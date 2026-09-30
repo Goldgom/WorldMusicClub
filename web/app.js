@@ -1,3 +1,4 @@
+import {setupMetronome} from './metronome.js';
 import {setupJianpuExport} from './jianpu-export.js';
 import {setupScoreLibrary} from './library-view.js';
 import {validateTargetPlan, mappedSourceIds} from './physical-targets.js';
@@ -18,6 +19,7 @@ const $ = id => document.getElementById(id);
 setupThemes();
 const transport = new Transport();
 const synth = new Synth();
+let metronome = null;
 const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reason:'Waiting for an instrument compatibility check.'}, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
 state.recorder = new PracticeRecorder({latencyMs:state.latency});
@@ -63,7 +65,7 @@ function pausePlayback(reason = 'Paused · 已暂停') {
   state.playTicket++;
   const pauseTime = performance.now(); advanceLoopClock(pauseTime); state.recorder.pause(pauseTime);
   if (transport.running) { transport.pause(pauseTime); $('transport-status').textContent = reason; }
-  silenceHeld();
+  silenceHeld();metronome?.pause();
   updateButtons();
   drawFrame();
 }
@@ -71,7 +73,7 @@ function resetPlayback() {
   pausePlayback();
   transport.reset();
   if (state.loop) transport.seek(state.loop.start_ms);
-  state.loopIteration = 1;
+  state.loopIteration = 1;metronome?.reset();
   if (state.loopPending && !state.loop) $('loop-status').textContent = 'Loop validation cancelled. Set loop to check the range again.';
   state.loopPending = false;
   state.loopRequest++; $('loop-enabled').checked = Boolean(state.loop);
@@ -109,13 +111,15 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     state.compiled = {...compiled, diagnostics, timeline: {...compiled.timeline, notes: [...compiled.timeline.notes].sort((a, b) => a.start_ms - b.start_ms || a.midi - b.midi)}};
     state.instrumentOutOfRange = null; state.instrumentConflict = false;
     state.timelineIndex = new TimelineIndex(state.compiled.timeline.notes);
+    metronome?.cancelForScore();
     state.sourceNotes = new Map(state.score.parts.flatMap(part => part.notes.map(note => [note.id, {note, partId: part.id}])));
     state.loop = null; state.loopRequest++; state.practicePart = previousPart !== null && state.score.parts.some(part => part.id === previousPart) ? previousPart : null; rebuildPracticeScope(); $('loop-enabled').checked = false; $('loop-status').textContent = 'Loop cleared. Choose A and B, then Set loop. Beats start at 0; B is exclusive.';
     state.notationPage = 0; state.notationPart = state.practicePart || state.score.parts[0].id;
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
     clearNotice();
     resetPlayback();
-    renderScore(); libraryView.scoreChanged(); renderCatalog(); updateRangeWarning(); checkInstrument();
+    renderScore(); libraryView.scoreChanged(); renderCatalog(); updateRangeWarning();
+    const clockScore=state.score;checkInstrument().finally(()=>{if(state.score===clockScore)metronome?.setScore()});
     return true;
   } catch (error) {
     if (error.name === 'AbortError') return;
@@ -483,6 +487,7 @@ function drawFrame() {
   const playbackNotes = state.loop?.notes || state.practiceTimeline?.notes || timeline?.notes || [];
   const playbackIndex = state.mode==='practice'&&state.physicalIndex ? state.physicalIndex : state.loop?.index || state.practiceIndex || state.timelineIndex;
   if (transport.running && timeline) {
+    metronome?.advance({running:true,position,segment:transport.startedAt,startPosition:transport.position});
     for (const note of transport.due(now, playbackNotes)) if (state.mode === 'listen') synth.play(`score:${note.id}:${note.part_id}:${note.start_ms}`, note.midi, note.remaining_ms, note.delay_ms, state.instrument, note.velocity ?? 90);
     if (!state.loop && state.mode==='practice' && position>=duration) {
       const previouslyClosed=state.recorder.active?.closedWall!==null;
@@ -593,7 +598,7 @@ $('tempo').addEventListener('change', () => {
 });
 for (const mode of ['staff', 'jianpu']) $(mode + '-button').addEventListener('click', () => { engravedView.hide(); state.notation = mode; $('engraved-button').setAttribute('aria-pressed','false'); $('engraved-button').classList.remove('selected'); $('jianpu-reference-label').hidden = mode !== 'jianpu'; ['staff', 'jianpu'].forEach(m => { $(m + '-button').classList.toggle('selected', m === mode); $(m + '-button').setAttribute('aria-pressed', String(m === mode)); }); renderScore(); });
 $('engraved-button').addEventListener('click', () => engravedView.show());
-$('sound-button').addEventListener('click', () => { synth.muted = !synth.muted; if (synth.muted) synth.silence(); $('sound-button').textContent = synth.muted ? 'Sound off ♫' : 'Sound on ♫'; $('sound-button').setAttribute('aria-pressed', String(synth.muted)); });
+$('sound-button').addEventListener('click', () => { synth.muted = !synth.muted; if (synth.muted) synth.silence(); $('sound-button').textContent = synth.muted ? 'Sound off ♫' : 'Sound on ♫'; $('sound-button').setAttribute('aria-pressed', String(synth.muted));metronome?.updateMute(); });
 $('import-button').addEventListener('click', () => $('score-file').click());
 $('mobile-import-button').addEventListener('click', () => $('score-file').click());
 $('score-file').addEventListener('change', async event => {
@@ -673,4 +678,5 @@ setupJianpuEditor({onImport:importJianpuText,pausePlayback});
 setupJianpuExport({getScore:()=>state.score,pausePlayback,api});
 setupImageReview({onImport:importCanonicalScore, pausePlayback, notice});
 setupMidi({pressNote, releaseNote, releaseMatching, silenceHeld, notice});
+metronome = setupMetronome({api,getScore:()=>state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:transport.time(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
 renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); loadCatalog();

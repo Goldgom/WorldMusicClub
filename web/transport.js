@@ -42,7 +42,7 @@ export class Transport {
 }
 
 export class Synth {
-  constructor() { this.context = null; this.voices = new Map(); this.muted = false; this.output = null; this.droppedVoices = 0; }
+  constructor() { this.context = null; this.voices = new Map(); this.clickVoices = new Map(); this.muted = false; this.output = null; this.droppedVoices = 0; }
   async unlock() {
     const Audio = globalThis.AudioContext || globalThis.webkitAudioContext;
     if (!Audio) throw new Error('Audio is unavailable in this browser. Try a current Chrome, Edge, Firefox or Safari.');
@@ -81,6 +81,22 @@ export class Synth {
       oscillator.stop(end + 0.15);
     }
   }
+  click(id, accent = false, delay = 0, level = 0.25) {
+    if (!Number.isFinite(level) || !Number.isFinite(delay)) throw new Error('Click level and scheduling delay must be finite.');
+    if (!this.context || this.context.state !== 'running' || this.muted || level <= 0) return;
+    if (this.clickVoices.size >= 8) throw new Error('The click preview exceeded its safe voice budget. Choose a coarser pulse.');
+    const start=this.context.currentTime+Math.max(0,delay)/1000;
+    const gain=this.context.createGain(),oscillator=this.context.createOscillator();
+    oscillator.type='sine';oscillator.frequency.value=accent?1568:1046;
+    gain.gain.setValueAtTime(0,start);gain.gain.linearRampToValueAtTime(Math.min(1,level)*0.22,start+0.002);gain.gain.exponentialRampToValueAtTime(0.0001,start+0.035);
+    oscillator.connect(gain);gain.connect(this.output);const voice={oscillator,gain};this.clickVoices.set(id,voice);
+    oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();if(this.clickVoices.get(id)===voice)this.clickVoices.delete(id)};
+    oscillator.start(start);oscillator.stop(start+0.045);
+  }
+  silenceClicks() {
+    for(const voice of this.clickVoices.values()){const now=this.context.currentTime;voice.gain.gain.cancelScheduledValues(now);voice.gain.gain.setValueAtTime(0,now);try{voice.oscillator.stop(now)}catch{/* already ended */}}
+    this.clickVoices.clear();
+  }
   stop(id) {
     const voice = this.voices.get(id);
     if (!voice) return;
@@ -90,7 +106,7 @@ export class Synth {
     try { voice.oscillator.stop(now); } catch { /* Already ended. */ }
     this.voices.delete(id);
   }
-  silence() { for (const id of [...this.voices.keys()]) this.stop(id); }
+  silence() { for (const id of [...this.voices.keys()]) this.stop(id); this.silenceClicks(); }
 }
 
 /** Window queries avoid scanning a long score on every animation frame. */
