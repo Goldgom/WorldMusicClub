@@ -37,6 +37,11 @@ try:
     assert len(parsed['timeline']['notes'])>0
     status,body,_=request('/api/import/musicxml',b'<!DOCTYPE score [<!ENTITY x SYSTEM "file:///etc/passwd">]><score-partwise/>',{'Content-Type':'application/xml'})
     assert status==400
+    mxl=Path('tests/fixtures/original-duet.mxl').read_bytes()
+    status,body,_=request('/api/import/mxl',mxl,{'Content-Type':'application/zip'})
+    assert status==200,body
+    assert json.loads(body)['score']['source']['content'].encode()==xml
+    assert request('/api/import/mxl',b'not a zip',{'Content-Type':'application/zip'})[0]==400
     png=Path('tests/fixtures/omr-original-scale.png').read_bytes()
     status,body,_=request('/api/import/image',png,{'Content-Type':'image/png'})
     assert status==200,body

@@ -120,11 +120,18 @@ fn route(mut request: Request, authority: &str) {
             .find(|h| h.field.equiv("Content-Type"))
             .map(|h| h.value.as_str())
             .unwrap_or("");
-        if !(path == "/api/import/image"
+        if !(path == "/api/import/mxl"
             && matches!(
                 content_type,
-                "image/png" | "image/jpeg" | "application/octet-stream"
+                "application/vnd.recordare.musicxml"
+                    | "application/zip"
+                    | "application/octet-stream"
             ))
+            && !(path == "/api/import/image"
+                && matches!(
+                    content_type,
+                    "image/png" | "image/jpeg" | "application/octet-stream"
+                ))
             && !content_type.starts_with("application/json")
             && !(path == "/api/import/musicxml"
                 && (content_type.starts_with("application/xml")
@@ -142,6 +149,14 @@ fn route(mut request: Request, authority: &str) {
             "/api/compile" => serde_json::from_slice(&bytes)
                 .map_err(|e| format!("Invalid score JSON: {e}"))
                 .and_then(score_core::compile)
+                .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
+            "/api/import/mxl" => score_core::import_mxl(&bytes)
+                .and_then(|(score, warnings)| {
+                    score_core::compile(score).map(|mut c| {
+                        c.diagnostics.extend(warnings);
+                        c
+                    })
+                })
                 .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
             "/api/import/image" => score_core::omr::analyze_image(&bytes)
                 .and_then(|review| serde_json::to_value(review).map_err(|e| e.to_string())),

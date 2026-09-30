@@ -29,3 +29,7 @@ Limits: 8 MiB compressed image, 16 million pixels, 16,384 pixels per axis, 512 c
 ## MusicXML
 
 `POST /api/import/musicxml` accepts UTF-8 raw `application/xml` or `text/xml`; output matches `/api/compile` plus importer diagnostics. Limited score-partwise input preserves original XML and basic exact note/rhythm structure. Unsupported sound-affecting features are rejected rather than guessed. Visual/expressive source details outside the canonical model are retained in source content with explicit warnings. DTD and external entities are rejected.
+
+## Compressed MusicXML
+
+`POST /api/import/mxl` accepts raw MXL bytes as `application/zip`, `application/vnd.recordare.musicxml` or `application/octet-stream`. It reads the declared container rootfile in memory and then uses the same guarded MusicXML parser. Limits are 8 MiB compressed, 16 MiB declared total decompression, 128 archive entries and 64 KiB container XML. Unsafe paths, duplicate entries, symlinks, encryption, ZIP64 and split archives are rejected. The exact selected XML is retained; ancillary archive bytes are explicitly not retained.

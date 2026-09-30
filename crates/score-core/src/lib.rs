@@ -1,6 +1,8 @@
 //! WorldMusicHub's canonical musical model and deterministic performance engine.
 //! Musical time is rational quarter-note time; wall-clock time is derived only at playback boundaries.
 mod musicxml;
+mod mxl;
+pub use mxl::import_mxl;
 pub mod omr;
 pub use musicxml::import_musicxml;
 

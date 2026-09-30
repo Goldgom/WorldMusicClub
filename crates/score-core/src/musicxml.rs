@@ -8,7 +8,8 @@ use crate::{
 };
 use roxmltree::{Document, Node, ParsingOptions};
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::ops::Bound::{Excluded, Included};
 
 const MAX_SOURCE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_NOTES: usize = 100_000;
@@ -60,7 +61,13 @@ fn value<'a, 'i>(node: Node<'a, 'i>) -> Result<&'a str, String> {
             node.tag_name().name()
         ));
     }
-    node.text()
+    let mut text_nodes = node.children().filter(Node::is_text);
+    let first = text_nodes.next();
+    if text_nodes.next().is_some() {
+        return Err(format!("Split text inside <{}> is unsupported; remove embedded comments or combine adjacent CDATA/text into one value before import", node.tag_name().name()));
+    }
+    first
+        .and_then(|n| n.text())
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| format!("Empty <{}>", node.tag_name().name()))
@@ -245,7 +252,7 @@ pub fn import_musicxml(xml: &str) -> Result<(Score, Vec<Diagnostic>), String> {
         }
         if matches!(
             node.tag_name().name(),
-            "link" | "image" | "opus" | "part-link"
+            "link" | "image" | "credit-image" | "opus" | "part-link"
         ) || node.attributes().any(|a| {
             matches!(
                 a.name(),
@@ -535,7 +542,7 @@ fn parse_measure(
     let mut extent = Beat::ZERO;
     let mut event_extent = Beat::ZERO;
     let mut anchor: Option<Anchor> = None;
-    let mut division_changes = Vec::new();
+    let mut division_changes = BTreeSet::new();
     let mut marks = Vec::new();
     for node in elements(measure) {
         match node.tag_name().name() {
@@ -545,7 +552,7 @@ fn parse_measure(
                         "divisions" => {
                             let divisions = decimal(value(attr)?, "divisions")?;
                             if divisions.numerator <= 0 { return Err("Divisions must be positive".into()); }
-                            if state.divisions.is_some_and(|old| !old.equivalent(divisions)) { division_changes.push(cursor); }
+                            if state.divisions.is_some_and(|old| !old.equivalent(divisions)) { division_changes.insert(BeatKey(cursor)); }
                             state.divisions = Some(divisions);
                         }
                         "time" => {
@@ -671,10 +678,11 @@ fn parse_measure(
                 } else {
                     (cursor, previous)
                 };
-                if division_changes.iter().any(|change| {
-                    cmp(*change, low) == Ordering::Greater
-                        && cmp(*change, high) != Ordering::Greater
-                }) {
+                if division_changes
+                    .range((Excluded(BeatKey(low)), Included(BeatKey(high))))
+                    .next()
+                    .is_some()
+                {
                     return Err("Backup/forward crosses a divisions change; export one divisions value per measure".into());
                 }
                 if cmp(cursor, extent) == Ordering::Greater {
@@ -826,6 +834,9 @@ fn parse_ties(node: Node<'_, '_>, warnings: &mut Warnings) -> Result<(bool, bool
 }
 
 fn parse_meter(node: Node<'_, '_>, at: Beat) -> Result<Meter, String> {
+    if node.attribute("number").is_some() {
+        return Err("Staff-specific time signatures are unsupported; export one shared time signature without a staff number".into());
+    }
     if one(node, "senza-misura")?.is_some() {
         return Err("Unmetered notation is unsupported; export explicit measured durations".into());
     }
@@ -848,6 +859,9 @@ fn parse_meter(node: Node<'_, '_>, at: Beat) -> Result<Meter, String> {
     })
 }
 fn parse_key(node: Node<'_, '_>, at: Beat, warnings: &mut Warnings) -> Result<Key, String> {
+    if node.attribute("number").is_some() {
+        return Err("Staff-specific key signatures are unsupported; export one shared key signature without a staff number".into());
+    }
     if elements(node).any(|n| {
         matches!(
             n.tag_name().name(),
@@ -1448,5 +1462,47 @@ mod tests {
             );
         let (score, _) = import_musicxml(&xml).unwrap();
         assert_eq!(score.keys[0].mode, "major");
+    }
+    #[test]
+    fn rejects_staff_specific_signatures_and_credit_images() {
+        assert!(
+            import_musicxml(&DUET.replacen("<time>", "<time number='1'>", 1))
+                .unwrap_err()
+                .contains("Staff-specific time")
+        );
+        assert!(
+            import_musicxml(&DUET.replacen("<key>", "<key number='2'>", 1))
+                .unwrap_err()
+                .contains("Staff-specific key")
+        );
+        let xml = wrap(&note("1")).replace("<part-list>","<credit><credit-image source='https://example.invalid/a.png' type='image/png'/></credit><part-list>");
+        assert!(import_musicxml(&xml)
+            .unwrap_err()
+            .contains("External file/network"));
+    }
+    #[test]
+    fn rejects_split_scalar_text_instead_of_silently_truncating_it() {
+        for original in [
+            "<duration>1</duration>",
+            "<octave>4</octave>",
+            "<divisions>1</divisions>",
+            "<part-name>Piano</part-name>",
+        ] {
+            let split = original.replacen('>', ">1<!-- comment -->", 1);
+            assert!(import_musicxml(&wrap(&note("1")).replace(original, &split))
+                .unwrap_err()
+                .contains("Split text"));
+        }
+        let voice = wrap(&note("1").replace("</duration>", "</duration><voice>1<!--x-->2</voice>"));
+        assert!(import_musicxml(&voice).unwrap_err().contains("Split text"));
+    }
+    #[test]
+    fn many_redundant_divisions_changes_and_cursor_moves_remain_bounded() {
+        let changes = "<attributes><divisions>2</divisions><divisions>1</divisions></attributes>"
+            .repeat(6000);
+        let moves =
+            "<forward><duration>1</duration></forward><backup><duration>1</duration></backup>"
+                .repeat(6000);
+        assert!(import_musicxml(&wrap(&format!("{changes}{moves}{}", note("1")))).is_ok());
     }
 }
