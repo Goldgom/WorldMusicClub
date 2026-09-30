@@ -21,6 +21,8 @@ meter=4/4
 1' - - - |
 ```
 
+A single leading UTF-8 byte-order mark (BOM) from an editor is accepted as an encoding marker and remains preserved in `score.source.content`. A BOM inside a token or a repeated leading BOM is not silently removed.
+
 All headers must precede the first music token. Put each header on its own line; whitespace around `=` is permitted. Header names and enum values are case-sensitive. Every header is optional, but duplicates, unknown headers, and empty values are errors.
 
 | Header | Meaning |

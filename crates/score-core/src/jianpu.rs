@@ -335,7 +335,13 @@ pub fn import_jianpu(text: &str) -> Result<(Score, Vec<Diagnostic>), String> {
     }
     let mut headers = Headers::default();
     let mut body = Vec::new();
-    for (index, line) in text.lines().enumerate() {
+    // A single UTF-8 BOM is an encoding marker, not a header/token. Keep it in source.content.
+    for (index, line) in text
+        .strip_prefix('\u{feff}')
+        .unwrap_or(text)
+        .lines()
+        .enumerate()
+    {
         let line = line.trim();
         if line.is_empty() || line.starts_with(';') {
             continue;
@@ -799,7 +805,7 @@ mod tests {
         for text in [
             "\0",
             "1\u{0008}",
-            "\u{feff}1",
+            "1\u{feff}",
             "你好",
             "🎵",
             "1:🦀/2",
@@ -1157,6 +1163,21 @@ mod export_tests {
         let mut score = crate::catalog().remove(0);
         score.tempo[0].bpm = 90.000_000_000_04;
         assert!(export_jianpu(&score).unwrap_err().contains("rounding"));
+    }
+    #[test]
+    fn one_leading_utf8_bom_is_accepted_and_retained_exactly() {
+        let text="\u{feff}; Saved by a UTF-8 editor\r\nformat=worldmusichub-jianpu-text-v1\r\n1=D4\r\n1 2 3";
+        let (score, _) = import_jianpu(text).unwrap();
+        assert_eq!(
+            score.parts[0].notes[0].pitch.as_ref().unwrap().midi(),
+            Some(62)
+        );
+        assert_eq!(
+            score.source.as_ref().unwrap().content.as_bytes(),
+            text.as_bytes()
+        );
+        assert!(import_jianpu("1 \u{feff}2").is_err());
+        assert!(import_jianpu("\u{feff}\u{feff}1").is_err());
     }
     #[test]
     fn header_comments_do_not_become_score_tokens_or_metadata_commands() {
