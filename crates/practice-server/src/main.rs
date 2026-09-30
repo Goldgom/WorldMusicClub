@@ -206,6 +206,10 @@ fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
             .map_err(|e| format!("Invalid loop request: {e}"))
             .and_then(|r| score_core::practice::practice_window(&r.score, r.from, r.to))
             .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
+        "/api/practice-targets" => serde_json::from_slice::<InstrumentRequest>(&bytes)
+            .map_err(|e| format!("Invalid target request: {e}"))
+            .and_then(|r| score_core::targets::plan_targets(&r.timeline, &r.profile))
+            .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
         "/api/instrument-check" => serde_json::from_slice::<InstrumentRequest>(&bytes)
             .map_err(|e| format!("Invalid instrument request: {e}"))
             .and_then(|r| score_core::instruments::analyze_instrument(&r.timeline, &r.profile))

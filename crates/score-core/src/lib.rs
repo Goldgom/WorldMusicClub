@@ -15,6 +15,7 @@ pub mod instruments;
 pub mod omr;
 pub mod practice;
 mod public_domain;
+pub mod targets;
 pub use musicxml::import_musicxml;
 
 use serde::{Deserialize, Serialize};
@@ -214,6 +215,9 @@ pub struct TimedNote {
     pub id: String,
     #[serde(default)]
     pub source_note_id: String,
+    /// All canonical tied segments represented by this sounding occurrence.
+    #[serde(default)]
+    pub source_note_ids: Vec<String>,
     pub part_id: String,
     pub midi: u8,
     pub start_ms: f64,
@@ -431,6 +435,7 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
             if let Some((index, prior_end)) = prior {
                 if prior_end.equivalent(note.at) {
                     notes[index].duration_ms = end_ms - notes[index].start_ms;
+                    notes[index].source_note_ids.push(note.id.clone());
                     if note.tie_start {
                         ties.insert(tie_key.clone(), (index, end));
                     }
@@ -455,6 +460,7 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
                     velocity: note.velocity,
                     id: note.id.clone(),
                     source_note_id: note.id.clone(),
+                    source_note_ids: vec![note.id.clone()],
                     part_id: part.id.clone(),
                     midi,
                     start_ms,
@@ -549,6 +555,7 @@ fn expand_repeats(
         segments.push((cursor, duration_ms));
     }
     let mut output = vec![];
+    let mut source_references = 0_usize;
     let mut offset = 0.;
     for (start, end) in segments {
         let first = ordered.partition_point(|note| note.start_ms < start);
@@ -556,6 +563,10 @@ fn expand_repeats(
         for note in &ordered[first..last] {
             if output.len() >= 100_000 {
                 return Err("Expanded repeat timeline exceeds 100,000-note limit".into());
+            }
+            source_references += note.source_note_ids.len();
+            if source_references > 1_000_000 {
+                return Err("Expanded repeat source references exceed 1,000,000; simplify repeat navigation".into());
             }
             let mut occurrence = (*note).clone();
             occurrence.id = format!("occurrence-{}", output.len());
@@ -974,6 +985,7 @@ mod tests {
                 velocity: 90,
                 id: format!("n-{i}"),
                 source_note_id: format!("n-{i}"),
+                source_note_ids: vec![format!("n-{i}")],
                 part_id: "p".into(),
                 midi: 60,
                 start_ms: 0.,

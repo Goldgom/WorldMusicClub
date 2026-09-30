@@ -65,3 +65,11 @@ Assessment preserves event order independently for each pitch. It first maximize
 The executable uses Hyper HTTP/1 on `127.0.0.1` only, without HTTP keep-alive. It accepts at most 16 concurrent connections and two score-body/CPU operations, with a 32 KiB header buffer, 64 headers, a five-second header/body deadline, and a 30-second connection lifetime. Body content remains capped at 8 MiB. Busy processing returns 503; incomplete body reads may return 408. Import and score validation failures remain JSON 400 responses. Static assets and health checks do not wait for a long score computation.
 
 The previous tiny_http transport was replaced because early request rejection could synchronously drain unread bodies. Existing functional smoke and engine tests pass for the replacement. Independent adversarial-resource verification remains incomplete. Functional tests are not a security certification.
+
+### POST /api/practice-targets
+
+Body: `{ "timeline": Timeline, "profile": InstrumentProfile }`, with the timeline already narrowed to the selected part and loop attacks. Returns `{ timeline, groups, diagnostics, source_note_count, target_count, playable }`.
+
+The returned timeline contains physical note-on targets. For piano only, exact simultaneous events on the same MIDI key share one attack. Neighboring repeated notes are never grouped by a timing tolerance. Each `groups` entry maps `target_id` to all `source_occurrence_ids`, canonical `source_note_ids` (including tied segments), and `part_ids`. The canonical score and sounding/playback timeline remain unchanged. The target's display duration is the longest member duration; onset grading does not establish independent voice release or sustain correctness. The original `source_note_id` compatibility field still identifies the first tied segment, while `source_note_ids` retains the full chain.
+
+Guitar retains distinct events and returns a pitch-only/string-identity warning. Empty, out-of-range or conflicting-string plans are not playable in scored mode. Listening and export remain available. A new part, loop, instrument range or tuning requires a fresh plan; never reuse a plan from a different selection.
