@@ -1,4 +1,5 @@
-const MAX_IMAGE = 5 * 1024 * 1024;
+import {imageMetadata, IMAGE_LIMITS} from './image-metadata.js';
+const MAX_IMAGE = IMAGE_LIMITS.bytes;
 const MAX_SCORE = 8 * 1024 * 1024;
 const B = (n, d = 1) => ({numerator: n, denominator: d});
 export function parsePitch(text) {
@@ -57,20 +58,24 @@ export function setupImageReview({compileScore, pausePlayback, notice}) {
     if (!rows.length) {const empty=document.createElement('p');empty.className='muted';empty.textContent='No note candidates yet. Analyze the region or add notes manually.';$('review-notes').append(empty)}updateCreate();
   }
   async function open(selected) {
+    const current=++epoch;controller?.abort();$('analyze-image').disabled=false;
     if (selected.size>MAX_IMAGE) {notice('Choose a PNG or JPEG smaller than 5 MiB. Crop a single staff or reduce the image size before importing.',true);return}
-    const signature = new Uint8Array(await selected.slice(0, 8).arrayBuffer());
-    const png = signature.length === 8 && signature.every((value, index) => value === [137, 80, 78, 71, 13, 10, 26, 10][index]);
-    const jpeg = signature[0] === 255 && signature[1] === 216 && signature[2] === 255;
-    if (!png && !jpeg) { notice('Choose an actual PNG or JPEG image. Renaming a PDF, SVG or other file does not convert it.', true); return; }
-    pausePlayback();epoch++;controller?.abort();$('analyze-image').disabled=false;file=selected;review=null;rows=[];crop=null;$('review-confirm').checked=false;renderRows();$('image-assumptions').replaceChildren();
-    const current=epoch;
+    $('analyze-image').disabled=true;
     try {
-      dataUrl=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Could not read this image.'));reader.readAsDataURL(file)});
-      const loaded=new Image();loaded.src=dataUrl;await loaded.decode();if(current!==epoch)return;
-      if(loaded.naturalWidth*loaded.naturalHeight>16000000)throw new Error('This image exceeds 16 million pixels. Crop or resize it and try again.');
-      image=loaded;$('crop-x').value='0';$('crop-y').value='0';$('crop-width').value=String(image.naturalWidth);$('crop-height').value=String(image.naturalHeight);$('review-title').value=file.name.replace(/\.[^.]+$/,'');
-      status('Choose a region with a single staff, then analyze it locally. No image leaves this computer.');drawPreview();dialog.showModal();
-    }catch(error){notice(`Could not open this image. ${error.message}`,true)}
+      const bytes=new Uint8Array(await selected.arrayBuffer());if(current!==epoch)return;
+      const metadata=imageMetadata(bytes); // Pixel allocation is permitted only after bounded dimensions are known.
+      const candidateUrl=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Could not read this image.'));reader.readAsDataURL(selected)});
+      if(current!==epoch)return;
+      const loaded=new Image();loaded.src=candidateUrl;await loaded.decode();if(current!==epoch)return;
+      if(loaded.naturalWidth<1||loaded.naturalHeight<1||loaded.naturalWidth>IMAGE_LIMITS.axis||loaded.naturalHeight>IMAGE_LIMITS.axis||loaded.naturalWidth*loaded.naturalHeight>IMAGE_LIMITS.pixels)throw new Error('Decoded image dimensions exceed the supported bounds. Crop or resize it.');
+      // EXIF orientation can swap axes; preserve the displayed orientation for the crop.
+      if(loaded.naturalWidth*loaded.naturalHeight!==metadata.width*metadata.height)throw new Error('The browser decoded a different image size. Re-export it as a still PNG and try again.');
+      pausePlayback();file=selected;dataUrl=candidateUrl;image=loaded;review=null;rows=[];crop=null;
+      $('review-confirm').checked=false;renderRows();$('image-assumptions').replaceChildren();
+      $('crop-x').value='0';$('crop-y').value='0';$('crop-width').value=String(image.naturalWidth);$('crop-height').value=String(image.naturalHeight);$('review-title').value=file.name.replace(/\.[^.]+$/,'');
+      status('Choose a region with a single staff, then analyze it locally. No image leaves this computer.');drawPreview();if(!dialog.open)dialog.showModal();
+    }catch(error){if(current===epoch)notice(`Could not open this image. ${error.message}`,true)}
+    finally{if(current===epoch)$('analyze-image').disabled=false}
   }
   function close() {epoch++;controller?.abort();dialog.close();}
   $('review-close').addEventListener('click',close);$('review-cancel').addEventListener('click',close);dialog.addEventListener('cancel',()=>{epoch++;controller?.abort()});

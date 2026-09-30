@@ -35,3 +35,9 @@ Windows CI compiles, runs Rust tests and starts the actual Windows executable. A
 Application code is MIT-licensed. Original exercise provenance is explicit. Third-party composition, edition, arrangement, recording and sound-bank rights must be tracked separately. Commercial-song metadata and legal acquisition links can be shown without bundling unlicensed note data.
 
 The local image recognizer is intentionally narrow and requires review. An optional external OMR adapter may be added, but no AGPL engine is silently included in the MIT executable. Audiveris integration would require an explicit distribution/license design.
+
+### Image-open preflight
+
+Before `Image.decode()`, the browser reads PNG IHDR or a supported 8-bit JPEG frame header and checks the same 16,384-axis/16-million-pixel bounds used by the Rust recognizer. The original file must also be below 5 MiB. Animated PNG is explicitly unsupported; export a still frame. A newer file selection invalidates older asynchronous header reads and decodes before they can replace the current review. The browser still validates/decodes the image; metadata preflight is not a complete image parser or an independently verified resource guarantee.
+
+Header layout references: [W3C PNG 3](https://www.w3.org/TR/png-3/#11IHDR) and the [libjpeg-turbo marker reader](https://github.com/libjpeg-turbo/libjpeg-turbo/blob/main/src/jdmarker.c). Original images remain local and their retained source is exported with the reviewed fragment.
