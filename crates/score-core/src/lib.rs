@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Beat {
     pub numerator: i64,
     pub denominator: i64,
@@ -30,6 +31,10 @@ impl Beat {
         self.denominator > 0
             && self.denominator <= 1_000_000
             && self.numerator.unsigned_abs() <= 1_000_000_000
+    }
+    pub fn compare(self, other: Self) -> std::cmp::Ordering {
+        (self.numerator as i128 * other.denominator as i128)
+            .cmp(&(other.numerator as i128 * self.denominator as i128))
     }
     pub fn equivalent(self, other: Self) -> bool {
         self.numerator as i128 * other.denominator as i128
@@ -57,6 +62,7 @@ fn gcd(mut a: u128, mut b: u128) -> u128 {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Pitch {
     pub step: String,
     pub alter: i8,
@@ -82,6 +88,7 @@ impl Pitch {
     }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Note {
     pub id: String,
     pub at: Beat,
@@ -96,6 +103,7 @@ pub struct Note {
     pub tie_stop: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Part {
     pub id: String,
     pub name: String,
@@ -103,35 +111,41 @@ pub struct Part {
     pub notes: Vec<Note>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Tempo {
     pub at: Beat,
     pub bpm: f64,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Meter {
     pub at: Beat,
     pub numerator: u16,
     pub denominator: u16,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Key {
     pub at: Beat,
     pub fifths: i8,
     pub mode: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Measure {
     pub number: u32,
     pub at: Beat,
     pub length: Beat,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Repeat {
     pub from: Beat,
     pub to: Beat,
     pub times: u8,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Provenance {
     pub kind: String,
     pub attribution: String,
@@ -139,12 +153,14 @@ pub struct Provenance {
     pub license: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Source {
     pub format: String,
     pub filename: Option<String>,
     pub content: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Score {
     pub version: u32,
     pub id: String,
@@ -161,6 +177,7 @@ pub struct Score {
     pub source: Option<Source>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Diagnostic {
     pub severity: String,
     pub code: String,
@@ -202,6 +219,38 @@ pub struct Compilation {
 }
 
 pub fn validate(score: &Score) -> Result<(), String> {
+    let bounded = |value: &str, limit: usize, name: &str| -> Result<(), String> {
+        if value.len() > limit {
+            Err(format!("{name} exceeds {limit}-byte limit"))
+        } else {
+            Ok(())
+        }
+    };
+    bounded(&score.id, 128, "Score id")?;
+    bounded(&score.composer, 1024, "Composer")?;
+    bounded(&score.provenance.kind, 64, "Provenance kind")?;
+    bounded(&score.provenance.attribution, 8192, "Attribution")?;
+    if let Some(url) = &score.provenance.source_url {
+        bounded(url, 4096, "Source URL")?;
+    }
+    if let Some(license) = &score.provenance.license {
+        bounded(license, 256, "Asset license")?;
+    }
+    if let Some(source) = &score.source {
+        bounded(&source.format, 64, "Source format")?;
+        if let Some(name) = &source.filename {
+            bounded(name, 1024, "Source filename")?;
+        }
+        bounded(&source.content, 8 * 1024 * 1024, "Retained source")?;
+    }
+    if score.tempo.len() > 100_000
+        || score.meters.len() > 100_000
+        || score.keys.len() > 100_000
+        || score.measures.len() > 100_000
+        || score.repeats.len() > 10_000
+    {
+        return Err("Score metadata exceeds event-count limits".into());
+    }
     if score.version != 1 {
         return Err("Unsupported score version; expected version 1".into());
     }
@@ -217,17 +266,18 @@ pub fn validate(score: &Score) -> Result<(), String> {
     if score.tempo.is_empty() || !score.tempo[0].at.equivalent(Beat::ZERO) {
         return Err("Tempo map must begin at beat zero".into());
     }
-    let mut last = -1.;
+    let mut last: Option<Beat> = None;
     for t in &score.tempo {
         if !t.at.valid()
-            || t.at.value() <= last
+            || t.at.numerator < 0
+            || last.is_some_and(|at| t.at.compare(at) != std::cmp::Ordering::Greater)
             || !t.bpm.is_finite()
             || t.bpm < 10.
             || t.bpm > 600.
         {
             return Err("Tempo map must have increasing nonnegative beats and 10–600 BPM".into());
         }
-        last = t.at.value();
+        last = Some(t.at);
     }
     for m in &score.meters {
         if !m.at.valid()
@@ -245,17 +295,27 @@ pub fn validate(score: &Score) -> Result<(), String> {
         }
     }
     for m in &score.measures {
-        if !m.at.valid() || m.at.numerator < 0 || !m.length.valid() || m.length.numerator <= 0 {
+        if !m.at.valid()
+            || m.at.numerator < 0
+            || !m.length.valid()
+            || m.length.numerator <= 0
+            || m.at.checked_add(m.length).is_none()
+        {
             return Err("Invalid measure timing".into());
         }
     }
     let mut ids = HashSet::new();
     let mut part_ids = HashSet::new();
     for p in &score.parts {
+        bounded(&p.id, 128, "Part id")?;
+        bounded(&p.name, 256, "Part name")?;
+        bounded(&p.instrument, 64, "Instrument")?;
         if p.id.is_empty() || !part_ids.insert(&p.id) {
             return Err("Part ids must be nonempty and unique".into());
         }
         for n in &p.notes {
+            bounded(&n.id, 128, "Note id")?;
+            bounded(&n.voice, 64, "Voice id")?;
             if n.id.is_empty() || !ids.insert(&n.id) {
                 return Err("Note ids must be nonempty and globally unique".into());
             }
@@ -282,7 +342,7 @@ pub fn validate(score: &Score) -> Result<(), String> {
         if !r.from.valid()
             || !r.to.valid()
             || r.from.numerator < 0
-            || r.to.value() <= r.from.value()
+            || r.to.compare(r.from) != std::cmp::Ordering::Greater
             || !(2..=16).contains(&r.times)
         {
             return Err("Invalid repeat region".into());
@@ -313,7 +373,7 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
     let mut total: f64 = 0.;
     for part in &score.parts {
         let mut sorted: Vec<&Note> = part.notes.iter().collect();
-        sorted.sort_by(|a, b| a.at.value().total_cmp(&b.at.value()).then(a.id.cmp(&b.id)));
+        sorted.sort_by(|a, b| a.at.compare(b.at).then(a.id.cmp(&b.id)));
         let mut ties: HashMap<(String, u8, u8), (usize, Beat)> = HashMap::new();
         for note in sorted {
             let end = note.at.checked_add(note.duration).expect("validated");
@@ -363,8 +423,8 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
                     voice: note.voice.clone(),
                     staff: note.staff,
                 });
-                if note.tie_start {
-                    ties.insert(tie_key, (index, end));
+                if note.tie_start && ties.insert(tie_key, (index, end)).is_some() {
+                    return Err(format!("Ambiguous overlapping tie starts for note {}; use distinct voices or correct the ties", note.id));
                 }
             }
         }
@@ -922,5 +982,48 @@ mod tests {
         .unwrap();
         assert_eq!(result.hits[0].note_id, t.notes[0].id);
         assert_eq!(result.hits[1].note_id, t.notes[1].id);
+    }
+    #[test]
+    fn overflowing_measure_end_is_rejected_before_compilation() {
+        let mut score = catalog().remove(0);
+        score.measures[0].at = Beat::new(1_000_000_000, 1);
+        score.measures[0].length = Beat::new(1, 1);
+        assert!(compile(score).unwrap_err().contains("measure"));
+    }
+    #[test]
+    fn oversized_identifiers_cannot_amplify_timeline_memory() {
+        let mut score = catalog().remove(0);
+        score.parts[0].id = "x".repeat(129);
+        assert!(compile(score).unwrap_err().contains("Part id"));
+        let mut score = catalog().remove(0);
+        score.parts[0].notes[0].voice = "x".repeat(65);
+        assert!(compile(score).unwrap_err().contains("Voice id"));
+    }
+    #[test]
+    fn unknown_json_notation_fields_are_never_silently_discarded() {
+        let mut json = serde_json::to_value(catalog().remove(0)).unwrap();
+        json["parts"][0]["notes"][0]["articulations"] = serde_json::json!(["staccato"]);
+        assert!(serde_json::from_value::<Score>(json)
+            .unwrap_err()
+            .to_string()
+            .contains("unknown field"));
+        let mut json = serde_json::to_value(catalog().remove(0)).unwrap();
+        json["navigation"] = serde_json::json!({"dacapo":true});
+        assert!(serde_json::from_value::<Score>(json).is_err());
+    }
+    #[test]
+    fn ambiguous_tie_starts_do_not_silently_overwrite_each_other() {
+        let mut score = catalog().remove(0);
+        score.parts[0].notes.truncate(3);
+        let pitch = score.parts[0].notes[0].pitch.clone();
+        for n in &mut score.parts[0].notes {
+            n.pitch = pitch.clone();
+            n.at = Beat::ZERO;
+            n.tie_start = true;
+        }
+        score.parts[0].notes[2].at = Beat::new(1, 1);
+        score.parts[0].notes[2].tie_start = false;
+        score.parts[0].notes[2].tie_stop = true;
+        assert!(compile(score).unwrap_err().contains("Ambiguous"));
     }
 }
