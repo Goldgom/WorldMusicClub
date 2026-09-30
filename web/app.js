@@ -1,3 +1,4 @@
+import {setupJianpuExport} from './jianpu-export.js';
 import {setupScoreLibrary} from './library-view.js';
 import {validateTargetPlan, mappedSourceIds} from './physical-targets.js';
 import {PracticeRecorder} from './practice-recorder.js';
@@ -45,6 +46,7 @@ function updateButtons() {
   $('export-takes').disabled = state.recorder.passes.length === 0;
   $('retry-assessments').hidden = !state.recorder.passes.some(pass=>pass.error);
   $('export-button').disabled = !state.score;
+  $('export-jianpu').disabled = !state.score;
   $('loop-apply').disabled = !ready;
   $('assess-button').disabled = !ready || state.mode !== 'practice' || checkingCurrent || !allowed;
   $('practice-gate').hidden = state.mode !== 'practice' || state.compatibility.status === 'ready';
@@ -668,6 +670,7 @@ const engravedView = setupEngravedView({getScore:()=>state.score,getPracticePart
   if(active){$('score-key').textContent='Generated MusicXML · static staff preview';for(const id of ['staff-button','jianpu-button']){$(id).classList.remove('selected');$(id).setAttribute('aria-pressed','false')}$('engraved-button').classList.add('selected');$('engraved-button').setAttribute('aria-pressed','true')}
 },onFallback:message=>{$('staff-button').click();notice(message,true)}});
 setupJianpuEditor({onImport:importJianpuText,pausePlayback});
+setupJianpuExport({getScore:()=>state.score,pausePlayback,api});
 setupImageReview({compileScore, pausePlayback, notice});
 setupMidi({pressNote, releaseNote, releaseMatching, silenceHeld, notice});
 renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); loadCatalog();

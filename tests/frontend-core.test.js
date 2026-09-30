@@ -142,3 +142,6 @@ test('whole missed loop passes pause without fabricating takes and retain unassi
  assert.equal(recorder.capture({midi:67,eventWall:4000}),null,'Free play after the known gap is not fabricated into practice');transport.start(5000,timeline.notes);assert.equal(transport.time(5000),0);
 });
 test('a complete next pass includes its count-in when deciding whether a frame stall skipped it',()=>{const transport=new Transport();transport.start(0,[],300);assert.equal(transport.wrapLoop(1799,[],{start:0,end:600,countIn:300}).status,'wrapped');assert.equal(transport.time(1799),599);assert.equal(transport.wrapLoop(2700,[],{start:0,end:600,countIn:300}).status,'stalled');});
+
+import {validateJianpuExport} from '../web/jianpu-export.js';
+test('numbered-text preview verifies every canonical note/rest identity and labels inserted gaps',()=>{const result={text:'1:1/1 3:1/1 0:2/1',note_map:['c4','e4',null],diagnostics:[]};assert.deepEqual(validateJianpuExport(result,fixture),{sourceNotes:2,gapRests:1});for(const ids of [['c4'],['c4','c4'],['c4','e4','unknown'],['c4','e4',5]])assert.throws(()=>validateJianpuExport({...result,note_map:ids},fixture),/incomplete/);assert.throws(()=>validateJianpuExport({...result,text:'x'.repeat(1024*1024+1)},fixture));});

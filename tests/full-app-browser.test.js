@@ -558,3 +558,11 @@ test('real local library preserves a source snapshot across reload and validates
   assert.equal(await page.locator('#library-list>li').count(),2);assert.equal(requests.filter(request=>request.path==='/api/compile').length,before+1);
   await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-library.png'),fullPage:true});
 });
+
+test('real numbered-text export previews Rust diagnostics and roundtrips original melody timing', testOptions, async () => {
+  const [response]=await Promise.all([nextResponse('/api/export/jianpu'),page.locator('#export-jianpu').click()]);const exported=await responseJson(response);
+  await page.locator('#jianpu-export-download:not([disabled])').waitFor();assert.equal(await page.locator('#jianpu-export-text').inputValue(),exported.text);assert.equal(exported.note_map.filter(id=>id!==null).length,initialCompilation.score.parts[0].notes.length);assert.match(await page.locator('#jianpu-export-diagnostics').textContent(),/original source bytes/);
+  const promise=page.waitForEvent('download');await page.locator('#jianpu-export-download').click();const downloaded=await readFile(await(await promise).path(),'utf8');assert.equal(downloaded,exported.text);await page.locator('#jianpu-export-close').click();assert.deepEqual(await exportScore(),initialCompilation.score);
+  const [importResponse]=await Promise.all([nextResponse('/api/import/jianpu'),page.locator('#score-file').setInputFiles({name:'original-roundtrip.jianpu',mimeType:'text/plain',buffer:Buffer.from(downloaded)})]);const imported=await responseJson(importResponse);
+  const timing=timeline=>timeline.notes.map(note=>({midi:note.midi,start_ms:note.start_ms,duration_ms:note.duration_ms}));assert.deepEqual(timing(imported.timeline),timing(initialCompilation.timeline));assert.equal(imported.timeline.duration_ms,initialCompilation.timeline.duration_ms);await readyForTitle(imported.score.title);
+});
