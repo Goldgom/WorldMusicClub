@@ -12,7 +12,7 @@ import re
 import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-REVIEWED = {'MIT', 'Apache-2.0', '0BSD', 'Unlicense', 'Zlib', 'BSD-3-Clause', 'BSD-2-Clause', 'Unicode-3.0', 'ISC'}
+REVIEWED = {'MIT', 'Apache-2.0', '0BSD', 'Unlicense', 'Zlib', 'BSD-3-Clause', 'BSD-2-Clause', 'Unicode-3.0', 'ISC', 'LLVM-exception'}
 FALLBACK = {
     ('midly', '0.5.3'): ('Unlicense', ['midly-0.5.3-LICENSE']),
     ('zune-core', '0.4.12'): ('Zlib', ['zune-LICENSE-ZLIB']),

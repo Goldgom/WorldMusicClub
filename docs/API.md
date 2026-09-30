@@ -59,3 +59,9 @@ Assessment responses include `summary`: expected/matched counts, onset coverage,
 ### Repeated-pitch alignment
 
 Assessment preserves event order independently for each pitch. It first maximizes the number of valid onset matches, then minimizes total absolute timing error. It does not let a nearer later target steal a consistently late earlier attack. Coincident and complete ordered takes have exact fast paths; more than2million ambiguous candidate edges is an actionable error, not a silent greedy fallback. Timing tolerance never merges separate score attacks.
+
+## Local transport limits
+
+The executable uses Hyper HTTP/1 on `127.0.0.1` only, without HTTP keep-alive. It accepts at most 16 concurrent connections and two score-body/CPU operations, with a 32 KiB header buffer, 64 headers, a five-second header/body deadline, and a 30-second connection lifetime. Body content remains capped at 8 MiB. Busy processing returns 503; incomplete body reads may return 408. Import and score validation failures remain JSON 400 responses. Static assets and health checks do not wait for a long score computation.
+
+The previous tiny_http transport was replaced because early request rejection could synchronously drain unread bodies. Existing functional smoke and engine tests pass for the replacement. Independent adversarial-resource verification remains incomplete. Functional tests are not a security certification.

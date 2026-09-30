@@ -1,9 +1,16 @@
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full, Limited};
+use hyper::{body::Incoming, server::conn::http1, service::service_fn, Method, Request, Response};
+use hyper_util::rt::{TokioIo, TokioTimer};
 use serde::Deserialize;
 use serde_json::json;
-use std::{env, io::Read, time::Duration};
-use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
+use std::{convert::Infallible, env, sync::Arc, time::Duration};
+use tokio::{net::TcpListener, sync::Semaphore, time::timeout};
 include!(concat!(env!("OUT_DIR"), "/web_assets.rs"));
 const MAX_BODY: usize = 8 * 1024 * 1024;
+const BODY_TIMEOUT: Duration = Duration::from_secs(5);
+const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
+type WebResponse = Response<Full<Bytes>>;
 #[derive(Deserialize)]
 struct WindowRequest {
     score: score_core::Score,
@@ -21,84 +28,79 @@ struct AssessRequest {
     inputs: Vec<score_core::InputEvent>,
     tolerance_ms: f64,
 }
-fn header(name: &str, value: &str) -> Header {
-    Header::from_bytes(name, value).expect("static safe header")
+
+fn reply(status: u16, content_type: &str, body: impl Into<Bytes>) -> WebResponse {
+    Response::builder()
+        .status(status)
+        .header("Content-Type", content_type)
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Cache-Control", "no-store")
+        .header("Referrer-Policy", "no-referrer")
+        .header("Cross-Origin-Resource-Policy", "same-origin")
+        .header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+        .body(Full::new(body.into()))
+        .expect("static response headers")
 }
-fn reply(request: Request, status: u16, content_type: &str, body: Vec<u8>) {
-    let response=Response::from_data(body).with_status_code(StatusCode(status))
-        .with_header(header("Content-Type",content_type))
-        .with_header(header("X-Content-Type-Options","nosniff"))
-        .with_header(header("Cache-Control","no-store"))
-        .with_header(header("Referrer-Policy","no-referrer"))
-        .with_header(header("Cross-Origin-Resource-Policy","same-origin"))
-        .with_header(header("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"));
-    let _ = request.respond(response);
+fn json_reply(result: Result<serde_json::Value, String>) -> WebResponse {
+    let (status, value) = match result {
+        Ok(value) => (200, value),
+        Err(error) => (400, json!({"error":error})),
+    };
+    reply(
+        status,
+        "application/json; charset=utf-8",
+        serde_json::to_vec(&value).expect("JSON value"),
+    )
 }
-fn json_reply(request: Request, result: Result<serde_json::Value, String>) {
-    match result {
-        Ok(value) => reply(
-            request,
-            200,
-            "application/json; charset=utf-8",
-            serde_json::to_vec(&value).unwrap(),
-        ),
-        Err(error) => reply(
-            request,
-            400,
-            "application/json; charset=utf-8",
-            serde_json::to_vec(&json!({"error":error})).unwrap(),
-        ),
-    }
+fn content_type_allowed(path: &str, content_type: &str) -> bool {
+    content_type.starts_with("application/json")
+        || (path == "/api/import/jianpu" && content_type.starts_with("text/plain"))
+        || (path == "/api/import/midi"
+            && matches!(
+                content_type,
+                "audio/midi" | "audio/x-midi" | "application/octet-stream"
+            ))
+        || (path == "/api/import/mxl"
+            && matches!(
+                content_type,
+                "application/vnd.recordare.musicxml"
+                    | "application/zip"
+                    | "application/octet-stream"
+            ))
+        || (path == "/api/import/image"
+            && matches!(
+                content_type,
+                "image/png" | "image/jpeg" | "application/octet-stream"
+            ))
+        || (path == "/api/import/musicxml"
+            && (content_type.starts_with("application/xml")
+                || content_type.starts_with("text/xml")))
 }
-fn body(request: &mut Request) -> Result<Vec<u8>, String> {
-    if request.body_length().is_some_and(|n| n > MAX_BODY) {
-        return Err("Import exceeds 8 MiB limit".into());
-    }
-    let mut bytes = vec![];
-    request
-        .as_reader()
-        .take((MAX_BODY + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|_| "Cannot read request body")?;
-    if bytes.len() > MAX_BODY {
-        return Err("Import exceeds 8 MiB limit".into());
-    }
-    Ok(bytes)
-}
-fn route(mut request: Request, authority: &str) {
-    let host = request
-        .headers()
-        .iter()
-        .find(|h| h.field.equiv("Host"))
-        .map(|h| h.value.as_str());
-    let origin = request
-        .headers()
-        .iter()
-        .find(|h| h.field.equiv("Origin"))
-        .map(|h| h.value.as_str());
+async fn route(
+    request: Request<Incoming>,
+    authority: &str,
+    computations: Arc<Semaphore>,
+) -> WebResponse {
+    let host = request.headers().get("host").and_then(|v| v.to_str().ok());
+    let origin = request.headers().get("origin");
     let expected = format!("http://{authority}");
-    if host != Some(authority) || origin.is_some_and(|o| o != expected) {
-        reply(
-            request,
+    if host != Some(authority) || origin.is_some_and(|o| o.to_str().ok() != Some(expected.as_str()))
+    {
+        return reply(
             403,
             "text/plain; charset=utf-8",
-            b"Local same-origin requests only".to_vec(),
+            "Local same-origin requests only",
         );
-        return;
     }
-    let path = request.url().split('?').next().unwrap_or("/").to_owned();
-    if request.method() == &Method::Get {
-        match path.as_str() {
-            "/api/health" => json_reply(
-                request,
-                Ok(
-                    json!({"name":"WorldMusicHub","version":env!("CARGO_PKG_VERSION"),"engine":"rust","network":"loopback-only"}),
-                ),
-            ),
-            "/api/catalog" => json_reply(
-                request,
-                serde_json::to_value(score_core::catalog()).map_err(|e| e.to_string()),
-            ),
+    let path = request.uri().path().to_owned();
+    if request.method() == Method::GET {
+        return match path.as_str() {
+            "/api/health" => json_reply(Ok(
+                json!({"name":"WorldMusicHub","version":env!("CARGO_PKG_VERSION"),"engine":"rust","network":"loopback-only"}),
+            )),
+            "/api/catalog" => {
+                json_reply(serde_json::to_value(score_core::catalog()).map_err(|e| e.to_string()))
+            }
             _ => {
                 let asset = if path == "/" { "/index.html" } else { &path };
                 if let Some(bytes) = web_asset(asset) {
@@ -117,126 +119,144 @@ fn route(mut request: Request, authority: &str) {
                     } else {
                         "application/octet-stream"
                     };
-                    reply(request, 200, mime, bytes.to_vec());
+                    reply(200, mime, Bytes::from_static(bytes))
                 } else {
-                    reply(
-                        request,
-                        404,
-                        "text/plain; charset=utf-8",
-                        b"Not found".to_vec(),
-                    );
+                    reply(404, "text/plain; charset=utf-8", "Not found")
                 }
             }
-        }
-    } else if request.method() == &Method::Post && path.starts_with("/api/") {
-        let content_type = request
-            .headers()
-            .iter()
-            .find(|h| h.field.equiv("Content-Type"))
-            .map(|h| h.value.as_str())
-            .unwrap_or("");
-        if !(path == "/api/import/jianpu" && content_type.starts_with("text/plain"))
-            && !(path == "/api/import/midi"
-                && matches!(
-                    content_type,
-                    "audio/midi" | "audio/x-midi" | "application/octet-stream"
-                ))
-            && !(path == "/api/import/mxl"
-                && matches!(
-                    content_type,
-                    "application/vnd.recordare.musicxml"
-                        | "application/zip"
-                        | "application/octet-stream"
-                ))
-            && !(path == "/api/import/image"
-                && matches!(
-                    content_type,
-                    "image/png" | "image/jpeg" | "application/octet-stream"
-                ))
-            && !content_type.starts_with("application/json")
-            && !(path == "/api/import/musicxml"
-                && (content_type.starts_with("application/xml")
-                    || content_type.starts_with("text/xml")))
-        {
-            reply(
-                request,
-                415,
-                "text/plain; charset=utf-8",
-                b"Expected application/json or MusicXML application/xml".to_vec(),
-            );
-            return;
-        }
-        let result = body(&mut request).and_then(|bytes| match path.as_str() {
-            "/api/compile" => serde_json::from_slice(&bytes)
-                .map_err(|e| format!("Invalid score JSON: {e}"))
-                .and_then(score_core::compile)
-                .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
-            "/api/practice-window" => serde_json::from_slice::<WindowRequest>(&bytes)
-                .map_err(|e| format!("Invalid loop request: {e}"))
-                .and_then(|r| score_core::practice::practice_window(&r.score, r.from, r.to))
-                .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
-            "/api/instrument-check" => serde_json::from_slice::<InstrumentRequest>(&bytes)
-                .map_err(|e| format!("Invalid instrument request: {e}"))
-                .and_then(|r| score_core::instruments::analyze_instrument(&r.timeline, &r.profile))
-                .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
-            "/api/export/musicxml" => serde_json::from_slice::<score_core::Score>(&bytes)
-                .map_err(|e| format!("Invalid score JSON: {e}"))
-                .and_then(|score| score_core::export_musicxml(&score))
-                .and_then(|result| serde_json::to_value(result).map_err(|e| e.to_string())),
-            "/api/import/jianpu" => String::from_utf8(bytes)
-                .map_err(|_| "Jianpu text must be UTF-8".to_string())
-                .and_then(|text| score_core::import_jianpu(&text))
-                .and_then(|(score, warnings)| {
-                    score_core::compile(score).map(|mut c| {
-                        c.diagnostics.extend(warnings);
-                        c
-                    })
-                })
-                .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
-            "/api/import/midi" => score_core::import_midi(&bytes)
-                .and_then(|(score, warnings)| {
-                    score_core::compile(score).map(|mut c| {
-                        c.diagnostics.extend(warnings);
-                        c
-                    })
-                })
-                .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
-            "/api/import/mxl" => score_core::import_mxl(&bytes)
-                .and_then(|(score, warnings)| {
-                    score_core::compile(score).map(|mut c| {
-                        c.diagnostics.extend(warnings);
-                        c
-                    })
-                })
-                .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
-            "/api/import/image" => score_core::omr::analyze_image(&bytes)
-                .and_then(|review| serde_json::to_value(review).map_err(|e| e.to_string())),
-            "/api/import/musicxml" => String::from_utf8(bytes)
-                .map_err(|_| {
-                    "MusicXML must be UTF-8; convert the source encoding first".to_string()
-                })
-                .and_then(|xml| score_core::import_musicxml(&xml))
-                .and_then(|(score, warnings)| {
-                    score_core::compile(score).map(|mut c| {
-                        c.diagnostics.extend(warnings);
-                        c
-                    })
-                })
-                .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
-            "/api/assess" => serde_json::from_slice::<AssessRequest>(&bytes)
-                .map_err(|e| format!("Invalid performance JSON: {e}"))
-                .and_then(|r| score_core::assess(&r.timeline, &r.inputs, r.tolerance_ms))
-                .and_then(|a| serde_json::to_value(a).map_err(|e| e.to_string())),
-            _ => Err("Unknown API route".into()),
-        });
-        json_reply(request, result);
-    } else {
-        reply(
-            request,
-            405,
+        };
+    }
+    if request.method() != Method::POST || !path.starts_with("/api/") {
+        return reply(405, "text/plain; charset=utf-8", "Method not allowed");
+    }
+    let content_type = request
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !content_type_allowed(&path, content_type) {
+        return reply(
+            415,
             "text/plain; charset=utf-8",
-            b"Method not allowed".to_vec(),
+            "Expected application/json or MusicXML application/xml",
         );
+    }
+    if request
+        .headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .is_some_and(|size| size > MAX_BODY as u64)
+    {
+        return json_reply(Err("Import exceeds 8 MiB limit".into()));
+    }
+    // Acquire before reading/allocating a body; keep the permit through CPU work.
+    let permit = match timeout(Duration::from_secs(2), computations.acquire_owned()).await {
+        Ok(Ok(permit)) => permit,
+        _ => {
+            return reply(
+                503,
+                "application/json; charset=utf-8",
+                r#"{"error":"The local engine is busy; retry shortly"}"#,
+            )
+        }
+    };
+    let bytes = match timeout(
+        BODY_TIMEOUT,
+        Limited::new(request.into_body(), MAX_BODY).collect(),
+    )
+    .await
+    {
+        Ok(Ok(body)) => body.to_bytes().to_vec(),
+        Ok(Err(_)) => {
+            return json_reply(Err(
+                "Cannot read request body or import exceeds 8 MiB limit".into(),
+            ))
+        }
+        Err(_) => {
+            return reply(
+                408,
+                "application/json; charset=utf-8",
+                r#"{"error":"Request body timed out"}"#,
+            )
+        }
+    };
+    // Imported-score processing cannot stall static assets or the asynchronous I/O threads.
+    match tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        api(&path, bytes)
+    })
+    .await
+    {
+        Ok(result) => json_reply(result),
+        Err(_) => reply(
+            500,
+            "application/json; charset=utf-8",
+            r#"{"error":"The score operation failed"}"#,
+        ),
+    }
+}
+fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
+    match path {
+        "/api/compile" => serde_json::from_slice(&bytes)
+            .map_err(|e| format!("Invalid score JSON: {e}"))
+            .and_then(score_core::compile)
+            .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
+        "/api/practice-window" => serde_json::from_slice::<WindowRequest>(&bytes)
+            .map_err(|e| format!("Invalid loop request: {e}"))
+            .and_then(|r| score_core::practice::practice_window(&r.score, r.from, r.to))
+            .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
+        "/api/instrument-check" => serde_json::from_slice::<InstrumentRequest>(&bytes)
+            .map_err(|e| format!("Invalid instrument request: {e}"))
+            .and_then(|r| score_core::instruments::analyze_instrument(&r.timeline, &r.profile))
+            .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
+        "/api/export/musicxml" => serde_json::from_slice::<score_core::Score>(&bytes)
+            .map_err(|e| format!("Invalid score JSON: {e}"))
+            .and_then(|score| score_core::export_musicxml(&score))
+            .and_then(|result| serde_json::to_value(result).map_err(|e| e.to_string())),
+        "/api/import/jianpu" => String::from_utf8(bytes)
+            .map_err(|_| "Jianpu text must be UTF-8".to_string())
+            .and_then(|text| score_core::import_jianpu(&text))
+            .and_then(|(score, warnings)| {
+                score_core::compile(score).map(|mut c| {
+                    c.diagnostics.extend(warnings);
+                    c
+                })
+            })
+            .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
+        "/api/import/midi" => score_core::import_midi(&bytes)
+            .and_then(|(score, warnings)| {
+                score_core::compile(score).map(|mut c| {
+                    c.diagnostics.extend(warnings);
+                    c
+                })
+            })
+            .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
+        "/api/import/mxl" => score_core::import_mxl(&bytes)
+            .and_then(|(score, warnings)| {
+                score_core::compile(score).map(|mut c| {
+                    c.diagnostics.extend(warnings);
+                    c
+                })
+            })
+            .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
+        "/api/import/image" => score_core::omr::analyze_image(&bytes)
+            .and_then(|review| serde_json::to_value(review).map_err(|e| e.to_string())),
+        "/api/import/musicxml" => String::from_utf8(bytes)
+            .map_err(|_| "MusicXML must be UTF-8; convert the source encoding first".to_string())
+            .and_then(|xml| score_core::import_musicxml(&xml))
+            .and_then(|(score, warnings)| {
+                score_core::compile(score).map(|mut c| {
+                    c.diagnostics.extend(warnings);
+                    c
+                })
+            })
+            .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
+        "/api/assess" => serde_json::from_slice::<AssessRequest>(&bytes)
+            .map_err(|e| format!("Invalid performance JSON: {e}"))
+            .and_then(|r| score_core::assess(&r.timeline, &r.inputs, r.tolerance_ms))
+            .and_then(|a| serde_json::to_value(a).map_err(|e| e.to_string())),
+        _ => Err("Unknown API route".into()),
     }
 }
 fn open_browser(url: &str) {
@@ -272,22 +292,75 @@ fn main() {
         })
         .unwrap_or(7878);
     let authority = format!("127.0.0.1:{port}");
-    let server = Server::http(&authority).unwrap_or_else(|e| {
-        eprintln!("Cannot start WorldMusicHub at {authority}: {e}. Try --port 7879.");
-        std::process::exit(1)
-    });
-    let url = format!("http://{authority}");
-    println!("WorldMusicHub {}\nOpen {url}\nRust engine · local files stay on this computer · Ctrl+C to stop",env!("CARGO_PKG_VERSION"));
-    if !args.iter().any(|s| s == "--no-open") {
-        open_browser(&url);
-    }
-    loop {
-        match server.recv_timeout(Duration::from_secs(1)) {
-            Ok(Some(request)) => route(request, &authority),
-            Ok(None) => {}
-            Err(error) => {
-                eprintln!("Request error: {error}");
-            }
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .max_blocking_threads(2)
+        .enable_all()
+        .build()
+        .expect("local app runtime");
+    runtime.block_on(async {
+        let listener = TcpListener::bind(&authority).await.unwrap_or_else(|e| {
+            eprintln!("Cannot start WorldMusicHub at {authority}: {e}. Try --port 7879.");
+            std::process::exit(1)
+        });
+        let url = format!("http://{authority}");
+        println!("WorldMusicHub {}\nOpen {url}\nRust engine · local files stay on this computer · Ctrl+C to stop",env!("CARGO_PKG_VERSION"));
+        if !args.iter().any(|s| s == "--no-open") { open_browser(&url); }
+        let connections = Arc::new(Semaphore::new(16));
+        let computations = Arc::new(Semaphore::new(2));
+        loop {
+            let (stream, _) = match listener.accept().await {
+                Ok(connection) => connection,
+                Err(error) => { eprintln!("Connection error: {error}"); continue; }
+            };
+            let Ok(permit) = connections.clone().try_acquire_owned() else { drop(stream); continue; };
+            let authority = authority.clone();
+            let computations = computations.clone();
+            tokio::spawn(async move {
+                let _permit = permit;
+                let service = service_fn(move |request| {
+                    let authority = authority.clone();
+                    let computations = computations.clone();
+                    async move { Ok::<_, Infallible>(route(request, &authority, computations).await) }
+                });
+                let mut builder = http1::Builder::new();
+                builder.timer(TokioTimer::new()).header_read_timeout(Duration::from_secs(5)).max_buf_size(32 * 1024).max_headers(64).keep_alive(false);
+                // Closing drops an unfinished Incoming body instead of draining it synchronously.
+                let _ = timeout(CONNECTION_TIMEOUT, builder.serve_connection(TokioIo::new(stream), service)).await;
+            });
         }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn existing_import_content_types_are_preserved() {
+        for (path, content_type) in [
+            ("/api/compile", "application/json; charset=utf-8"),
+            ("/api/import/musicxml", "application/xml"),
+            ("/api/import/musicxml", "text/xml; charset=utf-8"),
+            ("/api/import/midi", "audio/midi"),
+            ("/api/import/mxl", "application/zip"),
+            ("/api/import/image", "image/png"),
+            ("/api/import/jianpu", "text/plain; charset=utf-8"),
+        ] {
+            assert!(content_type_allowed(path, content_type));
+        }
+        assert!(!content_type_allowed("/api/compile", "text/plain"));
+    }
+    #[test]
+    fn ordinary_api_compile_and_export_remain_compatible() {
+        let score = score_core::catalog().into_iter().next().unwrap();
+        let bytes = serde_json::to_vec(&score).unwrap();
+        let compiled = api("/api/compile", bytes.clone()).unwrap();
+        assert_eq!(compiled["score"]["id"], score.id);
+        let exported = api("/api/export/musicxml", bytes).unwrap();
+        assert!(exported["xml"]
+            .as_str()
+            .unwrap()
+            .contains("<score-partwise"));
     }
 }
