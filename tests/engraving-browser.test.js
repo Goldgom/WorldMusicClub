@@ -9,7 +9,7 @@ import test, {before, after, beforeEach, afterEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {mkdir, readFile} from 'node:fs/promises';
+import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
@@ -99,9 +99,8 @@ after(async () => {
   }
 }, {timeout: 15_000});
 
-beforeEach(async () => {
-  pageErrors = []; apiFailures = []; offOrigin = []; requests = [];
-  context = await browser.newContext({viewport: {width: 1440, height: 1100}, colorScheme: 'light', serviceWorkers: 'block'});
+async function openHarnessContext(deviceScaleFactor = 1) {
+  context = await browser.newContext({viewport: {width: 1440, height: 1100}, colorScheme: 'light', serviceWorkers: 'block', deviceScaleFactor});
   context.setDefaultTimeout(10_000); context.setDefaultNavigationTimeout(15_000);
   // Block any unexpected network destination before it can receive score data.
   await context.route('**/*', async route => {
@@ -118,6 +117,10 @@ beforeEach(async () => {
   page.on('response', response => {const url = new URL(response.url()); if (url.origin === origin && url.pathname.startsWith('/api/') && response.status() >= 400) apiFailures.push(`${response.status()} ${url.pathname}`);});
   await page.goto(`${origin}/__engraving-harness`, {waitUntil: 'domcontentloaded'});
   await page.evaluate(async () => {window.engraving = await import('/engraving.js');});
+}
+beforeEach(async () => {
+  pageErrors = []; apiFailures = []; offOrigin = []; requests = [];
+  await openHarnessContext();
 }, {timeout: 25_000});
 
 afterEach(async t => {
@@ -303,4 +306,20 @@ test('missing bundle preserves a labelled basic view and a later retry uses the 
   await render(exported.xml);
   assert.equal(await page.locator('#basic-fallback').count(), 0);
   assert.ok((await geometry()).ties >= 1);
+});
+
+
+test('fresh high-DPI original staff fixtures are suitable inputs for separate local OMR evaluation', options, async () => {
+  await context.close();
+  await openHarnessContext(3);
+  const catalog=await page.evaluate(async()=>{const response=await fetch('/api/catalog');if(!response.ok)throw Error('Catalog unavailable');return response.json()});
+  const melody=catalog.find(score=>score.id==='first-steps');assert.equal(melody.provenance.kind,'original_exercise');
+  for(const [name,score] of [['duet',duet.score],['melody',melody]]){
+    const exported=await exportScore(score);await render(exported.xml,{zoom:1.2});
+    const path=join(artifacts,`worldmusichub-omr-original-${name}-3x.png`);
+    await page.locator('#staff').screenshot({path,animations:'disabled',scale:'device'});
+    const png=await readFile(path),width=png.readUInt32BE(16),height=png.readUInt32BE(20);
+    assert.ok(width>=3000&&width*height<=16_000_000,'Fresh fixture is high-DPI but within the image-import pixel cap');
+    await writeFile(join(artifacts,`worldmusichub-omr-original-${name}-groundtruth.json`),JSON.stringify({fixture_version:1,kind:'original-generated-engraving',renderer:'OpenSheetMusicDisplay 2.1.3',device_scale_factor:3,zoom:1.2,width,height,image_sha256:createHash('sha256').update(png).digest('hex'),score,musicxml:exported.xml,note:'Generated test input, not an OMR success claim. Compare separately recognized output against this canonical score.'},null,2)+'\n');
+  }
 });
