@@ -1,0 +1,14 @@
+{
+  "name": "worldmusichub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first music practice UI for the Rust score engine",
+  "scripts": {
+    "test": "node --test tests/frontend-core.test.js",
+    "test:browser": "node --test tests/frontend-browser.test.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.58.0"
+  }
+}
