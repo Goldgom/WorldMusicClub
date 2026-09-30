@@ -337,7 +337,7 @@ pub fn import_jianpu(text: &str) -> Result<(Score, Vec<Diagnostic>), String> {
     let mut body = Vec::new();
     for (index, line) in text.lines().enumerate() {
         let line = line.trim();
-        if line.is_empty() {
+        if line.is_empty() || line.starts_with(';') {
             continue;
         }
         let line_number = index + 1;
@@ -858,5 +858,313 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ExportedJianpu {
+    pub text: String,
+    pub diagnostics: Vec<Diagnostic>,
+    /// One entry per exported token. None identifies an explicit rest filling a written gap.
+    pub note_map: Vec<Option<String>>,
+}
+/// Export the bounded text dialect only when it can represent every note in order.
+pub fn export_jianpu(score: &Score) -> Result<ExportedJianpu, String> {
+    crate::validate(score)?;
+    if score.parts.len() != 1
+        || score.tempo.len() != 1
+        || score.keys.len() != 1
+        || score.meters.len() != 1
+        || !score.repeats.is_empty()
+    {
+        return Err("Numbered-text export requires one part and constant tempo/key/meter without repeats; use JSON or MusicXML for the complete score".into());
+    }
+    let part = &score.parts[0];
+    if part.notes.is_empty() {
+        return Err("There are no notes or rests to export".into());
+    }
+    let lane = (&part.notes[0].voice, part.notes[0].staff);
+    if part
+        .notes
+        .iter()
+        .any(|n| (&n.voice, n.staff) != lane || n.tie_start || n.tie_stop)
+    {
+        return Err("Numbered-text v1 cannot preserve multiple voices/staves or written ties; use MusicXML or JSON".into());
+    }
+    let key = &score.keys[0];
+    let meter = &score.meters[0];
+    if !key.at.equivalent(Beat::ZERO) || !meter.at.equivalent(Beat::ZERO) {
+        return Err("Key and meter must begin at beat zero for numbered-text export".into());
+    }
+    let circle = match key.mode.as_str() {
+        "major" => [
+            "Cb", "Gb", "Db", "Ab", "Eb", "Bb", "F", "C", "G", "D", "A", "E", "B", "F#", "C#",
+        ],
+        "minor" => [
+            "Ab", "Eb", "Bb", "F", "C", "G", "D", "A", "E", "B", "F#", "C#", "G#", "D#", "A#",
+        ],
+        _ => return Err("Numbered-text export supports major and natural-minor keys only".into()),
+    };
+    let tonic = format!("{}4", circle[(key.fifths + 7) as usize]);
+    let tonality = parse_tonality(&tonic, &key.mode)?;
+    let tempo = format!("{:.3}", score.tempo[0].bpm);
+    if parse_tempo(&tempo)? != score.tempo[0].bpm {
+        return Err(
+            "Tempo needs more than three decimal places; use MusicXML to avoid rounding it".into(),
+        );
+    }
+    let (_, _, measure_length) =
+        parse_meter(&format!("{}/{}", meter.numerator, meter.denominator))?;
+    let mut notes: Vec<_> = part.notes.iter().collect();
+    notes.sort_by(|a, b| a.at.compare(b.at).then(a.id.cmp(&b.id)));
+    let mut total = notes
+        .iter()
+        .map(|n| n.at.checked_add(n.duration).expect("validated"))
+        .max_by(|a, b| a.compare(*b))
+        .unwrap();
+    for measure in &score.measures {
+        let end = measure.at.checked_add(measure.length).expect("validated");
+        if end.compare(total).is_gt() {
+            total = end;
+        }
+    }
+    let inferred = measures(total, measure_length)?;
+    if !score.measures.is_empty()
+        && (inferred.len() != score.measures.len()
+            || inferred
+                .iter()
+                .zip(&score.measures)
+                .any(|(a, b)| !a.at.equivalent(b.at) || !a.length.equivalent(b.length)))
+    {
+        return Err("Pickup, irregular or nonsequential measures cannot be represented in numbered-text v1; use MusicXML".into());
+    }
+    let mut diagnostics=vec![Diagnostic::warning("jianpu_export_scope","Numbered text preserves this melody's spelled pitches and exact note/rest durations. It does not preserve canonical IDs, instrument setup, original source bytes, expressive velocities or engraving; keep JSON/MusicXML as the full score archive. Rights are retained as comments, not independently verified.",None)];
+    let title = score.title.split_whitespace().collect::<Vec<_>>().join(" ");
+    let composer = score
+        .composer
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let title = if title.is_empty() {
+        "Untitled".into()
+    } else {
+        title
+    };
+    let composer = if composer.is_empty() {
+        "Unknown".into()
+    } else {
+        composer
+    };
+    if title != score.title || composer != score.composer {
+        diagnostics.push(Diagnostic::warning("jianpu_export_labels","Multiline/empty title or composer labels were normalized for single-line headers; original labels remain in JSON.",None));
+    }
+    let mut text=format!("format={FORMAT}\ntitle={title}\ncomposer={composer}\n1={tonic}\nmode={}\ntempo={tempo}\nmeter={}/{}\n",key.mode,meter.numerator,meter.denominator);
+    for (label, value) in [
+        ("Attribution", Some(score.provenance.attribution.as_str())),
+        ("License", score.provenance.license.as_deref()),
+        ("Source URL", score.provenance.source_url.as_deref()),
+    ] {
+        if let Some(value) = value {
+            for line in value.lines() {
+                text.push_str(&format!("; {label}: {line}\n"));
+            }
+        }
+    }
+    let mut tokens = vec![];
+    let mut mapping = vec![];
+    let mut cursor = Beat::ZERO;
+    let mut gaps = 0;
+    let difference = |end: Beat, start: Beat| {
+        rational(
+            end.numerator as i128 * start.denominator as i128
+                - start.numerator as i128 * end.denominator as i128,
+            end.denominator as i128 * start.denominator as i128,
+        )
+    };
+    for note in notes {
+        if note.at.compare(cursor).is_lt() {
+            return Err("Overlapping notes/chords cannot be flattened into monophonic numbered text; use MusicXML".into());
+        }
+        if note.at.compare(cursor).is_gt() {
+            let gap = difference(note.at, cursor)?;
+            tokens.push(format!("0:{}/{}", gap.numerator, gap.denominator));
+            mapping.push(None);
+            gaps += 1;
+        }
+        let token = if let Some(pitch) = &note.pitch {
+            let step = STEPS
+                .iter()
+                .position(|s| *s == pitch.step)
+                .expect("validated");
+            let degree = (step + 7 - tonality.step) % 7;
+            let base_octave = tonality.octave + ((tonality.step + degree) / 7) as i16;
+            let shift = i16::from(pitch.octave) - base_octave;
+            let suffix = if shift < 0 {
+                ",".repeat((-shift) as usize)
+            } else {
+                "'".repeat(shift as usize)
+            };
+            let natural = format!("{}{suffix}", degree + 1);
+            let scale = if tonality.minor {
+                [0, 2, 3, 5, 7, 8, 10]
+            } else {
+                [0, 2, 4, 5, 7, 9, 11]
+            };
+            let base_midi = tonality.midi + scale[degree] + shift * 12;
+            let delta = i16::from(pitch.midi().expect("validated")) - base_midi;
+            let accidental=match delta{-1=>"b",0=>"",1=>"#",_=>return Err(format!("Note {} requires an unsupported multi-semitone degree accidental in text v1; use MusicXML",note.id))};
+            format!("{accidental}{natural}")
+        } else {
+            "0".into()
+        };
+        tokens.push(format!(
+            "{token}:{}/{}",
+            note.duration.numerator, note.duration.denominator
+        ));
+        mapping.push(Some(note.id.clone()));
+        cursor = note.at.checked_add(note.duration).expect("validated");
+    }
+    if total.compare(cursor).is_gt() {
+        let gap = difference(total, cursor)?;
+        tokens.push(format!("0:{}/{}", gap.numerator, gap.denominator));
+        mapping.push(None);
+        gaps += 1;
+    }
+    if mapping.len() > MAX_NOTES {
+        return Err("Explicit gap rests exceed the numbered-text token limit".into());
+    }
+    if gaps > 0 {
+        diagnostics.push(Diagnostic::warning("jianpu_export_gap_rests",format!("{gaps} explicit rests preserve gaps and trailing measure time; no pitched note was removed or shifted."),None));
+    }
+    for line in tokens.chunks(8) {
+        text.push_str(&line.join(" "));
+        text.push('\n');
+    }
+    if text.len() > MAX_SOURCE_BYTES {
+        return Err("Numbered-text export exceeds the 1 MiB dialect limit".into());
+    }
+    // Run the public reader before offering a download; preserve spelling/timing, not token aesthetics.
+    let (roundtrip, _) = import_jianpu(&text)?;
+    if roundtrip.parts[0].notes.len() != mapping.len() {
+        return Err("Numbered-text roundtrip did not preserve all exported tokens".into());
+    }
+    let source_notes: std::collections::HashMap<_, _> = part
+        .notes
+        .iter()
+        .map(|note| (note.id.as_str(), note))
+        .collect();
+    for (written, source_id) in roundtrip.parts[0].notes.iter().zip(&mapping) {
+        if let Some(id) = source_id {
+            let original = source_notes[id.as_str()];
+            let same_pitch = match (&written.pitch, &original.pitch) {
+                (None, None) => true,
+                (Some(a), Some(b)) => {
+                    a.step == b.step && a.alter == b.alter && a.octave == b.octave
+                }
+                _ => false,
+            };
+            if !same_pitch
+                || !written.at.equivalent(original.at)
+                || !written.duration.equivalent(original.duration)
+            {
+                return Err(format!(
+                    "Numbered-text verification changed note {}; use MusicXML or JSON",
+                    id
+                ));
+            }
+        }
+    }
+    Ok(ExportedJianpu {
+        text,
+        diagnostics,
+        note_map: mapping,
+    })
+}
+
+#[cfg(test)]
+mod export_tests {
+    use super::*;
+    #[test]
+    fn exact_melody_roundtrip_preserves_spelling_triplets_rests_and_source_rights() {
+        let (mut score, _) = import_jianpu("1=D4\nmode=major\n1:1/3 #3:2/3 0:1/2 7,:3/2").unwrap();
+        score.provenance.attribution =
+            "An original study\n; never an authorization to upload".into();
+        score.provenance.license = Some("CC0-1.0".into());
+        let exported = export_jianpu(&score).unwrap();
+        let (again, _) = import_jianpu(&exported.text).unwrap();
+        assert_eq!(again.parts[0].notes.len(), score.parts[0].notes.len());
+        for (a, b) in again.parts[0].notes.iter().zip(&score.parts[0].notes) {
+            assert_eq!(
+                serde_json::to_value(&a.pitch).unwrap(),
+                serde_json::to_value(&b.pitch).unwrap()
+            );
+            assert!(a.at.equivalent(b.at));
+            assert!(a.duration.equivalent(b.duration));
+        }
+        assert!(exported.text.contains("; License: CC0-1.0"));
+        assert_eq!(exported.note_map.len(), 4);
+    }
+    #[test]
+    fn sparse_melody_gets_explicit_gap_rests_without_moving_notes() {
+        let mut score = crate::catalog().remove(0);
+        score.parts[0].notes.truncate(2);
+        score.parts[0].notes[0].at = Beat::new(1, 2);
+        score.parts[0].notes[0].duration = Beat::new(1, 2);
+        let exported = export_jianpu(&score).unwrap();
+        let again = crate::compile(import_jianpu(&exported.text).unwrap().0).unwrap();
+        let original = crate::compile(score).unwrap();
+        assert_eq!(again.timeline.notes.len(), original.timeline.notes.len());
+        for (a, b) in again.timeline.notes.iter().zip(&original.timeline.notes) {
+            assert_eq!(a.midi, b.midi);
+            assert!((a.start_ms - b.start_ms).abs() < 1e-8);
+            assert!((a.duration_ms - b.duration_ms).abs() < 1e-8);
+        }
+        assert!((again.timeline.duration_ms - original.timeline.duration_ms).abs() < 1e-8);
+        assert!(exported.note_map.contains(&None));
+    }
+    #[test]
+    fn polyphony_ties_repeats_and_pickups_are_not_silently_flattened() {
+        let base = crate::catalog().remove(0);
+        let mut score = base.clone();
+        score.parts[0].notes[1].at = Beat::ZERO;
+        assert!(export_jianpu(&score).unwrap_err().contains("Overlapping"));
+        let mut score = base.clone();
+        score.parts[0].notes[0].tie_start = true;
+        assert!(export_jianpu(&score).unwrap_err().contains("ties"));
+        let mut score = base.clone();
+        score.repeats.push(crate::Repeat {
+            from: Beat::ZERO,
+            to: Beat::new(4, 1),
+            times: 2,
+        });
+        assert!(export_jianpu(&score).is_err());
+        let mut score = base;
+        score.measures[0].length = Beat::new(1, 1);
+        assert!(export_jianpu(&score).is_err());
+    }
+    #[test]
+    fn extreme_valid_midi_pitch_can_use_an_accidental_from_out_of_range_base_degree() {
+        let (score, _) = import_jianpu("1=G#4\nmode=minor\nb1''''':1/1").unwrap();
+        assert_eq!(
+            score.parts[0].notes[0].pitch.as_ref().unwrap().midi(),
+            Some(127)
+        );
+        let result = export_jianpu(&score).unwrap();
+        assert!(result.text.contains("b1''''':1/1"));
+    }
+    #[test]
+    fn export_does_not_silently_round_fine_tempo() {
+        let mut score = crate::catalog().remove(0);
+        score.tempo[0].bpm = 90.000_000_000_04;
+        assert!(export_jianpu(&score).unwrap_err().contains("rounding"));
+    }
+    #[test]
+    fn header_comments_do_not_become_score_tokens_or_metadata_commands() {
+        let (score, _) =
+            import_jianpu("; title=ignored\ntitle=Actual\n; license unknown\n1\n; tempo=600\n2")
+                .unwrap();
+        assert_eq!(score.title, "Actual");
+        assert_eq!(score.parts[0].notes.len(), 2);
+        assert_eq!(score.tempo[0].bpm, 90.);
     }
 }

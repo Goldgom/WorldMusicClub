@@ -214,6 +214,10 @@ fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
             .map_err(|e| format!("Invalid instrument request: {e}"))
             .and_then(|r| score_core::instruments::analyze_instrument(&r.timeline, &r.profile))
             .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
+        "/api/export/jianpu" => serde_json::from_slice::<score_core::Score>(&bytes)
+            .map_err(|e| format!("Invalid score JSON: {e}"))
+            .and_then(|score| score_core::export_jianpu(&score))
+            .and_then(|result| serde_json::to_value(result).map_err(|e| e.to_string())),
         "/api/export/musicxml" => serde_json::from_slice::<score_core::Score>(&bytes)
             .map_err(|e| format!("Invalid score JSON: {e}"))
             .and_then(|score| score_core::export_musicxml(&score))

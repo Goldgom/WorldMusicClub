@@ -3,7 +3,7 @@
 mod jianpu;
 mod matching;
 mod midi;
-pub use jianpu::import_jianpu;
+pub use jianpu::{export_jianpu, import_jianpu, ExportedJianpu};
 mod musicxml;
 mod musicxml_export;
 pub use midi::import_midi;
