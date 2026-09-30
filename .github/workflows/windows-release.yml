@@ -50,6 +50,25 @@ jobs:
             $page = Invoke-WebRequest http://127.0.0.1:17879/
             if ($page.StatusCode -ne 200 -or $page.Content -notmatch 'WorldMusicHub') { throw 'Embedded UI missing' }
           } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id } }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npx playwright install chromium
+      - name: Test Windows release through real browser UI
+        run: npm run test:full-app
+        env:
+          WMH_SERVER_BINARY: target/release/practice-server.exe
+          WMH_ARTIFACT_DIR: ${{ runner.temp }}/wmh-screenshots
+      - name: Preserve Windows release screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-release-screenshots-${{ needs.milestone.outputs.count }}
+          path: ${{ runner.temp }}/wmh-screenshots/*.png
+          if-no-files-found: ignore
       - name: Create portable Windows package
         shell: pwsh
         run: |
