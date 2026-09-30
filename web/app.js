@@ -59,7 +59,7 @@ function silenceHeld() {
 }
 function pausePlayback(reason = 'Paused · 已暂停') {
   state.playTicket++;
-  const pauseTime = performance.now(); state.recorder.pause(pauseTime);
+  const pauseTime = performance.now(); advanceLoopClock(pauseTime); state.recorder.pause(pauseTime);
   if (transport.running) { transport.pause(pauseTime); $('transport-status').textContent = reason; }
   silenceHeld();
   updateButtons();
@@ -327,10 +327,14 @@ $('instrument-apply').addEventListener('click', () => {
 async function pressNote(source, midi, velocity = 90, eventTime = null, options = {}) {
   if (state.held.has(source) && !options.retrigger) return;
   const receivedWall = performance.now();
+  advanceLoopClock(receivedWall);
   const captureTime = normalizeEventTime(eventTime,{now:receivedWall,timeOrigin:performance.timeOrigin});
   if (state.mode === 'practice' && state.compatibility.status === 'ready') {
     const captured = state.recorder.capture({midi,eventWall:captureTime,receivedWall,velocity});
-    if (captured) {
+    if (captured?.unassigned) {
+      refreshPassHistory();
+      $('feedback-description').textContent=`${state.recorder.unassignedCaptures.length} input events retained from an interrupted loop gap. They are unscored and included in Export take data.`;
+    } else if (captured) {
       state.inputs = state.recorder.active?.inputs || [];
       $('feedback-description').textContent = captured.pass === state.recorder.active ? `${captured.pass.inputs.length} note-on events recorded in ${captured.pass.label} · 已记录 ${captured.pass.inputs.length} 个音` : `Delayed input retained for ${captured.pass.label}; its feedback will be updated.`;
       if(captured.pass.boundaryReviews.length)displayChosenPass();
@@ -401,6 +405,7 @@ function showPassAssessment(pass) {
     $('timing-spread').textContent = view.spread;
     $('feedback-advice').replaceChildren();
     for (const advice of view.advice) { const item = document.createElement('li'); item.textContent = advice.message; item.className = advice.severity === 'warning' ? 'warning' : 'info'; $('feedback-advice').append(item); }
+    if(state.recorder.interruptions.some(gap=>gap.from_wall_ms===pass.closedWall)){const warning=document.createElement('li');warning.className='warning';warning.textContent='A clock interruption followed this take. Skipped loop cycles were not graded or created as takes; unassigned gap events are preserved in the session export.';$('feedback-advice').append(warning)}
     if(pass.boundaryReviews.length){const warning=document.createElement('li');warning.className='warning';warning.textContent='* Boundary review: some onsets are eligible near an adjacent pass. These provisional scores use deterministic corrected-clock ownership; continuous cross-pass matching has not been evaluated. All events are retained in the take-data export.';$('feedback-advice').append(warning)}
     $('feedback-calibration-note').textContent = `${view.hasSummary ? 'Rust-derived timing statistics.' : 'Timing bias and variability are unavailable in this server response.'} Your ${state.recorder.latencyMs} ms manual offset is already applied. Device/audio latency can resemble consistent early or late playing; use repeated takes before adjusting calibration. Accuracy includes extra inputs; coverage counts matched expected note-ons.`;
     $('feedback-detail').textContent = `${assessment.hits.filter(h => h.grade === 'perfect').length} perfect · ${assessment.hits.filter(h => h.grade === 'good').length} good · ${assessment.hits.filter(h => h.grade === 'early').length} early · ${assessment.hits.filter(h => h.grade === 'late').length} late. Matching window: ±180 ms. Input offset: ${state.recorder.latencyMs} ms. Browser/audio latency can affect your result.`;
@@ -411,6 +416,8 @@ function refreshPassHistory() {
   $('feedback-pass').replaceChildren();const latest=document.createElement('option');latest.value='';latest.textContent='Latest completed · 最新结果';$('feedback-pass').append(latest);
   for(const pass of state.recorder.passes){const option=document.createElement('option');option.value=String(pass.id);option.textContent=`${pass.label}${pass.error?' · retry needed':pass.assessedRevision<pass.revision?' · pending':pass.assessment?(pass.boundaryReviews.length?' · boundary review':' · checked'):''}`;$('feedback-pass').append(option)}
   $('feedback-pass').value=selected;$('take-history').hidden=state.recorder.passes.length===0;
+  $('take-interruption-note').hidden=state.recorder.interruptions.length===0;
+  $('take-interruption-note').textContent=`${state.recorder.interruptions.length} loop clock interruptions · ${state.recorder.unassignedCaptures.length} unassigned input events preserved for review. Skipped passes are not included in scores. Export take data to keep the clock gaps and every captured event.`;
   $('export-takes').disabled=state.recorder.passes.length===0;
   $('retry-assessments').hidden=!state.recorder.passes.some(pass=>pass.error);
 }
@@ -446,26 +453,36 @@ function assess() {
 $('feedback-pass').addEventListener('change',displayChosenPass);
 $('retry-assessments').addEventListener('click',()=>{state.recorder.retryFailed();drainAssessments()});
 $('export-takes').addEventListener('click',()=>{const data={...state.recorder.exportData(),score_id:state.score?.id,practice_part:state.practicePart,target_plan:state.practicePlan};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
+function advanceLoopClock(now) {
+  if(!state.loop||!transport.running)return;
+  const beatMs=60000/(Number($('tempo').value)||100);
+  const result=transport.wrapLoop(now,state.loop.notes,{start:state.loop.start_ms,end:state.loop.end_ms,countIn:$('count-in').checked?beatMs*4:0});
+  if(result.status==='pending')return;
+  if(state.mode==='practice')state.recorder.closeAtEnd(result.boundaryWall);
+  state.loopIteration++;silenceHeld();
+  if(result.status==='stalled'){
+    if(state.mode==='practice')state.recorder.recordInterruption({boundaryWall:result.boundaryWall,observedWall:now,skippedPasses:result.skippedPasses});
+    $('transport-status').textContent='Paused after a loop clock interruption · 循环中断';
+    notice(`The browser clock advanced across ${result.skippedPasses} complete loop cycles before the app could respond. Playback is paused; no missing takes were invented. Existing inputs are retained. Unassigned events from the gap remain unscored in the session export. Press Play to start a fresh loop.`,true);
+  }else{
+    if(state.mode==='practice')beginPracticePass(result.boundaryWall);
+    $('transport-status').textContent=`Loop ${state.loopIteration} · 循环`;
+  }
+  updateButtons();refreshPassHistory();
+}
 function drawFrame() {
   const now = performance.now();
+  advanceLoopClock(now);
   const position = transport.time(now);
   if (synth.droppedVoices && !state.audioLimitWarned) { state.audioLimitWarned = true; notice('This dense passage exceeded the 64-voice synth preview limit. Some overlapping sounds were cut short; the full score and assessment targets remain unchanged.'); }
   const timeline = state.compiled?.timeline;
   const duration = timeline?.duration_ms || 0;
   const segmentStart = state.loop?.start_ms || 0;
-  const segmentEnd = state.loop?.end_ms || duration;
   const playbackNotes = state.loop?.notes || state.practiceTimeline?.notes || timeline?.notes || [];
   const playbackIndex = state.mode==='practice'&&state.physicalIndex ? state.physicalIndex : state.loop?.index || state.practiceIndex || state.timelineIndex;
   if (transport.running && timeline) {
     for (const note of transport.due(now, playbackNotes)) if (state.mode === 'listen') synth.play(`score:${note.id}:${note.part_id}:${note.start_ms}`, note.midi, note.remaining_ms, note.delay_ms, state.instrument, note.velocity ?? 90);
-    if (state.loop && position >= segmentEnd) {
-      if(state.mode==='practice')state.recorder.closeAtEnd(now);
-      state.loopIteration++;silenceHeld();transport.seek(segmentStart);
-      const beatMs=60000/(Number($('tempo').value)||100);
-      transport.start(now,playbackNotes,$('count-in').checked?beatMs*4:0);
-      if(state.mode==='practice')beginPracticePass(now);
-      updateButtons();$('transport-status').textContent=`Loop ${state.loopIteration} · 循环`;
-    } else if (!state.loop && state.mode==='practice' && position>=duration) {
+    if (!state.loop && state.mode==='practice' && position>=duration) {
       const previouslyClosed=state.recorder.active?.closedWall!==null;
       const pass=state.recorder.closeAtEnd(now);
       if(!previouslyClosed){updateButtons();refreshPassHistory()}

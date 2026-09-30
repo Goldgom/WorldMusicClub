@@ -117,3 +117,28 @@ test('empty target plans remain unplayable and mapped IDs support older canonica
 
 import {librarySize,scoreFilename} from '../web/library-view.js';
 test('saved-library display sizes and download names stay bounded without changing canonical IDs',()=>{assert.equal(librarySize(1024),'1.0 KiB');assert.equal(librarySize(1572864),'1.5 MiB');const score={id:'../a/b:音符'};assert.equal(scoreFilename(score),'.._a_b___.json');assert.equal(score.id,'../a/b:音符');assert.equal(scoreFilename({id:'a'.repeat(500)}).length,125);});
+
+test('late animation frames wrap on exact wall boundaries without accumulating loop drift',()=>{
+ const transport=new Transport(),notes=[{id:'short',start_ms:200,duration_ms:100}];transport.seek(200);transport.start(1000,notes);
+ for(let pass=1;pass<=1000;pass++){const boundary=1000+pass*100;const frame=boundary+7+(pass%3);const result=transport.wrapLoop(frame,notes,{start:200,end:300});assert.equal(result.status,'wrapped');assert.equal(result.boundaryWall,boundary);assert.equal(transport.time(frame),200+frame-boundary);assert.equal(transport.startedAt,boundary)}
+});
+test('exact loop wrapping preserves repeated count-ins and pause/resume segments',()=>{
+ const transport=new Transport(),notes=[{id:'note',start_ms:2000,duration_ms:300}];transport.seek(2000);transport.start(1000,notes,400);
+ let result=transport.wrapLoop(1717,notes,{start:2000,end:2300,countIn:400});assert.equal(result.boundaryWall,1700);assert.equal(transport.time(1717),1617);
+ result=transport.wrapLoop(2411,notes,{start:2000,end:2300,countIn:400});assert.equal(result.boundaryWall,2400);assert.equal(transport.time(2411),1611);
+ transport.pause(2600);transport.start(4000,notes,400);result=transport.wrapLoop(4513,notes,{start:2000,end:2300,countIn:400});assert.equal(result.boundaryWall,4500);assert.equal(transport.time(4513),1613);
+});
+test('late MIDI delivery advances a shared exact loop clock before pass assignment',()=>{
+ const transport=new Transport(),recorder=new PracticeRecorder({latencyMs:500});const timeline={duration_ms:500,notes:[{id:'first',midi:60,start_ms:0,duration_ms:500}]};
+ transport.start(1000,timeline.notes);const first=recorder.begin({wallTime:1000,position:0,startMs:0,endMs:500,timeline});
+ const wrap=transport.wrapLoop(1520,timeline.notes,{start:0,end:500});recorder.closeAtEnd(wrap.boundaryWall);const second=recorder.begin({wallTime:wrap.boundaryWall,position:transport.position,startMs:0,endMs:500,timeline});
+ assert.equal(first.closedWall,1500);assert.equal(first.deadline,2180);assert.equal(second.startedWall,1500);
+ assert.equal(recorder.capture({midi:60,eventWall:1950,receivedWall:2200}).pass,first);const onset=recorder.capture({midi:60,eventWall:2010,receivedWall:2200});assert.equal(onset.pass,second);assert.equal(onset.input.at_ms,10);
+});
+test('whole missed loop passes pause without fabricating takes and retain unassigned gap events',()=>{
+ const transport=new Transport(),recorder=new PracticeRecorder({latencyMs:100}),timeline={duration_ms:500,notes:[{id:'note',midi:60,start_ms:0,duration_ms:500}]};transport.start(1000,timeline.notes);recorder.begin({wallTime:1000,position:0,startMs:0,endMs:500,timeline});
+ const result=transport.wrapLoop(2700,timeline.notes,{start:0,end:500});assert.equal(result.status,'stalled');assert.equal(result.boundaryWall,1500);assert.equal(result.skippedPasses,2);assert.equal(transport.running,false);assert.equal(transport.position,0);
+ recorder.closeAtEnd(result.boundaryWall);recorder.recordInterruption({boundaryWall:result.boundaryWall,observedWall:2700,skippedPasses:result.skippedPasses});const captured=recorder.capture({midi:64,eventWall:2300,receivedWall:2800});assert.equal(captured.pass,null);assert.equal(captured.unassigned.corrected_wall_ms,2200);assert.equal(recorder.passes.length,1);assert.equal(recorder.passes[0].inputs.length,0);assert.equal(recorder.exportData().unassigned_captures.length,1);assert.equal(recorder.exportData().interruptions[0].skipped_passes,2);
+ assert.equal(recorder.capture({midi:67,eventWall:4000}),null,'Free play after the known gap is not fabricated into practice');transport.start(5000,timeline.notes);assert.equal(transport.time(5000),0);
+});
+test('a complete next pass includes its count-in when deciding whether a frame stall skipped it',()=>{const transport=new Transport();transport.start(0,[],300);assert.equal(transport.wrapLoop(1799,[],{start:0,end:600,countIn:300}).status,'wrapped');assert.equal(transport.time(1799),599);assert.equal(transport.wrapLoop(2700,[],{start:0,end:600,countIn:300}).status,'stalled');});

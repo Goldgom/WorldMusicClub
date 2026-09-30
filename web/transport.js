@@ -26,6 +26,18 @@ export class Transport {
     }
     return due;
   }
+  wrapLoop(now, notes, {start, end, countIn = 0}) {
+    if (!this.running || this.time(now) < end) return {status:'pending'};
+    if (![now,start,end,countIn].every(Number.isFinite) || end <= start || countIn < 0) throw new Error('Invalid loop clock range.');
+    const boundaryWall = this.startedAt + end - this.position;
+    const overshootMs = now - boundaryWall;
+    const cycleMs = end - start + countIn;
+    this.seek(start);
+    // A missed complete pass is an interruption, never silently invented practice history.
+    if (overshootMs >= cycleMs) return {status:'stalled',boundaryWall,overshootMs,skippedPasses:Math.floor(overshootMs/cycleMs)};
+    this.start(boundaryWall,notes,countIn);
+    return {status:'wrapped',boundaryWall,overshootMs,position:this.time(now)};
+  }
   finish(duration) { this.position = duration; this.startedAt = null; this.running = false; this.completed = true; }
 }
 

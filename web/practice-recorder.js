@@ -2,7 +2,7 @@
 export class PracticeRecorder {
   constructor({latencyMs = 0, toleranceMs = 180} = {}) {
     this.latencyMs = latencyMs; this.toleranceMs = toleranceMs;
-    this.passes = []; this.active = null; this.nextEventId = 1;
+    this.passes = []; this.active = null; this.nextEventId = 1; this.interruptions = []; this.unassignedCaptures = [];
   }
   begin({wallTime, position, startMs, endMs, timeline, label = 'Take', captureEnabled = true}) {
     const pass = {id:this.passes.length + 1,label,captureEnabled,startMs,endMs,timeline,startedWall:wallTime,
@@ -37,6 +37,9 @@ export class PracticeRecorder {
     pass.manualDeadline=wallTime+(grace?Math.max(0,this.latencyMs)+this.toleranceMs:0);
     return pass;
   }
+  recordInterruption({boundaryWall, observedWall, skippedPasses}) {
+    this.interruptions.push({reason:'loop_clock_stall',from_wall_ms:boundaryWall,to_wall_ms:observedWall,skipped_passes:skippedPasses});
+  }
   capture({midi, eventWall, receivedWall = eventWall, velocity = 90}) {
     if(!Number.isFinite(eventWall)||!Number.isFinite(receivedWall))return null;
     const correctedWall=eventWall-this.latencyMs;
@@ -57,7 +60,12 @@ export class PracticeRecorder {
         if(!best||rank<best.rank)best={pass,atMs,rank};
       }
     }
-    if(!best)return null;
+    if(!best){
+      const gap=this.interruptions.find(item=>correctedWall>=item.from_wall_ms&&correctedWall<=item.to_wall_ms);
+      if(!gap)return null;
+      const capture={event_id:this.nextEventId++,event_wall_ms:eventWall,received_wall_ms:receivedWall,corrected_wall_ms:correctedWall,midi,velocity,reason:'loop_clock_stall',scored:false};
+      this.unassignedCaptures.push(capture);return {pass:null,input:null,unassigned:capture};
+    }
     const input={midi,at_ms:best.atMs,velocity};
     const capture={event_id:this.nextEventId++,event_wall_ms:eventWall,received_wall_ms:receivedWall,input};
     best.pass.inputs.push(input);best.pass.captures.push(capture);best.pass.revision++;
@@ -95,6 +103,6 @@ export class PracticeRecorder {
     return this.passes.some(pass=>!pass.error&&(pass.inFlight||pass.manualDeadline!==null||(pass.closedWall!==null&&pass.assessedRevision<pass.revision)));
   }
   exportData() {
-    return {version:1,latency_ms:this.latencyMs,tolerance_ms:this.toleranceMs,passes:this.passes.map(pass=>({id:pass.id,label:pass.label,range:{start_ms:pass.startMs,end_ms:pass.endMs},timeline:pass.timeline,capture_enabled:pass.captureEnabled,clock_segments:pass.segments,grace_deadline_wall_ms:pass.deadline,manual_deadline_wall_ms:pass.manualDeadline,inputs:pass.inputs,captures:pass.captures,revision:pass.revision,assessed_revision:pass.assessedRevision,assessment:pass.assessment,error:pass.error,boundary_reviews:pass.boundaryReviews,ownership:'deterministic_corrected_clock',pending:pass.inFlight||pass.manualDeadline!==null||pass.assessedRevision<pass.revision}))};
+    return {version:1,latency_ms:this.latencyMs,tolerance_ms:this.toleranceMs,interruptions:this.interruptions,unassigned_captures:this.unassignedCaptures,passes:this.passes.map(pass=>({id:pass.id,label:pass.label,range:{start_ms:pass.startMs,end_ms:pass.endMs},timeline:pass.timeline,capture_enabled:pass.captureEnabled,clock_segments:pass.segments,grace_deadline_wall_ms:pass.deadline,manual_deadline_wall_ms:pass.manualDeadline,inputs:pass.inputs,captures:pass.captures,revision:pass.revision,assessed_revision:pass.assessedRevision,assessment:pass.assessment,error:pass.error,boundary_reviews:pass.boundaryReviews,ownership:'deterministic_corrected_clock',pending:pass.inFlight||pass.manualDeadline!==null||pass.assessedRevision<pass.revision}))};
   }
 }
