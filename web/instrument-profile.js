@@ -16,3 +16,14 @@ export function pianoProfile(countValue, lowestText) {
   if (!Number.isInteger(key_count) || key_count < 12 || key_count > 128 || lowest_midi + key_count - 1 > 127) throw new Error('Choose 12–128 keys and a starting pitch that keeps the highest key within MIDI 127.');
   return {kind:'piano',key_count,lowest_midi};
 }
+/** Practice admission is conservative; listening never changes or drops source notes. */
+export function compatibilityStatus(report, targets) {
+  if (!report || !Array.isArray(report.note_options) || !Array.isArray(report.diagnostics) || report.changed_source_notes === true) return {status:'error',reason:'The instrument report is incomplete or changed source notes. Recheck the setup before scoring.'};
+  const expected = new Set(targets.map(note => note.id));
+  if (report.note_options.length !== targets.length || report.note_options.some(note => !expected.has(note.note_id) || typeof note.playable !== 'boolean') || new Set(report.note_options.map(note=>note.note_id)).size !== targets.length) return {status:'error',reason:'The instrument report does not cover every selected target. Recheck the setup before scoring.'};
+  if (!targets.length) return {status:'blocked',reason:'This selection has no sounding note-on targets. Choose a part or loop containing notes.'};
+  const outside = report.note_options.filter(note=>!note.playable).length;
+  const conflict = report.diagnostics.some(item=>item.code==='guitar_string_conflict');
+  if (outside || conflict) return {status:'blocked',reason:`${outside ? `${outside} selected notes cannot be played in this instrument range. ` : ''}${conflict ? 'Some simultaneous notes cannot be assigned to distinct guitar strings. ' : ''}Change the range, tuning, part or loop before practicing.`};
+  return {status:'ready',reason:'Every selected pitch has an instrument position. Guitar positions remain fingering candidates; hand reach and sustained overlaps require review.'};
+}

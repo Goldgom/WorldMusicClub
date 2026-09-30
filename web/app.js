@@ -1,7 +1,7 @@
 import {setupEngravedView} from './engraved-view.js';
 import {setupJianpuEditor} from './jianpu-editor.js';
 import {feedbackView} from './feedback-view.js';
-import {STANDARD_TUNING, guitarProfile, pianoProfile} from './instrument-profile.js';
+import {STANDARD_TUNING, guitarProfile, pianoProfile, compatibilityStatus} from './instrument-profile.js';
 import {compensateInput, validLatency, loadLatency, saveLatency, parseBeatInput, practiceScope} from './practice-settings.js';
 import {setupMidi, normalizeEventTime} from './midi.js';
 import {setupImageReview} from './image-review.js';
@@ -14,7 +14,7 @@ const $ = id => document.getElementById(id);
 setupThemes();
 const transport = new Transport();
 const synth = new Synth();
-const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
+const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reason:'Waiting for an instrument compatibility check.'}, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
 function notice(message, error = false) {
   $('notice').textContent = message;
@@ -31,11 +31,15 @@ async function api(path, body, signal) {
 }
 function updateButtons() {
   const ready = Boolean(state.compiled);
-  $('play-button').disabled = !ready;
+  const allowed = state.mode !== 'practice' || state.compatibility.status === 'ready';
+  $('play-button').disabled = !ready || (!transport.running && !allowed);
   $('reset-button').disabled = !ready;
   $('export-button').disabled = !state.score;
   $('loop-apply').disabled = !ready;
-  $('assess-button').disabled = !ready || state.mode !== 'practice' || state.finishing;
+  $('assess-button').disabled = !ready || state.mode !== 'practice' || state.finishing || !allowed;
+  $('practice-gate').hidden = state.mode !== 'practice' || state.compatibility.status === 'ready';
+  $('practice-gate-reason').textContent = state.compatibility.reason;
+  $('practice-gate-retry').disabled = !ready || state.compatibility.status === 'pending';
   $('play-button').textContent = transport.running ? 'Ⅱ Pause · 暂停' : transport.completed ? '↻ Play again · 重来' : '▶ Play · 播放';
 }
 function silenceHeld() {
@@ -55,6 +59,8 @@ function resetPlayback() {
   transport.reset();
   if (state.loop) transport.seek(state.loop.start_ms);
   state.loopIteration = 1;
+  if (state.loopPending && !state.loop) $('loop-status').textContent = 'Loop validation cancelled. Set loop to check the range again.';
+  state.loopPending = false;
   state.loopRequest++; $('loop-enabled').checked = Boolean(state.loop);
   state.inputs = [];
   state.generation++;
@@ -76,6 +82,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
   const controller = new AbortController();
   state.compileController = controller;
   const generation = ++state.generation;
+  state.finishing = false;
   $('play-button').disabled = true;
   $('transport-status').textContent = 'Preparing score…';
   try {
@@ -156,6 +163,7 @@ function rebuildPracticeScope() {
   state.practiceTimeline = scope.selected; state.targetTimeline = scope.targets;
   state.practiceIndex = new TimelineIndex(scope.selected.notes); state.practiceVersion++;
   state.instrumentOutOfRange = null; state.instrumentConflict = false;
+  state.compatibility = {status:'pending',reason:'Checking the selected targets against your instrument setup…'};
   if (state.loop) { state.loop.notes = scope.playbackNotes; state.loop.index = new TimelineIndex(scope.playbackNotes); state.loop.targetIds = scope.targetIds; updateLoopStatus(); }
   updatePracticeScopeLabel();
 }
@@ -242,6 +250,9 @@ function profileControls() {
 }
 async function checkInstrument(profile = currentProfile(), apply = false) {
   if (!state.compiled) return;
+  if (state.profileDirty && !apply) { state.compatibility = {status:'dirty',reason:'Instrument settings were edited. Apply and validate the setup before practicing.'}; updateButtons(); return; }
+  if (state.mode === 'practice' && transport.running) pausePlayback();
+  state.compatibility = {status:'pending',reason:'Checking every selected note and guitar string assignment with Rust…'}; updateButtons();
   const request = ++state.instrumentRequest; const compiled = state.compiled; const selection = state.practiceVersion;
   state.instrumentOutOfRange = null; state.instrumentConflict = false;
   $('instrument-report').textContent = 'Checking note range and pitch-compatible positions with Rust…';
@@ -249,22 +260,37 @@ async function checkInstrument(profile = currentProfile(), apply = false) {
     const report = await api('/api/instrument-check', {timeline:state.targetTimeline || compiled.timeline, profile});
     if (request !== state.instrumentRequest || compiled !== state.compiled || selection !== state.practiceVersion) return;
     if (apply) {
-      pausePlayback();
+      state.profileDirty = false;
+      resetPlayback();
       if (profile.kind === 'piano') { state.keys = profile.key_count; state.lowestMidi = profile.lowest_midi; state.customKeys = true; $('key-count').value = 'custom'; renderKeyboard(); }
       else { state.guitar = {tuning:profile.tuning, frets:profile.frets, capo:profile.capo}; renderFretboard(); }
       updateRangeWarning();
     }
+    state.compatibility = compatibilityStatus(report, state.targetTimeline?.notes || compiled.timeline.notes);
     const outside = report.note_options.filter(note => !note.playable).length;
     state.instrumentOutOfRange = outside; state.instrumentConflict = report.diagnostics.some(d => d.code === 'guitar_string_conflict'); updateRangeWarning();
     $('instrument-report').textContent = `${midiName(report.lowest_midi)}–${midiName(report.highest_midi)} · ${outside} notes outside playable range · original pitches preserved`;
     $('instrument-diagnostics').replaceChildren();
     for (const diagnostic of report.diagnostics) { const li = document.createElement('li'); li.textContent = diagnostic.message; $('instrument-diagnostics').append(li); }
     $('instrument-settings').classList.toggle('has-warnings', report.diagnostics.some(d => d.code !== 'guitar_fingering_advisory'));
-  } catch (error) { if (request === state.instrumentRequest) $('instrument-report').textContent = `Instrument setup not applied: ${error.message}`; }
+  } catch (error) { if (request === state.instrumentRequest) { state.compatibility = {status:'error',reason:`Compatibility could not be verified: ${error.message}`}; $('instrument-report').textContent = `Instrument setup not verified: ${error.message}`; } }
+  finally { if (request === state.instrumentRequest) updateButtons(); }
 }
+function syncProfileFields() {
+  $('custom-key-count').value=String(state.keys); $('custom-lowest').value=midiName(state.geometry[0].midi).replace('♯','#');
+  $('guitar-tuning').value=state.guitar.tuning.map(midiName).join(' ').replaceAll('♯','#'); $('guitar-frets').value=String(state.guitar.frets); $('guitar-capo').value=String(state.guitar.capo);
+}
+function markProfileDirty() {
+  state.profileDirty=true; state.instrumentRequest++;
+  state.compatibility={status:'dirty',reason:'Instrument settings were edited. Apply and validate the setup before practicing.'};
+  resetPlayback();
+  $('instrument-report').textContent=state.compatibility.reason; updateButtons();
+}
+for(const id of ['custom-key-count','custom-lowest','guitar-tuning','guitar-frets','guitar-capo'])$(id).addEventListener('input',markProfileDirty);
+$('practice-gate-retry').addEventListener('click',()=>{if(state.profileDirty)$('instrument-apply').click();else checkInstrument()});
 $('instrument-apply').addEventListener('click', () => {
   try { const profile = state.instrument === 'guitar' ? guitarProfile($('guitar-tuning').value, $('guitar-frets').value, $('guitar-capo').value) : pianoProfile($('custom-key-count').value, $('custom-lowest').value); checkInstrument(profile, true); }
-  catch (error) { $('instrument-report').textContent = error.message; }
+  catch (error) { state.compatibility = {status:'error',reason:error.message}; $('instrument-report').textContent = error.message; updateButtons(); }
 });
 async function pressNote(source, midi, velocity = 90, eventTime = null) {
   if (document.hidden) return;
@@ -273,7 +299,7 @@ async function pressNote(source, midi, velocity = 90, eventTime = null) {
   const captureTime = normalizeEventTime(eventTime);
   const inputTime = transport.time(captureTime);
   const correctedTime = compensateInput(inputTime, state.latency);
-  if (transport.running && captureTime >= transport.startedAt && state.mode === 'practice' && correctedTime >= (state.loop?.start_ms || 0) - 180 && correctedTime <= (state.loop?.end_ms || state.compiled.timeline.duration_ms) + 180) {
+  if (transport.running && captureTime >= transport.startedAt && state.mode === 'practice' && state.compatibility.status === 'ready' && correctedTime >= (state.loop?.start_ms || 0) - 180 && correctedTime <= (state.loop?.end_ms || state.compiled.timeline.duration_ms) + 180) {
     state.inputs.push({midi, at_ms: correctedTime, velocity});
     $('feedback-description').textContent = `${state.inputs.length} note${state.inputs.length === 1 ? '' : 's'} recorded in this take · 已记录 ${state.inputs.length} 个音`;
   }
@@ -304,6 +330,7 @@ function connectPlayable(container) {
 async function togglePlayback() {
   if (!state.compiled) return;
   if (transport.running) { pausePlayback(); return; }
+  if (state.mode === 'practice' && state.compatibility.status !== 'ready') { notice(state.compatibility.reason, true); return; }
   const generation = state.generation;
   const ticket = ++state.playTicket;
   try { await synth.unlock(); } catch (error) { notice(error.message, true); return; }
@@ -315,6 +342,7 @@ async function togglePlayback() {
 }
 async function assess(options = {}) {
   if (!state.compiled || state.mode !== 'practice' || state.finishing) return;
+  if (state.compatibility.status !== 'ready') { if (!options.keepPlaying) notice(state.compatibility.reason,true); return; }
   if (!options.keepPlaying) pausePlayback();
   state.finishing = true; updateButtons();
   const generation = state.generation;
@@ -408,7 +436,7 @@ function animate(now) { if (transport.running || now - lastIdleDraw > 100) { dra
 async function applyLoop() {
   if (!state.score) return;
   pausePlayback();
-  const request = ++state.loopRequest;
+  const request = ++state.loopRequest; state.loopPending = true;
   const generation = state.generation;
   $('loop-status').textContent = 'Validating loop boundaries with the Rust score clock…';
   $('loop-apply').disabled = true;
@@ -418,12 +446,13 @@ async function applyLoop() {
     const window = await api('/api/practice-window', {score: state.score, from, to});
     if (request !== state.loopRequest || generation !== state.generation) return;
     if (window.end_ms - window.start_ms < 250) throw new Error('Choose a loop at least 250 ms long so playback and feedback can remain usable.');
+    state.loopPending = false;
     state.loop = {...window, notes: [], index: null, targetIds: new Set()};
     rebuildPracticeScope();
     $('loop-enabled').checked = true;
     updateLoopStatus();
     resetPlayback(); checkInstrument();
-  } catch (error) { if (request === state.loopRequest) { state.loop = null; rebuildPracticeScope(); checkInstrument(); $('loop-enabled').checked = false; $('loop-status').textContent = `Loop not set: ${error.message}`; resetPlayback(); } }
+  } catch (error) { if (request === state.loopRequest) { state.loopPending = false; state.loop = null; rebuildPracticeScope(); checkInstrument(); $('loop-enabled').checked = false; $('loop-status').textContent = `Loop not set: ${error.message}`; resetPlayback(); } }
   finally { if (request === state.loopRequest) updateButtons(); }
 }
 $('loop-apply').addEventListener('click', applyLoop);
@@ -445,8 +474,8 @@ $('play-button').addEventListener('click', togglePlayback);
 $('reset-button').addEventListener('click', resetPlayback);
 $('assess-button').addEventListener('click', () => assess());
 $('session-mode').addEventListener('change', () => { state.mode = $('session-mode').value; resetPlayback(); updateRangeWarning(); });
-$('instrument').addEventListener('change', () => { pausePlayback(); state.instrument = $('instrument').value; profileControls(); if (state.instrument === 'guitar') $('instrument-settings').open = true; checkInstrument(); $('piano-stage').hidden = state.instrument !== 'piano'; $('guitar-stage').hidden = state.instrument !== 'guitar'; $('key-count').disabled = state.instrument !== 'piano'; updateRangeWarning(); drawFrame(); });
-$('key-count').addEventListener('change', () => { pausePlayback(); state.customKeys = $('key-count').value === 'custom'; profileControls(); if (state.customKeys) { $('instrument-settings').open = true; $('custom-key-count').value = String(state.keys); $('custom-lowest').value = midiName(state.geometry[0].midi).replace('♯','#'); return; } state.keys = Number($('key-count').value); state.lowestMidi = null; renderKeyboard(); updateRangeWarning(); checkInstrument(); });
+$('instrument').addEventListener('change', () => { resetPlayback(); state.instrument = $('instrument').value; state.profileDirty = false; syncProfileFields(); profileControls(); if (state.instrument === 'guitar') $('instrument-settings').open = true; checkInstrument(); $('piano-stage').hidden = state.instrument !== 'piano'; $('guitar-stage').hidden = state.instrument !== 'guitar'; $('key-count').disabled = state.instrument !== 'piano'; updateRangeWarning(); drawFrame(); });
+$('key-count').addEventListener('change', () => { resetPlayback(); state.customKeys = $('key-count').value === 'custom'; profileControls(); if (state.customKeys) { markProfileDirty(); $('instrument-settings').open = true; $('custom-key-count').value = String(state.keys); $('custom-lowest').value = midiName(state.geometry[0].midi).replace('♯','#'); return; } state.keys = Number($('key-count').value); state.lowestMidi = null; state.profileDirty = false; renderKeyboard(); updateRangeWarning(); checkInstrument(); });
 $('typing-octave').addEventListener('change', () => { pausePlayback(); state.octave = Number($('typing-octave').value); renderKeyboard(); });
 $('tempo').addEventListener('change', () => {
   const bpm = Number($('tempo').value);
