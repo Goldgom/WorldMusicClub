@@ -543,3 +543,18 @@ test('real Rust physical targets retain unison source voices and score one piano
   const [partResponse]=await Promise.all([nextResponse('/api/practice-targets'),page.locator('#practice-part').selectOption('unison-part')]);
   const selected=await responseJson(partResponse);assert.equal(selected.source_note_count,1);assert.equal(selected.target_count,1);assert.deepEqual(selected.groups[0].source_note_ids,['unison-source']);
 });
+
+test('real local library preserves a source snapshot across reload and validates backup restoration', testOptions, async () => {
+  const score=structuredClone(initialCompilation.score);score.title='Saved original exercise';score.source={format:'original-test-text',filename:'original.txt',content:'Original local source · 文本\r\nPreserve this exact payload.'};
+  await page.locator('#score-file').setInputFiles({name:'original-library-score.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);
+  await page.locator('#library-button').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Ready.'));assert.equal(await page.locator('#library-list>li').count(),0);
+  await page.locator('#library-label').fill('Original source copy');await page.locator('#library-save-copy').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Saved'));
+  const backupPromise=page.waitForEvent('download');await page.locator('#library-export-backup').click();const backup=await readFile(await(await backupPromise).path(),'utf8');assert.deepEqual(JSON.parse(backup).entries[0].score,score);
+  await page.locator('#library-close').click();await page.reload();await readyForTitle(initialCompilation.score.title);await page.locator('#library-button').click();await page.locator('[data-library-open]').waitFor();await page.locator('[data-library-open]').click();await page.waitForFunction(()=>!document.querySelector('#score-library').open);await readyForTitle(score.title);
+  assert.deepEqual(await exportScore(),score);
+  await page.locator('#library-button').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Ready.'));
+  const before=requests.filter(request=>request.path==='/api/compile').length;
+  await page.locator('#library-backup-file').setInputFiles({name:'worldmusichub-library-backup.json',mimeType:'application/json',buffer:Buffer.from(backup)});await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Restored'));
+  assert.equal(await page.locator('#library-list>li').count(),2);assert.equal(requests.filter(request=>request.path==='/api/compile').length,before+1);
+  await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-library.png'),fullPage:true});
+});

@@ -23,8 +23,8 @@ test('backup restores atomically as new copies after every Rust validation succe
   await assert.rejects(b.restoreBackup(backup,{validate:async()=>{calls++;if(calls===2)throw Error('Invalid score');return true}}),/score 2/);
   assert.equal((await b.list()).length,0);
   await assert.rejects(b.restoreBackup(backup),/Rust/);
-  const restored=await b.restoreBackup(backup,{validate:async()=>true});assert.equal(restored.length,2);assert.equal((await b.get(restored[0].key)).label,'First');
-  assert.deepEqual((await b.get(restored[0].key)).score,fixture);
+  const restored=await b.restoreBackup(backup,{validate:async()=>true});assert.equal(restored.length,2);const first=restored.find(row=>row.label==='First');assert.ok(first);
+  assert.deepEqual((await b.get(first.key)).score,fixture);
   await b.restoreBackup(backup,{validate:async()=>true});assert.equal((await b.list()).length,4);
  }finally{a.close();b.close()}
 });

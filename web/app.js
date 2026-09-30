@@ -1,3 +1,4 @@
+import {setupScoreLibrary} from './library-view.js';
 import {validateTargetPlan, mappedSourceIds} from './physical-targets.js';
 import {PracticeRecorder} from './practice-recorder.js';
 import {setupEngravedView} from './engraved-view.js';
@@ -602,7 +603,7 @@ $('score-file').addEventListener('change', async event => {
 $('export-button').addEventListener('click', () => { if (!state.score) return; const blob = new Blob([JSON.stringify(state.score, null, 2)], {type: 'application/json'}); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `${state.score.id.replace(/[^\w.-]/g, '_')}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 connectPlayable($('keyboard')); connectPlayable($('fretboard'));
 document.addEventListener('keydown', event => {
-  if (event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName) || event.target.isContentEditable) return;
+  if (event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName) || event.target.isContentEditable || event.target.closest('dialog[open]')) return;
   if (event.code === 'Space') { if (event.target.tagName === 'BUTTON') return; event.preventDefault(); togglePlayback(); return; }
   const key = event.key.toLowerCase();
   if (Object.hasOwn(SHORTCUTS, key)) { event.preventDefault(); pressNote(`key:${event.code}`, (state.octave + 1) * 12 + SHORTCUTS[key], 90, event.timeStamp); }
@@ -636,6 +637,15 @@ async function importJianpuText(text, signal) {
     return loaded;
   } finally { signal.removeEventListener('abort', cancel); }
 }
+async function loadSavedScore(score, signal) {
+  if(signal.aborted)return false;
+  const intent=++state.loadIntent;
+  const cancel=()=>{if(intent===state.loadIntent){state.loadIntent++;state.compileController?.abort();$('transport-status').textContent=state.compiled?'Previous score is still available':'Score unavailable';updateButtons()}};
+  signal.addEventListener('abort',cancel,{once:true});
+  try{return await compileScore(score,false,intent)}
+  finally{signal.removeEventListener('abort',cancel)}
+}
+setupScoreLibrary({getScore:()=>state.score,onLoad:loadSavedScore,validate:(score,signal)=>api('/api/compile',score,signal),pausePlayback,notice});
 const engravedView = setupEngravedView({getScore:()=>state.score,getPracticePart:()=>state.practicePart,pausePlayback,notice,onVisibility:active=>{
   state.engravingActive=active;$('engraving-view').hidden=!active;$('notation-controls').hidden=active;$('notation').hidden=active;$('basic-notation-note').hidden=active;
   if(active){$('score-key').textContent='Generated MusicXML · static staff preview';for(const id of ['staff-button','jianpu-button']){$(id).classList.remove('selected');$(id).setAttribute('aria-pressed','false')}$('engraved-button').classList.add('selected');$('engraved-button').setAttribute('aria-pressed','true')}
