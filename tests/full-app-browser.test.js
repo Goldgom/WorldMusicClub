@@ -216,6 +216,7 @@ beforeEach(async () => {
     ]);
     initialCompilation = await responseJson(compilation);
     await readyForTitle(initialCompilation.score.title);
+    await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('physical attacks'));
   } catch (error) {
     const observed = await page.evaluate(() => ({url:location.href,readyState:document.readyState,title:document.title,notice:document.querySelector('#notice')?.textContent,scoreTitle:document.querySelector('#score-title')?.textContent,playDisabled:document.querySelector('#play-button')?.disabled})).catch(failure=>({observationError:failure.message}));
     const diagnostics={failure:error.message,observed,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverRunning:serverRunning(),serverOutput:serverOutput.slice(-4000)};
@@ -520,4 +521,25 @@ test('whole application engraves real exported MusicXML and preserves the score 
   assert.equal(await page.locator('#engraving-view').isVisible(),false);
   assert.equal(await page.locator('#engraved-staff svg').count(),0,'Switching to the pitch guide disposes the generated staff');
   assert.deepEqual(await exportScore(),before,'View/theme/part changes must not modify canonical notes or source data');
+});
+
+test('real Rust physical targets retain unison source voices and score one piano attack', testOptions, async () => {
+  const score=structuredClone(initialCompilation.score);
+  const first=score.parts[0].notes.find(note=>note.pitch);
+  score.title='Original physical unison check';
+  score.parts.push({id:'unison-part',name:'Unison source voice',instrument:'piano',notes:[{...structuredClone(first),id:'unison-source'}]});
+  const [response]=await Promise.all([nextResponse('/api/practice-targets'),page.locator('#score-file').setInputFiles({name:'original-unison.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))})]);
+  const plan=await responseJson(response);
+  assert.equal(plan.source_note_count,16);assert.equal(plan.target_count,15);
+  assert.ok(plan.groups.some(group=>group.source_note_ids.includes('unison-source')&&group.source_occurrence_ids.length===2));
+  await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('15 physical attacks from 16 sounding'));
+  await page.locator('#session-mode').selectOption('practice');
+  const [assessmentResponse]=await Promise.all([nextResponse('/api/assess'),page.locator('#assess-button').click()]);
+  assert.deepEqual(assessmentResponse.request().postDataJSON().timeline,plan.timeline);
+  const assessment=await responseJson(assessmentResponse);assert.equal(assessment.misses.length,15);
+  const downloadPromise=page.waitForEvent('download');await page.locator('#export-button').click();
+  const exported=JSON.parse(await readFile(await(await downloadPromise).path(),'utf8'));
+  assert.deepEqual(exported,score);
+  const [partResponse]=await Promise.all([nextResponse('/api/practice-targets'),page.locator('#practice-part').selectOption('unison-part')]);
+  const selected=await responseJson(partResponse);assert.equal(selected.source_note_count,1);assert.equal(selected.target_count,1);assert.deepEqual(selected.groups[0].source_note_ids,['unison-source']);
 });

@@ -1,9 +1,10 @@
+import {validateTargetPlan, mappedSourceIds} from './physical-targets.js';
 import {PracticeRecorder} from './practice-recorder.js';
 import {setupEngravedView} from './engraved-view.js';
 import {setupJianpuEditor} from './jianpu-editor.js';
 import {feedbackView} from './feedback-view.js';
 import {STANDARD_TUNING, guitarProfile, pianoProfile, compatibilityStatus} from './instrument-profile.js';
-import {validLatency, loadLatency, saveLatency, parseBeatInput, practiceScope} from './practice-settings.js';
+import {validLatency, loadLatency, saveLatency, parseBeatInput, practiceScope, windowNotes} from './practice-settings.js';
 import {setupMidi, normalizeEventTime} from './midi.js';
 import {setupImageReview} from './image-review.js';
 import {setupThemes} from './themes.js';
@@ -15,7 +16,7 @@ const $ = id => document.getElementById(id);
 setupThemes();
 const transport = new Transport();
 const synth = new Synth();
-const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reason:'Waiting for an instrument compatibility check.'}, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
+const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reason:'Waiting for an instrument compatibility check.'}, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
 state.recorder = new PracticeRecorder({latencyMs:state.latency});
 
@@ -105,7 +106,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     state.compiled = {...compiled, diagnostics, timeline: {...compiled.timeline, notes: [...compiled.timeline.notes].sort((a, b) => a.start_ms - b.start_ms || a.midi - b.midi)}};
     state.instrumentOutOfRange = null; state.instrumentConflict = false;
     state.timelineIndex = new TimelineIndex(state.compiled.timeline.notes);
-    state.sourceNotes = new Map(state.score.parts.flatMap(part => part.notes.map(note => [`${part.id}:${note.id}`, {note, partId: part.id}])));
+    state.sourceNotes = new Map(state.score.parts.flatMap(part => part.notes.map(note => [note.id, {note, partId: part.id}])));
     state.loop = null; state.loopRequest++; state.practicePart = previousPart !== null && state.score.parts.some(part => part.id === previousPart) ? previousPart : null; rebuildPracticeScope(); $('loop-enabled').checked = false; $('loop-status').textContent = 'Loop cleared. Choose A and B, then Set loop. Beats start at 0; B is exclusive.';
     state.notationPage = 0; state.notationPart = state.practicePart || state.score.parts[0].id;
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
@@ -170,7 +171,7 @@ function renderScore() {
 function rebuildPracticeScope() {
   if (!state.compiled) return;
   const scope = practiceScope(state.compiled.timeline, state.practicePart, state.loop);
-  state.practiceTimeline = scope.selected; state.targetTimeline = scope.targets;
+  state.practiceTimeline = scope.selected; state.sourceTargetTimeline = scope.targets; state.targetTimeline = null; state.practicePlan = null; state.targetGroups = new Map(); state.physicalIndex = null;
   state.practiceIndex = new TimelineIndex(scope.selected.notes); state.practiceVersion++;
   state.instrumentOutOfRange = null; state.instrumentConflict = false;
   state.compatibility = {status:'pending',reason:'Checking the selected targets against your instrument setup…'};
@@ -180,12 +181,15 @@ function rebuildPracticeScope() {
 function updatePracticeScopeLabel() {
   if (!state.score) return;
   const name = state.practicePart === null ? 'All parts · 所有声部' : state.score.parts.find(part => part.id === state.practicePart)?.name || state.practicePart;
-  $('practice-scope').textContent = `${name} · ${state.targetTimeline?.notes.length || 0} note-on targets${state.loop ? ' in A–B' : ''}`;
+  const plan=state.practicePlan;
+  $('practice-scope').textContent = plan ? `${name} · ${plan.target_count} physical attacks from ${plan.source_note_count} sounding events${state.loop?' in A–B':''}` : `${name} · ${state.sourceTargetTimeline?.notes.length || 0} source events · physical targets pending`;
+  $('physical-target-note').textContent = !plan ? 'Rust prepares physical targets after part, loop and instrument selection. Listening and score export preserve the sounding source events.' : state.instrument==='piano' ? 'Exact same-time, same-pitch piano voices share one attack. The block uses the longest duration; separate voice releases and sustain are not scored.' : 'Guitar targets keep distinct source events. Pitch-only input cannot identify strings; fingering, same-pitch string choice and sustain require review.';
+
 }
 function updateLoopStatus() {
   if (!state.loop) return;
   const loop = state.loop;
-  $('loop-status').textContent = `Loop A–B ready · ${formatTime(loop.start_ms)}–${formatTime(loop.end_ms)} · ${loop.targetIds.size} selected target notes. ${loop.crossing_notes ? `${loop.crossing_notes} sustained notes in the full score cross a boundary; only selected note-ons inside A–B are scored. ` : ''}${(loop.diagnostics || []).map(d => d.message).join(' ')}`;
+  $('loop-status').textContent = `Loop A–B ready · ${formatTime(loop.start_ms)}–${formatTime(loop.end_ms)} · ${loop.targetIds.size} selected source onset events. ${loop.crossing_notes ? `${loop.crossing_notes} sustained notes in the full score cross a boundary; only selected note-ons inside A–B are scored. ` : ''}${(loop.diagnostics || []).map(d => d.message).join(' ')}`;
 }
 function renderNotationPage() {
   if (!state.score) return;
@@ -205,7 +209,7 @@ function renderNotationPage() {
 function updateRangeWarning() {
   if (!state.compiled) return;
   const [min, max] = state.instrument === 'guitar' ? [Math.min(...state.guitar.tuning) + state.guitar.capo, Math.max(...state.guitar.tuning) + state.guitar.frets] : [state.geometry[0].midi, state.geometry.at(-1).midi];
-  const outside = state.instrumentOutOfRange ?? (state.targetTimeline?.notes || state.compiled.timeline.notes).filter(n => n.midi < min || n.midi > max).length;
+  const outside = state.instrumentOutOfRange ?? (state.sourceTargetTimeline?.notes || state.compiled.timeline.notes).filter(n => n.midi < min || n.midi > max).length;
   $('practice-hint').textContent = state.instrumentConflict ? 'Some chords need a guitar arrangement · 同时发音存在弦位冲突' : outside ? `${outside} notes unavailable in this ${state.instrument === 'guitar' ? 'guitar fret display' : 'keyboard range'}; change range or exercise` : state.mode === 'practice' ? 'Play each note as it reaches the line · 到线时弹奏' : 'Listen first. Then make it your own. · 先听，再弹';
 }
 function renderKeyboard() {
@@ -262,12 +266,15 @@ async function checkInstrument(profile = currentProfile(), apply = false) {
   if (!state.compiled) return;
   if (state.profileDirty && !apply) { state.compatibility = {status:'dirty',reason:'Instrument settings were edited. Apply and validate the setup before practicing.'}; updateButtons(); return; }
   if (state.mode === 'practice' && transport.running) pausePlayback();
-  state.compatibility = {status:'pending',reason:'Checking every selected note and guitar string assignment with Rust…'}; updateButtons();
-  const request = ++state.instrumentRequest; const compiled = state.compiled; const selection = state.practiceVersion;
+  state.practicePlan=null;state.targetGroups=new Map();state.targetTimeline=null;state.physicalIndex=null;updatePracticeScopeLabel();renderTargetMappings();
+  state.compatibility = {status:'pending',reason:'Preparing physical attack targets and checking every selected source note with Rust…'}; updateButtons();
+  const request = ++state.instrumentRequest; const compiled = state.compiled; const selection = state.practiceVersion; const sourceTargets=state.sourceTargetTimeline||compiled.timeline;
   state.instrumentOutOfRange = null; state.instrumentConflict = false;
   $('instrument-report').textContent = 'Checking note range and pitch-compatible positions with Rust…';
   try {
-    const report = await api('/api/instrument-check', {timeline:state.targetTimeline || compiled.timeline, profile});
+    const plan = validateTargetPlan(await api('/api/practice-targets',{timeline:sourceTargets,profile}),sourceTargets);
+    if(request!==state.instrumentRequest||compiled!==state.compiled||selection!==state.practiceVersion)return;
+    const report = await api('/api/instrument-check', {timeline:sourceTargets, profile});
     if (request !== state.instrumentRequest || compiled !== state.compiled || selection !== state.practiceVersion) return;
     if (apply) {
       state.profileDirty = false;
@@ -276,15 +283,28 @@ async function checkInstrument(profile = currentProfile(), apply = false) {
       else { state.guitar = {tuning:profile.tuning, frets:profile.frets, capo:profile.capo}; renderFretboard(); }
       updateRangeWarning();
     }
-    state.compatibility = compatibilityStatus(report, state.targetTimeline?.notes || compiled.timeline.notes);
+    state.practicePlan=plan;state.targetTimeline=plan.timeline;state.targetGroups=new Map(plan.groups.map(group=>[group.target_id,group]));
+    state.physicalIndex=new TimelineIndex(state.loop?windowNotes(plan.timeline.notes,state.loop.start_ms,state.loop.end_ms):plan.timeline.notes);
+    state.compatibility = compatibilityStatus(report, sourceTargets.notes);
+    if(!plan.playable&&state.compatibility.status==='ready')state.compatibility={status:'blocked',reason:'Rust marked the selected physical target plan as unplayable. Review its diagnostics or choose another setup.'};
+    updatePracticeScopeLabel();renderTargetMappings();
     const outside = report.note_options.filter(note => !note.playable).length;
     state.instrumentOutOfRange = outside; state.instrumentConflict = report.diagnostics.some(d => d.code === 'guitar_string_conflict'); updateRangeWarning();
     $('instrument-report').textContent = `${midiName(report.lowest_midi)}–${midiName(report.highest_midi)} · ${outside} notes outside playable range · original pitches preserved`;
     $('instrument-diagnostics').replaceChildren();
-    for (const diagnostic of report.diagnostics) { const li = document.createElement('li'); li.textContent = diagnostic.message; $('instrument-diagnostics').append(li); }
-    $('instrument-settings').classList.toggle('has-warnings', report.diagnostics.some(d => d.code !== 'guitar_fingering_advisory'));
+    const diagnostics=[...new Map([...report.diagnostics,...plan.diagnostics].map(item=>[`${item.code}:${item.message}`,item])).values()];
+    for (const diagnostic of diagnostics) { const li = document.createElement('li'); li.textContent = diagnostic.message; $('instrument-diagnostics').append(li); }
+    $('instrument-settings').classList.toggle('has-warnings', diagnostics.some(d => !['guitar_fingering_advisory','guitar_pitch_only_targets'].includes(d.code)));
   } catch (error) { if (request === state.instrumentRequest) { state.compatibility = {status:'error',reason:`Compatibility could not be verified: ${error.message}`}; $('instrument-report').textContent = `Instrument setup not verified: ${error.message}`; } }
   finally { if (request === state.instrumentRequest) updateButtons(); }
+}
+function renderTargetMappings() {
+  $('target-group-list').replaceChildren();
+  const mapped=state.practicePlan?.groups.filter(group=>group.source_occurrence_ids.length>1||group.source_note_ids.length>1)||[];
+  $('target-mapping-summary').textContent=state.practicePlan ? `Physical target source mapping · ${mapped.length} grouped / tied targets` : 'Physical target source mapping · pending verification';
+  const targets=new Map((state.practicePlan?.timeline.notes||[]).map(note=>[note.id,note]));
+  for(const group of mapped.slice(0,100)){const note=targets.get(group.target_id);const item=document.createElement('li');item.textContent=`${midiName(note.midi)} at ${(note.start_ms/1000).toFixed(3)}s: ${group.source_occurrence_ids.length} sounding events; source notes ${group.source_note_ids.join(', ')}; parts ${group.part_ids.join(', ')}`;$('target-group-list').append(item)}
+  $('target-mapping-limit').textContent=!state.practicePlan?'Verify the current part, loop and instrument selection to view its mapping.':mapped.length>100?'Showing the first 100 mappings. The complete physical plan is included in Export take data.':'All mapped occurrences and tied source-note IDs are retained. Canonical score export is unchanged.';
 }
 function syncProfileFields() {
   $('custom-key-count').value=String(state.keys); $('custom-lowest').value=midiName(state.geometry[0].midi).replace('♯','#');
@@ -292,6 +312,7 @@ function syncProfileFields() {
 }
 function markProfileDirty() {
   state.profileDirty=true; state.instrumentRequest++;
+  state.practicePlan=null;state.targetTimeline=null;state.physicalIndex=null;state.targetGroups=new Map();updatePracticeScopeLabel();renderTargetMappings();
   state.compatibility={status:'dirty',reason:'Instrument settings were edited. Apply and validate the setup before practicing.'};
   resetPlayback();
   $('instrument-report').textContent=state.compatibility.reason; updateButtons();
@@ -351,7 +372,7 @@ async function togglePlayback() {
   const generation = state.generation;
   const ticket = ++state.playTicket;
   try { await synth.unlock(); } catch (error) { notice(error.message, true); return; }
-  if (generation !== state.generation || ticket !== state.playTicket || transport.running || !state.compiled) return;
+  if (generation !== state.generation || ticket !== state.playTicket || transport.running || !state.compiled || (state.mode === 'practice' && state.compatibility.status !== 'ready')) return;
   if (transport.completed) { if(state.mode==='practice') { transport.reset(); if(state.loop)transport.seek(state.loop.start_ms); state.lastHighlight=''; } else resetPlayback(); }
   const beatMs = 60000 / (Number($('tempo').value) || 100);
   const now = performance.now();
@@ -362,7 +383,7 @@ async function togglePlayback() {
 function beginPracticePass(now, captureEnabled = true) {
   const recorder=state.recorder;let pass=recorder.active;
   if(pass&&pass.closedWall===null&&pass.captureEnabled&&captureEnabled) recorder.resume(now,transport.position);
-  else pass=recorder.begin({wallTime:now,position:transport.position,startMs:state.loop?.start_ms||0,endMs:state.loop?.end_ms||state.compiled.timeline.duration_ms,timeline:state.targetTimeline||state.compiled.timeline,label:state.loop?`Loop ${state.loopIteration}`:`Take ${recorder.passes.length+1}`,captureEnabled});
+  else pass=recorder.begin({wallTime:now,position:transport.position,startMs:state.loop?.start_ms||0,endMs:state.loop?.end_ms||state.compiled.timeline.duration_ms,timeline:state.targetTimeline,label:state.loop?`Loop ${state.loopIteration}`:`Take ${recorder.passes.length+1}`,captureEnabled});
   state.inputs=pass.inputs;refreshPassHistory();displayChosenPass();return pass;
 }
 function showPassAssessment(pass) {
@@ -423,7 +444,7 @@ function assess() {
 }
 $('feedback-pass').addEventListener('change',displayChosenPass);
 $('retry-assessments').addEventListener('click',()=>{state.recorder.retryFailed();drainAssessments()});
-$('export-takes').addEventListener('click',()=>{const data={...state.recorder.exportData(),score_id:state.score?.id,practice_part:state.practicePart};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
+$('export-takes').addEventListener('click',()=>{const data={...state.recorder.exportData(),score_id:state.score?.id,practice_part:state.practicePart,target_plan:state.practicePlan};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
 function drawFrame() {
   const now = performance.now();
   const position = transport.time(now);
@@ -433,7 +454,7 @@ function drawFrame() {
   const segmentStart = state.loop?.start_ms || 0;
   const segmentEnd = state.loop?.end_ms || duration;
   const playbackNotes = state.loop?.notes || state.practiceTimeline?.notes || timeline?.notes || [];
-  const playbackIndex = state.loop?.index || state.practiceIndex || state.timelineIndex;
+  const playbackIndex = state.mode==='practice'&&state.physicalIndex ? state.physicalIndex : state.loop?.index || state.practiceIndex || state.timelineIndex;
   if (transport.running && timeline) {
     for (const note of transport.due(now, playbackNotes)) if (state.mode === 'listen') synth.play(`score:${note.id}:${note.part_id}:${note.start_ms}`, note.midi, note.remaining_ms, note.delay_ms, state.instrument, note.velocity ?? 90);
     if (state.loop && position >= segmentEnd) {
@@ -459,14 +480,14 @@ function drawFrame() {
   }
   const active = position < segmentStart ? [] : playbackIndex?.range(position) || [];
   if (!state.engravingActive && transport.running && active.length) {
-    const first = active.find(note => note.part_id === state.notationPart);
-    const source = first && state.sourceNotes.get(`${first.part_id}:${first.source_note_id || first.id}`);
+    const source = active.flatMap(note=>mappedSourceIds(note,state.mode==='practice'?state.targetGroups.get(note.id):null)).map(id=>state.sourceNotes.get(id)).find(item=>item?.partId===state.notationPart);
     const page = source ? Math.floor(beat(source.note.at) / state.notationSpan) : state.notationPage;
     if (page !== state.notationPage) { state.notationPage = page; renderNotationPage(); }
   }
   const signature = active.map(n => n.id).join('|');
   if (signature !== state.lastHighlight) {
-    document.querySelectorAll('.score-note').forEach(note => note.classList.toggle('active', active.some(n => (n.source_note_id || n.id) === note.dataset.noteId)));
+    const activeSources=new Set(active.flatMap(note=>mappedSourceIds(note,state.mode==='practice'?state.targetGroups.get(note.id):null)));
+    document.querySelectorAll('.score-note').forEach(note => note.classList.toggle('active', activeSources.has(note.dataset.noteId)));
     state.lastHighlight = signature;
     const focused = $('notation').querySelector('.score-note.active');
     if (!state.engravingActive && transport.running && focused) { const box = focused.getBoundingClientRect(); const view = $('notation').getBoundingClientRect(); if (box.left < view.left + 20 || box.right > view.right - 20) $('notation').scrollLeft += box.left - view.left - view.width * 0.35; }
