@@ -12,6 +12,7 @@ mod mxl;
 pub use mxl::import_mxl;
 pub mod feedback;
 pub mod instruments;
+pub mod metronome;
 pub mod omr;
 pub mod practice;
 mod public_domain;
@@ -511,6 +512,46 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
     })
 }
 
+/// Exact written duration of a validated score, including explicit rests and measures.
+fn written_duration(score: &Score) -> Beat {
+    let note_ends = score
+        .parts
+        .iter()
+        .flat_map(|part| &part.notes)
+        .map(|note| note.at.checked_add(note.duration).expect("validated"));
+    let measure_ends = score
+        .measures
+        .iter()
+        .map(|measure| measure.at.checked_add(measure.length).expect("validated"));
+    note_ends
+        .chain(measure_ends)
+        .max_by(|a, b| a.compare(*b))
+        .unwrap_or(Beat::ZERO)
+}
+/// Shared half-open written segments for note and metronome performance occurrences.
+fn navigation_segments(score: &Score, total: Beat) -> Result<Vec<(Beat, Beat)>, String> {
+    let mut regions: Vec<_> = score.repeats.iter().collect();
+    regions.sort_by(|a, b| a.from.compare(b.from));
+    let mut segments = vec![];
+    let mut cursor = Beat::ZERO;
+    for region in regions {
+        if region.from.compare(cursor).is_lt() || region.to.compare(total).is_gt() {
+            return Err("Overlapping/nested or out-of-score repeat regions are not supported; source is retained for correction".into());
+        }
+        if region.from.compare(cursor).is_gt() {
+            segments.push((cursor, region.from));
+        }
+        for _ in 0..region.times {
+            segments.push((region.from, region.to));
+        }
+        cursor = region.to;
+    }
+    if cursor.compare(total).is_lt() {
+        segments.push((cursor, total));
+    }
+    Ok(segments)
+}
+
 /// Expand disjoint written repeat ranges without changing the source score.
 /// Complex endings and nested repeats require a richer navigation graph and are rejected.
 fn expand_repeats(
@@ -524,19 +565,7 @@ fn expand_repeats(
         .flat_map(|part| &part.notes)
         .map(|note| (note.id.as_str(), note))
         .collect();
-    let mut total = Beat::ZERO;
-    for note in source.values() {
-        let end = note.at.checked_add(note.duration).expect("validated");
-        if end.compare(total).is_gt() {
-            total = end;
-        }
-    }
-    for measure in &score.measures {
-        let end = measure.at.checked_add(measure.length).expect("validated");
-        if end.compare(total).is_gt() {
-            total = end;
-        }
-    }
+    let total = written_duration(score);
     // Navigation membership and boundary crossing use exact written beats. A floating
     // epsilon could silently accept a very short sustain crossing a repeat boundary.
     let mut ordered: Vec<_> = notes
@@ -568,30 +597,14 @@ fn expand_repeats(
         }
         prefix_ends.push(farthest);
     }
-    let mut regions: Vec<_> = score.repeats.iter().collect();
-    regions.sort_by(|a, b| a.from.compare(b.from));
-    let mut segments = vec![];
-    let mut cursor = Beat::ZERO;
-    for region in regions {
-        if region.from.compare(cursor).is_lt() || region.to.compare(total).is_gt() {
-            return Err("Overlapping/nested or out-of-score repeat regions are not supported; source is retained for correction".into());
-        }
+    let segments = navigation_segments(score, total)?;
+    for region in &score.repeats {
         for boundary in [region.from, region.to] {
             let index = ordered.partition_point(|(_, start, _)| start.compare(boundary).is_lt());
             if index > 0 && prefix_ends[index - 1].compare(boundary).is_gt() {
                 return Err("A note crosses a repeat boundary; explicit tie/navigation handling is required".into());
             }
         }
-        if region.from.compare(cursor).is_gt() {
-            segments.push((cursor, region.from));
-        }
-        for _ in 0..region.times {
-            segments.push((region.from, region.to));
-        }
-        cursor = region.to;
-    }
-    if cursor.compare(total).is_lt() {
-        segments.push((cursor, total));
     }
     let mut output = vec![];
     let mut source_references = 0_usize;

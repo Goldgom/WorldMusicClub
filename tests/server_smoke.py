@@ -43,6 +43,10 @@ try:
     status,body,_=request('/api/import/jianpu',numbered['text'].encode(),{'Content-Type':'text/plain'})
     assert status==200,body
     assert [n['midi'] for n in json.loads(body)['timeline']['notes']]==[n['midi'] for n in compilation['timeline']['notes']]
+    status,body,_=request('/api/metronome',json.dumps({'score':catalog[0],'pulse':'quarter'}).encode(),{'Content-Type':'application/json'})
+    assert status==200,body
+    grid=json.loads(body);assert len(grid['ticks'])==16 and grid['accent_policy']=='written_measure_boundary'
+    assert abs(grid['duration_ms']-compilation['timeline']['duration_ms'])<.001
     window={'score':catalog[0],'from':{'numerator':1,'denominator':1},'to':{'numerator':4,'denominator':1}}
     status,body,_=request('/api/practice-window',json.dumps(window).encode(),{'Content-Type':'application/json'})
     assert status==200 and len(json.loads(body)['target_note_ids'])==3

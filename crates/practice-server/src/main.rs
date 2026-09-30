@@ -12,6 +12,13 @@ const BODY_TIMEOUT: Duration = Duration::from_secs(5);
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 type WebResponse = Response<Full<Bytes>>;
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MetronomeRequest {
+    score: score_core::Score,
+    #[serde(default)]
+    pulse: score_core::metronome::PulseMode,
+}
+#[derive(Deserialize)]
 struct WindowRequest {
     score: score_core::Score,
     from: score_core::Beat,
@@ -202,6 +209,10 @@ fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
             .map_err(|e| format!("Invalid score JSON: {e}"))
             .and_then(score_core::compile)
             .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
+        "/api/metronome" => serde_json::from_slice::<MetronomeRequest>(&bytes)
+            .map_err(|e| format!("Invalid metronome request: {e}"))
+            .and_then(|r| score_core::metronome::metronome_grid(r.score, r.pulse))
+            .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
         "/api/practice-window" => serde_json::from_slice::<WindowRequest>(&bytes)
             .map_err(|e| format!("Invalid loop request: {e}"))
             .and_then(|r| score_core::practice::practice_window(&r.score, r.from, r.to))

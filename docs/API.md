@@ -77,3 +77,11 @@ Guitar retains distinct events and returns a pitch-only/string-identity warning.
 ### POST /api/export/jianpu
 
 Body: canonical `Score`. Returns `{ text, diagnostics, note_map }` for the app-specific numbered-text v1 dialect. All source-note spellings and exact onsets/durations are roundtrip-verified. It explicitly rejects polyphonic/overlapping lanes, written ties, repeats, pickups/irregular measures and changing maps it cannot preserve. Gaps become mapped explicit rests; provenance is carried in whole-line comments. The canonical source is unchanged. Show diagnostics before downloading `.jianpu`; do not present this as a lossless replacement for JSON/MusicXML. See [numbered-text format](JIANPU_TEXT.md).
+
+### POST /api/metronome
+
+Body: `{ score: Score, pulse?: "notated_unit" | "quarter" | "dotted_quarter" }`. The default is `notated_unit`, which uses the active time signature's denominator; 6/8 therefore produces six eighth-note subdivision clicks, not two inferred compound beats. Choose `dotted_quarter` explicitly for three-eighth groupings.
+
+Returns `{ ticks, duration_ms, pulse, accent_policy, diagnostics }`. Each tick has a unique performance `id`, stable written `source_tick_id`, exact `source_at` beat, derived `start_ms`, `measure_number`, zero-based `unit_index` and `accent`. An accent marks a supplied written-measure boundary, not an inferred strong beat; pickups/partial measures receive an explicit warning. Repeat navigation and half-open boundary membership reuse the same Rust segments as notes. Tempo changes are integrated, and rests still contain clicks. The original score is never modified.
+
+The map must contain contiguous measures covering the whole score. Duplicate signatures, meter changes inside a supplied measure and over 100,000 written or repeat-expanded clicks are explicitly refused. A failed optional metronome does not make ordinary score playback invalid. For an A–B window, retain ticks whose `start_ms` is in the same half-open performance range; do not invent a new pulse at the loop start or infer a different beat convention in JavaScript. This endpoint is engine groundwork; audible UI integration is separate.
