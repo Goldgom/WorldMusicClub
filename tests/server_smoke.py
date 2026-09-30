@@ -2,7 +2,7 @@
 import json, subprocess, time, urllib.request, urllib.error, os
 from pathlib import Path
 port=17878
-binary=Path('target/debug/practice-server' + ('.exe' if os.name=='nt' else ''))
+binary=Path(os.environ.get('WMH_SERVER_BINARY', 'target/debug/practice-server' + ('.exe' if os.name=='nt' else '')))
 process=subprocess.Popen([str(binary),'--no-open','--port',str(port)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 base=f'http://127.0.0.1:{port}'
 def request(path, body=None, headers=None):
@@ -33,6 +33,16 @@ try:
     instrument={'timeline':compilation['timeline'],'profile':{'kind':'piano','key_count':61,'lowest_midi':None}}
     status,body,_=request('/api/instrument-check',json.dumps(instrument).encode(),{'Content-Type':'application/json'})
     assert status==200 and json.loads(body)['highest_midi']==96
+    status,body,_=request('/api/practice-targets',json.dumps(instrument).encode(),{'Content-Type':'application/json'})
+    assert status==200,body
+    targets=json.loads(body);assert targets['playable'] and targets['target_count']==15 and targets['source_note_count']==15
+    assert all(group['source_occurrence_ids'] and group['source_note_ids'] for group in targets['groups'])
+    status,body,_=request('/api/export/jianpu',json.dumps(catalog[0]).encode(),{'Content-Type':'application/json'})
+    assert status==200,body
+    numbered=json.loads(body);assert '; License: CC0-1.0' in numbered['text'] and numbered['note_map']
+    status,body,_=request('/api/import/jianpu',numbered['text'].encode(),{'Content-Type':'text/plain'})
+    assert status==200,body
+    assert [n['midi'] for n in json.loads(body)['timeline']['notes']]==[n['midi'] for n in compilation['timeline']['notes']]
     window={'score':catalog[0],'from':{'numerator':1,'denominator':1},'to':{'numerator':4,'denominator':1}}
     status,body,_=request('/api/practice-window',json.dumps(window).encode(),{'Content-Type':'application/json'})
     assert status==200 and len(json.loads(body)['target_note_ids'])==3

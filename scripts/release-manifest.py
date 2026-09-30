@@ -83,10 +83,11 @@ def main():
     def git(*arguments):return subprocess.check_output(['git',*arguments],cwd=ROOT,text=True).strip()
     commit=git('rev-parse','HEAD');count=int(git('rev-list','--count','HEAD'))
     if not re.fullmatch('[0-9a-f]{40}',args.commit) or args.commit!=commit or args.count!=count:raise ValueError('Requested release commit/count does not match this complete checkout')
+    if git('status','--porcelain'):raise ValueError('Release checkout must be clean; do not label uncommitted code with a committed SHA')
     if platform.system()!='Windows':raise ValueError('Release manifests must be created on Windows after native build and smoke tests')
     host=next((line.split(': ',1)[1] for line in subprocess.check_output(['rustc','-vV'],text=True).splitlines() if line.startswith('host: ')),None)
     if host!='x86_64-pc-windows-msvc':raise ValueError('Expected the native Windows x64 MSVC toolchain')
-    metadata={'name':'WorldMusicHub','git_commit':commit,'git_tree':git('rev-parse','HEAD^{tree}'),'commit_count':count,'target':host,'rustflags':os.environ.get('RUSTFLAGS',''),'build_platform':platform.platform(),'rustc':subprocess.check_output(['rustc','--version'],text=True).strip(),'cargo_lock_sha256':sha((ROOT/'Cargo.lock').read_bytes()),'npm_lock_sha256':sha((ROOT/'package-lock.json').read_bytes()),'offline_engraving_version':'2.1.3','distribution':'unsigned portable alpha; browser UI; physical MIDI/audio latency not verified'}
+    metadata={'name':'WorldMusicHub','git_commit':commit,'git_tree':git('rev-parse','HEAD^{tree}'),'commit_count':count,'target':host,'rustflags':os.environ.get('RUSTFLAGS',''),'build_platform':platform.platform(),'rustc':subprocess.check_output(['rustc','--version'],text=True).strip(),'rustc_verbose':subprocess.check_output(['rustc','-vV'],text=True).strip(),'cargo':subprocess.check_output(['cargo','--version'],text=True).strip(),'node':subprocess.check_output(['node','--version'],text=True).strip(),'python':platform.python_version(),'cargo_lock_sha256':sha((ROOT/'Cargo.lock').read_bytes()),'npm_lock_sha256':sha((ROOT/'package-lock.json').read_bytes()),'offline_engraving_version':'2.1.3','distribution':'unsigned portable alpha; browser UI; physical MIDI/audio latency not verified'}
     create_manifest(args.directory,metadata);print(f'Created release inventory for commit {count}: {commit}')
 
 if __name__=='__main__':main()

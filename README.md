@@ -2,13 +2,16 @@
 
 A local-first music practice and rhythm-game project with a Rust score engine.
 
-## Intended foundation
+[中文上手指南](docs/QUICKSTART.zh-CN.md) · [Alpha features and limits](docs/releases/0.1.0-alpha.1.md)
+
+## Current alpha
 
 - One versioned score model preserving exact note timing, spelling, voices, staves, ties, meter, keys and source provenance
 - Derived staff notation, numbered jianpu and repeat-expanded performance views
 - Piano and guitar practice; configurable keyboard ranges; playable exercises and falling-note guidance
 - Optional MIDI input and explainable timing/pitch feedback
-- Rich MusicXML interchange first; MIDI as a performance format; PDF/image recognition is a future assisted import, not a lossless promise
+- Bounded MusicXML/MXL, MIDI and numbered-text import; a limited local printed-staff image aid with mandatory manual correction
+- Offline staff engraving, local saved-score backups and exact monophonic numbered-text export
 
 ## Development
 
@@ -18,7 +21,7 @@ The first shell is a portable Rust local server with a browser UI. It binds only
 
 ## Distribution and rights
 
-WorldMusicHub code is MIT-licensed. Score, audio and other assets retain their individually recorded rights; the code license does not relicense third-party music. Bundled practice exercises are newly authored for this project, with provenance recorded in their score metadata. Do not add unlicensed commercial arrangements. A composition, score engraving, arrangement and recording can have different rights.
+WorldMusicHub code is MIT-licensed. Score, audio and other assets retain their individually recorded rights; the code license does not relicense third-party music. Bundled music includes newly authored exercises and two documented public-domain opening excerpts, with provenance recorded in score metadata and [catalog rights](docs/CATALOG_RIGHTS.md). Do not add unlicensed commercial arrangements. A composition, score engraving, arrangement and recording can have different rights.
 
 ## Release policy
 
@@ -26,7 +29,7 @@ Each meaningful implementation increment is committed. Every 50 project commits 
 
 ## Current product scope and image workflow
 
-The roadmap includes local staff-image/fragment recognition with confidence indicators and manual correction before conversion to playable notes or jianpu. Printed-score recognition is imperfect; handwritten, ambiguous or complex notation must never be silently treated as reliable. Light/dark/system/custom themes and an accessible modern interface are part of the ongoing UI work.
+A limited local recognizer suggests note positions from one clean horizontal printed treble staff. You must correct and confirm every pitch and duration before it becomes playable. Handwritten music, complex notation and general PDFs are unsupported. The interface includes light/dark/system/custom themes. Saved-score copies are explicit and browser-local; export backups for durable records. See [the first alpha's features and limits](docs/releases/0.1.0-alpha.1.md).
 
 ## Windows builds
 

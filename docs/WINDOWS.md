@@ -1,5 +1,7 @@
 # WorldMusicHub on Windows
 
+中文用户可阅读安装包内的 `docs/QUICKSTART.zh-CN.md`。
+
 The initial distribution targets Windows 10/11 x64 and is a portable Rust executable with its UI embedded inside it. The Windows build requests static C-runtime linkage to reduce separate runtime-installation requirements.
 
 1. Extract the entire ZIP to a normal folder.

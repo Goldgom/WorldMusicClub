@@ -53,6 +53,10 @@ jobs:
       - run: npm test
       - run: cargo test --workspace --target x86_64-pc-windows-msvc --locked
       - run: cargo build -p practice-server --release --target x86_64-pc-windows-msvc --locked
+      - name: Check full API against the Windows release binary
+        run: python tests/server_smoke.py
+        env:
+          WMH_SERVER_BINARY: target/x86_64-pc-windows-msvc/release/practice-server.exe
       - name: Smoke-test exact release executable
         shell: pwsh
         run: |
