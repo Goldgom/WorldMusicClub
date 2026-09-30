@@ -22,7 +22,7 @@ Staff and jianpu views share the canonical score. A simplified renderer cannot d
 - Explicit rejection of complex repeat navigation rather than unbounded traversal
 - Embedded static asset allowlist; no arbitrary filesystem read route
 - No command execution derived from score content
-- Pitch-indexed ordered assessment buckets avoid quadratic matching for dense imports
+- Order-preserving sparse assessment matching maximizes matched onsets before minimizing total timing error. Dense coincident buckets and complete ordered takes use exact fast paths; an explicit candidate-edge budget rejects pathological ambiguity rather than returning a guessed score
 
 ## Native Windows path
 

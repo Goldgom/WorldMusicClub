@@ -55,3 +55,7 @@ Assessment responses include `summary`: expected/matched counts, onset coverage,
 ## Generated MusicXML export
 
 `POST /api/export/musicxml` accepts a canonical Score and returns `{xml,diagnostics,part_id_map,voice_id_map}`. Export preserves supported musical timing using exact integer divisions, splits cross-bar holds with ties, maps overlapping voices explicitly, and retains supplied attribution/license notices. Safe `P1`/`P2` part IDs and positive numeric voice IDs map back to canonical labels for renderer compatibility. This generated interchange is not original engraving recovery; raw source bytes and provenance URLs never become XML markup or external resources. See [export limits](MUSICXML_EXPORT.md).
+
+### Repeated-pitch alignment
+
+Assessment preserves event order independently for each pitch. It first maximizes the number of valid onset matches, then minimizes total absolute timing error. It does not let a nearer later target steal a consistently late earlier attack. Coincident and complete ordered takes have exact fast paths; more than2million ambiguous candidate edges is an actionable error, not a silent greedy fallback. Timing tolerance never merges separate score attacks.

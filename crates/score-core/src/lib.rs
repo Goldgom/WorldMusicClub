@@ -1,6 +1,7 @@
 //! WorldMusicHub's canonical musical model and deterministic performance engine.
 //! Musical time is rational quarter-note time; wall-clock time is derived only at playback boundaries.
 mod jianpu;
+mod matching;
 mod midi;
 pub use jianpu::import_jianpu;
 mod musicxml;
@@ -17,7 +18,7 @@ mod public_domain;
 pub use musicxml::import_musicxml;
 
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -615,49 +616,39 @@ pub fn assess(
     {
         return Err("Invalid performance data".into());
     }
+    let mut target_pitches: Vec<Vec<(usize, f64)>> = (0..128).map(|_| vec![]).collect();
+    let mut input_pitches: Vec<Vec<(usize, f64)>> = (0..128).map(|_| vec![]).collect();
+    for (i, note) in timeline.notes.iter().enumerate() {
+        target_pitches[note.midi as usize].push((i, note.start_ms));
+    }
+    for (i, event) in inputs.iter().enumerate().filter(|(_, e)| e.velocity > 0) {
+        input_pitches[event.midi as usize].push((i, event.at_ms));
+    }
+    let mut pairs = HashMap::new();
+    let mut budget = 2_000_000;
+    for midi in 0..128 {
+        target_pitches[midi].sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+        input_pitches[midi].sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+        for (target, input) in matching::align_pitch(
+            &target_pitches[midi],
+            &input_pitches[midi],
+            tolerance_ms,
+            &mut budget,
+        )? {
+            pairs.insert(input, target);
+        }
+    }
     let mut matched = HashSet::new();
     let mut hits = vec![];
     let mut extras = vec![];
-    let mut sorted: Vec<&InputEvent> = inputs.iter().filter(|e| e.velocity > 0).collect();
-    sorted.sort_by(|a, b| a.at_ms.total_cmp(&b.at_ms));
-    // Ordered buckets avoid quadratic scans on long scores or dense repeated pitches.
-    let mut targets: Vec<BTreeMap<u64, VecDeque<usize>>> =
-        (0..128).map(|_| BTreeMap::new()).collect();
-    for (index, note) in timeline.notes.iter().enumerate() {
-        targets[note.midi as usize]
-            .entry(note.start_ms.max(0.).to_bits())
-            .or_default()
-            .push_back(index);
-    }
-    for event in sorted {
-        let pitch_targets = &mut targets[event.midi as usize];
-        let key = event.at_ms.max(0.).to_bits();
-        let before = pitch_targets
-            .range(..=key)
-            .next_back()
-            .map(|(time, indices)| (*time, indices[0]));
-        let after = pitch_targets
-            .range(key..)
-            .next()
-            .map(|(time, indices)| (*time, indices[0]));
-        let best = before
-            .into_iter()
-            .chain(after)
-            .filter(|(_, i)| (timeline.notes[*i].start_ms - event.at_ms).abs() <= tolerance_ms)
-            .min_by(|(_, a), (_, b)| {
-                (timeline.notes[*a].start_ms - event.at_ms)
-                    .abs()
-                    .total_cmp(&(timeline.notes[*b].start_ms - event.at_ms).abs())
-                    .then(a.cmp(b))
-            });
-        if let Some((time, i)) = best {
-            let bucket = pitch_targets
-                .get_mut(&time)
-                .expect("selected existing bucket");
-            bucket.pop_front();
-            if bucket.is_empty() {
-                pitch_targets.remove(&time);
-            }
+    let mut sorted: Vec<_> = inputs
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.velocity > 0)
+        .collect();
+    sorted.sort_by(|(ai, a), (bi, b)| a.at_ms.total_cmp(&b.at_ms).then(ai.cmp(bi)));
+    for (input_index, event) in sorted {
+        if let Some(&i) = pairs.get(&input_index) {
             let note = &timeline.notes[i];
             matched.insert(i);
             let delta = event.at_ms - note.start_ms;
@@ -1118,5 +1109,39 @@ mod tests {
         let mut score = catalog().remove(0);
         score.parts[0].notes[0].velocity = 42;
         assert_eq!(compile(score).unwrap().timeline.notes[0].velocity, 42);
+    }
+    #[test]
+    fn late_repetitions_keep_the_correct_order_and_bias() {
+        let mut t = compile(catalog().remove(0)).unwrap().timeline;
+        t.notes.truncate(2);
+        t.notes[0].midi = 60;
+        t.notes[0].start_ms = 0.;
+        t.notes[1].midi = 60;
+        t.notes[1].start_ms = 250.;
+        let a = assess(
+            &t,
+            &[
+                InputEvent {
+                    midi: 60,
+                    at_ms: 140.,
+                    velocity: 90,
+                },
+                InputEvent {
+                    midi: 60,
+                    at_ms: 390.,
+                    velocity: 90,
+                },
+            ],
+            180.,
+        )
+        .unwrap();
+        assert_eq!(a.hits.len(), 2);
+        assert!(a.misses.is_empty() && a.extras.is_empty());
+        assert_eq!(a.accuracy_percent, 100.);
+        assert!(a
+            .hits
+            .iter()
+            .all(|h| h.delta_ms == 140. && h.grade == "late"));
+        assert_eq!(a.summary.timing_bias_ms, Some(140.));
     }
 }
