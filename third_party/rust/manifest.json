@@ -1,0 +1,26 @@
+[
+  {
+    "file": "midly-0.5.3-LICENSE",
+    "repository": "negamartin/midly",
+    "commit": "816cb2a585b4d5d1fd7aeb0cb35668f21dc00869",
+    "path": "LICENSE",
+    "blob_sha": "cf1ab25da0349f84a3fdd40032f0ce99db813b8b",
+    "sha256": "88d9b4eb60579c191ec391ca04c16130572d7eedc4a86daa58bf28c6e14c9bcd"
+  },
+  {
+    "file": "zune-LICENSE-ZLIB",
+    "repository": "etemesi254/zune-image",
+    "commit": "f8fbb123d5ed04441e8324a555bfcda0cb1bd28f",
+    "path": "LICENSE-ZLIB",
+    "blob_sha": "582ec653390adaf4893b71f3e113a6ac4d392463",
+    "sha256": "7fa429541e55b1509909e058f2d21a37467e4958ec713b357f6e0cf9dc4ee352"
+  },
+  {
+    "file": "zune-COPYRIGHT-LICENSE-OPTIONS",
+    "repository": "etemesi254/zune-image",
+    "commit": "f8fbb123d5ed04441e8324a555bfcda0cb1bd28f",
+    "path": "LICENSE.md",
+    "blob_sha": "4761bfa9a6eb62b4a85927b479294df2fdf1a307",
+    "sha256": "c6dff146a9f31848ac296faa5a08a4253caf2c384c86f906dc99e7fc0a39cc8c"
+  }
+]

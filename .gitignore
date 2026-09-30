@@ -7,3 +7,5 @@
 
 # Generated, locally bundled renderer assets (prepared from exact npm lockfile).
 /web/vendor/
+
+__pycache__/

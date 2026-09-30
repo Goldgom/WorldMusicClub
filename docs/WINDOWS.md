@@ -16,3 +16,9 @@ Early builds are unsigned. They may trigger reputation warnings. Do not bypass a
 CI tests the Rust engine and actually starts the Windows executable, requests its health endpoint and verifies embedded UI delivery. This is not a substitute for physical MIDI hardware, speaker latency, Web MIDI permissions or a Windows visual/audio acceptance test.
 
 Every 50 meaningful development-branch commits is a release-build milestone. A manually triggered workflow can produce an earlier preview build. Artifacts are available in the corresponding GitHub Actions run. A milestone is not verified until that exact workflow passes.
+
+## Distribution notices
+
+Keep the `licenses` folder with redistributed ZIP packages. It includes offline engraving notices, the locked Cargo dependency inventory, and the Rust standard-library copyright/license collection from the exact build toolchain. The conservative inventory includes build-time and target-specific packages and does not imply that every listed component is linked into the executable. The code license does not relicense imported songs, score images, or third-party assets.
+
+Build preparation uses `python scripts/prepare-rust-notices.py` after `cargo fetch --locked`. It reads installed official registry packages, verifies version-pinned upstream fallback notices where crates omit them, and fails on unknown license expressions or missing notices. Zune image components use their Zlib option. Generated notices stay out of Git and are recreated for each release.

@@ -25,6 +25,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python tests/server_smoke.py
+      - run: python -m unittest discover -s tests -p test_rust_notices.py
   frontend:
     runs-on: ubuntu-latest
     steps:
