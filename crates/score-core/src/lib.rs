@@ -176,6 +176,8 @@ impl Diagnostic {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TimedNote {
     pub id: String,
+    #[serde(default)]
+    pub source_note_id: String,
     pub part_id: String,
     pub midi: u8,
     pub start_ms: f64,
@@ -349,6 +351,7 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
                 let index = notes.len();
                 notes.push(TimedNote {
                     id: note.id.clone(),
+                    source_note_id: note.id.clone(),
                     part_id: part.id.clone(),
                     midi,
                     start_ms,
@@ -369,8 +372,18 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
             ));
         }
     }
+    for measure in &score.measures {
+        total = total.max(beat_to_ms(
+            measure
+                .at
+                .checked_add(measure.length)
+                .expect("validated")
+                .value(),
+            &score.tempo,
+        ));
+    }
     if !score.repeats.is_empty() {
-        return Err("Repeat regions are preserved but playback expansion is not implemented yet; remove repeats only if you intentionally want a linear practice copy".into());
+        (notes, total) = expand_repeats(&notes, total, &score.repeats, &score.tempo)?;
     }
     notes.sort_by(|a, b| {
         a.start_ms
@@ -386,6 +399,63 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
         },
         diagnostics,
     })
+}
+
+/// Expand disjoint written repeat ranges without changing the source score.
+/// Complex endings and nested repeats require a richer navigation graph and are rejected.
+fn expand_repeats(
+    notes: &[TimedNote],
+    duration_ms: f64,
+    repeats: &[Repeat],
+    tempo: &[Tempo],
+) -> Result<(Vec<TimedNote>, f64), String> {
+    let mut regions: Vec<_> = repeats.iter().collect();
+    regions.sort_by(|a, b| a.from.value().total_cmp(&b.from.value()));
+    let mut segments = vec![];
+    let mut cursor = 0.;
+    for region in regions {
+        let from = beat_to_ms(region.from.value(), tempo);
+        let to = beat_to_ms(region.to.value(), tempo);
+        if from < cursor || to > duration_ms + 0.001 {
+            return Err("Overlapping/nested or out-of-score repeat regions are not supported; source is retained for correction".into());
+        }
+        for note in notes {
+            let end = note.start_ms + note.duration_ms;
+            if (note.start_ms < from - 0.001 && end > from + 0.001)
+                || (note.start_ms < to - 0.001 && end > to + 0.001)
+            {
+                return Err(format!("Note {} crosses a repeat boundary; explicit tie/navigation handling is required",note.id));
+            }
+        }
+        if from > cursor {
+            segments.push((cursor, from));
+        }
+        for _ in 0..region.times {
+            segments.push((from, to));
+        }
+        cursor = to;
+    }
+    if cursor < duration_ms {
+        segments.push((cursor, duration_ms));
+    }
+    let mut output = vec![];
+    let mut offset = 0.;
+    for (start, end) in segments {
+        for note in notes
+            .iter()
+            .filter(|n| n.start_ms >= start && n.start_ms < end)
+        {
+            if output.len() >= 100_000 {
+                return Err("Expanded repeat timeline exceeds 100,000-note limit".into());
+            }
+            let mut occurrence = note.clone();
+            occurrence.id = format!("occurrence-{}", output.len());
+            occurrence.start_ms = offset + note.start_ms - start;
+            output.push(occurrence);
+        }
+        offset += end - start;
+    }
+    Ok((output, offset))
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -722,5 +792,50 @@ mod tests {
         .unwrap()
         .extras
         .is_empty());
+    }
+    #[test]
+    fn repeats_expand_occurrences_without_changing_source() {
+        let mut s = catalog().remove(0);
+        s.parts[0].notes.truncate(4);
+        s.measures.truncate(1);
+        s.repeats.push(Repeat {
+            from: Beat::ZERO,
+            to: Beat::new(4, 1),
+            times: 3,
+        });
+        let c = compile(s).unwrap();
+        assert_eq!(c.score.parts[0].notes.len(), 4);
+        assert_eq!(c.timeline.notes.len(), 12);
+        assert_eq!(
+            c.timeline.notes[0].source_note_id,
+            c.timeline.notes[4].source_note_id
+        );
+        assert_ne!(c.timeline.notes[0].id, c.timeline.notes[4].id);
+        assert!((c.timeline.duration_ms - 8000.).abs() < 0.001);
+    }
+    #[test]
+    fn nested_repeats_and_crossing_sustains_are_rejected() {
+        let mut s = catalog().remove(0);
+        s.repeats = vec![
+            Repeat {
+                from: Beat::ZERO,
+                to: Beat::new(4, 1),
+                times: 2,
+            },
+            Repeat {
+                from: Beat::new(2, 1),
+                to: Beat::new(3, 1),
+                times: 2,
+            },
+        ];
+        assert!(compile(s).unwrap_err().contains("nested"));
+        let mut s = catalog().remove(0);
+        s.parts[0].notes[0].duration = Beat::new(2, 1);
+        s.repeats.push(Repeat {
+            from: Beat::new(1, 1),
+            to: Beat::new(4, 1),
+            times: 2,
+        });
+        assert!(compile(s).unwrap_err().contains("crosses"));
     }
 }
