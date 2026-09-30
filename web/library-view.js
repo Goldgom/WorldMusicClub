@@ -27,10 +27,15 @@ export function setupScoreLibrary({getScore, onLoad, validate, pausePlayback, no
     <section id="library-delete-confirm" class="library-delete-confirm" aria-labelledby="library-delete-title" hidden><h3 id="library-delete-title">Delete this saved copy?</h3><p id="library-delete-name"></p><p>This removes only this browser’s saved copy. Current practice and exported files stay available. Export a backup first if you need to keep it.</p><div><button id="library-delete-cancel" class="button secondary" data-library-action>Keep copy · 保留</button><button id="library-delete-submit" class="button secondary" data-library-action>Delete copy · 删除</button></div></section>
     <section class="library-backups" aria-label="Library backups"><h3>A file you can keep · 备份文件</h3><p>Backups include every saved source file or image. Share them only when you intend to share all included material and have the necessary rights. Restore validates every score with the local Rust engine, then adds new copies atomically.</p><div><button id="library-export-backup" class="button secondary" data-library-action>Export backup · 导出备份</button><button id="library-import-backup" class="button secondary" data-library-action>Restore backup · 恢复备份</button><input id="library-backup-file" type="file" accept="application/json,.json" hidden></div><p>Limits: 100 copies · 8 MiB per score · 32 MiB total · 40 MiB backup file</p></section>`;
   document.body.append(dialog);$('library-origin').textContent=location.origin;
-  let libraryPromise=null,busy=false,controller=null,pendingDelete=null,view=0,refreshId=0;
+  let libraryPromise=null,busy=false,controller=null,pendingDelete=null,view=0,refreshId=0,displayedScore=null;
   const getLibrary=()=>libraryPromise??=(openScoreLibrary().catch(error=>{libraryPromise=null;throw error}));
   function status(message,error=false){$('library-status').textContent=message;$('library-status').classList.toggle('error',error)}
   function controls(){for(const button of dialog.querySelectorAll('[data-library-action]'))button.disabled=busy;$('library-save-copy').disabled=busy||!getScore();$('library-label').disabled=busy;dialog.setAttribute('aria-busy',String(busy))}
+  function scoreChanged(){
+    const current=getScore();if(current===displayedScore)return;displayedScore=current;
+    $('library-current-title').textContent=current?.title||'No score is open';$('library-label').value='';controls();
+    if(dialog.open)status(busy?'Current score changed. A save already in progress keeps its earlier snapshot; review the displayed score before another save.':'Current score changed. Review the displayed title and add a new label before saving.');
+  }
   function hideDelete(restoreFocus=false){const previous=pendingDelete;pendingDelete=null;$('library-delete-confirm').hidden=true;if(restoreFocus){const row=[...$('library-list').children].find(item=>item.dataset.libraryKey===previous?.key);(row?.querySelector('[data-library-delete]')||$('library-refresh')).focus()}}
   function close(){view++;controller?.abort();hideDelete();dialog.close()}
   $('library-close').addEventListener('click',close);
@@ -70,12 +75,14 @@ export function setupScoreLibrary({getScore, onLoad, validate, pausePlayback, no
     controls();
   }
   $('library-button').addEventListener('click',()=>{
-    pausePlayback();view++;hideDelete();$('library-current-title').textContent=getScore()?.title||'No score is open';$('library-label').value='';dialog.showModal();controls();
+    pausePlayback();view++;hideDelete();displayedScore=getScore();$('library-current-title').textContent=displayedScore?.title||'No score is open';$('library-label').value='';dialog.showModal();controls();
     if(!busy)run('Reading your saved copies…',async()=>{await refresh();status('Ready. Only the copies listed here are saved in this browser.')});
   });
   $('library-refresh').addEventListener('click',()=>run('Refreshing saved copies…',async()=>{hideDelete();await refresh();status('List refreshed. Each operation checks for changes made in other tabs.')}));
   $('library-save-copy').addEventListener('click',()=>{
-    const current=getScore();if(!current)return;const score=structuredClone(current),label=$('library-label').value.trim()||null;
+    const current=getScore();if(!current)return;
+    if(current!==displayedScore){scoreChanged();status('The current score changed before saving. Review the displayed title, then choose Save new copy again.');return}
+    const score=structuredClone(current),label=$('library-label').value.trim()||null;
     run('Saving a complete score copy…',async signal=>{
       const library=await getLibrary();signal.throwIfAborted();const saved=await library.save(score,{label});
       const message=`Saved “${saved.label||saved.title}” in this browser. Export a backup to keep a durable copy.`;
@@ -106,5 +113,5 @@ export function setupScoreLibrary({getScore, onLoad, validate, pausePlayback, no
       if(dialog.open){await refresh();status(message)}else notice(message);
     });
   });
-  return{close};
+  return{close,scoreChanged};
 }

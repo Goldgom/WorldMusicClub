@@ -115,7 +115,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
     clearNotice();
     resetPlayback();
-    renderScore(); renderCatalog(); updateRangeWarning(); checkInstrument();
+    renderScore(); libraryView.scoreChanged(); renderCatalog(); updateRangeWarning(); checkInstrument();
     return true;
   } catch (error) {
     if (error.name === 'AbortError') return;
@@ -664,7 +664,7 @@ async function loadSavedScore(score, signal) {
   try{return await compileScore(score,false,intent)}
   finally{signal.removeEventListener('abort',cancel)}
 }
-setupScoreLibrary({getScore:()=>state.score,onLoad:loadSavedScore,validate:(score,signal)=>api('/api/compile',score,signal),pausePlayback,notice});
+const libraryView = setupScoreLibrary({getScore:()=>state.score,onLoad:loadSavedScore,validate:(score,signal)=>api('/api/compile',score,signal),pausePlayback,notice});
 const engravedView = setupEngravedView({getScore:()=>state.score,getPracticePart:()=>state.practicePart,pausePlayback,notice,onVisibility:active=>{
   state.engravingActive=active;$('engraving-view').hidden=!active;$('notation-controls').hidden=active;$('notation').hidden=active;$('basic-notation-note').hidden=active;
   if(active){$('score-key').textContent='Generated MusicXML · static staff preview';for(const id of ['staff-button','jianpu-button']){$(id).classList.remove('selected');$(id).setAttribute('aria-pressed','false')}$('engraved-button').classList.add('selected');$('engraved-button').setAttribute('aria-pressed','true')}
