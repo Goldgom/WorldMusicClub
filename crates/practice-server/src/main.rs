@@ -5,6 +5,17 @@ use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 include!(concat!(env!("OUT_DIR"), "/web_assets.rs"));
 const MAX_BODY: usize = 8 * 1024 * 1024;
 #[derive(Deserialize)]
+struct WindowRequest {
+    score: score_core::Score,
+    from: score_core::Beat,
+    to: score_core::Beat,
+}
+#[derive(Deserialize)]
+struct InstrumentRequest {
+    timeline: score_core::Timeline,
+    profile: score_core::instruments::InstrumentProfile,
+}
+#[derive(Deserialize)]
 struct AssessRequest {
     timeline: score_core::Timeline,
     inputs: Vec<score_core::InputEvent>,
@@ -150,6 +161,14 @@ fn route(mut request: Request, authority: &str) {
                 .map_err(|e| format!("Invalid score JSON: {e}"))
                 .and_then(score_core::compile)
                 .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
+            "/api/practice-window" => serde_json::from_slice::<WindowRequest>(&bytes)
+                .map_err(|e| format!("Invalid loop request: {e}"))
+                .and_then(|r| score_core::practice::practice_window(&r.score, r.from, r.to))
+                .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
+            "/api/instrument-check" => serde_json::from_slice::<InstrumentRequest>(&bytes)
+                .map_err(|e| format!("Invalid instrument request: {e}"))
+                .and_then(|r| score_core::instruments::analyze_instrument(&r.timeline, &r.profile))
+                .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
             "/api/import/mxl" => score_core::import_mxl(&bytes)
                 .and_then(|(score, warnings)| {
                     score_core::compile(score).map(|mut c| {

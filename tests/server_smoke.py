@@ -22,6 +22,12 @@ try:
     catalog=json.loads(body);assert len(catalog)>=3
     status,body,_=request('/api/compile',json.dumps(catalog[0]).encode(),{'Content-Type':'application/json'});assert status==200
     compilation=json.loads(body);assert len(compilation['timeline']['notes'])==15
+    instrument={'timeline':compilation['timeline'],'profile':{'kind':'piano','key_count':61,'lowest_midi':None}}
+    status,body,_=request('/api/instrument-check',json.dumps(instrument).encode(),{'Content-Type':'application/json'})
+    assert status==200 and json.loads(body)['highest_midi']==96
+    window={'score':catalog[0],'from':{'numerator':1,'denominator':1},'to':{'numerator':4,'denominator':1}}
+    status,body,_=request('/api/practice-window',json.dumps(window).encode(),{'Content-Type':'application/json'})
+    assert status==200 and len(json.loads(body)['target_note_ids'])==3
     performance={'timeline':compilation['timeline'],'inputs':[],'tolerance_ms':150}
     status,body,_=request('/api/assess',json.dumps(performance).encode(),{'Content-Type':'application/json'});assert status==200 and len(json.loads(body)['misses'])==15
     assert request('/api/compile',b'{',{'Content-Type':'application/json'})[0]==400

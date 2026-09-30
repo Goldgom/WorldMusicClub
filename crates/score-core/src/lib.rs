@@ -3,7 +3,9 @@
 mod musicxml;
 mod mxl;
 pub use mxl::import_mxl;
+pub mod instruments;
 pub mod omr;
+pub mod practice;
 pub use musicxml::import_musicxml;
 
 use serde::{Deserialize, Serialize};

@@ -33,3 +33,9 @@ Limits: 8 MiB compressed image, 16 million pixels, 16,384 pixels per axis, 512 c
 ## Compressed MusicXML
 
 `POST /api/import/mxl` accepts raw MXL bytes as `application/zip`, `application/vnd.recordare.musicxml` or `application/octet-stream`. It reads the declared container rootfile in memory and then uses the same guarded MusicXML parser. Limits are 8 MiB compressed, 16 MiB declared total decompression, 128 archive entries and 64 KiB container XML. Unsafe paths, duplicate entries, symlinks, encryption, ZIP64 and split archives are rejected. The exact selected XML is retained; ancillary archive bytes are explicitly not retained.
+
+## Instrument compatibility and loops
+
+`POST /api/instrument-check`: `{timeline, profile}`. Piano profile: `{kind:"piano",key_count:61,lowest_midi:null}`; custom key count12–128 can specify a starting MIDI pitch. Guitar profile: `{kind:"guitar",tuning:[64,59,55,50,45,40],frets:12,capo:0}`. Returns low/high bounds, each target's playable status and fret candidates, plus range/string-conflict diagnostics. It never transposes/removes source notes. Fret numbers are relative to the capo; positions are advisory, not validated ergonomic fingerings.
+
+`POST /api/practice-window`: `{score,from:Beat,to:Beat}`. Returns `start_ms`, `end_ms`, `target_note_ids`, `crossing_notes`, and diagnostics. Rust integrates tempo changes and selects onset targets in the half-open A/B range. Sustains crossing boundaries are explicitly flagged. Repeated-score written-beat windows are rejected until repeat-pass selection can make the range unambiguous.
