@@ -9,6 +9,7 @@ pub mod feedback;
 pub mod instruments;
 pub mod omr;
 pub mod practice;
+mod public_domain;
 pub use musicxml::import_musicxml;
 
 use serde::{Deserialize, Serialize};
@@ -809,7 +810,9 @@ pub fn catalog() -> Vec<Score> {
         tie_start: false,
         tie_stop: false,
     });
-    vec![scale, duet, rhythm]
+    let mut scores = vec![scale, duet, rhythm];
+    scores.extend(public_domain::catalog());
+    scores
 }
 
 #[cfg(test)]
