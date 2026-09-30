@@ -120,7 +120,12 @@ fn route(mut request: Request, authority: &str) {
             .find(|h| h.field.equiv("Content-Type"))
             .map(|h| h.value.as_str())
             .unwrap_or("");
-        if !content_type.starts_with("application/json")
+        if !(path == "/api/import/image"
+            && matches!(
+                content_type,
+                "image/png" | "image/jpeg" | "application/octet-stream"
+            ))
+            && !content_type.starts_with("application/json")
             && !(path == "/api/import/musicxml"
                 && (content_type.starts_with("application/xml")
                     || content_type.starts_with("text/xml")))
@@ -137,6 +142,20 @@ fn route(mut request: Request, authority: &str) {
             "/api/compile" => serde_json::from_slice(&bytes)
                 .map_err(|e| format!("Invalid score JSON: {e}"))
                 .and_then(score_core::compile)
+                .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
+            "/api/import/image" => score_core::omr::analyze_image(&bytes)
+                .and_then(|review| serde_json::to_value(review).map_err(|e| e.to_string())),
+            "/api/import/musicxml" => String::from_utf8(bytes)
+                .map_err(|_| {
+                    "MusicXML must be UTF-8; convert the source encoding first".to_string()
+                })
+                .and_then(|xml| score_core::import_musicxml(&xml))
+                .and_then(|(score, warnings)| {
+                    score_core::compile(score).map(|mut c| {
+                        c.diagnostics.extend(warnings);
+                        c
+                    })
+                })
                 .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
             "/api/assess" => serde_json::from_slice::<AssessRequest>(&bytes)
                 .map_err(|e| format!("Invalid performance JSON: {e}"))

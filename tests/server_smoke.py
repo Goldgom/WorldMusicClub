@@ -30,6 +30,19 @@ try:
     assert request('/api/catalog',headers={'Origin':'https://attacker.example'})[0]==403
     assert request('/../../Cargo.toml')[0]==404
     assert request('/unknown')[0]==404
+    xml=Path('tests/fixtures/original-duet.musicxml').read_bytes()
+    status,body,_=request('/api/import/musicxml',xml,{'Content-Type':'application/xml'})
+    assert status==200,body
+    parsed=json.loads(body);assert parsed['score']['source']['content'].encode()==xml
+    assert len(parsed['timeline']['notes'])>0
+    status,body,_=request('/api/import/musicxml',b'<!DOCTYPE score [<!ENTITY x SYSTEM "file:///etc/passwd">]><score-partwise/>',{'Content-Type':'application/xml'})
+    assert status==400
+    png=Path('tests/fixtures/omr-original-scale.png').read_bytes()
+    status,body,_=request('/api/import/image',png,{'Content-Type':'image/png'})
+    assert status==200,body
+    review=json.loads(body);assert review['requires_review'] and len(review['candidates'])==8
+    assert all(c['duration']=='unknown' for c in review['candidates'])
+    assert request('/api/import/image',b'not an image',{'Content-Type':'image/png'})[0]==400
     print('Rust server integration checks passed: health, catalog, compile, scoring, invalid input, Host/Origin defenses, path containment')
 finally:
     process.terminate()

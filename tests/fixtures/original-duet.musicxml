@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Original test material, authored for this project. -->
+<score-partwise version="4.0">
+  <work><work-title>Small Exact Duet</work-title></work>
+  <identification><creator type="composer">WorldMusicHub test authors</creator></identification>
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name><score-instrument id="I1"><instrument-name>Piano</instrument-name></score-instrument></score-part>
+    <score-part id="P2"><part-name>Guitar</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="0" implicit="yes">
+      <attributes><divisions>3</divisions><key><fifths>1</fifths><mode>major</mode></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves></attributes>
+      <direction><sound tempo="120"/></direction>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>3</duration><voice>1</voice><staff>1</staff></note>
+    </measure>
+    <measure number="1">
+      <note><pitch><step>C</step><alter>1</alter><octave>4</octave></pitch><duration>6</duration><voice>1</voice><staff>1</staff></note>
+      <note><chord/><pitch><step>E</step><alter>-1</alter><octave>4</octave></pitch><duration>6</duration><voice>1</voice><staff>1</staff></note>
+      <direction><offset sound="yes">-3</offset><sound tempo="60"/></direction>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>6</duration><voice>1</voice><staff>1</staff></note>
+      <backup><duration>12</duration></backup>
+      <note><rest/><duration>3</duration><voice>2</voice><staff>2</staff></note>
+      <forward><duration>3</duration><voice>2</voice><staff>2</staff></forward>
+      <note><pitch><step>A</step><octave>2</octave></pitch><duration>6</duration><voice>2</voice><staff>2</staff></note>
+    </measure>
+    <measure number="2">
+      <attributes><time><beats>3</beats><beat-type>4</beat-type></time><key><fifths>-2</fifths><mode>minor</mode></key></attributes>
+      <sound tempo="90"/>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>3</duration><tie type="start"/><voice>1</voice></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>6</duration><tie type="stop"/><voice>1</voice></note>
+    </measure>
+  </part>
+  <part id="P2">
+    <measure number="0" implicit="yes">
+      <attributes><divisions>2</divisions><key><fifths>1</fifths><mode>major</mode></key><time><beats>4</beats><beat-type>4</beat-type></time></attributes>
+      <note><rest/><duration>2</duration></note>
+    </measure>
+    <measure number="1"><note><pitch><step>C</step><octave>3</octave></pitch><duration>8</duration></note></measure>
+    <measure number="2">
+      <attributes><time><beats>3</beats><beat-type>4</beat-type></time><key><fifths>-2</fifths><mode>minor</mode></key></attributes>
+      <note><rest/><duration>6</duration></note>
+    </measure>
+  </part>
+</score-partwise>

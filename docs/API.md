@@ -19,3 +19,13 @@ All routes are same-origin loopback. JSON responses; errors use `{ "error": "mes
 The UI may derive note geometry and sounds, but canonical timing and performance matching come from Rust. Controls may scale the already-compiled time for practice playback. Submit scaled performance input times transformed back to the timeline clock for assessment (tolerance likewise scaled), or recompile a score with tempo changes.
 
 Simple disjoint repeats expand into unique occurrence ids mapping to source_note_id. Nested repeats and note sustains crossing jump boundaries are rejected explicitly instead of silently playing incorrectly.
+
+## Local image review
+
+`POST /api/import/image` accepts raw PNG/JPEG (`image/png`, `image/jpeg`, or `application/octet-stream`). It returns `OmrReview` with image dimensions, staff geometry, candidate bounding boxes and tentative natural treble pitches. `requires_review` is always true; candidate `duration` and `accidental` are literally `unknown`. Confidence is an uncalibrated geometric score, not probability of musical accuracy. No playable Score is returned.
+
+Limits: 8 MiB compressed image, 16 million pixels, 16,384 pixels per axis, 512 candidates. Supported initial input is a clean upright crop with one horizontal five-line staff and distinct filled noteheads. Other material returns explicit unsupported/review warnings or an error. The UI limits images to 5 MiB when embedding the original into exported score provenance, leaving room under the 8 MiB JSON-request cap.
+
+## MusicXML
+
+`POST /api/import/musicxml` accepts UTF-8 raw `application/xml` or `text/xml`; output matches `/api/compile` plus importer diagnostics. Limited score-partwise input preserves original XML and basic exact note/rhythm structure. Unsupported sound-affecting features are rejected rather than guessed. Visual/expressive source details outside the canonical model are retained in source content with explicit warnings. DTD and external entities are rejected.
