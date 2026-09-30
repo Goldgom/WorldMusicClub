@@ -47,3 +47,7 @@ Limits: 8 MiB compressed image, 16 million pixels, 16,384 pixels per axis, 512 c
 ## Explainable performance feedback
 
 Assessment responses include `summary`: expected/matched counts, onset coverage, signed timing bias, timing standard deviation, early/late counts and diagnostic advice. Empty-target selections have zero coverage with a warning; small samples are labeled. A consistent timing offset includes a device-latency calibration caution rather than assigning it to playing skill. Accuracy, hits, misses, extras and mean absolute error remain available.
+
+## Numbered-notation text
+
+`POST /api/import/jianpu` accepts UTF-8 `text/plain` in the explicit WorldMusicHub v1 dialect, up to1MiB. It returns the compiled score and source/default diagnostics. This is not a claim to parse every jianpu typography convention. See [Jianpu text grammar](JIANPU_TEXT.md) for tonic/mode/tempo/meter headers, exact fractional durations, octave marks, rests, sustains and checked barlines. Unsupported lyrics/chords/polyphony and invalid notation are rejected explicitly. Original text is retained verbatim.

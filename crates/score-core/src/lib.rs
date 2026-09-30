@@ -1,6 +1,8 @@
 //! WorldMusicHub's canonical musical model and deterministic performance engine.
 //! Musical time is rational quarter-note time; wall-clock time is derived only at playback boundaries.
+mod jianpu;
 mod midi;
+pub use jianpu::import_jianpu;
 mod musicxml;
 pub use midi::import_midi;
 mod mxl;

@@ -48,6 +48,12 @@ try:
     assert status==200,body
     assert json.loads(body)['score']['source']['content'].encode()==xml
     assert request('/api/import/mxl',b'not a zip',{'Content-Type':'application/zip'})[0]==400
+    jianpu=Path('tests/fixtures/jianpu-original-steps.jianpu').read_bytes()
+    status,body,_=request('/api/import/jianpu',jianpu,{'Content-Type':'text/plain; charset=utf-8'})
+    assert status==200,body
+    jianpu_result=json.loads(body);assert jianpu_result['score']['source']['content'].encode()==jianpu
+    assert abs(jianpu_result['timeline']['duration_ms']-7500)<.001
+    assert request('/api/import/jianpu',b'8 9 bad',{'Content-Type':'text/plain'})[0]==400
     midi=Path('tests/fixtures/midi-original-ppq.mid').read_bytes()
     status,body,_=request('/api/import/midi',midi,{'Content-Type':'audio/midi'})
     assert status==200,body

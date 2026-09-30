@@ -131,11 +131,12 @@ fn route(mut request: Request, authority: &str) {
             .find(|h| h.field.equiv("Content-Type"))
             .map(|h| h.value.as_str())
             .unwrap_or("");
-        if !(path == "/api/import/midi"
-            && matches!(
-                content_type,
-                "audio/midi" | "audio/x-midi" | "application/octet-stream"
-            ))
+        if !(path == "/api/import/jianpu" && content_type.starts_with("text/plain"))
+            && !(path == "/api/import/midi"
+                && matches!(
+                    content_type,
+                    "audio/midi" | "audio/x-midi" | "application/octet-stream"
+                ))
             && !(path == "/api/import/mxl"
                 && matches!(
                     content_type,
@@ -174,6 +175,16 @@ fn route(mut request: Request, authority: &str) {
                 .map_err(|e| format!("Invalid instrument request: {e}"))
                 .and_then(|r| score_core::instruments::analyze_instrument(&r.timeline, &r.profile))
                 .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
+            "/api/import/jianpu" => String::from_utf8(bytes)
+                .map_err(|_| "Jianpu text must be UTF-8".to_string())
+                .and_then(|text| score_core::import_jianpu(&text))
+                .and_then(|(score, warnings)| {
+                    score_core::compile(score).map(|mut c| {
+                        c.diagnostics.extend(warnings);
+                        c
+                    })
+                })
+                .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
             "/api/import/midi" => score_core::import_midi(&bytes)
                 .and_then(|(score, warnings)| {
                     score_core::compile(score).map(|mut c| {
