@@ -64,15 +64,17 @@ export function escapeXml(value) {
 }
 /** A deliberately basic fixed-C pitch view. Unsupported engraving is disclosed in the UI. */
 export function scoreEndBeat(score) { return score.parts.reduce((end, part) => part.notes.reduce((value, note) => Math.max(value, beat(note.at) + beat(note.duration)), end), 4); }
+export function notationLayout(availableWidth) { const width=Math.max(240,Math.floor(availableWidth)); return {width,spanBeats:width>=960?16:width>=540?8:4}; }
 export function notationPageCount(score, spanBeats = 16) { return Math.max(1, Math.ceil(scoreEndBeat(score) / spanBeats)); }
 export function renderNotation(score, mode = 'staff', options = {}) {
   const parts = options.partId ? score.parts.filter(part => part.id === options.partId) : score.parts.slice(0, 1);
   const startBeat = Math.max(0, options.startBeat || 0);
   const spanBeats = Math.min(32, Math.max(4, options.spanBeats || 16));
   const endBeat = startBeat + spanBeats;
-  const width = Math.max(720, 90 + spanBeats * 72);
+  const width = Math.max(240, options.width || Math.max(720, 90 + spanBeats * 72));
+  const spacing = (width - 96) / spanBeats;
   const height = mode === 'staff' ? Math.max(170, parts.length * 140 + 30) : Math.max(125, parts.length * 105 + 30);
-  const x = t => 72 + (t - startBeat) * 72;
+  const x = t => 72 + (t - startBeat) * spacing;
   const shapes = [];
   parts.forEach((part, index) => {
     const top = 38 + index * (mode === 'staff' ? 140 : 105);

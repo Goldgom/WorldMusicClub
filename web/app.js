@@ -4,7 +4,7 @@ import {compensateInput, validLatency, loadLatency, saveLatency, parseBeatInput,
 import {setupMidi} from './midi.js';
 import {setupImageReview} from './image-review.js';
 import {setupThemes} from './themes.js';
-import {PIANO_RANGES, SHORTCUTS, beat, midiName, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, renderNotation, notationPageCount, keyAt, keyTonic} from './music.js';
+import {PIANO_RANGES, SHORTCUTS, beat, midiName, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, renderNotation, notationPageCount, notationLayout, keyAt, keyTonic} from './music.js';
 import {Transport, Synth, TimelineIndex} from './transport.js';
 import {formatTime} from './music.js';
 
@@ -12,7 +12,7 @@ const $ = id => document.getElementById(id);
 setupThemes();
 const transport = new Transport();
 const synth = new Synth();
-const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, notationPage: 0, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
+const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
 function notice(message, error = false) {
   $('notice').textContent = message;
@@ -168,10 +168,13 @@ function updateLoopStatus() {
 }
 function renderNotationPage() {
   if (!state.score) return;
-  const count = notationPageCount(state.score);
+  const layout = notationLayout(Math.max(240, $('notation').clientWidth - 36));
+  const previousBeat = state.notationPage * state.notationSpan;
+  if (layout.spanBeats !== state.notationSpan) { state.notationSpan = layout.spanBeats; state.notationPage = Math.floor(previousBeat / state.notationSpan); }
+  const count = notationPageCount(state.score, state.notationSpan);
   state.notationPage = Math.max(0, Math.min(count - 1, state.notationPage));
-  $('notation').innerHTML = renderNotation(state.score, state.notation, {startBeat: state.notationPage * 16, spanBeats: 16, partId: state.notationPart, numberedMode: state.numberedMode});
-  const tonic = keyTonic(keyAt(state.score, state.notationPage * 16));
+  $('notation').innerHTML = renderNotation(state.score, state.notation, {startBeat: state.notationPage * state.notationSpan, spanBeats: state.notationSpan, width: layout.width, partId: state.notationPart, numberedMode: state.numberedMode});
+  const tonic = keyTonic(keyAt(state.score, state.notationPage * state.notationSpan));
   $('score-key').textContent = state.notation === 'jianpu' && state.numberedMode === 'movable' ? (tonic ? `1 = ${tonic.name}${tonic.octave} · tonic-based numbering (minor too)` : 'Unknown key mode: fixed C display') : `${state.score.meters[0]?.numerator || 4}/${state.score.meters[0]?.denominator || 4} time · 1 = C4 display`;
   $('notation-page').textContent = `Page ${state.notationPage + 1} / ${count}`;
   $('notation-prev').disabled = state.notationPage <= 0;
@@ -192,9 +195,9 @@ function renderKeyboard() {
     button.type = 'button'; button.className = `piano-key${key.black ? ' black' : ''}`;
     button.style.left = `${key.x * 100}%`; button.style.width = `${key.width * 100}%`;
     button.dataset.midi = String(key.midi);
-    button.setAttribute('aria-label', `Play ${midiName(key.midi)}`);
+    button.setAttribute('aria-label', `Play ${midiName(key.midi)}`); button.title = midiName(key.midi);
     button.setAttribute('aria-pressed', 'false');
-    const name = document.createElement('span'); name.textContent = key.midi % 12 === 0 || key.black ? midiName(key.midi) : '';
+    const name = document.createElement('span'); name.textContent = key.midi % 12 === 0 ? midiName(key.midi) : '';
     const shortcut = document.createElement('span'); shortcut.className = 'key-shortcut';
     const matched = Object.entries(SHORTCUTS).find(([, offset]) => (state.octave + 1) * 12 + offset === key.midi);
     shortcut.textContent = matched ? matched[0].toUpperCase() : '';
@@ -207,6 +210,7 @@ function renderKeyboard() {
 function renderFretboard() {
   const board = $('fretboard'); board.replaceChildren();
   const {tuning, frets, capo} = state.guitar; const last = frets - capo;
+  board.setAttribute('aria-label', `Guitar fretboard: tuning ${tuning.map(midiName).join(', ')}, capo ${capo}`);
   board.style.gridTemplateColumns = `35px repeat(${last + 1}, 1fr)`;
   board.style.gridTemplateRows = `22px repeat(${tuning.length}, 34px)`;
   board.style.minWidth = `${Math.max(600, 35 + (last + 1) * 54)}px`;
@@ -356,7 +360,7 @@ function drawFrame() {
   if (transport.running && active.length) {
     const first = active.find(note => note.part_id === state.notationPart);
     const source = first && state.sourceNotes.get(`${first.part_id}:${first.source_note_id || first.id}`);
-    const page = source ? Math.floor(beat(source.note.at) / 16) : state.notationPage;
+    const page = source ? Math.floor(beat(source.note.at) / state.notationSpan) : state.notationPage;
     if (page !== state.notationPage) { state.notationPage = page; renderNotationPage(); }
   }
   const signature = active.map(n => n.id).join('|');
@@ -388,7 +392,7 @@ function drawFrame() {
     const x = key.x * width + 2; const y = bottom - noteHeight;
     ctx.fillStyle = note.start_ms <= position ? '#dfb45e' : key.black ? '#76975e' : '#a6c887';
     ctx.beginPath(); ctx.roundRect(x, y, Math.max(2, key.width * width - 4), noteHeight, 4); ctx.fill();
-    if (noteHeight > 23 && key.width * width > 18) { ctx.fillStyle = '#29422a'; ctx.font = '8px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(midiName(note.midi), x + (key.width * width - 4) / 2, Math.max(y + 14, 12)); }
+    if (noteHeight > 23 && key.width * width > 27) { ctx.fillStyle = '#29422a'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(midiName(note.midi), x + (key.width * width - 4) / 2, Math.max(y + 14, 12)); }
   }
   if (reducedMotion && timeline) { ctx.fillStyle = '#b2c2a6'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Reduced motion · Active notes only', width / 2, 30); }
   if (!timeline) { ctx.fillStyle = '#a9bba2'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Choose an exercise to begin · 选择练习曲', width / 2, height / 2); }
@@ -479,7 +483,8 @@ document.addEventListener('keyup', event => { releaseNote(`key:${event.code}`); 
 window.addEventListener('blur', () => pausePlayback('Paused when focus moved · 已暂停'));
 document.addEventListener('visibilitychange', () => { if (document.hidden) pausePlayback('Paused in background · 已暂停'); });
 window.addEventListener('pagehide', () => { pausePlayback(); cancelAnimationFrame(state.frame); });
-window.addEventListener('resize', drawFrame);
+let notationResizeFrame = 0;
+window.addEventListener('resize', () => { cancelAnimationFrame(notationResizeFrame); notationResizeFrame = requestAnimationFrame(() => { renderNotationPage(); drawFrame(); }); });
 window.addEventListener('pageshow', event => { if (event.persisted) { cancelAnimationFrame(state.frame); state.frame = requestAnimationFrame(animate); } });
 
 async function loadCatalog() {
