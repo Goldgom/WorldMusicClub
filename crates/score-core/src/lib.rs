@@ -350,24 +350,44 @@ pub fn validate(score: &Score) -> Result<(), String> {
     }
     Ok(())
 }
+/// Indexed piecewise-linear conversion from rational musical time to a playback clock.
+struct TempoIndex {
+    segments: Vec<(f64, f64, f64)>,
+}
+impl TempoIndex {
+    fn new(tempo: &[Tempo]) -> Self {
+        let mut segments = vec![];
+        let mut elapsed = 0.;
+        let mut previous: Option<&Tempo> = None;
+        for event in tempo {
+            if let Some(prior) = previous {
+                elapsed += (event.at.value() - prior.at.value()) * 60_000. / prior.bpm;
+            }
+            segments.push((event.at.value(), event.bpm, elapsed));
+            previous = Some(event);
+        }
+        Self { segments }
+    }
+    fn at(&self, beat: f64) -> f64 {
+        let index = self
+            .segments
+            .partition_point(|(start, _, _)| *start <= beat)
+            .saturating_sub(1);
+        self.segments
+            .get(index)
+            .map_or(0., |(start, bpm, elapsed)| {
+                elapsed + (beat - start).max(0.) * 60_000. / bpm
+            })
+    }
+}
 /// Integrate a validated tempo map, including changes inside a held note.
 pub fn beat_to_ms(beat: f64, tempo: &[Tempo]) -> f64 {
-    let mut elapsed = 0.;
-    for (i, t) in tempo.iter().enumerate() {
-        let start = t.at.value();
-        if start >= beat {
-            break;
-        }
-        let end = tempo
-            .get(i + 1)
-            .map_or(beat, |next| next.at.value().min(beat));
-        elapsed += (end - start) * 60_000. / t.bpm;
-    }
-    elapsed
+    TempoIndex::new(tempo).at(beat)
 }
 
 pub fn compile(score: Score) -> Result<Compilation, String> {
     validate(&score)?;
+    let tempo_index = TempoIndex::new(&score.tempo);
     let mut notes: Vec<TimedNote> = vec![];
     let mut diagnostics = vec![];
     let mut total: f64 = 0.;
@@ -377,8 +397,8 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
         let mut ties: HashMap<(String, u8, u8), (usize, Beat)> = HashMap::new();
         for note in sorted {
             let end = note.at.checked_add(note.duration).expect("validated");
-            let start_ms = beat_to_ms(note.at.value(), &score.tempo);
-            let end_ms = beat_to_ms(end.value(), &score.tempo);
+            let start_ms = tempo_index.at(note.at.value());
+            let end_ms = tempo_index.at(end.value());
             total = total.max(end_ms);
             let Some(midi) = note.pitch.as_ref().and_then(Pitch::midi) else {
                 continue;
@@ -428,26 +448,27 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
                 }
             }
         }
-        for (index, _) in ties.values() {
+        let mut unresolved: Vec<_> = ties.values().map(|(index, _)| *index).collect();
+        unresolved.sort_unstable();
+        for index in unresolved {
             diagnostics.push(Diagnostic::warning(
                 "unclosed_tie",
                 "Tie start has no continuation",
-                Some(notes[*index].id.clone()),
+                Some(notes[index].id.clone()),
             ));
         }
     }
     for measure in &score.measures {
-        total = total.max(beat_to_ms(
-            measure
+        total = total.max(
+            tempo_index.at(measure
                 .at
                 .checked_add(measure.length)
                 .expect("validated")
-                .value(),
-            &score.tempo,
-        ));
+                .value()),
+        );
     }
     if !score.repeats.is_empty() {
-        (notes, total) = expand_repeats(&notes, total, &score.repeats, &score.tempo)?;
+        (notes, total) = expand_repeats(&notes, total, &score.repeats, &tempo_index)?;
     }
     notes.sort_by(|a, b| {
         a.start_ms
@@ -471,24 +492,30 @@ fn expand_repeats(
     notes: &[TimedNote],
     duration_ms: f64,
     repeats: &[Repeat],
-    tempo: &[Tempo],
+    tempo: &TempoIndex,
 ) -> Result<(Vec<TimedNote>, f64), String> {
     let mut regions: Vec<_> = repeats.iter().collect();
-    regions.sort_by(|a, b| a.from.value().total_cmp(&b.from.value()));
+    regions.sort_by(|a, b| a.from.compare(b.from));
+    let mut ordered: Vec<_> = notes.iter().collect();
+    ordered.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms).then(a.id.cmp(&b.id)));
+    let mut prefix_ends = Vec::with_capacity(ordered.len());
+    let mut farthest: f64 = 0.;
+    for note in &ordered {
+        farthest = farthest.max(note.start_ms + note.duration_ms);
+        prefix_ends.push(farthest);
+    }
     let mut segments = vec![];
     let mut cursor = 0.;
     for region in regions {
-        let from = beat_to_ms(region.from.value(), tempo);
-        let to = beat_to_ms(region.to.value(), tempo);
+        let from = tempo.at(region.from.value());
+        let to = tempo.at(region.to.value());
         if from < cursor || to > duration_ms + 0.001 {
             return Err("Overlapping/nested or out-of-score repeat regions are not supported; source is retained for correction".into());
         }
-        for note in notes {
-            let end = note.start_ms + note.duration_ms;
-            if (note.start_ms < from - 0.001 && end > from + 0.001)
-                || (note.start_ms < to - 0.001 && end > to + 0.001)
-            {
-                return Err(format!("Note {} crosses a repeat boundary; explicit tie/navigation handling is required",note.id));
+        for boundary in [from, to] {
+            let index = ordered.partition_point(|note| note.start_ms < boundary - 0.001);
+            if index > 0 && prefix_ends[index - 1] > boundary + 0.001 {
+                return Err("A note crosses a repeat boundary; explicit tie/navigation handling is required".into());
             }
         }
         if from > cursor {
@@ -505,14 +532,13 @@ fn expand_repeats(
     let mut output = vec![];
     let mut offset = 0.;
     for (start, end) in segments {
-        for note in notes
-            .iter()
-            .filter(|n| n.start_ms >= start && n.start_ms < end)
-        {
+        let first = ordered.partition_point(|note| note.start_ms < start);
+        let last = ordered.partition_point(|note| note.start_ms < end);
+        for note in &ordered[first..last] {
             if output.len() >= 100_000 {
                 return Err("Expanded repeat timeline exceeds 100,000-note limit".into());
             }
-            let mut occurrence = note.clone();
+            let mut occurrence = (*note).clone();
             occurrence.id = format!("occurrence-{}", output.len());
             occurrence.start_ms = offset + note.start_ms - start;
             output.push(occurrence);
@@ -1025,5 +1051,41 @@ mod tests {
         score.parts[0].notes[2].tie_start = false;
         score.parts[0].notes[2].tie_stop = true;
         assert!(compile(score).unwrap_err().contains("Ambiguous"));
+    }
+    #[test]
+    fn many_tempo_changes_and_notes_compile_with_indexed_clock() {
+        let mut score = catalog().remove(0);
+        let template = score.parts[0].notes[0].clone();
+        score.parts[0].notes.clear();
+        score.tempo.clear();
+        score.measures.clear();
+        for i in 0..20_000 {
+            let mut n = template.clone();
+            n.id = format!("dense-{i}");
+            n.at = Beat::new(i, 1);
+            score.parts[0].notes.push(n);
+            score.tempo.push(Tempo {
+                at: Beat::new(i, 1),
+                bpm: if i % 2 == 0 { 120. } else { 60. },
+            });
+        }
+        let c = compile(score).unwrap();
+        assert_eq!(c.timeline.notes.len(), 20_000);
+        assert_eq!(c.timeline.duration_ms, 15_000_000.);
+    }
+    #[test]
+    fn unresolved_tie_diagnostics_follow_deterministic_source_order() {
+        let mut score = catalog().remove(0);
+        score.parts[0].notes.truncate(7);
+        for note in &mut score.parts[0].notes {
+            note.tie_start = true;
+        }
+        let first = serde_json::to_value(compile(score.clone()).unwrap().diagnostics).unwrap();
+        for _ in 0..10 {
+            assert_eq!(
+                serde_json::to_value(compile(score.clone()).unwrap().diagnostics).unwrap(),
+                first
+            );
+        }
     }
 }
