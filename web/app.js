@@ -1,3 +1,4 @@
+import {setupJianpuEditor} from './jianpu-editor.js';
 import {feedbackView} from './feedback-view.js';
 import {STANDARD_TUNING, guitarProfile, pianoProfile} from './instrument-profile.js';
 import {compensateInput, validLatency, loadLatency, saveLatency, parseBeatInput, practiceScope} from './practice-settings.js';
@@ -459,19 +460,23 @@ $('score-file').addEventListener('change', async event => {
   const intent = ++state.loadIntent;
   if (file.size > 8 * 1024 * 1024) { notice('This score is too large. Choose a score file smaller than 8 MiB.', true); return; }
   try {
+    const jianpuText = /\.jianpu$/i.test(file.name);
+    if (jianpuText && file.size > 1024 * 1024) throw new Error('WorldMusicHub numbered text is limited to 1 MiB.');
     const compressed = /\.mxl$/i.test(file.name);
     const midiFile = /\.(mid|midi)$/i.test(file.name);
-    const content = compressed || midiFile ? await file.arrayBuffer() : await file.text();
-    if (compressed || midiFile || /\.(musicxml|xml)$/i.test(file.name)) {
+    const xmlFile = /\.(musicxml|xml)$/i.test(file.name);
+    const content = compressed || midiFile || jianpuText || xmlFile ? await file.arrayBuffer() : await file.text();
+    if (jianpuText || compressed || midiFile || xmlFile) {
       pausePlayback();
-      const response = await fetch(midiFile ? '/api/import/midi' : compressed ? '/api/import/mxl' : '/api/import/musicxml', {method: 'POST', headers: {'Content-Type': midiFile ? 'audio/midi' : compressed ? 'application/zip' : 'application/xml'}, body: content});
+      const response = await fetch(jianpuText ? '/api/import/jianpu' : midiFile ? '/api/import/midi' : compressed ? '/api/import/mxl' : '/api/import/musicxml', {method: 'POST', headers: {'Content-Type': jianpuText ? 'text/plain' : midiFile ? 'audio/midi' : compressed ? 'application/zip' : 'application/xml'}, body: content});
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Score import failed.');
       const loaded = await compileScore(result.score, false, intent, result.diagnostics || []);
+      if (loaded && jianpuText) activateJianpuView();
       if (loaded && Array.isArray(result.diagnostics) && result.diagnostics.length) notice(result.diagnostics.map(d => d.message).join(' '));
     } else { const score = JSON.parse(content); await compileScore(score, false, intent); }
   }
-  catch (error) { if (intent !== state.loadIntent) return; notice(`Could not read “${file.name}”. Choose valid score JSON, MusicXML (.musicxml/.xml), compressed MusicXML (.mxl), or MIDI (.mid/.midi). ${error.message}`, true); }
+  catch (error) { if (intent !== state.loadIntent) return; notice(`Could not read “${file.name}”. Choose valid score JSON, MusicXML (.musicxml/.xml), compressed MusicXML (.mxl), MIDI (.mid/.midi), or WorldMusicHub numbered text (.jianpu). ${error.message}`, true); }
 });
 $('export-button').addEventListener('click', () => { if (!state.score) return; const blob = new Blob([JSON.stringify(state.score, null, 2)], {type: 'application/json'}); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `${state.score.id.replace(/[^\w.-]/g, '_')}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 connectPlayable($('keyboard')); connectPlayable($('fretboard'));
@@ -494,6 +499,23 @@ async function loadCatalog() {
   try { state.catalog = await api('/api/catalog'); if (!Array.isArray(state.catalog) || !state.catalog.length) throw new Error('No bundled exercises are available. Import a score JSON or restart the server.'); renderCatalog(); await compileScore(structuredClone(state.catalog[0]), false, intent); }
   catch (error) { $('catalog').replaceChildren(); const retry = document.createElement('button'); retry.className = 'button secondary'; retry.textContent = 'Retry exercise library'; retry.addEventListener('click', loadCatalog); $('catalog').append(retry); notice(`Could not load the exercise library. ${error.message}`, true); }
 }
+function activateJianpuView() { state.numberedMode = 'movable'; $('jianpu-reference').value = 'movable'; $('jianpu-button').click(); }
+async function importJianpuText(text, signal) {
+  const intent = ++state.loadIntent;
+  pausePlayback();
+  const cancel = () => { if (intent === state.loadIntent) { state.loadIntent++; state.compileController?.abort(); resetPlayback(); } };
+  signal.addEventListener('abort', cancel, {once:true});
+  try {
+    const response = await fetch('/api/import/jianpu', {method:'POST',headers:{'Content-Type':'text/plain'},body:text,signal});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Numbered-notation import failed.');
+    if (signal.aborted || intent !== state.loadIntent) return false;
+    const loaded = await compileScore(result.score, false, intent, result.diagnostics || []);
+    if (loaded) { activateJianpuView(); if (result.diagnostics?.length) notice(result.diagnostics.map(item => item.message).join(' ')); }
+    return loaded;
+  } finally { signal.removeEventListener('abort', cancel); }
+}
+setupJianpuEditor({onImport:importJianpuText,pausePlayback});
 setupImageReview({compileScore, pausePlayback, notice});
 setupMidi({pressNote, releaseNote, silenceHeld, notice});
 renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); loadCatalog();
