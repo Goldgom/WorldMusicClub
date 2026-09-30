@@ -1,4 +1,4 @@
-# Music Practice (working title)
+# WorldMusicHub
 
 A local-first music practice and rhythm-game project with a Rust score engine.
 
@@ -18,7 +18,7 @@ The first shell is a portable Rust local server with a browser UI. It binds only
 
 ## Distribution and rights
 
-Repository name, visibility and software license are awaiting owner decisions. No license grant is implied. Bundled practice exercises are newly authored for this project, with provenance recorded in their score metadata. Do not add unlicensed commercial arrangements. A composition, score engraving, arrangement and recording can have different rights.
+WorldMusicHub code is MIT-licensed. Score, audio and other assets retain their individually recorded rights; the code license does not relicense third-party music. Bundled practice exercises are newly authored for this project, with provenance recorded in their score metadata. Do not add unlicensed commercial arrangements. A composition, score engraving, arrangement and recording can have different rights.
 
 ## Release policy
 
