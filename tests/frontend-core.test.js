@@ -80,3 +80,7 @@ test('MIDI timestamp normalization handles epoch clocks, missing values and inva
 
 import {JIANPU_EXAMPLE} from '../web/jianpu-editor.js';
 test('numbered-text editor starts with an explicit bounded original example', () => {assert.ok(JIANPU_EXAMPLE.startsWith('format=worldmusichub-jianpu-text-v1\n'));assert.ok(JIANPU_EXAMPLE.includes('composer=WorldMusicHub original exercise'));assert.ok(JIANPU_EXAMPLE.includes('1 2 3 0 |'));assert.ok(JIANPU_EXAMPLE.includes("1' - - - |"));});
+
+import {engravingWindow, mappedPartIds} from '../web/engraved-view.js';
+test('engraved pages use one-based measure ordinals and bounded explicit windows', () => {assert.deepEqual(engravingWindow(20,9,8),{total:20,from:9,to:16});assert.deepEqual(engravingWindow(20,17,8),{total:20,from:17,to:20});assert.throws(()=>engravingWindow(20,0,8));assert.throws(()=>engravingWindow(20,21,8));assert.throws(()=>engravingWindow(200,1,65));});
+test('engraving part selections use Rust maps and never guess XML IDs', () => {assert.deepEqual(mappedPartIds({part_id_map:{'user:part':'P2'}},'user:part'),['P2']);assert.equal(mappedPartIds({part_id_map:{}},null),null);assert.throws(()=>mappedPartIds({part_id_map:{}},'P1'));assert.throws(()=>mappedPartIds({part_id_map:{}},'toString'));});

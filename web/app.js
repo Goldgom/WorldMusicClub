@@ -1,3 +1,4 @@
+import {setupEngravedView} from './engraved-view.js';
 import {setupJianpuEditor} from './jianpu-editor.js';
 import {feedbackView} from './feedback-view.js';
 import {STANDARD_TUNING, guitarProfile, pianoProfile} from './instrument-profile.js';
@@ -13,7 +14,7 @@ const $ = id => document.getElementById(id);
 setupThemes();
 const transport = new Transport();
 const synth = new Synth();
-const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
+const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
 function notice(message, error = false) {
   $('notice').textContent = message;
@@ -146,6 +147,7 @@ function renderScore() {
     const li = document.createElement('li'); li.className = diagnostic.severity; li.textContent = `${diagnostic.code}: ${diagnostic.message}`; $('diagnostic-list').append(li);
   });
   state.lastHighlight = '';
+  engravedView.updateScore();
   drawFrame();
 }
 function rebuildPracticeScope() {
@@ -360,7 +362,7 @@ function drawFrame() {
     else $('transport-status').textContent = position < segmentStart ? `Count in · ${Math.ceil((segmentStart - position) / (60000 / (Number($('tempo').value) || 100)))}` : state.mode === 'practice' ? `Your turn${state.loop ? ` · Loop ${state.loopIteration}` : ''} · 跟着弹` : `Listening${state.loop ? ` · Loop ${state.loopIteration}` : ''} · 正在聆听`;
   }
   const active = position < segmentStart ? [] : playbackIndex?.range(position) || [];
-  if (transport.running && active.length) {
+  if (!state.engravingActive && transport.running && active.length) {
     const first = active.find(note => note.part_id === state.notationPart);
     const source = first && state.sourceNotes.get(`${first.part_id}:${first.source_note_id || first.id}`);
     const page = source ? Math.floor(beat(source.note.at) / state.notationSpan) : state.notationPage;
@@ -371,7 +373,7 @@ function drawFrame() {
     document.querySelectorAll('.score-note').forEach(note => note.classList.toggle('active', active.some(n => (n.source_note_id || n.id) === note.dataset.noteId)));
     state.lastHighlight = signature;
     const focused = $('notation').querySelector('.score-note.active');
-    if (transport.running && focused) { const box = focused.getBoundingClientRect(); const view = $('notation').getBoundingClientRect(); if (box.left < view.left + 20 || box.right > view.right - 20) $('notation').scrollLeft += box.left - view.left - view.width * 0.35; }
+    if (!state.engravingActive && transport.running && focused) { const box = focused.getBoundingClientRect(); const view = $('notation').getBoundingClientRect(); if (box.left < view.left + 20 || box.right > view.right - 20) $('notation').scrollLeft += box.left - view.left - view.width * 0.35; }
   }
   highlightKeys(active);
   $('progress').max = Math.max(1, duration); $('progress').value = Math.min(duration, Math.max(0, position));
@@ -434,7 +436,7 @@ $('latency-offset').addEventListener('change', () => {
   if (!validLatency(value)) { $('latency-offset').value = String(state.latency); notice('Latency offset must be a whole number from −500 to 500 ms.', true); return; }
   state.latency = Number(value); saveLatency(state.latency); resetPlayback();
 });
-$('practice-part').addEventListener('change', () => { state.practicePart = $('practice-part').value || null; rebuildPracticeScope(); resetPlayback(); if (state.practicePart !== null) { state.notationPart = state.practicePart; $('notation-part').value = state.practicePart; renderNotationPage(); } updateRangeWarning(); checkInstrument(); });
+$('practice-part').addEventListener('change', () => { state.practicePart = $('practice-part').value || null; rebuildPracticeScope(); resetPlayback(); if (state.practicePart !== null) { state.notationPart = state.practicePart; $('notation-part').value = state.practicePart; renderNotationPage(); } engravedView.selectPart(state.practicePart); updateRangeWarning(); checkInstrument(); });
 $('jianpu-reference').addEventListener('change', () => { state.numberedMode = $('jianpu-reference').value; renderNotationPage(); });
 $('notation-part').addEventListener('change', () => { state.notationPart = $('notation-part').value; renderNotationPage(); });
 $('notation-prev').addEventListener('click', () => { state.notationPage--; renderNotationPage(); });
@@ -451,7 +453,8 @@ $('tempo').addEventListener('change', () => {
   if (!Number.isFinite(bpm) || bpm < 10 || bpm > 600) { notice('Choose a tempo from 10 to 600 BPM.', true); $('tempo').value = String(state.score?.tempo[0]?.bpm || 100); return; }
   if (state.score) compileScore(transposeTempo(state.score, bpm), true);
 });
-for (const mode of ['staff', 'jianpu']) $(mode + '-button').addEventListener('click', () => { state.notation = mode; $('jianpu-reference-label').hidden = mode !== 'jianpu'; ['staff', 'jianpu'].forEach(m => { $(m + '-button').classList.toggle('selected', m === mode); $(m + '-button').setAttribute('aria-pressed', String(m === mode)); }); renderScore(); });
+for (const mode of ['staff', 'jianpu']) $(mode + '-button').addEventListener('click', () => { engravedView.hide(); state.notation = mode; $('engraved-button').setAttribute('aria-pressed','false'); $('engraved-button').classList.remove('selected'); $('jianpu-reference-label').hidden = mode !== 'jianpu'; ['staff', 'jianpu'].forEach(m => { $(m + '-button').classList.toggle('selected', m === mode); $(m + '-button').setAttribute('aria-pressed', String(m === mode)); }); renderScore(); });
+$('engraved-button').addEventListener('click', () => engravedView.show());
 $('sound-button').addEventListener('click', () => { synth.muted = !synth.muted; if (synth.muted) synth.silence(); $('sound-button').textContent = synth.muted ? 'Sound off ♫' : 'Sound on ♫'; $('sound-button').setAttribute('aria-pressed', String(synth.muted)); });
 $('import-button').addEventListener('click', () => $('score-file').click());
 $('mobile-import-button').addEventListener('click', () => $('score-file').click());
@@ -515,6 +518,10 @@ async function importJianpuText(text, signal) {
     return loaded;
   } finally { signal.removeEventListener('abort', cancel); }
 }
+const engravedView = setupEngravedView({getScore:()=>state.score,getPracticePart:()=>state.practicePart,pausePlayback,notice,onVisibility:active=>{
+  state.engravingActive=active;$('engraving-view').hidden=!active;$('notation-controls').hidden=active;$('notation').hidden=active;$('basic-notation-note').hidden=active;
+  if(active){$('score-key').textContent='Generated MusicXML · static staff preview';for(const id of ['staff-button','jianpu-button']){$(id).classList.remove('selected');$(id).setAttribute('aria-pressed','false')}$('engraved-button').classList.add('selected');$('engraved-button').setAttribute('aria-pressed','true')}
+},onFallback:message=>{$('staff-button').click();notice(message,true)}});
 setupJianpuEditor({onImport:importJianpuText,pausePlayback});
 setupImageReview({compileScore, pausePlayback, notice});
 setupMidi({pressNote, releaseNote, silenceHeld, notice});
