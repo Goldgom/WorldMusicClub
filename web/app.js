@@ -1,15 +1,15 @@
 import {setupMidi} from './midi.js';
 import {setupImageReview} from './image-review.js';
 import {setupThemes} from './themes.js';
-import {PIANO_RANGES, SHORTCUTS, beat, midiName, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, renderNotation} from './music.js';
-import {Transport, Synth} from './transport.js';
+import {PIANO_RANGES, SHORTCUTS, beat, midiName, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, renderNotation, notationPageCount} from './music.js';
+import {Transport, Synth, TimelineIndex} from './transport.js';
 import {formatTime} from './music.js';
 
 const $ = id => document.getElementById(id);
 setupThemes();
 const transport = new Transport();
 const synth = new Synth();
-const state = {catalog: [], score: null, compiled: null, mode: 'listen', instrument: 'piano', notation: 'staff', keys: 61, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null};
+const state = {catalog: [], score: null, compiled: null, mode: 'listen', instrument: 'piano', notation: 'staff', notationPage: 0, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null};
 
 function notice(message, error = false) {
   $('notice').textContent = message;
@@ -56,7 +56,9 @@ function resetPlayback() {
   $('feedback-description').textContent = state.mode === 'practice' ? 'Play along using the on-screen keys or your computer keyboard. Your note-on timing is measured locally.' : 'Switch to Practice mode, play along, then see your timing and pitch feedback.';
   updateButtons(); drawFrame();
 }
-async function compileScore(score, preserveTempo = false) {
+async function compileScore(score, preserveTempo = false, expectedIntent = null) {
+  if (expectedIntent !== null && expectedIntent !== state.loadIntent) return false;
+  if (expectedIntent === null) state.loadIntent++;
   if (new TextEncoder().encode(JSON.stringify(score)).byteLength > 8 * 1024 * 1024) { notice('This score exceeds 8 MiB. Reduce its source image or split it into smaller fragments.', true); return false; }
   pausePlayback();
   state.compileController?.abort();
@@ -70,6 +72,9 @@ async function compileScore(score, preserveTempo = false) {
     if (generation !== state.generation || controller.signal.aborted) return;
     state.score = compiled.score;
     state.compiled = {...compiled, timeline: {...compiled.timeline, notes: [...compiled.timeline.notes].sort((a, b) => a.start_ms - b.start_ms || a.midi - b.midi)}};
+    state.timelineIndex = new TimelineIndex(state.compiled.timeline.notes);
+    state.sourceNotes = new Map(state.score.parts.flatMap(part => part.notes.map(note => [`${part.id}:${note.id}`, {note, partId: part.id}])));
+    state.notationPage = 0; state.notationPart = state.score.parts[0].id;
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
     clearNotice();
     resetPlayback();
@@ -108,7 +113,10 @@ function renderScore() {
   $('score-title').textContent = score.title;
   $('score-meta').textContent = `${score.composer || 'Original exercise'} · ${summary.count} notes · ${summary.measures} measures · ${summary.parts} part${summary.parts === 1 ? '' : 's'}`;
   $('score-key').textContent = `${score.meters[0]?.numerator || 4}/${score.meters[0]?.denominator || 4} time · 1 = C display`;
-  $('notation').innerHTML = renderNotation(score, state.notation);
+  $('notation-part').replaceChildren();
+  for (const part of score.parts) { const option = document.createElement('option'); option.value = part.id; option.textContent = part.name; $('notation-part').append(option); }
+  $('notation-part').value = state.notationPart;
+  renderNotationPage();
   $('provenance').textContent = `Source: ${score.provenance.kind}. ${score.provenance.attribution || ''}${score.provenance.license ? ` License: ${score.provenance.license}.` : ' Rights information stays with this score; no external reuse permission is implied.'}`;
   $('diagnostic-count').textContent = state.compiled.diagnostics.length ? `(${state.compiled.diagnostics.length})` : '';
   $('diagnostic-list').replaceChildren();
@@ -117,6 +125,16 @@ function renderScore() {
   });
   state.lastHighlight = '';
   drawFrame();
+}
+function renderNotationPage() {
+  if (!state.score) return;
+  const count = notationPageCount(state.score);
+  state.notationPage = Math.max(0, Math.min(count - 1, state.notationPage));
+  $('notation').innerHTML = renderNotation(state.score, state.notation, {startBeat: state.notationPage * 16, spanBeats: 16, partId: state.notationPart});
+  $('notation-page').textContent = `Page ${state.notationPage + 1} / ${count}`;
+  $('notation-prev').disabled = state.notationPage <= 0;
+  $('notation-next').disabled = state.notationPage >= count - 1;
+  state.lastHighlight = '';
 }
 function updateRangeWarning() {
   if (!state.compiled) return;
@@ -188,6 +206,7 @@ function connectPlayable(container) {
   container.addEventListener('keydown', event => {
     if ((event.key === 'Enter' || event.key === ' ') && !event.repeat && event.target.dataset.midi) { event.preventDefault(); event.stopPropagation(); pressNote('accessible-key', Number(event.target.dataset.midi)); }
   });
+  container.addEventListener('focusout', () => releaseNote('accessible-key'));
   container.addEventListener('keyup', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); releaseNote('accessible-key'); } });
 }
 async function togglePlayback() {
@@ -230,7 +249,13 @@ function drawFrame() {
     if (position >= duration + (state.mode === 'practice' ? 200 : 80)) { transport.finish(duration); silenceHeld(); updateButtons(); $('transport-status').textContent = 'Complete · 已完成'; if (state.mode === 'practice') assess(); }
     else $('transport-status').textContent = position < 0 ? `Count in · ${Math.ceil(-position / (60000 / (Number($('tempo').value) || 100)))}` : state.mode === 'practice' ? 'Your turn · 跟着弹' : 'Listening · 正在聆听';
   }
-  const active = timeline?.notes.filter(n => n.start_ms <= position && n.start_ms + n.duration_ms > position) || [];
+  const active = state.timelineIndex?.range(position) || [];
+  if (transport.running && active.length) {
+    const first = active.find(note => note.part_id === state.notationPart);
+    const source = first && state.sourceNotes.get(`${first.part_id}:${first.source_note_id || first.id}`);
+    const page = source ? Math.floor(beat(source.note.at) / 16) : state.notationPage;
+    if (page !== state.notationPage) { state.notationPage = page; renderNotationPage(); }
+  }
   const signature = active.map(n => n.id).join('|');
   if (signature !== state.lastHighlight) { document.querySelectorAll('.score-note').forEach(note => note.classList.toggle('active', active.some(n => (n.source_note_id || n.id) === note.dataset.noteId))); state.lastHighlight = signature; }
   highlightKeys(active);
@@ -247,7 +272,7 @@ function drawFrame() {
   const windowMs = beatMs * 4;
   for (let b = Math.floor(position / beatMs); b <= Math.ceil((position + windowMs) / beatMs); b++) { const y = height - (b * beatMs - position) / windowMs * height; if (y < 0 || y > height) continue; ctx.strokeStyle = b % 4 === 0 ? '#a7c09435' : '#a7c09416'; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke(); }
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  for (const note of reducedMotion ? active : timeline?.notes || []) {
+  for (const note of reducedMotion ? active : state.timelineIndex?.range(position, position + windowMs) || []) {
     if (note.start_ms + note.duration_ms < position || note.start_ms > position + windowMs) continue;
     const key = state.geometry.find(k => k.midi === note.midi); if (!key) continue;
     const bottom = reducedMotion ? height : height - (note.start_ms - position) / windowMs * height;
@@ -263,6 +288,9 @@ function drawFrame() {
 let lastIdleDraw = 0;
 function animate(now) { if (transport.running || now - lastIdleDraw > 100) { drawFrame(); lastIdleDraw = now; } state.frame = requestAnimationFrame(animate); }
 
+$('notation-part').addEventListener('change', () => { state.notationPart = $('notation-part').value; renderNotationPage(); });
+$('notation-prev').addEventListener('click', () => { state.notationPage--; renderNotationPage(); });
+$('notation-next').addEventListener('click', () => { state.notationPage++; renderNotationPage(); });
 $('play-button').addEventListener('click', togglePlayback);
 $('reset-button').addEventListener('click', resetPlayback);
 $('assess-button').addEventListener('click', assess);
@@ -281,6 +309,7 @@ $('import-button').addEventListener('click', () => $('score-file').click());
 $('mobile-import-button').addEventListener('click', () => $('score-file').click());
 $('score-file').addEventListener('change', async event => {
   const file = event.target.files[0]; event.target.value = ''; if (!file) return;
+  const intent = ++state.loadIntent;
   if (file.size > 8 * 1024 * 1024) { notice('This score is too large. Choose a score JSON smaller than 8 MiB.', true); return; }
   try {
     const content = await file.text();
@@ -289,11 +318,11 @@ $('score-file').addEventListener('change', async event => {
       const response = await fetch('/api/import/musicxml', {method: 'POST', headers: {'Content-Type': 'application/xml'}, body: content});
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'MusicXML import failed.');
-      await compileScore(result.score);
-      if (Array.isArray(result.diagnostics) && result.diagnostics.length) notice(result.diagnostics.map(d => d.message).join(' '));
-    } else { const score = JSON.parse(content); await compileScore(score); }
+      const loaded = await compileScore(result.score, false, intent);
+      if (loaded && Array.isArray(result.diagnostics) && result.diagnostics.length) notice(result.diagnostics.map(d => d.message).join(' '));
+    } else { const score = JSON.parse(content); await compileScore(score, false, intent); }
   }
-  catch (error) { notice(`Could not read “${file.name}”. Choose a valid score JSON or an uncompressed .musicxml/.xml file. ${error.message}`, true); }
+  catch (error) { if (intent !== state.loadIntent) return; notice(`Could not read “${file.name}”. Choose a valid score JSON or an uncompressed .musicxml/.xml file. ${error.message}`, true); }
 });
 $('export-button').addEventListener('click', () => { if (!state.score) return; const blob = new Blob([JSON.stringify(state.score, null, 2)], {type: 'application/json'}); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `${state.score.id.replace(/[^\w.-]/g, '_')}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 connectPlayable($('keyboard')); connectPlayable($('fretboard'));
@@ -303,14 +332,16 @@ document.addEventListener('keydown', event => {
   const key = event.key.toLowerCase();
   if (Object.hasOwn(SHORTCUTS, key)) { event.preventDefault(); pressNote(`key:${event.code}`, (state.octave + 1) * 12 + SHORTCUTS[key]); }
 });
-document.addEventListener('keyup', event => releaseNote(`key:${event.code}`));
+document.addEventListener('keyup', event => { releaseNote(`key:${event.code}`); if (event.key === 'Enter' || event.key === ' ') releaseNote('accessible-key'); });
 window.addEventListener('blur', () => pausePlayback('Paused when focus moved · 已暂停'));
 document.addEventListener('visibilitychange', () => { if (document.hidden) pausePlayback('Paused in background · 已暂停'); });
 window.addEventListener('pagehide', () => { pausePlayback(); cancelAnimationFrame(state.frame); });
 window.addEventListener('resize', drawFrame);
+window.addEventListener('pageshow', event => { if (event.persisted) { cancelAnimationFrame(state.frame); state.frame = requestAnimationFrame(animate); } });
 
 async function loadCatalog() {
-  try { state.catalog = await api('/api/catalog'); if (!Array.isArray(state.catalog) || !state.catalog.length) throw new Error('No original exercises are available. Import a score JSON or restart the server.'); renderCatalog(); await compileScore(structuredClone(state.catalog[0])); }
+  const intent = state.loadIntent;
+  try { state.catalog = await api('/api/catalog'); if (!Array.isArray(state.catalog) || !state.catalog.length) throw new Error('No original exercises are available. Import a score JSON or restart the server.'); renderCatalog(); await compileScore(structuredClone(state.catalog[0]), false, intent); }
   catch (error) { $('catalog').replaceChildren(); const retry = document.createElement('button'); retry.className = 'button secondary'; retry.textContent = 'Retry exercise library'; retry.addEventListener('click', loadCatalog); $('catalog').append(retry); notice(`Could not load the exercise library. ${error.message}`, true); }
 }
 setupImageReview({compileScore, pausePlayback, notice});

@@ -58,6 +58,10 @@ export function setupImageReview({compileScore, pausePlayback, notice}) {
   }
   async function open(selected) {
     if (selected.size>MAX_IMAGE) {notice('Choose a PNG or JPEG smaller than 5 MiB. Crop a single staff or reduce the image size before importing.',true);return}
+    const signature = new Uint8Array(await selected.slice(0, 8).arrayBuffer());
+    const png = signature.length === 8 && signature.every((value, index) => value === [137, 80, 78, 71, 13, 10, 26, 10][index]);
+    const jpeg = signature[0] === 255 && signature[1] === 216 && signature[2] === 255;
+    if (!png && !jpeg) { notice('Choose an actual PNG or JPEG image. Renaming a PDF, SVG or other file does not convert it.', true); return; }
     pausePlayback();epoch++;controller?.abort();$('analyze-image').disabled=false;file=selected;review=null;rows=[];crop=null;$('review-confirm').checked=false;renderRows();$('image-assumptions').replaceChildren();
     const current=epoch;
     try {

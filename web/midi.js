@@ -25,5 +25,6 @@ export function setupMidi({pressNote, releaseNote, silenceHeld, notice}) {
     catch { notice('MIDI permission was not granted or the device is unavailable. You can retry with Connect MIDI or keep using the keyboard.', true); }
     finally { button.disabled = false; }
   });
+  window.addEventListener('pageshow', event => { if (event.persisted && access) attach(); });
   window.addEventListener('pagehide', () => { if (access) access.onstatechange = null; for (const input of bound.values()) input.onmidimessage = null; bound.clear(); });
 }

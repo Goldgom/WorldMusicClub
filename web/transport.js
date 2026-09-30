@@ -68,3 +68,20 @@ export class Synth {
   }
   silence() { for (const id of [...this.voices.keys()]) this.stop(id); }
 }
+
+/** Window queries avoid scanning a long score on every animation frame. */
+export class TimelineIndex {
+  constructor(notes) {
+    this.notes = notes;
+    let end = -Infinity;
+    this.maxEnds = notes.map(note => (end = Math.max(end, note.start_ms + note.duration_ms)));
+  }
+  range(from, to = from) {
+    let low = 0, high = this.notes.length;
+    while (low < high) { const mid = (low + high) >>> 1; if (this.maxEnds[mid] <= from) low = mid + 1; else high = mid; }
+    const first = low;
+    low = first; high = this.notes.length;
+    while (low < high) { const mid = (low + high) >>> 1; if (this.notes[mid].start_ms <= to) low = mid + 1; else high = mid; }
+    return this.notes.slice(first, low).filter(note => note.start_ms + note.duration_ms > from);
+  }
+}

@@ -44,12 +44,16 @@ export function escapeXml(value) {
   return String(value).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;'}[c]));
 }
 /** A deliberately basic fixed-C pitch view. Unsupported engraving is disclosed in the UI. */
-export function renderNotation(score, mode = 'staff') {
-  const parts = score.parts;
-  const endBeat = Math.max(4, ...parts.flatMap(p => p.notes.map(n => beat(n.at) + beat(n.duration))));
-  const width = Math.max(720, 90 + endBeat * 72);
+export function scoreEndBeat(score) { return score.parts.reduce((end, part) => part.notes.reduce((value, note) => Math.max(value, beat(note.at) + beat(note.duration)), end), 4); }
+export function notationPageCount(score, spanBeats = 16) { return Math.max(1, Math.ceil(scoreEndBeat(score) / spanBeats)); }
+export function renderNotation(score, mode = 'staff', options = {}) {
+  const parts = options.partId ? score.parts.filter(part => part.id === options.partId) : score.parts.slice(0, 1);
+  const startBeat = Math.max(0, options.startBeat || 0);
+  const spanBeats = Math.min(32, Math.max(4, options.spanBeats || 16));
+  const endBeat = startBeat + spanBeats;
+  const width = Math.max(720, 90 + spanBeats * 72);
   const height = mode === 'staff' ? Math.max(170, parts.length * 140 + 30) : Math.max(125, parts.length * 105 + 30);
-  const x = t => 72 + t * 72;
+  const x = t => 72 + (t - startBeat) * 72;
   const shapes = [];
   parts.forEach((part, index) => {
     const top = 38 + index * (mode === 'staff' ? 140 : 105);
@@ -58,10 +62,10 @@ export function renderNotation(score, mode = 'staff') {
       for (let line = 0; line < 5; line++) shapes.push(`<line x1="14" y1="${top + line * 12}" x2="${width - 16}" y2="${top + line * 12}" class="staff-line"/>`);
       shapes.push(`<text x="23" y="${top + 46}" class="clef">𝄞</text>`);
     }
-    score.measures.forEach(measure => {
+    score.measures.filter(measure => beat(measure.at) >= startBeat && beat(measure.at) < endBeat).forEach(measure => {
       shapes.push(`<line x1="${x(beat(measure.at))}" y1="${top - 5}" x2="${x(beat(measure.at))}" y2="${top + 53}" class="bar-line"/><text x="${x(beat(measure.at)) + 5}" y="${top - 10}" class="measure-number">${measure.number}</text>`);
     });
-    part.notes.forEach(note => {
+    part.notes.filter(note => beat(note.at) >= startBeat && beat(note.at) < endBeat).slice(0, 1000).forEach(note => {
       const nx = x(beat(note.at)) + 18;
       const data = `data-note-id="${escapeXml(note.id)}" class="score-note"`;
       if (mode === 'jianpu') {
@@ -92,5 +96,6 @@ export function renderNotation(score, mode = 'staff') {
       }
     });
   });
+  if (parts.some(part => part.notes.filter(note => beat(note.at) >= startBeat && beat(note.at) < endBeat).length > 1000)) shapes.push('<text x="14" y="16" class="part-name">Dense fragment: first 1,000 notation events shown; complete score retained for playback/export.</text>');
   return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${mode === 'staff' ? 'Basic treble staff pitch view' : 'Fixed C numbered pitch view'}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${shapes.join('')}</svg>`;
 }
