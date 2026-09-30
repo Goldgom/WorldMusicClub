@@ -5,6 +5,7 @@ mod musicxml;
 pub use midi::import_midi;
 mod mxl;
 pub use mxl::import_mxl;
+pub mod feedback;
 pub mod instruments;
 pub mod omr;
 pub mod practice;
@@ -577,6 +578,7 @@ pub struct Hit {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Assessment {
+    pub summary: feedback::PerformanceSummary,
     pub hits: Vec<Hit>,
     pub misses: Vec<String>,
     pub extras: Vec<InputEvent>,
@@ -690,7 +692,9 @@ pub fn assess(
     };
     let mean_abs_error_ms = (!hits.is_empty())
         .then(|| hits.iter().map(|h| h.delta_ms.abs()).sum::<f64>() / hits.len() as f64);
+    let summary = feedback::summarize(&hits, timeline.notes.len(), extras.len(), tolerance_ms);
     Ok(Assessment {
+        summary,
         hits,
         misses,
         extras,

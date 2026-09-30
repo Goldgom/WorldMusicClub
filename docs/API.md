@@ -43,3 +43,7 @@ Limits: 8 MiB compressed image, 16 million pixels, 16,384 pixels per axis, 512 c
 ## MIDI import
 
 `POST /api/import/midi` accepts raw `.mid`/`.midi` as `audio/midi`, `audio/x-midi` or `application/octet-stream` (5 MiB max). Type0/1 PPQ files preserve exact tick-derived onset/duration, tempo maps and attack velocity; pitch spelling, voices/staves and notation are explicitly inferred. Exact input bytes are retained as `source.format="midi-base64"`. Type2, SMPTE time division, ambiguous/unclosed notes and unsupported pedal/bend/percussion/tuning semantics produce actionable errors rather than guessed playback. Program/expression information retained only in source produces visible warnings.
+
+## Explainable performance feedback
+
+Assessment responses include `summary`: expected/matched counts, onset coverage, signed timing bias, timing standard deviation, early/late counts and diagnostic advice. Empty-target selections have zero coverage with a warning; small samples are labeled. A consistent timing offset includes a device-latency calibration caution rather than assigning it to playing skill. Accuracy, hits, misses, extras and mean absolute error remain available.
