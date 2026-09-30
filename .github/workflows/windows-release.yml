@@ -1,0 +1,66 @@
+name: Windows milestone build
+on:
+  push:
+    branches: ['dev/initial-prototype']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  milestone:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.count.outputs.build }}
+      count: ${{ steps.count.outputs.count }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - id: count
+        shell: bash
+        run: |
+          count=$(git rev-list --count HEAD)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          if (( count % 50 == 0 )) || [[ '${{ github.event_name }}' == 'workflow_dispatch' ]]; then
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'build=false' >> "$GITHUB_OUTPUT"
+          fi
+  package:
+    needs: milestone
+    if: needs.milestone.outputs.build == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: cargo test --workspace --locked
+      - run: cargo build -p practice-server --release --locked
+      - name: Smoke-test exact release executable
+        shell: pwsh
+        run: |
+          $app = Start-Process target/release/practice-server.exe -ArgumentList '--no-open','--port','17879' -PassThru
+          try {
+            $ready = $false
+            for ($i=0; $i -lt 40; $i++) {
+              try { $health = Invoke-RestMethod http://127.0.0.1:17879/api/health; $ready = $true; break } catch { Start-Sleep -Milliseconds 250 }
+            }
+            if (-not $ready -or $health.engine -ne 'rust') { throw 'Release executable did not become healthy' }
+            $page = Invoke-WebRequest http://127.0.0.1:17879/
+            if ($page.StatusCode -ne 200 -or $page.Content -notmatch 'WorldMusicHub') { throw 'Embedded UI missing' }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id } }
+      - name: Create portable Windows package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist/WorldMusicHub -Force | Out-Null
+          Copy-Item target/release/practice-server.exe dist/WorldMusicHub/WorldMusicHub.exe
+          Copy-Item README.md,LICENSE dist/WorldMusicHub/
+          Copy-Item docs/WINDOWS.md dist/WorldMusicHub/START-HERE.md
+          Get-FileHash dist/WorldMusicHub/WorldMusicHub.exe -Algorithm SHA256 | Format-List | Out-File dist/WorldMusicHub/SHA256.txt
+          Compress-Archive -Path dist/WorldMusicHub -DestinationPath dist/WorldMusicHub-Windows-x64-commit-${{ needs.milestone.outputs.count }}.zip
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: WorldMusicHub-Windows-x64-commit-${{ needs.milestone.outputs.count }}
+          path: dist/*.zip
+          if-no-files-found: error

@@ -23,3 +23,11 @@ WorldMusicHub code is MIT-licensed. Score, audio and other assets retain their i
 ## Release policy
 
 Each meaningful implementation increment is committed. Every 50 project commits triggers a Windows build/release checkpoint. Windows artifacts must be produced and smoke-tested on Windows CI before being called verified; a Linux build is not Windows verification. See `docs/ROADMAP.md`.
+
+## Current product scope and image workflow
+
+The roadmap includes local staff-image/fragment recognition with confidence indicators and manual correction before conversion to playable notes or jianpu. Printed-score recognition is imperfect; handwritten, ambiguous or complex notation must never be silently treated as reliable. Light/dark/system/custom themes and an accessible modern interface are part of the ongoing UI work.
+
+## Windows builds
+
+CI checks Rust on Linux and Windows. The Windows milestone workflow packages a portable executable at each 50-commit milestone, or when manually dispatched. See [Windows usage and verification boundaries](docs/WINDOWS.md). No Windows artifact has been verified merely because these workflow files exist.
