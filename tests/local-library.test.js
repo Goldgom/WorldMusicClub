@@ -1,0 +1,44 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {IDBFactory} from 'fake-indexeddb';
+import {openScoreLibrary} from '../web/local-library.js';
+import {fixture} from './frontend-fixtures.js';
+const create=()=>openScoreLibrary({factory:new IDBFactory()});
+test('explicit local save keeps a complete immutable canonical/source snapshot',async()=>{
+ const library=await create();try{const score=structuredClone(fixture);score.source={format:'musicxml',filename:'fragment.xml',content:'<score>\r\n音符 &amp; 原稿</score>'};const saved=await library.save(score,{label:'My fragment'});score.title='Changed elsewhere';const loaded=await library.get(saved.key);assert.equal(loaded.score.title,fixture.title);assert.equal(loaded.score.source.content,'<score>\r\n音符 &amp; 原稿</score>');assert.equal(loaded.label,'My fragment');const rows=await library.list();assert.equal(rows.length,1);assert.ok(!('score'in rows[0]));}finally{library.close()}
+});
+test('score identity never overwrites another copy and revisions prevent lost updates',async()=>{
+ const factory=new IDBFactory(),a=await openScoreLibrary({factory}),b=await openScoreLibrary({factory});try{
+  const first=await a.save(fixture),second=await a.save(fixture);assert.notEqual(first.key,second.key);
+  const update=await b.save({...fixture,title:'Revision 2'},{key:first.key,expectedRevision:1});assert.equal(update.revision,2);
+  await assert.rejects(a.save(fixture,{key:first.key,expectedRevision:1}),/changed/);
+  await assert.rejects(a.remove(first.key,{expectedRevision:1}),/changed/);
+  assert.equal((await a.get(first.key)).score.title,'Revision 2');assert.equal(await a.remove(first.key,{expectedRevision:2}),true);assert.equal(await a.get(first.key),null);
+ }finally{a.close();b.close()}
+});
+test('backup restores atomically as new copies after every Rust validation succeeds',async()=>{
+ const a=await create(),b=await create();try{
+  await a.save(fixture,{label:'First'});await a.save({...fixture,title:'Second'});
+  const backup=await a.exportBackup();let calls=0;
+  await assert.rejects(b.restoreBackup(backup,{validate:async()=>{calls++;if(calls===2)throw Error('Invalid score');return true}}),/score 2/);
+  assert.equal((await b.list()).length,0);
+  await assert.rejects(b.restoreBackup(backup),/Rust/);
+  const restored=await b.restoreBackup(backup,{validate:async()=>true});assert.equal(restored.length,2);assert.equal((await b.get(restored[0].key)).label,'First');
+  assert.deepEqual((await b.get(restored[0].key)).score,fixture);
+  await b.restoreBackup(backup,{validate:async()=>true});assert.equal((await b.list()).length,4);
+ }finally{a.close();b.close()}
+});
+test('count limits and failed writes leave existing saved copies intact',async()=>{
+ const library=await create();try{
+  const promises=Array.from({length:101},()=>library.save(fixture));const result=await Promise.allSettled(promises);
+  assert.equal(result.filter(r=>r.status==='fulfilled').length,100);assert.match(result.find(r=>r.status==='rejected').reason.message,/100/);assert.equal((await library.list()).length,100);
+  await assert.rejects(library.save({...fixture,source:{format:'text',filename:null,content:'x'.repeat(8*1024*1024)}}),/8 MiB/);
+  assert.equal((await library.list()).length,100);
+ }finally{library.close()}
+});
+test('storage unavailability, closed handles and unsupported backups fail clearly',async()=>{
+ await assert.rejects(openScoreLibrary({factory:null}),/does not provide/);
+ const library=await create();await assert.rejects(library.restoreBackup('{',{validate:async()=>true}),/JSON/);
+ await assert.rejects(library.restoreBackup('{"format":"new-format","version":2,"entries":[]}',{validate:async()=>true}),/Unsupported/);
+ library.close();await assert.rejects(library.list(),/closed/);
+});
