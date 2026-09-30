@@ -7,12 +7,13 @@ export function normalizeEventTime(value, {now = performance.now(), timeOrigin =
   return Math.min(candidate, now);
 }
 export function decodeMidi(data) {
-  if (!data || data.length < 3) return null;
+  if (!data || data.length < 3 || ![data[0],data[1],data[2]].every(value=>Number.isInteger(value)&&value>=0&&value<=255)) return null;
   const type = data[0] & 0xf0; const channel = data[0] & 0x0f;
+  if(type===0xb0&&(data[1]===120||data[1]===123)&&data[2]<=127)return{kind:'panic',channel,controller:data[1]};
   if ((type !== 0x80 && type !== 0x90) || data[1] > 127 || data[2] > 127) return null;
   return {kind: type === 0x80 || data[2] === 0 ? 'off' : 'on', channel, midi: data[1], velocity: data[2]};
 }
-export function setupMidi({pressNote, releaseNote, silenceHeld, notice}) {
+export function setupMidi({pressNote, releaseNote, releaseMatching, silenceHeld, notice}) {
   const button = document.getElementById('midi-button');
   let access = null; const bound = new Map();
   function attach() {
@@ -20,7 +21,7 @@ export function setupMidi({pressNote, releaseNote, silenceHeld, notice}) {
     for (const [id, input] of bound) if (!inputs.some(i => i.id === id)) { input.onmidimessage = null; bound.delete(id); silenceHeld(); }
     for (const input of inputs) if (bound.get(input.id) !== input) {
       if (bound.has(input.id)) { bound.get(input.id).onmidimessage = null; silenceHeld(); }
-      input.onmidimessage = event => { const note = decodeMidi(event.data); if (!note) return; const source = `midi:${input.id}:${note.channel}:${note.midi}`; if (note.kind === 'on') pressNote(source, note.midi, note.velocity, event.timeStamp); else releaseNote(source); };
+      input.onmidimessage = event => { const note = decodeMidi(event.data); if (!note) return; if(note.kind==='panic'){releaseMatching(`midi:${encodeURIComponent(input.id)}:${note.channel}:`);return} const source = `midi:${encodeURIComponent(input.id)}:${note.channel}:${note.midi}`; if (note.kind === 'on') pressNote(source, note.midi, note.velocity, event.timeStamp, {retrigger:true}); else releaseNote(source); };
       bound.set(input.id, input);
     }
     button.textContent = inputs.length ? `MIDI connected · ${inputs.length}` : 'MIDI ready · Connect a device';

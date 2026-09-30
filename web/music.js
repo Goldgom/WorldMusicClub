@@ -66,6 +66,7 @@ export function escapeXml(value) {
 export function scoreEndBeat(score) { return score.parts.reduce((end, part) => part.notes.reduce((value, note) => Math.max(value, beat(note.at) + beat(note.duration)), end), 4); }
 export function notationLayout(availableWidth) { const width=Math.max(240,Math.floor(availableWidth)); return {width,spanBeats:width>=960?16:width>=540?8:4}; }
 export function notationPageCount(score, spanBeats = 16) { return Math.max(1, Math.ceil(scoreEndBeat(score) / spanBeats)); }
+export function accidentalGlyph(alter) { if (!Number.isInteger(alter) || alter < -2 || alter > 2) throw new Error('Unsupported pitch alteration.'); return alter === 0 ? '♮' : alter > 0 ? '♯'.repeat(alter) : '♭'.repeat(-alter); }
 export function renderNotation(score, mode = 'staff', options = {}) {
   const parts = options.partId ? score.parts.filter(part => part.id === options.partId) : score.parts.slice(0, 1);
   const startBeat = Math.max(0, options.startBeat || 0);
@@ -116,7 +117,7 @@ export function renderNotation(score, mode = 'staff', options = {}) {
         shapes.push(`<ellipse cx="${nx}" cy="${ny}" rx="8" ry="5.5" transform="rotate(-18 ${nx} ${ny})" class="note-head${length >= 2 ? ' open-head' : ''}"/>`);
         if (length < 4) shapes.push(`<line x1="${nx + 7}" y1="${ny}" x2="${nx + 7}" y2="${ny - 31}" class="note-line"/>`);
         if (length < 1) shapes.push(`<path d="M${nx + 7} ${ny - 31}q18 7 8 18" class="note-flag"/>`);
-        if (note.pitch.alter) shapes.push(`<text x="${nx - 23}" y="${ny + 6}" class="accidental">${note.pitch.alter > 0 ? '♯' : '♭'}</text>`);
+        shapes.push(`<text x="${nx - (Math.abs(note.pitch.alter) === 2 ? 32 : 23)}" y="${ny + 6}" class="accidental">${accidentalGlyph(note.pitch.alter)}</text>`);
         shapes.push('</g>');
       }
     });
