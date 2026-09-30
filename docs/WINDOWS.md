@@ -30,3 +30,9 @@ Build preparation uses `python scripts/prepare-rust-notices.py` after `cargo fet
 `BUILD-INFO.json` records the development-branch commit SHA/tree, complete-history commit count, target, toolchain, lockfile hashes and every packaged file's SHA-256. `SHA256.txt` uses portable relative filenames; the download also includes a checksum for the ZIP itself. These checks identify bytes and provenance, not a digital signature or antivirus verdict.
 
 The milestone workflow checks out the exact SHA measured by its counting job, builds and runs the Windows x64 executable, exercises the real browser UI, creates the ZIP, verifies its complete inventory, then starts the extracted executable from its portable folder and compares its embedded offline renderer against the pinned bundle checksum. A successfully skipped count gate is not a verified release. GitHub release/tag publication is a separate step tied to the same verified SHA.
+
+## Explicit recovery builds
+
+A milestone artifact remains tied to its original commit and is never replaced with different source under the same SHA. A later trusted development-branch push can explicitly request a recovery build with one commit-message trailer, `Windows-Recovery-For: 50` (or the applicable preceding multiple of 50). The gate accepts it only after that milestone and before the next one; malformed, duplicate, future and wrong-interval trailers fail. Ordinary intervening commits do not start a package build. No commit text is evaluated as shell code.
+
+Recovery ZIP/artifact names include both the actual source count and `recovery-for-50`; `BUILD-INFO.json` keeps the actual SHA/tree/count plus a separate `recovery_for` field. It is a new build, not a claim of binary equivalence or a rewritten test result for the original milestone. The normal 50/100/150 cadence is unchanged.

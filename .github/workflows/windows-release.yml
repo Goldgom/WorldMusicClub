@@ -12,21 +12,16 @@ jobs:
       build: ${{ steps.count.outputs.build }}
       count: ${{ steps.count.outputs.count }}
       sha: ${{ steps.count.outputs.sha }}
+      recovery: ${{ steps.count.outputs.recovery_for }}
+      label: ${{ steps.count.outputs.label }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
       - id: count
-        shell: bash
-        run: |
-          count=$(git rev-list --count HEAD)
-          echo "count=$count" >> "$GITHUB_OUTPUT"
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          if (( count % 50 == 0 )) || [[ '${{ github.event_name }}' == 'workflow_dispatch' ]]; then
-            echo 'build=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'build=false' >> "$GITHUB_OUTPUT"
-          fi
+        run: python3 scripts/windows-build-gate.py
+
   package:
     needs: milestone
     if: needs.milestone.outputs.build == 'true'
@@ -87,7 +82,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: windows-release-screenshots-${{ needs.milestone.outputs.count }}
+          name: windows-release-screenshots-${{ needs.milestone.outputs.label }}
           path: ${{ runner.temp }}/wmh-screenshots/*.png
           if-no-files-found: ignore
       - run: cargo fetch --locked
@@ -105,19 +100,20 @@ jobs:
           Copy-Item -Recurse docs dist/WorldMusicHub/
           Copy-Item -Recurse schema dist/WorldMusicHub/
           Copy-Item -Recurse dist/licenses/rust dist/WorldMusicHub/licenses/
-          python scripts/release-manifest.py create dist/WorldMusicHub --commit '${{ needs.milestone.outputs.sha }}' --count '${{ needs.milestone.outputs.count }}'
+          python scripts/release-manifest.py create dist/WorldMusicHub --commit '${{ needs.milestone.outputs.sha }}' --count '${{ needs.milestone.outputs.count }}' --recovery-for '${{ needs.milestone.outputs.recovery }}'
           if ($LASTEXITCODE -ne 0) { throw 'Release inventory failed' }
-          python scripts/release-manifest.py archive dist/WorldMusicHub dist/WorldMusicHub-Windows-x64-commit-${{ needs.milestone.outputs.count }}.zip
+          python scripts/release-manifest.py archive dist/WorldMusicHub dist/WorldMusicHub-Windows-x64-${{ needs.milestone.outputs.label }}.zip
           if ($LASTEXITCODE -ne 0) { throw 'Portable archive verification failed' }
       - name: Smoke-test the extracted portable package and offline renderer bytes
         shell: pwsh
         run: |
           $destination = Join-Path $env:RUNNER_TEMP 'wmh-portable-smoke'
-          Expand-Archive -Path dist/WorldMusicHub-Windows-x64-commit-${{ needs.milestone.outputs.count }}.zip -DestinationPath $destination
+          Expand-Archive -Path dist/WorldMusicHub-Windows-x64-${{ needs.milestone.outputs.label }}.zip -DestinationPath $destination
           $directory = Join-Path $destination 'WorldMusicHub'
           $executable = Join-Path $directory 'WorldMusicHub.exe'
           $info = Get-Content (Join-Path $directory 'BUILD-INFO.json') -Raw | ConvertFrom-Json
           if ($info.git_commit -ne '${{ needs.milestone.outputs.sha }}' -or $info.commit_count -ne ${{ needs.milestone.outputs.count }}) { throw 'Wrong milestone provenance' }
+          if ([int]$info.recovery_for -ne ${{ needs.milestone.outputs.recovery }} -or $info.release_label -ne '${{ needs.milestone.outputs.label }}') { throw 'Wrong recovery provenance' }
           $app = Start-Process $executable -WorkingDirectory $directory -ArgumentList '--no-open','--port','17880' -PassThru
           try {
             $ready = $false
@@ -132,7 +128,7 @@ jobs:
           } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id } }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: WorldMusicHub-Windows-x64-commit-${{ needs.milestone.outputs.count }}
+          name: WorldMusicHub-Windows-x64-${{ needs.milestone.outputs.label }}
           path: |
             dist/*.zip
             dist/*.zip.sha256

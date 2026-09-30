@@ -73,7 +73,7 @@ def create_archive(directory,archive):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     commands=parser.add_subparsers(dest='command',required=True)
-    create=commands.add_parser('create');create.add_argument('directory',type=pathlib.Path);create.add_argument('--commit',required=True);create.add_argument('--count',required=True,type=int)
+    create=commands.add_parser('create');create.add_argument('directory',type=pathlib.Path);create.add_argument('--commit',required=True);create.add_argument('--count',required=True,type=int);create.add_argument('--recovery-for',type=int,default=0)
     verify=commands.add_parser('verify');verify.add_argument('archive',type=pathlib.Path)
     archive=commands.add_parser('archive');archive.add_argument('directory',type=pathlib.Path);archive.add_argument('archive',type=pathlib.Path)
     args=parser.parse_args()
@@ -83,11 +83,12 @@ def main():
     def git(*arguments):return subprocess.check_output(['git',*arguments],cwd=ROOT,text=True).strip()
     commit=git('rev-parse','HEAD');count=int(git('rev-list','--count','HEAD'))
     if not re.fullmatch('[0-9a-f]{40}',args.commit) or args.commit!=commit or args.count!=count:raise ValueError('Requested release commit/count does not match this complete checkout')
+    if args.recovery_for and (args.recovery_for<1 or args.recovery_for%50 or not args.recovery_for<count<args.recovery_for+50):raise ValueError('Invalid recovery milestone for this actual source count')
     if git('status','--porcelain'):raise ValueError('Release checkout must be clean; do not label uncommitted code with a committed SHA')
     if platform.system()!='Windows':raise ValueError('Release manifests must be created on Windows after native build and smoke tests')
     host=next((line.split(': ',1)[1] for line in subprocess.check_output(['rustc','-vV'],text=True).splitlines() if line.startswith('host: ')),None)
     if host!='x86_64-pc-windows-msvc':raise ValueError('Expected the native Windows x64 MSVC toolchain')
-    metadata={'name':'WorldMusicHub','git_commit':commit,'git_tree':git('rev-parse','HEAD^{tree}'),'commit_count':count,'target':host,'rustflags':os.environ.get('RUSTFLAGS',''),'build_platform':platform.platform(),'rustc':subprocess.check_output(['rustc','--version'],text=True).strip(),'rustc_verbose':subprocess.check_output(['rustc','-vV'],text=True).strip(),'cargo':subprocess.check_output(['cargo','--version'],text=True).strip(),'node':subprocess.check_output(['node','--version'],text=True).strip(),'python':platform.python_version(),'cargo_lock_sha256':sha((ROOT/'Cargo.lock').read_bytes()),'npm_lock_sha256':sha((ROOT/'package-lock.json').read_bytes()),'offline_engraving_version':'2.1.3','distribution':'unsigned portable alpha; browser UI; physical MIDI/audio latency not verified'}
+    metadata={'name':'WorldMusicHub','git_commit':commit,'git_tree':git('rev-parse','HEAD^{tree}'),'commit_count':count,'recovery_for':args.recovery_for or None,'release_label':f'commit-{count}'+(f'-recovery-for-{args.recovery_for}' if args.recovery_for else ''),'target':host,'rustflags':os.environ.get('RUSTFLAGS',''),'build_platform':platform.platform(),'rustc':subprocess.check_output(['rustc','--version'],text=True).strip(),'rustc_verbose':subprocess.check_output(['rustc','-vV'],text=True).strip(),'cargo':subprocess.check_output(['cargo','--version'],text=True).strip(),'node':subprocess.check_output(['node','--version'],text=True).strip(),'python':platform.python_version(),'cargo_lock_sha256':sha((ROOT/'Cargo.lock').read_bytes()),'npm_lock_sha256':sha((ROOT/'package-lock.json').read_bytes()),'offline_engraving_version':'2.1.3','distribution':'unsigned portable alpha; browser UI; physical MIDI/audio latency not verified'}
     create_manifest(args.directory,metadata);print(f'Created release inventory for commit {count}: {commit}')
 
 if __name__=='__main__':main()
