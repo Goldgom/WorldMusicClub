@@ -613,7 +613,7 @@ fn parse_measure(
                         return Err(format!("Note @{name} playback overrides are unsupported; export explicit note timing"));
                     }
                 }
-                for name in ["dynamics", "end-dynamics", "pizzicato"] {
+                for name in ["end-dynamics", "pizzicato"] {
                     if node.attribute(name).is_some() {
                         warnings.source_only(&format!("note @{name}"));
                     }
@@ -645,7 +645,11 @@ fn parse_measure(
                     pitch: pitch.clone(),
                     voice: voice.clone(),
                     staff,
-                    velocity: if pitch.is_some() { 90 } else { 0 },
+                    velocity: if pitch.is_some() {
+                        parse_note_velocity(node)?
+                    } else {
+                        0
+                    },
                     tie_start,
                     tie_stop,
                 });
@@ -744,6 +748,23 @@ fn parse_measure(
         event_extent,
         marks,
     })
+}
+
+/// MusicXML note dynamics is a percentage of forte (MIDI velocity 90).
+fn parse_note_velocity(node: Node<'_, '_>) -> Result<u8, String> {
+    let Some(raw) = node.attribute("dynamics") else {
+        return Ok(90);
+    };
+    let percent = decimal(raw, "note dynamics percentage")?;
+    if percent.numerator < 0 {
+        return Err("Note dynamics cannot be negative".into());
+    }
+    let velocity = (i128::from(percent.numerator) * 9 + i128::from(percent.denominator) * 5)
+        / (i128::from(percent.denominator) * 10);
+    if velocity > 127 {
+        return Err("Note dynamics exceeds supported MIDI velocity 127".into());
+    }
+    Ok(velocity as u8)
 }
 
 fn parse_pitch(node: Node<'_, '_>) -> Result<Option<Pitch>, String> {
@@ -1504,5 +1525,21 @@ mod tests {
             "<forward><duration>1</duration></forward><backup><duration>1</duration></backup>"
                 .repeat(6000);
         assert!(import_musicxml(&wrap(&format!("{changes}{moves}{}", note("1")))).is_ok());
+    }
+    #[test]
+    fn note_dynamics_roundtrip_all_midi_attack_velocities() {
+        for velocity in 0..=127 {
+            let percent = format!("{:.6}", f64::from(velocity) * 100. / 90.);
+            let xml = DUET.replacen("<note>", &format!("<note dynamics=\"{percent}\">"), 1);
+            let (score, warnings) = import_musicxml(&xml).unwrap();
+            assert_eq!(score.parts[0].notes[0].velocity, velocity);
+            assert!(!warnings
+                .iter()
+                .any(|d| d.message.contains("note @dynamics")));
+        }
+        for bad in ["-1", "150", "NaN", "Infinity"] {
+            let xml = DUET.replacen("<note>", &format!("<note dynamics=\"{bad}\">"), 1);
+            assert!(import_musicxml(&xml).is_err());
+        }
     }
 }
