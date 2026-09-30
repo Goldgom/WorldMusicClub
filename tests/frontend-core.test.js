@@ -145,3 +145,10 @@ test('a complete next pass includes its count-in when deciding whether a frame s
 
 import {validateJianpuExport} from '../web/jianpu-export.js';
 test('numbered-text preview verifies every canonical note/rest identity and labels inserted gaps',()=>{const result={text:'1:1/1 3:1/1 0:2/1',note_map:['c4','e4',null],diagnostics:[]};assert.deepEqual(validateJianpuExport(result,fixture),{sourceNotes:2,gapRests:1});for(const ids of [['c4'],['c4','c4'],['c4','e4','unknown'],['c4','e4',5]])assert.throws(()=>validateJianpuExport({...result,note_map:ids},fixture),/incomplete/);assert.throws(()=>validateJianpuExport({...result,text:'x'.repeat(1024*1024+1)},fixture));});
+
+import {installLoopClockFixture} from './frontend-clock-fixture.js';
+test('controlled loop fixture preserves ordinary RAF callbacks and cancellation for browser polling',()=>{
+ const forwarded=[],cancelled=[],target={performance:{now:()=>5},requestAnimationFrame(callback){forwarded.push(callback);return forwarded.length},cancelAnimationFrame(id){cancelled.push(id)}};
+ installLoopClockFixture(target);function animate(){}function next(){}
+ assert.equal(target.requestAnimationFrame(animate),-1);assert.equal(target.loopTestFrame,animate);assert.equal(target.requestAnimationFrame(next),1);assert.deepEqual(forwarded,[next]);target.cancelAnimationFrame(1);assert.deepEqual(cancelled,[1]);target.cancelAnimationFrame(-1);assert.equal(target.loopTestFrame,null);assert.deepEqual(cancelled,[1]);target.loopTestClock=1517;assert.equal(target.performance.now(),1517);
+});

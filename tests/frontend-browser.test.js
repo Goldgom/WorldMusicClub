@@ -6,6 +6,7 @@ import {existsSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
 import {fixture} from './frontend-fixtures.js';
+import {installLoopClockFixture} from './frontend-clock-fixture.js';
 import {pitchMidi, beat} from '../web/music.js';
 let server, browser, context, page, origin, pageErrors;
 const requests=[];
@@ -204,7 +205,7 @@ test('a stale library list cannot delete a copy revised by another tab',async()=
  await page.locator('#library-delete-submit').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.includes('changed in another tab'));assert.equal(await page.locator('#library-list>li').count(),1);await page.locator('#library-delete-cancel').click();await page.locator('#library-refresh').click();await page.waitForFunction(()=>document.querySelector('#library-list').textContent.includes('Updated by another tab'));
 });
 test('whole app loop clocks retain frame overshoot and pause rather than invent skipped takes',async()=>{
- await page.addInitScript(()=>{window.loopTestClock=1000;Object.defineProperty(performance,'now',{value:()=>window.loopTestClock});window.requestAnimationFrame=callback=>{window.loopTestFrame=callback;return 1};window.cancelAnimationFrame=()=>{}});await page.reload();await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('physical attacks'));
+ await page.addInitScript(installLoopClockFixture);await page.reload();await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('physical attacks'));
  await page.locator('.practice-options summary').click();await page.locator('#loop-to').fill('1');await page.locator('#loop-apply').click();await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('in A–B'));await page.locator('#session-mode').selectOption('practice');await page.locator('#count-in').uncheck();await page.locator('#play-button').click();
  for(const frame of [1517,2013,2510])await page.evaluate(now=>{window.loopTestClock=now;window.loopTestFrame(now)},frame);
  await page.evaluate(()=>{window.loopTestClock=5000;window.loopTestFrame(5000)});assert.match(await page.locator('#transport-status').textContent(),/clock interruption/);assert.match(await page.locator('#notice').textContent(),/no missing takes were invented/);assert.match(await page.locator('#take-interruption-note').textContent(),/1 loop clock/);
