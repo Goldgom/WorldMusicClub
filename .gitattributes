@@ -1,0 +1,9 @@
+# Keep embedded text fixtures byte-identical on Windows and Unix.
+* text=auto eol=lf
+*.png -text
+*.jpg -text
+*.jpeg -text
+*.mxl -text
+*.mid -text
+*.midi -text
+*.zip -text

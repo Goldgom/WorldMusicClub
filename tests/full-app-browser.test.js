@@ -202,9 +202,13 @@ beforeEach(async () => {
       apiFailures.push(`${response.status()} ${url.pathname}`);
     }
   });
-  const compilation = nextResponse('/api/compile');
-  await page.goto(origin, {waitUntil: 'networkidle'});
-  initialCompilation = await responseJson(await compilation);
+  // Wait for the app's observable ready contract, not unrelated network-idle heuristics.
+  // Promise.all immediately handles both waiters if navigation or compilation fails.
+  const [compilation] = await Promise.all([
+    nextResponse('/api/compile'),
+    page.goto(origin, {waitUntil: 'domcontentloaded'}),
+  ]);
+  initialCompilation = await responseJson(compilation);
   await readyForTitle(initialCompilation.score.title);
 }, {timeout: 25_000});
 
@@ -311,7 +315,7 @@ test('live Rust-backed desktop light/dark and mobile layouts produce real screen
   await screenshot('light');
   await page.locator('#theme-mode').selectOption('dark');
   assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
-  const [response] = await Promise.all([nextResponse('/api/compile'), page.reload({waitUntil: 'networkidle'})]);
+  const [response] = await Promise.all([nextResponse('/api/compile'), page.reload({waitUntil: 'domcontentloaded'})]);
   await responseJson(response);
   await readyForTitle(initialCompilation.score.title);
   assert.equal(await page.locator('#theme-mode').inputValue(), 'dark');
@@ -375,7 +379,11 @@ test('PNG review uses real Rust candidates and requires every duration plus rene
   const [response] = await Promise.all([nextResponse('/api/import/image'), page.locator('#analyze-image').click()]);
   const review = await responseJson(response);
   assert.equal(response.request().headers()['content-type'], 'image/png');
-  assert.deepEqual([...response.request().postDataBuffer().subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  // Browser Blob uploads need not expose a CDP postDataBuffer. Verify actual Rust decoding
+  // here, and byte-exact original retention through the exported score below.
+  assert.equal(review.format, 'png');
+  assert.equal(review.width, 640);
+  assert.equal(review.height, 160);
   assert.equal(review.status, 'review_required');
   assert.equal(review.requires_review, true);
   assert.equal(review.candidates.length, 8);
