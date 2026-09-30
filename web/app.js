@@ -1,3 +1,4 @@
+import {feedbackView} from './feedback-view.js';
 import {STANDARD_TUNING, guitarProfile, pianoProfile} from './instrument-profile.js';
 import {compensateInput, validLatency, loadLatency, saveLatency, parseBeatInput, windowNotes} from './practice-settings.js';
 import {setupMidi} from './midi.js';
@@ -11,7 +12,7 @@ const $ = id => document.getElementById(id);
 setupThemes();
 const transport = new Transport();
 const synth = new Synth();
-const state = {catalog: [], score: null, compiled: null, mode: 'listen', instrument: 'piano', notation: 'staff', numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, notationPage: 0, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
+const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', instrument: 'piano', notation: 'staff', numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, notationPage: 0, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
 function notice(message, error = false) {
   $('notice').textContent = message;
@@ -63,7 +64,8 @@ function resetPlayback() {
   $('feedback-description').textContent = state.mode === 'practice' ? 'Play along using the on-screen keys or your computer keyboard. Your note-on timing is measured locally.' : 'Switch to Practice mode, play along, then see your timing and pitch feedback.';
   updateButtons(); drawFrame();
 }
-async function compileScore(score, preserveTempo = false, expectedIntent = null) {
+async function compileScore(score, preserveTempo = false, expectedIntent = null, importDiagnostics = []) {
+  if (preserveTempo) importDiagnostics = state.importDiagnostics;
   if (expectedIntent !== null && expectedIntent !== state.loadIntent) return false;
   if (expectedIntent === null) state.loadIntent++;
   if (new TextEncoder().encode(JSON.stringify(score)).byteLength > 8 * 1024 * 1024) { notice('This score exceeds 8 MiB. Reduce its source image or split it into smaller fragments.', true); return false; }
@@ -78,7 +80,9 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null)
     const compiled = await api('/api/compile', score, controller.signal);
     if (generation !== state.generation || controller.signal.aborted) return;
     state.score = compiled.score;
-    state.compiled = {...compiled, timeline: {...compiled.timeline, notes: [...compiled.timeline.notes].sort((a, b) => a.start_ms - b.start_ms || a.midi - b.midi)}};
+    state.importDiagnostics = importDiagnostics;
+    const diagnostics = [...new Map([...compiled.diagnostics, ...importDiagnostics].map(item => [`${item.code}:${item.note_id || ''}:${item.message}`, item])).values()];
+    state.compiled = {...compiled, diagnostics, timeline: {...compiled.timeline, notes: [...compiled.timeline.notes].sort((a, b) => a.start_ms - b.start_ms || a.midi - b.midi)}};
     state.instrumentOutOfRange = null; state.instrumentConflict = false;
     state.timelineIndex = new TimelineIndex(state.compiled.timeline.notes);
     state.sourceNotes = new Map(state.score.parts.flatMap(part => part.notes.map(note => [`${part.id}:${note.id}`, {note, partId: part.id}])));
@@ -109,7 +113,7 @@ function renderCatalog() {
     const number = document.createElement('span'); number.className = 'number'; number.textContent = String(index + 1).padStart(2, '0');
     const label = document.createElement('span');
     const title = document.createElement('strong'); title.textContent = score.title;
-    const meta = document.createElement('small'); meta.textContent = `${scoreSummary(score).count} notes · ${score.tempo[0]?.bpm || 100} BPM · Original`;
+    const meta = document.createElement('small'); meta.textContent = `${scoreSummary(score).count} notes · ${score.tempo[0]?.bpm || 100} BPM · ${score.provenance.kind === 'public_domain_practice_arrangement' ? 'Public-domain excerpt' : 'Original'}`;
     label.append(title, meta); button.append(number, label);
     button.addEventListener('click', () => compileScore(structuredClone(score)));
     $('catalog').append(button);
@@ -127,6 +131,8 @@ function renderScore() {
   $('notation-part').value = state.notationPart;
   renderNotationPage();
   $('provenance').textContent = `Source: ${score.provenance.kind}. ${score.provenance.attribution || ''}${score.provenance.license ? ` License: ${score.provenance.license}.` : ' Rights information stays with this score; no external reuse permission is implied.'}`;
+  $('provenance-link').hidden = true;
+  if (score.provenance.source_url) { try { const url = new URL(score.provenance.source_url); if (url.protocol === 'https:') { $('provenance-link').href = url.href; $('provenance-link').hidden = false; } } catch { /* Preserve invalid source text in exported score, but never turn it into an unsafe link. */ } }
   $('diagnostic-count').textContent = state.compiled.diagnostics.length ? `(${state.compiled.diagnostics.length})` : '';
   $('diagnostic-list').replaceChildren();
   state.compiled.diagnostics.forEach(diagnostic => {
@@ -283,12 +289,19 @@ async function assess(options = {}) {
     const assessment = await api('/api/assess', {timeline, inputs: options.inputs || state.inputs, tolerance_ms: 180});
     if (generation !== state.generation) return;
     $('feedback-results').hidden = false;
-    $('accuracy').textContent = `${Math.round(assessment.accuracy_percent)}%`;
-    $('hits').textContent = String(assessment.hits.length);
-    $('misses').textContent = `${assessment.misses.length} / ${assessment.extras.length}`;
-    $('timing').textContent = assessment.mean_abs_error_ms === null ? '—' : `${Math.round(assessment.mean_abs_error_ms)} ms`;
+    const view = feedbackView(assessment, timeline.notes.length);
+    $('accuracy').textContent = view.accuracy;
+    $('hits').textContent = view.hits;
+    $('misses').textContent = view.misses;
+    $('timing').textContent = view.meanError;
+    $('coverage').textContent = view.coverage;
+    $('timing-bias').textContent = view.bias;
+    $('timing-spread').textContent = view.spread;
+    $('feedback-advice').replaceChildren();
+    for (const advice of view.advice) { const item = document.createElement('li'); item.textContent = advice.message; item.className = advice.severity === 'warning' ? 'warning' : 'info'; $('feedback-advice').append(item); }
+    $('feedback-calibration-note').textContent = `${view.hasSummary ? 'Rust-derived timing statistics.' : 'Timing bias and variability are unavailable in this server response.'} Your ${state.latency} ms manual offset is already applied. Device/audio latency can resemble consistent early or late playing; use repeated takes before adjusting calibration. Accuracy includes extra inputs; coverage counts matched expected note-ons.`;
     $('feedback-detail').textContent = `${assessment.hits.filter(h => h.grade === 'perfect').length} perfect · ${assessment.hits.filter(h => h.grade === 'good').length} good · ${assessment.hits.filter(h => h.grade === 'early').length} early · ${assessment.hits.filter(h => h.grade === 'late').length} late. Matching window: ±180 ms. Input offset: ${state.latency} ms. Browser/audio latency can affect your result.`;
-    $('feedback-description').textContent = (options.iteration ? `Loop ${options.iteration}: ` : '') + (assessment.hits.length ? 'A useful snapshot, not a verdict. Slow the tempo and try another take.' : 'No notes matched yet. Try a slower tempo and the four-beat count-in.');
+    $('feedback-description').textContent = (options.iteration ? `Loop ${options.iteration}: ` : '') + (view.expected === 0 ? 'No note-on targets were selected. Choose a range containing notes.' : assessment.hits.length ? 'A useful snapshot, not a verdict. Slow the tempo and try another take.' : 'No notes matched yet. Try a slower tempo and the four-beat count-in.');
   } catch (error) { if (generation === state.generation) notice(`Could not check this take. ${error.message}`, true); }
   finally { if (generation === state.generation) { state.finishing = false; updateButtons(); } }
 }
@@ -402,7 +415,7 @@ $('key-count').addEventListener('change', () => { pausePlayback(); state.customK
 $('typing-octave').addEventListener('change', () => { pausePlayback(); state.octave = Number($('typing-octave').value); renderKeyboard(); });
 $('tempo').addEventListener('change', () => {
   const bpm = Number($('tempo').value);
-  if (!Number.isFinite(bpm) || bpm < 20 || bpm > 300) { notice('Choose a tempo from 20 to 300 BPM.', true); $('tempo').value = String(state.score?.tempo[0]?.bpm || 100); return; }
+  if (!Number.isFinite(bpm) || bpm < 10 || bpm > 600) { notice('Choose a tempo from 10 to 600 BPM.', true); $('tempo').value = String(state.score?.tempo[0]?.bpm || 100); return; }
   if (state.score) compileScore(transposeTempo(state.score, bpm), true);
 });
 for (const mode of ['staff', 'jianpu']) $(mode + '-button').addEventListener('click', () => { state.notation = mode; $('jianpu-reference-label').hidden = mode !== 'jianpu'; ['staff', 'jianpu'].forEach(m => { $(m + '-button').classList.toggle('selected', m === mode); $(m + '-button').setAttribute('aria-pressed', String(m === mode)); }); renderScore(); });
@@ -415,17 +428,18 @@ $('score-file').addEventListener('change', async event => {
   if (file.size > 8 * 1024 * 1024) { notice('This score is too large. Choose a score file smaller than 8 MiB.', true); return; }
   try {
     const compressed = /\.mxl$/i.test(file.name);
-    const content = compressed ? await file.arrayBuffer() : await file.text();
-    if (compressed || /\.(musicxml|xml)$/i.test(file.name)) {
+    const midiFile = /\.(mid|midi)$/i.test(file.name);
+    const content = compressed || midiFile ? await file.arrayBuffer() : await file.text();
+    if (compressed || midiFile || /\.(musicxml|xml)$/i.test(file.name)) {
       pausePlayback();
-      const response = await fetch(compressed ? '/api/import/mxl' : '/api/import/musicxml', {method: 'POST', headers: {'Content-Type': compressed ? 'application/zip' : 'application/xml'}, body: content});
+      const response = await fetch(midiFile ? '/api/import/midi' : compressed ? '/api/import/mxl' : '/api/import/musicxml', {method: 'POST', headers: {'Content-Type': midiFile ? 'audio/midi' : compressed ? 'application/zip' : 'application/xml'}, body: content});
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'MusicXML import failed.');
-      const loaded = await compileScore(result.score, false, intent);
+      if (!response.ok) throw new Error(result.error || 'Score import failed.');
+      const loaded = await compileScore(result.score, false, intent, result.diagnostics || []);
       if (loaded && Array.isArray(result.diagnostics) && result.diagnostics.length) notice(result.diagnostics.map(d => d.message).join(' '));
     } else { const score = JSON.parse(content); await compileScore(score, false, intent); }
   }
-  catch (error) { if (intent !== state.loadIntent) return; notice(`Could not read “${file.name}”. Choose valid score JSON, MusicXML (.musicxml/.xml), or compressed MusicXML (.mxl). ${error.message}`, true); }
+  catch (error) { if (intent !== state.loadIntent) return; notice(`Could not read “${file.name}”. Choose valid score JSON, MusicXML (.musicxml/.xml), compressed MusicXML (.mxl), or MIDI (.mid/.midi). ${error.message}`, true); }
 });
 $('export-button').addEventListener('click', () => { if (!state.score) return; const blob = new Blob([JSON.stringify(state.score, null, 2)], {type: 'application/json'}); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `${state.score.id.replace(/[^\w.-]/g, '_')}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 connectPlayable($('keyboard')); connectPlayable($('fretboard'));
@@ -444,7 +458,7 @@ window.addEventListener('pageshow', event => { if (event.persisted) { cancelAnim
 
 async function loadCatalog() {
   const intent = state.loadIntent;
-  try { state.catalog = await api('/api/catalog'); if (!Array.isArray(state.catalog) || !state.catalog.length) throw new Error('No original exercises are available. Import a score JSON or restart the server.'); renderCatalog(); await compileScore(structuredClone(state.catalog[0]), false, intent); }
+  try { state.catalog = await api('/api/catalog'); if (!Array.isArray(state.catalog) || !state.catalog.length) throw new Error('No bundled exercises are available. Import a score JSON or restart the server.'); renderCatalog(); await compileScore(structuredClone(state.catalog[0]), false, intent); }
   catch (error) { $('catalog').replaceChildren(); const retry = document.createElement('button'); retry.className = 'button secondary'; retry.textContent = 'Retry exercise library'; retry.addEventListener('click', loadCatalog); $('catalog').append(retry); notice(`Could not load the exercise library. ${error.message}`, true); }
 }
 setupImageReview({compileScore, pausePlayback, notice});
