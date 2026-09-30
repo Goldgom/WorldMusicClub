@@ -84,4 +84,17 @@ Body: `{ score: Score, pulse?: "notated_unit" | "quarter" | "dotted_quarter" }`.
 
 Returns `{ ticks, duration_ms, pulse, accent_policy, diagnostics }`. Each tick has a unique performance `id`, stable written `source_tick_id`, exact `source_at` beat, derived `start_ms`, `measure_number`, zero-based `unit_index` and `accent`. An accent marks a supplied written-measure boundary, not an inferred strong beat; pickups/partial measures receive an explicit warning. Repeat navigation and half-open boundary membership reuse the same Rust segments as notes. Tempo changes are integrated, and rests still contain clicks. The original score is never modified.
 
-The map must contain contiguous measures covering the whole score. Duplicate signatures, meter changes inside a supplied measure and over 100,000 written or repeat-expanded clicks are explicitly refused. A failed optional metronome does not make ordinary score playback invalid. For an A–B window, retain ticks whose `start_ms` is in the same half-open performance range; do not invent a new pulse at the loop start or infer a different beat convention in JavaScript. This endpoint is engine groundwork; audible UI integration is separate.
+The map must contain contiguous measures covering the whole score. Duplicate signatures, meter changes inside a supplied measure and over 100,000 written or repeat-expanded clicks are explicitly refused. A failed optional metronome does not make ordinary score playback invalid. For an A–B window, retain ticks whose `start_ms` is in the same half-open performance range; do not invent a new pulse at the loop start or infer a different beat convention in JavaScript. The optional UI click track uses this Rust grid and the same transport/AudioContext as playback. It is off by default, has a separate level control, obeys global mute, and never enters performance inputs. More than 10 clicks/second (including an A–B join) or scheduling more than 100 ms late disables clicks with an explanation rather than silently thinning or replaying them. Preparation errors do not invalidate ordinary playback. The existing count-in is explicitly silent: four quarter-note beats at the displayed opening BPM, not an inferred local tempo or compound beat at A.
+
+
+## Score-source directory and local import guidance
+
+The frontend contains three fixed editorial source cards, not a searchable score catalog or download service. Filtering stays in the browser; following a source/rights link is explicit and opens the official page. No source file is fetched automatically and no directory selection changes score provenance.
+
+The linked official references were checked on 2026-09-30:
+
+- [OpenScore/Lieder](https://github.com/OpenScore/Lieder): CC0 corpus editions, primarily MSCX source with documented export/conversion routes; MSCX/MSCZ are not direct app inputs
+- [Mutopia](https://www.mutopiaproject.org/) and its [license guide](https://www.mutopiaproject.org/legal.html): PDF/MIDI/LilyPond, with per-piece rights and attribution checks
+- [IMSLP](https://imslp.org/wiki/Main_Page) and its [copyright guide](https://imslp.org/wiki/IMSLP:Copyright_Made_Simple): exact edition and jurisdiction matter; a PDF requires a separate reviewed image/OMR workflow
+
+Unsupported PDF, MuseScore-source, LilyPond and image files selected through score import receive format-specific guidance before file contents are read. The app does not install converters, turn PDF into playable music, guarantee source availability or verify legal clearance. Users keep the original file, exact edition URL, rights notice and conversion history, then inspect import diagnostics and musical content before practice.

@@ -1,3 +1,4 @@
+import {setupSourceDirectory,unsupportedImportHint} from './score-sources.js';
 import {setupMetronome} from './metronome.js';
 import {setupJianpuExport} from './jianpu-export.js';
 import {setupScoreLibrary} from './library-view.js';
@@ -604,6 +605,7 @@ $('mobile-import-button').addEventListener('click', () => $('score-file').click(
 $('score-file').addEventListener('change', async event => {
   const file = event.target.files[0]; event.target.value = ''; if (!file) return;
   const intent = ++state.loadIntent;
+  const guidance=unsupportedImportHint(file.name);if(guidance){notice(guidance+' Open Find score sources for format and provenance guidance.',true);return}
   if (file.size > 8 * 1024 * 1024) { notice('This score is too large. Choose a score file smaller than 8 MiB.', true); return; }
   try {
     const jianpuText = /\.jianpu$/i.test(file.name);
@@ -676,6 +678,7 @@ const engravedView = setupEngravedView({getScore:()=>state.score,getPracticePart
 },onFallback:message=>{$('staff-button').click();notice(message,true)}});
 setupJianpuEditor({onImport:importJianpuText,pausePlayback});
 setupJianpuExport({getScore:()=>state.score,pausePlayback,api});
+setupSourceDirectory({pausePlayback,onScoreFile:()=>$('score-file').click(),onImageFile:()=>$('score-image-file').click()});
 setupImageReview({onImport:importCanonicalScore, pausePlayback, notice});
 setupMidi({pressNote, releaseNote, releaseMatching, silenceHeld, notice});
 metronome = setupMetronome({api,getScore:()=>state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:transport.time(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
