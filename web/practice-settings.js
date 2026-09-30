@@ -17,3 +17,16 @@ export function parseBeatInput(value) {
 export function windowNotes(notes, startMs, endMs) {
   return notes.filter(note => note.start_ms < endMs && note.start_ms + note.duration_ms > startMs).map(note => ({...note, start_ms: Math.max(startMs, note.start_ms), duration_ms: Math.min(endMs, note.start_ms + note.duration_ms) - Math.max(startMs, note.start_ms)}));
 }
+/** Select canonical part/occurrence IDs without changing note timing or source Score. */
+export function practiceScope(timeline, partId = null, loop = null) {
+  const notes = partId === null ? timeline.notes : timeline.notes.filter(note => note.part_id === partId);
+  const selected = {...timeline, notes};
+  const ids = new Set(notes.map(note => note.id));
+  const targetIds = loop ? new Set(loop.target_note_ids.filter(id => ids.has(id))) : ids;
+  return {
+    selected,
+    targets: {...timeline, notes: loop ? notes.filter(note => targetIds.has(note.id)) : notes},
+    targetIds,
+    playbackNotes: loop ? windowNotes(notes, loop.start_ms, loop.end_ms) : notes
+  };
+}

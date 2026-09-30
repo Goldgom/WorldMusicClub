@@ -1,6 +1,6 @@
 import {feedbackView} from './feedback-view.js';
 import {STANDARD_TUNING, guitarProfile, pianoProfile} from './instrument-profile.js';
-import {compensateInput, validLatency, loadLatency, saveLatency, parseBeatInput, windowNotes} from './practice-settings.js';
+import {compensateInput, validLatency, loadLatency, saveLatency, parseBeatInput, practiceScope} from './practice-settings.js';
 import {setupMidi} from './midi.js';
 import {setupImageReview} from './image-review.js';
 import {setupThemes} from './themes.js';
@@ -12,7 +12,7 @@ const $ = id => document.getElementById(id);
 setupThemes();
 const transport = new Transport();
 const synth = new Synth();
-const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', instrument: 'piano', notation: 'staff', numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, notationPage: 0, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
+const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, notationPage: 0, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
 function notice(message, error = false) {
   $('notice').textContent = message;
@@ -79,6 +79,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
   try {
     const compiled = await api('/api/compile', score, controller.signal);
     if (generation !== state.generation || controller.signal.aborted) return;
+    const previousPart = preserveTempo ? state.practicePart : null;
     state.score = compiled.score;
     state.importDiagnostics = importDiagnostics;
     const diagnostics = [...new Map([...compiled.diagnostics, ...importDiagnostics].map(item => [`${item.code}:${item.note_id || ''}:${item.message}`, item])).values()];
@@ -86,8 +87,8 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     state.instrumentOutOfRange = null; state.instrumentConflict = false;
     state.timelineIndex = new TimelineIndex(state.compiled.timeline.notes);
     state.sourceNotes = new Map(state.score.parts.flatMap(part => part.notes.map(note => [`${part.id}:${note.id}`, {note, partId: part.id}])));
-    state.loop = null; state.loopRequest++; $('loop-enabled').checked = false; $('loop-status').textContent = 'Loop cleared. Choose A and B, then Set loop. Beats start at 0; B is exclusive.';
-    state.notationPage = 0; state.notationPart = state.score.parts[0].id;
+    state.loop = null; state.loopRequest++; state.practicePart = previousPart !== null && state.score.parts.some(part => part.id === previousPart) ? previousPart : null; rebuildPracticeScope(); $('loop-enabled').checked = false; $('loop-status').textContent = 'Loop cleared. Choose A and B, then Set loop. Beats start at 0; B is exclusive.';
+    state.notationPage = 0; state.notationPart = state.practicePart || state.score.parts[0].id;
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
     clearNotice();
     resetPlayback();
@@ -129,6 +130,11 @@ function renderScore() {
   $('notation-part').replaceChildren();
   for (const part of score.parts) { const option = document.createElement('option'); option.value = part.id; option.textContent = part.name; $('notation-part').append(option); }
   $('notation-part').value = state.notationPart;
+  $('practice-part').replaceChildren();
+  const all = document.createElement('option'); all.value = ''; all.textContent = 'All parts · 所有声部'; $('practice-part').append(all);
+  for (const part of score.parts) { const option = document.createElement('option'); option.value = part.id; option.textContent = part.name; $('practice-part').append(option); }
+  $('practice-part').value = state.practicePart || '';
+  updatePracticeScopeLabel();
   renderNotationPage();
   $('provenance').textContent = `Source: ${score.provenance.kind}. ${score.provenance.attribution || ''}${score.provenance.license ? ` License: ${score.provenance.license}.` : ' Rights information stays with this score; no external reuse permission is implied.'}`;
   $('provenance-link').hidden = true;
@@ -140,6 +146,25 @@ function renderScore() {
   });
   state.lastHighlight = '';
   drawFrame();
+}
+function rebuildPracticeScope() {
+  if (!state.compiled) return;
+  const scope = practiceScope(state.compiled.timeline, state.practicePart, state.loop);
+  state.practiceTimeline = scope.selected; state.targetTimeline = scope.targets;
+  state.practiceIndex = new TimelineIndex(scope.selected.notes); state.practiceVersion++;
+  state.instrumentOutOfRange = null; state.instrumentConflict = false;
+  if (state.loop) { state.loop.notes = scope.playbackNotes; state.loop.index = new TimelineIndex(scope.playbackNotes); state.loop.targetIds = scope.targetIds; updateLoopStatus(); }
+  updatePracticeScopeLabel();
+}
+function updatePracticeScopeLabel() {
+  if (!state.score) return;
+  const name = state.practicePart === null ? 'All parts · 所有声部' : state.score.parts.find(part => part.id === state.practicePart)?.name || state.practicePart;
+  $('practice-scope').textContent = `${name} · ${state.targetTimeline?.notes.length || 0} note-on targets${state.loop ? ' in A–B' : ''}`;
+}
+function updateLoopStatus() {
+  if (!state.loop) return;
+  const loop = state.loop;
+  $('loop-status').textContent = `Loop A–B ready · ${formatTime(loop.start_ms)}–${formatTime(loop.end_ms)} · ${loop.targetIds.size} selected target notes. ${loop.crossing_notes ? `${loop.crossing_notes} sustained notes in the full score cross a boundary; only selected note-ons inside A–B are scored. ` : ''}${(loop.diagnostics || []).map(d => d.message).join(' ')}`;
 }
 function renderNotationPage() {
   if (!state.score) return;
@@ -156,7 +181,7 @@ function renderNotationPage() {
 function updateRangeWarning() {
   if (!state.compiled) return;
   const [min, max] = state.instrument === 'guitar' ? [Math.min(...state.guitar.tuning) + state.guitar.capo, Math.max(...state.guitar.tuning) + state.guitar.frets] : [state.geometry[0].midi, state.geometry.at(-1).midi];
-  const outside = state.instrumentOutOfRange ?? state.compiled.timeline.notes.filter(n => n.midi < min || n.midi > max).length;
+  const outside = state.instrumentOutOfRange ?? (state.targetTimeline?.notes || state.compiled.timeline.notes).filter(n => n.midi < min || n.midi > max).length;
   $('practice-hint').textContent = state.instrumentConflict ? 'Some chords need a guitar arrangement · 同时发音存在弦位冲突' : outside ? `${outside} notes unavailable in this ${state.instrument === 'guitar' ? 'guitar fret display' : 'keyboard range'}; change range or exercise` : state.mode === 'practice' ? 'Play each note as it reaches the line · 到线时弹奏' : 'Listen first. Then make it your own. · 先听，再弹';
 }
 function renderKeyboard() {
@@ -210,12 +235,12 @@ function profileControls() {
 }
 async function checkInstrument(profile = currentProfile(), apply = false) {
   if (!state.compiled) return;
-  const request = ++state.instrumentRequest; const compiled = state.compiled;
+  const request = ++state.instrumentRequest; const compiled = state.compiled; const selection = state.practiceVersion;
   state.instrumentOutOfRange = null; state.instrumentConflict = false;
   $('instrument-report').textContent = 'Checking note range and pitch-compatible positions with Rust…';
   try {
-    const report = await api('/api/instrument-check', {timeline:compiled.timeline, profile});
-    if (request !== state.instrumentRequest || compiled !== state.compiled) return;
+    const report = await api('/api/instrument-check', {timeline:state.targetTimeline || compiled.timeline, profile});
+    if (request !== state.instrumentRequest || compiled !== state.compiled || selection !== state.practiceVersion) return;
     if (apply) {
       pausePlayback();
       if (profile.kind === 'piano') { state.keys = profile.key_count; state.lowestMidi = profile.lowest_midi; state.customKeys = true; $('key-count').value = 'custom'; renderKeyboard(); }
@@ -276,7 +301,7 @@ async function togglePlayback() {
   if (generation !== state.generation || ticket !== state.playTicket || transport.running || !state.compiled) return;
   if (transport.completed) resetPlayback();
   const beatMs = 60000 / (Number($('tempo').value) || 100);
-  transport.start(performance.now(), state.loop?.notes || state.compiled.timeline.notes, $('count-in').checked ? beatMs * 4 : 0);
+  transport.start(performance.now(), state.loop?.notes || state.practiceTimeline?.notes || state.compiled.timeline.notes, $('count-in').checked ? beatMs * 4 : 0);
   updateButtons();
 }
 async function assess(options = {}) {
@@ -285,7 +310,7 @@ async function assess(options = {}) {
   state.finishing = true; updateButtons();
   const generation = state.generation;
   try {
-    const timeline = state.loop ? {...state.compiled.timeline, notes: state.compiled.timeline.notes.filter(note => state.loop.targetIds.has(note.id))} : state.compiled.timeline;
+    const timeline = state.targetTimeline || state.compiled.timeline;
     const assessment = await api('/api/assess', {timeline, inputs: options.inputs || state.inputs, tolerance_ms: 180});
     if (generation !== state.generation) return;
     $('feedback-results').hidden = false;
@@ -313,8 +338,8 @@ function drawFrame() {
   const duration = timeline?.duration_ms || 0;
   const segmentStart = state.loop?.start_ms || 0;
   const segmentEnd = state.loop?.end_ms || duration;
-  const playbackNotes = state.loop?.notes || timeline?.notes || [];
-  const playbackIndex = state.loop?.index || state.timelineIndex;
+  const playbackNotes = state.loop?.notes || state.practiceTimeline?.notes || timeline?.notes || [];
+  const playbackIndex = state.loop?.index || state.practiceIndex || state.timelineIndex;
   if (transport.running && timeline) {
     for (const note of transport.due(now, playbackNotes)) if (state.mode === 'listen') synth.play(`score:${note.id}:${note.part_id}:${note.start_ms}`, note.midi, note.remaining_ms, note.delay_ms, state.instrument, note.velocity ?? 90);
     if (state.loop && position >= segmentEnd) {
@@ -384,17 +409,17 @@ async function applyLoop() {
     const window = await api('/api/practice-window', {score: state.score, from, to});
     if (request !== state.loopRequest || generation !== state.generation) return;
     if (window.end_ms - window.start_ms < 250) throw new Error('Choose a loop at least 250 ms long so playback and feedback can remain usable.');
-    const notes = windowNotes(state.compiled.timeline.notes, window.start_ms, window.end_ms);
-    state.loop = {...window, notes, index: new TimelineIndex(notes), targetIds: new Set(window.target_note_ids)};
+    state.loop = {...window, notes: [], index: null, targetIds: new Set()};
+    rebuildPracticeScope();
     $('loop-enabled').checked = true;
-    $('loop-status').textContent = `Loop A–B ready · ${formatTime(window.start_ms)}–${formatTime(window.end_ms)} · ${window.target_note_ids.length} target notes. ${window.crossing_notes ? `${window.crossing_notes} sustained notes cross a boundary; only note-ons inside A–B are scored. ` : ''}${(window.diagnostics || []).map(d => d.message).join(' ')}`;
-    resetPlayback();
-  } catch (error) { if (request === state.loopRequest) { state.loop = null; $('loop-enabled').checked = false; $('loop-status').textContent = `Loop not set: ${error.message}`; resetPlayback(); } }
+    updateLoopStatus();
+    resetPlayback(); checkInstrument();
+  } catch (error) { if (request === state.loopRequest) { state.loop = null; rebuildPracticeScope(); checkInstrument(); $('loop-enabled').checked = false; $('loop-status').textContent = `Loop not set: ${error.message}`; resetPlayback(); } }
   finally { if (request === state.loopRequest) updateButtons(); }
 }
 $('loop-apply').addEventListener('click', applyLoop);
-$('loop-enabled').addEventListener('change', () => { if ($('loop-enabled').checked) applyLoop(); else { state.loop = null; state.loopRequest++; resetPlayback(); $('loop-status').textContent = 'Loop off. Full-score playback and assessment restored.'; } });
-for (const id of ['loop-from', 'loop-to']) $(id).addEventListener('input', () => { state.loopRequest++; if (state.loop || $('loop-enabled').checked) { state.loop = null; $('loop-enabled').checked = false; resetPlayback(); } $('loop-status').textContent = 'Bounds changed. Set loop to validate the new range.'; });
+$('loop-enabled').addEventListener('change', () => { if ($('loop-enabled').checked) applyLoop(); else { state.loop = null; state.loopRequest++; rebuildPracticeScope(); resetPlayback(); checkInstrument(); $('loop-status').textContent = 'Loop off. Full-length playback and assessment for the selected part restored.'; } });
+for (const id of ['loop-from', 'loop-to']) $(id).addEventListener('input', () => { state.loopRequest++; if (state.loop || $('loop-enabled').checked) { state.loop = null; rebuildPracticeScope(); $('loop-enabled').checked = false; resetPlayback(); checkInstrument(); } $('loop-status').textContent = 'Bounds changed. Set loop to validate the new range.'; });
 
 $('latency-offset').value = String(state.latency);
 $('latency-offset').addEventListener('change', () => {
@@ -402,6 +427,7 @@ $('latency-offset').addEventListener('change', () => {
   if (!validLatency(value)) { $('latency-offset').value = String(state.latency); notice('Latency offset must be a whole number from −500 to 500 ms.', true); return; }
   state.latency = Number(value); saveLatency(state.latency); resetPlayback();
 });
+$('practice-part').addEventListener('change', () => { state.practicePart = $('practice-part').value || null; rebuildPracticeScope(); resetPlayback(); if (state.practicePart !== null) { state.notationPart = state.practicePart; $('notation-part').value = state.practicePart; renderNotationPage(); } updateRangeWarning(); checkInstrument(); });
 $('jianpu-reference').addEventListener('change', () => { state.numberedMode = $('jianpu-reference').value; renderNotationPage(); });
 $('notation-part').addEventListener('change', () => { state.notationPart = $('notation-part').value; renderNotationPage(); });
 $('notation-prev').addEventListener('click', () => { state.notationPage--; renderNotationPage(); });
