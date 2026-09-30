@@ -10,7 +10,7 @@ import test, {before, after, beforeEach, afterEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {mkdir, readFile} from 'node:fs/promises';
+import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
@@ -25,6 +25,8 @@ const fixtures = new URL('./fixtures/', import.meta.url);
 const testOptions = {timeout: 45_000};
 let server, browser, context, page, origin, initialCompilation;
 let serverOutput = '', serverError, pageErrors = [], apiFailures = [], requests = [];
+let browserConsole = [], failedResources = [], resourceFailures = [];
+const bootstrapTimeout = 25_000;
 
 async function availablePort() {
   const reservation = createServer();
@@ -96,8 +98,8 @@ async function rustApi(path, data) {
   return JSON.parse(body);
 }
 
-function nextResponse(path) {
-  return page.waitForResponse(response => new URL(response.url()).pathname === path);
+function nextResponse(path, timeout = 10_000) {
+  return page.waitForResponse(response => new URL(response.url()).pathname === path, {timeout});
 }
 
 async function responseJson(response) {
@@ -184,12 +186,14 @@ after(async () => {
 }, {timeout: 15_000});
 
 beforeEach(async () => {
-  pageErrors = []; apiFailures = []; requests = [];
+  pageErrors = []; apiFailures = []; requests = []; browserConsole = []; failedResources = []; resourceFailures = [];
   context = await browser.newContext({viewport: {width: 1440, height: 1100}, colorScheme: 'light', acceptDownloads: true});
   context.setDefaultTimeout(10_000);
   context.setDefaultNavigationTimeout(15_000);
   page = await context.newPage();
   page.on('pageerror', error => pageErrors.push(error.message));
+  page.on('console', message => { if (['error','warning'].includes(message.type()) && browserConsole.length < 30) browserConsole.push({type:message.type(),text:message.text().slice(0,1000)}); });
+  page.on('requestfailed', request => { const url=new URL(request.url()); if(url.origin===origin && failedResources.length<30)failedResources.push({path:url.pathname,error:request.failure()?.errorText}); });
   page.on('request', request => {
     const url = new URL(request.url());
     if (url.origin === origin && url.pathname.startsWith('/api/')) {
@@ -198,19 +202,28 @@ beforeEach(async () => {
   });
   page.on('response', response => {
     const url = new URL(response.url());
+    if(url.origin===origin && response.status()>=400 && resourceFailures.length<30)resourceFailures.push({path:url.pathname,status:response.status()});
     if (url.origin === origin && url.pathname.startsWith('/api/') && response.status() >= 400) {
       apiFailures.push(`${response.status()} ${url.pathname}`);
     }
   });
   // Wait for the app's observable ready contract, not unrelated network-idle heuristics.
   // Promise.all immediately handles both waiters if navigation or compilation fails.
-  const [compilation] = await Promise.all([
-    nextResponse('/api/compile'),
-    page.goto(origin, {waitUntil: 'domcontentloaded'}),
-  ]);
-  initialCompilation = await responseJson(compilation);
-  await readyForTitle(initialCompilation.score.title);
-}, {timeout: 25_000});
+  try {
+    const [compilation] = await Promise.all([
+      nextResponse('/api/compile', bootstrapTimeout),
+      page.goto(origin, {waitUntil: 'domcontentloaded'}),
+    ]);
+    initialCompilation = await responseJson(compilation);
+    await readyForTitle(initialCompilation.score.title);
+  } catch (error) {
+    const observed = await page.evaluate(() => ({url:location.href,readyState:document.readyState,title:document.title,notice:document.querySelector('#notice')?.textContent,scoreTitle:document.querySelector('#score-title')?.textContent,playDisabled:document.querySelector('#play-button')?.disabled})).catch(failure=>({observationError:failure.message}));
+    const diagnostics={failure:error.message,observed,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverRunning:serverRunning(),serverOutput:serverOutput.slice(-4000)};
+    await writeFile(join(artifactDirectory,'worldmusichub-live-bootstrap-diagnostics.json'),JSON.stringify(diagnostics,null,2));
+    await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-bootstrap-failure.png'),fullPage:true,timeout:3000}).catch(()=>{});
+    throw new Error(`Live app bootstrap failed without retry. Diagnostics: ${JSON.stringify(diagnostics)}`,{cause:error});
+  }
+}, {timeout: 40_000});
 
 afterEach(async t => {
   try {
@@ -472,4 +485,39 @@ test('browser practice records real keyboard timing and displays the Rust assess
   assert.equal(await page.locator('#misses').textContent(), `${assessment.misses.length} / ${assessment.extras.length}`);
   assert.match(await page.locator('#transport-status').textContent(), /Paused/);
   assert.equal(await page.locator('.piano-key.pressed').count(), 0);
+});
+
+test('whole application engraves real exported MusicXML and preserves the score across light/dark views', {timeout:60_000}, async () => {
+  const source = await readFile(new URL('original-duet.musicxml',fixtures),'utf8');
+  const [compiledResponse] = await Promise.all([
+    nextResponse('/api/compile'),
+    page.locator('#score-file').setInputFiles({name:'original-duet.musicxml',mimeType:'application/xml',buffer:Buffer.from(source)}),
+  ]);
+  const compiled = await responseJson(compiledResponse);
+  await readyForTitle(compiled.score.title);
+  const before = await exportScore();
+  const [xmlResponse] = await Promise.all([nextResponse('/api/export/musicxml'),page.locator('#engraved-button').click()]);
+  const exported = await responseJson(xmlResponse);
+  assert.match(exported.xml, /^<\?xml/);
+  assert.ok(Object.hasOwn(exported.part_id_map,compiled.score.parts[0].id));
+  await page.locator('#engraved-staff svg').first().waitFor({state:'visible',timeout:25_000});
+  await page.waitForFunction(()=>document.querySelector('#engraving-status').textContent.includes('Generated staff preview'));
+  assert.equal(await page.locator('#engraved-button').getAttribute('aria-pressed'),'true');
+  assert.equal(await page.locator('#notation').isVisible(),false);
+  assert.ok(await page.locator('#engraved-staff svg path').count()>30);
+  assert.ok(await page.locator('#engraved-staff .vf-stavetie').count()>=1);
+  assert.equal(await page.locator('#engraving-license-note').isVisible(),true);
+  assert.ok(requests.some(request=>request.path==='/api/export/musicxml'));
+  await screenshot('engraved-light');
+  await page.locator('#theme-mode').selectOption('dark');
+  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark' && [...document.querySelectorAll('#engraved-staff .vf-notehead path')].some(path=>getComputedStyle(path).fill==='rgb(243, 245, 239)') && document.querySelector('#engraving-status').textContent.includes('Generated staff preview'));
+  await screenshot('engraved-dark');
+  await page.locator('#engraving-part').selectOption(compiled.score.parts[0].id);
+  await page.waitForFunction(()=>document.querySelector('#engraved-staff svg') && !document.querySelector('#engraved-staff').textContent.includes('Guitar'));
+  assert.ok(await page.locator('#engraved-staff .vf-clef').count()>=2);
+  await page.locator('#staff-button').click();
+  assert.equal(await page.locator('#notation').isVisible(),true);
+  assert.equal(await page.locator('#engraving-view').isVisible(),false);
+  assert.equal(await page.locator('#engraved-staff svg').count(),0,'Switching to the pitch guide disposes the generated staff');
+  assert.deepEqual(await exportScore(),before,'View/theme/part changes must not modify canonical notes or source data');
 });

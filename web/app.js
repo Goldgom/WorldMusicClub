@@ -407,7 +407,7 @@ async function drainAssessments() {
       try{
         const assessment=await api('/api/assess',{timeline:job.timeline,inputs:job.inputs,tolerance_ms:recorder.toleranceMs});
         if(recorder!==state.recorder)return;
-        recorder.complete(job,assessment);refreshPassHistory();displayChosenPass();
+        recorder.complete(job,assessment);if(pass===recorder.active&&pass.closedWall===null&&!transport.running)$('transport-status').textContent='Paused · 已暂停';refreshPassHistory();displayChosenPass();
       }catch(error){if(recorder!==state.recorder)return;recorder.fail(job,error.message);notice(`Could not check ${pass.label}. ${error.message} Its inputs are retained; use Retry checks or export the session.`,true);refreshPassHistory()}
     }
   }finally{if(recorder===state.recorder){state.assessmentBusy=false;updateButtons();refreshPassHistory()}}
