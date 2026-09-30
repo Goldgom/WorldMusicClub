@@ -22,6 +22,14 @@ try:
     catalog=json.loads(body);assert len(catalog)>=3
     status,body,_=request('/api/compile',json.dumps(catalog[0]).encode(),{'Content-Type':'application/json'});assert status==200
     compilation=json.loads(body);assert len(compilation['timeline']['notes'])==15
+    status,body,_=request('/api/export/musicxml',json.dumps(catalog[0]).encode(),{'Content-Type':'application/json'})
+    assert status==200,body
+    exported=json.loads(body);assert exported['part_id_map']['piano']=='P1' and exported['voice_id_map']
+    assert '<rights type="attribution">' in exported['xml']
+    status,body,_=request('/api/import/musicxml',exported['xml'].encode(),{'Content-Type':'application/xml'})
+    assert status==200,body
+    again=json.loads(body)['timeline'];assert [n['midi'] for n in again['notes']]==[n['midi'] for n in compilation['timeline']['notes']]
+    assert abs(again['duration_ms']-compilation['timeline']['duration_ms'])<.001
     instrument={'timeline':compilation['timeline'],'profile':{'kind':'piano','key_count':61,'lowest_midi':None}}
     status,body,_=request('/api/instrument-check',json.dumps(instrument).encode(),{'Content-Type':'application/json'})
     assert status==200 and json.loads(body)['highest_midi']==96

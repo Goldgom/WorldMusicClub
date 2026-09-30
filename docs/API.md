@@ -51,3 +51,7 @@ Assessment responses include `summary`: expected/matched counts, onset coverage,
 ## Numbered-notation text
 
 `POST /api/import/jianpu` accepts UTF-8 `text/plain` in the explicit WorldMusicHub v1 dialect, up to1MiB. It returns the compiled score and source/default diagnostics. This is not a claim to parse every jianpu typography convention. See [Jianpu text grammar](JIANPU_TEXT.md) for tonic/mode/tempo/meter headers, exact fractional durations, octave marks, rests, sustains and checked barlines. Unsupported lyrics/chords/polyphony and invalid notation are rejected explicitly. Original text is retained verbatim.
+
+## Generated MusicXML export
+
+`POST /api/export/musicxml` accepts a canonical Score and returns `{xml,diagnostics,part_id_map,voice_id_map}`. Export preserves supported musical timing using exact integer divisions, splits cross-bar holds with ties, maps overlapping voices explicitly, and retains supplied attribution/license notices. Safe `P1`/`P2` part IDs and positive numeric voice IDs map back to canonical labels for renderer compatibility. This generated interchange is not original engraving recovery; raw source bytes and provenance URLs never become XML markup or external resources. See [export limits](MUSICXML_EXPORT.md).
