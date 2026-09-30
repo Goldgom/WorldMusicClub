@@ -13,6 +13,13 @@ const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 type WebResponse = Response<Full<Bytes>>;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct AdaptationRequest {
+    score: score_core::Score,
+    operation: score_core::adaptation::OctaveOperation,
+    profile: score_core::instruments::InstrumentProfile,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct MetronomeRequest {
     score: score_core::Score,
     #[serde(default)]
@@ -205,6 +212,16 @@ async fn route(
 }
 fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
     match path {
+        "/api/adaptation/preview" => serde_json::from_slice::<AdaptationRequest>(&bytes)
+            .map_err(|e| format!("Invalid adaptation request: {e}"))
+            .and_then(|r| {
+                score_core::adaptation::preview_octaves(&r.score, r.operation, &r.profile)
+            })
+            .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
+        "/api/adaptation/restore" => serde_json::from_slice::<score_core::Score>(&bytes)
+            .map_err(|e| format!("Invalid adapted score: {e}"))
+            .and_then(|score| score_core::adaptation::restore_original(&score))
+            .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
         "/api/compile" => serde_json::from_slice(&bytes)
             .map_err(|e| format!("Invalid score JSON: {e}"))
             .and_then(score_core::compile)

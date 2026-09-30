@@ -1,5 +1,6 @@
 //! WorldMusicHub's canonical musical model and deterministic performance engine.
 //! Musical time is rational quarter-note time; wall-clock time is derived only at playback boundaries.
+pub mod adaptation;
 mod jianpu;
 mod matching;
 mod midi;

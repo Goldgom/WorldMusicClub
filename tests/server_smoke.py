@@ -37,6 +37,14 @@ try:
     assert status==200,body
     targets=json.loads(body);assert targets['playable'] and targets['target_count']==15 and targets['source_note_count']==15
     assert all(group['source_occurrence_ids'] and group['source_note_ids'] for group in targets['groups'])
+    adaptation={'score':catalog[0],'operation':{'part_id':None,'octaves':1},'profile':instrument['profile']}
+    status,body,_=request('/api/adaptation/preview',json.dumps(adaptation).encode(),{'Content-Type':'application/json'})
+    assert status==200,body
+    adapted=json.loads(body);assert adapted['original_preserved'] and adapted['changed_note_count']==15
+    assert adapted['scored_mode_allowed']
+    assert [n['midi'] for n in adapted['compilation']['timeline']['notes']]==[n['midi']+12 for n in compilation['timeline']['notes']]
+    status,body,_=request('/api/adaptation/restore',json.dumps(adapted['compilation']['score']).encode(),{'Content-Type':'application/json'})
+    assert status==200 and json.loads(body)['score']==catalog[0],body
     status,body,_=request('/api/export/jianpu',json.dumps(catalog[0]).encode(),{'Content-Type':'application/json'})
     assert status==200,body
     numbered=json.loads(body);assert '; License: CC0-1.0' in numbered['text'] and numbered['note_map']
