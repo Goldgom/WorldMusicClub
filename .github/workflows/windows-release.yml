@@ -11,6 +11,7 @@ jobs:
     outputs:
       build: ${{ steps.count.outputs.build }}
       count: ${{ steps.count.outputs.count }}
+      sha: ${{ steps.count.outputs.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -20,6 +21,7 @@ jobs:
         run: |
           count=$(git rev-list --count HEAD)
           echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           if (( count % 50 == 0 )) || [[ '${{ github.event_name }}' == 'workflow_dispatch' ]]; then
             echo 'build=true' >> "$GITHUB_OUTPUT"
           else
@@ -29,8 +31,13 @@ jobs:
     needs: milestone
     if: needs.milestone.outputs.build == 'true'
     runs-on: windows-latest
+    env:
+      RUSTFLAGS: '-C target-feature=+crt-static'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.milestone.outputs.sha }}
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           components: rust-docs
@@ -44,12 +51,12 @@ jobs:
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
       - run: npm test
-      - run: cargo test --workspace --locked
-      - run: cargo build -p practice-server --release --locked
+      - run: cargo test --workspace --target x86_64-pc-windows-msvc --locked
+      - run: cargo build -p practice-server --release --target x86_64-pc-windows-msvc --locked
       - name: Smoke-test exact release executable
         shell: pwsh
         run: |
-          $app = Start-Process target/release/practice-server.exe -ArgumentList '--no-open','--port','17879' -PassThru
+          $app = Start-Process target/x86_64-pc-windows-msvc/release/practice-server.exe -ArgumentList '--no-open','--port','17879' -PassThru
           try {
             $ready = $false
             for ($i=0; $i -lt 40; $i++) {
@@ -65,12 +72,12 @@ jobs:
       - name: Test Windows release through real browser UI
         run: npm run test:full-app
         env:
-          WMH_SERVER_BINARY: target/release/practice-server.exe
+          WMH_SERVER_BINARY: target/x86_64-pc-windows-msvc/release/practice-server.exe
           WMH_ARTIFACT_DIR: ${{ runner.temp }}/wmh-screenshots
       - name: Verify offline engraving in Windows release
         run: npm run test:engraving-browser
         env:
-          WMH_SERVER_BINARY: target/release/practice-server.exe
+          WMH_SERVER_BINARY: target/x86_64-pc-windows-msvc/release/practice-server.exe
           WMH_ARTIFACT_DIR: ${{ runner.temp }}/wmh-screenshots
       - name: Preserve Windows release screenshots
         if: always()
@@ -80,24 +87,49 @@ jobs:
           path: ${{ runner.temp }}/wmh-screenshots/*.png
           if-no-files-found: ignore
       - run: cargo fetch --locked
-      - run: python -m unittest discover -s tests -p test_rust_notices.py
+      - run: python -m unittest discover -s tests -p 'test_*.py'
       - run: python scripts/prepare-rust-notices.py
       - name: Create portable Windows package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path dist/WorldMusicHub -Force | Out-Null
-          Copy-Item target/release/practice-server.exe dist/WorldMusicHub/WorldMusicHub.exe
+          Copy-Item target/x86_64-pc-windows-msvc/release/practice-server.exe dist/WorldMusicHub/WorldMusicHub.exe
           Copy-Item README.md,LICENSE dist/WorldMusicHub/
           Copy-Item docs/WINDOWS.md dist/WorldMusicHub/START-HERE.md
           New-Item -ItemType Directory -Path dist/WorldMusicHub/licenses/engraving -Force | Out-Null
           Copy-Item web/vendor/*.txt,web/vendor/engraving-manifest.json dist/WorldMusicHub/licenses/engraving/
-          Copy-Item docs/ENGRAVING.md,docs/CATALOG_RIGHTS.md dist/WorldMusicHub/
+          Copy-Item -Recurse docs dist/WorldMusicHub/
           Copy-Item -Recurse schema dist/WorldMusicHub/
           Copy-Item -Recurse dist/licenses/rust dist/WorldMusicHub/licenses/
-          Get-FileHash dist/WorldMusicHub/WorldMusicHub.exe -Algorithm SHA256 | Format-List | Out-File dist/WorldMusicHub/SHA256.txt
-          Compress-Archive -Path dist/WorldMusicHub -DestinationPath dist/WorldMusicHub-Windows-x64-commit-${{ needs.milestone.outputs.count }}.zip
+          python scripts/release-manifest.py create dist/WorldMusicHub --commit '${{ needs.milestone.outputs.sha }}' --count '${{ needs.milestone.outputs.count }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Release inventory failed' }
+          python scripts/release-manifest.py archive dist/WorldMusicHub dist/WorldMusicHub-Windows-x64-commit-${{ needs.milestone.outputs.count }}.zip
+          if ($LASTEXITCODE -ne 0) { throw 'Portable archive verification failed' }
+      - name: Smoke-test the extracted portable package and offline renderer bytes
+        shell: pwsh
+        run: |
+          $destination = Join-Path $env:RUNNER_TEMP 'wmh-portable-smoke'
+          Expand-Archive -Path dist/WorldMusicHub-Windows-x64-commit-${{ needs.milestone.outputs.count }}.zip -DestinationPath $destination
+          $directory = Join-Path $destination 'WorldMusicHub'
+          $executable = Join-Path $directory 'WorldMusicHub.exe'
+          $info = Get-Content (Join-Path $directory 'BUILD-INFO.json') -Raw | ConvertFrom-Json
+          if ($info.git_commit -ne '${{ needs.milestone.outputs.sha }}' -or $info.commit_count -ne ${{ needs.milestone.outputs.count }}) { throw 'Wrong milestone provenance' }
+          $app = Start-Process $executable -WorkingDirectory $directory -ArgumentList '--no-open','--port','17880' -PassThru
+          try {
+            $ready = $false
+            for ($i=0; $i -lt 40; $i++) {
+              try { $health = Invoke-RestMethod http://127.0.0.1:17880/api/health; $ready = $true; break } catch { Start-Sleep -Milliseconds 250 }
+            }
+            if (-not $ready -or $health.engine -ne 'rust') { throw 'Extracted executable did not start' }
+            $manifest = Invoke-RestMethod http://127.0.0.1:17880/vendor/engraving-manifest.json
+            $bundle = Join-Path $env:RUNNER_TEMP 'wmh-packaged-osmd.js'
+            Invoke-WebRequest http://127.0.0.1:17880/vendor/opensheetmusicdisplay.min.js -OutFile $bundle
+            if ((Get-FileHash $bundle -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest.bundleSha256) { throw 'Embedded offline renderer checksum differs' }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id } }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: WorldMusicHub-Windows-x64-commit-${{ needs.milestone.outputs.count }}
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/*.zip.sha256
           if-no-files-found: error

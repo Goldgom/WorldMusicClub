@@ -1,6 +1,6 @@
 # WorldMusicHub on Windows
 
-The initial distribution is a portable Rust executable with its UI embedded inside it.
+The initial distribution targets Windows 10/11 x64 and is a portable Rust executable with its UI embedded inside it. The Windows build requests static C-runtime linkage to reduce separate runtime-installation requirements.
 
 1. Extract the entire ZIP to a normal folder.
 2. Double-click `WorldMusicHub.exe`.
@@ -22,3 +22,9 @@ Every 50 meaningful development-branch commits is a release-build milestone. A m
 Keep the `licenses` folder with redistributed ZIP packages. It includes offline engraving notices, the locked Cargo dependency inventory, and the Rust standard-library copyright/license collection from the exact build toolchain. The conservative inventory includes build-time and target-specific packages and does not imply that every listed component is linked into the executable. The code license does not relicense imported songs, score images, or third-party assets.
 
 Build preparation uses `python scripts/prepare-rust-notices.py` after `cargo fetch --locked`. It reads installed official registry packages, verifies version-pinned upstream fallback notices where crates omit them, and fails on unknown license expressions or missing notices. Zune image components use their Zlib option. Generated notices stay out of Git and are recreated for each release.
+
+## Exact build provenance and ZIP checks
+
+`BUILD-INFO.json` records the development-branch commit SHA/tree, complete-history commit count, target, toolchain, lockfile hashes and every packaged file's SHA-256. `SHA256.txt` uses portable relative filenames; the download also includes a checksum for the ZIP itself. These checks identify bytes and provenance, not a digital signature or antivirus verdict.
+
+The milestone workflow checks out the exact SHA measured by its counting job, builds and runs the Windows x64 executable, exercises the real browser UI, creates the ZIP, verifies its complete inventory, then starts the extracted executable from its portable folder and compares its embedded offline renderer against the pinned bundle checksum. A successfully skipped count gate is not a verified release. GitHub release/tag publication is a separate step tied to the same verified SHA.
