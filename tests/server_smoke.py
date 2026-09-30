@@ -48,6 +48,13 @@ try:
     assert status==200,body
     assert json.loads(body)['score']['source']['content'].encode()==xml
     assert request('/api/import/mxl',b'not a zip',{'Content-Type':'application/zip'})[0]==400
+    midi=Path('tests/fixtures/midi-original-ppq.mid').read_bytes()
+    status,body,_=request('/api/import/midi',midi,{'Content-Type':'audio/midi'})
+    assert status==200,body
+    midi_result=json.loads(body);assert len(midi_result['timeline']['notes'])==3
+    import base64
+    assert base64.b64decode(midi_result['score']['source']['content'])==midi
+    assert request('/api/import/midi',b'not midi',{'Content-Type':'audio/midi'})[0]==400
     png=Path('tests/fixtures/omr-original-scale.png').read_bytes()
     status,body,_=request('/api/import/image',png,{'Content-Type':'image/png'})
     assert status==200,body

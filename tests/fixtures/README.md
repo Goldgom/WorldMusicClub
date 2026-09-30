@@ -10,3 +10,5 @@ under CC0-1.0. They test timing/import behavior, not MusicXML engraving fidelity
 - `original-repeat.musicxml`: a bounded, explicit three-pass repeat region
 - `original-duet.mxl`: a deterministic stored/DEFLATE ZIP container holding the
   exact `original-duet.musicxml`, with a manifest and standard MXL MIME entry
+
+`midi-original-ppq.mid` is an original three-note synthetic parser fixture generated for WorldMusicHub, with exact PPQ timing and attack velocities. It contains no third-party song.

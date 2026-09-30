@@ -1,6 +1,8 @@
 //! WorldMusicHub's canonical musical model and deterministic performance engine.
 //! Musical time is rational quarter-note time; wall-clock time is derived only at playback boundaries.
+mod midi;
 mod musicxml;
+pub use midi::import_midi;
 mod mxl;
 pub use mxl::import_mxl;
 pub mod instruments;
@@ -200,6 +202,8 @@ impl Diagnostic {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TimedNote {
+    #[serde(default = "default_velocity")]
+    pub velocity: u8,
     pub id: String,
     #[serde(default)]
     pub source_note_id: String,
@@ -209,6 +213,9 @@ pub struct TimedNote {
     pub duration_ms: f64,
     pub voice: String,
     pub staff: u8,
+}
+fn default_velocity() -> u8 {
+    90
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Timeline {
@@ -438,6 +445,7 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
             if !merged {
                 let index = notes.len();
                 notes.push(TimedNote {
+                    velocity: note.velocity,
                     id: note.id.clone(),
                     source_note_id: note.id.clone(),
                     part_id: part.id.clone(),
@@ -591,6 +599,7 @@ pub fn assess(
         .any(|x| x.midi > 127 || x.velocity > 127 || !x.at_ms.is_finite())
         || timeline.notes.iter().any(|n| {
             n.midi > 127
+                || n.velocity > 127
                 || !n.start_ms.is_finite()
                 || n.start_ms < 0.
                 || !n.duration_ms.is_finite()
@@ -960,6 +969,7 @@ mod tests {
     fn dense_performance_matching_is_one_to_one_and_bounded() {
         let notes = (0..20_000)
             .map(|i| TimedNote {
+                velocity: 90,
                 id: format!("n-{i}"),
                 source_note_id: format!("n-{i}"),
                 part_id: "p".into(),
@@ -1091,5 +1101,11 @@ mod tests {
                 first
             );
         }
+    }
+    #[test]
+    fn playback_timeline_preserves_attack_velocity() {
+        let mut score = catalog().remove(0);
+        score.parts[0].notes[0].velocity = 42;
+        assert_eq!(compile(score).unwrap().timeline.notes[0].velocity, 42);
     }
 }
