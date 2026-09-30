@@ -1,7 +1,7 @@
 //! WorldMusicHub's canonical musical model and deterministic performance engine.
 //! Musical time is rational quarter-note time; wall-clock time is derived only at playback boundaries.
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Beat {
@@ -498,6 +498,7 @@ pub fn assess(
         || timeline.notes.iter().any(|n| {
             n.midi > 127
                 || !n.start_ms.is_finite()
+                || n.start_ms < 0.
                 || !n.duration_ms.is_finite()
                 || n.duration_ms <= 0.
         })
@@ -509,22 +510,45 @@ pub fn assess(
     let mut extras = vec![];
     let mut sorted: Vec<&InputEvent> = inputs.iter().filter(|e| e.velocity > 0).collect();
     sorted.sort_by(|a, b| a.at_ms.total_cmp(&b.at_ms));
+    // Ordered buckets avoid quadratic scans on long scores or dense repeated pitches.
+    let mut targets: Vec<BTreeMap<u64, VecDeque<usize>>> =
+        (0..128).map(|_| BTreeMap::new()).collect();
+    for (index, note) in timeline.notes.iter().enumerate() {
+        targets[note.midi as usize]
+            .entry(note.start_ms.max(0.).to_bits())
+            .or_default()
+            .push_back(index);
+    }
     for event in sorted {
-        let best = timeline
-            .notes
-            .iter()
-            .enumerate()
-            .filter(|(i, n)| {
-                !matched.contains(i)
-                    && n.midi == event.midi
-                    && (n.start_ms - event.at_ms).abs() <= tolerance_ms
-            })
+        let pitch_targets = &mut targets[event.midi as usize];
+        let key = event.at_ms.max(0.).to_bits();
+        let before = pitch_targets
+            .range(..=key)
+            .next_back()
+            .map(|(time, indices)| (*time, indices[0]));
+        let after = pitch_targets
+            .range(key..)
+            .next()
+            .map(|(time, indices)| (*time, indices[0]));
+        let best = before
+            .into_iter()
+            .chain(after)
+            .filter(|(_, i)| (timeline.notes[*i].start_ms - event.at_ms).abs() <= tolerance_ms)
             .min_by(|(_, a), (_, b)| {
-                (a.start_ms - event.at_ms)
+                (timeline.notes[*a].start_ms - event.at_ms)
                     .abs()
-                    .total_cmp(&(b.start_ms - event.at_ms).abs())
+                    .total_cmp(&(timeline.notes[*b].start_ms - event.at_ms).abs())
+                    .then(a.cmp(b))
             });
-        if let Some((i, note)) = best {
+        if let Some((time, i)) = best {
+            let bucket = pitch_targets
+                .get_mut(&time)
+                .expect("selected existing bucket");
+            bucket.pop_front();
+            if bucket.is_empty() {
+                pitch_targets.remove(&time);
+            }
+            let note = &timeline.notes[i];
             matched.insert(i);
             let delta = event.at_ms - note.start_ms;
             let grade = if delta.abs() <= tolerance_ms * 0.25 {
@@ -837,5 +861,62 @@ mod tests {
             times: 2,
         });
         assert!(compile(s).unwrap_err().contains("crosses"));
+    }
+    #[test]
+    fn dense_performance_matching_is_one_to_one_and_bounded() {
+        let notes = (0..20_000)
+            .map(|i| TimedNote {
+                id: format!("n-{i}"),
+                source_note_id: format!("n-{i}"),
+                part_id: "p".into(),
+                midi: 60,
+                start_ms: 0.,
+                duration_ms: 500.,
+                voice: "1".into(),
+                staff: 1,
+            })
+            .collect();
+        let t = Timeline {
+            notes,
+            duration_ms: 500.,
+        };
+        let inputs = vec![
+            InputEvent {
+                midi: 60,
+                at_ms: 10.,
+                velocity: 90
+            };
+            20_000
+        ];
+        let result = assess(&t, &inputs, 150.).unwrap();
+        assert_eq!(result.hits.len(), 20_000);
+        assert_eq!(result.accuracy_percent, 100.);
+        assert!(result.extras.is_empty());
+    }
+    #[test]
+    fn nearest_note_choice_handles_early_and_tied_distance() {
+        let mut t = compile(catalog().remove(0)).unwrap().timeline;
+        t.notes.truncate(2);
+        t.notes[1].midi = 60;
+        t.notes[1].start_ms = 200.;
+        let result = assess(
+            &t,
+            &[
+                InputEvent {
+                    midi: 60,
+                    at_ms: 100.,
+                    velocity: 90,
+                },
+                InputEvent {
+                    midi: 60,
+                    at_ms: 190.,
+                    velocity: 90,
+                },
+            ],
+            150.,
+        )
+        .unwrap();
+        assert_eq!(result.hits[0].note_id, t.notes[0].id);
+        assert_eq!(result.hits[1].note_id, t.notes[1].id);
     }
 }
