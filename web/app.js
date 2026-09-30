@@ -1,7 +1,8 @@
+import {compensateInput, validLatency, loadLatency, saveLatency, parseBeatInput, windowNotes} from './practice-settings.js';
 import {setupMidi} from './midi.js';
 import {setupImageReview} from './image-review.js';
 import {setupThemes} from './themes.js';
-import {PIANO_RANGES, SHORTCUTS, beat, midiName, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, renderNotation, notationPageCount} from './music.js';
+import {PIANO_RANGES, SHORTCUTS, beat, midiName, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, renderNotation, notationPageCount, keyAt, keyTonic} from './music.js';
 import {Transport, Synth, TimelineIndex} from './transport.js';
 import {formatTime} from './music.js';
 
@@ -9,7 +10,7 @@ const $ = id => document.getElementById(id);
 setupThemes();
 const transport = new Transport();
 const synth = new Synth();
-const state = {catalog: [], score: null, compiled: null, mode: 'listen', instrument: 'piano', notation: 'staff', notationPage: 0, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null};
+const state = {catalog: [], score: null, compiled: null, mode: 'listen', instrument: 'piano', notation: 'staff', numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, notationPage: 0, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null};
 
 function notice(message, error = false) {
   $('notice').textContent = message;
@@ -29,6 +30,7 @@ function updateButtons() {
   $('play-button').disabled = !ready;
   $('reset-button').disabled = !ready;
   $('export-button').disabled = !state.score;
+  $('loop-apply').disabled = !ready;
   $('assess-button').disabled = !ready || state.mode !== 'practice' || state.finishing;
   $('play-button').textContent = transport.running ? 'Ⅱ Pause · 暂停' : transport.completed ? '↻ Play again · 重来' : '▶ Play · 播放';
 }
@@ -47,6 +49,9 @@ function pausePlayback(reason = 'Paused · 已暂停') {
 function resetPlayback() {
   pausePlayback();
   transport.reset();
+  if (state.loop) transport.seek(state.loop.start_ms);
+  state.loopIteration = 1;
+  state.loopRequest++; $('loop-enabled').checked = Boolean(state.loop);
   state.inputs = [];
   state.generation++;
   state.finishing = false;
@@ -74,6 +79,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null)
     state.compiled = {...compiled, timeline: {...compiled.timeline, notes: [...compiled.timeline.notes].sort((a, b) => a.start_ms - b.start_ms || a.midi - b.midi)}};
     state.timelineIndex = new TimelineIndex(state.compiled.timeline.notes);
     state.sourceNotes = new Map(state.score.parts.flatMap(part => part.notes.map(note => [`${part.id}:${note.id}`, {note, partId: part.id}])));
+    state.loop = null; state.loopRequest++; $('loop-enabled').checked = false; $('loop-status').textContent = 'Loop cleared. Choose A and B, then Set loop. Beats start at 0; B is exclusive.';
     state.notationPage = 0; state.notationPart = state.score.parts[0].id;
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
     clearNotice();
@@ -130,7 +136,9 @@ function renderNotationPage() {
   if (!state.score) return;
   const count = notationPageCount(state.score);
   state.notationPage = Math.max(0, Math.min(count - 1, state.notationPage));
-  $('notation').innerHTML = renderNotation(state.score, state.notation, {startBeat: state.notationPage * 16, spanBeats: 16, partId: state.notationPart});
+  $('notation').innerHTML = renderNotation(state.score, state.notation, {startBeat: state.notationPage * 16, spanBeats: 16, partId: state.notationPart, numberedMode: state.numberedMode});
+  const tonic = keyTonic(keyAt(state.score, state.notationPage * 16));
+  $('score-key').textContent = state.notation === 'jianpu' && state.numberedMode === 'movable' ? (tonic ? `1 = ${tonic.name}${tonic.octave} · tonic-based numbering (minor too)` : 'Unknown key mode: fixed C display') : `${state.score.meters[0]?.numerator || 4}/${state.score.meters[0]?.denominator || 4} time · 1 = C4 display`;
   $('notation-page').textContent = `Page ${state.notationPage + 1} / ${count}`;
   $('notation-prev').disabled = state.notationPage <= 0;
   $('notation-next').disabled = state.notationPage >= count - 1;
@@ -181,8 +189,9 @@ async function pressNote(source, midi, velocity = 90) {
   if (state.held.has(source)) return;
   state.held.set(source, midi);
   const inputTime = transport.time(performance.now());
-  if (transport.running && state.mode === 'practice' && inputTime >= 0 && inputTime <= state.compiled.timeline.duration_ms + 300) {
-    state.inputs.push({midi, at_ms: inputTime, velocity});
+  const correctedTime = compensateInput(inputTime, state.latency);
+  if (transport.running && state.mode === 'practice' && correctedTime >= (state.loop?.start_ms || 0) - 180 && correctedTime <= (state.loop?.end_ms || state.compiled.timeline.duration_ms) + 180) {
+    state.inputs.push({midi, at_ms: correctedTime, velocity});
     $('feedback-description').textContent = `${state.inputs.length} note${state.inputs.length === 1 ? '' : 's'} recorded in this take · 已记录 ${state.inputs.length} 个音`;
   }
   highlightKeys();
@@ -218,24 +227,25 @@ async function togglePlayback() {
   if (generation !== state.generation || ticket !== state.playTicket || transport.running || !state.compiled) return;
   if (transport.completed) resetPlayback();
   const beatMs = 60000 / (Number($('tempo').value) || 100);
-  transport.start(performance.now(), state.compiled.timeline.notes, $('count-in').checked ? beatMs * 4 : 0);
+  transport.start(performance.now(), state.loop?.notes || state.compiled.timeline.notes, $('count-in').checked ? beatMs * 4 : 0);
   updateButtons();
 }
-async function assess() {
+async function assess(options = {}) {
   if (!state.compiled || state.mode !== 'practice' || state.finishing) return;
-  pausePlayback();
+  if (!options.keepPlaying) pausePlayback();
   state.finishing = true; updateButtons();
   const generation = state.generation;
   try {
-    const assessment = await api('/api/assess', {timeline: state.compiled.timeline, inputs: state.inputs, tolerance_ms: 180});
+    const timeline = state.loop ? {...state.compiled.timeline, notes: state.compiled.timeline.notes.filter(note => state.loop.targetIds.has(note.id))} : state.compiled.timeline;
+    const assessment = await api('/api/assess', {timeline, inputs: options.inputs || state.inputs, tolerance_ms: 180});
     if (generation !== state.generation) return;
     $('feedback-results').hidden = false;
     $('accuracy').textContent = `${Math.round(assessment.accuracy_percent)}%`;
     $('hits').textContent = String(assessment.hits.length);
     $('misses').textContent = `${assessment.misses.length} / ${assessment.extras.length}`;
     $('timing').textContent = assessment.mean_abs_error_ms === null ? '—' : `${Math.round(assessment.mean_abs_error_ms)} ms`;
-    $('feedback-detail').textContent = `${assessment.hits.filter(h => h.grade === 'perfect').length} perfect · ${assessment.hits.filter(h => h.grade === 'good').length} good · ${assessment.hits.filter(h => h.grade === 'early').length} early · ${assessment.hits.filter(h => h.grade === 'late').length} late. Matching window: ±180 ms. Browser/audio latency can affect your result.`;
-    $('feedback-description').textContent = assessment.hits.length ? 'A useful snapshot, not a verdict. Slow the tempo and try another take.' : 'No notes matched yet. Try a slower tempo and the four-beat count-in.';
+    $('feedback-detail').textContent = `${assessment.hits.filter(h => h.grade === 'perfect').length} perfect · ${assessment.hits.filter(h => h.grade === 'good').length} good · ${assessment.hits.filter(h => h.grade === 'early').length} early · ${assessment.hits.filter(h => h.grade === 'late').length} late. Matching window: ±180 ms. Input offset: ${state.latency} ms. Browser/audio latency can affect your result.`;
+    $('feedback-description').textContent = (options.iteration ? `Loop ${options.iteration}: ` : '') + (assessment.hits.length ? 'A useful snapshot, not a verdict. Slow the tempo and try another take.' : 'No notes matched yet. Try a slower tempo and the four-beat count-in.');
   } catch (error) { if (generation === state.generation) notice(`Could not check this take. ${error.message}`, true); }
   finally { if (generation === state.generation) { state.finishing = false; updateButtons(); } }
 }
@@ -244,12 +254,23 @@ function drawFrame() {
   const position = transport.time(now);
   const timeline = state.compiled?.timeline;
   const duration = timeline?.duration_ms || 0;
+  const segmentStart = state.loop?.start_ms || 0;
+  const segmentEnd = state.loop?.end_ms || duration;
+  const playbackNotes = state.loop?.notes || timeline?.notes || [];
+  const playbackIndex = state.loop?.index || state.timelineIndex;
   if (transport.running && timeline) {
-    for (const note of transport.due(now, timeline.notes)) if (state.mode === 'listen') synth.play(`score:${note.id}:${note.part_id}:${note.start_ms}`, note.midi, note.remaining_ms, note.delay_ms, state.instrument);
-    if (position >= duration + (state.mode === 'practice' ? 200 : 80)) { transport.finish(duration); silenceHeld(); updateButtons(); $('transport-status').textContent = 'Complete · 已完成'; if (state.mode === 'practice') assess(); }
-    else $('transport-status').textContent = position < 0 ? `Count in · ${Math.ceil(-position / (60000 / (Number($('tempo').value) || 100)))}` : state.mode === 'practice' ? 'Your turn · 跟着弹' : 'Listening · 正在聆听';
+    for (const note of transport.due(now, playbackNotes)) if (state.mode === 'listen') synth.play(`score:${note.id}:${note.part_id}:${note.start_ms}`, note.midi, note.remaining_ms, note.delay_ms, state.instrument);
+    if (state.loop && position >= segmentEnd) {
+      const inputs = state.inputs; const iteration = state.loopIteration++;
+      silenceHeld(); transport.seek(segmentStart); state.inputs = [];
+      if (state.mode === 'practice') assess({keepPlaying: true, inputs, iteration});
+      const beatMs = 60000 / (Number($('tempo').value) || 100);
+      transport.start(now, playbackNotes, $('count-in').checked ? beatMs * 4 : 0);
+      updateButtons(); $('transport-status').textContent = `Loop ${state.loopIteration} · 循环`;
+    } else if (position >= duration + (state.mode === 'practice' ? 200 : 80)) { transport.finish(duration); silenceHeld(); updateButtons(); $('transport-status').textContent = 'Complete · 已完成'; if (state.mode === 'practice') assess(); }
+    else $('transport-status').textContent = position < segmentStart ? `Count in · ${Math.ceil((segmentStart - position) / (60000 / (Number($('tempo').value) || 100)))}` : state.mode === 'practice' ? `Your turn${state.loop ? ` · Loop ${state.loopIteration}` : ''} · 跟着弹` : `Listening${state.loop ? ` · Loop ${state.loopIteration}` : ''} · 正在聆听`;
   }
-  const active = state.timelineIndex?.range(position) || [];
+  const active = position < segmentStart ? [] : playbackIndex?.range(position) || [];
   if (transport.running && active.length) {
     const first = active.find(note => note.part_id === state.notationPart);
     const source = first && state.sourceNotes.get(`${first.part_id}:${first.source_note_id || first.id}`);
@@ -272,7 +293,7 @@ function drawFrame() {
   const windowMs = beatMs * 4;
   for (let b = Math.floor(position / beatMs); b <= Math.ceil((position + windowMs) / beatMs); b++) { const y = height - (b * beatMs - position) / windowMs * height; if (y < 0 || y > height) continue; ctx.strokeStyle = b % 4 === 0 ? '#a7c09435' : '#a7c09416'; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke(); }
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  for (const note of reducedMotion ? active : state.timelineIndex?.range(position, position + windowMs) || []) {
+  for (const note of reducedMotion ? active : playbackIndex?.range(position, position + windowMs) || []) {
     if (note.start_ms + note.duration_ms < position || note.start_ms > position + windowMs) continue;
     const key = state.geometry.find(k => k.midi === note.midi); if (!key) continue;
     const bottom = reducedMotion ? height : height - (note.start_ms - position) / windowMs * height;
@@ -288,12 +309,44 @@ function drawFrame() {
 let lastIdleDraw = 0;
 function animate(now) { if (transport.running || now - lastIdleDraw > 100) { drawFrame(); lastIdleDraw = now; } state.frame = requestAnimationFrame(animate); }
 
+async function applyLoop() {
+  if (!state.score) return;
+  pausePlayback();
+  const request = ++state.loopRequest;
+  const generation = state.generation;
+  $('loop-status').textContent = 'Validating loop boundaries with the Rust score clock…';
+  $('loop-apply').disabled = true;
+  try {
+    const from = parseBeatInput($('loop-from').value); const to = parseBeatInput($('loop-to').value);
+    if (beat(to) <= beat(from)) throw new Error('B must be later than A.');
+    const window = await api('/api/practice-window', {score: state.score, from, to});
+    if (request !== state.loopRequest || generation !== state.generation) return;
+    if (window.end_ms - window.start_ms < 250) throw new Error('Choose a loop at least 250 ms long so playback and feedback can remain usable.');
+    const notes = windowNotes(state.compiled.timeline.notes, window.start_ms, window.end_ms);
+    state.loop = {...window, notes, index: new TimelineIndex(notes), targetIds: new Set(window.target_note_ids)};
+    $('loop-enabled').checked = true;
+    $('loop-status').textContent = `Loop A–B ready · ${formatTime(window.start_ms)}–${formatTime(window.end_ms)} · ${window.target_note_ids.length} target notes. ${window.crossing_notes ? `${window.crossing_notes} sustained notes cross a boundary; only note-ons inside A–B are scored. ` : ''}${(window.diagnostics || []).map(d => d.message).join(' ')}`;
+    resetPlayback();
+  } catch (error) { if (request === state.loopRequest) { state.loop = null; $('loop-enabled').checked = false; $('loop-status').textContent = `Loop not set: ${error.message}`; resetPlayback(); } }
+  finally { if (request === state.loopRequest) updateButtons(); }
+}
+$('loop-apply').addEventListener('click', applyLoop);
+$('loop-enabled').addEventListener('change', () => { if ($('loop-enabled').checked) applyLoop(); else { state.loop = null; state.loopRequest++; resetPlayback(); $('loop-status').textContent = 'Loop off. Full-score playback and assessment restored.'; } });
+for (const id of ['loop-from', 'loop-to']) $(id).addEventListener('input', () => { state.loopRequest++; if (state.loop || $('loop-enabled').checked) { state.loop = null; $('loop-enabled').checked = false; resetPlayback(); } $('loop-status').textContent = 'Bounds changed. Set loop to validate the new range.'; });
+
+$('latency-offset').value = String(state.latency);
+$('latency-offset').addEventListener('change', () => {
+  const value = $('latency-offset').value;
+  if (!validLatency(value)) { $('latency-offset').value = String(state.latency); notice('Latency offset must be a whole number from −500 to 500 ms.', true); return; }
+  state.latency = Number(value); saveLatency(state.latency); resetPlayback();
+});
+$('jianpu-reference').addEventListener('change', () => { state.numberedMode = $('jianpu-reference').value; renderNotationPage(); });
 $('notation-part').addEventListener('change', () => { state.notationPart = $('notation-part').value; renderNotationPage(); });
 $('notation-prev').addEventListener('click', () => { state.notationPage--; renderNotationPage(); });
 $('notation-next').addEventListener('click', () => { state.notationPage++; renderNotationPage(); });
 $('play-button').addEventListener('click', togglePlayback);
 $('reset-button').addEventListener('click', resetPlayback);
-$('assess-button').addEventListener('click', assess);
+$('assess-button').addEventListener('click', () => assess());
 $('session-mode').addEventListener('change', () => { state.mode = $('session-mode').value; resetPlayback(); updateRangeWarning(); });
 $('instrument').addEventListener('change', () => { pausePlayback(); state.instrument = $('instrument').value; $('piano-stage').hidden = state.instrument !== 'piano'; $('guitar-stage').hidden = state.instrument !== 'guitar'; $('key-count').disabled = state.instrument !== 'piano'; updateRangeWarning(); drawFrame(); });
 $('key-count').addEventListener('change', () => { pausePlayback(); state.keys = Number($('key-count').value); renderKeyboard(); updateRangeWarning(); });
@@ -303,26 +356,27 @@ $('tempo').addEventListener('change', () => {
   if (!Number.isFinite(bpm) || bpm < 20 || bpm > 300) { notice('Choose a tempo from 20 to 300 BPM.', true); $('tempo').value = String(state.score?.tempo[0]?.bpm || 100); return; }
   if (state.score) compileScore(transposeTempo(state.score, bpm), true);
 });
-for (const mode of ['staff', 'jianpu']) $(mode + '-button').addEventListener('click', () => { state.notation = mode; ['staff', 'jianpu'].forEach(m => { $(m + '-button').classList.toggle('selected', m === mode); $(m + '-button').setAttribute('aria-pressed', String(m === mode)); }); renderScore(); });
+for (const mode of ['staff', 'jianpu']) $(mode + '-button').addEventListener('click', () => { state.notation = mode; $('jianpu-reference-label').hidden = mode !== 'jianpu'; ['staff', 'jianpu'].forEach(m => { $(m + '-button').classList.toggle('selected', m === mode); $(m + '-button').setAttribute('aria-pressed', String(m === mode)); }); renderScore(); });
 $('sound-button').addEventListener('click', () => { synth.muted = !synth.muted; if (synth.muted) synth.silence(); $('sound-button').textContent = synth.muted ? 'Sound off ♫' : 'Sound on ♫'; $('sound-button').setAttribute('aria-pressed', String(synth.muted)); });
 $('import-button').addEventListener('click', () => $('score-file').click());
 $('mobile-import-button').addEventListener('click', () => $('score-file').click());
 $('score-file').addEventListener('change', async event => {
   const file = event.target.files[0]; event.target.value = ''; if (!file) return;
   const intent = ++state.loadIntent;
-  if (file.size > 8 * 1024 * 1024) { notice('This score is too large. Choose a score JSON smaller than 8 MiB.', true); return; }
+  if (file.size > 8 * 1024 * 1024) { notice('This score is too large. Choose a score file smaller than 8 MiB.', true); return; }
   try {
-    const content = await file.text();
-    if (/\.(musicxml|xml)$/i.test(file.name)) {
+    const compressed = /\.mxl$/i.test(file.name);
+    const content = compressed ? await file.arrayBuffer() : await file.text();
+    if (compressed || /\.(musicxml|xml)$/i.test(file.name)) {
       pausePlayback();
-      const response = await fetch('/api/import/musicxml', {method: 'POST', headers: {'Content-Type': 'application/xml'}, body: content});
+      const response = await fetch(compressed ? '/api/import/mxl' : '/api/import/musicxml', {method: 'POST', headers: {'Content-Type': compressed ? 'application/zip' : 'application/xml'}, body: content});
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'MusicXML import failed.');
       const loaded = await compileScore(result.score, false, intent);
       if (loaded && Array.isArray(result.diagnostics) && result.diagnostics.length) notice(result.diagnostics.map(d => d.message).join(' '));
     } else { const score = JSON.parse(content); await compileScore(score, false, intent); }
   }
-  catch (error) { if (intent !== state.loadIntent) return; notice(`Could not read “${file.name}”. Choose a valid score JSON or an uncompressed .musicxml/.xml file. ${error.message}`, true); }
+  catch (error) { if (intent !== state.loadIntent) return; notice(`Could not read “${file.name}”. Choose valid score JSON, MusicXML (.musicxml/.xml), or compressed MusicXML (.mxl). ${error.message}`, true); }
 });
 $('export-button').addEventListener('click', () => { if (!state.score) return; const blob = new Blob([JSON.stringify(state.score, null, 2)], {type: 'application/json'}); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `${state.score.id.replace(/[^\w.-]/g, '_')}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 connectPlayable($('keyboard')); connectPlayable($('fretboard'));

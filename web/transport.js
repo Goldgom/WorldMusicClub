@@ -1,12 +1,14 @@
 /** Pure transport state; scheduling is driven by a single animation loop in app.js. */
 export class Transport {
   constructor() { this.reset(); }
-  reset() { this.position = 0; this.startedAt = null; this.running = false; this.cursor = 0; this.completed = false; }
+  reset() { this.position = 0; this.startedAt = null; this.running = false; this.cursor = 0; this.completed = false; this.hasStarted = false; }
+  seek(position) { this.reset(); this.position = position; }
   time(now) { return this.running ? this.position + now - this.startedAt : this.position; }
   start(now, notes, countIn = 0) {
     if (this.running) return;
     if (this.completed) this.reset();
-    if (this.position === 0) this.position = -Math.max(0, countIn);
+    if (!this.hasStarted) this.position -= Math.max(0, countIn);
+    this.hasStarted = true;
     this.cursor = notes.findIndex(n => n.start_ms + n.duration_ms > this.position);
     if (this.cursor < 0) this.cursor = notes.length;
     this.startedAt = now;

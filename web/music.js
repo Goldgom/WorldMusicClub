@@ -20,9 +20,26 @@ export function keyboardGeometry(count) {
     return {midi, black, x, width: width * (black ? 0.62 : 1)};
   });
 }
-export function jianpu(pitch) {
+export function keyAt(score, atBeat) {
+  let current = {fifths: 0, mode: 'major'};
+  for (const key of score.keys) if (beat(key.at) <= atBeat) current = key; else break;
+  return current;
+}
+export function keyTonic(key) {
+  if (!key || !['major', 'minor'].includes(key.mode) || !Number.isInteger(key.fifths) || key.fifths < -7 || key.fifths > 7) return null;
+  const tonics = key.mode === 'minor' ? ['Ab', 'Eb', 'Bb', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#', 'G#', 'D#', 'A#'] : ['Cb', 'Gb', 'Db', 'Ab', 'Eb', 'Bb', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#'];
+  const name = tonics[key.fifths + 7];
+  const signature = Object.fromEntries(STEPS.map(step => [step, 0]));
+  const order = key.fifths > 0 ? ['F', 'C', 'G', 'D', 'A', 'E', 'B'] : ['B', 'E', 'A', 'D', 'G', 'C', 'F'];
+  for (const step of order.slice(0, Math.abs(key.fifths))) signature[step] = Math.sign(key.fifths);
+  return {step: name[0], name: name.replace('#', '♯').replace('b', '♭'), octave: 4, signature};
+}
+export function jianpu(pitch, key = null) {
   if (!pitch) return {number: '0', accidental: '', octave: 0};
-  return {number: String(STEPS.indexOf(pitch.step) + 1), accidental: pitch.alter > 0 ? '♯'.repeat(pitch.alter) : pitch.alter < 0 ? '♭'.repeat(-pitch.alter) : '', octave: pitch.octave - 4};
+  const tonic = keyTonic(key);
+  const difference = tonic ? (pitch.octave - tonic.octave) * 7 + STEPS.indexOf(pitch.step) - STEPS.indexOf(tonic.step) : (pitch.octave - 4) * 7 + STEPS.indexOf(pitch.step);
+  const alteration = pitch.alter - (tonic?.signature[pitch.step] || 0);
+  return {number: String(((difference % 7) + 7) % 7 + 1), accidental: alteration > 0 ? '♯'.repeat(alteration) : alteration < 0 ? '♭'.repeat(-alteration) : '', octave: Math.floor(difference / 7)};
 }
 export function transposeTempo(score, bpm) {
   const copy = structuredClone(score);
@@ -65,11 +82,15 @@ export function renderNotation(score, mode = 'staff', options = {}) {
     score.measures.filter(measure => beat(measure.at) >= startBeat && beat(measure.at) < endBeat).forEach(measure => {
       shapes.push(`<line x1="${x(beat(measure.at))}" y1="${top - 5}" x2="${x(beat(measure.at))}" y2="${top + 53}" class="bar-line"/><text x="${x(beat(measure.at)) + 5}" y="${top - 10}" class="measure-number">${measure.number}</text>`);
     });
+    if (mode === 'jianpu' && options.numberedMode === 'movable') {
+      const markers = [{at: {numerator: startBeat, denominator: 1}, ...keyAt(score, startBeat)}, ...score.keys.filter(key => beat(key.at) > startBeat && beat(key.at) < endBeat)];
+      markers.forEach((key, index) => { const tonic = keyTonic(key); shapes.push(`<text x="${x(index === 0 ? startBeat : beat(key.at)) + 18}" y="${top + 76}" class="tonic-reference">${tonic ? `1 = ${tonic.name}${tonic.octave} (${escapeXml(key.mode)})` : 'Unknown mode: fixed C reference'}</text>`); });
+    }
     part.notes.filter(note => beat(note.at) >= startBeat && beat(note.at) < endBeat).slice(0, 1000).forEach(note => {
       const nx = x(beat(note.at)) + 18;
       const data = `data-note-id="${escapeXml(note.id)}" class="score-note"`;
       if (mode === 'jianpu') {
-        const pitch = jianpu(note.pitch);
+        const pitch = jianpu(note.pitch, options.numberedMode === 'movable' ? keyAt(score, beat(note.at)) : null);
         const y = top + 26;
         const dots = '•'.repeat(Math.min(4, Math.abs(pitch.octave)));
         shapes.push(`<g ${data}><text x="${nx}" y="${y}" class="jianpu-note" text-anchor="middle">${pitch.accidental}${pitch.number}</text>`);
@@ -97,5 +118,5 @@ export function renderNotation(score, mode = 'staff', options = {}) {
     });
   });
   if (parts.some(part => part.notes.filter(note => beat(note.at) >= startBeat && beat(note.at) < endBeat).length > 1000)) shapes.push('<text x="14" y="16" class="part-name">Dense fragment: first 1,000 notation events shown; complete score retained for playback/export.</text>');
-  return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${mode === 'staff' ? 'Basic treble staff pitch view' : 'Fixed C numbered pitch view'}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${shapes.join('')}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${mode === 'staff' ? 'Basic treble staff pitch view' : options.numberedMode === 'movable' ? 'Movable tonic numbered pitch view' : 'Fixed C numbered pitch view'}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${shapes.join('')}</svg>`;
 }
