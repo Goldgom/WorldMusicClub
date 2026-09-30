@@ -656,7 +656,7 @@ async function importJianpuText(text, signal) {
     return loaded;
   } finally { signal.removeEventListener('abort', cancel); }
 }
-async function loadSavedScore(score, signal) {
+async function importCanonicalScore(score, signal) {
   if(signal.aborted)return false;
   const intent=++state.loadIntent;
   const cancel=()=>{if(intent===state.loadIntent){state.loadIntent++;state.compileController?.abort();$('transport-status').textContent=state.compiled?'Previous score is still available':'Score unavailable';updateButtons()}};
@@ -664,13 +664,13 @@ async function loadSavedScore(score, signal) {
   try{return await compileScore(score,false,intent)}
   finally{signal.removeEventListener('abort',cancel)}
 }
-const libraryView = setupScoreLibrary({getScore:()=>state.score,onLoad:loadSavedScore,validate:(score,signal)=>api('/api/compile',score,signal),pausePlayback,notice});
+const libraryView = setupScoreLibrary({getScore:()=>state.score,onLoad:importCanonicalScore,validate:(score,signal)=>api('/api/compile',score,signal),pausePlayback,notice});
 const engravedView = setupEngravedView({getScore:()=>state.score,getPracticePart:()=>state.practicePart,pausePlayback,notice,onVisibility:active=>{
   state.engravingActive=active;$('engraving-view').hidden=!active;$('notation-controls').hidden=active;$('notation').hidden=active;$('basic-notation-note').hidden=active;
   if(active){$('score-key').textContent='Generated MusicXML · static staff preview';for(const id of ['staff-button','jianpu-button']){$(id).classList.remove('selected');$(id).setAttribute('aria-pressed','false')}$('engraved-button').classList.add('selected');$('engraved-button').setAttribute('aria-pressed','true')}
 },onFallback:message=>{$('staff-button').click();notice(message,true)}});
 setupJianpuEditor({onImport:importJianpuText,pausePlayback});
 setupJianpuExport({getScore:()=>state.score,pausePlayback,api});
-setupImageReview({compileScore, pausePlayback, notice});
+setupImageReview({onImport:importCanonicalScore, pausePlayback, notice});
 setupMidi({pressNote, releaseNote, releaseMatching, silenceHeld, notice});
 renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); loadCatalog();
