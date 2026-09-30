@@ -493,7 +493,7 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
         );
     }
     if !score.repeats.is_empty() {
-        (notes, total) = expand_repeats(&notes, total, &score.repeats, &tempo_index)?;
+        (notes, total) = expand_repeats(&notes, &score, &tempo_index)?;
     }
     notes.sort_by(|a, b| {
         a.start_ms
@@ -515,52 +515,92 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
 /// Complex endings and nested repeats require a richer navigation graph and are rejected.
 fn expand_repeats(
     notes: &[TimedNote],
-    duration_ms: f64,
-    repeats: &[Repeat],
+    score: &Score,
     tempo: &TempoIndex,
 ) -> Result<(Vec<TimedNote>, f64), String> {
-    let mut regions: Vec<_> = repeats.iter().collect();
-    regions.sort_by(|a, b| a.from.compare(b.from));
-    let mut ordered: Vec<_> = notes.iter().collect();
-    ordered.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms).then(a.id.cmp(&b.id)));
+    let source: HashMap<_, _> = score
+        .parts
+        .iter()
+        .flat_map(|part| &part.notes)
+        .map(|note| (note.id.as_str(), note))
+        .collect();
+    let mut total = Beat::ZERO;
+    for note in source.values() {
+        let end = note.at.checked_add(note.duration).expect("validated");
+        if end.compare(total).is_gt() {
+            total = end;
+        }
+    }
+    for measure in &score.measures {
+        let end = measure.at.checked_add(measure.length).expect("validated");
+        if end.compare(total).is_gt() {
+            total = end;
+        }
+    }
+    // Navigation membership and boundary crossing use exact written beats. A floating
+    // epsilon could silently accept a very short sustain crossing a repeat boundary.
+    let mut ordered: Vec<_> = notes
+        .iter()
+        .map(|note| {
+            let first = source[note
+                .source_note_ids
+                .first()
+                .expect("compiled source")
+                .as_str()];
+            let last = source[note
+                .source_note_ids
+                .last()
+                .expect("compiled source")
+                .as_str()];
+            (
+                note,
+                first.at,
+                last.at.checked_add(last.duration).expect("validated"),
+            )
+        })
+        .collect();
+    ordered.sort_by(|a, b| a.1.compare(b.1).then(a.0.id.cmp(&b.0.id)));
     let mut prefix_ends = Vec::with_capacity(ordered.len());
-    let mut farthest: f64 = 0.;
-    for note in &ordered {
-        farthest = farthest.max(note.start_ms + note.duration_ms);
+    let mut farthest = Beat::ZERO;
+    for (_, _, end) in &ordered {
+        if end.compare(farthest).is_gt() {
+            farthest = *end;
+        }
         prefix_ends.push(farthest);
     }
+    let mut regions: Vec<_> = score.repeats.iter().collect();
+    regions.sort_by(|a, b| a.from.compare(b.from));
     let mut segments = vec![];
-    let mut cursor = 0.;
+    let mut cursor = Beat::ZERO;
     for region in regions {
-        let from = tempo.at(region.from.value());
-        let to = tempo.at(region.to.value());
-        if from < cursor || to > duration_ms + 0.001 {
+        if region.from.compare(cursor).is_lt() || region.to.compare(total).is_gt() {
             return Err("Overlapping/nested or out-of-score repeat regions are not supported; source is retained for correction".into());
         }
-        for boundary in [from, to] {
-            let index = ordered.partition_point(|note| note.start_ms < boundary - 0.001);
-            if index > 0 && prefix_ends[index - 1] > boundary + 0.001 {
+        for boundary in [region.from, region.to] {
+            let index = ordered.partition_point(|(_, start, _)| start.compare(boundary).is_lt());
+            if index > 0 && prefix_ends[index - 1].compare(boundary).is_gt() {
                 return Err("A note crosses a repeat boundary; explicit tie/navigation handling is required".into());
             }
         }
-        if from > cursor {
-            segments.push((cursor, from));
+        if region.from.compare(cursor).is_gt() {
+            segments.push((cursor, region.from));
         }
         for _ in 0..region.times {
-            segments.push((from, to));
+            segments.push((region.from, region.to));
         }
-        cursor = to;
+        cursor = region.to;
     }
-    if cursor < duration_ms {
-        segments.push((cursor, duration_ms));
+    if cursor.compare(total).is_lt() {
+        segments.push((cursor, total));
     }
     let mut output = vec![];
     let mut source_references = 0_usize;
     let mut offset = 0.;
     for (start, end) in segments {
-        let first = ordered.partition_point(|note| note.start_ms < start);
-        let last = ordered.partition_point(|note| note.start_ms < end);
-        for note in &ordered[first..last] {
+        let first = ordered.partition_point(|(_, at, _)| at.compare(start).is_lt());
+        let last = ordered.partition_point(|(_, at, _)| at.compare(end).is_lt());
+        let start_ms = tempo.at(start.value());
+        for (note, _, _) in &ordered[first..last] {
             if output.len() >= 100_000 {
                 return Err("Expanded repeat timeline exceeds 100,000-note limit".into());
             }
@@ -570,10 +610,10 @@ fn expand_repeats(
             }
             let mut occurrence = (*note).clone();
             occurrence.id = format!("occurrence-{}", output.len());
-            occurrence.start_ms = offset + note.start_ms - start;
+            occurrence.start_ms = offset + note.start_ms - start_ms;
             output.push(occurrence);
         }
-        offset += end - start;
+        offset += tempo.at(end.value()) - start_ms;
     }
     Ok((output, offset))
 }
@@ -977,6 +1017,51 @@ mod tests {
             times: 2,
         });
         assert!(compile(s).unwrap_err().contains("crosses"));
+    }
+    #[test]
+    fn repeat_boundary_checks_do_not_ignore_sub_millisecond_crossings() {
+        let mut s = catalog().remove(0);
+        s.parts[0].notes.truncate(1);
+        s.parts[0].notes[0].at = Beat::new(999_999, 1_000_000);
+        s.parts[0].notes[0].duration = Beat::new(2, 1_000_000);
+        s.repeats.push(Repeat {
+            from: Beat::new(1, 1),
+            to: Beat::new(4, 1),
+            times: 2,
+        });
+        assert!(compile(s).unwrap_err().contains("crosses"));
+    }
+    #[test]
+    fn exact_repeat_edges_and_tempo_changes_preserve_occurrence_membership() {
+        let mut s = catalog().remove(0);
+        s.parts[0].notes.truncate(2);
+        s.parts[0].notes[0].at = Beat::new(1, 3);
+        s.parts[0].notes[0].duration = Beat::new(1, 3);
+        s.parts[0].notes[1].at = Beat::new(2, 3);
+        s.parts[0].notes[1].duration = Beat::new(1, 3);
+        s.tempo = vec![
+            Tempo {
+                at: Beat::ZERO,
+                bpm: 120.,
+            },
+            Tempo {
+                at: Beat::new(2, 3),
+                bpm: 60.,
+            },
+        ];
+        s.repeats.push(Repeat {
+            from: Beat::new(2, 6),
+            to: Beat::new(1, 1),
+            times: 2,
+        });
+        let c = compile(s).unwrap();
+        assert_eq!(c.timeline.notes.len(), 4);
+        assert_eq!(
+            c.timeline.notes[0].source_note_ids,
+            c.timeline.notes[2].source_note_ids
+        );
+        assert!((c.timeline.notes[2].start_ms - c.timeline.notes[0].start_ms - 500.).abs() < 1e-8);
+        assert!((c.timeline.notes[3].duration_ms - 1000. / 3.).abs() < 1e-8);
     }
     #[test]
     fn dense_performance_matching_is_one_to_one_and_bounded() {
