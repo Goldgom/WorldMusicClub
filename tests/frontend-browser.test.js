@@ -249,7 +249,11 @@ test('closing or editing an image draft cancels pending activation and requires 
   if(action==='close')await page.locator('#review-cancel').click();else{await page.getByLabel('Pitch for note 1',{exact:true}).fill('G4');await page.getByLabel('Duration for note 1',{exact:true}).selectOption('2/3');assert.equal(await page.locator('#review-confirm').isChecked(),false);assert.equal(await page.locator('#review-create').isDisabled(),true)}
   release();await page.waitForTimeout(60);assert.equal(await page.locator('#score-title').textContent(),fixture.title);
  }
- pending=Promise.resolve();await page.locator('#review-confirm').check();await page.locator('#review-create').click();await page.locator('#image-review-dialog').waitFor({state:'hidden'});const sent=JSON.parse(requests.filter(request=>request.url==='/api/compile').at(-1).body);assert.deepEqual(sent.parts[0].notes[0].pitch,{step:'G',alter:0,octave:4});assert.deepEqual(sent.parts[0].notes[0].duration,{numerator:2,denominator:3});
+ pending=Promise.resolve();await page.locator('#review-confirm').check();
+ // Routed requests never reach the fixture server's request log. Observe the browser request.
+ const finalRequest=page.waitForRequest(request=>request.url().endsWith('/api/compile')&&request.postDataJSON().source?.format==='image-review');await page.locator('#review-create').click();const sent=(await finalRequest).postDataJSON();await page.locator('#image-review-dialog').waitFor({state:'hidden'});
+ assert.deepEqual(sent.parts[0].notes[0].pitch,{step:'G',alter:0,octave:4});assert.deepEqual(sent.parts[0].notes[0].duration,{numerator:2,denominator:3});
+ const downloadPromise=page.waitForEvent('download');await page.locator('#export-button').click();const active=JSON.parse(await readFile(await(await downloadPromise).path(),'utf8'));assert.deepEqual(active,sent,'The actual activated/exported score matches the freshly confirmed draft');
 });
 test('manual image edits are not overwritten by a late recognition response',async()=>{
  const image=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jWZkAAAAASUVORK5CYII=','base64');let release;const pending=new Promise(resolve=>release=resolve);
