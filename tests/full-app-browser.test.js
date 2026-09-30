@@ -416,7 +416,7 @@ test('PNG review uses real Rust candidates and requires every duration plus rene
   assert.equal(await page.locator('#review-create').isDisabled(), true);
   await page.locator('#review-confirm').check();
   assert.equal(await page.locator('#review-create').isEnabled(), true);
-  await page.getByLabel('Pitch for note 1', {exact: true}).fill('F#4');
+  await page.getByLabel('Pitch for note 1', {exact: true}).fill('F##4');
   assert.equal(await page.locator('#review-confirm').isChecked(), false, 'Editing pitch also requires renewed confirmation');
   assert.equal(await page.locator('#review-create').isDisabled(), true);
   await page.locator('#review-title').fill('My checked scale');
@@ -429,9 +429,9 @@ test('PNG review uses real Rust candidates and requires every duration plus rene
   await readyForTitle('My checked scale');
   assert.equal(compiled.score.provenance.kind, 'user_reviewed_image');
   assert.equal(compiled.timeline.notes.length, 8);
-  assert.equal(compiled.timeline.notes[0].midi, 66);
-  assert.deepEqual(compiled.score.parts[0].notes[0].pitch, {step: 'F', alter: 1, octave: 4});
-  assert.deepEqual(compiled.score.parts[0].notes[0].duration, {numerator: 4, denominator: 4});
+  assert.equal(compiled.timeline.notes[0].midi, 67);
+  assert.deepEqual(compiled.score.parts[0].notes[0].pitch, {step: 'F', alter: 2, octave: 4});
+  assert.deepEqual(compiled.score.parts[0].notes[0].duration, {numerator: 1, denominator: 1});
   await assertStoppedAtZero();
   const exported = await exportScore();
   assert.deepEqual(exported, compiled.score);
@@ -440,7 +440,7 @@ test('PNG review uses real Rust candidates and requires every duration plus rene
   const preserved = JSON.parse(exported.source.content);
   assert.deepEqual(preserved.recognition_review, review);
   assert.deepEqual(Buffer.from(preserved.original_image_data_url.split(',')[1], 'base64'), png);
-  assert.equal(preserved.manual_notes[0].pitch, 'F#4');
+  assert.equal(preserved.manual_notes[0].pitch, 'F##4');
   assert.ok(preserved.manual_notes.every(note => note.duration === '1'));
   assert.deepEqual(preserved.crop, {x: 0, y: 0, width: 640, height: 160});
 });
@@ -565,4 +565,18 @@ test('real numbered-text export previews Rust diagnostics and roundtrips origina
   const promise=page.waitForEvent('download');await page.locator('#jianpu-export-download').click();const downloaded=await readFile(await(await promise).path(),'utf8');assert.equal(downloaded,exported.text);await page.locator('#jianpu-export-close').click();assert.deepEqual(await exportScore(),initialCompilation.score);
   const [importResponse]=await Promise.all([nextResponse('/api/import/jianpu'),page.locator('#score-file').setInputFiles({name:'original-roundtrip.jianpu',mimeType:'text/plain',buffer:Buffer.from(downloaded)})]);const imported=await responseJson(importResponse);
   const timing=timeline=>timeline.notes.map(note=>({midi:note.midi,start_ms:note.start_ms,duration_ms:note.duration_ms}));assert.deepEqual(timing(imported.timeline),timing(initialCompilation.timeline));assert.equal(imported.timeline.duration_ms,initialCompilation.timeline.duration_ms);await readyForTitle(imported.score.title);
+});
+
+test('real image review exports manually confirmed triplets and dotted rhythms through Jianpu and MusicXML',testOptions,async()=>{
+  const png=await readFile(new URL('omr-original-scale.png',fixtures));await page.locator('#score-image-file').setInputFiles({name:'original-rhythm.png',mimeType:'image/png',buffer:png});await page.locator('#image-review-dialog').waitFor();
+  const[recognitionResponse]=await Promise.all([nextResponse('/api/import/image'),page.locator('#analyze-image').click()]);const recognition=await responseJson(recognitionResponse);assert.equal(recognition.candidates.length,8);await page.waitForFunction(()=>document.querySelectorAll('.review-note-row').length===8);
+  const pitches=['C4','D4','E4','F#4','0','A4','B4','C5'],durations=['1/3','1/3','1/3','0.75','0.25','1.5','1.5','3'];
+  for(let index=0;index<8;index++){await page.getByLabel(`Pitch for note ${index+1}`,{exact:true}).fill(pitches[index]);await page.getByLabel(`Duration for note ${index+1}`,{exact:true}).selectOption(durations[index])}
+  assert.equal(await page.locator('#review-create').isDisabled(),true);await page.locator('#review-confirm').check();const[compileResponse]=await Promise.all([nextResponse('/api/compile'),page.locator('#review-create').click()]);const original=await responseJson(compileResponse);await page.locator('#image-review-dialog').waitFor({state:'hidden'});
+  const notes=original.score.parts[0].notes;assert.deepEqual(notes[2].at,{numerator:2,denominator:3});assert.deepEqual(notes[7].at,{numerator:5,denominator:1});assert.equal(notes[4].velocity,0);assert.equal(notes[4].pitch,null);assert.deepEqual(original.score.measures.map(measure=>measure.length),[{numerator:4,denominator:1},{numerator:4,denominator:1}]);const preserved=JSON.parse(original.score.source.content);assert.deepEqual(preserved.manual_notes.map(row=>row.duration),durations);assert.deepEqual(Buffer.from(preserved.original_image_data_url.split(',')[1],'base64'),png);
+  const[xmlResponse,xmlFile]=await Promise.all([nextResponse('/api/export/musicxml'),page.waitForEvent('download'),page.locator('#export-musicxml').click()]);const xml=await responseJson(xmlResponse);assert.equal(await readFile(await xmlFile.path(),'utf8'),xml.xml);
+  const[textResponse]=await Promise.all([nextResponse('/api/export/jianpu'),page.locator('#export-jianpu').click()]);const text=await responseJson(textResponse);await page.locator('#jianpu-export-download:not([disabled])').waitFor();assert.ok(text.text.includes(':1/3'));const textFilePromise=page.waitForEvent('download');await page.locator('#jianpu-export-download').click();assert.equal(await readFile(await(await textFilePromise).path(),'utf8'),text.text);await page.locator('#jianpu-export-close').click();assert.deepEqual(await exportScore(),original.score);
+  for(const[endpoint,filename,content,mime]of[['/api/import/jianpu','roundtrip.jianpu',text.text,'text/plain'],['/api/import/musicxml','roundtrip.musicxml',xml.xml,'application/xml']]){
+    const[response]=await Promise.all([nextResponse(endpoint),page.locator('#score-file').setInputFiles({name:filename,mimeType:mime,buffer:Buffer.from(content)})]);const imported=await responseJson(response);assert.equal(imported.timeline.notes.length,original.timeline.notes.length);for(let index=0;index<original.timeline.notes.length;index++){const actual=imported.timeline.notes[index],expected=original.timeline.notes[index];assert.equal(actual.midi,expected.midi);assert.ok(Math.abs(actual.start_ms-expected.start_ms)<1e-7);assert.ok(Math.abs(actual.duration_ms-expected.duration_ms)<1e-7)}assert.ok(Math.abs(imported.timeline.duration_ms-original.timeline.duration_ms)<1e-7);await readyForTitle(imported.score.title);
+  }
 });
