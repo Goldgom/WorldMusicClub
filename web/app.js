@@ -1,7 +1,7 @@
 import {feedbackView} from './feedback-view.js';
 import {STANDARD_TUNING, guitarProfile, pianoProfile} from './instrument-profile.js';
 import {compensateInput, validLatency, loadLatency, saveLatency, parseBeatInput, practiceScope} from './practice-settings.js';
-import {setupMidi} from './midi.js';
+import {setupMidi, normalizeEventTime} from './midi.js';
 import {setupImageReview} from './image-review.js';
 import {setupThemes} from './themes.js';
 import {PIANO_RANGES, SHORTCUTS, beat, midiName, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, renderNotation, notationPageCount, notationLayout, keyAt, keyTonic} from './music.js';
@@ -263,12 +263,14 @@ $('instrument-apply').addEventListener('click', () => {
   try { const profile = state.instrument === 'guitar' ? guitarProfile($('guitar-tuning').value, $('guitar-frets').value, $('guitar-capo').value) : pianoProfile($('custom-key-count').value, $('custom-lowest').value); checkInstrument(profile, true); }
   catch (error) { $('instrument-report').textContent = error.message; }
 });
-async function pressNote(source, midi, velocity = 90) {
+async function pressNote(source, midi, velocity = 90, eventTime = null) {
+  if (document.hidden) return;
   if (state.held.has(source)) return;
   state.held.set(source, midi);
-  const inputTime = transport.time(performance.now());
+  const captureTime = normalizeEventTime(eventTime);
+  const inputTime = transport.time(captureTime);
   const correctedTime = compensateInput(inputTime, state.latency);
-  if (transport.running && state.mode === 'practice' && correctedTime >= (state.loop?.start_ms || 0) - 180 && correctedTime <= (state.loop?.end_ms || state.compiled.timeline.duration_ms) + 180) {
+  if (transport.running && captureTime >= transport.startedAt && state.mode === 'practice' && correctedTime >= (state.loop?.start_ms || 0) - 180 && correctedTime <= (state.loop?.end_ms || state.compiled.timeline.duration_ms) + 180) {
     state.inputs.push({midi, at_ms: correctedTime, velocity});
     $('feedback-description').textContent = `${state.inputs.length} note${state.inputs.length === 1 ? '' : 's'} recorded in this take · 已记录 ${state.inputs.length} 个音`;
   }
@@ -287,11 +289,11 @@ function connectPlayable(container) {
     const key = event.target.closest('[data-midi]');
     if (!key || event.button > 0) return;
     event.preventDefault(); key.setPointerCapture(event.pointerId);
-    pressNote(`pointer:${event.pointerId}`, Number(key.dataset.midi));
+    pressNote(`pointer:${event.pointerId}`, Number(key.dataset.midi), 90, event.timeStamp);
   });
   for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) container.addEventListener(type, event => releaseNote(`pointer:${event.pointerId}`));
   container.addEventListener('keydown', event => {
-    if ((event.key === 'Enter' || event.key === ' ') && !event.repeat && event.target.dataset.midi) { event.preventDefault(); event.stopPropagation(); pressNote('accessible-key', Number(event.target.dataset.midi)); }
+    if ((event.key === 'Enter' || event.key === ' ') && !event.repeat && event.target.dataset.midi) { event.preventDefault(); event.stopPropagation(); pressNote('accessible-key', Number(event.target.dataset.midi), 90, event.timeStamp); }
   });
   container.addEventListener('focusout', () => releaseNote('accessible-key'));
   container.addEventListener('keyup', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); releaseNote('accessible-key'); } });
@@ -477,7 +479,7 @@ document.addEventListener('keydown', event => {
   if (event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName) || event.target.isContentEditable) return;
   if (event.code === 'Space') { if (event.target.tagName === 'BUTTON') return; event.preventDefault(); togglePlayback(); return; }
   const key = event.key.toLowerCase();
-  if (Object.hasOwn(SHORTCUTS, key)) { event.preventDefault(); pressNote(`key:${event.code}`, (state.octave + 1) * 12 + SHORTCUTS[key]); }
+  if (Object.hasOwn(SHORTCUTS, key)) { event.preventDefault(); pressNote(`key:${event.code}`, (state.octave + 1) * 12 + SHORTCUTS[key], 90, event.timeStamp); }
 });
 document.addEventListener('keyup', event => { releaseNote(`key:${event.code}`); if (event.key === 'Enter' || event.key === ' ') releaseNote('accessible-key'); });
 window.addEventListener('blur', () => pausePlayback('Paused when focus moved · 已暂停'));

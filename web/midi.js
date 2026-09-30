@@ -1,3 +1,11 @@
+/** Convert browser event timestamps to performance.now()'s monotonic clock. */
+export function normalizeEventTime(value, {now = performance.now(), timeOrigin = performance.timeOrigin} = {}) {
+  if (!Number.isFinite(value) || value <= 0) return now;
+  let candidate = value;
+  if (value > now + 50 && Number.isFinite(timeOrigin)) candidate = value - timeOrigin;
+  if (!Number.isFinite(candidate) || candidate < 0 || candidate > now + 50) return now;
+  return Math.min(candidate, now);
+}
 export function decodeMidi(data) {
   if (!data || data.length < 3) return null;
   const type = data[0] & 0xf0; const channel = data[0] & 0x0f;
@@ -10,8 +18,9 @@ export function setupMidi({pressNote, releaseNote, silenceHeld, notice}) {
   function attach() {
     const inputs = [...access.inputs.values()].filter(input => input.state !== 'disconnected');
     for (const [id, input] of bound) if (!inputs.some(i => i.id === id)) { input.onmidimessage = null; bound.delete(id); silenceHeld(); }
-    for (const input of inputs) if (!bound.has(input.id)) {
-      input.onmidimessage = event => { const note = decodeMidi(event.data); if (!note) return; const source = `midi:${input.id}:${note.channel}:${note.midi}`; if (note.kind === 'on') pressNote(source, note.midi, note.velocity); else releaseNote(source); };
+    for (const input of inputs) if (bound.get(input.id) !== input) {
+      if (bound.has(input.id)) { bound.get(input.id).onmidimessage = null; silenceHeld(); }
+      input.onmidimessage = event => { const note = decodeMidi(event.data); if (!note) return; const source = `midi:${input.id}:${note.channel}:${note.midi}`; if (note.kind === 'on') pressNote(source, note.midi, note.velocity, event.timeStamp); else releaseNote(source); };
       bound.set(input.id, input);
     }
     button.textContent = inputs.length ? `MIDI connected · ${inputs.length}` : 'MIDI ready · Connect a device';
@@ -21,7 +30,7 @@ export function setupMidi({pressNote, releaseNote, silenceHeld, notice}) {
     if (access) { attach(); return; }
     if (!navigator.requestMIDIAccess) { notice('MIDI input is not available in this browser. Try a current Chrome or Edge on desktop, or use the on-screen keyboard.', true); return; }
     button.disabled = true;
-    try { access = await navigator.requestMIDIAccess({sysex: false}); access.onstatechange = attach; attach(); }
+    try { access = await navigator.requestMIDIAccess({sysex: false}); access.onstatechange = attach; attach(); document.getElementById('midi-help').hidden = false; }
     catch { notice('MIDI permission was not granted or the device is unavailable. You can retry with Connect MIDI or keep using the keyboard.', true); }
     finally { button.disabled = false; }
   });
