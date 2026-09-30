@@ -1,25 +1,25 @@
-# WorldMusicHub
+# Music Practice (working title)
 
-A Rust-backed music-practice and rhythm-game project.
+A local-first music practice and rhythm-game project with a Rust score engine.
 
-## Product direction
+## Intended foundation
 
-- Preserve note-level musical structure and timing in a versioned score model
-- Import MusicXML/MXL and MIDI, with assisted staff-image/fragment recognition and an explicit correction step
-- Display staff notation and numbered notation (jianpu)
-- Offer piano and guitar practice, configurable piano ranges such as 61 keys, and transparent instrument-range adaptation
-- Synchronize score playback, a virtual instrument and falling-note practice
-- Optionally use MIDI input for timing/pitch assessment, calibration and practice diagnostics
-- Provide light, dark, system and custom themes with a clean, accessible interface
+- One versioned score model preserving exact note timing, spelling, voices, staves, ties, meter, keys and source provenance
+- Derived staff notation, numbered jianpu and repeat-expanded performance views
+- Piano and guitar practice; configurable keyboard ranges; playable exercises and falling-note guidance
+- Optional MIDI input and explainable timing/pitch feedback
+- Rich MusicXML interchange first; MIDI as a performance format; PDF/image recognition is a future assisted import, not a lossless promise
 
-## Development status
+## Development
 
-Initial development is in progress. This document describes the intended scope, not a claim that all features are implemented or verified.
+Install a current stable Rust toolchain from https://rust-lang.org/tools/install/. Run `cargo run -p practice-server` and open the loopback URL printed by the app. Tests: `cargo test --workspace`; browser tests and frontend setup will be documented as implemented.
 
-Changes will be recorded in meaningful, incremental commits. A Windows release build is planned at each 50-commit milestone, with reproducible tests and explicit platform-verification limits.
+The first shell is a portable Rust local server with a browser UI. It binds only to 127.0.0.1 and works without a cloud account. A native Windows wrapper can be added without moving music logic out of Rust.
 
-## Music and asset rights
+## Distribution and rights
 
-Code and music assets have separate licensing requirements. Built-in note data will use original exercises, verified public-domain editions or appropriately licensed sources, with provenance and attribution. Noncommercial use does not automatically permit redistribution of a composition, arrangement or recording. User-imported scores stay local by default and must not be committed to this repository.
+Repository name, visibility and software license are awaiting owner decisions. No license grant is implied. Bundled practice exercises are newly authored for this project, with provenance recorded in their score metadata. Do not add unlicensed commercial arrangements. A composition, score engraving, arrangement and recording can have different rights.
 
-Requested commercial-song examples may initially contain metadata, official source links and local-import entry points until score redistribution permission is established.
+## Release policy
+
+Each meaningful implementation increment is committed. Every 50 project commits triggers a Windows build/release checkpoint. Windows artifacts must be produced and smoke-tested on Windows CI before being called verified; a Linux build is not Windows verification. See `docs/ROADMAP.md`.
