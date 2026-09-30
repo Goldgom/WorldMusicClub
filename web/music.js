@@ -8,17 +8,19 @@ export const beat = (value) => value.numerator / value.denominator;
 export const midiName = (midi) => `${['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'][((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
 export const pitchMidi = (pitch) => pitch ? 12 * (pitch.octave + 1) + SEMITONES[pitch.step] + pitch.alter : null;
 export const formatTime = (ms) => `${Math.floor(Math.max(0, ms) / 60000)}:${String(Math.floor(Math.max(0, ms) / 1000) % 60).padStart(2, '0')}`;
-export function keyboardGeometry(count) {
-  const [low, high] = PIANO_RANGES[count] || PIANO_RANGES[61];
-  const whites = Array.from({length: high - low + 1}, (_, i) => i + low).filter(n => !BLACK_CLASSES.has(n % 12));
-  const width = 1 / whites.length;
+export function keyboardGeometry(count, lowest = null) {
+  count = Number(count);
+  if (!Number.isInteger(count) || count < 12 || count > 128) throw new Error('Keyboard count must be 12–128.');
+  const low = lowest ?? (PIANO_RANGES[count]?.[0] ?? Math.max(0, 60 - Math.floor(count / 2)));
+  const high = low + count - 1;
+  if (!Number.isInteger(low) || low < 0 || high > 127) throw new Error('Keyboard range must stay inside MIDI 0–127.');
   let whiteIndex = 0;
-  return Array.from({length: high - low + 1}, (_, i) => {
-    const midi = i + low;
-    const black = BLACK_CLASSES.has(midi % 12);
-    const x = black ? (whiteIndex - 0.31) * width : whiteIndex++ * width;
-    return {midi, black, x, width: width * (black ? 0.62 : 1)};
+  const keys = Array.from({length: count}, (_, i) => {
+    const midi = i + low; const black = BLACK_CLASSES.has(midi % 12);
+    return {midi, black, x: black ? whiteIndex - 0.31 : whiteIndex++, width: black ? 0.62 : 1};
   });
+  const min = Math.min(0, keys[0].x); const max = Math.max(...keys.map(key => key.x + key.width));
+  return keys.map(key => ({...key, x:(key.x - min)/(max - min), width:key.width/(max - min)}));
 }
 export function keyAt(score, atBeat) {
   let current = {fifths: 0, mode: 'major'};

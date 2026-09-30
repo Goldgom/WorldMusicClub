@@ -30,25 +30,35 @@ export class Transport {
 }
 
 export class Synth {
-  constructor() { this.context = null; this.voices = new Map(); this.muted = false; }
+  constructor() { this.context = null; this.voices = new Map(); this.muted = false; this.output = null; this.droppedVoices = 0; }
   async unlock() {
     const Audio = globalThis.AudioContext || globalThis.webkitAudioContext;
     if (!Audio) throw new Error('Audio is unavailable in this browser. Try a current Chrome, Edge, Firefox or Safari.');
     this.context ||= new Audio();
+    if (!this.output) {
+      this.output = this.context.createGain(); this.output.gain.value = 0.7;
+      if (this.context.createDynamicsCompressor) {
+        const compressor = this.context.createDynamicsCompressor(); compressor.threshold.value = -12; compressor.knee.value = 15; compressor.ratio.value = 8; compressor.attack.value = 0.003; compressor.release.value = 0.15; this.output.connect(compressor); compressor.connect(this.context.destination);
+      } else this.output.connect(this.context.destination);
+    }
     if (this.context.state !== 'running') await this.context.resume();
   }
-  play(id, midi, duration = null, delay = 0, timbre = 'piano') {
+  play(id, midi, duration = null, delay = 0, timbre = 'piano', velocity = 90) {
     if (!this.context || this.context.state !== 'running' || this.muted) return;
     this.stop(id);
+    velocity = Number.isFinite(velocity) ? Math.max(0, Math.min(127, velocity)) : 90;
+    if (velocity === 0) return;
+    if (this.voices.size >= 64) { this.stop(this.voices.keys().next().value); this.droppedVoices++; }
+    const peak = 0.28 * (velocity / 127) ** 1.5;
     const start = this.context.currentTime + delay / 1000;
     const gain = this.context.createGain();
     const oscillator = this.context.createOscillator();
     oscillator.type = timbre === 'guitar' ? 'triangle' : 'sine';
     oscillator.frequency.value = 440 * 2 ** ((midi - 69) / 12);
     gain.gain.setValueAtTime(0, start);
-    gain.gain.linearRampToValueAtTime(0.2, start + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.08, start + 0.18);
-    oscillator.connect(gain); gain.connect(this.context.destination);
+    gain.gain.linearRampToValueAtTime(peak, start + 0.008);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * 0.4), start + 0.18);
+    oscillator.connect(gain); gain.connect(this.output);
     const voice = {oscillator, gain, start};
     this.voices.set(id, voice);
     oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); if (this.voices.get(id) === voice) this.voices.delete(id); };

@@ -1,3 +1,4 @@
+import {STANDARD_TUNING, guitarProfile, pianoProfile} from './instrument-profile.js';
 import {compensateInput, validLatency, loadLatency, saveLatency, parseBeatInput, windowNotes} from './practice-settings.js';
 import {setupMidi} from './midi.js';
 import {setupImageReview} from './image-review.js';
@@ -10,7 +11,7 @@ const $ = id => document.getElementById(id);
 setupThemes();
 const transport = new Transport();
 const synth = new Synth();
-const state = {catalog: [], score: null, compiled: null, mode: 'listen', instrument: 'piano', notation: 'staff', numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, notationPage: 0, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null};
+const state = {catalog: [], score: null, compiled: null, mode: 'listen', instrument: 'piano', notation: 'staff', numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, notationPage: 0, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
 function notice(message, error = false) {
   $('notice').textContent = message;
@@ -55,6 +56,7 @@ function resetPlayback() {
   state.inputs = [];
   state.generation++;
   state.finishing = false;
+  state.audioLimitWarned = false; synth.droppedVoices = 0;
   state.lastHighlight = '';
   $('feedback-results').hidden = true;
   $('transport-status').textContent = 'Ready when you are';
@@ -77,6 +79,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null)
     if (generation !== state.generation || controller.signal.aborted) return;
     state.score = compiled.score;
     state.compiled = {...compiled, timeline: {...compiled.timeline, notes: [...compiled.timeline.notes].sort((a, b) => a.start_ms - b.start_ms || a.midi - b.midi)}};
+    state.instrumentOutOfRange = null; state.instrumentConflict = false;
     state.timelineIndex = new TimelineIndex(state.compiled.timeline.notes);
     state.sourceNotes = new Map(state.score.parts.flatMap(part => part.notes.map(note => [`${part.id}:${note.id}`, {note, partId: part.id}])));
     state.loop = null; state.loopRequest++; $('loop-enabled').checked = false; $('loop-status').textContent = 'Loop cleared. Choose A and B, then Set loop. Beats start at 0; B is exclusive.';
@@ -84,7 +87,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null)
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
     clearNotice();
     resetPlayback();
-    renderScore(); renderCatalog(); updateRangeWarning();
+    renderScore(); renderCatalog(); updateRangeWarning(); checkInstrument();
     return true;
   } catch (error) {
     if (error.name === 'AbortError') return;
@@ -146,12 +149,12 @@ function renderNotationPage() {
 }
 function updateRangeWarning() {
   if (!state.compiled) return;
-  const [min, max] = state.instrument === 'guitar' ? [40, 76] : PIANO_RANGES[state.keys];
-  const outside = state.compiled.timeline.notes.filter(n => n.midi < min || n.midi > max).length;
-  $('practice-hint').textContent = outside ? `${outside} notes outside this ${state.instrument === 'guitar' ? '0–12 fret display' : 'keyboard range'}; change range or exercise` : state.mode === 'practice' ? 'Play each note as it reaches the line · 到线时弹奏' : 'Listen first. Then make it your own. · 先听，再弹';
+  const [min, max] = state.instrument === 'guitar' ? [Math.min(...state.guitar.tuning) + state.guitar.capo, Math.max(...state.guitar.tuning) + state.guitar.frets] : [state.geometry[0].midi, state.geometry.at(-1).midi];
+  const outside = state.instrumentOutOfRange ?? state.compiled.timeline.notes.filter(n => n.midi < min || n.midi > max).length;
+  $('practice-hint').textContent = state.instrumentConflict ? 'Some chords need a guitar arrangement · 同时发音存在弦位冲突' : outside ? `${outside} notes unavailable in this ${state.instrument === 'guitar' ? 'guitar fret display' : 'keyboard range'}; change range or exercise` : state.mode === 'practice' ? 'Play each note as it reaches the line · 到线时弹奏' : 'Listen first. Then make it your own. · 先听，再弹';
 }
 function renderKeyboard() {
-  state.geometry = keyboardGeometry(state.keys);
+  state.geometry = keyboardGeometry(state.keys, state.lowestMidi);
   const fragment = document.createDocumentFragment();
   for (const key of state.geometry) {
     const button = document.createElement('button');
@@ -167,24 +170,64 @@ function renderKeyboard() {
     button.append(shortcut, name); fragment.append(button);
   }
   $('keyboard').replaceChildren(fragment);
-  $('piano-surface').style.minWidth = `${state.keys === 88 ? 1050 : state.keys === 76 ? 960 : 840}px`;
+  $('piano-surface').style.minWidth = `${Math.max(640, state.geometry.filter(key => !key.black).length * 22)}px`;
   requestAnimationFrame(() => { const center = state.geometry.find(k => k.midi === (state.octave + 1) * 12); if (center) $('piano-scroll').scrollLeft = Math.max(0, center.x * $('piano-surface').clientWidth - $('piano-scroll').clientWidth / 2.5); drawFrame(); });
 }
 function renderFretboard() {
   const board = $('fretboard'); board.replaceChildren();
+  const {tuning, frets, capo} = state.guitar; const last = frets - capo;
+  board.style.gridTemplateColumns = `35px repeat(${last + 1}, 1fr)`;
+  board.style.gridTemplateRows = `22px repeat(${tuning.length}, 34px)`;
+  board.style.minWidth = `${Math.max(600, 35 + (last + 1) * 54)}px`;
+  board.style.height = `${22 + tuning.length * 34}px`;
   board.append(document.createElement('span'));
-  for (let fret = 0; fret <= 12; fret++) { const label = document.createElement('span'); label.className = 'fret-number'; label.textContent = fret === 0 ? 'OPEN' : String(fret); board.append(label); }
-  [64, 59, 55, 50, 45, 40].forEach((open, string) => {
-    const label = document.createElement('span'); label.className = 'string-name'; label.textContent = midiName(open); board.append(label);
-    for (let fret = 0; fret <= 12; fret++) {
+  for (let fret = 0; fret <= last; fret++) { const label = document.createElement('span'); label.className = 'fret-number'; label.textContent = fret === 0 ? capo ? `CAPO ${capo}` : 'OPEN' : String(fret); board.append(label); }
+  tuning.forEach((open, string) => {
+    const label = document.createElement('span'); label.className = 'string-name'; label.textContent = midiName(open + capo); board.append(label);
+    for (let fret = 0; fret <= last; fret++) {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'fret-button';
-      button.dataset.midi = String(open + fret); button.dataset.string = String(string); button.dataset.fret = String(fret);
-      button.setAttribute('aria-label', `String ${string + 1}, fret ${fret}: ${midiName(open + fret)}`);
+      button.dataset.midi = String(open + capo + fret); button.dataset.string = String(string); button.dataset.fret = String(fret);
+      button.setAttribute('aria-label', `String ${string + 1}, fret ${fret}${capo ? ` after capo ${capo}` : ''}: ${midiName(open + capo + fret)}`);
       button.setAttribute('aria-pressed', 'false');
-      const text = document.createElement('span'); text.textContent = midiName(open + fret); button.append(text); board.append(button);
+      const text = document.createElement('span'); text.textContent = midiName(open + capo + fret); button.append(text); board.append(button);
     }
   });
+  $('guitar-description').textContent = `${tuning.map(midiName).join(' · ')} tuning, string 1 → ${tuning.length}. ${frets} physical frets; capo ${capo}. Displayed fret numbers are relative to the capo. Highlighted positions are pitch options, not a validated fingering.`;
 }
+function currentProfile() {
+  return state.instrument === 'guitar' ? {kind:'guitar',...state.guitar} : {kind:'piano',key_count:state.keys,lowest_midi:state.lowestMidi};
+}
+function profileControls() {
+  $('custom-piano-controls').hidden = state.instrument !== 'piano' || !state.customKeys;
+  $('guitar-controls').hidden = state.instrument !== 'guitar';
+  $('instrument-apply').hidden = state.instrument !== 'guitar' && !state.customKeys;
+}
+async function checkInstrument(profile = currentProfile(), apply = false) {
+  if (!state.compiled) return;
+  const request = ++state.instrumentRequest; const compiled = state.compiled;
+  state.instrumentOutOfRange = null; state.instrumentConflict = false;
+  $('instrument-report').textContent = 'Checking note range and pitch-compatible positions with Rust…';
+  try {
+    const report = await api('/api/instrument-check', {timeline:compiled.timeline, profile});
+    if (request !== state.instrumentRequest || compiled !== state.compiled) return;
+    if (apply) {
+      pausePlayback();
+      if (profile.kind === 'piano') { state.keys = profile.key_count; state.lowestMidi = profile.lowest_midi; state.customKeys = true; $('key-count').value = 'custom'; renderKeyboard(); }
+      else { state.guitar = {tuning:profile.tuning, frets:profile.frets, capo:profile.capo}; renderFretboard(); }
+      updateRangeWarning();
+    }
+    const outside = report.note_options.filter(note => !note.playable).length;
+    state.instrumentOutOfRange = outside; state.instrumentConflict = report.diagnostics.some(d => d.code === 'guitar_string_conflict'); updateRangeWarning();
+    $('instrument-report').textContent = `${midiName(report.lowest_midi)}–${midiName(report.highest_midi)} · ${outside} notes outside playable range · original pitches preserved`;
+    $('instrument-diagnostics').replaceChildren();
+    for (const diagnostic of report.diagnostics) { const li = document.createElement('li'); li.textContent = diagnostic.message; $('instrument-diagnostics').append(li); }
+    $('instrument-settings').classList.toggle('has-warnings', report.diagnostics.some(d => d.code !== 'guitar_fingering_advisory'));
+  } catch (error) { if (request === state.instrumentRequest) $('instrument-report').textContent = `Instrument setup not applied: ${error.message}`; }
+}
+$('instrument-apply').addEventListener('click', () => {
+  try { const profile = state.instrument === 'guitar' ? guitarProfile($('guitar-tuning').value, $('guitar-frets').value, $('guitar-capo').value) : pianoProfile($('custom-key-count').value, $('custom-lowest').value); checkInstrument(profile, true); }
+  catch (error) { $('instrument-report').textContent = error.message; }
+});
 async function pressNote(source, midi, velocity = 90) {
   if (state.held.has(source)) return;
   state.held.set(source, midi);
@@ -195,7 +238,7 @@ async function pressNote(source, midi, velocity = 90) {
     $('feedback-description').textContent = `${state.inputs.length} note${state.inputs.length === 1 ? '' : 's'} recorded in this take · 已记录 ${state.inputs.length} 个音`;
   }
   highlightKeys();
-  try { await synth.unlock(); if (state.held.get(source) === midi) synth.play(`manual:${source}`, midi, null, 0, state.instrument); }
+  try { await synth.unlock(); if (state.held.get(source) === midi) synth.play(`manual:${source}`, midi, null, 0, state.instrument, velocity); }
   catch (error) { notice(error.message, true); }
 }
 function releaseNote(source) { state.held.delete(source); synth.stop(`manual:${source}`); highlightKeys(); }
@@ -252,6 +295,7 @@ async function assess(options = {}) {
 function drawFrame() {
   const now = performance.now();
   const position = transport.time(now);
+  if (synth.droppedVoices && !state.audioLimitWarned) { state.audioLimitWarned = true; notice('This dense passage exceeded the 64-voice synth preview limit. Some overlapping sounds were cut short; the full score and assessment targets remain unchanged.'); }
   const timeline = state.compiled?.timeline;
   const duration = timeline?.duration_ms || 0;
   const segmentStart = state.loop?.start_ms || 0;
@@ -259,7 +303,7 @@ function drawFrame() {
   const playbackNotes = state.loop?.notes || timeline?.notes || [];
   const playbackIndex = state.loop?.index || state.timelineIndex;
   if (transport.running && timeline) {
-    for (const note of transport.due(now, playbackNotes)) if (state.mode === 'listen') synth.play(`score:${note.id}:${note.part_id}:${note.start_ms}`, note.midi, note.remaining_ms, note.delay_ms, state.instrument);
+    for (const note of transport.due(now, playbackNotes)) if (state.mode === 'listen') synth.play(`score:${note.id}:${note.part_id}:${note.start_ms}`, note.midi, note.remaining_ms, note.delay_ms, state.instrument, note.velocity ?? 90);
     if (state.loop && position >= segmentEnd) {
       const inputs = state.inputs; const iteration = state.loopIteration++;
       silenceHeld(); transport.seek(segmentStart); state.inputs = [];
@@ -278,7 +322,12 @@ function drawFrame() {
     if (page !== state.notationPage) { state.notationPage = page; renderNotationPage(); }
   }
   const signature = active.map(n => n.id).join('|');
-  if (signature !== state.lastHighlight) { document.querySelectorAll('.score-note').forEach(note => note.classList.toggle('active', active.some(n => (n.source_note_id || n.id) === note.dataset.noteId))); state.lastHighlight = signature; }
+  if (signature !== state.lastHighlight) {
+    document.querySelectorAll('.score-note').forEach(note => note.classList.toggle('active', active.some(n => (n.source_note_id || n.id) === note.dataset.noteId)));
+    state.lastHighlight = signature;
+    const focused = $('notation').querySelector('.score-note.active');
+    if (transport.running && focused) { const box = focused.getBoundingClientRect(); const view = $('notation').getBoundingClientRect(); if (box.left < view.left + 20 || box.right > view.right - 20) $('notation').scrollLeft += box.left - view.left - view.width * 0.35; }
+  }
   highlightKeys(active);
   $('progress').max = Math.max(1, duration); $('progress').value = Math.min(duration, Math.max(0, position));
   $('time-label').textContent = `${formatTime(position)} / ${formatTime(duration)}`;
@@ -348,8 +397,8 @@ $('play-button').addEventListener('click', togglePlayback);
 $('reset-button').addEventListener('click', resetPlayback);
 $('assess-button').addEventListener('click', () => assess());
 $('session-mode').addEventListener('change', () => { state.mode = $('session-mode').value; resetPlayback(); updateRangeWarning(); });
-$('instrument').addEventListener('change', () => { pausePlayback(); state.instrument = $('instrument').value; $('piano-stage').hidden = state.instrument !== 'piano'; $('guitar-stage').hidden = state.instrument !== 'guitar'; $('key-count').disabled = state.instrument !== 'piano'; updateRangeWarning(); drawFrame(); });
-$('key-count').addEventListener('change', () => { pausePlayback(); state.keys = Number($('key-count').value); renderKeyboard(); updateRangeWarning(); });
+$('instrument').addEventListener('change', () => { pausePlayback(); state.instrument = $('instrument').value; profileControls(); if (state.instrument === 'guitar') $('instrument-settings').open = true; checkInstrument(); $('piano-stage').hidden = state.instrument !== 'piano'; $('guitar-stage').hidden = state.instrument !== 'guitar'; $('key-count').disabled = state.instrument !== 'piano'; updateRangeWarning(); drawFrame(); });
+$('key-count').addEventListener('change', () => { pausePlayback(); state.customKeys = $('key-count').value === 'custom'; profileControls(); if (state.customKeys) { $('instrument-settings').open = true; $('custom-key-count').value = String(state.keys); $('custom-lowest').value = midiName(state.geometry[0].midi).replace('♯','#'); return; } state.keys = Number($('key-count').value); state.lowestMidi = null; renderKeyboard(); updateRangeWarning(); checkInstrument(); });
 $('typing-octave').addEventListener('change', () => { pausePlayback(); state.octave = Number($('typing-octave').value); renderKeyboard(); });
 $('tempo').addEventListener('change', () => {
   const bpm = Number($('tempo').value);
