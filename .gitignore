@@ -4,3 +4,6 @@
 /playwright-report/
 /dist/
 *.log
+
+# Generated, locally bundled renderer assets (prepared from exact npm lockfile).
+/web/vendor/

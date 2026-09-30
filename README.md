@@ -12,7 +12,7 @@ A local-first music practice and rhythm-game project with a Rust score engine.
 
 ## Development
 
-Install a current stable Rust toolchain from https://rust-lang.org/tools/install/. Run `cargo run -p practice-server` and open the loopback URL printed by the app. Tests: `cargo test --workspace`; browser tests and frontend setup will be documented as implemented.
+Install a current stable Rust toolchain from https://rust-lang.org/tools/install/. For the complete offline staff renderer, first run `npm ci --ignore-scripts --omit=optional` and `npm run prepare:engraving`, then `cargo run -p practice-server` and open the printed loopback URL. A Rust-only build keeps the basic pitch view, jianpu and practice engine available. Tests: `cargo test --workspace` and `npm test`. See [engraving setup and verification](docs/ENGRAVING.md) and [canonical score v1](docs/SCORE_FORMAT.md).
 
 The first shell is a portable Rust local server with a browser UI. It binds only to 127.0.0.1 and works without a cloud account. A native Windows wrapper can be added without moving music logic out of Rust.
 

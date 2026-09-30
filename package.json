@@ -5,11 +5,15 @@
   "type": "module",
   "description": "Local-first music practice UI for the Rust score engine",
   "scripts": {
-    "test": "node --test tests/frontend-core.test.js",
+    "test": "node --test tests/frontend-core.test.js tests/score-schema.test.js tests/engraving.test.js tests/engraving-assets.test.js",
     "test:browser": "node --test tests/frontend-browser.test.js",
-    "test:full-app": "node --test tests/full-app-browser.test.js"
+    "test:full-app": "node --test tests/full-app-browser.test.js",
+    "prepare:engraving": "node scripts/prepare-engraving.mjs",
+    "test:engraving-browser": "node --test tests/engraving-browser.test.js"
   },
   "devDependencies": {
+    "ajv": "^8.20.0",
+    "opensheetmusicdisplay": "2.1.3",
     "playwright": "^1.58.0"
   }
 }

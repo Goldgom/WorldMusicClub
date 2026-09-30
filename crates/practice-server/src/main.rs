@@ -108,6 +108,10 @@ fn route(mut request: Request, authority: &str) {
                         "text/css; charset=utf-8"
                     } else if asset.ends_with(".js") {
                         "text/javascript; charset=utf-8"
+                    } else if asset.ends_with(".json") {
+                        "application/json; charset=utf-8"
+                    } else if asset.ends_with(".txt") {
+                        "text/plain; charset=utf-8"
                     } else if asset.ends_with(".svg") {
                         "image/svg+xml"
                     } else {

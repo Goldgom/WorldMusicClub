@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:worldmusichub:score:v1",
+  "title": "WorldMusicHub canonical score v1",
+  "description": "One written score, not a compilation response or a performance timeline. Structural validation is necessary but not sufficient: Rust validates UTF-8 byte limits, rational arithmetic, MIDI pitch relationships, IDs and navigation. See docs/SCORE_FORMAT.md.",
+  "$comment": "All maxLength values are necessary code-point bounds; Rust additionally enforces stricter UTF-8 byte limits. Optional nullable fields match Serde Option semantics. Defaults are annotations; validators must not coerce, remove fields or mutate the score.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "id", "title", "composer", "provenance", "parts", "tempo", "meters", "keys", "measures"],
+  "properties": {
+    "version": {"type": "integer", "const": 1},
+    "id": {"type": "string", "minLength": 1, "maxLength": 128, "description": "Stable score identifier; Rust additionally rejects whitespace-only values."},
+    "title": {"type": "string", "minLength": 1, "maxLength": 1000, "description": "Rust additionally rejects whitespace-only values."},
+    "composer": {"type": "string", "maxLength": 1024},
+    "provenance": {"$ref": "#/$defs/Provenance"},
+    "parts": {"type": "array", "minItems": 1, "maxItems": 128, "items": {"$ref": "#/$defs/Part"}},
+    "tempo": {"type": "array", "minItems": 1, "maxItems": 100000, "items": {"$ref": "#/$defs/Tempo"}, "description": "Quarter notes per minute. Rust requires the first event at zero and strictly increasing exact beat positions."},
+    "meters": {"type": "array", "maxItems": 100000, "items": {"$ref": "#/$defs/Meter"}},
+    "keys": {"type": "array", "maxItems": 100000, "items": {"$ref": "#/$defs/Key"}},
+    "measures": {"type": "array", "maxItems": 100000, "items": {"$ref": "#/$defs/Measure"}},
+    "repeats": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/Repeat"}, "default": []},
+    "source": {"anyOf": [{"$ref": "#/$defs/Source"}, {"type": "null"}], "default": null}
+  },
+  "$defs": {
+    "Beat": {
+      "description": "An exact nonnegative position in quarter-note units, not seconds, ticks or a floating-point beat. Reduction to lowest terms is not required.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["numerator", "denominator"],
+      "properties": {
+        "numerator": {"type": "integer", "minimum": 0, "maximum": 1000000000},
+        "denominator": {"type": "integer", "minimum": 1, "maximum": 1000000}
+      }
+    },
+    "PositiveBeat": {
+      "description": "An exact strictly positive duration in quarter-note units. Rust also checks that onset plus duration remains representable after reduction.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["numerator", "denominator"],
+      "properties": {
+        "numerator": {"type": "integer", "minimum": 1, "maximum": 1000000000},
+        "denominator": {"type": "integer", "minimum": 1, "maximum": 1000000}
+      }
+    },
+    "Pitch": {
+      "description": "Written spelling. Rust additionally requires (octave + 1) * 12 + diatonic offset + alter to fall in MIDI 0–127. The octave bounds below are Serde i8 storage bounds, not a guarantee of playability.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["step", "alter", "octave"],
+      "properties": {
+        "step": {"type": "string", "enum": ["C", "D", "E", "F", "G", "A", "B"]},
+        "alter": {"type": "integer", "minimum": -2, "maximum": 2},
+        "octave": {"type": "integer", "minimum": -128, "maximum": 127}
+      }
+    },
+    "Note": {
+      "description": "One written note or rest, including every tied segment. Omitted or null pitch means rest; rests cannot be tied.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "at", "duration", "voice", "staff", "velocity"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "at": {"$ref": "#/$defs/Beat"},
+        "duration": {"$ref": "#/$defs/PositiveBeat"},
+        "pitch": {"anyOf": [{"$ref": "#/$defs/Pitch"}, {"type": "null"}], "default": null},
+        "voice": {"type": "string", "minLength": 1, "maxLength": 64},
+        "staff": {"type": "integer", "minimum": 1, "maximum": 255},
+        "velocity": {"type": "integer", "minimum": 0, "maximum": 127},
+        "tie_start": {"type": "boolean", "default": false},
+        "tie_stop": {"type": "boolean", "default": false}
+      },
+      "allOf": [
+        {
+          "$comment": "The condition deliberately also matches an omitted pitch: Serde deserializes it to None.",
+          "if": {"properties": {"pitch": {"type": "null"}}},
+          "then": {"properties": {"tie_start": {"const": false}, "tie_stop": {"const": false}}}
+        }
+      ]
+    },
+    "Part": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "instrument", "notes"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "name": {"type": "string", "maxLength": 256},
+        "instrument": {"type": "string", "maxLength": 64, "description": "A label, not an enum or a guarantee of instrument support; piano and guitar are current UI conventions."},
+        "notes": {"type": "array", "maxItems": 100000, "items": {"$ref": "#/$defs/Note"}, "description": "Rust enforces 100,000 total written notes/rests across all parts, not just this part."}
+      }
+    },
+    "Tempo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "bpm"],
+      "properties": {
+        "at": {"$ref": "#/$defs/Beat"},
+        "bpm": {"type": "number", "minimum": 10, "maximum": 600}
+      }
+    },
+    "Meter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "numerator", "denominator"],
+      "properties": {
+        "at": {"$ref": "#/$defs/Beat"},
+        "numerator": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "denominator": {"type": "integer", "enum": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]}
+      }
+    },
+    "Key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "fifths", "mode"],
+      "properties": {
+        "at": {"$ref": "#/$defs/Beat"},
+        "fifths": {"type": "integer", "minimum": -7, "maximum": 7},
+        "mode": {"type": "string", "description": "Not an enum and not length-bounded by core v1 validation. Major/minor are common conventions; other strings do not imply renderer support."}
+      }
+    },
+    "Measure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "at", "length"],
+      "properties": {
+        "number": {"type": "integer", "minimum": 0, "maximum": 4294967295, "description": "Serde u32; core validation does not require sequential or unique measure numbers."},
+        "at": {"$ref": "#/$defs/Beat"},
+        "length": {"$ref": "#/$defs/PositiveBeat"}
+      }
+    },
+    "Repeat": {
+      "description": "Play the half-open written interval [from, to) for a total of times passes, including the first pass. Rust validates ordering, score extent, overlap and jump-boundary sustains.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "times"],
+      "properties": {
+        "from": {"$ref": "#/$defs/Beat"},
+        "to": {"$ref": "#/$defs/PositiveBeat"},
+        "times": {"type": "integer", "minimum": 2, "maximum": 16}
+      }
+    },
+    "Provenance": {
+      "description": "Attribution and claimed source rights, not proof of ownership, accuracy or a license grant.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "attribution"],
+      "properties": {
+        "kind": {"type": "string", "maxLength": 64},
+        "attribution": {"type": "string", "maxLength": 8192},
+        "source_url": {"type": ["string", "null"], "maxLength": 4096, "default": null, "description": "Optional reference text; v1 does not validate URL syntax or fetch it."},
+        "license": {"type": ["string", "null"], "maxLength": 256, "default": null}
+      }
+    },
+    "Source": {
+      "description": "One retained source payload. Its content is an opaque string to canonical-score validation; preservation does not imply parsing or playback support.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "content"],
+      "properties": {
+        "format": {"type": "string", "maxLength": 64},
+        "filename": {"type": ["string", "null"], "maxLength": 1024, "default": null},
+        "content": {"type": "string", "maxLength": 8388608, "description": "Rust enforces an 8 MiB UTF-8 byte limit; the server's separate 8 MiB request-body cap also includes JSON escaping and all other fields."}
+      }
+    }
+  }
+}
