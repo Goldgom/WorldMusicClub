@@ -44,16 +44,17 @@ export function setupAdaptationView({api,getContext,onActivate,pausePlayback,not
   function status(message,error=false){$('adaptation-status').textContent=message;$('adaptation-status').classList.toggle('error',error)}
   function sameContext(snapshot){const current=getContext();return current.score===snapshot.score&&current.part===snapshot.part&&current.version===snapshot.version&&!current.dirty&&equivalentJson(current.profile,snapshot.profile)}
   function refreshContext(){
-    const context=getContext(),adapted=context.score?.source?.format==='octave-adaptation';
+    const context=getContext(),adapted=context.score?.source?.format==='octave-adaptation',transposed=context.score?.source?.format==='semitone-transposition';
     $('adaptation-button').disabled=!context.score;$('adaptation-active-note').hidden=!adapted;
     $('adaptation-current-title').textContent=context.score?.title||'No score is loaded';
     $('adaptation-scope').options[1].disabled=context.part===null;
     if(context.part===null&&$('adaptation-scope').value==='selected')$('adaptation-scope').value='all';
     const name=context.score?.parts.find(part=>part.id===context.part)?.name;
     $('adaptation-scope-note').textContent=context.part===null?'Practice part: all parts. Select one on the main page to enable an entire-part copy.':`Current Practice part: ${name||context.part}. Selected-part scope shifts this whole part, including notes outside A–B.`;
-    $('adaptation-preview').disabled=!context.score||context.dirty||adapted||activating;
+    $('adaptation-preview').disabled=!context.score||context.dirty||adapted||transposed||activating;
     $('adaptation-restore-preview').hidden=!adapted;$('adaptation-restore-preview').disabled=activating;
     if(context.dirty&&!prepared)status('Apply and validate the edited instrument settings before requesting a preview.',true);
+    else if(transposed&&!prepared&&!activating)status('This is a semitone copy. Use Transpose semitones to review and restore its preserved original before making an octave copy. 当前为移调副本，请先恢复原稿。');
     else if(adapted&&!prepared&&!activating)status('This score carries an octave-copy record. Review and validate its preserved original before choosing a different shift.');
   }
   function invalidate(message='The score, part, profile or draft changed. Request a fresh preview before confirming.'){
@@ -63,7 +64,7 @@ export function setupAdaptationView({api,getContext,onActivate,pausePlayback,not
   function close(){invalidate('Preview cancelled. The loaded score is unchanged.');dialog.close()}
   for(const id of ['adaptation-close','adaptation-cancel'])$(id).addEventListener('click',close);
   dialog.addEventListener('cancel',event=>{event.preventDefault();close()});
-  $('adaptation-button').addEventListener('click',()=>{pausePlayback();invalidate();refreshContext();dialog.showModal();const context=getContext();if(!context.dirty&&context.score?.source?.format!=='octave-adaptation')status('Preview only. Nothing changes until you explicitly activate a reviewed copy.')});
+  $('adaptation-button').addEventListener('click',()=>{pausePlayback();invalidate();refreshContext();dialog.showModal();const context=getContext();if(!context.dirty&&!['octave-adaptation','semitone-transposition'].includes(context.score?.source?.format))status('Preview only. Nothing changes until you explicitly activate a reviewed copy.')});
   for(const id of ['adaptation-scope','adaptation-octaves'])$(id).addEventListener('input',()=>invalidate('The requested scope or octave shift changed. Generate a fresh preview.'));
   for(const id of ['instrument','key-count','practice-part','tempo','custom-key-count','custom-lowest','guitar-tuning','guitar-frets','guitar-capo','loop-from','loop-to','loop-enabled','score-file','score-image-file'])for(const event of ['input','change'])$(id).addEventListener(event,()=>{if(dialog.open)invalidate()});
   function showResult(snapshot,result,kind){
@@ -87,7 +88,7 @@ export function setupAdaptationView({api,getContext,onActivate,pausePlayback,not
     status(kind==='copy'?'Preview ready. The original loaded score has not changed.':'Original preview ready. Nothing has been restored yet.');
   }
   async function requestPreview(kind){
-    invalidate();const snapshot=getContext();if(!snapshot.score||snapshot.dirty){refreshContext();return}
+    invalidate();const snapshot=getContext();if(!snapshot.score||snapshot.dirty||kind==='copy'&&snapshot.score.source?.format==='semitone-transposition'){refreshContext();return}
     const current=generation;controller=new AbortController();const signal=controller.signal;status(kind==='copy'?'Preparing an explicit octave copy with Rust…':'Checking the retained original and complete current copy…');
     try{
       let result;

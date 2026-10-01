@@ -8,6 +8,7 @@ import {validateCatalogIndex,CatalogScoreCache,fetchCatalogScore} from './catalo
 import {setupNotationFollowing} from './notation-follow.js';
 import {setupExternalOmrReview} from './external-omr-view.js';
 import {setupAdaptationView} from './adaptation-view.js';
+import {setupTranspositionView} from './transposition-view.js';
 import {setupSourceDirectory,unsupportedImportHint} from './score-sources.js';
 import {setupMetronome} from './metronome.js';
 import {setupJianpuExport} from './jianpu-export.js';
@@ -35,6 +36,7 @@ const transport = new Transport();
 const synth = new Synth();
 let metronome = null;
 let adaptationView = null;
+let transpositionView = null;
 let externalOmrView = null;
 let notationFollowing = null;
 let sourceArchiveView=null;
@@ -156,7 +158,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
     clearNotice();
     resetPlayback();
-    renderScore(); notationFollowing?.scoreChanged(); sourceArchiveView?.scoreChanged(); libraryView.scoreChanged(); adaptationView?.scoreChanged(); renderCatalog(); updateRangeWarning();
+    renderScore(); notationFollowing?.scoreChanged(); sourceArchiveView?.scoreChanged(); libraryView.scoreChanged(); adaptationView?.scoreChanged(); transpositionView?.scoreChanged(); renderCatalog(); updateRangeWarning();
     $('catalog-status').textContent=`Current session: ${state.score.title}. Browsing a preview keeps this take intact.`;
     const clockScore=state.score;await checkInstrument();if(state.score===clockScore){metronome?.setScore();preview.adopt(state.compiled,previewCompatibility(state.compatibility),state.practicePart);}
     return state.score===clockScore&&(expectedIntent===null||expectedIntent===state.loadIntent);
@@ -865,6 +867,7 @@ setupImageReview({onImport:importCanonicalScore, pausePlayback, notice,onExterna
 sourceArchiveView=setupSourceArchiveView({getContext:()=>({score:state.score,version:state.loadIntent}),pausePlayback});
 externalOmrView = setupExternalOmrReview({api,onActivate:importCanonicalScore,pausePlayback,notice,getSourceVersion:()=>state.loadIntent});
 adaptationView = setupAdaptationView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.score,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
+transpositionView = setupTranspositionView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.score,timeline:state.compiled?.timeline,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
 metronome = setupMetronome({api,getScore:()=>state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:transport.time(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
 performanceView=setupPerformanceView({getContext:()=>({geometry:state.geometry,rangeLabel:`${midiName(state.geometry[0].midi)}–${midiName(state.geometry.at(-1).midi)}`,mode:state.mode,instrument:state.instrument,position:transport.time(performance.now()),segmentStart:state.loop?.start_ms||0,countInBeatMs:60000/(Number($('tempo').value)||100),running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,now:performance.now(),recorder:state.recorder})});
 midiController=setupMidi({pressNote, releaseNote, releaseMatching, notice, pausePlayback,

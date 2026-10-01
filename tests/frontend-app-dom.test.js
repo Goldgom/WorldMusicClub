@@ -9,7 +9,7 @@ import {InputEvidence} from '../web/input-evidence.js';
 // Node DOM integration only: no browser, layout engine, real audio or HTTP is run.
 test('application module initializes the lobby and activates only through explicit Start',async()=>{
  const {document,window}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8'));
- const requests=[],values=new Map();let audioContexts=0,holdCheck=null,heldCheck=null;
+ const requests=[],values=new Map();let audioContexts=0,holdCheck=null,heldCheck=null,holdCompile=null,heldCompile=false;
  const originalEvidenceStart=InputEvidence.prototype.start,originalCreateUrl=URL.createObjectURL;
  Object.defineProperty(window.HTMLSelectElement.prototype,'value',{configurable:true,get(){return this.querySelector('option[selected]')?.value||this.querySelector('option')?.value||''},set(value){for(const option of this.querySelectorAll('option'))option.toggleAttribute('selected',option.value===String(value))}});
  Object.defineProperty(window.HTMLElement.prototype,'open',{configurable:true,get(){return this.hasAttribute('open')},set(value){this.toggleAttribute('open',Boolean(value))}});
@@ -17,7 +17,7 @@ test('application module initializes the lobby and activates only through explic
  const paint=new Proxy({createLinearGradient:()=>({addColorStop(){}})},{get:(target,key)=>target[key]||(()=>{})});window.HTMLCanvasElement.prototype.getContext=()=>paint;
  const param={setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){},cancelScheduledValues(){}};
  class Audio{constructor(){audioContexts++;this.state='running';this.currentTime=0;this.destination={}}createGain(){return{gain:{...param},connect(){},disconnect(){}}}createOscillator(){return{frequency:{},connect(){},disconnect(){},start(){},stop(){}}}}
- const compile=score=>({score,timeline:{notes:score.parts.flatMap(part=>part.notes.filter(note=>note.pitch).map(note=>({id:note.id,part_id:part.id,midi:pitchMidi(note.pitch),start_ms:beat(note.at)*500,duration_ms:beat(note.duration)*500,voice:note.voice,staff:note.staff}))),duration_ms:1000},diagnostics:[]});
+ const compile=score=>({score,timeline:{notes:score.parts.flatMap(part=>part.notes.filter(note=>note.pitch).map(note=>({id:note.id,source_note_id:note.id,source_note_ids:[note.id],velocity:note.velocity,part_id:part.id,midi:pitchMidi(note.pitch),start_ms:beat(note.at)*500,duration_ms:beat(note.duration)*500,voice:note.voice,staff:note.staff}))),duration_ms:1000},diagnostics:[]});
  const item={id:fixture.id,title:fixture.title,composer:fixture.composer,provenance:fixture.provenance,written_event_count:2,pitched_note_count:2,rest_count:0,opening_bpm:120,part_count:1};
  const otherScore={...structuredClone(fixture),id:'other-preview',title:'Another selected score'};
  const installed={window,document,location:{origin:'http://local-node-dom.invalid'},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},matchMedia:()=>({matches:false,addEventListener(){}}),MutationObserver:class{observe(){}disconnect(){}},requestAnimationFrame:()=>0,cancelAnimationFrame:()=>{},AudioContext:Audio,fetch:async(path,options={})=>{
@@ -26,10 +26,13 @@ test('application module initializes the lobby and activates only through explic
   else if(path==='/api/catalog/score/'+fixture.id)result=structuredClone(fixture);
   else if(path==='/api/catalog/score/'+otherScore.id)result=structuredClone(otherScore);
   else if(path==='/api/compile')result=compile(body);
+  else if(path==='/api/transposition/preview'){const score=structuredClone(body.score);for(const part of score.parts)for(const note of part.notes)if(note.pitch)note.pitch.octave++;score.id+=':semitones:+12';score.title+=' [+12 semitones]';score.source={format:'semitone-transposition',filename:null,content:JSON.stringify({version:1,operation:body.operation,original:body.score}),import_diagnostics:[{severity:'warning',code:'explicit_semitone_transposition',message:'Keep original JSON',note_id:null}]};const compilation=compile(score);result={compilation,operation:body.operation,written_interval:{diatonic_steps:7,fifths_delta:0},changed_note_count:score.parts.flatMap(part=>part.notes).filter(note=>note.pitch).length,original_preserved:true,scored_mode_allowed:true,instrument_report:{lowest_midi:36,highest_midi:96,note_options:compilation.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:true,positions:[]})),diagnostics:[],changed_source_notes:false}};}
+  else if(path==='/api/transposition/restore')result=compile(JSON.parse(body.source.content).original);
   else if(path==='/api/practice-targets')result={timeline:body.timeline,groups:body.timeline.notes.map(note=>({target_id:note.id,source_occurrence_ids:[note.id],source_note_ids:[note.id],part_ids:[note.part_id]})),diagnostics:[],source_note_count:body.timeline.notes.length,target_count:body.timeline.notes.length,playable:true};
   else if(path==='/api/instrument-check')result={lowest_midi:36,highest_midi:96,note_options:body.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:true,positions:[]})),diagnostics:[],changed_source_notes:false};
   else if(path==='/api/assess')result={hits:[],misses:body.timeline.notes.map(note=>note.id),extras:[],accuracy_percent:0,mean_abs_error_ms:null,grade_counts:{perfect:0,good:0,early:0,late:0,missed:2,extra:0},onset_completion:{total:2,complete:0,longest_complete_sequence:0}};
   else throw Error(`Unexpected Node DOM test request: ${path}`);
+  if(path==='/api/compile'&&holdCompile){const gate=holdCompile;holdCompile=null;heldCompile=true;await gate;}
   if(path==='/api/instrument-check'&&holdCheck){const gate=holdCheck;holdCheck=null;heldCheck=true;await gate;}
   return{ok:true,json:async()=>result};
  }};
@@ -117,5 +120,17 @@ test('application module initializes the lobby and activates only through explic
   assert.deepEqual(exported.input_evidence.events.map(event=>event.kind),['note_on','note_off']);assert.equal(exported.input_evidence.truncated,true);assert.equal(exported.input_evidence.omitted_observations,4);
   assert.equal(exported.input_evidence.events[1].encoding,'key_up');assert.equal(exported.input_evidence.release_assessment,'not_implemented');
   document.getElementById('reset-button').click();assert.equal(document.getElementById('take-evidence-limit').hidden,true);
+  // Exercise the actual shared loader's pre-commit cancellation and post-commit
+  // compatibility wait. A view-only activation mock cannot establish this boundary.
+  InputEvidence.prototype.start=originalEvidenceStart;await startPractice();emit(key,'keydown',enter);emit(key,'keyup',enter);document.getElementById('play-button').click();
+  const beforeTranspose=await exportTake(),originalTitle=document.getElementById('score-title').textContent;
+  const openTranspose=()=>{document.getElementById('settings-button').click();document.getElementById('transposition-button').click();document.getElementById('transposition-semitones').value='12'};
+  const previewTranspose=async()=>{document.getElementById('transposition-preview').click();await until(()=>!document.getElementById('transposition-result').hidden,'Semitone preview did not become reviewable');const confirm=document.getElementById('transposition-confirm');confirm.checked=true;confirm.dispatchEvent(new window.Event('change'))};
+  openTranspose();await previewTranspose();assert.deepEqual(await exportTake(),beforeTranspose,'Preview preserves every paused take field');
+  let releaseCompile;holdCompile=new Promise(resolve=>{releaseCompile=resolve});document.getElementById('transposition-activate').click();await until(()=>heldCompile,'Activation compilation did not wait');document.getElementById('transposition-cancel').click();releaseCompile();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(document.getElementById('score-title').textContent,originalTitle);assert.deepEqual(await exportTake(),beforeTranspose,'Cancellation before commit preserves complete history');
+  openTranspose();await previewTranspose();heldCheck=false;let releaseCompatibility;holdCheck=new Promise(resolve=>{releaseCompatibility=resolve});document.getElementById('transposition-activate').click();await until(()=>heldCheck,'Committed copy did not wait for instrument checks');
+  assert.equal(document.getElementById('transposition-dialog').open,false,'Review ends at score commit before the instrument request settles');assert.equal(document.getElementById('score-title').textContent,originalTitle+' [+12 semitones]');assert.equal(document.getElementById('export-takes').disabled,true,'Confirmed replacement clears the explicitly warned take history');assert.match(document.getElementById('notice').textContent,/copy loaded.*checks are updating/);
+  openTranspose();releaseCompatibility();await until(()=>!document.getElementById('play-button').disabled,'Committed compatibility check never finished');assert.equal(document.getElementById('transposition-dialog').open,true,'Late activation completion does not dismiss a new review');assert.equal(document.getElementById('transposition-preview').disabled,true);assert.equal(document.getElementById('transposition-restore-preview').hidden,false);
  }finally{InputEvidence.prototype.start=originalEvidenceStart;URL.createObjectURL=originalCreateUrl;for(const[key,descriptor]of originals)if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key]}
 });

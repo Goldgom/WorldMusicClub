@@ -119,3 +119,7 @@
   .guitar-target-identity{grid-row:2;grid-column:1}
   .guitar-target-onset{grid-row:2;grid-column:2}
 }
+
+/* Explicit whole-score copies stay in the existing Settings review flow. */
+.pitch-copy-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.pitch-copy-actions #adaptation-button{margin-top:0}
+.transposition-dialog #transposition-result{border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:18px;margin-top:16px}.transposition-dialog #transposition-result p,.transposition-dialog #transposition-result ul,.transposition-dialog #transposition-result details{font-size:13px;line-height:1.8;color:var(--muted)}
