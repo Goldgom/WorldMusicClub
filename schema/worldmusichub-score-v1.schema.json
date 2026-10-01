@@ -9,6 +9,7 @@
   "required": ["version", "id", "title", "composer", "provenance", "parts", "tempo", "meters", "keys", "measures"],
   "properties": {
     "version": {"type": "integer", "const": 1},
+    "format_metadata": {"anyOf": [{"$ref": "#/$defs/FormatMetadata"}, {"type": "null"}], "default": null},
     "id": {"type": "string", "minLength": 1, "maxLength": 128, "description": "Stable score identifier; Rust additionally rejects whitespace-only values."},
     "title": {"type": "string", "minLength": 1, "maxLength": 1000, "description": "Rust additionally rejects whitespace-only values."},
     "composer": {"type": "string", "maxLength": 1024},
@@ -171,6 +172,17 @@
         "code": {"type": "string", "minLength": 1, "maxLength": 64},
         "message": {"type": "string", "minLength": 1, "maxLength": 8192},
         "note_id": {"anyOf": [{"type": "string", "maxLength": 128}, {"type": "null"}], "default": null}
+      }
+    },
+    "FormatMetadata": {
+      "description": "Claimed canonical origin producer, not musical authorship, a signature or complete edit history. Absent legacy metadata remains unknown.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_revision", "producer", "producer_version"],
+      "properties": {
+        "schema_revision": {"type": "integer", "minimum": 1, "maximum": 2},
+        "producer": {"type": "string", "minLength": 1, "maxLength": 128},
+        "producer_version": {"type": "string", "minLength": 1, "maxLength": 64}
       }
     }
   }

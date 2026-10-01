@@ -61,6 +61,15 @@ fn reply(status: u16, content_type: &str, body: impl Into<Bytes>) -> WebResponse
         .body(Full::new(body.into()))
         .expect("static response headers")
 }
+fn json_input_error(context: &str, error: serde_json::Error) -> String {
+    let detail = error.to_string();
+    if error.is_data() && detail.contains("unknown field") {
+        format!("Unsupported field or metadata in {context}. This file may require a newer WorldMusicHub app; it was not changed or stripped. Keep the original. Details: {detail}")
+    } else {
+        format!("Invalid {context}: {detail}")
+    }
+}
+
 fn json_reply(result: Result<serde_json::Value, String>) -> WebResponse {
     let (status, value) = match result {
         Ok(value) => (200, value),
@@ -116,7 +125,7 @@ async fn route(
     if request.method() == Method::GET {
         return match path.as_str() {
             "/api/health" => json_reply(Ok(
-                json!({"name":"WorldMusicHub","version":env!("CARGO_PKG_VERSION"),"engine":"rust","network":"loopback-only"}),
+                json!({"name":"WorldMusicHub","version":env!("CARGO_PKG_VERSION"),"engine":"rust","network":"loopback-only","score_format_version":1,"score_schema_revision":score_core::SCORE_SCHEMA_REVISION}),
             )),
             "/api/catalog" => {
                 json_reply(serde_json::to_value(score_core::catalog()).map_err(|e| e.to_string()))
@@ -220,50 +229,50 @@ fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
     match path {
         "/api/omr/audiveris-draft" => {
             serde_json::from_slice::<score_core::external_omr::AudiverisInput>(&bytes)
-                .map_err(|e| format!("Invalid external OMR input: {e}"))
+                .map_err(|e| json_input_error("external OMR input", e))
                 .and_then(score_core::external_omr::prepare_audiveris)
                 .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string()))
         }
         "/api/omr/confirm" => serde_json::from_slice::<OmrConfirmationRequest>(&bytes)
-            .map_err(|e| format!("Invalid OMR review confirmation: {e}"))
+            .map_err(|e| json_input_error("OMR review confirmation", e))
             .and_then(|r| score_core::external_omr::confirm_review(r.score, r.confirmation))
             .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
         "/api/adaptation/preview" => serde_json::from_slice::<AdaptationRequest>(&bytes)
-            .map_err(|e| format!("Invalid adaptation request: {e}"))
+            .map_err(|e| json_input_error("adaptation request", e))
             .and_then(|r| {
                 score_core::adaptation::preview_octaves(&r.score, r.operation, &r.profile)
             })
             .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
         "/api/adaptation/restore" => serde_json::from_slice::<score_core::Score>(&bytes)
-            .map_err(|e| format!("Invalid adapted score: {e}"))
+            .map_err(|e| json_input_error("adapted score", e))
             .and_then(|score| score_core::adaptation::restore_original(&score))
             .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
         "/api/compile" => serde_json::from_slice(&bytes)
-            .map_err(|e| format!("Invalid score JSON: {e}"))
+            .map_err(|e| json_input_error("score JSON", e))
             .and_then(score_core::compile)
             .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
         "/api/metronome" => serde_json::from_slice::<MetronomeRequest>(&bytes)
-            .map_err(|e| format!("Invalid metronome request: {e}"))
+            .map_err(|e| json_input_error("metronome request", e))
             .and_then(|r| score_core::metronome::metronome_grid(r.score, r.pulse))
             .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
         "/api/practice-window" => serde_json::from_slice::<WindowRequest>(&bytes)
-            .map_err(|e| format!("Invalid loop request: {e}"))
+            .map_err(|e| json_input_error("loop request", e))
             .and_then(|r| score_core::practice::practice_window(&r.score, r.from, r.to))
             .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
         "/api/practice-targets" => serde_json::from_slice::<InstrumentRequest>(&bytes)
-            .map_err(|e| format!("Invalid target request: {e}"))
+            .map_err(|e| json_input_error("target request", e))
             .and_then(|r| score_core::targets::plan_targets(&r.timeline, &r.profile))
             .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
         "/api/instrument-check" => serde_json::from_slice::<InstrumentRequest>(&bytes)
-            .map_err(|e| format!("Invalid instrument request: {e}"))
+            .map_err(|e| json_input_error("instrument request", e))
             .and_then(|r| score_core::instruments::analyze_instrument(&r.timeline, &r.profile))
             .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
         "/api/export/jianpu" => serde_json::from_slice::<score_core::Score>(&bytes)
-            .map_err(|e| format!("Invalid score JSON: {e}"))
+            .map_err(|e| json_input_error("score JSON", e))
             .and_then(|score| score_core::export_jianpu(&score))
             .and_then(|result| serde_json::to_value(result).map_err(|e| e.to_string())),
         "/api/export/musicxml" => serde_json::from_slice::<score_core::Score>(&bytes)
-            .map_err(|e| format!("Invalid score JSON: {e}"))
+            .map_err(|e| json_input_error("score JSON", e))
             .and_then(|score| score_core::export_musicxml(&score))
             .and_then(|result| serde_json::to_value(result).map_err(|e| e.to_string())),
         "/api/import/jianpu" => String::from_utf8(bytes)
@@ -285,7 +294,7 @@ fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
             .and_then(|(score, _warnings)| score_core::compile(score))
             .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
         "/api/assess" => serde_json::from_slice::<AssessRequest>(&bytes)
-            .map_err(|e| format!("Invalid performance JSON: {e}"))
+            .map_err(|e| json_input_error("performance JSON", e))
             .and_then(|r| score_core::assess(&r.timeline, &r.inputs, r.tolerance_ms))
             .and_then(|a| serde_json::to_value(a).map_err(|e| e.to_string())),
         _ => Err("Unknown API route".into()),
@@ -368,6 +377,20 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unknown_score_metadata_reports_compatibility_without_rewriting_input() {
+        let mut value = serde_json::to_value(score_core::catalog().remove(0)).unwrap();
+        value["future_notation_metadata"] = json!({"version":2});
+        let bytes = serde_json::to_vec(&value).unwrap();
+        let original = bytes.clone();
+        let error = api("/api/compile", bytes.clone()).unwrap_err();
+        assert!(error.contains("may require a newer WorldMusicHub"));
+        assert!(error.contains("not changed or stripped"));
+        assert_eq!(bytes, original);
+        let syntax = api("/api/compile", b"{".to_vec()).unwrap_err();
+        assert!(syntax.contains("Invalid score JSON"));
+        assert!(!syntax.contains("Unsupported field"));
+    }
     #[test]
     fn existing_import_content_types_are_preserved() {
         for (path, content_type) in [

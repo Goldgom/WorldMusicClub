@@ -33,7 +33,7 @@ All names are case-sensitive and use the exact snake_case spellings shown. Objec
 
 | Object / 对象 | Required fields / 必填字段 | Optional fields / 可选字段 |
 | --- | --- | --- |
-| Score | `version`, `id`, `title`, `composer`, `provenance`, `parts`, `tempo`, `meters`, `keys`, `measures` | `repeats` → `[]`; `source` → `null` |
+| Score | `version`, `id`, `title`, `composer`, `provenance`, `parts`, `tempo`, `meters`, `keys`, `measures` | `repeats` → `[]`; `source`, `format_metadata` → `null` |
 | Part | `id`, `name`, `instrument`, `notes` | none / 无 |
 | Note or rest / 音符或休止符 | `id`, `at`, `duration`, `voice`, `staff`, `velocity` | `pitch` → `null`; `tie_start`, `tie_stop` → `false` |
 | Pitch | `step`, `alter`, `octave` | none / 无 |
@@ -45,6 +45,7 @@ All names are case-sensitive and use the exact snake_case spellings shown. Objec
 | Repeat | `from`, `to`, `times` | none / 无 |
 | Provenance | `kind`, `attribution` | `source_url`, `license` → `null` |
 | Source | `format`, `content` | `filename`, `import_diagnostics` → `null` |
+| Format metadata | `schema_revision`, `producer`, `producer_version` | none |
 | Retained diagnostic | `severity`, `code`, `message` | `note_id` → `null` |
 
 For nullable fields, either absence or explicit `null` means `None` in Rust. Therefore an omitted `pitch` is a rest, not an unknown pitch awaiting recognition. Prefer writing `pitch: null` explicitly for rests. A pitched note requires the full `Pitch` object; partial pitches are invalid. The `default` keywords in the schema describe Rust's behavior; they are annotations and do not require a schema validator to change the input. Rust serialization emits these fields explicitly, so deserialize/serialize preserves the model, not whitespace, object-key order, or whether a default was omitted. Retained `source.content` remains the decoded string, independently of JSON escaping.
@@ -113,6 +114,10 @@ Schema 仅做结构预检：字段集合、必填项、类型、单字段数值�
 Use JSON integer tokens for integer fields, not quoted numbers, `1.0`, or exponent notation. JSON Schema sees a mathematical integer after JSON parsing, while Serde's integer parser can reject a decimal/exponent token. Avoid duplicate JSON property names; a generic JavaScript JSON parse can hide a duplicate that Rust rejects. JSON itself excludes `NaN` and infinity. The HTTP server additionally caps the entire request body at 8 MiB; JSON escaping, base64 growth, and other score fields count toward that cap, so a source payload near its standalone limit may not fit an API request.
 
 整数字段请使用 JSON 整数文本，不要使用字符串、`1.0` 或指数写法。Schema 处理解析后的数学数值，无法完全代替 Serde 对原始数值文本的判断。也不要写重复的对象键；普通 JavaScript 解析可能掩盖 Rust 会拒绝的重复键。JSON 不支持 NaN 或无穷大。HTTP 的 8 MiB 限制针对整个请求体，含 JSON 转义、Base64 膨胀和其他字段，来源内容未超过自身上限也可能使整个请求超限。
+
+## Compatibility and producer policy / 格式兼容与生成工具
+
+Score `version: 1` describes the musical model. Additive nonmusical metadata is schema revision 2 in the 0.2.0-alpha.1 development series. Optional `format_metadata` records the claimed origin producer and its version; new application-created/imported canonical records stamp these values, while reading legacy files never invents missing producer information. Ordinary compile and reversible copy/restore retain origin metadata; it is not a signature, musical authorship or a complete edit history. Unknown fields and future declared revisions produce compatibility errors, never silent field stripping. See [format compatibility policy](FORMAT_COMPATIBILITY.md).
 
 ## Source preservation and diagnostics / 来源保留与诊断
 

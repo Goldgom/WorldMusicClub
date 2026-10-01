@@ -266,8 +266,8 @@ mod tests {
             .unwrap()
             .xml
             .replace(
-                "</identification>",
-                "<encoding><software>Audiveris 5.11.0</software></encoding></identification>",
+                "<encoding>",
+                "<encoding><software>Audiveris 5.11.0</software>",
             )
     }
     fn input() -> AudiverisInput {

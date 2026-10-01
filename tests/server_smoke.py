@@ -25,7 +25,7 @@ try:
     status,body,_=request('/api/export/musicxml',json.dumps(catalog[0]).encode(),{'Content-Type':'application/json'})
     assert status==200,body
     exported=json.loads(body);assert exported['part_id_map']['piano']=='P1' and exported['voice_id_map']
-    declared_omr=exported['xml'].replace('</identification>','<encoding><software>Audiveris 5.11.0</software></encoding></identification>')
+    declared_omr=exported['xml'].replace('<encoding>','<encoding><software>Audiveris 5.11.0</software>')
     omr_input={'engine_version':'5.11.0','output_format':'musicxml','output_content':declared_omr}
     status,body,_=request('/api/omr/audiveris-draft',json.dumps(omr_input).encode(),{'Content-Type':'application/json'})
     assert status==200,body

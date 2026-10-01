@@ -318,7 +318,10 @@ pub fn export_musicxml(score: &Score) -> Result<ExportedMusicXml, String> {
             escape(license)?
         ))?;
     }
-    xml.put(format_args!("</identification>\n"))?;
+    xml.put(format_args!(
+        "<encoding><software>WorldMusicHub {}</software></encoding></identification>\n",
+        env!("CARGO_PKG_VERSION")
+    ))?;
     xml.put(format_args!("<part-list>\n"))?;
     for (index, part) in score.parts.iter().enumerate() {
         if part.name.trim().is_empty() || part.instrument.trim().is_empty() {
@@ -824,6 +827,7 @@ mod tests {
 
     fn score() -> Score {
         Score {
+            format_metadata: Some(crate::FormatMetadata::current()),
             version: 1,
             id: "original-id".into(),
             title: "Exact étude & <duet> 🎹".into(),

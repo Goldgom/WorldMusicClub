@@ -179,9 +179,29 @@ pub struct Source {
     pub filename: Option<String>,
     pub content: String,
 }
+pub const SCORE_SCHEMA_REVISION: u32 = 2;
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FormatMetadata {
+    pub schema_revision: u32,
+    pub producer: String,
+    pub producer_version: String,
+}
+impl FormatMetadata {
+    pub fn current() -> Self {
+        Self {
+            schema_revision: SCORE_SCHEMA_REVISION,
+            producer: "WorldMusicHub".into(),
+            producer_version: env!("CARGO_PKG_VERSION").into(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Score {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format_metadata: Option<FormatMetadata>,
     pub version: u32,
     pub id: String,
     pub title: String,
@@ -254,6 +274,19 @@ pub fn validate(score: &Score) -> Result<(), String> {
             Ok(())
         }
     };
+    if let Some(metadata) = &score.format_metadata {
+        if metadata.schema_revision > SCORE_SCHEMA_REVISION {
+            return Err(format!("This score uses newer schema metadata revision {}. Update WorldMusicHub; this build reads revisions 1–{}. Keep the original file unchanged.", metadata.schema_revision, SCORE_SCHEMA_REVISION));
+        }
+        if metadata.schema_revision == 0
+            || metadata.producer.trim().is_empty()
+            || metadata.producer_version.trim().is_empty()
+        {
+            return Err("Format metadata requires a positive schema revision and nonempty producer/version claims".into());
+        }
+        bounded(&metadata.producer, 128, "Producer name")?;
+        bounded(&metadata.producer_version, 64, "Producer version")?;
+    }
     bounded(&score.id, 128, "Score id")?;
     bounded(&score.composer, 1024, "Composer")?;
     bounded(&score.provenance.kind, 64, "Provenance kind")?;
@@ -298,7 +331,7 @@ pub fn validate(score: &Score) -> Result<(), String> {
         return Err("Score metadata exceeds event-count limits".into());
     }
     if score.version != 1 {
-        return Err("Unsupported score version; expected version 1".into());
+        return Err(format!("Unsupported canonical score format version {}. This build reads version 1; a newer format needs a newer compatible WorldMusicHub app. Keep the original file unchanged.", score.version));
     }
     if score.title.trim().is_empty() || score.title.len() > 1000 || score.id.trim().is_empty() {
         return Err("Score requires a short title and stable id".into());
@@ -844,7 +877,7 @@ pub fn catalog() -> Vec<Score> {
             tie_stop: false,
         })
         .collect();
-    let mut scale=Score { version:1,id:"first-steps".into(),title:"初见 · First Steps".into(),composer:"WorldMusicHub original exercise".into(),provenance:Provenance {kind:"original_exercise".into(),attribution:"Newly authored pedagogical scale exercise for WorldMusicHub; not a transcription of a song".into(),source_url:None,license:Some("CC0-1.0".into())},parts:vec![Part {id:"piano".into(),name:"Piano".into(),instrument:"piano".into(),notes}],tempo:vec![Tempo {at:Beat::ZERO,bpm:90.}],meters:vec![Meter {at:Beat::ZERO,numerator:4,denominator:4}],keys:vec![Key {at:Beat::ZERO,fifths:0,mode:"major".into()}],measures:(0..4).map(|i|Measure {number:i+1,at:Beat::new(i as i64*4,1),length:Beat::new(4,1)}).collect(),repeats:vec![],source:None};
+    let mut scale=Score { format_metadata: Some(crate::FormatMetadata::current()), version:1,id:"first-steps".into(),title:"初见 · First Steps".into(),composer:"WorldMusicHub original exercise".into(),provenance:Provenance {kind:"original_exercise".into(),attribution:"Newly authored pedagogical scale exercise for WorldMusicHub; not a transcription of a song".into(),source_url:None,license:Some("CC0-1.0".into())},parts:vec![Part {id:"piano".into(),name:"Piano".into(),instrument:"piano".into(),notes}],tempo:vec![Tempo {at:Beat::ZERO,bpm:90.}],meters:vec![Meter {at:Beat::ZERO,numerator:4,denominator:4}],keys:vec![Key {at:Beat::ZERO,fifths:0,mode:"major".into()}],measures:(0..4).map(|i|Measure {number:i+1,at:Beat::new(i as i64*4,1),length:Beat::new(4,1)}).collect(),repeats:vec![],source:None};
     let mut duet = scale.clone();
     duet.id = "steady-hands".into();
     duet.title = "同频 · Steady Hands".into();
@@ -999,6 +1032,29 @@ mod tests {
         assert!(validate(&score).is_err());
         score.source.as_mut().unwrap().import_diagnostics = Some(vec![observation]);
         assert!(validate(&score).is_ok());
+    }
+    #[test]
+    fn canonical_origin_metadata_is_optional_preserved_and_future_revisions_are_clear() {
+        let mut score = catalog().remove(0);
+        let metadata = score.format_metadata.as_ref().unwrap();
+        assert_eq!(metadata.schema_revision, 2);
+        assert_eq!(metadata.producer_version, env!("CARGO_PKG_VERSION"));
+        score.format_metadata = None;
+        let text = serde_json::to_string(&score).unwrap();
+        assert!(!text.contains("format_metadata"));
+        let legacy: Score = serde_json::from_str(&text).unwrap();
+        assert!(compile(legacy).unwrap().score.format_metadata.is_none());
+        let mut future = FormatMetadata::current();
+        future.schema_revision = 3;
+        score.format_metadata = Some(future);
+        assert!(validate(&score)
+            .unwrap_err()
+            .contains("newer schema metadata"));
+        score.format_metadata = None;
+        score.version = 2;
+        assert!(validate(&score)
+            .unwrap_err()
+            .contains("newer compatible WorldMusicHub"));
     }
     #[test]
     fn rational_addition_is_exact() {

@@ -529,7 +529,7 @@ pub fn import_midi(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
         .filter(|n| !n.is_empty())
         .cloned()
         .unwrap_or_else(|| "Imported MIDI performance".into());
-    let score = Score {
+    let score = Score { format_metadata: Some(crate::FormatMetadata::current()),
         version: 1, id: format!("midi-{fingerprint:016x}"), title, composer: String::new(),
         provenance: Provenance { kind: "user_import".into(), attribution: "User-supplied MIDI performance; ownership and usage rights are not verified. Notation is inferred, not original sheet music.".into(), source_url: None, license: None },
         parts, tempo, meters, keys, measures, repeats: Vec::new(),

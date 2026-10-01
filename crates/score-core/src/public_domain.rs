@@ -167,6 +167,7 @@ fn arrange(arrangement: Arrangement) -> Score {
         .to_string(),
     };
     Score {
+        format_metadata: Some(crate::FormatMetadata::current()),
         version: 1,
         id: arrangement.id.into(),
         title: arrangement.title.into(),

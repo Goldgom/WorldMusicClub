@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import Ajv2020 from 'ajv/dist/2020.js';
 import {fixture} from './frontend-fixtures.js';
+import {APP_VERSION,SCORE_SCHEMA_REVISION,currentFormatMetadata} from '../web/format-metadata.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const schema = JSON.parse(read('../schema/worldmusichub-score-v1.schema.json'));
@@ -15,6 +16,7 @@ const validate = ajv.compile(schema);
 const beat = (numerator, denominator = 1) => ({numerator, denominator});
 const complete = () => ({
   ...structuredClone(fixture),
+  format_metadata: currentFormatMetadata(),
   repeats: [{from: beat(0), to: beat(4), times: 2}],
   source: {format: 'original-test-text', filename: 'original.txt', content: 'Original schema test only.', import_diagnostics: [{severity:'warning',code:'source_only',message:'Original import observation.',note_id:null}]},
 });
@@ -32,6 +34,7 @@ function changed(edit) {
 function objectExamples(score) {
   return {
     Score: score,
+    FormatMetadata: score.format_metadata,
     Beat: score.parts[0].notes[0].at,
     PositiveBeat: score.parts[0].notes[0].duration,
     Pitch: score.parts[0].notes[0].pitch,
@@ -277,3 +280,12 @@ test('schema mirrors permissive core measure, map and label semantics honestly',
     score.provenance.attribution = '';
   }));
 });
+
+ test('canonical origin version metadata agrees with Rust and npm and does not invent legacy producers',()=>{
+  assert.equal(APP_VERSION, JSON.parse(read('../package.json')).version);
+  assert.match(read('../Cargo.toml'),new RegExp(`version = "${APP_VERSION.replaceAll('.','\\.')}"`));
+  assert.match(rust,new RegExp(`SCORE_SCHEMA_REVISION: u32 = ${SCORE_SCHEMA_REVISION}`));
+  valid(fixture);valid(complete());
+  invalid(changed(score=>score.format_metadata.schema_revision=3));
+  invalid(changed(score=>score.format_metadata.producer=''));
+ });

@@ -498,6 +498,7 @@ pub fn import_musicxml(xml: &str) -> Result<(Score, Vec<Diagnostic>), String> {
         warnings.add("musicxml_repeats", "Simple repeat regions are retained for playback expansion; alternate endings and navigation jumps are unsupported.");
     }
     let score = Score {
+        format_metadata: Some(crate::FormatMetadata::current()),
         version: 1,
         id: score_id,
         title,

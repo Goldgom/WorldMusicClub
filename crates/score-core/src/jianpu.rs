@@ -464,7 +464,7 @@ pub fn import_jianpu(text: &str) -> Result<(Score, Vec<Diagnostic>), String> {
             None,
         ));
     }
-    let score = Score {
+    let score = Score { format_metadata: Some(crate::FormatMetadata::current()),
         version: 1,
         id: "jianpu-import".into(),
         title: headers
