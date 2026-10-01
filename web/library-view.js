@@ -1,4 +1,5 @@
 import {openScoreLibrary, LIBRARY_LIMITS} from './local-library.js';
+import {prepareScoreDownload} from './score-download.js';
 
 export function librarySize(bytes) {
   return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KiB` : `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
@@ -67,7 +68,7 @@ export function setupScoreLibrary({getScore, onLoad, validate, pausePlayback, no
         close();notice(`Opened saved copy “${saved.label||saved.title}”. The saved copy remains unchanged.`);
       }));
       const exportOne=document.createElement('button');exportOne.textContent='Export';exportOne.className='button ghost';exportOne.dataset.libraryAction='';exportOne.dataset.libraryExport='';exportOne.setAttribute('aria-label',`Export saved copy ${row.label||row.title}`);
-      exportOne.addEventListener('click',()=>run('Reading a complete score file…',async signal=>{const saved=await(await getLibrary()).get(row.key);signal.throwIfAborted();if(!saved)throw Error('This saved copy was removed. Refresh the list.');download(JSON.stringify(saved.score,null,2),scoreFilename(saved.score));status('Score file exported, including its original source.')}));
+      exportOne.addEventListener('click',()=>run('Reading a complete score file…',async signal=>{const saved=await(await getLibrary()).get(row.key);signal.throwIfAborted();if(!saved)throw Error('This saved copy was removed. Refresh the list.');const prepared=prepareScoreDownload(saved.score);download(prepared.text,scoreFilename(saved.score));status(prepared.reimportable===false?'Download requested. The complete compact JSON exceeds this build’s 8 MiB reimport limit; all notes and source data were retained. Keep this archival copy.':`Download requested, including the original source.${prepared.formatting==='compact'?' Compact JSON keeps the file within the 8 MiB reimport limit; no notes or source data were removed.':' Readable JSON formatting.'}`,prepared.reimportable===false)}));
       const remove=document.createElement('button');remove.textContent='Delete';remove.className='button ghost';remove.dataset.libraryAction='';remove.dataset.libraryDelete='';remove.setAttribute('aria-label',`Delete saved copy ${row.label||row.title}`);
       remove.addEventListener('click',()=>{pendingDelete=row;$('library-delete-name').textContent=row.label||row.title;$('library-delete-confirm').hidden=false;$('library-delete-cancel').focus()});
       actions.append(open,exportOne,remove);item.append(info,actions);$('library-list').append(item);

@@ -382,8 +382,8 @@ pub fn import_mxl(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
     }
     // Full source preservation takes precedence over accepting a score that
     // cannot subsequently be saved or sent through the app's 8 MiB JSON route.
-    // The download UI writes two-space JSON, so include that whitespace too.
-    let saved_bytes = serde_json::to_vec_pretty(&score)
+    // The download UI uses compact JSON if indentation would exceed the limit.
+    let saved_bytes = serde_json::to_vec(&score)
         .map_err(|error| format!("Cannot serialize the archived MXL score: {error}"))?;
     if saved_bytes.len() > MAX_RETAINED_SCORE {
         return Err("The complete MXL archive plus its selected XML and canonical notes exceeds the 8 MiB saved-score limit. No attachment or source bytes were dropped. Keep the original MXL and import a smaller score, or separately export/import its MusicXML when an archive-preserving copy is not required.".into());

@@ -124,7 +124,9 @@ async function exportScore() {
   assert.equal(await download.failure(), null);
   const path = await download.path();
   assert.ok(path, 'The browser must produce a real JSON download');
-  const score = JSON.parse(await readFile(path, 'utf8'));
+  const bytes = await readFile(path);
+  assert.ok(bytes.length <= 8 * 1024 * 1024, 'Canonical downloads must fit the advertised JSON reimport limit');
+  const score = JSON.parse(bytes.toString('utf8'));
   assert.equal(download.suggestedFilename(), `${score.id.replace(/[^\w.-]/g, '_')}.json`);
   return score;
 }

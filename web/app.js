@@ -1,4 +1,5 @@
 import {setupSourceArchiveView} from './source-archive-view.js';
+import {prepareScoreDownload} from './score-download.js';
 import {validateCatalogIndex,CatalogScoreCache,fetchCatalogScore} from './catalog-loader.js';
 import {setupNotationFollowing} from './notation-follow.js';
 import {setupExternalOmrReview} from './external-omr-view.js';
@@ -652,7 +653,21 @@ $('score-file').addEventListener('change', async event => {
   }
   catch (error) { if (intent !== state.loadIntent) return; notice(`Could not read “${file.name}”. Choose valid score JSON, MusicXML (.musicxml/.xml), compressed MusicXML (.mxl), MIDI (.mid/.midi), or WorldMusicHub numbered text (.jianpu). ${error.message}`, true); }
 });
-$('export-button').addEventListener('click', () => { if (!state.score) return; const blob = new Blob([JSON.stringify(state.score, null, 2)], {type: 'application/json'}); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `${state.score.id.replace(/[^\w.-]/g, '_')}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
+$('export-button').addEventListener('click', () => {
+  if (!state.score) return;
+  try {
+    const download = prepareScoreDownload(state.score);
+    const blob = new Blob([download.text], {type: 'application/json'});
+    const url = URL.createObjectURL(blob); const link = document.createElement('a');
+    link.href = url; link.download = `${state.score.id.replace(/[^\w.-]/g, '_')}.json`;
+    link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    notice(!download.reimportable
+      ? 'Complete score download requested. It exceeds this build’s 8 MiB reimport limit; every note and retained source was kept. Keep this full copy and the original input.'
+      : download.formatting === 'compact'
+      ? 'Complete score download requested in compact JSON to fit the 8 MiB reimport limit. Every note and retained source is unchanged.'
+      : 'Complete score download requested, including every retained source.');
+  } catch (error) { notice(`Could not export this score. ${error.message}`, true); }
+});
 connectPlayable($('keyboard')); connectPlayable($('fretboard'));
 document.addEventListener('keydown', event => {
   if (event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName) || event.target.isContentEditable || event.target.closest('dialog[open]')) return;

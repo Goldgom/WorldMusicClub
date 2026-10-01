@@ -25,6 +25,9 @@ try:
     else:raise AssertionError('Server never became healthy')
     assert status==200 and json.loads(body)['engine']=='rust'
     assert headers['X-Content-Type-Options']=='nosniff'
+    status,body,headers=request('/score-download.js')
+    assert status==200 and body==Path('web/score-download.js').read_bytes()
+    assert headers['Content-Type'].startswith('text/javascript')
     status,body,_=request('/api/catalog'); assert status==200
     catalog=json.loads(body);assert len(catalog)>=3
     status,index_body,_=request('/api/catalog/index');assert status==200
