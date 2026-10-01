@@ -149,6 +149,44 @@ mod tests {
             lowest_midi: None,
         }
     }
+    #[test]
+    fn fractional_timeline_floats_survive_json_reposts_before_target_grouping() {
+        let original =
+            compile(crate::catalog_score("cc0-schubert-wandrers-nachtlied-d768").unwrap())
+                .unwrap()
+                .timeline;
+        let bytes = serde_json::to_vec(&original).unwrap();
+        let reposted: Timeline = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            reposted.duration_ms.to_bits(),
+            original.duration_ms.to_bits()
+        );
+        for (a, b) in original.notes.iter().zip(&reposted.notes) {
+            assert_eq!(a.start_ms.to_bits(), b.start_ms.to_bits(), "start {}", a.id);
+            assert_eq!(
+                a.duration_ms.to_bits(),
+                b.duration_ms.to_bits(),
+                "duration {}",
+                a.id
+            );
+        }
+        let plan = plan_targets(&reposted, &piano()).unwrap();
+        for (target, group) in plan.timeline.notes.iter().zip(plan.groups) {
+            let sources: Vec<_> = original
+                .notes
+                .iter()
+                .filter(|n| group.source_occurrence_ids.contains(&n.id))
+                .collect();
+            assert!(sources
+                .iter()
+                .all(|n| n.start_ms.to_bits() == target.start_ms.to_bits()));
+            let longest = sources
+                .iter()
+                .map(|n| n.duration_ms)
+                .fold(0.0_f64, f64::max);
+            assert_eq!(longest.to_bits(), target.duration_ms.to_bits());
+        }
+    }
     fn unison() -> crate::Score {
         let mut score = catalog().remove(0);
         score.parts[0].notes.truncate(1);

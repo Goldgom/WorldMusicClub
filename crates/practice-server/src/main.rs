@@ -397,6 +397,32 @@ fn main() {
 mod tests {
     use super::*;
     #[test]
+    fn fractional_edition_target_api_retains_exact_float_values_and_range_gates() {
+        let score = score_core::catalog_score("cc0-schubert-wandrers-nachtlied-d768").unwrap();
+        let compiled = api("/api/compile", serde_json::to_vec(&score).unwrap()).unwrap();
+        for (keys, playable) in [(61, false), (76, true)] {
+            let request = json!({"timeline":compiled["timeline"],"profile":{"kind":"piano","key_count":keys,"lowest_midi":null}});
+            let result = api(
+                "/api/practice-targets",
+                serde_json::to_vec(&request).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(result["playable"], playable);
+            assert_eq!(
+                result["timeline"]["duration_ms"],
+                compiled["timeline"]["duration_ms"]
+            );
+            let originals = compiled["timeline"]["notes"].as_array().unwrap();
+            for target in result["timeline"]["notes"].as_array().unwrap() {
+                let original = originals
+                    .iter()
+                    .find(|note| note["id"] == target["id"])
+                    .unwrap();
+                assert_eq!(target["start_ms"], original["start_ms"]);
+            }
+        }
+    }
+    #[test]
     fn unknown_score_metadata_reports_compatibility_without_rewriting_input() {
         let mut value = serde_json::to_value(score_core::catalog().remove(0)).unwrap();
         value["future_notation_metadata"] = json!({"version":2});
