@@ -1791,3 +1791,32 @@ test('real MIDI key test and delayed test callbacks never enter an existing prac
  assert.doesNotMatch(JSON.stringify(after),/private-keyboard|Fixture keyboard|Private fixture/);await ui('#midi-test-toggle').waitFor();assert.match(await page.locator('#midi-timing-status').textContent(),/1 timing-ambiguous/);
  await writeFile(join(artifactDirectory,'worldmusichub-live-midi-key-test.json'),JSON.stringify({practice_inputs_before:1,practice_inputs_after:after.passes[0].inputs.length,test_contacts_same_pitch:2,delayed_test_callbacks_excluded:2,missing_timestamp_excluded:1,source_identifiers_absent_from_export:true,monitorGeometry,physical_hardware_test:false},null,2));
 });
+
+test('short-landscape following reveals later systems with non-color cues and preserves a paused take during manual scrolling', {timeout:60_000}, async()=>{
+  await page.setViewportSize({width:844,height:390});await page.emulateMedia({reducedMotion:'reduce'});
+  const score=structuredClone(fixture),beat=n=>({numerator:n,denominator:1}),seed=score.parts[0].notes[0];
+  score.id='original-pane-reveal-study';score.title='Original pane reveal study';score.tempo=[{at:beat(0),bpm:120}];score.repeats=[];
+  score.measures=Array.from({length:6},(_,index)=>({number:7,at:beat(index*4),length:beat(4)}));
+  score.parts[0].notes=Array.from({length:6},(_,index)=>({...structuredClone(seed),id:`reveal-note-${index}`,at:beat(index*4),duration:beat(4),pitch:{step:'C',alter:0,octave:4},tie_start:false,tie_stop:false}));
+  await ui('#score-file').setInputFiles({name:'original-pane-reveal-study.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await waitForEngraving();
+  await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#reset-button').click();await closeShellPanels();
+  await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.status==='ready');
+  const stageBefore=await page.evaluate(()=>{const box=document.querySelector('.transport').getBoundingClientRect();return{windowX:scrollX,windowY:scrollY,transport:{x:box.x,y:box.y,width:box.width,height:box.height}}});
+  await ui('#engraving-follow').check();await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('a');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');
+  await page.waitForFunction(()=>Number(document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex)>=3);await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
+  const cueVisible=()=>{const cue=document.querySelector('.engraving-expected-cue:not([hidden])'),dock=document.querySelector('#notation-dock');if(!cue)return false;const head=cue.getBoundingClientRect(),pane=dock.getBoundingClientRect();return head.width>0&&head.height>0&&head.left>=pane.left&&head.right<=pane.right&&head.top>=pane.top&&head.bottom<=pane.bottom};
+  await page.waitForFunction(cueVisible);
+  const current=await page.evaluate(()=>({ids:[...document.querySelectorAll('.engraving-expected-cue:not([hidden])')].map(node=>node.dataset.sourceNoteId),measure:Number(document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex),scrollTop:document.querySelector('#notation-dock').scrollTop,range:document.querySelector('#engraving-range').textContent,focus:document.activeElement?.id}));
+  assert.deepEqual(current.ids,[`reveal-note-${current.measure}`]);assert.ok(current.measure>=3&&current.scrollTop>0);assert.match(current.range,/Measures 1–6/);assert.equal(current.focus,'play-button','Revealing a glyph does not move focus');
+  const take=await exportTakeData(),position=await page.locator('#progress').evaluate(element=>element.value);assert.equal(take.passes[0].inputs.length,1);
+  const dock=page.locator('#notation-dock'),box=await dock.boundingBox();await page.mouse.move(box.x+box.width-20,box.y+box.height/2);await page.mouse.wheel(0,-10000);
+  await page.waitForFunction(()=>!document.querySelector('#engraving-follow').checked&&document.querySelector('#notation-dock').scrollTop===0);
+  await page.evaluate(async()=>{for(let frame=0;frame<3;frame++)await new Promise(resolve=>requestAnimationFrame(resolve))});
+  assert.equal(await dock.evaluate(element=>element.scrollTop),0,'Manual scrolling is not pulled back on the next frame');assert.equal(await page.evaluate(cueVisible),false,'The later system can stay offscreen in manual mode');
+  await ui('#engraving-follow').check();await page.waitForFunction(cueVisible);assert.equal(await page.locator('#progress').evaluate(element=>element.value),position);
+  await dock.focus();await page.keyboard.press('Home');assert.equal(await ui('#engraving-follow').isChecked(),false,'Scroll keys suspend following');
+  await ui('#engraving-follow').check();await page.waitForFunction(cueVisible);await screenshot('verified-pane-reveal-844x390');
+  const stageAfter=await page.evaluate(()=>{const box=document.querySelector('.transport').getBoundingClientRect();return{windowX:scrollX,windowY:scrollY,transport:{x:box.x,y:box.y,width:box.width,height:box.height}}});assert.deepEqual(stageAfter,stageBefore,'Owned pane reveal never scrolls or moves the stage and transport');
+  await page.setViewportSize({width:1000,height:500});await page.waitForFunction(cueVisible);assert.deepEqual(await exportTakeData(),take,'Follow, manual scroll, re-enable and resize preserve every paused input and clock segment');assert.equal(await page.locator('#progress').evaluate(element=>element.value),position);assert.deepEqual(await exportScore(),score);
+  await writeFile(join(artifactDirectory,'worldmusichub-live-verified-pane-reveal.json'),JSON.stringify({current,stageBefore,stageAfter,paused_take_unchanged:true,reduced_motion:true,manual_scroll_suspended:true},null,2));
+});

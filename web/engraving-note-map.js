@@ -109,6 +109,11 @@ function visibleGlyph(group,mount){
   for(let element=group;element;element=element.parentElement){const style=view.getComputedStyle(element);if(style.display==='none'||style.visibility==='hidden'||style.visibility==='collapse'||Number(style.opacity)===0)return false;if(element===mount)return true}
   return false;
 }
+function paintedPath(path,mount){
+  if(!visibleGlyph(path,mount))return false;
+  const fill=mount.ownerDocument.defaultView.getComputedStyle(path).fill;
+  return fill!=='none'&&fill!=='transparent'&&!/^rgba\([^)]*,\s*0(?:\.0+)?\s*\)$/.test(fill||'');
+}
 function headFor(note,renderer,mount){
   const graphical=renderer.EngravingRules?.GNote?.(note);
   if(!graphical||graphical.sourceNote!==note||note.PrintObject!==true||note.IsGraceNote||note.IsCueNote||note.Notehead||graphical.parentVoiceEntry?.parentStaffEntry?.parentMeasure?.isMultiRestMeasure?.())fail('This note has no supported individual ordinary staff glyph.');
@@ -119,13 +124,13 @@ function headFor(note,renderer,mount){
   if(!group?.classList?.contains('vf-notehead')||group.parentElement!==parent||!visibleGlyph(group,mount))fail('The notehead is hidden or belongs to another render.');
   const paths=Array.from(group.children||[]),box=group.getBoundingClientRect();
   if(!paths.length||paths.some(path=>path.localName!=='path'||path.getAttribute('fill')==='none'||path.getAttribute('fill')==='transparent')||!['x','y','width','height'].every(key=>Number.isFinite(box[key]))||box.width<=0||box.height<=0)fail('This notehead shape cannot be marked without changing its meaning.');
-  for(const path of paths){const fill=mount.ownerDocument.defaultView.getComputedStyle(path).fill;if(!visibleGlyph(path,mount)||fill==='none'||fill==='transparent'||/^rgba\([^)]*,\s*0(?:\.0+)?\s*\)$/.test(fill||''))fail('A transparent notehead must remain hidden.')}
-  return {group,paths,box};
+  if(!paths.every(path=>paintedPath(path,mount)))fail('A transparent notehead must remain hidden.');
+  return {group,parent,paths,box};
 }
 
 /** Bind only verified current-render glyphs. No update below invokes OSMD.render(). */
-export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasure,toMeasure,partIds,color,onChange=()=>{}}){
-  const matched=matchEngravingModel(renderer,validated),entries=[],diagnostics=[],snapshots=new Map(),allowedByMeasure=new Map();let disposed=false,invalidated=false,current=new Set(),inputDiagnostic=null;
+export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasure,toMeasure,partIds,color,cueColor,onChange=()=>{}}){
+  const matched=matchEngravingModel(renderer,validated),entries=[],diagnostics=[],snapshots=new Map(),allowedByMeasure=new Map();let disposed=false,invalidated=false,current=new Set(),currentRequest=null,inputDiagnostic=null,cueLayer=null;
   for(const segment of validated.segments||[]){if(!allowedByMeasure.has(segment.source_measure_index))allowedByMeasure.set(segment.source_measure_index,new Set());allowedByMeasure.get(segment.source_measure_index).add(segment.source_note_id)}
   if(!matched.ok)diagnostics.push(...matched.diagnostics);
   else{const displayedIds=new Set(validated.segments.filter(segment=>partIds.includes(segment.xml_part_id)&&segment.source_measure_index>=fromMeasure-1&&segment.source_measure_index<=toMeasure-1).map(segment=>segment.xml_note_id));diagnostics.push(...matched.diagnostics.filter(item=>item.xmlNoteIds.some(id=>displayedIds.has(id))))}
@@ -151,16 +156,47 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
   const visited=new Set();
   for(const start of shared.keys()){if(visited.has(start))continue;const group=[],queue=[start];while(queue.length){const entry=queue.pop();if(visited.has(entry))continue;visited.add(entry);group.push(entry);queue.push(...shared.get(entry)||[])}for(const entry of group){entry.status='unavailable';entry.reason='engraving_shared_glyph'}diagnostics.push(diagnostic('engraving_shared_glyph','These written segments share an indistinguishable notehead. Their complete source set is retained; no individual head is guessed.',group.map(entry=>entry.segment)))}
   for(const entry of entries)if(entry.status==='bound')for(const path of entry.glyph.paths)if(!snapshots.has(path))snapshots.set(path,{present:path.hasAttribute('fill'),fill:path.getAttribute('fill')});
+  // Separate presentation markers never change a musical glyph's shape, style,
+  // bounding box or identity. Geometry is sampled once for this render only.
+  if(cueColor&&entries.some(entry=>entry.status==='bound')){
+    const origin=mount.getBoundingClientRect();cueLayer=mount.ownerDocument.createElement('div');cueLayer.className='engraving-expected-cues';cueLayer.setAttribute('aria-hidden','true');cueLayer.style.cssText='position:absolute;inset:0;pointer-events:none;overflow:visible';
+    for(const entry of entries)if(entry.status==='bound'){
+      const box=entry.glyph.box,cue=mount.ownerDocument.createElement('span');cue.className='engraving-expected-cue';cue.hidden=true;
+      cue.dataset.sourceNoteId=entry.segment.source_note_id;cue.dataset.xmlNoteId=entry.segment.xml_note_id;cue.dataset.sourceMeasureIndex=String(entry.segment.source_measure_index);
+      cue.style.cssText=`position:absolute;box-sizing:border-box;left:${box.x-origin.x-3}px;top:${box.y-origin.y-3}px;width:${box.width+6}px;height:${box.height+6}px;border:2px solid ${cueColor};border-radius:3px;pointer-events:none`;
+      entry.cue=cue;cueLayer.append(cue);
+    }
+    mount.append(cueLayer);
+  }
   const summary=()=>{
     const displayed=entries.filter(entry=>entry.status!=='not-displayed'),bound=displayed.filter(entry=>entry.status==='bound'),allDiagnostics=inputDiagnostic?[...diagnostics,inputDiagnostic]:diagnostics;
     return {status:disposed?'unavailable':!validated.ok?validated.status:inputDiagnostic||!matched.ok?'unavailable':bound.length===displayed.length?'ready':bound.length?'partial':'unavailable',version:VERSION,segmentCount:validated.segments?.length||0,displayedSegmentCount:displayed.length,verifiedGlyphCount:new Set(bound.map(entry=>entry.glyph.group)).size,bindings:entries.map(entry=>({xmlNoteId:entry.segment.xml_note_id,sourceNoteId:entry.segment.source_note_id,sourceMeasureIndex:entry.segment.source_measure_index,status:entry.status,...(entry.reason?{reason:entry.reason}:{})})),diagnostics:allDiagnostics.map(item=>({...item,sourceNoteIds:[...item.sourceNoteIds],xmlNoteIds:[...item.xmlNoteIds]}))};
   };
   const notify=()=>{try{onChange(summary())}catch{/* Presentation listeners cannot acquire glyph ownership. */}};
   const restore=path=>{const original=snapshots.get(path);if(original?.present)path.setAttribute('fill',original.fill);else path.removeAttribute('fill')};
-  function clear(announce=true){for(const entry of current)for(const path of entry.glyph.paths)restore(path);current.clear();const changed=Boolean(inputDiagnostic);inputDiagnostic=null;if(changed&&!disposed&&announce)notify()}
+  function clear(announce=true){for(const entry of current){for(const path of entry.glyph.paths)restore(path);if(entry.cue)entry.cue.hidden=true}current.clear();currentRequest=null;const changed=Boolean(inputDiagnostic);inputDiagnostic=null;if(changed&&!disposed&&announce)notify()}
   function reject(){const alreadyRejected=Boolean(inputDiagnostic);clear(false);inputDiagnostic=diagnostic('engraving_expected_notes_invalid','Current written-note identities do not match this score and measure. Highlighting is cleared; playback is unchanged.');if(!alreadyRejected)notify();return false}
   return {
     mappingStatus:summary,
+    expectedNoteBounds(){
+      if(disposed||invalidated||!currentRequest)return {status:'unavailable',rects:[],unavailableSourceNoteIds:[]};
+      const rects=[],found=new Set();
+      for(const entry of current){
+        const {group,parent,paths}=entry.glyph;
+        // Reuse the exact owned nodes, never search for a replacement glyph.
+        // A detached/reparented head or replaced/hidden path is not evidence for
+        // scrolling, even when the old group itself still has a nonempty box.
+        const intact=group.parentElement===parent&&group.children.length===paths.length&&visibleGlyph(group,mount)&&paths.every(path=>path.parentElement===group&&paintedPath(path,mount));
+        const box=intact?group.getBoundingClientRect():null;
+        const visible=box&&['x','y','width','height'].every(key=>Number.isFinite(box[key]))&&box.width>0&&box.height>0;
+        if(entry.cue)entry.cue.hidden=!visible;
+        if(!visible)continue;
+        found.add(entry.segment.xml_note_id);
+        rects.push({sourceNoteId:entry.segment.source_note_id,xmlNoteId:entry.segment.xml_note_id,sourceMeasureIndex:entry.segment.source_measure_index,left:box.x,top:box.y,right:box.x+box.width,bottom:box.y+box.height,width:box.width,height:box.height});
+      }
+      const unavailableSourceNoteIds=currentRequest.sourceNoteIds.filter(id=>entries.some(entry=>entry.segment.source_note_id===id&&entry.segment.source_measure_index===currentRequest.sourceMeasureIndex&&!found.has(entry.segment.xml_note_id)));
+      return {status:!rects.length?'unavailable':unavailableSourceNoteIds.length?'partial':'ready',rects,unavailableSourceNoteIds};
+    },
     clearExpectedWrittenNotes(){if(disposed)return false;clear();return true},
     setExpectedWrittenNotes(value){
       if(disposed||invalidated)return false;
@@ -170,10 +206,10 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
       if(inputDiagnostic){inputDiagnostic=null;notify()}
       const wanted=new Set(ids),next=new Set(entries.filter(entry=>entry.status==='bound'&&entry.segment.source_measure_index===measure&&wanted.has(entry.segment.source_note_id)));
       if([...next].some(entry=>!mount.contains(entry.glyph.group)||!entry.glyph.group.isConnected)){clear(false);invalidated=true;const old=entries.filter(entry=>entry.status==='bound');for(const entry of old){entry.status='unavailable';entry.reason='engraving_glyph_stale'}diagnostics.push(diagnostic('engraving_glyph_stale','The rendered noteheads changed. Highlighting is cleared until the display is rebuilt.',old.map(entry=>entry.segment)));notify();return false}
-      for(const entry of current)if(!next.has(entry))for(const path of entry.glyph.paths)restore(path);
-      for(const entry of next)if(!current.has(entry))for(const path of entry.glyph.paths)path.setAttribute('fill',color);
-      current=next;return true;
+      for(const entry of current)if(!next.has(entry)){for(const path of entry.glyph.paths)restore(path);if(entry.cue)entry.cue.hidden=true}
+      for(const entry of next)if(!current.has(entry)){for(const path of entry.glyph.paths)path.setAttribute('fill',color);if(entry.cue)entry.cue.hidden=false}
+      current=next;currentRequest={sourceNoteIds:[...ids],sourceMeasureIndex:measure};return true;
     },
-    dispose(){if(disposed)return;clear();disposed=true;for(const entry of entries)if(entry.status==='bound'){entry.status='unavailable';entry.reason='engraving_view_disposed'}snapshots.clear()},
+    dispose(){if(disposed)return;clear();disposed=true;cueLayer?.remove();cueLayer=null;for(const entry of entries)if(entry.status==='bound'){entry.status='unavailable';entry.reason='engraving_view_disposed'}snapshots.clear()},
   };
 }

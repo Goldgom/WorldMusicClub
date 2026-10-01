@@ -30,7 +30,7 @@ export function setupNotationFollowing({api,getContext,getPlayback,view}){
   const checkbox=document.getElementById('engraving-follow'),status=document.getElementById('engraving-follow-status');let controller=null,generation=0,index=null,target=null,last='';
   function message(text,announce=true){status.setAttribute('aria-live',announce?'polite':'off');status.textContent=text}
   function suspend(reason='Manual navigation suspended following. Enable it again to resume.'){
-    generation++;controller?.abort();controller=null;checkbox.checked=false;last='';message(reason);
+    generation++;controller?.abort();controller=null;checkbox.checked=false;last='';view.resetReveal?.();message(reason);
   }
   function scoreChanged(){suspend('Following is off.');index=null;target=null}
   function tick(position,running){
@@ -38,12 +38,13 @@ export function setupNotationFollowing({api,getContext,getPlayback,view}){
     if(target!==getContext().score){scoreChanged();return}if(!view.isActive()){suspend('Following stopped because the engraved view is not active. Manual notation and playback remain available.');return}
     const occurrence=index.at(position);
     if(!occurrence){const key=position<0?'count-in':'end';if(last!==key){last=key;message(position<0?'Count-in: no active score measure.':'End of performance.')}return}
-    view.followMeasure(occurrence.source_measure_index);const page=view.navigationState();const key=`${occurrence.id}:${page.ready}:${running}`;if(key===last)return;last=key;
+    view.followMeasure(occurrence.source_measure_index);const page=view.navigationState(),reveal=view.revealExpectedWrittenNotes?.(occurrence.id,occurrence.source_measure_index);const key=`${occurrence.id}:${page.ready}:${running}:${reveal?.status}`;if(key===last)return;last=key;
     status.title=`${occurrence.written_note_ids.length} full-score written onsets, ${occurrence.continuing_note_ids.length} continuing written events. Display changes do not alter the playback clock.`;
-    message(`${running?'Following':'Paused at'} written measure ${occurrence.measure_number} · source ${occurrence.source_measure_index+1}/${getContext().score.measures.length}${occurrence.repeat_region_index===null?'':` · repeat ${occurrence.repeat_region_index+1}, pass ${occurrence.repeat_pass}/${occurrence.repeat_times}`}${page.ready?'':' · Loading display…'}`,!running);
+    message(`${running?'Following':'Paused at'} written measure ${occurrence.measure_number} · source ${occurrence.source_measure_index+1}/${getContext().score.measures.length}${occurrence.repeat_region_index===null?'':` · repeat ${occurrence.repeat_region_index+1}, pass ${occurrence.repeat_pass}/${occurrence.repeat_times}`}${page.ready?'':' · Loading display…'}${reveal?.status==='partial'?' · Some expected notes remain outside this view.':''}`,!running);
   }
   checkbox.addEventListener('change',async()=>{
     if(!checkbox.checked){suspend('Following is off. Manual measure paging remains available.');return}
+    view.resetReveal?.();
     if(!view.isActive()){suspend('Choose the engraved view before enabling following.');return}
     const context=getContext();if(!context.score||!context.timeline){suspend('Load a validated score first.');return}
     if(index&&target===context.score){last='';const playback=getPlayback();tick(playback.position,playback.running);return}

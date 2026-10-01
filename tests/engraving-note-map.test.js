@@ -28,6 +28,7 @@ function mountEnvironment(){
   const {document}=parseHTML('<html><body><div id="mount"></div></body></html>'),window={},mount=document.getElementById('mount');
   Object.defineProperty(document,'defaultView',{configurable:true,value:window});
   window.getComputedStyle=element=>({display:element.style.display||'block',visibility:element.style.visibility||'visible',opacity:element.getAttribute('opacity')||'1',fill:element.getAttribute('fill')||'#123456'});
+  mount.getBoundingClientRect=()=>({x:5,y:10,width:800,height:500});
   return {document,window,mount};
 }
 function graphics(renderer,mount,spec){
@@ -63,6 +64,38 @@ test('indexed chord coloring marks only the requested member and restores exact 
   const env=bound(),before=env.mount.innerHTML;assert.equal(env.output.mappingStatus().status,'ready');assert.equal(env.output.mappingStatus().verifiedGlyphCount,5);
   assert.equal(env.output.setExpectedWrittenNotes({sourceNoteIds:['long','short'],sourceMeasureIndex:0}),true);assert.equal(env.paths.get('N1_1_1').getAttribute('fill'),'#f7cf68');assert.equal(env.paths.get('N1_2_1').getAttribute('fill'),'#f7cf68');
   env.output.setExpectedWrittenNotes({sourceNoteIds:['long'],sourceMeasureIndex:0});assert.equal(env.paths.get('N1_1_1').hasAttribute('fill'),false);assert.equal(env.paths.get('N1_2_1').getAttribute('fill'),'#f7cf68');assert.equal(env.paths.get('N1_3_1').getAttribute('fill'),'#abcdef');env.output.clearExpectedWrittenNotes();assert.equal(env.mount.innerHTML,before);
+});
+test('separate non-color cues preserve musical SVG and update without geometry or child creation',()=>{
+  const env=bound(example(),{cueColor:'#17251d'}),before=env.svg.innerHTML,cues=[...env.mount.querySelectorAll('.engraving-expected-cue')];
+  assert.equal(cues.length,5);assert.ok(cues.every(cue=>cue.hidden));assert.equal(env.mount.querySelector('.engraving-expected-cues').getAttribute('aria-hidden'),'true');
+  let reads=0;for(const graphical of env.graphical.values()){const group=graphical.getNoteheadSVGs()[graphical.vfnoteIndex],original=group.getBoundingClientRect;group.getBoundingClientRect=()=>{reads++;return original()}}
+  for(let frame=0;frame<20;frame++)env.output.setExpectedWrittenNotes({sourceNoteIds:frame%2?['long']:['long','short'],sourceMeasureIndex:0});
+  assert.equal(reads,0);assert.deepEqual(cues.filter(cue=>!cue.hidden).map(cue=>cue.dataset.sourceNoteId),['long']);assert.deepEqual([...env.mount.querySelectorAll('.engraving-expected-cue')],cues);
+  env.output.setExpectedWrittenNotes({sourceNoteIds:['rest'],sourceMeasureIndex:0});assert.deepEqual(cues.filter(cue=>!cue.hidden).map(cue=>cue.dataset.sourceNoteId),['rest']);
+  env.output.clearExpectedWrittenNotes();assert.ok(cues.every(cue=>cue.hidden));assert.equal(env.svg.innerHTML,before);
+  env.output.dispose();assert.equal(env.mount.querySelector('.engraving-expected-cues'),null);assert.equal(env.svg.innerHTML,before);
+});
+test('expected bounds are fresh, exact to the written segment and omit stale or unavailable glyphs',()=>{
+  const env=bound();env.output.setExpectedWrittenNotes({sourceNoteIds:['split'],sourceMeasureIndex:1});let bounds=env.output.expectedNoteBounds();assert.equal(bounds.status,'ready');assert.equal(bounds.rects.length,1);assert.equal(bounds.rects[0].xmlNoteId,'N1_4_2');
+  const g=env.graphical.get(env.renderer.byXml.get('N1_4_2')),head=g.getNoteheadSVGs()[g.vfnoteIndex];head.getBoundingClientRect=()=>({x:13,y:27,width:8,height:7});bounds=env.output.expectedNoteBounds();assert.equal(bounds.rects[0].left,13);assert.equal(bounds.rects[0].top,27);
+  head.remove();bounds=env.output.expectedNoteBounds();assert.equal(bounds.status,'unavailable');assert.deepEqual(bounds.rects,[]);assert.deepEqual(bounds.unavailableSourceNoteIds,['split']);env.output.dispose();assert.deepEqual(env.output.expectedNoteBounds().rects,[]);
+  const page=bound(example(),{fromMeasure:2,toMeasure:2});page.output.setExpectedWrittenNotes({sourceNoteIds:['long'],sourceMeasureIndex:0});assert.deepEqual(page.output.expectedNoteBounds().unavailableSourceNoteIds,['long']);
+});
+test('fresh bounds refuse replaced, reparented and hidden owned paths and hide their non-color cues',()=>{
+  for(const mutate of [
+    ({path})=>{path.style.display='none'},
+    ({path})=>{path.setAttribute('opacity','0')},
+    ({path})=>{path.setAttribute('fill','none')},
+    ({path})=>{path.setAttribute('fill','rgba(0, 0, 0, 0)')},
+    ({path})=>{path.replaceWith(path.cloneNode(true))},
+    ({head,env})=>{env.svg.append(head)},
+    ({head})=>{head.getBoundingClientRect=()=>({x:10,y:20,width:0,height:7})},
+  ]){
+    const env=bound(example(),{cueColor:'#17251d'}),path=env.paths.get('N1_1_1'),head=path.parentElement;
+    env.output.setExpectedWrittenNotes({sourceNoteIds:['short','long'],sourceMeasureIndex:0});assert.equal(env.output.expectedNoteBounds().status,'ready');
+    mutate({env,path,head});const bounds=env.output.expectedNoteBounds();assert.equal(bounds.status,'partial');assert.deepEqual(bounds.rects.map(rect=>rect.sourceNoteId),['long']);assert.deepEqual(bounds.unavailableSourceNoteIds,['short']);
+    assert.deepEqual([...env.mount.querySelectorAll('.engraving-expected-cue')].filter(cue=>!cue.hidden).map(cue=>cue.dataset.sourceNoteId),['long']);env.output.dispose();assert.equal(env.mount.querySelector('.engraving-expected-cues'),null);
+  }
 });
 test('split and rest selection uses the explicit source measure ordinal; hidden pages are not missing mappings',()=>{
   const env=bound(example(),{fromMeasure:2,toMeasure:2});assert.equal(env.output.mappingStatus().verifiedGlyphCount,1);assert.equal(env.output.mappingStatus().bindings.filter(entry=>entry.status==='not-displayed').length,4);
@@ -117,5 +150,8 @@ test('adapter rebuilds glyph bindings after resize, reapplies expected state, an
   class Renderer{constructor(mount){this.mount=mount;Object.assign(this,model(spec));this.Version='2.1.3-release';this.renders=0;instances.push(this)}async load(){}updateGraphic(){}render(){this.renders++;this.paint=graphics(this,this.mount,spec)}clear(){this.mount.replaceChildren()}}
   env.window.opensheetmusicdisplay={OpenSheetMusicDisplay:Renderer};const changes=[];
   const output=await renderEngravedStaff(env.mount,spec.xml,{identity:spec.identity,responsive:false,fromMeasure:1,toMeasure:2,onMappingChange:value=>changes.push(value)});assert.equal(output.ok,true,output.message);assert.equal(output.mappingStatus().verifiedGlyphCount,5);const renderer=instances[0];
+  assert.equal(output.renderGeneration(),1);assert.equal(output.resize(),true);assert.equal(output.renderGeneration(),1);assert.match(renderer.mount.getAttribute('aria-label'),/Outlined noteheads show expected written notes/);
+  const originalCues=[...renderer.mount.querySelectorAll('.engraving-expected-cue')];assert.equal(originalCues.length,5);
   for(let i=0;i<10;i++)output.setExpectedWrittenNotes({sourceNoteIds:i%2?['long']:['short'],sourceMeasureIndex:0});assert.equal(renderer.renders,1);const old=renderer.paint.paths.get('N1_2_1');output.setExpectedWrittenNotes({sourceNoteIds:['long'],sourceMeasureIndex:0});width=700;assert.equal(output.resize(),true);assert.equal(renderer.renders,2);assert.notEqual(renderer.paint.paths.get('N1_2_1'),old);assert.equal(old.getAttribute('fill'),'#abcdef');assert.equal(renderer.paint.paths.get('N1_2_1').getAttribute('fill'),'#925b12');assert.equal(changes.length,2);output.clearExpectedWrittenNotes();assert.equal(renderer.paint.paths.get('N1_2_1').getAttribute('fill'),'#abcdef');output.dispose();assert.equal(output.mappingStatus().verifiedGlyphCount,0);assert.equal(output.setExpectedWrittenNotes({sourceNoteIds:['long'],sourceMeasureIndex:0}),false);
+  assert.equal(output.renderGeneration(),2);assert.ok(originalCues.every(cue=>!cue.isConnected));assert.equal(env.mount.querySelector('.engraving-expected-cues'),null);assert.deepEqual(output.expectedNoteBounds().rects,[]);
 });

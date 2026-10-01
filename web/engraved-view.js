@@ -1,4 +1,5 @@
 import {sourceMeasurePage} from './notation-follow.js';
+import {planEngravingReveal} from './engraving-reveal.js';
 export function engravingWindow(total, from = 1, count = 8) {
   if (!Number.isInteger(total) || total < 0 || !Number.isInteger(from) || from < 1 || !Number.isInteger(count) || count < 1 || count > 64 || (total && from > total)) throw new Error('Choose a valid one-based source measure range of at most 64 measures.');
   return {total, from, to:Math.min(total,from+count-1)};
@@ -15,17 +16,35 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
   let active = false, preferred = true, score = null, selectedPart = null, from = 1, pageSize = 8;
   let generation = 0, controller = null, cached = null, adapter = null, rendered = null;
   let expected=null,expectedScore=null,knownScore=null,knownIds=new Set();
+  let lastReveal='',revealStatus={status:'unavailable'};
   let lastDark = document.documentElement.dataset.theme === 'dark';
   const container = $('engraved-staff');
-  function cancel() { generation++; controller?.abort(); controller = null; rendered?.dispose(); rendered = null; adapter?.disposeEngravedStaff(container); }
+  function cancel() { generation++;lastReveal='';revealStatus={status:'unavailable'}; controller?.abort(); controller = null; rendered?.dispose(); rendered = null; adapter?.disposeEngravedStaff(container); }
   function hasNoteMapping(){return ['mappingStatus','setExpectedWrittenNotes','clearExpectedWrittenNotes'].every(name=>typeof rendered?.[name]==='function')}
   function mappingStatus(){return hasNoteMapping()?rendered.mappingStatus():{status:'unavailable',verifiedGlyphCount:0,diagnostics:rendered?[{code:'engraving_note_mapping_unavailable',message:'Individual notehead mapping is unavailable from this renderer. Static staff remains available; current written notes are not highlighted.'}]:[]}}
-  function clearExpectedWrittenNotes(){expected=null;expectedScore=null;return hasNoteMapping()?rendered.clearExpectedWrittenNotes():false}
+  function clearExpectedWrittenNotes(){expected=null;expectedScore=null;lastReveal='';return hasNoteMapping()?rendered.clearExpectedWrittenNotes():false}
+  function revealExpectedWrittenNotes(occurrenceId,sourceMeasureIndex=expected?.sourceMeasureIndex){
+    if(!$('engraving-follow').checked||!active||!isVisible()||expectedScore!==score||!expected||expected.sourceMeasureIndex!==sourceMeasureIndex||!rendered)return {status:'unavailable'};
+    const key=JSON.stringify([generation,rendered.renderGeneration?.(),occurrenceId,expected.sourceMeasureIndex,[...expected.sourceNoteIds].sort()]);
+    if(lastReveal===key)return revealStatus;
+    lastReveal=key;revealStatus={status:'unavailable'};
+    if(!hasNoteMapping()||typeof rendered.expectedNoteBounds!=='function')return revealStatus;
+    try{
+      const bounds=rendered.expectedNoteBounds(),dock=$('notation-dock'),scroller=container.closest?.('.engraving-scroll');
+      if(!['ready','partial'].includes(bounds?.status)||!bounds?.rects?.length||!dock||!scroller)return revealStatus;
+      const outer=dock.getBoundingClientRect(),inner=scroller.getBoundingClientRect();
+      const plan=planEngravingReveal(bounds.rects,{top:outer.top+dock.clientTop,bottom:outer.top+dock.clientTop+dock.clientHeight,left:Math.max(outer.left+dock.clientLeft,inner.left+scroller.clientLeft),right:Math.min(outer.left+dock.clientLeft+dock.clientWidth,inner.left+scroller.clientLeft+scroller.clientWidth),scrollTop:dock.scrollTop,scrollLeft:scroller.scrollLeft,maxTop:dock.scrollHeight-dock.clientHeight,maxLeft:scroller.scrollWidth-scroller.clientWidth});
+      if(!plan)return revealStatus;
+      if(plan.scrollTop!==dock.scrollTop)dock.scrollTo({top:plan.scrollTop,left:dock.scrollLeft,behavior:'instant'});
+      if(plan.scrollLeft!==scroller.scrollLeft)scroller.scrollTo({left:plan.scrollLeft,top:scroller.scrollTop,behavior:'instant'});
+      return revealStatus={status:plan.partial||bounds.status==='partial'?'partial':'ready'};
+    }catch{return revealStatus} // Optional presentation failures never break the playback frame.
+  }
   function setExpectedWrittenNotes(value){
     const current=getScore();if(!active||!current||score!==current){clearExpectedWrittenNotes();return false}
     if(knownScore!==current){knownScore=current;knownIds=new Set(current.parts.flatMap(part=>part.notes.map(note=>note.id)))}
     const ids=value?.sourceNoteIds,measure=value?.sourceMeasureIndex;
-    if(!Array.isArray(ids)||ids.some(id=>typeof id!=='string'||!knownIds.has(id))||new Set(ids).size!==ids.length||!Number.isInteger(measure)||measure<0||measure>=current.measures.length){expected=null;expectedScore=null;if(hasNoteMapping())rendered.setExpectedWrittenNotes(value);return false}
+    if(!Array.isArray(ids)||ids.some(id=>typeof id!=='string'||!knownIds.has(id))||new Set(ids).size!==ids.length||!Number.isInteger(measure)||measure<0||measure>=current.measures.length){expected=null;expectedScore=null;lastReveal='';if(hasNoteMapping())rendered.setExpectedWrittenNotes(value);return false}
     expected={sourceNoteIds:[...ids],sourceMeasureIndex:measure};expectedScore=current;return rendered?(hasNoteMapping()?rendered.setExpectedWrittenNotes(expected):false):true;
   }
   function showNotices(exported,mapping){
@@ -118,7 +137,22 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
   });
   const observer=new MutationObserver(()=>{const dark=document.documentElement.dataset.theme==='dark';if(dark!==lastDark){lastDark=dark;if(active)render()}});observer.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
   window.addEventListener('pagehide',cancel);window.addEventListener('pageshow',event=>{if(event.persisted&&active)render()});
-  return {show,hide,updateScore,selectPart,setExpectedWrittenNotes,clearExpectedWrittenNotes,mappingStatus,isActive:()=>active,surfaceChanged(){if(active&&isVisible())render({automatic:true});else cancel()},
+  const dock=$('notation-dock');
+  if(dock?.setAttribute){dock.setAttribute('tabindex','0');dock.setAttribute('aria-label','Score notation scroll area · 乐谱滚动区域')}
+  const manualScroll=()=>{if($('engraving-follow').checked){lastReveal='';onManualNavigation()}};
+  dock?.addEventListener('wheel',manualScroll,{passive:true});dock?.addEventListener('touchmove',manualScroll,{passive:true});
+  dock?.addEventListener('pointerdown',event=>{if(event.target===dock||event.target?.closest?.('.engraving-scroll'))manualScroll()},{passive:true});
+  dock?.addEventListener('keydown',event=>{if(!event.defaultPrevented&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','PageUp','PageDown','Home','End',' '].includes(event.key)&&!event.target?.isContentEditable&&!event.target?.closest?.('input,select,textarea,button,summary,[contenteditable]:not([contenteditable="false"])'))manualScroll()});
+  const invalidateReveal=()=>{lastReveal=''};
+  window.addEventListener('resize',invalidateReveal);
+  // Opening score details can shift the staff without changing the dock's size.
+  dock?.addEventListener('toggle',invalidateReveal,true);
+  if(dock&&typeof globalThis.ResizeObserver==='function'){
+    const resizeObserver=new ResizeObserver(invalidateReveal),surfaces=[dock,container.closest?.('.engraving-scroll'),dock.firstElementChild].filter(Boolean);
+    const observe=()=>surfaces.forEach(surface=>resizeObserver.observe(surface));observe();
+    window.addEventListener('pagehide',()=>resizeObserver.disconnect());window.addEventListener('pageshow',event=>{if(event.persisted){invalidateReveal();observe()}});
+  }
+  return {show,hide,updateScore,selectPart,setExpectedWrittenNotes,clearExpectedWrittenNotes,revealExpectedWrittenNotes,resetReveal(){lastReveal=''},mappingStatus,isActive:()=>active,surfaceChanged(){if(active&&isVisible())render({automatic:true});else cancel()},
     navigationState:()=>({from,ready:Boolean(rendered)}),
     followMeasure(index){if(!active||!score||!Number.isInteger(index)||index<0||index>=score.measures.length)return false;const page=sourceMeasurePage(index,pageSize);if(page===from)return false;from=page;render({automatic:true});return true}
   };

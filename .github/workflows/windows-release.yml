@@ -87,6 +87,7 @@ jobs:
             ${{ runner.temp }}/wmh-screenshots/*.png
             ${{ runner.temp }}/wmh-screenshots/worldmusichub-omr-*.json
             ${{ runner.temp }}/wmh-screenshots/worldmusichub-live-*.json
+            ${{ runner.temp }}/wmh-screenshots/worldmusichub-binding-*.json
           if-no-files-found: ignore
       - run: cargo fetch --locked
       - run: python -m unittest discover -s tests -p 'test_*.py'

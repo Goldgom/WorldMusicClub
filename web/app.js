@@ -596,7 +596,6 @@ function drawFrame() {
   performanceView?.update();
   if($('results-dialog').open)updateResultsSummary(undefined,now);
   if(shell.screen()!=='stage')return;
-  if(shell.notationVisible())notationFollowing?.tick(position < segmentStart ? -1 : position,transport.running);
   const active = position < segmentStart ? [] : playbackIndex?.range(position) || [];
   if(shell.notationVisible())writtenCursor?.prepare();
   const written = position < segmentStart ? null : writtenCursor?.at(position);
@@ -624,6 +623,7 @@ function drawFrame() {
   }
   if(shell.notationVisible()&&state.engravingActive&&written?.occurrence)engravedView.setExpectedWrittenNotes?.({sourceNoteIds:currentWritten.map(entry=>entry.sourceNoteId),sourceMeasureIndex:written.occurrence.source_measure_index});
   else engravedView.clearExpectedWrittenNotes?.();
+  if(shell.notationVisible())notationFollowing?.tick(position < segmentStart ? -1 : position,transport.running);
   highlightKeys(active);
   $('progress').max = Math.max(1, duration); $('progress').value = Math.min(duration, Math.max(0, position));
   $('time-label').textContent = `${formatTime(position)} / ${formatTime(duration)}`;

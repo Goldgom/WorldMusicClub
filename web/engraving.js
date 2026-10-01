@@ -114,7 +114,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
   const checked = validateEngravingInput(xml, options, view.DOMParser ?? globalThis.DOMParser);
   if (!checked.ok) return result(checked.status, checked.message);
   const identity=validateEngravingNoteMap(checked.document,options.identity);
-  let renderer, mount, observer, frame, bindings=null, expected=null, ready = false, cancelled = false, width = 0;
+  let renderer, mount, observer, frame, bindings=null, expected=null, renderGeneration=0, ready = false, cancelled = false, width = 0;
   const useAnimationFrame = typeof view.requestAnimationFrame === 'function' && typeof view.cancelAnimationFrame === 'function';
   let cancelWait;
   const cancellation = new Promise(resolve => { cancelWait = () => resolve(null); });
@@ -137,7 +137,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
   const isCurrent = () => !cancelled && active.get(container) === state;
   const reportMapping=mapping=>{if(isCurrent()&&typeof options.onMappingChange==='function'){try{options.onMappingChange(mapping)}catch{/* A presentation callback does not own this renderer. */}}};
   const rebind=()=>{
-    bindings=createEngravingNoteBindings(renderer,mount,identity,{...checked.options,color:checked.options.dark?'#f7cf68':'#925b12',onChange:reportMapping});
+    bindings=createEngravingNoteBindings(renderer,mount,identity,{...checked.options,color:checked.options.dark?'#f7cf68':'#925b12',cueColor:checked.options.dark?'#f3f5ef':'#17251d',onChange:reportMapping});renderGeneration++;
     if(expected)bindings.setExpectedWrittenNotes(expected);
     reportMapping(bindings.mappingStatus());
   };
@@ -160,7 +160,8 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     mount = document.createElement('div');
     mount.className = 'engraved-staff';
     mount.setAttribute('role', 'img');
-    mount.setAttribute('aria-label', `Engraved staff, measures ${checked.options.fromMeasure} to ${checked.options.toMeasure}`);
+    mount.setAttribute('aria-label', `Engraved staff, measures ${checked.options.fromMeasure} to ${checked.options.toMeasure}. Outlined noteheads show expected written notes. Played input and assessed hits are separate.`);
+    if(document.getElementById?.('written-cursor-status'))mount.setAttribute('aria-describedby','written-cursor-status');
     mount.style.visibility = 'hidden';
     mount.style.position = 'absolute';
     width = getWidth();
@@ -195,7 +196,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     if (!mount.querySelector('svg')) { state.dispose(); return result('error', 'The renderer produced no staff engraving.'); }
     // OSMD draws with DOM/SVG primitives. No imported source is inserted with innerHTML.
     container.replaceChildren(mount);
-    mount.style.position = '';
+    mount.style.position = 'relative';
     mount.style.visibility = '';
     ready = true;
     rebind();
@@ -209,6 +210,8 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     }
     return result('ready', 'Staff engraved with OpenSheetMusicDisplay.', {metadata: checked.metadata, dispose: state.dispose, resize,
       mappingStatus:()=>bindings?.mappingStatus()||unavailableMapping(),
+      renderGeneration:()=>renderGeneration,
+      expectedNoteBounds:()=>bindings?.expectedNoteBounds()||{status:'unavailable',rects:[],unavailableSourceNoteIds:[]},
       setExpectedWrittenNotes(value){if(!isCurrent()||!bindings)return false;const accepted=bindings.setExpectedWrittenNotes(value);expected=accepted?{sourceNoteIds:[...value.sourceNoteIds],sourceMeasureIndex:value.sourceMeasureIndex}:null;return accepted},
       clearExpectedWrittenNotes(){expected=null;return bindings?.clearExpectedWrittenNotes()||false},
     });

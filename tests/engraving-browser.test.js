@@ -554,6 +554,14 @@ async function installBindingObservation() {
         watch.assert([...head.querySelectorAll('path')].some(path => watch.baseline.get(path) !== watch.paint(path)),
           'Each expected source note must visibly change its own painted glyph');
       }
+      const cues=[...document.querySelectorAll('#staff .engraving-expected-cue:not([hidden])')];
+      watch.assert(cues.length===sourceNoteIds.length,'Only expected verified heads receive non-color outlines');
+      for(const id of sourceNoteIds){
+        const cue=cues.find(node=>node.dataset.sourceNoteId===id&&Number(node.dataset.sourceMeasureIndex)===sourceMeasureIndex),head=watch.groups.get(`${id}@${sourceMeasureIndex}`);
+        watch.assert(cue&&!cue.closest('svg')&&getComputedStyle(cue).pointerEvents==='none','Outline is separate from musical SVG and cannot intercept input');
+        const box=cue.getBoundingClientRect(),glyph=head.getBoundingClientRect();
+        watch.assert(Math.abs(box.left-(glyph.left-3))<1&&Math.abs(box.top-(glyph.top-3))<1&&Math.abs(box.width-(glyph.width+6))<1&&Math.abs(box.height-(glyph.height+6))<1,'Outline encloses the exact verified glyph without covering a hollow centre or changing rest shape');
+      }
       watch.assert([...watch.baseline.keys()].every(node => node.isConnected), 'Highlighting must keep every mounted SVG element');
       return {changedElements: changed.length, rows: watch.rows.filter(row => sourceNoteIds.includes(row.sourceId) && row.measure === sourceMeasureIndex)};
     };
@@ -608,10 +616,11 @@ async function expectBinding(sourceNoteIds, sourceMeasureIndex) {
 async function clearBinding() {
   const outcome = await page.evaluate(() => {
     window.lastEngraving.clearExpectedWrittenNotes();
-    return {changed: window.__wmhBinding.changed().length, allConnected: [...window.__wmhBinding.baseline.keys()].every(node => node.isConnected)};
+    return {changed: window.__wmhBinding.changed().length, allConnected: [...window.__wmhBinding.baseline.keys()].every(node => node.isConnected),visibleCues:document.querySelectorAll('#staff .engraving-expected-cue:not([hidden])').length};
   });
   assert.equal(outcome.changed, 0, 'Clear restores original fill/stroke/style attributes and computed paint for the whole SVG');
   assert.equal(outcome.allConnected, true);
+  assert.equal(outcome.visibleCues,0,'Clear hides every non-color cue');
 }
 async function bindingEvidence(name, data) {
   await screenshot(`binding-${name}`);
@@ -848,4 +857,17 @@ test('invalid exact expected-note requests are rejected without changing mounted
   const emptied = await page.evaluate(() => ({accepted: window.lastEngraving.setExpectedWrittenNotes({sourceNoteIds: [], sourceMeasureIndex: 0}),
     changed: window.__wmhBinding.changed().length}));
   assert.deepEqual(emptied, {accepted: true, changed: 0}, 'An exact empty membership array clears the marker');
+});
+
+test('verified expected bounds follow pane scrolling without rebinding or moving musical glyphs', options, async()=>{
+  const score=bindingScore(),exported=await exportScore(score);await page.setViewportSize({width:580,height:600});await renderBinding(score,exported,{width:520});
+  await page.locator('#viewport').evaluate(element=>{element.style.maxHeight='160px';element.style.overflow='auto'});
+  await expectBinding(['tie-stop-D5'],2);
+  const before=await page.evaluate(()=>({bounds:window.lastEngraving.expectedNoteBounds(),generation:window.lastEngraving.renderGeneration(),renders:window.__wmhBinding.renderCalls}));
+  assert.equal(before.bounds.status,'ready');assert.equal(before.bounds.rects[0].sourceNoteId,'tie-stop-D5');
+  const movement=await page.locator('#viewport').evaluate(element=>{const before=element.scrollTop;element.scrollTop=90;return element.scrollTop-before});assert.ok(movement>0);
+  const after=await page.evaluate(()=>({bounds:window.lastEngraving.expectedNoteBounds(),generation:window.lastEngraving.renderGeneration(),renders:window.__wmhBinding.renderCalls}));
+  assert.equal(after.generation,before.generation);assert.equal(after.renders,before.renders);assert.ok(Math.abs(before.bounds.rects[0].top-after.bounds.rects[0].top-movement)<1);
+  await page.evaluate(()=>window.__wmhBinding.checkExpected(['tie-stop-D5'],2));await clearBinding();
+  await bindingEvidence('fresh-bounds-after-scroll',{before,after,movement});
 });
