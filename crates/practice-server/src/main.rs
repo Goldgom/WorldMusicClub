@@ -332,25 +332,68 @@ fn open_browser(url: &str) {
         eprintln!("Open the URL in your browser manually ({e})");
     }
 }
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.iter().any(|s| s == "--help") {
-        println!("WorldMusicHub [--port 7878] [--no-open]\nLocal-only Rust music practice app. Close this terminal to stop.");
-        return;
+#[derive(Debug, PartialEq, Eq)]
+enum Startup {
+    Help,
+    Version,
+    Serve { port: u16, no_open: bool },
+}
+fn startup_args(args: &[String]) -> Result<Startup, &'static str> {
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        return Ok(Startup::Help);
     }
-    let port = args
-        .iter()
-        .position(|s| s == "--port")
-        .map(|i| {
-            args.get(i + 1)
-                .and_then(|s| s.parse::<u16>().ok())
-                .filter(|p| *p > 0)
-                .unwrap_or_else(|| {
-                    eprintln!("--port requires a number from 1 to 65535");
-                    std::process::exit(2)
-                })
-        })
-        .unwrap_or(7878);
+    if args.len() == 1 && args[0] == "--version" {
+        return Ok(Startup::Version);
+    }
+    let mut port = None;
+    let mut no_open = false;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--no-open" => no_open = true,
+            "--port" => {
+                if port.is_some() {
+                    return Err("Specify --port only once; use --help for startup options");
+                }
+                index += 1;
+                port = Some(
+                    args.get(index)
+                        .filter(|value| {
+                            !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+                        })
+                        .and_then(|value| value.parse::<u16>().ok())
+                        .filter(|value| *value > 0)
+                        .ok_or("--port requires a number from 1 to 65535")?,
+                );
+            }
+            _ => return Err(
+                "Unknown startup option; use --help, or run --version alone. No server was started",
+            ),
+        }
+        index += 1;
+    }
+    Ok(Startup::Serve {
+        port: port.unwrap_or(7878),
+        no_open,
+    })
+}
+fn main() {
+    let args: Vec<String> = env::args().skip(1).collect();
+    let (port, no_open) = match startup_args(&args) {
+        Ok(Startup::Help) => {
+            println!("WorldMusicHub [--port 7878] [--no-open]\nWorldMusicHub --version\nLocal-only Rust music practice app. Close this terminal to stop.\n--help / -h: show this help without starting a server.");
+            return;
+        }
+        Ok(Startup::Version) => {
+            println!("WorldMusicHub {}", env!("CARGO_PKG_VERSION"));
+            return;
+        }
+        Ok(Startup::Serve { port, no_open }) => (port, no_open),
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(2);
+        }
+    };
     let authority = format!("127.0.0.1:{port}");
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -366,7 +409,7 @@ fn main() {
         });
         let url = format!("http://{authority}");
         println!("WorldMusicHub {}\nOpen {url}\nRust engine · local files stay on this computer · Ctrl+C to stop",env!("CARGO_PKG_VERSION"));
-        if !args.iter().any(|s| s == "--no-open") { open_browser(&url); }
+        if !no_open { open_browser(&url); }
         let connections = Arc::new(Semaphore::new(16));
         let computations = Arc::new(Semaphore::new(2));
         loop {
@@ -396,6 +439,39 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn startup_information_and_invalid_options_never_request_a_server() {
+        let parse =
+            |args: &[&str]| startup_args(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!(
+            parse(&[]).unwrap(),
+            Startup::Serve {
+                port: 7878,
+                no_open: false
+            }
+        );
+        assert_eq!(
+            parse(&["--no-open", "--port", "7879"]).unwrap(),
+            Startup::Serve {
+                port: 7879,
+                no_open: true
+            }
+        );
+        assert_eq!(parse(&["--help"]).unwrap(), Startup::Help);
+        assert_eq!(parse(&["-h"]).unwrap(), Startup::Help);
+        assert_eq!(parse(&["--version"]).unwrap(), Startup::Version);
+        for args in [
+            &["--unknown"][..],
+            &["--port"],
+            &["--port", "0"],
+            &["--port", "65536"],
+            &["--port", "12.5"],
+            &["--port", "7878", "--port", "7879"],
+            &["--version", "--no-open"],
+        ] {
+            assert!(parse(args).is_err(), "{args:?}");
+        }
+    }
     #[test]
     fn fractional_edition_target_api_retains_exact_float_values_and_range_gates() {
         let score = score_core::catalog_score("cc0-schubert-wandrers-nachtlied-d768").unwrap();

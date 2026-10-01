@@ -1,8 +1,15 @@
 """Dependency-free integration checks against the actual Rust executable."""
-import json, subprocess, time, urllib.request, urllib.error, os
+import json, subprocess, time, urllib.request, urllib.error, os, tomllib
 from pathlib import Path
 port=17878
 binary=Path(os.environ.get('WMH_SERVER_BINARY', 'target/debug/practice-server' + ('.exe' if os.name=='nt' else '')))
+version=subprocess.run([str(binary),'--version'],capture_output=True,text=True,timeout=5)
+expected_version=tomllib.loads((Path(__file__).resolve().parents[1]/'Cargo.toml').read_text(encoding='utf-8'))['workspace']['package']['version']
+assert version.returncode==0 and version.stdout.strip()=='WorldMusicHub '+expected_version
+help_result=subprocess.run([str(binary),'--help'],capture_output=True,text=True,timeout=5)
+assert help_result.returncode==0 and '--version' in help_result.stdout
+bad_options=subprocess.run([str(binary),'--unknown'],capture_output=True,text=True,timeout=5)
+assert bad_options.returncode==2 and 'No server was started' in bad_options.stderr
 process=subprocess.Popen([str(binary),'--no-open','--port',str(port)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 base=f'http://127.0.0.1:{port}'
 def request(path, body=None, headers=None):

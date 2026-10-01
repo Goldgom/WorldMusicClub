@@ -118,6 +118,8 @@ jobs:
           $info = Get-Content (Join-Path $directory 'BUILD-INFO.json') -Raw | ConvertFrom-Json
           if ($info.git_commit -ne '${{ needs.milestone.outputs.sha }}' -or $info.commit_count -ne ${{ needs.milestone.outputs.count }}) { throw 'Wrong milestone provenance' }
           if ([int]$info.recovery_for -ne ${{ needs.milestone.outputs.recovery }} -or $info.release_label -ne '${{ needs.milestone.outputs.label }}') { throw 'Wrong recovery provenance' }
+          $reportedVersion = & $executable --version
+          if ($LASTEXITCODE -ne 0 -or $reportedVersion -cne ('WorldMusicHub ' + $info.app_version)) { throw 'Extracted executable reports a different version' }
           $app = Start-Process $executable -WorkingDirectory $directory -ArgumentList '--no-open','--port','17880' -PassThru
           try {
             $ready = $false

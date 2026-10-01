@@ -9,6 +9,8 @@ The initial distribution targets Windows 10/11 x64 and is a portable Rust execut
 3. It opens your default browser at `http://127.0.0.1:7878`.
 4. Keep the console window open while practicing. Close it to stop the app.
 
+Use `WorldMusicHub.exe --version` to report the application version without opening a browser or starting a server; `--help`/`-h` shows startup options. Unknown options, missing/invalid ports and duplicate `--port` values exit with code 2 instead of silently starting an unexpected instance.
+
 If port 7878 is in use, run `WorldMusicHub.exe --port 7879`. `--no-open` disables automatically opening a browser. The app only listens on loopback; no account or network service is required for exercises and score imports. The interface is browser-rendered, rather than a fully native Windows widget interface.
 
 ## Trust and verification
