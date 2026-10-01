@@ -17,6 +17,7 @@ import {validateTargetPlan, mappedSourceIds} from './physical-targets.js';
 import {PracticeRecorder} from './practice-recorder.js';
 import {setupResultsSummary} from './results-summary.js';
 import {setupEngravedView} from './engraved-view.js';
+import {setupWrittenCursor} from './written-cursor.js';
 import {setupJianpuEditor} from './jianpu-editor.js';
 import {feedbackView,pitchBreakdownView} from './feedback-view.js';
 import {STANDARD_TUNING, guitarProfile, pianoProfile, compatibilityStatus} from './instrument-profile.js';
@@ -24,7 +25,7 @@ import {validLatency, readLatencyPreference, saveLatency, parseBeatInput, practi
 import {setupMidi, eventTimeEvidence} from './midi.js';
 import {setupImageReview} from './image-review.js';
 import {setupThemes} from './themes.js';
-import {PIANO_RANGES, SHORTCUTS, beat, midiName, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, catalogOriginLabel, renderNotation, notationPageCount, notationLayout, keyAt, keyTonic} from './music.js';
+import {PIANO_RANGES, SHORTCUTS, beat, midiName, pitchMidi, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, catalogOriginLabel, renderNotation, notationPageCount, notationLayout, keyAt, keyTonic} from './music.js';
 import {Transport, Synth, TimelineIndex} from './transport.js';
 import {formatTime} from './music.js';
 
@@ -39,6 +40,7 @@ let adaptationView = null;
 let transpositionView = null;
 let externalOmrView = null;
 let notationFollowing = null;
+let writtenCursor = null, writtenCursorStatus = null, writtenCursorRetry = null;
 let sourceArchiveView=null;
 let midiController=null;
 let shell=null,preview=null,performanceView=null,startingPreview=false,previewRefreshQueued=false,startRequest=0,enteringPreview=false;
@@ -158,6 +160,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
     clearNotice();
     resetPlayback();
+    writtenCursor?.reset();
     renderScore(); notationFollowing?.scoreChanged(); sourceArchiveView?.scoreChanged(); libraryView.scoreChanged(); adaptationView?.scoreChanged(); transpositionView?.scoreChanged(); renderCatalog(); updateRangeWarning();
     $('catalog-status').textContent=`Current session: ${state.score.title}. Browsing a preview keeps this take intact.`;
     const clockScore=state.score;await checkInstrument();if(state.score===clockScore){metronome?.setScore();preview.adopt(state.compiled,previewCompatibility(state.compatibility),state.practicePart);}
@@ -593,19 +596,32 @@ function drawFrame() {
   if(shell.screen()!=='stage')return;
   if(shell.notationVisible())notationFollowing?.tick(position < segmentStart ? -1 : position,transport.running);
   const active = position < segmentStart ? [] : playbackIndex?.range(position) || [];
-  if (shell.notationVisible() && !state.engravingActive && transport.running && active.length) {
-    const source = active.flatMap(note=>mappedSourceIds(note,state.mode==='practice'?state.targetGroups.get(note.id):null)).map(id=>state.sourceNotes.get(id)).find(item=>item?.partId===state.notationPart);
+  if(shell.notationVisible())writtenCursor?.prepare();
+  const written = position < segmentStart ? null : writtenCursor?.at(position);
+  const soundingSources = new Set(active.flatMap(note=>mappedSourceIds(note,state.mode==='practice'?state.targetGroups.get(note.id):null)));
+  const currentWritten = (written?.entries || []).filter(entry=>entry.note.pitch?soundingSources.has(entry.sourceNoteId):state.practicePart===null||entry.partId===state.practicePart);
+  if (shell.notationVisible() && !state.engravingActive && transport.running && currentWritten.length) {
+    const source = currentWritten.find(item=>item.partId===state.notationPart);
     const page = source ? Math.floor(beat(source.note.at) / state.notationSpan) : state.notationPage;
     if (page !== state.notationPage) { state.notationPage = page; renderNotationPage(); }
   }
-  const signature = active.map(n => n.id).join('|');
+  const signature = JSON.stringify([written?.occurrence?.id || null,currentWritten.map(entry=>entry.sourceNoteId)]);
   if (signature !== state.lastHighlight) {
-    const activeSources=new Set(active.flatMap(note=>mappedSourceIds(note,state.mode==='practice'?state.targetGroups.get(note.id):null)));
+    const activeSources=new Set(currentWritten.map(entry=>entry.sourceNoteId));
     document.querySelectorAll('.score-note').forEach(note => note.classList.toggle('active', activeSources.has(note.dataset.noteId)));
     state.lastHighlight = signature;
+    if(writtenCursor?.state().status==='ready'&&writtenCursorStatus){
+      const pitches=currentWritten.filter(entry=>entry.note.pitch),rests=currentWritten.length-pitches.length;
+      const labels=pitches.slice(0,8).map(({note})=>`${note.pitch.step}${({'-2':'𝄫','-1':'♭','0':'','1':'♯','2':'𝄪'})[note.pitch.alter]}${note.pitch.octave} → ${midiName(pitchMidi(note.pitch))}`);
+      writtenCursorStatus.textContent=`Expected written notes · 当前谱面: ${labels.join(', ')||'—'}${pitches.length>8?` +${pitches.length-8} more`:''}${rests?` · ${rests} written rest(s)`:''}. Expected keys and held input colors are separate; duration and fingering are not assessed.`;
+      writtenCursorStatus.dataset.sourceNoteIds=JSON.stringify([...activeSources]);
+      writtenCursorStatus.dataset.sourceMeasureIndex=written?.occurrence?String(written.occurrence.source_measure_index):'';
+    }
     const focused = $('notation').querySelector('.score-note.active');
     if (!state.engravingActive && transport.running && focused) { const box = focused.getBoundingClientRect(); const view = $('notation').getBoundingClientRect(); if (box.left < view.left + 20 || box.right > view.right - 20) $('notation').scrollLeft += box.left - view.left - view.width * 0.35; }
   }
+  if(shell.notationVisible()&&state.engravingActive&&written?.occurrence)engravedView.setExpectedWrittenNotes?.({sourceNoteIds:currentWritten.map(entry=>entry.sourceNoteId),sourceMeasureIndex:written.occurrence.source_measure_index});
+  else engravedView.clearExpectedWrittenNotes?.();
   highlightKeys(active);
   $('progress').max = Math.max(1, duration); $('progress').value = Math.min(duration, Math.max(0, position));
   $('time-label').textContent = `${formatTime(position)} / ${formatTime(duration)}`;
@@ -870,6 +886,12 @@ adaptationView = setupAdaptationView({api,pausePlayback,notice,onActivate:import
 transpositionView = setupTranspositionView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.score,timeline:state.compiled?.timeline,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
 metronome = setupMetronome({api,getScore:()=>state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:transport.time(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
 performanceView=setupPerformanceView({getContext:()=>({geometry:state.geometry,rangeLabel:`${midiName(state.geometry[0].midi)}–${midiName(state.geometry.at(-1).midi)}`,mode:state.mode,instrument:state.instrument,position:transport.time(performance.now()),segmentStart:state.loop?.start_ms||0,countInBeatMs:60000/(Number($('tempo').value)||100),running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,now:performance.now(),recorder:state.recorder})});
+writtenCursorStatus=document.createElement('p');writtenCursorStatus.id='written-cursor-status';writtenCursorStatus.setAttribute('aria-live','off');
+writtenCursorRetry=document.createElement('button');writtenCursorRetry.id='written-cursor-retry';writtenCursorRetry.type='button';writtenCursorRetry.className='button compact';writtenCursorRetry.textContent='Retry note positions · 重试音符定位';writtenCursorRetry.hidden=true;
+document.querySelector('#notation-dock .dock-help').append(writtenCursorStatus,writtenCursorRetry);
+writtenCursor=setupWrittenCursor({api,getContext:()=>({score:state.score,timeline:state.compiled?.timeline}),onStatus:({status,message})=>{writtenCursorStatus.dataset.status=status;writtenCursorStatus.dataset.sourceNoteIds='[]';writtenCursorStatus.textContent=message;writtenCursorRetry.hidden=status!=='unavailable';state.lastHighlight='';}});
+writtenCursorRetry.addEventListener('click',()=>writtenCursor.prepare({retry:true}));
+window.addEventListener('pagehide',()=>writtenCursor.reset());
 midiController=setupMidi({pressNote, releaseNote, releaseMatching, notice, pausePlayback,
   getConfiguredRange:()=>state.instrument==='guitar'?{low:Math.min(...state.guitar.tuning)+state.guitar.capo,high:Math.max(...state.guitar.tuning)+state.guitar.frets}:state.geometry.length?{low:state.geometry[0].midi,high:state.geometry.at(-1).midi}:null});
 renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); loadCatalog();

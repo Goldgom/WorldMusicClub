@@ -155,8 +155,15 @@ exceeds 4 MiB, would overflow the full response budget, or has a written interva
 too small for a reliable floating display clock. No partial cursor is returned.
 Existing measure following remains available when its own limits pass. Older
 responses may omit the cursor. An unknown cursor version must disable exact
-note highlighting rather than guess. These fields prepare exact note display;
-the current frontend still uses the existing measure-following behavior.
+note highlighting rather than guess. The frontend prepares this index lazily
+when the notation dock is visible. Basic staff/Jianpu markers use the current
+written segment, filtered against active Rust sounding/physical target IDs and
+the selected part. A complete tie chain is never highlighted all at once.
+Rests keep their own visual interval without a physical key target. Expected
+key colors, held inputs and assessment remain distinct. Current-note tracking
+does not enable automatic page following. Its quiet status and explicit retry
+are in Help & notation limits; a missing/failed cursor leaves static notation
+available. Engraved notehead bindings require their separate validated adapter.
 
 Following requires contiguous, ordered measures from beat zero covering the complete score, as the exporter does; it does not sort, repair or invent measures. Limits are 100,000 intervals, 1,000,000 total source references and a 16 MiB response. Failure disables optional following only; manual notation and playback remain available. Existing written A–B loops remain limited to linear scores and reject repeats until explicit pass selection is supported.
 

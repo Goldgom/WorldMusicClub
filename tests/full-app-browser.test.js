@@ -1056,9 +1056,50 @@ test('real external duet corrections keep every part/staff/tie while fixing onse
 
 test('real Rust measure following turns engraved pages through repeat passes without changing playback or source', {timeout:60_000},async()=>{
  const score=structuredClone(initialCompilation.score);score.id='original-follow-study';score.title='Original repeated measure study';score.tempo=[{at:{numerator:0,denominator:1},bpm:300}];score.meters=[{at:{numerator:0,denominator:1},numerator:1,denominator:4}];score.measures=Array.from({length:20},(_,index)=>({number:42,at:{numerator:index,denominator:1},length:{numerator:1,denominator:1}}));const seed=score.parts[0].notes[0];score.parts[0].notes=Array.from({length:20},(_,index)=>({...structuredClone(seed),id:`follow-note-${index}`,at:{numerator:index,denominator:1},duration:{numerator:1,denominator:1},pitch:{step:['C','D','E','F','G'][index%5],alter:0,octave:4}}));score.repeats=[{from:{numerator:0,denominator:1},to:{numerator:12,denominator:1},times:2}];
- await ui('#score-file').setInputFiles({name:'original-follow-study.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await waitForEngraving();assert.equal(requests.filter(request=>request.path==='/api/notation-navigation').length,0);const[response]=await Promise.all([nextResponse('/api/notation-navigation'),ui('#engraving-follow').check()]);const navigation=await responseJson(response);assert.equal(navigation.occurrences.length,32);assert.equal(navigation.source_measure_count,20);assert.equal(navigation.duration_ms,6400);await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('Paused at written measure 42'));
+ await ui('#score-file').setInputFiles({name:'original-follow-study.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await waitForEngraving();await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.status==='ready');const scoreNavigationRequests=()=>requests.filter(request=>request.path==='/api/notation-navigation'&&JSON.parse(request.body).id===score.id);assert.equal(scoreNavigationRequests().length,1,'Current-note positions prepare separately from optional page following');assert.equal(await ui('#engraving-follow').isChecked(),false);const[response]=await Promise.all([nextResponse('/api/notation-navigation'),ui('#engraving-follow').check()]);const navigation=await responseJson(response);assert.equal(navigation.occurrences.length,32);assert.equal(navigation.source_measure_count,20);assert.equal(navigation.duration_ms,6400);await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('Paused at written measure 42'));
  await ui('#count-in').uncheck();await ui('#play-button').click();await page.waitForFunction(()=>document.querySelector('#engraving-range').textContent.startsWith('Measures 9–'));assert.match(await ui('#play-button').textContent(),/Pause/);await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('pass 2/2')&&document.querySelector('#engraving-range').textContent.startsWith('Measures 1–8'));assert.match(await ui('#play-button').textContent(),/Pause/);await page.waitForFunction(()=>document.querySelector('#transport-status').textContent.includes('Complete'));assert.match(await ui('#engraving-follow-status').textContent(),/End of performance/);assert.match(await ui('#engraving-range').textContent(),/Measures 17–20/);await screenshot('measure-following');assert.deepEqual(await exportScore(),score);
- await ui('#engraving-prev').click();assert.equal(await ui('#engraving-follow').isChecked(),false);assert.match(await ui('#engraving-follow-status').textContent(),/Manual navigation suspended/);assert.equal(requests.filter(request=>request.path==='/api/notation-navigation').length,1);
+ await ui('#engraving-prev').click();assert.equal(await ui('#engraving-follow').isChecked(),false);assert.match(await ui('#engraving-follow-status').textContent(),/Manual navigation suspended/);assert.equal(scoreNavigationRequests().length,2,'Manual paging does not refetch either current-note or page-following data');
+});
+
+test('real written-note cursor separates tied continuations, short unisons, rests and selected-part keys', testOptions, async () => {
+  const score=structuredClone(fixture),beat=n=>({numerator:n,denominator:1}),seed=score.parts[0].notes[0];
+  score.id='original-written-cursor-study';score.title='Original written cursor study';
+  score.measures=[0,1].map(index=>({number:7,at:beat(index*4),length:beat(4)}));
+  score.parts[0].notes=[
+    {...structuredClone(seed),id:'tie-start',at:beat(0),duration:beat(2),tie_start:true},
+    {...structuredClone(seed),id:'tie-stop',at:beat(2),duration:beat(2),tie_stop:true},
+    {...structuredClone(seed),id:'short-D',at:beat(0),duration:beat(1),pitch:{step:'D',alter:0,octave:4},voice:'2'},
+    {...structuredClone(seed),id:'written-rest',at:beat(1),duration:beat(2),pitch:null,velocity:0,voice:'2'},
+  ];
+  score.parts.push({id:'counter',name:'Counter voice',instrument:'piano',notes:[
+    {...structuredClone(seed),id:'short-unison',at:beat(0),duration:beat(1)},
+    {...structuredClone(seed),id:'repeated-C',at:beat(3),duration:beat(1)},
+  ]});
+  await ui('#score-file').setInputFiles({name:'original-written-cursor-study.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});
+  await readyForTitle(score.title);await ui('#jianpu-button').click();
+  await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.status==='ready');
+  await ui('#session-mode').selectOption('practice');await ui('#play-button:not([disabled])').waitFor();
+  await ui('#count-in').uncheck();await ui('#reset-button').click();await closeShellPanels();
+  const waitIds=expected=>page.waitForFunction(ids=>JSON.stringify(JSON.parse(document.querySelector('#written-cursor-status').dataset.sourceNoteIds||'[]').sort())===JSON.stringify(ids),[...expected].sort());
+  const snapshot=()=>page.evaluate(()=>({
+    ids:JSON.parse(document.querySelector('#written-cursor-status').dataset.sourceNoteIds),
+    activeWritten:[...document.querySelectorAll('.score-note.active')].map(n=>n.dataset.noteId).sort(),
+    expectedKeys:[...document.querySelectorAll('.piano-key.playing')].map(n=>Number(n.dataset.midi)).sort((a,b)=>a-b),
+    heldKeys:document.querySelectorAll('.piano-key.pressed').length,position:document.querySelector('#progress').value,
+  }));
+  await waitIds(['short-D','short-unison','tie-start']);
+  const initial=await snapshot();assert.deepEqual(initial.activeWritten,['short-D','tie-start']);assert.deepEqual(initial.expectedKeys,[60,62]);assert.equal(initial.heldKeys,0);
+  await ui('#play-button').click();await waitIds(['tie-start','written-rest']);await ui('#play-button').click();
+  const first=await snapshot();assert.deepEqual(first.activeWritten,['tie-start','written-rest']);assert.deepEqual(first.expectedKeys,[60]);assert.equal(first.heldKeys,0);
+  await ui('#play-button').click();await waitIds(['tie-stop','written-rest']);await ui('#play-button').click();
+  const continuation=await snapshot();assert.deepEqual(continuation.activeWritten,['tie-stop','written-rest']);assert.deepEqual(continuation.expectedKeys,[60]);assert.equal(continuation.heldKeys,0);
+  assert.equal(await ui('#engraving-follow').isChecked(),false,'Current-note display does not enable page following');
+  await screenshot('written-cursor-tie-jianpu');
+  await ui('#practice-part').selectOption('counter');await ui('#play-button:not([disabled])').waitFor();await ui('#reset-button').click();await closeShellPanels();
+  await waitIds(['short-unison']);const selected=await snapshot();assert.deepEqual(selected.activeWritten,['short-unison']);assert.deepEqual(selected.expectedKeys,[60]);
+  await ui('#play-button').click();await waitIds(['repeated-C']);await ui('#play-button').click();const repeat=await snapshot();assert.deepEqual(repeat.activeWritten,['repeated-C']);assert.deepEqual(repeat.expectedKeys,[60]);
+  assert.deepEqual(await exportScore(),score,'Display tracking never rewrites canonical music');
+  await writeFile(join(artifactDirectory,'worldmusichub-live-written-cursor.json'),JSON.stringify({initial,first,continuation,selected,repeat,source_retained:true,scope:'Real Rust navigation/timeline and browser; expected notes only, no physical input or sustain assessment'},null,2));
 });
 
 test('complete CC0 D768 edition retains every event and source while range gates, later pages and following remain explicit', {timeout:60_000},async()=>{

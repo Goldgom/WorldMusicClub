@@ -209,6 +209,7 @@ import './frontend-external-omr-model.test.js';
 import "./frontend-engraved-view.test.js";
 
 import "./frontend-notation-follow.test.js";
+import "./frontend-written-cursor.test.js";
 
 import {scoreSummary,catalogOriginLabel} from '../web/music.js';
 test('edition counts distinguish written notes/rests from compiled attacks without judging note loss',()=>{const score=structuredClone(fixture);score.parts[0].notes.push({...structuredClone(score.parts[0].notes[0]),id:'rest',pitch:null,velocity:0});const before=structuredClone(score);assert.deepEqual(scoreSummary(score,{notes:[{}]}),{count:2,rests:1,writtenCount:3,playbackCount:1,parts:1,measures:1});assert.equal(scoreSummary(score).playbackCount,null);assert.equal(scoreSummary(score,{notes:Array(8).fill({})}).playbackCount,8);assert.deepEqual(score,before);});
