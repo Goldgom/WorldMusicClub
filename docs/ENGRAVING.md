@@ -1,6 +1,6 @@
 # Optional offline staff engraving
 
-WorldMusicHub uses the open-source **OpenSheetMusicDisplay (OSMD) 2.1.3** renderer for its optional staff preview. OSMD uses VexFlow for professional staff layout. This is a presentation adapter: Rust remains authoritative for score validation, exact rational durations, repeat/tie timing, playback, input assessment and export. Jianpu remains the separate WorldMusicHub view. No OSMD paid player, transpose plugin, Jianpu plugin, audio service, remote score loader or hosted font is included.
+WorldMusicHub uses the open-source **OpenSheetMusicDisplay (OSMD) 2.1.3** renderer for its supported-score default staff view, with an explicit simplified pitch-guide fallback. OSMD uses VexFlow for professional staff layout. This is a presentation adapter: Rust remains authoritative for score validation, exact rational durations, repeat/tie timing, playback, input assessment and export. Jianpu remains the separate WorldMusicHub view. No OSMD paid player, transpose plugin, Jianpu plugin, audio service, remote score loader or hosted font is included.
 
 An unbuilt checkout does **not** have the professional renderer available. Keep the clearly labelled basic pitch view usable when assets are absent, the score exceeds limits, or engraving fails. An OSMD preview is not a claim of lossless recovery of the uploaded notation: canonical exports infer rhythmic spelling/clefs and surface their own diagnostics.
 
@@ -81,7 +81,7 @@ Successful metadata is `{noteCount, measureCount, partIds, fromMeasure, toMeasur
 - `zoom` is 0.5–2. Container width is bounded to 320–4096 px. Optional `width` fixes that width and disables automatic observation. Narrower viewports should permit horizontal scrolling
 - `autoResize` and OSMD cursor/following are disabled. A single adapter-owned `ResizeObserver` coalesces width changes. It and pending animation frames are disconnected on replacement/disposal; no global resize listener is registered
 - Render calls supersede earlier calls for the same container. The adapter checks generation/cancellation after asynchronous work and never lets late loads overwrite a newer view. The caller must also guard its own earlier asynchronous Rust export requests before calling this adapter
-- The preview is static. It does **not** imply OSMD playback/cursor synchronization, hit highlighting, or automatic scrolling. Practice timing continues to use the Rust-derived timeline
+- The adapter renders a static measure window and does not use OSMD playback, cursor synchronization or per-note hit highlighting. The application can explicitly follow Rust source-measure/repeat occurrences by changing that window at page boundaries; manual navigation suspends following. This does not reschedule audio or trigger a full render on each animation frame. Practice timing remains Rust-derived
 
 ## Safety and bounded support
 
@@ -97,7 +97,7 @@ The adapter requests only its bundled same-origin JS. It needs no remote `connec
 
 `tests/engraving.test.js` uses small DOM/OSMD doubles to cover preflight caps, malicious resource inputs, part/range options, missing assets, retry/deduplication, cancellation, out-of-order resolution, responsive cleanup and renderer errors. These tests **do not verify actual glyph rendering or browser layout**. `tests/engraving-assets.test.js` verifies the real pinned npm bundle, checksums and generated notices without running it.
 
-Real browser CI must prepare the vendor assets, render the Rust-exported original fixtures, assert SVG staff paths/measure content, exercise multi-voice/two-staff/tie/key/time cases, initial pickups and paging, change themes/width, and verify that network requests stay local. Local browser execution was blocked in the implementation environment; it was not retried through an alternate browser route, and no visual-browser pass is claimed.
+Real browser CI must prepare the vendor assets, render the Rust-exported original fixtures, assert SVG staff paths/measure content, exercise multi-voice/two-staff/tie/key/time cases, initial pickups and paging, change themes/width, and verify that network requests stay local. Local browser execution was blocked in the implementation environment and was not retried through an alternate route. Hosted real-browser acceptance later passed on the exact [commit91 workflow](https://github.com/Goldgom/WorldMusicHub/actions/runs/36811215258), including complete D768 multi-staff SVG, both pages, light/dark display, range gates and source-aware following. These hosted checks are distinct from local browser execution or physical MIDI/audio acceptance.
 
 Primary sources consulted 2026-09-30:
 

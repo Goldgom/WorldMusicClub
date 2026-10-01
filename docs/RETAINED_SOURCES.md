@@ -8,3 +8,9 @@
 - The original converter XML can include a DTD declaration refused by generic import. Its normalized import copy is separately labeled and the conversion record remains in the source envelope. Reference MIDI may still be refused for unsupported controllers; downloading it does not claim playable compatibility.
 
 This is a source-file model for an explicit download UI, not a replacement for saving the complete canonical JSON or a library backup. Original images and OMR/adaptation history can be nested in other source formats; until individually supported, download their full retained envelope. Sharing any archive may disclose private source material and requires the appropriate music/image rights.
+
+## Use the retained-file dialog
+
+Open **Retained source files** for the loaded score. Choose **Inspect file** to see its declared/computed checksum and size, then explicitly request that one download. No download occurs just by opening the dialog or computing a hash. Raw converter XML and the compatible import copy are labeled separately. A mismatch preserves the actual retained bytes and is displayed explicitly; an unavailable or missing checksum is unknown, not verified.
+
+Close/Cancel or a newer score selection invalidates pending inspection results. Refresh lists the current score, and an old digest cannot prepare a download for a changed score. The status says that a download was requested, because the browser or the user can still cancel saving it. Files are never opened, executed or reimported by this dialog.
