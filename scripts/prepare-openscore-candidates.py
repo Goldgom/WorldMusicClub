@@ -6,6 +6,7 @@ not automatically added to the playable catalog. Run under an ordinary display/X
 """
 import argparse
 from collections import Counter
+from fractions import Fraction
 import hashlib
 import json
 import os
@@ -63,6 +64,13 @@ def validate_manifest(manifest):
         ids.add(score['id'])
         if score['edition_license'] != 'CC0-1.0' or not re.fullmatch('[0-9a-f]{64}', score['source_sha256']):
             raise ValueError('An explicit CC0 edition and pinned source digest are required')
+        if score.get('status') not in ['held', 'conversion_and_review_pending']:
+            raise ValueError('Every candidate needs an explicit held or pending review state')
+        if score['status'] == 'held' and not all(
+            isinstance(score.get(field), str) and score[field].strip()
+            for field in ['hold_reason', 'expected_import_error', 'next_step']
+        ):
+            raise ValueError('Held candidates require a reason, exact expected refusal and next review step')
         path = Path(score['source_path'])
         if path.is_absolute() or '..' in path.parts or not score['source_path'].startswith('scores/') or path.suffix != '.mscx':
             raise ValueError('Candidate must refer to a score inside the pinned corpus')
@@ -93,6 +101,93 @@ def xml_pitch_inventory(text):
         if p is not None:
             values.append(12 * (int(p.findtext('octave')) + 1) + offsets[p.findtext('step')] + int(p.findtext('alter', '0')))
     return Counter(values)
+
+
+def canonical_pitch_inventory(compilation):
+    offsets = dict(C=0,D=2,E=4,F=5,G=7,A=9,B=11)
+    return Counter(12*(n['pitch']['octave']+1)+offsets[n['pitch']['step']]+n['pitch']['alter']
+                   for part in compilation['score']['parts'] for n in part['notes'] if n['pitch'] is not None)
+
+
+def written_event_inventory(xml):
+    """Independent comparison of ordinary explicit MusicXML note/backup durations.
+
+    Grace/untimed and empty-measure inference are deliberately not invented here.
+    This verifies the supported candidate subset, not every MusicXML feature.
+    """
+    root=ET.fromstring(xml); parts=[]
+    for part in root.findall('part'):
+        divisions=None; measures=[]
+        for measure in part.findall('measure'):
+            cursor=Fraction(0); extent=Fraction(0); anchor=None; notes=[]
+            for child in measure:
+                if child.tag=='attributes' and child.find('divisions') is not None:
+                    divisions=Fraction(child.findtext('divisions'))
+                elif child.tag in ['backup','forward']:
+                    amount=Fraction(child.findtext('duration'))/divisions
+                    cursor += -amount if child.tag=='backup' else amount
+                    extent=max(extent,cursor)
+                elif child.tag=='note':
+                    if child.find('grace') is not None or child.find('duration') is None:
+                        raise ValueError('Untimed/grace notes require a separate reviewed interpretation')
+                    duration=Fraction(child.findtext('duration'))/divisions
+                    at=anchor if child.find('chord') is not None else cursor
+                    if at is None:raise ValueError('Chord without a source onset')
+                    if child.find('chord') is None:anchor=cursor;cursor+=duration
+                    extent=max(extent,at+duration)
+                    pitch=child.find('pitch'); value=None if pitch is None else (pitch.findtext('step'),int(pitch.findtext('alter','0')),int(pitch.findtext('octave')))
+                    ties={node.get('type') for node in child.findall('tie')}
+                    notes.append((at,duration,value,child.findtext('voice','1'),int(child.findtext('staff','1')),'start' in ties,'stop' in ties))
+            if extent<=0:raise ValueError('An empty measure needs separately checked meter inference')
+            measures.append((extent,notes))
+        parts.append((part.get('id'),measures))
+    if len({len(measures) for _,measures in parts})!=1:raise ValueError('Unequal source measure counts require review')
+    starts=[];cursor=Fraction(0)
+    for ordinal in range(len(parts[0][1])):
+        starts.append(cursor);cursor+=max(measures[ordinal][0] for _,measures in parts)
+    return Counter((part_id,str(starts[index]+at),str(duration),pitch,voice,staff,start,stop)
+                   for part_id,measures in parts for index,(_,notes) in enumerate(measures)
+                   for at,duration,pitch,voice,staff,start,stop in notes)
+
+
+def canonical_written_inventory(compilation):
+    b=lambda value:str(Fraction(value['numerator'],value['denominator']))
+    return Counter((part['id'],b(n['at']),b(n['duration']),None if n['pitch'] is None else (n['pitch']['step'],n['pitch']['alter'],n['pitch']['octave']),n['voice'],n['staff'],n['tie_start'],n['tie_stop'])
+                   for part in compilation['score']['parts'] for n in part['notes'])
+
+
+def reference_agreement(canonical, reference, assessment):
+    expected = {note['id']: note for note in canonical['timeline']['notes']}
+    observed = {}
+    for note in reference['timeline']['notes']:
+        observed.setdefault((note['midi'], note['start_ms']), []).append(note)
+    durations = []
+    ambiguous = 0
+    for hit in assessment['hits']:
+        candidates = observed.get((hit['midi'], hit['actual_ms']), [])
+        if len(candidates) != 1:
+            ambiguous += 1
+            continue
+        durations.append(candidates[0]['duration_ms'] - expected[hit['note_id']]['duration_ms'])
+    return {'matcher_tolerance_ms': 10, 'canonical_sounding_notes': len(expected), 'reference_midi_note_ons': len(reference['timeline']['notes']),
+            'matched_note_ons': len(assessment['hits']), 'matches_within_1ms': sum(abs(h['delta_ms']) <= 1 for h in assessment['hits']),
+            'missed_canonical_attacks': len(assessment['misses']), 'extra_reference_attacks': len(assessment['extras']),
+            'unambiguous_noteoff_duration_comparisons': len(durations), 'ambiguous_unison_durations_not_guessed': ambiguous,
+            'duration_differences_over_1ms': sum(abs(d) > 1 for d in durations), 'largest_duration_difference_ms': max(map(abs, durations), default=0),
+            'canonical_duration_ms': canonical['timeline']['duration_ms'], 'reference_duration_ms': reference['timeline']['duration_ms'],
+            'canonical_tempo_map': canonical['score'].get('tempo', []),
+            'reference_tempo_map': reference['score']['tempo'], 'reference_diagnostics': reference['diagnostics'],
+            'interpretation': 'Reference software note-ons/key-noteoffs, not acoustic sustain or musical truth. Generated ornaments, fermatas, articulation, dynamics, channels and repeat policies may differ. Every mismatch remains visible; this is not an automatic acceptance score.'}
+
+
+def candidate_gate(score, result):
+    if not result['pitch_inventory_matches']:
+        return False
+    if score.get('status') == 'held':
+        # A known held work is never admitted by changing the expected music. Even a new
+        # successful import requires a fresh review/manifest decision rather than auto-entry.
+        return result['rust_import_status'] == 400 and score['expected_import_error'] in result.get('import_error', {}).get('error', '')
+    return result['rust_import_status'] == 200 and result.get('canonical_pitch_inventory_matches') is True and result.get('canonical_written_events_match') is True and not any(d['code'] in ['orphan_tie', 'broken_tie', 'unclosed_tie'] for d in result.get('import_diagnostics', []))
 
 
 def run_bounded(arguments, cwd, env, log, timeout=120, output_root=None):
@@ -168,20 +263,49 @@ def main():
             normalized, changes = normalize_converted_xml(raw.read_bytes()); actual = xml_pitch_inventory(normalized)
             (folder / 'import.musicxml').write_text(normalized, encoding='utf-8')
             status, imported = post(base, '/api/import/musicxml', normalized.encode(), 'application/xml')
-            result = {'id': slug, 'source_sha256': digest(source), 'raw_converter_sha256': digest(raw), 'import_xml_sha256': digest(folder / 'import.musicxml'), 'normalizations': changes, 'written_source_pitch_count': sum(expected.values()), 'converted_pitch_count': sum(actual.values()), 'pitch_inventory_matches': expected == actual, 'rust_import_status': status, 'status': 'pending_musical_review'}
+            result = {'id': slug, 'source_sha256': digest(source), 'raw_converter_sha256': digest(raw), 'import_xml_sha256': digest(folder / 'import.musicxml'), 'normalizations': changes, 'written_source_pitch_count': sum(expected.values()), 'converted_pitch_count': sum(actual.values()), 'pitch_inventory_matches': expected == actual, 'rust_import_status': status, 'status': 'held' if score.get('status') == 'held' else 'pending_musical_review'}
             if status == 200:
                 (folder / 'compiled.json').write_text(json.dumps(imported, ensure_ascii=False, indent=2), encoding='utf-8')
                 result['import_diagnostics'] = imported['diagnostics']
                 result['canonical_written_events'] = sum(len(p['notes']) for p in imported['score']['parts'])
                 result['sounding_notes'] = len(imported['timeline']['notes'])
+                result['canonical_pitch_inventory_matches'] = canonical_pitch_inventory(imported) == actual
+                try:
+                    written=written_event_inventory(normalized); canonical=canonical_written_inventory(imported)
+                    result['canonical_written_events_match'] = written == canonical
+                    result['missing_written_events'] = sum((written-canonical).values())
+                    result['extra_written_events'] = sum((canonical-written).values())
+                except ValueError as error:
+                    result['canonical_written_events_match'] = False
+                    result['written_comparison_limit'] = str(error)
             else: result['import_error'] = imported
+            if score.get('status') == 'held':
+                result['hold_reason'] = score['hold_reason']
+                result['expected_import_error'] = score['expected_import_error']
+            midi = folder / 'reference.mid'
+            run_bounded(engine_args + ['-o', str(midi), str(source)], work, env, folder / 'midi-export.log', output_root=folder)
+            midi_status, reference = post(base, '/api/import/midi', midi.read_bytes(), 'audio/midi')
+            result['reference_midi_sha256'] = digest(midi)
+            result['reference_midi_import_status'] = midi_status
+            if midi_status == 200:
+                (folder / 'reference-midi-compilation.json').write_text(json.dumps(reference, ensure_ascii=False, indent=2), encoding='utf-8')
+                if status == 200:
+                    inputs = [{'midi': n['midi'], 'at_ms': n['start_ms'], 'velocity': n['velocity']} for n in reference['timeline']['notes']]
+                    grade_status, matched = post(base, '/api/assess', json.dumps({'timeline': imported['timeline'], 'inputs': inputs, 'tolerance_ms': 10}).encode(), 'application/json')
+                    if grade_status != 200: raise RuntimeError('Reference onset comparison failed: ' + str(matched))
+                    (folder / 'reference-assessment.json').write_text(json.dumps(matched, ensure_ascii=False, indent=2), encoding='utf-8')
+                    result['reference_agreement'] = reference_agreement(imported, reference, matched)
+            else:
+                result['reference_midi_import_error'] = reference
+                result['reference_agreement'] = None
+            result['gate_matches_declared_candidate_state'] = candidate_gate(score, result)
             # A readable source rendering supports human review; no copied commercial scan.
             run_bounded(engine_args + ['-r', '120', '-o', str(folder / 'source.png'), str(source)], work, env, folder / 'render.log', output_root=folder)
             results.append(result)
-        report = {'manifest': manifest, 'license_sha256': digest(license_path), 'results': results, 'automatically_bundled': False, 'acceptance': 'Candidate conversion/import evidence only. Pitch inventories do not prove rhythm, voice, expression or instrument compatibility; review source images and every diagnostic before catalog admission.'}
+        report = {'manifest': manifest, 'license_sha256': digest(license_path), 'results': results, 'automatically_bundled': False, 'held_count': sum(r['status'] == 'held' for r in results), 'acceptance': 'Candidate conversion/import evidence only. Pitch inventories do not prove rhythm, voice, expression or instrument compatibility; review source images and every diagnostic before catalog admission.'}
         (output / 'conversion-report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
-        print(json.dumps({'candidates': len(results), 'importable': sum(r['rust_import_status'] == 200 for r in results), 'all_pitch_inventories_match': all(r['pitch_inventory_matches'] for r in results)}))
-        return 0 if all(r['rust_import_status'] == 200 and r['pitch_inventory_matches'] for r in results) else 1
+        print(json.dumps({'candidates': len(results), 'importable': sum(r['rust_import_status'] == 200 for r in results), 'all_pitch_inventories_match': all(r['pitch_inventory_matches'] for r in results), 'held':sum(r['status']=='held' for r in results)}))
+        return 0 if all(r['gate_matches_declared_candidate_state'] for r in results) else 1
     finally:
         server.terminate(); server.wait(timeout=5)
 

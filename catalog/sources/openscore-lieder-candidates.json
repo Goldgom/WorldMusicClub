@@ -29,7 +29,10 @@
       "attribution": "OpenScore Lieder corpus and the original composer/lyricist; transcription credits remain in the exact source",
       "official_score_url": "https://musescore.com/openscore-lieder-corpus/scores/5701612",
       "upstream_imslp_reference": "#81909",
-      "status": "conversion_and_review_pending"
+      "status": "held",
+      "hold_reason": "The version-1 musical model cannot retain untimed grace-note semantics in a playable canonical score. Do not remove ornaments to force import.",
+      "expected_import_error": "Grace notes are unsupported",
+      "next_step": "Design explicit grace notation and a reviewed timing policy or a separately labeled derivative arrangement."
     },
     {
       "id": "schubert-an-die-musik-d547",
@@ -45,7 +48,10 @@
       "attribution": "OpenScore Lieder corpus and the original composer/lyricist; transcription credits remain in the exact source",
       "official_score_url": "https://musescore.com/openscore-lieder-corpus/scores/6180725",
       "upstream_imslp_reference": "#364857",
-      "status": "conversion_and_review_pending"
+      "status": "held",
+      "hold_reason": "The version-1 musical model cannot retain untimed grace-note semantics in a playable canonical score. Do not remove ornaments to force import.",
+      "expected_import_error": "Grace notes are unsupported",
+      "next_step": "Design explicit grace notation and a reviewed timing policy or a separately labeled derivative arrangement."
     },
     {
       "id": "schubert-wandrers-nachtlied-d768",
@@ -77,7 +83,17 @@
       "attribution": "OpenScore Lieder corpus and the original composer/lyricist; transcription credits remain in the exact source",
       "official_score_url": "https://musescore.com/openscore-lieder-corpus/scores/5000397",
       "upstream_imslp_reference": "#454110",
-      "status": "conversion_and_review_pending"
+      "status": "held",
+      "hold_reason": "MuseScore3.6.2 emitted competing playback tempos with visual-only offsets. Per MusicXML, omitted offset sound defaults to no; the reader must not silently reinterpret them.",
+      "expected_import_error": "Conflicting playback tempos",
+      "next_step": "Compare newer official converter/reference MIDI and review an explicit derivative correction if needed."
     }
-  ]
+  ],
+  "held_ledger_evidence": {
+    "initial_run": 36796359951,
+    "initial_commit": "7880a3264db0773ff858b03e5085dc4c56cf0a06",
+    "artifact": 11134016619,
+    "artifact_sha256": "ffcecd4f1e0b03441b0878e8f6845e8b6f1e811f04e09ad554a80232ea939c15",
+    "result": "All four source/converter pitch inventories matched; three imports were refused and none were automatically bundled."
+  }
 }
