@@ -5,8 +5,13 @@ The [108 recovery snapshot](0.2.0-alpha.1-recovery.md) passed its exact-source L
 ## New source changes after 108
 
 - Rust assessment adds exclusive timing-grade counts and exact simultaneous-onset completion statistics for a future result HUD. Partial chords remain incomplete; expected score order determines the longest complete-onset sequence. Extras affect accuracy separately, so this coverage statistic must not be called live combo or an error-free streak. Older exports without the fields remain readable as unavailable. This API addition does not change matching, scoring, or canonical music.
+- A separate song lobby filters the bundled catalog and prepares a candidate without replacing the active score or recorded take. Listen/Practice explicitly activate it, with Rust compatibility checks and visible blocking range reasons. Selected score identity and Start controls stay anchored while detailed notices scroll.
+- The landscape stage gives the falling notes and full configured keyboard the main area. Settings, imports, source files, results and saved scores open secondary panels. Returning to the lobby or opening a panel pauses playback; closing or resuming the view never starts audio automatically.
+- The optional notation dock keeps professional engraving, pitch guide, jianpu, part/page controls and Rust measure following. Compact headers remove repeated display headings without changing musical data or exports. Short landscape windows place optional display controls in Help so the staff has visible space.
+- The HUD distinguishes captured inputs from checked onset matching. It suppresses stale rates during playback, changed input revisions and delayed-input grace periods. Previous results remain labeled and do not claim sustain, release, perfect timing or live-combo evaluation.
+- Browser verification covers light/dark desktop scenes, narrow landscape and portrait layouts, modal/focus behavior, complete source export and preservation of paused takes. The suites report independently so one failure no longer hides the other browser results.
 
-These post-108 changes require their own exact-head checks before release. They are not present in the accepted 108 ZIP. The game-like landscape interface is being developed separately.
+These post-108 changes require their own exact-head checks before release. They are not present in the accepted 108 ZIP. See the [interface behavior and validation boundaries](../GAME_UI.md) and [Chinese quickstart](../QUICKSTART.zh-CN.md) for the source tree's current navigation.
 
 ## Included in accepted 108
 
