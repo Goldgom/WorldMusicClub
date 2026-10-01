@@ -1,4 +1,11 @@
 /* The active stage gives its space to music; tool panels keep the full controls. */
+.fullscreen-tools{position:relative;display:flex;flex:none}
+.shell-header #fullscreen-button,.performance-layout .stage-hud nav #fullscreen-button{display:inline-flex;align-items:center;justify-content:center;flex:none;width:40px;min-width:40px;padding:8px}
+#fullscreen-button svg{display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+#fullscreen-button[aria-disabled=true]{opacity:.6}
+.fullscreen-status{position:absolute;right:0;top:calc(100% + 8px);z-index:10;width:min(280px,calc(100vw - 24px));padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--paper);color:var(--ink);font-size:12px;line-height:1.5;box-shadow:0 4px 18px #0003;pointer-events:none}
+.fullscreen-status:empty{display:none}
+@media(max-width:650px),(max-height:600px){.shell-header #fullscreen-button,.performance-layout .stage-hud nav #fullscreen-button{width:34px;min-width:34px;padding:6px}}
 .performance-field{position:relative;display:flex;flex:1;min-height:0;min-width:0}.performance-field>.piano-stage{width:100%}
 .performance-layout #workspace{grid-template-columns:minmax(0,1fr)}.performance-layout .play-panel,.performance-layout .piano-stage,.performance-layout .stage-hud,.performance-layout .stage-hud nav{min-width:0}
 .performance-layout .song-preview{overflow:hidden}.performance-layout .preview-art{min-height:95px;max-height:145px;flex:0 1 145px}.performance-layout .preview-copy{flex:1;min-height:0;overflow:auto;padding:20px 25px 12px}.performance-layout .preview-copy h2{font-size:clamp(22px,2.2vw,31px)}.performance-layout .preview-footer{flex:none;padding:14px 25px 17px;border-top:1px solid var(--border);background:var(--paper)}.performance-layout .preview-actions{margin:0}.preview-session-help{margin-top:12px;font-size:12px;line-height:1.6;color:var(--muted)}.preview-session-help summary{cursor:pointer;font-size:12px;color:var(--ink)}.preview-session-help p{margin:8px 0 0}.preview-session-help[open]{max-height:150px;overflow:auto}.performance-layout #preview-notices{font-size:12px;line-height:1.6;color:var(--muted)}.performance-layout #preview-notices summary{cursor:pointer;font-size:13px;color:var(--ink)}

@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
 import {ScorePreview,filterCatalog,stageShortcutAllowed} from '../web/score-preview.js';
 import {setupGameShell} from '../web/game-shell.js';
+import {setupFullscreen} from '../web/fullscreen.js';
 import {fixture} from './frontend-fixtures.js';
 
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return{promise,resolve,reject}};
@@ -54,6 +55,9 @@ test('static DOM shell keeps every source control exactly once and pauses on pan
   const ids=[...document.querySelectorAll('[id]')].map(el=>el.id),shell=setupGameShell({pausePlayback:()=>pauses++,onScreen:value=>screens.push(value),onNotation:value=>notation.push(value)});
   for(const id of ids)assert.equal(document.querySelectorAll(`[id="${id}"]`).length,1,id);
   assert.equal(document.querySelector('#workspace').hidden,true);assert.equal(document.querySelector('#song-lobby').hidden,false);
+  assert.equal(document.querySelectorAll('#fullscreen-button').length,1);
+  assert.equal(document.querySelector('#fullscreen-button').getAttribute('aria-label'),'Enter fullscreen · 进入全屏');
+  assert.equal(document.querySelector('#fullscreen-button').getAttribute('aria-disabled'),'true');
   assert.equal(document.querySelector('.skip-link').getAttribute('href'),'#lobby-title');assert.equal(document.querySelector('#song-lobby').getAttribute('role'),'main');
   for(const id of ['instrument','key-count','practice-part','latency-offset','theme-mode'])assert.equal(document.getElementById(id).closest('dialog').id,'settings-dialog');
   for(const id of ['export-button','source-files-button','score-details'])assert.equal(document.getElementById(id).closest('dialog').id,'score-tools-dialog');
@@ -64,4 +68,99 @@ test('static DOM shell keeps every source control exactly once and pauses on pan
   assert.equal(document.querySelector('.skip-link').getAttribute('href'),'#stage-title');shell.show('library');assert.equal(pauses,3);assert.equal(shell.screen(),'library');assert.equal(document.querySelector('#workspace').hidden,true);assert.equal(document.querySelector('.skip-link').getAttribute('href'),'#lobby-title');
   shell.open('settings');const settings=document.getElementById('settings-dialog');settings.removeAttribute('open');const next=document.querySelector('.skip-link');next.focus();settings.dispatchEvent(new window.Event('close'));assert.ok(focused===next,'A queued close event must not steal focus after the user has moved to another control');
  }finally{if(original)Object.defineProperty(globalThis,'document',original);else delete globalThis.document}
+});
+
+function fullscreenFixture({enabled=true,request,exit}={}) {
+ const {document,window}=parseHTML('<html><body><button id="fullscreen"></button><span id="status"></span><dialog id="panel"><input value="Keep this draft"></dialog><button id="other">Other control</button></body></html>');
+ const button=document.getElementById('fullscreen'),status=document.getElementById('status'),timers=new Map(),calls=[];
+ let nextTimer=0,active=null;
+ Object.defineProperties(document,{fullscreenEnabled:{configurable:true,value:enabled},fullscreenElement:{get:()=>active},hidden:{configurable:true,value:false}});
+ document.documentElement.requestFullscreen=function(){calls.push({kind:'enter',target:this});return request?.()??new Promise(()=>{})};
+ document.exitFullscreen=function(){calls.push({kind:'exit',target:this});return exit?.()??new Promise(()=>{})};
+ const controller=setupFullscreen({document,button,status,timeoutMs:80,setTimer:(callback,ms)=>{const id=++nextTimer;timers.set(id,{callback,ms});return id},clearTimer:id=>timers.delete(id)});
+ const change=element=>{active=element;document.dispatchEvent(new window.Event('fullscreenchange'))};
+ const tick=ms=>{for(const[id,timer]of [...timers])if(timer.ms===ms){timers.delete(id);timer.callback()}};
+ return {document,window,button,status,calls,timers,controller,change,tick,setActive:element=>{active=element}};
+}
+const microtasks=async()=>{await Promise.resolve();await Promise.resolve()};
+
+test('fullscreen uses a direct root request, serializes clicks and follows actual events including Escape',async()=>{
+ const enter=deferred(),exit=deferred(),f=fullscreenFixture({request:()=>enter.promise,exit:()=>exit.promise});
+ try{
+  f.button.click();assert.equal(f.calls.length,1,'The API is invoked synchronously in the native click handler');assert.equal(f.calls[0].target,f.document.documentElement);assert.equal(f.button.getAttribute('aria-busy'),'true');
+  f.button.click();assert.equal(f.calls.length,1,'A second click cannot create an overlapping request');assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen · 进入全屏','An intent is not browser state');
+  f.change(f.document.documentElement);assert.equal(f.button.getAttribute('aria-label'),'Exit fullscreen · 退出全屏');assert.equal(f.button.getAttribute('aria-busy'),'false');assert.match(f.button.title,/Esc/);assert.equal(f.button.hasAttribute('aria-pressed'),false);
+  f.change(null);enter.resolve();await microtasks();assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen · 进入全屏','Late completion cannot undo Escape');assert.equal(f.calls.length,1);
+  f.change(f.document.documentElement);f.button.click();assert.equal(f.calls.at(-1).kind,'exit');assert.equal(f.calls.at(-1).target,f.document);f.change(null);exit.reject(Error('Already exited'));await microtasks();assert.equal(f.status.textContent,'','A browser exit is authoritative even when the promise later rejects');
+ }finally{f.controller.destroy()}
+});
+
+test('fullscreen handles refusal, synchronous throws, missing support and retry without disabling other tools',async()=>{
+ for(const synchronous of [false,true]){
+  let reject=true;const f=fullscreenFixture({request:()=>{if(reject){if(synchronous)throw Error('Policy denied');return Promise.reject(Error('Policy denied'))}return Promise.resolve()}});
+  try{f.button.click();await microtasks();assert.match(f.status.textContent,/Could not enter fullscreen/);assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen · 进入全屏');assert.equal(f.button.getAttribute('aria-busy'),'false');assert.equal(f.document.getElementById('other').hasAttribute('disabled'),false);reject=false;f.button.click();await microtasks();assert.equal(f.calls.length,2);assert.equal(f.status.textContent,'');}finally{f.controller.destroy()}
+ }
+ for(const absent of [false,true]){
+  const f=fullscreenFixture({enabled:absent});if(absent)delete f.document.documentElement.requestFullscreen;
+  try{f.button.click();assert.equal(f.calls.length,0);assert.equal(f.button.getAttribute('aria-disabled'),'true');assert.match(f.status.textContent,/unavailable/);assert.equal(f.button.disabled,false);f.tick(6000);assert.equal(f.status.textContent,'');}finally{f.controller.destroy()}
+ }
+});
+
+test('fullscreen timeout cancels intent, bounds busy state and exits late entry before allowing a retry',async()=>{
+ const enter=deferred(),exit=deferred(),f=fullscreenFixture({request:()=>enter.promise,exit:()=>exit.promise});
+ try{
+  f.button.click();f.tick(80);assert.equal(f.button.getAttribute('aria-busy'),'false');assert.match(f.status.textContent,/did not finish/);
+  f.button.click();assert.equal(f.calls.length,1);assert.match(f.status.textContent,/earlier fullscreen request/);
+  f.change(f.document.documentElement);assert.equal(f.calls.at(-1).kind,'exit');assert.equal(f.button.getAttribute('aria-label'),'Exit fullscreen · 退出全屏','Recovery does not pretend the browser has exited');
+  enter.resolve();await microtasks();assert.equal(f.button.getAttribute('aria-busy'),'true','Old completion cannot clear the recovery operation');f.change(null);exit.resolve();await microtasks();assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen · 进入全屏');assert.equal(f.button.getAttribute('aria-busy'),'false');f.button.click();assert.equal(f.calls.at(-1).kind,'enter');
+ }finally{f.controller.destroy()}
+});
+
+test('Escape cancels an entry that has not appeared yet without suppressing native Escape behavior',async()=>{
+ const enter=deferred(),exit=deferred(),f=fullscreenFixture({request:()=>enter.promise,exit:()=>exit.promise});
+ try{
+  f.button.click();const event=new f.window.Event('keydown',{bubbles:true,cancelable:true});Object.defineProperty(event,'key',{value:'Escape'});f.document.dispatchEvent(event);
+  assert.equal(event.defaultPrevented,false);assert.equal(f.button.getAttribute('aria-busy'),'false');assert.match(f.status.textContent,/entry cancelled/);
+  f.change(f.document.documentElement);enter.resolve();await microtasks();assert.equal(f.calls.filter(call=>call.kind==='exit').length,1);f.change(null);exit.resolve();await microtasks();assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen · 进入全屏');
+  f.document.dispatchEvent(event);assert.equal(f.calls.length,2,'Escape outside a pending entry remains entirely native');
+ }finally{f.controller.destroy()}
+});
+
+test('fullscreen late entry preserves an open modal, its contents and focus without reopening it',async()=>{
+ for(const completionFirst of [false,true]){
+  const enter=deferred(),exit=deferred(),f=fullscreenFixture({request:()=>enter.promise,exit:()=>exit.promise});
+  let focusCalls=0;f.window.HTMLElement.prototype.focus=()=>focusCalls++;
+  try{
+   f.button.click();const dialog=f.document.getElementById('panel');dialog.setAttribute('open','');
+   if(completionFirst){f.setActive(f.document.documentElement);enter.resolve();await microtasks()}else{f.change(f.document.documentElement);enter.resolve();await microtasks()}
+   assert.equal(f.calls.filter(call=>call.kind==='exit').length,1);assert.equal(dialog.hasAttribute('open'),true);assert.equal(dialog.querySelector('input').value,'Keep this draft');assert.equal(focusCalls,0);f.change(null);exit.resolve();await microtasks();assert.equal(dialog.hasAttribute('open'),true);
+  }finally{f.controller.destroy()}
+ }
+});
+
+test('fullscreen leaves ordinary dialogs above completed entry and reports a failed exit truthfully',async()=>{
+ const enter=deferred(),f=fullscreenFixture({request:()=>enter.promise,exit:()=>Promise.reject(Error('Exit denied'))});
+ try{
+  f.button.click();f.change(f.document.documentElement);enter.resolve();await microtasks();f.document.getElementById('panel').setAttribute('open','');f.change(f.document.documentElement);assert.equal(f.calls.length,1,'A panel opened after entry does not cancel an established fullscreen session');
+  f.button.click();await microtasks();assert.equal(f.button.getAttribute('aria-label'),'Exit fullscreen · 退出全屏');assert.equal(f.button.getAttribute('aria-busy'),'false');assert.match(f.status.textContent,/Press Esc or try again/);
+  f.change(null);assert.equal(f.status.textContent,'','A subsequent browser Escape must clear the obsolete failure message');assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen · 进入全屏');
+ }finally{f.controller.destroy()}
+});
+
+test('fullscreen failed modal recovery keeps its exit action and error instead of reporting success',async()=>{
+ const enter=deferred(),f=fullscreenFixture({request:()=>enter.promise,exit:()=>{throw Error('Exit refused')}});
+ try{
+  f.button.click();const dialog=f.document.getElementById('panel');dialog.setAttribute('open','');f.change(f.document.documentElement);enter.resolve();await microtasks();
+  assert.equal(f.button.getAttribute('aria-label'),'Exit fullscreen · 退出全屏');assert.equal(f.button.getAttribute('aria-busy'),'false');assert.match(f.status.textContent,/Could not exit fullscreen/);assert.equal(dialog.hasAttribute('open'),true);assert.equal(f.calls.filter(call=>call.kind==='exit').length,1,'A failed recovery cannot enter an automatic retry loop');
+ }finally{f.controller.destroy()}
+});
+
+test('fullscreen page lifecycle cancels only entry intent and never creates an automatic new request',async()=>{
+ for(const event of ['visibilitychange','pagehide']){
+  const enter=deferred(),exit=deferred(),f=fullscreenFixture({request:()=>enter.promise,exit:()=>exit.promise});
+  try{
+   f.button.click();if(event==='visibilitychange'){Object.defineProperty(f.document,'hidden',{value:true});f.document.dispatchEvent(new f.window.Event(event))}else f.window.dispatchEvent(new f.window.Event(event));
+   f.change(f.document.documentElement);assert.equal(f.calls.at(-1).kind,'exit');enter.resolve();await microtasks();f.change(null);exit.resolve();await microtasks();Object.defineProperty(f.document,'hidden',{value:false});f.window.dispatchEvent(new f.window.Event('pageshow'));assert.equal(f.calls.filter(call=>call.kind==='enter').length,1);assert.equal(f.button.getAttribute('aria-busy'),'false');
+  }finally{f.controller.destroy()}
+ }
 });

@@ -626,3 +626,56 @@ test('1280 by 720 lobby and performance occupy one screen with secondary tools i
  assert.ok(geometry.docWidth<=geometry.width+1&&geometry.docHeight<=geometry.height+1,JSON.stringify(geometry));assert.ok(geometry.roll>=220,JSON.stringify(geometry));assert.equal(await page.locator('.skip-link').getAttribute('href'),'#stage-title');
  await page.screenshot({path:'/tmp/worldmusichub-game-stage.png',fullPage:true});await page.locator('#settings-button').click();assert.equal(await page.locator('#settings-dialog').isVisible(),true);await page.locator('#settings-dialog [data-close-panel]').click();assert.match(await page.locator('#play-button').textContent(),/Play/);
 });
+
+async function mockFullscreenRequest() {
+ await page.evaluate(()=>{
+  let active=null;const state={enters:0,exits:0,resolve:null,reject:null,target:null};
+  state.change=element=>{active=element;document.dispatchEvent(new Event('fullscreenchange'))};
+  Object.defineProperties(document,{fullscreenEnabled:{configurable:true,value:true},fullscreenElement:{configurable:true,get:()=>active}});
+  document.documentElement.requestFullscreen=function(){state.enters++;state.target=this===document.documentElement;return new Promise((resolve,reject)=>{state.resolve=resolve;state.reject=reject})};
+  document.exitFullscreen=()=>{state.exits++;state.change(null);return Promise.resolve()};
+  window.fullscreenTest=state;
+ });
+}
+
+test('fullscreen pending entry preserves newer modal focus and refusal leaves session tools usable',async()=>{
+ await closeShellPanels();await mockFullscreenRequest();
+ const fullscreen=page.locator('#fullscreen-button');await fullscreen.click();
+ assert.deepEqual(await page.evaluate(()=>({enters:fullscreenTest.enters,target:fullscreenTest.target})),{enters:1,target:true});
+ assert.equal(await fullscreen.getAttribute('aria-label'),'Enter fullscreen · 进入全屏');
+ await page.locator('#settings-button').click();await page.locator('#tempo').focus();
+ await page.evaluate(()=>{fullscreenTest.change(document.documentElement);fullscreenTest.resolve()});
+ await page.waitForFunction(()=>document.querySelector('#fullscreen-button').getAttribute('aria-busy')==='false');
+ assert.equal(await page.evaluate(()=>fullscreenTest.exits),1);assert.equal(await page.locator('#settings-dialog').isVisible(),true);assert.equal(await page.evaluate(()=>document.activeElement.id),'tempo');
+ await page.locator('#settings-dialog [data-close-panel]').click();await fullscreen.click();await page.evaluate(()=>fullscreenTest.reject(Error('Request denied')));
+ await page.waitForFunction(()=>document.querySelector('#fullscreen-status').textContent.includes('Could not enter fullscreen'));
+ assert.equal(await fullscreen.getAttribute('aria-busy'),'false');assert.equal(await fullscreen.getAttribute('aria-label'),'Enter fullscreen · 进入全屏');
+ await page.locator('#results-button').click();assert.equal(await page.locator('#results-dialog').isVisible(),true);await closeShellPanels();
+ await fullscreen.focus();await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>fullscreenTest.enters),3,'Native keyboard activation retries without a musical shortcut');
+ await page.evaluate(()=>{fullscreenTest.change(document.documentElement);fullscreenTest.resolve()});await page.waitForFunction(()=>document.querySelector('#fullscreen-button').getAttribute('aria-label').startsWith('Exit'));
+ await page.keyboard.press('Space');assert.equal(await page.evaluate(()=>fullscreenTest.exits),2);assert.match(await page.locator('#play-button').textContent(),/Play/);assert.equal(await page.locator('.piano-key.pressed').count(),0);
+});
+
+test('Escape cancels an unfinished fullscreen request while retaining native modal dismissal',async()=>{
+ await closeShellPanels();await mockFullscreenRequest();await page.locator('#fullscreen-button').click();await page.locator('#settings-button').click();await page.locator('#tempo').focus();
+ await page.keyboard.press('Escape');await page.locator('#settings-dialog').waitFor({state:'hidden'});assert.equal(await page.locator('#fullscreen-button').getAttribute('aria-busy'),'false');
+ await page.evaluate(()=>{fullscreenTest.change(document.documentElement);fullscreenTest.resolve()});await page.waitForFunction(()=>document.querySelector('#fullscreen-button').getAttribute('aria-busy')==='false');
+ assert.equal(await page.evaluate(()=>fullscreenTest.exits),1);assert.equal(await page.locator('#fullscreen-button').getAttribute('aria-label'),'Enter fullscreen · 进入全屏');assert.equal(await page.locator('#settings-dialog').isVisible(),false);assert.match(await page.locator('#play-button').textContent(),/Play/);
+});
+
+test('fullscreen state transitions preserve an entire paused take and its controls across lobby and stage',async()=>{
+ await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();if(await page.locator('#notation-dock').isVisible())await page.locator('#notation-toggle').click();
+ await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('#progress').value>100);await page.locator('#stage-title').click();await page.keyboard.press('a');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
+ const take=async()=>{const[download]=await Promise.all([page.waitForEvent('download'),ui('#export-takes').click()]);const data=JSON.parse(await readFile(await download.path(),'utf8'));await closeShellPanels();return data};
+ const before=await take(),position=await page.locator('#progress').inputValue();assert.equal(before.passes.length,1);assert.equal(before.passes[0].inputs.length,1);await mockFullscreenRequest();
+ await page.locator('#fullscreen-button').click();await page.evaluate(()=>{fullscreenTest.change(document.documentElement);fullscreenTest.resolve()});await page.waitForFunction(()=>document.querySelector('#fullscreen-button').getAttribute('aria-label').startsWith('Exit'));
+ await page.locator('#back-to-library').click();assert.equal(await page.locator('.shell-header #fullscreen-button').count(),1);assert.equal(await page.locator('#fullscreen-button').count(),1);await page.locator('#resume-session').click();assert.equal(await page.locator('.stage-hud #fullscreen-button').count(),1);
+ await page.evaluate(()=>fullscreenTest.change(null));assert.equal(await page.locator('#fullscreen-button').getAttribute('aria-label'),'Enter fullscreen · 进入全屏');
+ assert.deepEqual(await take(),before,'Mocked display-only events do not add inputs, evidence boundaries, clock segments or grade changes');assert.equal(await page.locator('#progress').inputValue(),position);assert.match(await page.locator('#play-button').textContent(),/Play/);
+});
+
+test('fullscreen unsupported state is explained without removing keyboard access to other tools',async()=>{
+ await closeShellPanels();await page.evaluate(()=>{Object.defineProperty(document,'fullscreenEnabled',{configurable:true,value:false});document.dispatchEvent(new Event('fullscreenchange'))});
+ const button=page.locator('#fullscreen-button');assert.equal(await button.getAttribute('aria-disabled'),'true');await button.focus();await page.keyboard.press('Enter');
+ assert.match(await page.locator('#fullscreen-status').textContent(),/unavailable/);assert.match(await button.getAttribute('title'),/unavailable/);await page.locator('#settings-button').click();assert.equal(await page.locator('#settings-dialog').isVisible(),true);
+});
