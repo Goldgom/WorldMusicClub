@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import signal
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -126,6 +127,8 @@ def main():
     parser.add_argument('--workspace', type=Path, required=True)
     parser.add_argument('--server-binary', type=Path, required=True)
     args = parser.parse_args()
+    if sys.platform != "linux":
+        parser.error("The pinned maintainer converter runs only on Linux/Xvfb. Use the hosted review workflow; it is not part of the portable Windows app.")
     manifest = json.loads(MANIFEST.read_text(encoding='utf-8')); validate_manifest(manifest)
     work = args.workspace.resolve(); work.mkdir(parents=True, exist_ok=True)
     inputs, output = work / 'inputs', work / 'review-artifacts'

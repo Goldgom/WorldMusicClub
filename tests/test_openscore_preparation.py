@@ -30,7 +30,7 @@ class OpenScorePreparationTests(unittest.TestCase):
         process = MagicMock(); process.pid = 12345; process.poll.return_value = None
         with TemporaryDirectory() as temporary:
             folder = Path(temporary)
-            with patch.object(prepare.subprocess, 'Popen', return_value=process) as launch, patch.object(prepare.time, 'monotonic', side_effect=[0, 121]), patch.object(prepare.os, 'killpg') as cancel:
+            with patch.object(prepare.subprocess, 'Popen', return_value=process) as launch, patch.object(prepare.time, 'monotonic', side_effect=[0, 121]), patch.object(prepare.os, 'killpg', create=True) as cancel, patch.object(prepare.signal, 'SIGKILL', 9, create=True):
                 with self.assertRaisesRegex(RuntimeError, 'runtime/log/output'):
                     prepare.run_bounded(['fixed-converter', '--version'], folder, {}, folder / 'log')
                 self.assertTrue(launch.call_args.kwargs['start_new_session'])
