@@ -16,10 +16,10 @@ class OpenScorePreparationTests(unittest.TestCase):
     def test_committed_candidates_have_pinned_sources_and_explicit_cc0(self):
         manifest = json.loads(prepare.MANIFEST.read_text(encoding='utf-8'))
         prepare.validate_manifest(manifest)
-        self.assertEqual(len(manifest['scores']), 4)
+        self.assertEqual(len(manifest['scores']), 5)
         self.assertEqual(manifest['converter']['sha256'], 'c59a41ee88bc7c565a939b9c73498ac0451bbd86574e95cb6e359302c1465290')
         self.assertEqual(sum(s['status'] == 'held' for s in manifest['scores']),3)
-        self.assertEqual(sum(s['status'] == 'conversion_and_review_pending' for s in manifest['scores']),1)
+        self.assertEqual(sum(s['status'] == 'conversion_and_review_pending' for s in manifest['scores']),2)
 
     def test_normalization_keeps_raw_input_and_declares_exact_vendor_header_removal(self):
         raw = b'<?xml version="1.0"?>\n<!DOCTYPE score-partwise  PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">\n<score-partwise/>'

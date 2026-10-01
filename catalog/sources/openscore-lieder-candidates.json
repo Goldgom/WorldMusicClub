@@ -87,6 +87,22 @@
       "hold_reason": "MuseScore3.6.2 emitted competing playback tempos with visual-only offsets. Per MusicXML, omitted offset sound defaults to no; the reader must not silently reinterpret them.",
       "expected_import_error": "Conflicting playback tempos",
       "next_step": "Compare newer official converter/reference MIDI and review an explicit derivative correction if needed."
+    },
+    {
+      "id": "beethoven-gottes-macht-op48-5",
+      "upstream_score_id": 5121692,
+      "title": "Gottes Macht und Vorsehung, Op.48 No.5",
+      "composer": "Ludwig van Beethoven",
+      "lyricist": "Christian Fürchtegott Gellert",
+      "language": "de",
+      "source_path": "scores/Beethoven,_Ludwig_van/6_Lieder,_Op.48/5_Gottes_Macht_und_Vorsehung/lc5121692.mscx",
+      "source_sha256": "36f263f5c7eef7dda481b2732131dcf5dd74a136e368dc396827ef94a64b40ca",
+      "source_bytes": 65619,
+      "edition_license": "CC0-1.0",
+      "attribution": "OpenScore Lieder corpus and the original composer/lyricist; transcription credits remain in the exact source",
+      "official_score_url": "https://musescore.com/openscore-lieder-corpus/scores/5121692",
+      "upstream_imslp_reference": "#26415",
+      "status": "conversion_and_review_pending"
     }
   ],
   "held_ledger_evidence": {
