@@ -1050,6 +1050,29 @@ function assertGuitarGuidancePlan(cards,plan) {
   for(const card of cards){const note=plan.timeline.notes.find(note=>note.id===card.id),group=plan.groups.find(group=>group.target_id===card.id);assert.ok(note&&group,card.id);assert.equal(card.start_ms,note.start_ms);assert.equal(card.duration_ms,note.duration_ms);assert.deepEqual(card.sourceIds,group.source_note_ids);assert.deepEqual(card.occurrenceIds,group.source_occurrence_ids);}
 }
 
+async function guitarFretVisibility(selector) {
+  return page.locator(selector).evaluate(element=>{
+    const bounds=r=>({x:r.left,y:r.top,right:r.right,bottom:r.bottom,width:Math.max(0,r.right-r.left),height:Math.max(0,r.bottom-r.top)}),box=element.getBoundingClientRect();
+    const visible={left:Math.max(0,box.left),top:Math.max(0,box.top),right:Math.min(innerWidth,box.right),bottom:Math.min(innerHeight,box.bottom)},clippingAncestors=[];
+    let painted=true;
+    for(let parent=element;parent;parent=parent.parentElement){
+      const style=getComputedStyle(parent);if(style.display==='none'||style.visibility==='hidden'||style.visibility==='collapse'||Number(style.opacity)===0)painted=false;
+      if(parent===element)continue;
+      const clipX=/^(auto|scroll|hidden|clip|overlay)$/.test(style.overflowX),clipY=/^(auto|scroll|hidden|clip|overlay)$/.test(style.overflowY);if(!clipX&&!clipY)continue;
+      const r=parent.getBoundingClientRect(),left=r.left+parent.clientLeft,top=r.top+parent.clientTop,clip={left,top,right:left+parent.clientWidth,bottom:top+parent.clientHeight};
+      if(clipX){visible.left=Math.max(visible.left,clip.left);visible.right=Math.min(visible.right,clip.right)}
+      if(clipY){visible.top=Math.max(visible.top,clip.top);visible.bottom=Math.min(visible.bottom,clip.bottom)}
+      clippingAncestors.push({element:parent.id||parent.className,clip:bounds(clip)});
+    }
+    const visibleRect=bounds(visible),rect=bounds(box),visibleFraction=rect.width*rect.height?visibleRect.width*visibleRect.height/(rect.width*rect.height):0;
+    const centerHit=visibleRect.width>0&&visibleRect.height>0&&document.elementFromPoint(visibleRect.x+visibleRect.width/2,visibleRect.y+visibleRect.height/2)?.closest('.fret-button')===element;
+    return{rect,visibleRect,visibleFraction,painted,centerHit,clippingAncestors};
+  });
+}
+function assertWholeGuitarFret(visibility,label) {
+  assert.ok(visibility.painted&&visibility.centerHit&&visibility.visibleFraction>=.98&&visibility.visibleRect.height>=visibility.rect.height-1&&visibility.visibleRect.width>=visibility.rect.width-1,`${label} must remain visible through every clipping ancestor and reachable at its center: ${JSON.stringify(visibility)}`);
+}
+
 test('real Rust guitar guide keeps fractional and repeated tie targets separate, and freezes countdowns through pause',testOptions,async()=>{
   await hideNotation();await ui('#instrument').selectOption('guitar');await ui('#session-mode').selectOption('practice');await ui('#count-in').check();await ui('#play-button:not([disabled])').waitFor();
   const score=structuredClone(fixture),seed=score.parts[0].notes[0];score.id='guitar-expanded-time';score.title='Original guitar timing and unison study';
@@ -1089,13 +1112,15 @@ for(const viewport of [{width:1280,height:720},{width:844,height:390},{width:390
       const rect=selector=>{const el=document.querySelector(selector),r=el.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom,clientHeight:el.clientHeight,scrollHeight:el.scrollHeight,clientWidth:el.clientWidth,scrollWidth:el.scrollWidth,scrollTop:el.scrollTop,scrollLeft:el.scrollLeft}};
       return{viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},play:rect('.play-panel'),transport:rect('.transport'),guidance:rect('#guitar-guidance'),cue:rect('#stage-cue'),scroll:rect('.guitar-scroll'),board:rect('#fretboard'),help:rect('.guitar-details'),first:rect('.fret-button[data-string="0"][data-fret="0"]')};
     });
+    const firstVisible=await guitarFretVisibility('.fret-button[data-string="0"][data-fret="0"]');
+    await writeFile(join(artifactDirectory,`worldmusichub-live-guitar-${viewport.width}x${viewport.height}-geometry.json`),JSON.stringify({...geometry,firstVisible},null,2));
     assertBoundedDocument(geometry);for(const name of ['play','transport','guidance','cue','scroll','help','first'])assertInsideViewport(geometry[name],viewport,name);
     assert.ok(geometry.play.scrollHeight<=geometry.play.clientHeight+1,'Transport stays outside the contained instrument scroller');assert.ok(geometry.scroll.height>=34,'At least a whole fret row stays reachable');assert.equal(geometry.scroll.scrollTop,0,'An oversized fretboard starts at its scroll origin');assert.ok(geometry.board.y>=geometry.scroll.y-1,'No centered overflow hides the top strings');assert.ok(geometry.cue.bottom<=geometry.guidance.y+1,'The shared cue never overlays pitch guidance');assert.ok(geometry.guidance.bottom<=geometry.scroll.y+1,'Fixed guidance never overlays fret controls');assert.ok(geometry.scroll.bottom<=geometry.transport.y+1);assert.ok(geometry.scroll.scrollWidth>geometry.scroll.clientWidth,'All 36 frets scroll inside the instrument');
-    assert.equal(await page.locator('#guitar-guidance').getAttribute('aria-live'),'off');assert.equal(await page.locator('#guitar-guidance').evaluate(el=>el.getAnimations({subtree:true}).length),0);await viewportSnapshot(`guitar-${viewport.width}x${viewport.height}-ready`);
-    const last=page.locator('.fret-button[data-string="5"][data-fret="36"]');await last.focus();const lastBounds=await last.boundingBox();assertInsideViewport({...lastBounds,right:lastBounds.x+lastBounds.width,bottom:lastBounds.y+lastBounds.height},viewport,'Last string and fret');assert.ok(await page.locator('.guitar-scroll').evaluate(el=>el.scrollLeft>0));
+    assertWholeGuitarFret(firstVisible,'First string at the scroll origin');assert.equal(await page.locator('#guitar-guidance').getAttribute('aria-live'),'off');assert.equal(await page.locator('#guitar-guidance').evaluate(el=>el.getAnimations({subtree:true}).length),0);await viewportSnapshot(`guitar-${viewport.width}x${viewport.height}-ready`);
+    const last=page.locator('.fret-button[data-string="5"][data-fret="36"]');await last.focus();const lastBounds=await last.boundingBox(),lastVisible=await guitarFretVisibility('.fret-button[data-string="5"][data-fret="36"]');assertWholeGuitarFret(lastVisible,'Focused last string and fret');assertInsideViewport({...lastBounds,right:lastBounds.x+lastBounds.width,bottom:lastBounds.y+lastBounds.height},viewport,'Last string and fret');assert.ok(await page.locator('.guitar-scroll').evaluate(el=>el.scrollLeft>0));
     for(const key of ['Enter','Space']){await page.keyboard.down(key);assert.equal(await last.getAttribute('aria-pressed'),'true');await page.keyboard.up(key);assert.equal(await last.getAttribute('aria-pressed'),'false');assert.equal(await page.locator('.fret-button.pressed').count(),0);assert.match(await page.locator('#play-button').textContent(),/Play/,'Fret Space input must not start the transport');}
     await viewportSnapshot(`guitar-${viewport.width}x${viewport.height}-full-range`);await page.keyboard.down('Enter');await page.locator('#reset-button').focus();assert.equal(await page.locator('.fret-button.pressed').count(),0,'Moving focus releases a held accessible fret');await page.keyboard.up('Enter');
     const first=page.locator('.fret-button[data-string="0"][data-fret="0"]');await first.focus();assert.equal(await first.getAttribute('aria-label'),'String 1, fret 0: E4');assert.ok(await page.locator('.guitar-scroll').evaluate(el=>el.scrollLeft<50&&el.scrollTop<=23));await page.locator('#reset-button').focus();await page.locator('.guitar-details summary').click();assert.ok(await page.locator('#guitar-guidance-sources li').count()>0);assert.match(await page.locator('#guitar-guidance-sources').textContent(),/Source occurrences:/);await page.locator('.guitar-details summary').click();
-    await writeFile(join(artifactDirectory,`worldmusichub-live-guitar-${viewport.width}x${viewport.height}-geometry.json`),JSON.stringify({...geometry,lastFret:lastBounds},null,2));assert.deepEqual(await exportScore(),initialCompilation.score);
+    await writeFile(join(artifactDirectory,`worldmusichub-live-guitar-${viewport.width}x${viewport.height}-geometry.json`),JSON.stringify({...geometry,firstVisible,lastVisible,lastFret:lastBounds},null,2));assert.deepEqual(await exportScore(),initialCompilation.score);
   });
 }

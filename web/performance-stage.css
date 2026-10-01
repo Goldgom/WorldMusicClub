@@ -90,3 +90,14 @@
    section reachable inside the instrument while transport remains outside. */
 .performance-layout .play-panel:has(#practice-gate:not([hidden])) .guitar-stage,.performance-layout .guitar-stage:has(.guitar-details[open]){overflow:auto;overscroll-behavior:contain}
 .performance-layout .play-panel:has(#practice-gate:not([hidden])) .guitar-scroll,.performance-layout .guitar-stage:has(.guitar-details[open]) .guitar-scroll{flex:none;height:35dvh;min-height:100px;max-height:250px}
+@media(max-height:600px) and (min-width:651px){
+  .performance-layout .play-panel[data-instrument=guitar] .onset-counter{min-width:0}
+  .performance-layout .play-panel[data-instrument=guitar] .onset-counter small{max-width:none;white-space:nowrap}
+  .performance-layout .guitar-stage{padding-top:4px;padding-bottom:4px;gap:4px;overflow:auto;overscroll-behavior:contain}
+  .performance-layout .guitar-scroll{min-height:56px} /* 22px fret labels + one complete 34px string row */
+  .guitar-target{flex-basis:188px;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto}
+  .guitar-target-pitch{grid-row:1;grid-column:1;font-size:18px;line-height:1}
+  .guitar-target-time{grid-row:1;grid-column:2;align-self:center}
+  .guitar-target-identity{grid-row:2;grid-column:1}
+  .guitar-target-onset{grid-row:2;grid-column:2}
+}
