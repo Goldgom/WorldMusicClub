@@ -145,6 +145,9 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
   try {
     const compiled = await api('/api/compile', score, controller.signal);
     if (generation !== state.generation || controller.signal.aborted || expectedIntent!==null&&expectedIntent!==state.loadIntent) return;
+    // Reset before publishing the new score: resetPlayback() can immediately
+    // draw and start the new score's lazy cursor request.
+    writtenCursor?.reset();
     const previousPart = requestedPracticePart !== undefined ? requestedPracticePart : preserveTempo ? state.practicePart : null;
     state.score = compiled.score;
     if(requestedMode!==undefined){state.mode=requestedMode;$('session-mode').value=requestedMode;}
@@ -160,7 +163,6 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
     clearNotice();
     resetPlayback();
-    writtenCursor?.reset();
     renderScore(); notationFollowing?.scoreChanged(); sourceArchiveView?.scoreChanged(); libraryView.scoreChanged(); adaptationView?.scoreChanged(); transpositionView?.scoreChanged(); renderCatalog(); updateRangeWarning();
     $('catalog-status').textContent=`Current session: ${state.score.title}. Browsing a preview keeps this take intact.`;
     const clockScore=state.score;await checkInstrument();if(state.score===clockScore){metronome?.setScore();preview.adopt(state.compiled,previewCompatibility(state.compatibility),state.practicePart);}
