@@ -56,6 +56,15 @@ export class ExternalOmrReview {
     if(Object.hasOwn(score,'source'))throw Error('The source retention record is managed separately. Remove the source field from editor JSON; the original record will be reattached unchanged.');
     editableShape(score);boundedJson({...score,source:this.source});this.editable=score;
   }
+  addMapEvent(kind){
+    if(!['tempo','keys'].includes(kind))throw Error('Only tempo and key events have structured manual controls.');
+    const list=this.editable[kind];if(list.length>=100000)throw Error('This map already has 100,000 events. Split the source; no existing events were dropped.');
+    this.invalidate();const event={at:{numerator:0,denominator:1},...(kind==='tempo'?{bpm:120}:{fifths:0,mode:'major'})};list.push(event);return{index:list.length-1,event};
+  }
+  removeMapEvent(kind,index){
+    if(!['tempo','keys'].includes(kind)||!Number.isInteger(index)||index<0||index>=this.editable[kind].length)throw Error('Choose an existing tempo or key event to remove.');
+    this.invalidate();this.editable[kind].splice(index,1);
+  }
   score(){return structuredClone({...this.editable,source:this.source})}
   payload(){if(!this.complete)throw Error('Confirm every review category freshly after comparing with the original.');const payload={score:this.score(),confirmation:{...this.confirmation}};boundedJson(payload);return payload}
   verifyReviewed(compilation){
