@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Local-first music practice UI for the Rust score engine",
   "scripts": {
-    "test": "node --test tests/frontend-core.test.js tests/score-schema.test.js tests/engraving.test.js tests/engraving-assets.test.js tests/image-metadata.test.js tests/local-library.test.js tests/source-archive.test.js",
+    "test": "node --test tests/frontend-core.test.js tests/score-schema.test.js tests/engraving.test.js tests/engraving-assets.test.js tests/image-metadata.test.js tests/local-library.test.js tests/source-archive.test.js tests/midi-binding.test.js",
     "test:browser": "node --test tests/frontend-browser.test.js",
     "test:full-app": "node --test tests/full-app-browser.test.js",
     "prepare:engraving": "node scripts/prepare-engraving.mjs",
