@@ -1,5 +1,6 @@
 //! Strict in-memory MXL container support. Nothing is extracted to the filesystem.
 use crate::{import_musicxml, Diagnostic, Score};
+use base64::{engine::general_purpose::STANDARD, Engine};
 use roxmltree::{Document, ParsingOptions};
 use std::collections::HashSet;
 use std::io::{Cursor, Read};
@@ -10,6 +11,7 @@ const MAX_EXPANDED: u64 = 16 * 1024 * 1024;
 const MAX_SCORE: usize = 8 * 1024 * 1024;
 const MAX_CONTAINER: usize = 64 * 1024;
 const MAX_ENTRIES: usize = 128;
+const MAX_RETAINED_SCORE: usize = 8 * 1024 * 1024;
 const CONTAINER: &str = "META-INF/container.xml";
 const MIMETYPE: &[u8] = b"application/vnd.recordare.musicxml";
 
@@ -278,9 +280,8 @@ fn rootfile(container: &str) -> Result<(String, usize), String> {
     ))
 }
 
-/// Import one bounded score from an MXL ZIP container, never extracting files.
-/// The exact selected XML is retained in `Score.source`; auxiliary archive
-/// renditions are not imported, and that limitation is always reported.
+/// Read one bounded score from an MXL ZIP container, never extracting files.
+/// The caller chooses how to retain the selected XML and the original container.
 pub(crate) fn read_mxl_xml(bytes: &[u8]) -> Result<(String, String, Vec<Diagnostic>), String> {
     let expected_entries = preflight(bytes)?;
     let mut archive =
@@ -352,14 +353,40 @@ pub(crate) fn read_mxl_xml(bytes: &[u8]) -> Result<(String, String, Vec<Diagnost
 }
 
 pub fn import_mxl(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
-    let (xml, score_path, container_warnings) = read_mxl_xml(bytes)?;
+    let (xml, score_path, mut container_warnings) = read_mxl_xml(bytes)?;
     let (mut score, mut diagnostics) = import_musicxml(&xml)?;
+    // The complete input remains inert. In particular, preserving an attachment
+    // does not make it an imported part, displayed page or playable resource.
+    let content = serde_json::to_string(&serde_json::json!({
+        "version": 1,
+        "selected_score_path": score_path,
+        "files": {
+            "original.mxl": {"encoding": "base64", "bytes": bytes.len(), "content": STANDARD.encode(bytes)},
+            "selected.musicxml": {"encoding": "utf-8", "bytes": xml.len(), "content": xml}
+        }
+    }))
+    .map_err(|error| format!("Cannot retain the complete MXL source: {error}"))?;
+    for warning in &mut container_warnings {
+        if warning.code == "mxl_source_retained" {
+            warning.message = "The complete original MXL container and exact selected MusicXML are retained as inert source files. Ancillary files are preserved inside the original archive, but are not interpreted, displayed or played. Save canonical JSON or a library backup to keep the complete archive.".into();
+        }
+    }
     if let Some(source) = &mut score.source {
-        source.filename = Some(score_path);
+        source.format = "worldmusichub-mxl-archive-v1".into();
+        source.filename = Some("retained-mxl.json".into());
+        source.content = content;
         source
             .import_diagnostics
             .get_or_insert_with(Vec::new)
             .extend(container_warnings.iter().cloned());
+    }
+    // Full source preservation takes precedence over accepting a score that
+    // cannot subsequently be saved or sent through the app's 8 MiB JSON route.
+    // The download UI writes two-space JSON, so include that whitespace too.
+    let saved_bytes = serde_json::to_vec_pretty(&score)
+        .map_err(|error| format!("Cannot serialize the archived MXL score: {error}"))?;
+    if saved_bytes.len() > MAX_RETAINED_SCORE {
+        return Err("The complete MXL archive plus its selected XML and canonical notes exceeds the 8 MiB saved-score limit. No attachment or source bytes were dropped. Keep the original MXL and import a smaller score, or separately export/import its MusicXML when an archive-preserving copy is not required.".into());
     }
     diagnostics.extend(container_warnings);
     Ok((score, diagnostics))
@@ -413,7 +440,7 @@ mod tests {
         bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
     }
     #[test]
-    fn imports_deflated_and_stored_scores_without_losing_selected_xml() {
+    fn imports_deflated_and_stored_scores_without_losing_archive_or_selected_xml() {
         for method in [CompressionMethod::Stored, CompressionMethod::Deflated] {
             let bytes = zip_files(
                 &[
@@ -425,10 +452,21 @@ mod tests {
             );
             let (score, warnings) = import_mxl(&bytes).unwrap();
             assert_eq!(score.parts.len(), 2);
-            assert_eq!(score.source.as_ref().unwrap().content, XML);
+            let source = score.source.as_ref().unwrap();
+            assert_eq!(source.format, "worldmusichub-mxl-archive-v1");
+            assert_eq!(source.filename.as_deref(), Some("retained-mxl.json"));
+            let archive: serde_json::Value = serde_json::from_str(&source.content).unwrap();
+            assert_eq!(archive["version"], 1);
+            assert_eq!(archive["selected_score_path"], "scores/duet.musicxml");
+            assert_eq!(archive["files"]["selected.musicxml"]["content"], XML);
+            assert_eq!(archive["files"]["selected.musicxml"]["bytes"], XML.len());
+            let original = &archive["files"]["original.mxl"];
+            assert_eq!(original["bytes"], bytes.len());
             assert_eq!(
-                score.source.unwrap().filename.as_deref(),
-                Some("scores/duet.musicxml")
+                STANDARD
+                    .decode(original["content"].as_str().unwrap())
+                    .unwrap(),
+                bytes
             );
             assert!(warnings.iter().any(|d| d.code == "mxl_source_retained"));
             assert_eq!(score.provenance.kind, "user_import");
@@ -439,7 +477,39 @@ mod tests {
     fn reads_original_mxl_fixture() {
         let bytes = include_bytes!("../../../tests/fixtures/original-duet.mxl");
         let (score, _) = import_mxl(bytes).unwrap();
-        assert_eq!(score.source.unwrap().content, XML);
+        let saved = serde_json::to_string(&score).unwrap();
+        let reloaded: Score = serde_json::from_str(&saved).unwrap();
+        assert_eq!(
+            reloaded.source.as_ref().unwrap().content,
+            score.source.as_ref().unwrap().content
+        );
+        let archive: serde_json::Value =
+            serde_json::from_str(&reloaded.source.unwrap().content).unwrap();
+        assert_eq!(archive["files"]["selected.musicxml"]["content"], XML);
+        assert_eq!(
+            STANDARD
+                .decode(
+                    archive["files"]["original.mxl"]["content"]
+                        .as_str()
+                        .unwrap()
+                )
+                .unwrap(),
+            bytes
+        );
+        let (direct, _) = import_musicxml(XML).unwrap();
+        let mut retained_model = score.clone();
+        let mut direct_model = direct.clone();
+        retained_model.source = None;
+        direct_model.source = None;
+        assert_eq!(
+            serde_json::to_value(retained_model).unwrap(),
+            serde_json::to_value(direct_model).unwrap(),
+            "Archive retention leaves every canonical note, rest and musical map unchanged"
+        );
+        assert_eq!(
+            serde_json::to_value(crate::compile(score).unwrap().timeline).unwrap(),
+            serde_json::to_value(crate::compile(direct).unwrap().timeline).unwrap()
+        );
     }
     #[test]
     fn older_archives_without_mimetype_are_explicitly_marked() {
@@ -630,11 +700,21 @@ mod tests {
             ],
             CompressionMethod::Stored,
         );
-        assert!(import_mxl(&bytes)
-            .unwrap()
-            .1
+        let (score, diagnostics) = import_mxl(&bytes).unwrap();
+        assert!(diagnostics
             .iter()
             .any(|d| d.code == "mxl_attachments_ignored"));
+        let source: serde_json::Value =
+            serde_json::from_str(&score.source.unwrap().content).unwrap();
+        let retained = STANDARD
+            .decode(source["files"]["original.mxl"]["content"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(retained, bytes);
+        let mut archive = ZipArchive::new(Cursor::new(retained.as_slice())).unwrap();
+        assert_eq!(
+            read_entry(&mut archive, "preview.pdf", 1024).unwrap(),
+            b"original placeholder; not opened"
+        );
     }
     #[test]
     fn rejects_crc_corruption_and_wrong_mimetype() {

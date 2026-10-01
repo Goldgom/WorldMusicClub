@@ -34,7 +34,7 @@ Limits: 8 MiB compressed image, 16 million pixels, 16,384 pixels per axis, 512 c
 
 ## Compressed MusicXML
 
-`POST /api/import/mxl` accepts raw MXL bytes as `application/zip`, `application/vnd.recordare.musicxml` or `application/octet-stream`. It reads the declared container rootfile in memory and then uses the same guarded MusicXML parser. Limits are 8 MiB compressed, 16 MiB declared total decompression, 128 archive entries and 64 KiB container XML. Unsafe paths, duplicate entries, symlinks, encryption, ZIP64 and split archives are rejected. The exact selected XML is retained; ancillary archive bytes are explicitly not retained.
+`POST /api/import/mxl` accepts raw MXL bytes as `application/zip`, `application/vnd.recordare.musicxml` or `application/octet-stream`. It reads the declared container rootfile in memory and then uses the same guarded MusicXML parser. Limits are 8 MiB compressed, 16 MiB declared total decompression, 128 archive entries and 64 KiB container XML. Unsafe paths, duplicate entries, symlinks, encryption, ZIP64 and split archives are rejected. New imports retain the complete original archive plus the exact selected XML in a versioned `worldmusichub-mxl-archive-v1` source envelope. Ancillary contents are archived but not interpreted, rendered or played. The entire saved canonical score, including base64/JSON overhead, must fit 8 MiB; otherwise the import fails explicitly rather than discarding original bytes. Earlier imports that retained only XML cannot recover their missing archive automatically. See [retained sources](RETAINED_SOURCES.md).
 
 ## Instrument compatibility and loops
 

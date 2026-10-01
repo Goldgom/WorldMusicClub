@@ -125,7 +125,8 @@ Score `version: 1` describes the musical model. Additive nonmusical metadata is 
 
 Current importer conventions:
 
-- `musicxml`: the selected XML text is retained. For MXL, the selected root MusicXML is retained, **not** the exact compressed archive or ancillary files
+- `musicxml`: the original XML text is retained. Older MXL imports also used this format for only the selected root XML; their missing archive cannot be reconstructed
+- `worldmusichub-mxl-archive-v1`: new MXL imports retain a versioned JSON envelope containing the original compressed archive as base64, the selected MusicXML as exact UTF-8 text, its manifest path and both byte counts. Ancillary bytes remain inert inside the original archive. The complete canonical score must fit the 8 MiB save/import budget; sources are never dropped just to fit
 - `midi-base64`: base64 of the original MIDI bytes. Canonical pitch spelling, voices/staves, and notation are inferred; source-byte preservation is not original-notation recovery
 - `worldmusichub-jianpu-text-v1`: the explicit [numbered-notation dialect](JIANPU_TEXT.md) retains the input text verbatim
 - `image-review`: content is a JSON string holding the original image data URL, crop/review information, and manually entered notes. A raw recognition result is not a playable score; unknown rhythm/accidentals require review. This is not lossless PDF/image transcription
@@ -136,11 +137,11 @@ Runtime diagnostics remain operation results. New imports also retain their orig
 
 `source` 最多包含一份来源，`content` 在标准校验中是不会自动执行或解码的字符串。`source_url` 只是元数据；来源声明不等于转载授权，应用的 MIT 许可不覆盖导入音乐。应独立保存原文件，尤其是导入失败或尚不支持的文件。
 
-当前 MusicXML 导入保留原 XML 文本；MXL 只保留选中的根 XML，不保留压缩包或附属文件。MIDI 以 Base64 保留原字节，但音符拼写、声部和谱表信息属于推断。明确支持的简谱方言保留原文本。图像校对保存图像、裁剪/复核信息和人工输入；自动识别候选不等于可播放乐谱，也不保证 PDF/图像无损转谱。
+当前 MusicXML 导入保留原 XML 文本；新 MXL 导入保存完整原压缩包、选中的根 XML、清单路径和字节数，附属文件只归档，不解压显示或播放。完整标准乐谱连同 Base64/JSON 开销必须不超过 8 MiB，否则明确拒绝，不会丢掉附件以便导入。旧版 MXL 导入若只保存了 XML，需要重新导入原 MXL 才能补齐归档。MIDI 以 Base64 保留原字节，但音符拼写、声部和谱表信息属于推断。明确支持的简谱方言保留原文本。图像校对保存图像、裁剪/复核信息和人工输入；自动识别候选不等于可播放乐谱，也不保证 PDF/图像无损转谱。
 
 影响发声且不支持的语义会被拒绝；部分显示/表情细节可能仅留在源内容中并附警告。这不代表任意源文件都可导入或每种未知特征都有单独诊断。导入失败时不承诺生成标准乐谱，调用者必须保留输入。
 
-诊断属于操作返回值，不属于 `.wmhscore.json` 字段。仅保存 `score` 不会保存导入警告，重新编译也不能恢复所有原始导入诊断；重要警告应随项目另存。校验成功或没有警告，不保证完整转写、原始排版、乐器可演奏性、版权许可或演奏准确性。
+操作会返回当前诊断；新版导入也把原始观察保存在可选的 `source.import_diagnostics` 中，保存完整 `score` 或曲库备份即可保留。重新编译会明确标注它们是历史导入观察，不代表后续编辑后的当前状态。旧文件未保存的警告无法自动恢复。较早的严格读取器可能拒绝新增元数据，应更新应用并保留原文件，不要删掉字段强行导入。校验成功或没有警告，不保证完整转写、原始排版、乐器可演奏性、版权许可或演奏准确性。
 
 ## Original complete example / 完整原创示例
 

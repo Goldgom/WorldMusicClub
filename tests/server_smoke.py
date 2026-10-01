@@ -1,5 +1,5 @@
 """Dependency-free integration checks against the actual Rust executable."""
-import json, subprocess, time, urllib.request, urllib.error, os, tomllib
+import base64, json, subprocess, time, urllib.request, urllib.error, os, tomllib
 from pathlib import Path
 port=17878
 binary=Path(os.environ.get('WMH_SERVER_BINARY', 'target/debug/practice-server' + ('.exe' if os.name=='nt' else '')))
@@ -115,7 +115,12 @@ try:
     mxl=Path('tests/fixtures/original-duet.mxl').read_bytes()
     status,body,_=request('/api/import/mxl',mxl,{'Content-Type':'application/zip'})
     assert status==200,body
-    assert json.loads(body)['score']['source']['content'].encode()==xml
+    archived=json.loads(body);assert archived['score']['source']['format']=='worldmusichub-mxl-archive-v1'
+    source=json.loads(archived['score']['source']['content']);assert source['files']['selected.musicxml']['content'].encode()==xml
+    assert base64.b64decode(source['files']['original.mxl']['content'],validate=True)==mxl
+    assert source['files']['original.mxl']['bytes']==len(mxl)
+    status,body,_=request('/api/compile',json.dumps(archived['score']).encode(),{'Content-Type':'application/json'})
+    assert status==200 and json.loads(body)['score']['source']==archived['score']['source'],body
     assert request('/api/import/mxl',b'not a zip',{'Content-Type':'application/zip'})[0]==400
     jianpu=Path('tests/fixtures/jianpu-original-steps.jianpu').read_bytes()
     status,body,_=request('/api/import/jianpu',jianpu,{'Content-Type':'text/plain; charset=utf-8'})

@@ -19,6 +19,8 @@ The new reader reports unknown fields as potentially newer score metadata or an 
 
 Legacy notes/rests, pitches/spelling, exact beat fractions, voices/staves, ties, maps and original sources remain unchanged when read. New metadata is optional. Full canonical JSON and library backups carry retained observations and source records; MusicXML/jianpu exports are not complete substitutes for all application metadata.
 
+Source-envelope versions are separate from the musical model. New MXL imports can use `source.format="worldmusichub-mxl-archive-v1"` to retain the complete archive and selected XML. The canonical source remains an opaque string, so an older compatible reader can preserve it without understanding its nested download entries. An unknown envelope version must remain downloadable whole rather than being guessed or normalized. Older MXL records containing only XML are left unchanged; missing archive bytes require the original input.
+
 A future migration must preserve the original file/source alongside its derivative, declare every transformation or unsupported feature, test per-note/source identity and exact timing, and require an explicit choice where musical interpretation is needed. Unknown semantic fields must never be removed merely to pass validation. No irreversible in-place migration is performed by this alpha.
 
 Producer strings are bounded descriptive claims supplied by a file. Never use them as proof of rights, trust, correctness or permission to execute anything. No timestamp, account identity, machine identifier or external credential is added to a canonical score.

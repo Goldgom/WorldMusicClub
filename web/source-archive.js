@@ -26,6 +26,17 @@ export function retainedSourceArchive(score){
  const files=[file('complete-retained-source',safeTextFilename(source.filename,'retained-source.txt'),source.content,'utf-8','Complete retained source')],warnings=[];
  if(source.format==='midi-base64'){
   files.push(file('original-midi',safeBinaryFilename(source.filename?.replace(/\.json$/i,'.mid')||'original.mid'),source.content,'base64','Original MIDI bytes'));
+ }else if(source.format==='worldmusichub-mxl-archive-v1'){
+  try{
+   const envelope=JSON.parse(source.content);
+   if(envelope.version!==1)throw Error('Unknown MXL retention version');
+   if(typeof envelope.selected_score_path!=='string'||!envelope.selected_score_path.length||!envelope.files||Array.isArray(envelope.files)||Object.keys(envelope.files).length!==2)throw Error('Incomplete MXL retention record');
+   for(const[name,encoding]of [['original.mxl','base64'],['selected.musicxml','utf-8']]){const value=envelope.files[name];if(!value||value.encoding!==encoding||typeof value.content!=='string'||!Number.isSafeInteger(value.bytes)||value.bytes<0||value.bytes>SOURCE_ARCHIVE_LIMITS.sourceBytes)throw Error('Incomplete retained MXL file metadata')}
+   const path=envelope.selected_score_path.length>500?`${envelope.selected_score_path.slice(0,500)}… (full path retained in the complete envelope)`:envelope.selected_score_path;
+   const original=envelope.files['original.mxl'],selected=envelope.files['selected.musicxml'];
+   files.push(file('mxl:original.mxl','original.mxl',original.content,'base64','Original MXL archive',{bytes:original.bytes,note:'Complete imported archive, including its container and ancillary entries. Saved as inert bytes; this view does not extract or open it.'}));
+   files.push(file('mxl:selected.musicxml','selected.musicxml',selected.content,'utf-8','Selected MusicXML entry',{bytes:selected.bytes,note:`Exact XML entry selected by the manifest: ${path}. Keep the original MXL or full score JSON for the other archive contents.`}));
+  }catch(error){files.splice(1);warnings.push(`Individual MXL files are unavailable: ${error.message}. The complete retained envelope is still downloadable unchanged.`)}
  }else if(source.format==='worldmusichub-curated-edition-v1'){
   let envelope;
   try{envelope=JSON.parse(source.content);if(envelope.version!==1||!envelope.files||Array.isArray(envelope.files)||typeof envelope.files!=='object')throw Error('Unknown archive version');

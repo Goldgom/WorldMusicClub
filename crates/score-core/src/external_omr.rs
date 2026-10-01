@@ -96,7 +96,7 @@ fn unpack(input: &AudiverisInput) -> Result<(String, Vec<Diagnostic>), String> {
                 .decode(&input.output_content)
                 .map_err(|_| "OMR MXL content must be standard base64")?;
             let (xml, _, mut warnings) = crate::mxl::read_mxl_xml(&bytes)?;
-            // This bridge preserves the complete container, unlike ordinary import_mxl.
+            // The review record below preserves the complete supplied container.
             warnings.retain(|w| w.code != "mxl_source_retained");
             Ok((xml, warnings))
         }

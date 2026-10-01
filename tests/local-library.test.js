@@ -67,3 +67,10 @@ test('complete CC0 edition backup restores all notes, original bytes, notices an
   assert.equal(createHash('sha256').update(envelope.license_text).digest('hex'),envelope.provenance.license_text_sha256);
  }finally{first.close();second.close()}
 });
+
+test('library snapshots and backups retain the entire MXL envelope and all original archive bytes',async()=>{
+ const raw=readFileSync(new URL('./fixtures/original-duet.mxl',import.meta.url)),xml=readFileSync(new URL('./fixtures/original-duet.musicxml',import.meta.url)),content=JSON.stringify({version:1,selected_score_path:'scores/duet.musicxml',files:{'original.mxl':{encoding:'base64',bytes:raw.length,content:raw.toString('base64')},'selected.musicxml':{encoding:'utf-8',bytes:xml.length,content:xml.toString('utf8')}}});
+ // This storage fixture tests immutable bytes. The real browser test also validates musical import with Rust.
+ const score={...structuredClone(fixture),source:{format:'worldmusichub-mxl-archive-v1',filename:'retained-mxl.json',content}},expected=structuredClone(score),first=await create(),second=await create();
+ try{const saved=await first.save(score,{label:'Retained MXL'});score.source.content='Later unsaved edit';assert.deepEqual((await first.get(saved.key)).score,expected);const backup=await first.exportBackup();let validations=0;const restored=await second.restoreBackup(backup,{validate:async restoredScore=>{validations++;assert.deepEqual(restoredScore,expected);return true}});assert.equal(validations,1);assert.equal(restored.length,1);const actual=(await second.get(restored[0].key)).score;assert.deepEqual(actual,expected);const envelope=JSON.parse(actual.source.content);assert.deepEqual(Buffer.from(envelope.files['original.mxl'].content,'base64'),raw);assert.deepEqual(Buffer.from(envelope.files['selected.musicxml'].content),xml);assert.equal(envelope.selected_score_path,'scores/duet.musicxml')}finally{first.close();second.close()}
+});
