@@ -1,0 +1,151 @@
+name: Exact150 unaccepted developer preview
+on:
+  push:
+    branches: ['diagnostic/exact-150-developer-preview']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview:
+    name: Build unaccepted exact-150 preview
+    timeout-minutes: 30
+    runs-on: windows-latest
+    env:
+      RUSTFLAGS: '-C target-feature=+crt-static'
+      PREVIEW_ORCHESTRATION_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          ref: 19c3c04b9ea8908677a02c8ebc9c8fc71c123543
+          persist-credentials: false
+      - name: Verify immutable requested source before any build
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -cne '19c3c04b9ea8908677a02c8ebc9c8fc71c123543') { throw 'Wrong source commit' }
+          if ((git rev-parse 'HEAD^{tree}') -cne '636aed9c277520102d84a6fe6c5f05bc5765726a') { throw 'Wrong source tree' }
+          if ((git rev-list --count HEAD) -ne '150') { throw 'Wrong source count' }
+          if (git status --porcelain) { throw 'Source checkout is not clean' }
+          Write-Output 'Exact150 source verified. This separate packaging job does not supersede failed UI acceptance.'
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          components: rust-docs
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: npm test
+      - run: cargo test --workspace --target x86_64-pc-windows-msvc --locked
+      - run: cargo build -p practice-server --release --target x86_64-pc-windows-msvc --locked
+      - name: Check full API against the Windows release binary
+        run: python tests/server_smoke.py
+        env:
+          WMH_SERVER_BINARY: target/x86_64-pc-windows-msvc/release/practice-server.exe
+      - name: Smoke-test exact release executable
+        shell: pwsh
+        run: |
+          $app = Start-Process target/x86_64-pc-windows-msvc/release/practice-server.exe -ArgumentList '--no-open','--port','17879' -PassThru
+          try {
+            $ready = $false
+            for ($i=0; $i -lt 40; $i++) {
+              try { $health = Invoke-RestMethod http://127.0.0.1:17879/api/health; $ready = $true; break } catch { Start-Sleep -Milliseconds 250 }
+            }
+            if (-not $ready -or $health.engine -ne 'rust') { throw 'Release executable did not become healthy' }
+            $manifest = Invoke-RestMethod http://127.0.0.1:17879/vendor/engraving-manifest.json
+            if ($manifest.version -ne '2.1.3') { throw 'Pinned offline engraving assets missing' }
+            $page = Invoke-WebRequest http://127.0.0.1:17879/
+            if ($page.StatusCode -ne 200 -or $page.Content -notmatch 'WorldMusicHub') { throw 'Embedded UI missing' }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id } }
+      - run: cargo fetch --locked
+      - run: python -m unittest discover -s tests -p 'test_*.py'
+      - run: python scripts/prepare-rust-notices.py
+      - name: Create explicitly unaccepted developer preview
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist/WorldMusicHub -Force | Out-Null
+          Copy-Item target/x86_64-pc-windows-msvc/release/practice-server.exe dist/WorldMusicHub/WorldMusicHub.exe
+          Copy-Item README.md,LICENSE dist/WorldMusicHub/
+          Copy-Item docs/WINDOWS.md dist/WorldMusicHub/START-HERE.md
+          New-Item -ItemType Directory -Path dist/WorldMusicHub/licenses/engraving -Force | Out-Null
+          Copy-Item web/vendor/*.txt,web/vendor/engraving-manifest.json dist/WorldMusicHub/licenses/engraving/
+          Copy-Item -Recurse docs dist/WorldMusicHub/
+          Copy-Item -Recurse schema dist/WorldMusicHub/
+          Copy-Item -Recurse catalog dist/WorldMusicHub/
+          Copy-Item -Recurse dist/licenses/rust dist/WorldMusicHub/licenses/
+          $issues = @(
+            'UNACCEPTED DEVELOPER PREVIEW: exact source commit 150. This is not an accepted release.',
+            'Provided at the explicit user request to try version 150 despite disclosed UI failures.',
+            'Known150 Windows UI run:52/57 passed. Linux full UI run:56/57 passed.',
+            'Small landscape notation can be clipped by the Follow status toolbar.',
+            'The authored piano interaction test fixture has an overlapping tie voice and falls back from engraved notation.',
+            'A Windows browser bootstrap failed loading themes.js with ERR_NO_BUFFER_SPACE; cause remains unresolved.',
+            'Full UI acceptance is NOT rerun or claimed by this diagnostic packaging job.',
+            'Native unit tests, API/startup smoke and package integrity are checked here. Physical MIDI/audio are not validated.',
+            'Failed source150 validation:https://github.com/Goldgom/WorldMusicHub/actions/runs/36924488632',
+            'Failed source150 native run:https://github.com/Goldgom/WorldMusicHub/actions/runs/36924488588'
+          )
+          $issues | Set-Content dist/WorldMusicHub/DEVELOPER-PREVIEW.txt -Encoding utf8
+          $start = Get-Content dist/WorldMusicHub/START-HERE.md -Raw
+          ("# Unaccepted developer preview: exact150`n`nRead DEVELOPER-PREVIEW.txt and PREVIEW-INFO.json before testing.`n`n" + $start) | Set-Content dist/WorldMusicHub/START-HERE.md -Encoding utf8
+          $preview = @{
+            acceptance_status = 'NOT_ACCEPTED_DEVELOPER_PREVIEW'
+            application_source_commit = '19c3c04b9ea8908677a02c8ebc9c8fc71c123543'
+            application_source_tree = '636aed9c277520102d84a6fe6c5f05bc5765726a'
+            application_source_count = 150
+            orchestration_commit = $env:PREVIEW_ORCHESTRATION_SHA
+            orchestration_run = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            source_ui_acceptance = 'Failed in the linked immutable150 runs; not rerun in this packaging-only workflow'
+            normal_release_gates_changed = $false
+            packaging_additions = @('DEVELOPER-PREVIEW.txt','PREVIEW-INFO.json','START-HERE.md preview header')
+            known_issues = $issues
+          }
+          $preview | ConvertTo-Json -Depth 4 | Set-Content dist/WorldMusicHub/PREVIEW-INFO.json -Encoding utf8
+          python scripts/release-manifest.py create dist/WorldMusicHub --commit '19c3c04b9ea8908677a02c8ebc9c8fc71c123543' --count '150' --recovery-for '0'
+          if ($LASTEXITCODE -ne 0) { throw 'Release inventory failed' }
+          python scripts/release-manifest.py archive dist/WorldMusicHub dist/WorldMusicHub-Windows-x64-dev-preview-commit-150.zip
+          if ($LASTEXITCODE -ne 0) { throw 'Portable archive verification failed' }
+      - name: Smoke-test the extracted portable package and offline renderer bytes
+        shell: pwsh
+        run: |
+          $destination = Join-Path $env:RUNNER_TEMP 'wmh-portable-smoke'
+          Expand-Archive -Path dist/WorldMusicHub-Windows-x64-dev-preview-commit-150.zip -DestinationPath $destination
+          $directory = Join-Path $destination 'WorldMusicHub'
+          $executable = Join-Path $directory 'WorldMusicHub.exe'
+          $info = Get-Content (Join-Path $directory 'BUILD-INFO.json') -Raw | ConvertFrom-Json
+          if ($info.git_commit -ne '19c3c04b9ea8908677a02c8ebc9c8fc71c123543' -or $info.commit_count -ne 150) { throw 'Wrong milestone provenance' }
+          if ([int]$info.recovery_for -ne 0 -or $info.release_label -ne 'commit-150') { throw 'Wrong recovery provenance' }
+          $preview = Get-Content (Join-Path $directory 'PREVIEW-INFO.json') -Raw | ConvertFrom-Json
+          if ($preview.acceptance_status -cne 'NOT_ACCEPTED_DEVELOPER_PREVIEW' -or $preview.application_source_commit -cne $info.git_commit -or $preview.orchestration_commit -cne $env:PREVIEW_ORCHESTRATION_SHA) { throw 'Developer-preview provenance missing or inconsistent' }
+          $reportedVersion = & $executable --version
+          if ($LASTEXITCODE -ne 0 -or $reportedVersion -cne ('WorldMusicHub ' + $info.app_version)) { throw 'Extracted executable reports a different version' }
+          $app = Start-Process $executable -WorkingDirectory $directory -ArgumentList '--no-open','--port','17880' -PassThru
+          try {
+            $ready = $false
+            for ($i=0; $i -lt 40; $i++) {
+              try { $health = Invoke-RestMethod http://127.0.0.1:17880/api/health; $ready = $true; break } catch { Start-Sleep -Milliseconds 250 }
+            }
+            if (-not $ready -or $health.engine -ne 'rust') { throw 'Extracted executable did not start' }
+            if ($health.version -ne $info.app_version -or $health.score_schema_revision -ne $info.score_schema_revision) { throw 'Packaged executable and format metadata differ' }
+            foreach ($edition in $info.curated_editions) {
+              $scorePath = Join-Path $directory ('catalog/' + $edition.directory + '/score.json')
+              $packaged = Get-Content $scorePath -Raw -Encoding utf8 | ConvertFrom-Json
+              $embedded = Invoke-RestMethod ('http://127.0.0.1:17880/api/catalog/score/' + $edition.id)
+              if ($embedded.id -cne $packaged.id -or $embedded.source.content -cne $packaged.source.content -or $embedded.provenance.license -cne $edition.license) { throw 'Embedded edition differs from packaged source archive' }
+            }
+            $manifest = Invoke-RestMethod http://127.0.0.1:17880/vendor/engraving-manifest.json
+            $bundle = Join-Path $env:RUNNER_TEMP 'wmh-packaged-osmd.js'
+            Invoke-WebRequest http://127.0.0.1:17880/vendor/opensheetmusicdisplay.min.js -OutFile $bundle
+            if ((Get-FileHash $bundle -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest.bundleSha256) { throw 'Embedded offline renderer checksum differs' }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id } }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: WorldMusicHub-Windows-x64-dev-preview-commit-150
+          path: |
+            dist/*.zip
+            dist/*.zip.sha256
+          if-no-files-found: error
