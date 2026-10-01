@@ -215,3 +215,5 @@ test('edition counts distinguish written notes/rests from compiled attacks witho
 test('catalog origin labels never call an imported source edition an original exercise',()=>{const score=structuredClone(fixture);for(const[kind,label]of[['original_exercise','Original exercise'],['public_domain_practice_arrangement','Public-domain excerpt'],['curated_cc0_edition','CC0 source edition'],['musicxml_import','Source edition'],['future_kind','Source edition']]){score.provenance.kind=kind;assert.equal(catalogOriginLabel(score),label)}});
 
 import "./frontend-catalog-loader.test.js";
+
+import "./frontend-source-archive-view.test.js";

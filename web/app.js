@@ -1,3 +1,4 @@
+import {setupSourceArchiveView} from './source-archive-view.js';
 import {validateCatalogIndex,CatalogScoreCache,fetchCatalogScore} from './catalog-loader.js';
 import {setupNotationFollowing} from './notation-follow.js';
 import {setupExternalOmrReview} from './external-omr-view.js';
@@ -28,6 +29,7 @@ let metronome = null;
 let adaptationView = null;
 let externalOmrView = null;
 let notationFollowing = null;
+let sourceArchiveView=null;
 const catalogCache=new CatalogScoreCache();
 let catalogController=null,catalogIndexController=null,catalogIndexRequest=0,catalogPendingId=null,catalogIndexFailed=false;
 const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reason:'Waiting for an instrument compatibility check.'}, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
@@ -128,7 +130,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
     clearNotice();
     resetPlayback();
-    renderScore(); notationFollowing?.scoreChanged(); libraryView.scoreChanged(); adaptationView?.scoreChanged(); renderCatalog(); updateRangeWarning();
+    renderScore(); notationFollowing?.scoreChanged(); sourceArchiveView?.scoreChanged(); libraryView.scoreChanged(); adaptationView?.scoreChanged(); renderCatalog(); updateRangeWarning();
     const clockScore=state.score;checkInstrument().finally(()=>{if(state.score===clockScore)metronome?.setScore()});
     return true;
   } catch (error) {
@@ -712,6 +714,7 @@ setupJianpuExport({getScore:()=>state.score,pausePlayback,api});
 setupSourceDirectory({pausePlayback,onScoreFile:()=>$('score-file').click(),onImageFile:()=>$('score-image-file').click(),onExternalOmr:()=>externalOmrView.open()});
 setupImageReview({onImport:importCanonicalScore, pausePlayback, notice,onExternalOmr:imageFile=>externalOmrView.open({imageFile})});
 setupMidi({pressNote, releaseNote, releaseMatching, silenceHeld, notice});
+sourceArchiveView=setupSourceArchiveView({getContext:()=>({score:state.score,version:state.loadIntent}),pausePlayback});
 externalOmrView = setupExternalOmrReview({api,onActivate:importCanonicalScore,pausePlayback,notice,getSourceVersion:()=>state.loadIntent});
 adaptationView = setupAdaptationView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.score,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
 metronome = setupMetronome({api,getScore:()=>state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:transport.time(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
