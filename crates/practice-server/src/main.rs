@@ -251,6 +251,10 @@ fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
             .map_err(|e| json_input_error("score JSON", e))
             .and_then(score_core::compile)
             .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
+        "/api/notation-navigation" => serde_json::from_slice::<score_core::Score>(&bytes)
+            .map_err(|e| json_input_error("notation navigation score", e))
+            .and_then(score_core::navigation::notation_navigation)
+            .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
         "/api/metronome" => serde_json::from_slice::<MetronomeRequest>(&bytes)
             .map_err(|e| json_input_error("metronome request", e))
             .and_then(|r| score_core::metronome::metronome_grid(r.score, r.pulse))
@@ -405,6 +409,38 @@ mod tests {
             assert!(content_type_allowed(path, content_type));
         }
         assert!(!content_type_allowed("/api/compile", "text/plain"));
+    }
+    #[test]
+    fn notation_navigation_is_a_read_only_optional_score_route() {
+        let score = score_core::catalog().remove(0);
+        let bytes = serde_json::to_vec(&score).unwrap();
+        let navigation = api("/api/notation-navigation", bytes.clone()).unwrap();
+        let compiled = api("/api/compile", bytes.clone()).unwrap();
+        assert_eq!(navigation["version"], 1);
+        assert_eq!(navigation["source_measure_count"], score.measures.len());
+        assert_eq!(
+            navigation["duration_ms"],
+            compiled["timeline"]["duration_ms"]
+        );
+        assert_eq!(navigation["occurrences"][0]["source_measure_index"], 0);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(),
+            compiled["score"]
+        );
+        let mut incomplete = score;
+        incomplete.measures.clear();
+        let bytes = serde_json::to_vec(&incomplete).unwrap();
+        assert!(api("/api/notation-navigation", bytes.clone())
+            .unwrap_err()
+            .contains("measure map"));
+        assert!(
+            api("/api/compile", bytes).is_ok(),
+            "Optional following must not narrow the playback contract"
+        );
+        assert!(content_type_allowed(
+            "/api/notation-navigation",
+            "application/json"
+        ));
     }
     #[test]
     fn ordinary_api_compile_and_export_remain_compatible() {

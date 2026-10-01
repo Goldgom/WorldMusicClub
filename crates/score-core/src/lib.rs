@@ -16,6 +16,7 @@ pub mod external_omr;
 pub mod feedback;
 pub mod instruments;
 pub mod metronome;
+pub mod navigation;
 pub mod omr;
 pub mod practice;
 mod public_domain;
@@ -605,26 +606,52 @@ fn written_duration(score: &Score) -> Beat {
         .max_by(|a, b| a.compare(*b))
         .unwrap_or(Beat::ZERO)
 }
-/// Shared half-open written segments for note and metronome performance occurrences.
-fn navigation_segments(score: &Score, total: Beat) -> Result<Vec<(Beat, Beat)>, String> {
-    let mut regions: Vec<_> = score.repeats.iter().collect();
-    regions.sort_by(|a, b| a.from.compare(b.from));
+/// Shared exact half-open navigation; indices refer to the unchanged repeat array.
+#[derive(Clone, Copy, Debug)]
+struct NavigationSegment {
+    start: Beat,
+    end: Beat,
+    repeat_region_index: Option<usize>,
+    repeat_pass: Option<u8>,
+    repeat_times: Option<u8>,
+}
+fn navigation_segments(score: &Score, total: Beat) -> Result<Vec<NavigationSegment>, String> {
+    let mut regions: Vec<_> = score.repeats.iter().enumerate().collect();
+    regions.sort_by(|a, b| a.1.from.compare(b.1.from));
     let mut segments = vec![];
     let mut cursor = Beat::ZERO;
-    for region in regions {
+    for (region_index, region) in regions {
         if region.from.compare(cursor).is_lt() || region.to.compare(total).is_gt() {
             return Err("Overlapping/nested or out-of-score repeat regions are not supported; source is retained for correction".into());
         }
         if region.from.compare(cursor).is_gt() {
-            segments.push((cursor, region.from));
+            segments.push(NavigationSegment {
+                start: cursor,
+                end: region.from,
+                repeat_region_index: None,
+                repeat_pass: None,
+                repeat_times: None,
+            });
         }
-        for _ in 0..region.times {
-            segments.push((region.from, region.to));
+        for pass in 1..=region.times {
+            segments.push(NavigationSegment {
+                start: region.from,
+                end: region.to,
+                repeat_region_index: Some(region_index),
+                repeat_pass: Some(pass),
+                repeat_times: Some(region.times),
+            });
         }
         cursor = region.to;
     }
     if cursor.compare(total).is_lt() {
-        segments.push((cursor, total));
+        segments.push(NavigationSegment {
+            start: cursor,
+            end: total,
+            repeat_region_index: None,
+            repeat_pass: None,
+            repeat_times: None,
+        });
     }
     Ok(segments)
 }
@@ -686,7 +713,8 @@ fn expand_repeats(
     let mut output = vec![];
     let mut source_references = 0_usize;
     let mut offset = 0.;
-    for (start, end) in segments {
+    for segment in segments {
+        let (start, end) = (segment.start, segment.end);
         let first = ordered.partition_point(|(_, at, _)| at.compare(start).is_lt());
         let last = ordered.partition_point(|(_, at, _)| at.compare(end).is_lt());
         let start_ms = tempo.at(start.value());

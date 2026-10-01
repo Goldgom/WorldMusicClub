@@ -129,7 +129,8 @@ pub fn metronome_grid(score: Score, pulse: PulseMode) -> Result<MetronomeGrid, S
     }
     let mut ticks = vec![];
     let mut offset = 0.;
-    for (start, end) in crate::navigation_segments(&score, total)? {
+    for segment in crate::navigation_segments(&score, total)? {
+        let (start, end) = (segment.start, segment.end);
         let first = written.partition_point(|tick| tick.source_at.compare(start).is_lt());
         let last = written.partition_point(|tick| tick.source_at.compare(end).is_lt());
         if ticks.len() + last - first > MAX_CLICKS {

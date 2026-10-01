@@ -116,3 +116,15 @@ The UI keeps the original retention record outside editable JSON, shows unknown 
 ## Default notation presentation
 
 Supported scores open in the packaged offline engraved staff view. An explicit Simplified pitch guide or Jianpu selection is kept for later scores in the same session. Export/renderer limitations or failures keep a persistent visible explanation beside the simplified fallback; they are not treated as successful engraving. A new score or explicit engraved-view request can retry. The static staff remains display-only, with bounded measure paging; automatic source-measure following is not yet implemented. Playback and scoring continue to use the unchanged Rust timeline.
+
+## Optional notation-navigation contract
+
+`POST /api/notation-navigation` accepts the complete canonical Score and returns a display-only full-performance map. It compiles the unchanged score and reuses the engine's exact repeat-navigation segments. It never changes notes, scoring targets, audio scheduling or the current playback clock.
+
+Response fields: `version:1`, `source_measure_count`, `duration_ms`, `occurrences`, `sounding_groups`, and `diagnostics`. Each occurrence contains a unique `id`, zero-based `source_measure_index` into the **original ordered measure array**, the unchanged printed `measure_number`, exact rational `source_from`/`source_to`, and performance-clock `start_ms`/`end_ms`. Both source and performance intervals are half-open. At the exact full duration no interval is active. Printed measure labels may repeat, start at zero or be nonsequential; they are never used as array ordinals. A pickup is simply its declared short measure.
+
+`repeat_region_index` is the unchanged input repeat-array index; `repeat_pass` is one-based and `repeat_times` is the region's declared count. All three are null outside repeats. A repeat boundary inside a written measure splits its navigation interval without inventing a new measure. Such a score may still be unsupported by the separate MusicXML exporter; navigation success does not guarantee engravability.
+
+`written_note_ids` includes every written note/rest whose onset belongs to the interval, including explicit tie continuations. `continuing_note_ids` contains written events that began earlier and still extend into its start. Membership uses exact rational comparison, not floating tolerances. `sounding_groups` contains the compiled `occurrence_id`, `part_id`, complete tied `source_note_ids`, `start_ms` and `end_ms`. A written continuation is not a new attack; unison voices are not grouped by this display route.
+
+Following requires contiguous, ordered measures from beat zero covering the complete score, as the exporter does; it does not sort, repair or invent measures. Limits are 100,000 intervals, 1,000,000 total source references and a 16 MiB response. Failure disables optional following only; manual notation and playback remain available. Existing written A–B loops remain limited to linear scores and reject repeats until explicit pass selection is supported.
