@@ -1,5 +1,6 @@
 import importlib.util
 import copy
+from contextlib import ExitStack
 import json
 from pathlib import Path
 import unittest
@@ -96,6 +97,42 @@ class OpenScorePreparationTests(unittest.TestCase):
         expected = prepare.source_pitch_inventory(mscx)
         self.assertEqual(expected, prepare.xml_pitch_inventory(xml))
         self.assertEqual(expected[60], 2)
+
+    def test_second_candidate_still_uses_input_directory_after_reference_assessment(self):
+        xml = '<score-partwise><part id="P1"><measure><attributes><divisions>1</divisions></attributes><note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note></measure></part></score-partwise>'
+        mscx = '<museScore><Score><metaTag name="copyright">OpenScore CC0</metaTag><Staff><Measure><Note><pitch>60</pitch></Note></Measure></Staff></Score></museScore>'
+        beat = lambda value: {'numerator': value, 'denominator': 1}
+        note = {'id':'n1','at':beat(0),'duration':beat(1),'pitch':{'step':'C','alter':0,'octave':4},'voice':'1','staff':1,'tie_start':False,'tie_stop':False}
+        compiled = {'score':{'parts':[{'id':'P1','notes':[note]}],'tempo':[],'repeats':[]},'timeline':{'notes':[{'id':'n1','source_note_id':'n1','midi':60,'start_ms':0,'duration_ms':500,'velocity':90}],'duration_ms':500},'diagnostics':[]}
+        observation = {'ticks_per_quarter':480,'final_tick':480,'tempo_events':[{'tick':0,'microseconds_per_quarter':500000}], 'note_messages':[{'tick':0,'port':0,'channel':0,'kind':'on','midi':60,'velocity':90},{'tick':480,'port':0,'channel':0,'kind':'off','midi':60,'velocity':0}], 'non_note_messages':[],'interpretation':'test keys'}
+        manifest = json.loads(prepare.MANIFEST.read_text(encoding='utf-8'))
+        manifest['scores'] = [dict(manifest['scores'][2], id='first-study'), dict(manifest['scores'][2], id='second-study')]
+        calls = []
+        def download(url, path, *args):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(mscx if path.suffix == '.mscx' else 'fixture', encoding='utf-8')
+        def run(arguments, cwd, env, log, **kwargs):
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text(json.dumps(observation) if 'inspector' in str(arguments[0]) else 'fixture', encoding='utf-8')
+            if '--appimage-extract' in arguments:
+                target = cwd / 'squashfs-root/AppRun'; target.parent.mkdir(); target.write_text('fixture')
+            if '-o' in arguments:
+                target = Path(arguments[arguments.index('-o') + 1]); target.write_text(xml if target.suffix == '.musicxml' else 'fixture', encoding='utf-8')
+        def post(base, route, *args):
+            calls.append(route)
+            if route == '/api/import/musicxml': return 200, copy.deepcopy(compiled)
+            if route == '/api/import/midi': return 400, {'error':'controller 121'}
+            return 200, {'hits':[{'note_id':'n1','midi':60,'actual_ms':0,'delta_ms':0}], 'misses':[], 'extras':[]}
+        with TemporaryDirectory() as temporary, ExitStack() as stack:
+            folder = Path(temporary); manifest_path = folder / 'manifest.json'; manifest_path.write_text(json.dumps(manifest), encoding='utf-8')
+            for owner, name, value in [(prepare,'MANIFEST',manifest_path),(prepare.sys,'platform','linux'),(prepare.sys,'argv',['prepare','--workspace',str(folder/'work'),'--server-binary','server','--reference-inspector','inspector']), (prepare,'download',download),(prepare,'run_bounded',run),(prepare,'post',post)]:
+                stack.enter_context(patch.object(owner, name, value))
+            stack.enter_context(patch.object(prepare.subprocess, 'Popen', return_value=MagicMock()))
+            stack.enter_context(patch.object(prepare.urllib.request, 'urlopen', return_value=MagicMock()))
+            self.assertEqual(prepare.main(), 0)
+            self.assertEqual(calls.count('/api/assess'), 2)
+            report = json.loads((folder/'work/review-artifacts/conversion-report.json').read_text(encoding='utf-8'))
+            self.assertEqual([r['id'] for r in report['results']], ['first-study','second-study'])
 
 
 if __name__ == '__main__':

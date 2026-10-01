@@ -291,8 +291,8 @@ def main():
         parser.error("The pinned maintainer converter runs only on Linux/Xvfb. Use the hosted review workflow; it is not part of the portable Windows app.")
     manifest = json.loads(MANIFEST.read_text(encoding='utf-8')); validate_manifest(manifest)
     work = args.workspace.resolve(); work.mkdir(parents=True, exist_ok=True)
-    inputs, output = work / 'inputs', work / 'review-artifacts'
-    inputs.mkdir(exist_ok=True); output.mkdir(exist_ok=True)
+    input_directory, output = work / 'inputs', work / 'review-artifacts'
+    input_directory.mkdir(exist_ok=True); output.mkdir(exist_ok=True)
     converter = manifest['converter']; appimage = work / 'MuseScore.AppImage'
     download(converter['url'], appimage, converter['bytes'], converter['sha256'])
     appimage.chmod(0o755)
@@ -318,7 +318,7 @@ def main():
             except (urllib.error.URLError, ConnectionError): time.sleep(.05)
         else: raise RuntimeError('Rust server startup failed')
         for score in manifest['scores']:
-            slug = score['id']; source = inputs / (slug + '.mscx'); folder = output / slug; folder.mkdir(exist_ok=True)
+            slug = score['id']; source = input_directory / (slug + '.mscx'); folder = output / slug; folder.mkdir(exist_ok=True)
             download(upstream + urllib.parse.quote(score['source_path']), source, score['source_bytes'], score['source_sha256'])
             expected = source_pitch_inventory(source.read_bytes())
             (folder / 'original.mscx').write_bytes(source.read_bytes())
@@ -355,8 +355,8 @@ def main():
             if midi_status == 200:
                 (folder / 'reference-midi-compilation.json').write_text(json.dumps(reference, ensure_ascii=False, indent=2), encoding='utf-8')
                 if status == 200:
-                    inputs = [{'midi': n['midi'], 'at_ms': n['start_ms'], 'velocity': n['velocity']} for n in reference['timeline']['notes']]
-                    grade_status, matched = post(base, '/api/assess', json.dumps({'timeline': imported['timeline'], 'inputs': inputs, 'tolerance_ms': 10}).encode(), 'application/json')
+                    performance_inputs = [{'midi': n['midi'], 'at_ms': n['start_ms'], 'velocity': n['velocity']} for n in reference['timeline']['notes']]
+                    grade_status, matched = post(base, '/api/assess', json.dumps({'timeline': imported['timeline'], 'inputs': performance_inputs, 'tolerance_ms': 10}).encode(), 'application/json')
                     if grade_status != 200: raise RuntimeError('Reference onset comparison failed: ' + str(matched))
                     (folder / 'reference-assessment.json').write_text(json.dumps(matched, ensure_ascii=False, indent=2), encoding='utf-8')
                     result['reference_agreement'] = reference_agreement(imported, reference, matched)
@@ -372,8 +372,8 @@ def main():
                 result['raw_reference_note_on_messages'] = len(keys['timeline']['notes'])
                 result['raw_reference_unpaired_durations'] = keys['unpaired_or_ambiguous_key_durations']
                 if status == 200:
-                    inputs = [{'midi': n['midi'], 'at_ms': n['start_ms'], 'velocity': n['velocity']} for n in keys['timeline']['notes']]
-                    grade_status, matched = post(base, '/api/assess', json.dumps({'timeline': imported['timeline'], 'inputs': inputs, 'tolerance_ms': 10}).encode(), 'application/json')
+                    performance_inputs = [{'midi': n['midi'], 'at_ms': n['start_ms'], 'velocity': n['velocity']} for n in keys['timeline']['notes']]
+                    grade_status, matched = post(base, '/api/assess', json.dumps({'timeline': imported['timeline'], 'inputs': performance_inputs, 'tolerance_ms': 10}).encode(), 'application/json')
                     if grade_status != 200: raise RuntimeError('Raw reference comparison failed: ' + str(matched))
                     (folder / 'reference-key-assessment.json').write_text(json.dumps(matched, ensure_ascii=False, indent=2), encoding='utf-8')
                     result['raw_key_message_agreement'] = reference_agreement(imported, keys, matched)
