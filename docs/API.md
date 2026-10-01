@@ -129,6 +129,15 @@ The UI keeps the original retention record outside editable JSON, shows unknown 
 
 Supported scores open in the packaged offline engraved staff view. An explicit Simplified pitch guide or Jianpu selection is kept for later scores in the same session. Export/renderer limitations or failures keep a persistent visible explanation beside the simplified fallback; they are not treated as successful engraving. A new score or explicit engraved-view request can retry. The static staff remains display-only, with bounded measure paging; source-measure following is optional and uses the dedicated Rust navigation contract below. Playback and scoring continue to use the unchanged Rust timeline.
 
+## Advisory guitar fingering
+
+The separate advisory `POST /api/fingering/guitar` route accepts the complete
+score, explicit part/profile, reach constraint and source-note locks. It returns
+one bounded whole-phrase recommendation or an explicit incomplete result. It
+does not change source music or authorize scored mode. See
+[Guitar fingering](GUITAR_FINGERING.md) for identities, objective, exact held-note
+constraints, string numbering, picking hints and limits.
+
 ## Optional notation-navigation contract
 
 `POST /api/notation-navigation` accepts the complete canonical Score and returns a display-only full-performance map. It compiles the unchanged score and reuses the engine's exact repeat-navigation segments. It never changes notes, scoring targets, audio scheduling or the current playback clock.

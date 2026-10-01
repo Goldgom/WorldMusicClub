@@ -303,6 +303,12 @@ fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
             .map_err(|e| json_input_error("instrument request", e))
             .and_then(|r| score_core::instruments::analyze_instrument(&r.timeline, &r.profile))
             .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
+        "/api/fingering/guitar" => {
+            serde_json::from_slice::<score_core::guitar_fingering::GuitarFingeringRequest>(&bytes)
+                .map_err(|e| json_input_error("guitar fingering request", e))
+                .and_then(score_core::guitar_fingering::plan_guitar_fingering)
+                .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string()))
+        }
         "/api/export/jianpu" => serde_json::from_slice::<score_core::Score>(&bytes)
             .map_err(|e| json_input_error("score JSON", e))
             .and_then(|score| score_core::export_jianpu(&score))

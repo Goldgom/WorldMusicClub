@@ -86,6 +86,20 @@ try:
     assert status==200,body
     targets=json.loads(body);assert targets['playable'] and targets['target_count']==15 and targets['source_note_count']==15
     assert all(group['source_occurrence_ids'] and group['source_note_ids'] for group in targets['groups'])
+    guitar_profile={'kind':'guitar','tuning':[40,45,50,55,59,64],'frets':12,'capo':0}
+    guidance={'score':catalog[0],'part_id':None,'profile':guitar_profile,'max_fret_span':3,'locks':[]}
+    status,body,_=request('/api/fingering/guitar',json.dumps(guidance).encode(),{'Content-Type':'application/json'})
+    assert status==200,body
+    guide=json.loads(body);assert guide['complete'] and guide['status']=='ready',guide
+    assert guide['profile']==guitar_profile and not guide['changed_source_notes']
+    assignments={a['occurrence_id']:a for a in guide['assignments']}
+    assert set(assignments)=={n['id'] for n in compilation['timeline']['notes']}
+    for note in compilation['timeline']['notes']:
+        choice=assignments[note['id']]
+        assert choice['source_note_ids']==note['source_note_ids'] and choice['midi']==note['midi']
+        assert choice['start_ms']==note['start_ms'] and choice['end_ms']==note['start_ms']+note['duration_ms']
+        assert guitar_profile['tuning'][choice['string']-1]+guitar_profile['capo']+choice['fret']==note['midi']
+        assert (choice['finger']==0)==(choice['fret']==0)
     adaptation={'score':catalog[0],'operation':{'part_id':None,'octaves':1},'profile':instrument['profile']}
     status,body,_=request('/api/adaptation/preview',json.dumps(adaptation).encode(),{'Content-Type':'application/json'})
     assert status==200,body
