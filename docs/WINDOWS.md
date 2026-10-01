@@ -27,9 +27,9 @@ Build preparation uses `python scripts/prepare-rust-notices.py` after `cargo fet
 
 ## Exact build provenance and ZIP checks
 
-`BUILD-INFO.json` records the development-branch commit SHA/tree, complete-history commit count, target, toolchain, lockfile hashes and every packaged file's SHA-256. `SHA256.txt` uses portable relative filenames; the download also includes a checksum for the ZIP itself. These checks identify bytes and provenance, not a digital signature or antivirus verdict.
+`BUILD-INFO.json` records the development-branch commit SHA/tree, complete-history commit count, target, application/schema versions, toolchain, lockfile hashes and every packaged file's SHA-256. Each curated edition also records canonical-score, retained-source and license digests. `SHA256.txt` uses portable relative filenames; the download also includes a checksum for the ZIP itself. These checks identify bytes and provenance, not a digital signature or antivirus verdict.
 
-The milestone workflow checks out the exact SHA measured by its counting job, builds and runs the Windows x64 executable, exercises the real browser UI, creates the ZIP, verifies its complete inventory, then starts the extracted executable from its portable folder and compares its embedded offline renderer against the pinned bundle checksum. A successfully skipped count gate is not a verified release. GitHub release/tag publication is a separate step tied to the same verified SHA.
+The milestone workflow checks out the exact SHA measured by its counting job, builds and runs the Windows x64 executable, exercises the real browser UI, creates the ZIP, verifies its complete inventory, then starts the extracted executable from its portable folder and compares its embedded offline renderer against the pinned bundle checksum. It also compares the actual executable's version/schema and every embedded curated source envelope with the separately packaged edition and license. A successfully skipped count gate is not a verified release. GitHub release/tag publication is a separate step tied to the same verified SHA.
 
 ## Explicit recovery builds
 

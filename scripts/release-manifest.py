@@ -8,6 +8,7 @@ import pathlib
 import platform
 import re
 import subprocess
+import tomllib
 import zipfile
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
@@ -31,11 +32,20 @@ def create_manifest(directory,metadata):
     if not index_path.is_file(): raise ValueError('Package is missing catalog/index.json')
     catalog=json.loads(index_path.read_text(encoding='utf-8'))
     if catalog.get('version')!=1 or not isinstance(catalog.get('editions'),list):raise ValueError('Unknown packaged catalog index')
+    editions=[]
     for edition in catalog['editions']:
         relative=pathlib.PurePosixPath(edition['directory'])
         if relative.is_absolute() or '..' in relative.parts:raise ValueError('Invalid edition directory')
         for name in ['score.json','provenance.json','LICENSE-CC0.txt']:
             if not (directory/'catalog'/relative/name).is_file():raise ValueError(f'Package is missing edition asset {relative}/{name}')
+        folder=directory/'catalog'/relative
+        score_bytes=(folder/'score.json').read_bytes()
+        score=json.loads(score_bytes);provenance=json.loads((folder/'provenance.json').read_bytes())
+        retained=json.loads(score['source']['content']);license_bytes=(folder/'LICENSE-CC0.txt').read_bytes()
+        if score['id']!=edition['id'] or provenance['edition_id']!=edition['id']:raise ValueError('Packaged edition identity mismatch')
+        if score['provenance']['license']!=edition['license'] or provenance['edition_license']!=edition['license']:raise ValueError('Packaged edition license mismatch')
+        if retained['provenance']!=provenance or retained['license_text'].encode('utf-8')!=license_bytes or sha(license_bytes)!=provenance['license_text_sha256']:raise ValueError('Packaged edition archive/provenance/license differs')
+        editions.append({'id':edition['id'],'directory':edition['directory'],'license':edition['license'],'score_sha256':sha(score_bytes),'retained_source_sha256':sha(score['source']['content'].encode('utf-8')),'license_sha256':sha(license_bytes),'expressive_performance_equivalent':False})
     require_windows_x64((directory/'WorldMusicHub.exe').read_bytes())
     files={}
     for path in sorted(directory.rglob('*')):
@@ -44,7 +54,7 @@ def create_manifest(directory,metadata):
         name=path.relative_to(directory).as_posix()
         if name in (INFO,SUMS): continue
         data=path.read_bytes();files[name]={'sha256':sha(data),'bytes':len(data)}
-    info={'format_version':1,**metadata,'files':files}
+    info={'format_version':1,**metadata,'curated_editions':editions,'files':files}
     (directory/INFO).write_text(json.dumps(info,indent=2,ensure_ascii=False)+'\n',encoding='utf-8',newline='\n')
     entries={**files,INFO:{'sha256':sha((directory/INFO).read_bytes())}}
     (directory/SUMS).write_text(''.join(f'{entries[name]["sha256"]}  {name}\n' for name in sorted(entries)),encoding='utf-8',newline='\n')
@@ -98,6 +108,8 @@ def main():
     host=next((line.split(': ',1)[1] for line in subprocess.check_output(['rustc','-vV'],text=True).splitlines() if line.startswith('host: ')),None)
     if host!='x86_64-pc-windows-msvc':raise ValueError('Expected the native Windows x64 MSVC toolchain')
     metadata={'name':'WorldMusicHub','git_commit':commit,'git_tree':git('rev-parse','HEAD^{tree}'),'commit_count':count,'recovery_for':args.recovery_for or None,'release_label':f'commit-{count}'+(f'-recovery-for-{args.recovery_for}' if args.recovery_for else ''),'target':host,'rustflags':os.environ.get('RUSTFLAGS',''),'build_platform':platform.platform(),'rustc':subprocess.check_output(['rustc','--version'],text=True).strip(),'rustc_verbose':subprocess.check_output(['rustc','-vV'],text=True).strip(),'cargo':subprocess.check_output(['cargo','--version'],text=True).strip(),'node':subprocess.check_output(['node','--version'],text=True).strip(),'python':platform.python_version(),'cargo_lock_sha256':sha((ROOT/'Cargo.lock').read_bytes()),'npm_lock_sha256':sha((ROOT/'package-lock.json').read_bytes()),'offline_engraving_version':'2.1.3','distribution':'unsigned portable alpha; browser UI; physical MIDI/audio latency not verified'}
+    metadata['app_version']=tomllib.loads((ROOT/'Cargo.toml').read_text(encoding='utf-8'))['workspace']['package']['version']
+    metadata['score_schema_revision']=int(re.search(r'pub const SCORE_SCHEMA_REVISION: u32 = (\d+);',(ROOT/'crates/score-core/src/lib.rs').read_text(encoding='utf-8')).group(1))
     create_manifest(args.directory,metadata);print(f'Created release inventory for commit {count}: {commit}')
 
 if __name__=='__main__':main()

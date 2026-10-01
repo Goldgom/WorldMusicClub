@@ -125,6 +125,13 @@ jobs:
               try { $health = Invoke-RestMethod http://127.0.0.1:17880/api/health; $ready = $true; break } catch { Start-Sleep -Milliseconds 250 }
             }
             if (-not $ready -or $health.engine -ne 'rust') { throw 'Extracted executable did not start' }
+            if ($health.version -ne $info.app_version -or $health.score_schema_revision -ne $info.score_schema_revision) { throw 'Packaged executable and format metadata differ' }
+            foreach ($edition in $info.curated_editions) {
+              $scorePath = Join-Path $directory ('catalog/' + $edition.directory + '/score.json')
+              $packaged = Get-Content $scorePath -Raw -Encoding utf8 | ConvertFrom-Json
+              $embedded = Invoke-RestMethod ('http://127.0.0.1:17880/api/catalog/score/' + $edition.id)
+              if ($embedded.id -cne $packaged.id -or $embedded.source.content -cne $packaged.source.content -or $embedded.provenance.license -cne $edition.license) { throw 'Embedded edition differs from packaged source archive' }
+            }
             $manifest = Invoke-RestMethod http://127.0.0.1:17880/vendor/engraving-manifest.json
             $bundle = Join-Path $env:RUNNER_TEMP 'wmh-packaged-osmd.js'
             Invoke-WebRequest http://127.0.0.1:17880/vendor/opensheetmusicdisplay.min.js -OutFile $bundle

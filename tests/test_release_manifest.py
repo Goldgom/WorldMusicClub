@@ -1,4 +1,4 @@
-import importlib.util,json,pathlib,tempfile,unittest,zipfile
+import importlib.util,json,pathlib,tempfile,unittest,zipfile,shutil
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('release',ROOT/'scripts/release-manifest.py');release=importlib.util.module_from_spec(spec);spec.loader.exec_module(release)
 class ReleaseManifestTests(unittest.TestCase):
@@ -24,10 +24,14 @@ class ReleaseManifestTests(unittest.TestCase):
  def test_package_requires_every_declared_score_source_and_license(self):
   with tempfile.TemporaryDirectory() as temporary:
    directory=pathlib.Path(temporary);self.fixture(directory)
-   (directory/'catalog/index.json').write_text('{"version":1,"editions":[{"directory":"editions/example"}]}',encoding='utf-8')
+   shutil.copyfile(ROOT/'catalog/index.json',directory/'catalog/index.json')
    with self.assertRaisesRegex(ValueError,'missing edition asset'):release.create_manifest(directory,{})
-   edition=directory/'catalog/editions/example';edition.mkdir(parents=True)
-   for name in ['score.json','provenance.json','LICENSE-CC0.txt']:(edition/name).write_text('fixture',encoding='utf-8')
+   shutil.copytree(ROOT/'catalog/editions',directory/'catalog/editions')
    info=release.create_manifest(directory,{})
-   self.assertIn('catalog/editions/example/LICENSE-CC0.txt',info['files'])
+   edition=info['curated_editions'][0]
+   self.assertEqual(edition['id'],'cc0-schubert-wandrers-nachtlied-d768')
+   self.assertFalse(edition['expressive_performance_equivalent'])
+   self.assertIn('catalog/'+edition['directory']+'/LICENSE-CC0.txt',info['files'])
+   (directory/'catalog'/edition['directory']/'LICENSE-CC0.txt').write_text('incomplete copy',encoding='utf-8')
+   with self.assertRaisesRegex(ValueError,'archive/provenance/license differs'):release.create_manifest(directory,{})
 if __name__=='__main__':unittest.main()
