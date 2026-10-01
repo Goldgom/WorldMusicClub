@@ -6,8 +6,9 @@ an existing part ID explicitly selects that part. The profile is the existing
 `{kind:"guitar", tuning:[40,45,50,55,59,64], frets:12, capo:0}` shape.
 `max_fret_span` defaults to 3 and bounds highest minus lowest held fretted position;
 0–12 is supported. It is a chosen model constraint, not a measured hand size.
-The planner currently has a core/API implementation; its player-facing controls
-and recommended fretboard path are a separate integration step.
+The player automatically requests a complete plan when a guitar score is active.
+The default cards and fretboard show the single selected string/fret/left-finger
+route. The route is advisory and cannot change practice admission or score data.
 
 The result recommends one complete path under an explicit model. It is not a
 global or biomechanical optimum, a claim of safe technique, or a performance
@@ -32,9 +33,11 @@ clock and inform the movement cost; there is no second tempo engine. Unsupported
 display-clock resolution produces an explicit error rather than merged onsets.
 
 `string` is the one-based row in the supplied tuning array, matching
-`InstrumentReport`. In the standard low-to-high array, row 1 is low E (conventionally
-the sixth guitar string), and row 6 is high E. A UI must label that relationship
-explicitly rather than call tuning row 1 the conventional first string. `fret` is
+`InstrumentReport`. The API example above is low-to-high: row 1 is low E (conventionally the sixth
+guitar string) and row 6 is high E. The web default is instead high-to-low
+`[64,59,55,50,45,40]`, so its row 1 is high E. Both are valid. The player labels
+every row with its actual tuning pitch; it does not infer conventional string
+numbering from an arbitrary tuning array. `fret` is
 relative to the capo. Finger 0 means an open/capo-open string; 1–4 mean index,
 middle, ring and little finger. Pitch-only MIDI cannot identify the actual row
 or finger used.
@@ -104,3 +107,59 @@ identifying the relevant onset/occurrence or limit. It never presents an initial
 fragment as a complete phrase. Listening, source retention, export and existing
 assessment remain available according to their own contracts. Changing weights,
 finger semantics or search semantics requires a new algorithm identifier.
+
+## Player controls and lifecycle
+
+The guitar stage has a concise live status and expandable **Edit route,
+source-note locks & limits** controls. Each current/upcoming occurrence card
+includes its selected tuning row, tuning pitch, capo-relative fret and left-hand
+finger. The complete chosen route covers the selected part(s), even outside an
+A–B playback loop; movement across the artificial loop wrap is not modeled.
+Only currently sounding chosen positions highlight on the fretboard. Finger
+badges and source identities distinguish recommendations from pitch input.
+
+All pitch-compatible positions are an explicit optional overlay with dashed
+outlines, separate from the solid chosen positions. A second independent toggle
+shows the right-hand picking heuristics on cards. Neither option enters score,
+assessment, canonical timing or the Rust objective. Pressed-input colors indicate
+pitch only and cannot establish which string or finger was actually played.
+
+The source-note editor supports partial row, fret and/or finger locks. Its labels
+include exact source ID, pitch and part. At most 200 matching options are rendered;
+filtering by an exact ID makes any source accessible without dropping score data.
+Form fields are drafts until **Apply lock & replan**. Removing one lock, clearing
+all locks, or applying a fret span requests a fresh complete plan. Bounds errors
+leave the prior applied settings unchanged and are announced explicitly.
+Diagnostics show the reported occurrence/source IDs and onset seconds, including
+simultaneous or still-held source IDs as review context. A failed bounded search
+is never labeled as proof of impossibility, and no failed/partial plan displays
+assignments.
+
+Annotation policy version 1 is deliberately **session-only**. Locks and span are
+retained only while that exact loaded score object remains current in the tab.
+A new import, score load, tempo compilation, semitone copy, or restoration clears
+annotations and requests a fresh route. There is no implicit browser persistence
+or unversioned import/export; score, library and take exports omit annotations.
+Switching parts retains session locks, but only locks naming sources sounding in
+the selected part(s) enter that request. Inactive locks are labeled as such.
+Profile changes retain locks, invalidate the recommendation and may expose
+incompatible old constraints that the player can remove.
+
+The controller scopes every cached response to the exact canonical score and
+compiled timeline references, selected part, profile, dirty-setup state and
+settings revision. Callers replace score/timeline objects on recompilation; they
+must not mutate an accepted compiled score in place. Requests additionally
+compare complete snapshots before acceptance. Profile edits hide the route before
+application. Pending requests are aborted on invalidation and outdated successes
+or failures cannot overwrite newer state. Repeated requests and reentrant loading
+callbacks share one promise. Network/validation errors require an explicit retry;
+editing constraints is an explicit replan. The browser validates response version,
+algorithm, complete occurrence count, source IDs, timing, tuning/capo positions,
+requested locks and the empty-assignment contract before displaying guidance.
+
+Node regressions cover controller races, source-lock editing, safe row labeling,
+part filtering, status distinctions, tied/repeated/unison identities, optional
+views, source search bounds and score immutability. Real Rust/browser acceptance
+covers the integrated route and unchanged take/score exports. A mocked browser
+server explicitly returns unavailable guidance rather than pretending to solve
+fingering in JavaScript.

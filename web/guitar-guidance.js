@@ -1,6 +1,7 @@
 import {midiName} from './music.js';
 import {mappedSourceIds} from './physical-targets.js';
 import {TimelineIndex} from './transport.js';
+import {guitarChoiceLabel,guitarPickingLabel,guitarAssignmentIndex} from './guitar-fingering-view.js';
 
 export const GUITAR_LOOKAHEAD_MS=4000;
 export const GUITAR_VISIBLE_TARGETS=8;
@@ -8,7 +9,7 @@ const seconds=ms=>(ms/1000).toFixed(3);
 const countdown=ms=>`${Math.max(0,ms/1000).toFixed(1)}s`;
 
 /** Read Rust-expanded occurrences/targets only. This never groups attacks or chooses fingering. */
-export function guitarGuidanceView({index,groups=new Map(),parts=[],position=0,segmentStart=0,segmentEnd=Infinity,running=false,hasStarted=false,completed=false,mode='listen',loopIteration=null}) {
+export function guitarGuidanceView({index,groups=new Map(),parts=[],position=0,segmentStart=0,segmentEnd=Infinity,running=false,hasStarted=false,completed=false,mode='listen',loopIteration=null,plan=null,showPicking=false}) {
   if(!index)return{phase:'pending',state:'Waiting for checked guitar targets · 等待目标',items:[],additional:0,additionalSounding:0,additionalUpcoming:0};
   const notes=index.notes,from=Math.max(segmentStart,position),to=Math.min(segmentEnd,position+GUITAR_LOOKAHEAD_MS);
   // The index also supplies sounding durations, including a tie crossing a loop boundary.
@@ -25,11 +26,15 @@ export function guitarGuidanceView({index,groups=new Map(),parts=[],position=0,s
   // Long score durations cannot consume every card and hide all next attacks.
   const currentCount=Math.min(current.length,GUITAR_VISIBLE_TARGETS-Math.min(upcoming.length,6));
   const visible=[...current.slice(0,currentCount),...upcoming.slice(0,GUITAR_VISIBLE_TARGETS-currentCount)];
+  const assignments=guitarAssignmentIndex(plan);
   const items=visible.map(note=>{
     const group=groups.get(note.id),sourceIds=[...mappedSourceIds(note,group)],occurrenceIds=[...(group?.source_occurrence_ids||[note.id])],active=position>=segmentStart&&note.start_ms<=position;
     const continuing=!active&&note.start_ms<segmentStart;
     const partIds=[...(group?.part_ids||[note.part_id])],partLabel=partIds.map(id=>parts.find(part=>part.id===id)?.name||'Selected part').join(' + ');
-    return{id:note.id,midi:note.midi,pitch:midiName(note.midi),startMs:note.start_ms,durationMs:note.duration_ms,sourceIds,occurrenceIds,partIds,identity:`${partLabel}${note.voice?` · voice ${note.voice}`:''}${sourceIds.length>1?' · tied':''}`,phase:active?'sounding':continuing?'continuing':'upcoming',time:active?'Sounding':continuing?`Continues in ${countdown(segmentStart-position)}`:`In ${countdown(note.start_ms-position)}`,onset:`At ${seconds(note.start_ms)}s`,kind:mode==='practice'?'Target':'Occurrence'};
+    const chosen=occurrenceIds.map(id=>assignments.get(id)).filter(Boolean);
+    const route=chosen.length===occurrenceIds.length?chosen.map(choice=>guitarChoiceLabel(choice,plan.profile)).join(' / '):'No current recommended route';
+    const picking=showPicking&&chosen.length?`Picking heuristic: ${[...new Set(chosen.map(guitarPickingLabel))].join(' / ')}`:'';
+    return{route,picking,choices:chosen,id:note.id,midi:note.midi,pitch:midiName(note.midi),startMs:note.start_ms,durationMs:note.duration_ms,sourceIds,occurrenceIds,partIds,identity:`${partLabel}${note.voice?` · voice ${note.voice}`:''}${sourceIds.length>1?' · tied':''}`,phase:active?'sounding':continuing?'continuing':'upcoming',time:active?'Sounding':continuing?`Continues in ${countdown(segmentStart-position)}`:`In ${countdown(note.start_ms-position)}`,onset:`At ${seconds(note.start_ms)}s`,kind:mode==='practice'?'Target':'Occurrence'};
   });
   const additionalSounding=current.length-currentCount,additionalUpcoming=upcoming.length-(visible.length-currentCount);
   return{phase,state,items,additional:additionalSounding+additionalUpcoming,additionalSounding,additionalUpcoming};
@@ -47,11 +52,13 @@ export function setupGuitarGuidance(document) {
     const nextCards=new Map();
     for(const item of view.items){
       let card=cards.get(item.id);
-      if(!card){card=document.createElement('li');card.className='guitar-target';for(const name of ['pitch','time','onset','identity']){const span=document.createElement(name==='pitch'?'strong':'span');span.className=`guitar-target-${name}`;card.append(span);}}
+      if(!card){card=document.createElement('li');card.className='guitar-target';for(const name of ['pitch','time','onset','identity','route','picking']){const span=document.createElement(name==='pitch'?'strong':'span');span.className=`guitar-target-${name}`;card.append(span);}}
       card.dataset.targetId=item.id;card.dataset.startMs=String(item.startMs);card.dataset.durationMs=String(item.durationMs);card.dataset.sourceIds=JSON.stringify(item.sourceIds);card.dataset.occurrenceIds=JSON.stringify(item.occurrenceIds);card.dataset.phase=item.phase;
       card.querySelector('.guitar-target-pitch').textContent=item.pitch;card.querySelector('.guitar-target-time').textContent=item.time;card.querySelector('.guitar-target-onset').textContent=item.onset;
       card.querySelector('.guitar-target-identity').textContent=item.identity;
-      card.title=`${item.kind}: ${item.id}. Source occurrences: ${item.occurrenceIds.join(', ')}. Source notes: ${item.sourceIds.join(', ')}. Parts: ${item.partIds.join(', ')}. Duration in score: ${seconds(item.durationMs)}s. Sustain and fingering are not scored.`;
+      card.querySelector('.guitar-target-route').textContent=item.route;card.querySelector('.guitar-target-picking').textContent=item.picking;card.querySelector('.guitar-target-picking').hidden=!item.picking;
+      card.dataset.route=JSON.stringify(item.choices.map(choice=>({string:choice.string,fret:choice.fret,finger:choice.finger})));
+      card.title=`${item.kind}: ${item.id}. Source occurrences: ${item.occurrenceIds.join(', ')}. Source notes: ${item.sourceIds.join(', ')}. Parts: ${item.partIds.join(', ')}. Duration in score: ${seconds(item.durationMs)}s. ${item.route}. ${item.picking?item.picking+'. ':''}Sustain and fingering are not scored.`;
       card.setAttribute('aria-description',card.title);nextCards.set(item.id,card);
     }
     // Keep existing card nodes and horizontal scroll while the countdown changes.

@@ -3,6 +3,8 @@ import {setupGameShell} from './game-shell.js';
 import {ScorePreview,filterCatalog,stageShortcutAllowed} from './score-preview.js';
 import {setupPerformanceView,FIELD_COLORS,previewMusicMetadata} from './performance-view.js';
 import {setupGuitarGuidance} from './guitar-guidance.js';
+import {setupGuitarFingering} from './guitar-fingering.js';
+import {setupGuitarFingeringView,highlightGuitarRoute} from './guitar-fingering-view.js';
 import {prepareScoreDownload} from './score-download.js';
 import {validateCatalogIndex,CatalogScoreCache,fetchCatalogScore} from './catalog-loader.js';
 import {setupNotationFollowing} from './notation-follow.js';
@@ -43,6 +45,7 @@ let notationFollowing = null;
 let writtenCursor = null, writtenCursorStatus = null, writtenCursorRetry = null;
 let sourceArchiveView=null;
 let midiController=null;
+let guitarFingering=null,guitarFingeringView=null;
 let shell=null,preview=null,performanceView=null,startingPreview=false,previewRefreshQueued=false,startRequest=0,enteringPreview=false;
 const catalogCache=new CatalogScoreCache();
 const latencyPreference=readLatencyPreference();
@@ -300,23 +303,23 @@ function renderFretboard() {
   const board = $('fretboard'); board.replaceChildren();
   const {tuning, frets, capo} = state.guitar; const last = frets - capo;
   board.setAttribute('aria-label', `Guitar fretboard: tuning ${tuning.map(midiName).join(', ')}, capo ${capo}`);
-  board.style.gridTemplateColumns = `35px repeat(${last + 1}, 1fr)`;
+  board.style.gridTemplateColumns = `64px repeat(${last + 1}, 1fr)`;
   board.style.gridTemplateRows = `22px repeat(${tuning.length}, 34px)`;
-  board.style.minWidth = `${Math.max(600, 35 + (last + 1) * 54)}px`;
+  board.style.minWidth = `${Math.max(600, 64 + (last + 1) * 54)}px`;
   board.style.height = `${22 + tuning.length * 34}px`;
   board.append(document.createElement('span'));
   for (let fret = 0; fret <= last; fret++) { const label = document.createElement('span'); label.className = 'fret-number'; label.textContent = fret === 0 ? capo ? `CAPO ${capo}` : 'OPEN' : String(fret); board.append(label); }
   tuning.forEach((open, string) => {
-    const label = document.createElement('span'); label.className = 'string-name'; label.textContent = midiName(open + capo); board.append(label);
+    const label = document.createElement('span'); label.className = 'string-name'; label.textContent = `${string+1} · ${midiName(open)}`;label.title = `Tuning row ${string+1}: ${midiName(open)}${capo?`, capo-open ${midiName(open+capo)}`:''}`; board.append(label);
     for (let fret = 0; fret <= last; fret++) {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'fret-button';
       button.dataset.midi = String(open + capo + fret); button.dataset.string = String(string); button.dataset.fret = String(fret);
-      button.setAttribute('aria-label', `String ${string + 1}, fret ${fret}${capo ? ` after capo ${capo}` : ''}: ${midiName(open + capo + fret)}`);
+      button.setAttribute('aria-label', `String row ${string + 1} (tuning ${midiName(open)}), fret ${fret}${capo ? ` after capo ${capo}` : ''}: ${midiName(open + capo + fret)}`);
       button.setAttribute('aria-pressed', 'false');
       const text = document.createElement('span'); text.textContent = midiName(open + capo + fret); button.append(text); board.append(button);
     }
   });
-  $('guitar-description').textContent = `${tuning.map(midiName).join(' · ')} tuning, string 1 → ${tuning.length}. ${frets} physical frets; capo ${capo}. Displayed fret numbers are relative to the capo. Highlighted positions are pitch options, not a validated fingering.`;
+  $('guitar-description').textContent = `${tuning.map(midiName).join(' · ')} tuning, string 1 → ${tuning.length}. ${frets} physical frets; capo ${capo}. Displayed fret numbers are relative to the capo. Chosen route highlights are advisory. Optional outlined alternatives are pitch matches only; MIDI cannot verify string or finger. Input colors indicate pitch only.`;
   midiController?.refresh();
 }
 function currentProfile() {
@@ -434,7 +437,8 @@ function releaseNote(source, eventTime = null, options = {}) {
 function highlightKeys(activeNotes = []) {
   const held = new Set(state.held.values());
   const active = new Set(activeNotes.map(n => n.midi));
-  document.querySelectorAll('[data-midi]').forEach(button => { const midi = Number(button.dataset.midi); button.classList.toggle('pressed', held.has(midi)); button.classList.toggle('playing', active.has(midi)); button.setAttribute('aria-pressed', String(held.has(midi))); });
+  document.querySelectorAll('[data-midi]').forEach(button => { const midi = Number(button.dataset.midi); button.classList.toggle('pressed', held.has(midi)); if(!button.classList.contains('fret-button'))button.classList.toggle('playing', active.has(midi)); button.setAttribute('aria-pressed', String(held.has(midi))); });
+  highlightGuitarRoute(document,{notes:activeNotes,groups:state.mode==='practice'?state.targetGroups:new Map(),plan:guitarFingering?.state().plan,...guitarFingeringView?.options()});
 }
 function connectPlayable(container) {
   container.addEventListener('pointerdown', event => {
@@ -628,7 +632,8 @@ function drawFrame() {
   $('progress').max = Math.max(1, duration); $('progress').value = Math.min(duration, Math.max(0, position));
   $('time-label').textContent = `${formatTime(position)} / ${formatTime(duration)}`;
   if (state.instrument === 'guitar') {
-    renderGuitarGuidance({timeline:state.mode==='practice'?state.targetTimeline:state.practiceTimeline||timeline,groups:state.mode==='practice'?state.targetGroups:new Map(),parts:state.score?.parts||[],position,segmentStart,segmentEnd:state.loop?.end_ms||duration,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,mode:state.mode,loopIteration:state.loop?state.loopIteration:null});
+    guitarFingering?.prepare();
+    renderGuitarGuidance({plan:guitarFingering?.state().plan,...guitarFingeringView?.options(),timeline:state.mode==='practice'?state.targetTimeline:state.practiceTimeline||timeline,groups:state.mode==='practice'?state.targetGroups:new Map(),parts:state.score?.parts||[],position,segmentStart,segmentEnd:state.loop?.end_ms||duration,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,mode:state.mode,loopIteration:state.loop?state.loopIteration:null});
     return;
   }
   const canvas = $('falling-notes'); const width = canvas.clientWidth; const height = canvas.clientHeight;
@@ -886,6 +891,10 @@ sourceArchiveView=setupSourceArchiveView({getContext:()=>({score:state.score,ver
 externalOmrView = setupExternalOmrReview({api,onActivate:importCanonicalScore,pausePlayback,notice,getSourceVersion:()=>state.loadIntent});
 adaptationView = setupAdaptationView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.score,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
 transpositionView = setupTranspositionView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.score,timeline:state.compiled?.timeline,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
+const guitarContext=()=>({score:state.score,timeline:state.compiled?.timeline,part_id:state.practicePart,profile:currentProfile(),dirty:state.profileDirty});
+guitarFingering=setupGuitarFingering({api,getContext:guitarContext,onChange:()=>guitarFingeringView?.render()});
+guitarFingeringView=setupGuitarFingeringView({document,controller:guitarFingering,getContext:guitarContext,onRefresh:drawFrame});
+guitarFingeringView.render();
 metronome = setupMetronome({api,getScore:()=>state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:transport.time(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
 performanceView=setupPerformanceView({getContext:()=>({geometry:state.geometry,rangeLabel:`${midiName(state.geometry[0].midi)}–${midiName(state.geometry.at(-1).midi)}`,mode:state.mode,instrument:state.instrument,position:transport.time(performance.now()),segmentStart:state.loop?.start_ms||0,countInBeatMs:60000/(Number($('tempo').value)||100),running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,now:performance.now(),recorder:state.recorder})});
 writtenCursorStatus=document.createElement('p');writtenCursorStatus.id='written-cursor-status';writtenCursorStatus.setAttribute('aria-live','off');
