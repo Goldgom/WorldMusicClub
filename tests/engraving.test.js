@@ -111,7 +111,7 @@ test('renderer receives a parsed Document with SVG-only bounded options and sele
 
 test('compact dock headers change only renderer layout and preserve all source measure metadata',async()=>{
   const env=environment();const output=await renderEngravedStaff(env.container,xml,{compactHeader:true});assert.equal(output.status,'ready');
-  const renderer=env.instances[0];assert.equal(renderer.options.drawTitle,false);assert.equal(renderer.options.drawSubtitle,false);assert.equal(renderer.options.drawComposer,false);assert.equal(renderer.options.drawPartNames,true);assert.equal(renderer.options.drawTimeSignatures,true);assert.equal(output.metadata.noteCount,validate().metadata.noteCount);assert.equal(output.metadata.measureCount,validate().metadata.measureCount);output.dispose();
+  const renderer=env.instances[0];assert.equal(renderer.options.drawTitle,false);assert.equal(renderer.options.drawSubtitle,false);assert.equal(renderer.options.drawComposer,false);assert.equal(renderer.options.drawPartNames,true);assert.equal(renderer.options.drawTimeSignatures,true);assert.equal(renderer.EngravingRules.PageTopMargin,1);assert.equal(renderer.EngravingRules.PageTopMarginNarrow,1);assert.equal(output.metadata.noteCount,validate().metadata.noteCount);assert.equal(output.metadata.measureCount,validate().metadata.measureCount);output.dispose();
 });
 
 test('missing assets fail clearly without replacing the existing basic view', async () => {

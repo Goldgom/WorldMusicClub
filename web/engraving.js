@@ -175,6 +175,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     rules.MaxMeasureToDrawIndex = checked.options.toMeasure - 1;
     rules.MinMeasureToDrawNumber = 0;
     rules.MaxMeasureToDrawNumber = 0;
+    if(checked.options.compactHeader){rules.PageTopMargin=1;rules.PageTopMarginNarrow=1;}
     renderer.Zoom = checked.options.zoom;
     renderer.updateGraphic();
     renderer.render();

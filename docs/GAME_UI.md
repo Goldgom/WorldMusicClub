@@ -26,7 +26,7 @@ The lobby anchors the selected title, composer, abstract artwork and opening key
 
 The blocking instrument reason and Start buttons stay together in a fixed footer while source notices and import/replacement guidance remain available in the detail area. The compact song list keeps the selected edition clearly marked. Narrow landscape layouts bound the stage grid and wrap tool labels so controls remain reachable without a scrolling performance page.
 
-The dock uses the adapter's explicit `compactHeader: true` layout option to suppress duplicate title, subtitle and composer headings. Standalone adapter calls keep headers by default. This option does not modify the canonical score, MusicXML export, part selection, measure range or note content. Current measure/range/following state remains visible; longer explanations are expandable and the notice-count button opens detailed warnings or the current rendering error.
+The dock uses the adapter's explicit `compactHeader: true` layout option to suppress duplicate title, subtitle and composer headings and reduce its blank top margin. Standalone adapter calls keep their headers and margins by default. This option does not modify the canonical score, MusicXML export, part selection, measure range or note content. Current measure/range/following state remains visible; longer explanations are expandable and the notice-count button opens detailed warnings or the current rendering error. Short landscape windows move part/page-size choices into that expandable area and keep page arrows, range and following in a visible row, leaving space for the music.
 
 ## In-play feedback
 

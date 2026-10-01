@@ -32,7 +32,7 @@ export function setupNotationFollowing({api,getContext,getPlayback,view}){
   function suspend(reason='Manual navigation suspended following. Enable it again to resume.'){
     generation++;controller?.abort();controller=null;checkbox.checked=false;last='';message(reason);
   }
-  function scoreChanged(){suspend('Following is off. Enable it to follow the current measure.');index=null;target=null}
+  function scoreChanged(){suspend('Following is off.');index=null;target=null}
   function tick(position,running){
     if(!checkbox.checked||!index)return;
     if(target!==getContext().score){scoreChanged();return}if(!view.isActive()){suspend('Following stopped because the engraved view is not active. Manual notation and playback remain available.');return}

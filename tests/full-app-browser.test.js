@@ -836,9 +836,47 @@ test('real lobby preview leaves the active source and clock intact until an expl
   const[activationResponse]=await Promise.all([nextResponse('/api/compile'),startPreview({notation:false})]);assert.deepEqual((await responseJson(activationResponse)).score,candidate);assert.equal(await page.locator('#stage-title').textContent(),candidate.title);assert.equal(requests.filter(request=>request.path==='/api/compile').length,before+2,'Start recompiles through the canonical activation path');assert.deepEqual(await exportScore(),candidate);await closeShellPanels();await assertStoppedAtZero();
 });
 
-async function viewportSnapshot(name) {
+async function engravedNoteheadVisibility() {
+  return page.evaluate(()=>{
+    const bounds=box=>({x:box.left,y:box.top,right:box.right,bottom:box.bottom,width:Math.max(0,box.right-box.left),height:Math.max(0,box.bottom-box.top)});
+    const viewport={left:0,top:0,right:innerWidth,bottom:innerHeight};
+    const criteria={minimumVisibleFraction:.9,minimumVisibleWidth:4,minimumVisibleHeight:3};
+    const samples=[...document.querySelectorAll('#engraved-staff .vf-notehead path')].map((note,index)=>{
+      const rect=note.getBoundingClientRect(),visible={left:Math.max(rect.left,0),top:Math.max(rect.top,0),right:Math.min(rect.right,innerWidth),bottom:Math.min(rect.bottom,innerHeight)},clippingAncestors=[];
+      const noteStyle=getComputedStyle(note);let painted=(noteStyle.fill!=='none'&&Number(noteStyle.fillOpacity)>0)||(noteStyle.stroke!=='none'&&Number(noteStyle.strokeOpacity)>0);
+      for(let element=note;element;element=element.parentElement){
+        const style=getComputedStyle(element);if(style.display==='none'||style.visibility==='hidden'||style.visibility==='collapse'||Number(style.opacity)===0)painted=false;
+        // SVG groups do not establish overflow viewports; an ancestor <svg> does.
+        if(element===note||element instanceof SVGElement&&!(element instanceof SVGSVGElement))continue;
+        const clipX=/^(auto|scroll|hidden|clip|overlay)$/.test(style.overflowX),clipY=/^(auto|scroll|hidden|clip|overlay)$/.test(style.overflowY);if(!clipX&&!clipY)continue;
+        const box=element.getBoundingClientRect(),html=element instanceof HTMLElement;
+        const scaleX=html&&element.offsetWidth?box.width/element.offsetWidth:1,scaleY=html&&element.offsetHeight?box.height/element.offsetHeight:1;
+        const left=box.left+(html?element.clientLeft*scaleX:0),top=box.top+(html?element.clientTop*scaleY:0);
+        const clip={left,top,right:html?left+element.clientWidth*scaleX:box.right,bottom:html?top+element.clientHeight*scaleY:box.bottom};
+        if(clipX){visible.left=Math.max(visible.left,clip.left);visible.right=Math.min(visible.right,clip.right);}
+        if(clipY){visible.top=Math.max(visible.top,clip.top);visible.bottom=Math.min(visible.bottom,clip.bottom);}
+        clippingAncestors.push({element:element.id?`#${element.id}`:`${element.localName}.${[...element.classList].join('.')}`,overflowX:style.overflowX,overflowY:style.overflowY,clip:bounds(clip)});
+      }
+      const visibleRect=bounds(visible),area=rect.width*rect.height,visibleFraction=area>0?visibleRect.width*visibleRect.height/area:0;
+      const meaningful=painted&&visibleFraction>=criteria.minimumVisibleFraction&&visibleRect.width>=criteria.minimumVisibleWidth&&visibleRect.height>=criteria.minimumVisibleHeight;
+      return{index,rect:bounds(rect),visibleRect,visibleFraction,painted,meaningful,clippingAncestorCount:clippingAncestors.length,clippingAncestors:clippingAncestors.slice(0,32)};
+    });
+    const rect=selector=>{const element=document.querySelector(selector);return element?bounds(element.getBoundingClientRect()):null;};
+    return{viewport:bounds(viewport),criteria,dock:rect('#notation-dock'),scroll:rect('.engraving-scroll'),noteheadCount:samples.length,meaningfullyVisibleCount:samples.filter(sample=>sample.meaningful).length,samples:samples.sort((a,b)=>Number(b.meaningful)-Number(a.meaningful)||b.visibleFraction-a.visibleFraction).slice(0,12)};
+  });
+}
+
+async function viewportSnapshot(name,{requireVisibleNoteheads=false}={}) {
   await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))});
-  await page.screenshot({path:join(artifactDirectory,`worldmusichub-live-${name}.png`),fullPage:false,animations:'disabled'});
+  const screenshotOptions={path:join(artifactDirectory,`worldmusichub-live-${name}.png`),fullPage:false,animations:'disabled'};
+  const visibility=requireVisibleNoteheads?await engravedNoteheadVisibility():null;
+  if(visibility){
+    await writeFile(join(artifactDirectory,`worldmusichub-live-${name}-visibility.json`),JSON.stringify(visibility,null,2));
+    if(!visibility.meaningfullyVisibleCount)await page.screenshot(screenshotOptions);
+    assert.ok(visibility.meaningfullyVisibleCount>0,`The prepared notation screenshot must show at least 90% of a real notehead (minimum 4×3 px) inside the viewport and every overflow-clipping ancestor: ${JSON.stringify(visibility)}`);
+  }
+  await page.screenshot(screenshotOptions);
+  return visibility;
 }
 
 async function exportTakeData() {
@@ -910,8 +948,9 @@ for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:8
     const scrolledLobby=await compactGeometry();assertPinnedPreview(scrolledLobby,viewport);for(const name of ['identity','title','credits','music','footer','gate','listen','practice'])assert.deepEqual(scrolledLobby[name],expandedLobby[name],`${name} remains anchored while source details scroll`);assert.equal(await page.locator('#preview-music-meta').textContent(),musicMeta);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby-notices-scrolled`);
     const catalog=await rustApi('/api/catalog/index'),candidate=catalog.items.find(item=>item.id!==edition.id&&item.id!==initialCompilation.score.id);assert.ok(candidate);
     await selectPreview(candidate.id,candidate.title);assert.equal(await page.locator('#preview-notices').evaluate(element=>element.open),false);assert.equal(await page.locator('.preview-copy').evaluate(element=>element.scrollTop),0);assert.deepEqual(await pausedTakeSnapshot(),activeTake,'Browsing another score preserves the paused take');
-    await selectPreview(edition.id,edition.title);assert.equal(await page.locator('#preview-notices').evaluate(element=>element.open),false);assert.equal(await page.locator('.preview-copy').evaluate(element=>element.scrollTop),0);assert.equal(await page.locator('#preview-music-meta').textContent(),musicMeta);assert.deepEqual(await pausedTakeSnapshot(),activeTake,'Returning to D768 preserves the paused take');assert.deepEqual(await exportTakeData(),takeBefore,'Preview details, scrolling and catalog swaps preserve every captured input and clock segment');assert.deepEqual(await exportScore(),initialCompilation.score);await closeShellPanels();
+    await selectPreview(edition.id,edition.title);assert.equal(await page.locator('#preview-notices').evaluate(element=>element.open),false);assert.equal(await page.locator('.preview-copy').evaluate(element=>element.scrollTop),0);assert.equal(await page.locator('#preview-music-meta').textContent(),musicMeta);assert.deepEqual(await pausedTakeSnapshot(),activeTake,'Returning to D768 preserves the paused take');assert.deepEqual(await exportTakeData(),takeBefore,'Preview details, scrolling and catalog swaps preserve every captured input and clock segment');
     if(viewport.width>=1280){await ui('#theme-mode').selectOption('dark');await closeShellPanels();assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');assertPinnedPreview(await compactGeometry(),viewport);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby-dark`);await ui('#theme-mode').selectOption('light');await closeShellPanels();assert.equal(await page.locator('html').getAttribute('data-theme'),'light');}
+    assert.deepEqual(await exportScore(),initialCompilation.score);await closeShellPanels();
     await startPreview({notation:false});assert.equal(await page.locator('#stage-title').textContent(),edition.title);assert.equal(await page.locator('.shell-header').isVisible(),false);assert.equal(await page.locator('#notation-dock').isVisible(),false);assert.equal(await page.locator('#stage-cue-main').textContent(),'READY');
     const stage=await compactGeometry();assertBoundedDocument(stage);assertInsideViewport(stage.stage,viewport,'Performance stage');assertInsideViewport(stage.play,viewport,'Playfield and transport');assertInsideViewport(stage.transport,viewport,'Transport');assert.ok(stage.stage.scrollHeight<=stage.stage.clientHeight+1,'The stage must not become a scrolling dashboard');assert.ok(stage.play.scrollHeight<=stage.play.clientHeight+1,'Playfield and transport must fit without panel scrolling');assert.ok(stage.field.height>=viewport.height*(viewport.width>=1280?.5:.32),`The musical field needs substantial vertical space: ${JSON.stringify(stage.field)}`);
     if(viewport.width>=1280){const centers=stage.hudItems.map(item=>item.centerY);assert.ok(Math.max(...centers)-Math.min(...centers)<=2,`Desktop tools and title share one HUD row: ${JSON.stringify(stage.hudItems)}`);assert.ok(stage.hud.height<=70,JSON.stringify(stage.hud));}
@@ -923,13 +962,15 @@ for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:8
     if(keyboardRange.total>keyboardRange.width+1){const direction=await page.locator('#keyboard-pan-right').isEnabled()?'right':'left';await page.locator(`#keyboard-pan-${direction}`).click();await page.waitForFunction(previous=>Math.abs(document.querySelector('#piano-scroll').scrollLeft-previous)>1,keyboardRange.left);assert.equal(await page.locator('.piano-key').count(),61,'Panning never truncates the configured keyboard');}
     for(const name of ['settings','score-tools','import-tools','results']){await page.locator(`#${name}-button`).click();await page.locator(`#${name}-dialog`).waitFor();if(name==='settings')for(const id of ['midi-button','count-in','typing-octave'])assert.equal(await page.locator(`#${id}`).isVisible(),true);await page.locator(`#${name}-dialog [data-close-panel]`).click();}
     await page.locator('#library-button').click();await page.locator('#score-library').waitFor();await page.locator('#library-close').click();
-    await page.locator('#notation-toggle').click();await waitForEngraving();assert.ok(await page.locator('#engraved-staff svg').count()>0);assert.ok(await page.locator('#engraved-staff .vf-notehead path').count()>0,'Compact headers retain the actual generated notes');assert.equal(await page.locator('#engraved-staff .vf-notehead path').evaluateAll(notes=>{const box=document.querySelector('.engraving-scroll').getBoundingClientRect();return notes.some(note=>{const rect=note.getBoundingClientRect();return rect.width>0&&rect.height>0&&rect.right>Math.max(0,box.left)&&rect.left<Math.min(innerWidth,box.right)&&rect.bottom>Math.max(0,box.top)&&rect.top<Math.min(innerHeight,box.bottom)})}),true,'At least one engraved notehead must actually fit inside the visible dock');
+    await page.locator('#notation-toggle').click();await waitForEngraving();assert.ok(await page.locator('#engraved-staff svg').count()>0);assert.ok(await page.locator('#engraved-staff .vf-notehead path').count()>0,'Compact headers retain the actual generated notes');
     const svgText=(await page.locator('#engraved-staff svg text').allTextContents()).join(' ').replace(/\s+/g,' ');assert.equal(svgText.includes('Wandrers Nachtlied'),false,'The dock must not repeat the score title');assert.equal(svgText.includes(edition.composer),false,'The dock must not repeat the composer');assert.equal(await page.locator('#stage-title').textContent(),edition.title);
     assert.match(await page.locator('#engraving-range').textContent(),/Measures 1–8 \/ 14/);assert.equal(await page.locator('#engraving-follow').isVisible(),true);assert.equal(await page.locator('#engraving-follow-status').isVisible(),true);assert.match(await page.locator('#engraving-follow-status').textContent(),/Following is off/);
     for(const selector of ['#engraving-range','#engraving-follow-status']){const bounds=await page.locator(selector).boundingBox();assertInsideViewport({...bounds,right:bounds.x+bounds.width,bottom:bounds.y+bounds.height},viewport,`Visible notation state ${selector}`);}
-    const help=await page.locator('#engraving-follow-help').evaluate(element=>({inDetails:Boolean(element.closest('details')),open:element.closest('details')?.open}));assert.deepEqual(help,{inDetails:true,open:false});assert.equal(await page.locator('#dock-warning-count').isVisible(),true);assert.match(await page.locator('#dock-warning-count').textContent(),/Notation notices.*\d/);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-notation`);
+    const help=await page.locator('#engraving-follow-help').evaluate(element=>({inDetails:Boolean(element.closest('details')),open:element.closest('details')?.open}));assert.deepEqual(help,{inDetails:true,open:false});assert.equal(await page.locator('#dock-warning-count').isVisible(),true);assert.match(await page.locator('#dock-warning-count').textContent(),/Notation notices.*\d/);
+    if(viewport.height<=600&&viewport.width>=651){assert.equal(await page.locator('#engraving-part').isVisible(),false);await page.locator('.dock-help>summary').click();assert.equal(await page.locator('#engraving-part').isVisible(),true);assert.equal(await page.locator('#engraving-page-size').isVisible(),true);await page.locator('.dock-help>summary').click();assert.equal(await page.locator('#engraving-part').isVisible(),false);assert.equal(await page.locator('#engraving-range').isVisible(),true);}
+    const notationVisibility=await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-notation`,{requireVisibleNoteheads:true});
     assert.deepEqual(await exportScore(),edition,'Viewport, panning, compact notation and tools preserve every canonical event and retained source byte');await closeShellPanels();await assertStoppedAtZero();
-    await writeFile(join(artifactDirectory,`worldmusichub-live-compact-${viewport.width}x${viewport.height}.json`),JSON.stringify({viewport,score_id:edition.id,music_meta:musicMeta,lobby,expandedLobby,scrolledLobby,stage,paused_take_unchanged:true,canonical_score_unchanged:true},null,2));
+    await writeFile(join(artifactDirectory,`worldmusichub-live-compact-${viewport.width}x${viewport.height}.json`),JSON.stringify({viewport,score_id:edition.id,music_meta:musicMeta,lobby,expandedLobby,scrolledLobby,stage,notationVisibility,paused_take_unchanged:true,canonical_score_unchanged:true},null,2));
   });
 }
 
