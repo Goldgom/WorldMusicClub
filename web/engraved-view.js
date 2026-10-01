@@ -10,7 +10,7 @@ export function mappedPartIds(exported, canonicalId) {
   return [map[canonicalId]];
 }
 /** Optional presentation surface. All score conversion and timing stay in Rust. */
-export function setupEngravedView({getScore, getPracticePart, pausePlayback, onVisibility, onFallback, notice, onManualNavigation=()=>{}}) {
+export function setupEngravedView({getScore, getPracticePart, pausePlayback, onVisibility, onFallback, notice, onManualNavigation=()=>{},isVisible=()=>true}) {
   const $ = id => document.getElementById(id);
   let active = false, preferred = true, score = null, selectedPart = null, from = 1, pageSize = 8;
   let generation = 0, controller = null, cached = null, adapter = null, rendered = null;
@@ -45,7 +45,7 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
     hide(); $('engraving-fallback').textContent = `Engraved staff unavailable: ${message} Showing the simplified pitch guide. It does not fully engrave rhythm, voices, ties or key signatures. Playback still uses the Rust score.`; $('engraving-fallback').hidden = false; onFallback();
   }
   async function render({automatic=false}={}) {
-    if (!active || !score) return;
+    if (!active || !score || !isVisible()) return;
     cancel(); const current = generation; controller = new AbortController(); const signal = controller.signal; const target = score;
     $('engraving-fallback').hidden = true; onVisibility(true); if(!automatic)pausePlayback(); rangeControls(); $('engraving-status').textContent = 'Preparing exact MusicXML with Rust, then engraving locally…';
     try {
@@ -95,7 +95,7 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
   });
   const observer=new MutationObserver(()=>{const dark=document.documentElement.dataset.theme==='dark';if(dark!==lastDark){lastDark=dark;if(active)render()}});observer.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
   window.addEventListener('pagehide',cancel);window.addEventListener('pageshow',event=>{if(event.persisted&&active)render()});
-  return {show,hide,updateScore,selectPart,isActive:()=>active,
+  return {show,hide,updateScore,selectPart,isActive:()=>active,surfaceChanged(){if(active&&isVisible())render({automatic:true});else cancel()},
     navigationState:()=>({from,ready:Boolean(rendered)}),
     followMeasure(index){if(!active||!score||!Number.isInteger(index)||index<0||index>=score.measures.length)return false;const page=sourceMeasurePage(index,pageSize);if(page===from)return false;from=page;render({automatic:true});return true}
   };
