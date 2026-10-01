@@ -236,9 +236,11 @@ async function waitForEngraving(timeout=25_000) {
 }
 
 async function screenshot(name) {
-  await closeShellPanels();
-  if(await ui('#engraved-button').getAttribute('aria-pressed')==='true'){
-    await waitForEngraving();
+  const reviewing=await page.locator('dialog[open]').evaluateAll((dialogs,panels)=>dialogs.some(dialog=>!panels.includes(dialog.id)),shellPanels.map(name=>`${name}-dialog`));
+  // A native review modal owns the top layer. Capture that state without clicking behind it.
+  if(!reviewing){
+    await closeShellPanels();
+    if(await ui('#engraved-button').getAttribute('aria-pressed')==='true')await waitForEngraving();
   }
   await page.evaluate(async () => {
     await document.fonts.ready;
@@ -394,10 +396,22 @@ test('embedded browser UI selects all exercises and plays, pauses, resumes and r
   await activateCatalogTitle(catalog[0].title);
   await ui('#staff-button').click();
   assert.equal(await ui('#notation').isVisible(),true,'Count the explicitly selected pitch-guide page, not its hidden responsive layout');
-  assert.equal(await ui('.note-head').count(), 15);
-  assert.equal(await ui('.rest').count(), 1);
+  async function allNotationPages(){
+    const pageCount=Number((await ui('#notation-page').textContent()).match(/\/\s*(\d+)/)[1]);assert.ok(pageCount>=1&&pageCount<=4,'The original16-beat exercise uses bounded4/8/16-beat pages');
+    while(await ui('#notation-prev').isEnabled())await ui('#notation-prev').click();
+    const rows=[];
+    for(let index=0;index<pageCount;index++){
+      assert.match(await ui('#notation-page').textContent(),new RegExp(`^Page ${index+1} / ${pageCount}$`));
+      rows.push(...await ui('#notation .score-note').evaluateAll(notes=>notes.map(note=>({id:note.dataset.noteId,pitched:Boolean(note.querySelector('.note-head')),rest:Boolean(note.querySelector('.rest')),numbered:Boolean(note.querySelector('.jianpu-note'))}))));
+      if(index+1<pageCount)await ui('#notation-next').click();
+    }
+    assert.equal(await ui('#notation-next').isDisabled(),true);return rows;
+  }
+  const expectedIds=catalog[0].parts[0].notes.map(note=>note.id).sort(),staffRows=await allNotationPages();
+  assert.deepEqual(staffRows.map(row=>row.id).sort(),expectedIds,'Every written source event appears exactly once across responsive pitch-guide pages');
+  assert.equal(staffRows.filter(row=>row.pitched).length,15);assert.equal(staffRows.filter(row=>row.rest).length,1);
   await ui('#jianpu-button').click();
-  assert.equal(await ui('.jianpu-note').count(), 16);
+  const numberedRows=await allNotationPages();assert.deepEqual(numberedRows.map(row=>row.id).sort(),expectedIds);assert.equal(numberedRows.filter(row=>row.numbered).length,16);
   await ui('#staff-button').click();
   for (const count of [49, 76, 88, 61]) {
     await ui('#key-count').selectOption(String(count));
