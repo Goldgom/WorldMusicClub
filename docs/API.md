@@ -98,3 +98,10 @@ The linked official references were checked on 2026-09-30:
 - [IMSLP](https://imslp.org/wiki/Main_Page) and its [copyright guide](https://imslp.org/wiki/IMSLP:Copyright_Made_Simple): exact edition and jurisdiction matter; a PDF requires a separate reviewed image/OMR workflow
 
 Unsupported PDF, MuseScore-source, LilyPond and image files selected through score import receive format-specific guidance before file contents are read. The app does not install converters, turn PDF into playable music, guarantee source availability or verify legal clearance. Users keep the original file, exact edition URL, rights notice and conversion history, then inspect import diagnostics and musical content before practice.
+
+
+## Explicit reversible octave copies
+
+`POST /api/adaptation/preview` accepts `{score, operation:{part_id:null|string,octaves:integer},profile}` and returns a complete compilation plus changed written-note count, original-retention flag and instrument diagnostics. Preview is stateless. The frontend requires a fresh context-matched preview and explicit confirmation before activation; whole-score and current entire-part scope never mean only the current A–B window. Normal selected-target checks run again after activation.
+
+`POST /api/adaptation/restore` accepts the complete adapted Score and returns its original compilation only if the current derivative still matches the retained transformation. The UI previews that checked original and requires a separate explicit restore confirmation. Activation/restoration does not overwrite saved library copies. Preserve the complete JSON or a library backup for reversibility; MusicXML/.jianpu alone omit the envelope. See [the exact adaptation contract](ADAPTATION.md).

@@ -1,3 +1,4 @@
+import {setupAdaptationView} from './adaptation-view.js';
 import {setupSourceDirectory,unsupportedImportHint} from './score-sources.js';
 import {setupMetronome} from './metronome.js';
 import {setupJianpuExport} from './jianpu-export.js';
@@ -21,6 +22,7 @@ setupThemes();
 const transport = new Transport();
 const synth = new Synth();
 let metronome = null;
+let adaptationView = null;
 const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reason:'Waiting for an instrument compatibility check.'}, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
 state.recorder = new PracticeRecorder({latencyMs:state.latency});
@@ -89,7 +91,7 @@ function resetPlayback() {
   $('feedback-description').textContent = state.mode === 'practice' ? 'Play along using the on-screen keys or your computer keyboard. Your note-on timing is measured locally.' : 'Switch to Practice mode, play along, then see your timing and pitch feedback.';
   updateButtons(); drawFrame();
 }
-async function compileScore(score, preserveTempo = false, expectedIntent = null, importDiagnostics = []) {
+async function compileScore(score, preserveTempo = false, expectedIntent = null, importDiagnostics = [], requestedPracticePart = undefined) {
   if (preserveTempo) importDiagnostics = state.importDiagnostics;
   if (expectedIntent !== null && expectedIntent !== state.loadIntent) return false;
   if (expectedIntent === null) state.loadIntent++;
@@ -105,7 +107,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
   try {
     const compiled = await api('/api/compile', score, controller.signal);
     if (generation !== state.generation || controller.signal.aborted) return;
-    const previousPart = preserveTempo ? state.practicePart : null;
+    const previousPart = requestedPracticePart !== undefined ? requestedPracticePart : preserveTempo ? state.practicePart : null;
     state.score = compiled.score;
     state.importDiagnostics = importDiagnostics;
     const diagnostics = [...new Map([...compiled.diagnostics, ...importDiagnostics].map(item => [`${item.code}:${item.note_id || ''}:${item.message}`, item])).values()];
@@ -119,7 +121,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
     clearNotice();
     resetPlayback();
-    renderScore(); libraryView.scoreChanged(); renderCatalog(); updateRangeWarning();
+    renderScore(); libraryView.scoreChanged(); adaptationView?.scoreChanged(); renderCatalog(); updateRangeWarning();
     const clockScore=state.score;checkInstrument().finally(()=>{if(state.score===clockScore)metronome?.setScore()});
     return true;
   } catch (error) {
@@ -663,12 +665,12 @@ async function importJianpuText(text, signal) {
     return loaded;
   } finally { signal.removeEventListener('abort', cancel); }
 }
-async function importCanonicalScore(score, signal) {
+async function importCanonicalScore(score, signal, {practicePart=undefined,diagnostics=[]} = {}) {
   if(signal.aborted)return false;
   const intent=++state.loadIntent;
   const cancel=()=>{if(intent===state.loadIntent){state.loadIntent++;state.compileController?.abort();$('transport-status').textContent=state.compiled?'Previous score is still available':'Score unavailable';updateButtons()}};
   signal.addEventListener('abort',cancel,{once:true});
-  try{return await compileScore(score,false,intent)}
+  try{return await compileScore(score,false,intent,diagnostics,practicePart)}
   finally{signal.removeEventListener('abort',cancel)}
 }
 const libraryView = setupScoreLibrary({getScore:()=>state.score,onLoad:importCanonicalScore,validate:(score,signal)=>api('/api/compile',score,signal),pausePlayback,notice});
@@ -681,5 +683,6 @@ setupJianpuExport({getScore:()=>state.score,pausePlayback,api});
 setupSourceDirectory({pausePlayback,onScoreFile:()=>$('score-file').click(),onImageFile:()=>$('score-image-file').click()});
 setupImageReview({onImport:importCanonicalScore, pausePlayback, notice});
 setupMidi({pressNote, releaseNote, releaseMatching, silenceHeld, notice});
+adaptationView = setupAdaptationView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.score,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
 metronome = setupMetronome({api,getScore:()=>state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:transport.time(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
 renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); loadCatalog();
