@@ -207,3 +207,5 @@ test('octave scope and confirmation comparisons reject missing parts and invalid
 import './frontend-external-omr-model.test.js';
 
 import "./frontend-engraved-view.test.js";
+
+import "./frontend-notation-follow.test.js";

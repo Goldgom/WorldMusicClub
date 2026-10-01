@@ -1,3 +1,4 @@
+import {sourceMeasurePage} from './notation-follow.js';
 export function engravingWindow(total, from = 1, count = 8) {
   if (!Number.isInteger(total) || total < 0 || !Number.isInteger(from) || from < 1 || !Number.isInteger(count) || count < 1 || count > 64 || (total && from > total)) throw new Error('Choose a valid one-based source measure range of at most 64 measures.');
   return {total, from, to:Math.min(total,from+count-1)};
@@ -9,7 +10,7 @@ export function mappedPartIds(exported, canonicalId) {
   return [map[canonicalId]];
 }
 /** Optional presentation surface. All score conversion and timing stay in Rust. */
-export function setupEngravedView({getScore, getPracticePart, pausePlayback, onVisibility, onFallback, notice}) {
+export function setupEngravedView({getScore, getPracticePart, pausePlayback, onVisibility, onFallback, notice, onManualNavigation=()=>{}}) {
   const $ = id => document.getElementById(id);
   let active = false, preferred = true, score = null, selectedPart = null, from = 1, pageSize = 8;
   let generation = 0, controller = null, cached = null, adapter = null, rendered = null;
@@ -43,10 +44,10 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
     if (!active) return;
     hide(); $('engraving-fallback').textContent = `Engraved staff unavailable: ${message} Showing the simplified pitch guide. It does not fully engrave rhythm, voices, ties or key signatures. Playback still uses the Rust score.`; $('engraving-fallback').hidden = false; onFallback();
   }
-  async function render() {
+  async function render({automatic=false}={}) {
     if (!active || !score) return;
     cancel(); const current = generation; controller = new AbortController(); const signal = controller.signal; const target = score;
-    $('engraving-fallback').hidden = true; onVisibility(true); pausePlayback(); rangeControls(); $('engraving-status').textContent = 'Preparing exact MusicXML with Rust, then engraving locally…';
+    $('engraving-fallback').hidden = true; onVisibility(true); if(!automatic)pausePlayback(); rangeControls(); $('engraving-status').textContent = 'Preparing exact MusicXML with Rust, then engraving locally…';
     try {
       const exported = await exportScore(target, signal);
       if (signal.aborted || current !== generation || !active || target !== getScore()) return;
@@ -77,11 +78,11 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
     score = current; cached = null; from = 1; selectedPart = getPracticePart(); setParts(); rangeControls();
     if (active || preferred) {active=true;render();}
   }
-  function selectPart(part) { selectedPart = part; setParts(); if (active) render(); }
-  $('engraving-part').addEventListener('change', () => { selectedPart=$('engraving-part').value || null; render(); });
-  $('engraving-page-size').addEventListener('change', () => { pageSize=Number($('engraving-page-size').value); from=Math.floor((from-1)/pageSize)*pageSize+1; render(); });
-  $('engraving-prev').addEventListener('click', () => { from=Math.max(1,from-pageSize);render(); });
-  $('engraving-next').addEventListener('click', () => { if(from+pageSize<=(score?.measures.length||0)){from+=pageSize;render()} });
+  function selectPart(part) { onManualNavigation(); selectedPart = part; setParts(); if (active) render(); }
+  $('engraving-part').addEventListener('change', () => { onManualNavigation(); selectedPart=$('engraving-part').value || null; render(); });
+  $('engraving-page-size').addEventListener('change', () => { onManualNavigation(); pageSize=Number($('engraving-page-size').value); from=Math.floor((from-1)/pageSize)*pageSize+1; render(); });
+  $('engraving-prev').addEventListener('click', () => { onManualNavigation(); from=Math.max(1,from-pageSize);render(); });
+  $('engraving-next').addEventListener('click', () => { onManualNavigation(); if(from+pageSize<=(score?.measures.length||0)){from+=pageSize;render()} });
   $('export-musicxml').addEventListener('click', async () => {
     const target=getScore(); if(!target)return;
     const button=$('export-musicxml'); button.disabled=true;
@@ -94,5 +95,8 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
   });
   const observer=new MutationObserver(()=>{const dark=document.documentElement.dataset.theme==='dark';if(dark!==lastDark){lastDark=dark;if(active)render()}});observer.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
   window.addEventListener('pagehide',cancel);window.addEventListener('pageshow',event=>{if(event.persisted&&active)render()});
-  return {show,hide,updateScore,selectPart,isActive:()=>active};
+  return {show,hide,updateScore,selectPart,isActive:()=>active,
+    navigationState:()=>({from,ready:Boolean(rendered)}),
+    followMeasure(index){if(!active||!score||!Number.isInteger(index)||index<0||index>=score.measures.length)return false;const page=sourceMeasurePage(index,pageSize);if(page===from)return false;from=page;render({automatic:true});return true}
+  };
 }

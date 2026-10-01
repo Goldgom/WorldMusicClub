@@ -1,3 +1,4 @@
+import {setupNotationFollowing} from './notation-follow.js';
 import {setupExternalOmrReview} from './external-omr-view.js';
 import {setupAdaptationView} from './adaptation-view.js';
 import {setupSourceDirectory,unsupportedImportHint} from './score-sources.js';
@@ -25,6 +26,7 @@ const synth = new Synth();
 let metronome = null;
 let adaptationView = null;
 let externalOmrView = null;
+let notationFollowing = null;
 const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reason:'Waiting for an instrument compatibility check.'}, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
 state.recorder = new PracticeRecorder({latencyMs:state.latency});
@@ -123,7 +125,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
     clearNotice();
     resetPlayback();
-    renderScore(); libraryView.scoreChanged(); adaptationView?.scoreChanged(); renderCatalog(); updateRangeWarning();
+    renderScore(); notationFollowing?.scoreChanged(); libraryView.scoreChanged(); adaptationView?.scoreChanged(); renderCatalog(); updateRangeWarning();
     const clockScore=state.score;checkInstrument().finally(()=>{if(state.score===clockScore)metronome?.setScore()});
     return true;
   } catch (error) {
@@ -508,6 +510,7 @@ function drawFrame() {
     if(!transport.running&&!state.loop&&pass&&pass.closedWall!==null&&pass.deadline!==null&&now>=pass.deadline&&!transport.completed){transport.finish(duration);$('transport-status').textContent='Complete · 已完成';updateButtons()}
     if(state.recorder.ready(now).length)drainAssessments();
   }
+  notationFollowing?.tick(position < segmentStart ? -1 : position,transport.running);
   const active = position < segmentStart ? [] : playbackIndex?.range(position) || [];
   if (!state.engravingActive && transport.running && active.length) {
     const source = active.flatMap(note=>mappedSourceIds(note,state.mode==='practice'?state.targetGroups.get(note.id):null)).map(id=>state.sourceNotes.get(id)).find(item=>item?.partId===state.notationPart);
@@ -603,7 +606,7 @@ $('tempo').addEventListener('change', () => {
 });
 function selectBasicNotation(mode,{remember=true}={}) { engravedView.hide({remember}); state.notation = mode; $('engraved-button').setAttribute('aria-pressed','false'); $('engraved-button').classList.remove('selected'); $('jianpu-reference-label').hidden = mode !== 'jianpu'; ['staff', 'jianpu'].forEach(m => { $(m + '-button').classList.toggle('selected', m === mode); $(m + '-button').setAttribute('aria-pressed', String(m === mode)); }); renderScore(); }
 for (const mode of ['staff', 'jianpu']) $(mode + '-button').addEventListener('click', () => selectBasicNotation(mode));
-$('engraved-button').addEventListener('click', () => engravedView.show());
+$('engraved-button').addEventListener('click', () => {notationFollowing?.suspend();engravedView.show()});
 $('sound-button').addEventListener('click', () => { synth.muted = !synth.muted; if (synth.muted) synth.silence(); $('sound-button').textContent = synth.muted ? 'Sound off ♫' : 'Sound on ♫'; $('sound-button').setAttribute('aria-pressed', String(synth.muted));metronome?.updateMute(); });
 $('import-button').addEventListener('click', () => $('score-file').click());
 $('mobile-import-button').addEventListener('click', () => $('score-file').click());
@@ -678,9 +681,11 @@ async function importCanonicalScore(score, signal, {practicePart=undefined,diagn
 }
 const libraryView = setupScoreLibrary({getScore:()=>state.score,onLoad:importCanonicalScore,validate:(score,signal)=>api('/api/compile',score,signal),pausePlayback,notice});
 const engravedView = setupEngravedView({getScore:()=>state.score,getPracticePart:()=>state.practicePart,pausePlayback,notice,onVisibility:active=>{
+  if(!active)notationFollowing?.suspend('Following suspended because the engraved view changed. Enable it again after returning.');
   state.engravingActive=active;$('engraving-view').hidden=!active;$('notation-controls').hidden=active;$('notation').hidden=active;$('basic-notation-note').hidden=active;
   if(active){$('score-key').textContent='Generated MusicXML · static staff preview';for(const id of ['staff-button','jianpu-button']){$(id).classList.remove('selected');$(id).setAttribute('aria-pressed','false')}$('engraved-button').classList.add('selected');$('engraved-button').setAttribute('aria-pressed','true')}
-},onFallback:()=>selectBasicNotation('staff',{remember:false})});
+},onFallback:()=>selectBasicNotation('staff',{remember:false}),onManualNavigation:()=>notationFollowing?.suspend()});
+notationFollowing = setupNotationFollowing({api,getContext:()=>({score:state.score,timeline:state.compiled?.timeline}),getPlayback:()=>{const position=transport.time(performance.now());return{position:position<(state.loop?.start_ms||0)?-1:position,running:transport.running}},view:engravedView});
 setupJianpuEditor({onImport:importJianpuText,pausePlayback});
 setupJianpuExport({getScore:()=>state.score,pausePlayback,api});
 setupSourceDirectory({pausePlayback,onScoreFile:()=>$('score-file').click(),onImageFile:()=>$('score-image-file').click(),onExternalOmr:()=>externalOmrView.open()});
