@@ -13,6 +13,22 @@ The response contains:
 - `voice_id_map`: entries `{part_id, staff, voice, lane, xml_voice}`, preserving the
   canonical part/staff/voice and one-based overlap lane for each generated numeric
   MusicXML voice
+- `note_id_map`: optional version-1 complete written-segment identity map. Each
+  entry links `xml_note_id` to `source_note_id`, canonical/generated part and
+  voice, staff/lane, zero-based source measure index, printed measure number,
+  exact quarter-beat `at`, `measure_at` and `duration`, written pitch/rest,
+  effective tie flags and chord membership. Split notes/rests have separate
+  entries retaining the same canonical ID. Duplicate printed measure labels
+  never substitute for ordinal indices. Simultaneous duplicate pitches retain
+  their distinct voice/lane identities; unequal chord durations stay unequal
+
+This map is display metadata, not a new musical clock or proof that a renderer
+can distinguish every glyph. A renderer must validate the complete mapping and
+its current mount before marking a notehead. Matching only pitch or SVG order
+is insufficient. If the complete map exceeds 4 MiB, it is omitted with
+`musicxml_note_map_unavailable`; no partial map is returned and XML export is
+unchanged. Older export responses may omit this field. Mapping version changes
+require an explicit consumer update; unknown versions must not be guessed.
 
 This is generated notation, not recovery of the original engraving. Canonical
 JSON remains authoritative. Export does not mutate the score, its note IDs,

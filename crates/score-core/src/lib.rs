@@ -10,7 +10,9 @@ mod musicxml;
 mod musicxml_export;
 mod musicxml_header;
 pub use midi::import_midi;
-pub use musicxml_export::{export_musicxml, ExportedMusicXml, ExportedVoiceId};
+pub use musicxml_export::{
+    export_musicxml, ExportedMusicXml, ExportedNoteMap, ExportedNoteSegment, ExportedVoiceId,
+};
 mod mxl;
 pub use mxl::import_mxl;
 mod catalog_lookup;

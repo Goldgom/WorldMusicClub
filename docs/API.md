@@ -139,6 +139,25 @@ Response fields: `version:1`, `source_measure_count`, `duration_ms`, `occurrence
 
 `written_note_ids` includes every written note/rest whose onset belongs to the interval, including explicit tie continuations. `continuing_note_ids` contains written events that began earlier and still extend into its start. Membership uses exact rational comparison, not floating tolerances. `sounding_groups` contains the compiled `occurrence_id`, `part_id`, complete tied `source_note_ids`, `start_ms` and `end_ms`. A written continuation is not a new attack; unison voices are not grouped by this display route.
 
+The optional `written_cursor` has its own `version:1`, a complete `source_note_ids`
+table and `spans`. The table is ordered by source onset then Rust lexical ID;
+consumers must resolve by ID, without locale sorting or Unicode normalization.
+Each span is `{source_note_index, measure_occurrence_index, start_ms, end_ms}`.
+It identifies one written note/rest clipped to one half-open measure/repeat
+occurrence. Rust integrates tempo and repeats for both endpoints. Explicit tie
+continuations have separate spans; a note split across measures keeps one
+source ID with distinct spans. Unequal-duration chord tones have distinct ends.
+Rests are visual events, never new scoring targets. Spans are grouped by measure
+occurrence; their order within a group is not a timing sort contract.
+
+The entire cursor is omitted with `notation_written_cursor_unavailable` when it
+exceeds 4 MiB, would overflow the full response budget, or has a written interval
+too small for a reliable floating display clock. No partial cursor is returned.
+Existing measure following remains available when its own limits pass. Older
+responses may omit the cursor. An unknown cursor version must disable exact
+note highlighting rather than guess. These fields prepare exact note display;
+the current frontend still uses the existing measure-following behavior.
+
 Following requires contiguous, ordered measures from beat zero covering the complete score, as the exporter does; it does not sort, repair or invent measures. Limits are 100,000 intervals, 1,000,000 total source references and a 16 MiB response. Failure disables optional following only; manual notation and playback remain available. Existing written A–B loops remain limited to linear scores and reject repeats until explicit pass selection is supported.
 
 The frontend following checkbox is off initially and after score replacement. Enabling it prepares/caches one navigation map for the current immutable score, validates IDs against the current compilation and uses binary interval lookup. Only a change of source measure **page** requests a new local engraving; automatic page turns never pause, seek or reschedule audio. Count-in and the exact full duration have no active interval. Repeats show their original region and one-based pass labels. Manual measure/part/page-size navigation, leaving the engraved view or pagehide suspends following. Preparation/cancellation errors leave manual notation and playback usable. Page rendering can lag the audio clock; individual engraved-note highlighting is not claimed.

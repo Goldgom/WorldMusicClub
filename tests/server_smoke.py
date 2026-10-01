@@ -44,6 +44,21 @@ try:
     status,body,_=request('/api/export/musicxml',json.dumps(catalog[0]).encode(),{'Content-Type':'application/json'})
     assert status==200,body
     exported=json.loads(body);assert exported['part_id_map']['piano']=='P1' and exported['voice_id_map']
+    note_map=exported['note_id_map'];assert note_map['version']==1
+    original_ids={n['id'] for p in catalog[0]['parts'] for n in p['notes']}
+    assert {s['source_note_id'] for s in note_map['segments']}==original_ids
+    import xml.etree.ElementTree as ET
+    xml_notes={n.attrib['id'] for n in ET.fromstring(exported['xml']).iter('note')}
+    assert {s['xml_note_id'] for s in note_map['segments']}==xml_notes
+    status,body,_=request('/api/notation-navigation',json.dumps(catalog[0]).encode(),{'Content-Type':'application/json'})
+    assert status==200,body
+    navigation=json.loads(body);cursor=navigation['written_cursor'];assert cursor['version']==1
+    assert set(cursor['source_note_ids'])==original_ids
+    assert len(cursor['spans'])==len(note_map['segments'])
+    for span in cursor['spans']:
+        occurrence=navigation['occurrences'][span['measure_occurrence_index']]
+        assert occurrence['start_ms']<=span['start_ms']<span['end_ms']<=occurrence['end_ms']
+        assert cursor['source_note_ids'][span['source_note_index']] in occurrence['written_note_ids']+occurrence['continuing_note_ids']
     declared_omr=exported['xml'].replace('<encoding>','<encoding><software>Audiveris 5.11.0</software>')
     omr_input={'engine_version':'5.11.0','output_format':'musicxml','output_content':declared_omr}
     status,body,_=request('/api/omr/audiveris-draft',json.dumps(omr_input).encode(),{'Content-Type':'application/json'})

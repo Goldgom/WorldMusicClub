@@ -1,5 +1,5 @@
 //! Deterministic, bounded canonical-score interchange, not original-engraving recovery.
-use crate::{Beat, Diagnostic, Key, Meter, Note, Part, Score};
+use crate::{Beat, Diagnostic, Key, Meter, Note, Part, Pitch, Score};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::{Arguments, Write};
@@ -10,6 +10,7 @@ const MAX_DURATION_TICKS: i64 = 1_000_000_000;
 const MAX_SEGMENTS: usize = 100_000;
 const MAX_LANES: usize = 256;
 const MAX_EVENTS: usize = 500_000;
+const MAX_NOTE_MAP_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExportedMusicXml {
@@ -19,6 +20,83 @@ pub struct ExportedMusicXml {
     pub part_id_map: BTreeMap<String, String>,
     /// Explicit reversible labels for numeric engraving voices; one entry per lane.
     pub voice_id_map: Vec<ExportedVoiceId>,
+    /// Complete written-segment identity map, or None with an explicit diagnostic.
+    /// This is display metadata; MusicXML and canonical music remain independent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note_id_map: Option<ExportedNoteMap>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ExportedNoteMap {
+    pub version: u32,
+    pub segments: Vec<ExportedNoteSegment>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ExportedNoteSegment {
+    pub xml_note_id: String,
+    pub source_note_id: String,
+    pub part_id: String,
+    pub xml_part_id: String,
+    /// Zero-based ordinal, never the possibly repeated printed measure label.
+    pub source_measure_index: usize,
+    pub measure_number: u32,
+    pub staff: u8,
+    pub voice: String,
+    pub lane: u16,
+    pub xml_voice: String,
+    /// All times use exact quarter-note beats, including split notes and rests.
+    pub at: Beat,
+    pub measure_at: Beat,
+    pub duration: Beat,
+    pub pitch: Option<Pitch>,
+    pub tie_start: bool,
+    pub tie_stop: bool,
+    pub chord: bool,
+}
+
+struct NoteMapBuilder {
+    map: Option<ExportedNoteMap>,
+    remaining: usize,
+}
+impl std::io::Write for NoteMapBuilder {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.remaining = self.remaining.checked_sub(bytes.len()).ok_or_else(|| {
+            std::io::Error::other("Written-note identity metadata exceeds its size limit")
+        })?;
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+impl NoteMapBuilder {
+    fn new(limit: usize) -> Self {
+        Self {
+            map: Some(ExportedNoteMap {
+                version: 1,
+                segments: vec![],
+            }),
+            // Includes the empty wrapper; each entry reserves a comma as well.
+            remaining: limit.saturating_sub(b"{\"version\":1,\"segments\":[]}".len()),
+        }
+    }
+    fn push(&mut self, segment: ExportedNoteSegment) {
+        if self.map.is_none() {
+            return;
+        }
+        if serde_json::to_writer(&mut *self, &segment).is_err() || self.remaining == 0 {
+            self.map = None;
+            return;
+        }
+        self.remaining -= 1;
+        self.map.as_mut().expect("checked").segments.push(segment);
+    }
+}
+
+fn tick_beat(value: i64, divisions: i64) -> Beat {
+    let divisor = gcd(value, divisions);
+    Beat::new(value / divisor, divisions / divisor)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -333,6 +411,7 @@ pub fn export_musicxml(score: &Score) -> Result<ExportedMusicXml, String> {
     let mut segment_count = 0;
     let mut uses_tuplets = false;
     let mut voice_id_map = Vec::new();
+    let mut note_map = NoteMapBuilder::new(MAX_NOTE_MAP_BYTES);
     for (part_index, part) in score.parts.iter().enumerate() {
         let lanes = make_lanes(part, divisions, end, &repeat_boundaries, &mut diagnostics)?;
         if lanes
@@ -445,6 +524,32 @@ pub fn export_musicxml(score: &Score) -> Result<ExportedMusicXml, String> {
                 uses_tuplets |= write_note(
                     &mut xml, segment, lane, chord, divisions, part_index, bar_index,
                 )?;
+                if note_map.map.is_some() {
+                    note_map.push(ExportedNoteSegment {
+                        xml_note_id: format!(
+                            "N{}_{}_{}",
+                            part_index + 1,
+                            segment.note_index + 1,
+                            bar_index + 1
+                        ),
+                        source_note_id: segment.note.id.clone(),
+                        part_id: part.id.clone(),
+                        xml_part_id: format!("P{}", part_index + 1),
+                        source_measure_index: bar_index,
+                        measure_number: bar.number,
+                        staff: segment.note.staff,
+                        voice: lane.original_voice.clone(),
+                        lane: lane.ordinal,
+                        xml_voice: lane.voice.clone(),
+                        at: tick_beat(segment.start, divisions),
+                        measure_at: tick_beat(at, divisions),
+                        duration: tick_beat(segment.end - segment.start, divisions),
+                        pitch: segment.note.pitch.clone(),
+                        tie_start: segment.tie_start,
+                        tie_stop: segment.tie_stop,
+                        chord,
+                    });
+                }
                 if !chord {
                     cursor = segment.end - bar.start;
                     chord_at = segment.note.pitch.as_ref().map(|_| at);
@@ -463,10 +568,14 @@ pub fn export_musicxml(score: &Score) -> Result<ExportedMusicXml, String> {
     if uses_tuplets {
         diagnostics.push(Diagnostic::warning("musicxml_inferred_rhythm", "Nonstandard note lengths use exact time-modification ratios. Rhythmic grouping is inferred; unusual MIDI durations may produce complex tuplets rather than quantized notation.", None));
     }
+    if note_map.map.is_none() {
+        diagnostics.push(Diagnostic::warning("musicxml_note_map_unavailable", "The complete written-note identity map exceeds 4 MiB. Exact notehead following is unavailable; generated MusicXML, canonical notes and playback are unchanged. Use measure following or a smaller score.", None));
+    }
     Ok(ExportedMusicXml {
         xml: xml.text,
         diagnostics,
         voice_id_map,
+        note_id_map: note_map.map,
         part_id_map: score
             .parts
             .iter()
@@ -993,6 +1102,204 @@ mod tests {
         let second = compile(imported.clone()).unwrap().timeline.duration_ms;
         assert!((first - second).abs() < 0.000001);
         (exported, imported)
+    }
+    #[test]
+    fn written_identity_map_matches_xml_cursor_voices_splits_and_unequal_chords() {
+        let mut original = score();
+        original.measures[0].number = 0;
+        original.measures[1].number = 0;
+        original.parts[0].notes = vec![
+            note(
+                "long C",
+                Beat::ZERO,
+                Beat::new(6, 1),
+                Some(("C", 0, 4)),
+                "melody",
+                1,
+            ),
+            note(
+                "short D",
+                Beat::ZERO,
+                Beat::new(1, 3),
+                Some(("D", 0, 4)),
+                "melody",
+                1,
+            ),
+            note(
+                "unison C",
+                Beat::ZERO,
+                Beat::new(2, 1),
+                Some(("C", 0, 4)),
+                "melody",
+                1,
+            ),
+            note("rest", Beat::new(3, 1), Beat::new(3, 1), None, "bass", 2),
+            note(
+                "repeat C",
+                Beat::new(6, 1),
+                Beat::new(1, 1),
+                Some(("C", 0, 4)),
+                "melody",
+                1,
+            ),
+        ];
+        let before = serde_json::to_string(&original).unwrap();
+        let exported = export_musicxml(&original).unwrap();
+        assert_eq!(before, serde_json::to_string(&original).unwrap());
+        let map = exported.note_id_map.as_ref().unwrap();
+        assert_eq!(map.version, 1);
+        assert_eq!(map.segments.len(), 7);
+        let by_id: HashMap<_, _> = map
+            .segments
+            .iter()
+            .map(|s| (s.xml_note_id.as_str(), s))
+            .collect();
+        assert_eq!(by_id.len(), 7);
+        let document = roxmltree::Document::parse(&exported.xml).unwrap();
+        let child = |n: roxmltree::Node<'_, '_>, name: &str| {
+            n.children()
+                .find(|c| c.has_tag_name(name))
+                .unwrap()
+                .text()
+                .unwrap()
+                .to_owned()
+        };
+        let mut visited = 0;
+        for part in document
+            .root_element()
+            .children()
+            .filter(|n| n.has_tag_name("part"))
+        {
+            let mut divisions = 0_i64;
+            for (measure_index, measure) in part
+                .children()
+                .filter(|n| n.has_tag_name("measure"))
+                .enumerate()
+            {
+                let (mut cursor, mut chord_at) = (0_i64, 0_i64);
+                for event in measure.children().filter(|n| n.is_element()) {
+                    match event.tag_name().name() {
+                        "attributes" => {
+                            if let Some(d) = event.children().find(|n| n.has_tag_name("divisions"))
+                            {
+                                divisions = d.text().unwrap().parse().unwrap();
+                            }
+                        }
+                        "backup" => cursor -= child(event, "duration").parse::<i64>().unwrap(),
+                        "forward" => cursor += child(event, "duration").parse::<i64>().unwrap(),
+                        "note" => {
+                            visited += 1;
+                            let segment = by_id[event.attribute("id").unwrap()];
+                            let chord = event.children().any(|n| n.has_tag_name("chord"));
+                            let duration: i64 = child(event, "duration").parse().unwrap();
+                            if !chord {
+                                chord_at = cursor;
+                                cursor += duration;
+                            }
+                            assert_eq!(segment.xml_part_id, part.attribute("id").unwrap());
+                            assert_eq!(segment.source_measure_index, measure_index);
+                            assert_eq!(segment.measure_number, 0);
+                            assert_eq!(segment.xml_voice, child(event, "voice"));
+                            assert_eq!(segment.staff.to_string(), child(event, "staff"));
+                            assert_eq!(segment.chord, chord);
+                            assert!(segment
+                                .measure_at
+                                .equivalent(Beat::new(chord_at, divisions)));
+                            assert!(segment.duration.equivalent(Beat::new(duration, divisions)));
+                            assert!(segment.at.equivalent(
+                                original.measures[measure_index]
+                                    .at
+                                    .checked_add(segment.measure_at)
+                                    .unwrap()
+                            ));
+                            assert_eq!(
+                                segment.pitch.is_none(),
+                                event.children().any(|n| n.has_tag_name("rest"))
+                            );
+                            for (kind, expected) in
+                                [("start", segment.tie_start), ("stop", segment.tie_stop)]
+                            {
+                                assert_eq!(
+                                    expected,
+                                    event.children().any(|n| n.has_tag_name("tie")
+                                        && n.attribute("type") == Some(kind))
+                                );
+                            }
+                            if let Some(pitch) = &segment.pitch {
+                                let p = event.children().find(|n| n.has_tag_name("pitch")).unwrap();
+                                assert_eq!(pitch.step, child(p, "step"));
+                                assert_eq!(pitch.alter.to_string(), child(p, "alter"));
+                                assert_eq!(pitch.octave.to_string(), child(p, "octave"));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        assert_eq!(visited, map.segments.len());
+        let long: Vec<_> = map
+            .segments
+            .iter()
+            .filter(|s| s.source_note_id == "long C")
+            .collect();
+        assert_eq!(long.len(), 2);
+        assert!(long[0].tie_start && !long[0].tie_stop);
+        assert!(!long[1].tie_start && long[1].tie_stop);
+        let short = map
+            .segments
+            .iter()
+            .find(|s| s.source_note_id == "short D")
+            .unwrap();
+        assert!(short.chord && short.duration.equivalent(Beat::new(1, 3)));
+        let unison = map
+            .segments
+            .iter()
+            .find(|s| s.source_note_id == "unison C")
+            .unwrap();
+        assert_ne!(long[0].xml_voice, unison.xml_voice);
+        assert_eq!(long[0].voice, unison.voice);
+        assert!(map
+            .segments
+            .iter()
+            .filter(|s| s.source_note_id == "rest")
+            .all(|s| !s.tie_start && !s.tie_stop));
+    }
+
+    #[test]
+    fn identity_metadata_is_complete_or_explicitly_unavailable_and_old_exports_decode() {
+        let score = crate::catalog().remove(0);
+        let exported = export_musicxml(&score).unwrap();
+        let segment = exported.note_id_map.as_ref().unwrap().segments[0].clone();
+        let mut bounded = NoteMapBuilder::new(600);
+        bounded.push(segment.clone());
+        assert!(bounded.map.is_some());
+        bounded.push(segment.clone());
+        assert!(bounded.map.is_none(), "never retain a partial identity map");
+        bounded.push(segment);
+        assert!(bounded.map.is_none());
+        let mut old = serde_json::to_value(&exported).unwrap();
+        old.as_object_mut().unwrap().remove("note_id_map");
+        let decoded: ExportedMusicXml = serde_json::from_value(old).unwrap();
+        assert!(decoded.note_id_map.is_none());
+        assert_eq!(decoded.xml, exported.xml);
+        for id in [
+            "cc0-schubert-wandrers-nachtlied-d768",
+            "cc0-beethoven-gottes-macht-op48-5",
+        ] {
+            {
+                let score = crate::catalog_score(id).expect("admitted complete edition");
+                let output = export_musicxml(&score).unwrap();
+                let map = output.note_id_map.unwrap();
+                let mapped: HashSet<_> = map.segments.iter().map(|s| &s.source_note_id).collect();
+                let original: HashSet<_> = score
+                    .parts
+                    .iter()
+                    .flat_map(|p| p.notes.iter().map(|n| &n.id))
+                    .collect();
+                assert_eq!(mapped, original);
+            }
+        }
     }
     #[test]
     fn complete_cc0_edition_exports_its_valid_cross_voice_tie_without_changing_sources() {

@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 const MAX_OCCURRENCES: usize = 100_000;
 const MAX_REFERENCES: usize = 1_000_000;
 const MAX_BYTES: usize = 16 * 1024 * 1024;
+const MAX_CURSOR_BYTES: usize = 4 * 1024 * 1024;
 // Count serialized bytes without allocating a second, potentially oversized response buffer.
 #[derive(Default)]
 struct ResponseSize(usize);
@@ -55,14 +56,31 @@ pub struct NotationNavigation {
     pub duration_ms: f64,
     pub occurrences: Vec<MeasureOccurrence>,
     pub sounding_groups: Vec<SoundingGroup>,
+    /// Complete half-open written-event intervals, independent of attack/tie groups.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub written_cursor: Option<WrittenCursor>,
     pub diagnostics: Vec<Diagnostic>,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct WrittenCursor {
+    pub version: u32,
+    /// All canonical IDs, ordered by onset then exact lexical ID (including rests).
+    pub source_note_ids: Vec<String>,
+    pub spans: Vec<WrittenSpan>,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct WrittenSpan {
+    pub source_note_index: usize,
+    pub measure_occurrence_index: usize,
+    pub start_ms: f64,
+    pub end_ms: f64,
 }
 struct WrittenInterval {
     measure: usize,
     from: Beat,
     to: Beat,
-    starts: Vec<String>,
-    continues: Vec<String>,
+    starts: Vec<usize>,
+    continues: Vec<usize>,
 }
 fn count_references(count: &mut usize, added: usize) -> Result<(), String> {
     *count = count
@@ -136,20 +154,14 @@ pub fn notation_navigation(score: Score) -> Result<NotationNavigation, String> {
             first_end += 1;
         }
         count_references(&mut references, active.len())?;
-        let continues = active
-            .iter()
-            .map(|&index| notes[index].id.clone())
-            .collect();
+        let continues = active.iter().copied().collect();
         let first = first_note;
         while first_note < notes.len() && notes[first_note].at.compare(to).is_lt() {
             active.insert(first_note);
             first_note += 1;
         }
         count_references(&mut references, first_note - first)?;
-        let starts = notes[first..first_note]
-            .iter()
-            .map(|note| note.id.clone())
-            .collect();
+        let starts = (first..first_note).collect();
         written.push(WrittenInterval {
             measure,
             from,
@@ -160,6 +172,17 @@ pub fn notation_navigation(score: Score) -> Result<NotationNavigation, String> {
     }
     let tempo = TempoIndex::new(&score.tempo);
     let mut occurrences = vec![];
+    let mut written_cursor = Some(WrittenCursor {
+        version: 1,
+        source_note_ids: notes.iter().map(|note| note.id.clone()).collect(),
+        spans: vec![],
+    });
+    let mut cursor_size = ResponseSize::default();
+    if serde_json::to_writer(&mut cursor_size, &written_cursor).is_err()
+        || cursor_size.0 > MAX_CURSOR_BYTES
+    {
+        written_cursor = None;
+    }
     let mut offset = 0.;
     references = 0;
     for segment in segments {
@@ -183,6 +206,40 @@ pub fn notation_navigation(score: Score) -> Result<NotationNavigation, String> {
             if !start_ms.is_finite() || !end_ms.is_finite() || end_ms <= start_ms {
                 return Err("Written intervals are too small for a reliable display clock at this score's duration; use manual notation paging".into());
             }
+            for &note_index in interval.starts.iter().chain(&interval.continues) {
+                if written_cursor.is_none() {
+                    break;
+                }
+                let note = notes[note_index];
+                let from = if note.at.compare(interval.from).is_gt() {
+                    note.at
+                } else {
+                    interval.from
+                };
+                let note_end = note.at.checked_add(note.duration).expect("validated");
+                let to = if note_end.compare(interval.to).is_lt() {
+                    note_end
+                } else {
+                    interval.to
+                };
+                let span = WrittenSpan {
+                    source_note_index: note_index,
+                    measure_occurrence_index: occurrences.len(),
+                    start_ms: offset + (tempo.at(from.value()) - segment_start_ms),
+                    end_ms: offset + (tempo.at(to.value()) - segment_start_ms),
+                };
+                if !span.start_ms.is_finite()
+                    || !span.end_ms.is_finite()
+                    || span.end_ms <= span.start_ms
+                    || serde_json::to_writer(&mut cursor_size, &span).is_err()
+                    || cursor_size.0 >= MAX_CURSOR_BYTES
+                {
+                    written_cursor = None;
+                    break;
+                }
+                cursor_size.0 += 1; // Conservative comma allowance.
+                written_cursor.as_mut().expect("checked").spans.push(span);
+            }
             occurrences.push(MeasureOccurrence {
                 id: format!("measure-occurrence-{}", occurrences.len()),
                 source_measure_index: interval.measure,
@@ -194,8 +251,16 @@ pub fn notation_navigation(score: Score) -> Result<NotationNavigation, String> {
                 repeat_region_index: segment.repeat_region_index,
                 repeat_pass: segment.repeat_pass,
                 repeat_times: segment.repeat_times,
-                written_note_ids: interval.starts.clone(),
-                continuing_note_ids: interval.continues.clone(),
+                written_note_ids: interval
+                    .starts
+                    .iter()
+                    .map(|&i| notes[i].id.clone())
+                    .collect(),
+                continuing_note_ids: interval
+                    .continues
+                    .iter()
+                    .map(|&i| notes[i].id.clone())
+                    .collect(),
             });
         }
         offset += tempo.at(segment.end.value()) - segment_start_ms;
@@ -213,14 +278,23 @@ pub fn notation_navigation(score: Score) -> Result<NotationNavigation, String> {
     }
     let mut diagnostics = compiled.diagnostics;
     diagnostics.push(Diagnostic::warning("notation_following_scope", "Measure intervals are half-open full-performance navigation. Written anchors include rests and tied continuations; sounding groups retain compiled attack identities. Duplicate written measure labels are not ordinal positions. Manual paging and the Rust playback clock remain independent.", None));
-    let output = NotationNavigation {
+    if written_cursor.is_none() {
+        diagnostics.push(Diagnostic::warning("notation_written_cursor_unavailable", "The complete written-note cursor exceeds 4 MiB or contains intervals too small for a reliable display clock. Exact notehead following is unavailable; measure navigation, canonical notes and playback are unchanged.", None));
+    }
+    let mut output = NotationNavigation {
         version: 1,
         source_measure_count: score.measures.len(),
         duration_ms: compiled.timeline.duration_ms,
         occurrences,
         sounding_groups,
+        written_cursor,
         diagnostics,
     };
+    if serde_json::to_writer(ResponseSize::default(), &output).is_err()
+        && output.written_cursor.take().is_some()
+    {
+        output.diagnostics.push(Diagnostic::warning("notation_written_cursor_unavailable", "Adding the complete written-note cursor exceeds the navigation response limit. Use measure following; canonical notes and playback are unchanged.", None));
+    }
     serde_json::to_writer(ResponseSize::default(), &output).map_err(|error| error.to_string())?;
     Ok(output)
 }
@@ -416,6 +490,83 @@ mod tests {
         assert_eq!(result.sounding_groups[0].end_ms, 500.);
         assert_eq!(result.occurrences[0].source_measure_index, 0);
         assert_eq!(result.occurrences[0].measure_number, 0);
+        let cursor = result.written_cursor.unwrap();
+        let active = |at: f64| {
+            cursor
+                .spans
+                .iter()
+                .filter(|span| span.start_ms <= at && at < span.end_ms)
+                .map(|span| cursor.source_note_ids[span.source_note_index].as_str())
+                .collect::<BTreeSet<_>>()
+        };
+        assert_eq!(active(0.), BTreeSet::from(["tie-start"]));
+        assert_eq!(active(100.), BTreeSet::from(["tie-start", "written-rest"]));
+        assert_eq!(
+            active(500. / 3.),
+            BTreeSet::from(["tie-stop", "written-rest"])
+        );
+        assert_eq!(active(250.), BTreeSet::from(["tie-stop"]));
+        assert!(active(500.).is_empty());
+    }
+    #[test]
+    fn written_cursor_repeats_preserve_unequal_chord_ends_rests_and_tempo_changes() {
+        let mut score = score();
+        let mut short = note("short", Beat::ZERO, Beat::new(1, 1));
+        short.pitch.as_mut().unwrap().step = "D".into();
+        let long = note("long", Beat::ZERO, Beat::new(3, 1));
+        let mut rest = note("rest", Beat::new(1, 1), Beat::new(1, 1));
+        rest.pitch = None;
+        rest.velocity = 0;
+        score.parts[0].notes = vec![short, long, rest];
+        score.tempo.push(Tempo {
+            at: Beat::new(2, 1),
+            bpm: 60.,
+        });
+        score.repeats = vec![Repeat {
+            from: Beat::ZERO,
+            to: Beat::new(4, 1),
+            times: 2,
+        }];
+        let before = serde_json::to_value(&score).unwrap();
+        let compiled = crate::compile(score.clone()).unwrap();
+        let result = notation_navigation(score.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&score).unwrap(), before);
+        assert_eq!(result.duration_ms, compiled.timeline.duration_ms);
+        let cursor = result.written_cursor.unwrap();
+        assert_eq!(cursor.version, 1);
+        assert_eq!(cursor.source_note_ids, vec!["long", "short", "rest"]);
+        let spans: Vec<_> = cursor
+            .spans
+            .iter()
+            .map(|s| {
+                (
+                    cursor.source_note_ids[s.source_note_index].as_str(),
+                    s.measure_occurrence_index,
+                    s.start_ms,
+                    s.end_ms,
+                )
+            })
+            .collect();
+        assert_eq!(
+            spans,
+            vec![
+                ("long", 0, 0., 2000.),
+                ("short", 0, 0., 500.),
+                ("rest", 0, 500., 1000.),
+                ("long", 1, 3000., 5000.),
+                ("short", 1, 3000., 3500.),
+                ("rest", 1, 3500., 4000.),
+            ]
+        );
+        for span in &cursor.spans {
+            let measure = &result.occurrences[span.measure_occurrence_index];
+            assert!(measure.start_ms <= span.start_ms && span.end_ms <= measure.end_ms);
+        }
+        assert_eq!(
+            result.sounding_groups.len(),
+            4,
+            "written rest is never a scored attack"
+        );
     }
     #[test]
     fn long_written_notes_span_measures_without_becoming_repeated_attacks() {
@@ -426,6 +577,21 @@ mod tests {
         assert!(result.occurrences[1].written_note_ids.is_empty());
         assert_eq!(result.occurrences[1].continuing_note_ids, vec!["long"]);
         assert_eq!(result.sounding_groups.len(), 1);
+        let cursor = result.written_cursor.unwrap();
+        assert_eq!(cursor.source_note_ids, vec!["long"]);
+        assert_eq!(
+            cursor
+                .spans
+                .iter()
+                .map(|s| (
+                    s.source_note_index,
+                    s.measure_occurrence_index,
+                    s.start_ms,
+                    s.end_ms
+                ))
+                .collect::<Vec<_>>(),
+            vec![(0, 0, 500., 2000.), (0, 1, 2000., 3500.)]
+        );
     }
     #[test]
     fn partial_measure_repeat_intervals_are_clipped_exactly_without_inventing_measures() {
