@@ -2,6 +2,7 @@ import {setupSourceArchiveView} from './source-archive-view.js';
 import {setupGameShell} from './game-shell.js';
 import {ScorePreview,filterCatalog,stageShortcutAllowed} from './score-preview.js';
 import {setupPerformanceView,FIELD_COLORS,previewMusicMetadata} from './performance-view.js';
+import {setupGuitarGuidance} from './guitar-guidance.js';
 import {prepareScoreDownload} from './score-download.js';
 import {validateCatalogIndex,CatalogScoreCache,fetchCatalogScore} from './catalog-loader.js';
 import {setupNotationFollowing} from './notation-follow.js';
@@ -28,6 +29,7 @@ import {formatTime} from './music.js';
 
 const $ = id => document.getElementById(id);
 const renderResultsSummary=setupResultsSummary(document);
+const renderGuitarGuidance=setupGuitarGuidance(document);
 setupThemes();
 const transport = new Transport();
 const synth = new Synth();
@@ -252,7 +254,7 @@ function updateRangeWarning() {
   if (!state.compiled) return;
   const [min, max] = state.instrument === 'guitar' ? [Math.min(...state.guitar.tuning) + state.guitar.capo, Math.max(...state.guitar.tuning) + state.guitar.frets] : [state.geometry[0].midi, state.geometry.at(-1).midi];
   const outside = state.instrumentOutOfRange ?? (state.sourceTargetTimeline?.notes || state.compiled.timeline.notes).filter(n => n.midi < min || n.midi > max).length;
-  $('practice-hint').textContent = state.instrumentConflict ? 'Some chords need a guitar arrangement · 同时发音存在弦位冲突' : outside ? `${outside} notes unavailable in this ${state.instrument === 'guitar' ? 'guitar fret display' : 'keyboard range'}; change range or exercise` : state.mode === 'practice' ? 'Play each note as it reaches the line · 到线时弹奏' : 'Listen first. Then make it your own. · 先听，再弹';
+  $('practice-hint').textContent = state.instrumentConflict ? 'Some chords need a guitar arrangement · 同时发音存在弦位冲突' : outside ? `${outside} notes unavailable in this ${state.instrument === 'guitar' ? 'guitar fret display' : 'keyboard range'}; change range or exercise` : state.instrument === 'guitar' ? 'Follow upcoming pitch times. Frets show pitch options; fingering is not validated. · 按时弹奏，弦位仅供参考' : state.mode === 'practice' ? 'Play each note as it reaches the line · 到线时弹奏' : 'Listen first. Then make it your own. · 先听，再弹';
 }
 function renderKeyboard() {
   state.geometry = keyboardGeometry(state.keys, state.lowestMidi);
@@ -578,7 +580,10 @@ function drawFrame() {
   highlightKeys(active);
   $('progress').max = Math.max(1, duration); $('progress').value = Math.min(duration, Math.max(0, position));
   $('time-label').textContent = `${formatTime(position)} / ${formatTime(duration)}`;
-  if (state.instrument !== 'piano') return;
+  if (state.instrument === 'guitar') {
+    renderGuitarGuidance({timeline:state.mode==='practice'?state.targetTimeline:state.practiceTimeline||timeline,groups:state.mode==='practice'?state.targetGroups:new Map(),parts:state.score?.parts||[],position,segmentStart,segmentEnd:state.loop?.end_ms||duration,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,mode:state.mode,loopIteration:state.loop?state.loopIteration:null});
+    return;
+  }
   const canvas = $('falling-notes'); const width = canvas.clientWidth; const height = canvas.clientHeight;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) { canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr); }
