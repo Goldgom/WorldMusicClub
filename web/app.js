@@ -38,6 +38,7 @@ let adaptationView = null;
 let externalOmrView = null;
 let notationFollowing = null;
 let sourceArchiveView=null;
+let midiController=null;
 let shell=null,preview=null,performanceView=null,startingPreview=false,previewRefreshQueued=false,startRequest=0,enteringPreview=false;
 const catalogCache=new CatalogScoreCache();
 const latencyPreference=readLatencyPreference();
@@ -285,6 +286,7 @@ function renderKeyboard() {
   }
   $('keyboard').replaceChildren(fragment);
   $('piano-surface').style.minWidth = `${Math.max(640, state.geometry.filter(key => !key.black).length * 22)}px`;
+  midiController?.refresh();
   requestAnimationFrame(() => { const center = state.geometry.find(k => k.midi === (state.octave + 1) * 12); if (center) $('piano-scroll').scrollLeft = Math.max(0, center.x * $('piano-surface').clientWidth - $('piano-scroll').clientWidth / 2.5); drawFrame(); });
 }
 function renderFretboard() {
@@ -308,6 +310,7 @@ function renderFretboard() {
     }
   });
   $('guitar-description').textContent = `${tuning.map(midiName).join(' · ')} tuning, string 1 → ${tuning.length}. ${frets} physical frets; capo ${capo}. Displayed fret numbers are relative to the capo. Highlighted positions are pitch options, not a validated fingering.`;
+  midiController?.refresh();
 }
 function currentProfile() {
   return state.instrument === 'guitar' ? {kind:'guitar',...state.guitar} : {kind:'piano',key_count:state.keys,lowest_midi:state.lowestMidi};
@@ -404,7 +407,7 @@ async function pressNote(source, midi, velocity = 90, eventTime = null, options 
     }
   }
   state.recorder.observeOnset({...observationTime,...options,source,midi,velocity},captured);
-  if(document.hidden||shell.screen()!=='stage'||document.querySelector('dialog[open]'))return;
+  if(options.liveInput===false||document.hidden||shell.screen()!=='stage'||document.querySelector('dialog[open]'))return;
   state.held.set(source,midi);
   highlightKeys();
   try { await synth.unlock(); if (state.held.get(source) === midi) synth.play(`manual:${source}`, midi, null, 0, state.instrument, velocity); }
@@ -536,7 +539,7 @@ function assess() {
 }
 $('feedback-pass').addEventListener('change',displayChosenPass);
 $('retry-assessments').addEventListener('click',()=>{state.recorder.retryFailed();drainAssessments()});
-$('export-takes').addEventListener('click',()=>{const data={...state.recorder.exportData(),score_id:state.score?.id,practice_part:state.practicePart,target_plan:state.practicePlan};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
+$('export-takes').addEventListener('click',()=>{const routing=midiController?.exportRoutingData();const data={...state.recorder.exportData(),score_id:state.score?.id,practice_part:state.practicePart,target_plan:state.practicePlan,...(routing?{midi_routing:routing}:{})};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
 function advanceLoopClock(now) {
   if(!state.loop||!transport.running)return;
   const beatMs=60000/(Number($('tempo').value)||100);
@@ -859,10 +862,11 @@ setupJianpuEditor({onImport:importJianpuText,pausePlayback});
 setupJianpuExport({getScore:()=>state.score,pausePlayback,api});
 setupSourceDirectory({pausePlayback,onScoreFile:()=>$('score-file').click(),onImageFile:()=>$('score-image-file').click(),onExternalOmr:()=>externalOmrView.open()});
 setupImageReview({onImport:importCanonicalScore, pausePlayback, notice,onExternalOmr:imageFile=>externalOmrView.open({imageFile})});
-setupMidi({pressNote, releaseNote, releaseMatching, silenceHeld, notice});
 sourceArchiveView=setupSourceArchiveView({getContext:()=>({score:state.score,version:state.loadIntent}),pausePlayback});
 externalOmrView = setupExternalOmrReview({api,onActivate:importCanonicalScore,pausePlayback,notice,getSourceVersion:()=>state.loadIntent});
 adaptationView = setupAdaptationView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.score,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
 metronome = setupMetronome({api,getScore:()=>state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:transport.time(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
 performanceView=setupPerformanceView({getContext:()=>({geometry:state.geometry,rangeLabel:`${midiName(state.geometry[0].midi)}–${midiName(state.geometry.at(-1).midi)}`,mode:state.mode,instrument:state.instrument,position:transport.time(performance.now()),segmentStart:state.loop?.start_ms||0,countInBeatMs:60000/(Number($('tempo').value)||100),running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,now:performance.now(),recorder:state.recorder})});
+midiController=setupMidi({pressNote, releaseNote, releaseMatching, notice, pausePlayback,
+  getConfiguredRange:()=>state.instrument==='guitar'?{low:Math.min(...state.guitar.tuning)+state.guitar.capo,high:Math.max(...state.guitar.tuning)+state.guitar.frets}:state.geometry.length?{low:state.geometry[0].midi,high:state.geometry.at(-1).midi}:null});
 renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); loadCatalog();

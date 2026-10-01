@@ -1602,3 +1602,61 @@ test('real fullscreen does not restart a paused take or erase genuine focus life
  else{const added=after.input_evidence.events.slice(before.input_evidence.events.length);assert.deepEqual(after.input_evidence.events.slice(0,before.input_evidence.events.length),before.input_evidence.events);assert.deepEqual(added.map(event=>event.reason),lifecycle);assert.ok(added.every(event=>event.kind==='boundary'));const unchanged=structuredClone(after);unchanged.input_evidence.events=before.input_evidence.events;assert.deepEqual(unchanged,before,'Only observed browser focus boundaries may be appended; timing, inputs and assessments stay exact');}
  await writeFile(join(artifactDirectory,'worldmusichub-live-fullscreen-paused-take.json'),JSON.stringify({snapshot,lifecycle,paused_take_unchanged_except_observed_lifecycle:true,score_id:initialCompilation.score.id},null,2));
 });
+
+async function installSelectableMidiInputs() {
+ await page.addInitScript(()=>{
+  window.midiRequests=0;
+  const port=(id,name)=>({id,name,manufacturer:'Private fixture manufacturer',state:'connected',connection:'closed',onmidimessage:null,async open(){this.connection='open';return this},async close(){this.connection='closed';return this}});
+  window.midiOne=port('private-keyboard-one','Fixture keyboard one');window.midiTwo=port('private-keyboard-two','Fixture keyboard two');
+  window.selectableMidiAccess={inputs:new Map([[midiOne.id,midiOne],[midiTwo.id,midiTwo]]),onstatechange:null};
+  Object.defineProperty(navigator,'requestMIDIAccess',{configurable:true,value:async options=>{midiRequests++;window.midiRequestOptions=options;return selectableMidiAccess}});
+ });
+ await reloadStage();await ui('#midi-button').click();await page.waitForFunction(()=>typeof midiOne.onmidimessage==='function'&&typeof midiTwo.onmidimessage==='function');
+ assert.equal(await page.evaluate(()=>midiRequests),1);assert.deepEqual(await page.evaluate(()=>midiRequestOptions),{sysex:false});
+}
+
+test('real settings select one MIDI device, persist unavailable identity and keep source exports private',testOptions,async()=>{
+ await installSelectableMidiInputs();await closeShellPanels();
+ await page.evaluate(()=>{const t=performance.now();midiOne.onmidimessage({data:[0x90,60,93],timeStamp:t});midiTwo.onmidimessage({data:[0x90,60,88],timeStamp:t})});
+ assert.equal(await page.locator('.piano-key.pressed').count(),1);
+ await page.evaluate(()=>midiOne.onmidimessage({data:[0x80,60,0],timeStamp:performance.now()}));assert.equal(await page.locator('.piano-key.pressed').count(),1,'The second device still holds the same pitch');
+ await page.evaluate(()=>midiTwo.onmidimessage({data:[0x80,60,0],timeStamp:performance.now()}));assert.equal(await page.locator('.piano-key.pressed').count(),0);
+ await ui('#midi-device-select').selectOption('device:private-keyboard-one');
+ await page.waitForFunction(()=>typeof midiOne.onmidimessage==='function'&&midiTwo.onmidimessage===null&&midiTwo.connection==='closed');
+ assert.match(await page.locator('#midi-device-list').textContent(),/Open|已打开/);await closeShellPanels();
+ await page.evaluate(()=>{window.oldPracticeHandler=midiOne.onmidimessage;window.oldPracticeTime=performance.now();midiOne.onmidimessage({data:[0x90,60,93],timeStamp:oldPracticeTime})});assert.equal(await page.locator('.piano-key.pressed').count(),1);
+ await page.evaluate(()=>{midiOne={...midiOne,onmidimessage:null,connection:'closed'};selectableMidiAccess.inputs.set(midiOne.id,midiOne);selectableMidiAccess.onstatechange({port:midiOne,timeStamp:performance.now()})});
+ await page.waitForFunction(()=>typeof midiOne.onmidimessage==='function');assert.equal(await page.locator('.piano-key.pressed').count(),0);
+ await page.evaluate(()=>{midiOne.onmidimessage({data:[0x90,60,99],timeStamp:performance.now()});oldPracticeHandler({data:[0x80,60,44],timeStamp:oldPracticeTime})});assert.equal(await page.locator('.piano-key.pressed').count(),1,'An old queued release cannot stop the replacement generation');
+ await page.evaluate(()=>midiOne.onmidimessage({data:[0x80,60,41],timeStamp:performance.now()}));assert.equal(await page.locator('.piano-key.pressed').count(),0);
+ await reloadStage();assert.equal(await page.evaluate(()=>midiRequests),0,'Saved selection does not request permission on page load');
+ await ui('#midi-button').click();await page.waitForFunction(()=>typeof midiOne.onmidimessage==='function');assert.equal(await page.evaluate(()=>midiTwo.onmidimessage),null);
+ await page.evaluate(()=>{midiOne.state='disconnected';midiOne.connection='pending';selectableMidiAccess.inputs.delete(midiOne.id);selectableMidiAccess.onstatechange({port:midiOne,timeStamp:performance.now()})});
+ assert.equal(await page.locator('#midi-device-select').inputValue(),'device:private-keyboard-one');assert.match(await page.locator('#midi-device-select option:checked').textContent(),/unavailable/);assert.equal(await page.locator('#midi-test-toggle').isDisabled(),true);assert.equal(await page.evaluate(()=>midiTwo.onmidimessage),null);
+ await ui('#midi-device-select').selectOption('none');assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('worldmusichub.midi-choice')).mode),'none');
+ const score=await exportScore();assert.deepEqual(score,initialCompilation.score);assert.doesNotMatch(JSON.stringify(score),/private-keyboard|Fixture keyboard|Private fixture/);
+ await writeFile(join(artifactDirectory,'worldmusichub-live-midi-device-selection.json'),JSON.stringify({explicit_single_selection:true,other_input_closed:true,equal_pitch_device_holds_independent:true,replaced_generation_survives_old_queued_release:true,saved_unavailable_input_did_not_fallback:true,permission_requested_only_by_click:true,source_export_unchanged:true,physical_hardware_test:false},null,2));
+});
+
+test('real MIDI key test and delayed test callbacks never enter an existing practice take',testOptions,async()=>{
+ await installSelectableMidiInputs();await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('#progress').value>100);
+ await page.evaluate(()=>{const t=performance.now();midiOne.onmidimessage({data:[0x90,60,92],timeStamp:t});midiOne.onmidimessage({data:[0x80,60,31],timeStamp:t})});
+ await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
+ const before=await exportTakeData();assert.equal(before.passes.length,1);assert.equal(before.passes[0].inputs.length,1);
+ await ui('#midi-test-toggle').click();await page.waitForFunction(()=>document.querySelector('#midi-settings').dataset.testing==='true'&&typeof midiOne.onmidimessage==='function'&&typeof midiTwo.onmidimessage==='function');
+ await page.evaluate(()=>{window.testModeTimestamp=performance.now();window.oldTestHandler=midiOne.onmidimessage;midiOne.onmidimessage({data:[0x92,67,109],timeStamp:testModeTimestamp});midiTwo.onmidimessage({data:[0x92,67,88],timeStamp:testModeTimestamp})});
+ assert.match(await page.locator('#midi-test-last-note').textContent(),/G4/);assert.equal(await page.locator('#midi-test-channel').textContent(),'3');assert.equal(await page.locator('#midi-test-velocity').textContent(),'88');assert.match(await page.locator('#midi-test-held').textContent(),/1 held pitches \/ 2 input contacts/);
+ await page.evaluate(()=>midiOne.onmidimessage({data:[0x82,67,17],timeStamp:performance.now()}));assert.match(await page.locator('#midi-test-held').textContent(),/1 held pitches \/ 1 input contacts/);assert.equal(await page.locator('#midi-test-velocity').textContent(),'17');
+ await page.setViewportSize({width:844,height:390});await page.locator('#midi-test-scroll').scrollIntoViewIfNeeded();
+ await page.evaluate(()=>midiOne.onmidimessage({data:[0x92,67,100],timeStamp:performance.now()}));
+ const monitorGeometry=await page.locator('#midi-test-scroll').evaluate(element=>{const r=element.getBoundingClientRect(),key=element.querySelector('[data-midi-test-pitch="67"]'),k=key.getBoundingClientRect();const hit=(x,y)=>{const target=document.elementFromPoint(x,y);return Boolean(target&&(target===element||element.contains(target)))};return{width:r.width,height:r.height,documentWidth:document.documentElement.scrollWidth,viewport:{width:innerWidth,height:innerHeight},topReachable:hit(r.x+r.width/2,r.y+3),bottomReachable:hit(r.x+r.width/2,r.bottom-3),heldKeyVisible:k.left>=r.left&&k.right<=r.right&&hit(k.x+k.width/2,k.y+k.height/2)}});
+ assert.ok(monitorGeometry.documentWidth<=844);assert.ok(monitorGeometry.width<=844);assert.ok(monitorGeometry.height>=80);assert.equal(monitorGeometry.topReachable,true);assert.equal(monitorGeometry.bottomReachable,true);assert.equal(monitorGeometry.heldKeyVisible,true);
+ await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-midi-key-test-844x390.png'),fullPage:true});
+ await page.locator('#settings-dialog [data-close-panel]').click();await page.waitForFunction(()=>document.querySelector('#midi-settings').dataset.testing==='false'&&typeof midiOne.onmidimessage==='function'&&typeof midiTwo.onmidimessage==='function');
+ await page.evaluate(()=>{oldTestHandler({data:[0x90,68,95],timeStamp:testModeTimestamp});midiOne.onmidimessage({data:[0x90,69,95],timeStamp:testModeTimestamp});midiOne.onmidimessage({data:[0x90,70,95]})});
+ const after=await exportTakeData();assert.deepEqual(after.passes,before.passes);assert.equal(await page.locator('.piano-key.pressed').count(),0);
+ const added=after.input_evidence.events.slice(before.input_evidence.events.length);assert.ok(added.length>0);assert.ok(added.every(event=>event.kind==='boundary'&&['midi_key_test','midi_test_boundary'].includes(event.reason)),'Only explicit mode boundaries may be added, never test note events');
+ const unchanged=structuredClone(after);unchanged.input_evidence.events=before.input_evidence.events;assert.equal(unchanged.midi_routing.excluded_ambiguous_messages,1);delete unchanged.midi_routing;assert.deepEqual(unchanged,before);
+ assert.doesNotMatch(JSON.stringify(after),/private-keyboard|Fixture keyboard|Private fixture/);await ui('#midi-test-toggle').waitFor();assert.match(await page.locator('#midi-timing-status').textContent(),/1 timing-ambiguous/);
+ await writeFile(join(artifactDirectory,'worldmusichub-live-midi-key-test.json'),JSON.stringify({practice_inputs_before:1,practice_inputs_after:after.passes[0].inputs.length,test_contacts_same_pitch:2,delayed_test_callbacks_excluded:2,missing_timestamp_excluded:1,source_identifiers_absent_from_export:true,monitorGeometry,physical_hardware_test:false},null,2));
+});

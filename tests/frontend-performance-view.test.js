@@ -8,6 +8,7 @@ import {keyboardGeometry} from '../web/music.js';
 import {Transport} from '../web/transport.js';
 import {contrastRatio} from '../web/themes.js';
 import {fixture} from './frontend-fixtures.js';
+import './frontend-midi-settings.test.js';
 
 test('lobby musical metadata preserves unknown modes and labels only verified opening values',()=>{
  const score=structuredClone(fixture),before=structuredClone(score);
