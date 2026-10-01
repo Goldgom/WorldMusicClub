@@ -10,7 +10,7 @@ export function mappedPartIds(exported, canonicalId) {
   return [map[canonicalId]];
 }
 /** Optional presentation surface. All score conversion and timing stay in Rust. */
-export function setupEngravedView({getScore, getPracticePart, pausePlayback, onVisibility, onFallback, notice, onManualNavigation=()=>{},isVisible=()=>true}) {
+export function setupEngravedView({getScore, getPracticePart, pausePlayback, onVisibility, onFallback, notice, onManualNavigation=()=>{},isVisible=()=>true,loadAdapter=()=>import('./engraving.js')}) {
   const $ = id => document.getElementById(id);
   let active = false, preferred = true, score = null, selectedPart = null, from = 1, pageSize = 8;
   let generation = 0, controller = null, cached = null, adapter = null, rendered = null;
@@ -18,13 +18,15 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
   let lastDark = document.documentElement.dataset.theme === 'dark';
   const container = $('engraved-staff');
   function cancel() { generation++; controller?.abort(); controller = null; rendered?.dispose(); rendered = null; adapter?.disposeEngravedStaff(container); }
-  function clearExpectedWrittenNotes(){expected=null;expectedScore=null;return rendered?.clearExpectedWrittenNotes?.()||false}
+  function hasNoteMapping(){return ['mappingStatus','setExpectedWrittenNotes','clearExpectedWrittenNotes'].every(name=>typeof rendered?.[name]==='function')}
+  function mappingStatus(){return hasNoteMapping()?rendered.mappingStatus():{status:'unavailable',verifiedGlyphCount:0,diagnostics:rendered?[{code:'engraving_note_mapping_unavailable',message:'Individual notehead mapping is unavailable from this renderer. Static staff remains available; current written notes are not highlighted.'}]:[]}}
+  function clearExpectedWrittenNotes(){expected=null;expectedScore=null;return hasNoteMapping()?rendered.clearExpectedWrittenNotes():false}
   function setExpectedWrittenNotes(value){
     const current=getScore();if(!active||!current||score!==current){clearExpectedWrittenNotes();return false}
     if(knownScore!==current){knownScore=current;knownIds=new Set(current.parts.flatMap(part=>part.notes.map(note=>note.id)))}
     const ids=value?.sourceNoteIds,measure=value?.sourceMeasureIndex;
-    if(!Array.isArray(ids)||ids.some(id=>typeof id!=='string'||!knownIds.has(id))||new Set(ids).size!==ids.length||!Number.isInteger(measure)||measure<0||measure>=current.measures.length){expected=null;expectedScore=null;rendered?.setExpectedWrittenNotes?.(value);return false}
-    expected={sourceNoteIds:[...ids],sourceMeasureIndex:measure};expectedScore=current;return rendered?.setExpectedWrittenNotes?.(expected)??true;
+    if(!Array.isArray(ids)||ids.some(id=>typeof id!=='string'||!knownIds.has(id))||new Set(ids).size!==ids.length||!Number.isInteger(measure)||measure<0||measure>=current.measures.length){expected=null;expectedScore=null;if(hasNoteMapping())rendered.setExpectedWrittenNotes(value);return false}
+    expected={sourceNoteIds:[...ids],sourceMeasureIndex:measure};expectedScore=current;return rendered?(hasNoteMapping()?rendered.setExpectedWrittenNotes(expected):false):true;
   }
   function showNotices(exported,mapping){
     const diagnostics=[...(exported.diagnostics||[]),...(mapping?.diagnostics||[])];
@@ -69,7 +71,7 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
     try {
       const exported = await exportScore(target, signal);
       if (signal.aborted || current !== generation || !active || target !== getScore()) return;
-      adapter ||= await import('./engraving.js');
+      adapter ||= await loadAdapter();
       if (signal.aborted || current !== generation || !active) return;
       const {total,to} = rangeControls();
       if (!total) throw new Error('This score has no declared measure map for engraving.');
@@ -81,9 +83,9 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
       if (signal.aborted || current !== generation || !active) { result.dispose?.(); return; }
       if (!result.ok) { if (result.status !== 'cancelled') fallback(result.message); return; }
       rendered = result;
-      if(expectedScore===target&&expected)rendered.setExpectedWrittenNotes(expected);
+      if(expectedScore===target&&expected&&hasNoteMapping())rendered.setExpectedWrittenNotes(expected);
       $('engraving-status').textContent = `Generated staff preview · Measures ${result.metadata.fromMeasure}–${result.metadata.toMeasure} · display only.`;
-      showNotices(exported,rendered.mappingStatus());
+      showNotices(exported,mappingStatus());
       $('engraving-license-note').hidden = false;
     } catch (error) { if (current === generation && !signal.aborted && active && error.name !== 'AbortError') fallback(error.message || 'The optional renderer is unavailable in this build.'); }
   }
@@ -116,7 +118,7 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
   });
   const observer=new MutationObserver(()=>{const dark=document.documentElement.dataset.theme==='dark';if(dark!==lastDark){lastDark=dark;if(active)render()}});observer.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
   window.addEventListener('pagehide',cancel);window.addEventListener('pageshow',event=>{if(event.persisted&&active)render()});
-  return {show,hide,updateScore,selectPart,setExpectedWrittenNotes,clearExpectedWrittenNotes,mappingStatus:()=>rendered?.mappingStatus?.()||{status:'unavailable',verifiedGlyphCount:0,diagnostics:[]},isActive:()=>active,surfaceChanged(){if(active&&isVisible())render({automatic:true});else cancel()},
+  return {show,hide,updateScore,selectPart,setExpectedWrittenNotes,clearExpectedWrittenNotes,mappingStatus,isActive:()=>active,surfaceChanged(){if(active&&isVisible())render({automatic:true});else cancel()},
     navigationState:()=>({from,ready:Boolean(rendered)}),
     followMeasure(index){if(!active||!score||!Number.isInteger(index)||index<0||index>=score.measures.length)return false;const page=sourceMeasurePage(index,pageSize);if(page===from)return false;from=page;render({automatic:true});return true}
   };
