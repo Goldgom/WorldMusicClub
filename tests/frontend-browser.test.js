@@ -667,11 +667,11 @@ test('fullscreen state transitions preserve an entire paused take and its contro
  await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();if(await page.locator('#notation-dock').isVisible())await page.locator('#notation-toggle').click();
  await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('#progress').value>100);await page.locator('#stage-title').click();await page.keyboard.press('a');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
  const take=async()=>{const[download]=await Promise.all([page.waitForEvent('download'),ui('#export-takes').click()]);const data=JSON.parse(await readFile(await download.path(),'utf8'));await closeShellPanels();return data};
- const before=await take(),position=await page.locator('#progress').inputValue();assert.equal(before.passes.length,1);assert.equal(before.passes[0].inputs.length,1);await mockFullscreenRequest();
+ const before=await take(),position=await page.locator('#progress').evaluate(element=>element.value);assert.equal(before.passes.length,1);assert.equal(before.passes[0].inputs.length,1);await mockFullscreenRequest();
  await page.locator('#fullscreen-button').click();await page.evaluate(()=>{fullscreenTest.change(document.documentElement);fullscreenTest.resolve()});await page.waitForFunction(()=>document.querySelector('#fullscreen-button').getAttribute('aria-label').startsWith('Exit'));
  await page.locator('#back-to-library').click();assert.equal(await page.locator('.shell-header #fullscreen-button').count(),1);assert.equal(await page.locator('#fullscreen-button').count(),1);await page.locator('#resume-session').click();assert.equal(await page.locator('.stage-hud #fullscreen-button').count(),1);
  await page.evaluate(()=>fullscreenTest.change(null));assert.equal(await page.locator('#fullscreen-button').getAttribute('aria-label'),'Enter fullscreen · 进入全屏');
- assert.deepEqual(await take(),before,'Mocked display-only events do not add inputs, evidence boundaries, clock segments or grade changes');assert.equal(await page.locator('#progress').inputValue(),position);assert.match(await page.locator('#play-button').textContent(),/Play/);
+ assert.deepEqual(await take(),before,'Mocked display-only events do not add inputs, evidence boundaries, clock segments or grade changes');assert.equal(await page.locator('#progress').evaluate(element=>element.value),position);assert.match(await page.locator('#play-button').textContent(),/Play/);
 });
 
 test('fullscreen unsupported state is explained without removing keyboard access to other tools',async()=>{
