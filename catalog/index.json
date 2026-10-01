@@ -8,6 +8,14 @@
       "license": "CC0-1.0",
       "written_events": 334,
       "expressive_performance_equivalent": false
+    },
+    {
+      "id": "cc0-beethoven-gottes-macht-op48-5",
+      "directory": "editions/cc0-beethoven-gottes-macht-op48-5",
+      "status": "written_note_practice",
+      "license": "CC0-1.0",
+      "written_events": 226,
+      "expressive_performance_equivalent": false
     }
   ]
 }

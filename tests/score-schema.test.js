@@ -69,6 +69,16 @@ test('bundled complete CC0 edition is strict schema-valid without modifying reta
   assert.equal(edition.provenance.kind,'curated_cc0_edition');
 });
 
+test('complete Beethoven edition validates with its PNG archive and all durable limitations', () => {
+  const edition=JSON.parse(read('../catalog/editions/cc0-beethoven-gottes-macht-op48-5/score.json'));
+  const before=JSON.stringify(edition);valid(edition);assert.equal(JSON.stringify(edition),before);
+  assert.equal(edition.parts.flatMap(part=>part.notes).length,226);
+  assert.equal(edition.source.import_diagnostics.length,12);
+  const archive=JSON.parse(edition.source.content);assert.equal(archive.files['source-1.png'].encoding,'base64');
+  assert.equal(archive.provenance.evaluation.expressive_performance_equivalent,false);
+  assert.equal(edition.keys[0].mode,'unknown');
+});
+
 test('the complete original bilingual documentation example remains schema-valid', () => {
   assert.equal(examples.length, 1, 'Keep one executable, complete JSON example in the contract');
   valid(examples[0]);

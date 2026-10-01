@@ -15,6 +15,19 @@ test('complete edition archive exposes inert exact originals, compatible copy, M
  assert.equal((await inspectRetainedSourceFile(archive.files.at(-1))).checksumMatches,true);
  assert.equal(JSON.stringify(edition),before);
 });
+test('complete Beethoven archive exposes every exact retained file including the source PNG',async()=>{
+ const score=JSON.parse(readFileSync(new URL('../catalog/editions/cc0-beethoven-gottes-macht-op48-5/score.json',import.meta.url),'utf8'));
+ const before=JSON.stringify(score),archive=retainedSourceArchive(score),envelope=JSON.parse(score.source.content);
+ assert.equal(archive.files.length,7);
+ for(const[name,original]of Object.entries(envelope.files)){
+  const file=archive.files.find(item=>item.id===`edition:${name}`),result=await inspectRetainedSourceFile(file);
+  assert.equal(result.filename,name);assert.equal(result.mime,'application/octet-stream');
+  assert.equal(result.checksumMatches,true);assert.equal(result.sizeMatches,true);
+  assert.deepEqual(Buffer.from(result.bytes),Buffer.from(original.content,original.encoding==='base64'?'base64':'utf8'));
+ }
+ assert.equal((await inspectRetainedSourceFile(archive.files.at(-1))).checksumMatches,true);
+ assert.equal(JSON.stringify(score),before);
+});
 test('source views preserve BOM/CRLF and never infer rights or execute file contents',async()=>{
  const text='\uFEFF<score>\r\n原稿</score>',archive=retainedSourceArchive({source:{format:'musicxml',filename:'../CON.xml',content:text}});
  assert.equal(archive.files[0].filename,'source-CON.xml');const result=await inspectRetainedSourceFile(archive.files[0]);

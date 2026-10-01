@@ -1359,3 +1359,136 @@ for(const viewport of [{width:1280,height:720},{width:844,height:390},{width:390
     await writeFile(join(artifactDirectory,`worldmusichub-live-guitar-${viewport.width}x${viewport.height}-geometry.json`),JSON.stringify({...geometry,firstVisible,lastVisible,lastFret:lastBounds},null,2));assert.deepEqual(await exportScore(),initialCompilation.score);
   });
 }
+
+test('complete Beethoven edition renders all 18 measures and keeps every source event through piano range gates', {timeout:60_000}, async()=>{
+  const edition=JSON.parse(await readFile(join(root,'catalog/editions/cc0-beethoven-gottes-macht-op48-5/score.json'),'utf8'));
+  const written=edition.parts.flatMap(part=>part.notes),pitched=written.filter(note=>note.pitch);
+  const voice=edition.parts.find(part=>part.id==='P1'),piano=edition.parts.find(part=>part.id==='P2');
+  const editionPath=`/api/catalog/score/${edition.id}`;
+  assert.equal(requests.filter(request=>request.path===editionPath).length,0);
+  const [response]=await Promise.all([nextResponse('/api/compile'),ui(`[data-score-id="${edition.id}"]`).click()]);
+  const compiled=await responseJson(response);await activateCatalogTitle(edition.title);await waitForEngraving();
+  assert.deepEqual(compiled.score,edition);assert.equal(written.length,226);assert.equal(pitched.length,204);
+  assert.equal(compiled.timeline.notes.length,198);assert.equal(edition.measures.length,18);
+  assert.deepEqual(compiled.timeline.notes.flatMap(note=>note.source_note_ids).sort(),pitched.map(note=>note.id).sort());
+  assert.equal(requests.filter(request=>request.path===editionPath).length,1);
+  assert.match(await ui('#score-meta').textContent(),/226 written events.*198 playback note events.*18 measures/);
+  assert.match(await ui('#score-retention-note').textContent(),/204 pitched note segments \+ 22 rests/);
+  assert.equal(await ui('#score-origin-label').textContent(),'CC0 source edition');
+  await ui('#score-details-button').click();
+  assert.match(await ui('#provenance').textContent(),/Christian Fürchtegott Gellert/);
+  const notices=await ui('#diagnostic-list').textContent();
+  for(const phrase of ['+0.0002 BPM','unknown','138','60 same-pitch','controller 121','subtitle overlap'])assert.ok(notices.includes(phrase),phrase);
+  await ui('#score-details>summary').click();
+  const pages=[];
+  for(const [index,label]of ['Measures 1–8 / 18','Measures 9–16 / 18','Measures 17–18 / 18'].entries()){
+    if(index){await ui('#engraving-next').click();await page.waitForFunction(expected=>document.querySelector('#engraving-range').textContent.includes(expected),label);await waitForEngraving()}
+    assert.ok((await ui('#engraving-range').textContent()).includes(label));
+    const paths=await ui('#engraved-staff svg path').count();assert.ok(paths>20,'The selected measure range has actual rendered notation');
+    pages.push({range:label,svg_paths:paths});await screenshot(`cc0-beethoven-page-${index+1}`);
+  }
+  assert.equal(await ui('#engraving-next').isDisabled(),true);
+  await ui('#theme-mode').selectOption('dark');await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark');await waitForEngraving();await screenshot('cc0-beethoven-last-page-dark');
+  await page.setViewportSize({width:960,height:720});await waitForEngraving();
+  await viewportSnapshot('cc0-beethoven-last-page-960x720',{requireVisibleNoteheads:true});
+  await page.setViewportSize({width:1440,height:1100});await waitForEngraving();
+  await ui('#session-mode').selectOption('practice');
+  await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));
+  assert.equal(await ui('#key-count').inputValue(),'61');assert.equal(await ui('#play-button').isDisabled(),true);
+  assert.equal(await ui('#assess-button').isDisabled(),true);
+  await ui('#practice-part').selectOption(voice.id);await ui('#play-button:not([disabled])').waitFor();
+  await ui('#practice-part').selectOption(piano.id);await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));
+  assert.equal(await ui('#play-button').isDisabled(),true);await ui('#practice-part').selectOption('');
+  const plans=[];
+  for(const keys of ['76','88']){
+    const [targetResponse]=await Promise.all([nextResponse('/api/practice-targets'),ui('#key-count').selectOption(keys)]);
+    const plan=await responseJson(targetResponse);await ui('#play-button:not([disabled])').waitFor();
+    assert.equal(plan.playable,true);assert.equal(plan.source_note_count,198);assert.equal(plan.target_count,168);
+    assert.deepEqual(plan.groups.flatMap(group=>group.source_note_ids).sort(),pitched.map(note=>note.id).sort());
+    plans.push({keys,source_attack_count:plan.source_note_count,physical_target_count:plan.target_count,playable:plan.playable});
+  }
+  await ui('#session-mode').selectOption('listen');await ui('.practice-options summary').click();
+  await ui('#loop-from').fill('64');await ui('#loop-to').fill('68');
+  const [windowResponse]=await Promise.all([nextResponse('/api/practice-window'),ui('#loop-apply').click()]);
+  const window=await responseJson(windowResponse);await page.waitForFunction(()=>document.querySelector('#loop-status').textContent.includes('ready'));
+  await ui('#count-in').uncheck();
+  const [navigationResponse]=await Promise.all([nextResponse('/api/notation-navigation'),ui('#engraving-follow').check()]);
+  const navigation=await responseJson(navigationResponse);
+  assert.equal(navigation.occurrences.length,18);assert.equal(navigation.sounding_groups.length,198);
+  await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('source 17/18'));
+  await ui('#play-button').click();await page.waitForFunction(start=>document.querySelector('#progress').value>start,window.start_ms);
+  assert.match(await ui('#engraving-follow-status').textContent(),/Following written measure 17/);
+  assert.match(await ui('#engraving-range').textContent(),/Measures 17–18/);await ui('#play-button').click();
+  assert.deepEqual(await exportScore(),edition,'Ranges, source pages and following preserve the entire original score');
+  await writeFile(join(artifactDirectory,'worldmusichub-live-cc0-beethoven-acceptance.json'),JSON.stringify({score_id:edition.id,written_events:226,pitched_segments:204,rests:22,sounding_events:198,measures:18,pages,piano_plans:plans,all_source_ids_preserved:true,canonical_score_unchanged:true,limitations:edition.source.import_diagnostics},null,2));
+});
+
+test('complete Beethoven original PNG, MSCX, XML, reference MIDI and license download byte-exactly', {timeout:60_000}, async()=>{
+  const edition=JSON.parse(await readFile(join(root,'catalog/editions/cc0-beethoven-gottes-macht-op48-5/score.json'),'utf8'));
+  await ui(`[data-score-id="${edition.id}"]`).click();await activateCatalogTitle(edition.title);await waitForEngraving();
+  const envelope=JSON.parse(edition.source.content);
+  const expected=[{filename:edition.source.filename,bytes:Buffer.from(edition.source.content),sha256:null,size:null},...Object.entries(envelope.files).map(([filename,file])=>({filename,bytes:Buffer.from(file.content,file.encoding==='base64'?'base64':'utf8'),sha256:file.sha256,size:file.bytes})),{filename:'LICENSE-CC0.txt',bytes:Buffer.from(envelope.license_text),sha256:envelope.provenance.license_text_sha256,size:null}];
+  assert.equal(expected.length,7);let downloads=0;page.on('download',()=>downloads++);
+  const external=[];page.on('request',request=>{if(new URL(request.url()).origin!==origin)external.push(request.url())});
+  await ui('#source-files-button').click();assert.equal(await ui('#source-archive-files>li').count(),7);
+  const evidence=[];
+  for(const file of expected){
+    await page.getByRole('button',{name:`Inspect retained file ${file.filename}`,exact:true}).click();
+    await ui('#source-archive-download:not([disabled])').waitFor();assert.equal(downloads,evidence.length);
+    const hash=createHash('sha256').update(file.bytes).digest('hex');
+    assert.equal(await ui('#source-computed-hash').textContent(),hash);
+    assert.equal(await ui('#source-declared-hash').textContent(),file.sha256||'Not supplied');
+    assert.match(await ui('#source-hash-status').textContent(),file.sha256?/matches the declaration/:/Unknown: no declared/);
+    assert.match(await ui('#source-size-status').textContent(),file.size===null?/Unknown: no declared/:/matches the declaration/);
+    assert.equal(await ui('#source-mismatch-note').isVisible(),false);
+    if(file.filename==='source-1.png'){
+      assert.deepEqual(file.bytes.subarray(0,8),Buffer.from([137,80,78,71,13,10,26,10]));
+      await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-cc0-beethoven-retained-png.png'),fullPage:true});
+    }
+    const promise=page.waitForEvent('download');await ui('#source-archive-download').click();const downloaded=await promise;
+    assert.equal(await downloaded.failure(),null);assert.equal(downloaded.suggestedFilename(),file.filename);
+    assert.deepEqual(await readFile(await downloaded.path()),file.bytes);
+    evidence.push({filename:file.filename,bytes:file.bytes.length,computed_sha256:hash,declared_sha256:file.sha256,declared_bytes:file.size});
+  }
+  assert.deepEqual(external,[]);await ui('#source-archive-close').click();assert.deepEqual(await exportScore(),edition);
+  await writeFile(join(artifactDirectory,'worldmusichub-live-cc0-beethoven-source-files.json'),JSON.stringify({score_id:edition.id,files:evidence,canonical_score_unchanged:true},null,2));
+});
+
+test('complete Beethoven browser library restore retains all originals and guitar voice requires an explicit suitable range', {timeout:60_000}, async()=>{
+  const edition=JSON.parse(await readFile(join(root,'catalog/editions/cc0-beethoven-gottes-macht-op48-5/score.json'),'utf8'));
+  const [response]=await Promise.all([nextResponse('/api/compile'),ui(`[data-score-id="${edition.id}"]`).click()]);
+  const compiled=await responseJson(response);await activateCatalogTitle(edition.title);
+  const restored=await libraryRoundtrip(compiled,'Complete Beethoven archive','beethoven-library-backup.json');
+  assert.deepEqual(restored.score,edition);assert.equal(restored.score.source.content,edition.source.content);
+  const savedKey=await ui('#library-list>li').first().getAttribute('data-library-key');
+  await reloadStage();await readyForTitle(initialCompilation.score.title);await ui('#library-button').click();
+  const [reopenedResponse]=await Promise.all([nextResponse('/api/compile'),ui(`[data-library-key="${savedKey}"] [data-library-open]`).click()]);
+  assert.deepEqual(await responseJson(reopenedResponse),compiled);await ui('#score-library').waitFor({state:'hidden'});await readyForTitle(edition.title);
+  assert.deepEqual(await exportScore(),edition,'A real page reload preserves the saved full source archive');
+  const restoredArchive=JSON.parse(restored.score.source.content);
+  for(const file of Object.values(restoredArchive.files)){
+    const bytes=Buffer.from(file.content,file.encoding==='base64'?'base64':'utf8');
+    assert.equal(bytes.length,file.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256);
+  }
+  await ui('#instrument').selectOption('guitar');await ui('#session-mode').selectOption('practice');
+  await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));
+  assert.equal(await ui('#play-button').isDisabled(),true);assert.equal(await ui('#assess-button').isDisabled(),true);
+  const [voiceResponse]=await Promise.all([nextResponse('/api/instrument-check'),ui('#practice-part').selectOption('P1')]);
+  const voiceReport=await responseJson(voiceResponse);assert.equal(voiceReport.note_options.filter(note=>!note.playable).length,6);
+  assert.equal(await ui('#guitar-frets').inputValue(),'12');assert.equal(await ui('#play-button').isDisabled(),true);
+  await ui('#guitar-frets').fill('15');assert.match(await ui('#practice-gate-reason').textContent(),/edited|validate|Apply/);
+  const [rangeResponse,targetResponse]=await Promise.all([nextResponse('/api/instrument-check'),nextResponse('/api/practice-targets'),ui('#instrument-apply').click()]);
+  const range=await responseJson(rangeResponse),plan=await responseJson(targetResponse);await ui('#play-button:not([disabled])').waitFor();
+  assert.equal(range.highest_midi,79);assert.ok(range.note_options.every(note=>note.playable));
+  assert.equal(plan.playable,true);assert.equal(plan.source_note_count,30);assert.equal(plan.target_count,30);
+  assert.ok(plan.groups.every(group=>group.part_ids.every(id=>id==='P1')));
+  assert.match(await ui('#instrument-diagnostics').textContent(),/fingering|pitch|duration|technique/i);
+  assert.deepEqual(await exportScore(),edition);
+  await hideNotation();await ui('#guitar-guidance').waitFor();await screenshot('cc0-beethoven-guitar-voice');
+  const [fullResponse]=await Promise.all([nextResponse('/api/practice-targets'),ui('#practice-part').selectOption('')]);
+  const full=await responseJson(fullResponse);assert.equal(full.playable,false);assert.equal(full.target_count,198);
+  await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));
+  assert.equal(await ui('#play-button').isDisabled(),true);await ui('#session-mode').selectOption('listen');
+  assert.equal(await ui('#play-button').isEnabled(),true);assert.deepEqual(await exportScore(),edition);
+  await writeFile(join(artifactDirectory,'worldmusichub-live-cc0-beethoven-library-guitar.json'),JSON.stringify({score_id:edition.id,full_source_archive_unchanged:true,library_restore_equal:true,voice_guitar15:{source_attack_count:plan.source_note_count,physical_target_count:plan.target_count,playable:plan.playable},full_guitar15:{source_attack_count:full.source_note_count,physical_target_count:full.target_count,playable:full.playable}},null,2));
+});

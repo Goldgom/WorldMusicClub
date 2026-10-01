@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "edition_id": "cc0-beethoven-gottes-macht-op48-5",
+  "scope": "Complete 18-measure written-note practice with all original sources retained; expressive performance is not equivalent",
+  "public_conversion_evidence": {
+    "commit": "487183fc769fae3d56c747f043920374c21bc818",
+    "commit_url": "https://github.com/Goldgom/WorldMusicHub/commit/487183fc769fae3d56c747f043920374c21bc818",
+    "run": 36863845009,
+    "run_url": "https://github.com/Goldgom/WorldMusicHub/actions/runs/36863845009",
+    "job": 110374347152,
+    "artifact": 11163292672,
+    "artifact_sha256": "a379808fbb643d2bfaa05fdaf866518c1d6d1af77f1fb89d42ad871902828557",
+    "converter_version": "MuseScore 3.6.2",
+    "converter_sha256": "c59a41ee88bc7c565a939b9c73498ac0451bbd86574e95cb6e359302c1465290"
+  },
+  "independent_source_to_canonical": {
+    "source_format": "MSCX 2.06",
+    "source_sha256": "36f263f5c7eef7dda481b2732131dcf5dd74a136e368dc396827ef94a64b40ca",
+    "source_staff_count": 3,
+    "measures_per_staff": 18,
+    "direct_chord_rest_sequence_verified": true,
+    "voice_wrappers_tick_moves_tuplets_repeats": false,
+    "written_events": 226,
+    "pitched_written_events": 204,
+    "rests": 22,
+    "tie_starts": 6,
+    "tie_stops": 6,
+    "sounding_events": 198,
+    "missing_written_events": 0,
+    "extra_written_events": 0,
+    "compared_fields": [
+      "part",
+      "staff",
+      "single source voice lane",
+      "pitch spelling",
+      "exact rational onset",
+      "exact rational duration",
+      "rests",
+      "tie start",
+      "tie stop"
+    ],
+    "source_staff_to_canonical_lane": {
+      "1": "P1/staff1/voice1",
+      "2": "P2/staff1/voice1",
+      "3": "P2/staff2/voice5"
+    },
+    "voice_mapping": "Each MSCX staff contains one implicit sequential voice. Converter labels 1/1/5 preserve those three staff-local lanes; labels are serialization identifiers.",
+    "spelling_method": "Source MIDI pitch plus the numeric MuseScore TPC spelling values; exact step/alter/octave compared with canonical notes",
+    "tpc_numeric_reference": "https://github.com/musescore/MuseScore/blob/v3.6.2/libmscore/pitchspelling.h",
+    "maps": {
+      "measures": "All 54 source staff-measures independently sum to 4 quarter beats; 18 canonical shared measures exactly match every onset/length",
+      "meter": "2/2 at quarter beat 0",
+      "repeats": []
+    }
+  },
+  "tempo_and_key": {
+    "source_quarters_per_second": "2.33333",
+    "source_bpm_exact": "139.9998",
+    "converter_and_canonical_bpm": 140,
+    "source_to_converter_bpm_rounding": "+0.0002",
+    "difference_at_72_quarter_beats_ms": 0.044081695626912124,
+    "source_tempo_text": "Mit Kraft und Feuer",
+    "source_explicit_key_signatures": 0,
+    "converter_default_fifths": 0,
+    "converter_key_mode": null,
+    "canonical_key_mode": "unknown",
+    "key_limit": "An unmarked source signature becomes zero fifths; no major/minor mode is inferred"
+  },
+  "converted_musicxml_written_inventory": {
+    "matches_canonical": true,
+    "missing": 0,
+    "extra": 0
+  },
+  "raw_reference": {
+    "normal_midi_import_status": 400,
+    "normal_midi_import_error": "MIDI controller 121 is unsupported; it may change pitch, timing or note-release behavior. Its effects cannot be inferred safely",
+    "observation_only": true,
+    "agreement": {
+      "matcher_tolerance_ms": 10,
+      "canonical_sounding_notes": 198,
+      "reference_midi_note_ons": 198,
+      "matched_note_ons": 198,
+      "matches_within_1ms": 198,
+      "missed_canonical_attacks": 0,
+      "extra_reference_attacks": 0,
+      "unambiguous_noteoff_duration_comparisons": 138,
+      "ambiguous_unison_durations_not_guessed": 60,
+      "duration_differences_over_1ms": 138,
+      "largest_duration_difference_ms": 215.1782869047638,
+      "canonical_duration_ms": 30857.14285714286,
+      "reference_duration_ms": 30771.4696,
+      "canonical_tempo_map": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "bpm": 140.0
+        }
+      ],
+      "reference_tempo_map": [
+        {
+          "microseconds_per_quarter": 428572,
+          "tick": 0
+        }
+      ],
+      "reference_diagnostics": [],
+      "interpretation": "Reference software note-ons/key-noteoffs, not acoustic sustain or musical truth. Generated ornaments, fermatas, articulation, dynamics, channels and repeat policies may differ. Every mismatch remains visible; this is not an automatic acceptance score.",
+      "raw_midi_key_observation_only": true
+    },
+    "written_beat_attack_agreement": {
+      "available": true,
+      "missing": [],
+      "extra": [],
+      "interpretation": "Pitch/onset inventories in written quarter beats only; ignores expression and tempo realization, does not erase the separate wall-clock mismatch report."
+    },
+    "canonical_attack_velocity": 90,
+    "reference_attack_velocities": {
+      "96": 111,
+      "112": 48,
+      "94": 39
+    },
+    "source_gate_evidence": {
+      "default_voice_percent": 100,
+      "default_piano_percent": 95,
+      "staccato_percent": 50,
+      "staccato_chords": 19,
+      "staccato_pitched_segments": 41
+    },
+    "unambiguous_release_comparison": {
+      "piano_95_percent_minus_one_tick_matches": 103,
+      "staccato_50_percent_minus_one_tick_matches": 35,
+      "generic_unison_pairs_left_ambiguous": 60,
+      "all_138_durations_differ_over_1ms": true
+    },
+    "limits": "Controller 121 causes normal MIDI import refusal; raw inspection also retains controller 2 and other unimplemented channel behavior. MIDI keys are observations only. Matching 198 onsets does not establish articulation, dynamics, key release, acoustic sustain or equivalent expressive performance."
+  },
+  "source_rendering": {
+    "filename": "source-1.png",
+    "sha256": "6249a2c317dc2d3b781d21038a3db3c6f6a2c56046121012c28cc79e3a0d1489",
+    "page_count": 1,
+    "systems": 3,
+    "measures": 18,
+    "finding": "The retained MuseScore PNG subtitle 6 Lieder, Op.48 overlaps the main title. Musical systems, lyrics, clefs, dynamics, staccato marks, ties and CC0 credit are visible. The original PNG is unchanged.",
+    "layout_scope": "App engraving is a separate representation of canonical notes; no claim that it reproduces this source layout"
+  },
+  "source_only_material": [
+    "lyrics",
+    "engraving and layout",
+    "clefs",
+    "tempo words",
+    "dynamics",
+    "articulations",
+    "MIDI programs/channels/controllers"
+  ],
+  "importer_warnings": [
+    {
+      "code": "musicxml_limited_import",
+      "message": "Imported sounding notes, rests, voices, staves and basic timing. Engraving, clefs, layout, lyrics and other visual details remain in the exact original MusicXML source; this is not a lossless notation editor.",
+      "note_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "midi_instrument_source_only",
+      "message": "MusicXML MIDI programs, channels and devices remain in the source. The practice app selects its own sound for each named instrument.",
+      "note_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "musicxml_source_only",
+      "message": "MusicXML <clef> is retained in the original source only; its notation or performance instructions are not interpreted.",
+      "note_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "musicxml_source_only",
+      "message": "MusicXML <words> is retained in the original source only; its notation or performance instructions are not interpreted.",
+      "note_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "musicxml_source_only",
+      "message": "MusicXML <sound @dynamics> is retained in the original source only; its notation or performance instructions are not interpreted.",
+      "note_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "musicxml_source_only",
+      "message": "MusicXML <dynamics> is retained in the original source only; its notation or performance instructions are not interpreted.",
+      "note_id": null,
+      "severity": "warning"
+    },
+    {
+      "code": "musicxml_source_only",
+      "message": "MusicXML <articulations> is retained in the original source only; its notation or performance instructions are not interpreted.",
+      "note_id": null,
+      "severity": "warning"
+    }
+  ],
+  "expressive_performance_equivalent": false,
+  "acceptance_scope": "Source/converter and written-note evaluation only. Application rendering, source-download, library/backup and instrument-target acceptance are separately checked by the admission commit tests; this record does not assert an unrun hosted result."
+}

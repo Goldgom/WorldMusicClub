@@ -45,14 +45,14 @@ test('storage unavailability, closed handles and unsupported backups fail clearl
  library.close();await assert.rejects(library.list(),/closed/);
 });
 
-test('complete CC0 edition backup restores all notes, original bytes, notices and producer metadata',async()=>{
- const edition=JSON.parse(readFileSync(new URL('../catalog/editions/cc0-schubert-wandrers-nachtlied-d768/score.json',import.meta.url),'utf8'));
+for(const[id,count]of[['cc0-schubert-wandrers-nachtlied-d768',334],['cc0-beethoven-gottes-macht-op48-5',226]])test(`complete CC0 ${id} backup restores all notes, original bytes, notices and producer metadata`,async()=>{
+ const edition=JSON.parse(readFileSync(new URL(`../catalog/editions/${id}/score.json`,import.meta.url),'utf8'));
  const expected=structuredClone(edition),first=await create(),second=await create();
  try{
-  const saved=await first.save(edition,{label:'Full Schubert source edition'});
+  const saved=await first.save(edition,{label:'Complete source edition'});
   edition.parts[0].notes.find(note=>note.pitch).pitch.octave=1;edition.source.content='Later unsaved edit';
   const loaded=(await first.get(saved.key)).score;assert.deepEqual(loaded,expected);
-  assert.equal(loaded.parts.flatMap(part=>part.notes).length,334);
+  assert.equal(loaded.parts.flatMap(part=>part.notes).length,count);
   const backup=await first.exportBackup();let validated=0;
   const restored=await second.restoreBackup(backup,{validate:async score=>{validated++;assert.deepEqual(score,expected);return true}});
   assert.equal(validated,1);assert.equal(restored.length,1);

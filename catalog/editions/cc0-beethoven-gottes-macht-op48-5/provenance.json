@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "edition_id": "cc0-beethoven-gottes-macht-op48-5",
+  "upstream": {
+    "id": "beethoven-gottes-macht-op48-5",
+    "upstream_score_id": 5121692,
+    "title": "Gottes Macht und Vorsehung, Op.48 No.5",
+    "composer": "Ludwig van Beethoven",
+    "lyricist": "Christian Fürchtegott Gellert",
+    "language": "de",
+    "source_path": "scores/Beethoven,_Ludwig_van/6_Lieder,_Op.48/5_Gottes_Macht_und_Vorsehung/lc5121692.mscx",
+    "source_sha256": "36f263f5c7eef7dda481b2732131dcf5dd74a136e368dc396827ef94a64b40ca",
+    "source_bytes": 65619,
+    "edition_license": "CC0-1.0",
+    "attribution": "OpenScore Lieder corpus and the original composer/lyricist; transcription credits remain in the exact source",
+    "official_score_url": "https://musescore.com/openscore-lieder-corpus/scores/5121692",
+    "upstream_imslp_reference": "#26415",
+    "status": "conversion_and_review_pending",
+    "commit": "38c5db510224d9facdc4b08d741fc788cfb58ea8"
+  },
+  "converter": {
+    "url": "https://github.com/musescore/MuseScore/releases/download/v3.6.2/MuseScore-3.6.2.548021370-x86_64.AppImage",
+    "zsync_url": "https://github.com/musescore/MuseScore/releases/download/v3.6.2/MuseScore-3.6.2.548021370-x86_64.AppImage.zsync",
+    "bytes": 160305128,
+    "sha1": "1c10cbe33e0cdee1a482ac49b91cd9b1ef8130a3",
+    "sha256": "c59a41ee88bc7c565a939b9c73498ac0451bbd86574e95cb6e359302c1465290"
+  },
+  "edition_license": "CC0-1.0",
+  "license_text_sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+  "rights_evidence": [
+    {
+      "url": "https://github.com/OpenScore/Lieder/blob/38c5db510224d9facdc4b08d741fc788cfb58ea8/LICENSE.txt",
+      "finding": "Pinned corpus license is CC0-1.0; original source copyright states OpenScore (CC0)"
+    },
+    {
+      "url": "https://github.com/OpenScore/Lieder/blob/38c5db510224d9facdc4b08d741fc788cfb58ea8/scores/Beethoven%2C_Ludwig_van/6_Lieder%2C_Op.48/5_Gottes_Macht_und_Vorsehung/lc5121692.mscx",
+      "finding": "Original German lyricist is Christian Fürchtegott Gellert; translator metadata is empty; source credits are preserved"
+    },
+    {
+      "url": "https://imslp.org/wiki/6_Lieder,_Op.48_(Beethoven,_Ludwig_van)",
+      "finding": "Upstream reference #26415 is the 1863 Breitkopf & Härtel collected edition, plate B.217, listed Public Domain; no scanned page is redistributed"
+    },
+    {
+      "url": "https://www.beethoven.de/en/work/view/5913005854294016/Sechs%2BLieder%2Bf%C3%BCr%2BSingstimme%2Bund%2BKlavier%2Bop.%2B48",
+      "finding": "Beethoven-Haus identifies Op.48 No.5 and Gellert text with historical editions"
+    }
+  ],
+  "admission_scope": "Complete written-note practice with disclosed source conversion and expressive limitations; not equivalent reference performance",
+  "source_chain": {
+    "original.mscx": {
+      "sha256": "36f263f5c7eef7dda481b2732131dcf5dd74a136e368dc396827ef94a64b40ca",
+      "bytes": 65619,
+      "encoding": "utf-8"
+    },
+    "converter.musicxml": {
+      "sha256": "3f2e488a6c07243fea282268fa6dfed39aea9260aaca3545db99a896457aebfc",
+      "bytes": 85494,
+      "encoding": "utf-8"
+    },
+    "import.musicxml": {
+      "sha256": "a20db0a375c1c4c53345ac9a327d454f8824b21ee368de70fbf328988a7dd7b4",
+      "bytes": 85372,
+      "encoding": "utf-8"
+    },
+    "reference.mid": {
+      "sha256": "2467f02120a54dbef0539a006887511adc935659c054bd4c90ca5e7047a50a5c",
+      "bytes": 1496,
+      "encoding": "base64"
+    },
+    "source-1.png": {
+      "sha256": "6249a2c317dc2d3b781d21038a3db3c6f6a2c56046121012c28cc79e3a0d1489",
+      "bytes": 109286,
+      "encoding": "base64"
+    }
+  },
+  "normalizations": [
+    "Removed only the fixed MuseScore3.6.2 MusicXML3.1 external DOCTYPE for strict application import. Raw converter output is retained separately; no entity/DTD resolution.",
+    "MuseScore rounded source 2.33333 quarter notes per second (139.9998 BPM) to 140 BPM, a  +0.0002 BPM conversion difference; the original decimal remains retained.",
+    "The source has no explicit KeySig nodes; the converter supplies zero fifths without mode. Canonical mode remains unknown.",
+    "Only catalog score ID, provenance and retained archive envelope were assigned. Every imported note ID, part/name, written event, spelling, voice/staff, tie, measure and tempo/key/meter/repeat map remains unchanged."
+  ],
+  "evaluation": {
+    "run": 36863845009,
+    "remote_commit": "487183fc769fae3d56c747f043920374c21bc818",
+    "artifact_sha256": "a379808fbb643d2bfaa05fdaf866518c1d6d1af77f1fb89d42ad871902828557",
+    "written_events": 226,
+    "pitched_written_events": 204,
+    "rests": 22,
+    "sounding_events": 198,
+    "measures": 18,
+    "source_to_converter_pitch_inventory_matches": true,
+    "independent_source_mscx_to_canonical_written_events_match": true,
+    "converted_musicxml_to_canonical_written_events_match": true,
+    "expressive_performance_equivalent": false,
+    "details": "docs/evaluations/openscore-beethoven-op48-5-reference-125.json",
+    "reference": {
+      "normal_midi_import_status": 400,
+      "normal_midi_import_error": "MIDI controller 121 is unsupported; it may change pitch, timing or note-release behavior. Its effects cannot be inferred safely",
+      "observation_only": true,
+      "agreement": {
+        "matcher_tolerance_ms": 10,
+        "canonical_sounding_notes": 198,
+        "reference_midi_note_ons": 198,
+        "matched_note_ons": 198,
+        "matches_within_1ms": 198,
+        "missed_canonical_attacks": 0,
+        "extra_reference_attacks": 0,
+        "unambiguous_noteoff_duration_comparisons": 138,
+        "ambiguous_unison_durations_not_guessed": 60,
+        "duration_differences_over_1ms": 138,
+        "largest_duration_difference_ms": 215.1782869047638,
+        "canonical_duration_ms": 30857.14285714286,
+        "reference_duration_ms": 30771.4696,
+        "canonical_tempo_map": [
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 0
+            },
+            "bpm": 140.0
+          }
+        ],
+        "reference_tempo_map": [
+          {
+            "microseconds_per_quarter": 428572,
+            "tick": 0
+          }
+        ],
+        "reference_diagnostics": [],
+        "interpretation": "Reference software note-ons/key-noteoffs, not acoustic sustain or musical truth. Generated ornaments, fermatas, articulation, dynamics, channels and repeat policies may differ. Every mismatch remains visible; this is not an automatic acceptance score.",
+        "raw_midi_key_observation_only": true
+      },
+      "written_beat_attack_agreement": {
+        "available": true,
+        "missing": [],
+        "extra": [],
+        "interpretation": "Pitch/onset inventories in written quarter beats only; ignores expression and tempo realization, does not erase the separate wall-clock mismatch report."
+      },
+      "canonical_attack_velocity": 90,
+      "reference_attack_velocities": {
+        "96": 111,
+        "112": 48,
+        "94": 39
+      },
+      "source_gate_evidence": {
+        "default_voice_percent": 100,
+        "default_piano_percent": 95,
+        "staccato_percent": 50,
+        "staccato_chords": 19,
+        "staccato_pitched_segments": 41
+      },
+      "unambiguous_release_comparison": {
+        "piano_95_percent_minus_one_tick_matches": 103,
+        "staccato_50_percent_minus_one_tick_matches": 35,
+        "generic_unison_pairs_left_ambiguous": 60,
+        "all_138_durations_differ_over_1ms": true
+      },
+      "limits": "Controller 121 causes normal MIDI import refusal; raw inspection also retains controller 2 and other unimplemented channel behavior. MIDI keys are observations only. Matching 198 onsets does not establish articulation, dynamics, key release, acoustic sustain or equivalent expressive performance."
+    },
+    "tempo_and_key": {
+      "source_quarters_per_second": "2.33333",
+      "source_bpm_exact": "139.9998",
+      "converter_and_canonical_bpm": 140,
+      "source_to_converter_bpm_rounding": "+0.0002",
+      "difference_at_72_quarter_beats_ms": 0.044081695626912124,
+      "source_tempo_text": "Mit Kraft und Feuer",
+      "source_explicit_key_signatures": 0,
+      "converter_default_fifths": 0,
+      "converter_key_mode": null,
+      "canonical_key_mode": "unknown",
+      "key_limit": "An unmarked source signature becomes zero fifths; no major/minor mode is inferred"
+    },
+    "source_rendering": {
+      "filename": "source-1.png",
+      "sha256": "6249a2c317dc2d3b781d21038a3db3c6f6a2c56046121012c28cc79e3a0d1489",
+      "page_count": 1,
+      "systems": 3,
+      "measures": 18,
+      "finding": "The retained MuseScore PNG subtitle 6 Lieder, Op.48 overlaps the main title. Musical systems, lyrics, clefs, dynamics, staccato marks, ties and CC0 credit are visible. The original PNG is unchanged.",
+      "layout_scope": "App engraving is a separate representation of canonical notes; no claim that it reproduces this source layout"
+    }
+  },
+  "practice_limits": [
+    "All 18 measures and 226 written events are retained; six tie pairs form 198 sounding events. Lyrics, dynamics, articulation and layout remain source-only; this is complete written-note practice rather than equivalent expressive performance.",
+    "Reference 198 note-ons all match within 1 ms, with 0 missed/extra attacks; all 138 unambiguous releases differ by more than 1 ms (maximum 215.1782869047638 ms), while 60 same-pitch unison duration correspondences remain ambiguous.",
+    "Source tempo 139.9998 BPM was rounded by the converter to 140 BPM (+0.0002 BPM). No source KeySig is present; the converter supplies zero fifths and canonical key mode stays unknown.",
+    "The retained source PNG has an overlapping title/subtitle. Its original bytes are preserved; canonical app engraving does not reproduce every source layout detail.",
+    "Default 61-key scored mode is blocked because eight retained bass attacks are out of range. A 76/88-key piano range fits the written pitches. Full guitar needs an arrangement; choosing the voice part and suitable range changes only practice scope, never the stored notes.",
+    "Reference MIDI remains unsupported by normal import because of controller 121. Raw MIDI observations do not interpret controller 2, programs, pedals, dynamics or acoustic behavior.",
+    "CC0 applies to the OpenScore transcription. The retained MusicXML, MIDI and PNG files are conversion outputs of that edition. The MuseScore converter software retains its separate GPL version 2.0 license (https://raw.githubusercontent.com/musescore/MuseScore/v3.6.2/LICENSE.GPL) and is not bundled. Historic composition/text are credited separately; no modern translation, recording, SoundFont or scanned page is supplied. Application code remains MIT; no GPL converter code is copied."
+  ]
+}
