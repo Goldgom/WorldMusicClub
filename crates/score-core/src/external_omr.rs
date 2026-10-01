@@ -218,6 +218,52 @@ pub fn prepare_audiveris(input: AudiverisInput) -> Result<ExternalOmrDraft, Stri
     })
 }
 
+fn require_consistent_reviewed_ties(score: &Score) -> Result<(), String> {
+    for part in &score.parts {
+        let mut notes: Vec<_> = part.notes.iter().enumerate().collect();
+        notes.sort_by(|a, b| a.1.at.compare(b.1.at).then(a.1.id.cmp(&b.1.id)));
+        let mut tracker = crate::ties::TieTracker::default();
+        for (index, note) in notes {
+            let Some(midi) = note.pitch.as_ref().and_then(|pitch| pitch.midi()) else {
+                continue;
+            };
+            if note.tie_stop {
+                let previous = tracker
+                    .take(note, midi)
+                    .map_err(|error| format!("Review the ties before confirming: {error}"))?
+                    .ok_or_else(|| {
+                        format!(
+                            "Review the ties before confirming: note {} has an orphan tie stop",
+                            note.id
+                        )
+                    })?;
+                if !previous.end.equivalent(note.at) {
+                    return Err(format!("Review the ties before confirming: note {} does not begin exactly when its tied predecessor ends",note.id));
+                }
+            }
+            if note.tie_start {
+                tracker
+                    .start(
+                        note,
+                        midi,
+                        index,
+                        note.at
+                            .checked_add(note.duration)
+                            .ok_or("Invalid reviewed tie timing")?,
+                    )
+                    .map_err(|error| format!("Review the ties before confirming: {error}"))?;
+            }
+        }
+        if let Some(index) = tracker.unresolved().into_iter().min() {
+            return Err(format!(
+                "Review the ties before confirming: note {} has an unclosed tie start",
+                part.notes[index].id
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// A caller supplies the fully edited canonical draft plus freshly completed review attestations.
 /// These are user assertions, not an automatic claim of correctness or legal clearance.
 pub fn confirm_review(
@@ -228,6 +274,7 @@ pub fn confirm_review(
         return Err("Confirm every review category after checking the original source, including tempo and rights".into());
     }
     crate::validate(&edited)?;
+    require_consistent_reviewed_ties(&edited)?;
     let source = edited
         .source
         .as_ref()
@@ -322,6 +369,53 @@ mod tests {
             serde_json::from_str(&checked.score.source.unwrap().content).unwrap();
         assert_eq!(record.input.output_content, xml());
         assert!(record.confirmation.unwrap().complete());
+    }
+    #[test]
+    fn confirmation_keeps_orphan_unclosed_and_nonadjacent_ties_in_review() {
+        let draft = prepare_audiveris(input()).unwrap().score;
+        let original_source = draft.source.as_ref().unwrap().content.clone();
+        let mut unclosed = draft.clone();
+        unclosed.parts[0].notes[0].tie_start = true;
+        assert!(confirm_review(unclosed, confirmation())
+            .unwrap_err()
+            .contains("unclosed tie start"));
+        let mut orphan = draft.clone();
+        orphan.parts[0].notes[0].tie_stop = true;
+        assert!(confirm_review(orphan, confirmation())
+            .unwrap_err()
+            .contains("orphan tie stop"));
+        let mut gap = draft.clone();
+        gap.parts[0].notes[0].tie_start = true;
+        gap.parts[0].notes[1].pitch = gap.parts[0].notes[0].pitch.clone();
+        gap.parts[0].notes[1].tie_stop = true;
+        gap.parts[0].notes[1].at = crate::Beat::new(3, 1);
+        assert!(confirm_review(gap, confirmation())
+            .unwrap_err()
+            .contains("does not begin exactly"));
+        assert_eq!(draft.source.unwrap().content, original_source);
+    }
+    #[test]
+    fn explicit_adjacent_cross_voice_tie_can_be_reviewed_without_changing_the_source() {
+        let mut draft = prepare_audiveris(input()).unwrap().score;
+        let original = draft.source.as_ref().unwrap().content.clone();
+        draft.parts[0].notes[0].tie_start = true;
+        draft.parts[0].notes[1].pitch = draft.parts[0].notes[0].pitch.clone();
+        draft.parts[0].notes[1].tie_stop = true;
+        draft.parts[0].notes[1].voice = "reviewed-other-voice".into();
+        let compiled = confirm_review(draft, confirmation()).unwrap();
+        assert_eq!(compiled.timeline.notes.len(), 14);
+        assert!(compiled
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "cross_lane_tie"));
+        let before: ReviewRecord = serde_json::from_str(&original).unwrap();
+        let after: ReviewRecord =
+            serde_json::from_str(&compiled.score.source.unwrap().content).unwrap();
+        assert_eq!(before.input.output_content, after.input.output_content);
+        assert_eq!(
+            compiled.score.parts[0].notes[1].voice,
+            "reviewed-other-voice"
+        );
     }
     #[test]
     fn exact_vendor_header_is_disclosed_and_raw_xml_is_retained() {
