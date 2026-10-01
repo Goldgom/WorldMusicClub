@@ -1,5 +1,14 @@
 import {stageFeedbackView} from './hud-feedback.js';
+import {keyTonic} from './music.js';
 export const FIELD_COLORS=Object.freeze({background:'#142333',backgroundEnd:'#1d3b4b',natural:'#7be4ce',accidental:'#acb0f5',scheduled:'#f4ce78',noteText:'#112538'});
+
+export function previewMusicMetadata(score){
+  if(!score)return 'Musical details are available after score validation.';
+  const key=score.keys.find(entry=>entry.at.numerator===0),tempo=score.tempo.find(entry=>entry.at.numerator===0),tonic=keyTonic(key);
+  const keyLabel=tonic?`${tonic.name.replace('b','♭').replace('#','♯')} ${key.mode}`:key?`${key.fifths>0?`${key.fifths} sharps`:key.fifths<0?`${-key.fifths} flats`:'No sharps/flats'} · ${!key.mode||key.mode==='unknown'?'mode unspecified':key.mode}`:'Key unspecified';
+  const changes=[];if(tempo&&score.tempo.some(entry=>entry.bpm!==tempo.bpm))changes.push('tempo');if(key&&score.keys.some(entry=>entry.fifths!==key.fifths||entry.mode!==key.mode))changes.push('key');
+  return `Opening · 起始: ${keyLabel} · ${tempo?`${tempo.bpm} BPM`:'Tempo unspecified'} · ${score.parts.length} part${score.parts.length===1?'':'s'}${changes.length?` · Later ${changes.join(' / ')} changes`:''}`;
+}
 
 export function performanceCue(context){
   if(context.running)return context.position<context.segmentStart?{main:String(Math.ceil((context.segmentStart-context.position)/context.countInBeatMs)),detail:'Silent count-in · 预备拍'}:null;
@@ -11,8 +20,9 @@ export function performanceCue(context){
 export function setupPerformanceView({getContext}) {
   const $=id=>document.getElementById(id),header=document.querySelector('.shell-header'),nav=header.querySelector('nav'),hud=document.querySelector('.stage-hud'),play=document.querySelector('.play-panel');
   document.body.classList.add('performance-layout');
-  const controls=document.createElement('div');controls.className='preview-footer';controls.append(document.querySelector('.preview-actions'));
-  const details=document.createElement('details');details.className='preview-session-help';const summary=document.createElement('summary');summary.textContent='Starting or replacing a take · 使用说明';details.append(summary,document.querySelector('.preview-footnote'));controls.append(details);document.querySelector('.song-preview').append(controls);
+  const preview=document.querySelector('.song-preview'),copy=preview.querySelector('.preview-copy'),identity=document.createElement('div'),identityText=document.createElement('div'),musicMeta=document.createElement('p');identity.className='preview-identity';identityText.className='preview-identity-text';musicMeta.id='preview-music-meta';identityText.append(copy.querySelector('.eyebrow'),$('preview-title'),$('preview-meta'),musicMeta);identity.append(preview.querySelector('.preview-art'),identityText);preview.prepend(identity);
+  const controls=document.createElement('div');controls.className='preview-footer';controls.append($('preview-gate'),document.querySelector('.preview-actions'));
+  const details=document.createElement('details');details.className='preview-session-help';const summary=document.createElement('summary');summary.textContent='Starting or replacing a take · 使用说明';details.append(summary,document.querySelector('.preview-footnote'));copy.append(details);preview.append(controls);
   const settings=$('settings-dialog').querySelector('.shell-dialog-content'),inputTools=document.createElement('div');inputTools.className='performance-input-settings';inputTools.append($('midi-button'),document.querySelector('.count-in-label'),document.querySelector('.keyboard-footer'));settings.prepend(inputTools);
   document.querySelector('.transport').append($('sound-button'));
   const notation=document.querySelector('#notation-dock .notation-panel'),notationHeading=notation.querySelector('.section-heading'),help=document.createElement('details');help.className='dock-help';help.innerHTML='<summary>Help &amp; notation limits · 读谱说明</summary>';

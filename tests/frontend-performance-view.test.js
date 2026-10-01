@@ -3,10 +3,22 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
 import {setupGameShell} from '../web/game-shell.js';
-import {setupPerformanceView,performanceCue,FIELD_COLORS} from '../web/performance-view.js';
+import {setupPerformanceView,performanceCue,previewMusicMetadata,FIELD_COLORS} from '../web/performance-view.js';
 import {keyboardGeometry} from '../web/music.js';
 import {Transport} from '../web/transport.js';
 import {contrastRatio} from '../web/themes.js';
+import {fixture} from './frontend-fixtures.js';
+
+test('lobby musical metadata preserves unknown modes and labels only verified opening values',()=>{
+ const score=structuredClone(fixture),before=structuredClone(score);
+ assert.equal(previewMusicMetadata(score),'Opening · 起始: C major · 120 BPM · 1 part');assert.deepEqual(score,before);
+ score.keys[0]={...score.keys[0],fifths:-2,mode:'unknown'};score.tempo[0].bpm=38.5;score.parts.push({...score.parts[0],id:'voice'});
+ assert.equal(previewMusicMetadata(score),'Opening · 起始: 2 flats · mode unspecified · 38.5 BPM · 2 parts');
+ score.tempo.push({at:{numerator:4,denominator:1},bpm:90});score.keys.push({at:{numerator:4,denominator:1},fifths:1,mode:'minor'});
+ assert.match(previewMusicMetadata(score),/Later tempo \/ key changes$/);
+ score.keys=[];assert.match(previewMusicMetadata(score),/Key unspecified/);assert.doesNotMatch(previewMusicMetadata(score),/C major|B♭/);
+ score.keys=[{at:{numerator:4,denominator:1},fifths:0,mode:'major'}];assert.match(previewMusicMetadata(score),/Key unspecified/,'A later key marking cannot be assumed at the opening');
+});
 
 test('count-in and first-onset pauses use transport start state rather than the sign of musical position',()=>{
  const transport=new Transport(),context=now=>({position:transport.time(now),running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,segmentStart:0,countInBeatMs:500,mode:'listen'});
@@ -27,6 +39,7 @@ test('performance presentation moves existing controls once and scopes checked v
   assert.ok(document.getElementById('midi-button')===midi);assert.ok(document.getElementById('count-in')===countIn);assert.ok(document.getElementById('sound-button')===sound);
   assert.equal(midi.closest('dialog').id,'settings-dialog');assert.equal(countIn.closest('dialog').id,'settings-dialog');assert.equal(sound.closest('.transport')!==null,true);
   assert.equal(document.querySelector('.preview-actions').parentElement.className,'preview-footer');assert.equal(document.querySelector('.preview-footnote').closest('details').className,'preview-session-help');
+  for(const id of ['preview-title','preview-meta','preview-music-meta'])assert.ok(document.getElementById(id).closest('.preview-identity'),`${id} stays above the scrolling details`);assert.ok(document.getElementById('preview-gate').closest('.preview-footer'),'The blocking instrument warning stays with Start');
   shell.show('stage');assert.equal(document.querySelector('.shell-header').hidden,true);assert.equal(document.querySelectorAll('.stage-hud nav').length,1);assert.equal(document.getElementById('hud-result').hidden,true);assert.equal(document.getElementById('stage-cue-main').textContent,'READY');
   shell.show('library');assert.equal(document.querySelector('.shell-header').hidden,false);assert.equal(document.querySelectorAll('.shell-header nav').length,1);assert.equal(document.querySelectorAll('.stage-hud nav').length,0);
   context.mode='practice';context.recorder.active={id:2,label:'Take 2',inputs:[{}],revision:1,assessedRevision:1,closedWall:500,deadline:680,manualDeadline:null,inFlight:false,error:null,boundaryReviews:[],timeline:{notes:[{}]},assessment:{hits:[{grade:'late'}],misses:[],extras:[],accuracy_percent:100,grade_counts:{perfect:0,good:0,early:0,late:1,missed:0,extra:0},onset_completion:{total:1,complete:1,longest_complete_sequence:1}}};view.update();

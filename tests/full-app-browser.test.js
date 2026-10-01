@@ -841,10 +841,30 @@ async function viewportSnapshot(name) {
   await page.screenshot({path:join(artifactDirectory,`worldmusichub-live-${name}.png`),fullPage:false,animations:'disabled'});
 }
 
+async function exportTakeData() {
+  const [download]=await Promise.all([page.waitForEvent('download'),ui('#export-takes').click()]);
+  assert.equal(await download.failure(),null);
+  const data=JSON.parse(await readFile(await download.path(),'utf8'));
+  await closeShellPanels();
+  return data;
+}
+
+async function pausedTakeSnapshot() {
+  return page.evaluate(()=>({
+    title:document.querySelector('#score-title').textContent,
+    stageTitle:document.querySelector('#stage-title').textContent,
+    position:document.querySelector('#progress').value,
+    mode:document.querySelector('#session-mode').value,
+    pass:document.querySelector('.performance-status').dataset.passId,
+    revision:document.querySelector('.performance-status').dataset.revision,
+    captured:document.querySelector('#hud-captured').textContent,
+  }));
+}
+
 async function compactGeometry() {
   return page.evaluate(()=>{
     const rect=selector=>{const element=document.querySelector(selector),box=element.getBoundingClientRect();return{x:box.x,y:box.y,width:box.width,height:box.height,right:box.right,bottom:box.bottom,clientHeight:element.clientHeight,scrollHeight:element.scrollHeight}};
-    return{viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},lobby:rect('#song-lobby'),preview:rect('.song-preview'),copy:{...rect('.preview-copy'),overflow:getComputedStyle(document.querySelector('.preview-copy')).overflowY},footer:rect('.preview-footer'),listen:rect('#start-listen'),practice:rect('#start-practice'),stage:rect('#workspace'),hud:rect('.stage-hud'),play:rect('.play-panel'),field:rect('#falling-notes'),keyboard:rect('#keyboard'),transport:rect('.transport'),hudItems:[...document.querySelectorAll('.stage-hud>button,.stage-hud>.stage-heading,.stage-hud nav>.button')].map(element=>{const box=element.getBoundingClientRect();return{id:element.id||element.className,x:box.x,right:box.right,y:box.y,bottom:box.bottom,centerY:box.y+box.height/2}})};
+    return{viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},lobby:rect('#song-lobby'),preview:rect('.song-preview'),identity:rect('.preview-identity'),title:rect('#preview-title'),credits:rect('#preview-meta'),music:rect('#preview-music-meta'),copy:{...rect('.preview-copy'),overflow:getComputedStyle(document.querySelector('.preview-copy')).overflowY,scrollTop:document.querySelector('.preview-copy').scrollTop},footer:rect('.preview-footer'),gate:rect('#preview-gate'),listen:rect('#start-listen'),practice:rect('#start-practice'),stage:rect('#workspace'),hud:rect('.stage-hud'),play:rect('.play-panel'),field:rect('#falling-notes'),keyboard:rect('#keyboard'),transport:rect('.transport'),hudItems:[...document.querySelectorAll('.stage-hud>button,.stage-hud>.stage-heading,.stage-hud nav>.button')].map(element=>{const box=element.getBoundingClientRect();return{id:element.id||element.className,x:box.x,right:box.right,y:box.y,bottom:box.bottom,centerY:box.y+box.height/2}})};
   });
 }
 
@@ -856,20 +876,49 @@ function assertInsideViewport(rect,viewport,label) {
   assert.ok(rect.width>0&&rect.height>0&&rect.x>=-1&&rect.y>=-1&&rect.right<=viewport.width+1&&rect.bottom<=viewport.height+1,`${label}: ${JSON.stringify({rect,viewport})}`);
 }
 
+function assertPinnedPreview(geometry,viewport) {
+  assertBoundedDocument(geometry);
+  assert.equal(geometry.copy.overflow,'auto');
+  for(const [name,label] of Object.entries({identity:'Selected score identity',title:'Selected title',credits:'Composer and source',music:'Opening musical metadata',footer:'Start footer',gate:'Compatibility reason',listen:'Listen Start',practice:'Practice Start'}))assertInsideViewport(geometry[name],viewport,label);
+  assert.ok(geometry.identity.bottom<=geometry.copy.y+1,'Selected score identity stays above the scrollable details');
+  assert.ok(geometry.footer.y>=geometry.copy.bottom-1,'Long preview text must scroll above the Start footer');
+}
+
 for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:844,height:390},{width:390,height:844}]){
   test(`real D768 lobby and compact performance fit ${viewport.width} by ${viewport.height} with visible tools and exact source`,testOptions,async()=>{
     const edition=JSON.parse(await readFile(join(root,'catalog/editions/cc0-schubert-wandrers-nachtlied-d768/score.json'),'utf8'));
-    await hideNotation();await page.setViewportSize(viewport);await ui(`[data-score-id="${edition.id}"]`).click();await page.waitForFunction(title=>document.querySelector('#preview-title').textContent===title&&!document.querySelector('#start-listen').disabled,edition.title);
+    await hideNotation();await page.setViewportSize(viewport);await ui('#theme-mode').selectOption('light');await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();
+    await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('#progress').value>0);await page.locator('#stage-title').click();await page.keyboard.press('a');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#back-to-library').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
+    const activeTake=await pausedTakeSnapshot(),takeBefore=await exportTakeData();assert.ok(activeTake.position>0);assert.ok(activeTake.pass);assert.equal(takeBefore.passes.length,1);assert.equal(takeBefore.passes[0].inputs.length,1);
+    async function selectPreview(id,title) {
+      const [response]=await Promise.all([nextResponse('/api/compile'),ui(`[data-score-id="${id}"]`).click()]);
+      const compiled=await responseJson(response);assert.equal(compiled.score.id,id);
+      await page.waitForFunction(expected=>document.querySelector('#preview-title').textContent===expected&&!document.querySelector('#start-listen').disabled,title);
+      if(id===edition.id)await page.waitForFunction(()=>document.querySelector('#preview-gate').textContent.includes('18 selected notes cannot be played')&&document.querySelector('#preview-gate').classList.contains('preview-blocked')&&document.querySelector('#start-practice').disabled);
+      return compiled;
+    }
+    const preview=await selectPreview(edition.id,edition.title);assert.deepEqual(preview.score,edition);
+    assert.equal(await page.locator('#preview-title').textContent(),edition.title);assert.ok((await page.locator('#preview-meta').textContent()).includes(edition.composer));
+    const musicMeta=await page.locator('#preview-music-meta').textContent();assert.match(musicMeta,/^Opening · 起始: /);assert.match(musicMeta,/2 flats · mode unspecified/);assert.ok(musicMeta.includes(`${preview.score.tempo[0].bpm} BPM`));assert.ok(musicMeta.includes(`${preview.score.parts.length} parts`));
+    assert.equal(await page.locator('#preview-notices').evaluate(element=>element.open),false);assert.equal(await page.locator('.preview-copy').evaluate(element=>element.scrollTop),0);
+    if(viewport.width<651)await page.locator('.preview-footer').scrollIntoViewIfNeeded();
+    const lobby=await compactGeometry();assertPinnedPreview(lobby,viewport);assert.equal(await page.locator('html').getAttribute('data-theme'),'light');assert.equal(await page.locator('#workspace').isVisible(),false);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby`);
     await page.locator('#preview-notices-title').click();assert.ok(await page.locator('#preview-notice-list li').count()>0);assert.ok((await page.locator('#preview-notice-list').textContent()).length>300,'The retained D768 notices exercise a long preview');
     if(viewport.width<651)await page.locator('.preview-footer').scrollIntoViewIfNeeded();
-    const lobby=await compactGeometry();assertBoundedDocument(lobby);assert.equal(lobby.copy.overflow,'auto');assertInsideViewport(lobby.footer,viewport,'Start footer');assertInsideViewport(lobby.listen,viewport,'Listen Start');assertInsideViewport(lobby.practice,viewport,'Practice Start');assert.ok(lobby.footer.y>=lobby.copy.bottom-1,'Long preview text must scroll above the Start footer');
-    assert.equal(await page.locator('#workspace').isVisible(),false);assert.equal(await page.locator('#preview-title').textContent(),edition.title);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby`);
+    const expandedLobby=await compactGeometry();assertPinnedPreview(expandedLobby,viewport);assert.ok(expandedLobby.copy.scrollHeight>expandedLobby.copy.clientHeight,'Expanded source notices must exercise the preview detail scroller');await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby-notices`);
+    await page.mouse.move(expandedLobby.copy.x+expandedLobby.copy.width/2,expandedLobby.copy.y+expandedLobby.copy.height/2);await page.mouse.wheel(0,expandedLobby.copy.scrollHeight);await page.waitForFunction(()=>{const copy=document.querySelector('.preview-copy');return copy.scrollTop>0&&copy.scrollTop+copy.clientHeight>=copy.scrollHeight-1});
+    const scrolledLobby=await compactGeometry();assertPinnedPreview(scrolledLobby,viewport);for(const name of ['identity','title','credits','music','footer','gate','listen','practice'])assert.deepEqual(scrolledLobby[name],expandedLobby[name],`${name} remains anchored while source details scroll`);assert.equal(await page.locator('#preview-music-meta').textContent(),musicMeta);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby-notices-scrolled`);
+    const catalog=await rustApi('/api/catalog/index'),candidate=catalog.items.find(item=>item.id!==edition.id&&item.id!==initialCompilation.score.id);assert.ok(candidate);
+    await selectPreview(candidate.id,candidate.title);assert.equal(await page.locator('#preview-notices').evaluate(element=>element.open),false);assert.equal(await page.locator('.preview-copy').evaluate(element=>element.scrollTop),0);assert.deepEqual(await pausedTakeSnapshot(),activeTake,'Browsing another score preserves the paused take');
+    await selectPreview(edition.id,edition.title);assert.equal(await page.locator('#preview-notices').evaluate(element=>element.open),false);assert.equal(await page.locator('.preview-copy').evaluate(element=>element.scrollTop),0);assert.equal(await page.locator('#preview-music-meta').textContent(),musicMeta);assert.deepEqual(await pausedTakeSnapshot(),activeTake,'Returning to D768 preserves the paused take');assert.deepEqual(await exportTakeData(),takeBefore,'Preview details, scrolling and catalog swaps preserve every captured input and clock segment');assert.deepEqual(await exportScore(),initialCompilation.score);await closeShellPanels();
+    if(viewport.width>=1280){await ui('#theme-mode').selectOption('dark');await closeShellPanels();assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');assertPinnedPreview(await compactGeometry(),viewport);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby-dark`);await ui('#theme-mode').selectOption('light');await closeShellPanels();assert.equal(await page.locator('html').getAttribute('data-theme'),'light');}
     await startPreview({notation:false});assert.equal(await page.locator('#stage-title').textContent(),edition.title);assert.equal(await page.locator('.shell-header').isVisible(),false);assert.equal(await page.locator('#notation-dock').isVisible(),false);assert.equal(await page.locator('#stage-cue-main').textContent(),'READY');
     const stage=await compactGeometry();assertBoundedDocument(stage);assertInsideViewport(stage.stage,viewport,'Performance stage');assertInsideViewport(stage.play,viewport,'Playfield and transport');assertInsideViewport(stage.transport,viewport,'Transport');assert.ok(stage.stage.scrollHeight<=stage.stage.clientHeight+1,'The stage must not become a scrolling dashboard');assert.ok(stage.play.scrollHeight<=stage.play.clientHeight+1,'Playfield and transport must fit without panel scrolling');assert.ok(stage.field.height>=viewport.height*(viewport.width>=1280?.5:.32),`The musical field needs substantial vertical space: ${JSON.stringify(stage.field)}`);
     if(viewport.width>=1280){const centers=stage.hudItems.map(item=>item.centerY);assert.ok(Math.max(...centers)-Math.min(...centers)<=2,`Desktop tools and title share one HUD row: ${JSON.stringify(stage.hudItems)}`);assert.ok(stage.hud.height<=70,JSON.stringify(stage.hud));}
     for(const item of stage.hudItems)assert.ok(item.x>=-1&&item.right<=viewport.width+1,`HUD control stays reachable: ${JSON.stringify(item)}`);
     for(const id of ['midi-button','count-in','typing-octave']){assert.equal(await page.locator(`#${id}`).count(),1);assert.equal(await page.locator(`#settings-dialog #${id}`).count(),1);assert.equal(await page.locator(`#${id}`).isVisible(),false);}
     assert.equal(await page.locator('.transport #sound-button').count(),1);assert.match(await page.locator('#keyboard-range-context').textContent(),/61 keys/);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-stage`);
+    if(viewport.width>=1280){await ui('#theme-mode').selectOption('dark');await closeShellPanels();assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');const darkStage=await compactGeometry();assertBoundedDocument(darkStage);assertInsideViewport(darkStage.transport,viewport,'Dark transport');assert.ok(darkStage.field.height>=viewport.height*.5);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-stage-dark`);await ui('#theme-mode').selectOption('light');await closeShellPanels();assert.equal(await page.locator('html').getAttribute('data-theme'),'light');}
     const keyboardRange=await page.locator('#piano-scroll').evaluate(element=>({left:element.scrollLeft,width:element.clientWidth,total:element.scrollWidth}));
     if(keyboardRange.total>keyboardRange.width+1){const direction=await page.locator('#keyboard-pan-right').isEnabled()?'right':'left';await page.locator(`#keyboard-pan-${direction}`).click();await page.waitForFunction(previous=>Math.abs(document.querySelector('#piano-scroll').scrollLeft-previous)>1,keyboardRange.left);assert.equal(await page.locator('.piano-key').count(),61,'Panning never truncates the configured keyboard');}
     for(const name of ['settings','score-tools','import-tools','results']){await page.locator(`#${name}-button`).click();await page.locator(`#${name}-dialog`).waitFor();if(name==='settings')for(const id of ['midi-button','count-in','typing-octave'])assert.equal(await page.locator(`#${id}`).isVisible(),true);await page.locator(`#${name}-dialog [data-close-panel]`).click();}
@@ -880,7 +929,7 @@ for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:8
     for(const selector of ['#engraving-range','#engraving-follow-status']){const bounds=await page.locator(selector).boundingBox();assertInsideViewport({...bounds,right:bounds.x+bounds.width,bottom:bounds.y+bounds.height},viewport,`Visible notation state ${selector}`);}
     const help=await page.locator('#engraving-follow-help').evaluate(element=>({inDetails:Boolean(element.closest('details')),open:element.closest('details')?.open}));assert.deepEqual(help,{inDetails:true,open:false});assert.equal(await page.locator('#dock-warning-count').isVisible(),true);assert.match(await page.locator('#dock-warning-count').textContent(),/Notation notices.*\d/);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-notation`);
     assert.deepEqual(await exportScore(),edition,'Viewport, panning, compact notation and tools preserve every canonical event and retained source byte');await closeShellPanels();await assertStoppedAtZero();
-    await writeFile(join(artifactDirectory,`worldmusichub-live-compact-${viewport.width}x${viewport.height}.json`),JSON.stringify({viewport,score_id:edition.id,lobby,stage,canonical_score_unchanged:true},null,2));
+    await writeFile(join(artifactDirectory,`worldmusichub-live-compact-${viewport.width}x${viewport.height}.json`),JSON.stringify({viewport,score_id:edition.id,music_meta:musicMeta,lobby,expandedLobby,scrolledLobby,stage,paused_take_unchanged:true,canonical_score_unchanged:true},null,2));
   });
 }
 

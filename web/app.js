@@ -1,7 +1,7 @@
 import {setupSourceArchiveView} from './source-archive-view.js';
 import {setupGameShell} from './game-shell.js';
 import {ScorePreview,filterCatalog,stageShortcutAllowed} from './score-preview.js';
-import {setupPerformanceView,FIELD_COLORS} from './performance-view.js';
+import {setupPerformanceView,FIELD_COLORS,previewMusicMetadata} from './performance-view.js';
 import {prepareScoreDownload} from './score-download.js';
 import {validateCatalogIndex,CatalogScoreCache,fetchCatalogScore} from './catalog-loader.js';
 import {setupNotationFollowing} from './notation-follow.js';
@@ -727,10 +727,13 @@ async function checkPreview(compiled,part,signal){
   return previewCompatibility(result,profile);
 }
 function renderPreview(){
-  const value=preview.value;$('song-lobby').dataset.previewStatus=value.status;$('song-lobby').dataset.previewId=value.identity||'';
+  const value=preview.value,changedIdentity=$('song-lobby').dataset.previewId!==(value.identity||'');$('song-lobby').dataset.previewStatus=value.status;$('song-lobby').dataset.previewId=value.identity||'';
   const item=value.score||state.catalog.find(item=>item.id===value.identity);
   $('preview-title').textContent=item?.title||'Choose your first score';
-  $('preview-meta').textContent=value.compiled?`${item.composer||'Composer not specified'} · ${scoreSummary(item,value.compiled.timeline).writtenCount} written events · ${item.parts.length} parts · ${catalogOriginLabel(item)}`:item?`${item.composer||'Composer not specified'} · ${item.written_event_count} written events`:'Browse the list or import a local score.';
+  $('preview-title').title=$('preview-title').textContent;
+  $('preview-meta').textContent=item?`${item.composer||'Composer not specified'} · ${catalogOriginLabel(item)}`:'Browse the list or import a local score.';
+  $('preview-meta').title=$('preview-meta').textContent;
+  if($('preview-music-meta'))$('preview-music-meta').textContent=previewMusicMetadata(value.compiled?.score);
   $('preview-status').textContent=startingPreview?'Preparing the selected session…':value.status==='loading'?'Preparing this preview. Your current take is unchanged.':value.status==='error'?`Preview unavailable: ${value.message} Select it again to retry.`:value.status==='ready'?'Listen to the score, or Practice to record your notes and timing.':'Browsing keeps your current session intact.';
   $('preview-gate').textContent=value.compatibility.reason;$('preview-gate').classList.toggle('preview-blocked',['blocked','error','dirty'].includes(value.compatibility.status));
   $('start-listen').disabled=startingPreview||!preview.canStart('listen');$('start-practice').disabled=startingPreview||!preview.canStart('practice');
@@ -738,6 +741,7 @@ function renderPreview(){
   const select=$('preview-part'),signature=JSON.stringify(item?.parts?.map(part=>[part.id,part.name])||[]);
   if(select.dataset.parts!==signature){select.replaceChildren();const all=document.createElement('option');all.value='';all.textContent='All parts · 所有声部';select.append(all);for(const part of item?.parts||[]){const option=document.createElement('option');option.value=part.id;option.textContent=part.name;select.append(option)}select.dataset.parts=signature;}
   select.value=value.part||'';$('preview-part-label').hidden=!value.compiled;
+  if(changedIdentity){$('preview-notices').open=false;document.querySelector('.preview-copy').scrollTop=0;}
 }
 async function selectCatalogScore(id){
   const item=state.catalog.find(entry=>entry.id===id);if(!item)return;

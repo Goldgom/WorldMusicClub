@@ -17,10 +17,12 @@ test('application module initializes the lobby and activates only through explic
  class Audio{constructor(){audioContexts++;this.state='running';this.currentTime=0;this.destination={}}createGain(){return{gain:{...param},connect(){},disconnect(){}}}createOscillator(){return{frequency:{},connect(){},disconnect(){},start(){},stop(){}}}}
  const compile=score=>({score,timeline:{notes:score.parts.flatMap(part=>part.notes.filter(note=>note.pitch).map(note=>({id:note.id,part_id:part.id,midi:pitchMidi(note.pitch),start_ms:beat(note.at)*500,duration_ms:beat(note.duration)*500,voice:note.voice,staff:note.staff}))),duration_ms:1000},diagnostics:[]});
  const item={id:fixture.id,title:fixture.title,composer:fixture.composer,provenance:fixture.provenance,written_event_count:2,pitched_note_count:2,rest_count:0,opening_bpm:120,part_count:1};
+ const otherScore={...structuredClone(fixture),id:'other-preview',title:'Another selected score'};
  const installed={window,document,location:{origin:'http://local-node-dom.invalid'},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},matchMedia:()=>({matches:false,addEventListener(){}}),MutationObserver:class{observe(){}disconnect(){}},requestAnimationFrame:()=>0,cancelAnimationFrame:()=>{},AudioContext:Audio,fetch:async(path,options={})=>{
   const body=options.body?JSON.parse(options.body):null;requests.push({path,body});let result;
-  if(path==='/api/catalog/index')result={version:1,items:[item]};
+  if(path==='/api/catalog/index')result={version:1,items:[item,{...item,id:otherScore.id,title:otherScore.title}]};
   else if(path==='/api/catalog/score/'+fixture.id)result=structuredClone(fixture);
+  else if(path==='/api/catalog/score/'+otherScore.id)result=structuredClone(otherScore);
   else if(path==='/api/compile')result=compile(body);
   else if(path==='/api/practice-targets')result={timeline:body.timeline,groups:body.timeline.notes.map(note=>({target_id:note.id,source_occurrence_ids:[note.id],source_note_ids:[note.id],part_ids:[note.part_id]})),diagnostics:[],source_note_count:body.timeline.notes.length,target_count:body.timeline.notes.length,playable:true};
   else if(path==='/api/instrument-check')result={lowest_midi:36,highest_midi:96,note_options:body.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:true,positions:[]})),diagnostics:[],changed_source_notes:false};
@@ -47,5 +49,8 @@ test('application module initializes the lobby and activates only through explic
   assert.equal(document.getElementById('start-practice').disabled,true,'Dirty setup invalidates admission synchronously');release();await until(()=>document.getElementById('song-lobby').dataset.previewStatus==='ready'&&!document.getElementById('start-listen').disabled&&document.getElementById('preview-gate').textContent.includes('Apply your edited'),'Dirty setup was not preserved');
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(document.getElementById('start-practice').disabled,true);assert.equal(document.getElementById('start-listen').disabled,false);assert.equal(document.getElementById('stage-title').textContent,fixture.title);
+  document.getElementById('settings-dialog').close();const details=document.querySelector('.preview-copy');details.scrollTop=240;document.getElementById('preview-notices').open=true;
+  document.querySelector(`[data-score-id="${otherScore.id}"]`).click();await until(()=>document.getElementById('preview-title').textContent===otherScore.title&&!document.getElementById('start-listen').disabled,'Changed preview never became ready');
+  assert.equal(details.scrollTop,0,'A different score opens at its title instead of inheriting the old source-notice scroll');assert.equal(document.getElementById('preview-notices').open,false,'Source notices for a different score begin collapsed');assert.equal(document.getElementById('stage-title').textContent,fixture.title,'Preview positioning does not replace the active take');
  }finally{for(const[key,descriptor]of originals)if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key]}
 });
