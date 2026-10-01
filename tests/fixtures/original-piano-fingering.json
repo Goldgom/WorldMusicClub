@@ -1,0 +1,194 @@
+{
+  "composer": "WorldMusicHub original exercise",
+  "format_metadata": {
+    "producer": "WorldMusicHub",
+    "producer_version": "0.2.0-alpha.1",
+    "schema_revision": 2
+  },
+  "id": "original-piano-integration-fixture",
+  "keys": [
+    {
+      "at": {
+        "denominator": 1,
+        "numerator": 0
+      },
+      "fifths": 0,
+      "mode": "major"
+    }
+  ],
+  "measures": [
+    {
+      "number": 1,
+      "at": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "length": {
+        "numerator": 3,
+        "denominator": 1
+      }
+    }
+  ],
+  "meters": [
+    {
+      "at": {
+        "denominator": 1,
+        "numerator": 0
+      },
+      "denominator": 4,
+      "numerator": 4
+    }
+  ],
+  "parts": [
+    {
+      "id": "piano",
+      "instrument": "piano",
+      "name": "Piano",
+      "notes": [
+        {
+          "id": "tie-start",
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "C",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": true,
+          "tie_stop": false
+        },
+        {
+          "id": "tie-end",
+          "at": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "C",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": true
+        },
+        {
+          "id": "upper-chord",
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 2,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "E",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "later",
+          "at": {
+            "numerator": 2,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "D",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        }
+      ]
+    },
+    {
+      "id": "other",
+      "name": "Other voice",
+      "instrument": "piano",
+      "notes": [
+        {
+          "id": "unison",
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "C",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 2,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "attribution": "Newly authored pedagogical scale exercise for WorldMusicHub; not a transcription of a song",
+    "kind": "original_exercise",
+    "license": "CC0-1.0",
+    "source_url": null
+  },
+  "repeats": [
+    {
+      "from": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "to": {
+        "numerator": 3,
+        "denominator": 1
+      },
+      "times": 2
+    }
+  ],
+  "source": null,
+  "tempo": [
+    {
+      "at": {
+        "denominator": 1,
+        "numerator": 0
+      },
+      "bpm": 90.0
+    }
+  ],
+  "title": "Original piano integration fixture",
+  "version": 1
+}

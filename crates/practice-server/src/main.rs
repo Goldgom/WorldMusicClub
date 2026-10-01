@@ -303,6 +303,12 @@ fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
             .map_err(|e| json_input_error("instrument request", e))
             .and_then(|r| score_core::instruments::analyze_instrument(&r.timeline, &r.profile))
             .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
+        "/api/fingering/piano" => {
+            serde_json::from_slice::<score_core::piano_fingering::PianoFingeringRequest>(&bytes)
+                .map_err(|e| json_input_error("piano fingering request", e))
+                .and_then(score_core::piano_fingering::plan_piano_fingering)
+                .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string()))
+        }
         "/api/fingering/guitar" => {
             serde_json::from_slice::<score_core::guitar_fingering::GuitarFingeringRequest>(&bytes)
                 .map_err(|e| json_input_error("guitar fingering request", e))
@@ -581,6 +587,95 @@ mod tests {
             "/api/notation-navigation",
             "application/json"
         ));
+    }
+    #[test]
+    fn piano_fingering_api_preserves_sources_defaults_and_physical_target_ids() {
+        let mut score = score_core::catalog().remove(0);
+        score.parts[0].notes.truncate(1);
+        let mut other = score.parts[0].clone();
+        other.id = "other-part".into();
+        other.notes[0].id = "other-source".into();
+        score.parts.push(other);
+        let original = serde_json::to_value(&score).unwrap();
+        let request = json!({"score":score,"profile":{"kind":"piano","key_count":88,"lowest_midi":null},"locks":[{"source_note_id":"other-source","hand":"left","finger":3}]});
+        let result = api(
+            "/api/fingering/piano",
+            serde_json::to_vec(&request).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(result["version"], 1);
+        assert_eq!(result["status"], "ready");
+        assert_eq!(result["complete"], true);
+        assert_eq!(result["changed_source_notes"], false);
+        assert_eq!(result["source_occurrence_count"], 2);
+        assert_eq!(result["physical_target_count"], 1);
+        assert_eq!(result["left_hand"]["max_span_semitones"], 12);
+        assert_eq!(result["assignments"][0]["hand"], "left");
+        assert_eq!(result["assignments"][0]["finger"], 3);
+        assert_eq!(
+            result["assignments"][0]["source_note_ids"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(request["score"], original);
+        let compiled = api(
+            "/api/compile",
+            serde_json::to_vec(&request["score"]).unwrap(),
+        )
+        .unwrap();
+        let targets = api(
+            "/api/practice-targets",
+            serde_json::to_vec(
+                &json!({"timeline":compiled["timeline"],"profile":request["profile"]}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            result["targets"][0]["target_id"],
+            targets["groups"][0]["target_id"]
+        );
+        assert_eq!(
+            result["targets"][0]["source_occurrence_ids"],
+            targets["groups"][0]["source_occurrence_ids"]
+        );
+        assert!(content_type_allowed(
+            "/api/fingering/piano",
+            "application/json"
+        ));
+        let mut invalid = request.clone();
+        invalid["left_hand"] = json!({"lowest_midi":0,"highest_midi":127,"max_span_semitones":25});
+        assert!(api(
+            "/api/fingering/piano",
+            serde_json::to_vec(&invalid).unwrap()
+        )
+        .is_err());
+        invalid = request;
+        invalid["locks"][0]["finger"] = json!(0);
+        assert!(api(
+            "/api/fingering/piano",
+            serde_json::to_vec(&invalid).unwrap()
+        )
+        .is_err());
+    }
+    #[test]
+    fn piano_fingering_api_keeps_infeasible_target_map_without_partial_assignments() {
+        let mut score = score_core::catalog().remove(0);
+        score.parts[0].notes.truncate(1);
+        let source_id = score.parts[0].notes[0].id.clone();
+        let request = json!({"score":score,"profile":{"kind":"piano","key_count":12,"lowest_midi":0},"locks":[{"source_note_id":source_id,"hand":"right"}]});
+        let result = api(
+            "/api/fingering/piano",
+            serde_json::to_vec(&request).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(result["status"], "infeasible_under_model");
+        assert_eq!(result["complete"], false);
+        assert_eq!(result["assignments"], json!([]));
+        assert_eq!(result["targets"].as_array().unwrap().len(), 1);
+        assert_eq!(result["issues"][0]["source_note_ids"], json!([source_id]));
     }
     #[test]
     fn ordinary_api_compile_and_export_remain_compatible() {

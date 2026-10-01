@@ -6,6 +6,7 @@ pub mod guitar_fingering;
 mod jianpu;
 mod matching;
 mod midi;
+pub mod piano_fingering;
 mod ties;
 pub use jianpu::{export_jianpu, import_jianpu, ExportedJianpu};
 mod musicxml;

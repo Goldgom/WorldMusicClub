@@ -1,3 +1,4 @@
+import {unavailablePianoResult} from './piano-fingering-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -29,6 +30,7 @@ test('application module initializes the lobby and activates only through explic
   else if(path==='/api/transposition/preview'){const score=structuredClone(body.score);for(const part of score.parts)for(const note of part.notes)if(note.pitch)note.pitch.octave++;score.id+=':semitones:+12';score.title+=' [+12 semitones]';score.source={format:'semitone-transposition',filename:null,content:JSON.stringify({version:1,operation:body.operation,original:body.score}),import_diagnostics:[{severity:'warning',code:'explicit_semitone_transposition',message:'Keep original JSON',note_id:null}]};const compilation=compile(score);result={compilation,operation:body.operation,written_interval:{diatonic_steps:7,fifths_delta:0},changed_note_count:score.parts.flatMap(part=>part.notes).filter(note=>note.pitch).length,original_preserved:true,scored_mode_allowed:true,instrument_report:{lowest_midi:36,highest_midi:96,note_options:compilation.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:true,positions:[]})),diagnostics:[],changed_source_notes:false}};}
   else if(path==='/api/transposition/restore')result=compile(JSON.parse(body.source.content).original);
   else if(path==='/api/practice-targets')result={timeline:body.timeline,groups:body.timeline.notes.map(note=>({target_id:note.id,source_occurrence_ids:[note.id],source_note_ids:[note.id],part_ids:[note.part_id]})),diagnostics:[],source_note_count:body.timeline.notes.length,target_count:body.timeline.notes.length,playable:true};
+  else if(path==='/api/fingering/piano')result=unavailablePianoResult(body,compile(body.score).timeline);
   else if(path==='/api/instrument-check')result={lowest_midi:36,highest_midi:96,note_options:body.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:true,positions:[]})),diagnostics:[],changed_source_notes:false};
   else if(path==='/api/assess')result={hits:[],misses:body.timeline.notes.map(note=>note.id),extras:[],accuracy_percent:0,mean_abs_error_ms:null,grade_counts:{perfect:0,good:0,early:0,late:0,missed:2,extra:0},onset_completion:{total:2,complete:0,longest_complete_sequence:0}};
   else throw Error(`Unexpected Node DOM test request: ${path}`);
