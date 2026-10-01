@@ -222,6 +222,8 @@ mod tests {
         assert_eq!(grade.pitch_breakdown.len(), 1);
         assert_eq!(grade.pitch_breakdown[0].expected, 1);
         assert_eq!(grade.pitch_breakdown[0].matched, 1);
+        assert_eq!(grade.onset_completion.unwrap().total, 1);
+        assert_eq!(grade.grade_counts.unwrap().perfect, 1);
     }
     #[test]
     fn rapid_rearticulations_are_never_merged_by_tolerance() {
@@ -229,6 +231,21 @@ mod tests {
         score.parts[1].notes[0].at = Beat::new(1, 1000);
         let plan = plan_targets(&compile(score).unwrap().timeline, &piano()).unwrap();
         assert_eq!(plan.target_count, 2);
+        let inputs = plan
+            .timeline
+            .notes
+            .iter()
+            .map(|n| InputEvent {
+                midi: n.midi,
+                at_ms: n.start_ms,
+                velocity: 90,
+            })
+            .collect::<Vec<_>>();
+        let result = crate::assess(&plan.timeline, &inputs, 180.).unwrap();
+        assert_eq!(
+            result.onset_completion.unwrap().longest_complete_sequence,
+            2
+        );
     }
     #[test]
     fn part_selection_recomputes_groups_and_guitar_does_not_collapse_strings() {
@@ -250,7 +267,24 @@ mod tests {
             frets: 24,
             capo: 0,
         };
-        assert_eq!(plan_targets(&c.timeline, &guitar).unwrap().target_count, 2);
+        let guitar_plan = plan_targets(&c.timeline, &guitar).unwrap();
+        assert_eq!(guitar_plan.target_count, 2);
+        let note = &guitar_plan.timeline.notes[0];
+        let result = crate::assess(
+            &guitar_plan.timeline,
+            &[InputEvent {
+                midi: note.midi,
+                at_ms: note.start_ms,
+                velocity: 90,
+            }],
+            180.,
+        )
+        .unwrap();
+        assert_eq!(
+            result.onset_completion.unwrap().complete,
+            0,
+            "One pitch-only input cannot complete two retained guitar targets"
+        );
     }
     #[test]
     fn tied_continuations_and_repeats_keep_all_source_ids_without_extra_attacks() {
@@ -293,6 +327,8 @@ mod tests {
         assert_eq!(grade.pitch_breakdown[0].expected, 2);
         assert_eq!(grade.pitch_breakdown[0].matched, 2);
         assert_eq!(grade.pitch_breakdown[0].timing_bias_ms, Some(25.));
+        assert_eq!(grade.onset_completion.unwrap().longest_complete_sequence, 2);
+        assert_eq!(grade.grade_counts.unwrap().perfect, 2);
     }
     #[test]
     fn out_of_range_stays_visible_and_disables_scored_plan() {

@@ -95,11 +95,17 @@ try:
     performance={'timeline':compilation['timeline'],'inputs':[],'tolerance_ms':150}
     status,body,_=request('/api/assess',json.dumps(performance).encode(),{'Content-Type':'application/json'});assert status==200 and len(json.loads(body)['misses'])==15
     pitch_rows=json.loads(body)['pitch_breakdown'];assert sum(row['missed'] for row in pitch_rows)==15
+    result=json.loads(body)
+    assert result['grade_counts']=={'perfect':0,'good':0,'early':0,'late':0,'missed':15,'extra':0}
+    assert result['onset_completion']=={'total':15,'complete':0,'longest_complete_sequence':0}
     assert all(row['mean_abs_error_ms'] is None and row['timing_bias_ms'] is None for row in pitch_rows)
     performance['inputs']=[{'midi':note['midi'],'at_ms':note['start_ms']+10,'velocity':90} for note in compilation['timeline']['notes']]
     performance['inputs'].append({'midi':0,'at_ms':0,'velocity':90})
     status,body,_=request('/api/assess',json.dumps(performance).encode(),{'Content-Type':'application/json'});assert status==200,body
     pitch_rows=json.loads(body)['pitch_breakdown'];assert sum(row['matched'] for row in pitch_rows)==15
+    result=json.loads(body)
+    assert sum(result['grade_counts'][grade] for grade in ['perfect','good','early','late'])==15
+    assert result['onset_completion']=={'total':15,'complete':15,'longest_complete_sequence':15}
     assert pitch_rows[0]['midi']==0 and pitch_rows[0]['extra']==1 and pitch_rows[0]['expected']==0
     assert all(abs(row['timing_bias_ms']-10)<1e-6 for row in pitch_rows if row['matched'])
     assert request('/api/compile',b'{',{'Content-Type':'application/json'})[0]==400

@@ -23,6 +23,7 @@ pub mod navigation;
 pub mod omr;
 pub mod practice;
 mod public_domain;
+pub mod results;
 pub mod targets;
 pub use musicxml::import_musicxml;
 
@@ -757,6 +758,11 @@ pub struct Hit {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Assessment {
     pub summary: feedback::PerformanceSummary,
+    /// Counters for this assessed input snapshot, not a live or finalized combo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grade_counts: Option<results::GradeCounts>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onset_completion: Option<results::OnsetCompletion>,
     /// Sorted by MIDI pitch, counting the submitted physical onset targets.
     #[serde(default)]
     pub pitch_breakdown: Vec<feedback::PitchFeedback>,
@@ -865,8 +871,12 @@ pub fn assess(
         .then(|| hits.iter().map(|h| h.delta_ms.abs()).sum::<f64>() / hits.len() as f64);
     let summary = feedback::summarize(&hits, timeline.notes.len(), extras.len(), tolerance_ms);
     let pitch_breakdown = feedback::pitch_breakdown(timeline, &hits, &extras);
+    let grade_counts = results::grade_counts(&hits, timeline.notes.len(), extras.len());
+    let onset_completion = results::onset_completion(timeline, &matched);
     Ok(Assessment {
         summary,
+        grade_counts: Some(grade_counts),
+        onset_completion: Some(onset_completion),
         pitch_breakdown,
         hits,
         misses,
