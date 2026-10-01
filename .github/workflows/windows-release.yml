@@ -52,6 +52,10 @@ jobs:
         run: python tests/server_smoke.py
         env:
           WMH_SERVER_BINARY: target/x86_64-pc-windows-msvc/release/practice-server.exe
+      - name: Check bounded HTTP reuse in the native release binary
+        run: python tests/server_connection_smoke.py --report "${{ runner.temp }}/wmh-screenshots/worldmusichub-live-connections.json"
+        env:
+          WMH_SERVER_BINARY: target/x86_64-pc-windows-msvc/release/practice-server.exe
       - name: Smoke-test exact release executable
         shell: pwsh
         run: |

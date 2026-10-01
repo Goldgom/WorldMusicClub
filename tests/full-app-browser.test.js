@@ -21,6 +21,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
 import {isDeepStrictEqual} from 'node:util';
 import {fixture} from './frontend-fixtures.js';
+import {connectionDiagnostics} from './browser-connection-diagnostics.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const binary = resolve(root, process.env.WMH_SERVER_BINARY || join('target', 'debug', `practice-server${process.platform === 'win32' ? '.exe' : ''}`));
@@ -352,6 +353,8 @@ before(async () => {
 
 after(async () => {
   try {
+    const connections=await connectionDiagnostics(origin);
+    await writeFile(join(artifactDirectory,'worldmusichub-live-connection-summary.json'),JSON.stringify({attemptedContexts,connections},null,2));
     await browser?.close();
   } finally {
     try {
@@ -403,7 +406,8 @@ beforeEach(async t => {
     assert.equal(await ui('#engraved-button').getAttribute('aria-pressed'),'true','Supported original scores use the offline engraved view by default');
   } catch (error) {
     const observed = await page.evaluate(() => ({url:location.href,readyState:document.readyState,title:document.title,notice:document.querySelector('#notice')?.textContent,scoreTitle:document.querySelector('#score-title')?.textContent,playDisabled:document.querySelector('#play-button')?.disabled})).catch(failure=>({observationError:failure.message}));
-    const diagnostics={failure:error.message,observed,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,runtime:{platform:process.platform,node:process.version,browser:browser.version(),attemptedContexts,processMemory:process.memoryUsage(),systemFreeBytes:freemem(),systemTotalBytes:totalmem(),activeResources:process.getActiveResourcesInfo()},apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverRunning:serverRunning(),serverOutput:serverOutput.slice(-4000)};
+    const connections=await connectionDiagnostics(origin);
+    const diagnostics={failure:error.message,connections,observed,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,runtime:{platform:process.platform,node:process.version,browser:browser.version(),attemptedContexts,processMemory:process.memoryUsage(),systemFreeBytes:freemem(),systemTotalBytes:totalmem(),activeResources:process.getActiveResourcesInfo()},apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverRunning:serverRunning(),serverOutput:serverOutput.slice(-4000)};
     await writeFile(join(artifactDirectory,'worldmusichub-live-bootstrap-diagnostics.json'),JSON.stringify(diagnostics,null,2));
     await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-bootstrap-failure.png'),fullPage:true,timeout:3000}).catch(()=>{});
     throw new Error(`Live app bootstrap failed without retry. Diagnostics: ${JSON.stringify(diagnostics)}`,{cause:error});
@@ -1884,6 +1888,10 @@ test('real piano hands preserve merged ties and repeat targets through editable 
   await ui('#piano-left-reach').fill('8');await page.waitForFunction(()=>document.querySelector('#piano-guidance-state').textContent.includes('Settings edited'));assert.equal(await page.locator('.piano-finger-label').count(),0,'Unapplied reach edits immediately invalidate visible guidance');
   const discardResponse=watchPlan(body=>body.left_hand.max_span_semitones===12&&body.locks.length===1);await ui('#piano-fingering-discard').click();assert.equal((await responseJson(await discardResponse)).status,'ready');await page.waitForFunction(()=>document.querySelector('#piano-fingering-status').dataset.phase==='ready');
   assert.deepEqual(await exportTakeData(),take,'Hand/finger editing and failed plans preserve the complete paused take');assert.deepEqual(await exportScore(),score);await closeShellPanels();await screenshot('piano-two-hand-guidance');
-  await page.locator('#piano-fingering-guidance>summary').click();await page.setViewportSize({width:844,height:390});await page.emulateMedia({reducedMotion:'reduce'});await page.locator('#notation-toggle').click();await waitForEngraving();const geometry=await simultaneousStageGeometry();assertSimultaneousPiano(geometry);await screenshot('piano-two-hand-guidance-844x390');
-  await writeFile(join(artifactDirectory,'worldmusichub-live-piano-two-hands.json'),JSON.stringify({initial,leftPlan,conflict,restored,geometry,paused_take_unchanged:true,canonical_score_unchanged:true},null,2));
+  await page.locator('#piano-fingering-guidance>summary').click();await page.setViewportSize({width:844,height:390});await page.emulateMedia({reducedMotion:'reduce'});await page.locator('#notation-toggle').click();await waitForEngraving();
+  const withNotice=await simultaneousStageGeometry(),position=await page.locator('#progress').evaluate(element=>element.value);assert.equal(await page.locator('#notice').isVisible(),true);assert.match(await page.locator('#notice-message').textContent(),/Complete score download/);
+  await page.locator('#notice-dismiss').focus();await page.keyboard.press('Enter');assert.equal(await page.locator('#notice').isVisible(),false);assert.equal(await page.evaluate(()=>document.activeElement.id),'stage-title');
+  const geometry=await simultaneousStageGeometry();assertSimultaneousPiano(geometry);assert.ok(geometry.canvasVisible.height>withNotice.canvasVisible.height,'Explicit dismissal restores space without hiding messages automatically');assert.equal(await page.locator('#progress').evaluate(element=>element.value),position);assert.deepEqual(await exportTakeData(),take,'Dismissing a status message does not alter the paused take');
+  await ui('#notice-history>summary').click();assert.match(await ui('#notice-history-list').textContent(),/Complete score download/);await closeShellPanels();await screenshot('piano-two-hand-guidance-844x390');
+  await writeFile(join(artifactDirectory,'worldmusichub-live-piano-two-hands.json'),JSON.stringify({initial,leftPlan,conflict,restored,withNotice,geometry,notice_dismissed_by_user:true,paused_take_unchanged:true,canonical_score_unchanged:true},null,2));
 });

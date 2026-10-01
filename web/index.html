@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#eff4ee"><title>WorldMusicHub · 乐练</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/game-shell.css"><link rel="stylesheet" href="/performance-stage.css"><link rel="stylesheet" href="/piano-fingering.css"><script type="module" src="/app.js"></script></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#eff4ee"><title>WorldMusicHub · 乐练</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/game-shell.css"><link rel="stylesheet" href="/performance-stage.css"><link rel="stylesheet" href="/piano-fingering.css"><link rel="stylesheet" href="/notice-view.css"><script type="module" src="/app.js"></script></head>
 <body class="game-shell" data-screen="library">
 <a class="skip-link" href="#workspace">Skip to practice</a>
 <div class="app-shell">
@@ -16,7 +16,7 @@
 </aside>
 <main id="workspace" tabindex="-1">
   <header class="topbar"><div><span class="eyebrow">THE PRACTICE ROOM</span><h1>A little practice. A little progress.</h1><p>每天一点练习，让音乐更近一点。</p></div><span class="local-badge"><span class="status-dot"></span>LOCAL SESSION</span></header>
-  <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+  <div id="notice" class="notice" hidden><p id="notice-message" role="status" aria-live="polite" aria-atomic="true" tabindex="0"></p><button id="notice-dismiss" type="button" class="button secondary" title="Keep this message in Settings → Recent messages">Dismiss message · 关闭消息</button></div>
   <section class="piece-panel panel" aria-label="Current score">
     <div class="piece-heading"><div class="piece-icon" aria-hidden="true">♪</div><div><span class="eyebrow">NOW PRACTICING · 正在练习</span><h2 id="score-title">Your next small step</h2><p id="score-meta">Choose a practice score to begin</p></div><div class="score-actions"><button id="library-button" class="button ghost">Saved scores · 收藏</button><button id="export-button" class="button ghost" disabled>Export JSON ↗</button><button id="export-musicxml" class="button ghost" disabled>Export MusicXML ↗</button><button id="export-jianpu" class="button ghost" disabled>Export .jianpu ↗</button></div></div>
     <div class="score-source-summary"><span id="score-origin-label" class="subtle-label"></span><button id="score-details-button" class="button ghost compact" aria-controls="score-details" aria-expanded="false">Source, credits & limitations · 来源说明</button><button id="source-files-button" class="button ghost compact" aria-haspopup="dialog" disabled>Retained files · 原始文件</button><p id="score-retention-note">Written notes/rests and compiled playback events are separate counts. Review source limitations before practice.</p></div>

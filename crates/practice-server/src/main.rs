@@ -1,15 +1,30 @@
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, Limited};
-use hyper::{body::Incoming, server::conn::http1, service::service_fn, Method, Request, Response};
+use hyper::{
+    body::{Body, Incoming},
+    header::{HeaderValue, CONNECTION},
+    server::conn::http1,
+    service::service_fn,
+    Method, Request, Response,
+};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use serde::Deserialize;
 use serde_json::json;
-use std::{convert::Infallible, env, sync::Arc, time::Duration};
+use std::{
+    convert::Infallible,
+    env,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tokio::{net::TcpListener, sync::Semaphore, time::timeout};
 include!(concat!(env!("OUT_DIR"), "/web_assets.rs"));
 const MAX_BODY: usize = 8 * 1024 * 1024;
 const BODY_TIMEOUT: Duration = Duration::from_secs(5);
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_REQUESTS_PER_CONNECTION: usize = 64;
 type WebResponse = Response<Full<Bytes>>;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -67,6 +82,27 @@ fn reply(status: u16, content_type: &str, body: impl Into<Bytes>) -> WebResponse
         .header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
         .body(Full::new(body.into()))
         .expect("static response headers")
+}
+fn request_allows_reuse<B: Body>(request: &Request<B>) -> bool {
+    // Method alone does not prove there is no body. Reuse only an already
+    // complete GET; POSTs retain their existing one-response lifetime.
+    request.method() == Method::GET && request.body().is_end_stream()
+}
+fn bound_response_connection(
+    mut response: WebResponse,
+    allow_reuse: bool,
+    request_number: usize,
+) -> WebResponse {
+    // In particular, do not drain or reuse an early-rejected request body.
+    if !allow_reuse
+        || !response.status().is_success()
+        || request_number >= MAX_REQUESTS_PER_CONNECTION
+    {
+        response
+            .headers_mut()
+            .insert(CONNECTION, HeaderValue::from_static("close"));
+    }
+    response
 }
 fn json_input_error(context: &str, error: serde_json::Error) -> String {
     let detail = error.to_string();
@@ -451,14 +487,22 @@ fn main() {
             let computations = computations.clone();
             tokio::spawn(async move {
                 let _permit = permit;
+                let requests = AtomicUsize::new(0);
                 let service = service_fn(move |request| {
                     let authority = authority.clone();
                     let computations = computations.clone();
-                    async move { Ok::<_, Infallible>(route(request, &authority, computations).await) }
+                    let allow_reuse = request_allows_reuse(&request);
+                    let request_number = requests.fetch_add(1, Ordering::Relaxed) + 1;
+                    async move {
+                        let response = route(request, &authority, computations).await;
+                        Ok::<_, Infallible>(bound_response_connection(response, allow_reuse, request_number))
+                    }
                 });
                 let mut builder = http1::Builder::new();
-                builder.timer(TokioTimer::new()).header_read_timeout(Duration::from_secs(5)).max_buf_size(32 * 1024).max_headers(64).keep_alive(false);
-                // Closing drops an unfinished Incoming body instead of draining it synchronously.
+                builder.timer(TokioTimer::new()).header_read_timeout(Duration::from_secs(5)).max_buf_size(32 * 1024).max_headers(64).keep_alive(true);
+                // Hyper restarts the header timer on idle keep-alive connections.
+                // This independent total limit never resets after a request.
+                // Explicit close responses drop unfinished bodies without draining them.
                 let _ = timeout(CONNECTION_TIMEOUT, builder.serve_connection(TokioIo::new(stream), service)).await;
             });
         }
@@ -468,6 +512,69 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_known_empty_get_requests_can_reuse_a_connection() {
+        for (method, body, expected) in [
+            (Method::GET, Bytes::new(), true),
+            (Method::GET, Bytes::from_static(b"unconsumed"), false),
+            (Method::POST, Bytes::new(), false),
+            (Method::POST, Bytes::from_static(b"{}"), false),
+            (Method::HEAD, Bytes::new(), false),
+        ] {
+            let request = Request::builder()
+                .method(method)
+                .body(Full::new(body))
+                .unwrap();
+            assert_eq!(request_allows_reuse(&request), expected);
+        }
+    }
+    #[test]
+    fn unknown_length_get_body_is_not_polled_or_reused() {
+        struct UnfinishedBody;
+        impl Body for UnfinishedBody {
+            type Data = Bytes;
+            type Error = Infallible;
+            fn poll_frame(
+                self: std::pin::Pin<&mut Self>,
+                _cx: &mut std::task::Context<'_>,
+            ) -> std::task::Poll<Option<Result<hyper::body::Frame<Bytes>, Infallible>>>
+            {
+                panic!("The connection policy must not poll or drain a body")
+            }
+        }
+        let request = Request::builder()
+            .method(Method::GET)
+            .body(UnfinishedBody)
+            .unwrap();
+        assert!(!request_allows_reuse(&request));
+    }
+    #[test]
+    fn rejected_nonempty_and_capped_responses_explicitly_close() {
+        for (status, allow_reuse, number, should_close) in [
+            (200, true, 1, false),
+            (200, true, MAX_REQUESTS_PER_CONNECTION - 1, false),
+            (200, true, MAX_REQUESTS_PER_CONNECTION, true),
+            (200, false, 1, true),
+            (400, true, 1, true),
+            (403, true, 1, true),
+            (404, true, 1, true),
+            (405, true, 1, true),
+            (408, false, 1, true),
+            (415, false, 1, true),
+            (503, false, 1, true),
+        ] {
+            let response = bound_response_connection(
+                reply(status, "text/plain", "complete response"),
+                allow_reuse,
+                number,
+            );
+            assert_eq!(response.status().as_u16(), status);
+            assert_eq!(response.headers().contains_key(CONNECTION), should_close);
+            if should_close {
+                assert_eq!(response.headers()[CONNECTION], "close");
+            }
+        }
+    }
     #[test]
     fn startup_information_and_invalid_options_never_request_a_server() {
         let parse =

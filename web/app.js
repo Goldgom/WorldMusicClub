@@ -1,5 +1,6 @@
 import {setupSourceArchiveView} from './source-archive-view.js';
 import {setupGameShell} from './game-shell.js';
+import {setupNoticeView} from './notice-view.js';
 import {ScorePreview,filterCatalog,stageShortcutAllowed} from './score-preview.js';
 import {setupPerformanceView,FIELD_COLORS,previewMusicMetadata} from './performance-view.js';
 import {setupGuitarGuidance} from './guitar-guidance.js';
@@ -62,14 +63,13 @@ function createRecorder() {
 }
 state.recorder = createRecorder();
 shell=setupGameShell({pausePlayback,onPanel:name=>{cancelPendingStart();if(name==='results')updateResultsSummary()},onScreen:screen=>{if(!enteringPreview)cancelPendingStart();performanceView?.screenChanged(screen);engravedView.surfaceChanged();drawFrame()},onNotation:visible=>{if(!visible)notationFollowing?.suspend('Following suspended while the notation dock is closed.');engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
+const noticeView=setupNoticeView({document,getScope:()=>state.score?.title});
 preview=new ScorePreview({compile:(score,signal)=>api('/api/compile',score,signal),check:checkPreview,onChange:()=>{renderPreview();renderCatalog()}});
 
 function notice(message, error = false) {
-  $('notice').textContent = message;
-  $('notice').classList.toggle('error', error);
-  $('notice').hidden = false;
+  noticeView.show(message,error);
 }
-function clearNotice() { $('notice').hidden = true; }
+function clearNotice() { noticeView.clear(); }
 async function api(path, body, signal) {
   const response = await fetch(path, {method: body === undefined ? 'GET' : 'POST', headers: body === undefined ? {} : {'Content-Type': 'application/json'}, body: body === undefined ? undefined : JSON.stringify(body), signal});
   let result;
@@ -765,13 +765,14 @@ $('export-button').addEventListener('click', () => {
 });
 connectPlayable($('keyboard')); connectPlayable($('fretboard'));
 document.addEventListener('keydown', event => {
+  if(event.target.closest?.('#notice'))return;
   if(!stageShortcutAllowed({screen:shell.screen(),target:event.target,defaultPrevented:event.defaultPrevented,repeat:event.repeat,ctrlKey:event.ctrlKey,metaKey:event.metaKey,altKey:event.altKey,dialogOpen:Boolean(document.querySelector('dialog[open]'))}))return;
   if (event.code === 'Space') { if (event.target.tagName === 'BUTTON') return; event.preventDefault(); togglePlayback(); return; }
   const key = event.key.toLowerCase();
   if (Object.hasOwn(SHORTCUTS, key)) { event.preventDefault(); pressNote(`key:${event.code}`, (state.octave + 1) * 12 + SHORTCUTS[key], 90, event.timeStamp,{inputKind:'typing_keyboard',encoding:'key_down'}); }
 });
 document.addEventListener('keyup', event => {
-  const musical=Object.hasOwn(SHORTCUTS,event.key.toLowerCase())&&stageShortcutAllowed({screen:shell.screen(),target:event.target,dialogOpen:Boolean(document.querySelector('dialog[open]')),ctrlKey:event.ctrlKey,metaKey:event.metaKey,altKey:event.altKey});
+  const musical=!event.target.closest?.('#notice')&&Object.hasOwn(SHORTCUTS,event.key.toLowerCase())&&stageShortcutAllowed({screen:shell.screen(),target:event.target,dialogOpen:Boolean(document.querySelector('dialog[open]')),ctrlKey:event.ctrlKey,metaKey:event.metaKey,altKey:event.altKey});
   releaseNote(`key:${event.code}`,event.timeStamp,{encoding:'key_up',inputKind:musical?'typing_keyboard':null});
   if (event.key === 'Enter' || event.key === ' ') releaseNote('accessible-key',event.timeStamp,{encoding:'key_up'});
 });

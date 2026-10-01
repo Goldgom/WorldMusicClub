@@ -77,6 +77,20 @@ test('application module initializes the lobby and activates only through explic
   const exportTake=async()=>{document.getElementById('export-takes').click();return JSON.parse(await blob.text())};
   const startPractice=async()=>{document.getElementById('count-in').checked=false;document.getElementById('play-button').click();await until(()=>document.getElementById('play-button').textContent.includes('Pause'),'Practice did not start')};
   await startPractice();
+  // A real validation notice can be read and dismissed while playing without
+  // recording its keyboard controls, retrying a request or pausing the take.
+  const beforeNotice=await exportTake(),beforeNoticeRequests=requests.length;
+  const beforeNoticeControls=['score-title','transport-status','play-button','practice-gate','retry-assessments','diagnostic-list'].map(id=>document.getElementById(id).outerHTML);
+  document.getElementById('tempo').value='0';emit(document.getElementById('tempo'),'change');
+  assert.equal(document.getElementById('notice').hidden,false);assert.match(document.getElementById('notice-message').textContent,/Choose a tempo/);
+  for(const id of ['notice-message','notice-dismiss']){
+   for(const properties of [typing,enter,{key:' ',code:'Space'}]){emit(document.getElementById(id),'keydown',properties);emit(document.getElementById(id),'keyup',properties)}
+  }
+  document.getElementById('notice-dismiss').click();
+  assert.equal(document.getElementById('notice').hidden,true);assert.equal(requests.length,beforeNoticeRequests);
+  assert.deepEqual(await exportTake(),beforeNotice,'Reading and dismissing a running notice preserves inputs, clock segments, revisions and pending checks');
+  assert.deepEqual(['score-title','transport-status','play-button','practice-gate','retry-assessments','diagnostic-list'].map(id=>document.getElementById(id).outerHTML),beforeNoticeControls);
+  assert.match(document.getElementById('notice-history-list').textContent,/Choose a tempo/);
   document.getElementById('play-button').click();assert.equal((await exportTake()).input_evidence.events.at(-1).reason,'pause','A real transport pause remains visible even without held notes');await startPractice();
   emit(key,'pointerdown',{pointerId:3,button:0});emit(key,'pointerup',{pointerId:3});emit(key,'lostpointercapture',{pointerId:3});
   emit(key,'keydown',enter);emit(key,'focusout');emit(document.body,'keyup',enter);emit(key,'focusout');
@@ -121,6 +135,10 @@ test('application module initializes the lobby and activates only through explic
   const exported=await exportTake();assert.equal(exported.passes[0].inputs.length,3);assert.equal(exported.passes[0].revision,3);
   assert.deepEqual(exported.input_evidence.events.map(event=>event.kind),['note_on','note_off']);assert.equal(exported.input_evidence.truncated,true);assert.equal(exported.input_evidence.omitted_observations,4);
   assert.equal(exported.input_evidence.events[1].encoding,'key_up');assert.equal(exported.input_evidence.release_assessment,'not_implemented');
+  document.getElementById('notice-dismiss').click();
+  assert.equal(document.getElementById('notice').hidden,true);assert.equal(document.getElementById('take-evidence-limit').hidden,false,'Dismissing the banner never hides the persistent evidence limitation');
+  assert.deepEqual(await exportTake(),exported,'Dismissing an evidence-limit error never edits the captured take or its diagnostic counters');
+  assert.match(document.getElementById('notice-history-list').textContent,/export limit.*onset recording/);
   document.getElementById('reset-button').click();assert.equal(document.getElementById('take-evidence-limit').hidden,true);
   // Exercise the actual shared loader's pre-commit cancellation and post-commit
   // compatibility wait. A view-only activation mock cannot establish this boundary.
