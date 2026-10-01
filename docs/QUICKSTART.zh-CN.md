@@ -42,4 +42,4 @@
 
 代码采用 MIT 许可；音乐、编曲、制谱、录音各有独立权利。内置歌曲说明会记录来源。喜欢的商业音游曲目前提供名称和官方链接，需要导入你有权使用的乐谱；“不商用”或“只提供谱子”本身并不等于可以再分发。
 
-完整功能与验证边界见 [alpha 说明](releases/0.1.0-alpha.1.md)、[Windows 构建说明](WINDOWS.md) 和 [曲谱来源](CATALOG_RIGHTS.md)。
+完整功能与验证边界见 [当前 alpha 说明](releases/0.2.0-alpha.1.md)、[Windows 构建说明](WINDOWS.md) 和 [曲谱来源](CATALOG_RIGHTS.md)。

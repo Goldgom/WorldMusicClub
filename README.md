@@ -2,7 +2,7 @@
 
 A local-first music practice and rhythm-game project with a Rust score engine.
 
-[中文上手指南](docs/QUICKSTART.zh-CN.md) · [Alpha features and limits](docs/releases/0.1.0-alpha.1.md)
+[中文上手指南](docs/QUICKSTART.zh-CN.md) · [Current alpha features and limits](docs/releases/0.2.0-alpha.1.md)
 
 ## Current alpha
 
@@ -29,7 +29,7 @@ Each meaningful implementation increment is committed. Every 50 project commits 
 
 ## Current product scope and image workflow
 
-A limited local recognizer suggests note positions from one clean horizontal printed treble staff. You must correct and confirm every pitch and duration before it becomes playable. Handwritten music, complex notation and general PDFs are unsupported. The interface includes light/dark/system/custom themes. Saved-score copies are explicit and browser-local; export backups for durable records. See [the first alpha's features and limits](docs/releases/0.1.0-alpha.1.md).
+A limited local recognizer suggests note positions from one clean horizontal printed treble staff. You must correct and confirm every pitch and duration before it becomes playable. Handwritten music, complex notation and general PDFs are unsupported. The interface includes light/dark/system/custom themes. Saved-score copies are explicit and browser-local; export backups for durable records. See [current features and limits](docs/releases/0.2.0-alpha.1.md); the first alpha's historical guide remains in the releases folder.
 
 ## Windows builds
 

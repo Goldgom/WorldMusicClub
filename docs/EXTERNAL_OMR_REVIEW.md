@@ -1,6 +1,6 @@
 # Optional external OMR draft and confirmation API
 
-This bridge imports files produced separately by a locally installed Audiveris 5.11.0. It does not install or launch an engine, accept executable paths/arguments, upload images, or provide automatic image conversion. An integrated image/correction UI is still pending. The engine remains optional with separate AGPL licensing; the app stays MIT.
+This bridge imports files produced separately by a locally installed Audiveris 5.11.0. It does not install or launch an engine, accept executable paths/arguments, upload images, or provide automatic image conversion. The app provides an explicit external-output review dialog with an optional original-image preview, paged note/rest editor, tempo/key editing and a complete-score JSON fallback. Direct image-to-engine job orchestration is still pending. The engine remains optional with separate AGPL licensing; the app stays MIT.
 
 ## Prepare an explicitly unreviewed draft
 
@@ -23,7 +23,7 @@ The result is `{ score, requires_review: true, confidence: null, normalizations,
 - `tempo`
 - `source_rights`
 
-The full canonical score may contain explicit corrections to pitches, rests, rational timing, voices/staves, ties and maps. Normal Rust musical validation still applies; invalid timing or ties fail instead of being repaired silently. Any future UI must invalidate its checkboxes after an edit or source replacement, expose the source warnings, and require new confirmation before activating the returned compilation. Checkboxes record user attestations, not independently verified accuracy or legal clearance.
+The full canonical score may contain explicit corrections to pitches, rests, rational timing, voices/staves, ties and maps. Normal Rust musical validation still applies; invalid timing or ties fail instead of being repaired silently. The review UI invalidates its checkboxes after an edit or source replacement, exposes the source warnings, and requires new confirmation before activating the returned compilation. Checkboxes record user attestations, not independently verified accuracy or legal clearance.
 
 The retained draft record is revalidated, then source format becomes `external-omr-reviewed` and the confirmation categories are stored. Original engine output remains byte-exact, including the whole compressed MXL when supplied. Import warnings are labeled as applying **before manual correction**, so a missing-tempo warning is not incorrectly presented as the edited current tempo. The reviewed result is still subject to normal instrument/physical-target checks.
 
