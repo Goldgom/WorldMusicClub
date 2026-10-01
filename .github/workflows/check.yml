@@ -72,4 +72,5 @@ jobs:
             /tmp/worldmusichub-*.png
             /tmp/worldmusichub-omr-*.json
             /tmp/worldmusichub-live-*.json
+            /tmp/worldmusichub-binding-*.json
           if-no-files-found: ignore
