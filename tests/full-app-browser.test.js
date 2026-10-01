@@ -26,7 +26,7 @@ const fixtures = new URL('./fixtures/', import.meta.url);
 const testOptions = {timeout: 45_000};
 let server, browser, context, page, origin, initialCompilation;
 let serverOutput = '', serverError, pageErrors = [], apiFailures = [], requests = [];
-let browserConsole = [], failedResources = [], resourceFailures = [];
+let browserConsole = [], failedResources = [], resourceFailures = [], currentTestName='bootstrap';
 const bootstrapTimeout = 25_000;
 
 async function availablePort() {
@@ -139,10 +139,26 @@ async function assertStoppedAtZero() {
   assert.equal(await page.locator('.piano-key.pressed').count(), 0);
 }
 
+async function captureFailureState(stage) {
+  if(!page||page.isClosed())return;
+  const name=`worldmusichub-live-${stage}-${currentTestName.replace(/[^a-zA-Z0-9]+/g,'-').slice(0,85)}`;
+  const observed=await page.evaluate(()=>({scoreTitle:document.querySelector('#score-title')?.textContent,notice:document.querySelector('#notice')?.textContent,engravingStatus:document.querySelector('#engraving-status')?.textContent,engravingFallback:document.querySelector('#engraving-fallback')?.textContent,fallbackHidden:document.querySelector('#engraving-fallback')?.hidden,engravedSelected:document.querySelector('#engraved-button')?.getAttribute('aria-pressed'),svgCount:document.querySelectorAll('#engraved-staff svg').length,followStatus:document.querySelector('#engraving-follow-status')?.textContent,practiceGate:document.querySelector('#practice-gate-reason')?.textContent,transport:document.querySelector('#transport-status')?.textContent})).catch(error=>({observationError:error.message}));
+  const diagnostics={test:currentTestName,observed,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverOutput:serverOutput.slice(-4000)};
+  await writeFile(join(artifactDirectory,`${name}.json`),JSON.stringify(diagnostics,null,2));
+  await page.screenshot({path:join(artifactDirectory,`${name}.png`),fullPage:true,timeout:3000}).catch(()=>{});
+}
+async function waitForEngraving(timeout=25_000) {
+  await page.waitForFunction(()=>Boolean(document.querySelector('#engraved-staff svg')&&document.querySelector('#engraving-status').textContent.includes('Generated staff preview'))||!document.querySelector('#engraving-fallback').hidden,null,{timeout});
+  if(await page.locator('#engraving-fallback').isVisible()){
+    const reason=await page.locator('#engraving-fallback').textContent();await captureFailureState('engraving-failure');assert.fail(`Expected real engraved SVG; the app reported: ${reason}`);
+  }
+  await page.locator('#engraved-staff svg').first().waitFor({state:'visible',timeout});
+  assert.match(await page.locator('#engraving-status').textContent(),/Generated staff preview/);
+}
+
 async function screenshot(name) {
   if(await page.locator('#engraved-button').getAttribute('aria-pressed')==='true'){
-    await page.locator('#engraved-staff svg').first().waitFor({state:'visible',timeout:25_000});
-    await page.waitForFunction(()=>document.querySelector('#engraving-status').textContent.includes('Generated staff preview'));
+    await waitForEngraving();
   }
   await page.evaluate(async () => {
     await document.fonts.ready;
@@ -190,7 +206,8 @@ after(async () => {
   }
 }, {timeout: 15_000});
 
-beforeEach(async () => {
+beforeEach(async t => {
+  currentTestName=t.name||'unknown-test';
   pageErrors = []; apiFailures = []; requests = []; browserConsole = []; failedResources = []; resourceFailures = [];
   context = await browser.newContext({viewport: {width: 1440, height: 1100}, colorScheme: 'light', acceptDownloads: true});
   context.setDefaultTimeout(10_000);
@@ -222,8 +239,7 @@ beforeEach(async () => {
     initialCompilation = await responseJson(compilation);
     await readyForTitle(initialCompilation.score.title);
     await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('physical attacks'));
-    await page.locator('#engraved-staff svg').first().waitFor({state:'visible',timeout:25_000});
-    await page.waitForFunction(()=>document.querySelector('#engraving-status').textContent.includes('Generated staff preview'));
+    await waitForEngraving();
     assert.equal(await page.locator('#engraved-button').getAttribute('aria-pressed'),'true','Supported original scores use the offline engraved view by default');
   } catch (error) {
     const observed = await page.evaluate(() => ({url:location.href,readyState:document.readyState,title:document.title,notice:document.querySelector('#notice')?.textContent,scoreTitle:document.querySelector('#score-title')?.textContent,playDisabled:document.querySelector('#play-button')?.disabled})).catch(failure=>({observationError:failure.message}));
@@ -239,9 +255,7 @@ afterEach(async t => {
     assert.deepEqual(pageErrors, [], 'No uncaught browser errors');
     assert.deepEqual(apiFailures, [], 'All browser API calls must reach successful Rust responses');
   } finally {
-    if (t.signal.aborted && page && !page.isClosed()) {
-      await page.screenshot({path: join(artifactDirectory, 'worldmusichub-live-failure.png'), fullPage: true, timeout: 3000}).catch(() => {});
-    }
+    if(t.signal.aborted||pageErrors.length||apiFailures.length)await captureFailureState('failure');
     await context?.close();
   }
 }, {timeout: 10_000});
@@ -510,8 +524,7 @@ test('whole application engraves real exported MusicXML and preserves the score 
   const exported = await responseJson(xmlResponse);
   assert.match(exported.xml, /^<\?xml/);
   assert.ok(Object.hasOwn(exported.part_id_map,compiled.score.parts[0].id));
-  await page.locator('#engraved-staff svg').first().waitFor({state:'visible',timeout:25_000});
-  await page.waitForFunction(()=>document.querySelector('#engraving-status').textContent.includes('Generated staff preview'));
+  await waitForEngraving();
   assert.equal(await page.locator('#engraved-button').getAttribute('aria-pressed'),'true');
   assert.equal(await page.locator('#notation').isVisible(),false);
   assert.ok(await page.locator('#engraved-staff svg path').count()>30);
@@ -639,7 +652,7 @@ test('real external duet corrections keep every part/staff/tie while fixing onse
 
 test('real Rust measure following turns engraved pages through repeat passes without changing playback or source', {timeout:60_000},async()=>{
  const score=structuredClone(initialCompilation.score);score.id='original-follow-study';score.title='Original repeated measure study';score.tempo=[{at:{numerator:0,denominator:1},bpm:300}];score.meters=[{at:{numerator:0,denominator:1},numerator:1,denominator:4}];score.measures=Array.from({length:20},(_,index)=>({number:42,at:{numerator:index,denominator:1},length:{numerator:1,denominator:1}}));const seed=score.parts[0].notes[0];score.parts[0].notes=Array.from({length:20},(_,index)=>({...structuredClone(seed),id:`follow-note-${index}`,at:{numerator:index,denominator:1},duration:{numerator:1,denominator:1},pitch:{step:['C','D','E','F','G'][index%5],alter:0,octave:4}}));score.repeats=[{from:{numerator:0,denominator:1},to:{numerator:12,denominator:1},times:2}];
- await page.locator('#score-file').setInputFiles({name:'original-follow-study.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await page.locator('#engraved-staff svg').first().waitFor();await page.waitForFunction(()=>document.querySelector('#engraving-status').textContent.includes('Generated staff preview'));assert.equal(requests.filter(request=>request.path==='/api/notation-navigation').length,0);const[response]=await Promise.all([nextResponse('/api/notation-navigation'),page.locator('#engraving-follow').check()]);const navigation=await responseJson(response);assert.equal(navigation.occurrences.length,32);assert.equal(navigation.source_measure_count,20);assert.equal(navigation.duration_ms,6400);await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('Paused at written measure 42'));
+ await page.locator('#score-file').setInputFiles({name:'original-follow-study.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await waitForEngraving();assert.equal(requests.filter(request=>request.path==='/api/notation-navigation').length,0);const[response]=await Promise.all([nextResponse('/api/notation-navigation'),page.locator('#engraving-follow').check()]);const navigation=await responseJson(response);assert.equal(navigation.occurrences.length,32);assert.equal(navigation.source_measure_count,20);assert.equal(navigation.duration_ms,6400);await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('Paused at written measure 42'));
  await page.locator('#count-in').uncheck();await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('#engraving-range').textContent.startsWith('Measures 9–'));assert.match(await page.locator('#play-button').textContent(),/Pause/);await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('pass 2/2')&&document.querySelector('#engraving-range').textContent.startsWith('Measures 1–8'));assert.match(await page.locator('#play-button').textContent(),/Pause/);await page.waitForFunction(()=>document.querySelector('#transport-status').textContent.includes('Complete'));assert.match(await page.locator('#engraving-follow-status').textContent(),/End of performance/);assert.match(await page.locator('#engraving-range').textContent(),/Measures 17–20/);await screenshot('measure-following');assert.deepEqual(await exportScore(),score);
  await page.locator('#engraving-prev').click();assert.equal(await page.locator('#engraving-follow').isChecked(),false);assert.match(await page.locator('#engraving-follow-status').textContent(),/Manual navigation suspended/);assert.equal(requests.filter(request=>request.path==='/api/notation-navigation').length,1);
 });
@@ -650,7 +663,7 @@ test('complete CC0 D768 edition retains every event and source while range gates
   assert.equal(written.length,334);assert.equal(pitched.length,324);assert.equal(edition.measures.length,14);assert.equal(edition.provenance.kind,'curated_cc0_edition');assert.equal(edition.provenance.license,'CC0-1.0');assert.ok(voice&&piano);
   const[response]=await Promise.all([nextResponse('/api/compile'),page.locator('.catalog-item').filter({hasText:edition.title}).click()]);const compiled=await responseJson(response);await readyForTitle(edition.title);assert.deepEqual(compiled.score,edition);assert.equal(compiled.timeline.notes.length,321);assert.deepEqual(compiled.timeline.notes.flatMap(note=>note.source_note_ids).sort(),pitched.map(note=>note.id).sort(),'All pitched source IDs survive tie compilation');
   assert.match(await page.locator('#score-meta').textContent(),/334 written events.*321 playback note events.*14 measures/);assert.match(await page.locator('#score-retention-note').textContent(),/324 pitched note segments \+ 10 rests/);assert.equal(await page.locator('#score-origin-label').textContent(),'CC0 source edition');assert.equal(await page.locator(`#practice-part option[value="${voice.id}"]`).textContent(),voice.name,'Raw part names are retained rather than silently cleaned');
-  await page.locator('#engraved-staff svg').first().waitFor({state:'visible',timeout:25_000});await page.waitForFunction(()=>document.querySelector('#engraving-status').textContent.includes('Generated staff preview'));assert.equal(await page.locator('#engraved-button').getAttribute('aria-pressed'),'true');assert.ok(await page.locator('#engraved-staff svg path').count()>100);await screenshot('cc0-d768-light');
+  await waitForEngraving();assert.equal(await page.locator('#engraved-button').getAttribute('aria-pressed'),'true');assert.ok(await page.locator('#engraved-staff svg path').count()>100);await screenshot('cc0-d768-light');
   await page.locator('#score-details-button').click();assert.match(await page.locator('#provenance').textContent(),/Johann Wolfgang von Goethe/);assert.match(await page.locator('#provenance').textContent(),/pental/);assert.match(await page.locator('#diagnostic-list').textContent(),/327 key attacks versus 321 canonical/);assert.match(await page.locator('#diagnostic-list').textContent(),/fermata/);assert.equal(await page.locator('#provenance-link').getAttribute('href'),edition.provenance.source_url);await page.locator('#score-details>summary').click();assert.deepEqual(await exportScore(),edition);
   assert.equal(await page.locator('#key-count').inputValue(),'61');await page.locator('#session-mode').selectOption('practice');await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));assert.equal(await page.locator('#play-button').isDisabled(),true);assert.equal(await page.locator('#assess-button').isDisabled(),true);
   await page.locator('#practice-part').selectOption(voice.id);await page.locator('#play-button:not([disabled])').waitFor();assert.equal(await page.locator('#key-count').inputValue(),'61');await page.locator('#practice-part').selectOption(piano.id);await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));assert.equal(await page.locator('#play-button').isDisabled(),true);await page.locator('#practice-part').selectOption('');await page.locator('#key-count').selectOption('76');await page.locator('#play-button:not([disabled])').waitFor();await page.locator('#session-mode').selectOption('listen');assert.deepEqual(await exportScore(),edition,'Part/profile changes never adapt or discard source events');
