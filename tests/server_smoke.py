@@ -20,6 +20,15 @@ try:
     assert headers['X-Content-Type-Options']=='nosniff'
     status,body,_=request('/api/catalog'); assert status==200
     catalog=json.loads(body);assert len(catalog)>=3
+    status,index_body,_=request('/api/catalog/index');assert status==200
+    index=json.loads(index_body);assert index['version']==1 and len(index['items'])==len(catalog)
+    assert len(index_body)<20*1024 and len(index_body)<len(body)//10
+    for item,score in zip(index['items'],catalog):
+        assert item['id']==score['id'] and item['provenance']==score['provenance']
+        assert item['written_event_count']==sum(len(part['notes']) for part in score['parts'])
+        assert 'source' not in item and 'parts' not in item
+        status,selected,_=request('/api/catalog/score/'+item['id']);assert status==200 and json.loads(selected)==score
+    assert request('/api/catalog/score/missing-edition')[0]==404
     status,body,_=request('/api/compile',json.dumps(catalog[0]).encode(),{'Content-Type':'application/json'});assert status==200
     compilation=json.loads(body);assert len(compilation['timeline']['notes'])==15
     status,body,_=request('/api/export/musicxml',json.dumps(catalog[0]).encode(),{'Content-Type':'application/json'})

@@ -12,7 +12,9 @@ pub use midi::import_midi;
 pub use musicxml_export::{export_musicxml, ExportedMusicXml, ExportedVoiceId};
 mod mxl;
 pub use mxl::import_mxl;
+mod catalog_lookup;
 mod curated_editions;
+pub use catalog_lookup::{catalog_index, catalog_score, CatalogIndex, CatalogItem};
 pub mod external_omr;
 pub mod feedback;
 pub mod instruments;
@@ -870,6 +872,15 @@ pub fn assess(
 }
 
 pub fn catalog() -> Vec<Score> {
+    catalog_scores().to_vec()
+}
+
+fn catalog_scores() -> &'static [Score] {
+    static SCORES: std::sync::OnceLock<Vec<Score>> = std::sync::OnceLock::new();
+    SCORES.get_or_init(build_catalog)
+}
+
+fn build_catalog() -> Vec<Score> {
     let pitches = [
         ("C", 4),
         ("D", 4),

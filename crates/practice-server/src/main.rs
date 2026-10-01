@@ -130,6 +130,21 @@ async fn route(
             "/api/catalog" => {
                 json_reply(serde_json::to_value(score_core::catalog()).map_err(|e| e.to_string()))
             }
+            "/api/catalog/index" => json_reply(
+                serde_json::to_value(score_core::catalog_index()).map_err(|e| e.to_string()),
+            ),
+            _ if path.starts_with("/api/catalog/score/") => {
+                match score_core::catalog_score(&path["/api/catalog/score/".len()..]) {
+                    Some(score) => {
+                        json_reply(serde_json::to_value(score).map_err(|e| e.to_string()))
+                    }
+                    None => reply(
+                        404,
+                        "application/json; charset=utf-8",
+                        r#"{"error":"Bundled score not found"}"#,
+                    ),
+                }
+            }
             _ => {
                 let asset = if path == "/" { "/index.html" } else { &path };
                 if let Some(bytes) = web_asset(asset) {

@@ -2,7 +2,9 @@
 
 All routes are same-origin loopback. JSON responses; errors use `{ "error": "message" }`.
 
-- `GET /api/catalog` -> `Score[]`, bundled original exercises
+- `GET /api/catalog` -> `Score[]`, legacy complete bundled scores and retained originals
+- `GET /api/catalog/index` -> `{version:1,items:CatalogItem[]}`, lightweight metadata without notes/source archives
+- `GET /api/catalog/score/<exact-id>` -> one unchanged canonical `Score`, or JSON404 for an unknown bundled ID
 - `POST /api/compile` with `Score` -> `{ score: Score, timeline: Timeline, diagnostics: Diagnostic[] }`
 - `POST /api/assess` with `{ timeline: Timeline, inputs: InputEvent[], tolerance_ms: number }` -> `Assessment`
 - `POST /api/import/musicxml` with raw XML -> compilation response above (subsequent milestone)
@@ -130,3 +132,9 @@ Response fields: `version:1`, `source_measure_count`, `duration_ms`, `occurrence
 Following requires contiguous, ordered measures from beat zero covering the complete score, as the exporter does; it does not sort, repair or invent measures. Limits are 100,000 intervals, 1,000,000 total source references and a 16 MiB response. Failure disables optional following only; manual notation and playback remain available. Existing written A–B loops remain limited to linear scores and reject repeats until explicit pass selection is supported.
 
 The frontend following checkbox is off initially and after score replacement. Enabling it prepares/caches one navigation map for the current immutable score, validates IDs against the current compilation and uses binary interval lookup. Only a change of source measure **page** requests a new local engraving; automatic page turns never pause, seek or reschedule audio. Count-in and the exact full duration have no active interval. Repeats show their original region and one-based pass labels. Manual measure/part/page-size navigation, leaving the engraved view or pagehide suspends following. Preparation/cancellation errors leave manual notation and playback usable. Page rendering can lag the audio clock; individual engraved-note highlighting is not claimed.
+
+## On-demand bundled catalog
+
+`CatalogItem` includes `id`, `title`, `composer`, complete `provenance`, `written_event_count` (pitched note segments plus rests), `pitched_note_count`, `rest_count`, `opening_bpm` and `part_count`. These are written-data counts, not tie/repeat-expanded playback targets. The index transfers no notes, retained original source, image or MIDI archive. The server caches its fixed built-in scores and metadata immutably; requesting an individual score does not mutate an edition or bypass normal compilation/instrument checks.
+
+The score endpoint uses an exact catalog ID, not a filesystem path or external URL. Current bundled identifiers are portable lowercase ASCII labels. Unknown IDs return JSON404; legacy `GET /api/catalog` remains available for existing clients. A client should fetch the index, load one selected score, reject stale selection responses, and keep any session cache bounded. Loading errors should leave the previous score usable rather than partially replacing it.
