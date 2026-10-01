@@ -281,7 +281,7 @@ fn rootfile(container: &str) -> Result<(String, usize), String> {
 /// Import one bounded score from an MXL ZIP container, never extracting files.
 /// The exact selected XML is retained in `Score.source`; auxiliary archive
 /// renditions are not imported, and that limitation is always reported.
-pub fn import_mxl(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
+pub(crate) fn read_mxl_xml(bytes: &[u8]) -> Result<(String, String, Vec<Diagnostic>), String> {
     let expected_entries = preflight(bytes)?;
     let mut archive =
         ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("Invalid MXL ZIP archive: {e}"))?;
@@ -343,14 +343,19 @@ pub fn import_mxl(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
     }
     let score_bytes = read_entry(&mut archive, &score_path, MAX_SCORE)?;
     let xml = std::str::from_utf8(&score_bytes).map_err(|_| "MXL score must be UTF-8 MusicXML")?;
-    let (mut score, mut diagnostics) = import_musicxml(xml)?;
-    if let Some(source) = &mut score.source {
-        source.filename = Some(score_path);
-    }
     container_warnings.push(warning("mxl_source_retained", "The exact selected MusicXML source is retained. The ZIP container, embedded attachments and alternative renditions are not retained in the practice score; keep the original MXL file."));
     let expected_files = 2 + usize::from(names.contains("mimetype"));
     if file_count > expected_files || alternate_count > 0 {
         container_warnings.push(warning("mxl_attachments_ignored","Additional archive files or alternative renditions were not imported. Linked images, linked parts and external resources are unsupported."));
+    }
+    Ok((xml.to_string(), score_path, container_warnings))
+}
+
+pub fn import_mxl(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
+    let (xml, score_path, container_warnings) = read_mxl_xml(bytes)?;
+    let (mut score, mut diagnostics) = import_musicxml(&xml)?;
+    if let Some(source) = &mut score.source {
+        source.filename = Some(score_path);
     }
     diagnostics.extend(container_warnings);
     Ok((score, diagnostics))

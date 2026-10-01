@@ -11,6 +11,7 @@ pub use midi::import_midi;
 pub use musicxml_export::{export_musicxml, ExportedMusicXml, ExportedVoiceId};
 mod mxl;
 pub use mxl::import_mxl;
+pub mod external_omr;
 pub mod feedback;
 pub mod instruments;
 pub mod metronome;
@@ -410,6 +411,13 @@ pub fn beat_to_ms(beat: f64, tempo: &[Tempo]) -> f64 {
 }
 
 pub fn compile(score: Score) -> Result<Compilation, String> {
+    if score
+        .source
+        .as_ref()
+        .is_some_and(|source| source.format == "external-omr-draft")
+    {
+        return Err("External OMR output needs explicit note/rhythm/key/tempo review before playback or practice".into());
+    }
     validate(&score)?;
     let tempo_index = TempoIndex::new(&score.tempo);
     let mut notes: Vec<TimedNote> = vec![];

@@ -25,6 +25,18 @@ try:
     status,body,_=request('/api/export/musicxml',json.dumps(catalog[0]).encode(),{'Content-Type':'application/json'})
     assert status==200,body
     exported=json.loads(body);assert exported['part_id_map']['piano']=='P1' and exported['voice_id_map']
+    declared_omr=exported['xml'].replace('</identification>','<encoding><software>Audiveris 5.11.0</software></encoding></identification>')
+    omr_input={'engine_version':'5.11.0','output_format':'musicxml','output_content':declared_omr}
+    status,body,_=request('/api/omr/audiveris-draft',json.dumps(omr_input).encode(),{'Content-Type':'application/json'})
+    assert status==200,body
+    draft=json.loads(body);assert draft['requires_review'] and draft['confidence'] is None and 'timeline' not in draft
+    assert request('/api/compile',json.dumps(draft['score']).encode(),{'Content-Type':'application/json'})[0]==400
+    draft['score']['tempo'][0]['bpm']=85
+    confirmation={key:True for key in ['notes_and_rests','rhythm_and_voices','ties_and_navigation','key_and_meter','tempo','source_rights']}
+    status,body,_=request('/api/omr/confirm',json.dumps({'score':draft['score'],'confirmation':confirmation}).encode(),{'Content-Type':'application/json'})
+    assert status==200,body
+    reviewed=json.loads(body);assert reviewed['score']['tempo'][0]['bpm']==85
+    assert json.loads(reviewed['score']['source']['content'])['input']['output_content']==declared_omr
     assert '<rights type="attribution">' in exported['xml']
     status,body,_=request('/api/import/musicxml',exported['xml'].encode(),{'Content-Type':'application/xml'})
     assert status==200,body

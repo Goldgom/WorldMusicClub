@@ -20,6 +20,12 @@ struct AdaptationRequest {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct OmrConfirmationRequest {
+    score: score_core::Score,
+    confirmation: score_core::external_omr::ReviewConfirmation,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct MetronomeRequest {
     score: score_core::Score,
     #[serde(default)]
@@ -212,6 +218,16 @@ async fn route(
 }
 fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
     match path {
+        "/api/omr/audiveris-draft" => {
+            serde_json::from_slice::<score_core::external_omr::AudiverisInput>(&bytes)
+                .map_err(|e| format!("Invalid external OMR input: {e}"))
+                .and_then(score_core::external_omr::prepare_audiveris)
+                .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string()))
+        }
+        "/api/omr/confirm" => serde_json::from_slice::<OmrConfirmationRequest>(&bytes)
+            .map_err(|e| format!("Invalid OMR review confirmation: {e}"))
+            .and_then(|r| score_core::external_omr::confirm_review(r.score, r.confirmation))
+            .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
         "/api/adaptation/preview" => serde_json::from_slice::<AdaptationRequest>(&bytes)
             .map_err(|e| format!("Invalid adaptation request: {e}"))
             .and_then(|r| {

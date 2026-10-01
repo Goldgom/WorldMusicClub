@@ -38,6 +38,13 @@ pub struct AdaptationPreview {
 
 fn shifted_copy(original: &Score, operation: &OctaveOperation) -> Result<(Score, usize), String> {
     validate(original)?;
+    if original
+        .source
+        .as_ref()
+        .is_some_and(|s| s.format == "external-omr-draft")
+    {
+        return Err("Review external OMR output before making an octave adaptation".into());
+    }
     if original.source.as_ref().is_some_and(|s| s.format == FORMAT) {
         return Err(
             "Restore the preserved original before making another octave adaptation".into(),

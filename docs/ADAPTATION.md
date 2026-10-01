@@ -1,6 +1,6 @@
 # Reversible octave-copy contract
 
-Status: Rust API foundation; a user-facing preview/confirmation workflow is still pending. Nothing automatically changes the loaded arrangement.
+Status: Rust API with a user-facing preview/confirmation dialog. Whole-score or current-part scope, range diagnostics and restore are explicit actions; closing the dialog or changing score/profile/scope invalidates pending previews. The original arrangement remains unchanged until a copy is explicitly activated. Browser acceptance is tracked against the corresponding CI commit.
 
 ## Preview
 

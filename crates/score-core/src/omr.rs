@@ -87,13 +87,9 @@ struct StaffDetection {
     bands: [LineBand; 5],
 }
 
-/// Analyze PNG/JPEG bytes entirely in-process, returning only a mandatory-review proposal.
-///
-/// Input is limited to 8 MiB compressed, 16 million pixels, and 16,384 pixels on either axis.
-/// Both the header pass and full decoder receive allocation/dimension limits. The image crate's
-/// allocation ceiling is best-effort; independent dimensions/pixel limits are checked before the
-/// full decode. No filesystem writes, network calls, external OMR service, or playable score.
-pub fn analyze_image(bytes: &[u8]) -> Result<OmrReview, String> {
+pub(crate) fn decode_bounded_image(
+    bytes: &[u8],
+) -> Result<(image::DynamicImage, ImageFormat), String> {
     if bytes.is_empty() || bytes.len() > MAX_IMAGE_BYTES {
         return Err("Image must contain 1 byte to 8 MiB of PNG or JPEG data".into());
     }
@@ -120,6 +116,18 @@ pub fn analyze_image(bytes: &[u8]) -> Result<OmrReview, String> {
     let decoded = reader()
         .decode()
         .map_err(|e| format!("Cannot decode PNG/JPEG within image limits: {e}"))?;
+    Ok((decoded, format))
+}
+
+/// Analyze PNG/JPEG bytes entirely in-process, returning only a mandatory-review proposal.
+///
+/// Input is limited to 8 MiB compressed, 16 million pixels, and 16,384 pixels on either axis.
+/// Both the header pass and full decoder receive allocation/dimension limits. The image crate's
+/// allocation ceiling is best-effort; independent dimensions/pixel limits are checked before the
+/// full decode. No filesystem writes, network calls, external OMR service, or playable score.
+pub fn analyze_image(bytes: &[u8]) -> Result<OmrReview, String> {
+    let (decoded, format) = decode_bounded_image(bytes)?;
+    let (width, height) = (decoded.width(), decoded.height());
     // Composite transparent pixels over white. Ignoring alpha would turn transparent black
     // pixels into false ink. Conversion also normalizes 16-bit input to bounded 8-bit channels.
     let rgba = decoded.into_rgba8();
