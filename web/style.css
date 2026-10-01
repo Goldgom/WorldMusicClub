@@ -41,3 +41,5 @@ body{font-size:14px}.sidebar{background:var(--surface)}.topbar h1{color:var(--pa
 .engraving-follow-controls{padding:10px 21px;border-bottom:1px solid var(--border)}.engraving-follow-controls label{display:flex;align-items:center;gap:9px;font-size:13px}.engraving-follow-controls input{width:auto}.engraving-follow-controls p{font-size:12px;line-height:1.6;color:var(--muted);margin:7px 0 0}#engraving-follow-status{color:var(--ink)}
 
 .score-source-summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:12px 0 2px}.score-source-summary p{flex-basis:100%;font-size:12px;line-height:1.6;color:var(--muted);margin:0 0 8px}.score-source-summary .button{font-size:12px}
+
+.catalog-status{color:var(--muted);font-size:12px;line-height:1.5;margin:0}.catalog-item.loading{border-style:dashed;border-color:var(--green)}

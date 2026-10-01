@@ -1,3 +1,4 @@
+import {validateCatalogIndex,CatalogScoreCache,fetchCatalogScore} from './catalog-loader.js';
 import {setupNotationFollowing} from './notation-follow.js';
 import {setupExternalOmrReview} from './external-omr-view.js';
 import {setupAdaptationView} from './adaptation-view.js';
@@ -27,6 +28,8 @@ let metronome = null;
 let adaptationView = null;
 let externalOmrView = null;
 let notationFollowing = null;
+const catalogCache=new CatalogScoreCache();
+let catalogController=null,catalogIndexController=null,catalogIndexRequest=0,catalogPendingId=null,catalogIndexFailed=false;
 const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reason:'Waiting for an instrument compatibility check.'}, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
 state.recorder = new PracticeRecorder({latencyMs:state.latency});
@@ -98,7 +101,7 @@ function resetPlayback() {
 async function compileScore(score, preserveTempo = false, expectedIntent = null, importDiagnostics = [], requestedPracticePart = undefined) {
   if (preserveTempo) importDiagnostics = state.importDiagnostics;
   if (expectedIntent !== null && expectedIntent !== state.loadIntent) return false;
-  if (expectedIntent === null) state.loadIntent++;
+  if (expectedIntent === null) {state.loadIntent++;cancelCatalogSelection();}
   if (new TextEncoder().encode(JSON.stringify(score)).byteLength > 8 * 1024 * 1024) { notice('This score exceeds 8 MiB. Reduce its source image or split it into smaller fragments.', true); return false; }
   pausePlayback();
   state.compileController?.abort();
@@ -110,7 +113,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
   $('transport-status').textContent = 'Preparing score…';
   try {
     const compiled = await api('/api/compile', score, controller.signal);
-    if (generation !== state.generation || controller.signal.aborted) return;
+    if (generation !== state.generation || controller.signal.aborted || expectedIntent!==null&&expectedIntent!==state.loadIntent) return;
     const previousPart = requestedPracticePart !== undefined ? requestedPracticePart : preserveTempo ? state.practicePart : null;
     state.score = compiled.score;
     state.importDiagnostics = importDiagnostics;
@@ -144,15 +147,16 @@ function renderCatalog() {
     const button = document.createElement('button');
     button.className = 'catalog-item';
     button.classList.toggle('selected', state.score?.id === score.id);
-    button.setAttribute('aria-pressed', String(state.score?.id === score.id));
+    button.setAttribute('aria-pressed', String(state.score?.id === score.id));button.setAttribute('aria-busy',String(catalogPendingId===score.id));button.classList.toggle('loading',catalogPendingId===score.id);button.dataset.scoreId=score.id;
     const number = document.createElement('span'); number.className = 'number'; number.textContent = String(index + 1).padStart(2, '0');
     const label = document.createElement('span');
     const title = document.createElement('strong'); title.textContent = score.title;
-    const meta = document.createElement('small'); meta.textContent = `${scoreSummary(score).writtenCount} written events · ${score.tempo[0]?.bpm || 100} BPM · ${catalogOriginLabel(score)}`;
+    const meta = document.createElement('small'); meta.textContent = `${score.written_event_count} written events · ${score.opening_bpm} BPM · ${catalogOriginLabel(score)}${catalogPendingId===score.id?' · Loading…':''}`;
     label.append(title, meta); button.append(number, label);
-    button.addEventListener('click', () => compileScore(structuredClone(score)));
+    button.addEventListener('click', () => selectCatalogScore(score.id));
     $('catalog').append(button);
   });
+  if(catalogIndexFailed){const retry=document.createElement('button');retry.className='button secondary';retry.textContent='Retry catalog index';retry.disabled=Boolean(catalogIndexController);retry.addEventListener('click',loadCatalog);$('catalog').append(retry)}
 }
 function renderScore() {
   if (!state.score) return;
@@ -617,7 +621,7 @@ $('import-button').addEventListener('click', () => $('score-file').click());
 $('mobile-import-button').addEventListener('click', () => $('score-file').click());
 $('score-file').addEventListener('change', async event => {
   const file = event.target.files[0]; event.target.value = ''; if (!file) return;
-  const intent = ++state.loadIntent;
+  const intent = ++state.loadIntent;cancelCatalogSelection();state.compileController?.abort();
   const guidance=unsupportedImportHint(file.name);if(guidance){notice(guidance+' Open Find score sources for format and provenance guidance.',true);return}
   if (file.size > 8 * 1024 * 1024) { notice('This score is too large. Choose a score file smaller than 8 MiB.', true); return; }
   try {
@@ -650,19 +654,31 @@ document.addEventListener('keydown', event => {
 document.addEventListener('keyup', event => { releaseNote(`key:${event.code}`); if (event.key === 'Enter' || event.key === ' ') releaseNote('accessible-key'); });
 window.addEventListener('blur', () => pausePlayback('Paused when focus moved · 已暂停'));
 document.addEventListener('visibilitychange', () => { if (document.hidden) pausePlayback('Paused in background · 已暂停'); });
-window.addEventListener('pagehide', () => { pausePlayback(); cancelAnimationFrame(state.frame); });
+window.addEventListener('pagehide', () => { pausePlayback(); cancelAnimationFrame(state.frame);if(catalogController){state.loadIntent++;state.compileController?.abort();cancelCatalogSelection();$('catalog-status').textContent='Score loading stopped when the page was left. Choose a score to retry.'} });
 let notationResizeFrame = 0;
 window.addEventListener('resize', () => { cancelAnimationFrame(notationResizeFrame); notationResizeFrame = requestAnimationFrame(() => { renderNotationPage(); drawFrame(); }); });
 window.addEventListener('pageshow', event => { if (event.persisted) { cancelAnimationFrame(state.frame); state.frame = requestAnimationFrame(animate); } });
 
+function cancelCatalogSelection(){
+  const pending=Boolean(catalogController);catalogController?.abort();catalogController=null;catalogPendingId=null;
+  if(pending){$('catalog-status').textContent='Pending catalog selection cancelled. The current score is unchanged.';renderCatalog();$('transport-status').textContent=state.compiled?'Previous score is still available':'Choose a score';updateButtons()}
+}
+async function selectCatalogScore(id){
+  const item=state.catalog.find(entry=>entry.id===id);if(!item)return;
+  const intent=++state.loadIntent;cancelCatalogSelection();state.compileController?.abort();pausePlayback();const controller=new AbortController();catalogController=controller;catalogPendingId=id;renderCatalog();$('catalog-status').textContent=`Loading complete score: ${item.title}…`;$('transport-status').textContent=state.compiled?'Loading selection; previous score retained':'Loading selected score…';
+  try{const score=await fetchCatalogScore(item,api,catalogCache,controller.signal);if(controller.signal.aborted||intent!==state.loadIntent)return;const loaded=await compileScore(score,false,intent);if(controller.signal.aborted||intent!==state.loadIntent)return;$('catalog-status').textContent=loaded?`Loaded ${item.title}. Original source data is retained.`:'Could not activate this score. The previous score is unchanged.';}
+  catch(error){if(!controller.signal.aborted&&intent===state.loadIntent){notice(`Could not load “${item.title}”. ${error.message}`,true);$('catalog-status').textContent='Selection failed. Choose it again to retry; the prior score remains available.';$('transport-status').textContent=state.compiled?'Previous score is still available':'Score unavailable';updateButtons()}}
+  finally{if(catalogController===controller){catalogController=null;catalogPendingId=null;renderCatalog()}}
+}
 async function loadCatalog() {
-  const intent = state.loadIntent;
-  try { state.catalog = await api('/api/catalog'); if (!Array.isArray(state.catalog) || !state.catalog.length) throw new Error('No bundled exercises are available. Import a score JSON or restart the server.'); renderCatalog(); await compileScore(structuredClone(state.catalog[0]), false, intent); }
-  catch (error) { $('catalog').replaceChildren(); const retry = document.createElement('button'); retry.className = 'button secondary'; retry.textContent = 'Retry exercise library'; retry.addEventListener('click', loadCatalog); $('catalog').append(retry); notice(`Could not load the exercise library. ${error.message}`, true); }
+  const initial=state.loadIntent===0&&!state.score,intent=state.loadIntent,current=++catalogIndexRequest;catalogIndexController?.abort();const controller=new AbortController();catalogIndexController=controller;renderCatalog();$('catalog-status').textContent='Loading lightweight catalog metadata…';
+  try {const response=await api('/api/catalog/index',undefined,controller.signal);if(controller.signal.aborted||current!==catalogIndexRequest)return;state.catalog=validateCatalogIndex(response);catalogIndexFailed=false;catalogCache.clear();renderCatalog();$('catalog-status').textContent=state.catalog.length?`${state.catalog.length} scores. Complete notes and originals load only when selected.`:'No bundled entries. You can still import a local score.';if(initial&&intent===state.loadIntent&&state.catalog.length)await selectCatalogScore(state.catalog[0].id);}
+  catch(error){if(controller.signal.aborted||current!==catalogIndexRequest)return;catalogIndexFailed=true;renderCatalog();$('catalog-status').textContent='Catalog metadata is unavailable. Local imports and the current score remain available.';notice(`Could not load the catalog index. ${error.message}`,true)}
+  finally{if(catalogIndexController===controller){catalogIndexController=null;renderCatalog()}}
 }
 function activateJianpuView() { state.numberedMode = 'movable'; $('jianpu-reference').value = 'movable'; $('jianpu-button').click(); }
 async function importJianpuText(text, signal) {
-  const intent = ++state.loadIntent;
+  const intent = ++state.loadIntent;cancelCatalogSelection();state.compileController?.abort();
   pausePlayback();
   const cancel = () => { if (intent === state.loadIntent) { state.loadIntent++; state.compileController?.abort(); resetPlayback(); } };
   signal.addEventListener('abort', cancel, {once:true});
@@ -678,7 +694,7 @@ async function importJianpuText(text, signal) {
 }
 async function importCanonicalScore(score, signal, {practicePart=undefined,diagnostics=[]} = {}) {
   if(signal.aborted)return false;
-  const intent=++state.loadIntent;
+  const intent=++state.loadIntent;cancelCatalogSelection();state.compileController?.abort();
   const cancel=()=>{if(intent===state.loadIntent){state.loadIntent++;state.compileController?.abort();$('transport-status').textContent=state.compiled?'Previous score is still available':'Score unavailable';updateButtons()}};
   signal.addEventListener('abort',cancel,{once:true});
   try{return await compileScore(score,false,intent,diagnostics,practicePart)}
