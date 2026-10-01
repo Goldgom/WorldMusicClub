@@ -2,6 +2,8 @@ import importlib.util
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import MagicMock, patch
+from tempfile import TemporaryDirectory
 
 spec = importlib.util.spec_from_file_location('prepare', Path(__file__).parents[1] / 'scripts/prepare-openscore-candidates.py')
 prepare = importlib.util.module_from_spec(spec)
@@ -23,6 +25,17 @@ class OpenScorePreparationTests(unittest.TestCase):
         self.assertNotIn('<!DOCTYPE', text)
         self.assertEqual(len(changes), 1)
         self.assertEqual(prepare.normalize_converted_xml(b'<score-partwise/>'), ('<score-partwise/>', []))
+
+    def test_converter_cancellation_owns_the_process_group(self):
+        process = MagicMock(); process.pid = 12345; process.poll.return_value = None
+        with TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            with patch.object(prepare.subprocess, 'Popen', return_value=process) as launch, patch.object(prepare.time, 'monotonic', side_effect=[0, 121]), patch.object(prepare.os, 'killpg') as cancel:
+                with self.assertRaisesRegex(RuntimeError, 'runtime/log/output'):
+                    prepare.run_bounded(['fixed-converter', '--version'], folder, {}, folder / 'log')
+                self.assertTrue(launch.call_args.kwargs['start_new_session'])
+                cancel.assert_called_once_with(12345, prepare.signal.SIGKILL)
+                process.wait.assert_called_once_with(timeout=5)
 
     def test_source_and_musicxml_pitch_inventories_keep_chord_duplicates(self):
         mscx = b'<museScore><Score><metaTag name="copyright">OpenScore (CC0)</metaTag><Staff><Measure><voice><Chord><Note><pitch>60</pitch></Note><Note><pitch>60</pitch></Note><Note><pitch>63</pitch></Note></Chord></voice></Measure></Staff></Score></museScore>'

@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import time
 import urllib.error
@@ -93,15 +94,21 @@ def xml_pitch_inventory(text):
     return Counter(values)
 
 
-def run_bounded(arguments, cwd, env, log, timeout=120):
+def run_bounded(arguments, cwd, env, log, timeout=120, output_root=None):
     with log.open('wb') as out:
-        process = subprocess.Popen(arguments, cwd=cwd, env=env, stdout=out, stderr=subprocess.STDOUT)
+        process = subprocess.Popen(arguments, cwd=cwd, env=env, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
         started = time.monotonic()
-        while process.poll() is None:
-            if time.monotonic() - started > timeout or log.stat().st_size > 1024 * 1024:
-                process.kill(); process.wait(timeout=5)
-                raise RuntimeError('Converter runtime/log limit reached')
-            time.sleep(.1)
+        try:
+            while process.poll() is None:
+                files = [p for p in output_root.rglob('*') if p.is_file()] if output_root else []
+                excessive_output = len(files) > 128 or sum(p.stat().st_size for p in files) > 64 * 1024 * 1024
+                if time.monotonic() - started > timeout or log.stat().st_size > 1024 * 1024 or excessive_output:
+                    raise RuntimeError('Converter runtime/log/output limit reached')
+                time.sleep(.1)
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=5)
     if process.returncode != 0:
         raise RuntimeError(f'Converter exited {process.returncode}; inspect the retained log')
 
@@ -153,7 +160,7 @@ def main():
             expected = source_pitch_inventory(source.read_bytes())
             (folder / 'original.mscx').write_bytes(source.read_bytes())
             raw = folder / 'converter.musicxml'
-            run_bounded(engine_args + ['-o', str(raw), str(source)], work, env, folder / 'conversion.log')
+            run_bounded(engine_args + ['-o', str(raw), str(source)], work, env, folder / 'conversion.log', output_root=folder)
             if raw.stat().st_size > MAX_SOURCE: raise ValueError('Converted score exceeds4MiB review bound')
             normalized, changes = normalize_converted_xml(raw.read_bytes()); actual = xml_pitch_inventory(normalized)
             (folder / 'import.musicxml').write_text(normalized, encoding='utf-8')
@@ -166,7 +173,7 @@ def main():
                 result['sounding_notes'] = len(imported['timeline']['notes'])
             else: result['import_error'] = imported
             # A readable source rendering supports human review; no copied commercial scan.
-            run_bounded(engine_args + ['-r', '120', '-o', str(folder / 'source.png'), str(source)], work, env, folder / 'render.log')
+            run_bounded(engine_args + ['-r', '120', '-o', str(folder / 'source.png'), str(source)], work, env, folder / 'render.log', output_root=folder)
             results.append(result)
         report = {'manifest': manifest, 'license_sha256': digest(license_path), 'results': results, 'automatically_bundled': False, 'acceptance': 'Candidate conversion/import evidence only. Pitch inventories do not prove rhythm, voice, expression or instrument compatibility; review source images and every diagnostic before catalog admission.'}
         (output / 'conversion-report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
