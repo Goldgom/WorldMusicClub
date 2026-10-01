@@ -16,7 +16,7 @@ const beat = (numerator, denominator = 1) => ({numerator, denominator});
 const complete = () => ({
   ...structuredClone(fixture),
   repeats: [{from: beat(0), to: beat(4), times: 2}],
-  source: {format: 'original-test-text', filename: 'original.txt', content: 'Original schema test only.'},
+  source: {format: 'original-test-text', filename: 'original.txt', content: 'Original schema test only.', import_diagnostics: [{severity:'warning',code:'source_only',message:'Original import observation.',note_id:null}]},
 });
 function valid(score) {
   assert.equal(validate(score), true, ajv.errorsText(validate.errors, {separator: '\n'}));
@@ -44,6 +44,7 @@ function objectExamples(score) {
     Repeat: score.repeats[0],
     Provenance: score.provenance,
     Source: score.source,
+    Diagnostic: score.source.import_diagnostics[0],
   };
 }
 

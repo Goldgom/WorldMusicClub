@@ -105,6 +105,10 @@ fn unpack(input: &AudiverisInput) -> Result<(String, Vec<Diagnostic>), String> {
 
 fn record_source(score: &mut Score, record: &ReviewRecord, reviewed: bool) -> Result<(), String> {
     score.source = Some(Source {
+        import_diagnostics: score
+            .source
+            .as_ref()
+            .and_then(|source| source.import_diagnostics.clone()),
         format: if reviewed {
             "external-omr-reviewed"
         } else {
@@ -189,6 +193,15 @@ pub fn prepare_audiveris(input: AudiverisInput) -> Result<ExternalOmrDraft, Stri
             None,
         ));
     }
+    if let Some(source) = &mut score.source {
+        source.import_diagnostics = Some(
+            diagnostics
+                .iter()
+                .filter(|d| d.code != "external_omr_unreviewed")
+                .cloned()
+                .collect(),
+        );
+    }
     let record = ReviewRecord {
         version: 1,
         input,
@@ -229,20 +242,17 @@ pub fn confirm_review(
     if record.normalizations != original.normalizations {
         return Err("OMR normalization record does not match its retained source".into());
     }
+    if let Some(source) = &mut edited.source {
+        source.import_diagnostics = original
+            .score
+            .source
+            .as_ref()
+            .and_then(|source| source.import_diagnostics.clone());
+    }
     record.confirmation = Some(confirmation);
     edited.provenance.kind = "user_reviewed_external_omr".into();
     record_source(&mut edited, &record, true)?;
     let mut compilation = compile(edited)?;
-    compilation.diagnostics.extend(
-        original
-            .diagnostics
-            .into_iter()
-            .filter(|d| d.code != "external_omr_unreviewed")
-            .map(|mut d| {
-                d.message = format!("Before manual correction: {}", d.message);
-                d
-            }),
-    );
     compilation.diagnostics.push(Diagnostic::warning("external_omr_user_reviewed", "This score carries explicit user review attestations and retained engine output. That is not independently verified recognition accuracy, confidence, source rights or instrument playability. Keep the original image with the JSON backup; image retention is present only if it was explicitly supplied.", None));
     Ok(compilation)
 }

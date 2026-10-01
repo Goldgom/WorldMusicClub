@@ -356,6 +356,10 @@ pub fn import_mxl(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
     let (mut score, mut diagnostics) = import_musicxml(&xml)?;
     if let Some(source) = &mut score.source {
         source.filename = Some(score_path);
+        source
+            .import_diagnostics
+            .get_or_insert_with(Vec::new)
+            .extend(container_warnings.iter().cloned());
     }
     diagnostics.extend(container_warnings);
     Ok((score, diagnostics))

@@ -146,6 +146,7 @@ fn arrange(arrangement: Arrangement) -> Score {
     // Retain the exact newly authored input, including rational durations. This
     // source is a project fixture, never a claim to preserve the reference scan.
     let source = Source {
+        import_diagnostics: None,
         format: "worldmusichub-practice-fixture-json".into(),
         filename: Some(format!("{}.json", arrangement.id)),
         content: serde_json::json!({

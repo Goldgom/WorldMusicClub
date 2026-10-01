@@ -97,6 +97,10 @@ fn shifted_copy(original: &Score, operation: &OctaveOperation) -> Result<(Score,
     score.id = format!("{}:octave:{}:{:+}", original.id, scope, operation.octaves);
     score.title = format!("{} [octave {:+}]", original.title, operation.octaves);
     score.source = Some(Source {
+        import_diagnostics: original
+            .source
+            .as_ref()
+            .and_then(|source| source.import_diagnostics.clone()),
         format: FORMAT.into(),
         filename: None,
         content: serde_json::to_string(&PreservedOriginal {
@@ -193,6 +197,7 @@ mod tests {
     fn preserves_every_note_and_exact_original_source_and_roundtrips() {
         let mut score = catalog().remove(0);
         score.source = Some(Source {
+            import_diagnostics: None,
             format: "musicxml".into(),
             filename: Some("original.xml".into()),
             content: "\u{feff}<xml> 原始 \r\n</xml>".into(),
@@ -330,6 +335,7 @@ mod tests {
     fn refuses_large_reversible_copy_instead_of_omitting_original() {
         let mut score = catalog().remove(0);
         score.source = Some(Source {
+            import_diagnostics: None,
             format: "original".into(),
             filename: None,
             content: "\"".repeat(3 * 1024 * 1024),

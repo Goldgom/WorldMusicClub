@@ -533,7 +533,7 @@ pub fn import_midi(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
         version: 1, id: format!("midi-{fingerprint:016x}"), title, composer: String::new(),
         provenance: Provenance { kind: "user_import".into(), attribution: "User-supplied MIDI performance; ownership and usage rights are not verified. Notation is inferred, not original sheet music.".into(), source_url: None, license: None },
         parts, tempo, meters, keys, measures, repeats: Vec::new(),
-        source: Some(Source { format: "midi-base64".into(), filename: None, content: STANDARD.encode(bytes) }),
+        source: Some(Source { import_diagnostics: Some(warnings.entries.clone()), format: "midi-base64".into(), filename: None, content: STANDARD.encode(bytes) }),
     };
     crate::validate(&score)?;
     Ok((score, warnings.entries))

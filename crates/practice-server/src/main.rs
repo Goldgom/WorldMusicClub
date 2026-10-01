@@ -269,40 +269,20 @@ fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
         "/api/import/jianpu" => String::from_utf8(bytes)
             .map_err(|_| "Jianpu text must be UTF-8".to_string())
             .and_then(|text| score_core::import_jianpu(&text))
-            .and_then(|(score, warnings)| {
-                score_core::compile(score).map(|mut c| {
-                    c.diagnostics.extend(warnings);
-                    c
-                })
-            })
+            .and_then(|(score, _warnings)| score_core::compile(score))
             .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
         "/api/import/midi" => score_core::import_midi(&bytes)
-            .and_then(|(score, warnings)| {
-                score_core::compile(score).map(|mut c| {
-                    c.diagnostics.extend(warnings);
-                    c
-                })
-            })
+            .and_then(|(score, _warnings)| score_core::compile(score))
             .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
         "/api/import/mxl" => score_core::import_mxl(&bytes)
-            .and_then(|(score, warnings)| {
-                score_core::compile(score).map(|mut c| {
-                    c.diagnostics.extend(warnings);
-                    c
-                })
-            })
+            .and_then(|(score, _warnings)| score_core::compile(score))
             .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
         "/api/import/image" => score_core::omr::analyze_image(&bytes)
             .and_then(|review| serde_json::to_value(review).map_err(|e| e.to_string())),
         "/api/import/musicxml" => String::from_utf8(bytes)
             .map_err(|_| "MusicXML must be UTF-8; convert the source encoding first".to_string())
             .and_then(|xml| score_core::import_musicxml(&xml))
-            .and_then(|(score, warnings)| {
-                score_core::compile(score).map(|mut c| {
-                    c.diagnostics.extend(warnings);
-                    c
-                })
-            })
+            .and_then(|(score, _warnings)| score_core::compile(score))
             .and_then(|c| serde_json::to_value(c).map_err(|e| e.to_string())),
         "/api/assess" => serde_json::from_slice::<AssessRequest>(&bytes)
             .map_err(|e| format!("Invalid performance JSON: {e}"))

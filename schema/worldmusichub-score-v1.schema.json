@@ -158,7 +158,19 @@
       "properties": {
         "format": {"type": "string", "maxLength": 64},
         "filename": {"type": ["string", "null"], "maxLength": 1024, "default": null},
-        "content": {"type": "string", "maxLength": 8388608, "description": "Rust enforces an 8 MiB UTF-8 byte limit; the server's separate 8 MiB request-body cap also includes JSON escaping and all other fields."}
+        "content": {"type": "string", "maxLength": 8388608, "description": "Rust enforces an 8 MiB UTF-8 byte limit; the server's separate 8 MiB request-body cap also includes JSON escaping and all other fields."},
+        "import_diagnostics": {"anyOf": [{"type": "array", "maxItems": 256, "items": {"$ref": "#/$defs/Diagnostic"}}, {"type": "null"}], "default": null}
+      }
+    },
+    "Diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "code", "message"],
+      "properties": {
+        "severity": {"type": "string", "enum": ["warning", "info"]},
+        "code": {"type": "string", "minLength": 1, "maxLength": 64},
+        "message": {"type": "string", "minLength": 1, "maxLength": 8192},
+        "note_id": {"anyOf": [{"type": "string", "maxLength": 128}, {"type": "null"}], "default": null}
       }
     }
   }

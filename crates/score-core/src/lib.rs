@@ -173,6 +173,8 @@ pub struct Provenance {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Source {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub import_diagnostics: Option<Vec<Diagnostic>>,
     pub format: String,
     pub filename: Option<String>,
     pub content: String,
@@ -268,6 +270,24 @@ pub fn validate(score: &Score) -> Result<(), String> {
             bounded(name, 1024, "Source filename")?;
         }
         bounded(&source.content, 8 * 1024 * 1024, "Retained source")?;
+        if let Some(observations) = &source.import_diagnostics {
+            if observations.len() > 256 {
+                return Err("Retained import diagnostics exceed 256 entries".into());
+            }
+            for diagnostic in observations {
+                if !matches!(diagnostic.severity.as_str(), "warning" | "info")
+                    || diagnostic.code.is_empty()
+                    || diagnostic.message.is_empty()
+                {
+                    return Err("Retained import diagnostics require warning/info severity, a code and a message".into());
+                }
+                bounded(&diagnostic.code, 64, "Retained diagnostic code")?;
+                bounded(&diagnostic.message, 8192, "Retained diagnostic message")?;
+                if let Some(id) = &diagnostic.note_id {
+                    bounded(id, 128, "Retained diagnostic note id")?;
+                }
+            }
+        }
     }
     if score.tempo.len() > 100_000
         || score.meters.len() > 100_000
@@ -422,7 +442,18 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
     validate(&score)?;
     let tempo_index = TempoIndex::new(&score.tempo);
     let mut notes: Vec<TimedNote> = vec![];
-    let mut diagnostics = vec![];
+    let mut diagnostics: Vec<_> = score
+        .source
+        .as_ref()
+        .and_then(|source| source.import_diagnostics.as_ref())
+        .into_iter()
+        .flatten()
+        .cloned()
+        .map(|mut diagnostic| {
+            diagnostic.message = format!("Retained import observation: {}", diagnostic.message);
+            diagnostic
+        })
+        .collect();
     let mut total: f64 = 0.;
     for part in &score.parts {
         let mut sorted: Vec<&Note> = part.notes.iter().collect();
@@ -891,6 +922,85 @@ pub fn catalog() -> Vec<Score> {
 mod tests {
     use super::*;
     #[test]
+    fn import_observations_survive_json_reload_without_changing_source_bytes_or_reprefixing() {
+        let xml = include_str!("../../../tests/fixtures/original-duet.musicxml");
+        let (mut score, observations) = import_musicxml(xml).unwrap();
+        assert!(!observations.is_empty());
+        assert_eq!(score.source.as_ref().unwrap().content, xml);
+        assert_eq!(
+            serde_json::to_value(
+                score
+                    .source
+                    .as_ref()
+                    .unwrap()
+                    .import_diagnostics
+                    .as_ref()
+                    .unwrap()
+            )
+            .unwrap(),
+            serde_json::to_value(&observations).unwrap()
+        );
+        // Historical source warnings remain distinguishable after a later musical edit.
+        score.tempo[0].bpm = 80.;
+        let first = compile(score.clone()).unwrap();
+        assert_eq!(
+            first
+                .diagnostics
+                .iter()
+                .filter(|d| d.message.starts_with("Retained import observation: "))
+                .count(),
+            observations.len()
+        );
+        let loaded: Score =
+            serde_json::from_str(&serde_json::to_string(&first.score).unwrap()).unwrap();
+        let again = compile(loaded).unwrap();
+        assert_eq!(
+            serde_json::to_value(&first.diagnostics).unwrap(),
+            serde_json::to_value(&again.diagnostics).unwrap()
+        );
+        assert_eq!(again.score.source.unwrap().content, xml);
+    }
+    #[test]
+    fn midi_and_jianpu_inference_warnings_are_kept_in_their_exact_source_package() {
+        let midi = include_bytes!("../../../tests/fixtures/midi-original-ppq.mid");
+        let (score, warnings) = import_midi(midi).unwrap();
+        assert!(!warnings.is_empty());
+        assert_eq!(
+            score.source.unwrap().import_diagnostics.unwrap().len(),
+            warnings.len()
+        );
+        let (score, warnings) = import_jianpu("1 2 3").unwrap();
+        assert!(!warnings.is_empty());
+        assert_eq!(
+            score.source.unwrap().import_diagnostics.unwrap().len(),
+            warnings.len()
+        );
+    }
+    #[test]
+    fn legacy_sources_still_parse_and_retained_observations_are_bounded_metadata() {
+        let mut score = catalog().remove(0);
+        score.source = Some(Source {
+            format: "original".into(),
+            filename: None,
+            content: "exact source".into(),
+            import_diagnostics: None,
+        });
+        let json = serde_json::to_string(&score).unwrap();
+        assert!(!json.contains("import_diagnostics"));
+        let loaded: Score = serde_json::from_str(&json).unwrap();
+        assert!(validate(&loaded).is_ok());
+        let observation = Diagnostic {
+            severity: "warning".into(),
+            code: "source_only".into(),
+            message: "Original notation was not interpreted".into(),
+            note_id: None,
+        };
+        score.source.as_mut().unwrap().import_diagnostics = Some(vec![observation.clone(); 257]);
+        assert!(validate(&score).is_err());
+        score.source.as_mut().unwrap().import_diagnostics = Some(vec![observation]);
+        assert!(validate(&score).is_ok());
+    }
+    #[test]
     fn rational_addition_is_exact() {
         assert!(Beat::new(1, 3)
             .checked_add(Beat::new(1, 6))
@@ -929,6 +1039,7 @@ mod tests {
     fn source_roundtrip_preserves_notation() {
         let mut s = catalog().remove(0);
         s.source = Some(Source {
+            import_diagnostics: None,
             format: "musicxml".into(),
             filename: None,
             content: "<score/>".into(),

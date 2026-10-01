@@ -868,6 +868,7 @@ mod tests {
             ],
             repeats: vec![],
             source: Some(Source {
+                import_diagnostics: None,
                 format: "image".into(),
                 filename: Some("private.png".into()),
                 content: "RAW_IMAGE_NOT_XML <!DOCTYPE malicious> https://example.invalid/image"

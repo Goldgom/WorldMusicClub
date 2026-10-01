@@ -496,7 +496,7 @@ pub fn import_jianpu(text: &str) -> Result<(Score, Vec<Diagnostic>), String> {
         }],
         measures,
         repeats: Vec::new(),
-        source: Some(Source {
+        source: Some(Source { import_diagnostics: Some(diagnostics.clone()),
             format: FORMAT.into(),
             filename: None,
             content: text.into(),

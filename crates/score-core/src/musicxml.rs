@@ -517,6 +517,7 @@ pub fn import_musicxml(xml: &str) -> Result<(Score, Vec<Diagnostic>), String> {
         measures,
         repeats,
         source: Some(Source {
+            import_diagnostics: Some(warnings.entries.clone()),
             format: "musicxml".into(),
             filename: None,
             content: xml.to_string(),

@@ -40,7 +40,10 @@ try:
     assert '<rights type="attribution">' in exported['xml']
     status,body,_=request('/api/import/musicxml',exported['xml'].encode(),{'Content-Type':'application/xml'})
     assert status==200,body
-    again=json.loads(body)['timeline'];assert [n['midi'] for n in again['notes']]==[n['midi'] for n in compilation['timeline']['notes']]
+    imported_xml=json.loads(body);assert imported_xml['score']['source']['import_diagnostics']
+    status,reloaded,_=request('/api/compile',json.dumps(imported_xml['score']).encode(),{'Content-Type':'application/json'})
+    assert status==200 and json.loads(reloaded)['diagnostics']==imported_xml['diagnostics'],reloaded
+    again=imported_xml['timeline'];assert [n['midi'] for n in again['notes']]==[n['midi'] for n in compilation['timeline']['notes']]
     assert abs(again['duration_ms']-compilation['timeline']['duration_ms'])<.001
     instrument={'timeline':compilation['timeline'],'profile':{'kind':'piano','key_count':61,'lowest_midi':None}}
     status,body,_=request('/api/instrument-check',json.dumps(instrument).encode(),{'Content-Type':'application/json'})

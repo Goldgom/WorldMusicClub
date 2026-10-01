@@ -27,7 +27,7 @@ The file MUST contain `"version": 1`. The format version is independent of the a
 
 ## Fields, absence, and defaults / 字段、缺省与默认值
 
-All names are case-sensitive and use the exact snake_case spellings shown. Objects reject additional properties. Unless listed as optional below, every field is required even when an empty string or array is valid. Arrays and booleans cannot be `null`.
+All names are case-sensitive and use the exact snake_case spellings shown. Objects reject additional properties. Unless listed as optional below, every field is required even when an empty string or array is valid. Required arrays and booleans cannot be `null`; explicitly nullable optional metadata is listed below.
 
 字段名区分大小写，必须使用本文中的 snake_case 拼写。除下列可选字段外，其余字段均必须存在，即使允许值为空字符串或空数组。数组和布尔值不能为 `null`。
 
@@ -44,7 +44,8 @@ All names are case-sensitive and use the exact snake_case spellings shown. Objec
 | Measure | `number`, `at`, `length` | none / 无 |
 | Repeat | `from`, `to`, `times` | none / 无 |
 | Provenance | `kind`, `attribution` | `source_url`, `license` → `null` |
-| Source | `format`, `content` | `filename` → `null` |
+| Source | `format`, `content` | `filename`, `import_diagnostics` → `null` |
+| Retained diagnostic | `severity`, `code`, `message` | `note_id` → `null` |
 
 For nullable fields, either absence or explicit `null` means `None` in Rust. Therefore an omitted `pitch` is a rest, not an unknown pitch awaiting recognition. Prefer writing `pitch: null` explicitly for rests. A pitched note requires the full `Pitch` object; partial pitches are invalid. The `default` keywords in the schema describe Rust's behavior; they are annotations and do not require a schema validator to change the input. Rust serialization emits these fields explicitly, so deserialize/serialize preserves the model, not whitespace, object-key order, or whether a default was omitted. Retained `source.content` remains the decoded string, independently of JSON escaping.
 
@@ -126,7 +127,7 @@ Current importer conventions:
 
 Importers reject unsupported sound-affecting semantics rather than quietly inventing playback. Visual or expressive material outside the model may be retained only in source and accompanied by warnings. This does not mean every arbitrary source is accepted or every unsupported feature has its own diagnostic. If an import fails, no successful canonical score is promised; the caller must retain the original input.
 
-Diagnostics are separate operation results, not fields inside a `.wmhscore.json` file. The compilation/import result has `diagnostics: [{severity, code, message, note_id}]`; errors may instead return `{error}`. Keep important import warnings alongside your project if they must survive closing the app: saving only `score` does not serialize them, and recompiling cannot reconstruct source-import warnings. Never treat an empty diagnostic list or successful validation as a guarantee of complete transcription, original engraving, instrument playability, copyright clearance, or performance accuracy.
+Runtime diagnostics remain operation results. New imports also retain their original observations in optional `source.import_diagnostics`, so JSON export, library save/restore and recompilation preserve source-only limitations. Each entry has `severity` (`warning` or `info`), `code`, `message` and optional `note_id`; maximum256 entries,64-byte codes,8192-byte messages and128-byte note IDs. Compilation prefixes these as retained import observations rather than claiming they describe later edits. Errors may instead return `{error}`. Older files without this field remain readable, but their missing warnings cannot be reconstructed automatically. This optional metadata requires the updated reader; older strict alpha readers may reject it rather than discard it. Never treat an empty diagnostic list or successful validation as a guarantee of complete transcription, original engraving, instrument playability, copyright clearance, or performance accuracy.
 
 `source` 最多包含一份来源，`content` 在标准校验中是不会自动执行或解码的字符串。`source_url` 只是元数据；来源声明不等于转载授权，应用的 MIT 许可不覆盖导入音乐。应独立保存原文件，尤其是导入失败或尚不支持的文件。
 
