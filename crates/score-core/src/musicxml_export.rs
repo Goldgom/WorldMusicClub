@@ -483,6 +483,54 @@ fn make_lanes<'a>(
     repeat_boundaries: &BTreeSet<i64>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<Vec<Lane<'a>>, String> {
+    // Validate the part as a whole before allocating per-voice engraving lanes.
+    // A uniquely identified adjacent explicit tie may move written voice/staff;
+    // keeping its endpoints in those original lanes must not invent an orphan.
+    let mut ordered: Vec<_> = part.notes.iter().enumerate().collect();
+    ordered.sort_by(|a, b| a.1.at.compare(b.1.at).then(a.1.id.cmp(&b.1.id)));
+    let mut tracker = crate::ties::TieTracker::default();
+    let mut cross_stops = HashSet::new();
+    let mut cross_starts = HashSet::new();
+    for (index, note) in ordered {
+        let Some(midi) = note.pitch.as_ref().and_then(|p| p.midi()) else {
+            continue;
+        };
+        if note.tie_stop {
+            let previous = tracker.take(note, midi)?.ok_or_else(|| {
+                format!(
+                    "Note {} has an orphan tie stop; correct ties before MusicXML export",
+                    note.id
+                )
+            })?;
+            if !previous.end.equivalent(note.at) {
+                return Err(format!(
+                    "Note {} has a non-adjacent tie; correct ties before MusicXML export",
+                    note.id
+                ));
+            }
+            if previous.cross_lane {
+                cross_stops.insert(index);
+                cross_starts.insert(previous.index);
+                diagnostics.push(Diagnostic::warning("musicxml_cross_lane_tie", "Retained a uniquely matched adjacent tie across written voice/staff lanes. Both endpoint lanes remain mapped explicitly; no source note or canonical voice was changed.",Some(note.id.clone())));
+            }
+        }
+        if note.tie_start {
+            tracker.start(
+                note,
+                midi,
+                index,
+                note.at
+                    .checked_add(note.duration)
+                    .ok_or("MusicXML tie timing overflow")?,
+            )?;
+        }
+    }
+    if !tracker.unresolved().is_empty() {
+        return Err(format!(
+            "Part '{}' has an unclosed tie; add its continuation or remove the tie before export",
+            part.name
+        ));
+    }
     let mut groups: BTreeMap<(&str, u8), Vec<TickNote<'_>>> = BTreeMap::new();
     for (index, note) in part.notes.iter().enumerate() {
         escape(&note.voice)?;
@@ -534,7 +582,7 @@ fn make_lanes<'a>(
         let mut ties: HashMap<u8, (i64, usize)> = HashMap::new();
         for n in notes {
             let midi = n.note.pitch.as_ref().and_then(|p| p.midi());
-            let required_lane = if n.note.tie_stop {
+            let required_lane = if n.note.tie_stop && !cross_stops.contains(&n.index) {
                 let (previous_end, lane) = ties
                     .remove(&midi.expect("validated pitched tie"))
                     .ok_or_else(|| {
@@ -586,6 +634,7 @@ fn make_lanes<'a>(
                 index
             };
             if n.note.tie_start
+                && !cross_starts.contains(&n.index)
                 && ties
                     .insert(midi.expect("validated pitched tie"), (n.end, lane_index))
                     .is_some()
@@ -944,6 +993,120 @@ mod tests {
         let second = compile(imported.clone()).unwrap().timeline.duration_ms;
         assert!((first - second).abs() < 0.000001);
         (exported, imported)
+    }
+    #[test]
+    fn complete_cc0_edition_exports_its_valid_cross_voice_tie_without_changing_sources() {
+        let original = crate::catalog_score("cc0-schubert-wandrers-nachtlied-d768").unwrap();
+        let (exported, imported) = round_trip(&original);
+        assert_eq!(compile(imported.clone()).unwrap().timeline.notes.len(), 321);
+        assert_eq!(
+            imported
+                .parts
+                .iter()
+                .flat_map(|p| &p.notes)
+                .filter(|n| n.pitch.is_some())
+                .count(),
+            324
+        );
+        assert!(exported
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "musicxml_cross_lane_tie"));
+        assert!(exported
+            .voice_id_map
+            .iter()
+            .any(|v| v.part_id == "P2" && v.voice == "1"));
+        assert!(exported
+            .voice_id_map
+            .iter()
+            .any(|v| v.part_id == "P2" && v.voice == "2"));
+    }
+    #[test]
+    fn explicit_cross_voice_and_staff_chains_keep_written_lanes_and_one_sounding_note() {
+        let mut s = score();
+        s.parts[0].notes = vec![
+            note(
+                "a",
+                Beat::ZERO,
+                Beat::new(1, 1),
+                Some(("C", 0, 4)),
+                "left",
+                1,
+            ),
+            note(
+                "b",
+                Beat::new(1, 1),
+                Beat::new(1, 1),
+                Some(("C", 0, 4)),
+                "right",
+                1,
+            ),
+            note(
+                "c",
+                Beat::new(2, 1),
+                Beat::new(1, 1),
+                Some(("C", 0, 4)),
+                "lower",
+                2,
+            ),
+        ];
+        s.parts[0].notes[0].tie_start = true;
+        s.parts[0].notes[1].tie_stop = true;
+        s.parts[0].notes[1].tie_start = true;
+        s.parts[0].notes[2].tie_stop = true;
+        let (exported, imported) = round_trip(&s);
+        assert_eq!(compile(imported).unwrap().timeline.notes.len(), 1);
+        assert_eq!(exported.voice_id_map.len(), 3);
+        assert_eq!(
+            exported
+                .diagnostics
+                .iter()
+                .filter(|d| d.code == "musicxml_cross_lane_tie")
+                .count(),
+            2
+        );
+        for n in &mut s.parts[0].notes {
+            n.tie_start = false;
+            n.tie_stop = false;
+        }
+        let (_, rearticulated) = round_trip(&s);
+        assert_eq!(compile(rearticulated).unwrap().timeline.notes.len(), 3);
+    }
+    #[test]
+    fn ambiguous_cross_voice_tie_still_requires_explicit_correction() {
+        let mut s = score();
+        s.parts[0].notes = vec![
+            note(
+                "a",
+                Beat::ZERO,
+                Beat::new(1, 1),
+                Some(("C", 0, 4)),
+                "one",
+                1,
+            ),
+            note(
+                "b",
+                Beat::ZERO,
+                Beat::new(1, 1),
+                Some(("C", 0, 4)),
+                "two",
+                1,
+            ),
+            note(
+                "c",
+                Beat::new(1, 1),
+                Beat::new(1, 1),
+                Some(("C", 0, 4)),
+                "three",
+                1,
+            ),
+        ];
+        s.parts[0].notes[0].tie_start = true;
+        s.parts[0].notes[1].tie_start = true;
+        s.parts[0].notes[2].tie_stop = true;
+        assert!(export_musicxml(&s)
+            .unwrap_err()
+            .contains("Ambiguous cross-voice/staff tie"));
     }
     #[test]
     fn unicode_safe_xml_names_and_retained_source_are_isolated() {

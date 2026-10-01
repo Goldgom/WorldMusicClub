@@ -51,4 +51,5 @@ jobs:
           path: |
             /tmp/worldmusichub-*.png
             /tmp/worldmusichub-omr-*.json
+            /tmp/worldmusichub-live-*.json
           if-no-files-found: ignore

@@ -150,3 +150,9 @@ Interchange structure follows the primary MusicXML 4.0 specification:
 - [Official MusicXML schema](https://www.w3.org/2021/06/musicxml40/listings/musicxml.xsd/)
 
 - [Rights notices and extensible notice types](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/rights/)
+
+## Explicit ties crossing written lanes
+
+Tie validation uses the same exact adjacent-match rule as the Rust performance compiler across the entire part. A stop first resolves its written voice/staff; a unique explicit adjacent same-pitch start in another voice/staff can then match. Ambiguous candidates, missing starts, timing gaps and unclosed ties still require correction. Coincident or adjacent rearticulations without tie flags are never merged.
+
+For a supported cross-lane tie, generated MusicXML retains both original written lanes through the voice map and emits the start/stop endpoints with a visible `musicxml_cross_lane_tie` diagnostic. No canonical note, voice, staff or retained source is rewritten to satisfy engraving. Roundtrip tests cover the complete D768 edition, cross-voice/cross-staff chains, ambiguous unisons and separate repeated attacks. Actual OSMD rendering is checked separately in browser CI.
