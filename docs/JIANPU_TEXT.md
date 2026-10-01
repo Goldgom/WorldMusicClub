@@ -70,13 +70,13 @@ A final incomplete measure is allowed **without a closing barline**. It remains 
 
 ## Limits and unsupported notation
 
-- Input at most 1 MiB of UTF-8; no byte-order mark or control characters except tab, CR, and LF
+- Input at most 1 MiB of UTF-8; one leading byte-order mark is accepted and preserved verbatim. Additional BOM characters are not silently removed. Control characters other than tab, CR, and LF are rejected
 - At most 100,000 notes/rests and 100,000 inferred measures; generated identifiers remain under 128 bytes
 - Note tokens use ASCII and are at most 128 bytes. Title and composer may use Unicode; ordinary whitespace, including Unicode whitespace, can separate tokens
 - Written duration numerator at most 1,000,000,000 and denominator at most 1,000,000. Reduced durations, onsets, and all accumulated time must also fit those rational limits; a very small fraction combined with another incompatible denominator can exceed the limit
 - Every pitch must be MIDI 0–127 and spellable with no more than a double sharp or flat
 
-Unsupported tokens and directives are **errors, never discarded annotations**. This includes lyrics, chords, multiple voices, repeat signs, slurs/ties other than the documented duration extension, grace notes, ornaments, dynamics, numeric velocity directives, underlines, octave dots, Unicode accidental symbols, comments, and other Jianpu dialects. `123` is not three notes; write `1 2 3`. Use MusicXML for richer supported score structure, or manually translate into this exact dialect after reviewing the original.
+Unsupported tokens and directives are **errors, never discarded annotations**. This includes lyrics, chords, multiple voices, repeat signs, slurs/ties other than the documented duration extension, grace notes, ornaments, dynamics, numeric velocity directives, underlines, octave dots, Unicode accidental symbols, inline comments, and other Jianpu dialects. Whole-line semicolon comments are supported as described below. `123` is not three notes; write `1 2 3`. Use MusicXML for richer supported score structure, or manually translate into this exact dialect after reviewing the original.
 
 The retained original source is authoritative for text fidelity. The canonical score and staff/numbered views are a musical interpretation of this explicitly bounded input format; visual engraving is not a lossless reproduction of a printed score.
 
@@ -86,6 +86,6 @@ The app can export a canonical **single monophonic lane** to this dialect throug
 
 The format now permits a whole-line comment beginning with `;` (after optional leading whitespace). It is ignored musically and retained with the full source text. Inline comments are not supported. Exported attribution, license and source URL are written as comments; this records supplied provenance and is not a verification of rights. Comments cannot set headers or introduce notes.
 
-Text v1 cannot preserve multiple parts/voices/staves, chords, overlapping notes, written ties, repeats, pickups, irregular measures, mid-score changes or tempo values finer than three decimal places. The exporter refuses those cases explicitly; it does not silently flatten them. It also refuses notes requiring more than one semitone of alteration relative to a degree in the selected key. Canonical source, IDs, expressive velocity, instrument configuration and engraving are not stored in this simple musical dialect. Keep `.wmhscore.json` or MusicXML as the full archive. The API returns `diagnostics` and a `note_map` linking each text token to its canonical note ID, or `null` for an added gap rest.
+Text v1 cannot preserve multiple parts/voices/staves, chords, overlapping notes, written ties, repeats, pickups, irregular measures, mid-score changes or tempo values finer than three decimal places. The exporter refuses those cases explicitly; it does not silently flatten them. It also refuses notes requiring more than one semitone of alteration relative to a degree in the selected key. Canonical source, IDs, expressive velocity, instrument configuration and engraving are not stored in this simple musical dialect. Keep canonical `.wmhscore.json` or a library backup for the complete archive. Generated MusicXML preserves richer supported musical structure, but does not retain the complete original-source/history metadata. The API returns `diagnostics` and a `note_map` linking each text token to its canonical note ID, or `null` for an added gap rest.
 
 A manually reviewed single-melody image fragment can therefore become editable numbered text, with all manually confirmed pitched notes retained. A complex score should remain in the richer format and use the separate multi-voice numbered display until a broader text dialect is designed.

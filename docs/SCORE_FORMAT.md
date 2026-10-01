@@ -48,9 +48,9 @@ All names are case-sensitive and use the exact snake_case spellings shown. Objec
 | Format metadata | `schema_revision`, `producer`, `producer_version` | none |
 | Retained diagnostic | `severity`, `code`, `message` | `note_id` → `null` |
 
-For nullable fields, either absence or explicit `null` means `None` in Rust. Therefore an omitted `pitch` is a rest, not an unknown pitch awaiting recognition. Prefer writing `pitch: null` explicitly for rests. A pitched note requires the full `Pitch` object; partial pitches are invalid. The `default` keywords in the schema describe Rust's behavior; they are annotations and do not require a schema validator to change the input. Rust serialization emits these fields explicitly, so deserialize/serialize preserves the model, not whitespace, object-key order, or whether a default was omitted. Retained `source.content` remains the decoded string, independently of JSON escaping.
+For nullable fields, either absence or explicit `null` means `None` in Rust. Therefore an omitted `pitch` is a rest, not an unknown pitch awaiting recognition. Prefer writing `pitch: null` explicitly for rests. A pitched note requires the full `Pitch` object; partial pitches are invalid. The `default` keywords in the schema describe Rust's behavior; they are annotations and do not require a schema validator to change the input. Rust serialization emits defaulted musical fields and most nullable fields explicitly; absent optional `format_metadata` and `source.import_diagnostics` remain omitted. Deserialize/serialize preserves the model, not whitespace, object-key order, or generally whether a default was omitted. Retained `source.content` remains the decoded string, independently of JSON escaping.
 
-可空字段可以缺省或显式写为 `null`，二者在 Rust 中都表示 `None`。因此缺少 `pitch` 的记录是休止符，不是“尚未识别的音高”；建议休止符明确写 `pitch: null`。有音高时必须提供完整的 `Pitch` 对象。Schema 中的 `default` 只是说明 Rust 的默认行为，不要求校验器修改输入。Rust 再次序列化会显式输出这些字段，因此模型可以保留，但 JSON 空白、键顺序以及“曾省略默认值”不会原样保留；`source.content` 解码后的内容不因 JSON 转义改变。
+可空字段可以缺省或显式写为 `null`，二者在 Rust 中都表示 `None`。因此缺少 `pitch` 的记录是休止符，不是“尚未识别的音高”；建议休止符明确写 `pitch: null`。有音高时必须提供完整的 `Pitch` 对象。Schema 中的 `default` 只是说明 Rust 的默认行为，不要求校验器修改输入。Rust 再次序列化会显式输出带默认值的音乐字段和大多数可空字段；缺省的可选 `format_metadata` 与 `source.import_diagnostics` 则继续省略。因此模型可以保留，但 JSON 空白、键顺序以及其他“曾省略默认值”的写法不保证原样保留；`source.content` 解码后的内容不因 JSON 转义改变。
 
 ### Exact musical time / 精确音乐时间
 

@@ -7,7 +7,7 @@ All routes are same-origin loopback. JSON responses; errors use `{ "error": "mes
 - `GET /api/catalog/score/<exact-id>` -> one unchanged canonical `Score`, or JSON404 for an unknown bundled ID
 - `POST /api/compile` with `Score` -> `{ score: Score, timeline: Timeline, diagnostics: Diagnostic[] }`
 - `POST /api/assess` with `{ timeline: Timeline, inputs: InputEvent[], tolerance_ms: number }` -> `Assessment`
-- `POST /api/import/musicxml` with raw XML -> compilation response above (subsequent milestone)
+- `POST /api/import/musicxml` with raw XML -> compilation response above
 
 `Score`: `{ version:1, id, title, composer, provenance:{kind:"original_exercise", attribution, source_url:null, license:null}, parts:[{id,name,instrument:"piano"|"guitar", notes: Note[]}], tempo:[{at:Beat,bpm:number}], meters:[{at:Beat,numerator:4,denominator:4}], keys:[{at:Beat,fifths:0,mode:"major"}], measures:[{number:1,at:Beat,length:Beat}], repeats:[], source:null }`.
 

@@ -944,7 +944,7 @@ pub fn export_jianpu(score: &Score) -> Result<ExportedJianpu, String> {
     {
         return Err("Pickup, irregular or nonsequential measures cannot be represented in numbered-text v1; use MusicXML".into());
     }
-    let mut diagnostics=vec![Diagnostic::warning("jianpu_export_scope","Numbered text preserves this melody's spelled pitches and exact note/rest durations. It does not preserve canonical IDs, instrument setup, original source bytes, expressive velocities or engraving; keep JSON/MusicXML as the full score archive. Rights are retained as comments, not independently verified.",None)];
+    let mut diagnostics=vec![Diagnostic::warning("jianpu_export_scope","Numbered text preserves this melody's spelled pitches and exact note/rest durations. It does not preserve canonical IDs, instrument setup, original source bytes, expressive velocities or engraving. Keep canonical JSON or a library backup for the complete archive; generated MusicXML is richer musical interchange, not a complete source archive. Rights are retained as comments, not independently verified.",None)];
     let title = score.title.split_whitespace().collect::<Vec<_>>().join(" ");
     let composer = score
         .composer
@@ -1109,6 +1109,13 @@ mod export_tests {
         }
         assert!(exported.text.contains("; License: CC0-1.0"));
         assert_eq!(exported.note_map.len(), 4);
+        let scope = exported
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "jianpu_export_scope")
+            .unwrap();
+        assert!(scope.message.contains("canonical JSON or a library backup"));
+        assert!(scope.message.contains("not a complete source archive"));
     }
     #[test]
     fn sparse_melody_gets_explicit_gap_rests_without_moving_notes() {
