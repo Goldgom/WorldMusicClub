@@ -209,3 +209,7 @@ import './frontend-external-omr-model.test.js';
 import "./frontend-engraved-view.test.js";
 
 import "./frontend-notation-follow.test.js";
+
+import {scoreSummary,catalogOriginLabel} from '../web/music.js';
+test('edition counts distinguish written notes/rests from compiled attacks without judging note loss',()=>{const score=structuredClone(fixture);score.parts[0].notes.push({...structuredClone(score.parts[0].notes[0]),id:'rest',pitch:null,velocity:0});const before=structuredClone(score);assert.deepEqual(scoreSummary(score,{notes:[{}]}),{count:2,rests:1,writtenCount:3,playbackCount:1,parts:1,measures:1});assert.equal(scoreSummary(score).playbackCount,null);assert.equal(scoreSummary(score,{notes:Array(8).fill({})}).playbackCount,8);assert.deepEqual(score,before);});
+test('catalog origin labels never call an imported source edition an original exercise',()=>{const score=structuredClone(fixture);for(const[kind,label]of[['original_exercise','Original exercise'],['public_domain_practice_arrangement','Public-domain excerpt'],['curated_cc0_edition','CC0 source edition'],['musicxml_import','Source edition'],['future_kind','Source edition']]){score.provenance.kind=kind;assert.equal(catalogOriginLabel(score),label)}});

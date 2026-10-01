@@ -55,9 +55,15 @@ export function fretPositions(midi, maxFret = 12) {
     return fret >= 0 && fret <= maxFret ? [{string, fret}] : [];
   });
 }
-export function scoreSummary(score) {
-  const notes = score.parts.flatMap(part => part.notes).filter(n => n.pitch);
-  return {count: notes.length, parts: score.parts.length, measures: score.measures.length};
+export function scoreSummary(score,timeline=null) {
+  let count=0,rests=0;for(const part of score.parts)for(const note of part.notes){if(note.pitch)count++;else rests++}
+  return {count,rests,writtenCount:count+rests,playbackCount:timeline?.notes.length??null,parts:score.parts.length,measures:score.measures.length};
+}
+export function catalogOriginLabel(score){
+  if(score.provenance.kind==='original_exercise')return 'Original exercise';
+  if(score.provenance.kind==='public_domain_practice_arrangement')return 'Public-domain excerpt';
+  if(score.provenance.kind==='curated_cc0_edition')return 'CC0 source edition';
+  return 'Source edition';
 }
 export function escapeXml(value) {
   return String(value).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;'}[c]));

@@ -15,7 +15,7 @@ import {validLatency, loadLatency, saveLatency, parseBeatInput, practiceScope, w
 import {setupMidi, normalizeEventTime} from './midi.js';
 import {setupImageReview} from './image-review.js';
 import {setupThemes} from './themes.js';
-import {PIANO_RANGES, SHORTCUTS, beat, midiName, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, renderNotation, notationPageCount, notationLayout, keyAt, keyTonic} from './music.js';
+import {PIANO_RANGES, SHORTCUTS, beat, midiName, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, catalogOriginLabel, renderNotation, notationPageCount, notationLayout, keyAt, keyTonic} from './music.js';
 import {Transport, Synth, TimelineIndex} from './transport.js';
 import {formatTime} from './music.js';
 
@@ -148,7 +148,7 @@ function renderCatalog() {
     const number = document.createElement('span'); number.className = 'number'; number.textContent = String(index + 1).padStart(2, '0');
     const label = document.createElement('span');
     const title = document.createElement('strong'); title.textContent = score.title;
-    const meta = document.createElement('small'); meta.textContent = `${scoreSummary(score).count} notes · ${score.tempo[0]?.bpm || 100} BPM · ${score.provenance.kind === 'public_domain_practice_arrangement' ? 'Public-domain excerpt' : 'Original'}`;
+    const meta = document.createElement('small'); meta.textContent = `${scoreSummary(score).writtenCount} written events · ${score.tempo[0]?.bpm || 100} BPM · ${catalogOriginLabel(score)}`;
     label.append(title, meta); button.append(number, label);
     button.addEventListener('click', () => compileScore(structuredClone(score)));
     $('catalog').append(button);
@@ -157,9 +157,12 @@ function renderCatalog() {
 function renderScore() {
   if (!state.score) return;
   const score = state.score;
-  const summary = scoreSummary(score);
+  const summary = scoreSummary(score,state.compiled.timeline);
   $('score-title').textContent = score.title;
-  $('score-meta').textContent = `${score.composer || 'Original exercise'} · ${summary.count} notes · ${summary.measures} measures · ${summary.parts} part${summary.parts === 1 ? '' : 's'}`;
+  $('score-meta').textContent = `${score.composer || 'Composer not specified'} · Full score: ${summary.writtenCount} written events · ${summary.playbackCount} playback note events · ${summary.measures} measures · ${summary.parts} part${summary.parts === 1 ? '' : 's'}`;
+  $('score-origin-label').textContent=catalogOriginLabel(score);
+  $('score-details-button').textContent=`Source, credits & limitations${state.compiled.diagnostics.length?` · ${state.compiled.diagnostics.length} notice${state.compiled.diagnostics.length===1?'':'s'}`:''} · 来源说明`;
+  $('score-retention-note').textContent=`Written events: ${summary.count} pitched note segments + ${summary.rests} rests. Ties can join segments; repeats can create additional playback events. ${score.provenance.kind==='curated_cc0_edition'?'This complete source edition retains its written notes/rests; some expressive or visual instructions may be source-only.':'Event counts do not certify expressive playback.'} Review the source notices; onset-only practice targets are a separate count.`;
   $('score-key').textContent = `${score.meters[0]?.numerator || 4}/${score.meters[0]?.denominator || 4} time · 1 = C display`;
   $('notation-part').replaceChildren();
   for (const part of score.parts) { const option = document.createElement('option'); option.value = part.id; option.textContent = part.name; $('notation-part').append(option); }
@@ -332,6 +335,8 @@ function markProfileDirty() {
   $('instrument-report').textContent=state.compatibility.reason; updateButtons();
 }
 for(const id of ['custom-key-count','custom-lowest','guitar-tuning','guitar-frets','guitar-capo'])$(id).addEventListener('input',markProfileDirty);
+$('score-details-button').addEventListener('click',()=>{const details=$('score-details');details.open=true;$('score-details-button').setAttribute('aria-expanded','true');details.querySelector('summary').focus({preventScroll:true});details.scrollIntoView({block:'start',behavior:'auto'})});
+$('score-details').addEventListener('toggle',()=>{$('score-details-button').setAttribute('aria-expanded',String($('score-details').open))});
 $('practice-gate-retry').addEventListener('click',()=>{if(state.profileDirty)$('instrument-apply').click();else checkInstrument()});
 $('instrument-apply').addEventListener('click', () => {
   try { const profile = state.instrument === 'guitar' ? guitarProfile($('guitar-tuning').value, $('guitar-frets').value, $('guitar-capo').value) : pianoProfile($('custom-key-count').value, $('custom-lowest').value); checkInstrument(profile, true); }
