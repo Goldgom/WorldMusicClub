@@ -1,0 +1,16 @@
+{
+  "image": "audiveris-original-melody.png",
+  "image_sha256": "4da54044394706953dd0d2dee2dad8c3393a6dc33ab3ddc013f1de45930e6728",
+  "width": 3594,
+  "height": 1314,
+  "source_commit": "2c5de7234f4f2e6a0c11bb873ae40a10db83e7e4",
+  "source_ci_run": 36792679835,
+  "source_ci_artifact": 11132556503,
+  "recognized_fixture": "audiveris-original-melody.musicxml",
+  "recognition_fixture_sha256": "3df82aa3184c0266f91a523bc2afe8e14add32816475086ec38e0ce5a9a2d318",
+  "rights": "Original WorldMusicHub exercise, CC0-1.0. The Audiveris output contains only this original score; private file paths replaced and an explanatory comment added.",
+  "expected_written_pitched_events": 15,
+  "expected_rests": 1,
+  "printed_quarter_bpm": 90,
+  "known_recognition_error": "Tempo mark missed; recognition import defaults to120 and requires explicit correction. Unknown recognition confidence."
+}

@@ -202,3 +202,6 @@ test('octave preview keeps complete original source, exact note properties and u
 });
 test('octave preview cannot silently drop notes, rewrite timing or lose the original envelope',()=>{for(const mutate of [p=>p.compilation.score.parts[0].notes.pop(),p=>p.compilation.score.parts[0].notes[0].duration.numerator=3,p=>p.compilation.score.parts[0].notes[0].pitch.alter=1,p=>p.original_preserved=false,p=>p.changed_note_count=1,p=>p.operation.octaves=2,p=>p.compilation.score.source.content='{}',p=>p.instrument_report.note_options.pop()]){const operation={part_id:null,octaves:1},preview=adaptationFixture(fixture,operation);mutate(preview);assert.throws(()=>validateAdaptationPreview(preview,fixture,{part_id:null,octaves:1}),/preserve/)}});
 test('octave scope and confirmation comparisons reject missing parts and invalid shifts',()=>{assert.deepEqual(octaveOperation('all',null,'2'),{part_id:null,octaves:2});for(const value of ['',0,'1.5',9,-9,Infinity])assert.throws(()=>octaveOperation('all',null,value));assert.throws(()=>octaveOperation('selected',null,-1));assert.equal(equivalentJson({a:1,b:{c:2}},{b:{c:2},a:1}),true);assert.equal(equivalentJson({a:1},{a:2}),false);assert.equal(equivalentJson([1,2],[2,1]),false);});
+
+// Pure external-review tests also run in the aggregate frontend suite.
+import './frontend-external-omr-model.test.js';
