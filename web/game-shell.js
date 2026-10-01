@@ -10,7 +10,9 @@ export function setupGameShell({pausePlayback,onScreen,onNotation,onPanel=()=>{}
     const el=document.createElement('dialog');el.id=`${name}-dialog`;el.className='shell-dialog';el.setAttribute('aria-labelledby',`${name}-title`);
     const heading=document.createElement('header');heading.className='shell-dialog-heading';const h=document.createElement('h2');h.id=`${name}-title`;h.textContent=title;const close=document.createElement('button');close.className='button secondary';close.dataset.closePanel=name;close.textContent='Close · 关闭';heading.append(h,close);el.append(heading);
     const content=document.createElement('div');content.className='shell-dialog-content';for(const node of nodes)if(node)content.append(node);el.append(content);document.body.append(el);dialogs.set(name,el);
-    close.addEventListener('click',()=>el.close());el.addEventListener('close',()=>{$(`${name}-button`)?.focus()});return el;
+    // Native dialog closing restores its opener. A queued close handler must not
+    // refocus the opener after the user has already moved to another control.
+    close.addEventListener('click',()=>el.close());return el;
   }
   const piece=document.querySelector('.piece-panel');
   dialog('settings','Session settings · 演奏设置',[piece.querySelector('.control-grid'),$('instrument-settings'),document.querySelector('.practice-target-row'),$('physical-target-note'),document.querySelector('.practice-options'),sidebar.querySelector('.theme-settings'),$('midi-help')]);

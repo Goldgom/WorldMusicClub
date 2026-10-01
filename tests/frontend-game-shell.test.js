@@ -46,7 +46,8 @@ test('catalog filters use title/composer and explicit source kind without alteri
 
 test('static DOM shell keeps every source control exactly once and pauses on panel and screen transitions',async()=>{
  const html=await readFile(new URL('../web/index.html',import.meta.url),'utf8'),{document,window}=parseHTML(html),original=Object.getOwnPropertyDescriptor(globalThis,'document');
- Object.defineProperty(globalThis,'document',{configurable:true,value:document});let pauses=0;const screens=[],notation=[];
+ Object.defineProperty(globalThis,'document',{configurable:true,value:document});let pauses=0,focused=null;const screens=[],notation=[];
+ window.HTMLElement.prototype.focus=function(){focused=this;};
  window.HTMLElement.prototype.showModal=function(){this.setAttribute('open','')};window.HTMLElement.prototype.close=function(){this.removeAttribute('open');this.dispatchEvent(new window.Event('close'))};
  Object.defineProperty(window.HTMLElement.prototype,'open',{configurable:true,get(){return this.hasAttribute('open')},set(value){this.toggleAttribute('open',Boolean(value))}});
  try{
@@ -61,5 +62,6 @@ test('static DOM shell keeps every source control exactly once and pauses on pan
   shell.open('settings');assert.equal(pauses,1);assert.equal(document.getElementById('settings-dialog').open,true);shell.show('stage');assert.equal(pauses,2);assert.equal(document.getElementById('settings-dialog').open,false);assert.equal(document.getElementById('song-lobby').hidden,true);assert.deepEqual(screens,['stage']);
   document.getElementById('notation-toggle').click();assert.deepEqual(notation,[true]);assert.equal(shell.notationVisible(),true);
   assert.equal(document.querySelector('.skip-link').getAttribute('href'),'#stage-title');shell.show('library');assert.equal(pauses,3);assert.equal(shell.screen(),'library');assert.equal(document.querySelector('#workspace').hidden,true);assert.equal(document.querySelector('.skip-link').getAttribute('href'),'#lobby-title');
+  shell.open('settings');const settings=document.getElementById('settings-dialog');settings.removeAttribute('open');const next=document.querySelector('.skip-link');next.focus();settings.dispatchEvent(new window.Event('close'));assert.ok(focused===next,'A queued close event must not steal focus after the user has moved to another control');
  }finally{if(original)Object.defineProperty(globalThis,'document',original);else delete globalThis.document}
 });
