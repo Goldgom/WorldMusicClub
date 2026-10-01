@@ -18,6 +18,7 @@ import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
+import {isDeepStrictEqual} from 'node:util';
 import {fixture} from './frontend-fixtures.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -161,6 +162,12 @@ async function rustApi(path, data) {
 
 function nextResponse(path, timeout = 10_000) {
   return page.waitForResponse(response => new URL(response.url()).pathname === path, {timeout});
+}
+
+function nextTargetResponse(profile, timeline) {
+  return page.waitForResponse(response => new URL(response.url()).pathname === '/api/practice-targets'
+    && response.request().method() === 'POST'
+    && isDeepStrictEqual(response.request().postDataJSON(), {timeline, profile}), {timeout:10_000});
 }
 
 async function responseJson(response) {
@@ -1396,14 +1403,39 @@ test('complete Beethoven edition renders all 18 measures and keeps every source 
   await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));
   assert.equal(await ui('#key-count').inputValue(),'61');assert.equal(await ui('#play-button').isDisabled(),true);
   assert.equal(await ui('#assess-button').isDisabled(),true);
-  await ui('#practice-part').selectOption(voice.id);await ui('#play-button:not([disabled])').waitFor();
-  await ui('#practice-part').selectOption(piano.id);await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));
-  assert.equal(await ui('#play-button').isDisabled(),true);await ui('#practice-part').selectOption('');
-  const plans=[];
+  const selectedPages=[];
+  async function readySelectedPart(part){
+    await waitForEngraving();
+    assert.equal(await ui('#engraving-part').inputValue(),part);
+    assert.equal(await ui('#engraving-fallback').isVisible(),false);
+    assert.equal(await ui('#engraved-button').getAttribute('aria-pressed'),'true');
+    assert.match(await ui('#engraving-range').textContent(),/Measures 17–18 \/ 18/);
+    const svgCount=await ui('#engraved-staff svg').count();assert.ok(svgCount>0);
+    selectedPages.push({part:part||'all',range:await ui('#engraving-range').textContent(),svg_count:svgCount,fallback_hidden:true});
+    await screenshot(`cc0-beethoven-final-page-${part||'all'}`);
+  }
+  await ui('#practice-part').selectOption(voice.id);await ui('#play-button:not([disabled])').waitFor();await readySelectedPart(voice.id);
+  await ui('#practice-part').selectOption(piano.id);await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));await readySelectedPart(piano.id);
+  assert.equal(await ui('#play-button').isDisabled(),true);
+  const [blockedResponse]=await Promise.all([nextTargetResponse({kind:'piano',key_count:61,lowest_midi:null},compiled.timeline),ui('#practice-part').selectOption('')]);
+  const blockedPlan=await responseJson(blockedResponse);assert.equal(blockedPlan.playable,false);
+  await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));await readySelectedPart('');
+  const blockedTake=await exportTakeData();assert.equal(blockedTake.practice_part,null);assert.deepEqual(blockedTake.target_plan,blockedPlan);
+  const plans=[],planEvidence=[{request:blockedResponse.request().postDataJSON(),response:blockedPlan,ui_exported_plan:blockedTake.target_plan}];
+  const evidencePath=join(artifactDirectory,'worldmusichub-live-cc0-beethoven-target-plan-evidence.json');
+  await writeFile(evidencePath,JSON.stringify(planEvidence,null,2));
   for(const keys of ['76','88']){
-    const [targetResponse]=await Promise.all([nextResponse('/api/practice-targets'),ui('#key-count').selectOption(keys)]);
-    const plan=await responseJson(targetResponse);await ui('#play-button:not([disabled])').waitFor();
+    const profile={kind:'piano',key_count:Number(keys),lowest_midi:null};
+    const [targetResponse]=await Promise.all([nextTargetResponse(profile,compiled.timeline),ui('#key-count').selectOption(keys)]);
+    const plan=await responseJson(targetResponse),request=targetResponse.request().postDataJSON();
+    planEvidence.push({request,response:plan});await writeFile(evidencePath,JSON.stringify(planEvidence,null,2));
+    assert.deepEqual(request,{timeline:compiled.timeline,profile});
     assert.equal(plan.playable,true);assert.equal(plan.source_note_count,198);assert.equal(plan.target_count,168);
+    await ui('#play-button:not([disabled])').waitFor();await waitForEngraving();assert.equal(await ui('#engraving-fallback').isVisible(),false);
+    assert.equal(await ui('#key-count').inputValue(),keys);assert.equal(await ui('#practice-part').inputValue(),'');
+    const take=await exportTakeData();planEvidence.at(-1).ui_exported_plan=take.target_plan;
+    await writeFile(evidencePath,JSON.stringify(planEvidence,null,2));
+    assert.equal(take.practice_part,null);assert.deepEqual(take.target_plan,plan,'The visible ready UI must use this exact profile-matched Rust plan');
     assert.deepEqual(plan.groups.flatMap(group=>group.source_note_ids).sort(),pitched.map(note=>note.id).sort());
     plans.push({keys,source_attack_count:plan.source_note_count,physical_target_count:plan.target_count,playable:plan.playable});
   }
@@ -1420,7 +1452,7 @@ test('complete Beethoven edition renders all 18 measures and keeps every source 
   assert.match(await ui('#engraving-follow-status').textContent(),/Following written measure 17/);
   assert.match(await ui('#engraving-range').textContent(),/Measures 17–18/);await ui('#play-button').click();
   assert.deepEqual(await exportScore(),edition,'Ranges, source pages and following preserve the entire original score');
-  await writeFile(join(artifactDirectory,'worldmusichub-live-cc0-beethoven-acceptance.json'),JSON.stringify({score_id:edition.id,written_events:226,pitched_segments:204,rests:22,sounding_events:198,measures:18,pages,piano_plans:plans,all_source_ids_preserved:true,canonical_score_unchanged:true,limitations:edition.source.import_diagnostics},null,2));
+  await writeFile(join(artifactDirectory,'worldmusichub-live-cc0-beethoven-acceptance.json'),JSON.stringify({score_id:edition.id,written_events:226,pitched_segments:204,rests:22,sounding_events:198,measures:18,pages,selected_part_final_pages:selectedPages,piano_plans:plans,all_source_ids_preserved:true,canonical_score_unchanged:true,limitations:edition.source.import_diagnostics},null,2));
 });
 
 test('complete Beethoven original PNG, MSCX, XML, reference MIDI and license download byte-exactly', {timeout:60_000}, async()=>{

@@ -96,6 +96,7 @@ test('renderer receives a parsed Document with SVG-only bounded options and sele
   const renderer = env.instances[0];
   assert.equal(renderer.options.backend, 'svg');
   assert.equal(renderer.options.autoResize, false);
+  assert.equal(renderer.options.autoGenerateMultipleRestMeasuresFromRestMeasures, false);
   assert.equal(renderer.options.disableCursor, true);
   assert.equal(renderer.options.darkMode, true);
   assert.equal(renderer.options.drawFromMeasureNumber, 2);

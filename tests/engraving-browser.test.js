@@ -215,6 +215,29 @@ test('part selection hides the other instrument without changing canonical notes
   assert.equal((await exportScore()).xml, exported.xml);
 });
 
+test('Beethoven rest-only voice pages retain source measures and recover other visible parts', options, async () => {
+  const score=JSON.parse(await readFile(join(root,'catalog/editions/cc0-beethoven-gottes-macht-op48-5/score.json'),'utf8'));
+  const before=JSON.stringify(score),exported=await exportScore(score);
+  const voice=exported.part_id_map.P1,piano=exported.part_id_map.P2,evidence=[];
+  const rests=score.parts.find(part=>part.id==='P1').notes.filter(note=>note.at.numerator/note.at.denominator>=56);
+  assert.equal(rests.length,4);assert.ok(rests.every(note=>note.pitch===null&&note.duration.numerator/note.duration.denominator===4));
+  for(const fromMeasure of [15,17]){
+    const shown=await render(exported.xml,{partIds:[voice],fromMeasure,toMeasure:fromMeasure+1});
+    const drawn=await geometry();assert.equal(shown.metadata.fromMeasure,fromMeasure);assert.equal(shown.metadata.toMeasure,fromMeasure+1);
+    assert.equal(drawn.notes,2,'Both source rest measures must have actual VexFlow note/rest geometry');
+    assert.ok(drawn.svg>0&&drawn.paths>0);assert.doesNotMatch(drawn.text,/Pianoforte/);
+    evidence.push({part:'P1',fromMeasure,toMeasure:fromMeasure+1,geometry:drawn});
+    await screenshot(`beethoven-voice-rests-${fromMeasure}-${fromMeasure+1}`);
+  }
+  for(const [part,partIds]of [['P2',[piano]],['all',[voice,piano]]]){
+    await render(exported.xml,{partIds,fromMeasure:17,toMeasure:18});
+    const drawn=await geometry();assert.ok(drawn.svg>0&&drawn.notes>2);assert.match(drawn.text,/Pianoforte/);
+    evidence.push({part,fromMeasure:17,toMeasure:18,geometry:drawn});
+  }
+  assert.equal(JSON.stringify(score),before);assert.equal((await exportScore(score)).xml,exported.xml);
+  await writeFile(join(artifacts,'worldmusichub-live-beethoven-rest-paging.json'),JSON.stringify({score_id:score.id,canonical_score_unchanged:true,exported_xml_unchanged:true,evidence},null,2));
+});
+
 test('measure windows count the initial pickup as ordinal one and preserve the later tie', options, async () => {
   const exported = await exportScore();
   assert.match(exported.xml, /<measure number="0" implicit="yes">/);
