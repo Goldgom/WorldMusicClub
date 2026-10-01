@@ -23,3 +23,9 @@ A backup can contain private score images or source files, because preserving th
 `tests/local-library.test.js` uses the official `fake-indexeddb` package only as a development-test dependency. It tests complete source preservation, metadata-only listing, separate copies, concurrent revision conflicts, atomic restoration, count limits and storage failures. Real browser integration and persistence across reloads require the app's browser CI, not just these in-memory tests.
 
 The implementation follows the asynchronous transaction contract described in [MDN's IndexedDB guide](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Using_IndexedDB). Writes resolve on transaction completion, not an individual request's success event.
+
+## Complete source editions
+
+A saved complete CC0 edition is an immutable copy of the entire canonical score, not just its displayed page or playable part. Its note/rest arrays, producer metadata, source-only warnings, exact original MSCX/XML bytes, separately identified compatible import copy, reference MIDI and asset-license text remain in the saved JSON/source envelope. Choosing voice-only practice, a different keyboard size or a later displayed measure must not trim those archived contents.
+
+A focused IndexedDB regression uses the actual 334-event D768 edition, checks save/backup/restore equality and rechecks every retained file's SHA-256 after restoration. A real browser/Rust acceptance run is still required for the UI path; a storage-model test alone does not certify browser persistence or the user's device. Generated MusicXML or numbered text is an interchange view, not a substitute for the JSON source archive.

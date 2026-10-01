@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {IDBFactory} from 'fake-indexeddb';
 import {openScoreLibrary} from '../web/local-library.js';
 import {fixture} from './frontend-fixtures.js';
+import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 const create=()=>openScoreLibrary({factory:new IDBFactory()});
 test('explicit local save keeps a complete immutable canonical/source snapshot',async()=>{
  const library=await create();try{const score=structuredClone(fixture);score.source={format:'musicxml',filename:'fragment.xml',content:'<score>\r\n音符 &amp; 原稿</score>'};const saved=await library.save(score,{label:'My fragment'});score.title='Changed elsewhere';const loaded=await library.get(saved.key);assert.equal(loaded.score.title,fixture.title);assert.equal(loaded.score.source.content,'<score>\r\n音符 &amp; 原稿</score>');assert.equal(loaded.label,'My fragment');const rows=await library.list();assert.equal(rows.length,1);assert.ok(!('score'in rows[0]));}finally{library.close()}
@@ -41,4 +43,27 @@ test('storage unavailability, closed handles and unsupported backups fail clearl
  const library=await create();await assert.rejects(library.restoreBackup('{',{validate:async()=>true}),/JSON/);
  await assert.rejects(library.restoreBackup('{"format":"new-format","version":2,"entries":[]}',{validate:async()=>true}),/Unsupported/);
  library.close();await assert.rejects(library.list(),/closed/);
+});
+
+test('complete CC0 edition backup restores all notes, original bytes, notices and producer metadata',async()=>{
+ const edition=JSON.parse(readFileSync(new URL('../catalog/editions/cc0-schubert-wandrers-nachtlied-d768/score.json',import.meta.url),'utf8'));
+ const expected=structuredClone(edition),first=await create(),second=await create();
+ try{
+  const saved=await first.save(edition,{label:'Full Schubert source edition'});
+  edition.parts[0].notes.find(note=>note.pitch).pitch.octave=1;edition.source.content='Later unsaved edit';
+  const loaded=(await first.get(saved.key)).score;assert.deepEqual(loaded,expected);
+  assert.equal(loaded.parts.flatMap(part=>part.notes).length,334);
+  const backup=await first.exportBackup();let validated=0;
+  const restored=await second.restoreBackup(backup,{validate:async score=>{validated++;assert.deepEqual(score,expected);return true}});
+  assert.equal(validated,1);assert.equal(restored.length,1);
+  const actual=(await second.get(restored[0].key)).score;assert.deepEqual(actual,expected);
+  assert.deepEqual(actual.format_metadata,expected.format_metadata);
+  assert.ok(actual.source.import_diagnostics.some(item=>item.code==='written_note_practice_edition'));
+  const envelope=JSON.parse(actual.source.content);
+  for(const file of Object.values(envelope.files)){
+   const bytes=Buffer.from(file.content,file.encoding==='base64'?'base64':'utf8');
+   assert.equal(bytes.length,file.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256);
+  }
+  assert.equal(createHash('sha256').update(envelope.license_text).digest('hex'),envelope.provenance.license_text_sha256);
+ }finally{first.close();second.close()}
 });
