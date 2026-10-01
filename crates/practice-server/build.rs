@@ -108,16 +108,24 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
     struct Temp(PathBuf);
     impl Temp {
         fn new() -> Self {
-            let path = env::temp_dir().join(format!(
-                "wmh-assets-{}-{}",
-                std::process::id(),
+            Self::at(
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_nanos()
+                    .as_nanos(),
+            )
+        }
+        fn at(timestamp: u128) -> Self {
+            let path = env::temp_dir().join(format!(
+                "wmh-assets-{}-{}-{}",
+                std::process::id(),
+                timestamp,
+                NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
             ));
             fs::create_dir(&path).unwrap();
             Self(path)
@@ -127,6 +135,17 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+    #[test]
+    fn fixtures_created_at_the_same_clock_tick_are_independent() {
+        let first = Temp::at(42);
+        fs::write(first.0.join("fixture.txt"), "first").unwrap();
+        let second = Temp::at(42);
+        fs::write(second.0.join("fixture.txt"), "second").unwrap();
+        assert_ne!(first.0, second.0);
+        assert_eq!(fs::read(first.0.join("fixture.txt")).unwrap(), b"first");
+        drop(second);
+        assert_eq!(fs::read(first.0.join("fixture.txt")).unwrap(), b"first");
     }
     #[test]
     fn nested_regular_assets_are_embedded_under_exact_relative_routes() {
