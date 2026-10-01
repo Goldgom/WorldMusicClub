@@ -1,10 +1,16 @@
-export function validLatency(value) { const ms = Number(value); return value !== null && value !== undefined && String(value).trim() !== '' && Number.isFinite(ms) && Number.isInteger(ms) && ms >= -500 && ms <= 500; }
+export function validLatency(value) { if(typeof value!=='number'&&typeof value!=='string')return false;const ms = Number(value); return String(value).trim() !== '' && Number.isFinite(ms) && Number.isInteger(ms) && ms >= -500 && ms <= 500; }
 export function compensateInput(atMs, offsetMs) {
   if (!Number.isFinite(atMs) || !validLatency(offsetMs)) throw new Error('Input time and latency offset must be finite; offset must be a whole number from −500 to 500 ms.');
   return atMs - Number(offsetMs);
 }
-export function loadLatency() { try { const value = JSON.parse(localStorage.getItem('worldmusichub.latency')); return validLatency(value) ? Number(value) : 0; } catch { return 0; } }
-export function saveLatency(value) { if (!validLatency(value)) return; try { localStorage.setItem('worldmusichub.latency', JSON.stringify(Number(value))); } catch { /* Session-only preference when local storage is unavailable. */ } }
+export function readLatencyPreference() {
+  let stored;try{stored=localStorage.getItem('worldmusichub.latency')}catch{return{value:0,message:'Latency starts at 0 ms. Browser storage is unavailable; changes apply to this tab.'}}
+  if(stored===null)return{value:0,message:''};
+  try{const value=JSON.parse(stored);if(validLatency(value))return{value:Number(value),message:''}}catch{/* An unreadable preference must not become a calibration offset. */}
+  return{value:0,message:'Saved latency was invalid and was not applied. Offset starts at 0 ms; enter a reviewed value to replace it.'};
+}
+export function loadLatency() { return readLatencyPreference().value; }
+export function saveLatency(value) { if (!validLatency(value)) return false; try { localStorage.setItem('worldmusichub.latency', JSON.stringify(Number(value)));return true; } catch { return false; } }
 export function parseBeatInput(value) {
   const text = String(value).trim();
   let numerator, denominator;

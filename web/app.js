@@ -13,7 +13,7 @@ import {setupEngravedView} from './engraved-view.js';
 import {setupJianpuEditor} from './jianpu-editor.js';
 import {feedbackView} from './feedback-view.js';
 import {STANDARD_TUNING, guitarProfile, pianoProfile, compatibilityStatus} from './instrument-profile.js';
-import {validLatency, loadLatency, saveLatency, parseBeatInput, practiceScope, windowNotes} from './practice-settings.js';
+import {validLatency, readLatencyPreference, saveLatency, parseBeatInput, practiceScope, windowNotes} from './practice-settings.js';
 import {setupMidi, normalizeEventTime} from './midi.js';
 import {setupImageReview} from './image-review.js';
 import {setupThemes} from './themes.js';
@@ -31,8 +31,9 @@ let externalOmrView = null;
 let notationFollowing = null;
 let sourceArchiveView=null;
 const catalogCache=new CatalogScoreCache();
+const latencyPreference=readLatencyPreference();
 let catalogController=null,catalogIndexController=null,catalogIndexRequest=0,catalogPendingId=null,catalogIndexFailed=false;
-const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: loadLatency(), loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reason:'Waiting for an instrument compatibility check.'}, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
+const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reason:'Waiting for an instrument compatibility check.'}, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
 state.recorder = new PracticeRecorder({latencyMs:state.latency});
 
@@ -593,10 +594,11 @@ $('loop-enabled').addEventListener('change', () => { if ($('loop-enabled').check
 for (const id of ['loop-from', 'loop-to']) $(id).addEventListener('input', () => { state.loopRequest++; if (state.loop || $('loop-enabled').checked) { state.loop = null; rebuildPracticeScope(); $('loop-enabled').checked = false; resetPlayback(); checkInstrument(); } $('loop-status').textContent = 'Bounds changed. Set loop to validate the new range.'; });
 
 $('latency-offset').value = String(state.latency);
+$('latency-storage-status').textContent=latencyPreference.message;$('latency-storage-status').hidden=!latencyPreference.message;
 $('latency-offset').addEventListener('change', () => {
   const value = $('latency-offset').value;
   if (!validLatency(value)) { $('latency-offset').value = String(state.latency); notice('Latency offset must be a whole number from −500 to 500 ms.', true); return; }
-  state.latency = Number(value); saveLatency(state.latency); resetPlayback();
+  state.latency = Number(value);const saved=saveLatency(state.latency);$('latency-storage-status').textContent=saved?'Latency saved in this browser profile and site.':'Latency applies to this tab but could not be saved in browser storage.';$('latency-storage-status').hidden=false;resetPlayback();
 });
 $('practice-part').addEventListener('change', () => { state.practicePart = $('practice-part').value || null; rebuildPracticeScope(); resetPlayback(); if (state.practicePart !== null) { state.notationPart = state.practicePart; $('notation-part').value = state.practicePart; renderNotationPage(); } engravedView.selectPart(state.practicePart); updateRangeWarning(); checkInstrument(); });
 $('jianpu-reference').addEventListener('change', () => { state.numberedMode = $('jianpu-reference').value; renderNotationPage(); });

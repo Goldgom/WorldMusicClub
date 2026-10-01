@@ -4,9 +4,11 @@ export function isDark(hex) { return readableText(hex) === '#ffffff'; }
 export function validTheme(value) { return value && THEMES.has(value.mode) ? {mode: value.mode, accent: validHex(value.accent) ? value.accent : '#326b4c', background: validHex(value.background) ? value.background : '#f4f6f1'} : {mode: 'system', accent: '#326b4c', background: '#f4f6f1'}; }
 export function setupThemes() {
   const media = matchMedia('(prefers-color-scheme: dark)');
-  let preference;
-  try { preference = validTheme(JSON.parse(localStorage.getItem('worldmusichub.theme'))); } catch { preference = validTheme(null); }
+  let preference=validTheme(null), stored=null, storageMessage='';
+  try { stored=localStorage.getItem('worldmusichub.theme'); } catch { storageMessage='Appearance applies to this tab. Browser storage is unavailable.'; }
+  if(stored!==null){try{const parsed=JSON.parse(stored);preference=validTheme(parsed);if(!parsed||!THEMES.has(parsed.mode))storageMessage='Saved appearance is invalid. System appearance is active; choose a theme to replace it.';}catch{storageMessage='Saved appearance could not be read. System appearance is active; choose a theme to replace it.';}}
   const mode = document.getElementById('theme-mode'); const accent = document.getElementById('theme-accent'); const background = document.getElementById('theme-background');
+  function persistence(message){const status=document.getElementById('theme-storage-status');status.textContent=message;status.hidden=!message;}
   function apply() {
     const dark = preference.mode === 'dark' || (preference.mode === 'system' && media.matches) || (preference.mode === 'custom' && isDark(preference.background));
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
@@ -15,15 +17,16 @@ export function setupThemes() {
     const palette = THEME_PALETTES[dark ? 'dark' : 'light'];
     const page = preference.mode === 'custom' ? preference.background : palette.background;
     const accentColor = preference.mode === 'custom' ? preference.accent : palette.accent;
-    const tokens = {'--green':accentColor,'--accent-ink':readableText(accentColor),'--page-background':page,'--page-ink':safeText(palette.text,page),'--page-muted':safeText(palette.muted,page),'--paper':palette.paper,'--surface':palette.surface,'--ink':palette.text,'--muted':palette.muted,'--border':palette.border,'--link':safeText(accentColor,palette.paper)};
+    const focus=readableText(palette.paper);
+    const tokens = {'--green':accentColor,'--accent-ink':readableText(accentColor),'--page-background':page,'--page-ink':safeText(palette.text,page),'--page-muted':safeText(palette.muted,page),'--paper':palette.paper,'--surface':palette.surface,'--ink':palette.text,'--muted':palette.muted,'--border':palette.border,'--link':safeText(accentColor,palette.paper),'--focus-ring':focus,'--focus-halo':focus==='#000000'?'#ffffff':'#000000'};
     for (const [name,value] of Object.entries(tokens)) document.documentElement.style.setProperty(name,value);
     mode.value = preference.mode; accent.value = preference.accent; background.value = preference.background;
     document.getElementById('custom-theme-controls').hidden = preference.mode !== 'custom';
   }
-  function save() { preference = {mode: mode.value, accent: accent.value, background: background.value}; apply(); try { localStorage.setItem('worldmusichub.theme', JSON.stringify(preference)); } catch { /* Private browsing can disable persistence; theme still works. */ } }
+  function save() { preference = validTheme({mode: mode.value, accent: accent.value, background: background.value}); apply(); try { localStorage.setItem('worldmusichub.theme', JSON.stringify(preference));persistence(''); } catch { persistence('Appearance applies to this tab but could not be saved in browser storage.'); } }
   mode.addEventListener('change', save); accent.addEventListener('input', save); background.addEventListener('input', save);
   media.addEventListener('change', () => { if (preference.mode === 'system') apply(); });
-  apply();
+  apply();persistence(storageMessage);
 }
 
 export const THEME_PALETTES = Object.freeze({

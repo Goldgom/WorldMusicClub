@@ -217,3 +217,5 @@ test('catalog origin labels never call an imported source edition an original ex
 import "./frontend-catalog-loader.test.js";
 
 import "./frontend-source-archive-view.test.js";
+
+import "./frontend-settings.test.js";
