@@ -130,6 +130,14 @@ afterEach(async t => {
     assert.deepEqual(offOrigin, [], 'Engraving must not request any off-origin resource');
     assert.ok(requests.every(url => new URL(url).origin === origin), 'All observed browser requests stay on the local origin');
   } finally {
+    if (page && !page.isClosed()) {
+      const mismatch = await page.evaluate(() => window.__wmhBinding?.tupleMismatch || null).catch(() => null);
+      if (mismatch) {
+        const filename = `worldmusichub-binding-tuple-mismatch-${t.name.replace(/[^a-z0-9-]+/gi, '-').slice(0, 90)}.json`;
+        await writeFile(join(artifacts, filename), JSON.stringify(mismatch, null, 2) + '\n');
+        console.log('Exact written-tuple mismatch evidence', filename, JSON.stringify({expected: mismatch.expected, graphNoteCount: mismatch.graphNoteCount, adapterStatus: mismatch.adapter.status}));
+      }
+    }
     if (t.signal.aborted && page && !page.isClosed()) await page.screenshot({path: join(artifacts, 'worldmusichub-engraving-failure.png'), fullPage: true, timeout: 3000}).catch(() => {});
     await context?.close();
   }
@@ -453,6 +461,11 @@ async function installBindingObservation() {
       alter: source.Pitch.AccidentalHalfTones,
       octave: source.Pitch.Octave + window.opensheetmusicdisplay.Pitch.OctaveXmlDifference,
     };
+    // Rust's serde_json::Value can reorder object keys. Identity depends on the
+    // three exact written values, never JSON object insertion order.
+    watch.samePitch = (actual, expected) => actual === null || expected === null
+      ? actual === expected
+      : actual.step === expected.step && actual.alter === expected.alter && actual.octave === expected.octave;
     watch.assert = (condition, message) => {if (!condition) throw Error(message);};
     watch.reindex = () => {
       const renderer = watch.renderer, host = document.querySelector('#staff');
@@ -472,8 +485,28 @@ async function installBindingObservation() {
             String(n.ParentVoiceEntry.ParentVoice.VoiceId) === segment.xml_voice &&
             watch.sameBeat(n.ParentVoiceEntry.Timestamp, segment.measure_at) &&
             watch.sameBeat(n.getAbsoluteTimestamp(), segment.at) && watch.sameBeat(n.Length, segment.duration) &&
-            JSON.stringify(watch.sourcePitch(n)) === JSON.stringify(segment.pitch);
+            watch.samePitch(watch.sourcePitch(n), segment.pitch);
         });
+        if (candidates.length !== 1) {
+          const fraction = value => value ? {wholeValue: value.WholeValue, numerator: value.Numerator, denominator: value.Denominator} : null;
+          const mapping = window.lastEngraving.mappingStatus();
+          watch.tupleMismatch = {
+            expected: segment, graphNoteCount: graph.length, candidateCount: candidates.length,
+            modelTuplesTruncated: graph.length > 64,
+            modelTuples: graph.slice(0, 64).map(g => {
+              const n = g.sourceNote, staff = n.ParentStaff;
+              return {xmlPartId: staff.ParentInstrument.IdString,
+                staff: staff.ParentInstrument.Staves.indexOf(staff) + 1,
+                sourceMeasureIndex: sourceMeasures.indexOf(n.SourceMeasure),
+                xmlVoice: String(n.ParentVoiceEntry.ParentVoice.VoiceId),
+                measureAtWholeNotes: fraction(n.ParentVoiceEntry.Timestamp),
+                atWholeNotes: fraction(n.getAbsoluteTimestamp()), durationWholeNotes: fraction(n.Length),
+                pitch: watch.sourcePitch(n)};
+            }),
+            adapter: {status: mapping.status, verifiedGlyphCount: mapping.verifiedGlyphCount,
+              bindings: mapping.bindings.slice(0, 64), diagnostics: mapping.diagnostics.slice(0, 16)},
+          };
+        }
         watch.assert(candidates.length === 1, `Independent exact source tuple must be unique: ${segment.source_note_id}/${segment.source_measure_index}; got ${candidates.length}`);
         const g = candidates[0], vf = g.vfnote?.[0], index = g.vfnote?.[1];
         const heads = g.getNoteheadSVGs();
