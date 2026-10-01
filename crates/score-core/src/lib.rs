@@ -4,6 +4,7 @@ pub mod adaptation;
 mod jianpu;
 mod matching;
 mod midi;
+mod ties;
 pub use jianpu::{export_jianpu, import_jianpu, ExportedJianpu};
 mod musicxml;
 mod musicxml_export;
@@ -426,7 +427,7 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
     for part in &score.parts {
         let mut sorted: Vec<&Note> = part.notes.iter().collect();
         sorted.sort_by(|a, b| a.at.compare(b.at).then(a.id.cmp(&b.id)));
-        let mut ties: HashMap<(String, u8, u8), (usize, Beat)> = HashMap::new();
+        let mut ties = ties::TieTracker::default();
         for note in sorted {
             let end = note.at.checked_add(note.duration).expect("validated");
             let start_ms = tempo_index.at(note.at.value());
@@ -435,19 +436,22 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
             let Some(midi) = note.pitch.as_ref().and_then(Pitch::midi) else {
                 continue;
             };
-            let tie_key = (note.voice.clone(), note.staff, midi);
             let prior = if note.tie_stop {
-                ties.remove(&tie_key)
+                ties.take(note, midi)?
             } else {
                 None
             };
             let mut merged = false;
-            if let Some((index, prior_end)) = prior {
-                if prior_end.equivalent(note.at) {
+            if let Some(prior) = prior {
+                let index = prior.index;
+                if prior.end.equivalent(note.at) {
+                    if prior.cross_lane {
+                        diagnostics.push(Diagnostic::warning("cross_lane_tie", "Linked a unique explicit adjacent tie across written voices/staves. Original note IDs and written lanes are preserved.", Some(note.id.clone())));
+                    }
                     notes[index].duration_ms = end_ms - notes[index].start_ms;
                     notes[index].source_note_ids.push(note.id.clone());
                     if note.tie_start {
-                        ties.insert(tie_key.clone(), (index, end));
+                        ties.start(note, midi, index, end)?;
                     }
                     merged = true;
                 } else {
@@ -478,12 +482,12 @@ pub fn compile(score: Score) -> Result<Compilation, String> {
                     voice: note.voice.clone(),
                     staff: note.staff,
                 });
-                if note.tie_start && ties.insert(tie_key, (index, end)).is_some() {
-                    return Err(format!("Ambiguous overlapping tie starts for note {}; use distinct voices or correct the ties", note.id));
+                if note.tie_start {
+                    ties.start(note, midi, index, end)?;
                 }
             }
         }
-        let mut unresolved: Vec<_> = ties.values().map(|(index, _)| *index).collect();
+        let mut unresolved = ties.unresolved();
         unresolved.sort_unstable();
         for index in unresolved {
             diagnostics.push(Diagnostic::warning(
