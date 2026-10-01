@@ -424,7 +424,7 @@ pub fn import_jianpu(text: &str) -> Result<(Score, Vec<Diagnostic>), String> {
                 let previous = notes.last_mut().ok_or_else(|| {
                     context("A standalone - must follow a note or rest to extend it by one quarter-note beat".into())
                 })?;
-                previous.duration = add(previous.duration, Beat::new(1, 1)).map_err(&context)?;
+                previous.duration = add(previous.duration, Beat::new(1, 1)).map_err(context)?;
                 cursor = add(cursor, Beat::new(1, 1)).map_err(context)?;
             } else {
                 if notes.len() >= MAX_NOTES {
@@ -432,7 +432,7 @@ pub fn import_jianpu(text: &str) -> Result<(Score, Vec<Diagnostic>), String> {
                         "Score exceeds the 100,000-note/rest import limit".into(),
                     ));
                 }
-                let (pitch, duration) = parse_note(token, &tonality).map_err(&context)?;
+                let (pitch, duration) = parse_note(token, &tonality).map_err(context)?;
                 notes.push(Note {
                     id: format!("jianpu-note-{}", notes.len() + 1),
                     at: cursor,
