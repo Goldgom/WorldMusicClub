@@ -1,0 +1,10 @@
+# Retained source download model
+
+`web/source-archive.js` provides a small, inert view of sources already present in a Rust-validated canonical score. It performs no network request, local filesystem lookup, external-engine execution or source rendering. The canonical score and musical semantics are never modified.
+
+- `retainedSourceArchive(score)` returns file descriptors and cautions. The complete source payload is always preserved as a raw downloadable descriptor. Known CC0 edition envelopes additionally expose original MSCX, exact converter XML, explicitly normalized compatible XML, reference MIDI and license text. Unknown envelope versions keep the whole envelope rather than guessing nested files.
+- `inspectRetainedSourceFile(descriptor)` produces exact UTF-8/base64 bytes, a locally computed SHA-256 when Web Crypto is available, and separate declared-hash/declared-size match flags. A missing checksum is not a pass; mismatches remain visible. Declared metadata does not establish rights or authenticity.
+- Files are inert `application/octet-stream` downloads with portable sanitized names. The view preserves BOM/line endings, rejects invalid Unicode or noncanonical base64 instead of silently replacing bytes, caps source size at 8 MiB and known archive entries at 16. Unknown text/binary extensions are labeled `.txt`/`.bin`; no executable is launched.
+- The original converter XML can include a DTD declaration refused by generic import. Its normalized import copy is separately labeled and the conversion record remains in the source envelope. Reference MIDI may still be refused for unsupported controllers; downloading it does not claim playable compatibility.
+
+This is a source-file model for an explicit download UI, not a replacement for saving the complete canonical JSON or a library backup. Original images and OMR/adaptation history can be nested in other source formats; until individually supported, download their full retained envelope. Sharing any archive may disclose private source material and requires the appropriate music/image rights.
