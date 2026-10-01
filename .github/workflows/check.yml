@@ -28,6 +28,9 @@ jobs:
       - run: python -m unittest discover -s tests -p 'test_*.py'
   frontend:
     runs-on: ubuntu-latest
+    # A stalled dependency download must reach a terminal result, not occupy
+    # the runner for GitHub's default six-hour job allowance.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -41,6 +44,7 @@ jobs:
       - run: npm test
       - id: browser_setup
         if: ${{ !cancelled() && steps.npm_dependencies.outcome == 'success' && steps.engraving_assets.outcome == 'success' }}
+        timeout-minutes: 10
         run: npx playwright install --with-deps chromium
       - id: rust_toolchain
         if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' }}
