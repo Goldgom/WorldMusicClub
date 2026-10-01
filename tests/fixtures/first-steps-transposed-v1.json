@@ -1,0 +1,447 @@
+{
+  "format_metadata": {
+    "schema_revision": 2,
+    "producer": "WorldMusicHub",
+    "producer_version": "0.2.0-alpha.1"
+  },
+  "version": 1,
+  "id": "first-steps:semitones:+2",
+  "title": "初见 · First Steps [+2 semitones]",
+  "composer": "WorldMusicHub original exercise",
+  "provenance": {
+    "kind": "original_exercise",
+    "attribution": "Newly authored pedagogical scale exercise for WorldMusicHub; not a transcription of a song",
+    "source_url": null,
+    "license": "CC0-1.0"
+  },
+  "parts": [
+    {
+      "id": "piano",
+      "name": "Piano",
+      "instrument": "piano",
+      "notes": [
+        {
+          "id": "scale-0",
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "D",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "scale-1",
+          "at": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "E",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "scale-2",
+          "at": {
+            "numerator": 2,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "F",
+            "alter": 1,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "scale-3",
+          "at": {
+            "numerator": 3,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "G",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "scale-4",
+          "at": {
+            "numerator": 4,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "A",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "scale-5",
+          "at": {
+            "numerator": 5,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "B",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "scale-6",
+          "at": {
+            "numerator": 6,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "C",
+            "alter": 1,
+            "octave": 5
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "scale-7",
+          "at": {
+            "numerator": 7,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "D",
+            "alter": 0,
+            "octave": 5
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "scale-8",
+          "at": {
+            "numerator": 8,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "C",
+            "alter": 1,
+            "octave": 5
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "scale-9",
+          "at": {
+            "numerator": 9,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "B",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "scale-10",
+          "at": {
+            "numerator": 10,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "A",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "scale-11",
+          "at": {
+            "numerator": 11,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "G",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "scale-12",
+          "at": {
+            "numerator": 12,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "F",
+            "alter": 1,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "scale-13",
+          "at": {
+            "numerator": 13,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "E",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "scale-14",
+          "at": {
+            "numerator": 14,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "D",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "scale-rest",
+          "at": {
+            "numerator": 15,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": null,
+          "voice": "1",
+          "staff": 1,
+          "velocity": 0,
+          "tie_start": false,
+          "tie_stop": false
+        }
+      ]
+    }
+  ],
+  "tempo": [
+    {
+      "at": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "bpm": 90.0
+    }
+  ],
+  "meters": [
+    {
+      "at": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "numerator": 4,
+      "denominator": 4
+    }
+  ],
+  "keys": [
+    {
+      "at": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "fifths": 2,
+      "mode": "major"
+    }
+  ],
+  "measures": [
+    {
+      "number": 1,
+      "at": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "length": {
+        "numerator": 4,
+        "denominator": 1
+      }
+    },
+    {
+      "number": 2,
+      "at": {
+        "numerator": 4,
+        "denominator": 1
+      },
+      "length": {
+        "numerator": 4,
+        "denominator": 1
+      }
+    },
+    {
+      "number": 3,
+      "at": {
+        "numerator": 8,
+        "denominator": 1
+      },
+      "length": {
+        "numerator": 4,
+        "denominator": 1
+      }
+    },
+    {
+      "number": 4,
+      "at": {
+        "numerator": 12,
+        "denominator": 1
+      },
+      "length": {
+        "numerator": 4,
+        "denominator": 1
+      }
+    }
+  ],
+  "repeats": [],
+  "source": {
+    "import_diagnostics": [
+      {
+        "severity": "warning",
+        "code": "explicit_semitone_transposition",
+        "message": "Whole-score copy shifted +2 semitones with one consistent written interval. Original notes and source remain in the reversible record. Display and playback use the shifted pitches; no MIDI hardware transpose command is sent. Range checks do not certify fingering or permission to adapt.",
+        "note_id": null
+      }
+    ],
+    "format": "semitone-transposition",
+    "filename": null,
+    "content": "{\"version\":1,\"operation\":{\"semitones\":2},\"original\":{\"format_metadata\":{\"schema_revision\":2,\"producer\":\"WorldMusicHub\",\"producer_version\":\"0.2.0-alpha.1\"},\"version\":1,\"id\":\"first-steps\",\"title\":\"初见 · First Steps\",\"composer\":\"WorldMusicHub original exercise\",\"provenance\":{\"kind\":\"original_exercise\",\"attribution\":\"Newly authored pedagogical scale exercise for WorldMusicHub; not a transcription of a song\",\"source_url\":null,\"license\":\"CC0-1.0\"},\"parts\":[{\"id\":\"piano\",\"name\":\"Piano\",\"instrument\":\"piano\",\"notes\":[{\"id\":\"scale-0\",\"at\":{\"numerator\":0,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"C\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"scale-1\",\"at\":{\"numerator\":1,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"D\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"scale-2\",\"at\":{\"numerator\":2,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"E\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"scale-3\",\"at\":{\"numerator\":3,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"F\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"scale-4\",\"at\":{\"numerator\":4,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"G\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"scale-5\",\"at\":{\"numerator\":5,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"A\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"scale-6\",\"at\":{\"numerator\":6,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"B\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"scale-7\",\"at\":{\"numerator\":7,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"C\",\"alter\":0,\"octave\":5},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"scale-8\",\"at\":{\"numerator\":8,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"B\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"scale-9\",\"at\":{\"numerator\":9,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"A\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"scale-10\",\"at\":{\"numerator\":10,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"G\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"scale-11\",\"at\":{\"numerator\":11,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"F\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"scale-12\",\"at\":{\"numerator\":12,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"E\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"scale-13\",\"at\":{\"numerator\":13,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"D\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"scale-14\",\"at\":{\"numerator\":14,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"C\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"scale-rest\",\"at\":{\"numerator\":15,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":null,\"voice\":\"1\",\"staff\":1,\"velocity\":0,\"tie_start\":false,\"tie_stop\":false}]}],\"tempo\":[{\"at\":{\"numerator\":0,\"denominator\":1},\"bpm\":90.0}],\"meters\":[{\"at\":{\"numerator\":0,\"denominator\":1},\"numerator\":4,\"denominator\":4}],\"keys\":[{\"at\":{\"numerator\":0,\"denominator\":1},\"fifths\":0,\"mode\":\"major\"}],\"measures\":[{\"number\":1,\"at\":{\"numerator\":0,\"denominator\":1},\"length\":{\"numerator\":4,\"denominator\":1}},{\"number\":2,\"at\":{\"numerator\":4,\"denominator\":1},\"length\":{\"numerator\":4,\"denominator\":1}},{\"number\":3,\"at\":{\"numerator\":8,\"denominator\":1},\"length\":{\"numerator\":4,\"denominator\":1}},{\"number\":4,\"at\":{\"numerator\":12,\"denominator\":1},\"length\":{\"numerator\":4,\"denominator\":1}}],\"repeats\":[],\"source\":{\"format\":\"musicxml\",\"filename\":\"first-steps-generated.musicxml\",\"content\":\"﻿<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\r\\n<score-partwise version=\\\"4.0\\\">\\r\\n<work><work-title>初见 · First Steps</work-title></work>\\r\\n<identification><creator type=\\\"composer\\\">WorldMusicHub original exercise</creator><rights type=\\\"attribution\\\">Newly authored pedagogical scale exercise for WorldMusicHub; not a transcription of a song</rights><rights type=\\\"license\\\">CC0-1.0</rights><encoding><software>WorldMusicHub 0.2.0-alpha.1</software></encoding></identification>\\r\\n<part-list>\\r\\n<score-part id=\\\"P1\\\"><part-name>Piano</part-name><score-instrument id=\\\"I1\\\"><instrument-name>piano</instrument-name></score-instrument></score-part>\\r\\n</part-list>\\r\\n<part id=\\\"P1\\\">\\r\\n<measure number=\\\"1\\\">\\r\\n<attributes><divisions>1</divisions><key><fifths>0</fifths><mode>major</mode></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>1</staves><clef number=\\\"1\\\"><sign>G</sign><line>2</line></clef></attributes>\\r\\n<direction placement=\\\"above\\\"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>90</per-minute></metronome></direction-type><offset sound=\\\"yes\\\">0</offset><sound tempo=\\\"90\\\"/></direction>\\r\\n<note id=\\\"N1_1_1\\\" dynamics=\\\"100.000000\\\"><pitch><step>C</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n<note id=\\\"N1_2_1\\\" dynamics=\\\"100.000000\\\"><pitch><step>D</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n<note id=\\\"N1_3_1\\\" dynamics=\\\"100.000000\\\"><pitch><step>E</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n<note id=\\\"N1_4_1\\\" dynamics=\\\"100.000000\\\"><pitch><step>F</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n</measure>\\r\\n<measure number=\\\"2\\\">\\r\\n<note id=\\\"N1_5_2\\\" dynamics=\\\"100.000000\\\"><pitch><step>G</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n<note id=\\\"N1_6_2\\\" dynamics=\\\"100.000000\\\"><pitch><step>A</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n<note id=\\\"N1_7_2\\\" dynamics=\\\"100.000000\\\"><pitch><step>B</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n<note id=\\\"N1_8_2\\\" dynamics=\\\"100.000000\\\"><pitch><step>C</step><alter>0</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n</measure>\\r\\n<measure number=\\\"3\\\">\\r\\n<note id=\\\"N1_9_3\\\" dynamics=\\\"100.000000\\\"><pitch><step>B</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n<note id=\\\"N1_10_3\\\" dynamics=\\\"100.000000\\\"><pitch><step>A</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n<note id=\\\"N1_11_3\\\" dynamics=\\\"100.000000\\\"><pitch><step>G</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n<note id=\\\"N1_12_3\\\" dynamics=\\\"100.000000\\\"><pitch><step>F</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n</measure>\\r\\n<measure number=\\\"4\\\">\\r\\n<note id=\\\"N1_13_4\\\" dynamics=\\\"100.000000\\\"><pitch><step>E</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n<note id=\\\"N1_14_4\\\" dynamics=\\\"100.000000\\\"><pitch><step>D</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n<note id=\\\"N1_15_4\\\" dynamics=\\\"100.000000\\\"><pitch><step>C</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n<note id=\\\"N1_16_4\\\"><rest/><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>\\r\\n</measure>\\r\\n</part>\\r\\n</score-partwise>\\r\\n\"}}}"
+  }
+}

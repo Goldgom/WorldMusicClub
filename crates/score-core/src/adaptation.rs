@@ -45,7 +45,11 @@ fn shifted_copy(original: &Score, operation: &OctaveOperation) -> Result<(Score,
     {
         return Err("Review external OMR output before making an octave adaptation".into());
     }
-    if original.source.as_ref().is_some_and(|s| s.format == FORMAT) {
+    if original
+        .source
+        .as_ref()
+        .is_some_and(|s| s.format == FORMAT || s.format == crate::transposition::FORMAT)
+    {
         return Err(
             "Restore the preserved original before making another octave adaptation".into(),
         );

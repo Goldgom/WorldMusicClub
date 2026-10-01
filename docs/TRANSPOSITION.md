@@ -1,0 +1,21 @@
+# Reversible semitone transposition
+
+The Rust preview changes the whole score by an explicit nonzero integer from −127 to +127 semitones. Every pitched written event receives the exact same sounding offset. Rests, rational timing, tempo, meter, repeats, voices/staves, velocities, tie flags and source-note IDs remain unchanged. Key-signature positions and modes remain; their fifth counts move by one consistent interval. The preview checks the entire score against the requested instrument, and retains every out-of-range target.
+
+`POST /api/transposition/preview` accepts `{score, operation:{semitones}, profile}`. It returns `compilation`, the operation, `written_interval:{diatonic_steps,fifths_delta}`, changed written-note count, original-retention status, instrument report and scored-mode eligibility. It creates a preview only. It sends no MIDI hardware command and does not apply independent instrument-transpose metadata.
+
+## Written spelling policy, version1
+
+One consistent diatonic displacement applies to all pitches, including tied segments and passages across key changes. Candidate fifth displacements from −42 to +42 cover all seven written degree choices for a fixed chromatic offset. They must produce the requested chromatic offset, keep all signatures within −7…+7 and all note accidentals within double-flat…double-sharp. Rank feasible candidates by total signature accidental count, then total written-note accidental count, then absolute fifth displacement; a remaining signed tie favors the negative displacement. An existing key map further bounds feasible fifth displacement to −14…+14; with no map the wider candidate set can reduce written accidentals without inventing a key. This is a deterministic notation policy, not a harmonic analysis or fingering optimizer. With no key map, no key is invented. Whole-octave multiples retain exact spelling and signatures.
+
+No candidate is accepted if any note falls outside MIDI0…127. When no single representable written interval fits all signatures/notes, the entire operation is refused with an explanation. The app does not individually respell phrases, drop notes, fold octaves or change original sources to force acceptance. A source with extreme mixed signatures can therefore require an explicitly respelled edition before this feature supports the desired shift.
+
+## Preservation and restoration
+
+The derived score uses `source.format="semitone-transposition"`, with a version1 JSON envelope containing the operation and complete original canonical score, including original source content and retained import warnings. A durable warning describes shifted notation/playback and the preservation record. Preserve JSON or a library backup for restoration; MusicXML/jianpu exports alone do not retain the entire envelope. An 8MiB reversible-copy limit rejects oversize copies without omitting the original.
+
+`POST /api/transposition/restore` accepts the complete derived score. Rust regenerates the version1 transformation and compares the whole result before restoring the recorded original. Later edits are refused so restoration cannot discard them silently. This consistency check does not establish third-party provenance authenticity. A newer envelope version requires a compatible newer app.
+
+Unreviewed external OMR drafts cannot be transposed. Existing octave and semitone copies must restore their original before another pitch-copy operation, avoiding hidden cumulative transforms. Existing octave-copy API semantics are unchanged. UI activation, source/archive presentation and actual-browser validation are a separate integration step; this document initially describes the Rust API.
+
+A [frozen version1 fixture](../tests/fixtures/first-steps-transposed-v1.json) records the original CC0 First Steps exercise with generated source XML retaining BOM/CRLF, then its +2-semitone copy. SHA256: `07375bdba3bd5282066b2c573f99bd2d84fff4d45c4c4517ac0847c311b5c7a5`. Tests restore this saved record directly; it is not regenerated during tests. Version1 includes deterministic labeling/warning output as well as spelling policy. Future changes must retain version1 restoration or introduce an explicit migration/version, rather than replace this fixture to hide incompatibility.

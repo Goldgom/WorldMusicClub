@@ -20,6 +20,13 @@ struct AdaptationRequest {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct TranspositionRequest {
+    score: score_core::Score,
+    operation: score_core::transposition::TranspositionOperation,
+    profile: score_core::instruments::InstrumentProfile,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct OmrConfirmationRequest {
     score: score_core::Score,
     confirmation: score_core::external_omr::ReviewConfirmation,
@@ -261,6 +268,16 @@ fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
         "/api/adaptation/restore" => serde_json::from_slice::<score_core::Score>(&bytes)
             .map_err(|e| json_input_error("adapted score", e))
             .and_then(|score| score_core::adaptation::restore_original(&score))
+            .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
+        "/api/transposition/preview" => serde_json::from_slice::<TranspositionRequest>(&bytes)
+            .map_err(|e| json_input_error("transposition request", e))
+            .and_then(|r| {
+                score_core::transposition::preview_transposition(&r.score, r.operation, &r.profile)
+            })
+            .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
+        "/api/transposition/restore" => serde_json::from_slice::<score_core::Score>(&bytes)
+            .map_err(|e| json_input_error("transposed score", e))
+            .and_then(|score| score_core::transposition::restore_original(&score))
             .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
         "/api/compile" => serde_json::from_slice(&bytes)
             .map_err(|e| json_input_error("score JSON", e))

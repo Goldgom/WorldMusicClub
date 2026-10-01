@@ -48,7 +48,7 @@ export function retainedSourceArchive(score){
    }
    if(typeof envelope.license_text==='string')files.push(file('edition-license','LICENSE-CC0.txt',envelope.license_text,'utf-8','Edition license',{sha256:envelope.provenance?.license_text_sha256}));
   }catch(error){files.splice(1);warnings.push(`Individual files are unavailable: ${error.message}. The complete retained envelope is still downloadable unchanged.`)}
- }else if(source.format.includes('omr')||source.format==='octave-adaptation'){
+ }else if(source.format.includes('omr')||['octave-adaptation','semitone-transposition'].includes(source.format)){
   warnings.push('This retained envelope can include images, review history or an original score. Export the complete score JSON as well; this view does not flatten those records.');
  }
  warnings.push('Downloads stay local. Sources may contain private information or separately licensed music. Declared checksums are file claims, not proof of rights or authenticity.');

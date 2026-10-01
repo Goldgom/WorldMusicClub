@@ -79,6 +79,15 @@ try:
     assert [n['midi'] for n in adapted['compilation']['timeline']['notes']]==[n['midi']+12 for n in compilation['timeline']['notes']]
     status,body,_=request('/api/adaptation/restore',json.dumps(adapted['compilation']['score']).encode(),{'Content-Type':'application/json'})
     assert status==200 and json.loads(body)['score']==catalog[0],body
+    transposition={'score':catalog[0],'operation':{'semitones':2},'profile':instrument['profile']}
+    status,body,_=request('/api/transposition/preview',json.dumps(transposition).encode(),{'Content-Type':'application/json'})
+    assert status==200,body
+    transposed=json.loads(body);assert transposed['original_preserved'] and transposed['changed_note_count']==15
+    assert transposed['written_interval']=={'diatonic_steps':1,'fifths_delta':2}
+    assert [n['midi'] for n in transposed['compilation']['timeline']['notes']]==[n['midi']+2 for n in compilation['timeline']['notes']]
+    assert json.loads(transposed['compilation']['score']['source']['content'])['original']==catalog[0]
+    status,body,_=request('/api/transposition/restore',json.dumps(transposed['compilation']['score']).encode(),{'Content-Type':'application/json'})
+    assert status==200 and json.loads(body)['score']==catalog[0],body
     status,body,_=request('/api/export/jianpu',json.dumps(catalog[0]).encode(),{'Content-Type':'application/json'})
     assert status==200,body
     numbered=json.loads(body);assert '; License: CC0-1.0' in numbered['text'] and numbered['note_map']

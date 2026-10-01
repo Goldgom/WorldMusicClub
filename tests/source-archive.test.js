@@ -39,6 +39,13 @@ test('unknown envelope versions keep the entire original and do not invent indiv
  const score=structuredClone(edition),content=JSON.stringify({version:2,files:{}});score.source.content=content;
  const archive=retainedSourceArchive(score);assert.equal(archive.files.length,1);assert.equal(archive.files[0].content,content);assert.match(archive.warnings[0],/Unknown archive version/);
 });
+test('reversible pitch copies expose complete inert records without flattening the original',async()=>{
+ for(const format of ['octave-adaptation','semitone-transposition']){
+  const content=JSON.stringify({version:1,operation:{semitones:2},original:edition}),score={source:{format,filename:null,content}};
+  const archive=retainedSourceArchive(score);assert.equal(archive.files.length,1);assert.equal(archive.files[0].content,content);assert.match(archive.warnings.join(' '),/does not flatten/);
+  const inspected=await inspectRetainedSourceFile(archive.files[0]);assert.equal(new TextDecoder().decode(inspected.bytes),content);
+ }
+});
 test('checksum mismatches stay visible and invalid encoded bytes are not normalized',async()=>{
  const source=retainedSourceArchive(edition).files.find(file=>file.id==='edition:reference.mid');
  const mismatch=await inspectRetainedSourceFile({...source,declaredSha256:'0'.repeat(64),declaredBytes:1});assert.equal(mismatch.checksumMatches,false);assert.equal(mismatch.sizeMatches,false);

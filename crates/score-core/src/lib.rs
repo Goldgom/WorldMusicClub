@@ -26,6 +26,7 @@ pub mod practice;
 mod public_domain;
 pub mod results;
 pub mod targets;
+pub mod transposition;
 pub use musicxml::import_musicxml;
 
 use serde::{Deserialize, Serialize};
