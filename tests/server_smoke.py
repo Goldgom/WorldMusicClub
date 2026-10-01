@@ -91,6 +91,14 @@ try:
     assert status==200 and len(json.loads(body)['target_note_ids'])==3
     performance={'timeline':compilation['timeline'],'inputs':[],'tolerance_ms':150}
     status,body,_=request('/api/assess',json.dumps(performance).encode(),{'Content-Type':'application/json'});assert status==200 and len(json.loads(body)['misses'])==15
+    pitch_rows=json.loads(body)['pitch_breakdown'];assert sum(row['missed'] for row in pitch_rows)==15
+    assert all(row['mean_abs_error_ms'] is None and row['timing_bias_ms'] is None for row in pitch_rows)
+    performance['inputs']=[{'midi':note['midi'],'at_ms':note['start_ms']+10,'velocity':90} for note in compilation['timeline']['notes']]
+    performance['inputs'].append({'midi':0,'at_ms':0,'velocity':90})
+    status,body,_=request('/api/assess',json.dumps(performance).encode(),{'Content-Type':'application/json'});assert status==200,body
+    pitch_rows=json.loads(body)['pitch_breakdown'];assert sum(row['matched'] for row in pitch_rows)==15
+    assert pitch_rows[0]['midi']==0 and pitch_rows[0]['extra']==1 and pitch_rows[0]['expected']==0
+    assert all(abs(row['timing_bias_ms']-10)<1e-6 for row in pitch_rows if row['matched'])
     assert request('/api/compile',b'{',{'Content-Type':'application/json'})[0]==400
     assert request('/api/compile',b'{}',{'Content-Type':'text/plain'})[0]==415
     assert request('/api/catalog',headers={'Host':'attacker.example'})[0]==403

@@ -219,3 +219,5 @@ import "./frontend-catalog-loader.test.js";
 import "./frontend-source-archive-view.test.js";
 
 import "./frontend-settings.test.js";
+
+import "./frontend-pitch-feedback.test.js";

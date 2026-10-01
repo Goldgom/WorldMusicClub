@@ -757,6 +757,9 @@ pub struct Hit {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Assessment {
     pub summary: feedback::PerformanceSummary,
+    /// Sorted by MIDI pitch, counting the submitted physical onset targets.
+    #[serde(default)]
+    pub pitch_breakdown: Vec<feedback::PitchFeedback>,
     pub hits: Vec<Hit>,
     pub misses: Vec<String>,
     pub extras: Vec<InputEvent>,
@@ -861,8 +864,10 @@ pub fn assess(
     let mean_abs_error_ms = (!hits.is_empty())
         .then(|| hits.iter().map(|h| h.delta_ms.abs()).sum::<f64>() / hits.len() as f64);
     let summary = feedback::summarize(&hits, timeline.notes.len(), extras.len(), tolerance_ms);
+    let pitch_breakdown = feedback::pitch_breakdown(timeline, &hits, &extras);
     Ok(Assessment {
         summary,
+        pitch_breakdown,
         hits,
         misses,
         extras,

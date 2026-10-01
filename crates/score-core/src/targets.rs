@@ -219,6 +219,9 @@ mod tests {
         .unwrap();
         assert_eq!(grade.hits.len(), 1);
         assert!(grade.misses.is_empty());
+        assert_eq!(grade.pitch_breakdown.len(), 1);
+        assert_eq!(grade.pitch_breakdown[0].expected, 1);
+        assert_eq!(grade.pitch_breakdown[0].matched, 1);
     }
     #[test]
     fn rapid_rearticulations_are_never_merged_by_tolerance() {
@@ -275,6 +278,21 @@ mod tests {
             repeated.groups[0].source_note_ids,
             repeated.groups[1].source_note_ids
         );
+        let inputs = repeated
+            .timeline
+            .notes
+            .iter()
+            .map(|note| InputEvent {
+                midi: note.midi,
+                at_ms: note.start_ms + 25.,
+                velocity: 90,
+            })
+            .collect::<Vec<_>>();
+        let grade = crate::assess(&repeated.timeline, &inputs, 180.).unwrap();
+        assert_eq!(grade.pitch_breakdown.len(), 1);
+        assert_eq!(grade.pitch_breakdown[0].expected, 2);
+        assert_eq!(grade.pitch_breakdown[0].matched, 2);
+        assert_eq!(grade.pitch_breakdown[0].timing_bias_ms, Some(25.));
     }
     #[test]
     fn out_of_range_stays_visible_and_disables_scored_plan() {
