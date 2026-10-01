@@ -61,6 +61,14 @@ test('published schema is strict Draft 2020-12 and covers a canonical score only
   invalid({...fixture, $schema: schema.$id});
 });
 
+test('bundled complete CC0 edition is strict schema-valid without modifying retained sources', () => {
+  const edition=JSON.parse(read('../catalog/editions/cc0-schubert-wandrers-nachtlied-d768/score.json'));
+  const before=JSON.stringify(edition);valid(edition);
+  assert.equal(JSON.stringify(edition),before);
+  assert.equal(edition.parts.flatMap(part=>part.notes).length,334);
+  assert.equal(edition.provenance.kind,'curated_cc0_edition');
+});
+
 test('the complete original bilingual documentation example remains schema-valid', () => {
   assert.equal(examples.length, 1, 'Keep one executable, complete JSON example in the contract');
   valid(examples[0]);

@@ -27,6 +27,15 @@ def create_manifest(directory,metadata):
     required=['WorldMusicHub.exe','README.md','LICENSE','START-HERE.md','schema/worldmusichub-score-v1.schema.json','licenses/engraving/engraving-manifest.json','licenses/engraving/opensheetmusicdisplay.min.js.LICENSE.txt','licenses/rust/manifest.json','licenses/rust/CARGO-THIRD-PARTY-NOTICES.txt','licenses/rust/RUST-STANDARD-LIBRARY-COPYRIGHT.html']
     for name in required:
         if not (directory/name).is_file(): raise ValueError(f'Package is missing {name}')
+    index_path=directory/'catalog/index.json'
+    if not index_path.is_file(): raise ValueError('Package is missing catalog/index.json')
+    catalog=json.loads(index_path.read_text(encoding='utf-8'))
+    if catalog.get('version')!=1 or not isinstance(catalog.get('editions'),list):raise ValueError('Unknown packaged catalog index')
+    for edition in catalog['editions']:
+        relative=pathlib.PurePosixPath(edition['directory'])
+        if relative.is_absolute() or '..' in relative.parts:raise ValueError('Invalid edition directory')
+        for name in ['score.json','provenance.json','LICENSE-CC0.txt']:
+            if not (directory/'catalog'/relative/name).is_file():raise ValueError(f'Package is missing edition asset {relative}/{name}')
     require_windows_x64((directory/'WorldMusicHub.exe').read_bytes())
     files={}
     for path in sorted(directory.rglob('*')):

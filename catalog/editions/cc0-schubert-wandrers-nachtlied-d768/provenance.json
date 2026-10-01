@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "edition_id": "cc0-schubert-wandrers-nachtlied-d768",
+  "upstream": {
+    "id": "schubert-wandrers-nachtlied-d768",
+    "upstream_score_id": 6486443,
+    "title": "Wandrers Nachtlied, D.768",
+    "composer": "Franz Schubert",
+    "lyricist": "Johann Wolfgang von Goethe",
+    "language": "de",
+    "source_path": "scores/Schubert,_Franz/4_Lieder,_Op.96/3_Wandrers_Nachtlied,_D.768/lc6486443.mscx",
+    "source_sha256": "6620ec03113c62fa77b149dcdad17f3aa49fbba00d2ffc69c3edf360032fe0a3",
+    "source_bytes": 108809,
+    "edition_license": "CC0-1.0",
+    "attribution": "OpenScore Lieder corpus and the original composer/lyricist; transcription credits remain in the exact source",
+    "official_score_url": "https://musescore.com/openscore-lieder-corpus/scores/6486443",
+    "upstream_imslp_reference": "#16364",
+    "status": "conversion_and_review_pending",
+    "commit": "38c5db510224d9facdc4b08d741fc788cfb58ea8"
+  },
+  "converter": {
+    "url": "https://github.com/musescore/MuseScore/releases/download/v3.6.2/MuseScore-3.6.2.548021370-x86_64.AppImage",
+    "zsync_url": "https://github.com/musescore/MuseScore/releases/download/v3.6.2/MuseScore-3.6.2.548021370-x86_64.AppImage.zsync",
+    "bytes": 160305128,
+    "sha1": "1c10cbe33e0cdee1a482ac49b91cd9b1ef8130a3",
+    "sha256": "c59a41ee88bc7c565a939b9c73498ac0451bbd86574e95cb6e359302c1465290"
+  },
+  "edition_license": "CC0-1.0",
+  "license_text_sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+  "admission_scope": "Complete written-note practice with disclosed expressive limitations; not equivalent reference performance",
+  "source_chain": {
+    "original.mscx": {
+      "sha256": "6620ec03113c62fa77b149dcdad17f3aa49fbba00d2ffc69c3edf360032fe0a3",
+      "bytes": 108809,
+      "encoding": "utf-8"
+    },
+    "converter.musicxml": {
+      "sha256": "60e6c94c334114ec71a338fddfc39faf3a8e98f3628f7db4d91128216ffee712",
+      "bytes": 139136,
+      "encoding": "utf-8"
+    },
+    "import.musicxml": {
+      "sha256": "b8557e263f43fb8d03a5b0ed784be71c763a44a8252e36c9a9f16c5f8b6fcf68",
+      "bytes": 139014,
+      "encoding": "utf-8"
+    },
+    "reference.mid": {
+      "sha256": "a821e17dc5f22f48f2ec12a0ba75b8a69e86f660ba74b997bb59e0a0c704bbfd",
+      "bytes": 2401,
+      "encoding": "base64"
+    }
+  },
+  "normalizations": [
+    "Removed only the fixed MuseScore3.6.2 MusicXML3.1 external DOCTYPE for strict application import. Raw converter output is retained separately; no entity/DTD resolution.",
+    "Catalog score ID and attribution were assigned; original imported IDs, musical events, part names, tempo/key/meter/repeats were not altered."
+  ],
+  "evaluation": {
+    "run": 36802163187,
+    "remote_commit": "19b0c576d197ba47285df550917eefb3aabd6237",
+    "artifact_sha256": "863a7a45a736e5a46c65d0966c2298d5ba3710e8c58f47a09ef74a03a2b8cacb",
+    "written_events": 334,
+    "pitched_written_events": 324,
+    "rests": 10,
+    "sounding_events": 321,
+    "measures": 14,
+    "source_to_converter_pitch_inventory_matches": true,
+    "converted_musicxml_to_canonical_written_events_match": true,
+    "expressive_performance_equivalent": false,
+    "details": "docs/evaluations/openscore-d768-reference-77.json"
+  },
+  "practice_limits": [
+    "Complete written-note practice edition: source ornaments, fermatas, slurs, dynamics, lyrics and layout are not all reproduced by canonical engraving/playback.",
+    "Two turn signs realize six extra attacks in the converter MIDI; two fermatas change its tempo. This practice timeline retains explicit written durations and tempo, not equivalent expressive performance.",
+    "Default 61-key range cannot play the unchanged low piano part (MIDI 29–65). Voice (65–77) fits; choose parts/range or an explicit reversible octave copy.",
+    "Composition/text by Franz Schubert/Johann Wolfgang von Goethe are historic; CC0 applies to the OpenScore edition. No modern translation, recording or scanned edition is supplied."
+  ]
+}

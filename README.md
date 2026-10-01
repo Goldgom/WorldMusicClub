@@ -15,13 +15,13 @@ A local-first music practice and rhythm-game project with a Rust score engine.
 
 ## Development
 
-Install a current stable Rust toolchain from https://rust-lang.org/tools/install/. For the complete offline staff renderer, first run `npm ci --ignore-scripts --omit=optional` and `npm run prepare:engraving`, then `cargo run -p practice-server` and open the printed loopback URL. A Rust-only build keeps the basic pitch view, jianpu and practice engine available. Tests: `cargo test --workspace` and `npm test`. See [engraving setup and verification](docs/ENGRAVING.md) and [canonical score v1](docs/SCORE_FORMAT.md).
+Install a current stable Rust toolchain from https://rust-lang.org/tools/install/. For the complete offline staff renderer, first run `npm ci --ignore-scripts --omit=optional` and `npm run prepare:engraving`, then `cargo run -p practice-server` and open the printed loopback URL. A Rust-only build keeps the basic pitch view, jianpu and practice engine available. Tests: `cargo test --workspace --all-targets` and `npm test`. See [engraving setup and verification](docs/ENGRAVING.md) and [canonical score v1](docs/SCORE_FORMAT.md).
 
 The first shell is a portable Rust local server with a browser UI. It binds only to 127.0.0.1 and works without a cloud account. A native Windows wrapper can be added without moving music logic out of Rust.
 
 ## Distribution and rights
 
-WorldMusicHub code is MIT-licensed. Score, audio and other assets retain their individually recorded rights; the code license does not relicense third-party music. Bundled music includes newly authored exercises and two documented public-domain opening excerpts, with provenance recorded in score metadata and [catalog rights](docs/CATALOG_RIGHTS.md). Do not add unlicensed commercial arrangements. A composition, score engraving, arrangement and recording can have different rights.
+WorldMusicHub code is MIT-licensed. Score, audio and other assets retain their individually recorded rights; the code license does not relicense third-party music. Bundled music includes newly authored exercises, two documented public-domain opening excerpts and one complete CC0 Schubert written-note practice edition with explicit expressive limitations, with provenance recorded in score metadata and [catalog rights](docs/CATALOG_RIGHTS.md). Do not add unlicensed commercial arrangements. A composition, score engraving, arrangement and recording can have different rights.
 
 ## Release policy
 

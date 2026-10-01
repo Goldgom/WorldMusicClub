@@ -21,7 +21,7 @@ Every 50 meaningful development-branch commits is a release-build milestone. A m
 
 ## Distribution notices
 
-Keep the `licenses` folder with redistributed ZIP packages. It includes offline engraving notices, the locked Cargo dependency inventory, and the Rust standard-library copyright/license collection from the exact build toolchain. The conservative inventory includes build-time and target-specific packages and does not imply that every listed component is linked into the executable. The code license does not relicense imported songs, score images, or third-party assets.
+Keep the `licenses` and `catalog` folders with redistributed ZIP packages. The catalog contains separately licensed CC0 score sources/provenance and explicit expressive limitations. It includes offline engraving notices, the locked Cargo dependency inventory, and the Rust standard-library copyright/license collection from the exact build toolchain. The conservative inventory includes build-time and target-specific packages and does not imply that every listed component is linked into the executable. The code license does not relicense imported songs, score images, or third-party assets.
 
 Build preparation uses `python scripts/prepare-rust-notices.py` after `cargo fetch --locked`. It reads installed official registry packages, verifies version-pinned upstream fallback notices where crates omit them, and fails on unknown license expressions or missing notices. Zune image components use their Zlib option. Generated notices stay out of Git and are recreated for each release.
 

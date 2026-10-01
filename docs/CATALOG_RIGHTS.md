@@ -30,8 +30,22 @@ The tune's anonymous status and circulation in Paris by 1761 are also described 
 
 ## Reproducibility and guardrails
 
-All shipped note fixtures live in `crates/score-core/src/public_domain.rs`; no external asset is fetched at runtime. Each generated `Score.source` retains the project's fixture JSON, including the exact pitch/duration tuples, the CC0 edition notice, verified reference URL, and editorial changes. It is labeled `worldmusichub-practice-fixture-json`, not a historical-source file or imported scan.
+The two newly encoded excerpt fixtures live in `crates/score-core/src/public_domain.rs`; no external asset is fetched at runtime. Each generated `Score.source` retains the project's fixture JSON, including the exact pitch/duration tuples, the CC0 edition notice, verified reference URL, and editorial changes. It is labeled `worldmusichub-practice-fixture-json`, not a historical-source file or imported scan.
 
 Tests check validation, compilation, exact rational duration totals, expected note counts, playable pitch ranges, stable unique IDs, complete scoped attribution, and source-fixture preservation. New catalog additions require their own composition and edition evidence; a familiar title or search result alone is insufficient. Commercial repertoire should remain metadata-only unless the actual music/arrangement rights have been established.
 
 Reference pages and historical notation checked on 2026-09-30.
+
+## Complete CC0 written-note practice edition: Schubert D.768
+
+`cc0-schubert-wandrers-nachtlied-d768` adds all 14 measures of *Wandrers Nachtlied*, D.768, for voice and piano. Composer Franz Schubert and the original German lyricist Johann Wolfgang von Goethe are identified by the pinned source. The selected [OpenScore Lieder edition lc6486443](https://musescore.com/openscore-lieder-corpus/scores/6486443), credited to pental, carries CC0 in the original source and repository license. Its upstream reference is IMSLP #16364; no scanned page, modern translation, recording or SoundFont is included. This edition's permission is separate from the application's MIT code license and from other editions/countries' rights.
+
+The immutable corpus commit, original MSCX SHA-256, exact converter version/hash, raw MusicXML/hash, import-copy/hash, MIDI/hash and complete license are preserved in `catalog/editions/cc0-schubert-wandrers-nachtlied-d768/provenance.json` and the canonical score's retained source envelope. Only the fixed conventional external DOCTYPE is removed in the import copy; the raw converter XML remains unchanged. Catalog ID/attribution changes are documented. No pitch, rhythm, voice, staff, tie, tempo, key, meter, repeat or original part name is altered to fit an instrument.
+
+**Checked scope:** source-to-converter pitched-note inventory matches (324). Converted MusicXML-to-canonical validation preserves 334 explicit written events, including 10 rests, with exact rational onset/duration, spelling, voice, staff and tie flags. Three tied continuations form 321 playback events. Source-only material remains archived rather than claimed as implemented canonical semantics. The evidence is reproducible, but is not an independent critical-edition review of every MSCX engraving instruction.
+
+**Expressive limits:** the two turn ornaments generate six extra attacks in MuseScore's reference MIDI. Two fermatas generate tempo changes; this app keeps the explicit 38.5 BPM map. Dynamics, slurs, articulation, lyrics, engraving details and MIDI controller/program behavior are not completely reproduced. The raw reference comparison keeps its timing and key-release mismatches visible in `docs/evaluations/openscore-d768-reference-77.json`; it is not an equivalence score. All these warnings survive JSON saving/reopening.
+
+**Instrument limits:** the unchanged piano spans MIDI 29–65 and does not fit the default 61-key C2–C7 range. Voice spans 65–77. Choose a suitable keyboard/part or an explicitly confirmed reversible octave copy. Listen/display/source export remain available; impossible scored targets must not be made playable by silently dropping low notes.
+
+The portable Windows package includes the `catalog` folder and its asset licenses in addition to the embedded offline canonical data. JSON export preserves the retained originals; generated MusicXML/Jianpu alone is not a full source archive.

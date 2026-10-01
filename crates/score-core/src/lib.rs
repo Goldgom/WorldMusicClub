@@ -12,6 +12,7 @@ pub use midi::import_midi;
 pub use musicxml_export::{export_musicxml, ExportedMusicXml, ExportedVoiceId};
 mod mxl;
 pub use mxl::import_mxl;
+mod curated_editions;
 pub mod external_omr;
 pub mod feedback;
 pub mod instruments;
@@ -976,6 +977,7 @@ pub fn catalog() -> Vec<Score> {
     });
     let mut scores = vec![scale, duet, rhythm];
     scores.extend(public_domain::catalog());
+    scores.extend(curated_editions::catalog());
     scores
 }
 
@@ -1107,16 +1109,31 @@ mod tests {
         assert_eq!(beat_to_ms(2., &tempo), 1500.);
     }
     #[test]
-    fn all_original_exercises_compile() {
+    fn all_catalog_scores_compile_without_losing_written_pitch_ids() {
         for s in catalog() {
-            let n = s
+            let ids: HashSet<_> = s
                 .parts
                 .iter()
                 .flat_map(|p| &p.notes)
                 .filter(|n| n.pitch.is_some())
-                .count();
+                .map(|n| n.id.clone())
+                .collect();
+            let untied_unrepeated = s.repeats.is_empty()
+                && s.parts
+                    .iter()
+                    .flat_map(|p| &p.notes)
+                    .all(|n| !n.tie_start && !n.tie_stop);
             let c = compile(s).unwrap();
-            assert_eq!(c.timeline.notes.len(), n);
+            let retained: HashSet<_> = c
+                .timeline
+                .notes
+                .iter()
+                .flat_map(|n| n.source_note_ids.clone())
+                .collect();
+            assert_eq!(retained, ids);
+            if untied_unrepeated {
+                assert_eq!(c.timeline.notes.len(), ids.len());
+            }
         }
     }
     #[test]
