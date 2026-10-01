@@ -218,3 +218,5 @@ test('a later resize failure releases resources and reports an explicit fallback
   assert.equal(env.observers[0].disconnected, true);
   assert.equal(env.container.children.length, 0);
 });
+
+import "./engraving-note-map.test.js";

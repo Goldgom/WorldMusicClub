@@ -39,7 +39,7 @@ Prepare before packaging the web directory or compiling a release that embeds as
 ```js
 import {renderEngravedStaff, disposeEngravedStaff} from './engraving.js';
 
-// exported is Rust /api/export/musicxml's {xml, diagnostics, part_id_map} response.
+// exported is the complete Rust /api/export/musicxml response.
 // A canonical part ID is NOT the same as the generated MusicXML P1/P2 identifier.
 const selectedXmlId = selectedCanonicalPartId
   ? exported.part_id_map[selectedCanonicalPartId] : null;
@@ -50,18 +50,25 @@ const rendered = await renderEngravedStaff(container, exported.xml, {
   partIds: selectedXmlId ? [selectedXmlId] : null,
   zoom: 1,
   responsive: true,
+  identity: {score, noteMap: exported.note_id_map,
+    partIdMap: exported.part_id_map, voiceIdMap: exported.voice_id_map},
+  onMappingChange: mapping => updateNotationNotices(mapping.diagnostics),
   onError: failure => showBasicViewWithReason(failure.message),
 }, abortController.signal);
 if (!rendered.ok && rendered.status !== 'cancelled') {
   showBasicViewWithReason(rendered.message);
 }
+// Membership and source-measure ordinal come from the checked Rust written cursor.
+// This changes verified notehead fills, with no render, playback or scoring call.
+rendered.setExpectedWrittenNotes({sourceNoteIds: ['canonical-note-id'], sourceMeasureIndex: 0});
+rendered.clearExpectedWrittenNotes();
 // Switching notation views, closing the score, replacing the container, or unmounting:
 disposeEngravedStaff(container); // or rendered.dispose(); both are idempotent
 ```
 
 Only an **XML string** is accepted. URL strings, Blobs, MXL archives and arbitrary remote assets are rejected. Internally the validated XML is parsed into a `Document` and passed to `osmd.load(document)`, deliberately bypassing OSMD's automatic URL interpretation of short strings. Imported source is never inserted as HTML.
 
-The promise resolves with `{ok, status, message, metadata, dispose, resize}`:
+The promise resolves with `{ok, status, message, metadata, dispose, resize, setExpectedWrittenNotes, clearExpectedWrittenNotes, mappingStatus}`:
 
 - `ready`: an actual SVG exists in the container
 - `unavailable`: missing/failed vendor asset, wrong runtime version, or no XML parser
@@ -82,7 +89,21 @@ Successful metadata is `{noteCount, measureCount, partIds, fromMeasure, toMeasur
 - `zoom` is 0.5–2. Container width is bounded to 320–4096 px. Optional `width` fixes that width and disables automatic observation. Narrower viewports should permit horizontal scrolling
 - `autoResize` and OSMD cursor/following are disabled. A single adapter-owned `ResizeObserver` coalesces width changes. It and pending animation frames are disconnected on replacement/disposal; no global resize listener is registered
 - Render calls supersede earlier calls for the same container. The adapter checks generation/cancellation after asynchronous work and never lets late loads overwrite a newer view. The caller must also guard its own earlier asynchronous Rust export requests before calling this adapter
-- The adapter renders a static measure window and does not use OSMD playback, cursor synchronization or per-note hit highlighting. The application can explicitly follow Rust source-measure/repeat occurrences by changing that window at page boundaries; manual navigation suspends following. This does not reschedule audio or trigger a full render on each animation frame. Practice timing remains Rust-derived
+- The adapter does not use OSMD playback or cursor timing. It marks only the expected written identities supplied by the checked Rust cursor, separately from pressed keys and assessed hits. The application can explicitly follow Rust source-measure/repeat occurrences by changing the window at page boundaries; manual navigation suspends following. This does not reschedule audio or render on each animation frame. Revealing an offscreen system within the same page is not implemented by the binding adapter
+
+## Exact written-note binding
+
+The optional `identity` object supplies the canonical score and complete version1 Rust note/part/voice maps. The helper verifies every canonical note/rest is fully covered by non-overlapping written segments, then independently walks generated XML divisions, forward/backup cursors, chords and ties. It checks exact note IDs, measure ordinals, staff/voice/lane, written pitch, rational onset/duration and effective ties. Missing, incomplete, oversized or unknown-version identity metadata disables highlighting with an explicit diagnostic while retaining ordinary static engraving.
+
+OSMD does not expose the generated XML note ID on its `Note`. Model matching therefore requires a one-to-one tuple on both sides: generated part, identity index in public `Sheet.SourceMeasures`, staff identity within the instrument, numeric XML voice, measure-relative onset, note length and exact source pitch/rest. WholeValue is included in OSMD fractions and whole-note units are converted to quarter beats exactly. Source pitches use OSMD's XML-octave offset. Floating tolerance, nearest pitch and note/SVG ordering cannot select a source identity. Fraction rounding by OSMD produces an unavailable mapping, never a changed Rust time.
+
+A model match is still not proof of an individual glyph. The pinned renderer's `GNote(note)`, `sourceNote`, `vfnoteIndex`, VexFlow chord key/head counts, stored group ownership and current mounted SVG must agree. `getNoteheadSVGs()` returns the entire chord, and `GraphicalNote.setColor()` colors that whole set; neither is used to guess one head. The guarded indexed-head relationship depends on this pinned bundle and its verified draw loop. Unsupported, hidden or transparent heads remain unchanged. Shared DOM heads and coincident same-staff/onset glyphs are marked unavailable with their complete canonical/XML source sets, including cases with different accidentals.
+
+`setExpectedWrittenNotes({sourceNoteIds, sourceMeasureIndex})` accepts an explicit array of exact unique canonical strings and one zero-based source-measure ordinal. Unknown/duplicate IDs, invalid measures or membership outside that measure are rejected and clear prior highlighting. Empty membership clears the mark. Only verified head-path fill attributes change; stems, beams, ties, accidentals, input state and canonical/OSMD source-note objects remain untouched. Clearing or disposal restores the exact original attribute presence/value. No transitions, scrolling, audio changes or hit judgment are introduced.
+
+`mappingStatus()` and `onMappingChange` expose `ready`, `partial`, `unavailable` or `not-requested`, version1, complete/displayed segment counts, distinct verified glyph count, per-segment binding status and diagnostics. A `not-displayed` segment belongs to another part or source page; it is distinct from a missing/ambiguous glyph. Counts describe the current rendered window, which may extend below the notation scroller. Binding diagnostics share the existing notation notices rather than adding a persistent status row.
+
+Every initial render or resize creates fresh bindings. Accepted expected membership is replayed after resize; the view forwards current membership after theme/part/page rendering. Replacement, cancellation and disposal invalidate old handles and restore their owned paint. Per-note updates diff the verified set and never invoke rendering or search the SVG tree. The adapter does not automatically reveal offscreen systems; manual scrolling remains under the reader's control.
 
 ## Safety and bounded support
 
@@ -98,11 +119,14 @@ The adapter requests only its bundled same-origin JS. It needs no remote `connec
 
 `tests/engraving.test.js` uses small DOM/OSMD doubles to cover preflight caps, malicious resource inputs, part/range options, missing assets, retry/deduplication, cancellation, out-of-order resolution, responsive cleanup and renderer errors. These tests **do not verify actual glyph rendering or browser layout**. `tests/engraving-assets.test.js` verifies the real pinned npm bundle, checksums and generated notices without running it.
 
+`tests/engraving-note-map.test.js` additionally checks exact segment/model cardinality, unequal-duration chord isolation, rests/splits, duplicate labels, Unicode identities, coincident/shared glyph refusal, invalid requests, exact attribute restoration and resize/disposal using explicit non-rendering doubles. Registered real-OSMD cases in `tests/engraving-browser.test.js` verify independent head geometry for displaced seconds and both stem directions, unequal durations, rests, voices/unisons, split/tied notes, exact thirds, page/part changes, light/dark resize, replacement and malformed metadata. They also require no redraw, graph-color call or DOM replacement during expected-note updates. These new binding cases require their exact-source hosted run before glyph/geometry acceptance; local Node and HTTP checks do not establish it.
+
 Real browser CI must prepare the vendor assets, render the Rust-exported original fixtures, assert SVG staff paths/measure content, exercise multi-voice/two-staff/tie/key/time cases, initial pickups and paging, change themes/width, and verify that network requests stay local. Local browser execution was blocked in the implementation environment and was not retried through an alternate route. Hosted real-browser acceptance later passed on the exact [commit91 workflow](https://github.com/Goldgom/WorldMusicHub/actions/runs/36811215258), including complete D768 multi-staff SVG, both pages, light/dark display, range gates and source-aware following. These hosted checks are distinct from local browser execution or physical MIDI/audio acceptance.
 
 Primary sources consulted 2026-09-30:
 
 - [Official npm registry metadata](https://registry.npmjs.org/opensheetmusicdisplay/2.1.3) and the installed 2.1.3 package's declarations/source bundle
+- [GraphicalNote API](https://opensheetmusicdisplay.github.io/classdoc/classes/GraphicalNote.html), [VexFlowGraphicalNote API](https://opensheetmusicdisplay.github.io/classdoc/classes/VexFlowGraphicalNote.html) and the pinned package declarations/draw loop (reviewed 2026-10-01)
 - [OSMD API](https://opensheetmusicdisplay.github.io/classdoc/classes/OpenSheetMusicDisplay.html) and [render options](https://opensheetmusicdisplay.github.io/classdoc/interfaces/IOSMDOptions.html)
 - [Official getting-started guide](https://github.com/opensheetmusicdisplay/opensheetmusicdisplay/wiki/Getting-Started)
 - [OSMD source and license](https://github.com/opensheetmusicdisplay/opensheetmusicdisplay)

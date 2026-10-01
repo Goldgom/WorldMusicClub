@@ -1,4 +1,5 @@
 /** Optional, offline OSMD presentation adapter. Rust remains the score/timing authority. */
+import {validateEngravingNoteMap,createEngravingNoteBindings} from './engraving-note-map.js';
 export const ENGRAVING_VERSION = '2.1.3';
 export const ENGRAVING_BUNDLE_SHA256 = '099b2125aef055ca4faae75957037404973f9451544b52d9b3a0b1f788b33581';
 export const ENGRAVING_LIMITS = Object.freeze({xmlBytes: 8 * 1024 * 1024, notes: 2000, elements: 50000, depth: 32, parts: 16, measures: 512, measuresPerView: 64, textLength: 8192});
@@ -9,7 +10,8 @@ const numericLimits = Object.freeze({staves: [1, 8], staff: [1, 8], voice: [1, 2
 const unsupported = message => ({ok: false, status: 'unsupported', message});
 const invalid = message => ({ok: false, status: 'invalid', message});
 const noop = () => {};
-const result = (status, message, extra = {}) => ({ok: status === 'ready', status, message, dispose: noop, resize: () => false, ...extra});
+const unavailableMapping=()=>({status:'unavailable',version:1,segmentCount:0,displayedSegmentCount:0,verifiedGlyphCount:0,bindings:[],diagnostics:[]});
+const result = (status, message, extra = {}) => ({ok: status === 'ready', status, message, dispose: noop, resize: () => false, setExpectedWrittenNotes:()=>false,clearExpectedWrittenNotes:()=>false,mappingStatus:unavailableMapping, ...extra});
 
 /** Validate the entire input BEFORE loading third-party code; never treat a string as a URL. */
 export function validateEngravingInput(xml, options = {}, Parser = globalThis.DOMParser) {
@@ -111,7 +113,8 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
   if (signal?.aborted) return result('cancelled', 'Engraving cancelled.');
   const checked = validateEngravingInput(xml, options, view.DOMParser ?? globalThis.DOMParser);
   if (!checked.ok) return result(checked.status, checked.message);
-  let renderer, mount, observer, frame, ready = false, cancelled = false, width = 0;
+  const identity=validateEngravingNoteMap(checked.document,options.identity);
+  let renderer, mount, observer, frame, bindings=null, expected=null, ready = false, cancelled = false, width = 0;
   const useAnimationFrame = typeof view.requestAnimationFrame === 'function' && typeof view.cancelAnimationFrame === 'function';
   let cancelWait;
   const cancellation = new Promise(resolve => { cancelWait = () => resolve(null); });
@@ -119,6 +122,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
   const state = {dispose() {
     if (cancelled) return;
     cancelled = true;
+    bindings?.dispose();bindings=null;expected=null;
     cancelWait();
     observer?.disconnect();
     cancelFrame();
@@ -131,6 +135,12 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
   active.set(container, state);
   signal?.addEventListener('abort', state.dispose, {once: true});
   const isCurrent = () => !cancelled && active.get(container) === state;
+  const reportMapping=mapping=>{if(isCurrent()&&typeof options.onMappingChange==='function'){try{options.onMappingChange(mapping)}catch{/* A presentation callback does not own this renderer. */}}};
+  const rebind=()=>{
+    bindings=createEngravingNoteBindings(renderer,mount,identity,{...checked.options,color:checked.options.dark?'#f7cf68':'#925b12',onChange:reportMapping});
+    if(expected)bindings.setExpectedWrittenNotes(expected);
+    reportMapping(bindings.mappingStatus());
+  };
   const getWidth = () => Math.max(320, Math.min(4096, Math.round(checked.options.width ?? container.clientWidth ?? 800) || 800));
   const resize = () => {
     if (!isCurrent() || !ready) return false;
@@ -138,7 +148,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     if (nextWidth === width) return true;
     width = nextWidth;
     mount.style.width = `${width}px`;
-    try { renderer.render(); return true; } catch {
+    try { bindings?.dispose();bindings=null;renderer.render();rebind();return true; } catch {
       state.dispose();
       if (typeof options.onError === 'function') { try { options.onError(result('error', 'The staff could not be resized. Use the basic view.')); } catch { /* Consumer callbacks do not own cleanup. */ } }
       return false;
@@ -188,6 +198,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     mount.style.position = '';
     mount.style.visibility = '';
     ready = true;
+    rebind();
     if (checked.options.responsive && checked.options.width === undefined && typeof view.ResizeObserver === 'function') {
       observer = new view.ResizeObserver(() => {
         if (!isCurrent() || frame !== undefined || getWidth() === width) return;
@@ -196,7 +207,11 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
       });
       observer.observe(container);
     }
-    return result('ready', 'Staff engraved with OpenSheetMusicDisplay.', {metadata: checked.metadata, dispose: state.dispose, resize});
+    return result('ready', 'Staff engraved with OpenSheetMusicDisplay.', {metadata: checked.metadata, dispose: state.dispose, resize,
+      mappingStatus:()=>bindings?.mappingStatus()||unavailableMapping(),
+      setExpectedWrittenNotes(value){if(!isCurrent()||!bindings)return false;const accepted=bindings.setExpectedWrittenNotes(value);expected=accepted?{sourceNoteIds:[...value.sourceNoteIds],sourceMeasureIndex:value.sourceMeasureIndex}:null;return accepted},
+      clearExpectedWrittenNotes(){expected=null;return bindings?.clearExpectedWrittenNotes()||false},
+    });
   } catch {
     const wasCancelled = !isCurrent();
     const hadRenderer = Boolean(renderer);

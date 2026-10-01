@@ -346,3 +346,473 @@ test('fresh high-DPI original staff fixtures are suitable inputs for separate lo
     await writeFile(join(artifacts,`worldmusichub-omr-original-${name}-groundtruth.json`),JSON.stringify({fixture_version:1,kind:'original-generated-engraving',renderer:'OpenSheetMusicDisplay 2.1.3',device_scale_factor:3,zoom:1.2,width,height,image_sha256:createHash('sha256').update(png).digest('hex'),score,musicxml:exported.xml,note:'Generated test input, not an OMR success claim. Compare separately recognized output against this canonical score.'},null,2)+'\n');
   }
 });
+
+// Real renderer identity and isolated notehead-paint acceptance.
+const bindingBeat = (numerator, denominator = 1) => ({numerator, denominator});
+const bindingPitch = (step, octave, alter = 0) => ({step, alter, octave});
+function bindingNote(id, at, duration, pitch, voice = 'melody', extra = {}) {
+  return {id, at: bindingBeat(at), duration: bindingBeat(duration), pitch,
+    voice, staff: 1, velocity: 80, tie_start: false, tie_stop: false, ...extra};
+}
+function bindingScore({includeUnisons = false} = {}) {
+  return {
+    version: 1, id: 'original-written-binding-acceptance',
+    title: 'Original written-note binding exercise', composer: 'WorldMusicHub test authors',
+    provenance: {kind: 'original_exercise', attribution: 'Original synthetic acceptance fixture by WorldMusicHub test authors', source_url: null, license: 'MIT'},
+    source: null,
+    parts: [{id: 'canonical/piano part', name: 'Binding piano', instrument: 'piano', notes: [
+      // Deliberately reverse canonical pitch order. Export must put the longer
+      // low head first; the short neighbouring head must still clear by itself.
+      bindingNote('up-short-D4', 0, 1, bindingPitch('D', 4)),
+      bindingNote('up-long-C4', 0, 2, bindingPitch('C', 4)),
+      // Above the treble middle line, so the second chord must be down-stem.
+      bindingNote('down-long-F5', 2, 2, bindingPitch('F', 5)),
+      bindingNote('down-short-E5', 2, 1, bindingPitch('E', 5)),
+      bindingNote('written-rest', 4, 1, null),
+      bindingNote('after-rest-B4', 5, 1, bindingPitch('B', 4)),
+      // Exactly equal pitch/onset/duration on one staff, but distinct XML voices.
+      // Labels are selected to catch parseInt-based canonical-voice collisions.
+      ...(includeUnisons ? [
+        bindingNote('unison-01', 6, 1, bindingPitch('G', 4), '01'),
+        bindingNote('unison-1abc', 6, 1, bindingPitch('G', 4), '1abc'),
+      ] : []),
+      bindingNote('cross-bar-A4', 7, 2, bindingPitch('A', 4)),
+      bindingNote('tie-start-D5', 9, 1, bindingPitch('D', 5), 'melody', {tie_start: true}),
+      bindingNote('tie-stop-D5', 10, 1, bindingPitch('D', 5), 'melody', {tie_stop: true}),
+      bindingNote('exact-third-F4', 11, 1, bindingPitch('F', 4), 'melody', {
+        at: bindingBeat(34, 3), duration: bindingBeat(2, 3),
+      }),
+    ]}],
+    tempo: [{at: bindingBeat(0), bpm: 90}],
+    meters: [{at: bindingBeat(0), numerator: 4, denominator: 4}],
+    keys: [{at: bindingBeat(0), fifths: 0, mode: 'major'}],
+    // All three printed labels deliberately match; only SourceMeasures object
+    // identity/index may distinguish them, including the cross-bar continuation.
+    measures: [0, 4, 8].map(at => ({number: 7, at: bindingBeat(at), length: bindingBeat(4)})),
+    repeats: [],
+  };
+}
+const bindingStatusIsUsable = status => status?.status === 'ready' || status?.status === 'partial';
+
+async function installBindingObservation() {
+  await page.evaluate(() => {
+    if (window.__wmhBinding) return;
+    const watch = window.__wmhBinding = {
+      renderer: null, renderCalls: 0, graphicColorCalls: 0, events: [],
+      serial: 0, nodeIds: new WeakMap(), patched: new WeakSet(), baseline: new Map(),
+      groups: new Map(), rows: [],
+    };
+    const proto = window.opensheetmusicdisplay.OpenSheetMusicDisplay.prototype;
+    const original = proto.render;
+    proto.render = function (...args) {
+      watch.renderer = this; watch.renderCalls++;
+      return Reflect.apply(original, this, args);
+    };
+    watch.nodeId = node => {
+      if (!watch.nodeIds.has(node)) watch.nodeIds.set(node, ++watch.serial);
+      return watch.nodeIds.get(node);
+    };
+    watch.paint = node => {
+      const css = getComputedStyle(node);
+      return JSON.stringify({fill: node.getAttribute('fill'), stroke: node.getAttribute('stroke'),
+        style: node.getAttribute('style'), computedFill: css.fill,
+        computedStroke: css.stroke, opacity: css.opacity, strokeWidth: css.strokeWidth});
+    };
+    watch.snapshot = () => {
+      watch.baseline = new Map([...document.querySelectorAll('#staff svg, #staff svg *')]
+        .map(node => [node, watch.paint(node)]));
+    };
+    watch.changed = () => [...watch.baseline]
+      .filter(([node, before]) => watch.paint(node) !== before).map(([node]) => node);
+    watch.patchColorObserver = object => {
+      for (let p = Object.getPrototypeOf(object); p; p = Object.getPrototypeOf(p)) {
+        if (watch.patched.has(p)) continue;
+        watch.patched.add(p);
+        for (const name of ['setColor', 'color']) {
+          const descriptor = Object.getOwnPropertyDescriptor(p, name);
+          if (typeof descriptor?.value !== 'function') continue;
+          const original = descriptor.value;
+          Object.defineProperty(p, name, {...descriptor, value: function (...args) {
+            watch.graphicColorCalls++;
+            return Reflect.apply(original, this, args);
+          }});
+        }
+      }
+    };
+    // Quarter-beat comparison stays exact; OSMD stores whole-note fractions and
+    // may put the integer part in WholeValue. Never use RealValue/float tolerance.
+    watch.sameBeat = (fraction, beat) => {
+      if (!fraction || !Number.isSafeInteger(fraction.Numerator) ||
+          !Number.isSafeInteger(fraction.Denominator) || fraction.Denominator <= 0 ||
+          !Number.isSafeInteger(fraction.WholeValue ?? 0)) return false;
+      const n = BigInt(fraction.Numerator) + BigInt(fraction.WholeValue ?? 0) * BigInt(fraction.Denominator);
+      return n * 4n * BigInt(beat.denominator) === BigInt(beat.numerator) * BigInt(fraction.Denominator);
+    };
+    watch.sourcePitch = source => source.isRest() ? null : {
+      step: {0:'C', 2:'D', 4:'E', 5:'F', 7:'G', 9:'A', 11:'B'}[source.Pitch.FundamentalNote],
+      alter: source.Pitch.AccidentalHalfTones,
+      octave: source.Pitch.Octave + window.opensheetmusicdisplay.Pitch.OctaveXmlDifference,
+    };
+    watch.assert = (condition, message) => {if (!condition) throw Error(message);};
+    watch.reindex = () => {
+      const renderer = watch.renderer, host = document.querySelector('#staff');
+      const graph = [];
+      for (const row of renderer.GraphicSheet.MeasureList) for (const measure of row || [])
+        for (const staff of measure?.staffEntries || []) for (const voice of staff.graphicalVoiceEntries || [])
+          for (const note of voice.notes || []) if (!graph.includes(note)) graph.push(note);
+      watch.groups = new Map(); watch.rows = [];
+      const sourceMeasures = renderer.Sheet.SourceMeasures;
+      for (const segment of watch.exported.note_id_map.segments) {
+        if (segment.source_measure_index < watch.from - 1 || segment.source_measure_index > watch.to - 1 ||
+            !watch.partIds.includes(segment.xml_part_id)) continue;
+        const candidates = graph.filter(g => {
+          const n = g.sourceNote, staff = n.ParentStaff;
+          return staff.ParentInstrument.IdString === segment.xml_part_id && staff.ParentInstrument.Staves.indexOf(staff) + 1 === segment.staff &&
+            sourceMeasures.indexOf(n.SourceMeasure) === segment.source_measure_index &&
+            String(n.ParentVoiceEntry.ParentVoice.VoiceId) === segment.xml_voice &&
+            watch.sameBeat(n.ParentVoiceEntry.Timestamp, segment.measure_at) &&
+            watch.sameBeat(n.getAbsoluteTimestamp(), segment.at) && watch.sameBeat(n.Length, segment.duration) &&
+            JSON.stringify(watch.sourcePitch(n)) === JSON.stringify(segment.pitch);
+        });
+        watch.assert(candidates.length === 1, `Independent exact source tuple must be unique: ${segment.source_note_id}/${segment.source_measure_index}; got ${candidates.length}`);
+        const g = candidates[0], vf = g.vfnote?.[0], index = g.vfnote?.[1];
+        const heads = g.getNoteheadSVGs();
+        watch.assert(Number.isInteger(index) && index >= 0 && g.vfnoteIndex === index, 'Pinned graph/VF index agreement');
+        watch.assert(vf && heads.length === vf.note_heads.length && index < heads.length, 'Pinned whole-chord head count/index bounds');
+        const head = heads[index], vfHead = vf.note_heads[index];
+        watch.assert(head?.isConnected && host.contains(head) && head.closest('svg'), 'Head belongs to current mount');
+        watch.assert(head.classList.contains('vf-notehead') && head.querySelector('path'), 'Actual painted head/rest glyph');
+        const bbox = head.getBBox(), screen = head.getBoundingClientRect();
+        watch.assert(bbox.width > 0 && bbox.height > 0 && screen.width > 0 && screen.height > 0, 'Nonempty visible glyph geometry');
+        if (segment.pitch) {
+          // Independently prove indexed DOM order using actual rendered geometry.
+          // y is the glyph's centre line; the sloped oval can be slightly asymmetric.
+          const cy = bbox.y + bbox.height / 2;
+          watch.assert(Math.abs(cy - vfHead.getY()) < Math.min(2, bbox.height / 3), 'DOM head centre must agree with indexed VexFlow pitch line');
+          watch.assert(Math.abs(bbox.x - vfHead.getAbsoluteX()) < 2, 'DOM head x must agree with indexed displaced/un-displaced VexFlow head');
+          const key = vf.getKeys()[index].toLowerCase();
+          watch.assert(key.startsWith(segment.pitch.step.toLowerCase()) && key.endsWith(`/${segment.pitch.octave}`), 'VexFlow indexed written pitch agrees with canonical pitch');
+        }
+        const key = `${segment.source_note_id}@${segment.source_measure_index}`;
+        const binding = window.lastEngraving.mappingStatus().bindings.find(entry => entry.xmlNoteId === segment.xml_note_id);
+        watch.assert(Boolean(binding), 'Public status accounts for every displayed segment');
+        watch.assert(binding.sourceNoteId === segment.source_note_id && binding.sourceMeasureIndex === segment.source_measure_index, 'Public identity matches exact Rust segment');
+        if (binding.status === 'bound') watch.assert(![...watch.groups.values()].includes(head), 'Verified written segments cannot alias one mutable SVG head');
+        watch.groups.set(key, head);
+        watch.patchColorObserver(g); watch.patchColorObserver(g.parentVoiceEntry);
+        watch.rows.push({key, sourceId: segment.source_note_id, measure: segment.source_measure_index,
+          xmlVoice: segment.xml_voice, xmlNoteId: segment.xml_note_id, bindingStatus: binding.status, node: watch.nodeId(head), chord: segment.chord,
+          stem: vf.getStemDirection?.(), displaced: vfHead.isDisplaced?.(),
+          x: screen.x, y: screen.y, width: screen.width, height: screen.height,
+          cx: screen.x + screen.width / 2, cy: screen.y + screen.height / 2,
+          localX: bbox.x, localY: bbox.y, rest: segment.pitch === null,
+          indexedHead: index, chordHeadCount: heads.length});
+      }
+      watch.snapshot();
+      return watch.rows;
+    };
+    watch.checkExpected = (sourceNoteIds, sourceMeasureIndex) => {
+      const expected = sourceNoteIds.map(id => watch.groups.get(`${id}@${sourceMeasureIndex}`));
+      watch.assert(expected.every(Boolean), 'Every requested fixture note resolves independently');
+      const changed = watch.changed();
+      watch.assert(changed.every(node => expected.some(head => head === node || head.contains(node))),
+        'Only exact expected head/rest subtrees may change; other heads, stems, beams, ties, accidentals and labels keep their original paint');
+      for (const head of expected) {
+        watch.assert([...head.querySelectorAll('path')].some(path => watch.baseline.get(path) !== watch.paint(path)),
+          'Each expected source note must visibly change its own painted glyph');
+      }
+      watch.assert([...watch.baseline.keys()].every(node => node.isConnected), 'Highlighting must keep every mounted SVG element');
+      return {changedElements: changed.length, rows: watch.rows.filter(row => sourceNoteIds.includes(row.sourceId) && row.measure === sourceMeasureIndex)};
+    };
+  });
+}
+
+async function renderBinding(score, exported, renderOptions = {}) {
+  // First load the real shipped bundle through the production adapter. This warm
+  // render is unbound; the observed render below is a fresh real OSMD instance.
+  if (!await page.evaluate(() => Boolean(window.__wmhBinding))) {
+    await render(exported.xml);
+    await installBindingObservation();
+  }
+  const result = await page.evaluate(async ({score, exported, options}) => {
+    const watch = window.__wmhBinding;
+    watch.exported = exported;
+    watch.from = options.fromMeasure ?? 1;
+    watch.to = options.toMeasure ?? score.measures.length;
+    watch.partIds = options.partIds ?? Object.values(exported.part_id_map);
+    watch.events = [];
+    const ready = await window.engraving.renderEngravedStaff(document.querySelector('#staff'), exported.xml, {
+      ...options,
+      identity: {score, noteMap: exported.note_id_map, partIdMap: exported.part_id_map, voiceIdMap: exported.voice_id_map},
+      onMappingChange: status => watch.events.push({status, liveSvg: Boolean(document.querySelector('#staff svg'))}),
+    });
+    window.lastEngraving = ready;
+    watch.assert(typeof ready.mappingStatus === 'function', 'Public mappingStatus API');
+    watch.assert(typeof ready.setExpectedWrittenNotes === 'function', 'Public exact written-note setter');
+    watch.assert(typeof ready.clearExpectedWrittenNotes === 'function', 'Public written-note clearer');
+    return {status: ready.status, message: ready.message, mapping: ready.mappingStatus(), events: watch.events};
+  }, {score, exported, options: renderOptions});
+  assert.equal(result.status, 'ready', result.message);
+  assert.ok(bindingStatusIsUsable(result.mapping), JSON.stringify(result.mapping));
+  assert.equal(result.mapping.version, 1);
+  assert.equal(result.mapping.segmentCount, exported.note_id_map.segments.length);
+  assert.equal(result.mapping.bindings.length, result.mapping.segmentCount);
+  assert.equal(result.mapping.verifiedGlyphCount, result.mapping.bindings.filter(binding => binding.status === 'bound').length);
+  assert.equal(result.mapping.displayedSegmentCount, result.mapping.bindings.filter(binding => binding.status !== 'not-displayed').length);
+  assert.ok(result.events.length >= 1, 'Mapping callback fires after successful initial mapping');
+  assert.ok(result.events.every(event => event.liveSvg), 'Mapping publication follows mounted SVG publication');
+  assert.deepEqual(result.events.at(-1).status, result.mapping, 'Callback publishes the current public status');
+  const rows = await page.evaluate(() => window.__wmhBinding.reindex());
+  return {result, rows};
+}
+async function expectBinding(sourceNoteIds, sourceMeasureIndex) {
+  return page.evaluate(({sourceNoteIds, sourceMeasureIndex}) => {
+    const accepted = window.lastEngraving.setExpectedWrittenNotes({sourceNoteIds, sourceMeasureIndex});
+    window.__wmhBinding.assert(accepted === true, 'Valid exact request must be accepted');
+    return window.__wmhBinding.checkExpected(sourceNoteIds, sourceMeasureIndex);
+  }, {sourceNoteIds, sourceMeasureIndex});
+}
+async function clearBinding() {
+  const outcome = await page.evaluate(() => {
+    window.lastEngraving.clearExpectedWrittenNotes();
+    return {changed: window.__wmhBinding.changed().length, allConnected: [...window.__wmhBinding.baseline.keys()].every(node => node.isConnected)};
+  });
+  assert.equal(outcome.changed, 0, 'Clear restores original fill/stroke/style attributes and computed paint for the whole SVG');
+  assert.equal(outcome.allConnected, true);
+}
+async function bindingEvidence(name, data) {
+  await screenshot(`binding-${name}`);
+  await writeFile(join(artifacts, `worldmusichub-binding-${name}.json`), JSON.stringify(data, null, 2) + '\n');
+}
+
+test('exact unequal-duration chord heads and displaced seconds work for both stem directions without graph coloring or redraw', options, async () => {
+  const score = bindingScore(), before = JSON.stringify(score), exported = await exportScore(score);
+  assert.equal(exported.note_id_map?.version, 1);
+  const {rows} = await renderBinding(score, exported);
+  const cases = [
+    {long: 'up-long-C4', short: 'up-short-D4', direction: 1},
+    {long: 'down-long-F5', short: 'down-short-E5', direction: -1},
+  ];
+  for (const chord of cases) {
+    const members = rows.filter(row => [chord.long, chord.short].includes(row.sourceId));
+    assert.equal(members.length, 2); assert.ok(members.every(row => row.chordHeadCount === 2));
+    assert.ok(members.every(row => row.stem === chord.direction), JSON.stringify(members));
+    assert.ok(members.some(row => row.displaced), 'A neighbouring second must exercise a displaced head');
+    assert.ok(Math.abs(members[0].cx - members[1].cx) > 2, 'Seconds must have distinct horizontal head geometry');
+    assert.ok(Math.abs(members[0].cy - members[1].cy) > 2, 'Pitched geometry must prove which head is which');
+    const long = exported.note_id_map.segments.find(segment => segment.source_note_id === chord.long);
+    const short = exported.note_id_map.segments.find(segment => segment.source_note_id === chord.short);
+    assert.deepEqual(long.duration, bindingBeat(2)); assert.deepEqual(short.duration, bindingBeat(1));
+    await expectBinding([chord.long, chord.short], 0);
+    await expectBinding([chord.long], 0); // Short head must immediately restore while long remains marked.
+    await expectBinding([chord.short], 0); // Reverse membership catches accidental whole-chord coloring.
+    await clearBinding();
+  }
+  const activity = await page.evaluate(async () => {
+    const watch = window.__wmhBinding;
+    const before = {renders: watch.renderCalls, graphColors: watch.graphicColorCalls, nodes: [...watch.baseline.keys()]};
+    let childMutations = 0;
+    const observer = new MutationObserver(records => {childMutations += records.filter(r => r.type === 'childList').length;});
+    observer.observe(document.querySelector('#staff'), {subtree: true, childList: true});
+    // Bounded display loop: changing exact expected membership is the only input.
+    for (let frame = 0; frame < 12; frame++) {
+      const sourceNoteIds = frame % 2 ? ['up-long-C4'] : ['up-long-C4', 'up-short-D4'];
+      window.lastEngraving.setExpectedWrittenNotes({sourceNoteIds, sourceMeasureIndex: 0});
+      watch.checkExpected(sourceNoteIds, 0);
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+    observer.disconnect();
+    return {renders: watch.renderCalls - before.renders, graphColors: watch.graphicColorCalls - before.graphColors,
+      childMutations, sameNodes: before.nodes.every(node => node.isConnected)};
+  });
+  assert.deepEqual(activity, {renders: 0, graphColors: 0, childMutations: 0, sameNodes: true});
+  await clearBinding();
+  assert.equal(JSON.stringify(score), before, 'Canonical source remains unchanged');
+  assert.equal((await exportScore(score)).xml, exported.xml);
+  await bindingEvidence('chord-seconds-both-stems', {activity, rows, note_id_map: exported.note_id_map});
+});
+
+test('rests bind exactly and same-staff identical unisons are individually verified or explicitly unavailable', options, async () => {
+  const score = bindingScore({includeUnisons: true});
+  // The same written pitch/onset also occurs in a different part, and in the
+  // original part's second staff. Neither may be conflated with the first staff.
+  score.parts[0].notes.push(bindingNote('other-staff-G4', 6, 1, bindingPitch('G', 4), '01', {staff: 2}));
+  score.parts.push({id: 'canonical/second part', name: 'Binding second part', instrument: 'piano',
+    notes: [bindingNote('other-part-G4', 6, 1, bindingPitch('G', 4), '01')]});
+  const exported = await exportScore(score);
+  const {rows} = await renderBinding(score, exported);
+  const unisons = rows.filter(row => row.sourceId.startsWith('unison-'));
+  assert.equal(unisons.length, 2);
+  assert.equal(new Set(unisons.map(row => row.xmlVoice)).size, 2);
+  const coincident = unisons[0].node === unisons[1].node ||
+    (Math.abs(unisons[0].cx - unisons[1].cx) < 0.5 && Math.abs(unisons[0].cy - unisons[1].cy) < 0.5);
+  const mapping = await page.evaluate(() => window.lastEngraving.mappingStatus());
+  if (coincident) {
+    assert.ok(unisons.every(row => row.bindingStatus === 'unavailable'), 'Coincident same-staff unisons must not receive individual colors');
+  }
+  for (const row of unisons) {
+    if (row.bindingStatus === 'bound') {
+      assert.equal(coincident, false, 'Individual unison coloring needs distinct visible geometry');
+      await expectBinding([row.sourceId], 1); await clearBinding();
+    } else {
+      assert.equal(row.bindingStatus, 'unavailable');
+      assert.equal(mapping.status, 'partial');
+      assert.ok(mapping.diagnostics.some(diagnostic => diagnostic.sourceNoteIds.includes(row.sourceId) &&
+        diagnostic.xmlNoteIds.includes(row.xmlNoteId) && diagnostic.message), 'Unavailable unison names the exact canonical and XML note');
+      const changed = await page.evaluate(sourceNoteId => {
+        window.lastEngraving.setExpectedWrittenNotes({sourceNoteIds: [sourceNoteId], sourceMeasureIndex: 1});
+        return window.__wmhBinding.changed().length;
+      }, row.sourceId);
+      assert.equal(changed, 0, 'Unverified identical voice glyph stays unchanged');
+      await clearBinding();
+    }
+  }
+  for (const id of ['other-staff-G4', 'other-part-G4']) {await expectBinding([id], 1); await clearBinding();}
+  await expectBinding(['written-rest'], 1);
+  assert.equal(rows.find(row => row.sourceId === 'written-rest').rest, true);
+  await bindingEvidence('rests-identical-unisons', {rows, mapping, coincident});
+  await clearBinding();
+  const selected = await renderBinding(score, exported, {partIds: [exported.part_id_map['canonical/second part']]});
+  assert.ok(selected.result.mapping.bindings.filter(entry => entry.sourceNoteId !== 'other-part-G4')
+    .every(entry => entry.status === 'not-displayed'), 'Hidden part bindings are explicit');
+  await expectBinding(['other-part-G4'], 1); await clearBinding();
+});
+
+test('split source notes and explicit tie endpoints follow source measure ordinals even with duplicate printed labels', options, async () => {
+  const score = bindingScore(), exported = await exportScore(score);
+  const split = exported.note_id_map.segments.filter(segment => segment.source_note_id === 'cross-bar-A4');
+  assert.deepEqual(split.map(segment => segment.source_measure_index), [1, 2]);
+  assert.deepEqual(split.map(segment => [segment.tie_start, segment.tie_stop]), [[true, false], [false, true]]);
+  assert.ok(split.every(segment => segment.measure_number === 7));
+  await renderBinding(score, exported);
+  assert.ok((await geometry()).ties >= 2, 'Both cross-bar split and pre-existing explicit ties are real VexFlow curves');
+  await expectBinding(['cross-bar-A4'], 1);
+  await expectBinding(['cross-bar-A4'], 2); // The prior written segment clears, even though canonical ID stays the same.
+  await expectBinding(['tie-start-D5'], 2);
+  await expectBinding(['tie-stop-D5'], 2); // Never propagate a mark to a sounding/tie-chain peer.
+  await expectBinding(['exact-third-F4'], 2); // WholeValue + exact thirds are exercised in the graph tuple.
+  await clearBinding();
+  await renderBinding(score, exported, {fromMeasure: 3, toMeasure: 3});
+  await expectBinding(['cross-bar-A4'], 2);
+  await bindingEvidence('split-note-source-ordinal', {split, status: await page.evaluate(() => window.lastEngraving.mappingStatus())});
+  await clearBinding();
+});
+
+test('resize publishes fresh bindings and restores the configured light and dark base colors', options, async () => {
+  const score = bindingScore(), exported = await exportScore(score);
+  const evidence = [];
+  for (const dark of [false, true]) {
+    await page.setViewportSize({width: 1440, height: 1100});
+    await renderBinding(score, exported, {dark});
+    await expectBinding(['up-long-C4'], 0);
+    const before = await page.evaluate(() => {
+      const watch = window.__wmhBinding;
+      watch.oldHeads = [...watch.groups.values()];
+      return {events: watch.events.length, renders: watch.renderCalls};
+    });
+    await page.setViewportSize({width: 390, height: 844});
+    await page.waitForFunction(events => window.__wmhBinding.events.length > events, before.events);
+    const rebuilt = await page.evaluate(() => {
+      const watch = window.__wmhBinding;
+      const oldDisconnected = watch.oldHeads.every(node => !node.isConnected);
+      // Clearing before the fresh baseline verifies there is no retained paint on
+      // the replacement DOM, whether the helper replays selection automatically
+      // or the onMappingChange consumer resends its current expected set.
+      window.lastEngraving.clearExpectedWrittenNotes();
+      return {oldDisconnected, rows: watch.reindex(), mapping: window.lastEngraving.mappingStatus(),
+        callback: watch.events.at(-1), renders: watch.renderCalls};
+    });
+    assert.equal(rebuilt.oldDisconnected, true, 'Reflow may not retain detached head handles');
+    assert.ok(bindingStatusIsUsable(rebuilt.mapping));
+    assert.deepEqual(rebuilt.callback.status, rebuilt.mapping);
+    assert.equal(rebuilt.callback.liveSvg, true);
+    assert.ok(rebuilt.renders > before.renders, 'Width change really went through OSMD layout/render');
+    await expectBinding(['up-short-D4'], 0);
+    await clearBinding();
+    const fills = await page.locator('#staff .vf-notehead path').evaluateAll(paths => paths.map(path => getComputedStyle(path).fill));
+    assert.ok(fills.length > 0 && fills.every(fill => fill === (dark ? 'rgb(243, 245, 239)' : 'rgb(23, 37, 29)')), JSON.stringify(fills));
+    evidence.push({dark, rebuilt, fills});
+    await screenshot(`binding-resize-${dark ? 'dark' : 'light'}`);
+  }
+  await writeFile(join(artifacts, 'worldmusichub-binding-resize.json'), JSON.stringify(evidence, null, 2) + '\n');
+});
+
+test('replaced and disposed binding handles cannot recolor or resurrect the newer mount', options, async () => {
+  const score = bindingScore(), exported = await exportScore(score);
+  await renderBinding(score, exported);
+  await expectBinding(['up-long-C4'], 0);
+  await page.evaluate(() => {window.staleBinding = window.lastEngraving; window.staleBindingNodes = [...window.__wmhBinding.groups.values()];});
+  const replacement = structuredClone(score);
+  replacement.id += '-replacement'; replacement.title = 'Replacement binding mount';
+  for (const note of replacement.parts[0].notes) if (note.pitch) note.pitch.octave++;
+  const newExport = await exportScore(replacement);
+  await renderBinding(replacement, newExport);
+  const safe = await page.evaluate(() => {
+    const watch = window.__wmhBinding;
+    const renders = watch.renderCalls, oldDisconnected = window.staleBindingNodes.every(node => !node.isConnected);
+    window.staleBinding.setExpectedWrittenNotes({sourceNoteIds: ['up-short-D4'], sourceMeasureIndex: 0});
+    window.staleBinding.clearExpectedWrittenNotes(); window.staleBinding.dispose();
+    return {oldDisconnected, changed: watch.changed().length, renders: watch.renderCalls - renders,
+      currentMounted: [...watch.groups.values()].every(node => node.isConnected), title: document.querySelector('#staff').textContent};
+  });
+  assert.equal(safe.oldDisconnected, true); assert.equal(safe.changed, 0); assert.equal(safe.renders, 0);
+  assert.equal(safe.currentMounted, true); assert.match(safe.title, /Replacement binding mount/);
+  await expectBinding(['up-long-C4'], 0); await clearBinding();
+  await page.evaluate(() => window.lastEngraving.dispose());
+  await page.setViewportSize({width: 700, height: 900});
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.locator('#staff svg').count(), 0);
+});
+
+test('missing, unknown-version and incomplete identity maps fail closed while the real staff remains usable', options, async () => {
+  const score = bindingScore(), exported = await exportScore(score);
+  await renderBinding(score, exported);
+  const outcomes = await page.evaluate(async ({score, exported}) => {
+    const maps = [undefined, {...exported.note_id_map, version: 987},
+      {...exported.note_id_map, segments: exported.note_id_map.segments.slice(1)}];
+    const outcomes = [];
+    for (const noteMap of maps) {
+      const rendered = await window.engraving.renderEngravedStaff(document.querySelector('#staff'), exported.xml, {
+        identity: {score, noteMap, partIdMap: exported.part_id_map, voiceIdMap: exported.voice_id_map},
+      });
+      window.lastEngraving = rendered;
+      const watch = window.__wmhBinding; watch.snapshot();
+      const accepted = rendered.setExpectedWrittenNotes({sourceNoteIds: ['up-long-C4'], sourceMeasureIndex: 0});
+      outcomes.push({accepted, status: rendered.status, mapping: rendered.mappingStatus(), changed: watch.changed().length,
+        heads: document.querySelectorAll('#staff .vf-notehead').length});
+      rendered.clearExpectedWrittenNotes();
+    }
+    return outcomes;
+  }, {score, exported});
+  for (const outcome of outcomes) {
+    assert.equal(outcome.status, 'ready', 'Mapping metadata problems must not remove an otherwise valid engraving');
+    assert.equal(bindingStatusIsUsable(outcome.mapping), false, JSON.stringify(outcome.mapping));
+    assert.equal(outcome.mapping?.status, 'unavailable');
+    assert.ok(outcome.mapping.diagnostics.some(diagnostic => diagnostic.code && diagnostic.message), 'Fail-closed mapping explains why');
+    assert.equal(outcome.accepted, false); assert.equal(outcome.changed, 0); assert.ok(outcome.heads > 0);
+  }
+  await bindingEvidence('identity-map-fail-closed', outcomes);
+});
+
+
+test('invalid exact expected-note requests are rejected without changing mounted glyphs', options, async () => {
+  const score = bindingScore(), exported = await exportScore(score);
+  await renderBinding(score, exported);
+  const outcomes = await page.evaluate(() => {
+    const requests = [
+      {sourceNoteIds: ['not-in-the-score'], sourceMeasureIndex: 0},
+      {sourceNoteIds: ['up-long-C4', 'up-long-C4'], sourceMeasureIndex: 0},
+      {sourceNoteIds: 'up-long-C4', sourceMeasureIndex: 0},
+      {sourceNoteIds: ['up-long-C4'], sourceMeasureIndex: -1},
+      {sourceNoteIds: ['up-long-C4'], sourceMeasureIndex: 0.5},
+      {sourceNoteIds: ['up-long-C4'], sourceMeasureIndex: 99},
+    ];
+    return requests.map(request => ({accepted: window.lastEngraving.setExpectedWrittenNotes(request),
+      changed: window.__wmhBinding.changed().length}));
+  });
+  assert.ok(outcomes.every(outcome => outcome.accepted === false && outcome.changed === 0), JSON.stringify(outcomes));
+  await expectBinding(['up-long-C4'], 0);
+  const emptied = await page.evaluate(() => ({accepted: window.lastEngraving.setExpectedWrittenNotes({sourceNoteIds: [], sourceMeasureIndex: 0}),
+    changed: window.__wmhBinding.changed().length}));
+  assert.deepEqual(emptied, {accepted: true, changed: 0}, 'An exact empty membership array clears the marker');
+});
