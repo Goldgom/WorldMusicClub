@@ -50,6 +50,19 @@ try:
     import xml.etree.ElementTree as ET
     xml_notes={n.attrib['id'] for n in ET.fromstring(exported['xml']).iter('note')}
     assert {s['xml_note_id'] for s in note_map['segments']}==xml_notes
+    # The authored piano interaction fixture must be valid for both planning and
+    # real engraving; independent overlapping holds need distinct voice lanes.
+    piano_fixture=json.loads(Path('tests/fixtures/original-piano-fingering.json').read_text(encoding='utf-8'))
+    status,piano_xml,_=request('/api/export/musicxml',json.dumps(piano_fixture).encode(),{'Content-Type':'application/json'})
+    assert status==200,piano_xml
+    piano_export=json.loads(piano_xml)
+    assert {segment['source_note_id'] for segment in piano_export['note_id_map']['segments']}=={note['id'] for part in piano_fixture['parts'] for note in part['notes']}
+    piano_request={'score':piano_fixture,'part_id':None,'profile':{'kind':'piano','key_count':61,'lowest_midi':None},'locks':[{'source_note_id':'tie-end','hand':'left','finger':5}]}
+    status,piano_body,_=request('/api/fingering/piano',json.dumps(piano_request).encode(),{'Content-Type':'application/json'})
+    assert status==200,piano_body
+    piano_plan=json.loads(piano_body)
+    assert piano_plan['status']=='ready' and piano_plan['source_occurrence_count']==8 and piano_plan['physical_target_count']==6,piano_plan
+    assert all(choice['hand']=='left' and choice['finger']==5 for choice in piano_plan['assignments'] if 'tie-end' in choice['source_note_ids'])
     status,body,_=request('/api/notation-navigation',json.dumps(catalog[0]).encode(),{'Content-Type':'application/json'})
     assert status==200,body
     navigation=json.loads(body);cursor=navigation['written_cursor'];assert cursor['version']==1

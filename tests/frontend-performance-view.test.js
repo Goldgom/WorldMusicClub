@@ -27,6 +27,22 @@ test('count-in and first-onset pauses use transport start state rather than the 
 });
 test('note names retain AA contrast on every scheduled note color',()=>{for(const key of ['natural','accidental','scheduled'])assert.ok(contrastRatio(FIELD_COLORS.noteText,FIELD_COLORS[key])>=4.5,key)});
 
+test('short landscape gives following status a full non-shrinking row instead of the controls remainder',async()=>{
+ // CSS/DOM contract only: actual notehead visibility still requires real-browser
+ // geometry checks on the exact source, including Windows font metrics.
+ const css=await readFile(new URL('../web/performance-stage.css',import.meta.url),'utf8');
+ const {document}=parseHTML(`<style>${css}</style>`),rules=[...document.querySelector('style').sheet.cssRules];
+ const landscapeRules=rules.filter(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:651px)').flatMap(rule=>[...rule.cssRules]);
+ const statusRule=landscapeRules.findLast(rule=>rule.selectorText==='.performance-layout #workspace.with-notation #notation-dock #engraving-follow-status');
+ assert.ok(statusRule,'Short landscape must explicitly allocate the follow-status row');
+ assert.equal(statusRule.style.flex,'0 0 100%','Status cannot share leftover width with paging and Follow, or shrink into it');
+ assert.equal(statusRule.style.width,'100%');assert.equal(statusRule.style['min-width'],'0');
+ assert.equal(statusRule.style['overflow-wrap'],'anywhere','Long diagnostic tokens must wrap within the full row');
+ for(const property of ['height','max-height','overflow','overflow-y','display','visibility','position','text-overflow','-webkit-line-clamp'])assert.equal(statusRule.style.getPropertyValue(property),'',`Status must remain fully readable in the scrolling pane: ${property}`);
+ const controlsRule=rules.find(rule=>rule.selectorText==='.performance-layout #notation-dock .engraving-follow-controls');
+ assert.equal(controlsRule.style.display,'flex');assert.equal(controlsRule.style['flex-wrap'],'wrap','Paging and Follow must still wrap when their text needs more width');
+});
+
 test('performance presentation moves existing controls once and scopes checked values to the active revision',async()=>{
  const {document,window}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8')),originals=new Map(['document','window'].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
  Object.defineProperty(globalThis,'document',{configurable:true,value:document});Object.defineProperty(globalThis,'window',{configurable:true,value:window});
@@ -49,6 +65,8 @@ test('performance presentation moves existing controls once and scopes checked v
   context.instrument='piano';context.position=0;context.hasStarted=false;context.completed=false;document.getElementById('piano-stage').hidden=false;document.getElementById('guitar-stage').hidden=true;view.update();assert.equal(document.getElementById('stage-cue'),cue);assert.equal(document.getElementById('stage-cue-main').textContent,'READY');
   shell.show('library');assert.equal(document.querySelector('.shell-header').hidden,false);assert.equal(document.querySelectorAll('.shell-header nav').length,1);assert.equal(document.querySelectorAll('.stage-hud nav').length,0);
   const engravedPart=document.getElementById('engraving-part'),pages=document.querySelector('.engraving-pages');compactMedia.matches=true;onViewportChange();assert.ok(engravedPart.closest('.dock-help'),'Short landscape keeps optional display controls available in Help');assert.ok(pages.closest('.engraving-follow-controls'),'Current page controls stay outside collapsed Help');assert.ok(document.querySelector('.notation-panel').classList.contains('short-notation'));assert.equal(document.querySelector('.dock-help').open,false);
+  const followControls=document.querySelector('.engraving-follow-controls'),followLabel=document.getElementById('engraving-follow').closest('label'),followStatus=document.getElementById('engraving-follow-status');
+  assert.deepEqual([...followControls.children],[pages,followLabel,followStatus],'Paging and Follow precede the full-row status, without duplicated or hidden controls');assert.equal(followStatus.hidden,false);assert.equal(followStatus.closest('details'),null);assert.equal(followStatus.getAttribute('role'),'status');assert.equal(document.getElementById('engraving-follow').getAttribute('aria-describedby'),'engraving-follow-help');assert.ok(document.getElementById('engraving-follow-help').closest('.dock-help'));
   compactMedia.matches=false;onViewportChange();assert.ok(engravedPart.closest('.engraving-controls'),'Returning to a tall viewport restores inline display controls');assert.ok(pages.closest('.engraving-controls'));assert.equal(document.getElementById('engraving-part'),engravedPart);for(const id of ids)assert.equal(document.querySelectorAll(`[id="${id}"]`).length,1,id);
   context.mode='practice';context.recorder.active={id:2,label:'Take 2',inputs:[{}],revision:1,assessedRevision:1,closedWall:500,deadline:680,manualDeadline:null,inFlight:false,error:null,boundaryReviews:[],timeline:{notes:[{}]},assessment:{hits:[{grade:'late'}],misses:[],extras:[],accuracy_percent:100,grade_counts:{perfect:0,good:0,early:0,late:1,missed:0,extra:0},onset_completion:{total:1,complete:1,longest_complete_sequence:1}}};view.update();
   assert.equal(document.getElementById('hud-result').hidden,false);assert.equal(document.getElementById('hud-accuracy').textContent,'100%');assert.match(document.getElementById('hud-result').textContent,/Onset match rate/);assert.equal(document.querySelector('.performance-status').dataset.passId,'2');assert.equal(document.querySelector('.performance-status').dataset.revision,'1');

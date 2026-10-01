@@ -139,7 +139,12 @@
   .performance-layout #workspace.with-notation .play-panel[data-instrument=guitar] .performance-hint{display:none}
   .performance-layout #workspace.with-notation #guitar-guidance{max-height:96px;overflow:auto;overscroll-behavior:contain}
   .performance-layout #workspace.with-notation #notation-dock .short-notation{display:block}
-  .performance-layout #workspace.with-notation #notation-dock #engraving-follow-status{min-width:0}
+  /* A zero flex basis left this paragraph in a narrow remainder beside the
+     controls on Windows, making it tall enough to push every notehead below
+     the dock. Give status its own readable row regardless of font metrics;
+     paging and Follow can still wrap normally above it. Keep all text in flow
+     so longer diagnostics remain available through the notation pane scroll. */
+  .performance-layout #workspace.with-notation #notation-dock #engraving-follow-status{flex:0 0 100%;width:100%;min-width:0;overflow-wrap:anywhere}
 }
 @media(max-height:600px) and (min-width:651px) and (max-width:800px){
   .performance-layout #workspace.with-notation .transport{grid-template-columns:auto minmax(0,1fr) auto}

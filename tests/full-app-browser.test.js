@@ -14,7 +14,7 @@ import {createHash} from 'node:crypto';
 import {existsSync} from 'node:fs';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
-import {tmpdir} from 'node:os';
+import {tmpdir,freemem,totalmem} from 'node:os';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -31,6 +31,7 @@ let server, browser, context, page, origin, initialCompilation;
 let serverOutput = '', serverError, pageErrors = [], apiFailures = [], requests = [];
 let browserConsole = [], failedResources = [], resourceFailures = [], currentTestName='bootstrap';
 const bootstrapTimeout = 25_000;
+let attemptedContexts=0;
 
 // Route legacy coverage through the same visible panels that a player uses.
 // Inspection only discovers the owning surface; every state change is a real click.
@@ -364,7 +365,7 @@ after(async () => {
 }, {timeout: 15_000});
 
 beforeEach(async t => {
-  currentTestName=t.name||'unknown-test';
+  currentTestName=t.name||'unknown-test';attemptedContexts++;
   pageErrors = []; apiFailures = []; requests = []; browserConsole = []; failedResources = []; resourceFailures = [];
   context = await browser.newContext({viewport: {width: 1440, height: 1100}, colorScheme: 'light', acceptDownloads: true});
   context.setDefaultTimeout(10_000);
@@ -402,7 +403,7 @@ beforeEach(async t => {
     assert.equal(await ui('#engraved-button').getAttribute('aria-pressed'),'true','Supported original scores use the offline engraved view by default');
   } catch (error) {
     const observed = await page.evaluate(() => ({url:location.href,readyState:document.readyState,title:document.title,notice:document.querySelector('#notice')?.textContent,scoreTitle:document.querySelector('#score-title')?.textContent,playDisabled:document.querySelector('#play-button')?.disabled})).catch(failure=>({observationError:failure.message}));
-    const diagnostics={failure:error.message,observed,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverRunning:serverRunning(),serverOutput:serverOutput.slice(-4000)};
+    const diagnostics={failure:error.message,observed,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,runtime:{platform:process.platform,node:process.version,browser:browser.version(),attemptedContexts,processMemory:process.memoryUsage(),systemFreeBytes:freemem(),systemTotalBytes:totalmem(),activeResources:process.getActiveResourcesInfo()},apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverRunning:serverRunning(),serverOutput:serverOutput.slice(-4000)};
     await writeFile(join(artifactDirectory,'worldmusichub-live-bootstrap-diagnostics.json'),JSON.stringify(diagnostics,null,2));
     await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-bootstrap-failure.png'),fullPage:true,timeout:3000}).catch(()=>{});
     throw new Error(`Live app bootstrap failed without retry. Diagnostics: ${JSON.stringify(diagnostics)}`,{cause:error});
@@ -1250,7 +1251,12 @@ async function engravedNoteheadVisibility() {
       return{index,rect:bounds(rect),visibleRect,visibleFraction,painted,meaningful,clippingAncestorCount:clippingAncestors.length,clippingAncestors:clippingAncestors.slice(0,32)};
     });
     const rect=selector=>{const element=document.querySelector(selector);return element?bounds(element.getBoundingClientRect()):null;};
-    return{viewport:bounds(viewport),criteria,dock:rect('#notation-dock'),scroll:rect('.engraving-scroll'),noteheadCount:samples.length,meaningfullyVisibleCount:samples.filter(sample=>sample.meaningful).length,samples:samples.sort((a,b)=>Number(b.meaningful)-Number(a.meaningful)||b.visibleFraction-a.visibleFraction).slice(0,12)};
+    let followToolbar=null;
+    if(innerHeight<=600&&innerWidth>=651&&document.querySelector('#notation-dock .short-notation')){
+      const controls=document.querySelector('.engraving-follow-controls'),style=getComputedStyle(controls);
+      followToolbar={contentWidth:controls.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight),status:rect('#engraving-follow-status'),pages:rect('.engraving-follow-controls .engraving-pages'),label:bounds(document.querySelector('#engraving-follow').closest('label').getBoundingClientRect())};
+    }
+    return{viewport:bounds(viewport),criteria,followToolbar,dock:rect('#notation-dock'),scroll:rect('.engraving-scroll'),noteheadCount:samples.length,meaningfullyVisibleCount:samples.filter(sample=>sample.meaningful).length,samples:samples.sort((a,b)=>Number(b.meaningful)-Number(a.meaningful)||b.visibleFraction-a.visibleFraction).slice(0,12)};
   });
 }
 
@@ -1261,6 +1267,7 @@ async function viewportSnapshot(name,{requireVisibleNoteheads=false}={}) {
   if(visibility){
     await writeFile(join(artifactDirectory,`worldmusichub-live-${name}-visibility.json`),JSON.stringify(visibility,null,2));
     if(!visibility.meaningfullyVisibleCount)await page.screenshot(screenshotOptions);
+    if(visibility.followToolbar){const bar=visibility.followToolbar;assert.ok(bar.status.width>=bar.contentWidth-1,'Short-landscape follow status must have a readable full-width row under either platform font');assert.ok(bar.status.y>=Math.max(bar.pages.bottom,bar.label.bottom)-1,'Follow status sits below paging and checkbox controls rather than in a narrow leftover column');}
     assert.ok(visibility.meaningfullyVisibleCount>0,`The prepared notation screenshot must show at least 90% of a real notehead (minimum 4×3 px) inside the viewport and every overflow-clipping ancestor: ${JSON.stringify(visibility)}`);
   }
   await page.screenshot(screenshotOptions);
@@ -1856,6 +1863,7 @@ test('real whole-phrase guitar route honors editable locks, exposes conflicts an
 test('real piano hands preserve merged ties and repeat targets through editable locks and conflicting assignments', {timeout:60_000}, async()=>{
   await page.setViewportSize({width:1280,height:720});await hideNotation();
   const score=JSON.parse(await readFile(join(root,'tests/fixtures/original-piano-fingering.json'),'utf8'));
+  const exported=await rustApi('/api/export/musicxml',score);assert.equal(new Set(exported.note_id_map.segments.map(segment=>segment.source_note_id)).size,5,'Every authored source note must have a valid engraving lane before UI acceptance');
   const watchPlan=predicate=>page.waitForResponse(response=>new URL(response.url()).pathname==='/api/fingering/piano'&&response.request().method()==='POST'&&response.request().postDataJSON().score.id===score.id&&predicate(response.request().postDataJSON()),{timeout:15_000});
   const initialResponse=watchPlan(body=>body.locks.length===0);
   await ui('#score-file').setInputFiles({name:'original-piano-fingering.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await hideNotation();await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#play-button:not([disabled])').waitFor();await closeShellPanels();
