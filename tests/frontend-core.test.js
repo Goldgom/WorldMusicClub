@@ -205,3 +205,5 @@ test('octave scope and confirmation comparisons reject missing parts and invalid
 
 // Pure external-review tests also run in the aggregate frontend suite.
 import './frontend-external-omr-model.test.js';
+
+import "./frontend-engraved-view.test.js";

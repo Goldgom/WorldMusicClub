@@ -212,7 +212,7 @@ function renderNotationPage() {
   state.notationPage = Math.max(0, Math.min(count - 1, state.notationPage));
   $('notation').innerHTML = renderNotation(state.score, state.notation, {startBeat: state.notationPage * state.notationSpan, spanBeats: state.notationSpan, width: layout.width, partId: state.notationPart, numberedMode: state.numberedMode});
   const tonic = keyTonic(keyAt(state.score, state.notationPage * state.notationSpan));
-  $('score-key').textContent = state.notation === 'jianpu' && state.numberedMode === 'movable' ? (tonic ? `1 = ${tonic.name}${tonic.octave} · tonic-based numbering (minor too)` : 'Unknown key mode: fixed C display') : `${state.score.meters[0]?.numerator || 4}/${state.score.meters[0]?.denominator || 4} time · 1 = C4 display`;
+  if (!state.engravingActive) $('score-key').textContent = state.notation === 'jianpu' && state.numberedMode === 'movable' ? (tonic ? `1 = ${tonic.name}${tonic.octave} · tonic-based numbering (minor too)` : 'Unknown key mode: fixed C display') : `${state.score.meters[0]?.numerator || 4}/${state.score.meters[0]?.denominator || 4} time · 1 = C4 display`;
   $('notation-page').textContent = `Page ${state.notationPage + 1} / ${count}`;
   $('notation-prev').disabled = state.notationPage <= 0;
   $('notation-next').disabled = state.notationPage >= count - 1;
@@ -601,7 +601,8 @@ $('tempo').addEventListener('change', () => {
   if (!Number.isFinite(bpm) || bpm < 10 || bpm > 600) { notice('Choose a tempo from 10 to 600 BPM.', true); $('tempo').value = String(state.score?.tempo[0]?.bpm || 100); return; }
   if (state.score) compileScore(transposeTempo(state.score, bpm), true);
 });
-for (const mode of ['staff', 'jianpu']) $(mode + '-button').addEventListener('click', () => { engravedView.hide(); state.notation = mode; $('engraved-button').setAttribute('aria-pressed','false'); $('engraved-button').classList.remove('selected'); $('jianpu-reference-label').hidden = mode !== 'jianpu'; ['staff', 'jianpu'].forEach(m => { $(m + '-button').classList.toggle('selected', m === mode); $(m + '-button').setAttribute('aria-pressed', String(m === mode)); }); renderScore(); });
+function selectBasicNotation(mode,{remember=true}={}) { engravedView.hide({remember}); state.notation = mode; $('engraved-button').setAttribute('aria-pressed','false'); $('engraved-button').classList.remove('selected'); $('jianpu-reference-label').hidden = mode !== 'jianpu'; ['staff', 'jianpu'].forEach(m => { $(m + '-button').classList.toggle('selected', m === mode); $(m + '-button').setAttribute('aria-pressed', String(m === mode)); }); renderScore(); }
+for (const mode of ['staff', 'jianpu']) $(mode + '-button').addEventListener('click', () => selectBasicNotation(mode));
 $('engraved-button').addEventListener('click', () => engravedView.show());
 $('sound-button').addEventListener('click', () => { synth.muted = !synth.muted; if (synth.muted) synth.silence(); $('sound-button').textContent = synth.muted ? 'Sound off ♫' : 'Sound on ♫'; $('sound-button').setAttribute('aria-pressed', String(synth.muted));metronome?.updateMute(); });
 $('import-button').addEventListener('click', () => $('score-file').click());
@@ -679,7 +680,7 @@ const libraryView = setupScoreLibrary({getScore:()=>state.score,onLoad:importCan
 const engravedView = setupEngravedView({getScore:()=>state.score,getPracticePart:()=>state.practicePart,pausePlayback,notice,onVisibility:active=>{
   state.engravingActive=active;$('engraving-view').hidden=!active;$('notation-controls').hidden=active;$('notation').hidden=active;$('basic-notation-note').hidden=active;
   if(active){$('score-key').textContent='Generated MusicXML · static staff preview';for(const id of ['staff-button','jianpu-button']){$(id).classList.remove('selected');$(id).setAttribute('aria-pressed','false')}$('engraved-button').classList.add('selected');$('engraved-button').setAttribute('aria-pressed','true')}
-},onFallback:message=>{$('staff-button').click();notice(message,true)}});
+},onFallback:()=>selectBasicNotation('staff',{remember:false})});
 setupJianpuEditor({onImport:importJianpuText,pausePlayback});
 setupJianpuExport({getScore:()=>state.score,pausePlayback,api});
 setupSourceDirectory({pausePlayback,onScoreFile:()=>$('score-file').click(),onImageFile:()=>$('score-image-file').click(),onExternalOmr:()=>externalOmrView.open()});

@@ -140,6 +140,10 @@ async function assertStoppedAtZero() {
 }
 
 async function screenshot(name) {
+  if(await page.locator('#engraved-button').getAttribute('aria-pressed')==='true'){
+    await page.locator('#engraved-staff svg').first().waitFor({state:'visible',timeout:25_000});
+    await page.waitForFunction(()=>document.querySelector('#engraving-status').textContent.includes('Generated staff preview'));
+  }
   await page.evaluate(async () => {
     await document.fonts.ready;
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -218,6 +222,9 @@ beforeEach(async () => {
     initialCompilation = await responseJson(compilation);
     await readyForTitle(initialCompilation.score.title);
     await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('physical attacks'));
+    await page.locator('#engraved-staff svg').first().waitFor({state:'visible',timeout:25_000});
+    await page.waitForFunction(()=>document.querySelector('#engraving-status').textContent.includes('Generated staff preview'));
+    assert.equal(await page.locator('#engraved-button').getAttribute('aria-pressed'),'true','Supported original scores use the offline engraved view by default');
   } catch (error) {
     const observed = await page.evaluate(() => ({url:location.href,readyState:document.readyState,title:document.title,notice:document.querySelector('#notice')?.textContent,scoreTitle:document.querySelector('#score-title')?.textContent,playDisabled:document.querySelector('#play-button')?.disabled})).catch(failure=>({observationError:failure.message}));
     const diagnostics={failure:error.message,observed,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverRunning:serverRunning(),serverOutput:serverOutput.slice(-4000)};
@@ -491,14 +498,13 @@ test('browser practice records real keyboard timing and displays the Rust assess
 
 test('whole application engraves real exported MusicXML and preserves the score across light/dark views', {timeout:60_000}, async () => {
   const source = await readFile(new URL('original-duet.musicxml',fixtures),'utf8');
-  const [compiledResponse] = await Promise.all([
-    nextResponse('/api/compile'),
+  const [compiledResponse,xmlResponse] = await Promise.all([
+    nextResponse('/api/compile'),nextResponse('/api/export/musicxml'),
     page.locator('#score-file').setInputFiles({name:'original-duet.musicxml',mimeType:'application/xml',buffer:Buffer.from(source)}),
   ]);
   const compiled = await responseJson(compiledResponse);
   await readyForTitle(compiled.score.title);
   const before = await exportScore();
-  const [xmlResponse] = await Promise.all([nextResponse('/api/export/musicxml'),page.locator('#engraved-button').click()]);
   const exported = await responseJson(xmlResponse);
   assert.match(exported.xml, /^<\?xml/);
   assert.ok(Object.hasOwn(exported.part_id_map,compiled.score.parts[0].id));

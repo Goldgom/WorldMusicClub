@@ -11,7 +11,7 @@ export function mappedPartIds(exported, canonicalId) {
 /** Optional presentation surface. All score conversion and timing stay in Rust. */
 export function setupEngravedView({getScore, getPracticePart, pausePlayback, onVisibility, onFallback, notice}) {
   const $ = id => document.getElementById(id);
-  let active = false, score = null, selectedPart = null, from = 1, pageSize = 8;
+  let active = false, preferred = true, score = null, selectedPart = null, from = 1, pageSize = 8;
   let generation = 0, controller = null, cached = null, adapter = null, rendered = null;
   let lastDark = document.documentElement.dataset.theme === 'dark';
   const container = $('engraved-staff');
@@ -41,12 +41,12 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
   }
   function fallback(message) {
     if (!active) return;
-    hide(); onFallback(`Engraved staff preview: ${message} The basic pitch guide remains available.`);
+    hide(); $('engraving-fallback').textContent = `Engraved staff unavailable: ${message} Showing the simplified pitch guide. It does not fully engrave rhythm, voices, ties or key signatures. Playback still uses the Rust score.`; $('engraving-fallback').hidden = false; onFallback();
   }
   async function render() {
     if (!active || !score) return;
     cancel(); const current = generation; controller = new AbortController(); const signal = controller.signal; const target = score;
-    onVisibility(true); pausePlayback(); rangeControls(); $('engraving-status').textContent = 'Preparing exact MusicXML with Rust, then engraving locally…';
+    $('engraving-fallback').hidden = true; onVisibility(true); pausePlayback(); rangeControls(); $('engraving-status').textContent = 'Preparing exact MusicXML with Rust, then engraving locally…';
     try {
       const exported = await exportScore(target, signal);
       if (signal.aborted || current !== generation || !active || target !== getScore()) return;
@@ -67,15 +67,15 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
   }
   function show() {
     if (!getScore()) return;
-    score = getScore(); selectedPart = getPracticePart(); from = 1; active = true;
+    score = getScore(); selectedPart = getPracticePart(); from = 1; active = true; preferred = true;
     setParts(); onVisibility(true); render();
   }
-  function hide() { active = false; cancel(); container.replaceChildren(); onVisibility(false); }
+  function hide({remember=false}={}) { if(remember){preferred=false;$('engraving-fallback').hidden=true;} active = false; cancel(); container.replaceChildren(); onVisibility(false); }
   function updateScore() {
     const current = getScore(); $('export-musicxml').disabled = !current;
     if (current === score) return;
     score = current; cached = null; from = 1; selectedPart = getPracticePart(); setParts(); rangeControls();
-    if (active) render();
+    if (active || preferred) {active=true;render();}
   }
   function selectPart(part) { selectedPart = part; setParts(); if (active) render(); }
   $('engraving-part').addEventListener('change', () => { selectedPart=$('engraving-part').value || null; render(); });
