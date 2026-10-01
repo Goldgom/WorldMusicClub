@@ -153,24 +153,27 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
   }
 }
 function renderCatalog() {
-  $('catalog').replaceChildren();
-  $('catalog-count').textContent = String(state.catalog.length);
-  const filtered=filterCatalog(state.catalog,$('catalog-search').value,$('catalog-origin').value);
-  filtered.forEach((score, index) => {
-    const button = document.createElement('button');
-    button.className = 'catalog-item';
-    button.classList.toggle('selected', preview?.value.identity === score.id);
-    button.setAttribute('aria-pressed', String(preview?.value.identity === score.id));button.setAttribute('aria-busy',String(preview?.value.status==='loading'&&preview.value.identity===score.id));button.classList.toggle('loading',preview?.value.status==='loading'&&preview.value.identity===score.id);button.dataset.scoreId=score.id;
-    const number = document.createElement('span'); number.className = 'number'; number.textContent = String(index + 1).padStart(2, '0');
-    const label = document.createElement('span');
-    const title = document.createElement('strong'); title.textContent = score.title;
-    const meta = document.createElement('small'); meta.textContent = `${score.written_event_count} written events · ${score.opening_bpm} BPM · ${catalogOriginLabel(score)}${preview?.value.status==='loading'&&preview.value.identity===score.id?' · Loading…':''}`;
-    label.append(title, meta); button.append(number, label);
-    button.addEventListener('click', () => selectCatalogScore(score.id));
-    $('catalog').append(button);
+  const catalog=$('catalog');
+  $('catalog-count').textContent=String(state.catalog.length);
+  const filtered=filterCatalog(state.catalog,$('catalog-search').value,$('catalog-origin').value),wanted=new Set(filtered.map(score=>score.id));
+  for(const child of [...catalog.children])if(!child.classList.contains('catalog-item')||!wanted.has(child.dataset.scoreId))child.remove();
+  const existing=new Map([...catalog.children].map(button=>[button.dataset.scoreId,button]));
+  filtered.forEach((score,index)=>{
+    let button=existing.get(score.id);
+    if(!button){
+      button=document.createElement('button');button.className='catalog-item';button.dataset.scoreId=score.id;
+      const number=document.createElement('span');number.className='number';const label=document.createElement('span');label.append(document.createElement('strong'),document.createElement('small'));button.append(number,label);
+      button.addEventListener('click',()=>selectCatalogScore(score.id));
+    }
+    const selected=preview?.value.identity===score.id,loading=preview?.value.status==='loading'&&selected;
+    button.classList.toggle('selected',selected);button.setAttribute('aria-pressed',String(selected));button.setAttribute('aria-busy',String(loading));button.classList.toggle('loading',loading);
+    button.querySelector('.number').textContent=String(index+1).padStart(2,'0');button.querySelector('strong').textContent=score.title;
+    button.querySelector('small').textContent=`${score.written_event_count} written events · ${score.opening_bpm} BPM · ${catalogOriginLabel(score)}${loading?' · Loading…':''}`;
+    // Unchanged entries stay attached, retaining focus while preview/tempo work resolves.
+    if(catalog.children[index]!==button)catalog.insertBefore(button,catalog.children[index]||null);
   });
-  if(!filtered.length&&state.catalog.length){const empty=document.createElement('p');empty.className='catalog-empty';empty.textContent='No matching title or composer. Clear the search or change the edition filter.';$('catalog').append(empty)}
-  if(catalogIndexFailed){const retry=document.createElement('button');retry.className='button secondary';retry.textContent='Retry catalog index';retry.disabled=Boolean(catalogIndexController);retry.addEventListener('click',loadCatalog);$('catalog').append(retry)}
+  if(!filtered.length&&state.catalog.length){const empty=document.createElement('p');empty.className='catalog-empty';empty.textContent='No matching title or composer. Clear the search or change the edition filter.';catalog.append(empty)}
+  if(catalogIndexFailed){const retry=document.createElement('button');retry.className='button secondary';retry.textContent='Retry catalog index';retry.disabled=Boolean(catalogIndexController);retry.addEventListener('click',loadCatalog);catalog.append(retry)}
 }
 function renderScore() {
   if (!state.score) return;
