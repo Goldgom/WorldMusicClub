@@ -34,15 +34,31 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci --ignore-scripts --omit=optional
-      - run: npm run prepare:engraving
+      - id: npm_dependencies
+        run: npm ci --ignore-scripts --omit=optional
+      - id: engraving_assets
+        run: npm run prepare:engraving
       - run: npm test
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
-      - run: cargo build -p practice-server --locked
-      - run: npm run test:full-app
-      - run: npm run test:engraving-browser
+      - id: browser_setup
+        if: ${{ !cancelled() && steps.npm_dependencies.outcome == 'success' && steps.engraving_assets.outcome == 'success' }}
+        run: npx playwright install --with-deps chromium
+      - id: rust_toolchain
+        if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' }}
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - id: rust_server
+        if: ${{ !cancelled() && steps.rust_toolchain.outcome == 'success' }}
+        run: cargo build -p practice-server --locked
+      # A failed suite must not hide evidence from another prepared suite.
+      # No continue-on-error: any failed step still makes this job fail.
+      - name: Check mocked browser behavior
+        if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' }}
+        run: npm run test:browser
+      - name: Check real Rust-backed application
+        if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
+        run: npm run test:full-app
+      - name: Check real offline engraving
+        if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
+        run: npm run test:engraving-browser
       - name: Preserve browser screenshots
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
