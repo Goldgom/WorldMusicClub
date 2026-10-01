@@ -1,10 +1,13 @@
+import {InputEvidence} from './input-evidence.js';
 /** Per-pass input history. Canonical note times come unchanged from the Rust timeline. */
 export class PracticeRecorder {
-  constructor({latencyMs = 0, toleranceMs = 180} = {}) {
+  constructor({latencyMs = 0, toleranceMs = 180, evidenceLimit, onEvidenceLimit} = {}) {
     this.latencyMs = latencyMs; this.toleranceMs = toleranceMs;
     this.passes = []; this.active = null; this.nextEventId = 1; this.interruptions = []; this.unassignedCaptures = [];
+    this.evidence = new InputEvidence({limit:evidenceLimit, onLimit:onEvidenceLimit});
   }
   begin({wallTime, position, startMs, endMs, timeline, label = 'Take', captureEnabled = true}) {
+    if (captureEnabled) this.evidence.start();
     const pass = {id:this.passes.length + 1,label,captureEnabled,startMs,endMs,timeline,startedWall:wallTime,
       segments:[{wallStart:wallTime,wallEnd:null,positionStart:position}], inputs:[], captures:[], revision:0,
       closedWall:null,deadline:null,manualDeadline:null,requestVersion:0,inFlight:false,
@@ -102,7 +105,13 @@ export class PracticeRecorder {
   get pending() {
     return this.passes.some(pass=>!pass.error&&(pass.inFlight||pass.manualDeadline!==null||(pass.closedWall!==null&&pass.assessedRevision<pass.revision)));
   }
+  observeOnset(observation, captured = null) {
+    const retained = captured?.pass ? captured.pass.captures.at(-1) : captured?.unassigned;
+    return this.evidence.append({...observation, kind:'note_on', capture:retained ? {
+      pass_id:captured.pass?.id ?? null, event_id:retained.event_id,
+    } : null});
+  }
   exportData() {
-    return {version:1,latency_ms:this.latencyMs,tolerance_ms:this.toleranceMs,interruptions:this.interruptions,unassigned_captures:this.unassignedCaptures,passes:this.passes.map(pass=>({id:pass.id,label:pass.label,range:{start_ms:pass.startMs,end_ms:pass.endMs},timeline:pass.timeline,capture_enabled:pass.captureEnabled,clock_segments:pass.segments,grace_deadline_wall_ms:pass.deadline,manual_deadline_wall_ms:pass.manualDeadline,inputs:pass.inputs,captures:pass.captures,revision:pass.revision,assessed_revision:pass.assessedRevision,assessment:pass.assessment,error:pass.error,boundary_reviews:pass.boundaryReviews,ownership:'deterministic_corrected_clock',pending:pass.inFlight||pass.manualDeadline!==null||pass.assessedRevision<pass.revision}))};
+    return {version:1,latency_ms:this.latencyMs,tolerance_ms:this.toleranceMs,interruptions:this.interruptions,unassigned_captures:this.unassignedCaptures,passes:this.passes.map(pass=>({id:pass.id,label:pass.label,range:{start_ms:pass.startMs,end_ms:pass.endMs},timeline:pass.timeline,capture_enabled:pass.captureEnabled,clock_segments:pass.segments,grace_deadline_wall_ms:pass.deadline,manual_deadline_wall_ms:pass.manualDeadline,inputs:pass.inputs,captures:pass.captures,revision:pass.revision,assessed_revision:pass.assessedRevision,assessment:pass.assessment,error:pass.error,boundary_reviews:pass.boundaryReviews,ownership:'deterministic_corrected_clock',pending:pass.inFlight||pass.manualDeadline!==null||pass.assessedRevision<pass.revision})),...(this.evidence.enabled ? {input_evidence:this.evidence.exportData()} : {})};
   }
 }

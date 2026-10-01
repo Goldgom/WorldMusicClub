@@ -48,6 +48,8 @@ Limits: 8 MiB compressed image, 16 million pixels, 16,384 pixels per axis, 512 c
 
 ## Explainable performance feedback
 
+Browser [practice take exports](TAKE_EXPORT.md) may also contain bounded, separately versioned raw release evidence. That journal is not submitted to this API; release pairing and assessment are not implemented.
+
 Assessment responses include `summary`: expected/matched counts, onset coverage, signed timing bias, timing standard deviation, early/late counts and diagnostic advice. Empty-target selections have zero coverage with a warning; small samples are labeled. A consistent timing offset includes a device-latency calibration caution rather than assigning it to playing skill. Accuracy, hits, misses, extras and mean absolute error remain available.
 
 `pitch_breakdown` contains one row for each MIDI pitch with targets or extra attacks, sorted by MIDI number. Each row reports `midi`, `expected`, `matched`, `missed`, `extra`, `mean_abs_error_ms`, and signed `timing_bias_ms` (positive means late). Timing values are null when that pitch had no matched attacks. Counts refer to the submitted physical target timeline, so grouped piano unisons require one attack and tied continuations do not become additional targets. A missed C and an extra C♯ are reported independently; the engine does not claim that one was intended as the other. This is pitch-only note-on feedback, with no release, pedal, fingering, or per-voice judgement. Older assessment exports may omit this optional breakdown.

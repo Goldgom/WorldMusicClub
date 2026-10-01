@@ -4,11 +4,13 @@ import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
 import {fixture} from './frontend-fixtures.js';
 import {beat,pitchMidi} from '../web/music.js';
+import {InputEvidence} from '../web/input-evidence.js';
 
 // Node DOM integration only: no browser, layout engine, real audio or HTTP is run.
 test('application module initializes the lobby and activates only through explicit Start',async()=>{
  const {document,window}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8'));
  const requests=[],values=new Map();let audioContexts=0,holdCheck=null,heldCheck=null;
+ const originalEvidenceStart=InputEvidence.prototype.start,originalCreateUrl=URL.createObjectURL;
  Object.defineProperty(window.HTMLSelectElement.prototype,'value',{configurable:true,get(){return this.querySelector('option[selected]')?.value||this.querySelector('option')?.value||''},set(value){for(const option of this.querySelectorAll('option'))option.toggleAttribute('selected',option.value===String(value))}});
  Object.defineProperty(window.HTMLElement.prototype,'open',{configurable:true,get(){return this.hasAttribute('open')},set(value){this.toggleAttribute('open',Boolean(value))}});
  window.HTMLElement.prototype.showModal=function(){this.setAttribute('open','')};window.HTMLElement.prototype.close=function(){this.removeAttribute('open');this.dispatchEvent(new window.Event('close'))};
@@ -63,5 +65,57 @@ test('application module initializes the lobby and activates only through explic
   assert.equal(document.getElementById('piano-stage').hidden,true);assert.equal(document.getElementById('guitar-stage').hidden,false);assert.match(document.getElementById('practice-hint').textContent,/upcoming pitch times/);assert.doesNotMatch(document.getElementById('practice-hint').textContent,/reaches the line/);assert.equal(document.getElementById('stage-cue-main').textContent,'READY');assert.equal(document.getElementById('stage-cue').closest('#piano-stage'),null);
   const guitarPlan=requests.filter(r=>r.path==='/api/practice-targets'&&r.body.profile.kind==='guitar').at(-1).body.timeline;
   assert.deepEqual([...document.querySelectorAll('.guitar-target')].map(item=>[item.dataset.targetId,Number(item.dataset.startMs)]),guitarPlan.notes.map(note=>[note.id,note.start_ms]));assert.equal(document.querySelectorAll('.fret-button').length,78);
- }finally{for(const[key,descriptor]of originals)if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key]}
+  const key=document.querySelector('.fret-button');key.setPointerCapture=()=>{};
+  const emit=(target,type,properties={})=>{const event=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(event,{repeat:false,...properties});Object.defineProperty(event,'timeStamp',{value:performance.now()});target.dispatchEvent(event)};
+  const enter={key:'Enter',code:'Enter'},typing={key:'a',code:'KeyA'};
+  let blob;URL.createObjectURL=value=>{blob=value;return 'blob:node-evidence-test'};
+  const exportTake=async()=>{document.getElementById('export-takes').click();return JSON.parse(await blob.text())};
+  const startPractice=async()=>{document.getElementById('count-in').checked=false;document.getElementById('play-button').click();await until(()=>document.getElementById('play-button').textContent.includes('Pause'),'Practice did not start')};
+  await startPractice();
+  document.getElementById('play-button').click();assert.equal((await exportTake()).input_evidence.events.at(-1).reason,'pause','A real transport pause remains visible even without held notes');await startPractice();
+  emit(key,'pointerdown',{pointerId:3,button:0});emit(key,'pointerup',{pointerId:3});emit(key,'lostpointercapture',{pointerId:3});
+  emit(key,'keydown',enter);emit(key,'focusout');emit(document.body,'keyup',enter);emit(key,'focusout');
+  emit(document.body,'keydown',typing);emit(document.body,'keyup',typing);
+  const beforeTyping=(await exportTake()).input_evidence.events.length;
+  emit(document.getElementById('tempo'),'keydown',typing);emit(document.getElementById('tempo'),'keyup',typing);
+  assert.equal((await exportTake()).input_evidence.events.length,beforeTyping,'Text-field typing is not recorded, even after the same musical key was used');
+  emit(document.body,'keydown',typing);emit(window,'blur');emit(document.body,'keyup',typing);await startPractice();
+  emit(key,'pointerdown',{pointerId:4,button:0});emit(key,'pointercancel',{pointerId:4});emit(key,'lostpointercapture',{pointerId:4});
+  emit(key,'keydown',enter);Object.defineProperty(document,'hidden',{configurable:true,value:true});emit(document,'visibilitychange');
+  emit(document.body,'keydown',{key:'s',code:'KeyS'});emit(document.body,'keyup',{key:'s',code:'KeyS'});
+  Object.defineProperty(document,'hidden',{configurable:true,value:false});await startPractice();
+  emit(document.body,'keydown',typing);emit(window,'pagehide');
+  const lifecycle=(await exportTake()).input_evidence.events;
+  assert.deepEqual(lifecycle.filter(event=>event.kind==='synthetic_release').map(event=>event.reason),['focusout','blur','pointercancel','hidden','pagehide']);
+  assert.equal(lifecycle.filter(event=>event.reason==='lostpointercapture').length,0);
+  assert.ok(lifecycle.some(event=>event.kind==='note_off'&&event.encoding==='pointer_up'&&event.midi===null));
+  const hiddenBoundary=lifecycle.findIndex(event=>event.reason==='hidden'&&event.kind==='boundary');
+  assert.ok(lifecycle.slice(hiddenBoundary+1).some(event=>event.kind==='note_on'&&event.input_kind==='typing_keyboard'),'Hidden/audio-suppressed notes are still observed independently of held sound state');
+  const pausedSnapshot=await exportTake();
+  for(let opening=0;opening<2;opening++){
+   document.getElementById('results-button').click();assert.deepEqual(await exportTake(),pausedSnapshot,'Entering Results and exporting an idle paused take changes no export field');document.getElementById('results-dialog').close();
+  }
+  document.getElementById('back-to-library').click();document.querySelector(`[data-score-id="${otherScore.id}"]`).click();
+  await until(()=>document.getElementById('song-lobby').dataset.previewStatus==='ready'&&document.getElementById('preview-title').textContent===otherScore.title,'Catalog browsing never completed');
+  document.getElementById('results-button').click();assert.deepEqual(await exportTake(),pausedSnapshot,'Browsing and exporting preserves the complete paused take');document.getElementById('results-dialog').close();
+  document.getElementById('resume-session').click();document.getElementById('settings-button').click();document.getElementById('settings-dialog').close();
+  assert.deepEqual(await exportTake(),pausedSnapshot,'Returning to the paused stage or opening settings does not invent a cleanup boundary');
+  // A manual contact can begin while paused; the next panel opening must still
+  // record its actual cleanup even though the transport never restarted.
+  emit(document.body,'keydown',typing);document.getElementById('results-button').click();
+  const manualCleanup=(await exportTake()).input_evidence.events.at(-1);assert.equal(manualCleanup.kind,'synthetic_release');assert.equal(manualCleanup.reason,'pause');
+  emit(document.body,'keyup',typing);document.getElementById('results-dialog').close();
+  const beforeBlur=(await exportTake()).input_evidence.events.length;emit(window,'blur');
+  const afterBlur=(await exportTake()).input_evidence.events;assert.equal(afterBlur.length,beforeBlur+1);assert.equal(afterBlur.at(-1).reason,'blur','Genuine focus boundaries survive without active contacts for late callbacks');
+  document.getElementById('reset-button').click();
+  // A tiny test-only cap exercises the ordinary UI flow without a pressure test.
+  InputEvidence.prototype.start=function(){this.limit=2;return originalEvidenceStart.call(this)};
+  await startPractice();
+  for(let attack=0;attack<3;attack++){emit(key,'keydown',enter);emit(key,'keyup',enter)}
+  assert.equal(document.getElementById('take-evidence-limit').hidden,false);assert.match(document.getElementById('notice').textContent,/export limit.*onset recording/);
+  const exported=await exportTake();assert.equal(exported.passes[0].inputs.length,3);assert.equal(exported.passes[0].revision,3);
+  assert.deepEqual(exported.input_evidence.events.map(event=>event.kind),['note_on','note_off']);assert.equal(exported.input_evidence.truncated,true);assert.equal(exported.input_evidence.omitted_observations,4);
+  assert.equal(exported.input_evidence.events[1].encoding,'key_up');assert.equal(exported.input_evidence.release_assessment,'not_implemented');
+  document.getElementById('reset-button').click();assert.equal(document.getElementById('take-evidence-limit').hidden,true);
+ }finally{InputEvidence.prototype.start=originalEvidenceStart;URL.createObjectURL=originalCreateUrl;for(const[key,descriptor]of originals)if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key]}
 });

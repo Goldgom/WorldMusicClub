@@ -238,6 +238,41 @@ test('repeated MIDI NoteOn is retained and panic controllers release only their 
  await page.addInitScript(()=>{window.retriggerPort={id:'device:with:colons',name:'Retrigger test',state:'connected',onmidimessage:null};Object.defineProperty(navigator,'requestMIDIAccess',{configurable:true,value:async()=>({inputs:new Map([['port',window.retriggerPort]]),onstatechange:null})})});await reloadStage();await ui('#play-button:not([disabled])').waitFor();await ui('#midi-button').click();await closeShellPanels();await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#play-button').click();
  await page.evaluate(()=>{for(const data of [[0x90,60,40],[0x90,60,100],[0x91,64,90],[0xb0,120,0]])window.retriggerPort.onmidimessage({data,timeStamp:performance.now()})});assert.equal(await ui('.piano-key.pressed').count(),1);assert.equal(await ui('.piano-key.pressed').getAttribute('data-midi'),'64');await page.evaluate(()=>window.retriggerPort.onmidimessage({data:[0xb1,123,0],timeStamp:performance.now()}));assert.equal(await ui('.piano-key.pressed').count(),0);await ui('#assess-button').click();await ui('#feedback-results').waitFor();const assessed=JSON.parse(requests.filter(r=>r.url==='/api/assess').at(-1).body);assert.equal(assessed.inputs.length,3);assert.deepEqual(assessed.inputs.filter(input=>input.midi===60).map(input=>input.velocity),[40,100]);
 });
+test('take exports retain private MIDI release observations and reconnect generations without changing onset requests',async()=>{
+ await page.addInitScript(()=>{
+  window.evidencePort={id:'private-device:serial',name:'Private piano',manufacturer:'Private manufacturer',state:'connected',onmidimessage:null};
+  window.evidenceAccess={inputs:new Map([['port',window.evidencePort]]),onstatechange:null};
+  Object.defineProperty(navigator,'requestMIDIAccess',{configurable:true,value:async()=>window.evidenceAccess});
+ });
+ await reloadStage();await ui('#play-button:not([disabled])').waitFor();await ui('#midi-button').click();await closeShellPanels();
+ await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#play-button').click();
+ await page.waitForFunction(()=>document.querySelector('#progress').value>40);
+ await page.evaluate(()=>{
+  const port=window.evidencePort,at=performance.now();
+  for(const [data,timeStamp] of [
+   [[0x80,70,0],at-5],[[0x90,70,90],at-20],[[0x90,60,40],at-19],[[0x90,60,100],at-18],
+   [[0x80,60,33],at-10],[[0x91,64,90],at-15],[[0xb1,123,0],at-8],[[0x90,67,90],at-7],
+  ])port.onmidimessage({data,timeStamp});
+  port.state='disconnected';window.evidenceAccess.inputs.clear();window.evidenceAccess.onstatechange({timeStamp:at});
+  window.evidencePort={...port,state:'connected',onmidimessage:null};window.evidenceAccess.inputs.set('port',window.evidencePort);window.evidenceAccess.onstatechange({timeStamp:at});
+  window.evidencePort.onmidimessage({data:[0x90,67,80],timeStamp:performance.now()});
+  window.evidencePort.onmidimessage({data:[0x90,67,0],timeStamp:performance.now()});
+ });
+ await ui('#assess-button').click();await ui('#feedback-results').waitFor();
+ const submitted=JSON.parse(requests.filter(request=>request.url==='/api/assess').at(-1).body);
+ assert.deepEqual(Object.keys(submitted).sort(),['inputs','timeline','tolerance_ms']);assert.equal(submitted.inputs.length,6);
+ const promise=page.waitForEvent('download');await ui('#export-takes').click();const data=JSON.parse(await readFile(await(await promise).path(),'utf8'));
+ const evidence=data.input_evidence,events=evidence.events,attacks=events.filter(event=>event.kind==='note_on'),offs=events.filter(event=>event.kind==='note_off');
+ assert.equal(data.version,1);assert.equal(evidence.version,1);assert.equal(evidence.pairing,'not_implemented');assert.equal(evidence.duration_eligibility,'unknown');assert.equal(evidence.truncated,false);
+ assert.deepEqual(data.passes[0].inputs,submitted.inputs);assert.equal(data.passes[0].revision,6);assert.equal(attacks.length,6);assert.equal(offs.length,3);
+ assert.ok(events[0].event_wall_ms>events[1].event_wall_ms,'Off-before-on delivery order is retained');assert.equal(events[0].source_id,events[1].source_id);
+ assert.equal(offs[1].velocity,33);assert.equal(offs[1].encoding,'midi_note_off');assert.equal(offs[2].encoding,'midi_zero_velocity_note_on');
+ assert.equal(attacks[1].source_id,attacks[2].source_id);assert.notEqual(attacks[4].source_generation,attacks[5].source_generation);
+ assert.ok(events.some(event=>event.kind==='synthetic_release'&&event.reason==='midi_cc123'&&event.channel===1));
+ assert.ok(events.some(event=>event.kind==='synthetic_release'&&event.reason==='midi_disconnected'));
+ assert.deepEqual(attacks.map(event=>event.onset_capture.event_id),[1,2,3,4,5,6]);
+ assert.doesNotMatch(JSON.stringify(evidence),/private-device|Private piano|Private manufacturer/);
+});
 test('Rust target plan merges only physical piano attacks while canonical export keeps both voices',async()=>{
  const duet=structuredClone(fixture);duet.parts.push({id:'other:part',name:'Other voice',instrument:'piano',notes:[{...structuredClone(duet.parts[0].notes[0]),id:'other:source',duration:{numerator:1,denominator:2}}]});
  await ui('#score-file').setInputFiles({name:'unison.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(duet))});
@@ -291,6 +326,8 @@ test('whole app loop clocks retain frame overshoot and pause rather than invent 
  for(const frame of [1517,2013,2510])await page.evaluate(now=>{window.loopTestClock=now;window.loopTestFrame(now)},frame);
  await page.evaluate(()=>{window.loopTestClock=5000;window.loopTestFrame(5000)});assert.match(await ui('#transport-status').textContent(),/clock interruption/);assert.match(await ui('#notice').textContent(),/no missing takes were invented/);assert.match(await ui('#take-interruption-note').textContent(),/1 loop clock/);
  const promise=page.waitForEvent('download');await ui('#export-takes').click();const exported=JSON.parse(await readFile(await(await promise).path(),'utf8'));assert.deepEqual(exported.passes.map(pass=>pass.clock_segments[0].wallStart),[1000,1500,2000,2500]);assert.deepEqual(exported.passes.map(pass=>pass.clock_segments[0].wallEnd),[1500,2000,2500,3000]);assert.equal(exported.interruptions[0].skipped_passes,4);
+ const boundaries=exported.input_evidence.events.filter(event=>event.kind==='boundary'&&event.reason.startsWith('loop_'));
+ assert.deepEqual(boundaries.map(event=>event.boundary_wall_ms),[1500,2000,2500,3000]);assert.deepEqual(boundaries.map(event=>event.event_wall_ms),[1517,2013,2510,5000]);assert.equal(boundaries.at(-1).reason,'loop_clock_stall');
 });
 test('numbered-text export previews diagnostics before an explicit download and keeps the full score',async()=>{
  let downloads=0;page.on('download',()=>downloads++);await ui('#export-jianpu').click();await ui('#jianpu-export-download:not([disabled])').waitFor();assert.equal(downloads,0);assert.match(await ui('#jianpu-export-status').textContent(),/2 source notes\/rests and 1 explicit gap/);assert.match(await ui('#jianpu-export-diagnostics').textContent(),/expressive velocity/);assert.match(await ui('#jianpu-export-text').inputValue(),/1:1\/1 3:1\/1 0:2\/1/);

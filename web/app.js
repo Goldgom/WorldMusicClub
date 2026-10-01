@@ -20,7 +20,7 @@ import {setupJianpuEditor} from './jianpu-editor.js';
 import {feedbackView,pitchBreakdownView} from './feedback-view.js';
 import {STANDARD_TUNING, guitarProfile, pianoProfile, compatibilityStatus} from './instrument-profile.js';
 import {validLatency, readLatencyPreference, saveLatency, parseBeatInput, practiceScope, windowNotes} from './practice-settings.js';
-import {setupMidi, normalizeEventTime} from './midi.js';
+import {setupMidi, eventTimeEvidence} from './midi.js';
 import {setupImageReview} from './image-review.js';
 import {setupThemes} from './themes.js';
 import {PIANO_RANGES, SHORTCUTS, beat, midiName, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, catalogOriginLabel, renderNotation, notationPageCount, notationLayout, keyAt, keyTonic} from './music.js';
@@ -44,7 +44,13 @@ const latencyPreference=readLatencyPreference();
 let catalogIndexController=null,catalogIndexRequest=0,catalogIndexFailed=false;
 const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reason:'Waiting for an instrument compatibility check.'}, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
-state.recorder = new PracticeRecorder({latencyMs:state.latency});
+function createRecorder() {
+  return new PracticeRecorder({latencyMs:state.latency,onEvidenceLimit:()=>{
+    $('take-evidence-limit').hidden=false;
+    notice('Release evidence reached its export limit. Later observations are omitted; onset recording and scoring continue unchanged.',true);
+  }});
+}
+state.recorder = createRecorder();
 shell=setupGameShell({pausePlayback,onPanel:name=>{cancelPendingStart();if(name==='results')updateResultsSummary()},onScreen:screen=>{if(!enteringPreview)cancelPendingStart();performanceView?.screenChanged(screen);engravedView.surfaceChanged();drawFrame()},onNotation:visible=>{if(!visible)notationFollowing?.suspend('Following suspended while the notation dock is closed.');engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
 preview=new ScorePreview({compile:(score,signal)=>api('/api/compile',score,signal),check:checkPreview,onChange:()=>{renderPreview();renderCatalog()}});
 
@@ -81,16 +87,20 @@ function updateButtons() {
   $('play-button').textContent = transport.running ? 'Ⅱ Pause · 暂停' : transport.completed ? '↻ Play again · 重来' : '▶ Play · 播放';
   shell?.update({score:state.score,mode:state.mode,part:state.score?.parts.find(part=>part.id===state.practicePart)?.name,compatibility:state.compatibility,passes:state.recorder.passes.length});
 }
-function silenceHeld() {
+function silenceHeld(reason = 'application_cleanup', eventWall = performance.now(), boundaryWall = null, recordEvidence = true) {
+  if (recordEvidence) state.recorder.evidence.cancel({reason,eventWall,receivedWall:performance.now(),boundaryWall});
   state.held.clear();
   synth.silence();
   document.querySelectorAll('.pressed').forEach(el => el.classList.remove('pressed'));
 }
-function pausePlayback(reason = 'Paused · 已暂停') {
+function pausePlayback(reason = 'Paused · 已暂停', evidenceReason = 'pause') {
   state.playTicket++;
+  // Opening a panel or browsing an already-paused session is not a new input
+  // boundary. Real lifecycle events still matter even before a late onset arrives.
+  const recordEvidence = evidenceReason !== 'pause' || transport.running || state.held.size > 0 || state.recorder.evidence.active.size > 0;
   const pauseTime = performance.now(); advanceLoopClock(pauseTime); state.recorder.pause(pauseTime);
   if (transport.running) { transport.pause(pauseTime); $('transport-status').textContent = reason; }
-  silenceHeld();metronome?.pause();
+  silenceHeld(evidenceReason,pauseTime,pauseTime,recordEvidence);metronome?.pause();
   updateButtons();
   drawFrame();
 }
@@ -102,7 +112,8 @@ function resetPlayback() {
   if (state.loopPending && !state.loop) $('loop-status').textContent = 'Loop validation cancelled. Set loop to check the range again.';
   state.loopPending = false;
   state.loopRequest++; $('loop-enabled').checked = Boolean(state.loop);
-  state.inputs = []; state.recorder = new PracticeRecorder({latencyMs:state.latency}); state.assessmentBusy = false;
+  state.inputs = []; state.recorder = createRecorder(); state.assessmentBusy = false;
+  $('take-evidence-limit').hidden=true;
   $('feedback-pass').value = ''; refreshPassHistory();
   state.generation++;
   state.finishing = false;
@@ -377,9 +388,11 @@ async function pressNote(source, midi, velocity = 90, eventTime = null, options 
   if (state.held.has(source) && !options.retrigger) return;
   const receivedWall = performance.now();
   advanceLoopClock(receivedWall);
-  const captureTime = normalizeEventTime(eventTime,{now:receivedWall,timeOrigin:performance.timeOrigin});
+  const observationTime = eventTimeEvidence(eventTime,{now:receivedWall,timeOrigin:performance.timeOrigin});
+  const captureTime = observationTime.eventWall;
+  let captured = null;
   if (state.mode === 'practice' && state.compatibility.status === 'ready') {
-    const captured = state.recorder.capture({midi,eventWall:captureTime,receivedWall,velocity});
+    captured = state.recorder.capture({midi,eventWall:captureTime,receivedWall,velocity});
     if (captured?.unassigned) {
       refreshPassHistory();
       $('feedback-description').textContent=`${state.recorder.unassignedCaptures.length} input events retained from an interrupted loop gap. They are unscored and included in Export take data.`;
@@ -390,14 +403,24 @@ async function pressNote(source, midi, velocity = 90, eventTime = null, options 
       drainAssessments();
     }
   }
+  state.recorder.observeOnset({...observationTime,...options,source,midi,velocity},captured);
   if(document.hidden||shell.screen()!=='stage'||document.querySelector('dialog[open]'))return;
   state.held.set(source,midi);
   highlightKeys();
   try { await synth.unlock(); if (state.held.get(source) === midi) synth.play(`manual:${source}`, midi, null, 0, state.instrument, velocity); }
   catch (error) { notice(error.message, true); }
 }
-function releaseMatching(prefix) { for(const source of [...state.held.keys()]) if(source.startsWith(prefix)) releaseNote(source); }
-function releaseNote(source) { state.held.delete(source); synth.stop(`manual:${source}`); highlightKeys(); }
+function releaseMatching(prefix, eventTime = null, options = {}) {
+  state.recorder.evidence.cancel({...eventTimeEvidence(eventTime),...options,prefix});
+  for(const source of [...state.held.keys()]) if(source.startsWith(prefix)) { state.held.delete(source); synth.stop(`manual:${source}`); }
+  highlightKeys();
+}
+function releaseNote(source, eventTime = null, options = {}) {
+  const observation = {...eventTimeEvidence(eventTime),...options,source};
+  if (options.synthetic) state.recorder.evidence.cancel(observation);
+  else state.recorder.evidence.release(observation);
+  state.held.delete(source); synth.stop(`manual:${source}`); highlightKeys();
+}
 function highlightKeys(activeNotes = []) {
   const held = new Set(state.held.values());
   const active = new Set(activeNotes.map(n => n.midi));
@@ -408,14 +431,15 @@ function connectPlayable(container) {
     const key = event.target.closest('[data-midi]');
     if (!key || event.button > 0) return;
     event.preventDefault(); key.setPointerCapture(event.pointerId);
-    pressNote(`pointer:${event.pointerId}`, Number(key.dataset.midi), 90, event.timeStamp);
+    pressNote(`pointer:${event.pointerId}`, Number(key.dataset.midi), 90, event.timeStamp,{inputKind:'on_screen_pointer',encoding:'pointer_down'});
   });
-  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) container.addEventListener(type, event => releaseNote(`pointer:${event.pointerId}`));
+  container.addEventListener('pointerup', event => releaseNote(`pointer:${event.pointerId}`,event.timeStamp,{inputKind:'on_screen_pointer',encoding:'pointer_up'}));
+  for (const type of ['pointercancel', 'lostpointercapture']) container.addEventListener(type, event => releaseNote(`pointer:${event.pointerId}`,event.timeStamp,{synthetic:true,reason:type}));
   container.addEventListener('keydown', event => {
-    if ((event.key === 'Enter' || event.key === ' ') && !event.repeat && event.target.dataset.midi) { event.preventDefault(); event.stopPropagation(); pressNote('accessible-key', Number(event.target.dataset.midi), 90, event.timeStamp); }
+    if ((event.key === 'Enter' || event.key === ' ') && !event.repeat && event.target.dataset.midi) { event.preventDefault(); event.stopPropagation(); pressNote('accessible-key', Number(event.target.dataset.midi), 90, event.timeStamp,{inputKind:'on_screen_keyboard',encoding:'key_down'}); }
   });
-  container.addEventListener('focusout', () => releaseNote('accessible-key'));
-  container.addEventListener('keyup', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); releaseNote('accessible-key'); } });
+  container.addEventListener('focusout', event => releaseNote('accessible-key',event.timeStamp,{synthetic:true,reason:'focusout'}));
+  container.addEventListener('keyup', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); releaseNote('accessible-key',event.timeStamp,{inputKind:'on_screen_keyboard',encoding:'key_up'}); } });
 }
 async function togglePlayback() {
   if (!state.compiled) return;
@@ -519,7 +543,7 @@ function advanceLoopClock(now) {
   const result=transport.wrapLoop(now,state.loop.notes,{start:state.loop.start_ms,end:state.loop.end_ms,countIn:$('count-in').checked?beatMs*4:0});
   if(result.status==='pending')return;
   if(state.mode==='practice')state.recorder.closeAtEnd(result.boundaryWall);
-  state.loopIteration++;silenceHeld();
+  state.loopIteration++;silenceHeld(result.status==='stalled'?'loop_clock_stall':'loop_boundary',now,result.boundaryWall);
   if(result.status==='stalled'){
     if(state.mode==='practice')state.recorder.recordInterruption({boundaryWall:result.boundaryWall,observedWall:now,skippedPasses:result.skippedPasses});
     $('transport-status').textContent='Paused after a loop clock interruption · 循环中断';
@@ -548,8 +572,8 @@ function drawFrame() {
       const pass=state.recorder.closeAtEnd(now);
       if(!previouslyClosed){updateButtons();refreshPassHistory()}
       if(pass&&now<pass.deadline)$('transport-status').textContent='Receiving delayed input · 等待延迟输入';
-      else{transport.finish(duration);silenceHeld();updateButtons();$('transport-status').textContent='Complete · 已完成'}
-    } else if (state.mode==='listen' && position>=duration+80) {transport.finish(duration);silenceHeld();updateButtons();$('transport-status').textContent='Complete · 已完成'}
+      else{transport.finish(duration);silenceHeld('completion',now,pass?.closedWall);updateButtons();$('transport-status').textContent='Complete · 已完成'}
+    } else if (state.mode==='listen' && position>=duration+80) {transport.finish(duration);silenceHeld('completion',now);updateButtons();$('transport-status').textContent='Complete · 已完成'}
     else $('transport-status').textContent = position < segmentStart ? `Count in · ${Math.ceil((segmentStart - position) / (60000 / (Number($('tempo').value) || 100)))}` : state.mode === 'practice' ? `Your turn${state.loop ? ` · Loop ${state.loopIteration}` : ''} · 跟着弹` : `Listening${state.loop ? ` · Loop ${state.loopIteration}` : ''} · 正在聆听`;
   }
   if(state.mode==='practice'){
@@ -713,12 +737,16 @@ document.addEventListener('keydown', event => {
   if(!stageShortcutAllowed({screen:shell.screen(),target:event.target,defaultPrevented:event.defaultPrevented,repeat:event.repeat,ctrlKey:event.ctrlKey,metaKey:event.metaKey,altKey:event.altKey,dialogOpen:Boolean(document.querySelector('dialog[open]'))}))return;
   if (event.code === 'Space') { if (event.target.tagName === 'BUTTON') return; event.preventDefault(); togglePlayback(); return; }
   const key = event.key.toLowerCase();
-  if (Object.hasOwn(SHORTCUTS, key)) { event.preventDefault(); pressNote(`key:${event.code}`, (state.octave + 1) * 12 + SHORTCUTS[key], 90, event.timeStamp); }
+  if (Object.hasOwn(SHORTCUTS, key)) { event.preventDefault(); pressNote(`key:${event.code}`, (state.octave + 1) * 12 + SHORTCUTS[key], 90, event.timeStamp,{inputKind:'typing_keyboard',encoding:'key_down'}); }
 });
-document.addEventListener('keyup', event => { releaseNote(`key:${event.code}`); if (event.key === 'Enter' || event.key === ' ') releaseNote('accessible-key'); });
-window.addEventListener('blur', () => pausePlayback('Paused when focus moved · 已暂停'));
-document.addEventListener('visibilitychange', () => { if (document.hidden) pausePlayback('Paused in background · 已暂停'); });
-window.addEventListener('pagehide', () => { pausePlayback(); cancelAnimationFrame(state.frame);cancelPendingStart();if(preview.controller){preview.cancel();preview.publish({...preview.value,status:'error',message:'Preview stopped when the page was left. Choose this score again to retry.'})} });
+document.addEventListener('keyup', event => {
+  const musical=Object.hasOwn(SHORTCUTS,event.key.toLowerCase())&&stageShortcutAllowed({screen:shell.screen(),target:event.target,dialogOpen:Boolean(document.querySelector('dialog[open]')),ctrlKey:event.ctrlKey,metaKey:event.metaKey,altKey:event.altKey});
+  releaseNote(`key:${event.code}`,event.timeStamp,{encoding:'key_up',inputKind:musical?'typing_keyboard':null});
+  if (event.key === 'Enter' || event.key === ' ') releaseNote('accessible-key',event.timeStamp,{encoding:'key_up'});
+});
+window.addEventListener('blur', () => pausePlayback('Paused when focus moved · 已暂停','blur'));
+document.addEventListener('visibilitychange', () => { if (document.hidden) pausePlayback('Paused in background · 已暂停','hidden'); });
+window.addEventListener('pagehide', () => { pausePlayback(undefined,'pagehide'); cancelAnimationFrame(state.frame);cancelPendingStart();if(preview.controller){preview.cancel();preview.publish({...preview.value,status:'error',message:'Preview stopped when the page was left. Choose this score again to retry.'})} });
 let notationResizeFrame = 0;
 window.addEventListener('resize', () => { cancelAnimationFrame(notationResizeFrame); notationResizeFrame = requestAnimationFrame(() => { renderNotationPage(); drawFrame(); }); });
 window.addEventListener('pageshow', event => { if (event.persisted) { cancelAnimationFrame(state.frame); state.frame = requestAnimationFrame(animate); } });
