@@ -1,0 +1,800 @@
+{
+  "evaluation_date_utc": "2026-09-30",
+  "fixture_source_commit": "2c5de7234f4f2e6a0c11bb873ae40a10db83e7e4",
+  "fixture_ci_run": 36792679835,
+  "fixture_artifact": 11132556503,
+  "engine": "Audiveris 5.11.0",
+  "engine_release_sha256": "f20113aaa33b3149ec8d6a09b2a7963360e65fafd92d69389987a85bbc3ec7a3",
+  "english_model": {
+    "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata/ced78752cc61322fb554c280d13360b35b8684e4/eng.traineddata",
+    "upstream_commit": "ced78752cc61322fb554c280d13360b35b8684e4",
+    "git_blob": "f4744c201359d02ced6914c77f0de68ee9bbdd74",
+    "bytes": 23466654,
+    "sha256": "daa0c97d651c19fba3b25e81317cd697e9908c8208090c94c3905381c23fc047",
+    "license": "Apache-2.0",
+    "purpose": "Private original-fixture evaluation; Audiveris legacy OCR support"
+  },
+  "results": [
+    {
+      "fixture": "melody",
+      "input_image_sha256": "4da54044394706953dd0d2dee2dad8c3393a6dc33ab3ddc013f1de45930e6728",
+      "raw_mxl_sha256": "5c5097425c9e11dfbfe4af5c55788e04ed81d25c8c6c2167bdab48a489773d8a",
+      "elapsed_seconds": 9.577,
+      "engine_exit_code": 0,
+      "direct_mxl_import_status": 400,
+      "evaluation_normalization": "Removed exactly the fixed Audiveris/ProxyMusic 4.0.3 external DOCTYPE header; unmodified output retained; no external resolution",
+      "report": {
+        "report_version": 1,
+        "all_compared_content_matches": false,
+        "metrics": {
+          "written_pitch_spelling": {
+            "matches": true,
+            "expected_count": 15,
+            "actual_count": 15,
+            "missing_count": 0,
+            "extra_count": 0,
+            "missing_sample": [],
+            "extra_sample": []
+          },
+          "written_rhythm": {
+            "matches": true,
+            "expected_count": 16,
+            "actual_count": 16,
+            "missing_count": 0,
+            "extra_count": 0,
+            "missing_sample": [],
+            "extra_sample": []
+          },
+          "written_structure": {
+            "matches": true,
+            "expected_count": 16,
+            "actual_count": 16,
+            "missing_count": 0,
+            "extra_count": 0,
+            "missing_sample": [],
+            "extra_sample": []
+          },
+          "sounding_pitch_inventory": {
+            "matches": true,
+            "expected_count": 15,
+            "actual_count": 15,
+            "missing_count": 0,
+            "extra_count": 0,
+            "missing_sample": [],
+            "extra_sample": []
+          },
+          "sounding_timing": {
+            "matches": false,
+            "expected_count": 15,
+            "actual_count": 15,
+            "missing_count": 15,
+            "extra_count": 15,
+            "missing_sample": [
+              {
+                "value": [
+                  0,
+                  60,
+                  0.0,
+                  666.666667
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  60,
+                  9333.333333,
+                  666.666667
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  62,
+                  666.666667,
+                  666.666667
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  62,
+                  8666.666667,
+                  666.666667
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  64,
+                  1333.333333,
+                  666.666667
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  64,
+                  8000.0,
+                  666.666667
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  65,
+                  2000.0,
+                  666.666667
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  65,
+                  7333.333333,
+                  666.666667
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  67,
+                  2666.666667,
+                  666.666667
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  67,
+                  6666.666667,
+                  666.666667
+                ],
+                "count": 1
+              }
+            ],
+            "extra_sample": [
+              {
+                "value": [
+                  0,
+                  60,
+                  0.0,
+                  500.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  60,
+                  7000.0,
+                  500.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  62,
+                  500.0,
+                  500.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  62,
+                  6500.0,
+                  500.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  64,
+                  1000.0,
+                  500.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  64,
+                  6000.0,
+                  500.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  65,
+                  1500.0,
+                  500.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  65,
+                  5500.0,
+                  500.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  67,
+                  2000.0,
+                  500.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  67,
+                  5000.0,
+                  500.0
+                ],
+                "count": 1
+              }
+            ]
+          },
+          "performance_duration": {
+            "matches": false,
+            "expected_count": 1,
+            "actual_count": 1,
+            "missing_count": 1,
+            "extra_count": 1,
+            "missing_sample": [
+              {
+                "value": 10666.666667,
+                "count": 1
+              }
+            ],
+            "extra_sample": [
+              {
+                "value": 8000.0,
+                "count": 1
+              }
+            ]
+          },
+          "tempo": {
+            "matches": false,
+            "expected_count": 1,
+            "actual_count": 1,
+            "missing_count": 1,
+            "extra_count": 1,
+            "missing_sample": [
+              {
+                "value": [
+                  "0",
+                  90.0
+                ],
+                "count": 1
+              }
+            ],
+            "extra_sample": [
+              {
+                "value": [
+                  "0",
+                  120.0
+                ],
+                "count": 1
+              }
+            ]
+          },
+          "key": {
+            "matches": false,
+            "expected_count": 1,
+            "actual_count": 0,
+            "missing_count": 1,
+            "extra_count": 0,
+            "missing_sample": [
+              {
+                "value": [
+                  "0",
+                  0,
+                  "major"
+                ],
+                "count": 1
+              }
+            ],
+            "extra_sample": []
+          },
+          "meter": {
+            "matches": true,
+            "expected_count": 1,
+            "actual_count": 1,
+            "missing_count": 0,
+            "extra_count": 0,
+            "missing_sample": [],
+            "extra_sample": []
+          },
+          "measures": {
+            "matches": true,
+            "expected_count": 4,
+            "actual_count": 4,
+            "missing_count": 0,
+            "extra_count": 0,
+            "missing_sample": [],
+            "extra_sample": []
+          },
+          "repeats": {
+            "matches": true,
+            "expected_count": 0,
+            "actual_count": 0,
+            "missing_count": 0,
+            "extra_count": 0,
+            "missing_sample": [],
+            "extra_sample": []
+          }
+        },
+        "policy": "Part matching is by explicitly corresponding part order; stable IDs are ignored. Voice labels/staves/ties are strict in written_structure. Sound timing rounds to 0.000001 ms. No note is silently omitted.",
+        "recognition_confidence": null,
+        "limitations": "Ground-truth fixture comparison only. No confidence calibration, visual-layout fidelity, title/text/dynamics assessment or automatic approval for a new score."
+      }
+    },
+    {
+      "fixture": "duet",
+      "input_image_sha256": "87df48480f2a6c37a9608052e1191d71f76af2b34b524354e42e0be1eb33cc95",
+      "raw_mxl_sha256": "45584288efd6549cb6059f3a19436b4227ceb9084301ac355f6f57d6db701ee7",
+      "elapsed_seconds": 11.978,
+      "engine_exit_code": 0,
+      "direct_mxl_import_status": 400,
+      "evaluation_normalization": "Removed exactly the fixed Audiveris/ProxyMusic 4.0.3 external DOCTYPE header; unmodified output retained; no external resolution",
+      "report": {
+        "report_version": 1,
+        "all_compared_content_matches": false,
+        "metrics": {
+          "written_pitch_spelling": {
+            "matches": false,
+            "expected_count": 8,
+            "actual_count": 8,
+            "missing_count": 2,
+            "extra_count": 2,
+            "missing_sample": [
+              {
+                "value": [
+                  0,
+                  "3",
+                  [
+                    "A",
+                    0,
+                    2
+                  ]
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  "3",
+                  [
+                    "F",
+                    0,
+                    4
+                  ]
+                ],
+                "count": 1
+              }
+            ],
+            "extra_sample": [
+              {
+                "value": [
+                  0,
+                  "2",
+                  [
+                    "A",
+                    0,
+                    2
+                  ]
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  "2",
+                  [
+                    "F",
+                    0,
+                    4
+                  ]
+                ],
+                "count": 1
+              }
+            ]
+          },
+          "written_rhythm": {
+            "matches": false,
+            "expected_count": 11,
+            "actual_count": 11,
+            "missing_count": 2,
+            "extra_count": 2,
+            "missing_sample": [
+              {
+                "value": [
+                  0,
+                  "3",
+                  "2",
+                  false
+                ],
+                "count": 2
+              }
+            ],
+            "extra_sample": [
+              {
+                "value": [
+                  0,
+                  "2",
+                  "2",
+                  false
+                ],
+                "count": 2
+              }
+            ]
+          },
+          "written_structure": {
+            "matches": false,
+            "expected_count": 11,
+            "actual_count": 11,
+            "missing_count": 3,
+            "extra_count": 3,
+            "missing_sample": [
+              {
+                "value": [
+                  0,
+                  "1",
+                  "1",
+                  null,
+                  "2",
+                  2,
+                  false,
+                  false
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  "3",
+                  "2",
+                  [
+                    "A",
+                    0,
+                    2
+                  ],
+                  "2",
+                  2,
+                  false,
+                  false
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  "3",
+                  "2",
+                  [
+                    "F",
+                    0,
+                    4
+                  ],
+                  "1",
+                  1,
+                  false,
+                  false
+                ],
+                "count": 1
+              }
+            ],
+            "extra_sample": [
+              {
+                "value": [
+                  0,
+                  "1",
+                  "1",
+                  null,
+                  "5",
+                  2,
+                  false,
+                  false
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  "2",
+                  "2",
+                  [
+                    "A",
+                    0,
+                    2
+                  ],
+                  "5",
+                  2,
+                  false,
+                  false
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  "2",
+                  "2",
+                  [
+                    "F",
+                    0,
+                    4
+                  ],
+                  "2",
+                  1,
+                  false,
+                  false
+                ],
+                "count": 1
+              }
+            ]
+          },
+          "sounding_pitch_inventory": {
+            "matches": true,
+            "expected_count": 7,
+            "actual_count": 7,
+            "missing_count": 0,
+            "extra_count": 0,
+            "missing_sample": [],
+            "extra_sample": []
+          },
+          "sounding_timing": {
+            "matches": false,
+            "expected_count": 7,
+            "actual_count": 7,
+            "missing_count": 6,
+            "extra_count": 6,
+            "missing_sample": [
+              {
+                "value": [
+                  0,
+                  45,
+                  2000.0,
+                  2000.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  61,
+                  500.0,
+                  1500.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  62,
+                  4000.0,
+                  2000.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  63,
+                  500.0,
+                  1500.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  65,
+                  2000.0,
+                  2000.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  1,
+                  48,
+                  500.0,
+                  3500.0
+                ],
+                "count": 1
+              }
+            ],
+            "extra_sample": [
+              {
+                "value": [
+                  0,
+                  45,
+                  1500.0,
+                  2000.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  61,
+                  500.0,
+                  2000.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  62,
+                  4500.0,
+                  2000.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  63,
+                  500.0,
+                  2000.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  0,
+                  65,
+                  1500.0,
+                  2000.0
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  1,
+                  48,
+                  500.0,
+                  4000.0
+                ],
+                "count": 1
+              }
+            ]
+          },
+          "performance_duration": {
+            "matches": false,
+            "expected_count": 1,
+            "actual_count": 1,
+            "missing_count": 1,
+            "extra_count": 1,
+            "missing_sample": [
+              {
+                "value": 6000.0,
+                "count": 1
+              }
+            ],
+            "extra_sample": [
+              {
+                "value": 6500.0,
+                "count": 1
+              }
+            ]
+          },
+          "tempo": {
+            "matches": false,
+            "expected_count": 3,
+            "actual_count": 3,
+            "missing_count": 1,
+            "extra_count": 1,
+            "missing_sample": [
+              {
+                "value": [
+                  "2",
+                  60.0
+                ],
+                "count": 1
+              }
+            ],
+            "extra_sample": [
+              {
+                "value": [
+                  "1",
+                  60.0
+                ],
+                "count": 1
+              }
+            ]
+          },
+          "key": {
+            "matches": false,
+            "expected_count": 2,
+            "actual_count": 1,
+            "missing_count": 2,
+            "extra_count": 1,
+            "missing_sample": [
+              {
+                "value": [
+                  "0",
+                  1,
+                  "major"
+                ],
+                "count": 1
+              },
+              {
+                "value": [
+                  "5",
+                  -2,
+                  "minor"
+                ],
+                "count": 1
+              }
+            ],
+            "extra_sample": [
+              {
+                "value": [
+                  "0",
+                  1,
+                  "unknown"
+                ],
+                "count": 1
+              }
+            ]
+          },
+          "meter": {
+            "matches": true,
+            "expected_count": 2,
+            "actual_count": 2,
+            "missing_count": 0,
+            "extra_count": 0,
+            "missing_sample": [],
+            "extra_sample": []
+          },
+          "measures": {
+            "matches": true,
+            "expected_count": 3,
+            "actual_count": 3,
+            "missing_count": 0,
+            "extra_count": 0,
+            "missing_sample": [],
+            "extra_sample": []
+          },
+          "repeats": {
+            "matches": true,
+            "expected_count": 0,
+            "actual_count": 0,
+            "missing_count": 0,
+            "extra_count": 0,
+            "missing_sample": [],
+            "extra_sample": []
+          }
+        },
+        "policy": "Part matching is by explicitly corresponding part order; stable IDs are ignored. Voice labels/staves/ties are strict in written_structure. Sound timing rounds to 0.000001 ms. No note is silently omitted.",
+        "recognition_confidence": null,
+        "limitations": "Ground-truth fixture comparison only. No confidence calibration, visual-layout fidelity, title/text/dynamics assessment or automatic approval for a new score."
+      }
+    }
+  ],
+  "accepted_as_lossless": false,
+  "note": "Two synthetic original fixtures only. Both outputs require correction; no calibrated engine-confidence score exists in this integration. Local engine output was retained privately. This is not a distributed engine or a completed Windows OMR feature."
+}
