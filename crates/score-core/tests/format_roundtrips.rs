@@ -121,6 +121,35 @@ fn assert_maps(original: &Score, imported: &Score) {
 }
 
 #[test]
+fn standard_header_sources_export_every_supported_event_with_explicit_voice_mapping() {
+    let edition = score_core::catalog_score("cc0-schubert-wandrers-nachtlied-d768").unwrap();
+    let archive: serde_json::Value =
+        serde_json::from_str(&edition.source.unwrap().content).unwrap();
+    let raw_d768 = archive["files"]["converter.musicxml"]["content"]
+        .as_str()
+        .unwrap();
+    for xml in [
+        include_str!("../../../tests/fixtures/original-duet-standard-header.musicxml"),
+        raw_d768,
+    ] {
+        let original = import_musicxml(xml).unwrap().0;
+        let exported = export_musicxml(&original).unwrap();
+        assert!(!exported.xml.contains("<!DOCTYPE"));
+        let imported = import_musicxml(&exported.xml).unwrap().0;
+        assert_eq!(
+            written_events(&original, None),
+            written_events(&imported, Some(&exported))
+        );
+        assert_maps(&original, &imported);
+        assert_eq!(
+            serde_json::to_value(&original.repeats).unwrap(),
+            serde_json::to_value(&imported.repeats).unwrap()
+        );
+        assert_eq!(original.source.unwrap().content.as_bytes(), xml.as_bytes());
+    }
+}
+
+#[test]
 fn generated_polyphonic_musicxml_preserves_written_events_maps_and_performance() {
     let base = score_core::catalog_score("first-steps").unwrap();
     let mut seed = 1977_u32;

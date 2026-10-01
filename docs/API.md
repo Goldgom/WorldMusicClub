@@ -30,7 +30,7 @@ Limits: 8 MiB compressed image, 16 million pixels, 16,384 pixels per axis, 512 c
 
 ## MusicXML
 
-`POST /api/import/musicxml` accepts UTF-8 raw `application/xml` or `text/xml`; output matches `/api/compile` plus importer diagnostics. Limited score-partwise input preserves original XML and basic exact note/rhythm structure. Unsupported sound-affecting features are rejected rather than guessed. Visual/expressive source details outside the canonical model are retained in source content with explicit warnings. DTD and external entities are rejected.
+`POST /api/import/musicxml` accepts UTF-8 raw `application/xml` or `text/xml`; output matches `/api/compile` plus importer diagnostics. Limited score-partwise input preserves original XML and basic exact note/rhythm structure. Unsupported sound-affecting features are rejected rather than guessed. Visual/expressive source details outside the canonical model are retained in source content with explicit warnings. The fixed standard external-only MusicXML 3.1 and 4.0 partwise PUBLIC headers may be omitted from a separate parsing projection with a matching explicit root version and a retained normalization/limited-validation notice. The exact source, including BOM/CRLF, remains unchanged. No DTD is loaded, parsed or validated; entity declarations, DTD-dependent named entities and other declarations are refused. See [header compatibility and limits](MUSICXML_IMPORT.md).
 
 ## Compressed MusicXML
 

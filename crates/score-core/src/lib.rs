@@ -8,6 +8,7 @@ mod ties;
 pub use jianpu::{export_jianpu, import_jianpu, ExportedJianpu};
 mod musicxml;
 mod musicxml_export;
+mod musicxml_header;
 pub use midi::import_midi;
 pub use musicxml_export::{export_musicxml, ExportedMusicXml, ExportedVoiceId};
 mod mxl;

@@ -1,5 +1,5 @@
 //! Review bridge for separately produced engine output. No engine execution or network access.
-use crate::{compile, import_musicxml, Compilation, Diagnostic, Score, Source};
+use crate::{compile, Compilation, Diagnostic, Score, Source};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
@@ -163,8 +163,9 @@ pub fn prepare_audiveris(input: AudiverisInput) -> Result<ExternalOmrDraft, Stri
     } else {
         raw_xml.clone()
     };
-    // The ordinary importer still rejects any other DTD/entity declaration or unsupported XML.
-    let (mut score, warnings) = import_musicxml(&xml)?;
+    // Keep this bridge's existing exact vendor policy independent of the
+    // generic importer's standard MusicXML header compatibility.
+    let (mut score, warnings) = crate::musicxml::import_headerless_musicxml(&xml)?;
     let doc = roxmltree::Document::parse_with_options(
         &xml,
         roxmltree::ParsingOptions {
@@ -307,6 +308,7 @@ pub fn confirm_review(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::import_musicxml;
     use std::io::{Cursor, Write};
     fn xml() -> String {
         crate::export_musicxml(&crate::catalog().remove(0))
@@ -432,6 +434,34 @@ mod tests {
         let record: ReviewRecord =
             serde_json::from_str(&draft.score.source.unwrap().content).unwrap();
         assert_eq!(record.input.output_content, raw);
+    }
+    #[test]
+    fn generic_standard_headers_do_not_widen_the_audiveris_bridge() {
+        for version in ["3.1", "4.0"] {
+            let mut input = input();
+            input.output_content = input.output_content.replace(
+                "<score-partwise version=\"4.0\">",
+                &format!("<!DOCTYPE score-partwise PUBLIC \"-//Recordare//DTD MusicXML {version} Partwise//EN\" \"http://www.musicxml.org/dtds/partwise.dtd\">\n<score-partwise version=\"{version}\">"),
+            );
+            assert!(import_musicxml(&input.output_content).is_ok());
+            assert!(prepare_audiveris(input).unwrap_err().contains("DTD"));
+        }
+        for raw in [
+            include_str!("../../../tests/fixtures/audiveris-original-melody.musicxml"),
+            include_str!("../../../tests/fixtures/audiveris-original-duet.musicxml"),
+        ] {
+            assert!(import_musicxml(raw).is_err());
+            let draft = prepare_audiveris(AudiverisInput {
+                output_content: raw.into(),
+                ..input()
+            })
+            .unwrap();
+            assert!(draft.requires_review);
+            assert!(compile(draft.score.clone()).unwrap_err().contains("review"));
+            let record: ReviewRecord =
+                serde_json::from_str(&draft.score.source.unwrap().content).unwrap();
+            assert_eq!(record.input.output_content, raw);
+        }
     }
     #[test]
     fn complete_mxl_is_retained_without_extracting_files() {

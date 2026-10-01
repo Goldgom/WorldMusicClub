@@ -217,12 +217,33 @@ struct MeasureResult {
 /// Import uncompressed MusicXML. No network, filesystem, DTD, or entity resolver
 /// is used. Errors are actionable rather than silently altering unsupported music.
 pub fn import_musicxml(xml: &str) -> Result<(Score, Vec<Diagnostic>), String> {
+    check_source_size(xml)?;
+    let prepared = crate::musicxml_header::prepare(xml)?;
+    import_prepared_musicxml(xml, &prepared.xml, prepared.header_version)
+}
+
+fn check_source_size(xml: &str) -> Result<(), String> {
     if xml.len() > MAX_SOURCE_BYTES {
         return Err("MusicXML exceeds the 8 MiB source limit".into());
     }
+    Ok(())
+}
+
+/// Separate policy for the Audiveris bridge's already-normalized copy. Do not
+/// let generic header compatibility widen that engine/version-scoped bridge.
+pub(crate) fn import_headerless_musicxml(xml: &str) -> Result<(Score, Vec<Diagnostic>), String> {
+    check_source_size(xml)?;
     if xml.contains("<!DOCTYPE") || xml.contains("<!ENTITY") {
         return Err("DTD and entity declarations are not allowed. Export self-contained MusicXML without a DOCTYPE or external entities.".into());
     }
+    import_prepared_musicxml(xml, xml, None)
+}
+
+fn import_prepared_musicxml(
+    original: &str,
+    xml: &str,
+    header_version: Option<&str>,
+) -> Result<(Score, Vec<Diagnostic>), String> {
     let doc = Document::parse_with_options(
         xml,
         ParsingOptions {
@@ -235,6 +256,13 @@ pub fn import_musicxml(xml: &str) -> Result<(Score, Vec<Diagnostic>), String> {
     let root = doc.root_element();
     if root.tag_name().name() != "score-partwise" {
         return Err("Only uncompressed <score-partwise> MusicXML is supported. Export partwise .musicxml (not .mxl, score-timewise, PDF or an image).".into());
+    }
+    if let Some(version) = header_version {
+        if root.attribute("version") != Some(version)
+            || !xml[root.range().start..].starts_with("<score-partwise")
+        {
+            return Err(format!("The standard MusicXML {version} DOCTYPE requires an unprefixed <score-partwise> root with explicit version=\"{version}\"; no DTD defaults are applied."));
+        }
     }
     for node in doc.descendants() {
         if node.is_pi() {
@@ -267,6 +295,9 @@ pub fn import_musicxml(xml: &str) -> Result<(Score, Vec<Diagnostic>), String> {
     }
     let mut warnings = Warnings::default();
     warnings.add("musicxml_limited_import", "Imported sounding notes, rests, voices, staves and basic timing. Engraving, clefs, layout, lyrics and other visual details remain in the exact original MusicXML source; this is not a lossless notation editor.");
+    if let Some(version) = header_version {
+        warnings.add("musicxml_header_normalized", format!("Omitted the standard MusicXML {version} external-only DOCTYPE from the parsed copy. The exact UTF-8 source is retained. No DTD was loaded or validated; external entities, DTD defaults and attribute-type normalization are not applied. Only this application's supported musical content is interpreted; this is not complete MusicXML validation or lossless notation import."));
+    }
     let work_title = one(root, "work")?
         .map(|w| optional_text(w, "work-title"))
         .transpose()?
@@ -387,7 +418,7 @@ pub fn import_musicxml(xml: &str) -> Result<(Score, Vec<Diagnostic>), String> {
         );
     }
     // Stable source-derived identifier, not a cryptographic integrity claim.
-    let hash = xml.bytes().fold(0xcbf29ce484222325_u64, |h, b| {
+    let hash = original.bytes().fold(0xcbf29ce484222325_u64, |h, b| {
         (h ^ b as u64).wrapping_mul(0x100000001b3)
     });
     let score_id = format!("musicxml-{hash:016x}");
@@ -521,7 +552,7 @@ pub fn import_musicxml(xml: &str) -> Result<(Score, Vec<Diagnostic>), String> {
             import_diagnostics: Some(warnings.entries.clone()),
             format: "musicxml".into(),
             filename: None,
-            content: xml.to_string(),
+            content: original.to_string(),
         }),
     };
     crate::validate(&score)

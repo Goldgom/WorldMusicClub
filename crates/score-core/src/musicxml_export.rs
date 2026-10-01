@@ -1022,6 +1022,49 @@ mod tests {
             .any(|v| v.part_id == "P2" && v.voice == "2"));
     }
     #[test]
+    fn imported_standard_headers_never_reach_generated_renderer_xml() {
+        let xml = include_str!("../../../tests/fixtures/original-duet-standard-header.musicxml");
+        let original = import_musicxml(xml).unwrap().0;
+        let (exported, imported) = round_trip(&original);
+        assert!(!exported.xml.contains("<!DOCTYPE"));
+        assert!(!exported.xml.contains("<!ENTITY"));
+        assert_eq!(
+            original.source.as_ref().unwrap().content.as_bytes(),
+            xml.as_bytes()
+        );
+        assert!(imported
+            .source
+            .as_ref()
+            .unwrap()
+            .import_diagnostics
+            .as_ref()
+            .unwrap()
+            .iter()
+            .all(|d| d.code != "musicxml_header_normalized"));
+        let expected = import_musicxml(include_str!(
+            "../../../tests/fixtures/original-duet.musicxml"
+        ))
+        .unwrap()
+        .0;
+        let baseline_export = export_musicxml(&expected).unwrap();
+        assert_eq!(
+            exported.xml, baseline_export.xml,
+            "Source-only header and source-derived IDs do not alter generated supported notation"
+        );
+        assert_eq!(
+            serde_json::to_value(&original.tempo).unwrap(),
+            serde_json::to_value(&imported.tempo).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&original.meters).unwrap(),
+            serde_json::to_value(&imported.meters).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&original.keys).unwrap(),
+            serde_json::to_value(&imported.keys).unwrap()
+        );
+    }
+    #[test]
     fn explicit_cross_voice_and_staff_chains_keep_written_lanes_and_one_sounding_note() {
         let mut s = score();
         s.parts[0].notes = vec![

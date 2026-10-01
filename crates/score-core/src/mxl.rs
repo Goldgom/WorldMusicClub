@@ -512,6 +512,71 @@ mod tests {
         );
     }
     #[test]
+    fn standard_score_header_retains_exact_zip_xml_and_observations() {
+        let bytes = include_bytes!("../../../tests/fixtures/original-duet-standard-header.mxl");
+        let xml = include_str!("../../../tests/fixtures/original-duet-standard-header.musicxml");
+        let (score, warnings) = import_mxl(bytes).unwrap();
+        let direct = import_musicxml(xml).unwrap().0;
+        assert_eq!(score.id, direct.id);
+        assert_eq!(
+            serde_json::to_value(&score.parts).unwrap(),
+            serde_json::to_value(&direct.parts).unwrap()
+        );
+        let source = score.source.as_ref().unwrap();
+        let archive: serde_json::Value = serde_json::from_str(&source.content).unwrap();
+        assert_eq!(archive["selected_score_path"], "scores/duet.musicxml");
+        assert_eq!(archive["files"]["selected.musicxml"]["bytes"], xml.len());
+        assert_eq!(
+            archive["files"]["selected.musicxml"]["content"]
+                .as_str()
+                .unwrap()
+                .as_bytes(),
+            xml.as_bytes()
+        );
+        assert_eq!(
+            STANDARD
+                .decode(
+                    archive["files"]["original.mxl"]["content"]
+                        .as_str()
+                        .unwrap()
+                )
+                .unwrap(),
+            bytes
+        );
+        assert_eq!(archive["files"]["original.mxl"]["bytes"], bytes.len());
+        assert_eq!(
+            warnings
+                .iter()
+                .filter(|d| d.code == "musicxml_header_normalized")
+                .count(),
+            1
+        );
+        let saved: Score = serde_json::from_slice(&serde_json::to_vec(&score).unwrap()).unwrap();
+        let compiled = crate::compile(saved).unwrap();
+        assert_eq!(
+            serde_json::to_value(&compiled.score).unwrap(),
+            serde_json::to_value(score).unwrap()
+        );
+        assert_eq!(
+            compiled
+                .diagnostics
+                .iter()
+                .filter(|d| d.code == "musicxml_header_normalized")
+                .count(),
+            1
+        );
+        assert_eq!(
+            serde_json::to_value(compiled.timeline).unwrap(),
+            serde_json::to_value(crate::compile(direct).unwrap().timeline).unwrap()
+        );
+        // The container metadata keeps its existing no-DOCTYPE policy.
+        let declaration = "<!DOCTYPE score-partwise PUBLIC '-//Recordare//DTD MusicXML 4.0 Partwise//EN' 'http://www.musicxml.org/dtds/partwise.dtd'>";
+        assert!(import_mxl(&mxl(&format!("{declaration}{MANIFEST}"), xml))
+            .unwrap_err()
+            .contains("container DTD"));
+        assert!(import_mxl(&mxl(MANIFEST, &xml.replace("4.0", "4.0.3"))).is_err());
+    }
+    #[test]
     fn older_archives_without_mimetype_are_explicitly_marked() {
         let bytes = zip_files(
             &[

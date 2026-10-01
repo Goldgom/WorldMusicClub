@@ -7,3 +7,5 @@
 *.mid -text
 *.midi -text
 *.zip -text
+# Intentional BOM/CRLF fixture: retain its exact bytes beside the MXL entry.
+tests/fixtures/original-duet-standard-header.musicxml -text whitespace=cr-at-eol

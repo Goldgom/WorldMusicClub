@@ -208,6 +208,72 @@ async function exportScore() {
   return score;
 }
 
+function assertHeaderNormalization(compilation, expectedCount = 1) {
+  const retained = (compilation.score.source.import_diagnostics || []).filter(item => item.code === 'musicxml_header_normalized');
+  assert.equal(retained.length, expectedCount, 'The raw source retains one observation per normalized standard header');
+  for (const observation of retained) {
+    assert.equal(observation.severity, 'warning');
+    assert.equal(observation.note_id, null);
+    assert.ok(!observation.message.startsWith('Retained import observation: '));
+  }
+  assert.deepEqual(
+    compilation.diagnostics.filter(item => item.code === 'musicxml_header_normalized'),
+    retained.map(item => ({...item, message: `Retained import observation: ${item.message}`})),
+    'Compilation exposes the retained header warning exactly once, with exactly one prefix',
+  );
+}
+
+function writtenMusic(score) {
+  const {title, composer, tempo, meters, keys, measures, repeats} = score;
+  return {title, composer, tempo, meters, keys, measures, repeats, parts: score.parts.map(({id, notes, ...part}) => ({
+    ...part, notes: notes.map(({id, ...note}) => note),
+  }))};
+}
+
+function soundingMusic(compilation) {
+  const partIndexes = new Map(compilation.score.parts.map((part, index) => [part.id, index]));
+  return compilation.timeline.notes.map(note => [partIndexes.get(note.part_id), note.staff, note.midi,
+    Number(note.start_ms.toFixed(6)), Number(note.duration_ms.toFixed(6)), note.velocity])
+    .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+}
+
+async function libraryRoundtrip(compilation, label, filename) {
+  await ui('#library-button').click();
+  await page.waitForFunction(() => document.querySelector('#library-status').textContent.startsWith('Ready.'));
+  assert.equal(await ui('#library-list>li').count(), 0);
+  await ui('#library-label').fill(label);
+  await ui('#library-save-copy').click();
+  await page.waitForFunction(() => document.querySelector('#library-status').textContent.startsWith('Saved'));
+  const originalKey = await ui('#library-list>li').getAttribute('data-library-key');
+  const [download] = await Promise.all([page.waitForEvent('download'), ui('#library-export-backup').click()]);
+  assert.equal(await download.failure(), null);
+  const backup = await readFile(await download.path());
+  const entries = JSON.parse(backup).entries;
+  assert.equal(entries.length, 1);
+  assert.deepEqual(entries[0].score, compilation.score);
+  const [validationResponse] = await Promise.all([
+    nextResponse('/api/compile'),
+    ui('#library-backup-file').setInputFiles({name: filename, mimeType: 'application/json', buffer: backup}),
+  ]);
+  assert.deepEqual(await responseJson(validationResponse), compilation, 'Backup restoration validates the retained score and diagnostics with Rust');
+  await page.waitForFunction(() => document.querySelector('#library-status').textContent.startsWith('Restored 1 new copies'));
+  const keys = await ui('#library-list>li').evaluateAll(rows => rows.map(row => row.dataset.libraryKey));
+  assert.equal(keys.length, 2);
+  assert.ok(keys.includes(originalKey));
+  assert.equal(new Set(keys).size, 2);
+  const restoredKey = keys.find(key => key !== originalKey);
+  const [restoredResponse] = await Promise.all([
+    nextResponse('/api/compile'),
+    ui(`[data-library-key="${restoredKey}"] [data-library-open]`).click(),
+  ]);
+  const restored = await responseJson(restoredResponse);
+  assert.deepEqual(restored, compilation, 'Opening a restored copy preserves each retained warning without duplication');
+  await ui('#score-library').waitFor({state: 'hidden'});
+  await readyForTitle(compilation.score.title);
+  assert.deepEqual(await exportScore(), compilation.score);
+  return restored;
+}
+
 async function assertStoppedAtZero() {
   assert.match(await ui('#play-button').textContent(), /Play/);
   assert.equal(await ui('#transport-status').textContent(), 'Ready when you are');
@@ -504,6 +570,108 @@ test('.xml browser import reaches the Rust parser and exports its exact source, 
   assert.equal(exported.source.content, xml);
 });
 
+for (const version of ['3.1', '4.0']) {
+  test(`standard MusicXML ${version} browser upload preserves header bytes, warnings and music through source, JSON and backup roundtrips`, {timeout: 60_000}, async () => {
+    const fixtureXml = await readFile(new URL('original-duet-standard-header.musicxml', fixtures), 'utf8');
+    const xml = version === '4.0' ? fixtureXml : fixtureXml
+      .replace("'-//Recordare//DTD MusicXML 4.0 Partwise//EN'", '"-//Recordare//DTD MusicXML 3.1 Partwise//EN"')
+      .replace("'http://www.musicxml.org/dtds/partwise.dtd'", '"http://www.musicxml.org/dtds/partwise.dtd"')
+      .replace('<score-partwise version="4.0">', '<score-partwise version="3.1">');
+    const bytes = Buffer.from(xml);
+    assert.deepEqual(bytes.subarray(0, 3), Buffer.from([0xef, 0xbb, 0xbf]));
+    assert.ok(xml.includes('\r\n'));
+    const external = [];
+    page.on('request', request => { if (new URL(request.url()).origin !== origin) external.push(request.url()); });
+    const [importResponse, compileResponse] = await Promise.all([
+      nextResponse('/api/import/musicxml'), nextResponse('/api/compile'),
+      ui('#score-file').setInputFiles({name: `standard-${version}.${version === '3.1' ? 'xml' : 'musicxml'}`, mimeType: 'application/xml', buffer: bytes}),
+    ]);
+    const imported = await responseJson(importResponse), compiled = await responseJson(compileResponse);
+    assert.deepEqual(importResponse.request().postDataBuffer(), bytes, 'The browser sends the original UTF-8 bytes, including BOM and CRLF');
+    assert.equal(imported.score.source.format, 'musicxml');
+    assert.deepEqual(Buffer.from(imported.score.source.content), bytes);
+    assert.deepEqual(compiled, imported, 'The activation compile retains the complete imported score and its exact diagnostics');
+    assertHeaderNormalization(imported);
+    assertHeaderNormalization(compiled);
+    await readyForTitle(imported.score.title);
+    assert.equal(await ui('#diagnostic-list>li').filter({hasText: 'musicxml_header_normalized:'}).count(), 1);
+    await assertStoppedAtZero();
+
+    await ui('#source-files-button').click();
+    assert.equal(await ui('#source-archive-files>li').count(), 1);
+    await page.getByRole('button', {name: 'Inspect retained file retained-source.txt', exact: true}).click();
+    await ui('#source-archive-download:not([disabled])').waitFor();
+    assert.equal(await ui('#source-computed-hash').textContent(), createHash('sha256').update(bytes).digest('hex'));
+    const [sourceDownload] = await Promise.all([page.waitForEvent('download'), ui('#source-archive-download').click()]);
+    assert.equal(await sourceDownload.failure(), null);
+    assert.equal(sourceDownload.suggestedFilename(), 'retained-source.txt');
+    assert.deepEqual(await readFile(await sourceDownload.path()), bytes);
+    await ui('#source-archive-close').click();
+    const canonical = await exportScore();
+    assert.deepEqual(canonical, imported.score);
+    const [reloadedResponse] = await Promise.all([
+      nextResponse('/api/compile'),
+      ui('#score-file').setInputFiles({name: 'standard-header-score.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(canonical))}),
+    ]);
+    const reloaded = await responseJson(reloadedResponse);
+    assert.deepEqual(reloaded, compiled);
+    assertHeaderNormalization(reloaded);
+    await readyForTitle(imported.score.title);
+    const restored = await libraryRoundtrip(compiled, `MusicXML ${version} with its original header`, 'standard-header-backup.json');
+    assertHeaderNormalization(restored);
+    assert.deepEqual(Buffer.from(restored.score.source.content), bytes);
+    assert.equal(await ui('#diagnostic-list>li').filter({hasText: 'musicxml_header_normalized:'}).count(), 1);
+
+    // Ordinary equivalent encodings must keep distinct identities derived from raw input.
+    const sourceVariants = [xml.replace(/<!DOCTYPE[\s\S]*?>\r\n/, ''), xml.slice(1).replaceAll('\r\n', '\n')];
+    const ids = new Set([compiled.score.id]);
+    for (const [index, source] of sourceVariants.entries()) {
+      const response = await fetch(`${origin}/api/import/musicxml`, {method: 'POST', headers: {'Content-Type': 'application/xml'}, body: Buffer.from(source)});
+      assert.equal(response.status, 200);
+      const equivalent = await response.json();
+      assert.equal(equivalent.score.source.content, source);
+      assert.deepEqual(writtenMusic(equivalent.score), writtenMusic(compiled.score));
+      assert.deepEqual(soundingMusic(equivalent), soundingMusic(compiled));
+      assertHeaderNormalization(equivalent, index === 0 ? 0 : 1);
+      ids.add(equivalent.score.id);
+    }
+    assert.equal(ids.size, 3, 'Removing the header or changing BOM/newlines does not collapse raw-source IDs');
+
+    const generated = await rustApi('/api/export/musicxml', compiled.score);
+    assert.doesNotMatch(generated.xml, /<!DOCTYPE|<!ENTITY/);
+    assert.match(generated.xml, /<score-partwise version="4\.0">/);
+    assert.deepEqual(await exportScore(), compiled.score, 'Generated export leaves the complete retained source unchanged');
+    const [generatedImportResponse, generatedCompileResponse] = await Promise.all([
+      nextResponse('/api/import/musicxml'), nextResponse('/api/compile'),
+      ui('#score-file').setInputFiles({name: 'generated-roundtrip.musicxml', mimeType: 'application/xml', buffer: Buffer.from(generated.xml)}),
+    ]);
+    const generatedImport = await responseJson(generatedImportResponse), generatedCompile = await responseJson(generatedCompileResponse);
+    assert.deepEqual(generatedCompile, generatedImport);
+    assert.equal(generatedImport.score.source.content, generated.xml);
+    assertHeaderNormalization(generatedImport, 0);
+    assert.deepEqual(soundingMusic(generatedImport), soundingMusic(compiled));
+    assert.ok(Math.abs(generatedImport.timeline.duration_ms - compiled.timeline.duration_ms) < 1e-7);
+    for (const map of ['tempo', 'meters', 'keys', 'repeats']) assert.deepEqual(generatedImport.score[map], compiled.score[map]);
+    // This fixture has no cross-bar events to split. Exporter gaps use <forward>,
+    // so its explicit notes/rests compare exactly after restoring voice labels.
+    const notes = (score, restoreVoices = false) => score.parts.map((part, partIndex) => {
+      const originalPart = compiled.score.parts[partIndex];
+      if (restoreVoices) assert.equal(part.id, generated.part_id_map[originalPart.id]);
+      return part.notes.map(note => {
+        const mappedVoice = restoreVoices ? generated.voice_id_map.find(entry =>
+          entry.part_id === originalPart.id && entry.staff === note.staff && entry.xml_voice === note.voice) : null;
+        if (restoreVoices) assert.ok(mappedVoice, 'Every generated voice resolves to its canonical staff/voice');
+        return JSON.stringify([note.at, note.duration, note.pitch, note.staff,
+          restoreVoices ? mappedVoice.voice : note.voice, note.tie_start, note.tie_stop, note.velocity]);
+      }).sort();
+    });
+    assert.deepEqual(notes(generatedImport.score, true), notes(compiled.score), 'Supported spelling, rational rhythms, rests, voices and ties survive generated MusicXML');
+    await readyForTitle(generatedImport.score.title);
+    await page.waitForFunction(() => ![...document.querySelectorAll('#diagnostic-list>li')].some(row => row.textContent.includes('musicxml_header_normalized:')));
+    assert.deepEqual(external, [], 'The standard public identifier never becomes a browser resource request');
+  });
+}
+
 test('PNG review uses real Rust candidates and requires every duration plus renewed explicit confirmation', testOptions, async () => {
   const png = await readFile(new URL('omr-original-scale.png', fixtures));
   await ui('#count-in').uncheck();
@@ -791,8 +959,20 @@ test('real Audiveris melody review corrects missed tempo and retains hash-matche
   const provenance=JSON.parse(await readFile(new URL('audiveris-original-melody-provenance.json',fixtures),'utf8'));
   const image=await readFile(new URL(provenance.image,fixtures)),raw=await readFile(new URL(provenance.recognized_fixture,fixtures));
   assert.equal(createHash('sha256').update(image).digest('hex'),provenance.image_sha256);assert.equal(createHash('sha256').update(raw).digest('hex'),provenance.recognition_fixture_sha256);assert.equal(provenance.printed_quarter_bpm,90);
+  assert.match(raw.toString('utf8'), /DTD MusicXML 4\.0\.3 Partwise/);
+  const genericResponse = await fetch(`${origin}/api/import/musicxml`, {method: 'POST', headers: {'Content-Type': 'application/xml'}, body: raw});
+  assert.equal(genericResponse.status, 400, 'The new standard-header route does not admit Audiveris 4.0.3 output');
+  const genericError = await genericResponse.json();
+  assert.match(genericError.error, /4\.0\.3|DTD|DOCTYPE|version/i);
+  assert.equal(Object.hasOwn(genericError, 'score'), false);
   const compileCount=requests.filter(request=>request.path==='/api/compile').length,previousTitle=await ui('#score-title').textContent();const draft=await openExternalReviewFiles(raw,'audiveris-original-melody.musicxml',{filename:provenance.image,bytes:image});
   assert.equal(draft.requires_review,true);assert.equal(draft.confidence,null);assert.equal(Object.hasOwn(draft,'timeline'),false);assert.equal(draft.score.tempo[0].bpm,120,'The known recognition miss remains uncorrected until the user edits it');assert.equal(draft.score.parts[0].notes.length,16);assert.equal(draft.normalizations.length,1);assert.equal(await ui('#score-title').textContent(),previousTitle);assert.equal(requests.filter(request=>request.path==='/api/compile').length,compileCount);
+  assert.equal(draft.score.source.format, 'external-omr-draft');
+  assert.equal(JSON.parse(draft.score.source.content).input.output_content, raw.toString('utf8'));
+  assert.equal((draft.score.source.import_diagnostics || []).filter(item => item.code === 'musicxml_header_normalized').length, 0);
+  const draftCompile = await fetch(`${origin}/api/compile`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(draft.score)});
+  assert.equal(draftCompile.status, 400);
+  assert.match((await draftCompile.json()).error, /needs explicit.*review before playback or practice/);
   assert.deepEqual(await ui('#external-original-image').evaluate(image=>[image.naturalWidth,image.naturalHeight]),[provenance.width,provenance.height]);assert.match(await ui('.external-confidence').textContent(),/Confidence: unknown/);
   const unresolved=structuredClone(draft.score);unresolved.parts[0].notes.find(note=>note.pitch).tie_start=true;const refused=await fetch(`${origin}/api/omr/confirm`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({score:unresolved,confirmation:{notes_and_rests:true,rhythm_and_voices:true,ties_and_navigation:true,key_and_meter:true,tempo:true,source_rights:true}})});assert.equal(refused.status,400);assert.match((await refused.json()).error,/Review the ties.*unclosed tie start/);assert.equal(await ui('#score-title').textContent(),previousTitle);assert.equal(unresolved.source.content,draft.score.source.content,'The rejected review preserves the original source record');
   await attestExternalReview();await page.getByLabel('Tempo BPM 1',{exact:true}).fill('90');assert.equal(await ui('#external-confirm-load').isDisabled(),true);assert.equal(await ui('#external-confirm-source_rights').isChecked(),false);await ui('#external-title').fill('Manually reviewed original melody');await ui('#external-composer').fill('WorldMusicHub original exercise');assert.deepEqual(draft.score.keys,[],'The engine omitted a key declaration; the editor must not invent it');await ui('#external-map-kind').selectOption('keys');assert.equal(await ui('.external-map-row').count(),0);await ui('#external-add-map').click();assert.equal(await ui('#external-confirm-key_and_meter').isChecked(),false);await page.getByLabel('Key fifths 1',{exact:true}).fill('0');await page.getByLabel('Key mode 1',{exact:true}).fill('major');await attestExternalReview();
@@ -870,17 +1050,65 @@ test('real Rust pitch feedback exposes independent missed targets and an extra p
   assert.match(await ui('#pitch-breakdown-note').textContent(),/independent unmatched attacks/);assert.match(await ui('#pitch-breakdown-note').textContent(),/manual offset.*small sample.*latency/);assert.deepEqual(await exportScore(),initialCompilation.score);const takePromise=page.waitForEvent('download');await ui('#export-takes').click();const take=JSON.parse(await readFile(await(await takePromise).path(),'utf8'));assert.deepEqual(take.passes[0].assessment.pitch_breakdown,assessment.pitch_breakdown);await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-pitch-feedback.png'),fullPage:true});await writeFile(join(artifactDirectory,'worldmusichub-live-pitch-feedback.json'),JSON.stringify({score_id:initialCompilation.score.id,pitch_breakdown:assessment.pitch_breakdown,canonical_score_unchanged:true},null,2));
 });
 
-test('MXL browser import retains the entire archive and selected XML through inert downloads, JSON and library backup restore', {timeout:60_000},async()=>{
-  const mxl=await readFile(new URL('original-duet.mxl',fixtures)),xml=await readFile(new URL('original-duet.musicxml',fixtures));
-  const[importResponse,compileResponse]=await Promise.all([nextResponse('/api/import/mxl'),nextResponse('/api/compile'),ui('#score-file').setInputFiles({name:'original-duet.mxl',mimeType:'application/zip',buffer:mxl})]);const imported=await responseJson(importResponse),compiled=await responseJson(compileResponse);assert.deepEqual(compiled.score,imported.score);assert.equal(imported.score.source.format,'worldmusichub-mxl-archive-v1');assert.equal(imported.score.source.filename,'retained-mxl.json');const source=imported.score.source,envelope=JSON.parse(source.content);assert.equal(envelope.version,1);assert.equal(envelope.selected_score_path,'scores/duet.musicxml');assert.deepEqual(Buffer.from(envelope.files['original.mxl'].content,'base64'),mxl);assert.equal(envelope.files['original.mxl'].bytes,mxl.length);assert.deepEqual(Buffer.from(envelope.files['selected.musicxml'].content),xml);assert.equal(envelope.files['selected.musicxml'].bytes,xml.length);await readyForTitle(imported.score.title);
-  await ui('#source-files-button').click();assert.equal(await ui('#source-archive-files>li').count(),3);assert.match(await ui('#source-archive-files').textContent(),/Original MXL archive/);assert.match(await ui('#source-archive-files').textContent(),/Selected MusicXML entry/);assert.match(await ui('#source-archive-files').textContent(),/scores\/duet.musicxml/);
-  for(const[filename,bytes,hasSize]of[['retained-mxl.json',Buffer.from(source.content),false],['original.mxl',mxl,true],['selected.musicxml',xml,true]]){
-    await page.getByRole('button',{name:`Inspect retained file ${filename}`,exact:true}).click();await ui('#source-archive-download:not([disabled])').waitFor();assert.equal(await ui('#source-computed-hash').textContent(),createHash('sha256').update(bytes).digest('hex'));assert.equal(await ui('#source-declared-hash').textContent(),'Not supplied');assert.match(await ui('#source-hash-status').textContent(),/Unknown: no declared/);assert.match(await ui('#source-size-status').textContent(),hasSize?/matches the declaration/:/Unknown: no declared/);const promise=page.waitForEvent('download');await ui('#source-archive-download').click();const downloaded=await promise;assert.equal(downloaded.suggestedFilename(),filename);assert.deepEqual(await readFile(await downloaded.path()),bytes);
-  }
-  await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-mxl-retained-files.png'),fullPage:true});await ui('#source-archive-close').click();const exported=await exportScore();assert.deepEqual(exported,imported.score);
-  const[reloadedResponse]=await Promise.all([nextResponse('/api/compile'),ui('#score-file').setInputFiles({name:'retained-mxl-score.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(exported))})]);const reloaded=await responseJson(reloadedResponse);assert.deepEqual(reloaded.score,imported.score);await readyForTitle(imported.score.title);
-  await ui('#library-button').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Ready.'));await ui('#library-label').fill('Complete MXL archive');await ui('#library-save-copy').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Saved'));const originalKey=await ui('#library-list>li').getAttribute('data-library-key'),backupPromise=page.waitForEvent('download');await ui('#library-export-backup').click();const backup=await readFile(await(await backupPromise).path());assert.deepEqual(JSON.parse(backup).entries[0].score,imported.score);await ui('#library-backup-file').setInputFiles({name:'mxl-library-backup.json',mimeType:'application/json',buffer:backup});await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Restored 1 new copies'));const keys=await ui('#library-list>li').evaluateAll(rows=>rows.map(row=>row.dataset.libraryKey));assert.equal(keys.length,2);assert.equal(new Set(keys).size,2);const restoredKey=keys.find(key=>key!==originalKey);await ui(`[data-library-key="${restoredKey}"] [data-library-open]`).click();await ui('#score-library').waitFor({state:'hidden'});await readyForTitle(imported.score.title);const restoredExport=await exportScore();assert.deepEqual(restoredExport,imported.score);assert.equal(restoredExport.source.content,source.content);
-});
+for (const fixtureName of ['original-duet', 'original-duet-standard-header']) {
+  test(`MXL ${fixtureName} browser import retains archive, selected XML and warnings through downloads, JSON and library backup restore`, {timeout: 60_000}, async () => {
+    const mxl = await readFile(new URL(`${fixtureName}.mxl`, fixtures)), xml = await readFile(new URL(`${fixtureName}.musicxml`, fixtures));
+    const expectedHeaderCount = fixtureName === 'original-duet-standard-header' ? 1 : 0;
+    const [importResponse, compileResponse] = await Promise.all([
+      nextResponse('/api/import/mxl'), nextResponse('/api/compile'),
+      ui('#score-file').setInputFiles({name: `${fixtureName}.mxl`, mimeType: 'application/zip', buffer: mxl}),
+    ]);
+    const imported = await responseJson(importResponse), compiled = await responseJson(compileResponse);
+    assert.deepEqual(importResponse.request().postDataBuffer(), mxl);
+    assert.deepEqual(compiled, imported);
+    assertHeaderNormalization(imported, expectedHeaderCount);
+    assert.equal(imported.score.source.format, 'worldmusichub-mxl-archive-v1');
+    assert.equal(imported.score.source.filename, 'retained-mxl.json');
+    const source = imported.score.source, envelope = JSON.parse(source.content);
+    assert.equal(envelope.version, 1);
+    assert.equal(envelope.selected_score_path, 'scores/duet.musicxml');
+    assert.deepEqual(Buffer.from(envelope.files['original.mxl'].content, 'base64'), mxl);
+    assert.equal(envelope.files['original.mxl'].bytes, mxl.length);
+    assert.deepEqual(Buffer.from(envelope.files['selected.musicxml'].content), xml);
+    assert.equal(envelope.files['selected.musicxml'].bytes, xml.length);
+    await readyForTitle(imported.score.title);
+    assert.equal(await ui('#diagnostic-list>li').filter({hasText: 'musicxml_header_normalized:'}).count(), expectedHeaderCount);
+    await ui('#source-files-button').click();
+    assert.equal(await ui('#source-archive-files>li').count(), 3);
+    assert.match(await ui('#source-archive-files').textContent(), /Original MXL archive/);
+    assert.match(await ui('#source-archive-files').textContent(), /Selected MusicXML entry/);
+    assert.match(await ui('#source-archive-files').textContent(), /scores\/duet.musicxml/);
+    for (const [filename, bytes, hasSize] of [['retained-mxl.json', Buffer.from(source.content), false], ['original.mxl', mxl, true], ['selected.musicxml', xml, true]]) {
+      await page.getByRole('button', {name: `Inspect retained file ${filename}`, exact: true}).click();
+      await ui('#source-archive-download:not([disabled])').waitFor();
+      assert.equal(await ui('#source-computed-hash').textContent(), createHash('sha256').update(bytes).digest('hex'));
+      assert.equal(await ui('#source-declared-hash').textContent(), 'Not supplied');
+      assert.match(await ui('#source-hash-status').textContent(), /Unknown: no declared/);
+      assert.match(await ui('#source-size-status').textContent(), hasSize ? /matches the declaration/ : /Unknown: no declared/);
+      const [downloaded] = await Promise.all([page.waitForEvent('download'), ui('#source-archive-download').click()]);
+      assert.equal(await downloaded.failure(), null);
+      assert.equal(downloaded.suggestedFilename(), filename);
+      assert.deepEqual(await readFile(await downloaded.path()), bytes);
+    }
+    const screenshotName = expectedHeaderCount ? 'worldmusichub-live-mxl-standard-header-retained-files.png' : 'worldmusichub-live-mxl-retained-files.png';
+    await page.screenshot({path: join(artifactDirectory, screenshotName), fullPage: true});
+    await ui('#source-archive-close').click();
+    const exported = await exportScore();
+    assert.deepEqual(exported, imported.score);
+    const [reloadedResponse] = await Promise.all([
+      nextResponse('/api/compile'),
+      ui('#score-file').setInputFiles({name: 'retained-mxl-score.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(exported))}),
+    ]);
+    const reloaded = await responseJson(reloadedResponse);
+    assert.deepEqual(reloaded, compiled);
+    assertHeaderNormalization(reloaded, expectedHeaderCount);
+    await readyForTitle(imported.score.title);
+    const restored = await libraryRoundtrip(compiled, 'Complete MXL archive', 'mxl-library-backup.json');
+    assertHeaderNormalization(restored, expectedHeaderCount);
+    assert.equal(restored.score.source.content, source.content);
+    assert.equal(await ui('#diagnostic-list>li').filter({hasText: 'musicxml_header_normalized:'}).count(), expectedHeaderCount);
+  });
+}
 
 test('real lobby preview leaves the active source and clock intact until an explicit new Start',testOptions,async()=>{
   const catalog=await rustApi('/api/catalog'),candidate=catalog.find(score=>score.id!==initialCompilation.score.id&&score.provenance.kind==='original_exercise');assert.ok(candidate);
