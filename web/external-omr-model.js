@@ -32,6 +32,7 @@ function editableShape(score){
 // Match only documented Serde defaults; do not normalize musical values or discard fields.
 function reviewedEditable(score,{expected=false}={}){
   const copy=structuredClone(score);delete copy.source;
+  if(copy.format_metadata===null)delete copy.format_metadata;
   if(!Object.hasOwn(copy,'repeats'))copy.repeats=[];
   if(copy.provenance){if(expected)copy.provenance.kind='user_reviewed_external_omr';for(const key of ['source_url','license'])if(!Object.hasOwn(copy.provenance,key))copy.provenance[key]=null;}
   for(const part of copy.parts??[])for(const note of part.notes??[]){if(!Object.hasOwn(note,'pitch'))note.pitch=null;for(const key of ['tie_start','tie_stop'])if(!Object.hasOwn(note,key))note[key]=false;}
