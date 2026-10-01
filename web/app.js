@@ -1,6 +1,7 @@
 import {setupSourceArchiveView} from './source-archive-view.js';
 import {setupGameShell} from './game-shell.js';
 import {ScorePreview,filterCatalog,stageShortcutAllowed} from './score-preview.js';
+import {setupPerformanceView,FIELD_COLORS} from './performance-view.js';
 import {prepareScoreDownload} from './score-download.js';
 import {validateCatalogIndex,CatalogScoreCache,fetchCatalogScore} from './catalog-loader.js';
 import {setupNotationFollowing} from './notation-follow.js';
@@ -33,14 +34,14 @@ let adaptationView = null;
 let externalOmrView = null;
 let notationFollowing = null;
 let sourceArchiveView=null;
-let shell=null,preview=null,startingPreview=false,previewRefreshQueued=false,startRequest=0,enteringPreview=false;
+let shell=null,preview=null,performanceView=null,startingPreview=false,previewRefreshQueued=false,startRequest=0,enteringPreview=false;
 const catalogCache=new CatalogScoreCache();
 const latencyPreference=readLatencyPreference();
 let catalogIndexController=null,catalogIndexRequest=0,catalogIndexFailed=false;
 const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reason:'Waiting for an instrument compatibility check.'}, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
 state.recorder = new PracticeRecorder({latencyMs:state.latency});
-shell=setupGameShell({pausePlayback,onPanel:()=>cancelPendingStart(),onScreen:()=>{if(!enteringPreview)cancelPendingStart();engravedView.surfaceChanged();drawFrame()},onNotation:visible=>{if(!visible)notationFollowing?.suspend('Following suspended while the notation dock is closed.');engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
+shell=setupGameShell({pausePlayback,onPanel:()=>cancelPendingStart(),onScreen:screen=>{if(!enteringPreview)cancelPendingStart();performanceView?.screenChanged(screen);engravedView.surfaceChanged();drawFrame()},onNotation:visible=>{if(!visible)notationFollowing?.suspend('Following suspended while the notation dock is closed.');engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
 preview=new ScorePreview({compile:(score,signal)=>api('/api/compile',score,signal),check:checkPreview,onChange:()=>{renderPreview();renderCatalog()}});
 
 function notice(message, error = false) {
@@ -141,7 +142,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     resetPlayback();
     renderScore(); notationFollowing?.scoreChanged(); sourceArchiveView?.scoreChanged(); libraryView.scoreChanged(); adaptationView?.scoreChanged(); renderCatalog(); updateRangeWarning();
     $('catalog-status').textContent=`Current session: ${state.score.title}. Browsing a preview keeps this take intact.`;
-    const clockScore=state.score;await checkInstrument();if(state.score===clockScore){metronome?.setScore();preview.adopt(state.compiled,state.compatibility,state.practicePart);}
+    const clockScore=state.score;await checkInstrument();if(state.score===clockScore){metronome?.setScore();preview.adopt(state.compiled,previewCompatibility(state.compatibility),state.practicePart);}
     return state.score===clockScore&&(expectedIntent===null||expectedIntent===state.loadIntent);
   } catch (error) {
     if (error.name === 'AbortError') return;
@@ -548,6 +549,7 @@ function drawFrame() {
   }
   $('progress').max = Math.max(1, duration); $('progress').value = Math.min(duration, Math.max(0, position));
   $('time-label').textContent = `${formatTime(position)} / ${formatTime(duration)}`;
+  performanceView?.update();
   if(shell.screen()!=='stage')return;
   if(shell.notationVisible())notationFollowing?.tick(position < segmentStart ? -1 : position,transport.running);
   const active = position < segmentStart ? [] : playbackIndex?.range(position) || [];
@@ -572,11 +574,13 @@ function drawFrame() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) { canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr); }
   const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = '#263a31'; ctx.fillRect(0, 0, width, height);
-  for (const key of state.geometry.filter(k => !k.black)) { ctx.strokeStyle = '#ffffff08'; ctx.beginPath(); ctx.moveTo(key.x * width, 0); ctx.lineTo(key.x * width, height); ctx.stroke(); }
+  const background=ctx.createLinearGradient(0,0,width,height);background.addColorStop(0,FIELD_COLORS.background);background.addColorStop(1,FIELD_COLORS.backgroundEnd);
+  ctx.fillStyle = background; ctx.fillRect(0, 0, width, height);
+  for(const key of state.geometry.filter(key=>key.black)){ctx.fillStyle='#07162130';ctx.fillRect(key.x*width,0,key.width*width,height);}
+  for (const key of state.geometry.filter(k => !k.black)) { ctx.strokeStyle = '#88aac518'; ctx.beginPath(); ctx.moveTo(key.x * width, 0); ctx.lineTo(key.x * width, height); ctx.stroke(); }
   // Equal screen-space guides are decorative, not guessed beats or barlines.
   const windowMs = 4000;
-  for(let line=1;line<5;line++){const y=line*height/5;ctx.strokeStyle='#a7c09416';ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(width,y);ctx.stroke();}
+  for(let line=1;line<5;line++){const y=line*height/5;ctx.strokeStyle='#88aac51c';ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(width,y);ctx.stroke();}
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   for (const note of reducedMotion ? active : playbackIndex?.range(position, position + windowMs) || []) {
     if (note.start_ms + note.duration_ms < position || note.start_ms > position + windowMs) continue;
@@ -584,11 +588,12 @@ function drawFrame() {
     const bottom = reducedMotion ? height : height - (note.start_ms - position) / windowMs * height;
     const noteHeight = reducedMotion ? 40 : Math.max(8, note.duration_ms / windowMs * height - 4);
     const x = key.x * width + 2; const y = bottom - noteHeight;
-    ctx.fillStyle = note.start_ms <= position ? '#dfb45e' : key.black ? '#76975e' : '#a6c887';
-    ctx.beginPath(); ctx.roundRect(x, y, Math.max(2, key.width * width - 4), noteHeight, 4); ctx.fill();
-    if (noteHeight > 23 && key.width * width > 27) { ctx.fillStyle = '#29422a'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(midiName(note.midi), x + (key.width * width - 4) / 2, Math.max(y + 14, 12)); }
+    const color=note.start_ms<=position?FIELD_COLORS.scheduled:key.black?FIELD_COLORS.accidental:FIELD_COLORS.natural;
+    ctx.fillStyle=color;ctx.shadowColor=color+'66';ctx.shadowBlur=reducedMotion?0:6;
+    ctx.beginPath(); ctx.roundRect(x, y, Math.max(2, key.width * width - 4), noteHeight, 5); ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#eaffff55';ctx.lineWidth=1;ctx.stroke();
+    if (noteHeight > 23 && key.width * width > 27) { ctx.fillStyle = FIELD_COLORS.noteText; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(midiName(note.midi), x + (key.width * width - 4) / 2, Math.min(height-13,Math.max(y+17,85))); }
   }
-  if (reducedMotion && timeline) { ctx.fillStyle = '#b2c2a6'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Reduced motion · Active notes only', width / 2, 30); }
+  if (reducedMotion && timeline) { ctx.fillStyle = '#d4e4f1'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Reduced motion · Active notes only', width / 2, Math.min(height-12,100)); }
   if (!timeline) { ctx.fillStyle = '#a9bba2'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Choose an exercise to begin · 选择练习曲', width / 2, height / 2); }
 }
 let lastIdleDraw = 0;
@@ -709,20 +714,24 @@ function cancelCatalogSelection(){
   if(startingPreview){startRequest++;state.compileController?.abort();startingPreview=false;}
 }
 function cancelPendingStart(){if(startingPreview){state.loadIntent++;cancelCatalogSelection();renderPreview();updateButtons();}}
+function previewCompatibility(result,profile=currentProfile()){
+  return result.status==='ready'?{...result,reason:profile.kind==='piano'?'All selected pitches fit your keyboard.':'Pitch positions are available. Review fingering, hand reach and sustained overlaps before guitar practice.'}:result;
+}
 async function checkPreview(compiled,part,signal){
   if(state.profileDirty)return{status:'dirty',reason:'Apply your edited instrument setup before starting Practice.'};
   const profile=currentProfile(),targets=practiceScope(compiled.timeline,part,null).targets;
   const plan=validateTargetPlan(await api('/api/practice-targets',{timeline:targets,profile},signal),targets);
   const report=await api('/api/instrument-check',{timeline:targets,profile},signal);
   const result=compatibilityStatus(report,targets.notes);
-  return !plan.playable&&result.status==='ready'?{status:'blocked',reason:'Rust marked this target selection as unplayable. Review the instrument setup.'}:result;
+  if(!plan.playable&&result.status==='ready')return{status:'blocked',reason:'This selection is not playable with the current setup. Review the instrument range or part.'};
+  return previewCompatibility(result,profile);
 }
 function renderPreview(){
   const value=preview.value;$('song-lobby').dataset.previewStatus=value.status;$('song-lobby').dataset.previewId=value.identity||'';
   const item=value.score||state.catalog.find(item=>item.id===value.identity);
   $('preview-title').textContent=item?.title||'Choose your first score';
   $('preview-meta').textContent=value.compiled?`${item.composer||'Composer not specified'} · ${scoreSummary(item,value.compiled.timeline).writtenCount} written events · ${item.parts.length} parts · ${catalogOriginLabel(item)}`:item?`${item.composer||'Composer not specified'} · ${item.written_event_count} written events`:'Browse the list or import a local score.';
-  $('preview-status').textContent=startingPreview?'Preparing the selected session…':value.status==='loading'?'Loading and validating this preview. Your current take is unchanged.':value.status==='error'?`Preview unavailable: ${value.message} Select it again to retry.`:value.status==='ready'?'Ready to listen. Practice uses Rust-checked physical note-on targets.':'Browsing keeps your current session intact.';
+  $('preview-status').textContent=startingPreview?'Preparing the selected session…':value.status==='loading'?'Preparing this preview. Your current take is unchanged.':value.status==='error'?`Preview unavailable: ${value.message} Select it again to retry.`:value.status==='ready'?'Listen to the score, or Practice to record your notes and timing.':'Browsing keeps your current session intact.';
   $('preview-gate').textContent=value.compatibility.reason;$('preview-gate').classList.toggle('preview-blocked',['blocked','error','dirty'].includes(value.compatibility.status));
   $('start-listen').disabled=startingPreview||!preview.canStart('listen');$('start-practice').disabled=startingPreview||!preview.canStart('practice');
   const diagnostics=value.compiled?.diagnostics||[];$('preview-notices').hidden=!diagnostics.length;$('preview-notices-title').textContent=`Source & preparation notices · ${diagnostics.length}`;$('preview-notice-list').replaceChildren();for(const diagnostic of diagnostics.slice(0,20)){const row=document.createElement('li');row.textContent=diagnostic.message;$('preview-notice-list').append(row)}if(diagnostics.length>20){const row=document.createElement('li');row.textContent=`${diagnostics.length-20} further notices are retained in the full score view.`;$('preview-notice-list').append(row)}
@@ -795,7 +804,9 @@ const libraryView = setupScoreLibrary({getScore:()=>state.score,onLoad:importCan
 const engravedView = setupEngravedView({getScore:()=>state.score,getPracticePart:()=>state.practicePart,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),pausePlayback,notice,onVisibility:active=>{
   if(!active)notationFollowing?.suspend('Following suspended because the engraved view changed. Enable it again after returning.');
   state.engravingActive=active;$('engraving-view').hidden=!active;$('notation-controls').hidden=active;$('notation').hidden=active;$('basic-notation-note').hidden=active;
-  if(active){$('score-key').textContent='Generated MusicXML · static staff preview';for(const id of ['staff-button','jianpu-button']){$(id).classList.remove('selected');$(id).setAttribute('aria-pressed','false')}$('engraved-button').classList.add('selected');$('engraved-button').setAttribute('aria-pressed','true')}
+  $('score-key').hidden=active;
+  if($('dock-warning-count'))$('dock-warning-count').hidden=!active&&$('engraving-fallback').hidden;
+  if(active){$('score-key').textContent='Generated staff · 生成谱面';for(const id of ['staff-button','jianpu-button']){$(id).classList.remove('selected');$(id).setAttribute('aria-pressed','false')}$('engraved-button').classList.add('selected');$('engraved-button').setAttribute('aria-pressed','true')}
 },onFallback:()=>selectBasicNotation('staff',{remember:false}),onManualNavigation:()=>notationFollowing?.suspend()});
 notationFollowing = setupNotationFollowing({api,getContext:()=>({score:state.score,timeline:state.compiled?.timeline}),getPlayback:()=>{const position=transport.time(performance.now());return{position:position<(state.loop?.start_ms||0)?-1:position,running:transport.running}},view:engravedView});
 setupJianpuEditor({onImport:importJianpuText,pausePlayback});
@@ -807,4 +818,5 @@ sourceArchiveView=setupSourceArchiveView({getContext:()=>({score:state.score,ver
 externalOmrView = setupExternalOmrReview({api,onActivate:importCanonicalScore,pausePlayback,notice,getSourceVersion:()=>state.loadIntent});
 adaptationView = setupAdaptationView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.score,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
 metronome = setupMetronome({api,getScore:()=>state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:transport.time(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
+performanceView=setupPerformanceView({getContext:()=>({geometry:state.geometry,rangeLabel:`${midiName(state.geometry[0].midi)}–${midiName(state.geometry.at(-1).midi)}`,mode:state.mode,instrument:state.instrument,position:transport.time(performance.now()),segmentStart:state.loop?.start_ms||0,countInBeatMs:60000/(Number($('tempo').value)||100),running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,now:performance.now(),recorder:state.recorder})});
 renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); loadCatalog();

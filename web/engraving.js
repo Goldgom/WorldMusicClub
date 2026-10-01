@@ -63,7 +63,8 @@ export function validateEngravingInput(xml, options = {}, Parser = globalThis.DO
   const zoom = options.zoom ?? 1;
   if (!Number.isFinite(zoom) || zoom < 0.5 || zoom > 2) return invalid('Engraving zoom must be between 0.5 and 2.');
   if (options.width !== undefined && (!Number.isFinite(options.width) || options.width < 320 || options.width > 4096)) return invalid('Engraving width must be between 320 and 4096 pixels.');
-  return {ok: true, status: 'validated', document, options: {dark: options.dark === true, responsive: options.responsive !== false, fromMeasure, toMeasure, partIds: selectedIds, zoom, width: options.width}, metadata: {noteCount, measureCount, partIds, fromMeasure, toMeasure}};
+  if(options.compactHeader!==undefined&&typeof options.compactHeader!=='boolean')return invalid('Compact header must be an explicit boolean.');
+  return {ok: true, status: 'validated', document, options: {dark: options.dark === true, responsive: options.responsive !== false, compactHeader:options.compactHeader===true, fromMeasure, toMeasure, partIds: selectedIds, zoom, width: options.width}, metadata: {noteCount, measureCount, partIds, fromMeasure, toMeasure}};
 }
 
 function loadRenderer(document) {
@@ -155,7 +156,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     width = getWidth();
     mount.style.width = `${width}px`;
     container.appendChild(mount);
-    renderer = new Renderer(mount, {backend: 'svg', autoResize: false, disableCursor: true, followCursor: false, drawingParameters: 'default', drawTitle: true, drawPartNames: true, drawTimeSignatures: true, drawMeasureNumbers: true, darkMode: checked.options.dark, pageBackgroundColor: checked.options.dark ? '#171c1a' : '#ffffff', defaultColorMusic: checked.options.dark ? '#f3f5ef' : '#17251d', defaultColorLabel: checked.options.dark ? '#f3f5ef' : '#17251d', useGeometricSkyBottomLineCalculation: true, pageFormat: 'Endless', drawFromMeasureNumber: checked.options.fromMeasure, drawUpToMeasureNumber: checked.options.toMeasure});
+    renderer = new Renderer(mount, {backend: 'svg', autoResize: false, disableCursor: true, followCursor: false, drawingParameters: 'default', drawTitle: !checked.options.compactHeader, drawSubtitle: !checked.options.compactHeader, drawComposer: !checked.options.compactHeader, drawPartNames: true, drawTimeSignatures: true, drawMeasureNumbers: true, darkMode: checked.options.dark, pageBackgroundColor: checked.options.dark ? '#171c1a' : '#ffffff', defaultColorMusic: checked.options.dark ? '#f3f5ef' : '#17251d', defaultColorLabel: checked.options.dark ? '#f3f5ef' : '#17251d', useGeometricSkyBottomLineCalculation: true, pageFormat: 'Endless', drawFromMeasureNumber: checked.options.fromMeasure, drawUpToMeasureNumber: checked.options.toMeasure});
     if (renderer.Version !== `${ENGRAVING_VERSION}-release`) { state.dispose(); return result('unavailable', `Engraving requires the pinned OSMD ${ENGRAVING_VERSION} bundle.`); }
     renderer.setLogLevel?.('error');
     // Passing a parsed Document avoids OSMD.load(string)'s automatic URL/MXL detection entirely.

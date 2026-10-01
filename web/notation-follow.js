@@ -29,24 +29,25 @@ export function sourceMeasurePage(index,pageSize){if(!Number.isInteger(index)||i
 export function setupNotationFollowing({api,getContext,getPlayback,view}){
   const checkbox=document.getElementById('engraving-follow'),status=document.getElementById('engraving-follow-status');let controller=null,generation=0,index=null,target=null,last='';
   function message(text,announce=true){status.setAttribute('aria-live',announce?'polite':'off');status.textContent=text}
-  function suspend(reason='Manual navigation suspended following. Enable it again to follow the playback position.'){
+  function suspend(reason='Manual navigation suspended following. Enable it again to resume.'){
     generation++;controller?.abort();controller=null;checkbox.checked=false;last='';message(reason);
   }
-  function scoreChanged(){suspend('Following is off for this score. Enable it to use Rust measure occurrences.');index=null;target=null}
+  function scoreChanged(){suspend('Following is off. Enable it to follow the current measure.');index=null;target=null}
   function tick(position,running){
     if(!checkbox.checked||!index)return;
     if(target!==getContext().score){scoreChanged();return}if(!view.isActive()){suspend('Following stopped because the engraved view is not active. Manual notation and playback remain available.');return}
     const occurrence=index.at(position);
-    if(!occurrence){const key=position<0?'count-in':'end';if(last!==key){last=key;message(position<0?'Count-in: no active score measure.':'End of performance: no active half-open measure interval.')}return}
+    if(!occurrence){const key=position<0?'count-in':'end';if(last!==key){last=key;message(position<0?'Count-in: no active score measure.':'End of performance.')}return}
     view.followMeasure(occurrence.source_measure_index);const page=view.navigationState();const key=`${occurrence.id}:${page.ready}:${running}`;if(key===last)return;last=key;
-    message(`${running?'Following':'Paused at'} written measure ${occurrence.measure_number} · source ${occurrence.source_measure_index+1}/${getContext().score.measures.length}${occurrence.repeat_region_index===null?'':` · repeat ${occurrence.repeat_region_index+1}, pass ${occurrence.repeat_pass}/${occurrence.repeat_times}`} · ${occurrence.written_note_ids.length} full-score written onsets, ${occurrence.continuing_note_ids.length} continuing written events.${page.ready?'':' Loading the measure page; audio keeps its own clock.'}`,!running);
+    status.title=`${occurrence.written_note_ids.length} full-score written onsets, ${occurrence.continuing_note_ids.length} continuing written events. Display changes do not alter the playback clock.`;
+    message(`${running?'Following':'Paused at'} written measure ${occurrence.measure_number} · source ${occurrence.source_measure_index+1}/${getContext().score.measures.length}${occurrence.repeat_region_index===null?'':` · repeat ${occurrence.repeat_region_index+1}, pass ${occurrence.repeat_pass}/${occurrence.repeat_times}`}${page.ready?'':' · Loading display…'}`,!running);
   }
   checkbox.addEventListener('change',async()=>{
     if(!checkbox.checked){suspend('Following is off. Manual measure paging remains available.');return}
     if(!view.isActive()){suspend('Choose the engraved view before enabling following.');return}
     const context=getContext();if(!context.score||!context.timeline){suspend('Load a validated score first.');return}
     if(index&&target===context.score){last='';const playback=getPlayback();tick(playback.position,playback.running);return}
-    const current=++generation;controller?.abort();controller=new AbortController();const signal=controller.signal;message('Preparing optional exact measure occurrences with Rust…');
+    const current=++generation;controller?.abort();controller=new AbortController();const signal=controller.signal;message('Preparing measure following…');
     try{const response=await api('/api/notation-navigation',context.score,signal);if(current!==generation||signal.aborted||!checkbox.checked||getContext().score!==context.score)return;index=new NotationNavigationIndex(response,context.score,context.timeline);target=context.score;last='';const playback=getPlayback();tick(playback.position,playback.running)}catch(error){if(current===generation&&!signal.aborted)suspend(`Following unavailable: ${error.message} Use manual measure paging; playback is unchanged.`)}finally{if(current===generation)controller=null}
   });
   window.addEventListener('pagehide',()=>suspend('Following stopped when the page was hidden. Enable it again after returning.'));

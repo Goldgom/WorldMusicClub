@@ -43,11 +43,13 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
   function fallback(message) {
     if (!active) return;
     hide(); $('engraving-fallback').textContent = `Engraved staff unavailable: ${message} Showing the simplified pitch guide. It does not fully engrave rhythm, voices, ties or key signatures. Playback still uses the Rust score.`; $('engraving-fallback').hidden = false; onFallback();
+    if($('dock-warning-count')){$('dock-warning-count').hidden=false;$('dock-warning-count').textContent='View notation error · 查看提示';}
   }
   async function render({automatic=false}={}) {
     if (!active || !score || !isVisible()) return;
     cancel(); const current = generation; controller = new AbortController(); const signal = controller.signal; const target = score;
     $('engraving-fallback').hidden = true; onVisibility(true); if(!automatic)pausePlayback(); rangeControls(); $('engraving-status').textContent = 'Preparing exact MusicXML with Rust, then engraving locally…';
+    $('engraving-diagnostics').replaceChildren();if($('dock-warning-count'))$('dock-warning-count').textContent='Notation notices · preparing…';
     try {
       const exported = await exportScore(target, signal);
       if (signal.aborted || current !== generation || !active || target !== getScore()) return;
@@ -56,13 +58,14 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
       const {total,to} = rangeControls();
       if (!total) throw new Error('This score has no declared measure map for engraving.');
       const mapped = mappedPartIds(exported,selectedPart);
-      const result = await adapter.renderEngravedStaff(container, exported.xml, {dark:lastDark,fromMeasure:from,toMeasure:to,partIds:mapped,responsive:true,onError:failure=>{if(current===generation&&active)fallback(failure.message)}}, signal);
+      const result = await adapter.renderEngravedStaff(container, exported.xml, {dark:lastDark,fromMeasure:from,toMeasure:to,partIds:mapped,responsive:true,compactHeader:true,onError:failure=>{if(current===generation&&active)fallback(failure.message)}}, signal);
       if (signal.aborted || current !== generation || !active) { result.dispose?.(); return; }
       if (!result.ok) { if (result.status !== 'cancelled') fallback(result.message); return; }
       rendered = result;
-      $('engraving-status').textContent = `Generated staff preview · Measures ${result.metadata.fromMeasure}–${result.metadata.toMeasure}. Static display; playback and assessment use the Rust timeline.`;
+      $('engraving-status').textContent = `Generated staff preview · Measures ${result.metadata.fromMeasure}–${result.metadata.toMeasure} · display only.`;
       $('engraving-diagnostics').replaceChildren();
       for (const diagnostic of exported.diagnostics || []) { const item=document.createElement('li'); item.textContent=diagnostic.message; $('engraving-diagnostics').append(item); }
+      if($('dock-warning-count'))$('dock-warning-count').textContent=`Notation notices · ${exported.diagnostics?.length||0}`;
       $('engraving-license-note').hidden = false;
     } catch (error) { if (current === generation && !signal.aborted && active && error.name !== 'AbortError') fallback(error.message || 'The optional renderer is unavailable in this build.'); }
   }

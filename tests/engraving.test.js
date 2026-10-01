@@ -83,7 +83,7 @@ test('range and part options are explicit and never silently clamp user requests
   const checked = validate({measures: 90, parts: 2});
   assert.deepEqual([checked.options.fromMeasure, checked.options.toMeasure], [1, 32]);
   assert.equal(validate({measures: 90}, {fromMeasure: 1, toMeasure: 65}).status, 'unsupported');
-  for (const options of [{fromMeasure: 0}, {toMeasure: 5}, {partIds: []}, {partIds: ['missing']}, {partIds: ['P1', 'P1']}, {zoom: 9}, {width: 100}, null]) assert.equal(validate({}, options).status, 'invalid');
+  for (const options of [{fromMeasure: 0}, {toMeasure: 5}, {partIds: []}, {partIds: ['missing']}, {partIds: ['P1', 'P1']}, {zoom: 9}, {width: 100}, {compactHeader:'false'}, null]) assert.equal(validate({}, options).status, 'invalid');
   assert.deepEqual(validate({parts: 2}, {partIds: ['P2']}).options.partIds, ['P2']);
 });
 
@@ -99,6 +99,7 @@ test('renderer receives a parsed Document with SVG-only bounded options and sele
   assert.equal(renderer.options.disableCursor, true);
   assert.equal(renderer.options.darkMode, true);
   assert.equal(renderer.options.drawFromMeasureNumber, 2);
+  assert.equal(renderer.options.drawTitle,true);assert.equal(renderer.options.drawComposer,true);
   assert.deepEqual(renderer.EngravingRules, {MinMeasureToDrawIndex: 1, MaxMeasureToDrawIndex: 2, MinMeasureToDrawNumber: 0, MaxMeasureToDrawNumber: 0});
   assert.deepEqual(renderer.Sheet.Instruments.map(part => part.Visible), [false, true]);
   assert.equal(renderer.updated, true);
@@ -106,6 +107,11 @@ test('renderer receives a parsed Document with SVG-only bounded options and sele
   assert.equal(env.container.children.length, 0);
   assert.equal(env.observers[0].disconnected, true);
   assert.equal(outcome.resize(), false);
+});
+
+test('compact dock headers change only renderer layout and preserve all source measure metadata',async()=>{
+  const env=environment();const output=await renderEngravedStaff(env.container,xml,{compactHeader:true});assert.equal(output.status,'ready');
+  const renderer=env.instances[0];assert.equal(renderer.options.drawTitle,false);assert.equal(renderer.options.drawSubtitle,false);assert.equal(renderer.options.drawComposer,false);assert.equal(renderer.options.drawPartNames,true);assert.equal(renderer.options.drawTimeSignatures,true);assert.equal(output.metadata.noteCount,validate().metadata.noteCount);assert.equal(output.metadata.measureCount,validate().metadata.measureCount);output.dispose();
 });
 
 test('missing assets fail clearly without replacing the existing basic view', async () => {
