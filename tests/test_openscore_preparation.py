@@ -76,6 +76,20 @@ class OpenScorePreparationTests(unittest.TestCase):
                 cancel.assert_called_once_with(12345, prepare.signal.SIGKILL)
                 process.wait.assert_called_once_with(timeout=5)
 
+    def test_raw_key_observation_keeps_tempo_changes_and_refuses_ambiguous_noteoffs(self):
+        event = lambda tick, kind: {'tick': tick, 'port': 0, 'channel': 0, 'midi': 60, 'velocity': 90, 'kind': kind}
+        observation = {'ticks_per_quarter': 480, 'final_tick': 960,
+                       'tempo_events': [{'tick': 0, 'microseconds_per_quarter': 500000}, {'tick': 480, 'microseconds_per_quarter': 1000000}],
+                       'note_messages': [event(0, 'on'), event(960, 'off')],
+                       'non_note_messages': [{'controller': 64, 'value': 127}], 'interpretation': 'Keys only'}
+        result = prepare.observed_key_reference(observation)
+        self.assertEqual(result['timeline']['notes'][0]['duration_ms'], 1500)
+        self.assertEqual(result['non_note_messages'], observation['non_note_messages'])
+        observation['note_messages'] = [event(0, 'on'), event(1, 'on'), event(480, 'off'), event(960, 'off')]
+        ambiguous = prepare.observed_key_reference(observation)
+        self.assertEqual(ambiguous['unpaired_or_ambiguous_key_durations'], 2)
+        self.assertTrue(all(n['duration_ms'] is None for n in ambiguous['timeline']['notes']))
+
     def test_source_and_musicxml_pitch_inventories_keep_chord_duplicates(self):
         mscx = b'<museScore><Score><metaTag name="copyright">OpenScore (CC0)</metaTag><Staff><Measure><voice><Chord><Note><pitch>60</pitch></Note><Note><pitch>60</pitch></Note><Note><pitch>63</pitch></Note></Chord></voice></Measure></Staff></Score></museScore>'
         xml = '<score-partwise><part><measure><note><pitch><step>C</step><octave>4</octave></pitch></note><note><chord/><pitch><step>C</step><octave>4</octave></pitch></note><note><pitch><step>E</step><alter>-1</alter><octave>4</octave></pitch></note><note><rest/></note></measure></part></score-partwise>'

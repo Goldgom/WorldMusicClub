@@ -5,6 +5,7 @@ Sources and converter are pinned by the committed manifest. Outputs remain revie
 not automatically added to the playable catalog. Run under an ordinary display/Xvfb on Linux.
 """
 import argparse
+from bisect import bisect_right
 from collections import Counter
 from fractions import Fraction
 import hashlib
@@ -156,6 +157,54 @@ def canonical_written_inventory(compilation):
                    for part in compilation['score']['parts'] for n in part['notes'])
 
 
+def observed_key_reference(observation):
+    """Project raw MIDI keys through its tempo map; never apply controller behavior.
+
+    Duration pairing is refused for overlapping same-port/channel/pitch presses.
+    The returned shape supports comparison only, not canonical score compilation.
+    """
+    ppqn = observation['ticks_per_quarter']
+    tempos = observation['tempo_events']
+    ticks, micros, elapsed = [], [], []
+    total = Fraction(0)
+    for event in tempos:
+        tick, value = event['tick'], event['microseconds_per_quarter']
+        if ticks:
+            total += Fraction((tick - ticks[-1]) * micros[-1], ppqn)
+        ticks.append(tick)
+        micros.append(value)
+        elapsed.append(total)
+
+    def millis(tick):
+        index = bisect_right(ticks, tick) - 1
+        return float((elapsed[index] + Fraction((tick - ticks[index]) * micros[index], ppqn)) / 1000)
+
+    notes, active, orphan_offs = [], {}, 0
+    for event in observation['note_messages']:
+        lane = (event['port'], event['channel'], event['midi'])
+        pending = active.setdefault(lane, [])
+        if event['kind'] == 'on':
+            note = {**event, 'id': f"raw-key-{len(notes)}", 'start_ms': millis(event['tick']),
+                    'duration_ms': None, 'ambiguous_overlap': bool(pending)}
+            for index in pending:
+                notes[index]['ambiguous_overlap'] = True
+            pending.append(len(notes))
+            notes.append(note)
+        elif not pending:
+            orphan_offs += 1
+        else:
+            index = pending.pop(0)
+            note = notes[index]
+            if not note['ambiguous_overlap']:
+                note['duration_ms'] = millis(event['tick']) - note['start_ms']
+                note['end_tick'] = event['tick']
+    return {'score': {'tempo': tempos}, 'timeline': {'notes': notes, 'duration_ms': millis(observation['final_tick'])},
+            'diagnostics': [], 'raw_midi_key_observation_only': True,
+            'unpaired_or_ambiguous_key_durations': sum(n['duration_ms'] is None for n in notes),
+            'orphan_note_off_messages': orphan_offs, 'non_note_messages': observation['non_note_messages'],
+            'interpretation': observation['interpretation']}
+
+
 def reference_agreement(canonical, reference, assessment):
     expected = {note['id']: note for note in canonical['timeline']['notes']}
     observed = {}
@@ -165,7 +214,7 @@ def reference_agreement(canonical, reference, assessment):
     ambiguous = 0
     for hit in assessment['hits']:
         candidates = observed.get((hit['midi'], hit['actual_ms']), [])
-        if len(candidates) != 1:
+        if len(candidates) != 1 or candidates[0]['duration_ms'] is None:
             ambiguous += 1
             continue
         durations.append(candidates[0]['duration_ms'] - expected[hit['note_id']]['duration_ms'])
@@ -178,6 +227,21 @@ def reference_agreement(canonical, reference, assessment):
             'canonical_tempo_map': canonical['score'].get('tempo', []),
             'reference_tempo_map': reference['score']['tempo'], 'reference_diagnostics': reference['diagnostics'],
             'interpretation': 'Reference software note-ons/key-noteoffs, not acoustic sustain or musical truth. Generated ornaments, fermatas, articulation, dynamics, channels and repeat policies may differ. Every mismatch remains visible; this is not an automatic acceptance score.'}
+
+
+def written_beat_attack_agreement(canonical, keys, ppqn):
+    # Without repeats, the first segment of each tied sounding note identifies
+    # its exact written onset. Repeated material needs an occurrence-aware map.
+    if canonical['score']['repeats']:
+        return {'available': False, 'reason': 'Repeat-expanded written-beat comparison is not implemented'}
+    source = {n['id']: n for part in canonical['score']['parts'] for n in part['notes']}
+    expected = Counter((n['midi'], str(Fraction(source[n['source_note_id']]['at']['numerator'],
+                                             source[n['source_note_id']]['at']['denominator'])))
+                       for n in canonical['timeline']['notes'])
+    observed = Counter((n['midi'], str(Fraction(n['tick'], ppqn))) for n in keys['timeline']['notes'])
+    return {'available': True, 'missing': list((expected - observed).elements()),
+            'extra': list((observed - expected).elements()),
+            'interpretation': 'Pitch/onset inventories in written quarter beats only; ignores expression and tempo realization, does not erase the separate wall-clock mismatch report.'}
 
 
 def candidate_gate(score, result):
@@ -221,6 +285,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--workspace', type=Path, required=True)
     parser.add_argument('--server-binary', type=Path, required=True)
+    parser.add_argument('--reference-inspector', type=Path)
     args = parser.parse_args()
     if sys.platform != "linux":
         parser.error("The pinned maintainer converter runs only on Linux/Xvfb. Use the hosted review workflow; it is not part of the portable Windows app.")
@@ -298,6 +363,22 @@ def main():
             else:
                 result['reference_midi_import_error'] = reference
                 result['reference_agreement'] = None
+            if args.reference_inspector:
+                observation_path = folder / 'reference-midi-observation.json'
+                run_bounded([str(args.reference_inspector.resolve()), str(midi)], work, env, observation_path, output_root=folder)
+                observation = json.loads(observation_path.read_text(encoding='utf-8'))
+                keys = observed_key_reference(observation)
+                (folder / 'reference-key-events.json').write_text(json.dumps(keys, ensure_ascii=False, indent=2), encoding='utf-8')
+                result['raw_reference_note_on_messages'] = len(keys['timeline']['notes'])
+                result['raw_reference_unpaired_durations'] = keys['unpaired_or_ambiguous_key_durations']
+                if status == 200:
+                    inputs = [{'midi': n['midi'], 'at_ms': n['start_ms'], 'velocity': n['velocity']} for n in keys['timeline']['notes']]
+                    grade_status, matched = post(base, '/api/assess', json.dumps({'timeline': imported['timeline'], 'inputs': inputs, 'tolerance_ms': 10}).encode(), 'application/json')
+                    if grade_status != 200: raise RuntimeError('Raw reference comparison failed: ' + str(matched))
+                    (folder / 'reference-key-assessment.json').write_text(json.dumps(matched, ensure_ascii=False, indent=2), encoding='utf-8')
+                    result['raw_key_message_agreement'] = reference_agreement(imported, keys, matched)
+                    result['raw_key_message_agreement']['raw_midi_key_observation_only'] = True
+                    result['written_beat_attack_agreement'] = written_beat_attack_agreement(imported, keys, observation['ticks_per_quarter'])
             result['gate_matches_declared_candidate_state'] = candidate_gate(score, result)
             # A readable source rendering supports human review; no copied commercial scan.
             run_bounded(engine_args + ['-r', '120', '-o', str(folder / 'source.png'), str(source)], work, env, folder / 'render.log', output_root=folder)

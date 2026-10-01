@@ -5,6 +5,7 @@ on:
     paths:
       - 'catalog/sources/openscore-lieder-candidates.json'
       - 'scripts/prepare-openscore-candidates.py'
+      - 'crates/score-core/examples/inspect_reference_midi.rs'
       - '.github/workflows/curated-scores.yml'
 permissions:
   contents: read
@@ -21,10 +22,11 @@ jobs:
       - run: npm run prepare:engraving
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
       - run: cargo build -p practice-server --locked
+      - run: cargo build -p score-core --example inspect_reference_midi --locked
       - name: Install hosted display dependencies
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y xvfb xauth libegl1 libgl1 libnss3 libasound2t64 libsndfile1
       - name: Convert and inspect the fixed CC0 candidate set
-        run: xvfb-run -a python3 scripts/prepare-openscore-candidates.py --workspace "$RUNNER_TEMP/score-conversion" --server-binary target/debug/practice-server
+        run: xvfb-run -a python3 scripts/prepare-openscore-candidates.py --workspace "$RUNNER_TEMP/score-conversion" --server-binary target/debug/practice-server --reference-inspector target/debug/examples/inspect_reference_midi
       - name: Preserve source, licenses, warnings and conversion evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
