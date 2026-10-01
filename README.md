@@ -2,7 +2,7 @@
 
 A local-first music practice and rhythm-game project with a Rust score engine.
 
-[中文上手指南](docs/QUICKSTART.zh-CN.md) · [Accepted 108 build](docs/releases/0.2.0-alpha.1-recovery.md) · [Newer source changes](docs/releases/unreleased.md)
+[中文上手指南](docs/QUICKSTART.zh-CN.md) · [Verified Windows UI preview 119](docs/releases/0.2.0-alpha.1-ui-preview.md) · [Newer source changes](docs/releases/unreleased.md)
 
 ## Current alpha
 
@@ -34,5 +34,7 @@ Each meaningful implementation increment is committed. Every 50 project commits 
 A limited local recognizer suggests note positions from one clean horizontal printed treble staff. You must correct and confirm every pitch and duration before it becomes playable. Handwritten music, complex notation and general PDFs are unsupported. The interface includes light/dark/system/custom themes. Saved-score copies are explicit and browser-local; export backups for durable records. See [current features and limits](docs/releases/0.2.0-alpha.1.md); the first alpha's historical guide remains in the releases folder.
 
 ## Windows builds
+
+The [verified 119 UI preview](docs/releases/0.2.0-alpha.1-ui-preview.md) includes the landscape lobby and piano stage, with exact source, ZIP checksum and native Windows test evidence. It is an additional preview between the regular milestones. Check `BUILD-INFO.json` to distinguish its contents from newer source features and earlier packages.
 
 CI checks Rust on Linux and Windows. The Windows milestone workflow packages a portable executable at each 50-commit milestone, or when manually dispatched. See [Windows usage and verification boundaries](docs/WINDOWS.md). No Windows artifact has been verified merely because these workflow files exist.

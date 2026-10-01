@@ -62,4 +62,4 @@ Settings · 设置、Import · 导入、Score · 乐谱、Results · 结果与 S
 
 代码采用 MIT 许可；音乐、编曲、制谱、录音各有独立权利。内置歌曲说明会记录来源。喜欢的商业音游曲目前提供名称和官方链接，需要导入你有权使用的乐谱；“不商用”或“只提供谱子”本身并不等于可以再分发。
 
-版本边界见[已验收的第 108 次修复快照](releases/0.2.0-alpha.1-recovery.md)、[第 100 次提交的历史快照](releases/0.2.0-alpha.1.md)与[后续开发变更](releases/unreleased.md)，另见 [Windows 构建说明](WINDOWS.md) 和 [曲谱来源](CATALOG_RIGHTS.md)。后续开发功能不代表已包含在旧版发行包中，请以实际构建记录为准。
+版本边界见[已验证的第 119 次横屏界面预览](releases/0.2.0-alpha.1-ui-preview.md)、[第 108 次修复快照](releases/0.2.0-alpha.1-recovery.md)、[第 100 次提交的历史快照](releases/0.2.0-alpha.1.md)与[后续开发变更](releases/unreleased.md)。第 119 次是额外预览，不改变每 50 次提交的常规 Windows 构建节奏。另见 [Windows 构建说明](WINDOWS.md) 和 [曲谱来源](CATALOG_RIGHTS.md)。后续开发功能不代表已包含在旧版发行包中，请以实际构建记录为准。
