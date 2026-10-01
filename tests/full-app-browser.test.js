@@ -139,11 +139,11 @@ async function assertStoppedAtZero() {
   assert.equal(await page.locator('.piano-key.pressed').count(), 0);
 }
 
-async function captureFailureState(stage) {
+async function captureFailureState(stage,error=null) {
   if(!page||page.isClosed())return;
   const name=`worldmusichub-live-${stage}-${currentTestName.replace(/[^a-zA-Z0-9]+/g,'-').slice(0,85)}`;
   const observed=await page.evaluate(()=>({scoreTitle:document.querySelector('#score-title')?.textContent,notice:document.querySelector('#notice')?.textContent,engravingStatus:document.querySelector('#engraving-status')?.textContent,engravingFallback:document.querySelector('#engraving-fallback')?.textContent,fallbackHidden:document.querySelector('#engraving-fallback')?.hidden,engravedSelected:document.querySelector('#engraved-button')?.getAttribute('aria-pressed'),svgCount:document.querySelectorAll('#engraved-staff svg').length,followStatus:document.querySelector('#engraving-follow-status')?.textContent,practiceGate:document.querySelector('#practice-gate-reason')?.textContent,transport:document.querySelector('#transport-status')?.textContent})).catch(error=>({observationError:error.message}));
-  const diagnostics={test:currentTestName,observed,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverOutput:serverOutput.slice(-4000)};
+  const diagnostics={test:currentTestName,failure:error?{name:error.name,code:error.code,causeName:error.cause?.name,frames:String(error.stack||'').split('\n').filter(line=>/^\s*at /.test(line)).slice(0,6)}:null,observed,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverOutput:serverOutput.slice(-4000)};
   await writeFile(join(artifactDirectory,`${name}.json`),JSON.stringify(diagnostics,null,2));
   await page.screenshot({path:join(artifactDirectory,`${name}.png`),fullPage:true,timeout:3000}).catch(()=>{});
 }
@@ -255,7 +255,7 @@ afterEach(async t => {
     assert.deepEqual(pageErrors, [], 'No uncaught browser errors');
     assert.deepEqual(apiFailures, [], 'All browser API calls must reach successful Rust responses');
   } finally {
-    if(t.signal.aborted||pageErrors.length||apiFailures.length)await captureFailureState('failure');
+    if(t.passed===false||t.error||t.signal.aborted||pageErrors.length||apiFailures.length)await captureFailureState('failure',t.error);
     await context?.close();
   }
 }, {timeout: 10_000});
