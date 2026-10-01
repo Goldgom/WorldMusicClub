@@ -41,3 +41,9 @@ test('latency restoration distinguishes absent, corrupt and unavailable browser 
  withStorage({getItem:()=>'[140]'},()=>{const preference=readLatencyPreference();assert.equal(preference.value,0);assert.match(preference.message,/invalid.*not applied/)});
  withStorage({getItem(){throw Error('Disabled')}},()=>{const preference=readLatencyPreference();assert.equal(preference.value,0);assert.match(preference.message,/storage is unavailable/)});
 });
+
+test('invalid saved custom colors disclose exactly the substituted fields without overwriting storage',()=>{
+ for(const original of[{mode:'custom',accent:'green',background:'#121212'},{mode:'custom',accent:'#ab1245',background:'invalid'},{mode:'custom',accent:null}]){
+  const stored=JSON.stringify(original),env=themeDom({stored,dark:false});try{setupThemes();const message=env.nodes.get('theme-storage-status').textContent;assert.equal(env.nodes.get('theme-storage-status').hidden,false);assert.match(message,/Saved custom colors/);assert.equal(message.includes('accent uses #326b4c'),original.accent!=='#ab1245');assert.equal(message.includes('background uses #f4f6f1'),original.background!=='#121212');assert.equal(env.storage.value,stored);assert.equal(env.root.dataset.themeMode,'custom');assert.equal(env.values.get('--green'),original.accent==='#ab1245'?'#ab1245':'#326b4c');assert.equal(env.values.get('--page-background'),original.background==='#121212'?'#121212':'#f4f6f1');env.media.emit(true);assert.equal(env.storage.value,stored);env.nodes.get('theme-accent').value='#1144aa';env.nodes.get('theme-background').value='#eeeeee';env.nodes.get('theme-accent').emit('input');assert.equal(env.nodes.get('theme-storage-status').hidden,true);assert.deepEqual(JSON.parse(env.storage.value),{mode:'custom',accent:'#1144aa',background:'#eeeeee'})}finally{env.restore()}
+ }
+});

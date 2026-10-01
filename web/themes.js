@@ -6,7 +6,16 @@ export function setupThemes() {
   const media = matchMedia('(prefers-color-scheme: dark)');
   let preference=validTheme(null), stored=null, storageMessage='';
   try { stored=localStorage.getItem('worldmusichub.theme'); } catch { storageMessage='Appearance applies to this tab. Browser storage is unavailable.'; }
-  if(stored!==null){try{const parsed=JSON.parse(stored);preference=validTheme(parsed);if(!parsed||!THEMES.has(parsed.mode))storageMessage='Saved appearance is invalid. System appearance is active; choose a theme to replace it.';}catch{storageMessage='Saved appearance could not be read. System appearance is active; choose a theme to replace it.';}}
+  if(stored!==null){
+    try{
+      const parsed=JSON.parse(stored);preference=validTheme(parsed);
+      if(!parsed||!THEMES.has(parsed.mode))storageMessage='Saved appearance is invalid. System appearance is active; choose a theme to replace it.';
+      else if(parsed.mode==='custom'){
+        const substituted=['accent','background'].filter(field=>!validHex(parsed[field])).map(field=>`${field} uses ${preference[field]}`);
+        if(substituted.length)storageMessage=`Saved custom colors were missing or invalid: ${substituted.join('; ')}. The stored preference is unchanged until you choose a replacement.`;
+      }
+    }catch{storageMessage='Saved appearance could not be read. System appearance is active; choose a theme to replace it.';}
+  }
   const mode = document.getElementById('theme-mode'); const accent = document.getElementById('theme-accent'); const background = document.getElementById('theme-background');
   function persistence(message){const status=document.getElementById('theme-storage-status');status.textContent=message;status.hidden=!message;}
   function apply() {
