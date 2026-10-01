@@ -18,6 +18,7 @@ import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
+import {fixture} from './frontend-fixtures.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const binary = resolve(root, process.env.WMH_SERVER_BINARY || join('target', 'debug', `practice-server${process.platform === 'win32' ? '.exe' : ''}`));
@@ -607,8 +608,61 @@ test('browser practice records real keyboard timing and displays the Rust assess
   });
   assert.equal(await ui('#hits').textContent(), String(assessment.hits.length));
   assert.equal(await ui('#misses').textContent(), `${assessment.misses.length} / ${assessment.extras.length}`);
+  await page.waitForFunction(()=>document.querySelector('#result-summary').dataset.phase==='assessed');
+  for(const[key,value]of Object.entries(assessment.grade_counts))assert.equal(await ui(`#result-grade-${key}`).textContent(),String(value));
+  assert.equal(await ui('#result-onsets-complete').textContent(),`${assessment.onset_completion.complete} / ${assessment.onset_completion.total}`);
+  assert.equal(await ui('#result-onsets-sequence').textContent(),String(assessment.onset_completion.longest_complete_sequence));
+  assert.match(await ui('#result-summary-status').textContent(),/Previous check/);
   assert.match(await ui('#transport-status').textContent(), /Paused/);
   assert.equal(await ui('.piano-key.pressed').count(), 0);
+});
+
+test('real Rust Results retain partial chords, late grades and extras, then revise the selected take for delayed input',testOptions,async()=>{
+  await hideNotation();
+  const score=structuredClone(fixture);score.id='results-chord';score.title='Results chord coverage';
+  const template=score.parts[0].notes[0];score.parts[0].notes=[
+    {...structuredClone(template),id:'chord-c'},
+    {...structuredClone(template),id:'chord-e',pitch:{step:'E',alter:0,octave:4}},
+    {...structuredClone(template),id:'next-g',at:{numerator:1,denominator:1},duration:{numerator:3,denominator:1},pitch:{step:'G',alter:0,octave:4}},
+  ];
+  const[compiledResponse]=await Promise.all([nextResponse('/api/compile'),ui('#score-file').setInputFiles({name:'results-chord.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))})]);
+  const compiled=await responseJson(compiledResponse);await readyForTitle(score.title);await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#play-button:not([disabled])').waitFor();await ui('#play-button').click();
+  await page.waitForFunction(()=>document.querySelector('#progress').value>800);
+  const exportTake=async()=>{const[download]=await Promise.all([page.waitForEvent('download'),ui('#export-takes').click()]);assert.equal(await download.failure(),null);return JSON.parse(await readFile(await download.path(),'utf8'))};
+  const before=await exportTake(),startedWall=before.passes[0].clock_segments[0].wallStart;
+  assert.equal(before.passes.length,1);assert.equal(before.passes[0].timeline.notes.length,3);await closeShellPanels();
+  // Deliberately delayed browser key events use the recorder's exported clock.
+  // This controls input timestamps, not Rust responses, audio APIs or app state.
+  const deliver=attacks=>page.evaluate(({startedWall,attacks})=>{for(const[midi,offset]of attacks){const button=document.querySelector(`.piano-key[data-midi="${midi}"]`);for(const type of ['keydown','keyup']){const event=new KeyboardEvent(type,{key:'Enter',code:'Enter',bubbles:true,cancelable:true});Object.defineProperty(event,'timeStamp',{value:startedWall+offset});button.dispatchEvent(event)}}},{startedWall,attacks});
+  await deliver([[60,120],[67,620],[72,740]]);await ui('#assess-button').click();await ui('#feedback-results').waitFor();
+  await page.waitForFunction(()=>{const summary=document.querySelector('#result-summary');return summary.dataset.phase==='assessed'&&summary.dataset.revision==='3'&&summary.dataset.assessedRevision==='3'});
+  const partial=(await exportTake()).passes[0];assert.deepEqual(partial.inputs.map(input=>input.midi),[60,67,72]);for(const[index,expected]of [120,620,740].entries())assert.ok(Math.abs(partial.inputs[index].at_ms-expected)<0.001,JSON.stringify(partial.inputs));
+  assert.deepEqual(partial.assessment.grade_counts,{perfect:0,good:0,early:0,late:2,missed:1,extra:1});assert.deepEqual(partial.assessment.onset_completion,{total:2,complete:1,longest_complete_sequence:1});assert.equal(partial.assessment.accuracy_percent,50);
+  assert.equal(await ui('#result-grade-perfect').textContent(),'0');assert.equal(await ui('#result-grade-late').textContent(),'2');assert.equal(await ui('#result-grade-missed').textContent(),'1');assert.equal(await ui('#result-grade-extra').textContent(),'1');assert.equal(await ui('#result-onsets-complete').textContent(),'1 / 2');assert.equal(await ui('#result-onsets-sequence').textContent(),'1');
+  await ui('#feedback-pass').selectOption('1');await page.locator('.result-summary-help summary').click();assert.match(await ui('#result-onset-help').textContent(),/partial chord stays incomplete/);assert.match(await ui('#result-summary-limits').textContent(),/not a combo or an error-free streak/);await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-results-partial-chord.png'),fullPage:true,animations:'disabled'});
+  await closeShellPanels();await deliver([[64,160]]);await ui('#results-button').click();
+  await page.waitForFunction(()=>{const summary=document.querySelector('#result-summary');return summary.dataset.phase==='assessed'&&summary.dataset.revision==='4'&&summary.dataset.assessedRevision==='4'});
+  const corrected=(await exportTake()).passes[0];assert.equal(await ui('#feedback-pass').inputValue(),'1','A delayed correction retains the chosen pass');assert.deepEqual(corrected.assessment.grade_counts,{perfect:0,good:0,early:0,late:3,missed:0,extra:1});assert.deepEqual(corrected.assessment.onset_completion,{total:2,complete:2,longest_complete_sequence:2});assert.equal(corrected.assessment.accuracy_percent,75);
+  assert.equal(await ui('#result-grade-perfect').textContent(),'0');assert.equal(await ui('#result-grade-late').textContent(),'3');assert.equal(await ui('#result-grade-extra').textContent(),'1');assert.equal(await ui('#result-onsets-complete').textContent(),'2 / 2');assert.equal(await ui('#result-onsets-sequence').textContent(),'2');assert.match(await ui('#result-summary-revision').textContent(),/revision 4.*revision 4/);
+  for(const viewport of [{width:1280,height:720},{width:844,height:390},{width:390,height:844}]){await page.setViewportSize(viewport);await ui('#result-summary').scrollIntoViewIfNeeded();const bounds=await page.locator('#result-summary').evaluate(element=>({width:element.clientWidth,scrollWidth:element.scrollWidth,left:element.getBoundingClientRect().left,right:element.getBoundingClientRect().right}));assert.ok(bounds.scrollWidth<=bounds.width+1,JSON.stringify(bounds));assert.ok(bounds.left>=0&&bounds.right<=viewport.width,JSON.stringify(bounds));await page.screenshot({path:join(artifactDirectory,`worldmusichub-live-results-${viewport.width}x${viewport.height}.png`),fullPage:true,animations:'disabled'});}
+  await ui('#theme-mode').selectOption('dark');await ui('#results-button').click();assert.equal(await ui('#result-grade-late').textContent(),'3');await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-results-dark.png'),fullPage:true,animations:'disabled'});
+  assert.deepEqual(await exportScore(),compiled.score);await writeFile(join(artifactDirectory,'worldmusichub-live-results-summary.json'),JSON.stringify({partial,corrected,canonical_score_unchanged:true},null,2));
+});
+
+test('actual Rust empty assessments and legacy metadata render explicit unavailable Results counters',testOptions,async()=>{
+  const timeline={...initialCompilation.timeline,notes:[initialCompilation.timeline.notes[0]]};
+  const checked=await rustApi('/api/assess',{timeline,inputs:[],tolerance_ms:180});
+  const empty=await rustApi('/api/assess',{timeline:{notes:[],duration_ms:0},inputs:[],tolerance_ms:180});
+  assert.deepEqual(empty.onset_completion,{total:0,complete:0,longest_complete_sequence:0});
+  // Render the actual embedded Results component in an isolated browser document.
+  // Removing optional fields reproduces an older saved response, without mocking an API.
+  const views=await page.evaluate(async({checked,empty,timeline})=>{
+    const{setupResultsSummary}=await import('/results-summary.js');const isolated=document.implementation.createHTMLDocument('Results compatibility');isolated.body.append(document.querySelector('#result-summary').cloneNode(true));const render=setupResultsSummary(isolated);
+    const pass={id:1,label:'Take 1',revision:0,assessedRevision:0,closedWall:0,deadline:180,manualDeadline:null,inFlight:false,error:null,boundaryReviews:[],inputs:[],timeline,assessment:checked};
+    const read=()=>({status:isolated.getElementById('result-summary-status').textContent,grades:isolated.getElementById('result-grade-status').textContent,onsets:isolated.getElementById('result-onset-status').textContent,counts:[...isolated.querySelectorAll('.result-grade-grid dd,.result-onset-grid dd')].map(node=>node.textContent)});
+    render({pass,now:200});const supplied=read();const legacy={...checked};delete legacy.grade_counts;delete legacy.onset_completion;render({pass:{...pass,assessment:legacy},now:200});const absent=read();render({pass:{...pass,timeline:{notes:[]},assessment:empty},now:200});return{supplied,absent,empty:read()};
+  },{checked,empty,timeline});
+  assert.equal(views.supplied.counts[4],'1');assert.equal(views.supplied.counts[6],'0 / 1');for(const view of [views.absent,views.empty]){assert.ok(view.counts.every(value=>value==='—'));assert.match(view.grades,/Unavailable/);assert.match(view.onsets,/Unavailable/)}assert.match(views.empty.status,/no note-on targets.*not a successful take/);
 });
 
 test('whole application engraves real exported MusicXML and preserves the score across light/dark views', {timeout:60_000}, async () => {

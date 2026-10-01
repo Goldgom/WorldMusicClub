@@ -26,6 +26,7 @@ test('application module initializes the lobby and activates only through explic
   else if(path==='/api/compile')result=compile(body);
   else if(path==='/api/practice-targets')result={timeline:body.timeline,groups:body.timeline.notes.map(note=>({target_id:note.id,source_occurrence_ids:[note.id],source_note_ids:[note.id],part_ids:[note.part_id]})),diagnostics:[],source_note_count:body.timeline.notes.length,target_count:body.timeline.notes.length,playable:true};
   else if(path==='/api/instrument-check')result={lowest_midi:36,highest_midi:96,note_options:body.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:true,positions:[]})),diagnostics:[],changed_source_notes:false};
+  else if(path==='/api/assess')result={hits:[],misses:body.timeline.notes.map(note=>note.id),extras:[],accuracy_percent:0,mean_abs_error_ms:null,grade_counts:{perfect:0,good:0,early:0,late:0,missed:2,extra:0},onset_completion:{total:2,complete:0,longest_complete_sequence:0}};
   else throw Error(`Unexpected Node DOM test request: ${path}`);
   if(path==='/api/instrument-check'&&holdCheck){const gate=holdCheck;holdCheck=null;heldCheck=true;await gate;}
   return{ok:true,json:async()=>result};
@@ -52,5 +53,11 @@ test('application module initializes the lobby and activates only through explic
   document.getElementById('settings-dialog').close();const details=document.querySelector('.preview-copy');details.scrollTop=240;document.getElementById('preview-notices').open=true;
   document.querySelector(`[data-score-id="${otherScore.id}"]`).click();await until(()=>document.getElementById('preview-title').textContent===otherScore.title&&!document.getElementById('start-listen').disabled,'Changed preview never became ready');
   assert.equal(details.scrollTop,0,'A different score opens at its title instead of inheriting the old source-notice scroll');assert.equal(document.getElementById('preview-notices').open,false,'Source notices for a different score begin collapsed');assert.equal(document.getElementById('stage-title').textContent,fixture.title,'Preview positioning does not replace the active take');
+  document.getElementById('resume-session').click();document.getElementById('settings-button').click();
+  range.value='61';range.dispatchEvent(new window.Event('change'));await until(()=>!document.getElementById('play-button').disabled,'Instrument setup never recovered');
+  const mode=document.getElementById('session-mode');mode.value='practice';mode.dispatchEvent(new window.Event('change'));await until(()=>!document.getElementById('assess-button').disabled,'Practice never became ready');document.getElementById('settings-dialog').close();
+  document.getElementById('results-button').click();document.getElementById('assess-button').click();await until(()=>!document.getElementById('feedback-results').hidden,'Assessment was not rendered');
+  assert.equal(document.getElementById('result-summary').dataset.passId,'1');assert.equal(document.getElementById('result-summary').dataset.assessedRevision,'0');assert.equal(document.getElementById('result-grade-missed').textContent,'2');assert.equal(document.getElementById('result-onsets-complete').textContent,'0 / 2');assert.match(document.getElementById('result-summary-status').textContent,/Previous check/);assert.deepEqual(requests.find(request=>request.path==='/api/assess').body.inputs,[]);
+  document.getElementById('results-dialog').close();document.getElementById('reset-button').click();assert.equal(document.getElementById('feedback-results').hidden,true);
  }finally{for(const[key,descriptor]of originals)if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key]}
 });

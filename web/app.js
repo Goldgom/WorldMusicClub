@@ -13,6 +13,7 @@ import {setupJianpuExport} from './jianpu-export.js';
 import {setupScoreLibrary} from './library-view.js';
 import {validateTargetPlan, mappedSourceIds} from './physical-targets.js';
 import {PracticeRecorder} from './practice-recorder.js';
+import {setupResultsSummary} from './results-summary.js';
 import {setupEngravedView} from './engraved-view.js';
 import {setupJianpuEditor} from './jianpu-editor.js';
 import {feedbackView,pitchBreakdownView} from './feedback-view.js';
@@ -26,6 +27,7 @@ import {Transport, Synth, TimelineIndex} from './transport.js';
 import {formatTime} from './music.js';
 
 const $ = id => document.getElementById(id);
+const renderResultsSummary=setupResultsSummary(document);
 setupThemes();
 const transport = new Transport();
 const synth = new Synth();
@@ -41,7 +43,7 @@ let catalogIndexController=null,catalogIndexRequest=0,catalogIndexFailed=false;
 const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reason:'Waiting for an instrument compatibility check.'}, instrumentOutOfRange: null, instrumentConflict: false, octave: 4, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
 state.recorder = new PracticeRecorder({latencyMs:state.latency});
-shell=setupGameShell({pausePlayback,onPanel:()=>cancelPendingStart(),onScreen:screen=>{if(!enteringPreview)cancelPendingStart();performanceView?.screenChanged(screen);engravedView.surfaceChanged();drawFrame()},onNotation:visible=>{if(!visible)notationFollowing?.suspend('Following suspended while the notation dock is closed.');engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
+shell=setupGameShell({pausePlayback,onPanel:name=>{cancelPendingStart();if(name==='results')updateResultsSummary()},onScreen:screen=>{if(!enteringPreview)cancelPendingStart();performanceView?.screenChanged(screen);engravedView.surfaceChanged();drawFrame()},onNotation:visible=>{if(!visible)notationFollowing?.suspend('Following suspended while the notation dock is closed.');engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
 preview=new ScorePreview({compile:(score,signal)=>api('/api/compile',score,signal),check:checkPreview,onChange:()=>{renderPreview();renderCatalog()}});
 
 function notice(message, error = false) {
@@ -437,6 +439,7 @@ function beginPracticePass(now, captureEnabled = true) {
   state.inputs=pass.inputs;refreshPassHistory();displayChosenPass();return pass;
 }
 function showPassAssessment(pass) {
+  updateResultsSummary(pass);
   if(!pass?.assessment){$('feedback-results').hidden=true;return}
   const assessment=pass.assessment;
     $('feedback-results').hidden = false;
@@ -458,7 +461,7 @@ function showPassAssessment(pass) {
     for(const row of pitches.rows){const tr=document.createElement('tr');tr.dataset.pitchMidi=String(row.midi);const heading=document.createElement('th');heading.scope='row';heading.textContent=`${midiName(row.midi)} · ${row.midi}`;tr.append(heading);for(const value of [row.expected,row.matched,row.missed,row.extra,row.meanError,row.bias,row.sample]){const cell=document.createElement('td');cell.textContent=String(value);tr.append(cell)}$('pitch-breakdown-body').append(tr)}
     $('pitch-breakdown-note').textContent=`Missed targets and extra inputs are independent unmatched attacks; they do not identify a proven wrong-note substitution. Rows share MIDI pitch (C4 = 60), including enharmonic spellings and guitar strings. Timing averages use matched attacks only, with your ${state.recorder.latencyMs} ms manual offset already applied. Fewer than five matches per pitch is a small sample; device/audio latency can resemble early or late playing. Duration, pedal and fingering are not scored.`;
     $('feedback-calibration-note').textContent = `${view.hasSummary ? 'Rust-derived timing statistics.' : 'Timing bias and variability are unavailable in this server response.'} Your ${state.recorder.latencyMs} ms manual offset is already applied. Device/audio latency can resemble consistent early or late playing; use repeated takes before adjusting calibration. Accuracy includes extra inputs; coverage counts matched expected note-ons.`;
-    $('feedback-detail').textContent = `${assessment.hits.filter(h => h.grade === 'perfect').length} perfect · ${assessment.hits.filter(h => h.grade === 'good').length} good · ${assessment.hits.filter(h => h.grade === 'early').length} early · ${assessment.hits.filter(h => h.grade === 'late').length} late. Matching window: ±180 ms. Input offset: ${state.recorder.latencyMs} ms. Browser/audio latency can affect your result.`;
+    $('feedback-detail').textContent = `Matching window: ±${state.recorder.toleranceMs} ms. Input offset: ${state.recorder.latencyMs} ms. Browser/audio latency can affect your result.`;
     $('feedback-description').textContent = `${pass.label}${pass.boundaryReviews.length?' (boundary review)':''}: ` + (view.expected === 0 ? 'No note-on targets were selected. Choose a range containing notes.' : assessment.hits.length ? 'A useful snapshot, not a verdict. Slow the tempo and try another take.' : 'No notes matched yet. Try a slower tempo and the four-beat count-in.');
 }
 function refreshPassHistory() {
@@ -471,10 +474,15 @@ function refreshPassHistory() {
   $('export-takes').disabled=state.recorder.passes.length===0;
   $('retry-assessments').hidden=!state.recorder.passes.some(pass=>pass.error);
 }
-function displayChosenPass() {
+function chosenPass() {
   const selected=Number($('feedback-pass').value);
-  const pass=selected?state.recorder.passes.find(item=>item.id===selected):[...state.recorder.passes].reverse().find(item=>item.assessment);
-  if(pass)showPassAssessment(pass);
+  return selected?state.recorder.passes.find(item=>item.id===selected):[...state.recorder.passes].reverse().find(item=>item.assessment);
+}
+function updateResultsSummary(pass=chosenPass(),now=performance.now()) {
+  renderResultsSummary({pass,now,running:transport.running&&pass===state.recorder.active,latencyMs:state.recorder.latencyMs,toleranceMs:state.recorder.toleranceMs,interrupted:state.recorder.interruptions.some(gap=>gap.from_wall_ms===pass?.closedWall)});
+}
+function displayChosenPass() {
+  showPassAssessment(chosenPass());
 }
 async function drainAssessments() {
   if(state.assessmentBusy)return;
@@ -550,6 +558,7 @@ function drawFrame() {
   $('progress').max = Math.max(1, duration); $('progress').value = Math.min(duration, Math.max(0, position));
   $('time-label').textContent = `${formatTime(position)} / ${formatTime(duration)}`;
   performanceView?.update();
+  if($('results-dialog').open)updateResultsSummary(undefined,now);
   if(shell.screen()!=='stage')return;
   if(shell.notationVisible())notationFollowing?.tick(position < segmentStart ? -1 : position,transport.running);
   const active = position < segmentStart ? [] : playbackIndex?.range(position) || [];
