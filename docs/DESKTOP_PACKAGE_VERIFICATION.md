@@ -72,3 +72,41 @@ Release upload or resumed security probe belongs to this preparation.
 
 The retained Microsoft SDK license and MPL text contain two original trailing
 spaces; their notice bytes remain unchanged.
+
+## Native166 packaging failure and generated schema correction
+
+[Run 37033260358](https://github.com/Goldgom/WorldMusicHub/actions/runs/37033260358)
+at published source `d773035a5c49df1c6b1974217a78313b20b43a03` (local equivalent
+`3c845473189f149090e8ec8ec7395ab9751b24aa`) passed startup and all four native
+feature phases, including actual files, backups, restarts and normal close.
+Packaging then failed with `Native packaging requires clean source`; the old
+error omitted the dirty paths. No native ZIP or extracted-package pass resulted.
+
+The locked `tauri-build 2.7.1` calls its ACL/schema writers during `try_build`.
+`tauri-utils 2.10.1` places their output in the crate's `gen/schemas`, outside
+Cargo's ignored `target` directory. Local execution of those actual writers
+against clean166 produced exactly these untracked paths:
+
+- `crates/desktop-shell/gen/schemas/acl-manifests.json`
+- `crates/desktop-shell/gen/schemas/capabilities.json`
+- `crates/desktop-shell/gen/schemas/desktop-schema.json`
+- `crates/desktop-shell/gen/schemas/windows-schema.json`
+
+Reproduction used an external Rust harness with `tauri-build = "=2.7.1"` and
+`tauri_build::try_build(tauri_build::Attributes::default())`, built with
+`cargo build --offline`. Run it from `crates/desktop-shell` with
+`CARGO_CFG_TARGET_OS=windows`, `TARGET=x86_64-pc-windows-msvc`,
+`HOST=x86_64-unknown-linux-gnu`, `PROFILE=debug`, `DEP_TAURI_DEV=true` and
+`OUT_DIR` pointing to an existing external `target/debug/build/repro/out`.
+The upstream writers emit the four files before the Windows resource step
+stops on this Linux host. `git status --porcelain --untracked-files=all` then
+lists those paths, and the unmodified `source_metadata(HEAD, 166)` reproduces
+the same clean-source failure. This exercises real metadata generation, not
+a Windows application build or GUI test.
+
+The correction ignores only those four derived files. Unknown adjacent files,
+source capabilities, and staged or unstaged source edits still fail the same
+gate. Failures now include the full porcelain path list and preserve its status
+columns. A temporary-repository regression checks these cases with real Git;
+the Windows-host guard remains mandatory. The next exact-source hosted run
+must still pass package inventory, ZIP verification and extracted startup.

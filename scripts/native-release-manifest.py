@@ -180,11 +180,12 @@ def create_archive(directory, archive):
 
 def source_metadata(commit, count):
     def command(*args):
-        return subprocess.check_output(args, cwd=ROOT, text=True).strip()
+        return subprocess.check_output(args, cwd=ROOT, text=True).rstrip('\r\n')
     require(command('git', 'rev-parse', '--is-shallow-repository') == 'false', 'Complete history is required')
     require(re.fullmatch('[0-9a-f]{40}', commit) and command('git', 'rev-parse', 'HEAD') == commit
             and int(command('git', 'rev-list', '--count', 'HEAD')) == count, 'Exact source/count mismatch')
-    require(not command('git', 'status', '--porcelain'), 'Native packaging requires clean source')
+    status = command('git', 'status', '--porcelain', '--untracked-files=all')
+    require(not status, f'Native packaging requires clean source; git status --porcelain --untracked-files=all:\n{status}')
     require(platform.system() == 'Windows', 'Native packaging requires actual Windows acceptance')
     rust = command('rustc', '-vV')
     require('host: x86_64-pc-windows-msvc' in rust.splitlines(), 'Native x64 MSVC toolchain is required')

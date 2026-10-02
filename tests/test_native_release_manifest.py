@@ -1,8 +1,10 @@
 """Synthetic provenance failures are not claims of Windows acceptance."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -136,16 +138,63 @@ class NativeReleaseTests(unittest.TestCase):
 
     def test_source_metadata_rejects_shallow_dirty_wrong_count_and_wrong_host(self):
         outputs = {('git', 'rev-parse', '--is-shallow-repository'): 'false', ('git', 'rev-parse', 'HEAD'): 'b' * 40,
-                   ('git', 'rev-list', '--count', 'HEAD'): '164', ('git', 'status', '--porcelain'): '',
+                   ('git', 'rev-list', '--count', 'HEAD'): '164', ('git', 'status', '--porcelain', '--untracked-files=all'): '',
                    ('rustc', '-vV'): 'host: x86_64-pc-windows-msvc'}
         for command, replacement, message in [
             (('git', 'rev-parse', '--is-shallow-repository'), 'true', 'Complete history'),
             (('git', 'rev-list', '--count', 'HEAD'), '163', 'source/count mismatch'),
-            (('git', 'status', '--porcelain'), ' M file', 'clean source'),
+            (('git', 'status', '--porcelain', '--untracked-files=all'), ' M file', 'clean source'),
             (('rustc', '-vV'), 'host: x86_64-unknown-linux-gnu', 'MSVC toolchain')]:
             answers = {**outputs, command: replacement}
             with self.subTest(command=command), patch.object(native.platform, 'system', return_value='Windows'), patch.object(native.subprocess, 'check_output', side_effect=lambda args, **kw: answers[args]), self.assertRaisesRegex(ValueError, message):
                 native.source_metadata('b' * 40, 164)
+
+    def test_generated_windows_build_inventory_keeps_real_source_gate_strict(self):
+        # Real Git semantics, isolated from the checkout and any global excludes.
+        # These are the files emitted by the locked tauri-build/tauri-utils pair.
+        generated = ['acl-manifests.json', 'capabilities.json', 'desktop-schema.json', 'windows-schema.json']
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            def git(*args):
+                return subprocess.check_output(
+                    ['git', *args],
+                    cwd=root, text=True).rstrip('\r\n')
+            git('init', '--quiet')
+            git('config', 'core.excludesFile', os.devnull)
+            git('config', 'core.autocrlf', 'false')
+            git('config', 'core.hooksPath', str(root / 'unused-hooks'))
+            shutil.copyfile(ROOT / '.gitignore', root / '.gitignore')
+            config = root / 'crates/desktop-shell/tauri.conf.json'
+            write_json(config, {'app': {'security': {'capabilities': []}}})
+            git('add', '.gitignore', 'crates/desktop-shell/tauri.conf.json')
+            git('-c', 'user.name=Native packaging test', '-c', 'user.email=native-test@example.invalid',
+                '-c', 'commit.gpgsign=false', 'commit', '--quiet', '--no-verify', '-m', 'Synthetic source fixture')
+            commit = git('rev-parse', 'HEAD')
+            for name in generated:
+                write_json(root / 'crates/desktop-shell/gen/schemas' / name, {})
+            self.assertEqual(git('status', '--porcelain', '--untracked-files=all'), '')
+            with patch.object(native, 'ROOT', root), patch.object(native.platform, 'system', return_value='Linux'):
+                # Reaching the host guard proves real Git passed the source guard;
+                # this synthetic test must never claim actual Windows acceptance.
+                with self.assertRaisesRegex(ValueError, 'actual Windows acceptance'):
+                    native.source_metadata(commit, 1)
+                for relative in ['crates/desktop-shell/gen/schemas/unexpected.json',
+                                 'crates/desktop-shell/capabilities/new.json']:
+                    path = root / relative
+                    write_json(path, {})
+                    with self.subTest(path=relative), self.assertRaises(ValueError) as failure:
+                        native.source_metadata(commit, 1)
+                    self.assertIn('clean source', str(failure.exception))
+                    self.assertIn(f'?? {relative}', str(failure.exception))
+                    path.unlink()
+                write_json(config, {'changed': True})
+                with self.assertRaises(ValueError) as failure:
+                    native.source_metadata(commit, 1)
+                self.assertIn('\n M crates/desktop-shell/tauri.conf.json', str(failure.exception))
+                git('add', 'crates/desktop-shell/tauri.conf.json')
+                with self.assertRaises(ValueError) as failure:
+                    native.source_metadata(commit, 1)
+                self.assertIn('\nM  crates/desktop-shell/tauri.conf.json', str(failure.exception))
 
 
 if __name__ == '__main__':

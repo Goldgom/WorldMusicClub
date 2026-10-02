@@ -18,3 +18,10 @@ __pycache__/
 /desktop-startup/
 
 /desktop-portable/
+
+# tauri-build 2.7.1 emits these derived Windows schema/ACL inventories in the
+# crate, outside Cargo's target directory. Keep source capabilities visible.
+/crates/desktop-shell/gen/schemas/acl-manifests.json
+/crates/desktop-shell/gen/schemas/capabilities.json
+/crates/desktop-shell/gen/schemas/desktop-schema.json
+/crates/desktop-shell/gen/schemas/windows-schema.json
