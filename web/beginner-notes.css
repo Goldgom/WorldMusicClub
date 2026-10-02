@@ -56,6 +56,8 @@
   #keyboard.beginner-labels-enabled:has(:is([data-octave-dots="4"],[data-octave-dots="5"],[data-octave-dots="6"])){min-height:104px}
   #keyboard.beginner-labels-enabled .beginner-note-label>:is(.beginner-note-above,.beginner-note-below){font-size:7px!important;line-height:.5!important;min-height:3.5px!important}
   #keyboard.beginner-labels-enabled .piano-finger-label{top:1px;padding:0 3px;line-height:1.2}
+  /* Keep the complete guide box above the Windows shortcut label. */
+  #keyboard.beginner-labels-enabled .piano-key:not(.black)>.beginner-note-label{bottom:42px}
   #keyboard.beginner-labels-enabled .piano-key.black>.beginner-note-label{bottom:16px;font-size:12px}
   #keyboard.beginner-labels-enabled .piano-key.black>.key-shortcut{position:absolute;bottom:3px;line-height:1}
 }

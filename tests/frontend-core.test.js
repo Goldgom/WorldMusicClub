@@ -4,6 +4,7 @@ import {PIANO_RANGES, keyboardGeometry, jianpu, pitchMidi, midiName, transposeTe
 import {Transport, Synth} from '../web/transport.js';
 
 import {fixture} from './frontend-fixtures.js';
+import './frontend-staff-register.test.js';
 
 test('all keyboard ranges contain exact MIDI endpoints and bounded geometry', () => {
  for (const [count, endpoints] of Object.entries(PIANO_RANGES)) { const keys=keyboardGeometry(count); assert.equal(keys.length,Number(count)); assert.equal(keys[0].midi,endpoints[0]); assert.equal(keys.at(-1).midi,endpoints[1]); assert.ok(keys.every(k => k.x >= 0 && k.x + k.width <= 1.000001)); }

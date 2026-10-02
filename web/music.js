@@ -261,6 +261,33 @@ function renderNumberedNotation(score, options) {
   // generic staff SVG max-width rule must not scale dense numbered pages down.
   return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeXml(accessibleLabel)}" viewBox="0 0 ${layout.width} ${layout.height}" width="${layout.width}" height="${layout.height}" style="max-width:none;height:auto"><desc>${escapeXml(description)}</desc>${shapes.join('')}</svg>`;
 }
+function staffPitchY(pitch) {
+  return 60 - ((pitch.octave - 4) * 7 + STEPS.indexOf(pitch.step)) * 6;
+}
+
+// Reserve the complete painted note, including the upward stem/flag and the
+// accidental's font descent. A fixed-height SVG clips bass notes even when its
+// containing panel has space. This remains a treble pitch guide, not a hand or
+// clef inference, and only the current bounded page contributes to its height.
+function basicStaffParts(parts, startBeat, endBeat) {
+  let cursor = 0;
+  const rows = parts.map(part => {
+    const visible = part.notes.filter(note => beat(note.at) >= startBeat && beat(note.at) < endBeat);
+    const notes = visible.slice(0, 1000);
+    let above = 0, below = 53;
+    for (const note of notes) if (note.pitch) {
+      const y = staffPitchY(note.pitch), length = beat(note.duration);
+      above = Math.min(above, y - (length < 1 ? 33 : length < 4 ? 32 : 20));
+      below = Math.max(below, y + 14);
+    }
+    const nameY = cursor + 22;
+    const top = Math.max(cursor + 38, cursor + 32 - above);
+    cursor = Math.max(cursor + 140, top + below + 8);
+    return {part, notes, top, nameY, truncated: visible.length > 1000};
+  });
+  return {rows, height: Math.max(170, cursor + 30)};
+}
+
 export function renderNotation(score, mode = 'staff', options = {}) {
   if (mode === 'jianpu') return renderNumberedNotation(score, options);
   const i18n = options.i18n ?? getAppI18n(options.document);
@@ -270,12 +297,12 @@ export function renderNotation(score, mode = 'staff', options = {}) {
   const endBeat = startBeat + spanBeats;
   const width = Math.max(240, options.width || Math.max(720, 90 + spanBeats * 72));
   const spacing = (width - 96) / spanBeats;
-  const height = mode === 'staff' ? Math.max(170, parts.length * 140 + 30) : Math.max(125, parts.length * 105 + 30);
+  const layout = basicStaffParts(parts, startBeat, endBeat);
+  const height = layout.height;
   const x = t => 72 + (t - startBeat) * spacing;
   const shapes = [];
-  parts.forEach((part, index) => {
-    const top = 38 + index * (mode === 'staff' ? 140 : 105);
-    shapes.push(`<text x="14" y="${top - 16}" class="part-name">${escapeXml(part.name)}</text>`);
+  layout.rows.forEach(({part, notes, top, nameY}) => {
+    shapes.push(`<text x="14" y="${nameY}" class="part-name">${escapeXml(part.name)}</text>`);
     if (mode === 'staff') {
       for (let line = 0; line < 5; line++) shapes.push(`<line x1="14" y1="${top + line * 12}" x2="${width - 16}" y2="${top + line * 12}" class="staff-line"/>`);
       shapes.push(`<text x="23" y="${top + 46}" class="clef">𝄞</text>`);
@@ -283,14 +310,13 @@ export function renderNotation(score, mode = 'staff', options = {}) {
     score.measures.filter(measure => beat(measure.at) >= startBeat && beat(measure.at) < endBeat).forEach(measure => {
       shapes.push(`<line x1="${x(beat(measure.at))}" y1="${top - 5}" x2="${x(beat(measure.at))}" y2="${top + 53}" class="bar-line"/><text x="${x(beat(measure.at)) + 5}" y="${top - 10}" class="measure-number">${measure.number}</text>`);
     });
-    part.notes.filter(note => beat(note.at) >= startBeat && beat(note.at) < endBeat).slice(0, 1000).forEach(note => {
+    notes.forEach(note => {
       const nx = x(beat(note.at)) + 18;
       const data = `data-note-id="${escapeXml(note.id)}" class="score-note"`;
       if (!note.pitch) {
         shapes.push(`<g ${data}><text x="${nx}" y="${top + 32}" class="rest">𝄽</text></g>`);
       } else {
-        const diatonic = (note.pitch.octave - 4) * 7 + STEPS.indexOf(note.pitch.step);
-        const ny = top + 60 - diatonic * 6;
+        const ny = top + staffPitchY(note.pitch);
         shapes.push(`<g ${data}>`);
         if (ny >= top + 60) for (let ly = top + 60; ly <= ny; ly += 12) shapes.push(`<line x1="${nx - 12}" y1="${ly}" x2="${nx + 12}" y2="${ly}" class="note-line"/>`);
         if (ny <= top - 12) for (let ly = top - 12; ly >= ny; ly -= 12) shapes.push(`<line x1="${nx - 12}" y1="${ly}" x2="${nx + 12}" y2="${ly}" class="note-line"/>`);
@@ -303,7 +329,7 @@ export function renderNotation(score, mode = 'staff', options = {}) {
       }
     });
   });
-  if (parts.some(part => part.notes.filter(note => beat(note.at) >= startBeat && beat(note.at) < endBeat).length > 1000)) shapes.push(`<text x="14" y="16" class="part-name">${escapeXml(i18n.t('notation.eventLimit'))}</text>`);
+  if (layout.rows.some(row => row.truncated)) shapes.push(`<text x="14" y="16" class="part-name">${escapeXml(i18n.t('notation.eventLimit'))}</text>`);
   const accessibleLabel = i18n.t(mode === 'staff' ? 'notation.basicStaffAria' : options.numberedMode === 'movable' ? 'notation.ariaMovable' : 'notation.ariaFixed');
   return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeXml(accessibleLabel)}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${shapes.join('')}</svg>`;
 }

@@ -1,5 +1,6 @@
 import {assertLocaleRoundTrip,registerLocaleBrowserRegressions} from './locale-browser-regression.js';
 import {registerBeginnerBrowserRegressions} from './beginner-browser-regression.js';
+import {registerStaffRegisterBrowserRegressions} from './staff-register-browser-regression.js';
 import {selectLegacyEnglish, wideKeyboardBindings, keyboardBrowserScore, observeRealAudio, guitarPhraseBrowserScore, boundedPreviewBrowserRecord} from './browser-input-fixtures.js';
 /**
  * Full-stack checks against the actual Rust executable and its embedded UI.
@@ -2366,5 +2367,6 @@ test('real explicit guitar phrase uses Rust inventory then filtered locks withou
 });
 
 registerBeginnerBrowserRegressions({test,getPage:()=>page,ui,readyForTitle,exportScore,exportTakeData,closeShellPanels,artifactDirectory});
+registerStaffRegisterBrowserRegressions({test,getPage:()=>page,ui,readyForTitle,exportScore,closeShellPanels,actualMarkerVisibility,artifactDirectory});
 
 registerLocaleBrowserRegressions({test,getPage:()=>page,ui,closeShellPanels,waitForEngraving,readyForTitle,exportScore,getRequests:getRequestsForLocale});
