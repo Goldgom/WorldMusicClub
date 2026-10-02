@@ -98,19 +98,24 @@ public static class NativeAcceptance {
       throw new InvalidOperationException("Native filename handle ownership, class, identity or writable state does not match");
   }
   public static IntPtr SelectPickerOpenButton(NativePickerButton[] candidates,uint appProcess) {
+    return SelectPickerActionButton(candidates,appProcess,1);
+  }
+  public static IntPtr SelectPickerActionButton(NativePickerButton[] candidates,uint appProcess,int controlId) {
+    if(controlId!=1 && controlId!=2)throw new InvalidOperationException("Only native Open and Cancel buttons are accepted");
+    string label=controlId==1?"Open":"Cancel";
     if(candidates==null || candidates.Length==0 || candidates.Length>8 || appProcess==0)
-      throw new InvalidOperationException("Open button inventory is missing or exceeds eight candidates");
+      throw new InvalidOperationException(label+" button inventory is missing or exceeds eight candidates");
     IntPtr selected=IntPtr.Zero;
     foreach(var candidate in candidates) {
       // The provider can report a non-Button UIA type for an actual Win32
       // Button. Its verified native identity remains the selection criterion.
-      if(candidate==null || candidate.Window==IntPtr.Zero || candidate.AutomationId!="1" || candidate.NativeClass!="Button" || candidate.NativeControlId!=1 || candidate.AutomationProcess!=appProcess || candidate.NativeProcess!=appProcess || !candidate.AutomationEnabled || !candidate.InDialog || !candidate.Enabled || !candidate.Visible)
+      if(candidate==null || candidate.Window==IntPtr.Zero || candidate.AutomationId!=controlId.ToString(System.Globalization.CultureInfo.InvariantCulture) || candidate.NativeClass!="Button" || candidate.NativeControlId!=controlId || candidate.AutomationProcess!=appProcess || candidate.NativeProcess!=appProcess || !candidate.AutomationEnabled || !candidate.InDialog || !candidate.Enabled || !candidate.Visible)
         continue;
       if(selected!=IntPtr.Zero && selected!=candidate.Window)
-        throw new InvalidOperationException("Open button has multiple verified native handles");
+        throw new InvalidOperationException(label+" button has multiple verified native handles");
       selected=candidate.Window;
     }
-    if(selected==IntPtr.Zero)throw new InvalidOperationException("Open button has no verified native handle");
+    if(selected==IntPtr.Zero)throw new InvalidOperationException(label+" button has no verified native handle");
     return selected;
   }
   public static POINT PickerClickPoint(RECT dialog,RECT button) {

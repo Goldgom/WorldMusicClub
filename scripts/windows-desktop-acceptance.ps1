@@ -134,19 +134,21 @@ function Get-PickerButtonCandidate($Element,[IntPtr]$Dialog) {
   $candidate.InDialog=[NativeAcceptance]::IsChild($Dialog,$handle);$candidate.Enabled=[NativeAcceptance]::IsWindowEnabled($handle);$candidate.Visible=[NativeAcceptance]::IsWindowVisible($handle)
   return $candidate
 }
-function Click-PickerOpen($Root,[IntPtr]$Dialog,$App,[hashtable]$Evidence) {
-  $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'1')
+function Click-PickerAction($Root,[IntPtr]$Dialog,$App,[hashtable]$Evidence,[int]$ControlId=1) {
+  if($ControlId -notin @(1,2)){throw 'Only native Open or Cancel is supported'}
+  $prefix=if($ControlId -eq 1){'open_button'}else{'cancel_button'}
+  $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,[string]$ControlId)
   $buttons=@($Root.FindAll([System.Windows.Automation.TreeScope]::Descendants,$condition))
-  $Evidence.open_button_candidate_count=$buttons.Count;$candidates=@()
+  $Evidence[$prefix+'_candidate_count']=$buttons.Count;$candidates=@()
   if($buttons.Count -gt 8){throw 'Open button inventory exceeds eight candidates'}
   foreach($button in $buttons){$candidates+=,(Get-PickerButtonCandidate $button $Dialog)}
-  try {$handle=[NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]$candidates,[uint32]$App.Id)}
-  catch {$Evidence.open_button_candidates=@($candidates | ForEach-Object {[ordered]@{hwnd=$_.Window.ToInt64();id=$_.AutomationId;is_button=$_.IsButton;uia_control_type=$_.AutomationControlType;class=$_.NativeClass;control_id=$_.NativeControlId;process_id=$_.NativeProcess;uia_process_id=$_.AutomationProcess;uia_enabled=$_.AutomationEnabled;enabled=$_.Enabled;visible=$_.Visible;dialog_descendant=$_.InDialog}});throw}
+  try {$handle=[NativeAcceptance]::SelectPickerActionButton([NativePickerButton[]]$candidates,[uint32]$App.Id,$ControlId)}
+  catch {$Evidence[$prefix+'_candidates']=@($candidates | ForEach-Object {[ordered]@{hwnd=$_.Window.ToInt64();id=$_.AutomationId;is_button=$_.IsButton;uia_control_type=$_.AutomationControlType;class=$_.NativeClass;control_id=$_.NativeControlId;process_id=$_.NativeProcess;uia_process_id=$_.AutomationProcess;uia_enabled=$_.AutomationEnabled;enabled=$_.Enabled;visible=$_.Visible;dialog_descendant=$_.InDialog}});throw}
   [void][NativeAcceptance]::SetForegroundWindow($Dialog);Start-Sleep -Milliseconds 100
   # Re-read the live control and require its screen center to hit that exact
   # button (or a native child), rather than trusting a stale UIA rectangle.
   $live=Get-PickerButtonCandidate ([System.Windows.Automation.AutomationElement]::FromHandle($handle)) $Dialog
-  if([NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]@($live),[uint32]$App.Id) -ne $handle){throw 'Open button native handle changed during verification'}
+  if([NativeAcceptance]::SelectPickerActionButton([NativePickerButton[]]@($live),[uint32]$App.Id,$ControlId) -ne $handle){throw 'Open button native handle changed during verification'}
   $dialogBounds=New-Object NativeAcceptance+RECT;$buttonBounds=New-Object NativeAcceptance+RECT
   if(-not [NativeAcceptance]::GetWindowRect($Dialog,[ref]$dialogBounds) -or -not [NativeAcceptance]::GetWindowRect($handle,[ref]$buttonBounds)){throw 'Cannot read owned picker/button bounds'}
   $point=[NativeAcceptance]::PickerClickPoint($dialogBounds,$buttonBounds)
@@ -154,7 +156,7 @@ function Click-PickerOpen($Root,[IntPtr]$Dialog,$App,[hashtable]$Evidence) {
   [void][NativeAcceptance]::GetWindowThreadProcessId($hit,[ref]$hitProcess)
   [uint32]$dialogProcess=0;[void][NativeAcceptance]::GetWindowThreadProcessId($Dialog,[ref]$dialogProcess)
   [NativeAcceptance]::ValidatePickerClick($Dialog,$App.MainWindowHandle,[NativeAcceptance]::GetAncestor($Dialog,3),[NativeAcceptance]::GetForegroundWindow(),[uint32]$App.Id,$dialogProcess,($hitProcess -eq $App.Id -and ($hit -eq $handle -or [NativeAcceptance]::IsChild($handle,$hit))))
-  $Evidence.open_button=[ordered]@{hwnd=$handle.ToInt64();class=$live.NativeClass;uia_control_type=$live.AutomationControlType;control_id=$live.NativeControlId;process_id=$live.NativeProcess;enabled=$live.Enabled;visible=$live.Visible;dialog_descendant=$live.InDialog;bounds=@($buttonBounds.Left,$buttonBounds.Top,$buttonBounds.Right,$buttonBounds.Bottom);hit_hwnd=$hit.ToInt64();point=@($point.X,$point.Y);method='verified_native_mouse_click'}
+  $Evidence[$prefix]=[ordered]@{hwnd=$handle.ToInt64();class=$live.NativeClass;uia_control_type=$live.AutomationControlType;control_id=$live.NativeControlId;process_id=$live.NativeProcess;enabled=$live.Enabled;visible=$live.Visible;dialog_descendant=$live.InDialog;bounds=@($buttonBounds.Left,$buttonBounds.Top,$buttonBounds.Right,$buttonBounds.Bottom);hit_hwnd=$hit.ToInt64();point=@($point.X,$point.Y);method='verified_native_mouse_click'}
   [NativeAcceptance]::Click($point.X,$point.Y)
 }
 function Wait-PickerDismissal([IntPtr]$Dialog,$App,[hashtable]$Evidence) {
@@ -240,7 +242,29 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
   $Evidence.owned_dialog=[ordered]@{hwnd=$dialog.ToInt64();process_id=$dialogProcess;class=$class.ToString();root_owner_hwnd=[NativeAcceptance]::GetAncestor($dialog,3).ToInt64();app_hwnd=$window.ToInt64();app_process_id=$App.Id}
   try {
     if($dialogProcess -ne $App.Id){throw 'Windows picker process does not match its app owner'}
-    if($Action.kind -eq 'cancel-picker'){[NativeAcceptance]::Key(0x1B);Wait-PickerDismissal $dialog $App $Evidence;return}
+    if($Action.kind -eq 'cancel-picker'){
+      # A foreground HWND can exist before its controls are shown. Do not send
+      # Escape into that construction gap or mistake hidden-before-show for close.
+      $readyDeadline=[DateTime]::UtcNow.AddSeconds(5);$ready=$false
+      while([DateTime]::UtcNow -lt $readyDeadline){
+        $root=[System.Windows.Automation.AutomationElement]::FromHandle($dialog)
+        $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'2')
+        $buttons=@($root.FindAll([System.Windows.Automation.TreeScope]::Descendants,$condition))
+        if($buttons.Count -gt 8){throw 'Cancel button inventory exceeds eight candidates'}
+        $candidates=@();foreach($button in $buttons){$candidates+=,(Get-PickerButtonCandidate $button $dialog)}
+        $visible=[NativeAcceptance]::IsWindowVisible($dialog);$enabled=[NativeAcceptance]::IsWindowEnabled($dialog)
+        $Evidence.cancel_readiness=[ordered]@{dialog_visible=$visible;dialog_enabled=$enabled;candidates=$buttons.Count;ready=$false}
+        $Evidence.cancel_readiness.controls=@($candidates | ForEach-Object {[ordered]@{hwnd=$_.Window.ToInt64();id=$_.AutomationId;class=$_.NativeClass;control_id=$_.NativeControlId;process_id=$_.NativeProcess;uia_process_id=$_.AutomationProcess;uia_enabled=$_.AutomationEnabled;enabled=$_.Enabled;visible=$_.Visible;dialog_descendant=$_.InDialog}})
+        if($visible -and $enabled){
+          try{[void][NativeAcceptance]::SelectPickerActionButton([NativePickerButton[]]$candidates,[uint32]$App.Id,2);$ready=$true}catch{$Evidence.cancel_readiness.last_unready=$_.Exception.Message}
+        }
+        if($ready){$Evidence.cancel_readiness.ready=$true;break}
+        Start-Sleep -Milliseconds 100
+      }
+      if(-not $ready){throw 'Owned Windows Cancel button was not ready within 5 seconds'}
+      Click-PickerAction $root $dialog $App $Evidence 2
+      Wait-PickerDismissal $dialog $App $Evidence;return
+    }
     $path=[NativeAcceptance]::ResolveFixturePath($Fixtures,$OutputDirectory,[string]$Action.file)
     $root=[System.Windows.Automation.AutomationElement]::FromHandle($dialog)
     $entry=$null
@@ -255,7 +279,7 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
       $Evidence.filename_entry_method='UIA_ValuePattern'
     }
     Capture-Handle $dialog "owned-picker-before-open-$($env:WMH_DESKTOP_ACCEPTANCE_PHASE)-$($Action.sequence)"
-    Click-PickerOpen $root $dialog $App $Evidence
+    Click-PickerAction $root $dialog $App $Evidence 1
     Wait-PickerDismissal $dialog $App $Evidence
   } catch {
     $failure=$_.Exception.Message

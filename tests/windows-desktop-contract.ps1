@@ -82,6 +82,18 @@ foreach($case in @(
   $button=New-ValidOpenButton;$button.($case.field)=$case.value
   Assert-Rejected { [NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]@($button),42) } "Open identity $($case.field)"
 }
+# Cancellation must resolve the actual ready native ID 2 button, not merely a
+# newly allocated foreground dialog or an Open control with the same label.
+$cancel=New-ValidOpenButton;$cancel.Window=[IntPtr]202;$cancel.AutomationId='2';$cancel.NativeControlId=2
+Assert-True ([NativeAcceptance]::SelectPickerActionButton([NativePickerButton[]]@($openButton,$cancel),42,2) -eq [IntPtr]202) 'Cancel resolves independently of Open'
+Assert-Rejected { [NativeAcceptance]::SelectPickerActionButton([NativePickerButton[]]@($openButton),42,2) } 'Open is not Cancel'
+$unshown=New-ValidOpenButton;$unshown.AutomationId='2';$unshown.NativeControlId=2;$unshown.Visible=$false
+Assert-Rejected { [NativeAcceptance]::SelectPickerActionButton([NativePickerButton[]]@($unshown),42,2) } 'allocated but unshown Cancel is not ready'
+$disabled=New-ValidOpenButton;$disabled.AutomationId='2';$disabled.NativeControlId=2;$disabled.Enabled=$false
+Assert-Rejected { [NativeAcceptance]::SelectPickerActionButton([NativePickerButton[]]@($disabled),42,2) } 'disabled Cancel is not ready'
+$secondCancel=New-ValidOpenButton;$secondCancel.Window=[IntPtr]203;$secondCancel.AutomationId='2';$secondCancel.NativeControlId=2
+Assert-Rejected { [NativeAcceptance]::SelectPickerActionButton([NativePickerButton[]]@($cancel,$secondCancel),42,2) } 'ambiguous Cancel is not clicked'
+Assert-Rejected { [NativeAcceptance]::SelectPickerActionButton([NativePickerButton[]]@($cancel),42,3) } 'unsupported native action ID'
 function New-Rectangle([int]$Left,[int]$Top,[int]$Right,[int]$Bottom) {
   $bounds=[NativeAcceptance+RECT]::new();$bounds.Left=$Left;$bounds.Top=$Top;$bounds.Right=$Right;$bounds.Bottom=$Bottom;return $bounds
 }
