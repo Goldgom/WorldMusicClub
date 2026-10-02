@@ -3,6 +3,13 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.IO;
 using System.Text.RegularExpressions;
+public sealed class NativeFileNameHost {
+  public IntPtr Window;
+  public uint AutomationProcess, NativeProcess;
+  public string AutomationId, AutomationClass, NativeClass;
+  public int NativeControlId;
+  public bool AutomationEnabled, InDialog, Enabled, Visible;
+}
 public sealed class NativeFileNameTarget {
   public IntPtr Dialog, AppWindow, RootOwner, Host, Edit;
   public uint AppProcess, DialogProcess, HostProcess, EditProcess;
@@ -37,6 +44,23 @@ public static class NativeAcceptance {
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h,IntPtr device,uint flags);
   public static void Key(byte key) { byte scan=(byte)MapVirtualKey(key,0); keybd_event(key,scan,0,UIntPtr.Zero); keybd_event(key,scan,2,UIntPtr.Zero); }
   public static void Click(int x,int y) { SetCursorPos(x,y); mouse_event(2,0,0,0,UIntPtr.Zero); mouse_event(4,0,0,0,UIntPtr.Zero); }
+  public static IntPtr SelectFileNameHost(NativeFileNameHost[] candidates,uint appProcess) {
+    if(candidates==null || candidates.Length==0 || candidates.Length>8 || appProcess==0)
+      throw new InvalidOperationException("Windows filename host inventory is missing or exceeds eight candidates");
+    IntPtr selected=IntPtr.Zero;
+    foreach(var candidate in candidates) {
+      // AutomationId is scoped to siblings, not all dialog descendants. Match
+      // the UIA host to its actual HWND; repeated IDs alone are not ambiguity.
+      if(candidate==null || candidate.Window==IntPtr.Zero || candidate.AutomationId!="1148" || candidate.AutomationClass!="ComboBoxEx32" || candidate.NativeClass!="ComboBoxEx32" || candidate.NativeControlId!=1148 || candidate.AutomationProcess!=appProcess || candidate.NativeProcess!=appProcess || !candidate.AutomationEnabled || !candidate.InDialog || !candidate.Enabled || !candidate.Visible)
+        continue;
+      if(selected!=IntPtr.Zero && selected!=candidate.Window)
+        throw new InvalidOperationException("Windows filename host has multiple verified native handles");
+      selected=candidate.Window;
+    }
+    if(selected==IntPtr.Zero)
+      throw new InvalidOperationException("Windows filename host has no verified native handle");
+    return selected;
+  }
   public static void ValidateFileNameTarget(NativeFileNameTarget target) {
     if(target==null || target.Dialog==IntPtr.Zero || target.AppWindow==IntPtr.Zero || target.Host==IntPtr.Zero || target.Edit==IntPtr.Zero || target.Host==target.Edit || target.RootOwner!=target.AppWindow || target.AppProcess==0 || target.DialogProcess!=target.AppProcess || target.HostProcess!=target.AppProcess || target.EditProcess!=target.AppProcess || target.HostControlId!=1148 || target.HostClass!="ComboBoxEx32" || target.EditClass!="Edit" || !target.HostInDialog || !target.EditInHost || !target.HostEnabled || !target.EditEnabled || !target.EditVisible || target.EditReadOnly)
       throw new InvalidOperationException("Native filename handle ownership, class, identity or writable state does not match");

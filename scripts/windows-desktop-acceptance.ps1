@@ -82,9 +82,24 @@ function Set-NativeFileName($Root,[IntPtr]$Dialog,$App,[string]$Path,[hashtable]
   $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'1148')
   $hosts=@($Root.FindAll([System.Windows.Automation.TreeScope]::Descendants,$condition))
   $Evidence.filename_host_count=$hosts.Count
-  if($hosts.Count -ne 1){throw 'Windows filename host 1148 is missing or ambiguous'}
-  $hostControl=$hosts[0];$hostWindow=[IntPtr]$hostControl.Current.NativeWindowHandle
-  $Evidence.filename_host=[ordered]@{id=$hostControl.Current.AutomationId;class=$hostControl.Current.ClassName;control_type=$hostControl.Current.ControlType.ProgrammaticName;enabled=$hostControl.Current.IsEnabled;hwnd=$hostWindow.ToInt64();value_pattern=$hostControl.GetCurrentPropertyValue([System.Windows.Automation.AutomationElement]::IsValuePatternAvailableProperty)}
+  $Evidence.filename_host_candidates=@();$nativeHosts=@()
+  # ID 1148 can occur on several descendants. Inventory their identities and
+  # require one native ComboBoxEx32 HWND, rather than one raw UIA ID match.
+  if($hosts.Count -gt 8){throw 'Windows filename host inventory exceeds eight candidates'}
+  foreach($hostControl in $hosts) {
+    $current=$hostControl.Current;$candidateWindow=[IntPtr]$current.NativeWindowHandle
+    [uint32]$candidateProcess=0;[void][NativeAcceptance]::GetWindowThreadProcessId($candidateWindow,[ref]$candidateProcess)
+    $candidateClass=[System.Text.StringBuilder]::new(256);[void][NativeAcceptance]::GetClassName($candidateWindow,$candidateClass,256)
+    $candidate=[NativeFileNameHost]::new()
+    $candidate.Window=$candidateWindow;$candidate.AutomationId=$current.AutomationId;$candidate.AutomationClass=$current.ClassName
+    $candidate.AutomationProcess=$current.ProcessId;$candidate.AutomationEnabled=$current.IsEnabled
+    $candidate.NativeProcess=$candidateProcess;$candidate.NativeClass=$candidateClass.ToString();$candidate.NativeControlId=[NativeAcceptance]::GetDlgCtrlID($candidateWindow)
+    $candidate.InDialog=[NativeAcceptance]::IsChild($Dialog,$candidateWindow);$candidate.Enabled=[NativeAcceptance]::IsWindowEnabled($candidateWindow);$candidate.Visible=[NativeAcceptance]::IsWindowVisible($candidateWindow)
+    $nativeHosts+=,$candidate
+    $Evidence.filename_host_candidates+=,[ordered]@{id=$current.AutomationId;class=$current.ClassName;control_type=$current.ControlType.ProgrammaticName;process_id=$current.ProcessId;enabled=$current.IsEnabled;hwnd=$candidateWindow.ToInt64();native_class=$candidate.NativeClass;native_control_id=$candidate.NativeControlId;native_process_id=$candidateProcess;dialog_descendant=$candidate.InDialog;native_enabled=$candidate.Enabled;native_visible=$candidate.Visible}
+  }
+  $hostWindow=[NativeAcceptance]::SelectFileNameHost([NativeFileNameHost[]]$nativeHosts,[uint32]$App.Id)
+  $Evidence.filename_host=[ordered]@{hwnd=$hostWindow.ToInt64();selection='unique_UIA_and_native_ComboBoxEx32_handle'}
   [uint32]$hostProcess=0;[void][NativeAcceptance]::GetWindowThreadProcessId($hostWindow,[ref]$hostProcess)
   $class=[System.Text.StringBuilder]::new(256);[void][NativeAcceptance]::GetClassName($hostWindow,$class,256)
   if($hostWindow -eq [IntPtr]::Zero -or $class.ToString() -cne 'ComboBoxEx32' -or [NativeAcceptance]::GetDlgCtrlID($hostWindow) -ne 1148 -or -not [NativeAcceptance]::IsChild($Dialog,$hostWindow) -or $hostProcess -ne $App.Id -or -not [NativeAcceptance]::IsWindowEnabled($hostWindow)) {

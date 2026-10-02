@@ -11,6 +11,43 @@ function Assert-Rejected([scriptblock]$Operation,[string]$Label) {
   try { & $Operation } catch { $script:checks++;return }
   throw "Contract unexpectedly accepted: $Label"
 }
+function New-ValidHost {
+  $candidate=[NativeFileNameHost]::new()
+  $candidate.Window=[IntPtr]102;$candidate.AutomationProcess=42;$candidate.NativeProcess=42
+  $candidate.AutomationId='1148';$candidate.AutomationClass='ComboBoxEx32';$candidate.NativeClass='ComboBoxEx32';$candidate.NativeControlId=1148
+  $candidate.AutomationEnabled=$true;$candidate.InDialog=$true;$candidate.Enabled=$true;$candidate.Visible=$true
+  return $candidate
+}
+$validHost=New-ValidHost
+# Reproduce three descendant ID matches without assuming the two unrecorded
+# classes from the hosted failure. These fixtures exercise class/handle scope.
+$nestedCombo=New-ValidHost;$nestedCombo.Window=[IntPtr]103;$nestedCombo.AutomationClass='ComboBox';$nestedCombo.NativeClass='ComboBox'
+$nestedEdit=New-ValidHost;$nestedEdit.Window=[IntPtr]104;$nestedEdit.AutomationClass='Edit';$nestedEdit.NativeClass='Edit'
+Assert-True ([NativeAcceptance]::SelectFileNameHost([NativeFileNameHost[]]@($validHost,$nestedCombo,$nestedEdit),42) -eq [IntPtr]102) 'duplicate IDs with host first'
+Assert-True ([NativeAcceptance]::SelectFileNameHost([NativeFileNameHost[]]@($nestedCombo,$validHost,$nestedEdit),42) -eq [IntPtr]102) 'duplicate IDs with host in middle'
+Assert-True ([NativeAcceptance]::SelectFileNameHost([NativeFileNameHost[]]@($nestedEdit,$nestedCombo,$validHost),42) -eq [IntPtr]102) 'duplicate IDs with host last'
+Assert-True ([NativeAcceptance]::SelectFileNameHost([NativeFileNameHost[]]@($validHost,(New-ValidHost)),42) -eq [IntPtr]102) 'repeated UIA references to the same verified HWND'
+$otherHost=New-ValidHost;$otherHost.Window=[IntPtr]105
+Assert-Rejected { [NativeAcceptance]::SelectFileNameHost([NativeFileNameHost[]]@($validHost,$otherHost),42) } 'two distinct verified hosts'
+Assert-Rejected { [NativeAcceptance]::SelectFileNameHost([NativeFileNameHost[]]@($otherHost,$validHost),42) } 'two distinct verified hosts in reverse order'
+Assert-Rejected { [NativeAcceptance]::SelectFileNameHost([NativeFileNameHost[]]@($nestedCombo,$nestedEdit),42) } 'only nonhost duplicate IDs'
+Assert-Rejected { [NativeAcceptance]::SelectFileNameHost($null,42) } 'missing host inventory'
+Assert-Rejected { [NativeAcceptance]::SelectFileNameHost([NativeFileNameHost[]]@(),42) } 'empty host inventory'
+Assert-Rejected { [NativeAcceptance]::SelectFileNameHost([NativeFileNameHost[]]@($null),42) } 'null host candidate'
+Assert-Rejected { [NativeAcceptance]::SelectFileNameHost([NativeFileNameHost[]](@($validHost)*9),42) } 'host inventory exceeds bound even with one HWND'
+Assert-Rejected { [NativeAcceptance]::SelectFileNameHost([NativeFileNameHost[]]@($validHost),0) } 'missing app process for host selection'
+$hostCases=@(
+  @{field='Window';value=[IntPtr]::Zero},@{field='AutomationId';value='1001'},
+  @{field='AutomationClass';value='ComboBox'},@{field='NativeClass';value='ComboBox'},
+  @{field='NativeControlId';value=1001},@{field='AutomationProcess';value=[uint32]43},
+  @{field='NativeProcess';value=[uint32]43},@{field='AutomationEnabled';value=$false},
+  @{field='InDialog';value=$false},@{field='Enabled';value=$false},
+  @{field='Visible';value=$false}
+)
+foreach($case in $hostCases) {
+  $candidate=New-ValidHost;$candidate.($case.field)=$case.value
+  Assert-Rejected { [NativeAcceptance]::SelectFileNameHost([NativeFileNameHost[]]@($candidate),42) } "host identity $($case.field)"
+}
 function New-ValidTarget {
   $target=[NativeFileNameTarget]::new()
   $target.Dialog=[IntPtr]101;$target.AppWindow=[IntPtr]100;$target.RootOwner=[IntPtr]100
@@ -74,4 +111,4 @@ try {
 } finally {
   if(Test-Path $temporary){Remove-Item -LiteralPath $temporary -Recurse -Force}
 }
-Write-Output "$script:checks native filename ownership and fixture-path contract checks passed without GUI or native calls."
+Write-Output "$script:checks native filename identity, ownership and fixture-path contract checks passed without GUI or native calls."

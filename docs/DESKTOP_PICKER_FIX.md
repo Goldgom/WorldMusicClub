@@ -75,9 +75,10 @@ Evidence artifact `11226988695` has SHA-256
 `c67eb8eb484156be2dcd34d110529c878dc9852ce0c6984f7cf80a73d2f65189`.
 
 The retained action result establishes an owned `#32770` dialog: dialog and app
-PID are both 6924; root-owner and app HWND are both 262652. The only filename
-candidate is AutomationId `1148`, native class `ComboBoxEx32`, UIA
-`ControlType.Pane`, enabled, without ValuePattern or exposed child Edit.
+PID are both 6924; root-owner and app HWND are both 262652. Within the first
+AutomationId `1148` match, the only filename candidate is class `ComboBoxEx32`,
+UIA `ControlType.Pane`, enabled, without ValuePattern or exposed child Edit.
+That first-match inventory does not establish uniqueness across the dialog.
 The actual owned-dialog screenshot shows a normal editable, focused File name
 field. The missing UIA pattern is therefore the selector limitation; waiting
 longer for that pattern is not the correction.
@@ -112,3 +113,41 @@ Both failed evidence archives and previous source trees remain preserved. No
 product code, profile/origin, permissions, third-party license bytes or overall
 phase timeout changed. This remains an acceptance-harness correction pending
 Windows validation, not completed native feature acceptance.
+
+## Third hosted result and host identity scope
+
+[Run 37014715438](https://github.com/Goldgom/WorldMusicHub/actions/runs/37014715438)
+tested source `f023cb9d2e05db382bb76408a784e64ee4c4f76d`, tree
+`f99133582ffe1c7971de2c03314ac18cd8a57f93` (local equivalent
+`879ba753ee4eb46eb42282ad56960094dd27b0e2`). The 113 pure helper checks,
+compilation and startup smoke passed. Seed action 2 failed before text entry:
+`Windows filename host 1148 is missing or ambiguous`.
+
+The action result records three UIA descendants matching AutomationId `1148`,
+not three verified native filename hosts. The existing `FindFirst` path records
+one `ComboBoxEx32` candidate without ValuePattern; it never inventories the
+other two ID matches. The inspected owned-dialog screenshot shows the real Open
+dialog with an empty, focused File name field. The owned dialog and app PID are
+both 5512, and their root-owner/app HWND is 197124. No file was selected.
+
+The regression is the fallback's requirement that a descendant AutomationId be
+globally unique. Microsoft's [AutomationId documentation](https://learn.microsoft.com/en-us/dotnet/api/system.windows.automation.automationelement.automationidproperty)
+only expects sibling uniqueness. The evidence does not establish the other two
+matches' classes, so this correction does not assume what they are.
+
+The fallback now inventories up to eight ID matches with UIA and native HWND,
+class, control ID, PID, ancestry and enabled/visible state. It selects only the
+unique underlying HWND whose UIA and native identities both agree on the
+app-owned `1148`/`ComboBoxEx32` host. Repeated UIA references to that verified
+HWND collapse to one host; two distinct verified hosts still fail. The original
+native target validation, host-owned Edit query, bounded text messages, exact
+path readback and real Open invocation remain in place. Failure evidence
+retains every bounded candidate's identity without copying directory contents.
+
+Pure helper regressions cover repeated IDs with different native classes in
+three orders, repeated references to one HWND, two distinct valid hosts in both
+orders, missing/oversized inventories and every host identity constraint.
+The nonhost classes used in these fixtures are synthetic cases, not a claim
+about the unrecorded hosted controls. PowerShell/.NET are still absent locally;
+these added contracts and actual picker acceptance require the next exact-source
+hosted Windows run. All three prior failures remain preserved.
