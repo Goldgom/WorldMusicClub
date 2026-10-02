@@ -20,8 +20,10 @@ class ModelPitch{static OctaveXmlDifference=3;constructor(pitch){this.Fundamenta
 const fraction=value=>({WholeValue:0,Numerator:value.numerator,Denominator:4*value.denominator});
 function model(spec){
   const instrument={IdString:'P1',Visible:true,Staves:[]},staff={ParentInstrument:instrument};instrument.Staves.push(staff);
-  const measures=spec.score.measures.map(()=>({measureListIndex:999,VerticalSourceStaffEntryContainers:[]})),byXml=new Map();
+  const measures=spec.score.measures.map(measure=>({measureListIndex:999,Duration:fraction(measure.length),AbsoluteTimestamp:fraction(measure.at),VerticalSourceStaffEntryContainers:[]})),byXml=new Map();
   for(const segment of spec.identity.noteMap.segments){const voice={ParentVoice:{VoiceId:Number(segment.xml_voice)},Timestamp:fraction(segment.measure_at),Notes:[]},note={ParentStaff:staff,SourceMeasure:measures[segment.source_measure_index],ParentVoiceEntry:voice,Length:fraction(segment.duration),Pitch:segment.pitch?new ModelPitch(segment.pitch):undefined,PrintObject:true,isRest:()=>segment.pitch===null};voice.Notes.push(note);note.SourceMeasure.VerticalSourceStaffEntryContainers.push({StaffEntries:[{VoiceEntries:[voice]}]});byXml.set(segment.xml_note_id,note)}
+  const tied = spec.identity.noteMap.segments.filter(segment => segment.tie_start || segment.tie_stop).map(segment => byXml.get(segment.xml_note_id));
+  if(tied.length){const tie={Notes:tied};for(const note of tied)note.NoteTie=tie;}
   return {Sheet:{Instruments:[instrument],SourceMeasures:measures},EngravingRules:{},byXml};
 }
 function mountEnvironment(){
@@ -147,7 +149,7 @@ test('adapter rebuilds glyph bindings after resize, reapplies expected state, an
   const spec=example(),env=mountEnvironment();let width=900;Object.defineProperty(env.mount,'clientWidth',{configurable:true,get:()=>width});// Linkedom's XML wildcard traversal differs from native DOMParser; shim only
   // the test parser, while the renderer remains a deliberate non-layout double.
   env.window.DOMParser=class{parseFromString(input,type){const document=new DOMParser().parseFromString(input,type),native=document.getElementsByTagName.bind(document);for(const element of document.querySelectorAll('*'))Object.defineProperty(element,'namespaceURI',{value:'',configurable:true});document.getElementsByTagName=name=>name==='*'?document.querySelectorAll('*'):native(name);return document}};const instances=[];
-  class Renderer{constructor(mount){this.mount=mount;Object.assign(this,model(spec));this.Version='2.1.3-release';this.renders=0;instances.push(this)}async load(){}updateGraphic(){}render(){this.renders++;this.paint=graphics(this,this.mount,spec)}clear(){this.mount.replaceChildren()}}
+  class Renderer{constructor(mount){this.mount=mount;Object.assign(this,model(spec));this.Version='2.1.3-release';this.renders=0;instances.push(this)}async load(document){for(const [index,measure] of [...document.querySelectorAll('measure')].entries())for(const _padding of measure.querySelectorAll('note[print-object="no"]'))this.Sheet.SourceMeasures[index].VerticalSourceStaffEntryContainers.push({StaffEntries:[{VoiceEntries:[{Notes:[{PrintObject:false,isRest:()=>true}]}]}]})}updateGraphic(){}render(){this.renders++;this.paint=graphics(this,this.mount,spec)}clear(){this.mount.replaceChildren()}}
   env.window.opensheetmusicdisplay={OpenSheetMusicDisplay:Renderer};const changes=[];
   const output=await renderEngravedStaff(env.mount,spec.xml,{identity:spec.identity,responsive:false,fromMeasure:1,toMeasure:2,onMappingChange:value=>changes.push(value)});assert.equal(output.ok,true,output.message);assert.equal(output.mappingStatus().verifiedGlyphCount,5);const renderer=instances[0];
   assert.equal(output.renderGeneration(),1);assert.equal(output.resize(),true);assert.equal(output.renderGeneration(),1);assert.match(renderer.mount.getAttribute('aria-label'),/轮廓符头表示预期谱面音符/);

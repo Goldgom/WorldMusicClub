@@ -427,11 +427,19 @@ async function installBindingObservation() {
   await page.evaluate(() => {
     if (window.__wmhBinding) return;
     const watch = window.__wmhBinding = {
-      renderer: null, renderCalls: 0, graphicColorCalls: 0, events: [],
+      renderer: null, renderCalls: 0, loadCalls: 0, graphicColorCalls: 0, events: [],
       serial: 0, nodeIds: new WeakMap(), patched: new WeakSet(), baseline: new Map(),
       groups: new Map(), rows: [],
     };
     const proto = window.opensheetmusicdisplay.OpenSheetMusicDisplay.prototype;
+    const originalLoad = proto.load;
+    proto.load = function (document, ...args) {
+      watch.loadCalls++;
+      // Observe the exact Document delivered to the real renderer. Never replace
+      // its parser, graph, geometry, XML response or return value with a fixture.
+      watch.loadedDocument = document?.cloneNode?.(true) ?? null;
+      return Reflect.apply(originalLoad, this, [document, ...args]);
+    };
     const original = proto.render;
     proto.render = function (...args) {
       watch.renderer = this; watch.renderCalls++;
@@ -470,12 +478,13 @@ async function installBindingObservation() {
     };
     // Quarter-beat comparison stays exact; OSMD stores whole-note fractions and
     // may put the integer part in WholeValue. Never use RealValue/float tolerance.
-    watch.sameBeat = (fraction, beat) => {
+    watch.sameBeat = (fraction, beat, origin = {numerator: 0, denominator: 1}) => {
       if (!fraction || !Number.isSafeInteger(fraction.Numerator) ||
           !Number.isSafeInteger(fraction.Denominator) || fraction.Denominator <= 0 ||
           !Number.isSafeInteger(fraction.WholeValue ?? 0)) return false;
       const n = BigInt(fraction.Numerator) + BigInt(fraction.WholeValue ?? 0) * BigInt(fraction.Denominator);
-      return n * 4n * BigInt(beat.denominator) === BigInt(beat.numerator) * BigInt(fraction.Denominator);
+      return n * 4n * BigInt(beat.denominator) * BigInt(origin.denominator) ===
+        (BigInt(beat.numerator) * BigInt(origin.denominator) - BigInt(origin.numerator) * BigInt(beat.denominator)) * BigInt(fraction.Denominator);
     };
     watch.sourcePitch = source => source.isRest() ? null : {
       step: {0:'C', 2:'D', 4:'E', 5:'F', 7:'G', 9:'A', 11:'B'}[source.Pitch.FundamentalNote],
@@ -502,10 +511,10 @@ async function installBindingObservation() {
         const candidates = graph.filter(g => {
           const n = g.sourceNote, staff = n.ParentStaff;
           return staff.ParentInstrument.IdString === segment.xml_part_id && staff.ParentInstrument.Staves.indexOf(staff) + 1 === segment.staff &&
-            sourceMeasures.indexOf(n.SourceMeasure) === segment.source_measure_index &&
+            sourceMeasures.indexOf(n.SourceMeasure) + watch.modelFrom - 1 === segment.source_measure_index &&
             String(n.ParentVoiceEntry.ParentVoice.VoiceId) === segment.xml_voice &&
             watch.sameBeat(n.ParentVoiceEntry.Timestamp, segment.measure_at) &&
-            watch.sameBeat(n.getAbsoluteTimestamp(), segment.at) && watch.sameBeat(n.Length, segment.duration) &&
+            watch.sameBeat(n.getAbsoluteTimestamp(), segment.at, watch.origin) && watch.sameBeat(n.Length, segment.duration) &&
             watch.samePitch(watch.sourcePitch(n), segment.pitch);
         });
         if (candidates.length !== 1) {
@@ -518,7 +527,8 @@ async function installBindingObservation() {
               const n = g.sourceNote, staff = n.ParentStaff;
               return {xmlPartId: staff.ParentInstrument.IdString,
                 staff: staff.ParentInstrument.Staves.indexOf(staff) + 1,
-                sourceMeasureIndex: sourceMeasures.indexOf(n.SourceMeasure),
+                sourceMeasureIndex: sourceMeasures.indexOf(n.SourceMeasure) + watch.modelFrom - 1,
+                projectedMeasureIndex: sourceMeasures.indexOf(n.SourceMeasure),
                 xmlVoice: String(n.ParentVoiceEntry.ParentVoice.VoiceId),
                 measureAtWholeNotes: fraction(n.ParentVoiceEntry.Timestamp),
                 atWholeNotes: fraction(n.getAbsoluteTimestamp()), durationWholeNotes: fraction(n.Length),
@@ -591,16 +601,20 @@ async function installBindingObservation() {
 
 async function renderBinding(score, exported, renderOptions = {}) {
   // First load the real shipped bundle through the production adapter. This warm
-  // render is unbound; the observed render below is a fresh real OSMD instance.
+  // render uses the same bounded request; the observed render below is a fresh
+  // real OSMD instance. A long source must never need an unbound full-score load.
   if (!await page.evaluate(() => Boolean(window.__wmhBinding))) {
-    await render(exported.xml);
+    await render(exported.xml, {...renderOptions,
+      identity: {score, noteMap: exported.note_id_map, partIdMap: exported.part_id_map, voiceIdMap: exported.voice_id_map}});
     await installBindingObservation();
   }
   const result = await page.evaluate(async ({score, exported, options}) => {
     const watch = window.__wmhBinding;
     watch.exported = exported;
     watch.from = options.fromMeasure ?? 1;
-    watch.to = options.toMeasure ?? score.measures.length;
+    watch.to = options.toMeasure ?? Math.min(watch.from + 31, score.measures.length);
+    watch.origin = score.measures[watch.from - 1].at;
+    watch.score = score;
     watch.partIds = options.partIds ?? Object.values(exported.part_id_map);
     watch.events = [];
     const ready = await window.engraving.renderEngravedStaff(document.querySelector('#staff'), exported.xml, {
@@ -609,6 +623,9 @@ async function renderBinding(score, exported, renderOptions = {}) {
       onMappingChange: status => watch.events.push({status, liveSvg: Boolean(document.querySelector('#staff svg'))}),
     });
     window.lastEngraving = ready;
+    watch.modelFrom = ready.metadata?.modelFromMeasure ?? watch.from;
+    watch.modelTo = ready.metadata?.modelToMeasure ?? watch.to;
+    watch.origin = score.measures[watch.modelFrom - 1].at;
     watch.assert(typeof ready.mappingStatus === 'function', 'Public mappingStatus API');
     watch.assert(typeof ready.setExpectedWrittenNotes === 'function', 'Public exact written-note setter');
     watch.assert(typeof ready.clearExpectedWrittenNotes === 'function', 'Public written-note clearer');
@@ -647,6 +664,274 @@ async function bindingEvidence(name, data) {
   await screenshot(`binding-${name}`);
   await writeFile(join(artifacts, `worldmusichub-binding-${name}.json`), JSON.stringify(data, null, 2) + '\n');
 }
+
+function boundedPageScore() {
+  const score = bindingScore();
+  score.id = 'original-bounded-engraving-pages';
+  score.title = 'Original bounded pages and silent voice tails';
+  score.measures = Array.from({length: 76}, (_, index) => ({number: index,
+    at: bindingBeat(index ? 1 + (index - 1) * 4 : 0), length: bindingBeat(index ? 4 : 1)}));
+  score.keys = [{at: bindingBeat(0), fifths: 2, mode: 'major'},
+    {at: score.measures[64].at, fifths: -3, mode: 'major'}];
+  // The later 8/8 signature has the same duration but must still be inherited
+  // literally. It cannot be replaced with an assumed default 4/4 signature.
+  score.meters.push({at: score.measures[64].at, numerator: 8, denominator: 8});
+  score.repeats = [{from: score.measures[68].at, to: score.measures[72].at, times: 2}];
+  score.parts = ['piano', 'guitar'].map((instrument, partIndex) => {
+    const notes = [];
+    for (const [index, measure] of score.measures.entries()) {
+      const start = measure.at.numerator;
+      for (let step = 0; step < (index ? 14 : 2); step++) {
+        notes.push(bindingNote(`${instrument}-lead-${index}-${step}`, 0, 1,
+          bindingPitch(step < 2 ? 'C' : ['C', 'D', 'E', 'F', 'G', 'A', 'B'][step % 7], 5 - partIndex),
+          'upper', {at: bindingBeat(start * 4 + step, 4), duration: bindingBeat(1, 4),
+            tie_start: index === 69 && step === 0, tie_stop: index === 69 && step === 1}));
+      }
+      // Every voice ends early. The lower lane also has leading and interior
+      // silence, so preserving just the final export <forward> is insufficient.
+      const offsets = index ? [bindingBeat(1, 2), bindingBeat(2)] : [bindingBeat(1, 4)];
+      for (const [step, offset] of offsets.entries()) {
+        notes.push(bindingNote(`${instrument}-lower-${index}-${step}`, 0, 1,
+          bindingPitch(step ? 'G' : 'C', 3), 'lower', {
+            at: bindingBeat(start * offset.denominator + offset.numerator, offset.denominator),
+            duration: bindingBeat(1, index ? 2 : 4), staff: partIndex ? 1 : 2,
+          }));
+      }
+    }
+    return {id: `bounded/${instrument}`, name: `Bounded ${instrument}`, instrument, notes};
+  });
+  return score;
+}
+
+async function inspectBoundedPage() {
+  return page.evaluate(() => {
+    const watch = window.__wmhBinding, document = watch.loadedDocument;
+    const children = (node, name) => [...node.children].filter(child => child.localName === name);
+    const text = (node, name) => children(node, name)[0]?.textContent;
+    watch.assert(document?.documentElement?.localName === 'score-partwise', 'The real OSMD load receives a parsed MusicXML Document');
+    const parts = children(document.documentElement, 'part');
+    const expected = watch.exported.note_id_map.segments.filter(segment => watch.partIds.includes(segment.xml_part_id) &&
+      segment.source_measure_index >= watch.from - 1 && segment.source_measure_index < watch.to);
+    const notes = [...document.querySelectorAll('note')], mapped = notes.filter(note => note.hasAttribute('id'));
+    const padding = notes.filter(note => !note.hasAttribute('id'));
+    watch.assert(JSON.stringify(mapped.map(note => note.getAttribute('id')).sort()) ===
+      JSON.stringify(expected.map(segment => segment.xml_note_id).sort()), 'Projection retains exactly the selected original XML identities');
+    watch.assert(notes.length <= 2000 && padding.length > 0, 'Real OSMD workload is bounded including generated silence');
+    watch.assert(padding.every(note => note.getAttribute('print-object') === 'no' && children(note, 'rest').length === 1 && !children(note, 'pitch').length),
+      'All generated silence is explicitly nonprinting and has no canonical/XML source ID');
+    watch.assert(document.querySelectorAll('forward').length === 0, 'Every renderer-facing forward gap has explicit nonprinting duration');
+    const firstAttributes = [], laneClocks = [];
+    for (const part of parts) {
+      const measures = children(part, 'measure');
+      watch.assert(measures.length === watch.to - watch.from + 1, 'OSMD is never loaded with off-page source measures');
+      let divisions;
+      for (const [localIndex, measure] of measures.entries()) {
+        const original = watch.score.measures[watch.from - 1 + localIndex];
+        watch.assert(measure.getAttribute('number') === String(original.number), 'Original printed measure numbers are preserved');
+        const attributes = children(measure, 'attributes');
+        for (const entry of attributes) if (text(entry, 'divisions')) divisions = Number(text(entry, 'divisions'));
+        watch.assert(Number.isSafeInteger(divisions) && divisions > 0, 'The selected page inherits exact source divisions');
+        if (!localIndex) {
+          const all = attributes.flatMap(entry => [...entry.children]);
+          const last = name => all.filter(node => node.localName === name).at(-1);
+          firstAttributes.push({partId: part.getAttribute('id'), divisions,
+            fifths: Number(text(last('key'), 'fifths')), beats: Number(text(last('time'), 'beats')),
+            beatType: Number(text(last('time'), 'beat-type')), staves: Number(last('staves').textContent),
+            clefs: all.filter(node => node.localName === 'clef').map(node => ({staff: Number(node.getAttribute('number')), sign: text(node, 'sign'), line: Number(text(node, 'line'))})),
+            number: measure.getAttribute('number'), implicit: measure.getAttribute('implicit')});
+        }
+        const length = original.length.numerator * divisions / original.length.denominator;
+        let cursor = 0;
+        const lanes = new Map();
+        for (const node of [...measure.children]) {
+          if (node.localName === 'backup') cursor -= Number(text(node, 'duration'));
+          if (node.localName !== 'note') continue;
+          watch.assert(!children(node, 'chord').length, 'This original fixture uses independent sequential voices');
+          const key = `${text(node, 'staff')}/${text(node, 'voice')}`;
+          if (!lanes.has(key)) lanes.set(key, []);
+          const duration = Number(text(node, 'duration'));
+          lanes.get(key).push({start: cursor, end: cursor + duration});
+          cursor += duration;
+        }
+        watch.assert(lanes.size === 2, 'Both distinct written voices remain present in each selected part');
+        for (const [lane, intervals] of lanes) {
+          let end = 0;
+          for (const interval of intervals) {
+            watch.assert(interval.start === end && interval.end > interval.start, 'Every voice is contiguous after filling leading and interior silence');
+            end = interval.end;
+          }
+          watch.assert(end === length, 'Every short voice tail reaches the exact canonical bar boundary');
+          laneClocks.push({partId: part.getAttribute('id'), sourceMeasureIndex: watch.from - 1 + localIndex, lane, durationTicks: end, divisions});
+        }
+      }
+    }
+    const sourceMeasures = watch.renderer.Sheet.SourceMeasures;
+    watch.assert(sourceMeasures.length === watch.to - watch.from + 1, 'The real parsed OSMD model contains only the selected source window, without repeat expansion');
+    let modelPadding = 0;
+    for (const [index, measure] of sourceMeasures.entries()) {
+      const original = watch.score.measures[watch.from - 1 + index];
+      watch.assert(watch.sameBeat(measure.AbsoluteTimestamp, original.at, watch.origin), 'Actual OSMD measure timestamps preserve the exact rebased source clock');
+      watch.assert(watch.sameBeat(measure.Duration, original.length), 'Actual OSMD duration includes every silent voice tail, including the pickup');
+      for (const vertical of measure.VerticalSourceStaffEntryContainers) for (const staff of vertical.StaffEntries || [])
+        for (const voice of staff?.VoiceEntries || []) for (const note of voice.Notes || []) if (note.PrintObject === false) {
+          watch.assert(note.isRest(), 'The real OSMD model only hides generated silence'); modelPadding++;
+        }
+    }
+    watch.assert(modelPadding === padding.length, 'The real OSMD parser retains every nonprinting duration');
+    return {partIds: parts.map(part => part.getAttribute('id')),
+      partListIds: children(document.querySelector('part-list'), 'score-part').map(part => part.getAttribute('id')),
+      measureCount: sourceMeasures.length, noteCount: notes.length, mappedCount: mapped.length,
+      paddingCount: padding.length, modelPadding, firstAttributes, laneClocks,
+      repeats: [...document.querySelectorAll('repeat')].map(repeat => repeat.getAttribute('direction'))};
+  });
+}
+
+test('large original scores load only bounded pages and selected parts while preserving silent clocks and written identity', options, async () => {
+  const score = boundedPageScore(), before = JSON.stringify(score), exported = await exportScore(score);
+  const exportBefore = JSON.stringify(exported), count = score.parts.reduce((sum, part) => sum + part.notes.length, 0);
+  assert.equal(score.measures.length, 76);assert.equal(count, 2406);
+  assert.equal(exported.note_id_map.segments.length, count);
+  assert.ok(Buffer.byteLength(exported.xml) < 8 * 1024 * 1024);
+  assert.ok(Buffer.byteLength(JSON.stringify(exported.note_id_map)) < 4 * 1024 * 1024);
+  assert.match(exported.xml, /<measure number="0" implicit="yes">/);
+  assert.match(exported.xml, /<forward>/);assert.match(exported.xml, /<backup>/);
+  assert.doesNotMatch(exported.xml, /print-object="no"/, 'Padding is a disposable display projection, never part of Rust export');
+  const sourceSize = await page.evaluate(xml => {
+    const document = new DOMParser().parseFromString(xml, 'application/xml');
+    return {notes: document.querySelectorAll('note').length, elements: document.getElementsByTagName('*').length};
+  }, exported.xml);
+  assert.equal(sourceSize.notes, count);assert.ok(sourceSize.notes > 2000 && sourceSize.elements < 50000);
+  const piano = exported.part_id_map['bounded/piano'], guitar = exported.part_id_map['bounded/guitar'];
+  const started = performance.now(), evidence = [];
+  const pickup = await renderBinding(score, exported, {fromMeasure: 1, toMeasure: 2});
+  assert.equal(pickup.result.mapping.verifiedGlyphCount, 38);
+  const pickupPage = await inspectBoundedPage();
+  assert.deepEqual(pickupPage.partIds, [piano, guitar]);
+  assert.ok(pickupPage.firstAttributes.every(attribute => attribute.implicit === 'yes' && attribute.number === '0' && attribute.fifths === 2));
+  await expectBinding(['piano-lead-0-0'], 0);await clearBinding();
+  await expectBinding(['guitar-lower-1-1'], 1);await clearBinding();
+  evidence.push({page: 'pickup', projection: pickupPage});
+
+  const late = await renderBinding(score, exported, {fromMeasure: 69, toMeasure: 72, partIds: [piano]});
+  const latePage = await inspectBoundedPage();
+  assert.deepEqual(latePage.partIds, [piano]);assert.deepEqual(latePage.partListIds, [piano]);
+  assert.equal(latePage.measureCount, 4);assert.equal(latePage.mappedCount, 64);
+  assert.equal(latePage.noteCount, 80);assert.equal(latePage.paddingCount, 16);
+  assert.equal(late.result.mapping.segmentCount, count);assert.equal(late.result.mapping.verifiedGlyphCount, 64);
+  assert.deepEqual(latePage.firstAttributes, [{partId: piano, divisions: 4, fifths: -3, beats: 8, beatType: 8, staves: 2,
+    clefs: [{staff: 1, sign: 'G', line: 2}, {staff: 2, sign: 'F', line: 4}], number: '68', implicit: null}]);
+  assert.deepEqual(latePage.repeats, ['forward', 'backward']);
+  const visibleIds = new Set(exported.note_id_map.segments.filter(segment => segment.xml_part_id === piano && segment.source_measure_index >= 68 && segment.source_measure_index <= 71).map(segment => segment.xml_note_id));
+  assert.ok(late.result.mapping.bindings.every(binding => binding.status === (visibleIds.has(binding.xmlNoteId) ? 'bound' : 'not-displayed')),
+    'Off-page and other-part identities remain explicitly not-displayed, never renumbered or rebound');
+  const drawn = await geometry();assert.doesNotMatch(drawn.text, /Bounded guitar/);
+  assert.ok(drawn.ties > 0 && drawn.keys >= 2 && drawn.times >= 2 && drawn.clefs >= 2, JSON.stringify(drawn));
+  await expectBinding(['piano-lead-69-0'], 69);await expectBinding(['piano-lead-69-1'], 69);await clearBinding();
+  const activity = await page.evaluate(async () => {
+    const watch = window.__wmhBinding;
+    const before = {loads: watch.loadCalls, renders: watch.renderCalls, generation: window.lastEngraving.renderGeneration(), colors: watch.graphicColorCalls};
+    let childMutations = 0;
+    const observer = new MutationObserver(records => {childMutations += records.filter(record => record.type === 'childList').length;});
+    observer.observe(document.querySelector('#staff'), {subtree: true, childList: true});
+    for (let frame = 0; frame < 8; frame++) {
+      const sourceMeasureIndex = frame % 2 ? 71 : 68, sourceNoteIds = [`piano-lower-${sourceMeasureIndex}-1`];
+      watch.assert(window.lastEngraving.setExpectedWrittenNotes({sourceNoteIds, sourceMeasureIndex}), 'Original late-page identity is accepted');
+      watch.checkExpected(sourceNoteIds, sourceMeasureIndex);
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+    observer.disconnect();
+    return {loads: watch.loadCalls - before.loads, renders: watch.renderCalls - before.renders,
+      generations: window.lastEngraving.renderGeneration() - before.generation, graphColors: watch.graphicColorCalls - before.colors, childMutations};
+  });
+  assert.deepEqual(activity, {loads: 0, renders: 0, generations: 0, graphColors: 0, childMutations: 0});
+  await clearBinding();await expectBinding(['piano-lower-71-1'], 71);
+  const resizing = await page.evaluate(() => {
+    const watch = window.__wmhBinding;watch.oldHeads = [...watch.groups.values()];
+    return {events: watch.events.length, loads: watch.loadCalls, renders: watch.renderCalls, generation: window.lastEngraving.renderGeneration()};
+  });
+  await page.setViewportSize({width: 580, height: 900});
+  await page.waitForFunction(events => window.__wmhBinding.events.length > events, resizing.events);
+  const resized = await page.evaluate(() => {
+    const watch = window.__wmhBinding;
+    const result = {oldHeadsDetached: watch.oldHeads.every(node => !node.isConnected), loads: watch.loadCalls, renders: watch.renderCalls,
+      generation: window.lastEngraving.renderGeneration(), bounds: window.lastEngraving.expectedNoteBounds(), mapping: window.lastEngraving.mappingStatus()};
+    window.lastEngraving.clearExpectedWrittenNotes();watch.reindex();return result;
+  });
+  assert.equal(resized.oldHeadsDetached, true);assert.equal(resized.loads, resizing.loads, 'Resize reuses the already bounded parsed score');
+  assert.ok(resized.renders > resizing.renders && resized.generation > resizing.generation);
+  assert.equal(resized.mapping.verifiedGlyphCount, 64);assert.equal(resized.bounds.status, 'ready');
+  assert.ok(resized.bounds.rects.length > 0 && resized.bounds.rects.every(rect => rect.sourceNoteId === 'piano-lower-71-1' && rect.sourceMeasureIndex === 71));
+  await expectBinding(['piano-lead-69-1'], 69);await clearBinding();
+  assert.deepEqual(await inspectBoundedPage(), latePage, 'Rebinding never changes selected XML, inherited attributes, silence or clocks');
+  evidence.push({page: 'late-piano', projection: latePage, activity, resize: {oldHeadsDetached: resized.oldHeadsDetached, mapping: resized.mapping.status}});
+
+  await page.setViewportSize({width: 1440, height: 1100});
+  for (const partIds of [[guitar], [piano, guitar]]) {
+    const shown = await renderBinding(score, exported, {fromMeasure: 69, toMeasure: 72, partIds});
+    const projection = await inspectBoundedPage();
+    assert.deepEqual(projection.partIds, partIds);assert.deepEqual(projection.partListIds, partIds);
+    assert.equal(shown.result.mapping.verifiedGlyphCount, partIds.length * 64);
+    assert.ok(projection.firstAttributes.every(attribute => attribute.fifths === -3 && attribute.beats === 8 && attribute.beatType === 8));
+    await expectBinding(['guitar-lead-69-1'], 69);await clearBinding();
+    if (partIds.length === 1) assert.doesNotMatch((await geometry()).text, /Bounded piano/);
+    else {assert.match((await geometry()).text, /Bounded piano/);await expectBinding(['piano-lower-71-1'], 71);await clearBinding();}
+    evidence.push({page: partIds.length === 1 ? 'late-guitar' : 'late-all', projection});
+  }
+  assert.equal(JSON.stringify(score), before);assert.equal(JSON.stringify(exported), exportBefore);
+  assert.deepEqual(await exportScore(score), exported, 'Rust XML and every canonical identity map remain unchanged after paging, selection, highlighting and resize');
+  await bindingEvidence('bounded-pages-and-silence', {completionMs: performance.now() - started, sourceMeasures: score.measures.length,
+    sourceSize, sourceNotes: count, canonicalUnchanged: true, exportUnchanged: true, evidence});
+});
+
+test('bounded exact rhythm ratios preserve real OSMD duration, source identity and current-note highlighting', options, async () => {
+  // Original ascending synthetic pitches, with exact authored intervals. No
+  // private score, melody, title or audit file is used by this hosted fixture.
+  const score = bindingScore();
+  score.id = 'original-extended-exact-rhythm';score.title = 'Original exact rhythm bounds';
+  score.measures = [0, 4, 8].map(at => ({number: at / 4 + 1, at: bindingBeat(at), length: bindingBeat(4)}));
+  score.parts[0].notes = [
+    bindingNote('exact-240-227-C', 0, 1, bindingPitch('C', 4), 'melody', {duration: bindingBeat(227, 480)}),
+    bindingNote('exact-complement-D', 0, 1, bindingPitch('D', 4), 'melody', {at: bindingBeat(227, 480), duration: bindingBeat(1693, 480)}),
+    bindingNote('exact-1920-1919-E', 4, 1, bindingPitch('E', 4), 'melody', {duration: bindingBeat(1919, 480)}),
+    bindingNote('exact-small-rest', 0, 1, null, 'melody', {at: bindingBeat(3839, 480), duration: bindingBeat(1, 480)}),
+    bindingNote('after-exact-F', 8, 4, bindingPitch('F', 4)),
+  ];
+  const canonicalBefore = JSON.stringify(score), exported = await exportScore(score), exportBefore = JSON.stringify(exported);
+  assert.match(exported.xml, /<actual-notes>240<\/actual-notes><normal-notes>227<\/normal-notes>/);
+  assert.match(exported.xml, /<actual-notes>1920<\/actual-notes><normal-notes>1919<\/normal-notes>/);
+  assert.ok(exported.diagnostics.some(diagnostic => diagnostic.code === 'musicxml_inferred_rhythm'), 'Inferred rhythm remains explicit');
+  const started = performance.now(), shown = await renderBinding(score, exported);
+  assert.equal(shown.rows.length, 5);
+  assert.equal(shown.result.mapping.verifiedGlyphCount, 5, 'Every original note/rest receives its exact source binding');
+  const durations = await page.evaluate(() => {
+    const watch = window.__wmhBinding, renderer = watch.renderer;
+    for (let index = 0; index < renderer.Sheet.SourceMeasures.length; index++) {
+      watch.assert(watch.sameBeat(renderer.Sheet.SourceMeasures[index].AbsoluteTimestamp, {numerator: index * 4, denominator: 1}), 'Absolute measure clock remains exact after extended ratios');
+      watch.assert(watch.sameBeat(renderer.Sheet.SourceMeasures[index].Duration, {numerator: 4, denominator: 1}), 'Every complete measure retains its duration');
+    }
+    const values = [];
+    for (const row of renderer.GraphicSheet.MeasureList) for (const measure of row || [])
+      for (const staff of measure?.staffEntries || []) for (const voice of staff.graphicalVoiceEntries || []) {
+        if (!voice.notes?.length) continue;
+        const graph = voice.notes[0], ticks = graph.vfnote[0].getTicks(), length = graph.sourceNote.Length;
+        const numerator = BigInt(length.Numerator) + BigInt(length.WholeValue) * BigInt(length.Denominator);
+        watch.assert(BigInt(ticks.numerator) * BigInt(length.Denominator) === numerator * 16384n * BigInt(ticks.denominator), 'VexFlow spacing ticks retain the exact source duration');
+        values.push({ticks: {numerator: ticks.numerator, denominator: ticks.denominator}, source: {numerator: length.Numerator, denominator: length.Denominator, whole: length.WholeValue}});
+      }
+    return values;
+  });
+  assert.equal(durations.length, 5);
+  const generation = await page.evaluate(() => window.lastEngraving.renderGeneration());
+  for (const [id, measure] of [['exact-240-227-C', 0], ['exact-1920-1919-E', 1], ['after-exact-F', 2]]) {
+    await expectBinding([id], measure);await clearBinding();
+  }
+  assert.equal(await page.evaluate(() => window.lastEngraving.renderGeneration()), generation, 'Current-note changes never render again');
+  const completionMs = performance.now() - started;
+  assert.ok(completionMs < 15_000, `Bounded synthetic fixture completes promptly: ${completionMs}ms`);
+  assert.equal(JSON.stringify(score), canonicalBefore);assert.equal(JSON.stringify(exported), exportBefore);
+  assert.equal((await exportScore(score)).xml, exported.xml);
+  await bindingEvidence('extended-exact-rhythm', {completionMs, canonicalUnchanged: true, exportUnchanged: true, mapping: shown.result.mapping, durations});
+});
 
 test('exact unequal-duration chord heads and displaced seconds work for both stem directions without graph coloring or redraw', options, async () => {
   const score = bindingScore(), before = JSON.stringify(score), exported = await exportScore(score);
@@ -739,6 +1024,71 @@ test('rests bind exactly and same-staff identical unisons are individually verif
   assert.ok(selected.result.mapping.bindings.filter(entry => entry.sourceNoteId !== 'other-part-G4')
     .every(entry => entry.status === 'not-displayed'), 'Hidden part bindings are explicit');
   await expectBinding(['other-part-G4'], 1); await clearBinding();
+});
+
+function tiedContextScore() {
+  const score = bindingScore();
+  score.id = 'original-long-tie-page-context';score.title = 'Original long tied-note context';
+  score.measures = Array.from({length:12},(_,index)=>({number:index+1,at:bindingBeat(index*4),length:bindingBeat(4)}));
+  score.parts = [
+    {id:'tie/piano',name:'Original tied piano',instrument:'piano',notes:[
+      bindingNote('long-C4',0,48,bindingPitch('C',4),'long'),
+      bindingNote('long-G3',0,48,bindingPitch('G',3),'lower',{staff:2}),
+      ...score.measures.map((_,index)=>bindingNote(`explicit-F5-${index}`,index*4,4,bindingPitch('F',5),'explicit',{tie_start:index<11,tie_stop:index>0})),
+    ]},
+    {id:'tie/guitar',name:'Original tied guitar',instrument:'guitar',notes:[bindingNote('long-E4',0,48,bindingPitch('E',4),'melody')]},
+  ];
+  return score;
+}
+
+test('complete original tie context preserves real continuation curves on middle and boundary pages', options, async () => {
+  const score=tiedContextScore(),before=JSON.stringify(score),exported=await exportScore(score),exportBefore=JSON.stringify(exported),evidence=[];
+  assert.equal(exported.note_id_map.segments.length,48);
+  const guitar=exported.part_id_map['tie/guitar'];
+  for(const selected of [{fromMeasure:1,toMeasure:2},{fromMeasure:5,toMeasure:6},{fromMeasure:11,toMeasure:12},{fromMeasure:5,toMeasure:6,partIds:[guitar]}]) {
+    const shown=await renderBinding(score,exported,selected),count=selected.partIds?2:8;
+    assert.equal(shown.result.mapping.displayedSegmentCount,count);assert.equal(shown.result.mapping.verifiedGlyphCount,count);
+    const proof=await page.evaluate(()=>{
+      const watch=window.__wmhBinding,renderer=watch.renderer,projection=watch.loadedDocument,mapping=window.lastEngraving.mappingStatus();
+      watch.assert(watch.modelFrom===1&&watch.modelTo===12,'The real loader retains both original ends of each visible twelve-bar chain');
+      watch.assert(renderer.Sheet.SourceMeasures.length===12,'All original context measures are present in the bounded source model');
+      watch.assert(renderer.EngravingRules.MinMeasureToDrawIndex===watch.from-1&&renderer.EngravingRules.MaxMeasureToDrawIndex===watch.to-1,'Only the requested measures are drawn');
+      const model=[];for(const measure of renderer.Sheet.SourceMeasures)for(const vertical of measure.VerticalSourceStaffEntryContainers)for(const staff of vertical.StaffEntries||[])for(const voice of staff?.VoiceEntries||[])for(const note of voice.Notes||[])if(!model.includes(note))model.push(note);
+      const expected=watch.exported.note_id_map.segments.filter(segment=>watch.partIds.includes(segment.xml_part_id));
+      const match=segment=>model.filter(note=>note.ParentStaff.ParentInstrument.IdString===segment.xml_part_id&&note.ParentStaff.ParentInstrument.Staves.indexOf(note.ParentStaff)+1===segment.staff&&
+        renderer.Sheet.SourceMeasures.indexOf(note.SourceMeasure)+watch.modelFrom-1===segment.source_measure_index&&String(note.ParentVoiceEntry.ParentVoice.VoiceId)===segment.xml_voice&&
+        watch.sameBeat(note.ParentVoiceEntry.Timestamp,segment.measure_at)&&watch.sameBeat(note.Length,segment.duration)&&watch.samePitch(watch.sourcePitch(note),segment.pitch));
+      const originalDocument=new DOMParser().parseFromString(watch.exported.xml,'application/xml');
+      const byId=new Map();for(const segment of expected){const notes=match(segment);watch.assert(notes.length===1,'Every original context segment has exact unique model identity');byId.set(segment.xml_note_id,notes[0]);
+        const actual=projection.querySelector(`note[id="${segment.xml_note_id}"]`),source=originalDocument.querySelector(`note[id="${segment.xml_note_id}"]`);
+        watch.assert(new XMLSerializer().serializeToString(actual)===new XMLSerializer().serializeToString(source),'Context and visible notes retain their exact original flags, IDs and musical data');
+      }
+      const graphicalTies=new Set();for(const row of renderer.GraphicSheet.MeasureList)for(const measure of row||[])for(const staff of measure?.staffEntries||[])for(const tie of staff.GraphicalTies||[])graphicalTies.add(tie);
+      const curves=[];
+      for(const segment of expected){const note=byId.get(segment.xml_note_id),inside=segment.source_measure_index>=watch.from-1&&segment.source_measure_index<watch.to;
+        if(!inside){const g=renderer.EngravingRules.GNote(note),heads=g?.vfnote?.[0]?(g.getNoteheadSVGs?.()||[]):[];watch.assert(!heads.some(head=>head?.isConnected),'Nondisplayed original context has no mounted notehead');continue}
+        watch.assert(note.NoteTie?.Notes.length===12,'The reader retains the complete original tie, not a missing continuation or singleton');
+        const next=note.NoteTie.Notes[note.NoteTie.Notes.indexOf(note)+1];if(!next)continue;
+        const nextIndex=renderer.Sheet.SourceMeasures.indexOf(next.SourceMeasure)+watch.modelFrom-1;if(nextIndex<watch.from-1||nextIndex>=watch.to)continue;
+        const ties=[...graphicalTies].filter(tie=>tie.StartNote?.sourceNote===note&&tie.EndNote?.sourceNote===next&&tie.Tie===note.NoteTie);
+        watch.assert(ties.length>=1,'Each visible continuation pair has a real graphical tie linked to its exact model members');
+        const painted=ties.find(tie=>tie.vfTie&&tie.SVGElement?.isConnected&&tie.SVGElement.querySelector('path'));
+        watch.assert(Boolean(painted),'The exact continuation pair owns a mounted SVG tie curve');
+        const box=painted.SVGElement.getBoundingClientRect();watch.assert(box.width>0&&box.height>0,'The real continuation curve has nonempty geometry');
+        curves.push({sourceId:segment.source_note_id,sourceMeasureIndex:segment.source_measure_index,nextSourceMeasureIndex:nextIndex,width:box.width,height:box.height});
+      }
+      return {modelMeasures:renderer.Sheet.SourceMeasures.length,modelNotes:model.length,displayed:mapping.displayedSegmentCount,curves};
+    });
+    assert.equal(proof.curves.length,selected.partIds?1:4);
+    const sourceId=selected.partIds?'long-E4':'long-C4',index=selected.fromMeasure-1;
+    const activity=await page.evaluate(()=>({loads:window.__wmhBinding.loadCalls,renders:window.__wmhBinding.renderCalls}));
+    await expectBinding([sourceId],index);await expectBinding([sourceId],index+1);await clearBinding();
+    if(!selected.partIds){await expectBinding([`explicit-F5-${index+1}`],index+1);await clearBinding();}
+    assert.deepEqual(await page.evaluate(()=>({loads:window.__wmhBinding.loadCalls,renders:window.__wmhBinding.renderCalls})),activity,'Current-note movement between tied continuations does not reload or redraw');
+    evidence.push({...selected,...proof});
+  }
+  assert.equal(JSON.stringify(score),before);assert.equal(JSON.stringify(exported),exportBefore);
+  await bindingEvidence('original-tie-context',{sourceUnchanged:true,exportUnchanged:true,evidence});
 });
 
 test('split source notes and explicit tie endpoints follow source measure ordinals even with duplicate printed labels', options, async () => {

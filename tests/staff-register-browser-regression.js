@@ -1,11 +1,53 @@
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {originalStaffRegisterScore} from './staff-register-fixtures.js';
+import {originalStaffRegisterScore, originalStaffEdgeScore} from './staff-register-fixtures.js';
+import {notationLayout} from '../web/music.js';
 
 // Registration only. The hosted full-app suite owns the real browser and Rust
 // server. Importing or syntax-checking this module launches neither.
 export function registerStaffRegisterBrowserRegressions({test, getPage, ui, readyForTitle, exportScore, closeShellPanels, actualMarkerVisibility, artifactDirectory}) {
+  test('real basic staff preserves painted page-edge heads flags accidentals and rests', {timeout: 60_000}, async () => {
+    const page = getPage(), evidence = [];
+    await ui('#staff-button').click();
+    await ui('#engraving-follow').uncheck();
+    for (const viewport of [{width: 1280, height: 720}, {width: 844, height: 390}, {width: 390, height: 844}]) {
+      await page.setViewportSize(viewport);
+      const available = await page.locator('#notation').evaluate(pane => pane.clientWidth - 36);
+      const layout = notationLayout(available), score = originalStaffEdgeScore(layout.spanBeats);
+      await ui('#score-file').setInputFiles({name: `${score.id}.json`, mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(score))});
+      await readyForTitle(score.title);
+      await ui('#staff-button').click();
+      await ui('#engraving-follow').uncheck();
+      await page.waitForFunction(() => document.querySelectorAll('#notation .score-note').length === 4);
+      await page.evaluate(async () => {await document.fonts.ready; await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));});
+      const geometry = await page.locator('#notation svg').evaluate(svg => {
+        const bounds = svg.getBoundingClientRect(), scale = bounds.width / svg.viewBox.baseVal.width;
+        return {width: svg.viewBox.baseVal.width, height: svg.viewBox.baseVal.height, bounds: bounds.toJSON(),
+          notes: [...svg.querySelectorAll('.score-note')].map(note => ({id: note.dataset.noteId,
+            glyphs: [...note.children].filter(glyph => glyph.localName !== 'text' || glyph.textContent.trim()).map(glyph => {
+              const box = glyph.getBoundingClientRect(), style = getComputedStyle(glyph);
+              return {kind: glyph.localName, className: glyph.getAttribute('class'), box: box.toJSON(),
+                stroke: style.stroke === 'none' ? 0 : (parseFloat(style.strokeWidth) || 0) * scale};
+            })}))};
+      });
+      assert.deepEqual(geometry.notes.map(note => note.id), score.parts[0].notes.map(note => note.id));
+      for (const note of geometry.notes) for (const glyph of note.glyphs) {
+        assert.ok(glyph.box.left - glyph.stroke / 2 >= geometry.bounds.left && glyph.box.right + glyph.stroke / 2 <= geometry.bounds.right,
+          `Painted edge glyph stays inside its SVG: ${JSON.stringify({note: note.id, glyph, geometry})}`);
+      }
+      for (const selector of ['#notation [data-note-id="edge-2"] .note-head', '#notation [data-note-id="edge-3"] .rest']) {
+        await page.locator(selector).scrollIntoViewIfNeeded();
+        const visible = await actualMarkerVisibility(selector);
+        assert.ok(visible.length === 1 && visible[0].painted && visible[0].fraction >= .95, JSON.stringify(visible));
+      }
+      assert.deepEqual(await exportScore(), score, 'Page-edge spacing preserves exact original score data');
+      await closeShellPanels();
+      evidence.push({viewport, spanBeats: layout.spanBeats, geometry});
+      await page.screenshot({path: join(artifactDirectory, `worldmusichub-live-staff-edge-${viewport.width}.png`), fullPage: true, animations: 'disabled'});
+    }
+    await writeFile(join(artifactDirectory, 'worldmusichub-live-staff-edge.json'), JSON.stringify({original_fixtures_only: true, canonical_score_unchanged: true, evidence}, null, 2));
+  });
   test('real basic staff retains complete low, high and extreme glyphs and follows the current low note', {timeout: 60_000}, async () => {
     const page = getPage(), evidence = [];
     await ui('#staff-button').click();

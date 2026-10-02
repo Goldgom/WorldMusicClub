@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {DOMParser} from 'linkedom';
+import {createRequire} from 'node:module';
 import {createI18n} from '../web/i18n.js';
-import {validateEngravingInput, renderEngravedStaff, disposeEngravedStaff, ENGRAVING_LIMITS} from '../web/engraving.js';
+import {validateEngravingInput, renderEngravedStaff, disposeEngravedStaff, ENGRAVING_LIMITS, EXACT_RHYTHM_LIMITS} from '../web/engraving.js';
 
 // Deliberately small DOM/renderer doubles. These exercise the adapter, not OSMD's glyph/layout code.
 class Element {
@@ -65,6 +67,7 @@ test('preflight rejects URL, DTD, entities and processing instructions before pa
 test('preflight accepts canonical XML declaration and bounds all score parts before paging', () => {
   assert.equal(validate().ok, true);
   assert.equal(validate({notes: 2001}).status, 'unsupported');
+  assert.equal(validate({notes: 8193}, {identity: {}}).code, 'engraving_sourceNotes');
   assert.equal(validate({measures: 513}).status, 'unsupported');
   assert.equal(validate({parts: 17}).status, 'unsupported');
   assert.equal(validate({notes: 1001, parts: 2}).status, 'unsupported');
@@ -78,6 +81,110 @@ test('preflight rejects executable/resource markup and extreme numerical layout 
   for (const attribute of [['onclick', 'bad()'], ['href', 'https://bad.test'], ['xlink:href', '#reference'], ['xml:base', '/other/'], ['style', 'color:red'], ['color', 'url(https://bad.test)']]) assert.equal(validate({attribute}).status, 'unsupported');
   for (const musicalValue of [['staves', '999999'], ['staff', '99'], ['duration', '1e99'], ['beats', '999999'], ['divisions', '0'], ['voice', 'wmh-lane-1'], ['voice', 'track-0'], ['voice', '01'], ['voice', '0']]) assert.equal(validate({musicalValue}).status, 'unsupported');
   assert.equal(validate({musicalValue: ['fifths', '-3']}).ok, true);
+});
+
+// Original synthetic pitches only. These ratios describe timing, not a private melody.
+function exactRhythmXml({actual = 240, normal = 227, duration = 227, divisions = 480, type = 'eighth', normalType = type, extra = '', tail = ''} = {}) {
+  return `<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Synthetic rhythm</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>${divisions}</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes><note id="synthetic-C"><pitch><step>C</step><octave>4</octave></pitch><duration>${duration}</duration><voice>1</voice><type>${type}</type><time-modification><actual-notes>${actual}</actual-notes><normal-notes>${normal}</normal-notes><normal-type>${normalType}</normal-type></time-modification><staff>1</staff>${extra}</note></measure>${tail}</part></score-partwise>`;
+}
+class XmlParser extends DOMParser {
+  parseFromString(source, type) {
+    const document = super.parseFromString(source, type), find = document.getElementsByTagName.bind(document);
+    // Linkedom 0.18's XML wildcard lookup is empty and its unnamespaced XML uses
+    // the HTML namespace. Normalize these two DOM limitations for this test.
+    document.getElementsByTagName = name => name === '*' ? document.querySelectorAll('*') : find(name);
+    for (const element of document.querySelectorAll('*')) Object.defineProperty(element, 'namespaceURI', {value: null});
+    return document;
+  }
+}
+const validateExactRhythm = (source, options = {}) => validateEngravingInput(source, options, XmlParser);
+
+test('exact canonical rhythms accept bounded ratios without changing XML, note counts or range', () => {
+  assert.deepEqual(EXACT_RHYTHM_LIMITS, {component: 2048, divisions: 2048});
+  for (const spelling of [
+    {}, // 227/480 quarter beats, written eighth with 240:227
+    {actual: 1920, normal: 1919, duration: 1919, type: 'whole'},
+    {actual: 960, normal: 911, duration: 911, type: 'half'},
+    {actual: 129, normal: 128, duration: 128, divisions: 129, type: 'quarter'},
+    {actual: 2048, normal: 2047, duration: 2047, divisions: 2048, type: 'quarter'},
+    {actual: 129, normal: 128, duration: 4, divisions: 129, type: '128th'},
+  ]) {
+    const source = exactRhythmXml(spelling), before = new DOMParser().parseFromString(source, 'application/xml').toString();
+    const checked = validateExactRhythm(source);
+    assert.equal(checked.ok, true, checked.code);
+    assert.equal(checked.document.toString(), before, 'Preflight never rewrites rhythm or source identity');
+    assert.deepEqual(checked.metadata, {noteCount: 1, measureCount: 1, partIds: ['P1'], fromMeasure: 1, toMeasure: 1});
+  }
+  assert.equal(validateExactRhythm(exactRhythmXml({actual: 240, normal: 227, duration: 227, divisions: 1920, type: '32nd'})).ok, true);
+});
+
+test('extended rhythm admission is paired, reduced, source-wide and limited to canonical plain notation', () => {
+  const source = exactRhythmXml();
+  const refused = [
+    exactRhythmXml({actual: 2049}), exactRhythmXml({normal: 2049}),
+    exactRhythmXml({duration: 228}), exactRhythmXml({duration: 0}),
+    exactRhythmXml({actual: 480, normal: 454}),
+    exactRhythmXml({actual: 240, normal: 120, duration: 120}),
+    exactRhythmXml({actual: 160, normal: 227, duration: 681}),
+    exactRhythmXml({type: '256th'}), exactRhythmXml({type: '__proto__'}),
+    exactRhythmXml({normalType: 'quarter'}), exactRhythmXml({extra: '<dot/>'}),
+    exactRhythmXml({divisions: 3840, duration: 1816}),
+    source.replace('<normal-notes>227</normal-notes>', ''),
+    source.replace('<actual-notes>240</actual-notes>', '<actual-notes><type>240</type></actual-notes>'),
+    source.replace('<actual-notes>240</actual-notes>', '<actual-notes>240</actual-notes><actual-notes>240</actual-notes>'),
+    source.replace('</time-modification>', '<normal-dot/></time-modification>'),
+    source.replace('<normal-type>eighth</normal-type>', ''),
+    source.replace('</time-modification>', '</time-modification><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>'),
+    source.replace('<divisions>480</divisions>', ''),
+    source.replace('<note id="synthetic-C">', '<note id="synthetic-C"><notations><tuplet type="start" number="1"/></notations>'),
+    source.replace('</part></score-partwise>', '</part><part id="P2"><measure number="1"><attributes><divisions>960</divisions></attributes></measure></part></score-partwise>'),
+  ];
+  for (const input of refused) assert.equal(validateExactRhythm(input).code, 'engraving_exactRhythm', input);
+  assert.equal(validate({musicalValue: ['actual-notes', '240']}).code, 'engraving_exactRhythm');
+  const later = source.replace('<duration>227</duration>', '<duration>228</duration>').replace('<measure number="1">', '<measure number="2">');
+  const paged = later.replace('<part id="P1">', '<part id="P1"><measure number="1"><note/></measure>');
+  assert.equal(validateExactRhythm(paged, {fromMeasure: 1, toMeasure: 1}).code, 'engraving_exactRhythm', 'Paging never bypasses full-source rhythm validation');
+  const tooManyNotes = source.replace('</measure>', `${'<note><rest/><duration>1</duration></note>'.repeat(2000)}</measure>`);
+  assert.equal(validateExactRhythm(tooManyNotes).code, 'engraving_notes', 'Extended ratios never increase the full-score note/rest budget');
+  // Ordinary existing tuplets retain their former admission path.
+  assert.equal(validateExactRhythm(exactRhythmXml({actual: 3, normal: 2, duration: 160, extra: '<notations><tuplet type="start" number="1"/></notations>'})).ok, true);
+});
+
+test('unsupported exact rhythm diagnostics keep their code and translate without changing source', () => {
+  const i18n = createI18n(), source = exactRhythmXml({actual: 2049});
+  const checked = validateExactRhythm(source, {i18n});
+  assert.equal(checked.code, 'engraving_exactRhythm');assert.match(checked.message, /2,048/);
+  i18n.setLocale('en');assert.match(checked.message, /score timing is preserved/);
+  assert.deepEqual(i18n.getReports(), []);
+});
+
+test('pinned OSMD reader preserves exact extended fractions and source note IDs without layout', () => {
+  const previousSelf = globalThis.self, previousNode = globalThis.Node;
+  try {
+    globalThis.self = globalThis;
+    const osmd = createRequire(import.meta.url)('opensheetmusicdisplay');
+    const source = exactRhythmXml().replace('</note></measure>', '</note><note id="synthetic-D"><pitch><step>D</step><octave>4</octave></pitch><duration>1693</duration><voice>1</voice><type>whole</type><time-modification><actual-notes>1920</actual-notes><normal-notes>1693</normal-notes><normal-type>whole</normal-type></time-modification><staff>1</staff></note></measure>');
+    const checked = validateExactRhythm(source);
+    assert.equal(checked.ok, true);
+    const xmlBefore = checked.document.toString();
+    globalThis.Node = checked.document.defaultView.Node;
+    const reader = new osmd.MusicSheetReader([], new osmd.EngravingRules());
+    const sheet = reader.createMusicSheet(new osmd.IXmlElement(checked.document.documentElement), 'original-exact-rhythm');
+    const measure = sheet.SourceMeasures[0], notes = measure.VerticalSourceStaffEntryContainers.flatMap(container => container.StaffEntries.flatMap(staff => staff?.VoiceEntries.flatMap(voice => voice.Notes) || []));
+    const equalWhole = (fraction, n, d) => {
+      const numerator = BigInt(fraction.Numerator) + BigInt(fraction.WholeValue) * BigInt(fraction.Denominator);
+      assert.equal(numerator * BigInt(d), BigInt(n) * BigInt(fraction.Denominator));
+    };
+    assert.equal(notes.length, 2, 'No ratio-sized note duplication or lost canonical notes');
+    equalWhole(notes[0].Length, 227, 1920);equalWhole(notes[1].Length, 1693, 1920);
+    equalWhole(notes[0].ParentVoiceEntry.Timestamp, 0, 1);equalWhole(notes[1].ParentVoiceEntry.Timestamp, 227, 1920);
+    equalWhole(measure.Duration, 1, 1);
+    assert.equal(checked.document.getElementsByTagName('note')[0].getAttribute('id'), 'synthetic-C');
+    assert.equal(checked.document.toString(), xmlBefore, 'The original XML and IDs remain unchanged');
+  } finally {
+    if (previousSelf === undefined) delete globalThis.self; else globalThis.self = previousSelf;
+    if (previousNode === undefined) delete globalThis.Node; else globalThis.Node = previousNode;
+  }
 });
 
 test('range and part options are explicit and never silently clamp user requests', () => {

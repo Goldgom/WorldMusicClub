@@ -296,9 +296,17 @@ export function renderNotation(score, mode = 'staff', options = {}) {
   const spanBeats = Math.min(32, Math.max(4, options.spanBeats || 16));
   const endBeat = startBeat + spanBeats;
   const width = Math.max(240, options.width || Math.max(720, 90 + spanBeats * 72));
-  const spacing = (width - 96) / spanBeats;
   const layout = basicStaffParts(parts, startBeat, endBeat);
   const height = layout.height;
+  // The note anchor is 18px after its time column. Keep room beyond it for
+  // flags, ledger strokes and the 28px rest font, including a little padding.
+  // Only tighten pages that need it, using one scale for all parts and bars;
+  // clamping individual anchors would merge distinct near-edge onsets.
+  let spacing = (width - 96) / spanBeats;
+  for (const row of layout.rows) for (const note of row.notes) {
+    const offset = beat(note.at) - startBeat;
+    if (offset > 0) spacing = Math.min(spacing, (width - 90 - 36) / offset);
+  }
   const x = t => 72 + (t - startBeat) * spacing;
   const shapes = [];
   layout.rows.forEach(({part, notes, top, nameY}) => {

@@ -1,5 +1,19 @@
 import {fixture} from './frontend-fixtures.js';
 
+export function originalStaffEdgeScore(spanBeats) {
+  const score = structuredClone(fixture), seed = score.parts[0].notes[0];
+  score.id = `original-staff-edge-${spanBeats}`;
+  score.title = `Original staff edge exercise ${spanBeats}`;
+  score.provenance.attribution = 'WorldMusicHub original isolated page-edge regression fixture';
+  const pitches = [{step: 'C', alter: 0, octave: 1}, {step: 'F', alter: -2, octave: 4}, {step: 'C', alter: 0, octave: 8}, null];
+  score.parts[0].notes = pitches.map((pitch, index) => ({...structuredClone(seed), id: `edge-${index}`, pitch,
+    at: {numerator: spanBeats * 64 - 4 + index, denominator: 64},
+    duration: {numerator: 1, denominator: 64}, velocity: pitch ? 90 : 0}));
+  score.measures = Array.from({length: spanBeats / 4}, (_, index) => ({number: index + 1,
+    at: {numerator: index * 4, denominator: 1}, length: {numerator: 4, denominator: 1}}));
+  return score;
+}
+
 // Original synthetic exercises only. No imported score, title or source data.
 export function originalStaffRegisterScore(register = 'low') {
   const score = structuredClone(fixture), seed = score.parts[0].notes[0];

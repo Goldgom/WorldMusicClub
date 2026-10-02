@@ -1,5 +1,6 @@
 /** Verify display identity only. Rust owns every performance interval. */
-const VERSION=1,MAX_BYTES=4*1024*1024,MAX_SEGMENTS=2000;
+import {ENGRAVING_SOURCE_LIMITS} from './engraving-projection.js';
+const VERSION=1,MAX_BYTES=ENGRAVING_SOURCE_LIMITS.mapBytes,MAX_SEGMENTS=ENGRAVING_SOURCE_LIMITS.notes;
 const STEPS=['C','D','E','F','G','A','B'],NATURAL=[0,2,4,5,7,9,11];
 const diagnostic=(code,message,segments=[])=>({code,message,sourceNoteIds:[...new Set(segments.map(s=>s.source_note_id))],xmlNoteIds:[...new Set(segments.map(s=>s.xml_note_id))]});
 const fail=message=>{throw Error(message)};
@@ -27,6 +28,8 @@ export function validateEngravingNoteMap(document,identity){
     if(!noteMap)fail('This export has no complete written-note identity map. Static notation remains available.');
     if(noteMap.version!==VERSION)fail('The written-note identity map requires a compatible renderer version.');
     if(!score||!Array.isArray(score.parts)||!Array.isArray(score.measures)||!Array.isArray(noteMap.segments)||!noteMap.segments.length||noteMap.segments.length>MAX_SEGMENTS||new TextEncoder().encode(JSON.stringify(noteMap)).byteLength>MAX_BYTES||!Array.isArray(voiceIdMap))fail('The written-note identity map is incomplete or exceeds its display limit.');
+    let measureEnd = [0n, 1n];
+    for (const measure of score.measures) { const start = rational(measure.at), length = rational(measure.length); if (length[0] <= 0n || !equal(start, measureEnd)) fail('Canonical measures are not contiguous exact positive intervals.'); measureEnd = add(start, length); }
     const xmlParts=children(document.documentElement,'part'),sources=new Map(),parts=new Map(),voices=new Map(),xmlVoices=new Set(),xmlIds=new Set(),coverage=new Map();
     if(xmlParts.length!==score.parts.length||!partIdMap||typeof partIdMap!=='object'||Array.isArray(partIdMap)||Object.keys(partIdMap).length!==score.parts.length)fail('The complete generated part map does not match the source score.');
     for(const part of score.parts){
@@ -59,7 +62,7 @@ export function validateEngravingNoteMap(document,identity){
         if(measure.getAttribute('number')!==String(score.measures[measureIndex].number))fail('A generated XML measure label does not match its ordinal source measure.');
         for(const node of Array.from(measure.children)){
           if(node.localName==='attributes'){const value=one(node,'divisions',false);if(value)divisions=numberText(value,1,1000000);continue}
-          if(node.localName==='forward'||node.localName==='backup'){if(!divisions)fail('Generated XML divisions are missing.');const amount=[BigInt(numberText(one(node,'duration'),1,1000000000)),BigInt(divisions)];cursor=node.localName==='forward'?add(cursor,amount):sub(cursor,amount);if(cursor[0]<0n)fail('The generated XML moves before its measure.');previous=null;continue}
+          if(node.localName==='forward'||node.localName==='backup'){if(!divisions)fail('Generated XML divisions are missing.');const amount=[BigInt(numberText(one(node,'duration'),1,1000000000)),BigInt(divisions)];cursor=node.localName==='forward'?add(cursor,amount):sub(cursor,amount);if(cursor[0]<0n || compare(cursor, rational(score.measures[measureIndex].length))>0n)fail('The generated XML moves outside its measure.');previous=null;continue}
           if(node.localName!=='note')continue;
           const id=node.getAttribute('id'),segment=byXmlId.get(id);if(!segment||seen.has(id)||!divisions||node.getAttribute('print-object')==='no'||one(node,'grace',false)||one(node,'cue',false))fail('A generated XML note is missing, duplicated or unsupported for exact highlighting.');
           const chord=Boolean(one(node,'chord',false)),duration=[BigInt(numberText(one(node,'duration'),1,1000000000)),BigInt(divisions)],voice=one(node,'voice').textContent.trim(),staff=numberText(one(node,'staff'),1,8),pitch=xmlPitch(node),ties=tieFlags(node);
@@ -68,6 +71,7 @@ export function validateEngravingNoteMap(document,identity){
           if(segment.xml_part_id!==xmlPartId||segment.source_measure_index!==measureIndex||segment.xml_voice!==voice||segment.staff!==staff||segment.chord!==chord||!equal(rational(segment.measure_at),at)||!equal(rational(segment.duration),duration)||pitchKey(segment.pitch)!==pitchKey(pitch)||segment.tie_start!==ties.start||segment.tie_stop!==ties.stop)fail('The written-note map disagrees with the generated XML.');
           seen.add(id);previous={at,voice,staff,rest:pitch===null};if(!chord)cursor=add(at,duration);
         }
+        if(!equal(cursor, rational(score.measures[measureIndex].length)))fail('The generated XML does not retain the complete source measure clock.');
       }
     }
     if(seen.size!==segments.length)fail('The complete identity map and XML note counts differ.');
@@ -79,14 +83,16 @@ function modelFraction(value){if(!value||!integer(value.WholeValue)||!integer(va
 function modelPitch(note){if(note.isRest())return null;const pitch=note.Pitch,index=NATURAL.indexOf(pitch?.FundamentalNote);if(index<0||pitch.constructor.OctaveXmlDifference!==3)fail('The renderer has an unsupported source pitch.');const result={step:STEPS[index],alter:pitch.AccidentalHalfTones,octave:pitch.Octave+3};pitchKey(result);return result}
 
 /** Model matching uses exact written identity; geometry never assigns a source ID. */
-export function matchEngravingModel(renderer,validated){
+export function matchEngravingModel(renderer,validated,{includeContext=false}={}){
   if(!validated.ok)return {...validated,matches:[]};
   try{
     const measures=renderer.Sheet?.SourceMeasures,instruments=renderer.Sheet?.Instruments;
-    if(!Array.isArray(measures)||measures.length!==validated.score.measures.length||new Set(measures).size!==measures.length||!Array.isArray(instruments))fail('The renderer cannot expose an exact source-measure identity table.');
-    const ordinals=new Map(measures.map((measure,index)=>[measure,index])),notes=new Set(),index=new Map(),diagnostics=[];
+    const projection = validated.projection, sourceIndices = projection?.sourceMeasureIndices || validated.score.measures.map((_, index) => index);
+    if(!Array.isArray(measures)||measures.length!==sourceIndices.length||new Set(measures).size!==measures.length||!Array.isArray(instruments))fail('The renderer cannot expose an exact source-measure identity table.');
+    const ordinals=new Map(measures.map((measure,index)=>[measure,sourceIndices[index]])),notes=new Set(),index=new Map(),diagnostics=[];
     for(const measure of measures)for(const container of measure.VerticalSourceStaffEntryContainers||[])for(const staffEntry of container.StaffEntries||[])for(const voice of staffEntry?.VoiceEntries||[])for(const note of voice.Notes||[])notes.add(note);
     for(const note of notes){
+      if (note.PrintObject === false) continue; // Generated timing padding has no canonical identity.
       try{const staff=note.ParentStaff,instrument=staff?.ParentInstrument,staffIndex=instrument?.Staves?.indexOf(staff),measure=ordinals.get(note.SourceMeasure),voice=note.ParentVoiceEntry?.ParentVoice?.VoiceId;
         if(!instruments.includes(instrument)||!integer(staffIndex)||!integer(measure)||!integer(voice,1,2000))continue;
         const key=segmentKey(instrument.IdString,measure,staffIndex+1,String(voice),modelFraction(note.ParentVoiceEntry.Timestamp),modelFraction(note.Length),modelPitch(note));
@@ -94,13 +100,30 @@ export function matchEngravingModel(renderer,validated){
       }catch{/* An unsupported model note cannot be used as an approximate match. */}
     }
     const used=new Set(),matches=[],expected=new Map(),keys=new Map(),reported=new Set();
-    for(const segment of validated.segments){const key=segmentKey(segment.xml_part_id,segment.source_measure_index,segment.staff,segment.xml_voice,rational(segment.measure_at),rational(segment.duration),segment.pitch);keys.set(segment,key);if(!expected.has(key))expected.set(key,[]);expected.get(key).push(segment)}
-    for(const segment of validated.segments){const key=keys.get(segment),candidates=index.get(key)||[],ambiguous=expected.get(key).length!==1||candidates.length>1||used.has(candidates[0]);
+    const matchIndices = includeContext ? sourceIndices : projection?.displayedSourceMeasureIndices || sourceIndices;
+    const displayed = segment => !projection || projection.partIds.includes(segment.xml_part_id) && matchIndices.includes(segment.source_measure_index);
+    for(const segment of validated.segments.filter(displayed)){const key=segmentKey(segment.xml_part_id,segment.source_measure_index,segment.staff,segment.xml_voice,rational(segment.measure_at),rational(segment.duration),segment.pitch);keys.set(segment,key);if(!expected.has(key))expected.set(key,[]);expected.get(key).push(segment)}
+    for(const segment of validated.segments){if (!displayed(segment)) {matches.push({segment,note:null,reason:'not-displayed'});continue}const key=keys.get(segment),candidates=index.get(key)||[],ambiguous=expected.get(key).length!==1||candidates.length>1||used.has(candidates[0]);
       if(candidates.length!==1||ambiguous){const code=ambiguous?'engraving_note_identity_ambiguous':'engraving_note_identity_missing';if(!reported.has(key)){reported.add(key);diagnostics.push(diagnostic(code,ambiguous?'The source and renderer do not have a one-to-one written identity; no candidate was selected.':'No exact renderer note matches this segment. Rounded or missing fractions are never approximated.',expected.get(key)))}matches.push({segment,note:null,reason:code});continue}
       used.add(candidates[0]);matches.push({segment,note:candidates[0]});
     }
     return {...validated,matches,diagnostics};
   }catch(error){return {...validated,ok:false,status:'unavailable',matches:[],diagnostics:[diagnostic('engraving_model_unavailable',error.message)]}}
+}
+
+/** XML flags alone do not prove the pinned reader retained a visible tie. */
+export function validateEngravingModelTies(renderer, validated) {
+  const chains = validated.projection?.tieChains || [];
+  if (!chains.length) return {ok:true};
+  const matched = matchEngravingModel(renderer, validated, {includeContext:true});
+  if (!matched.ok) return {ok:false,key:'tieContext'};
+  const byId = new Map(matched.matches.map(match => [match.segment.xml_note_id, match.note]));
+  for (const chain of chains) {
+    const notes = chain.map(id => byId.get(id)), tie = notes[0]?.NoteTie;
+    if (notes.some(note => !note) || !tie || !Array.isArray(tie.Notes) || tie.Notes.length !== notes.length ||
+        notes.some((note, index) => note.NoteTie !== tie || tie.Notes[index] !== note)) return {ok:false,key:'tieContext'};
+  }
+  return {ok:true};
 }
 
 function visibleGlyph(group,mount){
