@@ -88,7 +88,12 @@ export function setupNotationFollowing({api,getContext,getPlayback,view,prepareN
   let controller=null,generation=0,index=null,target=null,timeline=null,pending=null,last='',presentation=null;
   const t=(key,params)=>i18n.t(`notationRuntime.${key}`,params);
   const failureKeys={notation_followInvalid:'followInvalid',notation_followMap:'followMap',notation_sourcePage:'sourcePage'};
-  const errorText=error=>Object.hasOwn(failureKeys,error?.code)?t(failureKeys[error.code]):typeof error?.message==='string'?t('technical',{detail:error.message}):t('followMap');
+  const errorText=error=>{
+    const owned=Object.hasOwn(failureKeys,error?.code);
+    const detail=owned?error?.cause?.message:error?.message;
+    const explanation=owned?t(failureKeys[error.code]):'';
+    return explanation+(typeof detail==='string'&&detail?(explanation?' ':'')+t('technical',{detail}):'')||t('followMap');
+  };
   status.removeAttribute?.('data-i18n');
   checkbox.checked=defaultEnabled;
   function redrawLocale(){

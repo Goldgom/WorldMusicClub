@@ -1222,7 +1222,7 @@ const followingView={
   },
 };
 notationFollowing = setupNotationFollowing({i18n,getContext:()=>({score:state.score,timeline:state.compiled?.timeline}),
-  prepareNavigation:async options=>{const cached=writtenCursor.navigation();if(cached)return cached;await writtenCursor.prepare(options);const navigation=writtenCursor.navigation();if(!navigation)throw Object.assign(new Error(writtenCursor.state().message),{code:'notation_followMap'});return navigation},
+  prepareNavigation:async options=>{const cached=writtenCursor.navigation();if(cached)return cached;await writtenCursor.prepare(options);const navigation=writtenCursor.navigation();if(!navigation){const detail=writtenCursor.state().message;throw Object.assign(new Error(detail),{code:'notation_followMap',cause:{message:detail}})}return navigation},
   getPlayback:()=>{const position=transport.time(performance.now()),written=writtenCursor?.at(position);return{position:position<(state.loop?.start_ms||0)?-1:position,running:transport.running,written:{...written,entries:displayedWrittenEntries(written),pageAnchor:writtenCursor?.pageAnchor(position,displayedPartId())}}},view:followingView});
 setupJianpuEditor({onImport:importJianpuText,pausePlayback});
 setupJianpuExport({getScore:()=>state.score,pausePlayback,api});

@@ -172,3 +172,22 @@ test('default follow setup shares the document locale service and starts in Chin
   getAppI18n(document).setLocale('en');assert.match(document.getElementById('engraving-follow-status').textContent,/Following is on/);assert.equal(document.documentElement.lang,'en');assert.equal(follow.isEnabled(),true);
  }finally{follow.suspend();for(const[key,value]of Object.entries(prior))if(value===undefined)delete globalThis[key];else globalThis[key]=value}
 });
+
+
+test('known follow-map failure retains its explicit original cause across locale redraw without retry',async()=>{
+ const i18n=createI18n({locale:'en'}),env=environment(i18n),detail='Incomplete measure map <source> 原始';
+ const cause=Object.freeze({message:detail}),error=Object.assign(new Error('Owned wrapper text'),{code:'notation_followMap',cause});
+ try {
+  const pending=env.checkbox.change();env.calls[0].reject(error);await pending;
+  assert.equal(env.checkbox.checked,false);assert.equal(env.pages.length,0);
+  assert.match(env.status.textContent,/A complete validated measure map is unavailable/);
+  assert.ok(env.status.textContent.includes('Original technical details: '+detail));
+  i18n.setLocale('zh-CN');
+  assert.ok(env.status.textContent.includes(i18n.t('notationRuntime.followMap')));
+  assert.ok(env.status.textContent.includes(i18n.t('notationRuntime.technical',{detail})));
+  assert.ok(!env.status.textContent.includes('Owned wrapper text'));
+  i18n.setLocale('en');assert.ok(env.status.textContent.includes(detail));
+  assert.equal(env.calls.length,1);assert.equal(env.pages.length,0);assert.equal(error.cause,cause);assert.equal(cause.message,detail);
+  assert.deepEqual(i18n.getReports(),[]);
+ }finally{env.restore()}
+});

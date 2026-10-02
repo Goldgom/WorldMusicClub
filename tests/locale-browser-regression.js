@@ -1,33 +1,78 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 
+// CSSOM scroll extents are integer pixels; control bounds may be fractional.
+// A changed offset is valid only when measured reflow or a smaller extent
+// explains it. An arbitrary jump (even with focus retained) must still fail.
+export function assertLocaleScrollContext(before, after, context) {
+  const evidence = `${context}: ${JSON.stringify({before,after})}`;
+  const clamp = (value, maximum) => Math.max(0, Math.min(value, maximum));
+  const anchored = before.focus?.visible;
+  if (anchored) assert.equal(after.focus?.id, before.focus.id, `Retain the reading anchor; ${evidence}`);
+  for (const [axis, size, maximum] of [['top','height','maxTop'],['left','width','maxLeft']]) {
+    const desiredOffset = anchored ? clamp(before.focus[axis], Math.max(0, after.viewport[size] - after.focus[size])) : null;
+    const contentPosition = anchored ? after.focus[axis] + after[axis] : null;
+    const expected = clamp(anchored ? contentPosition - desiredOffset : before[axis], after[maximum]);
+    assert.ok(Math.abs(after[axis] - expected) <= 1, `Preserve the nearest attainable ${axis} reading position; ${evidence}`);
+    assert.ok(after[axis] >= -1 && after[axis] <= after[maximum] + 1, `Stay within the real ${axis} scroll range; ${evidence}`);
+  }
+  if (anchored) assert.equal(after.focus.visible, true, `The focused reading control stays visible; ${evidence}`);
+  if (before.focus?.fullyVisible && after.focus.height <= after.viewport.height && after.focus.width <= after.viewport.width)
+    assert.equal(after.focus.fullyVisible, true, `Keep the whole focused control visible when it fits; ${evidence}`);
+}
+
 // Registration only. The host owns its browser, Rust process and lifecycle.
 // Service notifications let an already-open modal keep its focus; the existing
 // picker regression separately exercises the visible Settings language control.
-export async function assertLocaleRoundTrip(page, {root, message, stableText = []}) {
-  const snapshots = await page.evaluate(async ({root, message, stableText}) => {
+export async function assertLocaleRoundTrip(page, {root, message, stableText = [], reviewScroll = false}) {
+  const snapshots = await page.evaluate(async ({root, message, stableText, reviewScroll}) => {
     const {getAppI18n} = await import('/app-locale.js'), i18n = getAppI18n(document);
     const surface = document.querySelector(root), selector = 'input,select,textarea,button,option,details';
     const nodes = [...surface.querySelectorAll(selector)], active = document.activeElement;
     const retained = stableText.map(selector => document.querySelector(selector));
     const state = () => nodes.map(node => ({value:node.value,checked:node.checked,disabled:node.disabled,
       open:node.open,selectionStart:node.selectionStart,selectionEnd:node.selectionEnd}));
-    const before = state(), sourceText = retained.map(node => node.textContent), scroll = {top:surface.scrollTop,left:surface.scrollLeft};
-    return ['zh-CN','en'].map(locale => {
+    const geometry = () => {
+      const rect=surface.getBoundingClientRect(),viewport={top:rect.top+surface.clientTop,left:rect.left+surface.clientLeft,
+        width:surface.clientWidth,height:surface.clientHeight};
+      const bounds=active&&active!==surface&&surface.contains(active)?active.getBoundingClientRect():null;
+      const focus=bounds?{id:active.id||`${active.localName}[${nodes.indexOf(active)}]`,top:bounds.top-viewport.top,left:bounds.left-viewport.left,
+        width:bounds.width,height:bounds.height}:null;
+      if(focus){
+        focus.visible=focus.width>0&&focus.height>0&&focus.top<viewport.height&&focus.top+focus.height>0&&focus.left<viewport.width&&focus.left+focus.width>0;
+        focus.fullyVisible=focus.visible&&focus.top>=-1&&focus.left>=-1&&focus.top+focus.height<=viewport.height+1&&focus.left+focus.width<=viewport.width+1;
+      }
+      return {top:surface.scrollTop,left:surface.scrollLeft,maxTop:Math.max(0,surface.scrollHeight-surface.clientHeight),
+        maxLeft:Math.max(0,surface.scrollWidth-surface.clientWidth),viewport,focus};
+    };
+    const before = state(), sourceText = retained.map(node => node.textContent), snapshots=[];
+    for(const locale of ['zh-CN','en']) {
+      const scrollBefore=geometry();
       i18n.setLocale(locale);
+      const scrollAfter=geometry();
+      // These real review flows use the host's normal animation clock. Generic
+      // callers retain their existing synchronous contract, including clock fixtures.
+      if(reviewScroll)await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       const current = [...surface.querySelectorAll(selector)];
-      return {locale,before,after:state(),sameRoot:document.querySelector(root)===surface,
+      snapshots.push({locale,before,after:state(),sameRoot:document.querySelector(root)===surface,
         sameNodes:current.length===nodes.length&&current.every((node,index)=>node===nodes[index]),
         sameFocus:document.activeElement===active,sameSourceNodes:retained.every((node,index)=>node===document.querySelector(stableText[index])),
-        sourceText,afterSourceText:retained.map(node=>node.textContent),scroll,afterScroll:{top:surface.scrollTop,left:surface.scrollLeft},
-        message:document.querySelector(message.selector).textContent,expected:i18n.t(message.key,message.params||{}),reports:i18n.getReports()};
-    });
-  }, {root,message,stableText});
+        sourceText,afterSourceText:retained.map(node=>node.textContent),scrollBefore,scrollAfter,afterPaint:geometry(),
+        message:document.querySelector(message.selector).textContent,expected:i18n.t(message.key,message.params||{}),reports:i18n.getReports()});
+    }
+    return snapshots;
+  }, {root,message,stableText,reviewScroll});
+  console.info('Locale reading context:',JSON.stringify({root,transitions:snapshots.map(({locale,scrollBefore,scrollAfter,afterPaint})=>({locale,scrollBefore,scrollAfter,afterPaint}))}));
   for (const snapshot of snapshots) {
     for (const key of ['sameRoot','sameNodes','sameFocus','sameSourceNodes']) assert.equal(snapshot[key],true,`${root} ${snapshot.locale}: ${key}`);
     assert.deepEqual(snapshot.after,snapshot.before,`${root}: language changes retain drafts, selection, confirmations and enabled states`);
     assert.deepEqual(snapshot.afterSourceText,snapshot.sourceText,`${root}: original text remains literal`);
-    assert.deepEqual(snapshot.afterScroll,snapshot.scroll,`${root}: language changes preserve modal scroll`);
+    if(reviewScroll){
+      assertLocaleScrollContext(snapshot.scrollBefore,snapshot.scrollAfter,`${root} ${snapshot.locale} after redraw`);
+      assertLocaleScrollContext(snapshot.scrollBefore,snapshot.afterPaint,`${root} ${snapshot.locale} after paint`);
+    }else{
+      assert.deepEqual({top:snapshot.scrollAfter.top,left:snapshot.scrollAfter.left},{top:snapshot.scrollBefore.top,left:snapshot.scrollBefore.left},`${root}: language changes preserve modal scroll; ${JSON.stringify({before:snapshot.scrollBefore,after:snapshot.scrollAfter})}`);
+    }
     assert.equal(snapshot.message,snapshot.expected);
     assert.deepEqual(snapshot.reports,[]);
   }
@@ -89,7 +134,7 @@ export function registerLocaleBrowserRegressions({test,getPage,ui,closeShellPane
     await page.locator('#jianpu-text').fill(draft);await page.locator('#jianpu-syntax>summary').click();
     await page.locator('#jianpu-text').focus();await page.locator('#jianpu-text').evaluate(node=>node.setSelectionRange(8,23));
     let requestStart=getRequests().length;
-    await assertLocaleRoundTrip(page,{root:'#jianpu-editor',message:{selector:'#jianpu-editor-load',key:'review.jianpu.load'}});
+    await assertLocaleRoundTrip(page,{root:'#jianpu-editor',reviewScroll:true,message:{selector:'#jianpu-editor-load',key:'review.jianpu.load'}});
     assert.equal(await page.locator('#jianpu-text').inputValue(),draft);assert.deepEqual(getRequests().slice(requestStart),[]);
     await page.locator('#jianpu-editor-cancel').click();
 
@@ -99,7 +144,7 @@ export function registerLocaleBrowserRegressions({test,getPage,ui,closeShellPane
     await page.getByLabel('Pitch for note 1',{exact:true}).fill('F##4');await page.getByLabel('Duration for note 1',{exact:true}).selectOption('1/3');
     await page.locator('#review-title').fill('Original 图片 fragment');await page.locator('#review-confirm').check();
     await page.getByLabel('Pitch for note 1',{exact:true}).focus();requestStart=getRequests().length;
-    await assertLocaleRoundTrip(page,{root:'#image-review-dialog',message:{selector:'#review-create',key:'review.image.load'}});
+    await assertLocaleRoundTrip(page,{root:'#image-review-dialog',reviewScroll:true,message:{selector:'#review-create',key:'review.image.load'}});
     assert.equal(await page.locator('#review-confirm').isChecked(),true);assert.equal(await page.locator('#review-create').isEnabled(),true);
     assert.equal(await page.getByLabel('Pitch for note 1',{exact:true}).inputValue(),'F##4');assert.equal(await page.getByLabel('Duration for note 1',{exact:true}).inputValue(),'1/3');
     assert.deepEqual(getRequests().slice(requestStart),[],'Language changes neither recognize nor activate an image draft');
@@ -112,7 +157,7 @@ export function registerLocaleBrowserRegressions({test,getPage,ui,closeShellPane
     const preview=await previewResponse.json();await page.locator('#transposition-result').waitFor();
     assert.deepEqual(JSON.parse(preview.compilation.score.source.content).original,score);
     await page.locator('#transposition-confirm').check();await page.locator('#transposition-confirm').focus();requestStart=getRequests().length;
-    await assertLocaleRoundTrip(page,{root:'#transposition-dialog',message:{selector:'#transposition-status',key:'review.pitch.previewReady'},stableText:['#transposition-result-title','#transposition-note-sample']});
+    await assertLocaleRoundTrip(page,{root:'#transposition-dialog',reviewScroll:true,message:{selector:'#transposition-status',key:'review.pitch.previewReady'},stableText:['#transposition-result-title','#transposition-note-sample']});
     assert.equal(await page.locator('#transposition-confirm').isChecked(),true);assert.equal(await page.locator('#transposition-activate').isEnabled(),true);
     assert.deepEqual(getRequests().slice(requestStart),[],'Language changes neither regenerate nor activate an approved preview');
     await page.locator('#transposition-cancel').click();await closeShellPanels();assert.deepEqual(await exportScore(),score);

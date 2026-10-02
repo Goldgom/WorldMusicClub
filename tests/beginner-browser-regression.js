@@ -70,14 +70,15 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
       const control=selector=>{const element=document.querySelector(selector),r=rect(element),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return{selector,...r,reachable:element===hit||element.contains(hit)};};
       const canvas=document.querySelector('#falling-notes'),r=canvas.getBoundingClientRect();let top=Math.max(0,r.top),bottom=Math.min(innerHeight,r.bottom),left=Math.max(0,r.left),right=Math.min(innerWidth,r.right);
       for(let ancestor=canvas.parentElement;ancestor;ancestor=ancestor.parentElement){const css=getComputedStyle(ancestor),box=ancestor.getBoundingClientRect();if(/auto|hidden|scroll|clip/.test(css.overflowY)){top=Math.max(top,box.top+ancestor.clientTop);bottom=Math.min(bottom,box.top+ancestor.clientTop+ancestor.clientHeight);}if(/auto|hidden|scroll|clip/.test(css.overflowX)){left=Math.max(left,box.left+ancestor.clientLeft);right=Math.min(right,box.left+ancestor.clientLeft+ancestor.clientWidth);}}
-      return{viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},canvas:{...rect(canvas),visibleHeight:Math.max(0,bottom-top),visibleWidth:Math.max(0,right-left)},keybed:rect(document.querySelector('#keyboard')),stage:rect(document.querySelector('#workspace')),play:rect(document.querySelector('.play-panel')),dock:rect(document.querySelector('#notation-dock')),controls:['#beginner-enabled','#beginner-controls summary','#keyboard-compact-status','#reset-button','#play-button','#sound-button'].map(control),stagePanel:document.querySelector('#beginner-controls').parentElement.className,range:document.querySelector('#keyboard-compact-status').textContent};
+      return{viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},canvas:{...rect(canvas),visibleHeight:Math.max(0,bottom-top),visibleWidth:Math.max(0,right-left)},keybed:rect(document.querySelector('#keyboard')),stage:rect(document.querySelector('#workspace')),play:rect(document.querySelector('.play-panel')),dock:rect(document.querySelector('#notation-dock')),panControls:document.querySelector('.play-panel>.keyboard-pan').hidden?[]:['#keyboard-pan-left','#keyboard-pan-right'].map(control),controls:['#beginner-enabled','#beginner-controls summary','#keyboard-compact-status','#reset-button','#play-button','#sound-button'].map(control),stagePanel:document.querySelector('#beginner-controls').parentElement.className,range:document.querySelector('#keyboard-compact-status').textContent};
     });
   }
   function assertCompactStage(layout) {
     assert.ok(layout.document.width<=layout.viewport.width+1&&layout.document.height<=layout.viewport.height+1,JSON.stringify(layout));
     assert.ok(layout.canvas.visibleHeight>=100&&layout.canvas.visibleWidth>=250,`The existing falling-note acceptance remains unchanged: ${JSON.stringify(layout)}`);
     assert.ok(layout.keybed.height>=70);assert.ok(layout.play.right<=layout.dock.x+1,'Notation retains its separate column');
-    for(const control of layout.controls)assert.ok(control.width>0&&control.height>0&&control.x>=0&&control.y>=0&&control.right<=layout.viewport.width+1&&control.bottom<=layout.viewport.height+1&&control.reachable,`Compact control remains visible and clickable: ${JSON.stringify(control)}`);
+    for(const control of [...layout.controls,...layout.panControls])assert.ok(control.width>0&&control.height>0&&control.x>=0&&control.y>=0&&control.right<=layout.viewport.width+1&&control.bottom<=layout.viewport.height+1&&control.reachable,`Compact control remains visible and clickable: ${JSON.stringify(control)}`);
+    for(const control of layout.panControls)assert.ok(control.width>=40&&control.height>=34,`Compact panning retains its full arrow target: ${JSON.stringify(control)}`);
     assert.equal(layout.stagePanel,'stage-heading');assert.match(layout.range,/C2.*A♯5/);
   }
 
@@ -129,7 +130,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
         await ui('#custom-key-count').fill('128');await ui('#custom-lowest').fill('C-1');await ui('#instrument-apply').click();
       }
       await page.waitForFunction(midi=>Boolean(document.querySelector(`#keyboard [data-midi="${midi}"] .beginner-note-label`)),configuration.midis.at(-1));await closeShellPanels();
-      const layout=await compactStageGeometry(page);assertCompactStage(layout);const labels=[];
+      const layout=await compactStageGeometry(page);assertCompactStage(layout);assert.equal(layout.panControls.length,2,'Every wide keyboard keeps both visible pan arrows');const labels=[];
       for(const midi of configuration.midis){
         const selector=`#keyboard [data-midi="${midi}"]`,actual=await glyph(page,selector),octave=Math.floor(midi/12)-5;
         assertGlyph(actual,{midi,tone:['1','♯1','2','♯2','3','4','♯4','5','♯5','6','♯6','7'][midi%12],above:'•\n'.repeat(Math.max(0,octave)).trim(),below:'•\n'.repeat(Math.max(0,-octave)).trim()});

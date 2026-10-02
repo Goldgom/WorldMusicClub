@@ -18,7 +18,7 @@ export function setupMidi({pressNote, releaseNote, releaseMatching, notice, paus
   function render(snapshot) {
     model=snapshot;renderButton(snapshot);
     if(snapshot.phase==='ready')doc.getElementById('midi-help').hidden=false;
-    if(userRequested&&snapshot.phase!==lastPhase&&['error','unsupported'].includes(snapshot.phase))notice(t(snapshot.phase==='unsupported'?'access.unsupported':'permissionDenied'),true);
+    if(userRequested&&snapshot.phase!==lastPhase&&['error','unsupported'].includes(snapshot.phase))notice(()=>t(snapshot.phase==='unsupported'?'access.unsupported':'permissionDenied'),true);
     lastPhase=snapshot.phase;view?.render({...snapshot,storageCode:preference.code || '',storageMessage:preference.message});
   }
   const controller=createMidiInputController({requestAccess:typeof nav?.requestMIDIAccess==='function'?options=>nav.requestMIDIAccess(options):null,

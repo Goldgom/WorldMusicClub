@@ -13,6 +13,9 @@
 .beginner-controls :is(input,select,summary):focus-visible{outline:3px solid var(--green,#326b4c);outline-offset:3px}
 #free-beginner-controls{margin:8px 0 0;border-radius:7px}
 #free-beginner-controls label{margin:0}
+/* Keep the stage's permanent guide row within its vertical budget, including
+   while switched off. The 28px disclosure and 18px checkbox retain their size. */
+@media(min-height:601px) and (min-width:651px){.performance-layout .play-panel>#beginner-controls{padding-top:0;padding-bottom:0}}
 .performance-layout .play-panel:has(#keyboard.beginner-labels-enabled){--keybed-height:110px}
 #keyboard.beginner-labels-enabled{min-height:110px}
 .performance-layout .play-panel:has(#keyboard.beginner-labels-enabled :is([data-octave-dots="4"],[data-octave-dots="5"],[data-octave-dots="6"])){--keybed-height:148px}

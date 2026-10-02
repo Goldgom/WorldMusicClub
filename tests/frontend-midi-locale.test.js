@@ -138,3 +138,26 @@ test('unknown MIDI status codes do not infer meaning from English prose and pres
     f.i18n.setLocale('en');assert.match(f.$('midi-access-status').textContent,/could not be enabled/);assert.doesNotMatch(f.$('midi-access-status').textContent,/Permission denied/);assert.equal(f.$('midi-access-details').querySelector('p').textContent,raw);
   }finally{view.destroy();f.restore();}
 });
+
+test('MIDI denied and unsupported notices redraw in the actual notice DOM without reconnecting',async()=>{
+  const {setupNoticeView}=await import('../web/notice-view.js');
+  for(const supported of [true,false]) {
+    const f=fixture('en');
+    const banner=f.document.createElement('div');banner.id='notice';banner.innerHTML='<p id="notice-message"></p><button id="notice-dismiss"></button>';f.document.body.append(banner);
+    const notices=setupNoticeView({document:f.document,i18n:f.i18n});let requests=0;
+    const navigator=supported?{requestMIDIAccess:async options=>{requests++;assert.deepEqual(options,{sysex:false});throw new DOMException('Original runtime denial','SecurityError');}}:{};
+    setupMidi({document:f.document,window:f.window,i18n:f.i18n,storage:f.storage,navigator,notice:(...args)=>notices.show(...args),pressNote:()=>assert.fail('No input should occur'),releaseNote:()=>{},releaseMatching:()=>{}});
+    try {
+      f.$('midi-button').click();await settle();
+      const key=supported?'input.midi.permissionDenied':'input.midi.access.unsupported';
+      assert.equal(f.$('notice-message').textContent,f.i18n.t(key));
+      const history=f.$('notice-history-list').firstElementChild,message=f.$('notice-message');
+      f.i18n.setLocale('zh-CN');
+      assert.equal(message.textContent,f.i18n.t(key));assert.equal(history.querySelector('p').textContent,f.i18n.t(key));
+      f.i18n.setLocale('en');
+      assert.equal(message.textContent,f.i18n.t(key));assert.equal(f.$('notice-history-list').firstElementChild,history);
+      assert.equal(requests,supported?1:0,'Locale redraw cannot reconnect or manufacture permission requests');
+      assert.equal(f.$('midi-button').disabled,false,'Explicit retry remains available');
+    } finally {notices.destroy();f.restore();}
+  }
+});
