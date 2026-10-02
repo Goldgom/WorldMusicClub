@@ -25,6 +25,10 @@
       if (document.querySelector('#sound-button').getAttribute('aria-pressed') !== 'true') throw Error('Silent smoke mode did not activate');
       document.querySelector('#start-listen').click();
       await waitFor(() => !document.querySelector('#export-button')?.disabled, 'app score activation');
+      // The app intentionally starts with its notation dock closed. Exercise
+      // the real display control before requiring the lazily rendered SVG.
+      if (document.querySelector('#notation-toggle').getAttribute('aria-expanded') !== 'true') document.querySelector('#notation-toggle').click();
+      await waitFor(() => document.querySelector('#notation-toggle').getAttribute('aria-expanded') === 'true', 'visible notation dock');
       await waitFor(() => document.querySelector('#engraved-staff svg'), 'offline notation SVG');
       document.querySelector('#reset-button').click();
       report.health = await json('/api/health');
