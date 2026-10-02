@@ -5,6 +5,7 @@ import {DOMParser,parseHTML} from 'linkedom';
 import {validateEngravingInput, renderEngravedStaff, ENGRAVING_LIMITS} from '../web/engraving.js';
 import {createEngravingProjection, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from '../web/engraving-projection.js';
 import {matchEngravingModel,validateEngravingModelTies} from '../web/engraving-note-map.js';
+import {resolveEngravingTieContext} from '../web/engraving-tie-context.js';
 import {createI18n} from '../web/i18n.js';
 
 class XmlParser extends DOMParser {
@@ -281,6 +282,39 @@ test('explicit ties across distinct canonical IDs retain the original ordered ti
   const matches=matchEngravingModel({Sheet:sheet},validated).matches.filter(match=>match.note);
   assert.deepEqual(matches.map(match=>match.segment.source_note_id),['explicit-canonical-1','explicit-canonical-2']);
   assert.ok(matches.every(match=>match.note.NoteTie.Notes.length===4));
+});
+
+test('unique same-staff ties cross canonical and XML voices without losing original context or membership',()=>{
+  const spec=sustainedFixture({measures:4}),part=spec.identity.score.parts[0],document=new XmlParser().parseFromString(spec.xml,'application/xml');part.notes=[];
+  spec.identity.voiceIdMap=[1,2].map(voice=>({part_id:part.id,staff:1,voice:`authored-${voice}`,lane:1,xml_voice:String(voice)}));
+  for(const [index,segment] of spec.identity.noteMap.segments.entries()) {
+    segment.source_note_id=`cross-voice-source-${index}`;segment.voice=`authored-${index%2+1}`;segment.xml_voice=String(index%2+1);
+    part.notes.push({id:segment.source_note_id,staff:segment.staff,voice:segment.voice,pitch:segment.pitch,at:segment.at,duration:segment.duration,tie_start:segment.tie_start,tie_stop:segment.tie_stop});
+    document.querySelector(`note[id="${segment.xml_note_id}"] voice`).textContent=segment.xml_voice;
+  }
+  spec.xml=document.toString();const before=JSON.stringify(spec);
+  for(const options of [{fromMeasure:1,toMeasure:1},{fromMeasure:2,toMeasure:3},{fromMeasure:4,toMeasure:4}]) {
+    const {checked,projection}=project(spec,options);assert.equal(projection.ok,true);assert.deepEqual(projection.sourceMeasureIndices,[0,1,2,3]);
+    const sheet=read(projection),validated={...checked.identity,projection};
+    assert.deepEqual(validateEngravingProjectionModel(sheet,projection,spec.identity.score,ENGRAVING_LIMITS),{ok:true});
+    assert.deepEqual(validateEngravingModelTies({Sheet:sheet},validated),{ok:true});
+    const displayed=matchEngravingModel({Sheet:sheet},validated),all=matchEngravingModel({Sheet:sheet},validated,{includeContext:true});assert.deepEqual(displayed.diagnostics,[]);assert.deepEqual(all.diagnostics,[]);
+    assert.equal(displayed.matches.filter(match=>match.note).length,options.toMeasure-options.fromMeasure+1);
+    const notes=all.matches.map(match=>match.note);assert.deepEqual(notes[0].NoteTie.Notes,notes);assert.ok(notes.every(note=>note.NoteTie===notes[0].NoteTie));
+    for(const segment of spec.identity.noteMap.segments)assert.equal(projection.document.querySelector(`note[id="${segment.xml_note_id}"]`).toString(),checked.document.querySelector(`note[id="${segment.xml_note_id}"]`).toString());
+  }
+  assert.equal(JSON.stringify(spec),before);
+});
+
+test('cross-voice context preserves canonical voice priority and refuses ambiguous or unsupported joins',()=>{
+  const pitch={step:'C',alter:0,octave:4},note=(id,voice,start)=>({xml_note_id:id,source_note_id:id,xml_part_id:'P1',staff:1,voice,xml_voice:id,pitch,source_measure_index:start?0:1,at:beat(start?0:4),duration:beat(4),tie_start:start,tie_stop:!start});
+  const segments=[note('a','line-a',true),note('b','line-b',true),note('c','line-a',false),note('d','line-b',false)],options={fromMeasure:1,toMeasure:2,partIds:['P1']};
+  assert.deepEqual(resolveEngravingTieContext({segments},options,ENGRAVING_LIMITS).tieChains,[['a','c'],['b','d']],'Original voice identity has priority even when exported lane numbers differ');
+  const rejects=changed=>assert.throws(()=>resolveEngravingTieContext({segments:changed},options,ENGRAVING_LIMITS),error=>error.projectionKey==='tieContext');
+  const ambiguous=structuredClone(segments);ambiguous[2].voice='line-c';ambiguous[3].voice='line-d';rejects(ambiguous);
+  const crossStaff=[structuredClone(segments[0]),structuredClone(segments[2])];crossStaff[1].staff=2;rejects(crossStaff);
+  const spelling=[structuredClone(segments[0]),structuredClone(segments[2])];spelling[1].pitch={step:'B',alter:1,octave:3};rejects(spelling);
+  const gap=[structuredClone(segments[0]),structuredClone(segments[2])];gap[1].at=beat(9,2);rejects(gap);
 });
 
 test('adapter draws the selected local range and refuses a lost model tie before any graphical layout',async()=>{

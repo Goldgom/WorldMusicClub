@@ -3,7 +3,7 @@ const gcd = (a, b) => { while (b) { const rest = a % b; a = b; b = rest; } retur
 const rational = value => [BigInt(value.numerator), BigInt(value.denominator)];
 const add = (left, right) => [left[0] * right[1] + right[0] * left[1], left[1] * right[1]];
 const fractionKey = value => { const divisor = gcd(value[0], value[1]); return `${value[0] / divisor}/${value[1] / divisor}`; };
-const laneKey = segment => JSON.stringify([segment.xml_part_id, segment.staff, segment.xml_voice, segment.pitch?.step, segment.pitch?.alter, segment.pitch?.octave]);
+const staffPitchKey = segment => JSON.stringify([segment.xml_part_id, segment.staff, segment.pitch?.step, segment.pitch?.alter, segment.pitch?.octave]);
 const fail = () => { throw Object.assign(Error('A displayed tie requires unambiguous original context within the notation bounds.'), {projectionKey: 'tieContext'}); };
 
 /** Input is the complete previously validated Rust segment map. */
@@ -12,14 +12,26 @@ export function resolveEngravingTieContext(validated, options, limits) {
   const append = (map, key, segment) => { if (!map.has(key)) map.set(key, []); map.get(key).push(segment); };
   for (const segment of validated.segments) {
     if (!selectedParts.has(segment.xml_part_id) || !segment.pitch) continue;
-    const lane = laneKey(segment), at = rational(segment.at), end = add(at, rational(segment.duration));
+    const lane = staffPitchKey(segment), at = rational(segment.at), end = add(at, rational(segment.duration));
     append(starts, `${lane}:${fractionKey(at)}`, segment); append(ends, `${lane}:${fractionKey(end)}`, segment);
   }
-  const adjacent = (segment, backwards) => {
+  const candidate = (segment, backwards) => {
     const at = rational(segment.at), time = backwards ? at : add(at, rational(segment.duration));
-    const candidates = (backwards ? ends : starts).get(`${laneKey(segment)}:${fractionKey(time)}`)?.filter(other => backwards ? other.tie_start : other.tie_stop) || [];
+    let candidates = (backwards ? ends : starts).get(`${staffPitchKey(segment)}:${fractionKey(time)}`)?.filter(other => backwards ? other.tie_start : other.tie_stop) || [];
+    // Split segments retain their original source note. Explicit ties prefer
+    // the canonical voice, as Rust does; a unique same-staff join may change
+    // voice (for example the bundled D768 edition). XML lane numbers are an
+    // export allocation detail, not a restriction on an authored tie.
+    const sameSource = candidates.filter(other => other.source_note_id === segment.source_note_id);
+    const sameVoice = candidates.filter(other => other.voice === segment.voice);
+    candidates = sameSource.length ? sameSource : sameVoice.length ? sameVoice : candidates;
     if (candidates.length !== 1) fail();
     return candidates[0];
+  };
+  const adjacent = (segment, backwards) => {
+    const other = candidate(segment, backwards);
+    if (candidate(other, !backwards) !== segment) fail();
+    return other;
   };
   let fromMeasure = options.fromMeasure, toMeasure = options.toMeasure;
   const chains = new Map(), covered = new Set();

@@ -64,6 +64,49 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
   async function artifact(name, value) {
     if(artifactDirectory)await writeFile(join(artifactDirectory,`worldmusichub-${name}.json`),JSON.stringify(value,null,2));
   }
+  async function resizeStage(page, viewport, name) {
+    // setViewportSize acknowledges the emulation command, not a rendered frame.
+    // CSS may already use the new size before MediaQueryList change handlers
+    // have moved the guide/footer. The rendering algorithm delivers those
+    // events before animation-frame callbacks; inspect exactly that first
+    // frame, rather than polling until geometry happens to satisfy the test.
+    // https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering
+    await page.evaluate(()=>{
+      const media=matchMedia('(max-height:600px) and (min-width:651px)'),samples=[];
+      const sample=phase=>{
+        const panel=document.querySelector('#beginner-controls'),reference=document.querySelector('#beginner-reference');
+        samples.push({phase,time:performance.now(),width:innerWidth,height:innerHeight,compact:media.matches,
+          guideCompact:panel.classList.contains('beginner-controls-compact'),guideParent:panel.parentElement.className,
+          referenceInHelp:reference.parentElement===panel.querySelector('.beginner-help-body'),
+          footerInSettings:Boolean(document.querySelector('.keyboard-input-footer').closest('#keyboard-input-settings')),
+          statusHidden:document.querySelector('#keyboard-compact-status').hidden,
+          notationCompact:document.querySelector('#notation-dock .notation-panel').classList.contains('short-notation')});
+      };
+      const resized=()=>sample('resize'),changed=()=>sample('media-change');
+      addEventListener('resize',resized);media.addEventListener('change',changed);sample('before');
+      window.beginnerResizeObservation={samples,sample,stop(){removeEventListener('resize',resized);media.removeEventListener('change',changed);}};
+    });
+    try {
+      await page.setViewportSize(viewport);
+      const samples=await page.evaluate(()=>{
+        const observation=window.beginnerResizeObservation;observation.sample('protocol-complete');
+        return new Promise((resolve,reject)=>{
+          const timeout=setTimeout(()=>{cancelAnimationFrame(frame);reject(new Error(`No resize frame within 2000ms: ${JSON.stringify(observation.samples)}`));},2000);
+          const frame=requestAnimationFrame(()=>{clearTimeout(timeout);observation.sample('first-frame');resolve(observation.samples);});
+        });
+      });
+      await artifact(name,{requested:viewport,samples});
+      const before=samples[0],settled=samples.at(-1),compact=viewport.height<=600&&viewport.width>=651;
+      assert.deepEqual({width:settled.width,height:settled.height},viewport,JSON.stringify(samples));
+      assert.deepEqual({compact:settled.compact,guide:settled.guideCompact,reference:settled.referenceInHelp,footer:settled.footerInSettings,statusHidden:settled.statusHidden,notation:settled.notationCompact},
+        {compact,guide:compact,reference:compact,footer:compact,statusHidden:!compact,notation:compact},`All responsive handlers finish before the first rendered frame: ${JSON.stringify(samples)}`);
+      assert.equal(settled.guideParent,compact?'stage-heading':'play-panel panel',JSON.stringify(samples));
+      assert.equal(samples.filter(sample=>sample.phase==='media-change').length,Number(before.compact!==compact),`Observe the actual breakpoint notification: ${JSON.stringify(samples)}`);
+      return samples;
+    } finally {
+      await page.evaluate(()=>{window.beginnerResizeObservation.stop();delete window.beginnerResizeObservation;});
+    }
+  }
   async function compactStageGeometry(page) {
     return page.evaluate(()=>{
       const rect=element=>{const r=element.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
@@ -96,9 +139,9 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
     await page.evaluate(()=>{window.beginnerResponsiveNodes=Object.fromEntries(['beginner-controls','beginner-enabled','beginner-reference','keyboard-compact-status','keyboard-map'].map(id=>[id,document.getElementById(id)]));});
     await page.locator('#beginner-enabled').check();
     const on=await compactStageGeometry(page);assertCompactStage(on);
-    const layouts=[];
+    const layouts=[],resizes=[];
     for(const viewport of [{width:1440,height:900},{width:844,height:390},{width:1280,height:720},{width:844,height:390}]){
-      await page.setViewportSize(viewport);
+      resizes.push(await resizeStage(page,viewport,`beginner-resize-${resizes.length+1}-${viewport.width}x${viewport.height}`));
       const state=await page.evaluate(()=>({same:Object.entries(window.beginnerResponsiveNodes).every(([id,node])=>document.getElementById(id)===node),held:document.querySelector('#keyboard [data-midi="60"]').getAttribute('aria-pressed'),mapHeld:document.querySelector('#keyboard-map [data-code="KeyR"]').classList.contains('held'),inDialog:Boolean(document.querySelector('#beginner-controls').closest('dialog')),unique:['beginner-enabled','beginner-reference','keyboard-compact-status'].every(id=>document.querySelectorAll(`#${id}`).length===1)}));
       assert.deepEqual(state,{same:true,held:'true',mapHeld:true,inDialog:false,unique:true});
       assert.equal(await page.locator('#beginner-enabled').isVisible(),true);
@@ -112,7 +155,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
     const take=await exportTakeData();assert.deepEqual(take.passes.at(-1).inputs.map(input=>input.midi),[60]);
     assert.deepEqual(take.input_evidence.events.filter(event=>['note_on','note_off','synthetic_release'].includes(event.kind)).map(event=>event.kind),['note_on','note_off']);
     assert.deepEqual(await exportScore(),score);
-    await artifact('beginner-initial-compact',{off,on,layouts,score_preserved:true,contacts:['note_on','note_off']});
+    await artifact('beginner-initial-compact',{off,on,layouts,resizes,score_preserved:true,contacts:['note_on','note_off']});
   });
 
   test('real compact 88-key and custom extreme guides retain every octave dot beside the unchanged falling-note field',{timeout:60_000},async()=>{

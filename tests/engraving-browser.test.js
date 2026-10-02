@@ -1142,9 +1142,59 @@ test('resize publishes fresh bindings and restores the configured light and dark
     assert.ok(rebuilt.renders > before.renders, 'Width change really went through OSMD layout/render');
     await expectBinding(['up-short-D4'], 0);
     await clearBinding();
-    const fills = await page.locator('#staff .vf-notehead path').evaluateAll(paths => paths.map(path => getComputedStyle(path).fill));
-    assert.ok(fills.length > 0 && fills.every(fill => fill === (dark ? 'rgb(243, 245, 239)' : 'rgb(23, 37, 29)')), JSON.stringify(fills));
-    evidence.push({dark, rebuilt, fills});
+    const paint = await page.evaluate(() => {
+      const watch = window.__wmhBinding, renderer = watch.renderer, host = document.querySelector('#staff');
+      // reindex independently matched every canonical written tuple to its exact
+      // indexed head. Do not choose this set by paint: a transparent canonical
+      // glyph is a failure, while no-ID projection rests must stay transparent.
+      const canonicalHeads = new Set(watch.groups.values());
+      const canonical = watch.rows.map(row => {
+        const head = watch.groups.get(row.key), paths = [...head.querySelectorAll('path')];
+        watch.assert(head.isConnected && host.contains(head) && paths.length > 0, 'Every source-identified glyph retains mounted paint paths');
+        watch.assert(row.bindingStatus === 'bound', 'Every canonical glyph in the resize fixture stays bound');
+        return {sourceId: row.sourceId, xmlNoteId: row.xmlNoteId, rest: row.rest,
+          fills: paths.map(path => getComputedStyle(path).fill)};
+      });
+      watch.assert(canonical.length === watch.exported.note_id_map.segments.length && canonicalHeads.size === canonical.length,
+        'Base-color coverage includes every distinct canonical note and written rest');
+      const projectionPadding = [...watch.loadedDocument.querySelectorAll('note')].filter(note => !note.hasAttribute('id'));
+      watch.assert(projectionPadding.length > 0 && projectionPadding.every(note => note.getAttribute('print-object') === 'no' && note.querySelector('rest') && !note.querySelector('pitch')),
+        'Renderer padding consists only of nonprinting rests without source identities');
+      const modelNotes = new Set();
+      for (const measure of renderer.Sheet.SourceMeasures) for (const vertical of measure.VerticalSourceStaffEntryContainers)
+        for (const staff of vertical.StaffEntries || []) for (const voice of staff?.VoiceEntries || [])
+          for (const note of voice.Notes || []) modelNotes.add(note);
+      const paddingPaths = new Set(), padding = [];
+      for (const note of modelNotes) {
+        const graphical = renderer.EngravingRules.GNote(note), index = graphical?.vfnote?.[1];
+        watch.assert(graphical?.sourceNote === note && Number.isInteger(index) && graphical.vfnoteIndex === index,
+          'Every model note retains its exact indexed graphical owner after resize');
+        const head = graphical.getNoteheadSVGs()[index];
+        if (note.PrintObject === true) {
+          watch.assert(canonicalHeads.has(head), 'Every printing model note belongs to an exact canonical source identity');
+          continue;
+        }
+        watch.assert(note.PrintObject === false && note.isRest(), 'Only generated silent rests are nonprinting');
+        watch.assert(head?.isConnected && host.contains(head) && !canonicalHeads.has(head), 'Padding glyphs cannot alias any canonical binding');
+        const paths = [...head.querySelectorAll('path')];
+        watch.assert(paths.length > 0, 'Pinned renderer exposes the nonprinting rest paths');
+        for (const path of paths) paddingPaths.add(path);
+        padding.push(paths.map(path => ({fill: getComputedStyle(path).fill, stroke: getComputedStyle(path).stroke})));
+      }
+      watch.assert(padding.length === projectionPadding.length && modelNotes.size === canonical.length + padding.length,
+        'Real model accounts for all canonical notes and only the generated padding');
+      const canonicalPaths = new Set([...canonicalHeads].flatMap(head => [...head.querySelectorAll('path')]));
+      const allPaths = [...host.querySelectorAll('.vf-notehead path')];
+      watch.assert(allPaths.length === canonicalPaths.size + paddingPaths.size && allPaths.every(path => canonicalPaths.has(path) || paddingPaths.has(path)),
+        'Every mounted notehead path is covered by the canonical color or nonprinting padding assertion');
+      return {canonical, padding, pathCount: allPaths.length};
+    });
+    const fills = paint.canonical.flatMap(note => note.fills);
+    assert.ok(paint.canonical.some(note => note.rest), 'The visible written rest is included in theme-color coverage');
+    assert.ok(fills.length > 0 && fills.every(fill => fill === (dark ? 'rgb(243, 245, 239)' : 'rgb(23, 37, 29)')), JSON.stringify(paint));
+    assert.ok(paint.padding.flat().every(path => path.fill === 'rgba(0, 0, 0, 0)' && ['none', 'rgba(0, 0, 0, 0)'].includes(path.stroke)),
+      'Nonprinting padding stays transparent after resize, exact-note highlighting, and clear');
+    evidence.push({dark, rebuilt, fills, ...paint});
     await screenshot(`binding-resize-${dark ? 'dark' : 'light'}`);
   }
   await writeFile(join(artifacts, 'worldmusichub-binding-resize.json'), JSON.stringify(evidence, null, 2) + '\n');

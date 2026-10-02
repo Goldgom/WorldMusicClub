@@ -99,6 +99,7 @@ for (const initiallyCompact of [true, false]) test(`real shell/input/performance
       assert.equal(reference.parentElement,compact?panel.querySelector('.beginner-help-body'):panel);
       assert.equal(footer.closest('dialog')?.id,compact?'settings-dialog':undefined);
       assert.equal(badge.hidden,!compact);assert.equal(badge.previousElementSibling.id,'stage-subtitle');
+      assert.equal(document.querySelector('#notation-dock .notation-panel').classList.contains('short-notation'),compact);
       for(const id of ['beginner-controls','beginner-enabled','beginner-reference','beginner-help','beginner-numbered-mode','keyboard-map','keyboard-compact-status'])assert.equal(document.querySelectorAll(`#${id}`).length,1);
     };
     state(initiallyCompact);
@@ -106,8 +107,15 @@ for (const initiallyCompact of [true, false]) test(`real shell/input/performance
     const evidence=structuredClone(events),configuration=controller.exportConfigurationData();
     toggle.checked=true;toggle.dispatchEvent(new window.Event('change'));
     const pianoLabel=label(piano),mapLabel=label(map);details.setAttribute('open','');
+    let displayedCompact=initiallyCompact;
     for(const compact of [!initiallyCompact,initiallyCompact,!initiallyCompact,initiallyCompact]){
-      media.matches=compact;for(const listener of listeners)listener({matches:compact});state(compact);
+      media.matches=compact;
+      // A viewport command can return after CSS/matches changes but before the
+      // browser's rendering task reports media changes. Reproduce that interval:
+      // the guide, footer badge and notation all still have the prior placement.
+      state(displayedCompact);
+      assert.deepEqual(events,evidence,'A pending layout notification must not disturb the held contact');
+      for(const listener of listeners)listener({matches:compact});state(compact);displayedCompact=compact;
       for(const locale of ['zh-CN','en']){
         i18n.setLocale(locale);assert.equal($('beginner-controls'),panel);assert.equal($('beginner-enabled'),toggle);assert.equal($('beginner-reference'),reference);
         assert.equal(details.hasAttribute('open'),true,'Moving one native disclosure retains its state');
