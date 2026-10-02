@@ -1,7 +1,6 @@
 """Synthetic provenance failures are not claims of Windows acceptance."""
 import importlib.util
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -160,7 +159,11 @@ class NativeReleaseTests(unittest.TestCase):
                     ['git', *args],
                     cwd=root, text=True).rstrip('\r\n')
             git('init', '--quiet')
-            git('config', 'core.excludesFile', os.devnull)
+            # Git for Windows rejects the NUL device as an excludes file.
+            # A real empty file keeps the same isolation on every host.
+            excludes = root / '.git' / 'empty-global-excludes'
+            excludes.write_text('', encoding='utf-8')
+            git('config', 'core.excludesFile', str(excludes))
             git('config', 'core.autocrlf', 'false')
             git('config', 'core.hooksPath', str(root / 'unused-hooks'))
             shutil.copyfile(ROOT / '.gitignore', root / '.gitignore')

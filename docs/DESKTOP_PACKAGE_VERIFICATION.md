@@ -110,3 +110,11 @@ gate. Failures now include the full porcelain path list and preserve its status
 columns. A temporary-repository regression checks these cases with real Git;
 the Windows-host guard remains mandatory. The next exact-source hosted run
 must still pass package inventory, ZIP verification and extracted startup.
+
+The following Windows run, 37036259658 at source
+`40154fb540f0706f1792f88f69880f603e2edc9c`, caught a portability error in
+that new temporary-repository regression before the GUI stages: Git for
+Windows rejects the `nul` device as `core.excludesFile`. The fixture now uses
+an actual empty file inside its temporary `.git` directory, preserving the
+same global-ignore isolation and all source-cleanliness assertions. No app,
+permission, package gate or workflow assertion is relaxed by this correction.
