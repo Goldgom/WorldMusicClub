@@ -204,4 +204,8 @@
   .performance-layout .guitar-details{grid-column:2;min-width:0}
   .performance-layout #guitar-plan-controls>summary,.performance-layout .guitar-details>summary{font-size:11px;line-height:1.4;overflow-wrap:anywhere}
   .performance-layout .guitar-stage:has(#guitar-plan-controls[open]) #guitar-planning,.performance-layout .guitar-stage:has(.guitar-details[open]) .guitar-details{grid-column:1/-1;max-height:none}
+  /* Expanded tools give the board an explicit 35dvh height. Its grid track must
+     grow with that height: a 56px flexible track would let frets cover the next
+     row's disclosure and intercept its close click. The stage owns overflow. */
+  .performance-layout .guitar-stage:has(#guitar-plan-controls[open]),.performance-layout .guitar-stage:has(.guitar-details[open]),.performance-layout .play-panel:has(#practice-gate:not([hidden])) .guitar-stage{grid-template-rows:max-content max-content max-content;grid-auto-rows:max-content}
 }

@@ -79,4 +79,7 @@ test('compact CSS reserves a complete fret row and allows the Follow toolbar to 
   assert.equal(rule('.performance-layout .guitar-stage')['grid-template-rows'],'auto minmax(56px,1fr) auto');
   assert.equal(rule('.performance-layout #guitar-planning')['grid-column'],'1');
   assert.equal(rule('.performance-layout .guitar-details')['grid-column'],'2');
+  const expanded=rule('.performance-layout .guitar-stage:has(#guitar-plan-controls[open]),.performance-layout .guitar-stage:has(.guitar-details[open]),.performance-layout .play-panel:has(#practice-gate:not([hidden])) .guitar-stage');
+  assert.equal(expanded['grid-template-rows'],'max-content max-content max-content','An explicitly taller board must expand its grid track before the disclosure row');
+  assert.equal(expanded['grid-auto-rows'],'max-content','A full-width open disclosure can create another row, which must also retain its content height');
 });

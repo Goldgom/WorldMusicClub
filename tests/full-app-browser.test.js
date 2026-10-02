@@ -1547,8 +1547,27 @@ for(const viewport of [{width:1280,height:720},{width:844,height:390},{width:390
     const last=page.locator('.fret-button[data-string="5"][data-fret="36"]');await last.focus();const lastBounds=await last.boundingBox(),lastVisible=await guitarFretVisibility('.fret-button[data-string="5"][data-fret="36"]');assertWholeGuitarFret(lastVisible,'Focused last string and fret');assertInsideViewport({...lastBounds,right:lastBounds.x+lastBounds.width,bottom:lastBounds.y+lastBounds.height},viewport,'Last string and fret');assert.ok(await page.locator('.guitar-scroll').evaluate(el=>el.scrollLeft>0));
     for(const key of ['Enter','Space']){await page.keyboard.down(key);assert.equal(await last.getAttribute('aria-pressed'),'true');await page.keyboard.up(key);assert.equal(await last.getAttribute('aria-pressed'),'false');assert.equal(await page.locator('.fret-button.pressed').count(),0);assert.match(await page.locator('#play-button').textContent(),/Play/,'Fret Space input must not start the transport');}
     await viewportSnapshot(`guitar-${viewport.width}x${viewport.height}-full-range`);await page.keyboard.down('Enter');await page.locator('#reset-button').focus();assert.equal(await page.locator('.fret-button.pressed').count(),0,'Moving focus releases a held accessible fret');await page.keyboard.up('Enter');
-    const first=page.locator('.fret-button[data-string="0"][data-fret="0"]');await first.focus();assert.equal(await first.getAttribute('aria-label'),'String row 1 (tuning E4), fret 0: E4');assert.ok(await page.locator('.guitar-scroll').evaluate(el=>el.scrollLeft<50&&el.scrollTop<=23));await page.locator('#reset-button').focus();await page.locator('.guitar-details summary').click();assert.ok(await page.locator('#guitar-guidance-sources li').count()>0);assert.match(await page.locator('#guitar-guidance-sources').textContent(),/Source occurrences:/);await page.locator('.guitar-details summary').click();
-    await writeFile(join(artifactDirectory,`worldmusichub-live-guitar-${viewport.width}x${viewport.height}-geometry.json`),JSON.stringify({...geometry,firstVisible,lastVisible,lastFret:lastBounds},null,2));assert.deepEqual(await exportScore(),initialCompilation.score);
+    const first=page.locator('.fret-button[data-string="0"][data-fret="0"]');await first.focus();assert.equal(await first.getAttribute('aria-label'),'String row 1 (tuning E4), fret 0: E4');assert.ok(await page.locator('.guitar-scroll').evaluate(el=>el.scrollLeft<50&&el.scrollTop<=23));await page.locator('#reset-button').focus();
+    const disclosureEvidence=[],compact=viewport.width===844&&viewport.height===390,summary=page.locator('.guitar-details summary');
+    for(let cycle=0;cycle<(compact?2:1);cycle++){
+      await summary.click();assert.equal(await page.locator('.guitar-details').evaluate(el=>el.open),true);
+      assert.ok(await page.locator('#guitar-guidance-sources li').count()>0);assert.match(await page.locator('#guitar-guidance-sources').textContent(),/Source occurrences:/);
+      if(compact){
+        await summary.scrollIntoViewIfNeeded();
+        const opened=await summary.evaluate(element=>{
+          const box=el=>{const r=el.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height}};
+          const stage=element.closest('.guitar-stage'),scroll=stage.querySelector('.guitar-scroll'),rect=box(element),hit=document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2);
+          return{summary:rect,stage:box(stage),scroll:box(scroll),stageScrollTop:stage.scrollTop,gridRows:getComputedStyle(stage).gridTemplateRows,boardHeight:getComputedStyle(scroll).height,hit:hit?{tag:hit.tagName,id:hit.id,className:hit.className,string:hit.dataset.string,fret:hit.dataset.fret}:null,receivesPointer:hit===element||element.contains(hit)};
+        });
+        disclosureEvidence.push({cycle,opened});
+        await writeFile(join(artifactDirectory,'worldmusichub-live-guitar-844x390-disclosures.json'),JSON.stringify(disclosureEvidence,null,2));
+        assert.ok(opened.scroll.bottom<=opened.summary.y+1,`Expanded board must end before the source summary: ${JSON.stringify(opened)}`);
+        assert.ok(opened.receivesPointer,`The visible summary must receive its close click: ${JSON.stringify(opened)}`);
+      }
+      await summary.click();assert.equal(await page.locator('.guitar-details').evaluate(el=>el.open),false);
+      if(compact){assertWholeGuitarFret(await guitarFretVisibility('.fret-button[data-string="0"][data-fret="0"]'),'First string after closing source details');assert.equal(await page.locator('.fret-button.pressed').count(),0);}
+    }
+    await writeFile(join(artifactDirectory,`worldmusichub-live-guitar-${viewport.width}x${viewport.height}-geometry.json`),JSON.stringify({...geometry,firstVisible,lastVisible,lastFret:lastBounds,disclosureEvidence},null,2));assert.deepEqual(await exportScore(),initialCompilation.score);
   });
 }
 
