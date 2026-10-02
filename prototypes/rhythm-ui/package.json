@@ -1,0 +1,13 @@
+{
+  "name": "worldmusichub-ui-spike",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Isolated Chinese-first rhythm practice interaction prototype",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test tests/model.test.mjs tests/locales.test.mjs",
+    "test:dom": "node --test tests/dom.test.mjs",
+    "test:hosted": "node scripts/hosted-check.mjs"
+  }
+}

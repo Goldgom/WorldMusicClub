@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>WorldMusicHub · 练习交互原型</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main" data-t="skip">跳转到主要内容</a>
+  <header class="app-header">
+    <a class="brand" href="#lobby" id="brand"><span class="brand-mark" aria-hidden="true">⌁</span><span>WorldMusicHub</span></a>
+    <span class="prototype-tag" data-t="prototype">交互原型</span>
+    <div class="header-actions">
+      <button id="theme" class="quiet-button theme-button" type="button" data-title="theme"><span aria-hidden="true">◐</span><span id="theme-label"></span></button>
+      <label class="sr-only" for="locale" data-t="language">界面语言</label>
+      <select id="locale"><option value="zh-CN">简体中文</option><option value="en">English</option></select>
+    </div>
+  </header>
+  <main id="main" tabindex="-1">
+    <section id="lobby" class="lobby" aria-labelledby="lobby-heading">
+      <div class="lobby-heading"><span class="eyebrow" data-t="lobby"></span><span class="local-indicator"><i></i><span data-t="local"></span></span></div>
+      <div class="hero">
+        <div class="hero-copy"><p class="hero-kicker" data-t="homeTag"></p><h1 id="lobby-heading"><span data-t="heroA"></span><br><span class="gradient-text" data-t="heroB"></span></h1><p data-t="heroDescription"></p></div>
+        <div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div><div class="art-track"><span>1</span><span>2</span><span>3</span><span>5</span></div><div class="art-plaque">C<span>Do</span></div><div class="art-note note-one">♪</div><div class="art-note note-two">♫</div><div class="art-caption">01 / 08</div></div>
+      </div>
+      <div class="lobby-cards">
+        <article class="exercise-card">
+          <div class="exercise-art" aria-hidden="true"><div class="exercise-lines"></div><span>C</span><small data-t="major">大调</small></div>
+          <div class="exercise-copy"><div class="card-tags"><span data-t="original"></span><span data-t="beginner"></span></div><h2 data-t="songTitle"></h2><p data-t="songDescription"></p><div class="card-bottom"><span class="song-meta" data-t="songMeta"></span><button id="start-guided" type="button" class="primary-button"><span data-t="startPractice"></span><span aria-hidden="true">↗</span></button></div></div>
+        </article>
+        <article class="free-card"><span class="free-icon" aria-hidden="true">∿</span><h2 data-t="freeTitle"></h2><p data-t="freeDescription"></p><div class="free-footer"><span data-t="localSession"></span><button id="start-free" class="secondary-button" type="button"><span data-t="freeStart"></span><span aria-hidden="true">→</span></button></div></article>
+      </div>
+      <div class="beginner-guide"><div class="mini-keys" aria-hidden="true"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><span>…</span><kbd>7</kbd></div><div><h3 data-t="guideTitle"></h3><p data-t="guideBody"></p></div></div>
+      <button id="resume-session" class="quiet-button" type="button" data-t="resumeSession" hidden></button>
+    </section>
+    <section id="practice" class="practice" hidden aria-labelledby="practice-heading">
+      <div class="practice-heading"><button id="back" class="back-button" type="button" data-title="back"><span aria-hidden="true">←</span><span data-t="lobby"></span></button><div class="practice-title"><p id="mode-label" class="eyebrow"></p><h1 id="practice-heading"></h1></div><div class="session-status"><span class="status-dot"></span><span id="status" role="status" aria-live="polite"></span></div></div>
+      <div class="practice-grid">
+        <div class="instrument-column">
+          <section class="stage-panel" aria-labelledby="path-heading">
+            <div class="stage-heading"><div><span class="instrument-icon" aria-hidden="true">♬</span><h2 id="path-heading" data-t="path"></h2><span id="path-detail" data-t="pathDetail"></span></div><span class="stage-badge" data-t="guitar"></span></div>
+            <div class="current-summary"><div class="current-note"><span data-t="current"></span><strong id="current-degree">1</strong><div><b id="current-pitch">C4 · Do</b><small id="current-position"></small></div></div><div class="next-note"><span data-t="next"></span><b id="next-note"></b></div></div>
+            <div class="canvas-wrap"><canvas id="stage" role="img" data-aria="stageLabel"></canvas><div id="stage-overlay" class="stage-overlay" hidden></div></div>
+            <div class="stage-caption"><span id="stage-hint" data-t="inputHint"></span><span class="measure-label" id="measure-label"></span></div>
+          </section>
+          <section class="fretboard-panel" aria-labelledby="fretboard-heading"><div class="fretboard-heading"><h2 id="fretboard-heading" data-t="fretboard"></h2><span data-t="introHint"></span><div class="shortcut-keys" id="shortcut-keys"></div></div><div id="fretboard" class="fretboard"></div><p class="fret-help" data-t="fretboardHelp"></p></section>
+        </div>
+        <aside class="score-panel" aria-labelledby="score-heading"><div class="score-heading"><span class="eyebrow" id="score-subtitle"></span><h2 id="score-heading"></h2><span class="score-heading-decoration" aria-hidden="true">𝄞</span></div><div id="score-content" class="score-content"></div><p class="score-help" id="score-help"></p><div class="input-meter"><div><span data-t="inputs"></span><strong id="input-count">0</strong></div><small data-t="inputDisclaimer"></small></div></aside>
+      </div>
+      <section class="transport" data-aria="transport"><div class="play-group"><button id="play" type="button" class="play-button"><span id="play-icon" aria-hidden="true">▶</span><span id="play-label"></span></button><button id="reset" type="button" class="reset-button" data-title="reset" data-aria="reset">↺</button></div><div class="timeline"><div class="timeline-label"><span id="elapsed">0:00</span><span id="duration">0:20</span></div><label for="progress" class="sr-only" data-t="progress"></label><input id="progress" type="range" min="0" max="32" step="0.1" value="0"></div><div class="tempo-control"><label for="tempo" data-t="tempo"></label><select id="tempo"><option value="60">60 BPM</option><option value="72">72 BPM</option><option value="84">84 BPM</option><option value="96" selected>96 BPM</option><option value="120">120 BPM</option><option value="140">140 BPM</option></select></div><button id="sound" class="sound-button" type="button"><span aria-hidden="true">♪</span><span id="sound-label"></span></button></section>
+    </section>
+  </main>
+  <div id="notice" class="notice" role="status" hidden></div>
+  <footer class="app-footer" data-t="isolatedNote"></footer>
+</body>
+</html>
