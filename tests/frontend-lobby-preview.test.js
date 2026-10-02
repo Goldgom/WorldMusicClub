@@ -65,3 +65,29 @@ test('rapid selection, leaving during audio unlock, and page visibility prevent 
   Object.defineProperty(app.document,'hidden',{configurable:true,value:false});app.emit(app.document,'visibilitychange');assert.equal(app.$('lobby-preview-status').dataset.state,'interrupted');
  }finally {await app.close();}
 });
+
+test('all audition and instrument labels are populated on mount and stay localized without replacing controls or part choices',async()=>{
+ const app=await freePracticeApp({fetchResult:await fixtureScoreServer()});
+ try {
+  await app.until(()=>!app.$('start-listen').disabled);await app.click('home-single-player');
+  const i18n=getAppI18n(app.document),panels=['.lobby-audition','.lobby-options'];
+  const ids=['lobby-preview-sound','lobby-preview-volume','lobby-instrument','preview-part'];
+  const controls=new Map(ids.map(id=>[id,app.$(id)]));
+  app.$('lobby-preview-volume').value='23';app.emit(app.$('lobby-preview-volume'),'input');
+  app.$('preview-part').value='piano';app.emit(app.$('preview-part'),'change');await app.until(()=>!app.$('start-practice').disabled);
+  const requests=app.requests.length,audio=app.audio();
+  for(const locale of ['zh-CN','en','zh-CN']) {
+   i18n.setLocale(locale);
+   for(const selector of panels)for(const element of app.document.querySelectorAll(`${selector} [data-i18n]`)) {
+    const key=element.getAttribute('data-i18n');assert.equal(element.textContent,i18n.t(key),`${locale}: ${key} has visible owned text`);
+   }
+   for(const [id,control]of controls)assert.equal(app.$(id),control,`${id} retains its handler-bearing node`);
+   assert.equal(app.$('lobby-preview-volume').value,'23');assert.equal(app.$('lobby-instrument').value,'piano');
+   assert.equal(app.$('preview-part').value,'piano');assert.equal(app.$('preview-part').querySelector('option[value="piano"]').textContent,'Piano','Source part names remain authored data');
+   const partLabel=[...app.$('preview-part-label').childNodes].filter(node=>node.nodeType===3).map(node=>node.textContent).join('');
+   assert.equal(partLabel,i18n.t('shell.targetPart'));
+   assert.equal(app.$('preview-part').querySelector('option[value=""]').textContent,i18n.t('app.allParts'));
+  }
+  assert.equal(app.requests.length,requests);assert.deepEqual(app.audio(),audio);assert.equal(app.$('lobby-preview-status').dataset.state,'ready');
+ }finally {await app.close();}
+});

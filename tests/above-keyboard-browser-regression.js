@@ -38,8 +38,11 @@ export function registerAboveKeyboardBrowserRegressions({test,getPage,ui,readyFo
     assert.match(await page.locator('#engraving-range').textContent(),/9/,'Automatic following crosses the eight-measure page boundary');
     const cues=await actualMarkerVisibility('.engraving-expected-cue:not([hidden])');
     assert.ok(cues.every(cue=>cue.painted&&cue.fraction>=.9),'Both staff cues remain inside the reserved score band');
-    await page.waitForFunction(()=>!['grace','pending'].includes(document.querySelector('.performance-status').dataset.phase));
-    const take=await exportTakeData();await dismissNotice();
+    // Pausing closes the input grace period; assessment remains an explicit
+    // Results action. A retained, ungraded take is valid display-test evidence.
+    await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
+    const take=await exportTakeData();assert.equal(take.passes.length,1);assert.equal(take.passes[0].inputs.length,1);
+    await ui('#interface-language').selectOption('zh-CN');await dismissNotice();
     const verifyPlacement=async geometry=>{
       if(geometry.viewport.width>650||geometry.above){assertSimultaneousPiano(geometry);return;}
       assert.equal(await page.locator('#notation-toggle').isVisible(),true,'Compact score keeps its native keyboard-accessible return control');

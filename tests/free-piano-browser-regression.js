@@ -6,7 +6,8 @@ import {join} from 'node:path';
 export function registerFreePianoBrowserRegressions({test,getPage,closeShellPanels,artifactDirectory}) {
   test('real free piano fills desktop and compact stages, records actual key input and preserves held keys across locale redraw', {timeout:60_000}, async()=>{
     const page=getPage(),evidence=[];
-    await closeShellPanels();await page.locator('#shell-brand .brand').click();await page.locator('#start-free-practice').click();
+    await closeShellPanels();await page.locator('#settings-button').click();await page.locator('#interface-language').selectOption('zh-CN');await closeShellPanels();
+    await page.locator('#back-to-library').click();await page.locator('#lobby-home').click();await page.locator('#start-free-practice').click();
     if(await page.locator('#free-sound').getAttribute('aria-pressed')==='true')await page.locator('#free-sound').click();
     assert.equal(await page.locator('#free-practice-keys button').count(),88);
     assert.equal(await page.locator('#free-practice-keys .white').count(),52);
@@ -47,7 +48,7 @@ export function registerFreePianoBrowserRegressions({test,getPage,closeShellPane
     // Real pointer hits independently playable A0 and an overlapping black key.
     await page.locator('#free-practice-keys [data-midi="21"]').click();
     await page.locator('#free-practice-keys [data-midi="61"]').click();
-    await page.locator('#shell-brand .brand').click();await page.locator('#start-free-practice').click();
+    await page.locator('#free-exit').click();await page.locator('#lobby-home').click();await page.locator('#start-free-practice').click();
     assert.equal(await page.locator('#free-practice-screen').getAttribute('data-state'),'paused','Returning must never resume recording');
     assert.equal(await page.locator('#free-practice-keys [aria-pressed="true"]').count(),0);
     await page.locator('#free-stop').click();

@@ -91,6 +91,9 @@ export function setupLobbyPreview({document,i18n,allowed,audio,now,schedule,canc
   const options=document.createElement('div');options.className='lobby-options';
   options.innerHTML=`<label><span data-i18n="rhythm.previewInstrument"></span><select id="lobby-instrument"><option value="piano" data-i18n="free.timbre.piano"></option><option value="guitar" data-i18n="free.timbre.guitar"></option></select></label><div class="lobby-edition" id="lobby-edition"><span data-i18n="rhythm.currentEdition"></span><strong data-i18n="rhythm.originalDifficulty"></strong><small data-i18n="rhythm.difficultyHelp"></small></div>`;
   panel.after(options);
+  // These empty leaves are owned by this view. Seed their text before the
+  // shared localizer binds existing text nodes without replacing descendants.
+  for(const root of [panel,options])for(const element of root.querySelectorAll('[data-i18n]'))element.textContent=i18n.t(element.getAttribute('data-i18n'));
   let current;
   function render(value=current) {
     if(!value)return;current=value;
