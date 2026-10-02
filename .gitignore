@@ -1,5 +1,5 @@
 /target/
-/node_modules/
+/node_modules
 /test-results/
 /playwright-report/
 /dist/
@@ -9,3 +9,12 @@
 /web/vendor/
 
 __pycache__/
+
+# Native shell diagnostics and WebView profile are local build evidence.
+/desktop-evidence/
+
+/desktop-acceptance/
+
+/desktop-startup/
+
+/desktop-portable/

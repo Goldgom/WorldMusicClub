@@ -1,0 +1,48 @@
+name: Native Windows desktop proof
+on:
+  push:
+    branches: ['diagnostic/native-windows-shell']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-desktop:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: '1.99.0'
+          components: rustfmt, clippy, rust-docs
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: npm test
+      - run: cargo fmt --all --check
+      - run: cargo test --workspace --all-targets --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo build -p worldmusichub-desktop --release --locked
+      - name: Exercise actual Windows WebView2 app and capture its window
+        shell: pwsh
+        run: ./scripts/windows-desktop-smoke.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-evidence
+      - name: Preserve native evidence even after smoke failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-desktop-evidence-${{ github.sha }}
+          path: |
+            desktop-evidence/*.json
+            desktop-evidence/*.png
+            desktop-evidence/*.log
+          if-no-files-found: warn
+      # A CI build is not a release. Do not publish an EXE before the expanded
+      # native dependency notice inventory and WebView runtime terms are reviewed.
