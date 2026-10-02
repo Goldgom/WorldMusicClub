@@ -1,7 +1,7 @@
 name: Native Windows feature acceptance
 on:
   push:
-    branches: ['integration/native-desktop', 'dev/initial-prototype']
+    branches: ['integration/native-desktop', 'validation/**']
   workflow_dispatch:
 permissions:
   contents: read

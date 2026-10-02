@@ -1,7 +1,7 @@
 name: Verify WorldMusicHub
 on:
   push:
-    branches: ['dev/initial-prototype', 'integration/rhythm-ui']
+    branches: ['main', 'validation/**']
   pull_request:
   workflow_dispatch:
 permissions:

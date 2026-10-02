@@ -1,0 +1,41 @@
+name: Quick development checks
+on:
+  push:
+    branches: ['dev/initial-prototype', 'integration/**', 'feature/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: quick-development-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  quick:
+    name: Compile and affected fast checks (not acceptance)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          components: rustfmt
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: cargo fmt --all --check
+      - run: cargo test --workspace --lib --locked
+      - run: cargo build -p practice-server --locked
+      - name: Check changed JavaScript and affected Node tests
+        run: npm run test:quick
+        env:
+          WMH_QUICK_BASE: ${{ github.event.before }}
+          WMH_QUICK_REPORT: ${{ runner.temp }}/wmh-quick-check.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: quick-check-report-${{ github.sha }}
+          path: ${{ runner.temp }}/wmh-quick-check.json
+          if-no-files-found: warn

@@ -9,7 +9,8 @@
     "test:browser": "node --test tests/frontend-browser.test.js",
     "test:full-app": "node --test tests/full-app-browser.test.js",
     "prepare:engraving": "node scripts/prepare-engraving.mjs",
-    "test:engraving-browser": "node --test tests/engraving-browser.test.js"
+    "test:engraving-browser": "node --test tests/engraving-browser.test.js",
+    "test:quick": "node scripts/quick-development-checks.mjs"
   },
   "devDependencies": {
     "ajv": "^8.20.0",
