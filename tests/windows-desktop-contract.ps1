@@ -85,6 +85,29 @@ foreach($case in @(
 function New-Rectangle([int]$Left,[int]$Top,[int]$Right,[int]$Bottom) {
   $bounds=[NativeAcceptance+RECT]::new();$bounds.Left=$Left;$bounds.Top=$Top;$bounds.Right=$Right;$bounds.Bottom=$Bottom;return $bounds
 }
+# Screen mapping is a separate boundary from OS mouse dispatch. A clipped
+# pointer can hit the taskbar while the app still renders a valid PrintWindow.
+$client=New-Rectangle 0 0 1000 700
+$origin=[NativeAcceptance+POINT]::new();$origin.X=20;$origin.Y=31
+$mapped=[NativeAcceptance]::ClientClickPoint($client,$origin,147.5,650.5,1000,700)
+Assert-True ($mapped.X -eq 167 -and $mapped.Y -eq 681) 'viewport point maps to visible screen coordinates'
+$work=New-Rectangle 0 0 1024 728
+[NativeAcceptance]::ValidateClientClick($work,$mapped,$mapped,[IntPtr]100,[IntPtr]100,$true);$script:checks++
+$offscreen=[NativeAcceptance+POINT]::new();$offscreen.X=167;$offscreen.Y=780
+Assert-Rejected { [NativeAcceptance]::ValidateClientClick($work,$offscreen,$offscreen,[IntPtr]100,[IntPtr]100,$true) } 'rendered window bottom outside work area is not clickable'
+$clipped=[NativeAcceptance+POINT]::new();$clipped.X=$mapped.X;$clipped.Y=680
+Assert-Rejected { [NativeAcceptance]::ValidateClientClick($work,$mapped,$clipped,[IntPtr]100,[IntPtr]100,$true) } 'SetCursorPos success with different readback is rejected'
+Assert-Rejected { [NativeAcceptance]::ValidateClientClick($work,$mapped,$mapped,[IntPtr]100,[IntPtr]100,$false) } 'taskbar or other app at target is rejected'
+Assert-Rejected { [NativeAcceptance]::ValidateClientClick($work,$mapped,$mapped,[IntPtr]100,[IntPtr]999,$true) } 'focus ownership changed before click'
+Assert-Rejected { [NativeAcceptance]::ClientClickPoint($client,$origin,1000,5,1000,700) } 'right viewport boundary is excluded'
+Assert-Rejected { [NativeAcceptance]::ClientClickPoint($client,$origin,5,700,1000,700) } 'bottom viewport boundary is excluded'
+Assert-Rejected { [NativeAcceptance]::ClientClickPoint($client,$origin,-1,5,1000,700) } 'negative viewport target'
+Assert-Rejected { [NativeAcceptance]::ClientClickPoint($client,$origin,5,5,0,700) } 'zero viewport extent'
+Assert-Rejected { [NativeAcceptance]::ClientClickPoint($client,$origin,[double]::NaN,5,1000,700) } 'nonfinite viewport target'
+$negativeOrigin=[NativeAcceptance+POINT]::new();$negativeOrigin.X=-1920;$negativeOrigin.Y=-200
+$negative=[NativeAcceptance]::ClientClickPoint($client,$negativeOrigin,999.9,699.9,1000,700)
+Assert-True ($negative.X -eq -921 -and $negative.Y -eq 499) 'secondary monitor and fractional point remain inside client'
+[NativeAcceptance]::ValidateClientClick((New-Rectangle -1920 -200 0 880),$negative,$negative,[IntPtr]100,[IntPtr]100,$true);$script:checks++
 $dialogBounds=New-Rectangle 100 100 800 600;$buttonBounds=New-Rectangle 610 520 700 560
 $point=[NativeAcceptance]::PickerClickPoint($dialogBounds,$buttonBounds)
 Assert-True ($point.X -eq 655 -and $point.Y -eq 540) 'Open native screen center'

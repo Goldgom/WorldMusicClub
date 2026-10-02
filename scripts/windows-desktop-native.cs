@@ -27,6 +27,7 @@ public sealed class NativePickerButton {
 public static class NativeAcceptance {
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left,Top,Right,Bottom; }
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X,Y; }
+  [StructLayout(LayoutKind.Sequential)] public struct MONITORINFO { public uint Size; public RECT Monitor,Work; public uint Flags; }
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h,out RECT r);
   [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h,out RECT r);
   [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h,ref POINT p);
@@ -47,13 +48,34 @@ public static class NativeAcceptance {
   [DllImport("user32.dll",EntryPoint="SendMessageTimeoutW",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr SendText(IntPtr h,uint message,UIntPtr w,string l,uint flags,uint timeout,out UIntPtr result);
   [DllImport("user32.dll",EntryPoint="SendMessageTimeoutW",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr ReadText(IntPtr h,uint message,UIntPtr w,StringBuilder l,uint flags,uint timeout,out UIntPtr result);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
+  [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT point);
+  [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr window,uint flags);
+  [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr monitor,ref MONITORINFO info);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
   [DllImport("user32.dll")] public static extern void keybd_event(byte key,byte scan,uint flags,UIntPtr extra);
   [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint key,uint mode);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int command);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h,IntPtr device,uint flags);
   public static void Key(byte key) { byte scan=(byte)MapVirtualKey(key,0); keybd_event(key,scan,0,UIntPtr.Zero); keybd_event(key,scan,2,UIntPtr.Zero); }
-  public static void Click(int x,int y) { if(!SetCursorPos(x,y))throw new InvalidOperationException("Cannot position the native pointer"); mouse_event(2,0,0,0,UIntPtr.Zero); mouse_event(4,0,0,0,UIntPtr.Zero); }
+  public static void Click(int x,int y) { POINT actual; if(!SetCursorPos(x,y) || !GetCursorPos(out actual) || actual.X!=x || actual.Y!=y)throw new InvalidOperationException("Native pointer was clipped or could not reach the requested point"); ClickPositioned(); }
+  public static void ClickPositioned() { mouse_event(2,0,0,0,UIntPtr.Zero); mouse_event(4,0,0,0,UIntPtr.Zero); }
+  public static RECT WorkArea(IntPtr window) {
+    var monitor=MonitorFromWindow(window,2); var info=new MONITORINFO();info.Size=(uint)Marshal.SizeOf(typeof(MONITORINFO));
+    if(monitor==IntPtr.Zero || !GetMonitorInfo(monitor,ref info))throw new InvalidOperationException("Cannot read the app monitor work area");
+    return info.Work;
+  }
+  public static POINT ClientClickPoint(RECT client,POINT origin,double x,double y,double width,double height) {
+    if(double.IsNaN(x)||double.IsNaN(y)||double.IsInfinity(x)||double.IsInfinity(y)||double.IsNaN(width)||double.IsNaN(height)||double.IsInfinity(width)||double.IsInfinity(height)||width<=0||height<=0||x<0||y<0||x>=width||y>=height||client.Right<=client.Left||client.Bottom<=client.Top)
+      throw new InvalidOperationException("Native target is outside the finite current viewport");
+    // Floor stays inside the half-open client bounds, including negative screen origins.
+    return new POINT {X=checked(origin.X+(int)Math.Floor(x*(client.Right-client.Left)/width)),Y=checked(origin.Y+(int)Math.Floor(y*(client.Bottom-client.Top)/height))};
+  }
+  public static void ValidateClientClick(RECT work,POINT requested,POINT actual,IntPtr window,IntPtr foreground,bool hitInApp) {
+    if(work.Right<=work.Left||work.Bottom<=work.Top||requested.X<work.Left||requested.X>=work.Right||requested.Y<work.Top||requested.Y>=work.Bottom)
+      throw new InvalidOperationException("Native target is outside the monitor work area");
+    if(actual.X!=requested.X||actual.Y!=requested.Y)throw new InvalidOperationException("Native pointer was clipped before the click");
+    if(window==IntPtr.Zero||foreground!=window||!hitInApp)throw new InvalidOperationException("Native point does not hit the foreground app window");
+  }
   public static IntPtr SelectFileNameHost(NativeFileNameHost[] candidates,uint appProcess) {
     if(candidates==null || candidates.Length==0 || candidates.Length>8 || appProcess==0)
       throw new InvalidOperationException("Windows filename host inventory is missing or exceeds eight candidates");

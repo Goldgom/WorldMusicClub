@@ -215,9 +215,14 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
   }
   $rectangle=New-Object NativeAcceptance+RECT;$origin=New-Object NativeAcceptance+POINT
   if(-not [NativeAcceptance]::GetClientRect($window,[ref]$rectangle) -or -not [NativeAcceptance]::ClientToScreen($window,[ref]$origin)){throw 'Cannot map browser content to native client coordinates'}
-  $x=$origin.X+[int]($Action.x*($rectangle.Right-$rectangle.Left)/$Action.width)
-  $y=$origin.Y+[int]($Action.y*($rectangle.Bottom-$rectangle.Top)/$Action.height)
-  [NativeAcceptance]::Click($x,$y)
+  $point=[NativeAcceptance]::ClientClickPoint($rectangle,$origin,$Action.x,$Action.y,$Action.width,$Action.height)
+  $work=[NativeAcceptance]::WorkArea($window);$actual=[NativeAcceptance+POINT]::new()
+  $Evidence.client_click=[ordered]@{client=@($rectangle.Left,$rectangle.Top,$rectangle.Right,$rectangle.Bottom);origin=@($origin.X,$origin.Y);viewport=@($Action.width,$Action.height);requested=@($point.X,$point.Y);work_area=@($work.Left,$work.Top,$work.Right,$work.Bottom)}
+  if(-not [NativeAcceptance]::SetCursorPos($point.X,$point.Y) -or -not [NativeAcceptance]::GetCursorPos([ref]$actual)){throw 'Cannot observe actual native pointer position'}
+  $hit=[NativeAcceptance]::WindowFromPoint($actual);$hitRoot=[NativeAcceptance]::GetAncestor($hit,2);$foreground=[NativeAcceptance]::GetForegroundWindow()
+  $Evidence.client_click.actual=@($actual.X,$actual.Y);$Evidence.client_click.hit_hwnd=$hit.ToInt64();$Evidence.client_click.hit_root=$hitRoot.ToInt64();$Evidence.client_click.app_hwnd=$window.ToInt64();$Evidence.client_click.foreground=$foreground.ToInt64()
+  [NativeAcceptance]::ValidateClientClick($work,$point,$actual,$window,$foreground,($hit -eq $window -or $hitRoot -eq $window -or [NativeAcceptance]::IsChild($window,$hit)))
+  [NativeAcceptance]::ClickPositioned()
   if($Action.kind -eq 'key-r'){[NativeAcceptance]::Key(0x52);return}
   if($Action.kind -eq 'click'){return}
   if($Action.kind -notin @('picker','cancel-picker')){throw 'Unknown acceptance action'}

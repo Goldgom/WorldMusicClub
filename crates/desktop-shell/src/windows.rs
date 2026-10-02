@@ -144,6 +144,10 @@ pub fn run() {
             .title("WorldMusicHub")
             .inner_size(1280.0, 900.0)
             .min_inner_size(900.0, 640.0)
+            // Keep bottom transport controls inside the actual monitor work
+            // area, including the title bar and taskbar, on initial launch.
+            .prevent_overflow()
+            .center()
             .use_https_scheme(true)
             .disable_drag_drop_handler()
             .devtools(false)
