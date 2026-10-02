@@ -1,5 +1,5 @@
 import {getAppI18n} from './app-locale.js';
-import {midiName} from './music.js';
+import {midiName,keyboardGeometry} from './music.js';
 import {PERFORMANCE_LIBRARY_LIMITS, describePerformance} from './performance-library.js';
 
 /** Separate accessible screen. Global MIDI/PC ownership and normalized clocks belong to the app. */
@@ -10,50 +10,63 @@ export function setupFreePracticeView({document,session,preview=null,i18n=getApp
     const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));
     const link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }}={}) {
-  const elements={},translations=[],summaryTexts=[],contacts=new Map();let contactSerial=0,busy=false,composing=false,issue=null,notice=null,lastList='',lastDetail='',lastComparison='',lastKeyboard='';
+  const elements={},translations=[],summaryTexts=[],contacts=new Map();let contactSerial=0,busy=false,composing=false,issue=null,notice=null,lastList='',lastDetail='',lastComparison='',lastKeyboard='',keyboardBindings=[],heldNotes=[];
   const el=(tag,id,className)=>{const node=document.createElement(tag);if(id){node.id=id;elements[id]=node;}if(className)node.className=className;return node;};
   const text=(tag,id,key,className)=>{const node=el(tag,id,className);translations.push([node,key]);return node;};
   const button=(id,key,action)=>{const node=text('button',id,key,'button secondary');node.type='button';if(action)node.addEventListener('click',action);return node;};
   const label=(key,input)=>{const node=el('label');node.append(text('span',null,key),input);return node;};
-  const screen=el('section','free-practice-screen','free-practice-screen');screen.hidden=true;screen.setAttribute('aria-labelledby','free-practice-title');
+  const screen=el('section','free-practice-screen','free-practice-screen free-piano-workspace');screen.hidden=true;screen.setAttribute('aria-labelledby','free-practice-title');
   const heading=el('div',null,'free-practice-heading');const title=text('h1','free-practice-title','free.title');title.tabIndex=-1;title.dataset.keyboardPerformance='';
-  heading.append(title,button('free-exit','free.exit',()=>{leave();onExit();}));screen.append(heading,text('p',null,'free.description'));
+  heading.append(title,button('free-exit','free.exit',()=>{leave();onExit();}));screen.append(heading);
   const controls=el('div',null,'free-practice-actions');controls.dataset.keyboardInput='off';
   controls.append(button('free-start','free.start',()=>run(()=>{preview?.stop();clearContacts('free_start');session.start({configuration:getConfiguration()});})),
     button('free-pause','common.pause',()=>run(()=>session.pause())),button('free-resume','common.resume',()=>run(()=>session.resume())),button('free-stop','free.stop',()=>run(()=>session.stop())));
   const state=el('strong','free-state');state.setAttribute('role','status');state.setAttribute('aria-live','polite');
   const count=el('span','free-event-count');const full=text('p','free-capture-full','free.captureFull','warning');full.hidden=true;full.setAttribute('role','status');
   screen.append(controls,state,count,full);
-  const inputSection=el('section',null,'free-input-section');inputSection.setAttribute('aria-labelledby','free-input-title');
+  const inputSection=el('section','free-piano-stage','free-input-section');inputSection.setAttribute('aria-labelledby','free-input-title');
   const inputActions=el('div',null,'free-practice-actions');inputActions.dataset.keyboardInput='off';
   inputActions.append(button('free-connect-midi','free.connectMidi',()=>boundaryAction(onConnectMidi)),button('free-keyboard-settings','keyboard.configure',()=>boundaryAction(onConfigureKeyboard)),button('free-sound','settings.soundOff',()=>{try{const enabled=!getSoundEnabled();if(!enabled)preview?.stop('muted');onSoundChange(enabled);render();}catch(error){report(error);}}));
   const keys=el('div','free-practice-keys','free-practice-keys');keys.dataset.keyboardPerformance='';keys.setAttribute('role','group');keys.setAttribute('aria-labelledby','free-input-title');
   const mappingStatus=el('p','free-mapping-status');
-  inputSection.append(text('h2','free-input-title','free.inputTitle'),inputActions,text('p',null,'free.inputHelp'),mappingStatus,keys,text('p',null,'free.defaultVelocity'),text('p',null,'keyboard.rollover'),text('p',null,'free.noAudioCapture'));
+  const stageHeader=el('div',null,'free-stage-header');stageHeader.append(text('h2','free-input-title','free.pianoTitle'),inputActions);
+  const keyboardScroll=el('div','free-keyboard-scroll','free-keyboard-scroll');keyboardScroll.tabIndex=0;keyboardScroll.dataset.keyboardPerformance='';keyboardScroll.setAttribute('aria-labelledby','free-input-title');
+  const pianoSurface=el('div',null,'free-piano-surface');
+  const liveField=el('div','free-live-field','free-live-field');liveField.setAttribute('aria-hidden','true');
+  const rails=el('div','free-piano-rails','free-piano-rails'),liveCopy=el('div',null,'free-live-copy');
+  const liveCaption=text('span',null,'free.stageCaption'),liveNotes=el('strong','free-live-notes'),liveHint=text('span',null,'free.stageHint');
+  liveCopy.append(liveCaption,liveNotes,liveHint);liveField.append(rails,liveCopy);
+  const keybed=el('div',null,'free-keybed-wrap');keybed.append(keys);pianoSurface.append(keybed);keyboardScroll.append(pianoSurface);
+  const stageFooter=el('div',null,'free-stage-footer');const inputHelp=el('details','free-input-help','free-input-help');inputHelp.dataset.keyboardInput='off';
+  inputHelp.append(text('summary',null,'free.inputGuide'),text('p',null,'free.inputHelp'),text('p',null,'free.defaultVelocity'),text('p',null,'keyboard.rollover'),text('p',null,'free.noAudioCapture'));
+  stageFooter.append(mappingStatus,text('span',null,'free.scrollHint','free-scroll-hint'),inputHelp);inputSection.append(stageHeader,liveField,keyboardScroll,stageFooter);
   screen.append(inputSection);
+  const recordings=el('details','free-recordings','free-recordings');recordings.dataset.keyboardInput='off';recordings.append(text('summary','free-recordings-toggle','free.recordings'));
   const savePanel=el('section','free-save-panel','free-save-panel');savePanel.dataset.keyboardInput='off';
   const name=el('input','free-record-label');name.type='text';name.maxLength=200;name.autocomplete='off';
   const saveState=el('p','free-save-status');saveState.setAttribute('role','status');
   const saveActions=el('div',null,'free-practice-actions');saveActions.append(button('free-save','common.save',()=>run(()=>session.save({label:name.value}))),button('free-export-draft','free.exportDraft',()=>run(()=>download(session.exportDraft(),'worldmusichub-free-performance.json'))));
   const discard=el('input','free-discard-confirm');discard.type='checkbox';discard.addEventListener('change',()=>render());
   const discardAction=button('free-discard','free.discard',()=>run(()=>{session.discardDraft();discard.checked=false;render();}));
-  savePanel.append(label('free.titleLabel',name),text('p',null,'free.saveHelp'),saveState,saveActions,label('free.discardConfirm',discard),discardAction,text('p',null,'free.localStorageNote'));screen.append(savePanel);
+  const saveInfo=el('details',null,'free-save-info');saveInfo.append(text('summary',null,'free.recordOptions'),text('p',null,'free.saveHelp'),label('free.discardConfirm',discard),discardAction,text('p',null,'free.localStorageNote'));
+  savePanel.append(label('free.titleLabel',name),saveActions,saveState,saveInfo);screen.append(savePanel);
   const library=el('section','free-performance-library','free-performance-library');library.dataset.keyboardInput='off';library.setAttribute('aria-labelledby','free-library-title');
   const records=el('select','free-record-select');records.addEventListener('change',()=>render());
   const libraryActions=el('div',null,'free-practice-actions');libraryActions.append(button('free-refresh','free.refresh',()=>run(()=>session.refresh())),button('free-load','free.load',()=>run(async()=>{preview?.stop();await session.load(records.value);notice='free.loaded';})),button('free-export-record','common.export',()=>run(async()=>download(await session.exportRecord(),'worldmusichub-free-performance.json'))),button('free-export-backup','free.exportBackup',()=>run(async()=>download(await session.exportBackup(),'worldmusichub-performance-backup.json'))));
   const file=el('input','free-import-file');file.type='file';file.accept='.json,application/json';
   const importActions=el('div',null,'free-practice-actions');importActions.append(button('free-import-record','free.importRecord',()=>run(()=>importFile(false))),button('free-restore-backup','free.restoreBackup',()=>run(()=>importFile(true))));
   const recordCount=el('p','free-record-count');
-  library.append(text('h2','free-library-title','free.libraryTitle'),recordCount,label('free.recordSelect',records),libraryActions,label('free.importFile',file),importActions);screen.append(library);
+  library.append(text('h2','free-library-title','free.libraryTitle'),recordCount,label('free.recordSelect',records),libraryActions,label('free.importFile',file),importActions);recordings.append(library);
   const detail=el('section','free-performance-detail','free-performance-detail');detail.setAttribute('aria-labelledby','free-summary-title');
   const summary=el('div','free-summary');detail.append(text('h2','free-summary-title','free.summaryTitle'),summary);
   const previewControls=el('div',null,'free-practice-actions');previewControls.dataset.keyboardInput='off';
   const timbre=el('select','free-preview-timbre');for(const value of ['piano','guitar']){const option=text('option',null,`free.timbre.${value}`);option.value=value;timbre.append(option);}timbre.addEventListener('change',()=>{preview?.stop();render();});
   previewControls.append(label('free.previewTimbre',timbre),button('free-preview','free.preview',()=>{try{preview?.start(session.selectedRecord(),{instrument:timbre.value}).catch(report);}catch(error){report(error);}}),button('free-preview-stop','free.previewStop',()=>preview?.stop()));
   const previewState=el('p','free-preview-status');previewState.setAttribute('role','status');
-  detail.append(previewControls,text('p',null,'free.previewHelp'),previewState,button('free-choose-baseline','free.baseline',()=>run(()=>session.chooseBaseline())));screen.append(detail);
+  const replayHelp=el('details',null,'free-replay-help');replayHelp.append(text('summary',null,'free.previewGuide'),text('p',null,'free.previewHelp'));
+  detail.append(previewControls,previewState,replayHelp,button('free-choose-baseline','free.baseline',()=>run(()=>session.chooseBaseline())));recordings.append(detail);
   const comparison=el('section','free-comparison','free-comparison');comparison.setAttribute('aria-labelledby','free-comparison-title');
-  const comparisonBody=el('div','free-comparison-body','free-comparison-columns');comparison.append(text('h2','free-comparison-title','free.compareTitle'),text('p',null,'free.compareHelp'),comparisonBody);screen.append(comparison);
+  const comparisonBody=el('div','free-comparison-body','free-comparison-columns');comparison.append(text('h2','free-comparison-title','free.compareTitle'),text('p',null,'free.compareHelp'),comparisonBody);recordings.append(comparison);screen.append(recordings);
   const status=el('p','free-operation-status');status.setAttribute('role','status');status.setAttribute('aria-live','polite');screen.append(status);host.append(screen);
 
   function report(error){issue=error?.code || 'free.operation_failed';notice=null;render();}
@@ -104,21 +117,36 @@ export function setupFreePracticeView({document,session,preview=null,i18n=getApp
   function setKeyboard(next){
     const signature=JSON.stringify(next ? [next.configurationId,next.bindings.map(({code,midi,label,enabled})=>({code,midi,label,enabled}))] : null);
     if(signature===lastKeyboard)return;lastKeyboard=signature;
-    clearContacts('free_keyboard_change');keys.replaceChildren();
-    const bindings=next?.bindings ?? Array.from({length:13},(_,offset)=>({code:`screen-${offset}`,label:'',midi:60+offset,enabled:true}));
-    for(const binding of bindings){
-      const key=el('button',null,'free-practice-key');key.type='button';key.dataset.code=binding.code;key.dataset.keyboardPerformance='';key.disabled=!binding.enabled;
-      if(binding.enabled)key.dataset.midi=String(binding.midi);
-      const note=el('span');note.textContent=binding.enabled?midiName(binding.midi):i18n.t('keyboard.disabled');const legend=el('kbd');legend.textContent=binding.label;key.append(note,legend);keys.append(key);
+    clearContacts('free_keyboard_change');keys.replaceChildren();rails.replaceChildren();
+    keyboardBindings=(next?.bindings ?? []).filter(binding=>binding.enabled&&Number.isInteger(binding.midi)&&binding.midi>=0&&binding.midi<=127);
+    // A real chromatic piano remains playable independently of the PC mapping.
+    // Extend its ends only when a configured mapping reaches beyond A0–C8.
+    const low=Math.min(21,...keyboardBindings.map(binding=>binding.midi)),high=Math.max(108,...keyboardBindings.map(binding=>binding.midi));
+    const geometry=keyboardGeometry(high-low+1,low),whiteCount=geometry.filter(key=>!key.black).length;
+    pianoSurface.style.setProperty('--free-piano-min-width',`${whiteCount*22}px`);keys.dataset.low=String(low);keys.dataset.high=String(high);
+    for(const position of geometry){
+      const bindings=keyboardBindings.filter(binding=>binding.midi===position.midi);
+      const key=el('button',null,`free-practice-key ${position.black?'black':'white'}`);key.type='button';key.dataset.keyboardPerformance='';key.dataset.midi=String(position.midi);
+      if(bindings.length)key.dataset.code=bindings[0].code;
+      key.dataset.codes=bindings.map(binding=>binding.code).join(' ');key.classList.toggle('mapped',bindings.length>0);
+      key.style.left=`${position.x*100}%`;key.style.width=`${position.width*100}%`;
+      const note=el('span',null,'free-key-note');note.textContent=midiName(position.midi);const legend=el('kbd');legend.textContent=bindings.map(binding=>binding.label).join(' / ');key.append(note,legend);keys.append(key);
+      if(!position.black){const rail=el('i');rail.dataset.pitch=String(position.midi);rail.style.left=`${position.x*100}%`;rail.style.width=`${position.width*100}%`;rails.append(rail);}
     }
-    renderKeyLabels();
+    renderKeyLabels();setHeldNotes(heldNotes);
   }
   function renderKeyLabels(){
-    const pitches=[...keys.querySelectorAll('[data-midi]')].map(key=>Number(key.dataset.midi));
-    mappingStatus.textContent=pitches.length?i18n.t('free.mappingStatus',{low:midiName(Math.min(...pitches)),high:midiName(Math.max(...pitches)),count:pitches.length}):i18n.t('keyboard.noPlayableKeys');
-    for(const key of keys.querySelectorAll('button')){if(key.dataset.midi)key.setAttribute('aria-label',i18n.t('stage.pianoKey',{note:midiName(Number(key.dataset.midi))}));else key.querySelector('span').textContent=i18n.t('keyboard.disabled');}
+    const pitches=keyboardBindings.map(binding=>binding.midi);
+    mappingStatus.textContent=pitches.length?i18n.t('free.mappingStatus',{low:midiName(Math.min(...pitches)),high:midiName(Math.max(...pitches)),count:pitches.length}):i18n.t('free.screenOnly');
+    for(const key of keys.querySelectorAll('[data-midi]'))key.setAttribute('aria-label',i18n.t('stage.pianoKey',{note:midiName(Number(key.dataset.midi))}));
+    liveNotes.textContent=heldNotes.length?heldNotes.map(midiName).join(' · '):i18n.t('free.stageReady');
   }
-  function setHeldNotes(notes=[]){const held=new Set(notes);for(const key of keys.querySelectorAll('[data-midi]'))key.classList.toggle('held',held.has(Number(key.dataset.midi)));}
+  function setHeldNotes(notes=[]){
+    heldNotes=[...new Set(notes)].filter(note=>Number.isInteger(note)&&note>=0&&note<=127).sort((a,b)=>a-b);const held=new Set(heldNotes);
+    for(const key of keys.querySelectorAll('[data-midi]')){const pressed=held.has(Number(key.dataset.midi));key.classList.toggle('held',pressed);key.setAttribute('aria-pressed',String(pressed));}
+    for(const rail of rails.children)rail.classList.toggle('held',held.has(Number(rail.dataset.pitch))||held.has(Number(rail.dataset.pitch)+1)&&![4,11].includes(Number(rail.dataset.pitch)%12));
+    inputSection.classList.toggle('has-held-notes',held.size>0);liveNotes.textContent=heldNotes.length?heldNotes.map(midiName).join(' · '):i18n.t('free.stageReady');
+  }
   function description(parent,record){
     const data=describePerformance(record);const bind=(node,key,params)=>{const update=()=>{node.textContent=i18n.t(key,typeof params==='function'?params():params);};summaryTexts.push(update);update();return node;};const p=(key,params)=>parent.append(bind(el('p'),key,params));
     p('free.countSummary',{onsets:data.event_counts.note_on,releases:data.event_counts.note_off,synthetic:data.event_counts.synthetic_release});
@@ -151,7 +179,7 @@ export function setupFreePracticeView({document,session,preview=null,i18n=getApp
     elements['free-load'].disabled=busy||!records.value;elements['free-export-record'].disabled=busy||!value.selected;
     detail.hidden=!value.selected;comparison.hidden=!value.baseline||!value.selected;
     const detailSignature=JSON.stringify([value.selected?.key,value.selected?.revision]);
-    if(detailSignature!==lastDetail){lastDetail=detailSignature;summaryTexts.length=0;summary.replaceChildren();const record=session.selectedRecord();if(record)description(summary,record);}
+    if(detailSignature!==lastDetail){if(value.selected)recordings.open=true;lastDetail=detailSignature;summaryTexts.length=0;summary.replaceChildren();const record=session.selectedRecord();if(record)description(summary,record);}
     elements['free-preview'].disabled=busy||active||!preview||!value.selected||!getSoundEnabled()||playing;
     elements['free-preview-stop'].disabled=!playing;elements['free-choose-baseline'].disabled=busy||!value.selected;
     previewState.textContent=i18n.t('free.previewStatus',{state:i18n.t(`free.preview.state.${replay.status}`),scheduled:replay.scheduled,skipped:replay.skipped,excluded:replay.excluded});

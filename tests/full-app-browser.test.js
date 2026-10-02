@@ -2,6 +2,7 @@ import {assertLocaleRoundTrip,registerLocaleBrowserRegressions} from './locale-b
 import {registerBeginnerBrowserRegressions} from './beginner-browser-regression.js';
 import {registerStaffRegisterBrowserRegressions} from './staff-register-browser-regression.js';
 import {registerReferenceListeningBrowserRegressions} from './reference-listening-browser-regression.js';
+import {registerFreePianoBrowserRegressions} from './free-piano-browser-regression.js';
 import {selectLegacyEnglish, wideKeyboardBindings, keyboardBrowserScore, observeRealAudio, guitarPhraseBrowserScore, boundedPreviewBrowserRecord} from './browser-input-fixtures.js';
 /**
  * Full-stack checks against the actual Rust executable and its embedded UI.
@@ -2297,7 +2298,7 @@ test('real no-score Free practice survives an unavailable catalog and saves the 
   try{
     await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>document.querySelector('#catalog-status').textContent.includes('metadata is unavailable'));
     assert.equal(await page.locator('#resume-session').isVisible(),false);assert.equal(await page.locator('#score-tools-button').isDisabled(),true);assert.equal(await page.locator('#start-listen').isDisabled(),true);assert.ok(failedResources.some(failure=>failure.path==='/api/catalog/index'));
-    await enterSilentFreePractice();assert.equal(await page.locator('#free-practice-keys [data-midi]').count(),47);assert.equal(await page.locator('#free-practice-keys [data-code="KeyR"]').getAttribute('data-midi'),'60');assert.equal(await page.locator('#free-practice-keys [data-code="KeyI"]').getAttribute('data-midi'),'64');
+    await enterSilentFreePractice();assert.equal(await page.locator('#free-practice-keys [data-midi]').count(),88);assert.equal(await page.locator('#free-practice-keys [data-code]').count(),47);assert.equal(await page.locator('#free-practice-keys [data-code="KeyR"]').getAttribute('data-midi'),'60');assert.equal(await page.locator('#free-practice-keys [data-code="KeyI"]').getAttribute('data-midi'),'64');
     await page.locator('#free-start').click();await page.locator('#free-practice-title').focus();await page.keyboard.press('r');
     await page.locator('#free-pause').click();await page.locator('#free-practice-title').focus();await page.keyboard.press('i');
     await page.locator('#free-resume').click();await page.locator('#free-practice-title').focus();await page.keyboard.press('i');await page.keyboard.down('p');await page.locator('#free-stop').click();
@@ -2370,5 +2371,6 @@ test('real explicit guitar phrase uses Rust inventory then filtered locks withou
 registerBeginnerBrowserRegressions({test,getPage:()=>page,ui,readyForTitle,exportScore,exportTakeData,closeShellPanels,artifactDirectory});
 registerStaffRegisterBrowserRegressions({test,getPage:()=>page,ui,readyForTitle,exportScore,closeShellPanels,actualMarkerVisibility,artifactDirectory});
 registerReferenceListeningBrowserRegressions({test,getPage:()=>page,ui,readyForTitle,exportScore,exportTakeData,closeShellPanels,artifactDirectory});
+registerFreePianoBrowserRegressions({test,getPage:()=>page,closeShellPanels,artifactDirectory});
 
 registerLocaleBrowserRegressions({test,getPage:()=>page,ui,closeShellPanels,waitForEngraving,readyForTitle,exportScore,getRequests:getRequestsForLocale});

@@ -16,3 +16,73 @@
 .free-practice-screen .warning{color:var(--warning,#ffd58c)}#free-operation-status{overflow-wrap:anywhere;min-height:1.5rem}
 @media(max-width:600px){.free-comparison-columns{grid-template-columns:1fr}.free-practice-screen .button{max-width:100%;white-space:normal}.free-practice-actions{align-items:stretch}.free-practice-actions>*{flex:1 1 auto}.free-practice-key{min-width:3rem}.free-practice-screen input[type=file]{max-width:100%}}
 @media(prefers-reduced-motion:reduce){.free-practice-key.held{transform:none}}
+
+/* Full piano stage: geometry and input still come from the shared controllers.
+   The extra root class deliberately supersedes the older dashboard shell. */
+#free-practice-screen.free-piano-workspace{display:flex;flex-direction:column;gap:12px;max-width:1840px;padding:18px 28px 24px;align-items:stretch;color:var(--page-ink,#272438)}
+#free-practice-screen.free-piano-workspace>*{flex:none;min-width:0}
+#free-practice-screen.free-piano-workspace .free-practice-heading{padding:0;gap:12px}
+#free-practice-screen.free-piano-workspace .free-practice-heading h1{font-size:25px;margin:0;letter-spacing:-.5px}
+#free-practice-screen.free-piano-workspace .rhythm-free-console{margin:0;padding:10px 14px;border-radius:12px;gap:12px}
+#free-practice-screen.free-piano-workspace .free-practice-actions{gap:8px}
+#free-practice-screen.free-piano-workspace .free-practice-actions .button{min-height:36px;padding:7px 12px;font-size:12px}
+#free-practice-screen.free-piano-workspace #free-start::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor;margin-right:8px}
+#free-practice-screen.free-piano-workspace #free-capture-full{margin:0;padding:8px 12px;border:1px solid var(--border);border-radius:8px}
+#free-practice-screen.free-piano-workspace #free-piano-stage{position:relative;margin:0;padding:0;overflow:visible;border:1px solid #38435a;border-radius:17px;background:#121925;color:#eaf0ff;box-shadow:0 16px 45px #10172c18}
+#free-practice-screen.free-piano-workspace .free-stage-header{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:55px;padding:10px 17px;border-bottom:1px solid #354159;background:#1a2232;border-radius:16px 16px 0 0}
+#free-practice-screen.free-piano-workspace .free-stage-header h2{margin:0;font-size:16px;letter-spacing:2px;color:#edf2ff}
+#free-practice-screen.free-piano-workspace .free-stage-header .button{border:1px solid #536079;background:#283348;color:#eaf0ff}
+#free-practice-screen.free-piano-workspace .free-stage-header #free-sound[aria-pressed=true]{background:#b7eadb;border-color:#b7eadb;color:#153b31}
+#free-practice-screen.free-piano-workspace #free-live-tone{font-size:11px;color:#becbdf}
+#free-practice-screen.free-piano-workspace .free-keyboard-scroll{overflow:auto;overscroll-behavior:contain;scrollbar-color:#7c8da8 #1a2232;scrollbar-width:thin;border-radius:0 0 7px 7px}
+#free-practice-screen.free-piano-workspace .free-keyboard-scroll:focus-visible{outline:3px solid #a7e9d5;outline-offset:-3px}
+#free-practice-screen.free-piano-workspace .free-piano-surface{min-width:var(--free-piano-min-width,1144px);position:relative;padding:0 12px 12px}
+#free-practice-screen.free-piano-workspace .free-live-field{margin:0 12px;height:clamp(100px,19vh,230px);position:relative;isolation:isolate;display:grid;place-items:center;overflow:hidden;background:radial-gradient(ellipse at 50% 100%,#31465766,transparent 70%)}
+#free-practice-screen.free-piano-workspace .free-piano-rails{position:absolute;inset:0;z-index:-1;pointer-events:none;mask-image:linear-gradient(transparent,#000)}
+#free-practice-screen.free-piano-workspace .free-piano-rails i{position:absolute;top:0;bottom:0;border-left:1px solid #8098bd15}
+#free-practice-screen.free-piano-workspace .free-piano-rails i.held{background:linear-gradient(transparent,#8ae3c538);border-color:#a6f0d65c}
+#free-practice-screen.free-piano-workspace .free-live-copy{display:flex;justify-content:center;flex-direction:column;align-items:center;gap:10px;text-align:center;color:#aab8d0;max-width:100%;pointer-events:none}
+#free-practice-screen.free-piano-workspace .free-live-copy>span:first-child{font-size:10px;letter-spacing:4px;color:#9bacc8}
+#free-practice-screen.free-piano-workspace #free-live-notes{font-size:clamp(21px,2.2vw,34px);line-height:1.3;font-weight:500;letter-spacing:1px;color:#d7e1f3;overflow-wrap:anywhere}
+#free-practice-screen.free-piano-workspace .has-held-notes #free-live-notes{color:#bbf4df}
+#free-practice-screen.free-piano-workspace .free-live-copy>span:last-child{font-size:11px;letter-spacing:.4px}
+#free-practice-screen.free-piano-workspace .free-keybed-wrap{border-top:3px solid #95d9c4;box-shadow:0 -8px 26px #95d9c415}
+#free-practice-screen.free-piano-workspace #free-beginner-controls{margin:0;padding:3px 12px;border:0;border-bottom:1px solid #47536b;border-radius:0;background:#222d41;color:#d9e5f6;gap:4px 14px}
+#free-practice-screen.free-piano-workspace #free-beginner-controls p{line-height:1.4;font-size:11px}
+#free-practice-screen.free-piano-workspace #free-beginner-controls label{color:inherit}
+#free-practice-screen.free-piano-workspace #free-practice-keys{display:block;position:relative;height:clamp(168px,22vh,235px);min-height:168px;margin:0;padding:0;gap:0;overflow:visible;touch-action:pan-x}
+#free-practice-screen.free-piano-workspace .free-practice-key{display:block;position:absolute;top:0;bottom:0;min-width:0;max-width:none;min-height:0;height:100%;margin:0;padding:0;border:1px solid #a9b0c1;border-top:0;border-bottom:6px solid #c3c9d8;border-radius:0 0 5px 5px;background:linear-gradient(#fff 70%,#e9edf5);color:#4b556d;box-shadow:inset 0 -1px 0 #faffff,0 3px 5px #0005;touch-action:none;user-select:none;cursor:pointer;transform:none;z-index:1}
+#free-practice-screen.free-piano-workspace .free-practice-key.black{height:62%;bottom:auto;background:linear-gradient(90deg,#1b2230,#354055 50%,#161e2c);border:1px solid #0a1020;border-top:0;border-bottom:7px solid #0e1420;border-radius:0 0 4px 4px;color:#b7c6de;box-shadow:3px 5px 6px #0007,inset 0 -1px 0 #60728b;z-index:2}
+#free-practice-screen.free-piano-workspace .free-key-note{position:absolute;bottom:25px;left:0;right:0;text-align:center;font-size:9px;line-height:1.3;white-space:nowrap}
+#free-practice-screen.free-piano-workspace .free-practice-key kbd{position:absolute;bottom:7px;left:0;right:0;text-align:center;border:0;padding:0;background:transparent;font:600 10px/1.2 system-ui;color:#626f88;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#free-practice-screen.free-piano-workspace .free-practice-key.black kbd{color:#d6e5f5;font-size:9px;bottom:6px}
+#free-practice-screen.free-piano-workspace .free-practice-key.black .free-key-note{font-size:8px;bottom:22px}
+#free-practice-screen.free-piano-workspace .free-practice-key.held{background:linear-gradient(#d0f7e9,#8fddc2);border-color:#59a28d;border-bottom-color:#58a28c;color:#174839;box-shadow:inset 0 2px 10px #2d856329,0 1px 3px #0004}
+#free-practice-screen.free-piano-workspace .free-practice-key.black.held{background:linear-gradient(#8fd7c0,#3b957e);border-color:#367a67;border-bottom-color:#24644f;color:#082d21}
+#free-practice-screen.free-piano-workspace .free-practice-key.held kbd{color:#164b3b}
+#free-practice-screen.free-piano-workspace .free-practice-key:focus-visible{outline:3px solid #a889f4;outline-offset:-4px}
+#free-practice-screen.free-piano-workspace .free-practice-key .beginner-note-label{position:absolute;left:50%;bottom:45px;transform:translateX(-50%);font-size:14px;color:inherit;min-width:0}
+#free-practice-screen.free-piano-workspace .free-practice-key.black .beginner-note-label{bottom:39px;font-size:11px}
+#free-practice-screen.free-piano-workspace .free-stage-footer{position:relative;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:7px 16px;background:#192132;border-radius:0 0 16px 16px;color:#b8c7dc;font-size:11px}
+#free-practice-screen.free-piano-workspace #free-mapping-status{font-size:11px;line-height:1.5;margin:0}
+#free-practice-screen.free-piano-workspace .free-input-help>summary{cursor:pointer;min-height:28px;align-content:center;color:#d0dfef}
+#free-practice-screen.free-piano-workspace .free-input-help[open]{flex-basis:100%}
+#free-practice-screen.free-piano-workspace .free-scroll-hint{display:none}
+#free-practice-screen.free-piano-workspace #free-midi-quarantine{margin:10px 16px;background:#283348;color:#eaf0ff}
+#free-practice-screen.free-piano-workspace #free-save-panel{display:flex;align-items:center;gap:8px 18px;flex-wrap:wrap;margin:0;padding:10px 14px;background:var(--paper);border-color:var(--border)}
+#free-practice-screen.free-piano-workspace #free-save-panel>label{margin:0;flex:1 1 280px;flex-wrap:nowrap}
+#free-practice-screen.free-piano-workspace #free-record-label{width:100%;min-width:0}
+#free-practice-screen.free-piano-workspace #free-save-status{margin:0;font-size:11px;color:var(--muted)}
+#free-practice-screen.free-piano-workspace .free-save-info[open]{flex-basis:100%}
+#free-practice-screen.free-piano-workspace .free-recordings{margin:0;border:1px solid var(--border);border-radius:12px;background:var(--paper);padding:0 16px}
+#free-practice-screen.free-piano-workspace .free-recordings>summary{cursor:pointer;padding:13px 0;font-size:13px;font-weight:600;color:var(--page-ink)}
+#free-practice-screen.free-piano-workspace .free-recordings section{margin:0 0 12px;padding:14px;border-color:var(--border);background:var(--paper)}
+#free-practice-screen.free-piano-workspace .free-recordings label{margin:8px 0}
+#free-practice-screen.free-piano-workspace #free-summary{display:flex;gap:0 20px;flex-wrap:wrap}
+#free-practice-screen.free-piano-workspace #free-summary p{margin:4px 0}
+#free-practice-screen.free-piano-workspace .free-replay-help{margin:10px 0;font-size:12px}
+#free-practice-screen.free-piano-workspace #free-operation-status{margin:0;min-height:0}
+#free-practice-screen.free-piano-workspace #free-operation-status:empty{display:none}
+@media(max-width:1200px){#free-practice-screen.free-piano-workspace{padding:12px 16px 18px}#free-practice-screen.free-piano-workspace .free-scroll-hint{display:inline}}
+@media(max-height:650px){#free-practice-screen.free-piano-workspace{padding-top:10px;gap:8px}#free-practice-screen.free-piano-workspace .free-live-field{height:80px}#free-practice-screen.free-piano-workspace .free-live-copy{gap:5px}#free-practice-screen.free-piano-workspace #free-practice-keys{height:148px;min-height:148px}#free-practice-screen.free-piano-workspace .free-stage-header{min-height:46px;padding-top:6px;padding-bottom:6px}}
+@media(max-width:650px){#free-practice-screen.free-piano-workspace{padding:12px 10px;gap:10px}#free-practice-screen.free-piano-workspace .free-practice-heading h1{font-size:21px}#free-practice-screen.free-piano-workspace .free-practice-heading{align-items:flex-start}#free-practice-screen.free-piano-workspace .rhythm-free-console{flex-direction:column;align-items:stretch;gap:9px}#free-practice-screen.free-piano-workspace .free-stage-header{flex-wrap:wrap;padding:10px 12px}#free-practice-screen.free-piano-workspace .free-stage-header .free-practice-actions{width:100%}#free-practice-screen.free-piano-workspace .free-stage-footer{gap:4px 12px}#free-practice-screen.free-piano-workspace .free-recordings{padding:0 10px}#free-practice-screen.free-piano-workspace .free-live-field{height:100px}}

@@ -1,6 +1,8 @@
 const plain=Object.freeze({params:Object.freeze({})});
 const params=value=>Object.freeze({params:Object.freeze(value)});
 export default Object.freeze({
+  'free.pianoTitle':plain,'free.stageCaption':plain,'free.stageReady':plain,'free.stageHint':plain,
+  'free.inputGuide':plain,'free.recordings':plain,'free.recordOptions':plain,'free.previewGuide':plain,'free.scrollHint':plain,'free.screenOnly':plain,
   'midiQuarantine.title':plain,'midiQuarantine.status':params({retained:'count',omitted:'count'}),
   'midiQuarantine.help':plain,'midiQuarantine.export':plain,
   'free.exit':plain,'free.discard':plain,'free.discardConfirm':plain,'free.save.unsaved':plain,
