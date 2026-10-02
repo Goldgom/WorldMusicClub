@@ -29,6 +29,7 @@ async function revealControl(locator) {
     lobby: Boolean(element.closest('#song-lobby')),
     notation: Boolean(element.closest('#notation-dock')),
     stage: Boolean(element.closest('#workspace')),
+    notationOptions: Boolean(element.closest('.dock-help') && !element.matches('.dock-help>summary')),
   }));
   const panel = shellPanels.find(name => `${name}-dialog` === owner.dialog);
   if (owner.dialog && !panel) return; // Existing review dialogs keep their own explicit lifecycle.
@@ -40,6 +41,7 @@ async function revealControl(locator) {
     if (await page.locator('#song-lobby').isVisible()) await page.locator('#resume-session').click();
     await page.locator('#notation-toggle').click();
   }
+  if (owner.notationOptions && !await page.locator('.dock-help').evaluate(node=>node.open)) await page.locator('.dock-help>summary').click();
 }
 function ui(selector) {
   const wrap = locator => new Proxy(locator, {get(target, property) {
@@ -716,7 +718,7 @@ test('notation export failure follows the current language without retrying or c
   try{
     const requested=page.waitForRequest('**/api/export/musicxml');
     await reloadStage({waitUntil:'domcontentloaded'});await requested;
-    await page.locator('#engraving-part').focus();
+    await ui('#engraving-part').focus();
     await assertLocaleRoundTrip(page,{root:'#notation-dock',message:{selector:'#engraving-status',key:'notationRuntime.preparing'}});
     assert.equal(exports,1,'A language switch keeps the original export request pending');
     release();await page.waitForFunction(detail=>!document.querySelector('#engraving-fallback').hidden&&document.querySelector('#engraving-fallback').textContent.includes(detail),detail);

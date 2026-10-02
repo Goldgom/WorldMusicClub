@@ -19,7 +19,7 @@ export function setupGameShell({pausePlayback,onScreen,onNotation,onPanel=()=>{}
   const fullscreenTools=document.createElement('div');fullscreenTools.className='fullscreen-tools';fullscreenTools.innerHTML='<button id="fullscreen-button" type="button" class="button secondary" aria-describedby="fullscreen-status"></button><span id="fullscreen-status" role="status" aria-live="polite" class="fullscreen-status"></span>';header.querySelector('nav').append(fullscreenTools);
   const fullscreen=setupFullscreen({button:$('fullscreen-button'),status:$('fullscreen-status'),i18n});
   for(const selector of ['.library-heading','#catalog-status','#catalog'])$('lobby-catalog').append(sidebar.querySelector(selector));
-  const dialogs=new Map();let screen='library',notation=false,current={};
+  const dialogs=new Map();let screen='library',notation=false,notationChosen=false,current={};
   function dialog(name,titleKey,nodes) {
     const el=document.createElement('dialog');el.id=`${name}-dialog`;el.className='shell-dialog';el.setAttribute('aria-labelledby',`${name}-title`);
     const heading=document.createElement('header');heading.className='shell-dialog-heading';
@@ -42,7 +42,7 @@ export function setupGameShell({pausePlayback,onScreen,onNotation,onPanel=()=>{}
   dialog('results','shell.dialog.results',[document.querySelector('.feedback-panel')]);
   sidebar.remove();document.querySelector('.topbar')?.remove();document.querySelector('.page-footer')?.remove();
   const hud=document.createElement('div');hud.className='stage-hud';hud.innerHTML='<button id="back-to-library" class="button secondary" data-i18n="shell.backLibrary">← 曲库</button><div class="stage-heading"><h1 id="stage-title" tabindex="-1"></h1><p id="stage-subtitle"></p></div><button id="notation-toggle" class="button secondary" aria-expanded="false" aria-controls="notation-dock"></button>';
-  const dock=document.createElement('aside');dock.id='notation-dock';dock.hidden=true;dock.append(document.querySelector('.notation-panel'));stage.prepend(hud);stage.append(dock);
+  const dock=document.createElement('aside');dock.id='notation-dock';dock.hidden=true;dock.append(document.querySelector('.notation-panel'));stage.prepend(hud);document.querySelector('.play-panel').before(dock);
   const notice=$('notice');header.after(notice);stage.hidden=true;document.body.dataset.screen='library';
   function open(name){const el=dialogs.get(name);if(!el)return;pausePlayback();onPanel(name);if(!el.open)el.showModal();}
   for(const name of dialogs.keys())$(`${name}-button`).addEventListener('click',()=>open(name));
@@ -61,10 +61,11 @@ export function setupGameShell({pausePlayback,onScreen,onNotation,onPanel=()=>{}
     skip.textContent=i18n.t(screen==='free'?'free.title':screen==='stage'?'nav.skipStage':'nav.skipLibrary');
     $('notation-toggle').textContent=i18n.t(notation?'shell.closeNotation':'nav.notation');
   }
-  function show(next){if(!['library','stage','free'].includes(next))return;pausePlayback();for(const el of dialogs.values())if(el.open)el.close();screen=next;stage.hidden=next!=='stage';lobby.hidden=next!=='library';document.body.dataset.screen=next;const heading=next==='free'?'free-practice-title':next==='stage'?'stage-title':'lobby-title';skip.href=`#${heading}`;render();onScreen(next);$(heading)?.focus();}
+  function setNotation(visible){notation=visible;dock.hidden=!notation;$('notation-toggle').setAttribute('aria-expanded',String(notation));stage.classList.toggle('with-notation',notation);render();onNotation(notation)}
+  function show(next){if(!['library','stage','free'].includes(next))return;pausePlayback();for(const el of dialogs.values())if(el.open)el.close();screen=next;stage.hidden=next!=='stage';lobby.hidden=next!=='library';document.body.dataset.screen=next;const heading=next==='free'?'free-practice-title':next==='stage'?'stage-title':'lobby-title';skip.href=`#${heading}`;if(next==='stage'&&!notationChosen&&!notation&&$('instrument').value==='piano'&&document.defaultView.innerWidth>650&&document.defaultView.innerHeight>=700)setNotation(true);render();onScreen(next);$(heading)?.focus();}
   $('start-free-practice').addEventListener('click',()=>show('free'));
   $('back-to-library').addEventListener('click',()=>show('library'));$('resume-session').addEventListener('click',()=>show('stage'));
-  $('notation-toggle').addEventListener('click',()=>{notation=!notation;dock.hidden=!notation;$('notation-toggle').setAttribute('aria-expanded',String(notation));render();stage.classList.toggle('with-notation',notation);onNotation(notation)});
+  $('notation-toggle').addEventListener('click',()=>{notationChosen=true;setNotation(!notation)});
   localeView.refresh();render();const unsubscribe=i18n.subscribe(render);
   return {show,open,screen:()=>screen,notationVisible:()=>notation,localeView,
     update(value){current=value;render();},

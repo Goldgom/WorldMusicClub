@@ -2,6 +2,7 @@ import {getAppI18n} from './app-locale.js';
 import {localizeStatic} from './locale-view.js';
 import {stageFeedbackView} from './hud-feedback.js';
 import {keyTonic} from './music.js';
+import {setupStageNotationLayout} from './stage-notation-layout.js';
 export const FIELD_COLORS=Object.freeze({background:'#142333',backgroundEnd:'#1d3b4b',natural:'#7be4ce',accidental:'#acb0f5',scheduled:'#f4ce78',noteText:'#112538'});
 
 export function previewMusicMetadata(score,i18n=getAppI18n()){
@@ -52,7 +53,22 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
   const engravingControls=notation.querySelector('.engraving-controls'),pageControls=notation.querySelector('.engraving-pages'),followingControls=notation.querySelector('.engraving-follow-controls');
   const followingLabel=$('engraving-follow').closest('label');label(followingLabel,'follow.label');
   const shortLandscape=window.matchMedia?.('(max-height:600px) and (min-width:651px)');
-  function arrangeNotationTools(){const compact=Boolean(shortLandscape?.matches);notation.classList.toggle('short-notation',compact);if(compact){help.insertBefore(displayOptions,help.children[1]);followingControls.prepend(pageControls);}else{engravingControls.prepend(displayOptions);engravingControls.append(pageControls);}}
+  function arrangeNotationTools(){
+    const above=$('workspace').classList.contains('notation-above'),compact=Boolean(shortLandscape?.matches)||above,focused=document.activeElement;
+    notation.classList.toggle('short-notation',compact);
+    if(compact){
+      if(displayOptions.parentElement!==help)help.insertBefore(displayOptions,help.children[1]);
+      if(pageControls.parentElement!==followingControls)followingControls.prepend(pageControls);
+    }else{
+      if(displayOptions.parentElement!==engravingControls)engravingControls.prepend(displayOptions);
+      if(pageControls.parentElement!==engravingControls)engravingControls.append(pageControls);
+    }
+    const engravingStatus=$('engraving-status');
+    if(above){if(engravingStatus.parentElement!==help)help.append(engravingStatus);}
+    else if(engravingStatus.previousElementSibling!==engravingControls)engravingControls.after(engravingStatus);
+    if(focused&&help.contains(focused)&&focused!==help.querySelector('summary'))help.open=true;
+    if(focused&&document.activeElement!==focused&&notation.contains(focused))focused.focus({preventScroll:true});
+  }
   shortLandscape?.addEventListener('change',arrangeNotationTools);arrangeNotationTools();
   warnings.addEventListener('click',()=>{const fallback=$('engraving-fallback');if(!fallback.hidden){fallback.setAttribute('tabindex','-1');fallback.focus();fallback.scrollIntoView({block:'nearest'});return;}const details=notation.querySelector('.engraving-warnings');details.open=true;details.querySelector('summary').focus({preventScroll:true});details.scrollIntoView({block:'nearest'});});
   const status=document.createElement('div');status.className='performance-status';status.innerHTML='<div class="onset-counter"><span id="hud-captured">0</span><small data-i18n="performance.captured">已记录</small></div><div class="performance-status-copy"><strong id="hud-label"></strong><p id="hud-message"></p></div><div id="hud-result" hidden><strong id="hud-accuracy">—</strong><small data-i18n="performance.onsetMatchRate">起音命中率</small></div>';
@@ -60,12 +76,14 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
   play.querySelector('.section-heading').replaceWith(status);
   const piano=$('piano-stage');piano.classList.add('performance-piano');const overlay=document.createElement('div');overlay.className='performance-overlay';overlay.innerHTML='<div id="stage-cue" aria-live="off" hidden><strong id="stage-cue-main"></strong><span id="stage-cue-detail"></span></div><div class="keyboard-pan"><button id="keyboard-pan-left" class="button secondary" data-i18n-aria-label="performance.panLower" aria-label="显示更低的琴键音高">←</button><span id="keyboard-range-context"></span><button id="keyboard-pan-right" class="button secondary" data-i18n-aria-label="performance.panHigher" aria-label="显示更高的琴键音高">→</button></div>';
   const field=document.createElement('div');field.className='performance-field';piano.before(field);field.append(overlay,piano,$('guitar-stage'));const pan=overlay.querySelector('.keyboard-pan');play.insertBefore(pan,document.querySelector('.transport'));const scroll=$('piano-scroll');for(const[id,direction]of[['keyboard-pan-left',-1],['keyboard-pan-right',1]])$(id).addEventListener('click',()=>{scroll.scrollBy({left:direction*scroll.clientWidth*.65,behavior:'auto'});updateRange()});
+  const rangeText=(context,wide)=>context.geometry?.length?i18n.t(wide?'performance.rangeWide':'performance.range',{count:context.geometry.length,range:context.rangeLabel||''}):'';
+  const notationLayout=setupStageNotationLayout({document,getPanLabel:()=>rangeText(getContext(),true),onChange(){arrangeNotationTools();$('workspace').dispatchEvent(new Event('notationlayoutchange'));}});
   let lastFeedback='',lastCue='',lastRange='';
   function updateRange(){
     const context=getContext(),keys=context.geometry||[],wide=scroll.scrollWidth>scroll.clientWidth+1;
     const signature=JSON.stringify([i18n.revision,keys.length,context.rangeLabel,context.instrument,wide,scroll.scrollLeft,scroll.clientWidth,scroll.scrollWidth]);if(signature===lastRange)return;lastRange=signature;
     pan.hidden=!wide||context.instrument==='guitar';$('keyboard-pan-left').hidden=!wide;$('keyboard-pan-right').hidden=!wide;$('keyboard-pan-left').disabled=scroll.scrollLeft<=1;$('keyboard-pan-right').disabled=scroll.scrollLeft+scroll.clientWidth>=scroll.scrollWidth-1;
-    $('keyboard-range-context').textContent=keys.length?i18n.t(wide?'performance.rangeWide':'performance.range',{count:keys.length,range:context.rangeLabel||''}):'';
+    $('keyboard-range-context').textContent=rangeText(context,wide);
   }
   scroll.addEventListener('scroll',updateRange,{passive:true});window.addEventListener('resize',updateRange);
   function renderFeedback(context){
@@ -84,13 +102,13 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
     $('hud-result').hidden=view.accuracy===null;$('hud-accuracy').textContent=view.accuracy||'—';
   }
   function update(){
-    const context=getContext();if(play.dataset.instrument!==context.instrument)play.dataset.instrument=context.instrument||'piano';renderFeedback(context);const cue=performanceCue(context,i18n);
+    const context=getContext();if(play.dataset.instrument!==context.instrument){play.dataset.instrument=context.instrument||'piano';notationLayout.refresh();}renderFeedback(context);const cue=performanceCue(context,i18n);
     const cueState=!cue?null:context.running?'countdown':context.completed?'complete':context.hasStarted?'paused':'ready',signature=JSON.stringify([i18n.revision,cue,cueState]);
     if(signature!==lastCue){lastCue=signature;const node=$('stage-cue');node.hidden=!cue;if(cueState)node.dataset.cueState=cueState;else node.removeAttribute('data-cue-state');$('stage-cue-main').textContent=cue?.main||'';$('stage-cue-detail').textContent=cue?.detail||'';}updateRange();
   }
-  function screenChanged(screen){if(screen==='stage'){hud.append(nav);header.hidden=true;}else{header.append(nav);header.hidden=false;}update();}
-  const refreshLocale=()=>{localizeStatic(document,i18n);update();};
+  function screenChanged(screen){if(screen==='stage'){hud.append(nav);header.hidden=true;}else{header.append(nav);header.hidden=false;}update();notationLayout.refresh();}
+  const refreshLocale=()=>{localizeStatic(document,i18n);update();notationLayout.refresh();};
   localizeStatic(document,i18n);screenChanged(document.body.dataset.screen);
   const unsubscribe=i18n.subscribe(refreshLocale);
-  return{update,screenChanged,destroy(){unsubscribe();window.removeEventListener('resize',updateRange);scroll.removeEventListener('scroll',updateRange);shortLandscape?.removeEventListener('change',arrangeNotationTools);}};
+  return{update,screenChanged,destroy(){unsubscribe();notationLayout.destroy();window.removeEventListener('resize',updateRange);scroll.removeEventListener('scroll',updateRange);shortLandscape?.removeEventListener('change',arrangeNotationTools);}};
 }

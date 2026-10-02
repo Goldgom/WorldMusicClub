@@ -45,14 +45,86 @@ This source group is combined with accepted162's bounded imported-score engravin
 
 General verification runs rhythm checks alongside existing actual-app and engraving checks. The Windows package workflow runs the same matrix against the exact release executable before packaging, retaining screenshots, JSON and logs. Existing gates and pinned actions remain. No Release publication or write permissions are added.
 
-The matrix covers Chinese/English, light/dark, 1280×720, 1920×1080, 844×390 and 390×844. It exercises the actual Rust endpoint, piano/guitar, staff/Jianpu, follow controls, pointer/keyboard targets, transport/field/fret geometry, free-performance recording/downloads and retained-session navigation. Existing full-app tests remain the follow-timing gate.
+The matrix covers Chinese/English, light/dark, 1280×720, 1920×1080, 1033×403, 844×390 and 390×844. It exercises the actual Rust endpoint, piano/guitar, staff/Jianpu, follow controls, pointer/keyboard targets, transport/field/fret geometry, free-performance recording/downloads and retained-session navigation. Existing full-app tests remain the follow-timing gate.
 
 Results record exact checkout/source/workflow commits, source ref, run URL, module/binary hashes, browser version, planned/completed cases and failures. Incremental evidence survives failures; interrupted status is not a pass.
 
-## Next vertical slice, still unimplemented
+## Above-key notation candidate
 
-1. **Readable notation above the keys:** place the existing generated-staff/Jianpu surface above the playable piano keys while retaining one set of notation controls, source identity, page following and transport. Design and verify short-landscape and portrait bounds, notehead/number readability, keyboard access, and the interaction with beginner note labels before changing placement. The current side dock remains; this shell does not complete the requested relocation.
-2. **Selectable skins:** extend the existing appearance settings with named, accessible presets and persistence, retaining explicit custom colors and stable input/recording state. The purple/mint light/dark presentation in this patch is not a new skin picker.
-3. **Song folders:** add app-connected, persisted song organization with explicit membership for catalog and imported items, search/filter behavior and recovery tests. Preserve original score/source IDs and bytes. The existing searchable catalog and source-directory controls are not claimed as a new song-folder feature.
+The above-key UI integration retains the original `notation-dock` and puts it
+in reading order before the play panel. When actual viewport space permits, it
+uses an opaque full-width row inside the game stage above the playable keyboard.
+Staff, basic pitch guide and Jianpu remain the original renderers and controls.
+Optional staff display settings use the existing Help disclosure, while page
+controls and the full Follow status remain outside it. The renderer still owns
+exact source-note following and manual-page suspension.
+
+The first desktop piano entry (width over 650px, height at least 700px) opens
+the score automatically. An explicit visibility toggle is retained for the rest
+of the session, including library/free-stage round trips. The primary 1280×720
+and 1920×1080 acceptance cases require above-key placement rather than a side
+column. Compact transport/input padding preserves full controls while recovering
+the laptop score budget; transport buttons retain their 38px targets.
+
+`stage-notation-layout.js` budgets the actual HUD, notices, transport, key height,
+beginner row, pan controls and fingering guidance. It reserves a 100px falling
+canvas, the complete original keys and strike line, and scrollbar space before
+allocating a 240–360px score band (at least 300px in portrait). The canvas, strike
+and keys retain one horizontal scrolling surface. The score never covers that
+surface. No glyph scale is reduced to make the layout fit.
+
+This is a candidate, not hosted visual acceptance. At 1033×403 and 844×390, the
+required instrument and control space leaves insufficient room for a readable
+band. The existing side layout remains there. Smaller portrait or a large open
+guide/notice can also retain the previous fallback instead of forcing clipping.
+At a compact portrait fallback the same native score toggle returns to the
+playable piano; the hosted regression verifies that keyboard-operated switch.
+
+A synchronous candidate-layout measurement includes controls hidden by the old
+portrait layout and the exact localized wide-range pan label. Rejected probes
+restore scroll positions and controller-owned text before returning. This avoids
+feedback loops caused by measuring a hidden control as zero height. A focused
+setting moved into Help opens that disclosure before focus is restored.
+
+Pure Node/DOM coverage verifies budget boundaries, resize coalescing, stable
+control identities, preserved Follow choice and disposal. Threshold regressions
+cover guidance, wrapped beginner/pan controls and static status with a practice
+gate; repeated observer frames must settle with no further height changes. Hosted tests retain
+viewport, clipping, key access, canvas minimum and paused-take checks; placement
+checks distinguish the top band from the compact side fallback. The new original
+two-staff fixture adds actual page following into measures 9–12 and staff/Jianpu
+round trips, paused practice-take preservation, held key contacts through resize
+and notation switches, and a separate staff/Jianpu screenshot at every size.
+The grand-staff case uses Practice so a real recorded pass exists before exporting
+its take; source notes and all 12 written measures remain identical on export.
+These browser assertions and screenshots require an authorized hosted run; no
+browser, GUI, headless runner or server was launched locally.
+
+Integration base: `90c206b7c776d7d324b335644c8adaba880a75de` (local174).
+Local validation: `npm test` passed 795/795 Node/DOM tests; the focused notation
+following, numbered layout and runtime locale suites passed 37/37. JS syntax and
+`git diff --check` passed. Rust source, native package code and workflow files are
+unchanged; Rust/binary and real-browser acceptance belong to the merged hosted run.
+
+Expected new browser evidence under `WMH_ARTIFACT_DIR` (the full-app runner uses
+the OS temporary directory if unset):
+
+- `worldmusichub-above-keyboard.json`: original source, exact two-voice cues,
+  all viewport geometry, manual-follow behavior and held-contact result
+- `worldmusichub-above-keyboard-1280x720-staff.png` and `-jianpu.png`
+- `worldmusichub-above-keyboard-1920x1080-staff.png` and `-jianpu.png`
+- Equivalent staff/Jianpu PNGs for `1033x403`, `844x390`, `390x844`
+
+The hosted rhythm runner additionally writes `desktop-zh-dark-staff.png`,
+`desktop-zh-dark-jianpu.png`, `desktop-en-light-staff.png`,
+`desktop-en-light-jianpu.png`, `wide-zh-dark-staff.png`, and
+`wide-zh-dark-jianpu.png`, plus matching `*-notation-geometry.json` files
+and its provenance/results JSON under its configured artifact directory.
+The default standalone hosted directory is `test-results/rhythm-shell`.
+
+## Next vertical slices, still unimplemented
+
+1. **Selectable skins:** extend the existing appearance settings with named, accessible presets and persistence, retaining explicit custom colors and stable input/recording state. The purple/mint light/dark presentation in this patch is not a new skin picker.
+2. **Song folders:** add app-connected, persisted song organization with explicit membership for catalog and imported items, search/filter behavior and recovery tests. Preserve original score/source IDs and bytes. The existing searchable catalog and source-directory controls are not claimed as a new song-folder feature.
 
 These are separate acceptance targets for subsequent work. They must receive their own actual-app and authorized hosted evidence before being described as delivered.

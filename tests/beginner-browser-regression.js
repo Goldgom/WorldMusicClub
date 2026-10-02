@@ -80,6 +80,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
           referenceInHelp:reference.parentElement===panel.querySelector('.beginner-help-body'),
           footerInSettings:Boolean(document.querySelector('.keyboard-input-footer').closest('#keyboard-input-settings')),
           statusHidden:document.querySelector('#keyboard-compact-status').hidden,
+          notationAbove:document.querySelector('#workspace').classList.contains('notation-above'),
           notationCompact:document.querySelector('#notation-dock .notation-panel').classList.contains('short-notation')});
       };
       const resized=()=>sample('resize'),changed=()=>sample('media-change');
@@ -99,7 +100,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
       const before=samples[0],settled=samples.at(-1),compact=viewport.height<=600&&viewport.width>=651;
       assert.deepEqual({width:settled.width,height:settled.height},viewport,JSON.stringify(samples));
       assert.deepEqual({compact:settled.compact,guide:settled.guideCompact,reference:settled.referenceInHelp,footer:settled.footerInSettings,statusHidden:settled.statusHidden,notation:settled.notationCompact},
-        {compact,guide:compact,reference:compact,footer:compact,statusHidden:!compact,notation:compact},`All responsive handlers finish before the first rendered frame: ${JSON.stringify(samples)}`);
+        {compact,guide:compact,reference:compact,footer:compact,statusHidden:!compact,notation:compact||settled.notationAbove},`All responsive handlers finish before the first rendered frame: ${JSON.stringify(samples)}`);
       assert.equal(settled.guideParent,compact?'stage-heading':'play-panel panel',JSON.stringify(samples));
       assert.equal(samples.filter(sample=>sample.phase==='media-change').length,Number(before.compact!==compact),`Observe the actual breakpoint notification: ${JSON.stringify(samples)}`);
       return samples;

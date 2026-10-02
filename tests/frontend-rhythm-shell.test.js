@@ -9,8 +9,83 @@ import {setupGameShell} from '../web/game-shell.js';
 import {setupPerformanceView} from '../web/performance-view.js';
 import {Transport} from '../web/transport.js';
 import {contrastRatio} from '../web/themes.js';
+import {notationBandHeight, setupStageNotationLayout} from '../web/stage-notation-layout.js';
 
 const onsetCount = record => record.observations.events.filter(event => event.kind === 'note_on').length;
+
+test('above-key score budget preserves the whole instrument and rejects impossible compact layouts', () => {
+  const desktop={width:1280,availableHeight:626,instrumentHeight:230,controlsHeight:97};
+  assert.equal(notationBandHeight(desktop),287);
+  assert.ok(notationBandHeight({width:1280,availableHeight:626,instrumentHeight:260,controlsHeight:116})>=240,'Laptop budget includes collapsed fingering, beginner and input rows plus full transport targets');
+  assert.equal(notationBandHeight({...desktop,controlsHeight:200}),null,'An expanded guide or blocking notice cannot squeeze the music');
+  assert.equal(notationBandHeight({width:1033,availableHeight:319,instrumentHeight:198,controlsHeight:82}),null,'The short reference-sized window retains its usable side layout');
+  assert.equal(notationBandHeight({width:844,availableHeight:290,instrumentHeight:224,controlsHeight:78}),null);
+  assert.equal(notationBandHeight({width:390,availableHeight:702,instrumentHeight:230,controlsHeight:125}),322);
+  assert.equal(notationBandHeight({...desktop,instrument:'guitar'}),null,'The existing guitar layout is unchanged');
+  assert.equal(notationBandHeight({...desktop,availableHeight:NaN}),null);
+  for (const width of [390,844,1033,1280,1920]) for (const availableHeight of [250,500,626,900]) {
+    const input={width,availableHeight,instrumentHeight:268,controlsHeight:137},band=notationBandHeight(input);
+    if(band!==null){assert.ok(band >= (width<=650?300:240));assert.ok(band<=360);assert.ok(band+input.instrumentHeight+input.controlsHeight<=availableHeight);}
+  }
+});
+
+test('responsive score placement keeps controls, follow preference and shared keyboard nodes through resize and disposal', () => {
+  const {document,window}=parseHTML('<main id="workspace" class="with-notation"><header class="stage-hud"></header><aside id="notation-dock"><input id="engraving-follow" type="checkbox"></aside><section class="play-panel" data-instrument="piano"><div class="performance-status"></div><div class="performance-field"><div id="piano-surface"><canvas id="falling-notes"></canvas><div class="strike-line"></div><div id="keyboard"><button data-midi="60"></button></div></div></div><div class="keyboard-pan"></div><div id="beginner-controls"></div><div class="transport"></div></section></main>');
+  const stage=document.getElementById('workspace'),play=stage.querySelector('.play-panel'),keyboard=document.getElementById('keyboard'),follow=document.getElementById('engraving-follow'),canvas=document.getElementById('falling-notes');
+  const queue=new Map(),observed=[],changes=[];let id=0,disconnected=false;
+  const names=['getComputedStyle','requestAnimationFrame','cancelAnimationFrame','ResizeObserver'];
+  const originals=new Map(names.map(name=>[name,Object.getOwnPropertyDescriptor(window,name)]));
+  Object.assign(stage,{clientWidth:1280,clientHeight:720});
+  const heights=new Map([[stage.querySelector('.stage-hud'),46],[play.querySelector('.transport'),57],[play.querySelector('.keyboard-pan'),42],[play.querySelector('#beginner-controls'),30]]);
+  for(const node of stage.querySelectorAll('*'))node.getBoundingClientRect=()=>({height:heights.get(node)||0});
+  window.getComputedStyle=node=>({display:'block',position:node.classList.contains('performance-status')?'absolute':'static',paddingTop:node===stage?'12px':'0',paddingBottom:node===stage?'16px':'0',rowGap:'10px',height:node===keyboard?'110px':'0',minWidth:node.id==='piano-surface'?'792px':'0',borderTopWidth:node===play?'1px':'0',borderBottomWidth:node===play?'1px':'0',getPropertyValue:key=>key==='--keybed-height'?'110px':''});
+  window.requestAnimationFrame=callback=>{queue.set(++id,callback);return id;};window.cancelAnimationFrame=frame=>queue.delete(frame);
+  window.ResizeObserver=class{constructor(callback){this.callback=callback;}observe(node){observed.push(node);}disconnect(){disconnected=true;}};
+  const flush=()=>{for(const [key,callback]of [...queue]){queue.delete(key);callback();}};
+  const layout=setupStageNotationLayout({document,onChange:above=>changes.push(above)});
+  try {
+    const heldKey=keyboard.firstElementChild;heldKey.classList.add('pressed');heldKey.setAttribute('aria-pressed','true');
+    follow.checked=false;flush();assert.equal(stage.classList.contains('notation-above'),true);assert.equal(stage.style.getPropertyValue('--notation-band-height'),'287px');
+    assert.equal(observed.includes(keyboard),true);assert.equal(observed.includes(play.querySelector('.performance-field')),true);
+    for(const dimensions of [{clientWidth:1033,clientHeight:403},{clientWidth:1280,clientHeight:720}]){Object.assign(stage,dimensions);layout.refresh();layout.refresh();assert.equal(queue.size,1);flush();}
+    assert.deepEqual(changes,[true,false,true]);assert.equal(heldKey.classList.contains('pressed'),true);assert.equal(heldKey.getAttribute('aria-pressed'),'true');assert.equal(keyboard.firstElementChild,heldKey);assert.equal(follow.checked,false);assert.equal(document.getElementById('keyboard'),keyboard);assert.equal(document.getElementById('falling-notes'),canvas);
+    play.dataset.instrument='guitar';layout.refresh();flush();assert.equal(stage.classList.contains('notation-above'),false);assert.equal(stage.style.getPropertyValue('--notation-band-height'),undefined);
+    layout.refresh();layout.destroy();flush();assert.equal(disconnected,true);assert.equal(queue.size,0);
+    stage.dispatchEvent(new window.Event('click'));assert.equal(queue.size,0);
+  } finally {layout.destroy();for(const[name,descriptor]of originals)if(descriptor)Object.defineProperty(window,name,descriptor);else delete window[name];}
+});
+
+test('portrait placement budgets revealed guidance and wrapped controls without observer oscillation', () => {
+  for(const expanded of ['guidance','beginner','pan','status']){
+    const {document,window}=parseHTML('<main id="workspace" class="with-notation"><header class="stage-hud"></header><aside id="notation-dock"></aside><section class="play-panel" data-instrument="piano"><div class="performance-status"></div><div id="practice-gate"></div><div class="performance-field"><div id="piano-stage"><details id="piano-fingering-guidance"><summary>Guidance</summary></details><div id="piano-scroll"><div id="piano-surface"><div id="keyboard"></div></div></div></div></div><div class="keyboard-pan"><span id="keyboard-range-context">Short range</span></div><div id="beginner-controls"></div><div class="transport"></div></section></main>');
+    const stage=document.getElementById('workspace'),play=stage.querySelector('.play-panel'),pan=play.querySelector('.keyboard-pan'),guidance=document.getElementById('piano-fingering-guidance'),dock=document.getElementById('notation-dock'),piano=document.getElementById('piano-scroll'),panLabel=document.getElementById('keyboard-range-context'),candidateLabel='Wide localized range and keyboard panning help';
+    Object.assign(stage,{clientWidth:390,clientHeight:expanded==='status'?840:812});
+    document.getElementById('practice-gate').hidden=expanded!=='status';pan.hidden=true;dock.scrollTop=180;piano.scrollLeft=210;
+    const original=new Map(['getComputedStyle','requestAnimationFrame','cancelAnimationFrame','ResizeObserver'].map(key=>[key,Object.getOwnPropertyDescriptor(window,key)]));
+    const queue=new Map(),samples=[],changes=[];let next=0,observer;
+    const above=()=>stage.classList.contains('notation-above');
+    for(const node of stage.querySelectorAll('*'))node.getBoundingClientRect=()=>({height:node.classList.contains('stage-hud')?90:node.classList.contains('transport')?76:node.id==='practice-gate'?28:node===guidance?(above()&&expanded==='guidance'?31:0):node.id==='beginner-controls'?(above()?(expanded==='beginner'?70:38):0):node===pan?(above()?(expanded==='pan'&&panLabel.textContent===candidateLabel?80:42):0):node.classList.contains('performance-status')?(above()&&expanded==='status'?45:0):0});
+    window.getComputedStyle=node=>{
+      if(node===stage&&stage.classList.contains('notation-budget-probe')){dock.scrollTop=0;piano.scrollLeft=0;}
+      return {display:'block',position:node.classList.contains('performance-status')&&expanded!=='status'?'absolute':'static',paddingTop:node===stage?'8px':'0',paddingBottom:node===stage?'8px':'0',rowGap:'8px',height:node.id==='keyboard'?'105px':'0',minWidth:node.id==='piano-surface'?'792px':'0',borderTopWidth:node===play?'1px':'0',borderBottomWidth:node===play?'1px':'0',getPropertyValue:key=>key==='--keybed-height'?'105px':''};
+    };
+    window.requestAnimationFrame=callback=>{queue.set(++next,callback);return next;};window.cancelAnimationFrame=id=>queue.delete(id);
+    window.ResizeObserver=class{constructor(callback){observer=callback;}observe(){}disconnect(){}};
+    const layout=setupStageNotationLayout({document,getPanLabel:()=>candidateLabel,onChange:value=>{changes.push(value);panLabel.textContent=value?candidateLabel:'Short range';observer();}});
+    try {
+      for(let frame=0;frame<8;frame++){observer();for(const[id,callback]of [...queue]){queue.delete(id);callback();}samples.push(above());}
+      assert.deepEqual(samples,Array(8).fill(false),`${expanded}: hidden fallback content must not repeatedly enable an undersized score band`);
+      assert.deepEqual(changes,[]);assert.equal(stage.classList.contains('notation-budget-probe'),false);
+      assert.equal(dock.scrollTop,180,'Rejected probes restore manual score scrolling after a simulated layout clamp');assert.equal(piano.scrollLeft,210,'Rejected probes preserve keyboard panning');assert.equal(pan.hidden,true,'Measuring a needed pan row does not mutate its controller-owned visibility');assert.equal(panLabel.textContent,'Short range','Rejected probes restore controller-owned label copy');
+      stage.clientHeight=1000;layout.refresh();for(const[id,callback]of [...queue]){queue.delete(id);callback();}
+      assert.equal(above(),true,`${expanded}: a genuinely larger viewport can enable the band`);
+      assert.ok(parseFloat(stage.style.getPropertyValue('--notation-band-height'))>=300);
+      for(let frame=0;frame<8;frame++){observer();for(const[id,callback]of [...queue]){queue.delete(id);callback();}}
+      assert.deepEqual(changes,[true],`${expanded}: observer feedback reaches a fixed placement`);
+      assert.equal(queue.size,0,`${expanded}: the final height causes no further layout notification`);
+    }finally{layout.destroy();for(const[key,descriptor]of original)if(descriptor)Object.defineProperty(window,key,descriptor);else delete window[key];}
+  }
+});
 function playKey(app) {
   const properties = {code:'KeyR', key:'r'};
   app.emit(app.$('free-practice-title'), 'keydown', properties);

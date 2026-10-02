@@ -65,11 +65,29 @@ test('static DOM shell keeps every source control exactly once and pauses on pan
   for(const id of ['export-button','source-files-button','score-details'])assert.equal(document.getElementById(id).closest('dialog').id,'score-tools-dialog');
   for(const id of ['score-file','score-image-file','jianpu-editor-button'])assert.equal(document.getElementById(id).closest('dialog').id,'import-tools-dialog');
   assert.equal(document.getElementById('engraved-staff').closest('aside').id,'notation-dock');
+  assert.equal(document.getElementById('notation-dock').nextElementSibling,document.querySelector('.play-panel'),'Reading order places the original score surface before the playable keys');
   shell.open('settings');assert.equal(pauses,1);assert.equal(document.getElementById('settings-dialog').open,true);shell.show('stage');assert.equal(pauses,2);assert.equal(document.getElementById('settings-dialog').open,false);assert.equal(document.getElementById('song-lobby').hidden,true);assert.deepEqual(screens,['stage']);
   document.getElementById('notation-toggle').click();assert.deepEqual(notation,[true]);assert.equal(shell.notationVisible(),true);
   assert.equal(document.querySelector('.skip-link').getAttribute('href'),'#stage-title');shell.show('library');assert.equal(pauses,3);assert.equal(shell.screen(),'library');assert.equal(document.querySelector('#workspace').hidden,true);assert.equal(document.querySelector('.skip-link').getAttribute('href'),'#lobby-title');
   shell.open('settings');const settings=document.getElementById('settings-dialog');settings.removeAttribute('open');const next=document.querySelector('.skip-link');next.focus();settings.dispatchEvent(new window.Event('close'));assert.ok(focused===next,'A queued close event must not steal focus after the user has moved to another control');
  }finally{if(original)Object.defineProperty(globalThis,'document',original);else delete globalThis.document}
+});
+
+test('desktop piano opens its real score on first entry and keeps an explicit close through navigation',async()=>{
+ const {document,window}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8'));
+ const original=Object.getOwnPropertyDescriptor(globalThis,'document');Object.defineProperty(globalThis,'document',{configurable:true,value:document});
+ const sizes=new Map(['innerWidth','innerHeight'].map(key=>[key,Object.getOwnPropertyDescriptor(window,key)]));
+ const shown=[];let shell;
+ try{
+  Object.defineProperties(window,{innerWidth:{configurable:true,value:1280},innerHeight:{configurable:true,value:720}});
+  Object.defineProperty(document.getElementById('instrument'),'value',{configurable:true,value:'piano'});
+  shell=setupGameShell({pausePlayback(){},onScreen(){},onNotation:value=>shown.push(value)});
+  const dock=document.getElementById('notation-dock'),toggle=document.getElementById('notation-toggle');
+  shell.show('stage');assert.equal(dock.hidden,false);assert.equal(shell.notationVisible(),true);assert.equal(toggle.getAttribute('aria-expanded'),'true');assert.deepEqual(shown,[true]);
+  toggle.click();assert.equal(dock.hidden,true);assert.deepEqual(shown,[true,false]);
+  shell.show('library');shell.show('stage');assert.equal(dock.hidden,true,'Returning to the score respects the player’s explicit visibility choice');
+  toggle.click();assert.equal(dock.hidden,false);assert.equal(document.getElementById('notation-dock'),dock);
+ }finally{shell?.destroy();for(const[key,descriptor]of sizes)if(descriptor)Object.defineProperty(window,key,descriptor);else delete window[key];if(original)Object.defineProperty(globalThis,'document',original);else delete globalThis.document}
 });
 
 function fullscreenFixture({enabled=true,request,exit,i18n=createI18n({locale:'en',onReport(){}})}={}) {

@@ -1113,6 +1113,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) pause
 window.addEventListener('pagehide', () => { pausePlayback(undefined,'pagehide'); cancelAnimationFrame(state.frame);cancelPendingStart();if(preview.controller){preview.cancel();preview.publish({...preview.value,status:'error',message:t('app.previewStopped')})} });
 let notationResizeFrame = 0;
 window.addEventListener('resize', () => { cancelAnimationFrame(notationResizeFrame); notationResizeFrame = requestAnimationFrame(() => { renderNotationPage(); drawFrame(); }); });
+$('workspace').addEventListener('notationlayoutchange', () => { cancelAnimationFrame(notationResizeFrame); notationResizeFrame = requestAnimationFrame(() => { renderNotationPage(); drawFrame(); }); });
 window.addEventListener('pageshow', event => { if (event.persisted) { cancelAnimationFrame(state.frame); state.frame = requestAnimationFrame(animate); } });
 
 function cancelCatalogSelection(){
