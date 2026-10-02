@@ -193,7 +193,20 @@ test('loop boundaries use Rust responses, reject invalid ranges and clear take i
  await ui('#loop-from').fill('4');await ui('#loop-to').fill('1');await ui('#loop-apply').click();await page.waitForFunction(()=>document.querySelector('#loop-status').textContent.includes('B must be later'));assert.equal(await ui('#loop-enabled').isChecked(),false);
 });
 test('latency compensation persists and movable jianpu has explicit tonic reference',async()=>{
- await ui('.practice-options>summary').click();await ui('#latency-offset').fill('150');await ui('#latency-offset').dispatchEvent('change');await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#play-button').click();await ui('#stage-title').click();await page.keyboard.press('r');await ui('#assess-button').click();await ui('#feedback-results').waitFor();const data=JSON.parse(requests.filter(r=>r.url==='/api/assess').at(-1).body);assert.equal(data.inputs.length,1);assert.ok(data.inputs[0].at_ms<0);await ui('#jianpu-button').click();await ui('#jianpu-reference').selectOption('movable');assert.match(await ui('#score-key').textContent(),/1 = C4/);await reloadStage();await ui('#play-button:not([disabled])').waitFor();assert.equal(await ui('#latency-offset').inputValue(),'150');
+ await ui('.practice-options>summary').click();await ui('#latency-offset').fill('150');await ui('#latency-offset').dispatchEvent('change');await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#play-button').click();await ui('#stage-title').click();await page.keyboard.press('r');await ui('#assess-button').click();await ui('#feedback-results').waitFor();const data=JSON.parse(requests.filter(r=>r.url==='/api/assess').at(-1).body);assert.equal(data.inputs.length,1);
+ // A real keypress can arrive before or after 150 ms on a busy runner. Verify
+ // the actual captured event against its clock segment instead of its sign.
+ const downloadPromise=page.waitForEvent('download');await ui('#export-takes').click();const download=await downloadPromise;
+ assert.equal(await download.failure(),null);const take=JSON.parse(await readFile(await download.path(),'utf8'));
+ assert.equal(take.latency_ms,150);assert.equal(take.passes.length,1);
+ const pass=take.passes[0],onsets=take.input_evidence.events.filter(event=>event.kind==='note_on');
+ assert.equal(onsets.length,1);assert.equal(onsets[0].input_kind,'typing_keyboard');assert.equal(onsets[0].timestamp_basis,'event_monotonic');
+ const onset=onsets[0],segment=pass.clock_segments.find(segment=>segment.wallStart<=onset.event_wall_ms&&(segment.wallEnd===null||onset.event_wall_ms<=segment.wallEnd));
+ assert.ok(segment,'The observed keypress belongs to the exported performance segment');
+ const expected=segment.positionStart+(onset.event_wall_ms-take.latency_ms)-segment.wallStart;
+ assert.ok(Math.abs(data.inputs[0].at_ms-expected)<1e-6,JSON.stringify({input:data.inputs[0],expected,onset,segment}));
+ assert.deepEqual(pass.inputs,data.inputs);assert.equal(pass.captures[0].event_wall_ms,onset.event_wall_ms);
+ await ui('#jianpu-button').click();await ui('#jianpu-reference').selectOption('movable');assert.match(await ui('#score-key').textContent(),/1 = C4/);await reloadStage();await ui('#play-button:not([disabled])').waitFor();assert.equal(await ui('#latency-offset').inputValue(),'150');
 });
 test('custom piano and guitar settings apply only valid explicit profiles',async()=>{
  await ui('#key-count').selectOption('custom');await ui('#custom-key-count').fill('25');await ui('#custom-lowest').fill('C#4');await ui('#instrument-apply').click();await page.waitForFunction(()=>document.querySelectorAll('.piano-key').length===25);assert.equal(await ui('.piano-key').first().getAttribute('data-midi'),'61');assert.equal(await ui('.piano-key').last().getAttribute('data-midi'),'85');
@@ -534,7 +547,7 @@ test('cancelled or failed following leaves the current notation and playback ava
  assert.equal(await ui('#engraving-follow').isChecked(),false);assert.equal(await ui('#jianpu-button').getAttribute('aria-pressed'),'true');
  await page.unroute('**/api/notation-navigation');await page.route('**/api/notation-navigation',route=>route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:'Incomplete measure map'})}));
  await ui('#tempo').fill('121');await ui('#tempo').dispatchEvent('change');await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.status==='unavailable'&&document.querySelector('#written-cursor-status').title.includes('Incomplete measure map'));assert.equal(await ui('#written-cursor-status').textContent(),'Current-note following is unavailable. Static notation and playback remain available.');
- await ui('#engraved-button').click();await ui('[data-follow-staff]').waitFor();await ui('#engraving-follow').check();await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('Incomplete measure map'));
+ await ui('#engraved-button').click();await ui('[data-follow-staff]').waitFor();assert.equal(await ui('#engraving-follow').isChecked(),false);await ui('#engraving-follow').click();await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('Incomplete measure map'));
  assert.equal(await ui('#engraving-follow').isChecked(),false);assert.equal(await ui('#engraving-view').isVisible(),true);assert.equal(await ui('#play-button').isEnabled(),true);await ui('#engraving-next').click();assert.match(await ui('#engraving-range').textContent(),/Measures 9–/);
 });
 
@@ -569,7 +582,7 @@ test('local import cancels a pending catalog fetch without letting the delayed s
  const first=catalogCopy('fetch-original'),slow=catalogCopy('fetch-late'),release=deferred(),served=deferred(),compiledIds=[];await routeCatalog([first,slow],async(route,id)=>{if(id!==slow.id)return false;await release.promise;await route.fulfill({contentType:'application/json',body:JSON.stringify(slow)}).catch(()=>{});served.resolve();return true});page.on('request',request=>{if(new URL(request.url()).pathname==='/api/compile')compiledIds.push(request.postDataJSON().id)});await page.reload();await expectCatalogTitle(first.title);const pending=page.waitForRequest('**/api/catalog/score/fetch-late');await ui('[data-score-id="fetch-late"]').click();await pending;const imported=catalogCopy('local-over-fetch');const loaded=page.waitForResponse(response=>response.url().endsWith('/api/compile')&&response.request().postDataJSON().id===imported.id);await ui('#score-file').setInputFiles({name:'local.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(imported))});await loaded;await page.waitForFunction(title=>document.querySelector('#score-title').textContent===title,imported.title);release.resolve();await served.promise;assert.equal(compiledIds.includes(slow.id),false);assert.equal(await ui('#score-title').textContent(),imported.title);
 });
 test('failed metadata keeps an actionable retry after local import and retry does not replace that source',async()=>{
- const reads=[];await page.route('**/api/catalog/index',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Index temporarily unavailable'})}));page.on('request',request=>{if(new URL(request.url()).pathname.startsWith('/api/catalog/score/'))reads.push(request.url())});await page.reload();await page.waitForFunction(()=>document.querySelector('#catalog-status').textContent.includes('metadata is unavailable'));const imported=catalogCopy('local-during-index-error');const loaded=page.waitForResponse(response=>response.url().endsWith('/api/compile')&&response.request().postDataJSON().id===imported.id);await ui('#score-file').setInputFiles({name:'local.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(imported))});await loaded;await page.waitForFunction(title=>document.querySelector('#score-title').textContent===title,imported.title);await closeShellPanels();await page.getByRole('button',{name:'Retry catalog index',exact:true}).waitFor();await page.unroute('**/api/catalog/index');await page.getByRole('button',{name:'Retry catalog index',exact:true}).click();await page.waitForFunction(()=>document.querySelector('#catalog-status').textContent.includes('Complete notes'));assert.equal(await ui('#score-title').textContent(),imported.title);assert.deepEqual(reads,[]);assert.equal(await ui('.catalog-item').count(),1);
+ const reads=[];await page.route('**/api/catalog/index',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Index temporarily unavailable'})}));page.on('request',request=>{if(new URL(request.url()).pathname.startsWith('/api/catalog/score/'))reads.push(request.url())});await page.reload();await page.waitForFunction(()=>document.querySelector('#catalog-status').textContent.includes('metadata is unavailable'));const imported=catalogCopy('local-during-index-error');const loaded=page.waitForResponse(response=>response.url().endsWith('/api/compile')&&response.request().postDataJSON().id===imported.id);await ui('#score-file').setInputFiles({name:'local.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(imported))});await loaded;await page.waitForFunction(title=>document.querySelector('#score-title').textContent===title,imported.title);await closeShellPanels();await ui('#lobby-catalog').getByRole('button',{name:'Retry catalog index',exact:true}).waitFor();await page.unroute('**/api/catalog/index');await ui('#lobby-catalog').getByRole('button',{name:'Retry catalog index',exact:true}).click();await page.waitForFunction(()=>document.querySelector('#catalog-status').textContent.includes('Complete notes'));assert.equal(await ui('#score-title').textContent(),imported.title);assert.deepEqual(reads,[]);assert.equal(await ui('.catalog-item').count(),1);
 });
 
 test('retained source inspection downloads exact inert bytes only after an explicit click',async()=>{
@@ -661,7 +674,15 @@ test('1280 by 720 lobby and performance occupy one screen with secondary tools i
  await page.setViewportSize({width:1280,height:720});await page.reload();await page.locator('#home-single-player').click();await page.locator('#start-listen:not([disabled])').waitFor();
  assert.equal(await page.locator('#song-lobby').isVisible(),true);assert.equal(await page.locator('.skip-link').getAttribute('href'),'#lobby-title');
  await page.screenshot({path:'/tmp/worldmusichub-game-lobby.png',fullPage:true});
- await startPreview({notation:false});const geometry=await page.evaluate(()=>({width:innerWidth,height:innerHeight,docWidth:document.documentElement.scrollWidth,docHeight:document.documentElement.scrollHeight,roll:document.querySelector('#falling-notes').getBoundingClientRect().height}));
+ await startPreview({notation:false});
+ // Closing the score band requests a measured layout update, followed by a
+ // canvas redraw. Sample its settled full-stage geometry, without a time delay.
+ await page.waitForFunction(()=>{
+  const stage=document.querySelector('#workspace'),canvas=document.querySelector('#falling-notes'),dpr=Math.min(devicePixelRatio||1,2);
+  return !stage.classList.contains('with-notation')&&!stage.classList.contains('notation-above')&&document.querySelector('#notation-dock').hidden&&
+   canvas.width===Math.round(canvas.clientWidth*dpr)&&canvas.height===Math.round(canvas.clientHeight*dpr);
+ });
+ const geometry=await page.evaluate(()=>({width:innerWidth,height:innerHeight,docWidth:document.documentElement.scrollWidth,docHeight:document.documentElement.scrollHeight,roll:document.querySelector('#falling-notes').getBoundingClientRect().height}));
  assert.ok(geometry.docWidth<=geometry.width+1&&geometry.docHeight<=geometry.height+1,JSON.stringify(geometry));assert.ok(geometry.roll>=220,JSON.stringify(geometry));assert.equal(await page.locator('.skip-link').getAttribute('href'),'#stage-title');
  await page.screenshot({path:'/tmp/worldmusichub-game-stage.png',fullPage:true});await page.locator('#settings-button').click();assert.equal(await page.locator('#settings-dialog').isVisible(),true);await page.locator('#settings-dialog [data-close-panel]').click();assert.match(await page.locator('#play-button').textContent(),/Play/);
 });
@@ -730,6 +751,7 @@ test('notation export failure follows the current language without retrying or c
   try{
     const requested=page.waitForRequest('**/api/export/musicxml');
     await reloadStage({waitUntil:'domcontentloaded'});await requested;
+    assert.equal(exports,1,'Entering the default notation stage keeps one pending export across surface notifications');
     await ui('#engraving-part').focus();
     await assertLocaleRoundTrip(page,{root:'#notation-dock',message:{selector:'#engraving-status',key:'notationRuntime.preparing'}});
     assert.equal(exports,1,'A language switch keeps the original export request pending');

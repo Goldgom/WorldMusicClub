@@ -1105,19 +1105,21 @@ test('real Rust follow crosses Jianpu rests and silent measures while manual bro
   const score=structuredClone(fixture),beat=n=>({numerator:n,denominator:1}),seed=score.parts[0].notes[0];
   score.id='original-shared-follow-study';score.title='Original shared follow study';score.tempo=[{at:beat(0),bpm:120}];
   score.meters=[{at:beat(0),numerator:1,denominator:4}];
-  score.measures=Array.from({length:24},(_,index)=>({number:7,at:beat(index),length:beat(1)}));
-  score.parts[0].notes=Array.from({length:24},(_,index)=>({...structuredClone(seed),id:`shared-${index}`,at:beat(index),duration:beat(1),pitch:index===8?null:{step:'C',alter:0,octave:4},velocity:index===8?0:90})).filter((_,index)=>index!==9&&index!==10&&index!==11);
-  score.repeats=[{from:beat(0),to:beat(16),times:2}];
+  // The full-width desktop notation page holds 16 beats. Put the written
+  // rest exactly at the next page boundary, followed by genuinely empty bars.
+  score.measures=Array.from({length:32},(_,index)=>({number:7,at:beat(index),length:beat(1)}));
+  score.parts[0].notes=Array.from({length:32},(_,index)=>({...structuredClone(seed),id:`shared-${index}`,at:beat(index),duration:beat(1),pitch:index===16?null:{step:'C',alter:0,octave:4},velocity:index===16?0:90})).filter((_,index)=>index!==17&&index!==18&&index!==19);
+  score.repeats=[{from:beat(0),to:beat(24),times:2}];
   await ui('#score-file').setInputFiles({name:'shared-follow.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);
   await ui('#jianpu-button').click();await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.status==='ready');
   assert.equal(await page.locator('#engraving-follow').isVisible(),true);assert.equal(await page.locator('#engraving-follow').isChecked(),true);
   await ui('#count-in').uncheck();await closeShellPanels();await page.locator('#reset-button').click();
   const firstPage=await page.locator('#notation-page').textContent();
   await page.locator('#play-button').click();
-  await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex==='8');
+  await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex==='16');
   assert.notEqual(await page.locator('#notation-page').textContent(),firstPage,'An explicit written rest turns the basic page');
-  assert.equal(await page.locator('#notation .score-note.active[data-note-id="shared-8"]').count(),1);
-  await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex==='9');
+  assert.equal(await page.locator('#notation .score-note.active[data-note-id="shared-16"]').count(),1);
+  await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex==='17');
   assert.equal(await page.locator('#notation .score-note.active').count(),0);assert.notEqual(await page.locator('#notation-page').textContent(),firstPage,'Silent measures retain the correct source page');
   await page.locator('#notation-prev').click();const manualPage=await page.locator('#notation-page').textContent();
   assert.equal(await page.locator('#engraving-follow').isChecked(),false);assert.match(await page.locator('#play-button').textContent(),/Pause/);

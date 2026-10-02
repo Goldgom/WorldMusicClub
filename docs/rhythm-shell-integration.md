@@ -93,8 +93,11 @@ gate; repeated observer frames must settle with no further height changes. Hoste
 viewport, clipping, key access, canvas minimum and paused-take checks; placement
 checks distinguish the top band from the compact side fallback. The new original
 two-staff fixture adds actual page following into measures 9–12 and staff/Jianpu
-round trips, paused practice-take preservation, held key contacts through resize
-and notation switches, and a separate staff/Jianpu screenshot at every size.
+round trips, paused practice-take preservation, and held typing contacts through
+resize in each notation view. A separate real control click verifies the existing
+safe focus boundary: notation buttons release typing ownership, later physical
+keyup leaves no stuck key, and returning to the stage permits a fresh note.
+Each size also has a separate staff/Jianpu screenshot.
 The grand-staff case uses Practice so a real recorded pass exists before exporting
 its take; source notes and all 12 written measures remain identical on export.
 These browser assertions and screenshots require an authorized hosted run; no

@@ -128,7 +128,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
 
   test('real initial compact guide stays on stage through tall and short resizes without losing held input or playfield space',{timeout:60_000},async()=>{
     const page=getPage();await page.setViewportSize({width:844,height:390});await page.reload();
-    await page.locator('#start-listen:not([disabled])').waitFor();
+    await page.locator('#home-single-player').click();await page.locator('#start-listen:not([disabled])').waitFor();
     const {score}=await prepare('beginner-initial-compact');
     assert.equal(await page.locator('#beginner-enabled').isChecked(),false);
     assert.equal(await page.locator('#beginner-controls').evaluate(element=>element.closest('dialog')),null);

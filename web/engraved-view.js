@@ -183,7 +183,13 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
   }
   i18n.subscribe(redrawLocale);
   redrawLocale();
-  return {show,hide,updateScore,selectPart,setExpectedWrittenNotes,clearExpectedWrittenNotes,revealExpectedWrittenNotes,resetReveal(){lastReveal=''},mappingStatus,isActive:()=>active,surfaceChanged(){if(active&&isVisible())render();else cancel()},
+  return {show,hide,updateScore,selectPart,setExpectedWrittenNotes,clearExpectedWrittenNotes,revealExpectedWrittenNotes,resetReveal(){lastReveal=''},mappingStatus,isActive:()=>active,surfaceChanged(){
+      lastReveal='';
+      // Entering the desktop stage can expose notation and then notify the
+      // screen change. Both notifications own the same in-flight render.
+      // A genuinely hidden surface cancels below and creates fresh work on return.
+      if(active&&isVisible()){if(!controller)render();}else cancel();
+    },
     navigationState:()=>({from,ready:Boolean(rendered)}),
     followMeasure(index){if(!active||!score||!Number.isInteger(index)||index<0||index>=score.measures.length)return false;const page=sourceMeasurePage(index,pageSize);if(page===from)return false;from=page;render();return true}
   };

@@ -105,20 +105,32 @@ export function registerLocaleBrowserRegressions({test,getPage,ui,closeShellPane
     const retained=await page.evaluate(async()=>{
       const {getAppI18n}=await import('/app-locale.js'),i18n=getAppI18n(document),root=document.querySelector('#engraved-staff'),mount=root.firstElementChild;
       const svg=[...root.querySelectorAll('svg')],heads=[...root.querySelectorAll('.vf-notehead')];
-      const geometry=()=>{const origin=mount.getBoundingClientRect();return heads.map(node=>{const r=node.getBoundingClientRect();return{x:r.x-origin.x,y:r.y-origin.y,width:r.width,height:r.height};});};
-      const before=geometry(),markup=svg.map(node=>node.outerHTML),range=document.querySelector('#engraving-range').textContent;
+      // SVG screen bounds are float-backed and lose precision when translated
+      // by relabeled HTML chrome. Compare exact native glyph bounds/transforms,
+      // rendered scale, and each SVG viewport's position inside the same mount.
+      // This catches actual movement or scaling without rounding the glyphs.
+      const rect=value=>({x:value.x,y:value.y,width:value.width,height:value.height});
+      const matrix=(value,keys=['a','b','c','d','e','f'])=>Object.fromEntries(keys.map(key=>[key,value[key]]));
+      const geometry=()=>{
+        const origin=mount.getBoundingClientRect();
+        return {viewports:svg.map(node=>{const r=node.getBoundingClientRect();return{x:r.x-origin.x,y:r.y-origin.y,width:r.width,height:r.height};}),
+          heads:heads.map(node=>({bounds:rect(node.getBBox()),toViewport:matrix(node.getCTM()),screenScale:matrix(node.getScreenCTM(),['a','b','c','d'])}))};
+      };
+      const screenBounds=()=>{const origin=mount.getBoundingClientRect();return heads.map(node=>{const r=node.getBoundingClientRect();return{x:r.x-origin.x,y:r.y-origin.y,width:r.width,height:r.height};});};
+      const before=geometry(),screenBefore=screenBounds(),markup=svg.map(node=>node.outerHTML),range=document.querySelector('#engraving-range').textContent;
       return ['zh-CN','en'].map(locale=>{
         i18n.setLocale(locale);
         return {locale,sameMount:root.firstElementChild===mount,sameSvg:root.querySelectorAll('svg').length===svg.length&&[...root.querySelectorAll('svg')].every((node,index)=>node===svg[index]),
           sameHeads:root.querySelectorAll('.vf-notehead').length===heads.length&&[...root.querySelectorAll('.vf-notehead')].every((node,index)=>node===heads[index]),headCount:heads.length,markup,afterMarkup:svg.map(node=>node.outerHTML),
-          before,after:geometry(),aria:mount.getAttribute('aria-label'),status:document.querySelector('#engraving-status').textContent,
+          before,after:geometry(),screenBefore,screenAfter:screenBounds(),aria:mount.getAttribute('aria-label'),status:document.querySelector('#engraving-status').textContent,
           rangeBefore:range,rangeAfter:document.querySelector('#engraving-range').textContent};
       });
     });
     for(const snapshot of retained){
       for(const key of ['sameMount','sameSvg','sameHeads'])assert.equal(snapshot[key],true,key);
       assert.ok(snapshot.headCount>0);assert.deepEqual(snapshot.afterMarkup,snapshot.markup,'Relabeling retains exact rendered musical geometry');
-      for(const [index,bounds]of snapshot.after.entries())for(const key of ['x','y','width','height'])assert.ok(Math.abs(bounds[key]-snapshot.before[index][key])<1e-6,'Notehead bounds relative to the staff stay unchanged');
+      console.info('Locale staff geometry:',JSON.stringify({locale:snapshot.locale,before:snapshot.before,after:snapshot.after,screenBefore:snapshot.screenBefore,screenAfter:snapshot.screenAfter}));
+      assert.deepEqual(snapshot.after,snapshot.before,'Exact notehead bounds, transforms, rendered scale and staff-relative SVG viewports stay unchanged');
       assert.match(snapshot.aria,snapshot.locale==='en'?/Engraved staff, measures/:/五线谱/);
       assert.match(snapshot.status,snapshot.locale==='en'?/Generated staff preview/:/生成的五线谱预览/);
     }

@@ -5,15 +5,49 @@ import {setupEngravedView} from '../web/engraved-view.js';
 import {fixture} from './frontend-fixtures.js';
 import {planEngravingReveal} from '../web/engraving-reveal.js';
 const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return{promise,resolve}};
-function environment({loadAdapter,onManualNavigation,observeResize=false,i18n=createI18n({locale:'en'})}={}){
+function environment({loadAdapter,onManualNavigation,isVisible,observeResize=false,i18n=createI18n({locale:'en'})}={}){
  const prior=Object.fromEntries(['document','window','MutationObserver','ResizeObserver','fetch'].map(key=>[key,globalThis[key]]));const elements=new Map(),calls=[],visible=[],failures=[],resizeObservers=[],windowListeners=new Map();let score=null,pauses=0;const failure=deferred();
  const element=id=>{if(!elements.has(id))elements.set(id,{textContent:'',hidden:true,value:'',children:[],listeners:new Map(),addEventListener(type,handler){this.listeners.set(type,handler)},replaceChildren(){this.children=[]},append(item){this.children.push(item)}});return elements.get(id)};
  globalThis.document={getElementById:element,createElement:()=>({}),documentElement:{dataset:{theme:'light'}}};globalThis.window={addEventListener(type,handler){if(!windowListeners.has(type))windowListeners.set(type,[]);windowListeners.get(type).push(handler)}};globalThis.MutationObserver=class{observe(){}};globalThis.fetch=(_,options)=>{const response=deferred();calls.push({options,...response});return response.promise};
  if(observeResize)globalThis.ResizeObserver=class{constructor(callback){this.callback=callback;this.observed=[];resizeObservers.push(this)}observe(element){this.observed.push(element)}disconnect(){this.observed=[]}};
- const view=setupEngravedView({i18n,getScore:()=>score,getPracticePart:()=>null,pausePlayback(){pauses++},onVisibility:value=>visible.push(value),onFallback(){failures.push(element('engraving-fallback').textContent);failure.resolve()},notice(){},loadAdapter,onManualNavigation});
+ const view=setupEngravedView({i18n,getScore:()=>score,getPracticePart:()=>null,isVisible,pausePlayback(){pauses++},onVisibility:value=>visible.push(value),onFallback(){failures.push(element('engraving-fallback').textContent);failure.resolve()},notice(){},loadAdapter,onManualNavigation});
  return{view,elements,calls,visible,failures,failure,resizeObservers,windowListeners,get pauses(){return pauses},setScore(next=structuredClone(fixture)){score=next;view.updateScore();return score},close(){view.hide();for(const[key,value]of Object.entries(prior))if(value===undefined)delete globalThis[key];else globalThis[key]=value}};
 }
 test('the first score requests engraved presentation by default, without starting playback',()=>{const env=environment();try{assert.equal(env.calls.length,0);env.setScore();assert.equal(env.calls.length,1);assert.equal(env.view.isActive(),true);assert.equal(env.visible.at(-1),true);assert.equal(JSON.parse(env.calls[0].options.body).id,fixture.id);env.view.updateScore();assert.equal(env.calls.length,1,'Ordinary UI refreshes must not re-render an unchanged score');}finally{env.close()}});
+test('duplicate visible surface notifications retain pending export and ready mount, while hiding cancels and returning renders',async()=>{
+ let shown=false,renders=0,disposals=0;const mount={tagName:'svg'};
+ const env=environment({isVisible:()=>shown,loadAdapter:async()=>({disposeEngravedStaff(){},async renderEngravedStaff(container,xml,options){renders++;container.append(mount);return{ok:true,metadata:{fromMeasure:options.fromMeasure,toMeasure:options.toMeasure},dispose(){disposals++;container.replaceChildren()}}}})});
+ try{
+  env.setScore();assert.equal(env.calls.length,0,'A hidden stage does not export');
+  shown=true;env.view.surfaceChanged();const pending=env.calls[0];env.view.surfaceChanged();
+  assert.equal(env.calls.length,1,'Notation opening and stage entry share the pending request');assert.equal(pending.options.signal.aborted,false);
+  shown=false;env.view.surfaceChanged();assert.equal(pending.options.signal.aborted,true,'Leaving the stage cancels its pending request');
+  shown=true;env.view.surfaceChanged();assert.equal(env.calls.length,2);env.view.surfaceChanged();assert.equal(env.calls.length,2);
+  const exported={xml:'<score-partwise/>',part_id_map:{piano:'P1'},diagnostics:[]};
+  pending.resolve({ok:false,status:400,json:async()=>({error:'Obsolete hidden-surface error'})});
+  env.calls[1].resolve({ok:true,json:async()=>exported});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(renders,1);assert.deepEqual(env.failures,[]);env.view.surfaceChanged();
+  assert.equal(renders,1);assert.equal(disposals,0);assert.deepEqual(env.elements.get('engraved-staff').children,[mount]);
+  shown=false;env.view.surfaceChanged();assert.equal(disposals,1);shown=true;env.view.surfaceChanged();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(renders,2,'Returning mounts a new visible renderer');assert.equal(env.calls.length,2,'Returning uses the exact cached export');assert.equal(env.pauses,0);
+ }finally{env.close()}
+});
+test('surface notifications preserve an in-flight renderer and its latest exact queued source identities',async()=>{
+ const ready=deferred(),mount={tagName:'svg'},received=[];let renders=0,signal;
+ const env=environment({loadAdapter:async()=>({disposeEngravedStaff(){},async renderEngravedStaff(container,xml,options,pendingSignal){
+  renders++;signal=pendingSignal;await ready.promise;container.append(mount);
+  return{ok:true,metadata:{fromMeasure:options.fromMeasure,toMeasure:options.toMeasure},dispose(){container.replaceChildren()},mappingStatus:()=>({status:'ready',verifiedGlyphCount:1,diagnostics:[]}),setExpectedWrittenNotes(value){received.push(value);return true},clearExpectedWrittenNotes:()=>true};
+ }})});
+ try{
+  const score=env.setScore(),original=JSON.stringify(score),expected={sourceNoteIds:['e4'],sourceMeasureIndex:0};
+  env.calls[0].resolve({ok:true,json:async()=>({xml:'<score-partwise/>',part_id_map:{piano:'P1'},diagnostics:[]})});await new Promise(resolve=>setImmediate(resolve));
+  env.view.setExpectedWrittenNotes({sourceNoteIds:['c4'],sourceMeasureIndex:0});env.view.surfaceChanged();env.view.setExpectedWrittenNotes(expected);env.view.surfaceChanged();
+  assert.equal(renders,1);assert.equal(signal.aborted,false);assert.equal(env.calls.length,1);assert.equal(env.view.navigationState().ready,false);
+  ready.resolve();await new Promise(resolve=>setImmediate(resolve));env.view.surfaceChanged();
+  assert.deepEqual(received,[expected]);assert.deepEqual(env.elements.get('engraved-staff').children,[mount]);assert.equal(env.view.navigationState().ready,true);
+  assert.equal(renders,1);assert.equal(env.calls.length,1);assert.equal(env.pauses,0);assert.equal(JSON.stringify(score),original);
+ }finally{ready.resolve();env.close()}
+});
 test('explicit simplified or numbered selection survives score changes and cancels old exports',()=>{const env=environment();try{env.setScore();env.view.hide({remember:true});assert.equal(env.calls[0].options.signal.aborted,true);env.setScore({...structuredClone(fixture),id:'next'});assert.equal(env.calls.length,1);assert.equal(env.view.isActive(),false);env.view.show();assert.equal(env.calls.length,2);assert.equal(env.view.isActive(),true);}finally{env.close()}});
 test('failed engraving retains its exact reason with a named fallback and retries only for a new score or explicit request',async()=>{const env=environment();try{env.setScore();env.calls[0].resolve({ok:false,status:400,json:async()=>({error:'Unsupported nonrepresentable rhythm.'})});await env.failure.promise;assert.equal(env.view.isActive(),false);assert.equal(env.elements.get('engraving-fallback').hidden,false);assert.match(env.failures[0],/Unsupported nonrepresentable rhythm/);assert.match(env.failures[0],/simplified pitch guide/);env.view.updateScore();assert.equal(env.calls.length,1);env.setScore({...structuredClone(fixture),id:'new-source'});assert.equal(env.calls.length,2);assert.equal(env.view.isActive(),true);assert.equal(env.elements.get('engraving-fallback').hidden,true);}finally{env.close()}});
 
@@ -96,7 +130,7 @@ test('following reveals fresh verified bounds once per identity or geometry chan
   env.elements.get('engraving-follow').checked=true;assert.equal(env.view.revealExpectedWrittenNotes('occurrence-1').status,'ready');assert.equal(dock.scrollTop,272);assert.equal(scroller.scrollLeft,172);
   for(let frame=0;frame<40;frame++){env.view.setExpectedWrittenNotes(expected);env.view.revealExpectedWrittenNotes('occurrence-1')}assert.equal(reads,1,'Unchanged display frames must not read glyph geometry');
   renderGeneration++;env.view.revealExpectedWrittenNotes('occurrence-1');assert.equal(reads,2);env.view.revealExpectedWrittenNotes('repeat-2');assert.equal(reads,3);
-  for(const invalidate of [()=>env.resizeObservers[0].callback(),()=>env.windowListeners.get('resize')[0](),()=>dock.listeners.get('toggle')({}),()=>env.view.resetReveal()]){dock.scrollTop=0;invalidate();assert.equal(env.view.revealExpectedWrittenNotes('repeat-2').status,'ready');assert.equal(dock.scrollTop,272)}assert.equal(reads,7,'Resize, layout details and explicit re-enable refresh an otherwise unchanged identity');
+  for(const invalidate of [()=>env.resizeObservers[0].callback(),()=>env.windowListeners.get('resize')[0](),()=>dock.listeners.get('toggle')({}),()=>env.view.resetReveal(),()=>env.view.surfaceChanged()]){dock.scrollTop=0;invalidate();assert.equal(env.view.revealExpectedWrittenNotes('repeat-2').status,'ready');assert.equal(dock.scrollTop,272)}assert.equal(reads,8,'Resize, layout details, explicit re-enable and surface changes refresh an otherwise unchanged identity');
   dock.scrollTop=0;boundsStatus='unavailable';env.view.resetReveal();assert.equal(env.view.revealExpectedWrittenNotes('repeat-2').status,'unavailable');assert.equal(dock.scrollTop,0,'Unverified rectangles are never scroll targets');
   boundsStatus='ready';throwBounds=true;env.view.resetReveal();assert.doesNotThrow(()=>env.view.revealExpectedWrittenNotes('repeat-2'));assert.equal(dock.scrollTop,0,'Optional geometry errors preserve the playback frame and pane');throwBounds=false;
   env.view.setExpectedWrittenNotes({sourceNoteIds:['unknown'],sourceMeasureIndex:0});env.view.setExpectedWrittenNotes(expected);assert.equal(env.view.revealExpectedWrittenNotes('repeat-2').status,'ready');assert.equal(dock.scrollTop,272);

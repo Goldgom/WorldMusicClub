@@ -84,16 +84,37 @@ export function registerAboveKeyboardBrowserRegressions({test,getPage,ui,readyFo
     assert.equal(await page.locator('#engraving-follow').isChecked(),false);assert.equal(await page.locator('#engraving-range').textContent(),manualRange);
     assert.deepEqual(await exportTakeData(),take,'Placement, modes and pages never alter the paused performance');
     assert.deepEqual(await exportScore(),score,'The complete original two-staff score is preserved');
-    await dismissNotice();await page.locator('#stage-title').focus();await page.keyboard.down('r');
+    await dismissNotice();
+    const heldKeys=()=>page.locator('#keyboard .piano-key.pressed').evaluateAll(nodes=>nodes.map(node=>({midi:node.dataset.midi,pressed:node.getAttribute('aria-pressed')})));
+    const contact=[{midi:'60',pressed:'true'}],resizeContacts=[];
+    // Choose a view before holding input: a real click deliberately moves focus
+    // to a protected, nonmusical control and releases typing-key ownership.
+    for(const button of ['#jianpu-button','#engraved-button']){
+      await page.locator(button).click();await settle();if(button==='#engraved-button')await waitForEngraving();
+      await page.locator('#stage-title').focus();await page.keyboard.down('r');
+      try{
+        await page.waitForFunction(()=>document.querySelector('#keyboard .piano-key.pressed'));
+        assert.deepEqual(await heldKeys(),contact);
+        for(const viewport of [{width:1920,height:1080},{width:1280,height:720}]){
+          await page.setViewportSize(viewport);await settle();if(button==='#engraved-button')await waitForEngraving();
+          assert.equal(await page.evaluate(()=>document.activeElement.id),'stage-title','Resize keeps performance focus');
+          assert.deepEqual(await heldKeys(),contact,'Resize alone retains the exact typing contact in either notation view');
+          resizeContacts.push({view:button,viewport,held:await heldKeys()});
+        }
+      }finally{await page.keyboard.up('r');}
+      await page.waitForFunction(()=>!document.querySelector('#keyboard .piano-key.pressed'));
+    }
+    await page.locator('#stage-title').focus();await page.keyboard.down('r');
     try{
       await page.waitForFunction(()=>document.querySelector('#keyboard .piano-key.pressed'));
-      const held=await page.locator('#keyboard .piano-key.pressed').evaluateAll(nodes=>nodes.map(node=>({midi:node.dataset.midi,pressed:node.getAttribute('aria-pressed')})));
-      for(const viewport of [{width:1920,height:1080},{width:1280,height:720}]){
-        await page.setViewportSize(viewport);await settle();
-        for(const button of ['#jianpu-button','#engraved-button']){await page.locator(button).click();await settle();if(button==='#engraved-button')await waitForEngraving();assert.deepEqual(await page.locator('#keyboard .piano-key.pressed').evaluateAll(nodes=>nodes.map(node=>({midi:node.dataset.midi,pressed:node.getAttribute('aria-pressed')}))),held,'Resize and notation switches retain the held key contact');}
-      }
+      await page.locator('#jianpu-button').click();
+      assert.equal(await page.evaluate(()=>document.activeElement.id),'jianpu-button','The real notation button receives focus');
+      await page.waitForFunction(()=>!document.querySelector('#keyboard .piano-key.pressed'));
     }finally{await page.keyboard.up('r');}
+    await page.locator('#stage-title').focus();await page.keyboard.down('r');
+    try{await page.waitForFunction(()=>document.querySelector('#keyboard .piano-key.pressed'));assert.deepEqual(await heldKeys(),contact,'Fresh input works after protected control focus and the physical keyup');}
+    finally{await page.keyboard.up('r');}
     await page.waitForFunction(()=>!document.querySelector('#keyboard .piano-key.pressed'));
-    await writeFile(join(artifactDirectory,'worldmusichub-above-keyboard.json'),JSON.stringify({original_fixtures_only:true,initial,cues,evidence,paused_take_unchanged:true,canonical_score_unchanged:true,held_key_survived_view_and_resize:true},null,2));
+    await writeFile(join(artifactDirectory,'worldmusichub-above-keyboard.json'),JSON.stringify({original_fixtures_only:true,initial,cues,evidence,resizeContacts,paused_take_unchanged:true,canonical_score_unchanged:true,held_typing_key_survived_resize:true,notation_control_focus_released_typing_key:true,typing_input_recovered_after_control_focus:true,notation_switches_preserved_current_score_cues:true},null,2));
   });
 }
