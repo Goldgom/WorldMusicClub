@@ -110,7 +110,8 @@ async function startPreview({reset = true, notation = true, mode = 'listen'} = {
   await page.locator('#play-button').waitFor({state: 'visible'});
   await page.waitForFunction(() => !document.querySelector('#start-listen').disabled);
   if (reset) await page.locator('#reset-button').click();
-  if (notation && !await page.locator('#notation-dock').isVisible()) await page.locator('#notation-toggle').click();
+  // This helper makes an explicit test view choice; desktop startup may already show notation.
+  if (await page.locator('#notation-dock').isVisible() !== notation) await page.locator('#notation-toggle').click();
 }
 async function reloadStage(options) {
   const response = await page.reload(options);
@@ -424,7 +425,11 @@ beforeEach(async t => {
       page.goto(origin, {waitUntil: 'domcontentloaded'}),
     ]);
     initialCompilation = await responseJson(compilation);
-    assert.equal(await ui('#song-lobby').isVisible(), true);
+    await page.locator('#game-home').waitFor({state:'visible'});
+    assert.equal(await page.locator('#workspace').isVisible(),false,'Startup menu does not activate a practice session');
+    await page.locator('#home-single-player').click();
+    await page.locator('#song-lobby').waitFor({state:'visible'});
+    assert.equal(await page.locator('#game-home').isVisible(),false,'Single-player enters the actual library');
     await selectLegacyEnglish(page,{fresh:true});
     await startPreview();
     await readyForTitle(initialCompilation.score.title);
@@ -2250,11 +2255,11 @@ test('real IME and form-focus boundaries release physical notes without inventin
 });
 
 test('real Sound Off scored Start and Play capture silently without creating an AudioContext',testOptions,async()=>{
-  await page.addInitScript(observeRealAudio);await page.reload({waitUntil:'domcontentloaded'});await page.locator('#start-practice:not([disabled])').waitFor();
+  await page.addInitScript(observeRealAudio);await page.reload({waitUntil:'domcontentloaded'});await page.locator('#home-single-player').click();await page.locator('#start-practice:not([disabled])').waitFor();
   assert.deepEqual(await page.evaluate(()=>audioObservation),{construct:0,resume:0,oscillator:0,start:0,stop:0});
   // Free practice exposes the shared Sound switch before any scored activation.
   // No free recording is started; every sound change is a visible user action.
-  await page.locator('#start-free-practice').click();await page.locator('#free-sound').click();assert.equal(await page.locator('#free-sound').getAttribute('aria-pressed'),'false');await page.locator('#free-exit').click();
+  await ui('#start-free-practice').click();await page.locator('#free-sound').click();assert.equal(await page.locator('#free-sound').getAttribute('aria-pressed'),'false');await page.locator('#free-exit').click();
   await ui('#count-in').uncheck();await closeShellPanels();await startPreview({reset:false,notation:false,mode:'practice'});assert.equal(await page.locator('#sound-button').getAttribute('aria-pressed'),'true');
   await page.waitForFunction(()=>document.querySelector('#progress').value>0);await page.locator('#stage-title').click();await page.keyboard.press('r');await page.locator('#play-button').click();
   const position=await page.locator('#progress').evaluate(element=>element.value);await page.locator('#play-button').click();await page.waitForFunction(previous=>document.querySelector('#progress').value>previous,position);await page.locator('#stage-title').click();await page.keyboard.press('i');await page.locator('#play-button').click();
@@ -2287,7 +2292,7 @@ async function downloadFreeRecord(selector='#free-export-record') {
 }
 async function enterSilentFreePractice() {
   if(await page.locator('#workspace').isVisible())await page.locator('#back-to-library').click();
-  await page.locator('#start-free-practice').click();await page.locator('#free-practice-screen').waitFor();
+  await ui('#start-free-practice').click();await page.locator('#free-practice-screen').waitFor();
   if(await page.locator('#free-sound').getAttribute('aria-pressed')==='true')await page.locator('#free-sound').click();
   assert.equal(await page.locator('#free-sound').getAttribute('aria-pressed'),'false');
 }
@@ -2357,7 +2362,7 @@ test('real Free recording and return preserve the complete paused scored take, l
   const before=await exportTakeData(),snapshot=await pausedTakeSnapshot(),loop=await page.locator('#loop-from,#loop-to,#loop-enabled').evaluateAll(elements=>elements.map(element=>({id:element.id,value:element.value,checked:element.checked})));
   const requestStart=requests.length;await enterSilentFreePractice();const free=await recordAndSaveFreeKeys('Separate free record',['i','p']);assertFreeMusicalEvents(free.data,[64,66]);assert.equal(await page.locator('#workspace').isVisible(),false);
   await page.locator('#free-exit').click();await page.locator('#resume-session').click();assert.deepEqual(await pausedTakeSnapshot(),snapshot);assert.deepEqual(await page.locator('#loop-from,#loop-to,#loop-enabled').evaluateAll(elements=>elements.map(element=>({id:element.id,value:element.value,checked:element.checked}))),loop);assert.deepEqual(await exportTakeData(),before,'Free observations, library writes and navigation cannot leak into the scored recorder or its keyboard-configuration history');assert.deepEqual(await exportScore(),score);
-  assert.deepEqual(requests.slice(requestStart),[]);await closeShellPanels();await page.locator('#back-to-library').click();await page.locator('#start-free-practice').click();assert.equal((await downloadFreeRecord()).text,free.text,'Returning to Free practice retains its independently saved selection');
+  assert.deepEqual(requests.slice(requestStart),[]);await closeShellPanels();await page.locator('#back-to-library').click();await ui('#start-free-practice').click();assert.equal((await downloadFreeRecord()).text,free.text,'Returning to Free practice retains its independently saved selection');
 });
 
 test('real explicit guitar phrase uses Rust inventory then filtered locks without changing source, take or playback loop',testOptions,async()=>{

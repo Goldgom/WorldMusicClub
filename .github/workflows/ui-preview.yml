@@ -26,6 +26,7 @@ jobs:
         env:
           WMH_ARTIFACT_DIR: ui-preview
         run: |
+          set -o pipefail
           mkdir -p ui-preview
           node --test --test-reporter=tap --test-name-pattern='^(real free piano fills desktop|original grand staff and Jianpu follow|game menu and audible song preview)' tests/full-app-browser.test.js | tee ui-preview/tests.tap
       - name: Verify preview provenance and required real screenshots

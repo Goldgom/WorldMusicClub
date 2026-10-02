@@ -77,7 +77,8 @@ async function startPreview({reset = true, notation = true, mode = 'listen'} = {
   await page.locator('#play-button').waitFor({state: 'visible'});
   await page.waitForFunction(() => !document.querySelector('#start-listen').disabled);
   if (reset) await page.locator('#reset-button').click();
-  if (notation && !await page.locator('#notation-dock').isVisible()) await page.locator('#notation-toggle').click();
+  // This helper makes an explicit test view choice; desktop startup may already show notation.
+  if (await page.locator('#notation-dock').isVisible() !== notation) await page.locator('#notation-toggle').click();
 }
 async function reloadStage(options) {
   const response = await page.reload(options);
@@ -623,7 +624,7 @@ test('saved-copy archival download preserves all data and warns when the current
 
 test('lobby starts silent with separate preview validation and only explicit Start activates the score',async()=>{
  const seen=[];page.on('request',request=>{if(new URL(request.url()).pathname==='/api/compile')seen.push(request.postDataJSON().id)});
- await page.reload();await page.locator('#start-practice:not([disabled])').waitFor();
+ await page.reload();await page.locator('#home-single-player').click();await page.locator('#start-practice:not([disabled])').waitFor();
  assert.equal(await page.locator('#song-lobby').isVisible(),true);assert.equal(await page.locator('#workspace').isVisible(),false);assert.equal(await page.locator('#resume-session').isVisible(),false);assert.equal(await page.locator('#score-tools-button').isDisabled(),true);assert.equal(await page.locator('#preview-title').textContent(),fixture.title);assert.deepEqual(seen,[fixture.id],'Preview validates once without activating a take');
  await page.locator('#lobby-title').click();await page.keyboard.press('a');await page.keyboard.press('Space');assert.equal(await page.locator('.piano-key.pressed').count(),0);assert.equal(await page.locator('#workspace').isVisible(),false);
  await startPreview({reset:false,notation:false,mode:'practice'});await page.locator('#play-button').waitFor();assert.equal(await page.locator('#song-lobby').isVisible(),false);assert.equal(await page.locator('#stage-title').textContent(),fixture.title);assert.deepEqual(seen,[fixture.id,fixture.id],'Start uses a fresh canonical activation after preview validation');assert.equal(await page.locator('#notation-dock').isVisible(),false);assert.equal(await page.locator('#session-mode').inputValue(),'practice');
@@ -647,17 +648,17 @@ test('browsing another preview preserves the current take, canonical export and 
 
 test('practice Start remains disabled through pending and failed preview targets while Listen stays explicit',async()=>{
  const release=deferred(),started=deferred();await page.route('**/api/practice-targets',async route=>{started.resolve();await release.promise;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Preview target service unavailable'})})});
- await page.reload({waitUntil:'domcontentloaded'});await started.promise;await page.locator('#start-listen:not([disabled])').waitFor();assert.equal(await page.locator('#start-practice').isDisabled(),true);assert.equal(await page.locator('#workspace').isVisible(),false);release.resolve();await page.waitForFunction(()=>document.querySelector('#preview-gate').textContent==='Compatibility could not be verified. Review the original diagnostics and retry.');assert.equal(await page.locator('#start-practice').isDisabled(),true);assert.equal(await page.locator('#start-listen').isEnabled(),true);
+ await page.reload({waitUntil:'domcontentloaded'});await started.promise;await page.locator('#home-single-player').click();await page.locator('#start-listen:not([disabled])').waitFor();assert.equal(await page.locator('#start-practice').isDisabled(),true);assert.equal(await page.locator('#workspace').isVisible(),false);release.resolve();await page.waitForFunction(()=>document.querySelector('#preview-gate').textContent==='Compatibility could not be verified. Review the original diagnostics and retry.');assert.equal(await page.locator('#start-practice').isDisabled(),true);assert.equal(await page.locator('#start-listen').isEnabled(),true);
  await page.unroute('**/api/practice-targets');await startPreview({notation:false});assert.equal(await page.locator('#session-mode').inputValue(),'listen');assert.equal(await page.locator('#stage-title').textContent(),fixture.title);
 });
 
 test('preview range and part choices gate Practice Start without altering original notes',async()=>{
- const score=catalogCopy('preview-range','Preview range');score.parts.push({id:'out-of-range',name:'High source part',instrument:'piano',notes:[{...structuredClone(fixture.parts[0].notes[0]),id:'high-source',pitch:{step:'C',alter:0,octave:8}}]});await routeCatalog([score]);await page.reload();await page.locator('#start-listen:not([disabled])').waitFor();await page.waitForFunction(()=>document.querySelector('#preview-gate').textContent==='Selected notes outside this instrument range: 1. Change the range, tuning, part or loop before practicing.');assert.equal(await page.locator('#start-practice').isDisabled(),true);assert.equal(await page.locator('#score-tools-button').isDisabled(),true);
+ const score=catalogCopy('preview-range','Preview range');score.parts.push({id:'out-of-range',name:'High source part',instrument:'piano',notes:[{...structuredClone(fixture.parts[0].notes[0]),id:'high-source',pitch:{step:'C',alter:0,octave:8}}]});await routeCatalog([score]);await page.reload();await page.locator('#home-single-player').click();await page.locator('#start-listen:not([disabled])').waitFor();await page.waitForFunction(()=>document.querySelector('#preview-gate').textContent==='Selected notes outside this instrument range: 1. Change the range, tuning, part or loop before practicing.');assert.equal(await page.locator('#start-practice').isDisabled(),true);assert.equal(await page.locator('#score-tools-button').isDisabled(),true);
  await page.locator('#preview-part').selectOption('piano');await page.locator('#start-practice:not([disabled])').waitFor();await startPreview({mode:'practice',notation:false});assert.equal(await page.locator('#practice-part').inputValue(),'piano');const download=page.waitForEvent('download');await ui('#export-button').click();assert.deepEqual(JSON.parse(await readFile(await(await download).path(),'utf8')),score);
 });
 
 test('1280 by 720 lobby and performance occupy one screen with secondary tools in panels',async()=>{
- await page.setViewportSize({width:1280,height:720});await page.reload();await page.locator('#start-listen:not([disabled])').waitFor();
+ await page.setViewportSize({width:1280,height:720});await page.reload();await page.locator('#home-single-player').click();await page.locator('#start-listen:not([disabled])').waitFor();
  assert.equal(await page.locator('#song-lobby').isVisible(),true);assert.equal(await page.locator('.skip-link').getAttribute('href'),'#lobby-title');
  await page.screenshot({path:'/tmp/worldmusichub-game-lobby.png',fullPage:true});
  await startPreview({notation:false});const geometry=await page.evaluate(()=>({width:innerWidth,height:innerHeight,docWidth:document.documentElement.scrollWidth,docHeight:document.documentElement.scrollHeight,roll:document.querySelector('#falling-notes').getBoundingClientRect().height}));
