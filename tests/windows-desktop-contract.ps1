@@ -122,10 +122,12 @@ Assert-Rejected { [NativeAcceptance]::ValidatePickerClick([IntPtr]101,[IntPtr]10
 Assert-Rejected { [NativeAcceptance]::ValidatePickerClick([IntPtr]101,[IntPtr]100,[IntPtr]100,[IntPtr]999,42,42,$true) } 'another foreground window'
 Assert-Rejected { [NativeAcceptance]::ValidatePickerClick([IntPtr]101,[IntPtr]100,[IntPtr]100,[IntPtr]101,42,43,$true) } 'foreign dialog process'
 Assert-Rejected { [NativeAcceptance]::ValidatePickerClick([IntPtr]101,[IntPtr]100,[IntPtr]100,[IntPtr]101,42,42,$false) } 'Open point obscured by another control'
-Assert-True (-not [NativeAcceptance]::PickerDismissed($true,$true,$false)) 'Invoke or click return does not dismiss a visible chooser'
-Assert-True (-not [NativeAcceptance]::PickerDismissed($false,$false,$true)) 'replacement owned popup is not completion'
-Assert-True ([NativeAcceptance]::PickerDismissed($false,$false,$false)) 'destroyed chooser with no replacement modal'
-Assert-True ([NativeAcceptance]::PickerDismissed($true,$false,$false)) 'hidden chooser with no replacement modal'
+Assert-True (-not [NativeAcceptance]::PickerDismissed($true,$true,$false,$true,$true)) 'Invoke or click return does not dismiss a visible chooser'
+Assert-True (-not [NativeAcceptance]::PickerDismissed($false,$false,$true,$true,$true)) 'replacement owned popup is not completion'
+Assert-True ([NativeAcceptance]::PickerDismissed($false,$false,$false,$true,$true)) 'destroyed chooser with no replacement modal'
+Assert-True ([NativeAcceptance]::PickerDismissed($true,$false,$false,$true,$true)) 'hidden chooser with no replacement modal'
+Assert-True (-not [NativeAcceptance]::PickerDismissed($true,$false,$false,$false,$true)) 'hidden chooser retaining foreground is not completion'
+Assert-True (-not [NativeAcceptance]::PickerDismissed($false,$false,$false,$true,$false)) 'disabled app owner is not ready after chooser hides'
 function New-ValidTarget {
   $target=[NativeFileNameTarget]::new()
   $target.Dialog=[IntPtr]101;$target.AppWindow=[IntPtr]100;$target.RootOwner=[IntPtr]100

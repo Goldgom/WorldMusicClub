@@ -31,6 +31,12 @@
   };
   addEventListener('error', event => errors.push(String(event.message || 'script error')));
   addEventListener('unhandledrejection', event => errors.push(String(event.reason)));
+  // Persist the small lifecycle boundary even if a native modal suspends the
+  // renderer before its final report can be written. No file content is logged.
+  for(const type of ['cancel','close','change'])document.addEventListener(type,event=>{
+    const target=event.target?.id;
+    if(target==='reference-file'||target==='reference-listening-dialog')checkpoint(`reference-${target==='reference-file'?'file':'dialog'}-${type}`);
+  },true);
   const assert = (condition, message) => { if (!condition) throw Error(message); };
   const delay = milliseconds => new Promise(resolve => setTimeout(resolve,milliseconds));
   const until=waits.until;

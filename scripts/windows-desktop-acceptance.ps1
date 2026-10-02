@@ -164,8 +164,9 @@ function Wait-PickerDismissal([IntPtr]$Dialog,$App,[hashtable]$Evidence) {
     $foreground=[NativeAcceptance]::GetForegroundWindow();[uint32]$process=0
     [void][NativeAcceptance]::GetWindowThreadProcessId($foreground,[ref]$process)
     $popup=$foreground -ne $App.MainWindowHandle -and $process -eq $App.Id -and [NativeAcceptance]::GetAncestor($foreground,3) -eq $App.MainWindowHandle -and [NativeAcceptance]::IsWindowVisible($foreground)
-    $dismissed=[NativeAcceptance]::PickerDismissed($exists,$visible,$popup)
-    $Evidence.picker_completion=[ordered]@{dialog_exists=$exists;dialog_visible=$visible;foreground_hwnd=$foreground.ToInt64();owned_popup_visible=$popup;dialog_dismissed=$dismissed;elapsed_ms=[int]([DateTime]::UtcNow-$started).TotalMilliseconds}
+    $appForeground=$foreground -eq $App.MainWindowHandle;$appEnabled=[NativeAcceptance]::IsWindowEnabled($App.MainWindowHandle)
+    $dismissed=[NativeAcceptance]::PickerDismissed($exists,$visible,$popup,$appForeground,$appEnabled)
+    $Evidence.picker_completion=[ordered]@{dialog_exists=$exists;dialog_visible=$visible;foreground_hwnd=$foreground.ToInt64();owned_popup_visible=$popup;app_foreground=$appForeground;app_enabled=$appEnabled;dialog_dismissed=$dismissed;elapsed_ms=[int]([DateTime]::UtcNow-$started).TotalMilliseconds}
     if($dismissed){return}
     if([DateTime]::UtcNow -ge $deadline){throw 'Owned Windows picker did not dismiss within 5 seconds'}
     Start-Sleep -Milliseconds 100

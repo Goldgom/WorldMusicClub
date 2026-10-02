@@ -122,8 +122,8 @@ public static class NativeAcceptance {
     if(dialog==IntPtr.Zero || appWindow==IntPtr.Zero || dialog==appWindow || rootOwner!=appWindow || foreground!=dialog || appProcess==0 || dialogProcess!=appProcess || !hitInButton)
       throw new InvalidOperationException("Open click ownership, foreground or button hit test does not match");
   }
-  public static bool PickerDismissed(bool exists,bool visible,bool ownedPopupVisible) {
-    return (!exists || !visible) && !ownedPopupVisible;
+  public static bool PickerDismissed(bool exists,bool visible,bool ownedPopupVisible,bool appForeground,bool appEnabled) {
+    return (!exists || !visible) && !ownedPopupVisible && appForeground && appEnabled;
   }
   public static string ReadControlText(IntPtr window) {
     var value=new StringBuilder(257);UIntPtr copied;

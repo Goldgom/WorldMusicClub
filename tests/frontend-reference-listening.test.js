@@ -78,7 +78,13 @@ test('Import panel uses complete bytes, real controller, shared audio, explicit 
     $('policy-accept').checked=true;emit(window,$('policy-accept'),'change');$('play').click();await until(()=>$('status').dataset.state==='playing');
     assert.equal(synth.unlocks,1);assert.ok(sounding(synth.context).length>0);assert.ok(synth.context.nodes.some(node=>node.connections.includes(synth.output)));
     timers.advance(750,synth.context);assert.notEqual($('clock').textContent,'0:00.0 / 0:06.0');
-    $('choose-file').click();assert.equal($('status').dataset.state,'paused','File chooser pauses before it opens');emit(window,$('file'),'cancel');setFile(window,$('file'),null);assert.equal($('source-name').textContent,f.name);assert.equal($('status').dataset.state,'paused','Cancel keeps the prior position and source');assert.equal(sounding(synth.context).length,0);assert.equal($('mute-0').disabled,true);
+    $('choose-file').click();assert.equal($('status').dataset.state,'paused','File chooser pauses before it opens');
+    const nativeEscape=emit(window,$('listening-dialog'),'cancel');assert.equal(nativeEscape.defaultPrevented,true,'Chooser Escape must not also close its underlying dialog');
+    let bubbledCancel=0;$('listening-dialog').addEventListener('cancel',()=>bubbledCancel++,{once:true});
+    emit(window,$('file'),'cancel');assert.equal(bubbledCancel,0,'File cancel belongs only to the file input');
+    const sameTaskEscape=emit(window,$('listening-dialog'),'cancel');assert.equal(sameTaskEscape.defaultPrevented,true);await tick();
+    assert.equal(view.isOpen(),true);assert.equal($('listening-dialog').open,true);
+    setFile(window,$('file'),null);assert.equal($('source-name').textContent,f.name);assert.equal($('status').dataset.state,'paused','Cancel keeps the prior position and source');assert.equal(sounding(synth.context).length,0);assert.equal($('mute-0').disabled,true);
     const nodes=[...$('listening-dialog').querySelectorAll('input,button')],draft=document.getElementById('retained-draft'),clockBefore=$('clock').textContent;
     i18n.setLocale('en');assert.equal($('play').textContent,'Resume reference');assert.equal($('clock').textContent,clockBefore);assert.deepEqual([...$('listening-dialog').querySelectorAll('input,button')],nodes);assert.equal(document.getElementById('retained-draft'),draft);assert.equal(draft.value,'D#3');assert.equal(calls.length,1);
     $('play').click();await until(()=>$('status').dataset.state==='playing');assert.equal(synth.unlocks,2);const sameContext=synth.context;timers.advance(300,synth.context);
@@ -88,7 +94,7 @@ test('Import panel uses complete bytes, real controller, shared audio, explicit 
     const unlocks=synth.unlocks;$('play').click();await tick();assert.equal(synth.unlocks,unlocks);
     $('sound').checked=true;emit(window,$('sound'),'change');assert.equal(synth.unlocks,unlocks);assert.equal($('status').dataset.state,'stopped');
     $('download').click();assert.deepEqual(new Uint8Array(await downloads.at(-1).arrayBuffer()),Uint8Array.from(f.bytes));
-    $('play').click();await until(()=>$('status').dataset.state==='playing');$('close').click();assert.equal(view.isOpen(),false);assert.equal(sounding(synth.context).length,0);
+    $('play').click();await until(()=>$('status').dataset.state==='playing');const laterEscape=emit(window,$('listening-dialog'),'cancel');assert.equal(laterEscape.defaultPrevented,false);$('close').click();assert.equal(view.isOpen(),false);assert.equal(sounding(synth.context).length,0);
     view.open();assert.equal($('source-name').textContent,f.name);assert.equal($('counts').dataset.eventCount,'26');assert.equal($('mute-1').checked,true);assert.equal(calls.length,1);assert.deepEqual(transitions,[true,false,true]);
     setFile(window,$('file'),null);assert.equal($('counts').dataset.eventCount,'26');
     // A real controller failure is localized and blocks restart until Stop.

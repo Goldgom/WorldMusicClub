@@ -40,6 +40,8 @@ export function setupReferenceListening({document, i18n, synth, pausePlayback,
   const t = (key, params) => i18n.t(`reference.${key}`, params);
   let source = null, player = null, loading = false, loadToken = 0, errorCode = null, clockTimer = null, active = false, destroyed = false;
   let trackRows = [], programRows = [];
+  let pickerPending = false, pickerGeneration = 0;
+  const pickerSettled = () => { const token=pickerGeneration;queueMicrotask(() => { if(token===pickerGeneration)pickerPending=false; }); };
   const closedWaiters = [];
   const snapshot = () => player?.snapshot() ?? {state:'stopped', positionSeconds:0, mutedTracks:[], error:null};
   function clearClock() { if (clockTimer !== null) timers.clearTimeout(clockTimer); clockTimer = null; }
@@ -104,7 +106,7 @@ export function setupReferenceListening({document, i18n, synth, pausePlayback,
   }
   function stop() {clearClock();player?.stop();render();}
   function pause() {player?.pause();render();}
-  function closed() {if (!active) return;active=false;stop();onActiveChange(false);for(const resolve of closedWaiters.splice(0))resolve();}
+  function closed() {pickerGeneration++;pickerPending=false;if (!active) return;active=false;stop();onActiveChange(false);for(const resolve of closedWaiters.splice(0))resolve();}
   function close() {if(dialog.open)dialog.close();closed();}
   function open() {
     if(active)return;
@@ -137,9 +139,16 @@ export function setupReferenceListening({document, i18n, synth, pausePlayback,
   }
   entry.addEventListener('click',open);
   $('close').addEventListener('click',close);dialog.addEventListener('close',closed);
-  dialog.addEventListener('cancel',event=>{if(event.target===dialog)stop();});
-  $('choose-file').addEventListener('click',()=>{pause();$('file').click();});
-  $('file').addEventListener('change',event=>{const file=event.target.files?.[0];event.target.value='';void choose(file);});
+  dialog.addEventListener('cancel',event=>{
+    if(event.target!==dialog)return;
+    // Escape belongs to the native chooser until its completion event settles.
+    // It must not also close the underlying listener and discard its position.
+    if(pickerPending){event.preventDefault();return;}
+    stop();
+  });
+  $('choose-file').addEventListener('click',()=>{pause();pickerGeneration++;pickerPending=true;try{$('file').click();}catch(error){pickerPending=false;throw error;}});
+  $('file').addEventListener('cancel',event=>{event.stopPropagation();pickerSettled();});
+  $('file').addEventListener('change',event=>{pickerSettled();const file=event.target.files?.[0];event.target.value='';void choose(file);});
   $('policy-accept').addEventListener('change',()=>{if(!$('policy-accept').checked)stop();render();});
   $('sound').addEventListener('change',()=>onSoundChange($('sound').checked));
   $('play').addEventListener('click',async()=>{
