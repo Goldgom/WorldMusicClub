@@ -1,0 +1,240 @@
+//! Socket-free adapter for the existing UI. No filesystem or process commands.
+use http::{Request, Response};
+use serde_json::{json, Value};
+
+pub const MAX_BODY: usize = 8 * 1024 * 1024;
+const MAX_RESPONSE: usize = 32 * 1024 * 1024;
+pub const ORIGIN: &str = "https://wmh.localhost";
+const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'";
+
+pub fn response(status: u16, mime: &str, body: impl Into<Vec<u8>>) -> Response<Vec<u8>> {
+    Response::builder()
+        .status(status)
+        .header("Content-Type", mime)
+        .header("Content-Security-Policy", CSP)
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Cache-Control", "no-store")
+        .header("Referrer-Policy", "no-referrer")
+        .header("Cross-Origin-Resource-Policy", "same-origin")
+        .header(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), midi=(), usb=(), serial=(), payment=()",
+        )
+        .body(body.into())
+        .expect("constant protocol headers")
+}
+
+pub fn error(status: u16, message: &str) -> Response<Vec<u8>> {
+    response(
+        status,
+        "application/json; charset=utf-8",
+        serde_json::to_vec(&json!({"error":message})).expect("error JSON"),
+    )
+}
+
+/// Wry may deliver its canonical custom URI or the Windows HTTPS mapping.
+pub fn allowed_uri(uri: &http::Uri) -> bool {
+    matches!(
+        (uri.scheme_str(), uri.authority().map(|a| a.as_str())),
+        (Some("wmh"), Some("localhost")) | (Some("https"), Some("wmh.localhost"))
+    )
+}
+
+pub fn admission(request: &Request<Vec<u8>>) -> Option<Response<Vec<u8>>> {
+    if !allowed_uri(request.uri()) || request.uri().query().is_some() {
+        return Some(error(403, "Only the bundled app origin is allowed"));
+    }
+    if request
+        .headers()
+        .get("origin")
+        .is_some_and(|origin| origin != ORIGIN && origin != "wmh://localhost")
+    {
+        return Some(error(403, "Cross-origin requests are not allowed"));
+    }
+    if request.body().len() > MAX_BODY {
+        return Some(error(413, "Import exceeds 8 MiB limit"));
+    }
+    if request.method() == "GET" && !request.body().is_empty() {
+        return Some(error(400, "GET request bodies are not accepted"));
+    }
+    if request.method() != "GET" && request.method() != "POST" {
+        return Some(error(405, "Method not allowed"));
+    }
+    None
+}
+
+fn json_response(result: Result<Value, String>) -> Response<Vec<u8>> {
+    match result {
+        Ok(value) => {
+            let bytes = serde_json::to_vec(&value).expect("engine JSON");
+            if bytes.len() > MAX_RESPONSE {
+                return error(413, "Engine response exceeds desktop limit");
+            }
+            response(200, "application/json; charset=utf-8", bytes)
+        }
+        Err(message) => error(400, &message),
+    }
+}
+
+pub fn dispatch(request: Request<Vec<u8>>) -> Response<Vec<u8>> {
+    if let Some(reply) = admission(&request) {
+        return reply;
+    }
+    let path = request.uri().path();
+    if request.method() == "GET" {
+        return match path {
+            "/api/health" => json_response(Ok(
+                json!({"name":"WorldMusicHub","version":env!("CARGO_PKG_VERSION"),"engine":"rust","network":"native-protocol-no-listener","score_format_version":1,"score_schema_revision":score_core::SCORE_SCHEMA_REVISION}),
+            )),
+            "/api/catalog" => json_response(
+                serde_json::to_value(score_core::catalog()).map_err(|e| e.to_string()),
+            ),
+            "/api/catalog/index" => json_response(
+                serde_json::to_value(score_core::catalog_index()).map_err(|e| e.to_string()),
+            ),
+            _ if path.starts_with("/api/catalog/score/") => {
+                match score_core::catalog_score(&path["/api/catalog/score/".len()..]) {
+                    Some(score) => {
+                        json_response(serde_json::to_value(score).map_err(|e| e.to_string()))
+                    }
+                    None => error(404, "Bundled score not found"),
+                }
+            }
+            _ => {
+                let path = if path == "/" { "/index.html" } else { path };
+                match practice_server::asset(path) {
+                    Some(bytes) => {
+                        let mime = match path.rsplit('.').next() {
+                            Some("html") => "text/html; charset=utf-8",
+                            Some("js") => "text/javascript; charset=utf-8",
+                            Some("css") => "text/css; charset=utf-8",
+                            Some("json") => "application/json; charset=utf-8",
+                            Some("txt") => "text/plain; charset=utf-8",
+                            Some("svg") => "image/svg+xml",
+                            _ => "application/octet-stream",
+                        };
+                        response(200, mime, bytes)
+                    }
+                    None => error(404, "Embedded resource not found"),
+                }
+            }
+        };
+    }
+    if !path.starts_with("/api/") {
+        return error(405, "Only engine operations accept POST");
+    }
+    let content_type = request
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !practice_server::content_type_allowed(path, content_type) {
+        return error(415, "Unsupported import content type");
+    }
+    let path = path.to_owned();
+    json_response(practice_server::api(&path, request.into_body()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn request(method: &str, path: &str, body: Vec<u8>) -> Request<Vec<u8>> {
+        Request::builder()
+            .method(method)
+            .uri(format!("{ORIGIN}{path}"))
+            .header("content-type", "application/json")
+            .body(body)
+            .unwrap()
+    }
+    #[test]
+    fn exact_embedded_ui_and_engine_compile_survive_native_transport() {
+        let page = dispatch(request("GET", "/", vec![]));
+        assert_eq!(page.status(), 200);
+        assert_eq!(page.body(), practice_server::asset("/index.html").unwrap());
+        assert_eq!(
+            dispatch(request("GET", "/app.js", vec![])).body(),
+            practice_server::asset("/app.js").unwrap()
+        );
+        let score = score_core::catalog().remove(0);
+        let bytes = serde_json::to_vec(&score).unwrap();
+        let expected = practice_server::api("/api/compile", bytes.clone()).unwrap();
+        let actual = dispatch(request("POST", "/api/compile", bytes));
+        assert_eq!(actual.status(), 200);
+        assert_eq!(
+            serde_json::from_slice::<Value>(actual.body()).unwrap(),
+            expected
+        );
+    }
+    #[test]
+    fn rejects_foreign_origins_methods_bodies_and_runtime_paths() {
+        for uri in [
+            "https://example.com/api/health",
+            "https://wmh.localhost.evil/",
+            "https://wmh.localhost:123/",
+            "http://wmh.localhost/",
+            "file://localhost/etc/passwd",
+            "wmh://elsewhere/",
+        ] {
+            assert_eq!(
+                dispatch(Request::builder().uri(uri).body(vec![]).unwrap()).status(),
+                403,
+                "{uri}"
+            );
+        }
+        let mut cross = request("POST", "/api/compile", b"{}".to_vec());
+        cross
+            .headers_mut()
+            .insert("origin", "https://example.com".parse().unwrap());
+        assert_eq!(dispatch(cross).status(), 403);
+        assert_eq!(dispatch(request("DELETE", "/", vec![])).status(), 405);
+        assert_eq!(dispatch(request("GET", "/", vec![1])).status(), 400);
+        assert_eq!(
+            dispatch(request("GET", "/api/health?path=secret", vec![])).status(),
+            403
+        );
+        assert_eq!(
+            dispatch(request("POST", "/api/compile", vec![0; MAX_BODY + 1])).status(),
+            413
+        );
+        for path in [
+            "/etc/passwd",
+            "/../Cargo.toml",
+            "/unknown",
+            "/api/catalog/score/missing",
+        ] {
+            assert_eq!(dispatch(request("GET", path, vec![])).status(), 404);
+        }
+        assert_eq!(
+            dispatch(request("POST", "/api/run-command", b"{}".to_vec())).status(),
+            400
+        );
+    }
+    #[test]
+    fn raw_imports_and_error_statuses_reach_shared_engine() {
+        let text = b"not a musicxml document".to_vec();
+        let mut raw = request("POST", "/api/import/musicxml", text.clone());
+        raw.headers_mut()
+            .insert("content-type", "application/xml".parse().unwrap());
+        let actual = dispatch(raw);
+        let expected = practice_server::api("/api/import/musicxml", text).unwrap_err();
+        assert_eq!(actual.status(), 400);
+        assert_eq!(
+            serde_json::from_slice::<Value>(actual.body()).unwrap()["error"],
+            expected
+        );
+        let mut unsupported = request("POST", "/api/compile", b"{}".to_vec());
+        unsupported
+            .headers_mut()
+            .insert("content-type", "text/plain".parse().unwrap());
+        assert_eq!(dispatch(unsupported).status(), 415);
+        let response = dispatch(request("GET", "/api/health", vec![]));
+        assert_eq!(response.headers()["content-security-policy"], CSP);
+        assert!(response.headers()["permissions-policy"]
+            .to_str()
+            .unwrap()
+            .contains("midi=()"));
+        assert!(!response
+            .headers()
+            .contains_key("access-control-allow-origin"));
+    }
+}

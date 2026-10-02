@@ -9,3 +9,6 @@
 /web/vendor/
 
 __pycache__/
+
+# Native shell diagnostics and WebView profile are local build evidence.
+/desktop-evidence/
