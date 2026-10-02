@@ -578,7 +578,7 @@ test('.xml browser import reaches the Rust parser and exports its exact source, 
   }
   assert.equal(compiled.timeline.notes.filter(note => note.midi === 62).length, 1, 'The Rust timeline merges the tie');
   await readyForTitle('Small Exact Duet');
-  assert.equal(await ui('#notation-part option').count(), 2);
+  assert.deepEqual(await ui('#notation-part option').evaluateAll(options=>options.map(option=>({value:option.value,label:option.textContent}))), [{value:'',label:'All parts'},...imported.score.parts.map(part=>({value:part.id,label:part.name}))], 'Display choices include every exact source part plus a separate all-parts option');
   await assertStoppedAtZero();
   const exported = await exportScore();
   assert.deepEqual(exported, imported.score);

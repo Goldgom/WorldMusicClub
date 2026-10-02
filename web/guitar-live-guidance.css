@@ -26,10 +26,13 @@
 /* The route must never be clipped to the old 96px card viewport. The stage
    integrator reserves this block before allocating remaining board height. */
 @media(max-height:600px) and (min-width:651px){
- .performance-layout #guitar-guidance,.performance-layout #workspace.with-notation #guitar-guidance{max-height:none;overflow:visible}
+ .performance-layout #guitar-guidance,.performance-layout #workspace.with-notation #guitar-guidance{max-height:none;overflow:visible;padding:3px 7px}
  .performance-layout .guitar-stage{gap:3px}
  .guitar-guidance-heading{font-size:11px;line-height:1.3;gap:1px 8px}
  #guitar-live-route .guitar-live-legend{font-size:11px;line-height:1.25}
+ #guitar-live-route p{margin:1px 0}
  .guitar-live-row{grid-template-columns:36px repeat(var(--guitar-route-strings),minmax(0,1fr))}
- .guitar-live-row>span,.guitar-live-cell{padding:1px 2px}
+ .guitar-live-row>span,.guitar-live-cell{padding:0 2px}
+ .guitar-live-position{line-height:16px}
+ .guitar-live-action{line-height:12px}
 }

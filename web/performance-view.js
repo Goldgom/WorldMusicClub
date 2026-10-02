@@ -25,6 +25,12 @@ export function setupPerformanceView({getContext}) {
   const details=document.createElement('details');details.className='preview-session-help';const summary=document.createElement('summary');summary.textContent='Starting or replacing a take · 使用说明';details.append(summary,document.querySelector('.preview-footnote'));copy.append(details);preview.append(controls);
   const settings=$('settings-dialog').querySelector('.shell-dialog-content'),inputTools=document.createElement('div');inputTools.className='performance-input-settings';inputTools.append($('midi-button'),document.querySelector('.count-in-label'),document.querySelector('.keyboard-footer'));settings.prepend(inputTools);
   document.querySelector('.transport').append($('sound-button'));
+  // Keep the two guitar footer controls short enough to share a compact row.
+  // Detailed solver status belongs with its editor; live readiness stays above
+  // the complete current/next route and never depends on this disclosure.
+  const routeControls=$('guitar-plan-controls'),routeSummary=routeControls.querySelector('summary'),sourceSummary=document.querySelector('.guitar-details summary');
+  for(const[summary,label]of[[routeSummary,'Route settings · 弦位与指法'],[sourceSummary,'Tuning & sources · 调弦与来源']]){summary.title=summary.textContent;summary.setAttribute('aria-label',summary.textContent);summary.textContent=label;}
+  routeSummary.after($('guitar-plan-status'));
   const notation=document.querySelector('#notation-dock .notation-panel'),notationHeading=notation.querySelector('.section-heading'),help=document.createElement('details');help.className='dock-help';help.innerHTML='<summary>Help &amp; notation limits · 读谱说明</summary>';
   help.append($('basic-notation-note'),$('engraving-follow-help'));const helpRow=document.createElement('div');helpRow.className='dock-help-row';helpRow.append(help);notationHeading.after(helpRow);
   const warnings=document.createElement('button');warnings.id='dock-warning-count';warnings.className='button ghost compact';warnings.textContent='Notation notices';notationHeading.append(warnings);

@@ -41,6 +41,23 @@ export function basicNotationPage(occurrence, entries, partId, spanBeats, pageAn
   return Number(BigInt(at.numerator)/(BigInt(at.denominator)*BigInt(spanBeats)));
 }
 
+/** Leave the compact, sticky page/Follow toolbar above the revealed music.
+ * Use its height at the pinned position, not its current flow position: scrolling
+ * the dock can move the toolbar to the top while the same reveal is in progress.
+ */
+export function notationRevealViewport(dock,container) {
+  const outer=dock.getBoundingClientRect(),inner=container.getBoundingClientRect();
+  const toolbar=dock.querySelector?.('.short-notation .engraving-follow-controls');
+  const toolbarHeight=toolbar?.getBoundingClientRect().height||0;
+  return {
+    top:outer.top+dock.clientTop+toolbarHeight,bottom:outer.top+dock.clientTop+dock.clientHeight,
+    left:Math.max(outer.left+dock.clientLeft,inner.left+container.clientLeft),
+    right:Math.min(outer.left+dock.clientLeft+dock.clientWidth,inner.left+container.clientLeft+container.clientWidth),
+    scrollTop:dock.scrollTop,scrollLeft:container.scrollLeft,
+    maxTop:dock.scrollHeight-dock.clientHeight,maxLeft:container.scrollWidth-container.clientWidth,
+  };
+}
+
 /** Reveal exact generated note IDs inside the score dock; never scroll the page. */
 export function createBasicNotationReveal({container,dock}) {
   let last='',root=null,result={status:'unavailable'};
@@ -53,14 +70,7 @@ export function createBasicNotationReveal({container,dock}) {
     try {
       const ids=new Set(sourceNoteIds),nodes=[...container.querySelectorAll('.score-note')].filter(node=>ids.has(node.dataset.noteId));
       if(!nodes.length)return result;
-      const outer=dock.getBoundingClientRect(),inner=container.getBoundingClientRect();
-      const plan=planEngravingReveal(nodes.map(node=>node.getBoundingClientRect()),{
-        top:outer.top+dock.clientTop,bottom:outer.top+dock.clientTop+dock.clientHeight,
-        left:Math.max(outer.left+dock.clientLeft,inner.left+container.clientLeft),
-        right:Math.min(outer.left+dock.clientLeft+dock.clientWidth,inner.left+container.clientLeft+container.clientWidth),
-        scrollTop:dock.scrollTop,scrollLeft:container.scrollLeft,
-        maxTop:dock.scrollHeight-dock.clientHeight,maxLeft:container.scrollWidth-container.clientWidth,
-      });
+      const plan=planEngravingReveal(nodes.map(node=>node.getBoundingClientRect()),notationRevealViewport(dock,container));
       if(!plan)return result;
       if(plan.scrollTop!==dock.scrollTop)dock.scrollTo({top:plan.scrollTop,left:dock.scrollLeft,behavior:'instant'});
       if(plan.scrollLeft!==container.scrollLeft)container.scrollTo({left:plan.scrollLeft,top:container.scrollTop,behavior:'instant'});

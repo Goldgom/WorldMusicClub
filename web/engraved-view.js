@@ -1,4 +1,4 @@
-import {sourceMeasurePage} from './notation-follow.js';
+import {sourceMeasurePage,notationRevealViewport} from './notation-follow.js';
 import {planEngravingReveal} from './engraving-reveal.js';
 export function engravingWindow(total, from = 1, count = 8) {
   if (!Number.isInteger(total) || total < 0 || !Number.isInteger(from) || from < 1 || !Number.isInteger(count) || count < 1 || count > 64 || (total && from > total)) throw new Error('Choose a valid one-based source measure range of at most 64 measures.');
@@ -32,8 +32,7 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
     try{
       const bounds=rendered.expectedNoteBounds(),dock=$('notation-dock'),scroller=container.closest?.('.engraving-scroll');
       if(!['ready','partial'].includes(bounds?.status)||!bounds?.rects?.length||!dock||!scroller)return revealStatus;
-      const outer=dock.getBoundingClientRect(),inner=scroller.getBoundingClientRect();
-      const plan=planEngravingReveal(bounds.rects,{top:outer.top+dock.clientTop,bottom:outer.top+dock.clientTop+dock.clientHeight,left:Math.max(outer.left+dock.clientLeft,inner.left+scroller.clientLeft),right:Math.min(outer.left+dock.clientLeft+dock.clientWidth,inner.left+scroller.clientLeft+scroller.clientWidth),scrollTop:dock.scrollTop,scrollLeft:scroller.scrollLeft,maxTop:dock.scrollHeight-dock.clientHeight,maxLeft:scroller.scrollWidth-scroller.clientWidth});
+      const plan=planEngravingReveal(bounds.rects,notationRevealViewport(dock,scroller));
       if(!plan)return revealStatus;
       if(plan.scrollTop!==dock.scrollTop)dock.scrollTo({top:plan.scrollTop,left:dock.scrollLeft,behavior:'instant'});
       if(plan.scrollLeft!==scroller.scrollLeft)scroller.scrollTo({left:plan.scrollLeft,top:scroller.scrollTop,behavior:'instant'});
