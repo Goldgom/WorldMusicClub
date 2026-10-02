@@ -63,3 +63,52 @@ that the hosted picker interaction has succeeded.
 The five-second bound applies to polling. Individual synchronous UI Automation
 provider calls are not independently timeboxed; the hosted run must establish
 that the provider responds and exposes the intended filename control.
+
+## Second hosted result and native text route
+
+[Run 37008095504](https://github.com/Goldgom/WorldMusicHub/actions/runs/37008095504)
+tested source `146ab4b7adef00625abc0c7629d6b4b422322a5e`, tree
+`13016014b74a1507aceeefe6a70564755d4016dd` (local equivalent
+`1e861553777580a95b766bba7d204627167a7960`). Compilation and startup smoke
+passed. The feature gate failed promptly with its actual seed/action-2 error.
+Evidence artifact `11226988695` has SHA-256
+`c67eb8eb484156be2dcd34d110529c878dc9852ce0c6984f7cf80a73d2f65189`.
+
+The retained action result establishes an owned `#32770` dialog: dialog and app
+PID are both 6924; root-owner and app HWND are both 262652. The only filename
+candidate is AutomationId `1148`, native class `ComboBoxEx32`, UIA
+`ControlType.Pane`, enabled, without ValuePattern or exposed child Edit.
+The actual owned-dialog screenshot shows a normal editable, focused File name
+field. The missing UIA pattern is therefore the selector limitation; waiting
+longer for that pattern is not the correction.
+
+The working UIA path remains available. When it cannot resolve a writable
+filename field, the corrected harness verifies the unique host's native class,
+control ID, PID and dialog ancestry, then uses Microsoft's
+[CBEM_GETEDITCONTROL](https://learn.microsoft.com/en-us/windows/desktop/Controls/cbem-geteditcontrol)
+message to obtain that host's own edit HWND. It rejects a different process,
+class, ancestry, disabled/hidden field or read-only style before entering text.
+It does not search other native edit fields or type into an assumed focus target.
+
+The native helper sends [WM_SETTEXT](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-settext)
+and checks [WM_GETTEXT](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-gettext)
+against the complete approved path. Each native query/text message has a
+1000-ms [SendMessageTimeout](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessagetimeoutw)
+bound. CBEM_GETEDITCONTROL passes no pointer payload; the two text messages use
+Windows' system-message marshalling. Only the original finite fixture/download
+names resolve to existing regular files. The harness still invokes the real
+Windows Open button and waits for the app's actual picker/import result.
+
+`tests/windows-desktop-contract.ps1` compiles the exact C# helper and tests pure
+handle-ownership/writability and fixture-path contracts before the hosted Rust
+build. It covers foreign owners/processes, wrong controls, disabled/read-only
+fields, traversal/absolute/unapproved names, missing files, and directories;
+spaces and Unicode in the test directory are retained. It creates no window,
+uses no UIA, and sends no native message. These new Windows contract tests and
+native text interaction remain unrun locally because PowerShell/.NET are not
+installed here. The next exact-source hosted run supplies that evidence.
+
+Both failed evidence archives and previous source trees remain preserved. No
+product code, profile/origin, permissions, third-party license bytes or overall
+phase timeout changed. This remains an acceptance-harness correction pending
+Windows validation, not completed native feature acceptance.

@@ -15,31 +15,7 @@ foreach($name in @('original-duet.musicxml','original-duet.mxl','midi-original-p
 }
 Set-Content -NoNewline -Encoding utf8 (Join-Path $Fixtures 'malformed.json') '{invalid canonical score'
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-using System.Text;
-public static class NativeAcceptance {
-  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left,Top,Right,Bottom; }
-  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X,Y; }
-  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h,out RECT r);
-  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h,out RECT r);
-  [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h,ref POINT p);
-  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr h,uint flags);
-  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint processId);
-  [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h,StringBuilder text,int length);
-  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
-  [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
-  [DllImport("user32.dll")] public static extern void keybd_event(byte key,byte scan,uint flags,UIntPtr extra);
-  [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint key,uint mode);
-  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int command);
-  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h,IntPtr device,uint flags);
-  public static void Key(byte key) { byte scan=(byte)MapVirtualKey(key,0); keybd_event(key,scan,0,UIntPtr.Zero); keybd_event(key,scan,2,UIntPtr.Zero); }
-  public static void Click(int x,int y) { SetCursorPos(x,y); mouse_event(2,0,0,0,UIntPtr.Zero); mouse_event(4,0,0,0,UIntPtr.Zero); }
-}
-'@
+Add-Type -Path (Join-Path $PSScriptRoot 'windows-desktop-native.cs')
 function Save-Json($Value,[string]$Path) {
   $temporary="$Path.tmp"
   $Value | ConvertTo-Json -Depth 16 | Set-Content -Encoding utf8 $temporary
@@ -100,6 +76,37 @@ function Find-FileNameEntry($Root,[hashtable]$Evidence) {
   }
   throw 'Windows filename host 1148 has no unique writable filename control after 5 seconds; see filename_candidates in this action result'
 }
+function Set-NativeFileName($Root,[IntPtr]$Dialog,$App,[string]$Path,[hashtable]$Evidence) {
+  # The observed Windows ComboBoxEx32 exposes no UIA Edit or ValuePattern.
+  # Get its own native Edit HWND instead; never choose another dialog edit.
+  $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'1148')
+  $hosts=@($Root.FindAll([System.Windows.Automation.TreeScope]::Descendants,$condition))
+  $Evidence.filename_host_count=$hosts.Count
+  if($hosts.Count -ne 1){throw 'Windows filename host 1148 is missing or ambiguous'}
+  $hostControl=$hosts[0];$hostWindow=[IntPtr]$hostControl.Current.NativeWindowHandle
+  $Evidence.filename_host=[ordered]@{id=$hostControl.Current.AutomationId;class=$hostControl.Current.ClassName;control_type=$hostControl.Current.ControlType.ProgrammaticName;enabled=$hostControl.Current.IsEnabled;hwnd=$hostWindow.ToInt64();value_pattern=$hostControl.GetCurrentPropertyValue([System.Windows.Automation.AutomationElement]::IsValuePatternAvailableProperty)}
+  [uint32]$hostProcess=0;[void][NativeAcceptance]::GetWindowThreadProcessId($hostWindow,[ref]$hostProcess)
+  $class=[System.Text.StringBuilder]::new(256);[void][NativeAcceptance]::GetClassName($hostWindow,$class,256)
+  if($hostWindow -eq [IntPtr]::Zero -or $class.ToString() -cne 'ComboBoxEx32' -or [NativeAcceptance]::GetDlgCtrlID($hostWindow) -ne 1148 -or -not [NativeAcceptance]::IsChild($Dialog,$hostWindow) -or $hostProcess -ne $App.Id -or -not [NativeAcceptance]::IsWindowEnabled($hostWindow)) {
+    throw 'Filename host native class, control ID, dialog ancestry, process or enabled state does not match'
+  }
+  $edit=[NativeAcceptance]::FileNameEdit($hostWindow)
+  [uint32]$editProcess=0;[void][NativeAcceptance]::GetWindowThreadProcessId($edit,[ref]$editProcess)
+  $editClass=[System.Text.StringBuilder]::new(256);[void][NativeAcceptance]::GetClassName($edit,$editClass,256)
+  $readOnly=([NativeAcceptance]::GetWindowStyle($edit,-16) -band 0x0800) -ne 0
+  $Evidence.filename_native_edit=[ordered]@{hwnd=$edit.ToInt64();process_id=$editProcess;class=$editClass.ToString();control_id=[NativeAcceptance]::GetDlgCtrlID($edit);host_descendant=[NativeAcceptance]::IsChild($hostWindow,$edit);enabled=[NativeAcceptance]::IsWindowEnabled($edit);visible=[NativeAcceptance]::IsWindowVisible($edit);read_only=$readOnly;entry_method='WM_SETTEXT';exact_readback=$false}
+  [uint32]$dialogProcess=0;[void][NativeAcceptance]::GetWindowThreadProcessId($Dialog,[ref]$dialogProcess)
+  $target=[NativeFileNameTarget]::new()
+  $target.Dialog=$Dialog;$target.AppWindow=$App.MainWindowHandle;$target.RootOwner=[NativeAcceptance]::GetAncestor($Dialog,3)
+  $target.Host=$hostWindow;$target.Edit=$edit;$target.AppProcess=$App.Id;$target.DialogProcess=$dialogProcess;$target.HostProcess=$hostProcess;$target.EditProcess=$editProcess
+  $target.HostControlId=[NativeAcceptance]::GetDlgCtrlID($hostWindow);$target.HostClass=$class.ToString();$target.EditClass=$editClass.ToString()
+  $target.HostInDialog=[NativeAcceptance]::IsChild($Dialog,$hostWindow);$target.EditInHost=$Evidence.filename_native_edit.host_descendant
+  $target.HostEnabled=[NativeAcceptance]::IsWindowEnabled($hostWindow);$target.EditEnabled=$Evidence.filename_native_edit.enabled;$target.EditVisible=$Evidence.filename_native_edit.visible;$target.EditReadOnly=$readOnly
+  [NativeAcceptance]::ValidateFileNameTarget($target)
+  [NativeAcceptance]::SetFileName($edit,$Path)
+  $Evidence.filename_native_edit.exact_readback=$true
+  $Evidence.filename_entry_method='native_ComboBoxEx32_edit'
+}
 function Native-Action($App,$Action,[hashtable]$Evidence) {
   $App.Refresh();$window=$App.MainWindowHandle
   if($window -eq [IntPtr]::Zero){throw 'Application window disappeared'}
@@ -133,15 +140,19 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
   $Evidence.owned_dialog=[ordered]@{hwnd=$dialog.ToInt64();process_id=$dialogProcess;class=$class.ToString();root_owner_hwnd=[NativeAcceptance]::GetAncestor($dialog,3).ToInt64();app_hwnd=$window.ToInt64();app_process_id=$App.Id}
   if($Action.kind -eq 'cancel-picker'){[NativeAcceptance]::Key(0x1B);return}
   try {
-    $name=[string]$Action.file
-    if($name -match '^(seed|restart|close-active|reopen)-(?:[1-9]|1[0-6])\.json$'){$path=Join-Path (Join-Path $OutputDirectory 'downloads') $name}
-    elseif($name -in @('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','jianpu-original-steps.jianpu','malformed.json')){$path=Join-Path $Fixtures $name}
-    else{throw 'File is outside the finite acceptance fixture list'}
-    $path=(Resolve-Path $path).Path
+    $path=[NativeAcceptance]::ResolveFixturePath($Fixtures,$OutputDirectory,[string]$Action.file)
     $root=[System.Windows.Automation.AutomationElement]::FromHandle($dialog)
-    $entry=Find-FileNameEntry $root $Evidence
-    $entry.Pattern.SetValue($path)
-    if($entry.Pattern.Current.Value -cne $path){throw 'Windows filename control did not retain the selected fixture path'}
+    $entry=$null
+    try { $entry=Find-FileNameEntry $root $Evidence }
+    catch {
+      $Evidence.uia_entry_unavailable=$_.Exception.Message
+      Set-NativeFileName $root $dialog $App $path $Evidence
+    }
+    if($null -ne $entry) {
+      $entry.Pattern.SetValue($path)
+      if($entry.Pattern.Current.Value -cne $path){throw 'Windows filename control did not retain the selected fixture path'}
+      $Evidence.filename_entry_method='UIA_ValuePattern'
+    }
     $open=Find-Control $root '1'
     if($null -eq $open){throw 'Windows Open button is missing'}
     ([System.Windows.Automation.InvokePattern]$open.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)).Invoke()

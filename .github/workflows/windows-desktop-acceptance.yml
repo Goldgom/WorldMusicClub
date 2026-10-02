@@ -34,6 +34,9 @@ jobs:
           $tokens=$null; $errors=$null
           [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path scripts/windows-desktop-acceptance.ps1),[ref]$tokens,[ref]$errors)
           if ($errors.Count) { $errors | Format-List; throw 'PowerShell syntax errors' }
+      - name: Test native filename ownership and approved fixture paths without GUI
+        shell: pwsh
+        run: ./tests/windows-desktop-contract.ps1
       - run: cargo fmt --all --check
       - run: cargo test --workspace --all-targets --locked
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
