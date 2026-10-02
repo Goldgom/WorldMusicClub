@@ -20,7 +20,7 @@ public sealed class NativeFileNameTarget {
 public sealed class NativePickerButton {
   public IntPtr Window;
   public uint AutomationProcess, NativeProcess;
-  public string AutomationId, NativeClass;
+  public string AutomationId, AutomationControlType, NativeClass;
   public int NativeControlId;
   public bool IsButton, AutomationEnabled, InDialog, Enabled, Visible;
 }
@@ -80,7 +80,9 @@ public static class NativeAcceptance {
       throw new InvalidOperationException("Open button inventory is missing or exceeds eight candidates");
     IntPtr selected=IntPtr.Zero;
     foreach(var candidate in candidates) {
-      if(candidate==null || candidate.Window==IntPtr.Zero || candidate.AutomationId!="1" || !candidate.IsButton || candidate.NativeClass!="Button" || candidate.NativeControlId!=1 || candidate.AutomationProcess!=appProcess || candidate.NativeProcess!=appProcess || !candidate.AutomationEnabled || !candidate.InDialog || !candidate.Enabled || !candidate.Visible)
+      // The provider can report a non-Button UIA type for an actual Win32
+      // Button. Its verified native identity remains the selection criterion.
+      if(candidate==null || candidate.Window==IntPtr.Zero || candidate.AutomationId!="1" || candidate.NativeClass!="Button" || candidate.NativeControlId!=1 || candidate.AutomationProcess!=appProcess || candidate.NativeProcess!=appProcess || !candidate.AutomationEnabled || !candidate.InDialog || !candidate.Enabled || !candidate.Visible)
         continue;
       if(selected!=IntPtr.Zero && selected!=candidate.Window)
         throw new InvalidOperationException("Open button has multiple verified native handles");

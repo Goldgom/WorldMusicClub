@@ -62,8 +62,18 @@ $secondOpen=New-ValidOpenButton;$secondOpen.Window=[IntPtr]106
 Assert-Rejected { [NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]@($openButton,$secondOpen),42) } 'two verified Open buttons'
 Assert-Rejected { [NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]](@($openButton)*9),42) } 'oversized Open inventory'
 Assert-Rejected { [NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]@(),42) } 'missing Open button'
+# Hosted source 165 observed a virtual ID 1 and a fully verified native Button;
+# both had IsButton=false. Its exact UIA type was not recorded, so do not guess.
+$observedOpen=New-ValidOpenButton;$observedOpen.Window=[IntPtr]66092;$observedOpen.AutomationProcess=7284;$observedOpen.NativeProcess=7284;$observedOpen.IsButton=$false
+$virtualOpen=New-ValidOpenButton;$virtualOpen.Window=[IntPtr]::Zero;$virtualOpen.AutomationProcess=7284;$virtualOpen.NativeProcess=0;$virtualOpen.NativeClass='';$virtualOpen.NativeControlId=0
+$virtualOpen.IsButton=$false;$virtualOpen.Enabled=$false;$virtualOpen.Visible=$false;$virtualOpen.InDialog=$false
+Assert-True ([NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]@($virtualOpen,$observedOpen),7284) -eq [IntPtr]66092) 'observed non-Button UIA type with exact native Open identity'
+Assert-True ([NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]@($observedOpen,$virtualOpen),7284) -eq [IntPtr]66092) 'observed native Open identity is independent of candidate order'
+Assert-Rejected { [NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]@($virtualOpen),7284) } 'virtual ID 1 cannot replace the native Open button'
+$ambiguousOpen=New-ValidOpenButton;$ambiguousOpen.Window=[IntPtr]66094;$ambiguousOpen.AutomationProcess=7284;$ambiguousOpen.NativeProcess=7284;$ambiguousOpen.IsButton=$false
+Assert-Rejected { [NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]@($observedOpen,$ambiguousOpen),7284) } 'two native Open buttons remain ambiguous with non-Button UIA types'
 foreach($case in @(
-  @{field='Window';value=[IntPtr]::Zero},@{field='AutomationId';value='2'},@{field='IsButton';value=$false},
+  @{field='Window';value=[IntPtr]::Zero},@{field='AutomationId';value='2'},
   @{field='AutomationProcess';value=[uint32]43},@{field='NativeProcess';value=[uint32]43},
   @{field='NativeClass';value='Static'},@{field='NativeControlId';value=2},
   @{field='AutomationEnabled';value=$false},@{field='InDialog';value=$false},

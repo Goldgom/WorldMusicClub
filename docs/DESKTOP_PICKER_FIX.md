@@ -238,3 +238,26 @@ button/completion fields is 2,941 bytes, within the unchanged 4,096-byte result
 limit; detailed candidate/text inventories are attached only to failed actions.
 PowerShell/.NET and actual native clicking remain hosted-Windows checks. No local
 GUI is launched, and this preparation does not claim a successful native import.
+
+## Source 165 result and UIA type mismatch
+
+[Run 37029863265](https://github.com/Goldgom/WorldMusicHub/actions/runs/37029863265)
+tested source `629c59f6c2787865a0419db75e5a1feb15f8125e`, tree
+`86d797fa20e529e507dbfdca3a2322b339dd069c` (local equivalent
+`51f608d2113f3bf0c498c409b53c459e8575994f`). The owned chooser screenshot
+shows the fixture path in File name and the real Open button. Action 2 failed
+before clicking: its two UIA ID `1` matches were a virtual HWND `0` and native
+HWND `66092`. The latter has class `Button`, native ID `1`, matching app/UIA PID
+7284, dialog ancestry and enabled/visible state. Only the additional UIA
+ControlType-equals-Button test rejected it. Its exact UIA type was not recorded.
+
+Selection now uses that verified native Button identity without the redundant
+UIA type requirement. Exact UIA type is retained in new diagnostic evidence;
+the old result does not justify calling it a Pane or SplitButton. The virtual
+candidate, wrong native class/ID/PID and distinct valid-button ambiguity still
+fail. The observed two-candidate case is tested in both orders, with an
+additional ambiguity regression for two native Buttons reporting non-Button UIA
+types. All physical-click, foreground/hit-test, geometry and five-second chooser
+dismissal checks remain. Edit and ComboBoxEx32 text were exact in the failed run;
+the intermediate ComboBox text was empty, so the typed-path route is unchanged.
+No Open click or native import success is claimed from this failed run.

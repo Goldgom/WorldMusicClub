@@ -128,6 +128,7 @@ function Get-PickerButtonCandidate($Element,[IntPtr]$Dialog) {
   $class=[System.Text.StringBuilder]::new(256);[void][NativeAcceptance]::GetClassName($handle,$class,256)
   $candidate=[NativePickerButton]::new()
   $candidate.Window=$handle;$candidate.AutomationId=$current.AutomationId;$candidate.IsButton=$current.ControlType -eq [System.Windows.Automation.ControlType]::Button
+  $candidate.AutomationControlType=$current.ControlType.ProgrammaticName
   $candidate.AutomationProcess=$current.ProcessId;$candidate.AutomationEnabled=$current.IsEnabled
   $candidate.NativeProcess=$process;$candidate.NativeClass=$class.ToString();$candidate.NativeControlId=[NativeAcceptance]::GetDlgCtrlID($handle)
   $candidate.InDialog=[NativeAcceptance]::IsChild($Dialog,$handle);$candidate.Enabled=[NativeAcceptance]::IsWindowEnabled($handle);$candidate.Visible=[NativeAcceptance]::IsWindowVisible($handle)
@@ -140,7 +141,7 @@ function Click-PickerOpen($Root,[IntPtr]$Dialog,$App,[hashtable]$Evidence) {
   if($buttons.Count -gt 8){throw 'Open button inventory exceeds eight candidates'}
   foreach($button in $buttons){$candidates+=,(Get-PickerButtonCandidate $button $Dialog)}
   try {$handle=[NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]$candidates,[uint32]$App.Id)}
-  catch {$Evidence.open_button_candidates=@($candidates | ForEach-Object {[ordered]@{hwnd=$_.Window.ToInt64();id=$_.AutomationId;is_button=$_.IsButton;class=$_.NativeClass;control_id=$_.NativeControlId;process_id=$_.NativeProcess;uia_process_id=$_.AutomationProcess;uia_enabled=$_.AutomationEnabled;enabled=$_.Enabled;visible=$_.Visible;dialog_descendant=$_.InDialog}});throw}
+  catch {$Evidence.open_button_candidates=@($candidates | ForEach-Object {[ordered]@{hwnd=$_.Window.ToInt64();id=$_.AutomationId;is_button=$_.IsButton;uia_control_type=$_.AutomationControlType;class=$_.NativeClass;control_id=$_.NativeControlId;process_id=$_.NativeProcess;uia_process_id=$_.AutomationProcess;uia_enabled=$_.AutomationEnabled;enabled=$_.Enabled;visible=$_.Visible;dialog_descendant=$_.InDialog}});throw}
   [void][NativeAcceptance]::SetForegroundWindow($Dialog);Start-Sleep -Milliseconds 100
   # Re-read the live control and require its screen center to hit that exact
   # button (or a native child), rather than trusting a stale UIA rectangle.
@@ -153,7 +154,7 @@ function Click-PickerOpen($Root,[IntPtr]$Dialog,$App,[hashtable]$Evidence) {
   [void][NativeAcceptance]::GetWindowThreadProcessId($hit,[ref]$hitProcess)
   [uint32]$dialogProcess=0;[void][NativeAcceptance]::GetWindowThreadProcessId($Dialog,[ref]$dialogProcess)
   [NativeAcceptance]::ValidatePickerClick($Dialog,$App.MainWindowHandle,[NativeAcceptance]::GetAncestor($Dialog,3),[NativeAcceptance]::GetForegroundWindow(),[uint32]$App.Id,$dialogProcess,($hitProcess -eq $App.Id -and ($hit -eq $handle -or [NativeAcceptance]::IsChild($handle,$hit))))
-  $Evidence.open_button=[ordered]@{hwnd=$handle.ToInt64();class=$live.NativeClass;control_id=$live.NativeControlId;process_id=$live.NativeProcess;enabled=$live.Enabled;visible=$live.Visible;dialog_descendant=$live.InDialog;bounds=@($buttonBounds.Left,$buttonBounds.Top,$buttonBounds.Right,$buttonBounds.Bottom);hit_hwnd=$hit.ToInt64();point=@($point.X,$point.Y);method='verified_native_mouse_click'}
+  $Evidence.open_button=[ordered]@{hwnd=$handle.ToInt64();class=$live.NativeClass;uia_control_type=$live.AutomationControlType;control_id=$live.NativeControlId;process_id=$live.NativeProcess;enabled=$live.Enabled;visible=$live.Visible;dialog_descendant=$live.InDialog;bounds=@($buttonBounds.Left,$buttonBounds.Top,$buttonBounds.Right,$buttonBounds.Bottom);hit_hwnd=$hit.ToInt64();point=@($point.X,$point.Y);method='verified_native_mouse_click'}
   [NativeAcceptance]::Click($point.X,$point.Y)
 }
 function Wait-PickerDismissal([IntPtr]$Dialog,$App,[hashtable]$Evidence) {
