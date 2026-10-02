@@ -28,6 +28,7 @@ public static class NativeAcceptance {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr h,uint flags);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint processId);
   [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h,StringBuilder text,int length);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
@@ -44,21 +45,62 @@ function Save-Json($Value,[string]$Path) {
   $Value | ConvertTo-Json -Depth 16 | Set-Content -Encoding utf8 $temporary
   Move-Item -Force $temporary $Path
 }
-function Capture-Window($App,[string]$Name) {
+function Capture-Handle([IntPtr]$Handle,[string]$Name) {
   $rectangle=New-Object NativeAcceptance+RECT
-  if (-not [NativeAcceptance]::GetWindowRect($App.MainWindowHandle,[ref]$rectangle)) { throw 'Cannot read native window bounds' }
+  if (-not [NativeAcceptance]::GetWindowRect($Handle,[ref]$rectangle)) { throw 'Cannot read native window bounds' }
   $bitmap=New-Object System.Drawing.Bitmap(($rectangle.Right-$rectangle.Left),($rectangle.Bottom-$rectangle.Top))
   $graphics=[System.Drawing.Graphics]::FromImage($bitmap);$device=$graphics.GetHdc()
-  try { if(-not [NativeAcceptance]::PrintWindow($App.MainWindowHandle,$device,2)){throw 'Native screenshot failed'} }
+  try { if(-not [NativeAcceptance]::PrintWindow($Handle,$device,2)){throw 'Native screenshot failed'} }
   finally { $graphics.ReleaseHdc($device);$graphics.Dispose() }
   try { $bitmap.Save((Join-Path $OutputDirectory "$Name.png"),[System.Drawing.Imaging.ImageFormat]::Png) }
   finally { $bitmap.Dispose() }
 }
+function Capture-Window($App,[string]$Name) { Capture-Handle $App.MainWindowHandle $Name }
 function Find-Control($Root,[string]$Id) {
   $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,$Id)
   return $Root.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$condition)
 }
-function Native-Action($App,$Action) {
+function Find-FileNameEntry($Root,[hashtable]$Evidence) {
+  # The common dialog's filename host can be a ComboBox, while its editable
+  # descendant has a different AutomationId on different Windows versions.
+  # Wait for the realized editable control; do not assume child ID 1001.
+  $deadline=[DateTime]::UtcNow.AddSeconds(5)
+  $editCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Edit)
+  while([DateTime]::UtcNow -lt $deadline) {
+    $hostControl=Find-Control $Root '1148'
+    $Evidence.filename_host_found=$null -ne $hostControl
+    $Evidence.filename_candidates=@()
+    if($null -ne $hostControl) {
+      $edits=@($hostControl.FindAll([System.Windows.Automation.TreeScope]::Descendants,$editCondition))
+      $candidates=@($hostControl)+$edits
+      $Evidence.filename_candidate_count=$candidates.Count
+      $writableEdits=@();$writableHost=$null
+      foreach($candidate in ($candidates | Select-Object -First 8)) {
+        $pattern=$null
+        $available=$candidate.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]$pattern)
+        $details=[ordered]@{id=$candidate.Current.AutomationId;class=$candidate.Current.ClassName;control_type=$candidate.Current.ControlType.ProgrammaticName;enabled=$candidate.Current.IsEnabled;value_pattern=$available;read_only=$null}
+        if($available) {
+          $value=[System.Windows.Automation.ValuePattern]$pattern
+          $details.read_only=$value.Current.IsReadOnly
+          if($candidate.Current.IsEnabled -and -not $value.Current.IsReadOnly) {
+            $entry=[pscustomobject]@{Element=$candidate;Pattern=$value}
+            if($candidate -eq $hostControl){$writableHost=$entry}
+            else{$writableEdits+=,$entry}
+          }
+        }
+        $Evidence.filename_candidates+=,$details
+      }
+      # Descendants are considered only inside the verified filename host,
+      # never arbitrary edit fields elsewhere in the dialog (such as Search).
+      if($candidates.Count -gt 8){throw 'Windows filename host has more than eight candidate controls; refusing ambiguous input'}
+      if($writableEdits.Count -eq 1){return $writableEdits[0]}
+      if($edits.Count -eq 0 -and $null -ne $writableHost -and $hostControl.Current.ControlType -in @([System.Windows.Automation.ControlType]::Edit,[System.Windows.Automation.ControlType]::ComboBox)){return $writableHost}
+    }
+    Start-Sleep -Milliseconds 100
+  }
+  throw 'Windows filename host 1148 has no unique writable filename control after 5 seconds; see filename_candidates in this action result'
+}
+function Native-Action($App,$Action,[hashtable]$Evidence) {
   $App.Refresh();$window=$App.MainWindowHandle
   if($window -eq [IntPtr]::Zero){throw 'Application window disappeared'}
   [NativeAcceptance]::SetForegroundWindow($window) | Out-Null
@@ -86,24 +128,29 @@ function Native-Action($App,$Action) {
     Start-Sleep -Milliseconds 100
   }
   if($dialog -eq [IntPtr]::Zero){throw 'No owned Windows file picker opened; no browser file-input substitution is allowed'}
+  [uint32]$dialogProcess=0
+  [void][NativeAcceptance]::GetWindowThreadProcessId($dialog,[ref]$dialogProcess)
+  $Evidence.owned_dialog=[ordered]@{hwnd=$dialog.ToInt64();process_id=$dialogProcess;class=$class.ToString();root_owner_hwnd=[NativeAcceptance]::GetAncestor($dialog,3).ToInt64();app_hwnd=$window.ToInt64();app_process_id=$App.Id}
   if($Action.kind -eq 'cancel-picker'){[NativeAcceptance]::Key(0x1B);return}
-  $name=[string]$Action.file
-  if($name -match '^(seed|restart|close-active|reopen)-(?:[1-9]|1[0-6])\.json$'){$path=Join-Path (Join-Path $OutputDirectory 'downloads') $name}
-  elseif($name -in @('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','jianpu-original-steps.jianpu','malformed.json')){$path=Join-Path $Fixtures $name}
-  else{throw 'File is outside the finite acceptance fixture list'}
-  $path=(Resolve-Path $path).Path
-  $root=[System.Windows.Automation.AutomationElement]::FromHandle($dialog)
-  $filename=Find-Control $root '1148'
-  if($null -eq $filename){throw 'Windows file-name control (1148) is missing'}
-  $pattern=$null
-  if(-not $filename.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]$pattern)) {
-    $filename=Find-Control $filename '1001'
-    if($null -eq $filename -or -not $filename.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]$pattern)){throw 'Windows file-name control is not editable'}
+  try {
+    $name=[string]$Action.file
+    if($name -match '^(seed|restart|close-active|reopen)-(?:[1-9]|1[0-6])\.json$'){$path=Join-Path (Join-Path $OutputDirectory 'downloads') $name}
+    elseif($name -in @('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','jianpu-original-steps.jianpu','malformed.json')){$path=Join-Path $Fixtures $name}
+    else{throw 'File is outside the finite acceptance fixture list'}
+    $path=(Resolve-Path $path).Path
+    $root=[System.Windows.Automation.AutomationElement]::FromHandle($dialog)
+    $entry=Find-FileNameEntry $root $Evidence
+    $entry.Pattern.SetValue($path)
+    if($entry.Pattern.Current.Value -cne $path){throw 'Windows filename control did not retain the selected fixture path'}
+    $open=Find-Control $root '1'
+    if($null -eq $open){throw 'Windows Open button is missing'}
+    ([System.Windows.Automation.InvokePattern]$open.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
+  } catch {
+    $failure=$_.Exception.Message
+    try { Capture-Handle $dialog "owned-picker-failure-$($env:WMH_DESKTOP_ACCEPTANCE_PHASE)-$($Action.sequence)" }
+    catch { $Evidence.dialog_screenshot_error=$_.Exception.Message }
+    throw $failure
   }
-  ([System.Windows.Automation.ValuePattern]$pattern).SetValue($path)
-  $open=Find-Control $root '1'
-  if($null -eq $open){throw 'Windows Open button is missing'}
-  ([System.Windows.Automation.InvokePattern]$open.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
 }
 $previousDirectory=$env:WMH_DESKTOP_SMOKE_DIR;$previousPhase=$env:WMH_DESKTOP_ACCEPTANCE_PHASE
 $env:WMH_DESKTOP_SMOKE_DIR=$OutputDirectory
@@ -123,8 +170,13 @@ try {
         $action=Get-Content -Raw $actionFile | ConvertFrom-Json
         if($action.sequence -ne $sequence){throw 'Out-of-order native action'}
         $result=@{ok=$false}
-        try{Native-Action $app $action;$result.ok=$true}catch{$result.error=$_.Exception.Message}
-        Save-Json $result (Join-Path $OutputDirectory "result-$phase-$sequence.json");$sequence++
+        try{Native-Action $app $action $result;$result.ok=$true}catch{$result.error=$_.Exception.Message}
+        Save-Json $result (Join-Path $OutputDirectory "result-$phase-$sequence.json")
+        # A native modal can suspend the renderer, including its result poll.
+        # Fail here after preserving the real action error instead of waiting
+        # for the renderer to consume it and hiding it behind the phase limit.
+        if(-not $result.ok){throw "Native $phase action $sequence ($($action.kind)) failed: $($result.error)"}
+        $sequence++
       }
       Start-Sleep -Milliseconds 100
     }
