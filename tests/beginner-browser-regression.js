@@ -270,7 +270,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
     assertGlyph(await glyph(page,'#keyboard [data-midi="60"]'),{midi:60,tone:'♯6',below:'•'});
     assertGlyph(await glyph(page,'#keyboard-map [data-code="KeyR"]'),{midi:61,tone:'7',below:'•'});
     const copy=await exportScore(); assert.deepEqual(copy,preview.compilation.score); assert.deepEqual(JSON.parse(copy.source.content).original,score);
-    await closeShellPanels(); await page.locator('#back-to-library').click(); await page.locator('#start-free-practice').click();
+    await closeShellPanels(); await page.locator('#back-to-library').click(); await page.locator('#lobby-home').click(); await page.locator('#start-free-practice').click();
     assert.equal(await page.locator('#free-beginner-enabled').isChecked(),true);
     assert.equal(await page.locator('#free-beginner-numbered-mode').inputValue(),'movable');
     assert.match(await page.locator('#free-beginner-reference').textContent(),/No score key.*C4/);
@@ -283,7 +283,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
 
   test('real free guide keeps held keys and immutable records, and guitar guide uses actual capo pitches',options,async()=>{
     const {page,score}=await prepare('beginner-free-and-guitar');
-    await closeShellPanels(); await page.locator('#back-to-library').click(); await page.locator('#start-free-practice').click();
+    await closeShellPanels(); await page.locator('#back-to-library').click(); await page.locator('#lobby-home').click(); await page.locator('#start-free-practice').click();
     if(await page.locator('#free-sound').getAttribute('aria-pressed')==='true')await page.locator('#free-sound').click();
     await page.locator('#free-start').click(); await page.locator('#free-practice-title').focus(); await page.keyboard.down('r');
     await page.locator('#free-beginner-enabled').check();

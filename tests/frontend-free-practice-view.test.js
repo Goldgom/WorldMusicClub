@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
 import {IDBFactory} from 'fake-indexeddb';
 import {createI18n,validateLocaleCatalogs,MESSAGE_SCHEMA,LOCALE_CATALOGS} from '../web/i18n.js';
@@ -87,4 +88,50 @@ test('on-screen keys reject IME composition, legacy composition events and open 
 });
 test('muting a pending preview cancels it immediately and never blocks a new silent recording',async t=>{
  const gate=deferred(),plays=[];const ui=await setup(t,{audio:{unlock:()=>gate.promise,play:(...args)=>plays.push(args),stop:()=>{}}});const saved=await ui.library.save(sealed());await ui.view.enter();ui.$('free-record-select').value=saved.key;await ui.click('free-load');await ui.click('free-sound');await ui.click('free-preview');assert.equal(ui.preview.snapshot().status,'preparing');await ui.click('free-sound');assert.equal(ui.preview.snapshot().status,'muted');await ui.click('free-start');assert.equal(ui.session.snapshot().state,'recording');gate.resolve();await settle();assert.equal(plays.length,0);
+});
+
+// A DOM-only view test cannot see the linked CSS cascade. Read the production
+// stylesheet order and compare all matching declarations for this layout only.
+async function freePianoStylesheetRules(){
+ const {document}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8'));const result=[];
+ for(const link of document.querySelectorAll('link[rel="stylesheet"]')){
+  const href=link.getAttribute('href'),css=await readFile(new URL(`../web${href}`,import.meta.url),'utf8');
+  const {document:styles}=parseHTML(`<style>${css}</style>`);
+  function collect(rules,media=[]){for(const rule of rules){if(rule.cssRules)collect(rule.cssRules,[...media,...(rule.media?[rule.media.mediaText]:[])]);else if(rule.selectorText)result.push({rule,media,href});}}
+  collect(styles.querySelector('style').sheet.cssRules);
+ }
+ return result;
+}
+function cascadeLayout(element,rules,size){
+ const properties=['display','flex-direction','align-items','align-self','gap','max-width','padding','grid-area','order'],winners={};
+ const mediaMatches=media=>media.every(query=>query.split(',').some(branch=>{
+  if(/prefers-/.test(branch))return false;
+  return [...branch.matchAll(/\((min|max)-(width|height):\s*(\d+)px\)/g)].every(([,bound,axis,value])=>bound==='min'?size[axis]>=Number(value):size[axis]<=Number(value));
+ }));
+ for(const {rule,media,href}of rules){
+  if(!mediaMatches(media)||!properties.some(property=>rule.style.getPropertyValue(property)))continue;
+  // Split only selector-list commas, not commas inside a functional selector.
+  const selectors=rule.selectorText.split(/,(?![^()]*\))/);
+  for(const selector of selectors){
+   if(selector.includes('::')||!element.matches(selector))continue;
+   assert.doesNotMatch(selector,/:is\(|:not\(|:where\(|:has\(/,'Extend the specificity resolver before adding functional selectors to the root layout contract');
+   const ids=(selector.match(/#[\w-]+/g)||[]).length,classes=(selector.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g)||[]).length;
+   const types=(selector.replace(/#[\w-]+|\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g,'').match(/[a-zA-Z][\w-]*/g)||[]).length;
+   for(const property of properties){const value=rule.style.getPropertyValue(property);if(!value)continue;const rank=[rule.style.getPropertyPriority(property)==='important'?1:0,ids,classes,types];
+    const old=winners[property],comparison=old?rank.reduce((difference,part,index)=>difference||part-old.rank[index],0):1;
+    if(comparison>=0)winners[property]={value,rank,selector,href};
+   }
+  }
+ }
+ return winners;
+}
+test('production stylesheet order keeps the free piano full-width and recordings below it at every viewport',async t=>{
+ const ui=await setup(t);ui.document.body.classList.add('game-shell','rhythm-shell');await ui.view.enter();const rules=await freePianoStylesheetRules();
+ assert.ok(rules.findIndex(({href})=>href==='/rhythm-shell.css')>rules.findIndex(({href})=>href==='/free-practice.css'),'Exercise the real order that previously let the dashboard win');
+ const cases=[{width:1280,height:720,padding:'18px 28px 24px',gap:'12px'},{width:1920,height:1080,padding:'18px 28px 24px',gap:'12px'},{width:900,height:560,padding:'12px 16px 18px',gap:'8px'},{width:390,height:844,padding:'12px 10px',gap:'10px'}];
+ for(const size of cases){const styles=cascadeLayout(ui.$('free-practice-screen'),rules,size);
+  for(const [property,value]of Object.entries({display:'flex','flex-direction':'column','align-items':'stretch','max-width':'1840px',padding:size.padding,gap:size.gap}))assert.equal(styles[property]?.value,value,`${size.width}×${size.height}: ${property} winner ${JSON.stringify(styles[property])}`);
+  for(const id of ['free-piano-stage','free-save-panel','free-recordings']){const child=cascadeLayout(ui.$(id),rules,size);assert.equal(child['grid-area']?.value,'auto',`${id} cannot retain a legacy grid row`);assert.equal(child.order?.value,'0');assert.equal(child['align-self']?.value,'stretch');}
+ }
+ const children=[...ui.$('free-practice-screen').children].map(node=>node.id);assert.ok(children.indexOf('free-piano-stage')<children.indexOf('free-save-panel'));assert.ok(children.indexOf('free-save-panel')<children.indexOf('free-recordings'),'Normal flex order keeps recording/history below the piano');
 });

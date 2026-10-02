@@ -18,9 +18,10 @@
 @media(prefers-reduced-motion:reduce){.free-practice-key.held{transform:none}}
 
 /* Full piano stage: geometry and input still come from the shared controllers.
-   The extra root class deliberately supersedes the older dashboard shell. */
-#free-practice-screen.free-piano-workspace{display:flex;flex-direction:column;gap:12px;max-width:1840px;padding:18px 28px 24px;align-items:stretch;color:var(--page-ink,#272438)}
-#free-practice-screen.free-piano-workspace>*{flex:none;min-width:0}
+   The game-shell ancestor makes root ownership stronger than the later
+   rhythm-shell dashboard rules (including their desktop media query). */
+.game-shell #free-practice-screen.free-piano-workspace{display:flex;flex-direction:column;gap:12px;max-width:1840px;padding:18px 28px 24px;align-items:stretch;color:var(--page-ink,#272438)}
+.game-shell #free-practice-screen.free-piano-workspace>*{flex:none;min-width:0;grid-area:auto;order:0;align-self:stretch}
 #free-practice-screen.free-piano-workspace .free-practice-heading{padding:0;gap:12px}
 #free-practice-screen.free-piano-workspace .free-practice-heading h1{font-size:25px;margin:0;letter-spacing:-.5px}
 #free-practice-screen.free-piano-workspace .rhythm-free-console{margin:0;padding:10px 14px;border-radius:12px;gap:12px}
@@ -83,6 +84,6 @@
 #free-practice-screen.free-piano-workspace .free-replay-help{margin:10px 0;font-size:12px}
 #free-practice-screen.free-piano-workspace #free-operation-status{margin:0;min-height:0}
 #free-practice-screen.free-piano-workspace #free-operation-status:empty{display:none}
-@media(max-width:1200px){#free-practice-screen.free-piano-workspace{padding:12px 16px 18px}#free-practice-screen.free-piano-workspace .free-scroll-hint{display:inline}}
-@media(max-height:650px){#free-practice-screen.free-piano-workspace{padding-top:10px;gap:8px}#free-practice-screen.free-piano-workspace .free-live-field{height:80px}#free-practice-screen.free-piano-workspace .free-live-copy{gap:5px}#free-practice-screen.free-piano-workspace #free-practice-keys{height:148px;min-height:148px}#free-practice-screen.free-piano-workspace .free-stage-header{min-height:46px;padding-top:6px;padding-bottom:6px}}
-@media(max-width:650px){#free-practice-screen.free-piano-workspace{padding:12px 10px;gap:10px}#free-practice-screen.free-piano-workspace .free-practice-heading h1{font-size:21px}#free-practice-screen.free-piano-workspace .free-practice-heading{align-items:flex-start}#free-practice-screen.free-piano-workspace .rhythm-free-console{flex-direction:column;align-items:stretch;gap:9px}#free-practice-screen.free-piano-workspace .free-stage-header{flex-wrap:wrap;padding:10px 12px}#free-practice-screen.free-piano-workspace .free-stage-header .free-practice-actions{width:100%}#free-practice-screen.free-piano-workspace .free-stage-footer{gap:4px 12px}#free-practice-screen.free-piano-workspace .free-recordings{padding:0 10px}#free-practice-screen.free-piano-workspace .free-live-field{height:100px}}
+@media(max-width:1200px){.game-shell #free-practice-screen.free-piano-workspace{padding:12px 16px 18px}#free-practice-screen.free-piano-workspace .free-scroll-hint{display:inline}}
+@media(max-height:650px){.game-shell #free-practice-screen.free-piano-workspace{padding-top:10px;gap:8px}#free-practice-screen.free-piano-workspace .free-live-field{height:80px}#free-practice-screen.free-piano-workspace .free-live-copy{gap:5px}#free-practice-screen.free-piano-workspace #free-practice-keys{height:148px;min-height:148px}#free-practice-screen.free-piano-workspace .free-stage-header{min-height:46px;padding-top:6px;padding-bottom:6px}}
+@media(max-width:650px){.game-shell #free-practice-screen.free-piano-workspace{padding:12px 10px;gap:10px}#free-practice-screen.free-piano-workspace .free-practice-heading h1{font-size:21px}#free-practice-screen.free-piano-workspace .free-practice-heading{align-items:flex-start}#free-practice-screen.free-piano-workspace .rhythm-free-console{flex-direction:column;align-items:stretch;gap:9px}#free-practice-screen.free-piano-workspace .free-stage-header{flex-wrap:wrap;padding:10px 12px}#free-practice-screen.free-piano-workspace .free-stage-header .free-practice-actions{width:100%}#free-practice-screen.free-piano-workspace .free-stage-footer{gap:4px 12px}#free-practice-screen.free-piano-workspace .free-recordings{padding:0 10px}#free-practice-screen.free-piano-workspace .free-live-field{height:100px}}

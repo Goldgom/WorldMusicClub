@@ -331,12 +331,14 @@ async function captureFailureState(stage,error=null) {
 }
 async function waitForEngraving(timeout=25_000) {
   await revealControl(page.locator('#engraved-button'));
-  await page.waitForFunction(()=>Boolean(document.querySelector('#engraved-staff svg')&&document.querySelector('#engraving-status').textContent.includes('Generated staff preview'))||!document.querySelector('#engraving-fallback').hidden,null,{timeout});
+  // Require the completed preview message in either shipped locale. Chinese
+  // screenshots must not wait for the English-only text after a language switch.
+  await page.waitForFunction(()=>Boolean(document.querySelector('#engraved-staff svg')&&/^(?:Generated staff preview · Measures \d+–\d+ · display only\.|生成的五线谱预览 · 第 \d+–\d+ 小节 · 仅供显示。)$/.test(document.querySelector('#engraving-status').textContent))||!document.querySelector('#engraving-fallback').hidden,null,{timeout});
   if(await ui('#engraving-fallback').isVisible()){
     const reason=await ui('#engraving-fallback').textContent();await captureFailureState('engraving-failure');assert.fail(`Expected real engraved SVG; the app reported: ${reason}`);
   }
   await ui('#engraved-staff svg').first().waitFor({state:'visible',timeout});
-  assert.match(await ui('#engraving-status').textContent(),/Generated staff preview/);
+  assert.match(await ui('#engraving-status').textContent(),/^(?:Generated staff preview · Measures \d+–\d+ · display only\.|生成的五线谱预览 · 第 \d+–\d+ 小节 · 仅供显示。)$/);
 }
 
 async function screenshot(name) {
