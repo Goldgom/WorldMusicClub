@@ -26,6 +26,68 @@ function observeNativeReferenceAudio(root=globalThis) {
     pendingSources:rows.filter(row=>!row.disconnected&&row.start!==null&&row.start>row.context.currentTime&&row.stop>row.start).length};},restore(){for(const restore of restores)restore();}};
 }
 
+// Observe only the finite scored-take preparation. Native dispatch success does
+// not establish DOM event receipt or a running transport. No input is synthesized.
+function observeNativeReferenceTransport(document, {now=()=>performance.now(),defer=queueMicrotask}={}) {
+  const $=id=>document.getElementById(id),window=document.defaultView,rows=[],remove=[];
+  const started=now(),encoder=new TextEncoder();let omitted=0,rowBytes=2,active=true,lastState='',trustedPlayClicks=0,trustedKeyDowns=0,trustedKeyUps=0;
+  const text=value=>String(value ?? '').slice(0,64);
+  function state(){const status=document.querySelector('.performance-status');return {
+    screen:text(document.body.dataset.screen),mode:text($('session-mode')?.value),hidden:Boolean(document.hidden),
+    focused:typeof document.hasFocus==='function'?document.hasFocus():null,activeElement:text(document.activeElement?.id),
+    openDialogs:[...document.querySelectorAll('dialog[open]')].slice(0,4).map(node=>text(node.id)),
+    playDisabled:Boolean($('play-button')?.disabled),playText:text($('play-button')?.textContent),
+    phase:text(status?.dataset.phase),passId:text(status?.dataset.passId),revision:text(status?.dataset.revision),
+    captured:text($('hud-captured')?.textContent),positionMs:Number($('progress')?.value)||0,durationMs:Number($('progress')?.max)||0,
+    cue:text($('stage-cue')?.dataset.cueState),soundMuted:$('sound-button')?.getAttribute('aria-pressed')==='true',
+  };}
+  function append(kind,detail={}){if(!active)return;const row={elapsedMs:Math.max(0,now()-started),kind,...detail,state:state()},bytes=encoder.encode(JSON.stringify(row)).length+1;
+    while(rows.length&&(rows.length>=64||rowBytes+bytes>24*1024)){rowBytes-=encoder.encode(JSON.stringify(rows.shift())).length+1;omitted++;}
+    if(rowBytes+bytes<=24*1024){rows.push(row);rowBytes+=bytes;}else omitted++;
+  }
+  function changed(label){const current=state(),signature=JSON.stringify({...current,positionMs:undefined});if(signature!==lastState){lastState=signature;append(label);}return current;}
+  function observe(event){
+    const element=event.target?.closest?.('[id]'),target=text(element?.id||event.target?.localName||'window');
+    const control=text(event.target?.closest?.('button')?.id),surface=text(event.target?.closest?.('[data-keyboard-performance]')?.id);
+    if(event.isTrusted===true&&event.type==='click'&&control==='play-button')trustedPlayClicks++;
+    if(event.isTrusted===true&&event.code==='KeyR'&&surface==='stage-title'){
+      if(event.type==='keydown'&&!event.repeat)trustedKeyDowns++;
+      if(event.type==='keyup')trustedKeyUps++;
+    }
+    append('event',{event:{type:text(event.type),trusted:event.isTrusted===true,target,control,surface,code:text(event.code),repeat:Boolean(event.repeat),
+      preventedAtCapture:Boolean(event.defaultPrevented),eventTime:Number.isFinite(event.timeStamp)?event.timeStamp:null,
+      x:Number.isFinite(event.clientX)?event.clientX:null,y:Number.isFinite(event.clientY)?event.clientY:null}});
+    if(['click','keydown','keyup','blur','visibilitychange'].includes(event.type))defer(()=>{if(active)changed(`after-${event.type}`);});
+  }
+  for(const type of ['pointerdown','pointerup','click','keydown','keyup','focusin','focusout','visibilitychange']){document.addEventListener(type,observe,true);remove.push(()=>document.removeEventListener(type,observe,true));}
+  for(const type of ['focus','blur']){window?.addEventListener(type,observe,true);remove.push(()=>window?.removeEventListener(type,observe,true));}
+  append('begin');
+  return {state,changed,counts:()=>({trustedPlayClicks,trustedKeyDowns,trustedKeyUps}),
+    snapshot:stage=>({version:1,stage,rows:rows.slice(),omitted,rowBytes,...{trustedPlayClicks,trustedKeyDowns,trustedKeyUps},current:state()}),
+    stop(){active=false;for(const cleanup of remove)cleanup();}};
+}
+
+async function prepareNativeReferenceScoredTake({document,native,click,closeDialogs,until}) {
+  const $=id=>document.getElementById(id),trace=observeNativeReferenceTransport(document);
+  let stage='prepare';
+  try {
+    closeDialogs();if(document.body.dataset.screen!=='stage')click('resume-session');
+    if($('sound-button').getAttribute('aria-pressed')!=='true')click('sound-button');
+    click('settings-button');$('session-mode').value='practice';$('session-mode').dispatchEvent(new Event('change',{bubbles:true}));$('count-in').checked=false;closeDialogs();
+    await until(()=>!$('play-button').disabled,'score practice ready');const initialPosition=trace.changed('ready').positionMs;
+    stage='transport-start';await native('click',$('play-button'));
+    // The actual native key is never sent merely because the OS helper returned.
+    // Require its trusted Play click and observable recorder/clock admission.
+    await until(()=>{const current=trace.changed('await-transport-start');return trace.counts().trustedPlayClicks===1&&current.phase==='capturing'&&/^[1-9][0-9]*$/.test(current.passId)&&current.positionMs>initialPosition&&current.positionMs<current.durationMs&&!current.hidden&&current.openDialogs.length===0;},'native scored transport started');
+    const passId=trace.state().passId;stage='keyboard-capture';await native('key-r',$('stage-title'));
+    await until(()=>{const current=trace.changed('await-keyboard-capture'),events=trace.counts();return events.trustedKeyDowns===1&&events.trustedKeyUps===1&&current.passId===passId&&current.phase==='capturing'&&current.captured==='1';},'one actual Windows keyboard input');
+    stage='transport-pause';await native('click',$('play-button'));
+    await until(()=>{const current=trace.changed('await-transport-pause');return trace.counts().trustedPlayClicks===2&&current.passId===passId&&current.captured==='1'&&current.phase!=='capturing'&&current.cue==='paused';},'native scored transport paused');
+    return trace.snapshot('complete');
+  } catch(error) {trace.changed('failed');error.nativeReferenceTransport=trace.snapshot(stage);throw error;}
+  finally {trace.stop();}
+}
+
 async function checkNativeReferenceListening({document,native,click,closeDialogs,download,until,delay,requests}) {
   const $=id=>document.getElementById(id),f=NATIVE_REFERENCE_FIXTURE,checks=[],files={};
   const assert=(value,message)=>{if(!value)throw Error(`Native reference: ${message}`);};
@@ -35,13 +97,7 @@ async function checkNativeReferenceListening({document,native,click,closeDialogs
   const snapshot=()=>({title:$('score-title').textContent,stage:$('stage-title').textContent,mode:$('session-mode').value,clock:$('progress').value,captured:$('hud-captured').textContent,pass:document.querySelector('.performance-status').dataset.passId,revision:document.querySelector('.performance-status').dataset.revision});
   async function scoreDownload(){closeDialogs();click('score-tools-button');const file=await download('export-button');closeDialogs();return file;}
   async function takeDownload(){closeDialogs();click('results-button');const file=await download('export-takes');closeDialogs();return file;}
-  closeDialogs();if(document.body.dataset.screen!=='stage')click('resume-session');
-  if($('sound-button').getAttribute('aria-pressed')!=='true')click('sound-button');
-  click('settings-button');$('session-mode').value='practice';$('session-mode').dispatchEvent(new Event('change',{bubbles:true}));$('count-in').checked=false;closeDialogs();
-  await until(()=>!$('play-button').disabled,'score practice ready');
-  await native('click',$('play-button'));await native('key-r',$('stage-title'));
-  await until(()=>$('hud-captured').textContent==='1','one actual Windows keyboard input');await native('click',$('play-button'));
-  assert($('play-button').textContent.includes('Play'),'prior scored take did not pause');
+  const transportAdmission=await prepareNativeReferenceScoredTake({document,native,click,closeDialogs,until});
   files.beforeScore=await scoreDownload();files.beforeTake=await takeDownload();
   const before=JSON.stringify(snapshot()),requestStart=requests.length,probe=observeNativeReferenceAudio();let cleanupChecks=0;
   function unchanged(label){assert(JSON.stringify(snapshot())===before,`${label}: score/take display changed`);}
@@ -99,6 +155,6 @@ async function checkNativeReferenceListening({document,native,click,closeDialogs
     unchanged('reference playback complete');files.afterScore=await scoreDownload();files.afterTake=await takeDownload();
     assert(!requests.slice(requestStart).some(row=>['/api/compile','/api/import/midi','/api/assess','/api/practice-targets'].includes(row.path)),'reference operations entered score import, compilation or assessment');
     checks.push('canonical-score-unchanged','scored-take-unchanged');
-    return {ok:true,fixture:f.name,sourceSha256:f.sha256,eventCount:f.events,trackCount:f.tracks,onsetCount:f.onsets,files,checks,audio:{...clean('final'),cleanupChecks}};
+    return {ok:true,transportAdmission,fixture:f.name,sourceSha256:f.sha256,eventCount:f.events,trackCount:f.tracks,onsetCount:f.onsets,files,checks,audio:{...clean('final'),cleanupChecks}};
   } finally {if($('reference-listening-dialog')?.open)click('reference-close');probe.restore();}
 }

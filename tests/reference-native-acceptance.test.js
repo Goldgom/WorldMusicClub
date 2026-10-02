@@ -62,3 +62,91 @@ test('native probe reports uncanceled future audio and elapsed scheduled stops r
   } finally {probe.restore();}
   assert.throws(()=>observeNativeReferenceAudio({}),/real AudioContext/);
 });
+
+// Model only the acceptance admission contract. These plain event samples do
+// not enter the application, OS input system, or any scored performance.
+function transportFixture({clickDelivered=true,startOnPoll=0,keyDelivered=true,blurBeforeStart=false}={}) {
+  let wall=1000,startPolls=0,clicks=0;const listeners=new Map(),windowListeners=new Map(),deferred=[],actions=[];
+  const node=(id,kind='div')=>({id,localName:kind,dataset:{},disabled:false,value:'',textContent:'',checked:false,
+    getAttribute(name){return this[name]??null;},dispatchEvent(){},closest(selector){if(selector==='[id]')return this;if(selector==='button'&&kind==='button')return this;if(selector==='[data-keyboard-performance]'&&id==='stage-title')return this;return null;}});
+  const ids=Object.fromEntries(['session-mode','play-button','sound-button','count-in','stage-title','hud-captured','progress','stage-cue','settings-button','resume-session'].map(id=>[id,node(id,id.endsWith('button')?'button':'div')]));
+  ids['session-mode'].value='practice';ids['play-button'].textContent='▶ Play';ids['sound-button']['aria-pressed']='true';ids['hud-captured'].textContent='0';ids.progress.value=0;ids.progress.max=6000;ids['stage-cue'].dataset.cueState='ready';
+  const status=node('status');status.dataset={phase:'ready',passId:'',revision:''};
+  const add=(map,type,listener)=>{if(!map.has(type))map.set(type,new Set());map.get(type).add(listener);};
+  const document={body:{dataset:{screen:'stage'}},hidden:false,activeElement:ids['stage-title'],hasFocus:()=>true,
+    getElementById:id=>ids[id],querySelector:selector=>selector==='.performance-status'?status:null,querySelectorAll:()=>[],
+    addEventListener:(type,fn)=>add(listeners,type,fn),removeEventListener:(type,fn)=>listeners.get(type)?.delete(fn),
+    defaultView:{addEventListener:(type,fn)=>add(windowListeners,type,fn),removeEventListener:(type,fn)=>windowListeners.get(type)?.delete(fn)}};
+  const emit=(type,target,values={},map=listeners)=>{const event={type,target,timeStamp:++wall,isTrusted:true,...values};for(const listener of map.get(type)||[])listener(event);};
+  const running=()=>{status.dataset.phase='capturing';status.dataset.passId='1';status.dataset.revision='0';ids.progress.value=10;ids['play-button'].textContent='Ⅱ Pause';delete ids['stage-cue'].dataset.cueState;};
+  const exported=runInNewContext(`${source}\n({observeNativeReferenceTransport,prepareNativeReferenceScoredTake})`,{TextEncoder,performance:{now:()=>wall},queueMicrotask:fn=>deferred.push(fn),Event:class{}});
+  const options={document,click(){},closeDialogs(){},
+    async native(kind,target){actions.push([kind,target.id]);
+      if(kind==='click'){
+        clicks++;if(clickDelivered)emit('click',target);
+        if(clicks===1&&startOnPoll===0)running();
+        if(clicks===1&&blurBeforeStart){emit('blur',document.defaultView,{},windowListeners);status.dataset.phase='ready';ids.progress.value=0;}
+        if(clicks===2){status.dataset.phase='pending';ids['play-button'].textContent='▶ Play';ids['stage-cue'].dataset.cueState='paused';}
+      }else if(kind==='key-r'){
+        assert.equal(status.dataset.phase,'capturing');assert.ok(Number(ids.progress.value)>0,'Native key is sequenced after observable clock admission');
+        if(keyDelivered){emit('keydown',target,{code:'KeyR'});emit('keyup',target,{code:'KeyR'});}
+        ids['hud-captured'].textContent='1';status.dataset.revision='1';
+      }
+      for(const fn of deferred.splice(0))fn();
+    },
+    async until(condition,label){for(let i=0;i<4;i++){
+      if(label==='native scored transport started'&&startOnPoll>0&&++startPolls>=startOnPoll)running();
+      if(await condition())return;
+    }throw Error(`Timed out: ${label}`);}};
+  return {...exported,document,options,actions,ids,status,emit,listeners,windowListeners,deferred};
+}
+
+test('native coordinate success and a displayed clock cannot replace trusted Play delivery',async()=>{
+  const f=transportFixture({clickDelivered:false});let error;
+  await assert.rejects(f.prepareNativeReferenceScoredTake(f.options),value=>{error=value;return /native scored transport started/.test(value.message);});
+  assert.deepEqual(f.actions,[['click','play-button']],'Never inject the real key or retry a click before start admission');
+  assert.equal(error.nativeReferenceTransport.stage,'transport-start');assert.equal(error.nativeReferenceTransport.trustedPlayClicks,0);
+  assert.equal(error.nativeReferenceTransport.current.phase,'capturing','Even a running display alone is insufficient');
+  assert.ok([...f.listeners.values(),...f.windowListeners.values()].every(set=>set.size===0));
+});
+
+test('trusted Play followed by focus loss fails at transport admission with bounded lifecycle evidence',async()=>{
+  const f=transportFixture({blurBeforeStart:true});let error;
+  await assert.rejects(f.prepareNativeReferenceScoredTake(f.options),value=>{error=value;return /native scored transport started/.test(value.message);});
+  assert.equal(error.nativeReferenceTransport.trustedPlayClicks,1);assert.equal(error.nativeReferenceTransport.current.phase,'ready');
+  assert.ok(error.nativeReferenceTransport.rows.some(row=>row.event?.type==='blur'));assert.deepEqual(f.actions,[['click','play-button']]);
+});
+
+test('native key follows actual pass/clock transition, and only its trusted down/up plus capture admits Pause',async()=>{
+  const f=transportFixture({startOnPoll:3}),result=await f.prepareNativeReferenceScoredTake(f.options);
+  assert.deepEqual(f.actions,[['click','play-button'],['key-r','stage-title'],['click','play-button']]);
+  assert.equal(result.stage,'complete');assert.equal(result.trustedPlayClicks,2);assert.equal(result.trustedKeyDowns,1);assert.equal(result.trustedKeyUps,1);
+  assert.equal(result.current.passId,'1');assert.equal(result.current.captured,'1');assert.equal(result.current.cue,'paused');
+  const firstKey=result.rows.find(row=>row.event?.code==='KeyR');assert.equal(firstKey.state.phase,'capturing');assert.ok(firstKey.state.positionMs>0);
+});
+
+test('a displayed capture without trusted Windows key receipt is rejected, with no retry',async()=>{
+  const f=transportFixture({keyDelivered:false});let error;
+  await assert.rejects(f.prepareNativeReferenceScoredTake(f.options),value=>{error=value;return /one actual Windows keyboard input/.test(value.message);});
+  assert.deepEqual(f.actions,[['click','play-button'],['key-r','stage-title']]);assert.equal(error.nativeReferenceTransport.stage,'keyboard-capture');
+  assert.equal(error.nativeReferenceTransport.current.captured,'1');assert.equal(error.nativeReferenceTransport.trustedKeyDowns,0);
+});
+
+test('functional transport diagnostics have finite rows and byte budget and stop observing after cleanup',()=>{
+  const f=transportFixture(),trace=f.observeNativeReferenceTransport(f.document,{now:()=>1000,defer:fn=>f.deferred.push(fn)});
+  for(let i=0;i<150;i++)f.emit('click',f.ids['play-button']);
+  const result=trace.snapshot('stress-contract');assert.ok(result.rows.length<=64);assert.ok(result.rowBytes<=24*1024);assert.ok(result.omitted>0);
+  assert.ok(new TextEncoder().encode(JSON.stringify(result)).length<32*1024,'Diagnostic fits beneath the existing64KiB report limit with room for prior seed evidence');
+  trace.stop();for(const fn of f.deferred.splice(0))fn();f.emit('click',f.ids['play-button']);
+  assert.equal(trace.counts().trustedPlayClicks,150);
+});
+
+test('waiting for a clock transition retains the causal click rather than logging every progress tick',()=>{
+  const f=transportFixture(),trace=f.observeNativeReferenceTransport(f.document,{now:()=>1000,defer:fn=>f.deferred.push(fn)});
+  f.emit('click',f.ids['play-button']);f.status.dataset.phase='capturing';f.status.dataset.passId='1';
+  for(let tick=1;tick<=150;tick++){f.ids.progress.value=tick;trace.changed('await-keyboard-capture');}
+  const result=trace.snapshot('keyboard-capture');trace.stop();
+  assert.equal(result.omitted,0);assert.ok(result.rows.length<5);assert.ok(result.rows.some(row=>row.event?.type==='click'&&row.event.trusted));
+  assert.equal(result.current.positionMs,150,'Latest clock remains available without evicting event receipt');
+  assert.equal(result.rows.find(row=>row.event).event.preventedAtCapture,false,'Capture-phase sampling is explicitly named');
+});

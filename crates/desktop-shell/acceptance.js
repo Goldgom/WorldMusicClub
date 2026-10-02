@@ -189,7 +189,7 @@
       }
       report.downloads=(await json('/__desktop_smoke/state')).downloads;
       report.errors=errors;assert(errors.length===0,errors.join('; '));report.ok=true;
-    } catch(error) { report.error=String(error);report.errors=errors;checkpoint('renderer-error'); }
+    } catch(error) { report.error=String(error);report.errors=errors;if(error.nativeReferenceTransport)report.referenceTransport=error.nativeReferenceTransport;checkpoint('renderer-error'); }
     finally {scores?.close?.();performances?.close?.();}
     checkpoint('renderer-report-posting');
     await json('/__desktop_smoke/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(report)});
