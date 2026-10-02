@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {runInNewContext} from 'node:vm';
+import {freePracticeApp,fixtureScoreServer} from './free-practice-app-fixtures.js';
 
 const source=await readFile(new URL('../crates/desktop-shell/acceptance-wait.js',import.meta.url),'utf8');
 const createWait=runInNewContext(`${source}\ncreateAcceptanceWait`,{AbortController,setTimeout,clearTimeout});
+const createNavigation=runInNewContext(`${source}\ncreateAcceptanceNavigation`);
 const never=()=>new Promise(()=>{});
 
 test('acceptance deadline rejects a pending async condition and aborts its request',async()=>{
@@ -43,13 +45,104 @@ test('condition failures and HTTP result errors reach the report unchanged',asyn
   await assert.rejects(createWait().json(async()=>({ok:false,status:500,json:async()=>({error:'Invalid action result'})}),'/result',undefined,100),/\/result: Invalid action result/);
 });
 
+// Plain Node DOM tests of the exact injected navigation helper against the real
+// app's menu handlers. Fixed geometry is only a readiness fixture, never native
+// rendering, input, file chooser, recording, or Windows acceptance evidence.
+async function menuFixture() {
+  const app=await freePracticeApp({fetchResult:await fixtureScoreServer()}),clicks=[];
+  const prototype=app.window.HTMLElement.prototype,original=Object.getOwnPropertyDescriptor(prototype,'getBoundingClientRect');
+  Object.defineProperty(prototype,'getBoundingClientRect',{configurable:true,writable:true,value(){return {width:120,height:40};}});
+  const wait=createWait(),menu=createNavigation({document:app.document,until:(condition,label)=>wait.until(condition,label,1000),click:id=>{clicks.push(id);app.$(id).click();}});
+  return {app,menu,clicks,async close(){try{await app.close();}finally{if(original)Object.defineProperty(prototype,'getBoundingClientRect',original);else delete prototype.getBoundingClientRect;}}};
+}
+
+test('native menu admission rejects the preloaded hidden lobby and follows the real Single player control',async()=>{
+  const f=await menuFixture();try {
+    await f.app.until(()=>!f.app.$('start-listen').disabled);
+    assert.equal(f.app.document.body.dataset.screen,'home');
+    assert.equal(f.menu.ready('library','start-listen'),false,'An enabled hidden Listen button cannot admit startup');
+    assert.equal(f.menu.ready('home','home-single-player'),true);
+    const button=f.app.$('home-single-player');button.disabled=true;assert.equal(f.menu.ready('home','home-single-player'),false);button.disabled=false;
+    const geometry=button.getBoundingClientRect;button.getBoundingClientRect=()=>({width:0,height:40});assert.equal(f.menu.ready('home','home-single-player'),false);button.getBoundingClientRect=geometry;
+    f.app.$('home-settings').click();assert.equal(f.menu.ready('home','home-single-player'),false,'An open settings dialog blocks menu admission');f.app.$('settings-dialog').close();
+    await f.menu.enterLibrary();assert.deepEqual(f.clicks,['home-single-player']);
+    assert.equal(f.menu.ready('library','start-listen'),true);assert.equal(f.app.$('song-lobby').dataset.previewStatus,'ready');
+  }finally{await f.close();}
+});
+
+test('native menu waits for actual catalog readiness after one entry click without retries',async()=>{
+  const f=await menuFixture();try {
+    await f.app.until(()=>!f.app.$('start-listen').disabled);
+    f.app.$('start-listen').disabled=true;
+    const pending=f.menu.enterLibrary();await f.app.until(()=>f.clicks.length===1);
+    let settled=false;pending.then(()=>{settled=true;});await f.app.tick();assert.equal(settled,false);
+    f.app.$('start-listen').disabled=false;await pending;
+    assert.deepEqual(f.clicks,['home-single-player']);assert.equal(f.app.document.body.dataset.screen,'library');
+  }finally{await f.close();}
+});
+
+test('native free-practice routing goes through the visible home entry and Exit returns to the real library',async()=>{
+  const f=await menuFixture();try {
+    await f.menu.enterLibrary();
+    // Mute before the real stage handler so this Node menu test never unlocks audio.
+    f.app.$('sound-button').click();await f.app.click('start-listen');
+    await f.app.until(()=>f.app.document.body.dataset.screen==='stage'&&!f.app.$('start-listen').disabled);f.app.$('reset-button').click();
+    const stageTitle=f.app.$('stage-title').textContent,entry=f.app.$('start-free-practice');
+    f.clicks.length=0;await f.menu.enterFree();
+    assert.deepEqual(f.clicks,['back-to-library','lobby-home','start-free-practice']);
+    assert.equal(f.menu.ready('free','free-start'),true);assert.equal(f.app.$('start-free-practice'),entry);
+    await f.menu.exitFree();assert.equal(f.app.document.body.dataset.screen,'library');assert.equal(f.menu.ready('home','start-free-practice'),false);
+    f.clicks.length=0;await f.menu.enterFree();assert.deepEqual(f.clicks,['lobby-home','start-free-practice']);await f.menu.exitFree();
+    assert.equal(f.app.$('stage-title').textContent,stageTitle);assert.equal(f.app.$('resume-session').hidden,false);
+    assert.deepEqual(f.app.audio(),{contexts:0,unlocks:0});assert.equal(f.app.midiRequests(),0);
+  }finally{await f.close();}
+});
+
+test('native navigation fails within its deadline if the menu click does not transition screens',async()=>{
+  const f=await menuFixture();try {
+    await f.app.until(()=>!f.app.$('start-listen').disabled);
+    const clicks=[],wait=createWait(),menu=createNavigation({document:f.app.document,until:(condition,label)=>wait.until(condition,label,20),click:id=>clicks.push(id)});
+    await assert.rejects(menu.enterLibrary(),/Timed out: visible native single-player catalog preview/);
+    assert.deepEqual(clicks,['home-single-player']);assert.equal(f.app.document.body.dataset.screen,'home');
+  }finally{await f.close();}
+});
+
+test('native free entry waits for operation readiness and Exit rejects an incorrect home destination',async()=>{
+  const f=await menuFixture();try {
+    const clicks=[],wait=createWait(),menu=createNavigation({document:f.app.document,until:(condition,label)=>wait.until(condition,label,1000),click:id=>{
+      clicks.push(id);f.app.$(id).click();if(id==='start-free-practice')f.app.$('free-practice-screen').setAttribute('aria-busy','true');
+    }});
+    const pending=menu.enterFree();await f.app.until(()=>clicks.length===1);let settled=false;pending.then(()=>{settled=true;});
+    await f.app.tick();assert.equal(settled,false);f.app.$('free-practice-screen').setAttribute('aria-busy','false');await pending;
+    assert.deepEqual(clicks,['start-free-practice']);
+    const wrongExit=createNavigation({document:f.app.document,until:(condition,label)=>wait.until(condition,label,20),click:id=>{
+      assert.equal(id,'free-exit');f.app.document.querySelector('#shell-brand .brand').click();
+    }});
+    await assert.rejects(wrongExit.exitFree(),/Timed out: free-practice exit returned to library/);
+    assert.equal(f.app.document.body.dataset.screen,'home','Home is deliberately distinct from the required library return');
+  }finally{await f.close();}
+});
+
 // The exact injected smoke is parsed here, but DOMContentLoaded is not fired:
 // these are fixture/contract tests, not a WebView or playback substitute.
 const {createHash,webcrypto}=await import('node:crypto');
 const {default:Ajv2020}=await import('ajv/dist/2020.js');
 const songSmokeSource=await readFile(new URL('../crates/desktop-shell/smoke.js',import.meta.url),'utf8');
-const songSmoke=runInNewContext(`${songSmokeSource}\n({nativeSongApiFixture,checkNativeSongApi})`,{
+const songSmoke=runInNewContext(`${songSmokeSource}\n({nativeSongApiFixture,checkNativeSongApi,nativeSmokeControlReady,enterNativeSmokeLibrary})`,{
   AbortController,TextEncoder,Uint8Array,setTimeout,clearTimeout,addEventListener:()=>{}
+});
+
+test('startup smoke enters the actual visible Single player menu before catalog and stage work',async()=>{
+  const f=await menuFixture();try {
+    await f.app.until(()=>!f.app.$('start-listen').disabled);
+    assert.equal(songSmoke.nativeSmokeControlReady(f.app.document,'library','song-lobby','start-listen'),false);
+    const calls=[],wait=createWait();
+    const report=await songSmoke.enterNativeSmokeLibrary({document:f.app.document,waitFor:(condition,label)=>{calls.push(label);return wait.until(condition,label,1000);}});
+    assert.equal(report.entry,'home-single-player');assert.equal(report.destination,'library');assert.equal(report.catalogPreviewReady,true);
+    assert.equal(f.app.document.body.dataset.screen,'library');assert.equal(songSmoke.nativeSmokeControlReady(f.app.document,'library','song-lobby','start-listen'),true);
+    assert.deepEqual(calls,['visible app home menu','unchanged app catalog','visible app single-player catalog preview']);
+    assert.match(songSmokeSource,/report\.homeMenu = await enterNativeSmokeLibrary\(/,'The injected startup invokes this checked menu path');
+  }finally{await f.close();}
 });
 const originalMidi=Buffer.from('4d546864000000060000000100604d54726b0000001600ff510307a12000c005009924500189240c00ff2f00','hex');
 const midiHash=createHash('sha256').update(originalMidi).digest('hex');

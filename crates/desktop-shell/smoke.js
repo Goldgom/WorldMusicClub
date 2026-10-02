@@ -79,6 +79,20 @@ async function checkNativeSongApi({fetch,crypto,milliseconds=8000,setTimer=setTi
 }
 
 
+function nativeSmokeControlReady(document,screen,rootId,id) {
+  const root=document.getElementById(rootId),control=document.getElementById(id);
+  if(document.body.dataset.screen!==screen||!root||root.hidden||!control||control.disabled||!root.contains(control)||control.closest('[hidden]')||document.querySelector('dialog[open]'))return false;
+  const bounds=control.getBoundingClientRect();return bounds.width>0&&bounds.height>0;
+}
+
+async function enterNativeSmokeLibrary({document,waitFor}) {
+  await waitFor(() => nativeSmokeControlReady(document,'home','game-home','home-single-player'), 'visible app home menu');
+  document.querySelector('#home-single-player').click();
+  await waitFor(() => document.querySelectorAll('#catalog .catalog-item').length > 0, 'unchanged app catalog');
+  await waitFor(() => nativeSmokeControlReady(document,'library','song-lobby','start-listen') && document.querySelector('#song-lobby').dataset.previewStatus === 'ready', 'visible app single-player catalog preview');
+  return {entry:'home-single-player',destination:'library',catalogPreviewReady:true};
+}
+
 (() => {
   const errors = [];
   addEventListener('error', event => errors.push(String(event.message || 'script error')));
@@ -99,14 +113,13 @@ async function checkNativeSongApi({fetch,crypto,milliseconds=8000,setTimer=setTi
   addEventListener('DOMContentLoaded', async () => {
     const report = {version: 1, ok: false, origin: location.origin, userAgent: navigator.userAgent};
     try {
-      await waitFor(() => document.querySelectorAll('#catalog .catalog-item').length > 0, 'unchanged app catalog');
-      await waitFor(() => document.querySelector('#start-listen') && !document.querySelector('#start-listen').disabled, 'app catalog preview');
+      report.homeMenu = await enterNativeSmokeLibrary({document,waitFor});
       document.querySelector('#sound-button').click();
       if (document.querySelector('#sound-button').getAttribute('aria-pressed') !== 'true') throw Error('Silent smoke mode did not activate');
       document.querySelector('#start-listen').click();
-      await waitFor(() => !document.querySelector('#export-button')?.disabled, 'app score activation');
-      // The app intentionally starts with its notation dock closed. Exercise
-      // the real display control before requiring the lazily rendered SVG.
+      await waitFor(() => nativeSmokeControlReady(document,'stage','workspace','reset-button') && document.querySelector('#export-button') && !document.querySelector('#export-button').disabled && !document.querySelector('#start-listen').disabled, 'app score activation');
+      // Compact windows can keep the dock closed. Exercise the actual display
+      // control when needed before requiring the lazily rendered SVG.
       if (document.querySelector('#notation-toggle').getAttribute('aria-expanded') !== 'true') document.querySelector('#notation-toggle').click();
       await waitFor(() => document.querySelector('#notation-toggle').getAttribute('aria-expanded') === 'true', 'visible notation dock');
       await waitFor(() => document.querySelector('#engraved-staff svg'), 'offline notation SVG');

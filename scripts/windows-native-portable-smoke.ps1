@@ -35,13 +35,19 @@ try {
   while(-not $ready){
     $app.Refresh()
     if($app.HasExited){throw "Normal startup exited before ready: $($app.ExitCode)"}
-    if([DateTime]::UtcNow -ge $deadline){throw 'Normal startup did not expose enabled app controls within 60 seconds'}
+    if([DateTime]::UtcNow -ge $deadline){throw 'Normal startup did not expose the enabled Single player home-menu control within 60 seconds'}
     if($app.MainWindowHandle -ne [IntPtr]::Zero){
       try{
         $root=[System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
         $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Button)
         foreach($button in $root.FindAll([System.Windows.Automation.TreeScope]::Descendants,$condition)){
-          if($button.Current.IsEnabled -and -not $button.Current.IsOffscreen -and ($button.Current.AutomationId -ceq 'start-listen' -or $button.Current.Name -in @('▶ 开始聆听','▶ Listen'))){$ready=$true;break}
+          # Startup now exposes the home menu. Listen belongs to the hidden
+          # library and cannot prove that the normal startup screen rendered.
+          $name=($button.Current.Name -replace '\s+',' ').Trim()
+          if($button.Current.IsEnabled -and -not $button.Current.IsOffscreen -and ($button.Current.AutomationId -ceq 'home-single-player' -or $name -in @('单人模式 选一首曲子，进入你的音乐舞台','Single player Choose a song. Make the stage yours.'))){
+            $report.startup_control=[ordered]@{automation_id=$button.Current.AutomationId;name=$name;enabled=$true;offscreen=$false}
+            $ready=$true;break
+          }
         }
       }catch [System.Windows.Automation.ElementNotAvailableException]{
         # The startup tree can be replaced while WebView realizes its controls.

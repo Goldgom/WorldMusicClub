@@ -60,6 +60,7 @@
   }
   const click=id=>{assert($(id) && !$(id).disabled,`Control ${id} unavailable`);$(id).click();};
   const closeDialogs=()=>{for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();};
+  const menu=createAcceptanceNavigation({document,until,click});
   async function download(id) {
     const before=(await json('/__desktop_smoke/state')).downloads.length;
     await native('click',$(id));
@@ -98,14 +99,17 @@
         await native('escape',$(`${name}-dialog`).querySelector('button'));
         assert(!$(`${name}-dialog`).open,`${name} did not close with Escape`);
       }
-      if(document.body.dataset.screen==='stage'){click('back-to-library');click('resume-session');}
+      if(document.body.dataset.screen==='stage'){
+        await menu.returnToLibrary();await menu.waitScreen('library','resume-session','retained native session ready');click('resume-session');
+        await menu.waitScreen('stage','play-button','retained native stage ready');
+      }
     }
   }
   addEventListener('DOMContentLoaded',async()=>{
     const report={version:1,phase,ok:false,origin:location.origin,userAgent:navigator.userAgent,checks:[],physicalMidi:false,audioOutput:false};
     let scores,performances;
     try {
-      await until(()=>$('start-listen')&&!$('start-listen').disabled,'catalog preview');
+      await menu.enterLibrary();report.checks.push('home-menu-to-visible-single-player-library');
       ({openScoreLibrary:scores}=await import('/local-library.js'));scores=await scores();
       ({openPerformanceLibrary:performances}=await import('/performance-library.js'));performances=await performances();
       report.health=await json('/api/health');assert(report.health.network==='native-protocol-no-listener','Unexpected transport');
@@ -113,7 +117,7 @@
         assert((await scores.list()).length===0 && (await performances.list()).length===0,'Acceptance needs a fresh profile');
         $('interface-language').value='en';$('interface-language').dispatchEvent(new Event('change',{bubbles:true}));
         if($('sound-button').getAttribute('aria-pressed')!=='true')click('sound-button');
-        click('start-listen');await until(()=>$('export-button')&&!$('export-button').disabled,'stage activation');click('reset-button');
+        click('start-listen');await until(()=>menu.ready('stage','reset-button')&&$('export-button')&&!$('export-button').disabled&&!$('start-listen').disabled,'stage activation');click('reset-button');
         if($('notation-toggle').getAttribute('aria-expanded')!=='true')click('notation-toggle');
         await until(()=>$('engraved-staff').querySelector('svg'),'offline OSMD');
         report.checks.push('catalog-stage-offline-engraving');
@@ -147,7 +151,7 @@
         await until(async()=>(await scores.list()).length===before*2&&!$('library-import-backup').disabled,'restore real score backup');click('library-close');
         report.checks.push('score-library-save-and-actual-backup-restore');
         await navigation();report.checks.push('repeated-settings-score-results-import-escape-navigation');
-        if(document.body.dataset.screen==='stage')click('back-to-library');click('start-free-practice');
+        await menu.enterFree();
         if($('free-sound').getAttribute('aria-pressed')==='true')click('free-sound');click('free-start');
         await native('key-r',$('free-practice-title'));
         click('free-pause');await until(()=>!$('free-resume').disabled,'pause settled');assert($('free-practice-screen').dataset.state==='paused','Pause failed');click('free-resume');
@@ -172,7 +176,7 @@
         report.files={canonicalFile,scoreBackup:backup,recordFile,performanceBackup};report.scoreHash=scoreHash;
         const expected={scoreHash,performanceHash:report.performanceHash,scoreCount:(await scores.list()).length,performanceCount:(await performances.list()).length};
         localStorage.setItem('wmh.desktop.acceptance.v1',JSON.stringify(expected));
-        click('free-exit');
+        await menu.exitFree();report.checks.push('home-free-practice-entry-and-library-return');
         report.referenceListening=await checkNativeReferenceListening({document,native,click,closeDialogs,download,until,delay,requests});
         report.checks.push('actual-native-complete-midi-reference-listening');
       } else {
@@ -185,13 +189,13 @@
         report.scoreCount=scoreRows.length;report.performanceCount=performanceRows.length;report.checks.push('same-profile-restart-indexeddb-exact-records-and-locale');
         click('library-button');await until(()=>$('library-list').querySelector('[data-library-open]')&&!$('library-refresh').disabled,'saved score list');
         $('library-list').querySelector('[data-library-open]').click();await until(()=>!$('score-library').open&&!$('export-button').disabled,'saved score open');
-        if(document.body.dataset.screen==='stage')click('back-to-library');click('start-free-practice');
+        await menu.enterFree();
         await until(()=>!$('free-load').disabled,'saved history list');click('free-load');await until(()=>!$('free-export-record').disabled,'saved history open');
         report.checks.push('restart-saved-score-open-and-history-load');
         if(phase==='close-active') {
           if($('free-sound').getAttribute('aria-pressed')==='true')click('free-sound');click('free-start');await native('key-r',$('free-practice-title'));
           assert($('free-practice-screen').dataset.state==='recording','Close-active gate did not start recording');report.activeAtClose='recording';
-        } else {click('free-exit');}
+        } else {await menu.exitFree();}
       }
       report.downloads=(await json('/__desktop_smoke/state')).downloads;
       report.errors=errors;assert(errors.length===0,errors.join('; '));report.ok=true;

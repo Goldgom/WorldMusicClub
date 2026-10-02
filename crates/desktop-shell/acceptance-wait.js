@@ -26,3 +26,38 @@ function createAcceptanceWait({setTimer=setTimeout,clearTimer=clearTimeout}={}) 
   }
   return {bounded,until,json};
 }
+
+/* Real menu controls only; never change body state or invoke app controllers. */
+function createAcceptanceNavigation({document,until,click}) {
+  const $=id=>document.getElementById(id);
+  const screens={home:'game-home',library:'song-lobby',stage:'workspace',free:'free-practice-screen'};
+  function ready(screen,id) {
+    const root=$(screens[screen]),control=$(id);
+    if(document.body.dataset.screen!==screen||!root||root.hidden||!control||control.disabled||!root.contains(control))return false;
+    if(control.closest('[hidden]')||document.querySelector('dialog[open]'))return false;
+    const bounds=control.getBoundingClientRect();return bounds.width>0&&bounds.height>0;
+  }
+  const waitScreen=(screen,id,label)=>until(()=>ready(screen,id),label);
+  async function enterLibrary() {
+    await waitScreen('home','home-single-player','visible native home menu');
+    click('home-single-player');
+    await until(()=>ready('library','start-listen')&&$('song-lobby').dataset.previewStatus==='ready'&&$('catalog').querySelector('.catalog-item'),'visible native single-player catalog preview');
+  }
+  async function returnToLibrary() {
+    await waitScreen('stage','back-to-library','stage library navigation');click('back-to-library');
+    await waitScreen('library','lobby-home','returned native library');
+  }
+  async function enterFree() {
+    if(document.body.dataset.screen==='stage')await returnToLibrary();
+    if(document.body.dataset.screen==='library') {
+      await waitScreen('library','lobby-home','library home navigation');click('lobby-home');
+    }
+    await waitScreen('home','start-free-practice','visible native home free-practice entry');click('start-free-practice');
+    await until(()=>ready('free','free-start')&&$('free-practice-screen').getAttribute('aria-busy')==='false','native free-practice ready');
+  }
+  async function exitFree() {
+    await until(()=>ready('free','free-exit')&&$('free-practice-screen').getAttribute('aria-busy')==='false','native free-practice exit ready');click('free-exit');
+    await waitScreen('library','lobby-home','free-practice exit returned to library');
+  }
+  return {ready,waitScreen,enterLibrary,returnToLibrary,enterFree,exitFree};
+}
