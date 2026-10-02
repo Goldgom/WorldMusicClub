@@ -1,3 +1,5 @@
+import {getAppI18n} from './app-locale.js';
+import {createReviewLocale,reviewError} from './review-locale.js';
 import {equivalentJson} from './adaptation-view.js';
 import {compatibilityStatus} from './instrument-profile.js';
 import {pitchMidi,midiName,accidentalGlyph,keyTonic} from './music.js';
@@ -6,18 +8,18 @@ const FORMAT='semitone-transposition',STEPS=['C','D','E','F','G','A','B'];
 const signed=value=>`${value>0?'+':''}${value}`;
 export function semitoneOperation(value) {
   const semitones=Number(value);
-  if(!['string','number'].includes(typeof value)||String(value).trim()===''||!Number.isInteger(semitones)||semitones===0||Math.abs(semitones)>127)throw Error('Choose a nonzero whole-number shift from −127 to +127 semitones.');
+  if(!['string','number'].includes(typeof value)||String(value).trim()===''||!Number.isInteger(semitones)||semitones===0||Math.abs(semitones)>127)throw reviewError("review.pitch.semitoneInvalid",'Choose a nonzero whole-number shift from −127 to +127 semitones.');
   return {semitones};
 }
 function retainedOriginal(copy) {
-  if(copy?.source?.format!==FORMAT)throw Error('This score has no semitone-transposition original.');
+  if(copy?.source?.format!==FORMAT)throw reviewError("review.pitch.noSemitoneOriginal",'This score has no semitone-transposition original.');
   const envelope=JSON.parse(copy.source.content);
-  if(envelope.version!==1||!equivalentJson(envelope,{version:1,operation:envelope.operation,original:envelope.original})||!equivalentJson(envelope.operation,semitoneOperation(envelope.operation?.semitones))||!envelope.original?.parts)throw Error('The original record is incomplete or requires a newer app.');
+  if(envelope.version!==1||!equivalentJson(envelope,{version:1,operation:envelope.operation,original:envelope.original})||!equivalentJson(envelope.operation,semitoneOperation(envelope.operation?.semitones))||!envelope.original?.parts)throw reviewError("review.pitch.recordIncomplete",'The original record is incomplete or requires a newer app.');
   return envelope;
 }
 /** Verify the Rust result; this never selects a spelling or creates a local fallback. */
 export function validateTranspositionPreview(result,original,operation,originalTimeline) {
-  const fail=()=>{throw Error('The preview does not preserve the complete score, exact semitone shift and original record. Keep the original and request a fresh Rust preview.');};
+  const fail=()=>{throw reviewError("review.pitch.semitonePreviewInvalid",'The preview does not preserve the complete score, exact semitone shift and original record. Keep the original and request a fresh Rust preview.');};
   try {
     if(!equivalentJson(operation,semitoneOperation(operation?.semitones))||['octave-adaptation',FORMAT,'external-omr-draft'].includes(original.source?.format))fail();
     if(!result?.compilation?.score||!Array.isArray(result.compilation.timeline?.notes)||!Array.isArray(result.compilation.diagnostics)||result.original_preserved!==true||typeof result.scored_mode_allowed!=='boolean'||!equivalentJson(result.operation,operation))fail();
@@ -53,100 +55,114 @@ export function validateTranspositionRestore(result,copy) {
     const envelope=retainedOriginal(copy);
     if(!equivalentJson(result?.score,envelope.original)||!Array.isArray(result.timeline?.notes)||!Array.isArray(result.diagnostics))throw Error();
     return result;
-  } catch {throw Error('The restoration preview does not match the complete recorded original. Keep the reversible JSON and request a fresh Rust check.')}
+  } catch {throw reviewError("review.pitch.restoreInvalid",'The restoration preview does not match the complete recorded original. Keep the reversible JSON and request a fresh Rust check.')}
 }
 function pitchText(pitch){return `${pitch.step}${accidentalGlyph(pitch.alter)}${pitch.octave}`}
-function rangeText(score){let low=128,high=-1;for(const part of score.parts)for(const note of part.notes)if(note.pitch){const midi=pitchMidi(note.pitch);low=Math.min(low,midi);high=Math.max(high,midi)}return high<0?'No pitched notes':`${midiName(low)}–${midiName(high)}`}
-function keyText(key){const tonic=keyTonic(key);return `${tonic?`${tonic.name} ${key.mode}`:`${key.mode} mode`} (${signed(key.fifths)} fifths)`}
+function rangeText(score,m){let low=128,high=-1;for(const part of score.parts)for(const note of part.notes)if(note.pitch){const midi=pitchMidi(note.pitch);low=Math.min(low,midi);high=Math.max(high,midi)}return high<0?m('review.pitch.noPitches'):`${midiName(low)}–${midiName(high)}`}
 
-export function setupTranspositionView({api,getContext,onActivate,pausePlayback,notice}) {
+export function setupTranspositionView({api,getContext,onActivate,pausePlayback,notice,document=globalThis.document,i18n=getAppI18n(document)}) {
   const $=id=>document.getElementById(id),dialog=document.createElement('dialog');dialog.id='transposition-dialog';dialog.className='review-dialog adaptation-dialog transposition-dialog';dialog.setAttribute('aria-labelledby','transposition-title');
-  dialog.innerHTML=`<div class="review-header"><div><span class="eyebrow">MANUAL SEMITONE COPY · 手动移调副本</span><h2 id="transposition-title">Transpose the score · 全谱移调</h2></div><button id="transposition-close" class="button ghost" aria-label="Close semitone transposition · 关闭移调">✕</button></div><p id="transposition-current-title" class="adaptation-current-title"></p>
-    <p class="review-explanation session-replacement-note">Activating a copy or restoring its original replaces the paused score and clears its in-memory take history. Export take data in Results first to keep it. Playback stays paused. 使用副本或恢复原稿会替换当前乐谱，请先导出需要保留的练习记录。</p><p class="review-explanation">Every pitched note and key signature moves by one consistent written interval. This changes the displayed and sounding pitches for the whole score, including all parts and notes outside A–B. It sends no MIDI hardware transpose command. 全谱所有声部统一移调，不改变硬件设置。</p>
-    <div class="adaptation-controls"><label>Signed semitone shift · 半音<input id="transposition-semitones" type="number" min="-127" max="127" step="1" value="1"></label><button id="transposition-preview" class="button secondary">Preview with Rust · 预览</button></div><p class="review-explanation">Positive raises pitch; negative lowers it. Rust refuses a shift that exceeds MIDI 0–127 or requires inconsistent spelling. Range checks do not certify fingering, hand reach, sustain or permission to adapt the work.</p>
-    <div id="transposition-status" class="notice" role="status" aria-live="polite"></div><div id="transposition-result" hidden><h3 id="transposition-result-title"></h3><p id="transposition-result-summary"></p><p id="transposition-range-summary"></p><p id="transposition-instrument-summary"></p><ul id="transposition-diagnostics"></ul><details><summary>Key signatures and written-note examples · 调号与音符示例</summary><ul id="transposition-key-sample"></ul><ol id="transposition-note-sample"></ol><p>At most 20 signatures and 20 notes shown. The full score and complete original remain in the JSON package.</p></details></div>
-    <section class="adaptation-archive"><h3>Keep the reversible JSON · 保留可恢复文件</h3><p>Export JSON or a library backup to retain the complete original and its exact source. MusicXML and .jianpu alone do not retain the full restoration record. Saved library copies are never overwritten.</p><p>Restore checks the complete current copy. Later edits require saving/exporting first if Rust refuses restoration. This consistency check does not prove third-party authenticity. Restore an existing octave or semitone copy before requesting another pitch copy.</p><button id="transposition-restore-preview" class="button secondary" hidden>Review preserved original · 恢复预览</button></section>
-    <label class="review-confirm-label"><input id="transposition-confirm" type="checkbox" disabled><span id="transposition-confirm-label">I reviewed the whole-score shift, original retention and warnings. 我已核对全谱移调、原稿保留与提示。</span></label><div class="review-actions"><button id="transposition-cancel" class="button secondary">Cancel · 取消</button><button id="transposition-activate" class="button primary" disabled>Activate this copy · 使用副本</button></div>`;
+  dialog.innerHTML=`<div class="review-header"><div><span class="eyebrow" data-review-i18n="review.pitch.semitoneEyebrow"></span><h2 id="transposition-title" data-review-i18n="review.pitch.semitoneTitle"></h2></div><button id="transposition-close" class="button ghost" data-review-i18n-aria-label="review.pitch.semitoneClose">✕</button></div><p id="transposition-current-title" class="adaptation-current-title"></p><p class="review-explanation session-replacement-note" data-review-i18n="review.pitch.semitoneReplacement"></p><p class="review-explanation" data-review-i18n="review.pitch.semitoneExplanation"></p>
+    <div class="adaptation-controls"><label><span data-review-i18n="review.pitch.semitoneShift"></span><input id="transposition-semitones" type="number" min="-127" max="127" step="1" value="1"></label><button id="transposition-preview" class="button secondary" data-review-i18n="review.pitch.preview"></button></div><p class="review-explanation" data-review-i18n="review.pitch.semitoneRangeHelp"></p>
+    <div id="transposition-status" class="notice" role="status" aria-live="polite"></div><div id="transposition-result" hidden><h3 id="transposition-result-title"></h3><p id="transposition-result-summary"></p><p id="transposition-range-summary"></p><p id="transposition-instrument-summary"></p><ul id="transposition-diagnostics"></ul><details><summary data-review-i18n="review.pitch.semitoneSample"></summary><ul id="transposition-key-sample"></ul><ol id="transposition-note-sample"></ol><p data-review-i18n="review.pitch.semitoneSampleLimit"></p></details></div>
+    <section class="adaptation-archive"><h3 data-review-i18n="review.pitch.archiveTitle"></h3><p data-review-i18n="review.pitch.semitoneArchive"></p><p data-review-i18n="review.pitch.semitoneRestoreHelp"></p><button id="transposition-restore-preview" class="button secondary" hidden data-review-i18n="review.pitch.reviewOriginal"></button></section>
+    <label class="review-confirm-label"><input id="transposition-confirm" type="checkbox" disabled><span id="transposition-confirm-label" data-review-i18n="review.pitch.semitoneConfirm"></span></label><div class="review-actions"><button id="transposition-cancel" class="button secondary" data-review-i18n="review.pitch.cancel"></button><button id="transposition-activate" class="button primary" disabled data-review-i18n="review.pitch.activate"></button></div>`;
   document.body.append(dialog);
+  const locale=createReviewLocale(dialog,i18n),{m}=locale;
+  const announce=message=>notice(()=>locale.render(message));
+  function keySample(key){
+    const node=document.createElement('span'),tonic=keyTonic(key),sign=key.fifths>0?'+':'';
+    if(tonic)locale.text(node,m('review.pitch.key',{tonic:tonic.name,mode:m(`review.pitch.${key.mode}`),sign,fifths:key.fifths}));
+    else{
+      const label=document.createElement('span'),source=document.createElement('span');
+      locale.text(label,m('review.pitch.unknownKey',{sign,fifths:key.fifths}));
+      source.textContent=key.mode;node.append(label,document.createTextNode(' '),source);
+    }
+    return node;
+  }
   let controller=null,generation=0,prepared=null,activating=false,busy=false;
-  function status(message,error=false){$('transposition-status').textContent=message;$('transposition-status').classList.toggle('error',error)}
+  function status(message,error=false){locale.text($('transposition-status'),message);$('transposition-status').classList.toggle('error',error)}
   function capture(){const context=getContext();return {...context,identity:context.score,score:structuredClone(context.score),timeline:structuredClone(context.timeline),profile:structuredClone(context.profile)}}
   function sameContext(snapshot){const current=getContext();return current.score===snapshot.identity&&current.part===snapshot.part&&current.version===snapshot.version&&!current.dirty&&equivalentJson(current.score,snapshot.score)&&equivalentJson(current.timeline,snapshot.timeline)&&equivalentJson(current.profile,snapshot.profile)}
   function refreshContext(explain=false){
     const context=getContext(),format=context.score?.source?.format,adapted=format===FORMAT,octave=format==='octave-adaptation';
     $('transposition-button').disabled=!context.score;$('transposition-active-note').hidden=!adapted;
-    $('transposition-current-title').textContent=context.score?.title||'No score is loaded';
+    locale.text($('transposition-current-title'),context.score?.title||m('review.pitch.noScore'));
     $('transposition-preview').disabled=!context.score||context.dirty||adapted||octave||busy||activating;
     $('transposition-restore-preview').hidden=!adapted;$('transposition-restore-preview').disabled=context.dirty||busy||activating;
     if(explain&&!prepared&&!busy&&!activating){
-      if(context.dirty)status('Apply and validate the edited instrument settings before requesting a preview.',true);
-      else if(octave)status('This is an octave copy. Use Preview octave copy to review and restore its original first. 当前为八度副本，请先恢复原稿。');
-      else if(adapted)status('This is a semitone copy. Review and restore its preserved original before choosing another shift. 当前为移调副本，请先恢复原稿。');
+      if(context.dirty)status(m('review.pitch.dirty'),true);
+      else if(octave)status(m('review.pitch.semitoneOctave'));
+      else if(adapted)status(m('review.pitch.semitoneAdapted'));
     }
   }
-  function invalidate(message='The score, part, profile or draft changed. Request a fresh preview before confirming.'){
+  function invalidate(message=m('review.pitch.changed')){
     generation++;controller?.abort();controller=null;prepared=null;activating=false;busy=false;$('transposition-result').hidden=true;$('transposition-confirm').checked=false;$('transposition-confirm').disabled=true;$('transposition-activate').disabled=true;
     if(dialog.open)status(message);refreshContext(true);
   }
-  function close(){invalidate('Preview cancelled. The loaded score is unchanged.');dialog.close()}
+  function close(){invalidate(m('review.pitch.cancelled'));dialog.close()}
   for(const id of ['transposition-close','transposition-cancel'])$(id).addEventListener('click',close);
-  dialog.addEventListener('cancel',event=>{event.preventDefault();close()});dialog.addEventListener('close',()=>{if(!dialog.open)invalidate('Preview cancelled. The loaded score is unchanged.')});
-  $('transposition-button').addEventListener('click',()=>{pausePlayback();invalidate();dialog.showModal();status('Preview only. Nothing changes until you explicitly activate a reviewed copy.');refreshContext(true)});
-  $('transposition-semitones').addEventListener('input',()=>invalidate('The requested semitone shift changed. Generate a fresh preview.'));
+  dialog.addEventListener('cancel',event=>{event.preventDefault();close()});dialog.addEventListener('close',()=>{if(!dialog.open)invalidate(m('review.pitch.cancelled'))});
+  $('transposition-button').addEventListener('click',()=>{pausePlayback();invalidate();dialog.showModal();status(m('review.pitch.previewOnly'));refreshContext(true)});
+  $('transposition-semitones').addEventListener('input',()=>invalidate(m('review.pitch.semitoneChanged')));
   for(const id of ['instrument','key-count','practice-part','tempo','custom-key-count','custom-lowest','guitar-tuning','guitar-frets','guitar-capo','loop-from','loop-to','loop-enabled','score-file','score-image-file'])for(const event of ['input','change'])$(id)?.addEventListener(event,()=>{if(dialog.open)invalidate()});
   function showResult(snapshot,result,kind){
     prepared={snapshot,result,kind};const compilation=kind==='copy'?result.compilation:result;
-    $('transposition-result').hidden=false;$('transposition-result-title').textContent=compilation.score.title;
+    $('transposition-result').hidden=false;locale.text($('transposition-result-title'),compilation.score.title);
     for(const id of ['transposition-diagnostics','transposition-key-sample','transposition-note-sample'])$(id).replaceChildren();
     $('transposition-confirm').checked=false;$('transposition-confirm').disabled=false;$('transposition-activate').disabled=true;
-    $('transposition-activate').textContent=kind==='copy'?'Activate this copy · 使用副本':'Restore original now · 恢复原稿';
-    $('transposition-confirm-label').textContent=kind==='copy'?'I reviewed the whole-score shift, original retention and warnings. 我已核对全谱移调、原稿保留与提示。':'I want to replace only the loaded copy with this complete checked original. 我确认恢复完整原稿。';
+    locale.text($('transposition-activate'),kind==='copy'?m('review.pitch.activate'):m('review.pitch.restore'));
+    locale.text($('transposition-confirm-label'),kind==='copy'?m('review.pitch.semitoneConfirm'):m('review.pitch.semitoneConfirmRestore'));
     const diagnostics=[...compilation.diagnostics,...(kind==='copy'?result.instrument_report.diagnostics:[])];
-    for(const diagnostic of [...new Map(diagnostics.map(item=>[`${item.code}:${item.message}`,item])).values()].slice(0,100)){const li=document.createElement('li');li.textContent=diagnostic.message;$('transposition-diagnostics').append(li)}
-    $('transposition-range-summary').textContent=`Written pitch range · 书写音域: ${rangeText(snapshot.score)} → ${rangeText(compilation.score)}.`;
+    for(const diagnostic of [...new Map(diagnostics.map(item=>[`${item.code}:${item.message}`,item])).values()].slice(0,100)){const li=document.createElement('li');locale.text(li,locale.error({message:diagnostic.message}));$('transposition-diagnostics').append(li)}
+    locale.text($('transposition-range-summary'),m('review.pitch.range',{before:rangeText(snapshot.score,m),after:rangeText(compilation.score,m)}));
     if(kind==='copy'){
-      $('transposition-result-summary').textContent=`${signed(result.operation.semitones)} semitones · whole score / 全谱 · ${result.changed_note_count} written pitched notes changed · ${compilation.score.keys.length} key signatures retained and shifted. Rests, timing, voices, ties and the complete original source are retained.`;
+      locale.text($('transposition-result-summary'),m('review.pitch.semitoneSummary',{shift:m('review.pitch.semitoneAmount',{sign:result.operation.semitones>0?'+':'',semitones:result.operation.semitones}),notes:result.changed_note_count,keys:compilation.score.keys.length}));
       const report=result.instrument_report,outside=report.note_options.filter(note=>!note.playable).length;
-      $('transposition-instrument-summary').textContent=`Profile pitch range ${midiName(report.lowest_midi)}–${midiName(report.highest_midi)} · ${outside} sounding events outside range. ${result.scored_mode_allowed?'Rust allows the whole-score preview for onset scoring.':'The whole-score preview is not allowed in scored mode.'} Activation rechecks your actual Practice part and instrument.`;
-      for(let k=0;k<Math.min(20,snapshot.score.keys.length);k++){const key=snapshot.score.keys[k],li=document.createElement('li');li.textContent=`Beat ${key.at.numerator}/${key.at.denominator}: ${keyText(key)} → ${keyText(compilation.score.keys[k])}`;$('transposition-key-sample').append(li)}
-      if(!snapshot.score.keys.length){const li=document.createElement('li');li.textContent='No key signatures in the original; none invented. 原稿无调号，不自动添加。';$('transposition-key-sample').append(li)}
+      locale.text($('transposition-instrument-summary'),m('review.pitch.semitoneInstrument',{low:midiName(report.lowest_midi),high:midiName(report.highest_midi),outside,admission:m(result.scored_mode_allowed?'review.pitch.semitoneAllowed':'review.pitch.semitoneBlocked')}));
+      for(let k=0;k<Math.min(20,snapshot.score.keys.length);k++){
+        const key=snapshot.score.keys[k],li=document.createElement('li'),at=document.createElement('span');
+        locale.text(at,m('review.pitch.keyBeat',{numerator:key.at.numerator,denominator:key.at.denominator}));
+        li.append(at,document.createTextNode(' '),keySample(key),document.createTextNode(' → '),keySample(compilation.score.keys[k]));$('transposition-key-sample').append(li);
+      }
+      if(!snapshot.score.keys.length){const li=document.createElement('li');locale.text(li,m('review.pitch.noKeys'));$('transposition-key-sample').append(li)}
       let shown=0;for(let p=0;p<snapshot.score.parts.length;p++)for(let n=0;n<snapshot.score.parts[p].notes.length&&shown<20;n++){const part=snapshot.score.parts[p],note=part.notes[n];if(!note.pitch)continue;const li=document.createElement('li');li.textContent=`${part.name} · ${note.id}: ${pitchText(note.pitch)} → ${pitchText(compilation.score.parts[p].notes[n].pitch)}`;$('transposition-note-sample').append(li);shown++}
     }else{
-      $('transposition-result-summary').textContent='Rust checked the complete current copy. This preview exactly matches its complete recorded original, including the retained source. Nothing has been restored yet.';
-      $('transposition-instrument-summary').textContent='The original may not fit the current instrument. Fresh selected-target checks run after restoration. Saved library copies stay unchanged.';
+      locale.text($('transposition-result-summary'),m('review.pitch.semitoneOriginalSummary'));
+      locale.text($('transposition-instrument-summary'),m('review.pitch.semitoneOriginalInstrument'));
     }
-    status(kind==='copy'?'Preview ready. The original loaded score has not changed.':'Original preview ready. Nothing has been restored yet.');
+    status(kind==='copy'?m('review.pitch.previewReady'):m('review.pitch.originalReady'));
   }
   async function requestPreview(kind){
     const context=getContext(),format=context.score?.source?.format;
     if(!dialog.open||!context.score||context.dirty||busy||activating||kind==='copy'&&['octave-adaptation',FORMAT].includes(format)||kind==='original'&&format!==FORMAT)return;
-    invalidate();const snapshot=capture(),current=generation;controller=new AbortController();const signal=controller.signal;busy=true;refreshContext();status(kind==='copy'?'Preparing a whole-score semitone copy with Rust…':'Checking the retained original and complete current copy…');
+    invalidate();const snapshot=capture(),current=generation;controller=new AbortController();const signal=controller.signal;busy=true;refreshContext();status(kind==='copy'?m('review.pitch.semitonePreparing'):m('review.pitch.restoring'));
     try{
       let result;
       if(kind==='copy'){const operation=semitoneOperation($('transposition-semitones').value);result=await api('/api/transposition/preview',{score:snapshot.score,operation,profile:snapshot.profile},signal);if(current!==generation||signal.aborted)return;validateTranspositionPreview(result,snapshot.score,operation,snapshot.timeline)}
       else{result=await api('/api/transposition/restore',snapshot.score,signal);if(current!==generation||signal.aborted)return;validateTranspositionRestore(result,snapshot.score)}
       if(!sameContext(snapshot)){invalidate();return}showResult(snapshot,result,kind);
-    }catch(error){if(current===generation&&!signal.aborted)status(error.message,true)}
+    }catch(error){if(current===generation&&!signal.aborted)status(locale.error(error),true)}
     finally{if(current===generation){controller=null;busy=false;refreshContext()}}
   }
   $('transposition-preview').addEventListener('click',()=>requestPreview('copy'));
   $('transposition-restore-preview').addEventListener('click',()=>requestPreview('original'));
-  $('transposition-confirm').addEventListener('change',()=>{if(activating&&!$('transposition-confirm').checked){invalidate('Confirmation was withdrawn. The pending activation was cancelled.');return}$('transposition-activate').disabled=!prepared||!$('transposition-confirm').checked||activating});
+  $('transposition-confirm').addEventListener('change',()=>{if(activating&&!$('transposition-confirm').checked){invalidate(m('review.pitch.withdrawn'));return}$('transposition-activate').disabled=!prepared||!$('transposition-confirm').checked||activating});
   $('transposition-activate').addEventListener('click',async()=>{
     if(!dialog.open||!prepared||!$('transposition-confirm').checked||activating)return;const review=prepared;
     if(!sameContext(review.snapshot)){invalidate();return}
     const current=++generation;controller=new AbortController();const signal=controller.signal;activating=true;refreshContext();$('transposition-activate').disabled=true;
     const compilation=review.kind==='copy'?review.result.compilation:review.result;
-    status('Loading the explicitly confirmed score and recalculating its actual target checks…');
+    status(m('review.pitch.loading'));
     try{
       const loaded=await onActivate(compilation.score,signal,{practicePart:review.snapshot.part,diagnostics:compilation.diagnostics});
       if(current!==generation||signal.aborted)return;
-      if(loaded){controller=null;activating=false;close();notice(review.kind==='copy'?'Explicit semitone copy loaded. Export JSON or a library backup to retain the complete original.':'Preserved original restored as the loaded score. Saved library copies were not changed.')}
-      else{invalidate();status('The confirmed score could not be loaded. Review the error, then request a fresh preview.',true)}
-    }catch(error){if(current===generation&&!signal.aborted){invalidate();status(error.message,true)}}
+      if(loaded){controller=null;activating=false;close();announce(review.kind==='copy'?m('review.pitch.semitoneLoaded'):m('review.pitch.originalLoaded'))}
+      else{invalidate();status(m('review.pitch.loadFailed'),true)}
+    }catch(error){if(current===generation&&!signal.aborted){invalidate();status(locale.error(error),true)}}
     finally{if(current===generation){controller=null;activating=false;refreshContext();$('transposition-activate').disabled=true}}
   });
-  refreshContext(true);return {invalidate,scoreChanged(){
+  refreshContext(true);return {invalidate,destroy(){locale.destroy()},scoreChanged(){
     // The shared loader commits the score before awaiting its compatibility check.
     // At that boundary the review is finished; a later dialog cancellation must
     // not abort the committed score or claim that the old take remains loaded.
@@ -154,10 +170,10 @@ export function setupTranspositionView({api,getContext,onActivate,pausePlayback,
       const compilation=prepared.kind==='copy'?prepared.result.compilation:prepared.result;
       if(equivalentJson(getContext().score,compilation.score)){
         const kind=prepared.kind;controller=null;activating=false;close();
-        notice(kind==='copy'?'Explicit semitone copy loaded. Instrument checks are updating. Export JSON or a library backup to retain the complete original.':'Preserved original restored. Instrument checks are updating. Saved library copies were not changed.');return;
+        announce(kind==='copy'?m('review.pitch.semitoneLoadedChecking'):m('review.pitch.originalLoadedChecking'));return;
       }
-      invalidate('Another score was loaded. Request a fresh preview for this score.');return;
+      invalidate(m('review.pitch.anotherLoaded'));return;
     }
-    refreshContext();if(dialog.open)invalidate('The loaded score changed. Request a fresh preview for this score.');
+    refreshContext();if(dialog.open)invalidate(m('review.pitch.loadedChanged'));
   }};
 }

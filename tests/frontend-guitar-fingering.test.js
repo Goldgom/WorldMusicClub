@@ -1,3 +1,7 @@
+import {createI18n} from '../web/i18n.js';
+const en=createI18n({locale:'en'});
+const guitarRowLabel=(profile,row)=>localizedGuitarRowLabel(profile,row,en);
+const guitarPlanSummary=state=>localizedGuitarPlanSummary(state,en);
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -5,7 +9,7 @@ import {parseHTML} from 'linkedom';
 import {fixture} from './frontend-fixtures.js';
 import {getAppI18n} from '../web/app-locale.js';
 import {setupGuitarFingering} from '../web/guitar-fingering.js';
-import {setupGuitarFingeringView,guitarRowLabel,guitarPlanSummary,highlightGuitarRoute} from '../web/guitar-fingering-view.js';
+import {setupGuitarFingeringView,guitarRowLabel as localizedGuitarRowLabel,guitarPlanSummary as localizedGuitarPlanSummary,highlightGuitarRoute} from '../web/guitar-fingering-view.js';
 import {setupGuitarGuidance} from '../web/guitar-guidance.js';
 
 const html=await readFile(new URL('../web/index.html',import.meta.url),'utf8');
@@ -23,7 +27,7 @@ function result(ctx,settings){
  return plan;
 }
 async function harness(){
- const{document,window}=parseHTML(html);let ctx=context(),view;const calls=[];
+ const{document,window}=parseHTML(html);getAppI18n(document).setLocale('en');let ctx=context(),view;const calls=[];
  Object.defineProperty(window.HTMLSelectElement.prototype,'value',{configurable:true,get(){return this.querySelector('option[selected]')?.value||this.querySelector('option')?.value||''},set(value){for(const option of this.querySelectorAll('option'))option.toggleAttribute('selected',option.value===String(value))}});
  const controller=setupGuitarFingering({getContext:()=>ctx,onChange:()=>view?.render(),api:async(path,body)=>{calls.push({path,body});return result(ctx,body);}});
  view=setupGuitarFingeringView({document,controller,getContext:()=>ctx});view.render();
@@ -68,7 +72,7 @@ test('source filter is bounded, exact source IDs remain reachable and source tex
 test('no-plan statuses distinguish proven model conflict from bounded or unavailable search and keep source diagnostics',async()=>{
  for(const[status,expected]of [['infeasible_under_model',/Proven constraint conflict/],['no_plan_found',/another route may exist/],['search_limit',/feasibility is unresolved/],['unavailable',/feasibility is unresolved/]]){
   const {document}=parseHTML(html),ctx=context();const state={phase:'unavailable',message:'',settings:{max_fret_span:3,locks:[]},plan:{...result(ctx,{max_fret_span:3,locks:[]}),status,complete:false,assignments:[],objective_cost:null,diagnostics:[{code:'guitar_fingering_incomplete',severity:'warning',message:'The declared constraints conflict.',note_id:'c4@pass1'}]}};
-  const view=setupGuitarFingeringView({document,getContext:()=>ctx,controller:{state:()=>state}});view.render();assert.match(guitarPlanSummary(state),expected);assert.equal(document.getElementById('guitar-planning').dataset.status,status);assert.match(document.getElementById('guitar-plan-diagnostics').textContent,/Occurrence c4@pass1; source notes c4; onset 0.000s/);
+  const view=setupGuitarFingeringView({document,getContext:()=>ctx,controller:{state:()=>state},i18n:en});view.render();assert.match(guitarPlanSummary(state),expected);assert.equal(document.getElementById('guitar-planning').dataset.status,status);assert.match(document.getElementById('guitar-plan-diagnostics').textContent,/Occurrence c4@pass1; source notes c4; onset 0.000s/);
  }
 });
 
@@ -97,7 +101,7 @@ test('next chosen shape has distinct text/outline, keeps held identities, and ne
 
 test('explicit phrase editor clears invalid drafts, applies exact beats, and reverts without touching playback scope',async()=>{
  const h=await harness(),ctx=h.getContext(),before=structuredClone(ctx);await h.controller.prepare();
- const i18n=getAppI18n(h.document);assert.match(h.$('guitar-phrase-fields').textContent,/指法规划乐句/);
+ const i18n=getAppI18n(h.document);i18n.setLocale('zh-CN');assert.match(h.$('guitar-phrase-fields').textContent,/指法规划乐句/);
  h.$('guitar-phrase-mode').value='explicit';h.$('guitar-phrase-mode').dispatchEvent(new h.window.Event('change'));
  assert.equal(h.controller.assignment('c4@pass1'),null);assert.equal(h.controller.state().scopeDraft,true);
  h.$('guitar-phrase-from').value='1/0';h.$('guitar-phrase-from').dispatchEvent(new h.window.Event('input'));

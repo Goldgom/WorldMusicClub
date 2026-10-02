@@ -1,3 +1,5 @@
+import {assertLocaleRoundTrip,registerLocaleBrowserRegressions} from './locale-browser-regression.js';
+import {registerBeginnerBrowserRegressions} from './beginner-browser-regression.js';
 import {selectLegacyEnglish, wideKeyboardBindings, keyboardBrowserScore, observeRealAudio, guitarPhraseBrowserScore, boundedPreviewBrowserRecord} from './browser-input-fixtures.js';
 /**
  * Full-stack checks against the actual Rust executable and its embedded UI.
@@ -37,6 +39,7 @@ let serverOutput = '', serverError, pageErrors = [], apiFailures = [], requests 
 let browserConsole = [], failedResources = [], resourceFailures = [], currentTestName='bootstrap';
 const bootstrapTimeout = 25_000;
 let attemptedContexts=0;
+const getRequestsForLocale=()=>requests.map(request=>({...request}));
 
 // Route legacy coverage through the same visible panels that a player uses.
 // Inspection only discovers the owning surface; every state change is a real click.
@@ -1924,6 +1927,11 @@ test('real whole-phrase guitar route honors editable locks, exposes conflicts an
   assert.equal(blocked.status,'infeasible_under_model');assert.equal(blocked.complete,false);assert.deepEqual(blocked.assignments,[]);
   await page.waitForFunction(()=>document.querySelector('#guitar-planning').dataset.status==='infeasible_under_model'&&[...document.querySelectorAll('.guitar-target')].every(card=>JSON.parse(card.dataset.route).length===0));
   assert.match(await page.locator('#guitar-plan-diagnostics').textContent(),/later-g/);assert.equal(await page.locator('#fretboard [data-recommended="true"]').count(),0);assert.equal(await page.locator('.guitar-target').count(),2,'Unresolved fingering must not remove original targets');
+  const localeRequests=getRequestsForLocale();
+  await page.locator('#guitar-lock-fret').selectOption('2');await page.locator('#guitar-lock-fret').focus();
+  await assertLocaleRoundTrip(page,{root:'#guitar-planning',message:{selector:'#guitar-plan-status',key:'guitar.runtime.status.infeasible_under_model'}});
+  assert.deepEqual(getRequestsForLocale(),localeRequests,'Relabeling a conflicting guitar lock keeps its applied plan and pending field draft without another Rust request');
+  assert.equal(await page.locator('#guitar-lock-fret').inputValue(),'2');assert.match(await page.locator('#guitar-lock-list').textContent(),/held-e/);
   await page.locator('#guitar-show-alternatives').check();await page.waitForFunction(()=>document.querySelectorAll('#fretboard .pitch-option').length>0);await page.locator('#guitar-show-alternatives').uncheck();
   const restoredResponse=watchPlan(body=>body.locks.length===0);await page.locator('#guitar-remove-lock').click();const restored=await responseJson(await restoredResponse);assert.equal(restored.status,'ready');assert.deepEqual(restored.assignments,initial.assignments);
   await page.waitForFunction(()=>document.querySelector('#guitar-planning').dataset.status==='ready');await page.locator('#guitar-show-picking').check();assert.match(await page.locator('.guitar-target-picking').first().textContent(),/suggestion/);await page.locator('#guitar-plan-controls summary').click();
@@ -1948,7 +1956,12 @@ test('real piano hands preserve merged ties and repeat targets through editable 
   if(!await ui('#instrument-settings').evaluate(element=>element.open))await ui('#instrument-settings>summary').click();if(!await ui('.piano-lock-editor').evaluate(element=>element.open))await ui('.piano-lock-editor>summary').click();await ui('#piano-source-note').selectOption('tie-end');
   const leftResponse=watchPlan(body=>body.locks.some(lock=>lock.source_note_id==='tie-end'&&lock.hand==='left'&&lock.finger===null));await ui('#piano-source-hand').selectOption('left');assert.equal((await responseJson(await leftResponse)).status,'ready');
   const fingerResponse=watchPlan(body=>body.locks.some(lock=>lock.source_note_id==='tie-end'&&lock.hand==='left'&&lock.finger===5));await ui('#piano-source-finger').selectOption('5');const leftPlan=await responseJson(await fingerResponse);assert.equal(leftPlan.status,'ready');assert.ok(leftPlan.assignments.filter(choice=>choice.source_note_ids.includes('tie-end')).every(choice=>choice.hand==='left'&&choice.finger===5));
-  await page.waitForFunction(()=>document.querySelector('#piano-fingering-status').dataset.phase==='ready');await closeShellPanels();assert.equal(await key.locator('.piano-finger-label').textContent(),'L5');assert.equal(await key.getAttribute('aria-pressed'),'false','A recommendation never becomes a held input');
+  await page.waitForFunction(()=>document.querySelector('#piano-fingering-status').dataset.phase==='ready');
+  await ui('#piano-source-finger').focus();const localeRequests=getRequestsForLocale();
+  await assertLocaleRoundTrip(page,{root:'#piano-fingering-settings',message:{selector:'#piano-fingering-title',key:'piano.runtime.title'}});
+  assert.deepEqual(getRequestsForLocale(),localeRequests,'Relabeling an applied piano lock cannot request a different plan');
+  assert.equal(await ui('#piano-source-note').inputValue(),'tie-end');assert.equal(await ui('#piano-source-hand').inputValue(),'left');assert.equal(await ui('#piano-source-finger').inputValue(),'5');
+  await closeShellPanels();assert.equal(await key.locator('.piano-finger-label').textContent(),'L5');assert.equal(await key.getAttribute('aria-pressed'),'false','A recommendation never becomes a held input');
   await ui('#piano-source-note').selectOption('unison');const conflictResponse=watchPlan(body=>body.locks.some(lock=>lock.source_note_id==='unison'&&lock.hand==='right'));await ui('#piano-source-hand').selectOption('right');const conflict=await responseJson(await conflictResponse);
   assert.equal(conflict.status,'infeasible_under_model');assert.deepEqual(conflict.assignments,[]);assert.equal(conflict.targets.length,6);await page.waitForFunction(()=>document.querySelector('#piano-fingering-status').dataset.phase==='unavailable');assert.match(await ui('#piano-fingering-issues').textContent(),/tie-end/);assert.match(await ui('#piano-fingering-issues').textContent(),/unison/);assert.equal(await page.locator('.piano-finger-label').count(),0);
   const restoredResponse=watchPlan(body=>body.locks.length===1&&body.locks[0].source_note_id==='tie-end');await ui('#piano-lock-remove').click();const restored=await responseJson(await restoredResponse);assert.equal(restored.status,'ready');
@@ -2351,3 +2364,7 @@ test('real explicit guitar phrase uses Rust inventory then filtered locks withou
   await closeShellPanels();const invalidRequestStart=requests.length;await page.locator('#guitar-phrase-from').fill('1/0');await page.locator('#guitar-phrase-apply').click();assert.match(await page.locator('#guitar-phrase-status').textContent(),/denominator/);assert.equal(requests.length,invalidRequestStart,'Invalid phrase text never sends a partial or coerced scope to Rust');const revertInventory=watch(body=>body.inventory_only===true),revertPlan=watch(body=>!!body.planning_scope&&!body.inventory_only);await page.locator('#guitar-phrase-revert').click();assert.deepEqual((await responseJson(await revertInventory)).planning_scope,expectedInventory);assert.deepEqual((await responseJson(await revertPlan)).assignments,plan.assignments);assert.equal(await page.locator('#guitar-phrase-from').inputValue(),'5/2');assert.deepEqual(await exportTakeData(),before);assert.deepEqual(await exportScore(),score);
   await writeFile(join(artifactDirectory,'worldmusichub-live-guitar-explicit-phrase.json'),JSON.stringify({inventory,plan,requests:[inventoryBody,planBody],outside_lock_retained:true,entry_tail_unchanged:true,paused_take_unchanged:true,canonical_score_unchanged:true,loop_unchanged:true},null,2));
 });
+
+registerBeginnerBrowserRegressions({test,getPage:()=>page,ui,readyForTitle,exportScore,exportTakeData,closeShellPanels,artifactDirectory});
+
+registerLocaleBrowserRegressions({test,getPage:()=>page,ui,closeShellPanels,waitForEngraving,readyForTitle,exportScore,getRequests:getRequestsForLocale});

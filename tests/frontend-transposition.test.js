@@ -6,6 +6,7 @@ import {fixture} from './frontend-fixtures.js';
 import {pitchMidi,beat} from '../web/music.js';
 import {setupAdaptationView} from '../web/adaptation-view.js';
 import {semitoneOperation,validateTranspositionPreview,validateTranspositionRestore,setupTranspositionView} from '../web/transposition-view.js';
+import {createI18n} from '../web/i18n.js';
 
 const clone=structuredClone,steps=['C','D','E','F','G','A','B'],signed=n=>`${n>0?'+':''}${n}`;
 function compile(score){return {score,timeline:{notes:score.parts.flatMap(part=>part.notes.filter(note=>note.pitch).map(note=>({id:note.id,source_note_id:note.id,source_note_ids:[note.id],part_id:part.id,midi:pitchMidi(note.pitch),start_ms:beat(note.at)*500,duration_ms:beat(note.duration)*500,voice:note.voice,staff:note.staff,velocity:note.velocity}))),duration_ms:2000},diagnostics:[]}}
@@ -79,7 +80,7 @@ async function setup(t,overrides={}){
   Object.defineProperty(window.HTMLElement.prototype,'open',{configurable:true,get(){return this.hasAttribute('open')}});
   window.HTMLElement.prototype.showModal=function(){this.setAttribute('open','')};window.HTMLElement.prototype.close=function(){this.removeAttribute('open');this.dispatchEvent(new window.Event('close'))};
   const $=id=>document.getElementById(id),context={score:clone(fixture),timeline:compile(fixture).timeline,part:null,profile:{kind:'piano',key_count:61,lowest_midi:36},version:1,dirty:false},calls=[],activations=[],notices=[];let pauses=0;
-  const hooks={api:async(path,body,signal)=>{calls.push({path,body,signal});if(overrides.api)return overrides.api(path,body,signal);return path.endsWith('/restore')?compile(JSON.parse(body.source.content).original):preview(body.score,body.operation,{diatonic_steps:1,fifths_delta:2},context.timeline)},getContext:()=>context,onActivate:async(...args)=>{activations.push(args);return overrides.activate?overrides.activate(...args):false},pausePlayback:()=>pauses++,notice:message=>notices.push(message)};
+  const hooks={document,i18n:createI18n({locale:'en'}),api:async(path,body,signal)=>{calls.push({path,body,signal});if(overrides.api)return overrides.api(path,body,signal);return path.endsWith('/restore')?compile(JSON.parse(body.source.content).original):preview(body.score,body.operation,{diatonic_steps:1,fifths_delta:2},context.timeline)},getContext:()=>context,onActivate:async(...args)=>{activations.push(args);return overrides.activate?overrides.activate(...args):false},pausePlayback:()=>pauses++,notice:message=>notices.push(typeof message==='function'?message():message)};
   const view=setupTranspositionView(hooks);$('transposition-semitones').value='2';
   const open=()=>{$('transposition-button').click()},generate=async()=>{$('transposition-preview').click();await settle()},confirm=()=>{$('transposition-confirm').checked=true;$('transposition-confirm').dispatchEvent(new window.Event('change'))},change=(id,value)=>{if(value!==undefined)$(id).value=value;$(id).dispatchEvent(new window.Event('input'))};
   return {$,window,context,calls,activations,notices,view,hooks,open,generate,confirm,change,pauses:()=>pauses};

@@ -1,23 +1,30 @@
+import {getAppI18n} from './app-locale.js';
+
 const THEMES = new Set(['light', 'dark', 'system', 'custom']);
 export function validHex(value) { return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value); }
 export function isDark(hex) { return readableText(hex) === '#ffffff'; }
 export function validTheme(value) { return value && THEMES.has(value.mode) ? {mode: value.mode, accent: validHex(value.accent) ? value.accent : '#326b4c', background: validHex(value.background) ? value.background : '#f4f6f1'} : {mode: 'system', accent: '#326b4c', background: '#f4f6f1'}; }
-export function setupThemes() {
+export function setupThemes({document = globalThis.document, i18n = getAppI18n(document), storage = () => globalThis.localStorage, matchMedia = query => globalThis.matchMedia(query)} = {}) {
   const media = matchMedia('(prefers-color-scheme: dark)');
-  let preference=validTheme(null), stored=null, storageMessage='';
-  try { stored=localStorage.getItem('worldmusichub.theme'); } catch { storageMessage='Appearance applies to this tab. Browser storage is unavailable.'; }
+  const getStorage = () => typeof storage === 'function' ? storage() : storage;
+  let preference=validTheme(null), stored=null, storageMessage=null;
+  const message = (key, params = {}) => ({key, params});
+  try { stored=getStorage().getItem('worldmusichub.theme'); } catch { storageMessage=message('preferences.theme.storageUnavailable'); }
   if(stored!==null){
     try{
       const parsed=JSON.parse(stored);preference=validTheme(parsed);
-      if(!parsed||!THEMES.has(parsed.mode))storageMessage='Saved appearance is invalid. System appearance is active; choose a theme to replace it.';
+      if(!parsed||!THEMES.has(parsed.mode))storageMessage=message('preferences.theme.invalid');
       else if(parsed.mode==='custom'){
-        const substituted=['accent','background'].filter(field=>!validHex(parsed[field])).map(field=>`${field} uses ${preference[field]}`);
-        if(substituted.length)storageMessage=`Saved custom colors were missing or invalid: ${substituted.join('; ')}. The stored preference is unchanged until you choose a replacement.`;
+        const accentInvalid=!validHex(parsed.accent),backgroundInvalid=!validHex(parsed.background);
+        if(accentInvalid&&backgroundInvalid)storageMessage=message('preferences.theme.colorsInvalid',{accent:preference.accent,background:preference.background});
+        else if(accentInvalid)storageMessage=message('preferences.theme.accentInvalid',{accent:preference.accent});
+        else if(backgroundInvalid)storageMessage=message('preferences.theme.backgroundInvalid',{background:preference.background});
       }
-    }catch{storageMessage='Saved appearance could not be read. System appearance is active; choose a theme to replace it.';}
+    }catch{storageMessage=message('preferences.theme.unreadable');}
   }
   const mode = document.getElementById('theme-mode'); const accent = document.getElementById('theme-accent'); const background = document.getElementById('theme-background');
-  function persistence(message){const status=document.getElementById('theme-storage-status');status.textContent=message;status.hidden=!message;}
+  function redrawMessage(){const status=document.getElementById('theme-storage-status');status.textContent=storageMessage?i18n.t(storageMessage.key,storageMessage.params):'';status.hidden=!storageMessage;}
+  function persistence(value){storageMessage=value;redrawMessage();}
   function apply() {
     const dark = preference.mode === 'dark' || (preference.mode === 'system' && media.matches) || (preference.mode === 'custom' && isDark(preference.background));
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
@@ -32,10 +39,13 @@ export function setupThemes() {
     mode.value = preference.mode; accent.value = preference.accent; background.value = preference.background;
     document.getElementById('custom-theme-controls').hidden = preference.mode !== 'custom';
   }
-  function save() { preference = validTheme({mode: mode.value, accent: accent.value, background: background.value}); apply(); try { localStorage.setItem('worldmusichub.theme', JSON.stringify(preference));persistence(''); } catch { persistence('Appearance applies to this tab but could not be saved in browser storage.'); } }
+  function save() { preference = validTheme({mode: mode.value, accent: accent.value, background: background.value}); apply(); try { getStorage().setItem('worldmusichub.theme', JSON.stringify(preference));persistence(null); } catch { persistence(message('preferences.theme.unsaved')); } }
   mode.addEventListener('change', save); accent.addEventListener('input', save); background.addEventListener('input', save);
-  media.addEventListener('change', () => { if (preference.mode === 'system') apply(); });
-  apply();persistence(storageMessage);
+  const onMediaChange = () => { if (preference.mode === 'system') apply(); };
+  media.addEventListener('change', onMediaChange);
+  const unsubscribe = i18n.subscribe(redrawMessage);
+  apply();redrawMessage();
+  return {destroy(){unsubscribe();mode.removeEventListener('change',save);accent.removeEventListener('input',save);background.removeEventListener('input',save);media.removeEventListener?.('change',onMediaChange);}};
 }
 
 export const THEME_PALETTES = Object.freeze({

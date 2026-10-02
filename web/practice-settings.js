@@ -1,23 +1,42 @@
+/** Stable display identities; original diagnostics and numeric values remain unchanged. */
+export const PRACTICE_SETTING_MESSAGE_KEYS = Object.freeze({
+  latency_storage_read_failed: 'preferences.latency.storageUnavailable',
+  latency_preference_invalid: 'preferences.latency.invalidSaved',
+  latency_offset_invalid: 'preferences.latency.invalid',
+  latency_input_invalid: 'preferences.latency.invalidInput',
+  latency_storage_write_failed: 'preferences.latency.unsaved',
+  practice_beat_syntax: 'preferences.beat.syntax',
+  practice_beat_range: 'preferences.beat.range',
+});
+const preferenceError = (code, message) => Object.assign(new Error(message), {code});
+const resolveStorage = storage => typeof storage === 'function' ? storage() : storage;
+
 export function validLatency(value) { if(typeof value!=='number'&&typeof value!=='string')return false;const ms = Number(value); return String(value).trim() !== '' && Number.isFinite(ms) && Number.isInteger(ms) && ms >= -500 && ms <= 500; }
 export function compensateInput(atMs, offsetMs) {
-  if (!Number.isFinite(atMs) || !validLatency(offsetMs)) throw new Error('Input time and latency offset must be finite; offset must be a whole number from −500 to 500 ms.');
+  if (!Number.isFinite(atMs) || !validLatency(offsetMs)) throw preferenceError('latency_input_invalid','Input time and latency offset must be finite; offset must be a whole number from −500 to 500 ms.');
   return atMs - Number(offsetMs);
 }
-export function readLatencyPreference() {
-  let stored;try{stored=localStorage.getItem('worldmusichub.latency')}catch{return{value:0,message:'Latency starts at 0 ms. Browser storage is unavailable; changes apply to this tab.'}}
+export function readLatencyPreference({storage = () => globalThis.localStorage} = {}) {
+  let stored;try{stored=resolveStorage(storage).getItem('worldmusichub.latency')}catch{return{value:0,code:'latency_storage_read_failed',message:'Latency starts at 0 ms. Browser storage is unavailable; changes apply to this tab.'}}
   if(stored===null)return{value:0,message:''};
   try{const value=JSON.parse(stored);if(validLatency(value))return{value:Number(value),message:''}}catch{/* An unreadable preference must not become a calibration offset. */}
-  return{value:0,message:'Saved latency was invalid and was not applied. Offset starts at 0 ms; enter a reviewed value to replace it.'};
+  return{value:0,code:'latency_preference_invalid',message:'Saved latency was invalid and was not applied. Offset starts at 0 ms; enter a reviewed value to replace it.'};
 }
-export function loadLatency() { return readLatencyPreference().value; }
-export function saveLatency(value) { if (!validLatency(value)) return false; try { localStorage.setItem('worldmusichub.latency', JSON.stringify(Number(value)));return true; } catch { return false; } }
+export function loadLatency(options) { return readLatencyPreference(options).value; }
+/** Detailed result for display owners; saveLatency retains its existing boolean API. */
+export function writeLatencyPreference(value, {storage = () => globalThis.localStorage} = {}) {
+  if (!validLatency(value)) return {saved:false,code:'latency_offset_invalid',message:'Enter a whole-number latency offset from −500 to 500 ms.'};
+  try { resolveStorage(storage).setItem('worldmusichub.latency', JSON.stringify(Number(value)));return {saved:true,message:''}; }
+  catch { return {saved:false,code:'latency_storage_write_failed',message:'Latency applies to this tab but could not be saved in browser storage.'}; }
+}
+export function saveLatency(value, options) { return writeLatencyPreference(value, options).saved; }
 export function parseBeatInput(value) {
   const text = String(value).trim();
   let numerator, denominator;
   if (/^\d+\/\d+$/.test(text)) [numerator, denominator] = text.split('/').map(Number);
   else if (/^\d+(?:\.\d{1,6})?$/.test(text)) { const [whole, fraction = ''] = text.split('.'); denominator = 10 ** fraction.length; numerator = Number(whole) * denominator + Number(fraction || 0); }
-  else throw new Error('Use a non-negative beat number such as 0, 4, 1.5 or 3/2.');
-  if (!Number.isSafeInteger(numerator) || !Number.isSafeInteger(denominator) || numerator > 1e9 || denominator < 1 || denominator > 1e6) throw new Error('Beat value is outside the supported rational range.');
+  else throw preferenceError('practice_beat_syntax','Use a non-negative beat number such as 0, 4, 1.5 or 3/2.');
+  if (!Number.isSafeInteger(numerator) || !Number.isSafeInteger(denominator) || numerator > 1e9 || denominator < 1 || denominator > 1e6) throw preferenceError('practice_beat_range','Beat value is outside the supported rational range.');
   return {numerator, denominator};
 }
 export function windowNotes(notes, startMs, endMs) {

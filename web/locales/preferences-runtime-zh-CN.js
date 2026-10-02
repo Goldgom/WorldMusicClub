@@ -1,0 +1,17 @@
+export default Object.freeze({
+  'preferences.theme.storageUnavailable': '外观设置适用于当前标签页。浏览器存储不可用。',
+  'preferences.theme.invalid': '已保存的外观设置无效，当前使用系统外观。请选择外观以替换原设置。',
+  'preferences.theme.unreadable': '无法读取已保存的外观设置，当前使用系统外观。请选择外观以替换原设置。',
+  'preferences.theme.accentInvalid': '已保存的自定义颜色缺失或无效：强调色使用 {accent}。在你选择替代颜色前，已保存的设置保持不变。',
+  'preferences.theme.backgroundInvalid': '已保存的自定义颜色缺失或无效：背景色使用 {background}。在你选择替代颜色前，已保存的设置保持不变。',
+  'preferences.theme.colorsInvalid': '已保存的自定义颜色缺失或无效：强调色使用 {accent}；背景色使用 {background}。在你选择替代颜色前，已保存的设置保持不变。',
+  'preferences.theme.unsaved': '外观设置适用于当前标签页，但无法保存到浏览器存储。',
+  'preferences.latency.storageUnavailable': '延迟补偿从 0 毫秒开始。浏览器存储不可用；更改仅适用于当前标签页。',
+  'preferences.latency.invalidSaved': '已保存的延迟补偿无效，未予采用。补偿值从 0 毫秒开始；请输入核实后的值以替换原设置。',
+  'preferences.latency.invalid': '请输入 −500 至 500 毫秒之间的整数延迟补偿值。',
+  'preferences.latency.invalidInput': '输入时间和延迟补偿必须为有限数值；补偿值必须为 −500 至 500 毫秒之间的整数。',
+  'preferences.latency.unsaved': '延迟补偿适用于当前标签页，但无法保存到浏览器存储。',
+  'preferences.beat.syntax': '请使用非负拍数，例如 0、4、1.5 或 3/2。',
+  'preferences.beat.range': '拍数超出支持的有理数范围。',
+  'notation.basicStaffAria': '基础高音谱表音高视图',
+});

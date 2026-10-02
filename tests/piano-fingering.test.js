@@ -61,3 +61,11 @@ test('loading notifications can reenter prepare without duplicate requests or re
   const context=pianoContext();let calls=0,guide;guide=setupPianoFingering({getContext:()=>context,onChange:()=>{guide.state();guide.prepare();},api:async()=>{calls++;return pianoResult(context);}});
   await guide.prepare();assert.equal(calls,1);assert.equal(guide.state().phase,'ready');
 });
+
+test('controller stable display codes retain raw error details independently of their wording',async()=>{
+ const ctx=pianoContext(),guide=setupPianoFingering({getContext:()=>ctx,api:async()=>{throw Object.assign(Error('Engine text without a status word'),{code:'engine_detail_18'});}});
+ assert.throws(()=>guide.setSettings({...defaultPianoSettings(),left_hand:{lowest_midi:90,highest_midi:60,max_span_semitones:12}}),error=>error.code==='piano_hand_invalid');
+ const pending=guide.prepare();assert.equal(guide.state().messageCode,'piano_loading');await pending;
+ assert.equal(guide.state().messageCode,'piano_error');assert.deepEqual(guide.state().errorDetails,{code:'engine_detail_18',message:'Engine text without a status word'});assert.match(guide.state().message,/Engine text without/);
+ guide.setDraftDirty();await guide.prepare();assert.equal(guide.state().messageCode,'piano_draft');assert.equal(guide.state().errorDetails,null);
+});

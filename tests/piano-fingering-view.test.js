@@ -1,9 +1,13 @@
+import {createI18n} from '../web/i18n.js';
+const en=createI18n({locale:'en'});
+const pianoGuidanceView=context=>localizedPianoGuidanceView({...context,i18n:en});
+const setupPianoFingeringView=context=>localizedSetupPianoFingeringView({...context,i18n:en});
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
 import {pianoContext,pianoResult} from './piano-fingering-fixtures.js';
-import {pianoGuidanceView,setupPianoFingeringView,PIANO_VISIBLE_TARGETS} from '../web/piano-fingering-view.js';
+import {pianoGuidanceView as localizedPianoGuidanceView,setupPianoFingeringView as localizedSetupPianoFingeringView,PIANO_VISIBLE_TARGETS} from '../web/piano-fingering-view.js';
 
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function fixtureDom(){

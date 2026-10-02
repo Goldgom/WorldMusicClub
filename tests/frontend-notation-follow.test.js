@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createI18n} from '../web/i18n.js';
+import {getAppI18n} from '../web/app-locale.js';
 import {parseHTML} from 'linkedom';
 import {setupWrittenCursor,WrittenCursorIndex} from '../web/written-cursor.js';
 import {fixture} from './frontend-fixtures.js';
@@ -12,8 +14,8 @@ function setup(){
 }
 test('Rust occurrence lookup uses half-open boundaries through duplicate labels, repeat passes and rests',()=>{const{score,timeline,response}=setup(),before=JSON.stringify({score,timeline,response}),index=new NotationNavigationIndex(response,score,timeline);assert.equal(index.at(-1),null);assert.equal(index.at(0).source_measure_index,0);assert.equal(index.at(499.999).repeat_pass,null);assert.equal(index.at(500).source_measure_index,1);assert.equal(index.at(1000).written_note_ids[0],'rest');assert.equal(index.at(1500).source_measure_index,1);assert.equal(index.at(1500).repeat_pass,2);assert.equal(index.at(2999).measure_number,0);for(const value of [3000,3001,Infinity,NaN])assert.equal(index.at(value),null);assert.equal(index.soundingGroups.get('attack-2').source_note_ids[0],'e4');assert.equal(index.sourceNotes.get('rest').note.pitch,null);assert.equal(JSON.stringify({score,timeline,response}),before);});
 test('source measure paging uses ordinal indices rather than printed labels and is bounded',()=>{assert.equal(sourceMeasurePage(0,8),1);assert.equal(sourceMeasurePage(7,8),1);assert.equal(sourceMeasurePage(8,8),9);assert.equal(sourceMeasurePage(31,16),17);for(const[index,size]of[[-1,8],[0,0],[1,65],[1.5,8]])assert.throws(()=>sourceMeasurePage(index,size));});
-test('navigation schema, source identities, repeat metadata and compiled tie identities must agree before following',()=>{for(const mutate of[r=>r.version=2,r=>r.source_measure_count=5,r=>r.duration_ms=2999,r=>r.occurrences[1].start_ms=501,r=>r.occurrences[1].measure_number=8,r=>r.occurrences[1].repeat_pass=3,r=>r.occurrences[1].repeat_region_index=1,r=>r.occurrences[0].written_note_ids=['unknown'],r=>r.occurrences[0].written_note_ids=['e4'],r=>r.occurrences[0].source_to={numerator:2,denominator:1},r=>r.occurrences[0].continuing_note_ids=['c4'],r=>r.sounding_groups[0].source_note_ids=['e4'],r=>r.sounding_groups[0].end_ms=501]){const{score,timeline,response}=setup();mutate(response);assert.throws(()=>new NotationNavigationIndex(response,score,timeline),/does not match/)}});
-function environment(){const prior={document:globalThis.document,window:globalThis.window},checkbox={checked:false,addEventListener(_,handler){this.change=handler}},status={textContent:'',setAttribute(){}},calls=[],pages=[];let context=setup(),playback={position:1500,running:true};const view={isActive:()=>true,followMeasure:index=>pages.push(index),navigationState:()=>({ready:true})};globalThis.document={getElementById:id=>id==='engraving-follow'?checkbox:status};globalThis.window={addEventListener(){}};const follow=setupNotationFollowing({api:()=>new Promise((resolve,reject)=>calls.push({resolve,reject})),getContext:()=>context,getPlayback:()=>playback,view});return{follow,checkbox,status,calls,pages,context,setContext:value=>context=value,setPlayback:value=>playback=value,restore(){follow.suspend();for(const[key,value]of Object.entries(prior))if(value===undefined)delete globalThis[key];else globalThis[key]=value}}}
+test('navigation schema, source identities, repeat metadata and compiled tie identities must agree before following',()=>{for(const mutate of[r=>r.version=2,r=>r.source_measure_count=5,r=>r.duration_ms=2999,r=>r.occurrences[1].start_ms=501,r=>r.occurrences[1].measure_number=8,r=>r.occurrences[1].repeat_pass=3,r=>r.occurrences[1].repeat_region_index=1,r=>r.occurrences[0].written_note_ids=['unknown'],r=>r.occurrences[0].written_note_ids=['e4'],r=>r.occurrences[0].source_to={numerator:2,denominator:1},r=>r.occurrences[0].continuing_note_ids=['c4'],r=>r.sounding_groups[0].source_note_ids=['e4'],r=>r.sounding_groups[0].end_ms=501]){const{score,timeline,response}=setup();mutate(response);assert.throws(()=>new NotationNavigationIndex(response,score,timeline),{code:'notation_followInvalid'})}});
+function environment(i18n=createI18n({locale:'en'})){const prior={document:globalThis.document,window:globalThis.window},checkbox={checked:false,addEventListener(_,handler){this.change=handler}},status={textContent:'',setAttribute(){}},calls=[],pages=[];let context=setup(),playback={position:1500,running:true};const view={isActive:()=>true,followMeasure:index=>pages.push(index),navigationState:()=>({ready:true})};globalThis.document={getElementById:id=>id==='engraving-follow'?checkbox:status};globalThis.window={addEventListener(){}};const follow=setupNotationFollowing({i18n,api:()=>new Promise((resolve,reject)=>calls.push({resolve,reject})),getContext:()=>context,getPlayback:()=>playback,view});return{follow,checkbox,status,calls,pages,context,setContext:value=>context=value,setPlayback:value=>playback=value,restore(){follow.suspend();for(const[key,value]of Object.entries(prior))if(value===undefined)delete globalThis[key];else globalThis[key]=value}}}
 test('following prepares lazily, reuses a validated response, and manual suspension prevents late activation',async()=>{const env=environment();try{assert.equal(env.calls.length,0);env.checkbox.checked=true;const pending=env.checkbox.change();env.follow.suspend();env.calls[0].resolve(env.context.response);await pending;assert.equal(env.pages.length,0);assert.equal(env.checkbox.checked,false);env.checkbox.checked=true;const ready=env.checkbox.change();env.calls[1].resolve(env.context.response);await ready;assert.equal(env.pages.at(-1),1);assert.match(env.status.textContent,/pass 2\/2/);env.follow.suspend();env.checkbox.checked=true;await env.checkbox.change();assert.equal(env.calls.length,2);env.follow.tick(3000,false);assert.match(env.status.textContent,/End of performance/);env.follow.tick(-1,true);assert.match(env.status.textContent,/Count-in/);}finally{env.restore()}});
 test('replacement drops stale replies and failed preparation disables only following',async()=>{const env=environment();try{env.checkbox.checked=true;const pending=env.checkbox.change();env.follow.scoreChanged();env.setContext(setup());env.calls[0].resolve(env.context.response);await pending;assert.equal(env.pages.length,0);env.checkbox.checked=true;const failing=env.checkbox.change();env.calls[1].reject(Error('No complete measure map'));await failing;assert.equal(env.checkbox.checked,false);assert.match(env.status.textContent,/No complete measure map/);assert.match(env.status.textContent,/playback is unchanged/);assert.equal(env.pages.length,0);}finally{env.restore()}});
 
@@ -127,4 +129,46 @@ test('shared preparation ignores replaced-score replies and survives explicit su
   follow.suspend();calls[1].resolve(data.response);await second;assert.equal(pages.length,0);assert.ok(cursor.navigation(),'Suspending display following does not cancel the independent written cursor request');
   document.getElementById('engraving-follow').checked=true;await follow.prepare();assert.equal(calls.length,2);assert.equal(pages.at(-1),1);
  }finally{follow.suspend();cursor.reset();for(const[key,value]of Object.entries(prior))if(value===undefined)delete globalThis[key];else globalThis[key]=value}
+});
+
+test('locale redraw preserves pending follow requests, repeat position, focusable controls and scroll suspension',async()=>{
+ const prior={document:globalThis.document,window:globalThis.window};
+ const {document,window}=parseHTML('<html><body><input id="engraving-follow" type="checkbox"><p id="engraving-follow-status"></p></body></html>');
+ globalThis.document=document;globalThis.window=window;
+ const i18n=createI18n(),data=setup(),before=JSON.stringify(data),checkbox=document.getElementById('engraving-follow'),status=document.getElementById('engraving-follow-status');
+ let resolve,requests=0,clockReads=0,reveals=0,resets=0;const pages=[];
+ const view={isActive:()=>true,followMeasure:index=>pages.push(index),navigationState:()=>({ready:false}),revealExpectedWrittenNotes(){reveals++;return{status:'partial'}},resetReveal(){resets++}};
+ const follow=setupNotationFollowing({document,i18n,api:()=>{requests++;return new Promise(done=>resolve=done)},getContext:()=>data,getPlayback:()=>{clockReads++;return{position:1500,running:true}},view});
+ try{
+  assert.match(status.textContent,/已开启跟随/);const pending=follow.prepare();assert.match(status.textContent,/正在准备/);
+  i18n.setLocale('en');i18n.invalidate();assert.match(status.textContent,/Preparing score following/);assert.equal(follow.prepare(),pending);assert.equal(requests,1);assert.equal(clockReads,0);assert.equal(reveals,0);
+  resolve(data.response);await pending;assert.match(status.textContent,/pass 2\/2/);assert.match(status.textContent,/Loading display/);assert.match(status.textContent,/Some expected notes/);assert.equal(status.getAttribute('aria-live'),'off');
+  const calls=[requests,clockReads,reveals,resets,pages.length];i18n.setLocale('zh-CN');
+  assert.match(status.textContent,/第 2\/2 遍/);assert.match(status.textContent,/正在加载显示/);assert.match(status.title,/不会改变播放时钟/);assert.deepEqual([requests,clockReads,reveals,resets,pages.length],calls);
+  assert.equal(document.getElementById('engraving-follow'),checkbox);assert.equal(document.getElementById('engraving-follow-status'),status);assert.equal(checkbox.checked,true);
+  follow.tick(1500,false);assert.match(status.textContent,/已暂停于/);assert.equal(status.getAttribute('aria-live'),'polite');
+  follow.suspend();const suspended=[requests,clockReads,reveals,resets,pages.length];i18n.setLocale('en');assert.match(status.textContent,/Manual navigation suspended/);assert.equal(checkbox.checked,false);assert.deepEqual([requests,clockReads,reveals,resets,pages.length],suspended);
+  assert.equal(JSON.stringify(data),before);assert.deepEqual(i18n.getReports(),[]);
+ }finally{follow.suspend();for(const[key,value]of Object.entries(prior))if(value===undefined)delete globalThis[key];else globalThis[key]=value}
+});
+
+test('follow failures use stable owned codes and literal labelled unknown details in the latest locale',async()=>{
+ const i18n=createI18n(),env=environment(i18n);
+ try{
+  const first=env.follow.prepare();i18n.setLocale('en');env.calls[0].reject(Object.assign(Error('Legacy internal wording'),{code:'notation_followMap'}));await first;
+  assert.match(env.status.textContent,/complete validated measure map/);assert.doesNotMatch(env.status.textContent,/Legacy internal/);
+  i18n.setLocale('zh-CN');assert.match(env.status.textContent,/完整且经过验证的小节映射/);assert.equal(env.checkbox.checked,false);
+  env.checkbox.checked=true;const second=env.follow.prepare();const detail='<img src=x onerror=alert(1)> exact engine detail 原文';env.calls[1].reject(Error(detail));await second;
+  assert.ok(env.status.textContent.includes('原始技术详情：'+detail));i18n.setLocale('en');assert.ok(env.status.textContent.includes('Original technical details: '+detail));assert.equal(env.calls.length,2);
+  assert.deepEqual(i18n.getReports(),[]);
+ }finally{env.restore()}
+});
+
+test('default follow setup shares the document locale service and starts in Chinese',()=>{
+ const prior={document:globalThis.document,window:globalThis.window};const {document,window}=parseHTML('<html><body><input id="engraving-follow" type="checkbox"><p id="engraving-follow-status"></p></body></html>');globalThis.document=document;globalThis.window=window;
+ const follow=setupNotationFollowing({document,getContext:()=>({}),getPlayback:()=>assert.fail('Locale redraw must not read the clock'),view:{isActive:()=>false}});
+ try{
+  assert.match(document.getElementById('engraving-follow-status').textContent,/已开启跟随/);
+  getAppI18n(document).setLocale('en');assert.match(document.getElementById('engraving-follow-status').textContent,/Following is on/);assert.equal(document.documentElement.lang,'en');assert.equal(follow.isEnabled(),true);
+ }finally{follow.suspend();for(const[key,value]of Object.entries(prior))if(value===undefined)delete globalThis[key];else globalThis[key]=value}
 });

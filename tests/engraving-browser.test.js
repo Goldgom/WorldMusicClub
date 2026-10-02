@@ -116,7 +116,13 @@ async function openHarnessContext(deviceScaleFactor = 1) {
   page.on('request', request => requests.push(request.url()));
   page.on('response', response => {const url = new URL(response.url()); if (url.origin === origin && url.pathname.startsWith('/api/') && response.status() >= 400) apiFailures.push(`${response.status()} ${url.pathname}`);});
   await page.goto(`${origin}/__engraving-harness`, {waitUntil: 'domcontentloaded'});
-  await page.evaluate(async () => {window.engraving = await import('/engraving.js');});
+  await page.evaluate(async () => {
+    const {getAppI18n} = await import('/app-locale.js');
+    // This standalone legacy harness explicitly selects its expected display language.
+    window.engravingI18n = getAppI18n(document);
+    window.engravingI18n.setLocale('en');
+    window.engraving = await import('/engraving.js');
+  });
 }
 beforeEach(async () => {
   pageErrors = []; apiFailures = []; offOrigin = []; requests = [];
@@ -327,12 +333,27 @@ test('missing bundle preserves a labelled basic view and a later retry uses the 
     const host = document.querySelector('#staff');
     const basic = document.createElement('p'); basic.id = 'basic-fallback'; basic.textContent = 'Basic pitch view'; host.appendChild(basic);
     const outcome = await window.engraving.renderEngravedStaff(host, xml);
-    return {status: outcome.status, message: outcome.message, sameFallback: host.firstElementChild === basic, svg: host.querySelectorAll('svg').length};
+    window.unavailableEngraving = outcome;
+    return {status: outcome.status, message: outcome.message, messageKey: outcome.messageKey, sameFallback: host.firstElementChild === basic, svg: host.querySelectorAll('svg').length};
   }, exported.xml);
   assert.equal(failed.status, 'unavailable');
+  assert.equal(failed.messageKey, 'notationRuntime.bundle');
   assert.match(failed.message, /offline engraving bundle is unavailable/);
   assert.equal(failed.sameFallback, true);
   assert.equal(failed.svg, 0);
+  const bundleAttempts=requests.filter(url=>url===bundle).length;
+  const localized=await page.evaluate(()=>{
+    const fallback=document.querySelector('#basic-fallback');
+    return ['zh-CN','en'].map(locale=>{
+      window.engravingI18n.setLocale(locale);
+      return {locale,status:window.unavailableEngraving.status,message:window.unavailableEngraving.message,
+        expected:window.engravingI18n.t('notationRuntime.bundle'),sameFallback:document.querySelector('#basic-fallback')===fallback,
+        svg:document.querySelectorAll('#staff svg').length};
+    });
+  });
+  for(const state of localized){assert.equal(state.status,'unavailable');assert.equal(state.message,state.expected);assert.equal(state.sameFallback,true);assert.equal(state.svg,0);}
+  assert.notEqual(localized[0].message,localized[1].message);
+  assert.equal(requests.filter(url=>url===bundle).length,bundleAttempts,'Changing failure copy does not retry the optional asset');
   await context.unroute(bundle);
   await render(exported.xml);
   assert.equal(await page.locator('#basic-fallback').count(), 0);

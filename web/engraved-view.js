@@ -1,18 +1,29 @@
 import {sourceMeasurePage,notationRevealViewport} from './notation-follow.js';
 import {planEngravingReveal} from './engraving-reveal.js';
+import {getAppI18n} from './app-locale.js';
+import notationMessages from './locales/notation-runtime-schema.js';
+const presentationError=(key,messageParams={})=>Object.assign(new Error(getAppI18n().t(`notationRuntime.${key}`,messageParams)),{code:`engraving_${key}`,messageKey:`notationRuntime.${key}`,messageParams});
 export function engravingWindow(total, from = 1, count = 8) {
-  if (!Number.isInteger(total) || total < 0 || !Number.isInteger(from) || from < 1 || !Number.isInteger(count) || count < 1 || count > 64 || (total && from > total)) throw new Error('Choose a valid one-based source measure range of at most 64 measures.');
+  if (!Number.isInteger(total) || total < 0 || !Number.isInteger(from) || from < 1 || !Number.isInteger(count) || count < 1 || count > 64 || (total && from > total)) throw presentationError('window');
   return {total, from, to:Math.min(total,from+count-1)};
 }
 export function mappedPartIds(exported, canonicalId) {
   if (canonicalId === null) return null;
   const map = exported.part_id_map;
-  if (!map || !Object.hasOwn(map,canonicalId) || typeof map[canonicalId] !== 'string' || !map[canonicalId]) throw new Error('The selected canonical part has no generated MusicXML ID.');
+  if (!map || !Object.hasOwn(map,canonicalId) || typeof map[canonicalId] !== 'string' || !map[canonicalId]) throw presentationError('partMap');
   return [map[canonicalId]];
 }
 /** Optional presentation surface. All score conversion and timing stay in Rust. */
-export function setupEngravedView({getScore, getPracticePart, onVisibility, onFallback, notice, onManualNavigation=()=>{},isVisible=()=>true,loadAdapter=()=>import('./engraving.js')}) {
+export function setupEngravedView({getScore, getPracticePart, onVisibility, onFallback, notice, onManualNavigation=()=>{},isVisible=()=>true,loadAdapter=()=>import('./engraving.js'),document=globalThis.document,i18n=getAppI18n(document)}) {
   const $ = id => document.getElementById(id);
+  const t=(key,params)=>i18n.t(`notationRuntime.${key}`,params);
+  const errorText=value=>{
+    const own=value?.messageKey&&Object.hasOwn(notationMessages,value.messageKey);
+    const message=own?i18n.t(value.messageKey,value.messageParams||{}):typeof value?.message==='string'?t('technical',{detail:value.message}):typeof value==='string'?t('technical',{detail:value}):t('unknownFailure');
+    return message+(own&&typeof value.cause?.message==='string'?' '+t('technical',{detail:value.cause.message}):'');
+  };
+  let allPartsOption=null,statusMessage=null,fallbackReason=null,noticeState=null;
+  for(const id of ['engraving-range','engraving-status','engraving-fallback'])$(id)?.removeAttribute?.('data-i18n');
   let active = false, preferred = true, score = null, selectedPart = null, from = 1, pageSize = 8;
   let generation = 0, controller = null, cached = null, adapter = null, rendered = null;
   let expected=null,expectedScore=null,knownScore=null,knownIds=new Set();
@@ -21,7 +32,7 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
   const container = $('engraved-staff');
   function cancel() { generation++;lastReveal='';revealStatus={status:'unavailable'}; controller?.abort(); controller = null; rendered?.dispose(); rendered = null; adapter?.disposeEngravedStaff(container); }
   function hasNoteMapping(){return ['mappingStatus','setExpectedWrittenNotes','clearExpectedWrittenNotes'].every(name=>typeof rendered?.[name]==='function')}
-  function mappingStatus(){return hasNoteMapping()?rendered.mappingStatus():{status:'unavailable',verifiedGlyphCount:0,diagnostics:rendered?[{code:'engraving_note_mapping_unavailable',message:'Individual notehead mapping is unavailable from this renderer. Static staff remains available; current written notes are not highlighted.'}]:[]}}
+  function mappingStatus(){return hasNoteMapping()?rendered.mappingStatus():{status:'unavailable',verifiedGlyphCount:0,diagnostics:rendered?[{code:'engraving_note_mapping_unavailable',message:t('mappingUnavailable')}]:[]}}
   function clearExpectedWrittenNotes(){expected=null;expectedScore=null;lastReveal='';return hasNoteMapping()?rendered.clearExpectedWrittenNotes():false}
   function revealExpectedWrittenNotes(occurrenceId,sourceMeasureIndex=expected?.sourceMeasureIndex){
     if(!$('engraving-follow').checked||!active||!isVisible()||expectedScore!==score||!expected||expected.sourceMeasureIndex!==sourceMeasureIndex||!rendered)return {status:'unavailable'};
@@ -46,23 +57,41 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
     if(!Array.isArray(ids)||ids.some(id=>typeof id!=='string'||!knownIds.has(id))||new Set(ids).size!==ids.length||!Number.isInteger(measure)||measure<0||measure>=current.measures.length){expected=null;expectedScore=null;lastReveal='';if(hasNoteMapping())rendered.setExpectedWrittenNotes(value);return false}
     expected={sourceNoteIds:[...ids],sourceMeasureIndex:measure};expectedScore=current;return rendered?(hasNoteMapping()?rendered.setExpectedWrittenNotes(expected):false):true;
   }
+  const diagnosticKeys={engraving_note_mapping_unavailable:'mappingUnavailable',engraving_note_identity_ambiguous:'identityAmbiguous',engraving_note_identity_missing:'identityMissing',engraving_shared_glyph:'sharedGlyph',engraving_expected_notes_invalid:'expectedInvalid',engraving_glyph_stale:'glyphStale'};
+  function paintNotices(){
+    if(!noticeState)return;
+    for(const {diagnostic,node} of noticeState.rows){
+      node.textContent=diagnostic.code==='engraving_note_mapping_partial'?t('mappingPartial',{verified:noticeState.mapping.verifiedGlyphCount,displayed:noticeState.mapping.displayedSegmentCount}):Object.hasOwn(diagnosticKeys,diagnostic.code)?t(diagnosticKeys[diagnostic.code]):errorText(diagnostic);
+    }
+    if($('dock-warning-count'))$('dock-warning-count').textContent=t('noticeCount',{count:noticeState.rows.length});
+  }
   function showNotices(exported,mapping){
     const diagnostics=[...(exported.diagnostics||[]),...(mapping?.diagnostics||[])];
-    if(mapping?.status==='partial')diagnostics.push({code:'engraving_note_mapping_partial',message:`Current-note highlighting is limited: ${mapping.verifiedGlyphCount} of ${mapping.displayedSegmentCount} visible written segments have individually verified noteheads. Other symbols remain unchanged.`});
+    if(mapping?.status==='partial')diagnostics.push({code:'engraving_note_mapping_partial'});
     const unique=[...new Map(diagnostics.map(item=>[`${item.code}:${item.message}`,item])).values()];$('engraving-diagnostics').replaceChildren();
-    for(const diagnostic of unique){const item=document.createElement('li');item.textContent=diagnostic.message;$('engraving-diagnostics').append(item)}
-    if($('dock-warning-count'))$('dock-warning-count').textContent=`Notation notices · ${unique.length}`;
+    noticeState={mapping,rows:unique.map(diagnostic=>{const node=document.createElement('li');$('engraving-diagnostics').append(node);return {diagnostic,node}})};
+    paintNotices();
+  }
+  // Redraw retained presentation only. Never call render(), exportScore(), reveal or navigation here.
+  function redrawLocale(){
+    if(allPartsOption)allPartsOption.textContent=t('allParts');
+    rangeControls();
+    if(statusMessage)$('engraving-status').textContent=t(statusMessage.key,statusMessage.params);
+    paintNotices();
+    if(fallbackReason!==null){$('engraving-fallback').textContent=t('fallback',{reason:errorText(fallbackReason)});if($('dock-warning-count'))$('dock-warning-count').textContent=t('noticeError')}
+    else if(statusMessage?.key==='preparing'&&$('dock-warning-count'))$('dock-warning-count').textContent=t('noticePreparing');
+    $('notation-dock')?.setAttribute?.('aria-label',t('scrollArea'));
   }
   function setParts() {
     $('engraving-part').replaceChildren();
-    const all = document.createElement('option'); all.value = ''; all.textContent = 'All parts · 全部声部'; $('engraving-part').append(all);
+    const all = document.createElement('option'); all.value = ''; allPartsOption=all; all.textContent = t('allParts'); $('engraving-part').append(all);
     for (const part of score?.parts || []) { const option = document.createElement('option'); option.value = part.id; option.textContent = part.name; $('engraving-part').append(option); }
     if (selectedPart !== null && !score?.parts.some(part => part.id === selectedPart)) selectedPart = null;
     $('engraving-part').value = selectedPart || '';
   }
   function rangeControls() {
     const {total,to} = engravingWindow(score?.measures.length || 0,from,pageSize);
-    $('engraving-range').textContent = total ? `Measures ${from}–${to} / ${total}` : 'No measure map';
+    $('engraving-range').textContent = total ? t('pageRange',{from,to,total}) : t('noMap');
     $('engraving-prev').disabled = from <= 1;
     $('engraving-next').disabled = to >= total;
     return {total, to};
@@ -70,42 +99,42 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
   async function exportScore(target, signal) {
     if (cached?.score === target) return cached.result;
     const response = await fetch('/api/export/musicxml', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(target),signal});
-    let result; try { result = await response.json(); } catch { throw new Error('The Rust MusicXML exporter returned an unreadable response. Restart with a current server build.'); }
-    if (!response.ok) throw new Error(result.error || `MusicXML export returned ${response.status}.`);
-    if (typeof result.xml !== 'string' || !result.part_id_map) throw new Error('MusicXML export is missing its XML or canonical part map.');
+    let result; try { result = await response.json(); } catch { throw presentationError('exportUnreadable'); }
+    if (!response.ok) {if(typeof result?.error==='string'&&result.error)throw new Error(result.error);throw presentationError('exportHttp',{status:response.status})}
+    if (typeof result?.xml !== 'string' || !result.part_id_map) throw presentationError('exportIncomplete');
     if (!signal?.aborted && getScore() === target) cached = {score:target,result};
     return result;
   }
-  function fallback(message) {
+  function fallback(reason) {
     if (!active) return;
-    hide(); $('engraving-fallback').textContent = `Engraved staff unavailable: ${message} Showing the simplified pitch guide. It does not fully engrave rhythm, voices, ties or key signatures. Playback still uses the Rust score.`; $('engraving-fallback').hidden = false; onFallback();
-    if($('dock-warning-count')){$('dock-warning-count').hidden=false;$('dock-warning-count').textContent='View notation error · 查看提示';}
+    hide(); fallbackReason=reason??presentationError('unknownFailure'); redrawLocale(); $('engraving-fallback').hidden = false; onFallback();
+    if($('dock-warning-count')){$('dock-warning-count').hidden=false;$('dock-warning-count').textContent=t('noticeError');}
   }
   async function render() {
     if (!active || !score || !isVisible()) return;
     cancel(); const current = generation; controller = new AbortController(); const signal = controller.signal; const target = score;
-    $('engraving-fallback').hidden = true; onVisibility(true); rangeControls(); $('engraving-status').textContent = 'Preparing exact MusicXML with Rust, then engraving locally…';
-    $('engraving-diagnostics').replaceChildren();if($('dock-warning-count'))$('dock-warning-count').textContent='Notation notices · preparing…';
+    fallbackReason=null;$('engraving-fallback').hidden = true; onVisibility(true); rangeControls();statusMessage={key:'preparing'}; $('engraving-status').textContent = t('preparing');
+    noticeState=null;$('engraving-diagnostics').replaceChildren();if($('dock-warning-count'))$('dock-warning-count').textContent=t('noticePreparing');
     try {
       const exported = await exportScore(target, signal);
       if (signal.aborted || current !== generation || !active || target !== getScore()) return;
       adapter ||= await loadAdapter();
       if (signal.aborted || current !== generation || !active) return;
       const {total,to} = rangeControls();
-      if (!total) throw new Error('This score has no declared measure map for engraving.');
+      if (!total) throw presentationError('missingMap');
       const mapped = mappedPartIds(exported,selectedPart);
-      const result = await adapter.renderEngravedStaff(container, exported.xml, {dark:lastDark,fromMeasure:from,toMeasure:to,partIds:mapped,responsive:true,compactHeader:true,
+      const result = await adapter.renderEngravedStaff(container, exported.xml, {i18n,dark:lastDark,fromMeasure:from,toMeasure:to,partIds:mapped,responsive:true,compactHeader:true,
         identity:{score:target,noteMap:exported.note_id_map,partIdMap:exported.part_id_map,voiceIdMap:exported.voice_id_map},
         onMappingChange:mapping=>{if(current===generation&&active&&getScore()===target)showNotices(exported,mapping)},
-        onError:failure=>{if(current===generation&&active)fallback(failure.message)}}, signal);
-      if (signal.aborted || current !== generation || !active) { result.dispose?.(); return; }
-      if (!result.ok) { if (result.status !== 'cancelled') fallback(result.message); return; }
+        onError:failure=>{if(current===generation&&active&&getScore()===target)fallback(failure)}}, signal);
+      if (signal.aborted || current !== generation || !active || target !== getScore()) { result.dispose?.(); return; }
+      if (!result.ok) { if (result.status !== 'cancelled') fallback(result); return; }
       rendered = result;
       if(expectedScore===target&&expected&&hasNoteMapping())rendered.setExpectedWrittenNotes(expected);
-      $('engraving-status').textContent = `Generated staff preview · Measures ${result.metadata.fromMeasure}–${result.metadata.toMeasure} · display only.`;
+      statusMessage={key:'preview',params:{from:result.metadata.fromMeasure,to:result.metadata.toMeasure}};$('engraving-status').textContent = t(statusMessage.key,statusMessage.params);
       showNotices(exported,mappingStatus());
       $('engraving-license-note').hidden = false;
-    } catch (error) { if (current === generation && !signal.aborted && active && error.name !== 'AbortError') fallback(error.message || 'The optional renderer is unavailable in this build.'); }
+    } catch (error) { if (current === generation && !signal.aborted && active && error.name !== 'AbortError') fallback(error); }
   }
   function show() {
     if (!getScore()) return;
@@ -113,7 +142,7 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
     active = true; preferred = true;
     setParts(); onVisibility(true); render();
   }
-  function hide({remember=false}={}) { if(remember){preferred=false;$('engraving-fallback').hidden=true;}clearExpectedWrittenNotes();active = false; cancel(); container.replaceChildren(); onVisibility(false); }
+  function hide({remember=false}={}) { if(remember){preferred=false;fallbackReason=null;$('engraving-fallback').hidden=true;}clearExpectedWrittenNotes();active = false; cancel(); container.replaceChildren(); onVisibility(false); }
   function updateScore() {
     const current = getScore(); $('export-musicxml').disabled = !current;
     if (current === score) return;
@@ -132,13 +161,13 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
       const exported=await exportScore(target);
       if(target!==getScore())return;
       const url=URL.createObjectURL(new Blob([exported.xml],{type:'application/vnd.recordare.musicxml+xml'}));const link=document.createElement('a');link.href=url;link.download=`${target.id.replace(/[^\w.-]/g,'_')}.musicxml`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
-      notice('Generated MusicXML exported. Clefs and rhythmic spelling may be inferred; canonical JSON retains the full source and provenance.');
-    }catch(error){notice(`MusicXML export failed. ${error.message}`,true)}finally{button.disabled=!getScore()}
+      notice(()=>t('exported'));
+    }catch(error){if(target===getScore())notice(()=>t('exportFailed',{reason:errorText(error)}),true)}finally{button.disabled=!getScore()}
   });
   const observer=new MutationObserver(()=>{const dark=document.documentElement.dataset.theme==='dark';if(dark!==lastDark){lastDark=dark;if(active)render()}});observer.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
   window.addEventListener('pagehide',cancel);window.addEventListener('pageshow',event=>{if(event.persisted&&active)render()});
   const dock=$('notation-dock');
-  if(dock?.setAttribute){dock.setAttribute('tabindex','0');dock.setAttribute('aria-label','Score notation scroll area · 乐谱滚动区域')}
+  if(dock?.setAttribute){dock.setAttribute('tabindex','0');dock.setAttribute('aria-label',t('scrollArea'))}
   const manualScroll=()=>{if($('engraving-follow').checked){lastReveal='';onManualNavigation()}};
   dock?.addEventListener('wheel',manualScroll,{passive:true});dock?.addEventListener('touchmove',manualScroll,{passive:true});
   dock?.addEventListener('pointerdown',event=>{if(event.target===dock||event.target?.closest?.('.engraving-scroll,.notation-scroll'))manualScroll()},{passive:true});
@@ -152,6 +181,8 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
     const observe=()=>surfaces.forEach(surface=>resizeObserver.observe(surface));observe();
     window.addEventListener('pagehide',()=>resizeObserver.disconnect());window.addEventListener('pageshow',event=>{if(event.persisted){invalidateReveal();observe()}});
   }
+  i18n.subscribe(redrawLocale);
+  redrawLocale();
   return {show,hide,updateScore,selectPart,setExpectedWrittenNotes,clearExpectedWrittenNotes,revealExpectedWrittenNotes,resetReveal(){lastReveal=''},mappingStatus,isActive:()=>active,surfaceChanged(){if(active&&isVisible())render();else cancel()},
     navigationState:()=>({from,ready:Boolean(rendered)}),
     followMeasure(index){if(!active||!score||!Number.isInteger(index)||index<0||index>=score.measures.length)return false;const page=sourceMeasurePage(index,pageSize);if(page===from)return false;from=page;render();return true}

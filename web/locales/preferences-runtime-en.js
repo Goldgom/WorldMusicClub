@@ -1,0 +1,17 @@
+export default Object.freeze({
+  'preferences.theme.storageUnavailable': 'Appearance applies to this tab. Browser storage is unavailable.',
+  'preferences.theme.invalid': 'Saved appearance is invalid. System appearance is active; choose a theme to replace it.',
+  'preferences.theme.unreadable': 'Saved appearance could not be read. System appearance is active; choose a theme to replace it.',
+  'preferences.theme.accentInvalid': 'Saved custom colors were missing or invalid: accent uses {accent}. The stored preference is unchanged until you choose a replacement.',
+  'preferences.theme.backgroundInvalid': 'Saved custom colors were missing or invalid: background uses {background}. The stored preference is unchanged until you choose a replacement.',
+  'preferences.theme.colorsInvalid': 'Saved custom colors were missing or invalid: accent uses {accent}; background uses {background}. The stored preference is unchanged until you choose a replacement.',
+  'preferences.theme.unsaved': 'Appearance applies to this tab but could not be saved in browser storage.',
+  'preferences.latency.storageUnavailable': 'Latency starts at 0 ms. Browser storage is unavailable; changes apply to this tab.',
+  'preferences.latency.invalidSaved': 'Saved latency was invalid and was not applied. Offset starts at 0 ms; enter a reviewed value to replace it.',
+  'preferences.latency.invalid': 'Enter a whole-number latency offset from −500 to 500 ms.',
+  'preferences.latency.invalidInput': 'Input time and latency offset must be finite; offset must be a whole number from −500 to 500 ms.',
+  'preferences.latency.unsaved': 'Latency applies to this tab but could not be saved in browser storage.',
+  'preferences.beat.syntax': 'Use a non-negative beat number such as 0, 4, 1.5 or 3/2.',
+  'preferences.beat.range': 'Beat value is outside the supported rational range.',
+  'notation.basicStaffAria': 'Basic treble staff pitch view',
+});

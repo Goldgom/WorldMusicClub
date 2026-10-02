@@ -1,3 +1,4 @@
+import {assertLocaleRoundTrip} from './locale-browser-regression.js';
 import {selectLegacyEnglish} from './browser-input-fixtures.js';
 import {unavailablePianoResult} from './piano-fingering-fixtures.js';
 import test, {before, after, beforeEach, afterEach} from 'node:test';
@@ -346,7 +347,7 @@ test('whole app loop clocks retain frame overshoot and pause rather than invent 
  assert.deepEqual(boundaries.map(event=>event.boundary_wall_ms),[1500,2000,2500,3000]);assert.deepEqual(boundaries.map(event=>event.event_wall_ms),[1517,2013,2510,5000]);assert.equal(boundaries.at(-1).reason,'loop_clock_stall');
 });
 test('numbered-text export previews diagnostics before an explicit download and keeps the full score',async()=>{
- let downloads=0;page.on('download',()=>downloads++);await ui('#export-jianpu').click();await ui('#jianpu-export-download:not([disabled])').waitFor();assert.equal(downloads,0);assert.match(await ui('#jianpu-export-status').textContent(),/2 source notes\/rests and 1 explicit gap/);assert.match(await ui('#jianpu-export-diagnostics').textContent(),/expressive velocity/);assert.match(await ui('#jianpu-export-text').inputValue(),/1:1\/1 3:1\/1 0:2\/1/);
+ let downloads=0;page.on('download',()=>downloads++);await ui('#export-jianpu').click();await ui('#jianpu-export-download:not([disabled])').waitFor();assert.equal(downloads,0);assert.equal(await ui('#jianpu-export-status').textContent(),'Ready for review. Source notes/rests: 2; explicit gap rests: 1. This exports the complete score regardless of the current Practice part or A–B loop.');assert.match(await ui('#jianpu-export-diagnostics').textContent(),/expressive velocity/);assert.match(await ui('#jianpu-export-text').inputValue(),/1:1\/1 3:1\/1 0:2\/1/);
  const promise=page.waitForEvent('download');await ui('#jianpu-export-download').click();const file=await promise;assert.equal(file.suggestedFilename(),'test-score.jianpu');assert.equal(await readFile(await file.path(),'utf8'),await ui('#jianpu-export-text').inputValue());await ui('#jianpu-export-close').click();
  const full=page.waitForEvent('download');await ui('#export-button').click();assert.deepEqual(JSON.parse(await readFile(await(await full).path(),'utf8')),fixture);
 });
@@ -438,7 +439,7 @@ test('octave preview requires confirmation, retains full original and restores w
 });
 test('part and instrument changes invalidate an octave preview and require a fresh review',async()=>{
  const score=structuredClone(fixture);score.parts.push({id:'bass',name:'Bass',instrument:'piano',notes:[{...structuredClone(score.parts[0].notes[0]),id:'bass-note',pitch:{step:'C',alter:0,octave:3}}]});await ui('#score-file').setInputFiles({name:'duet.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await page.waitForFunction(()=>document.querySelector('#practice-part').options.length===3);await ui('#practice-part').selectOption('bass');await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('Bass · 1 physical'));
- await ui('#instrument-settings>summary').click();await ui('#adaptation-button').click();await ui('#adaptation-scope').selectOption('selected');await ui('#adaptation-preview').click();await ui('#adaptation-result').waitFor();assert.match(await ui('#adaptation-result-summary').textContent(),/Bass · 1 written/);await ui('#adaptation-confirm').check();
+ await ui('#instrument-settings>summary').click();await ui('#adaptation-button').click();await ui('#adaptation-scope').selectOption('selected');await ui('#adaptation-preview').click();await ui('#adaptation-result').waitFor();assert.equal(await ui('#adaptation-result-summary').textContent(),'-1 octave · Written pitched notes changed: 1. All notes, rests, timing and the complete original source are retained. Scope: Bass');await ui('#adaptation-confirm').check();
  await page.evaluate(()=>{const part=document.querySelector('#practice-part');part.value='piano';part.dispatchEvent(new Event('change',{bubbles:true}))});assert.equal(await ui('#adaptation-confirm').isChecked(),false);assert.equal(await ui('#adaptation-activate').isDisabled(),true);assert.match(await ui('#adaptation-scope-note').textContent(),/Piano/);
  await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('Piano · 2 physical'));await ui('#adaptation-preview').click();await ui('#adaptation-result').waitFor();await page.evaluate(()=>{const count=document.querySelector('#custom-key-count');count.value='25';count.dispatchEvent(new Event('input',{bubbles:true}))});assert.equal(await ui('#adaptation-preview').isDisabled(),true);assert.equal(await ui('#adaptation-confirm').isDisabled(),true);
 });
@@ -468,9 +469,9 @@ test('external OMR stays unplayable until every review category is freshly confi
  const promise=page.waitForEvent('download');await ui('#export-button').click();const saved=JSON.parse(await readFile(await(await promise).path(),'utf8'));assert.equal(saved.source.format,'external-omr-reviewed');const record=JSON.parse(saved.source.content);assert.equal(record.input.output_content,raw);assert.equal(Object.values(record.confirmation).every(value=>value===true),true);assert.match(await ui('#diagnostic-list').textContent(),/Before manual correction/);
 });
 test('external rich draft pagination and advanced JSON retain all voices/maps and reject source replacement',async()=>{
- await openExternalDraft('<score>RICH_FIXTURE</score>');assert.equal(await ui('.external-note-row').count(),20);assert.equal(await ui('#external-part option').count(),2);assert.match(await ui('#external-structure-summary').textContent(),/46 written notes/);await ui('#external-note-page').fill('3');await ui('#external-note-page').dispatchEvent('change');assert.equal(await ui('.external-note-row').count(),5);assert.match(await ui('#external-warning-range').textContent(),/of 46/);await ui('#external-warning-next').click();assert.match(await ui('#external-warning-range').textContent(),/21–40/);
+ await openExternalDraft('<score>RICH_FIXTURE</score>');assert.equal(await ui('.external-note-row').count(),20);assert.equal(await ui('#external-part option').count(),2);assert.match(await ui('#external-structure-summary').textContent(),/written notes\/rests: 46/);await ui('#external-note-page').fill('3');await ui('#external-note-page').dispatchEvent('change');assert.equal(await ui('.external-note-row').count(),5);assert.match(await ui('#external-warning-range').textContent(),/of 46/);await ui('#external-warning-next').click();assert.match(await ui('#external-warning-range').textContent(),/21–40/);
  await ui('#external-json-tab').click();const original=JSON.parse(await ui('#external-json').inputValue());assert.equal(original.parts[0].notes.length,45);assert.equal(original.parts[1].notes.length,1);assert.equal(Object.hasOwn(original,'source'),false);await ui('#external-json').fill(JSON.stringify({...original,source:{format:'changed',content:'not original'}}));await ui('#external-json-apply').click();assert.match(await ui('#external-status').textContent(),/managed separately/);assert.equal(await ui('#external-confirm-load').isDisabled(),true);
- original.parts[0].notes[0].voice='corrected voice';original.tempo[0].bpm=90;await ui('#external-json').fill(JSON.stringify(original));await ui('#external-json-apply').click();assert.equal(await page.getByLabel('Voice for draft note 1',{exact:true}).inputValue(),'corrected voice');assert.equal(await page.getByLabel('Tempo BPM 1',{exact:true}).inputValue(),'90');assert.match(await ui('#external-structure-summary').textContent(),/46 written notes/);
+ original.parts[0].notes[0].voice='corrected voice';original.tempo[0].bpm=90;await ui('#external-json').fill(JSON.stringify(original));await ui('#external-json-apply').click();assert.equal(await page.getByLabel('Voice for draft note 1',{exact:true}).inputValue(),'corrected voice');assert.equal(await page.getByLabel('Tempo BPM 1',{exact:true}).inputValue(),'90');assert.match(await ui('#external-structure-summary').textContent(),/written notes\/rests: 46/);
 });
 test('external source replacement requires an explicit draft-discard decision and retains prior corrections when kept',async()=>{
  await openExternalDraft();await page.getByLabel('Tempo BPM 1',{exact:true}).fill('90');assert.equal(await ui('#external-prepare').isDisabled(),true);await confirmExternalCategories();await ui('#external-output-file').setInputFiles({name:'replacement.musicxml',mimeType:'application/xml',buffer:Buffer.from('<score>NEW_SOURCE</score>')});await ui('#external-replacement').waitFor();assert.equal(await ui('#external-confirm-load').isDisabled(),true);await ui('#external-keep-draft').click();assert.equal(await page.getByLabel('Tempo BPM 1',{exact:true}).inputValue(),'90');assert.equal(await ui('#external-confirm-tempo').isChecked(),false);
@@ -574,7 +575,7 @@ test('closing, reopening and replacing a score discard a late source digest with
 });
 
 test('malformed stored appearance and latency recover explicitly and valid replacements survive reload',async()=>{
- await page.evaluate(()=>{localStorage.setItem('worldmusichub.theme','{broken');localStorage.setItem('worldmusichub.latency','[140]')});await reloadStage();await ui('#play-button:not([disabled])').waitFor();assert.equal(await ui('#theme-mode').inputValue(),'system');assert.match(await ui('#theme-storage-status').textContent(),/Saved appearance could not be read/);assert.equal(await ui('#latency-offset').inputValue(),'0');await ui('.practice-options>summary').click();assert.equal(await ui('#latency-storage-status').textContent(),'Saved latency could not be applied. Starting at 0 ms; review the offset and browser storage settings.');
+ await page.evaluate(()=>{localStorage.setItem('worldmusichub.theme','{broken');localStorage.setItem('worldmusichub.latency','[140]')});await reloadStage();await ui('#play-button:not([disabled])').waitFor();assert.equal(await ui('#theme-mode').inputValue(),'system');assert.match(await ui('#theme-storage-status').textContent(),/Saved appearance could not be read/);assert.equal(await ui('#latency-offset').inputValue(),'0');await ui('.practice-options>summary').click();assert.equal(await ui('#latency-storage-status').textContent(),'Saved latency was invalid and was not applied. Offset starts at 0 ms; enter a reviewed value to replace it.');
  await ui('#theme-mode').selectOption('custom');await ui('#theme-accent').fill('#ab1245');await ui('#theme-background').fill('#121212');await ui('#latency-offset').fill('-75');await ui('#latency-offset').dispatchEvent('change');assert.match(await ui('#latency-storage-status').textContent(),/saved in this browser/);await ui('#latency-offset').fill('501');await ui('#latency-offset').dispatchEvent('change');assert.equal(await ui('#latency-offset').inputValue(),'-75');assert.match(await ui('#latency-storage-status').textContent(),/saved in this browser/);assert.equal(await ui('#theme-storage-status').isVisible(),false);await reloadStage();await ui('#play-button:not([disabled])').waitFor();assert.equal(await ui('#latency-offset').inputValue(),'-75');assert.equal(await ui('#theme-mode').inputValue(),'custom');assert.equal(await ui('#theme-accent').inputValue(),'#ab1245');assert.equal(await ui('#theme-background').inputValue(),'#121212');assert.equal(await ui('html').getAttribute('data-theme'),'dark');
 });
 test('unavailable browser storage leaves appearance and latency usable with clear session-only feedback',async()=>{
@@ -702,4 +703,38 @@ test('fullscreen unsupported state is explained without removing keyboard access
  await closeShellPanels();await page.evaluate(()=>{Object.defineProperty(document,'fullscreenEnabled',{configurable:true,value:false});document.dispatchEvent(new Event('fullscreenchange'))});
  const button=page.locator('#fullscreen-button');assert.equal(await button.getAttribute('aria-disabled'),'true');await button.focus();await page.keyboard.press('Enter');
  assert.match(await page.locator('#fullscreen-status').textContent(),/unavailable/);assert.match(await button.getAttribute('title'),/unavailable/);await page.locator('#settings-button').click();assert.equal(await page.locator('#settings-dialog').isVisible(),true);
+});
+
+
+test('notation export failure follows the current language without retrying or changing the original diagnostic',{timeout:45_000},async()=>{
+  let release;const pending=new Promise(resolve=>{release=resolve;});let exports=0;
+  const detail='Literal engine <warning> 原始 technical detail';
+  await page.route('**/api/export/musicxml',async route=>{
+    exports++;await pending;
+    await route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:detail})}).catch(()=>{});
+  });
+  try{
+    const requested=page.waitForRequest('**/api/export/musicxml');
+    await reloadStage({waitUntil:'domcontentloaded'});await requested;
+    await page.locator('#engraving-part').focus();
+    await assertLocaleRoundTrip(page,{root:'#notation-dock',message:{selector:'#engraving-status',key:'notationRuntime.preparing'}});
+    assert.equal(exports,1,'A language switch keeps the original export request pending');
+    release();await page.waitForFunction(detail=>!document.querySelector('#engraving-fallback').hidden&&document.querySelector('#engraving-fallback').textContent.includes(detail),detail);
+    const failures=await page.evaluate(async detail=>{
+      const {getAppI18n}=await import('/app-locale.js'),i18n=getAppI18n(document),node=document.querySelector('#engraving-fallback'),notation=document.querySelector('#notation');
+      return ['zh-CN','en'].map(locale=>{
+        i18n.setLocale(locale);
+        return {locale,sameNode:document.querySelector('#engraving-fallback')===node,sameNotation:document.querySelector('#notation')===notation,
+          text:node.textContent,expected:i18n.t('notationRuntime.fallback',{reason:i18n.t('notationRuntime.technical',{detail})}),
+          interpreted:node.querySelector('warning')!==null,hidden:node.hidden,basic:document.querySelector('#staff-button').getAttribute('aria-pressed'),
+          playable:!document.querySelector('#play-button').disabled,reports:i18n.getReports()};
+      });
+    },detail);
+    for(const failure of failures){
+      assert.equal(failure.sameNode,true);assert.equal(failure.sameNotation,true);assert.equal(failure.text,failure.expected);
+      assert.equal(failure.interpreted,false);assert.equal(failure.hidden,false);assert.equal(failure.basic,'true');assert.equal(failure.playable,true);assert.deepEqual(failure.reports,[]);
+    }
+    assert.notEqual(failures[0].text,failures[1].text);assert.equal(exports,1,'Relabeling a failure never implicitly retries');
+    const downloaded=page.waitForEvent('download');await ui('#export-button').click();assert.deepEqual(JSON.parse(await readFile(await(await downloaded).path(),'utf8')),fixture);
+  }finally{release();}
 });

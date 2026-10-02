@@ -1,6 +1,7 @@
 import {equivalentJson} from './adaptation-view.js';
 import {keyboardGeometry} from './music.js';
 
+const codedError=(code,message)=>Object.assign(new Error(message),{code});
 const STATUSES=new Set(['ready','no_targets','infeasible_under_model','no_plan_found','search_limit','unavailable']);
 const integer=(value,low,high)=>Number.isSafeInteger(value)&&value>=low&&value<=high;
 const sourceIds=note=>note.source_note_ids?.length?note.source_note_ids:[note.source_note_id||note.id];
@@ -16,17 +17,17 @@ export function pianoSourceNotes(context){
 }
 
 export function validatePianoSettings(settings,context){
-  if(!settings||!Array.isArray(settings.locks)||settings.locks.length>1000)throw Error('Use at most 1,000 source-note hand/finger locks.');
+  if(!settings||!Array.isArray(settings.locks)||settings.locks.length>1000)throw codedError('piano_locks_invalid','Use at most 1,000 source-note hand/finger locks.');
   for(const field of ['left_hand','right_hand']){
     const hand=settings[field];
-    if(!hand||!integer(hand.lowest_midi,0,127)||!integer(hand.highest_midi,hand.lowest_midi,127)||!integer(hand.max_span_semitones,0,24))throw Error('Each hand needs MIDI limits from 0–127, lowest no higher than highest, and a reach from 0–24 semitones.');
+    if(!hand||!integer(hand.lowest_midi,0,127)||!integer(hand.highest_midi,hand.lowest_midi,127)||!integer(hand.max_span_semitones,0,24))throw codedError('piano_hand_invalid','Each hand needs MIDI limits from 0–127, lowest no higher than highest, and a reach from 0–24 semitones.');
   }
   const available=new Set(pianoSourceNotes(context).map(note=>note.id)),seen=new Set();
   for(const lock of settings.locks){
     if(!lock||!available.has(lock.source_note_id)||seen.has(lock.source_note_id)
       ||lock.hand!==null&&!['left','right'].includes(lock.hand)
       ||lock.finger!==null&&!integer(lock.finger,1,5)
-      ||lock.hand===null&&lock.finger===null)throw Error('Choose a unique sounding source note in the selected part and a hand and/or finger from 1–5.');
+      ||lock.hand===null&&lock.finger===null)throw codedError('piano_lock_invalid','Choose a unique sounding source note in the selected part and a hand and/or finger from 1–5.');
     seen.add(lock.source_note_id);
   }
   return settings;
@@ -34,7 +35,7 @@ export function validatePianoSettings(settings,context){
 
 /** Check Rust's complete physical/source correspondence, without planning in JavaScript. */
 export function validatePianoFingering(plan,context,settings){
-  const fail=()=>{throw Error('The piano recommendation does not match this complete score, selected part, keyboard, hand settings or locks. Request a fresh Rust plan; the original score is unchanged.');};
+  const fail=()=>{throw codedError('piano_response_invalid','The piano recommendation does not match this complete score, selected part, keyboard, hand settings or locks. Request a fresh Rust plan; the original score is unchanged.');};
   const profile=context?.profile;
   if(!context?.score||!Array.isArray(context.timeline?.notes)||profile?.kind!=='piano'||profile.lowest_midi!==null&&!integer(profile.lowest_midi,0,127)||!integer(profile.key_count,12,128))fail();
   let range;try{range=pianoKeyboardRange(profile);}catch{fail();}
@@ -106,11 +107,12 @@ export function pianoPlanMessage(plan){
 /** Advisory state only: it does not write scores, take evidence, playback or hardware state. */
 export function setupPianoFingering({api,getContext,onChange=()=>{}}){
   let score=null,timeline=null,part=null,key='',revision=0,generation=0,controller=null,pending=null,plan=null,phase='idle',message='Prepare a piano hand/finger recommendation.',draftDirty=false;
+  let messageCode='piano_initial',errorDetails=null;
   let settings=defaultPianoSettings(),assignments=new Map(),occurrences=new Map();
-  function value(){return{phase,message,plan,settings:structuredClone(settings),draftDirty,annotationVersion:PIANO_ANNOTATION_VERSION};}
-  function publish(next,text){phase=next;message=text;onChange(value());}
-  function invalidate(text='Piano guidance needs a fresh Rust plan.'){
-    generation++;controller?.abort();controller=null;pending=null;plan=null;assignments=new Map();occurrences=new Map();publish('idle',text);
+  function value(){return{phase,message,messageCode,errorDetails,plan,settings:structuredClone(settings),draftDirty,annotationVersion:PIANO_ANNOTATION_VERSION};}
+  function publish(next,text,code='piano_'+next,details=null){phase=next;message=text;messageCode=code;errorDetails=details;onChange(value());}
+  function invalidate(text='Piano guidance needs a fresh Rust plan.',code='piano_fresh'){
+    generation++;controller?.abort();controller=null;pending=null;plan=null;assignments=new Map();occurrences=new Map();publish('idle',text,code);
   }
   function synchronize(){
     const context=getContext(),currentScore=context?.score??null,currentTimeline=context?.timeline??null,currentPart=context?.part_id??null;
@@ -120,7 +122,7 @@ export function setupPianoFingering({api,getContext,onChange=()=>{}}){
     if(scopeChanged){settings={...settings,locks:[]};revision++;draftDirty=false;}
     score=currentScore;timeline=currentTimeline;part=currentPart;
     const next=JSON.stringify([part,context?.profile||null,context?.score?.tempo||null,context?.revision??null,Boolean(context?.dirty),revision,draftDirty]);
-    if(changed||next!==key){key=next;invalidate(cleared?'Source-note locks were cleared for the changed score or selected part. Request a fresh plan.':undefined);}
+    if(changed||next!==key){key=next;invalidate(cleared?'Source-note locks were cleared for the changed score or selected part. Request a fresh plan.':undefined,cleared?'piano_locks_cleared':'piano_fresh');}
     return context;
   }
   function setSettings(next){
@@ -130,7 +132,7 @@ export function setupPianoFingering({api,getContext,onChange=()=>{}}){
   function prepare({retry=false}={}){
     const context=synchronize();
     if(!context?.score||!context.timeline||context.profile?.kind!=='piano'||context.dirty||draftDirty){
-      if(phase!=='inactive')publish('inactive',draftDirty?'Apply or discard edited piano hand settings before planning.':context?.dirty?'Apply edited keyboard settings before planning.':'Choose Piano and a score to prepare hand/finger guidance.');
+      if(phase!=='inactive')publish('inactive',draftDirty?'Apply or discard edited piano hand settings before planning.':context?.dirty?'Apply edited keyboard settings before planning.':'Choose Piano and a score to prepare hand/finger guidance.',draftDirty?'piano_draft':context?.dirty?'piano_dirty':'piano_inactive');
       return Promise.resolve(null);
     }
     if(plan&&!retry)return Promise.resolve(plan);
@@ -150,7 +152,7 @@ export function setupPianoFingering({api,getContext,onChange=()=>{}}){
         assignments=new Map(plan.assignments.map(choice=>[choice.target_id,choice]));
         occurrences=new Map(plan.assignments.flatMap(choice=>choice.source_occurrence_ids.map(id=>[id,choice])));
         publish(result.status==='ready'?'ready':'unavailable',pianoPlanMessage(result));return plan;
-      }catch(error){if(isCurrent())publish('error',`Piano guidance unavailable: ${error.message}`);return null;}
+      }catch(error){if(isCurrent())publish('error',`Piano guidance unavailable: ${error.message}`,'piano_error',{code:error.code||'piano_request_failed',message:error.message});return null;}
     }).finally(()=>{if(current===generation){pending=null;controller=null;}});
     publish('loading','Planning piano hands and fingers with Rust…');
     return pending;

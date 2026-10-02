@@ -178,3 +178,13 @@ test('score, selected part, profile and lock revisions invalidate both phases of
   assert.equal(guide.state().plan,null);assert.equal(calls.length,phase==='plan'?2:1);
  }
 });
+
+test('controller display metadata uses stable codes without changing error prose or request semantics',async()=>{
+ const ctx=context(),guide=setupGuitarFingering({getContext:()=>ctx,api:async()=>{throw Object.assign(Error('Engine text without a status word'),{code:'engine_detail_17'});}});
+ assert.throws(()=>guide.setSettings({max_fret_span:13,locks:[]}),error=>error.code==='guitar_settings_invalid'&&/fret span/.test(error.message));
+ assert.throws(()=>guide.setSettings({max_fret_span:3,locks:[{source_note_id:'c4',finger:5}]}),error=>error.code==='guitar_lock_invalid');
+ assert.throws(()=>guide.setSettings({max_fret_span:3,locks:[{source_note_id:'absent',finger:1}]}),error=>error.code==='guitar_lock_source');
+ const pending=guide.prepare();assert.equal(guide.state().messageCode,'guitar_loading');await pending;
+ assert.equal(guide.state().messageCode,'guitar_error');assert.deepEqual(guide.state().errorDetails,{code:'engine_detail_17',message:'Engine text without a status word'});assert.match(guide.state().message,/Engine text without/);
+ guide.editPlanningScope();assert.equal(guide.state().messageCode,'guitar_draft');assert.equal(guide.state().errorDetails,null);
+});

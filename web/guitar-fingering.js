@@ -1,5 +1,6 @@
 import {equivalentJson} from './adaptation-view.js';
 
+const codedError=(code,message)=>Object.assign(new Error(message),{code});
 const STATUSES=new Set(['ready','no_targets','infeasible_under_model','no_plan_found','search_limit','unavailable']);
 const integer=(value,low,high)=>Number.isSafeInteger(value)&&value>=low&&value<=high;
 const selectedNotes=context=>context.timeline.notes.filter(note=>context.part_id===null||note.part_id===context.part_id);
@@ -29,7 +30,7 @@ function scopeNotes(inventory,context,scope,fail){
   return inventory.included_occurrence_ids.map(id=>byId.get(id));
 }
 export function validateGuitarScopeInventory(plan,context,scope,max_fret_span){
-  const fail=()=>{throw Error('The Rust guitar phrase inventory does not match this request.');};
+  const fail=()=>{throw codedError('guitar_response_invalid','The Rust guitar phrase inventory does not match this request.');};
   validateGuitarPlanningScope(scope);
   scopeNotes(plan?.planning_scope,context,scope,fail);
   if(plan.purpose!=='scope_inventory'||plan.status!=='unavailable'||plan.complete!==false||plan.assignments?.length!==0||plan.objective_cost!==null)fail();
@@ -40,7 +41,7 @@ export function validateGuitarScopeInventory(plan,context,scope,max_fret_span){
 
 /** Validate complete identity/range/lock correspondence; never solve fingering in JS. */
 export function validateGuitarFingering(plan,context,settings){
-  const fail=()=>{throw Error('The guitar recommendation does not match this complete score, selected part, instrument or locks. Request a fresh Rust plan; the original score is unchanged.');};
+  const fail=()=>{throw codedError('guitar_response_invalid','The guitar recommendation does not match this complete score, selected part, instrument or locks. Request a fresh Rust plan; the original score is unchanged.');};
   const profile=context.profile;
   if(!context.score||!Array.isArray(context.timeline?.notes)||profile?.kind!=='guitar'||!Array.isArray(profile.tuning))fail();
   const notes=settings.planning_scope?scopeNotes(plan?.planning_scope,context,settings.planning_scope,fail):selectedNotes(context),byId=new Map(notes.map(note=>[note.id,note]));
@@ -87,9 +88,10 @@ export function validateGuitarFingering(plan,context,settings){
 /** Score/profile-scoped advisory cache. No playback, input or score mutation hooks. */
 export function setupGuitarFingering({api,getContext,onChange=()=>{}}){
   let score=null,timeline=null,key='',revision=0,generation=0,controller=null,pending=null,plan=null,assignments=new Map(),phase='idle',message='Select a guitar score to prepare a recommended phrase.';
+  let messageCode='guitar_initial',errorDetails=null;
   let settings={max_fret_span:3,locks:[]},planningScope=null,scopeDraft=false,scopeInventory=null;
-  function publish(next,text){phase=next;message=text;onChange({phase,message,plan,settings:structuredClone(settings),planningScope:structuredClone(planningScope),scopeDraft,scopeInventory:structuredClone(scopeInventory)});}
-  function invalidate(){generation++;controller?.abort();controller=null;pending=null;plan=null;scopeInventory=null;assignments=new Map();publish('idle','Guitar recommendation needs a fresh Rust plan.');}
+  function publish(next,text,code='guitar_'+next,details=null){phase=next;message=text;messageCode=code;errorDetails=details;onChange({phase,message,messageCode,errorDetails,plan,settings:structuredClone(settings),planningScope:structuredClone(planningScope),scopeDraft,scopeInventory:structuredClone(scopeInventory)});}
+  function invalidate(){generation++;controller?.abort();controller=null;pending=null;plan=null;scopeInventory=null;assignments=new Map();publish('idle','Guitar recommendation needs a fresh Rust plan.','guitar_fresh');}
   function synchronize(){
     const context=getContext();
     const currentScore=context?.score??null,currentTimeline=context?.timeline??null;
@@ -101,24 +103,24 @@ export function setupGuitarFingering({api,getContext,onChange=()=>{}}){
     return context;
   }
   function setSettings(next){
-    if(!next||!integer(next.max_fret_span,0,12)||!Array.isArray(next.locks)||next.locks.length>1000)throw Error('Choose a fret span from 0–12 and at most 1,000 source-note locks.');
+    if(!next||!integer(next.max_fret_span,0,12)||!Array.isArray(next.locks)||next.locks.length>1000)throw codedError('guitar_settings_invalid','Choose a fret span from 0–12 and at most 1,000 source-note locks.');
     const ids=new Set();
     for(const lock of next.locks){
       if(!lock||typeof lock.source_note_id!=='string'||!lock.source_note_id||ids.has(lock.source_note_id)
         ||['string','fret','finger'].every(field=>lock[field]===null||lock[field]===undefined)
         ||lock.string!==null&&lock.string!==undefined&&!integer(lock.string,1,12)
         ||lock.fret!==null&&lock.fret!==undefined&&!integer(lock.fret,0,36)
-        ||lock.finger!==null&&lock.finger!==undefined&&!integer(lock.finger,0,4))throw Error('Each lock needs a unique source note and valid string/fret/finger constraints.');
+        ||lock.finger!==null&&lock.finger!==undefined&&!integer(lock.finger,0,4))throw codedError('guitar_lock_invalid','Each lock needs a unique source note and valid string/fret/finger constraints.');
       ids.add(lock.source_note_id);
     }
     const context=synchronize(),sources=new Set((context?.timeline?.notes||[]).flatMap(note=>note.source_note_ids||[]));
-    if(next.locks.some(lock=>!sources.has(lock.source_note_id)))throw Error('Locks must name sounding source notes in this current score.');
+    if(next.locks.some(lock=>!sources.has(lock.source_note_id)))throw codedError('guitar_lock_source','Locks must name sounding source notes in this current score.');
     settings={max_fret_span:next.max_fret_span,locks:normalizeLocks(next.locks)};revision++;synchronize();
   }
   function prepare({retry=false}={}){
     const context=synchronize();
     if(!context?.score||!context.timeline||context.profile?.kind!=='guitar'||context.dirty){
-      if(phase!=='inactive')publish('inactive',context?.dirty?'Apply edited instrument settings before planning.':'Choose Guitar to prepare a recommended phrase.');
+      if(phase!=='inactive')publish('inactive',context?.dirty?'Apply edited instrument settings before planning.':'Choose Guitar to prepare a recommended phrase.',context?.dirty?'guitar_dirty':'guitar_inactive');
       return Promise.resolve(null);
     }
     if(scopeDraft){if(phase!=='draft')publish('draft','Apply or revert the guitar phrase draft before planning.');return Promise.resolve(null);}
@@ -151,7 +153,7 @@ export function setupGuitarFingering({api,getContext,onChange=()=>{}}){
         validateGuitarFingering(result,snapshot,{...requested,...(targetScope?{scope_inventory:scopeInventory}:{})});plan=result;assignments=new Map(plan.assignments.map(choice=>[choice.occurrence_id,choice]));
         publish(result.status==='ready'?'ready':'unavailable',result.status==='ready'?'One recommended whole-phrase path under the declared model. Pitch-only MIDI does not verify fingers.':result.diagnostics.map(item=>item.message).join(' '));
         return plan;
-      }catch(error){if(currentContext())publish('error',`Guitar guidance unavailable: ${error.message}`);return null;}
+      }catch(error){if(currentContext())publish('error',`Guitar guidance unavailable: ${error.message}`,'guitar_error',{code:error.code||'guitar_request_failed',message:error.message});return null;}
     }).finally(()=>{if(current===generation){pending=null;controller=null;}});
     publish('loading','Planning a complete guitar phrase with Rust…');
     return pending;
@@ -161,7 +163,7 @@ export function setupGuitarFingering({api,getContext,onChange=()=>{}}){
     setPlanningScope(scope){synchronize();const next=scope===null?null:validateGuitarPlanningScope(scope);planningScope=next;scopeDraft=false;revision++;synchronize();},
     revertPlanningScopeDraft(){synchronize();scopeDraft=false;revision++;synchronize();},
     reset(){score=null;timeline=null;key='';settings={max_fret_span:3,locks:[]};planningScope=null;scopeDraft=false;revision++;invalidate();},
-    state(){synchronize();return{phase,message,plan,settings:structuredClone(settings),planningScope:structuredClone(planningScope),scopeDraft,scopeInventory:structuredClone(scopeInventory)};},
+    state(){synchronize();return{phase,message,messageCode,errorDetails,plan,settings:structuredClone(settings),planningScope:structuredClone(planningScope),scopeDraft,scopeInventory:structuredClone(scopeInventory)};},
     phase(){synchronize();return phase;},
     assignment(id){synchronize();return phase==='ready'?assignments.get(id)||null:null;},
   };

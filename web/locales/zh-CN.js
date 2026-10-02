@@ -1,3 +1,10 @@
+import preferencesRuntimeMessages from './preferences-runtime-zh-CN.js';
+import beginnerMessages from './beginner-zh-CN.js';
+import notationRuntimeMessages from './notation-runtime-zh-CN.js';
+import instrumentRuntimeMessages from './instrument-runtime-zh-CN.js';
+import reviewRuntimeMessages from './review-runtime-zh-CN.js';
+import externalReviewMessages from './external-review-zh-CN.js';
+import pitchReviewMessages from './pitch-review-zh-CN.js';
 import sourceDirectoryMessages from './source-directory-zh-CN.js';
 import libraryMessages from './library-zh-CN.js';
 import guitarPhraseMessages from './guitar-phrase-zh-CN.js';
@@ -9,6 +16,13 @@ import shellMessages from './shell-zh-CN.js';
 import staticMessages from './static-zh-CN.js';
 /** Application-owned display text only. Authored score data and identifiers stay unchanged. */
 export default Object.freeze({
+  ...preferencesRuntimeMessages,
+  ...beginnerMessages,
+  ...notationRuntimeMessages,
+  ...instrumentRuntimeMessages,
+  ...reviewRuntimeMessages,
+  ...externalReviewMessages,
+  ...pitchReviewMessages,
   ...sourceDirectoryMessages,
   ...libraryMessages,
   ...guitarPhraseMessages,

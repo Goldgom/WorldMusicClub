@@ -1,8 +1,12 @@
+import {createI18n} from '../web/i18n.js';
+const en=createI18n({locale:'en'});
+const guitarGuidanceView=context=>localizedGuitarGuidanceView({...context,i18n:en});
+const setupGuitarGuidance=document=>localizedSetupGuitarGuidance(document,{i18n:en});
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
-import {guitarGuidanceView,setupGuitarGuidance} from '../web/guitar-guidance.js';
+import {guitarGuidanceView as localizedGuitarGuidanceView,setupGuitarGuidance as localizedSetupGuitarGuidance} from '../web/guitar-guidance.js';
 import {Transport,TimelineIndex} from '../web/transport.js';
 
 // Representative expanded times. The view receives milliseconds, never a score BPM

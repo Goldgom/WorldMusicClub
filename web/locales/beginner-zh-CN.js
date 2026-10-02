@@ -1,0 +1,23 @@
+export default Object.freeze({
+  'beginner.referenceUnresolved': '此处乐谱调号尚未确定：使用固定 C 参考，1 = C4',
+  'beginner.numberedMode': '简谱参考',
+  'beginner.fixed': '固定 C',
+  'beginner.movable': '随乐谱调号',
+
+  'beginner.title': '新手模式',
+  'beginner.enabled': '在按键上显示简谱音级',
+  'beginner.help': '按键以 1–7 标出实际发声音高，上点和下点表示高低八度。切换此辅助显示不会改变输入音符或评分。',
+  'beginner.spellingPolicy': '按键采用统一拼写：优先使用调号内音；其余音选择最近的音级，等距时优先升高音级。因此可能与乐谱的等音拼写不同。小调主音记为 1，升降号表示相对于调号内音级的变化。',
+  'beginner.referenceFixed': '固定 C 参考：1 = C4',
+  'beginner.referenceMissing': '无乐谱调号：使用固定 C 参考，1 = C4',
+  'beginner.referenceUnsupported': '暂不支持该乐谱调号：使用固定 C 参考，1 = C4',
+  'beginner.referenceMajor': '首调大调参考：1 = {tonic}',
+  'beginner.referenceMinor': '首调小调参考：主音 1 = {tonic}',
+  'beginner.degree': '音级 {degree}',
+  'beginner.degreeRaised': '升高音级 {degree}',
+  'beginner.degreeLowered': '降低音级 {degree}',
+  'beginner.octaveReference': '参考八度',
+  'beginner.octaveAbove': Object.freeze({other: '比参考音区高 {count} 个八度'}),
+  'beginner.octaveBelow': Object.freeze({other: '比参考音区低 {count} 个八度'}),
+  'beginner.noteDescription': '简谱：{degree}；{octave}；{reference}。实际发声音高 {pitch}。',
+});

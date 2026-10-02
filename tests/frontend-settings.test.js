@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {setupThemes,contrastRatio,THEME_PALETTES} from '../web/themes.js';
+import {setupThemes as setupThemeView,contrastRatio,THEME_PALETTES} from '../web/themes.js';
+import {createI18n} from '../web/i18n.js';
 import {validLatency,loadLatency,saveLatency,readLatencyPreference} from '../web/practice-settings.js';
+const setupThemes = () => setupThemeView({i18n:createI18n({locale:'en',onReport:report=>assert.fail(JSON.stringify(report))})});
 function withStorage(storage,fn){const original=Object.getOwnPropertyDescriptor(globalThis,'localStorage');Object.defineProperty(globalThis,'localStorage',{configurable:true,value:storage});try{return fn()}finally{if(original)Object.defineProperty(globalThis,'localStorage',original);else delete globalThis.localStorage}}
 class Element{constructor(value=''){this.value=value;this.hidden=true;this.textContent='';this.listeners=new Map()}addEventListener(name,fn){this.listeners.set(name,fn)}emit(name){this.listeners.get(name)?.()}}
 function themeDom({stored=null,readFailure=false,writeFailure=false,dark=false}={}){

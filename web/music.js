@@ -1,4 +1,6 @@
 /** Geometry and display helpers only. Rust remains the canonical musical clock. */
+import {getAppI18n} from './app-locale.js';
+
 export const PIANO_RANGES = Object.freeze({49: [36, 84], 61: [36, 96], 76: [28, 103], 88: [21, 108]});
 export const BLACK_CLASSES = new Set([1, 3, 6, 8, 10]);
 export const SHORTCUTS = Object.freeze({a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11, k: 12, o: 13, l: 14, p: 15, ';': 16});
@@ -261,6 +263,7 @@ function renderNumberedNotation(score, options) {
 }
 export function renderNotation(score, mode = 'staff', options = {}) {
   if (mode === 'jianpu') return renderNumberedNotation(score, options);
+  const i18n = options.i18n ?? getAppI18n(options.document);
   const parts = options.allParts === true ? score.parts : options.partId ? score.parts.filter(part => part.id === options.partId) : score.parts.slice(0, 1);
   const startBeat = Math.max(0, options.startBeat || 0);
   const spanBeats = Math.min(32, Math.max(4, options.spanBeats || 16));
@@ -300,6 +303,7 @@ export function renderNotation(score, mode = 'staff', options = {}) {
       }
     });
   });
-  if (parts.some(part => part.notes.filter(note => beat(note.at) >= startBeat && beat(note.at) < endBeat).length > 1000)) shapes.push('<text x="14" y="16" class="part-name">Dense fragment: first 1,000 notation events shown; complete score retained for playback/export.</text>');
-  return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${mode === 'staff' ? 'Basic treble staff pitch view' : options.numberedMode === 'movable' ? 'Movable tonic numbered pitch view' : 'Fixed C numbered pitch view'}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${shapes.join('')}</svg>`;
+  if (parts.some(part => part.notes.filter(note => beat(note.at) >= startBeat && beat(note.at) < endBeat).length > 1000)) shapes.push(`<text x="14" y="16" class="part-name">${escapeXml(i18n.t('notation.eventLimit'))}</text>`);
+  const accessibleLabel = i18n.t(mode === 'staff' ? 'notation.basicStaffAria' : options.numberedMode === 'movable' ? 'notation.ariaMovable' : 'notation.ariaFixed');
+  return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeXml(accessibleLabel)}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${shapes.join('')}</svg>`;
 }

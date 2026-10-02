@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createI18n} from '../web/i18n.js';
 import {validateEngravingInput, renderEngravedStaff, disposeEngravedStaff, ENGRAVING_LIMITS} from '../web/engraving.js';
 
 // Deliberately small DOM/renderer doubles. These exercise the adapter, not OSMD's glyph/layout code.
@@ -214,9 +215,58 @@ test('a later resize failure releases resources and reports an explicit fallback
   env.container.clientWidth = 1000;
   assert.equal(outcome.resize(), false);
   assert.equal(failures[0].status, 'error');
-  assert.match(failures[0].message, /basic view/);
+  assert.equal(failures[0].code, 'engraving_resize');
+  assert.match(failures[0].message, /简化视图/);
   assert.equal(env.observers[0].disconnected, true);
   assert.equal(env.container.children.length, 0);
 });
 
 import "./engraving-note-map.test.js";
+
+test('OSMD loading and mounted ARIA follow the shared locale without restarting rendering or changing source XML',async()=>{
+  const i18n=createI18n(),pending=deferred(),env=environment({load:()=>pending.promise});
+  const request=renderEngravedStaff(env.container,xml,{i18n,fromMeasure:2,toMeasure:3});
+  await tick();
+  const mount=env.container.children[0],renderer=env.instances[0],source=renderer.loaded;
+  assert.match(mount.getAttribute('aria-label'),/第 2 至 3 小节/);
+  i18n.setLocale('en');
+  assert.equal(env.container.children[0],mount);assert.equal(env.instances.length,1);assert.equal(renderer.renders,0);
+  assert.match(mount.getAttribute('aria-label'),/measures 2 to 3/);
+  pending.resolve();const result=await request;
+  assert.equal(result.status,'ready');assert.equal(renderer.loaded,source);assert.equal(renderer.renders,1);
+  const svg=mount.querySelector('svg');
+  i18n.setLocale('zh-CN');i18n.invalidate();
+  assert.equal(env.container.children[0],mount);assert.equal(mount.querySelector('svg'),svg);assert.equal(renderer.renders,1);
+  assert.match(result.message,/已使用/);assert.match(mount.getAttribute('aria-label'),/第 2 至 3 小节/);
+  assert.deepEqual(result.metadata,{noteCount:3,measureCount:4,partIds:['P1'],fromMeasure:2,toMeasure:3});
+  const lastLabel=mount.getAttribute('aria-label');result.dispose();i18n.setLocale('en');
+  assert.equal(mount.getAttribute('aria-label'),lastLabel,'Disposed mounts release locale observers');
+  assert.deepEqual(i18n.getReports(),[]);
+});
+
+test('preflight failures retain stable codes and redraw messages from the selected locale',()=>{
+  const i18n=createI18n(),value=validateEngravingInput('https://example.test/score.xml',{i18n});
+  assert.equal(value.code,'engraving_input');assert.match(value.message,/不能使用网址或文件/);
+  i18n.setLocale('en');assert.match(value.message,/MusicXML string/);assert.equal(value.code,'engraving_input');
+  assert.deepEqual(i18n.getReports(),[]);
+});
+
+test('a locale switch cannot let a superseded pending renderer republish or change its successor',async()=>{
+  const i18n=createI18n(),pending=deferred(),env=environment({load:(_,count)=>count===1?pending.promise:Promise.resolve()});
+  const first=renderEngravedStaff(env.container,xml,{i18n});await tick();
+  const firstMount=env.container.children[0];i18n.setLocale('en');
+  const second=await renderEngravedStaff(env.container,xml,{i18n});const mount=env.container.children[0];
+  i18n.setLocale('zh-CN');pending.resolve();assert.equal((await first).status,'cancelled');await tick();
+  assert.equal(env.container.children[0],mount);assert.notEqual(mount,firstMount);assert.equal(env.instances[0].renders,0);
+  assert.match(mount.getAttribute('aria-label'),/五线谱/);assert.equal(env.instances[1].renders,1);
+  second.dispose();assert.deepEqual(i18n.getReports(),[]);
+});
+
+test('unknown OSMD failures retain the original exception behind a localized technical label',async()=>{
+  const cause=Error('<literal OSMD failure>'),i18n=createI18n(),env=environment({load:()=>Promise.reject(cause)});
+  const output=await renderEngravedStaff(env.container,xml,{i18n});
+  assert.equal(output.code,'engraving_renderFailed');assert.equal(output.cause,cause);
+  assert.match(output.message,/原始技术详情：<literal OSMD failure>/);i18n.setLocale('en');
+  assert.match(output.message,/Original technical details: <literal OSMD failure>/);assert.equal(output.cause,cause);
+  assert.equal(env.container.children.length,0);assert.deepEqual(i18n.getReports(),[]);
+});

@@ -1,3 +1,10 @@
+import preferencesRuntimeMessages from './preferences-runtime-en.js';
+import beginnerMessages from './beginner-en.js';
+import notationRuntimeMessages from './notation-runtime-en.js';
+import instrumentRuntimeMessages from './instrument-runtime-en.js';
+import reviewRuntimeMessages from './review-runtime-en.js';
+import externalReviewMessages from './external-review-en.js';
+import pitchReviewMessages from './pitch-review-en.js';
 import sourceDirectoryMessages from './source-directory-en.js';
 import libraryMessages from './library-en.js';
 import guitarPhraseMessages from './guitar-phrase-en.js';
@@ -9,6 +16,13 @@ import shellMessages from './shell-en.js';
 import staticMessages from './static-en.js';
 /** Application-owned display text only. Authored score data and identifiers stay unchanged. */
 export default Object.freeze({
+  ...preferencesRuntimeMessages,
+  ...beginnerMessages,
+  ...notationRuntimeMessages,
+  ...instrumentRuntimeMessages,
+  ...reviewRuntimeMessages,
+  ...externalReviewMessages,
+  ...pitchReviewMessages,
   ...sourceDirectoryMessages,
   ...libraryMessages,
   ...guitarPhraseMessages,

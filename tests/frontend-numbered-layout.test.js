@@ -256,11 +256,12 @@ test('long part and voice labels wrap above the lane and cannot consume note coo
   assertNoCollisions(layout);
 });
 
-test('staff SVG is byte-for-byte unchanged for existing simple and responsive fixtures', () => {
-  // Baselines recorded from the pre-numbered-layout implementation.
+test('English staff SVG remains byte-for-byte unchanged for existing simple and responsive fixtures', () => {
+  // Baselines recorded before locale integration; explicit English retains the original bytes.
+  const i18n = createI18n({locale:'en',onReport:report=>assert.fail(JSON.stringify(report))});
   for (const [options, expected] of [
     [{}, '91d168fe82c47eb819aaf50fa1b84bbbc13681f68d9be4b47bad5084c6544f35'],
     [{width: 288, spanBeats: 4}, 'f54a01031d54b9c51e9294bac722e67aa029e6c8d0f684e773931d78d8758f70'],
     [{width: 600, startBeat: 1, spanBeats: 8}, 'd4d68ec2535b04e86c1ceee5ec343d361d9592c5aca346e2d55d0b671c6024ff'],
-  ]) assert.equal(createHash('sha256').update(renderNotation(fixture, 'staff', options)).digest('hex'), expected);
+  ]) assert.equal(createHash('sha256').update(renderNotation(fixture, 'staff', {...options,i18n})).digest('hex'), expected);
 });

@@ -1,0 +1,23 @@
+export default Object.freeze({
+  'beginner.referenceUnresolved': 'Current score key is not resolved here: fixed C reference, 1 = C4',
+  'beginner.numberedMode': 'Numbering reference',
+  'beginner.fixed': 'Fixed C',
+  'beginner.movable': 'Movable score key',
+
+  'beginner.title': 'Beginner mode',
+  'beginner.enabled': 'Show numbered notes on keys',
+  'beginner.help': 'Keys show sounded pitch as 1–7. Dots above or below mark higher or lower octaves. Changing this guide does not change your notes or scoring.',
+  'beginner.spellingPolicy': 'Key labels use a consistent spelling: notes in the key signature first, otherwise the nearest degree, preferring a raised degree on ties. They may differ from the score’s enharmonic spelling. In minor, the tonic is 1; accidentals change the key-signature degree.',
+  'beginner.referenceFixed': 'Fixed C reference: 1 = C4',
+  'beginner.referenceMissing': 'No score key: fixed C reference, 1 = C4',
+  'beginner.referenceUnsupported': 'Unsupported score key: fixed C reference, 1 = C4',
+  'beginner.referenceMajor': 'Movable major reference: 1 = {tonic}',
+  'beginner.referenceMinor': 'Movable minor reference: tonic 1 = {tonic}',
+  'beginner.degree': 'degree {degree}',
+  'beginner.degreeRaised': 'raised degree {degree}',
+  'beginner.degreeLowered': 'lowered degree {degree}',
+  'beginner.octaveReference': 'reference octave',
+  'beginner.octaveAbove': Object.freeze({one: '{count} octave above the reference', other: '{count} octaves above the reference'}),
+  'beginner.octaveBelow': Object.freeze({one: '{count} octave below the reference', other: '{count} octaves below the reference'}),
+  'beginner.noteDescription': 'Numbered pitch: {degree}; {octave}; {reference}. Sounded pitch {pitch}.',
+});

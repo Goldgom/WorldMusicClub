@@ -1,3 +1,10 @@
+import preferencesRuntimeSchema from './locales/preferences-runtime-schema.js';
+import beginnerSchema from './locales/beginner-schema.js';
+import notationRuntimeSchema from './locales/notation-runtime-schema.js';
+import instrumentRuntimeSchema from './locales/instrument-runtime-schema.js';
+import reviewRuntimeSchema from './locales/review-runtime-schema.js';
+import externalReviewSchema from './locales/external-review-schema.js';
+import pitchReviewSchema from './locales/pitch-review-schema.js';
 import sourceDirectorySchema from './locales/source-directory-schema.js';
 import librarySchema from './locales/library-schema.js';
 import guitarPhraseSchema from './locales/guitar-phrase-schema.js';
@@ -21,6 +28,13 @@ const parameterized = (params, plural) => Object.freeze({params: Object.freeze(p
 
 /** Explicit display contracts. A machine code/identifier is never inferred from prose. */
 export const MESSAGE_SCHEMA = Object.freeze({
+  ...preferencesRuntimeSchema,
+  ...beginnerSchema,
+  ...notationRuntimeSchema,
+  ...instrumentRuntimeSchema,
+  ...reviewRuntimeSchema,
+  ...externalReviewSchema,
+  ...pitchReviewSchema,
   ...sourceDirectorySchema,
   ...librarySchema,
   ...guitarPhraseSchema,

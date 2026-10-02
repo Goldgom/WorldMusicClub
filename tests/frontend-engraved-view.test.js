@@ -1,15 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createI18n} from '../web/i18n.js';
 import {setupEngravedView} from '../web/engraved-view.js';
 import {fixture} from './frontend-fixtures.js';
 import {planEngravingReveal} from '../web/engraving-reveal.js';
 const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return{promise,resolve}};
-function environment({loadAdapter,onManualNavigation,observeResize=false}={}){
+function environment({loadAdapter,onManualNavigation,observeResize=false,i18n=createI18n({locale:'en'})}={}){
  const prior=Object.fromEntries(['document','window','MutationObserver','ResizeObserver','fetch'].map(key=>[key,globalThis[key]]));const elements=new Map(),calls=[],visible=[],failures=[],resizeObservers=[],windowListeners=new Map();let score=null,pauses=0;const failure=deferred();
  const element=id=>{if(!elements.has(id))elements.set(id,{textContent:'',hidden:true,value:'',children:[],listeners:new Map(),addEventListener(type,handler){this.listeners.set(type,handler)},replaceChildren(){this.children=[]},append(item){this.children.push(item)}});return elements.get(id)};
  globalThis.document={getElementById:element,createElement:()=>({}),documentElement:{dataset:{theme:'light'}}};globalThis.window={addEventListener(type,handler){if(!windowListeners.has(type))windowListeners.set(type,[]);windowListeners.get(type).push(handler)}};globalThis.MutationObserver=class{observe(){}};globalThis.fetch=(_,options)=>{const response=deferred();calls.push({options,...response});return response.promise};
  if(observeResize)globalThis.ResizeObserver=class{constructor(callback){this.callback=callback;this.observed=[];resizeObservers.push(this)}observe(element){this.observed.push(element)}disconnect(){this.observed=[]}};
- const view=setupEngravedView({getScore:()=>score,getPracticePart:()=>null,pausePlayback(){pauses++},onVisibility:value=>visible.push(value),onFallback(){failures.push(element('engraving-fallback').textContent);failure.resolve()},notice(){},loadAdapter,onManualNavigation});
+ const view=setupEngravedView({i18n,getScore:()=>score,getPracticePart:()=>null,pausePlayback(){pauses++},onVisibility:value=>visible.push(value),onFallback(){failures.push(element('engraving-fallback').textContent);failure.resolve()},notice(){},loadAdapter,onManualNavigation});
  return{view,elements,calls,visible,failures,failure,resizeObservers,windowListeners,get pauses(){return pauses},setScore(next=structuredClone(fixture)){score=next;view.updateScore();return score},close(){view.hide();for(const[key,value]of Object.entries(prior))if(value===undefined)delete globalThis[key];else globalThis[key]=value}};
 }
 test('the first score requests engraved presentation by default, without starting playback',()=>{const env=environment();try{assert.equal(env.calls.length,0);env.setScore();assert.equal(env.calls.length,1);assert.equal(env.view.isActive(),true);assert.equal(env.visible.at(-1),true);assert.equal(JSON.parse(env.calls[0].options.body).id,fixture.id);env.view.updateScore();assert.equal(env.calls.length,1,'Ordinary UI refreshes must not re-render an unchanged score');}finally{env.close()}});
@@ -36,7 +37,7 @@ test('successful static adapters without note mapping retain staff and report hi
    const mapping=env.view.mappingStatus();assert.equal(mapping.status,'unavailable');assert.equal(mapping.verifiedGlyphCount,0);
    assert.ok(mapping.diagnostics.some(item=>item.code==='engraving_note_mapping_unavailable'));
    const notices=env.elements.get('engraving-diagnostics').children.map(item=>item.textContent);
-   assert.ok(notices.includes('Original source warning.'));assert.ok(notices.some(message=>/notehead mapping.*unavailable/i.test(message)));
+   assert.ok(notices.includes('Original technical details: Original source warning.'));assert.ok(notices.some(message=>/notehead mapping.*unavailable/i.test(message)));
    assert.equal(env.view.setExpectedWrittenNotes(expected),false);assert.equal(env.view.clearExpectedWrittenNotes(),false);
    assert.equal(env.calls.length,1);assert.equal(env.pauses,0);
    env.view.hide();assert.equal(disposals,1);assert.equal(env.view.navigationState().ready,false);
