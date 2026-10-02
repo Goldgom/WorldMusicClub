@@ -33,11 +33,15 @@ The falling canvas reserves at least 100 CSS pixels, including compact landscape
 
 ## Validation state on 2026-10-02
 
-- The focused real-app DOM suite passes 5/5 checks. The DOM harness uses the production application/controllers and fixture API responses; it does not execute Rust or a browser layout engine.
-- The final aggregate `npm test` passes **730/730** tests with zero failures, skips or cancellations. The coordinator also ran `cargo test --workspace --all-targets --locked --offline` (292 passed), `cargo fmt --all --check` and strict clippy on this exact candidate.
+- The focused real-app DOM suite passes 8/8 checks. The DOM harness uses the production application/controllers and fixture API responses; it does not execute Rust or a browser layout engine.
+- The final aggregate `npm test` passes **733/733** tests with zero failures, skips or cancellations. The coordinator also ran `cargo test --workspace --all-targets --locked --offline` (292 passed), `cargo fmt --all --check` and strict clippy on this exact candidate.
 - `node --check scripts/hosted-rhythm-check.mjs` and `git diff --check` pass.
 - No Rust source, music timing, MIDI routing, score, engraving, or native-shell source was changed. Protected tracked files were hashed before and after this review.
-- Hosted browser verification is **authored and wired, not run for this branch**. No local browser, native window, real server, installation, or runtime probe was launched during this review. Physical MIDI devices and acoustic latency are outside this UI group.
+- The frozen UI candidate was run in [hosted verification 37005768172](https://github.com/Goldgom/WorldMusicHub/actions/runs/37005768172) on remote commit `0bf973f3ac4dee2e1c8fa23efcd763a0549b4f65`, tree `f4a433a0e984930409713cd771b46d2116f2025a` (local equivalent `da6be512c71c8139c65bcc6597dc4ab4db144abb`). It passed 730 Node, 98 mocked-browser, 16 engraving, and the standalone rhythm checks; the existing real-app suite passed 76/81. All five failures were compact title clicks intercepted by the beginner guide at 844×390.
+- This follow-on separates the compact title and guide into actual grid cells, reserves at least 64px for the title, and preserves the existing subtitle/keyboard-status row. The checkbox, full label, help and keyboard semantics remain active. No existing browser test was relaxed.
+- The new hosted geometry/pointer and conditional cue-visibility checks are **authored, not run on this follow-on**. They inspect title/guide separation and actual center-point hits, then use normal title and label clicks, held/released note input, help clicks and checkbox Space activation in both compact locales, with the notation dock closed and open.
+- A second pre-existing overlap is addressed only in presentation: `performance-view.js` marks the current cue state and clears it during active playback; scoped rhythm CSS hides the redundant paused piano overlay only with reduced motion. The localized transport pause status/Play button and canvas reduced-motion explanation remain. Ready, resumed count-in and completion states retain their original text and visibility; ordinary motion and guitar cues are unchanged. The hosted check asserts the paused rule, ordinary-motion visibility, localized visible/accessible transport, and retained ready/guitar cues.
+- No local browser, native window, real server, installation, or runtime probe was launched during this review. Physical MIDI devices and acoustic latency are outside this UI group.
 
 ## Hosted verification contract
 

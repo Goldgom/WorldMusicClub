@@ -4,7 +4,10 @@ import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
 import {freePracticeApp, fixtureScoreServer} from './free-practice-app-fixtures.js';
 import {getAppI18n} from '../web/app-locale.js';
-import {validateLocaleCatalogs} from '../web/i18n.js';
+import {validateLocaleCatalogs, createI18n} from '../web/i18n.js';
+import {setupGameShell} from '../web/game-shell.js';
+import {setupPerformanceView} from '../web/performance-view.js';
+import {Transport} from '../web/transport.js';
 import {contrastRatio} from '../web/themes.js';
 
 const onsetCount = record => record.observations.events.filter(event => event.kind === 'note_on').length;
@@ -124,6 +127,8 @@ test('accepted160 beginner controls and saved appearance survive rhythm screen a
     const i18n = getAppI18n(app.document);
     const ids = ['beginner-controls','beginner-enabled','beginner-reference','beginner-numbered-mode','free-beginner-controls','free-beginner-enabled','keyboard-compact-status','theme-mode','interface-language'];
     const nodes = new Map(ids.map(id => [id, app.$(id)]));
+    assert.equal(app.$('keyboard-compact-status').parentElement.className, 'keyboard-stage-meta');
+    assert.equal(app.$('stage-subtitle').parentElement, app.$('keyboard-compact-status').parentElement);
     for (const [id, node] of nodes) assert.ok(node, `${id} must survive the integration`);
     app.$('beginner-enabled').checked = true; app.emit(app.$('beginner-enabled'), 'change');
     assert.equal(app.$('free-beginner-enabled').checked, true);
@@ -154,4 +159,75 @@ test('accepted160 beginner controls and saved appearance survive rhythm screen a
     assert.deepEqual(app.audio(), {contexts:0, unlocks:0});
     assert.equal(app.midiRequests(), 0);
   } finally { await app.close(); }
+});
+
+
+test('compact rhythm title and guide reserve separate real hit boxes without hiding controls', async () => {
+  const css = await readFile(new URL('../web/rhythm-shell.css', import.meta.url), 'utf8');
+  const {document} = parseHTML(`<style>${css}</style>`);
+  const rules = [...document.querySelector('style').sheet.cssRules];
+  const heading = rules.find(rule => rule.selectorText === '.rhythm-shell.performance-layout .stage-heading:has(>.beginner-controls-compact)');
+  const title = rules.find(rule => rule.selectorText === '.rhythm-shell.performance-layout .stage-heading:has(>.beginner-controls-compact)>#stage-title');
+  const guide = rules.find(rule => rule.selectorText === '.rhythm-shell #beginner-controls.beginner-controls-compact');
+  const metadata = rules.find(rule => rule.selectorText === '.rhythm-shell .stage-heading:has(>.beginner-controls-compact)>.keyboard-stage-meta');
+  assert.equal(heading.style.display, 'grid');
+  assert.equal(heading.style['grid-template-columns'], 'minmax(64px,1fr) max-content', 'Title retains a useful minimum width beside the guide intrinsic width');
+  assert.ok(parseFloat(heading.style['min-width']) >= 150);
+  assert.equal(title.style['grid-column'], '1'); assert.equal(title.style['grid-row'], '1');
+  assert.equal(title.style['padding-right'], '0', 'Text padding cannot serve as pointer separation');
+  assert.equal(guide.style.position, 'static', 'Guide participates in the heading layout instead of overlaying the title');
+  assert.equal(guide.style['grid-column'], '2'); assert.equal(guide.style['grid-row'], '1');
+  assert.equal(metadata.style['grid-column'], '1/-1', 'The existing subtitle and keyboard status keep their shared full-width row');
+  for (const rule of [heading,title,guide,metadata]) {
+    assert.notEqual(rule.style['pointer-events'], 'none');
+    assert.notEqual(rule.style.display, 'none');
+    assert.notEqual(rule.style.visibility, 'hidden');
+  }
+});
+
+
+test('cue display state follows pause, resumed countdown, playback, completion and reset without stale paused state', async () => {
+  const {document,window}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8'));
+  const originals=new Map(['document','window'].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
+  for (const [key,value] of Object.entries({document,window})) Object.defineProperty(globalThis,key,{configurable:true,value});
+  window.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}});
+  const i18n=createI18n({locale:'en'}), transport=new Transport();
+  let now=0, view, shell;
+  const context={instrument:'piano',mode:'listen',segmentStart:0,countInBeatMs:500,recorder:{active:null,interruptions:[]}};
+  try {
+    shell=setupGameShell({i18n,pausePlayback(){},onNotation(){},onScreen:screen=>view?.screenChanged(screen)});
+    view=setupPerformanceView({i18n,getContext:()=>({...context,now,position:transport.time(now),running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed})});
+    shell.show('stage');
+    const cue=document.getElementById('stage-cue'), main=document.getElementById('stage-cue-main');
+    const state=(expected,text)=>{view.update();assert.equal(cue.getAttribute('data-cue-state'),expected);assert.equal(cue.hidden,expected===null);assert.equal(main.textContent,text);};
+    state('ready','READY');
+    transport.start(now,[],2000);state('countdown','4');
+    now=500;transport.pause(now);state('paused','PAUSED');
+    i18n.setLocale('zh-CN');state('paused',i18n.t('performance.paused'));
+    i18n.setLocale('en');now=2000;transport.start(now,[],2000);state('countdown','3');
+    now=3500;state(null,'');assert.equal(cue.hasAttribute('data-cue-state'),false,'Playing clears the prior display-state attribute');
+    transport.pause(now);state('paused','PAUSED');
+    transport.start(now,[]);state(null,'');
+    transport.finish(5000);state('complete','LISTEN COMPLETE');
+    transport.reset();state('ready','READY');
+    transport.start(now,[],2000);state('countdown','4');
+    context.instrument='guitar';view.update();assert.equal(document.querySelector('.play-panel').dataset.instrument,'guitar');state('countdown','4');
+    assert.equal(document.getElementById('stage-cue'),cue,'Display states never recreate the cue or transport controls');
+  } finally {
+    view?.destroy();shell?.destroy();
+    for (const [key,descriptor] of originals) if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key];
+  }
+});
+
+test('only a paused piano cue in the rhythm shell is visually suppressed by reduced motion', async () => {
+  const css=await readFile(new URL('../web/rhythm-shell.css',import.meta.url),'utf8');
+  const {document}=parseHTML(`<style>${css}</style>`),rules=[...document.querySelector('style').sheet.cssRules];
+  const selector='.rhythm-shell .play-panel[data-instrument=piano] #stage-cue[data-cue-state=paused]';
+  const matches=[];
+  const visit=(rows,media=null)=>{for(const rule of rows)if(rule.cssRules)visit([...rule.cssRules],rule.media?.mediaText??media);else if(rule.selectorText.includes('#stage-cue'))matches.push({rule,media});};
+  visit(rules);
+  assert.equal(matches.length,1,'The override must not hide ready/countdown/completion or other instruments');
+  assert.equal(matches[0].media,'(prefers-reduced-motion:reduce)');
+  assert.equal(matches[0].rule.selectorText,selector);assert.equal(matches[0].rule.style.display,'none');
+  assert.equal(matches[0].rule.style.length,1,'No transport, pointer, timing, or motion behavior is overridden');
 });
