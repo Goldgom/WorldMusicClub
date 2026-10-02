@@ -60,7 +60,7 @@ test('compact guitar footer retains both original controls and full labels with 
     assert.equal(controls.querySelector('summary'),route);assert.equal(document.querySelector('.guitar-details summary'),sources);
     assert.equal(status.parentElement,controls);assert.equal(status.previousElementSibling,route);
     assert.equal(route.getAttribute('aria-label'),routeLabel);assert.equal(sources.getAttribute('aria-label'),sourceLabel);
-    assert.match(route.textContent,/Route settings/);assert.match(sources.textContent,/Tuning & sources/);
+    assert.equal(route.textContent,'指法设置');assert.equal(sources.textContent,'调弦与来源');
     assert.equal(document.querySelectorAll('#guitar-plan-status').length,1);
   } finally {
     for(const[name,descriptor]of prior)if(descriptor)Object.defineProperty(globalThis,name,descriptor);else delete globalThis[name];

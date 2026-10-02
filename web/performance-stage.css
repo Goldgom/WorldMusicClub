@@ -169,7 +169,7 @@
 #guitar-plan-controls label:has(input[type=checkbox]){display:flex;align-items:center}
 .guitar-plan-options,.guitar-lock-inputs{display:flex;flex-wrap:wrap;gap:8px;align-items:end}
 .guitar-lock-inputs>label{flex:1 1 120px}#guitar-max-span{width:80px}
-#guitar-lock-fields{border:1px solid #64879a;border-radius:5px;padding:8px;min-width:0}
+#guitar-lock-fields,#guitar-phrase-fields{border:1px solid #64879a;border-radius:5px;padding:8px;min-width:0}
 #guitar-lock-list{padding-left:18px}#guitar-lock-list li{margin:5px 0}
 .guitar-target-route,.guitar-target-picking{grid-column:1/-1;font-size:11px;line-height:1.4;color:#d1fff4;overflow-wrap:anywhere}
 .guitar-target-picking{color:#f4ce78}

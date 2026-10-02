@@ -2,7 +2,7 @@
 use crate::{
     fingering_clock::{exact_notes, ExactNote, Moment},
     instruments::{analyze_instrument, InstrumentProfile},
-    Diagnostic, Score,
+    Beat, Diagnostic, Score,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -25,6 +25,24 @@ pub struct GuitarFingeringLock {
     pub fret: Option<u8>,
     pub finger: Option<u8>,
 }
+/// Versioned exact, half-open written range. Repeat-pass selection is not implied.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuitarPlanningScope {
+    pub version: u32,
+    pub from: Beat,
+    pub to: Beat,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct GuitarPlanningInventory {
+    pub requested: GuitarPlanningScope,
+    pub start_ms: f64,
+    pub end_ms: f64,
+    pub full_occurrence_count: usize,
+    pub selected_occurrence_count: usize,
+    pub included_occurrence_ids: Vec<String>,
+    pub entry_hold_occurrence_ids: Vec<String>,
+}
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GuitarFingeringRequest {
@@ -35,6 +53,10 @@ pub struct GuitarFingeringRequest {
     pub max_fret_span: u8,
     #[serde(default)]
     pub locks: Vec<GuitarFingeringLock>,
+    pub planning_scope: Option<GuitarPlanningScope>,
+    /// Resolve exact scope membership before a client submits selected locks.
+    #[serde(default)]
+    pub inventory_only: bool,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct GuitarAssignment {
@@ -65,6 +87,10 @@ pub struct GuitarFingeringPlan {
     pub complete: bool,
     pub changed_source_notes: bool,
     pub source_occurrence_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub planning_scope: Option<GuitarPlanningInventory>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
     pub max_fret_span: u8,
     pub beam_width: usize,
     pub explored_choices: usize,
@@ -330,7 +356,10 @@ pub fn plan_guitar_fingering(
         return Err("Use a fret span of 0–12 and at most 1,000 source-note locks".into());
     }
     let compiled = crate::compile(request.score)?;
-    let selected_count = compiled
+    if request.inventory_only && (request.planning_scope.is_none() || !request.locks.is_empty()) {
+        return Err("A scope inventory requires an explicit phrase and no locks".into());
+    }
+    let full_count = compiled
         .timeline
         .notes
         .iter()
@@ -341,18 +370,74 @@ pub fn plan_guitar_fingering(
                 .is_none_or(|id| &note.part_id == id)
         })
         .count();
-    let references: usize = compiled
-        .timeline
-        .notes
-        .iter()
-        .filter(|note| {
-            request
-                .part_id
-                .as_ref()
-                .is_none_or(|id| &note.part_id == id)
-        })
-        .map(|note| note.source_note_ids.len())
-        .sum();
+    // Keep the default whole-score path and its early budgets unchanged.
+    let mut scoped_notes = None;
+    let planning_scope = if let Some(scope) = &request.planning_scope {
+        if scope.version != 1
+            || !scope.from.valid()
+            || !scope.to.valid()
+            || scope.from.numerator < 0
+            || !scope.to.compare(scope.from).is_gt()
+        {
+            return Err("Guitar phrase version 1 requires nonnegative A and B later than A, in rational quarter-note beats".into());
+        }
+        if !compiled.score.repeats.is_empty() {
+            return Err("Written-beat guitar phrases are ambiguous in repeated scores; use whole selection until repeat-pass selection is available".into());
+        }
+        if scope
+            .to
+            .compare(crate::written_duration(&compiled.score))
+            .is_gt()
+        {
+            return Err("Guitar phrase extends past the end of the score".into());
+        }
+        let notes: Vec<_> = exact_notes(&compiled, request.part_id.as_deref())?
+            .into_iter()
+            .filter(|n| {
+                n.start.at.compare(scope.to).is_lt() && n.end.at.compare(scope.from).is_gt()
+            })
+            .collect();
+        let tempo = crate::TempoIndex::new(&compiled.score.tempo);
+        let start_ms = tempo.at(scope.from.value());
+        let end_ms = tempo.at(scope.to.value());
+        if !start_ms.is_finite() || !end_ms.is_finite() || end_ms <= start_ms {
+            return Err("Guitar phrase boundaries exceed reliable display-clock resolution; choose another exact range".into());
+        }
+        let inventory = GuitarPlanningInventory {
+            requested: scope.clone(),
+            start_ms,
+            end_ms,
+            full_occurrence_count: full_count,
+            selected_occurrence_count: notes.len(),
+            included_occurrence_ids: notes.iter().map(|n| n.note.id.clone()).collect(),
+            entry_hold_occurrence_ids: notes
+                .iter()
+                .filter(|n| n.start.at.compare(scope.from).is_lt())
+                .map(|n| n.note.id.clone())
+                .collect(),
+        };
+        scoped_notes = Some(notes);
+        Some(inventory)
+    } else {
+        None
+    };
+    let selected_count = scoped_notes.as_ref().map_or(full_count, Vec::len);
+    let references: usize = if let Some(notes) = &scoped_notes {
+        notes.iter().map(|n| n.note.source_note_ids.len()).sum()
+    } else {
+        compiled
+            .timeline
+            .notes
+            .iter()
+            .filter(|note| {
+                request
+                    .part_id
+                    .as_ref()
+                    .is_none_or(|id| &note.part_id == id)
+            })
+            .map(|note| note.source_note_ids.len())
+            .sum()
+    };
     let mut plan = GuitarFingeringPlan {
         version: 1,
         algorithm: "deterministic_guitar_beam_v1".into(),
@@ -363,6 +448,15 @@ pub fn plan_guitar_fingering(
         complete: false,
         changed_source_notes: false,
         source_occurrence_count: selected_count,
+        purpose: planning_scope.as_ref().map(|_| {
+            if request.inventory_only {
+                "scope_inventory"
+            } else {
+                "phrase_plan"
+            }
+            .into()
+        }),
+        planning_scope,
         max_fret_span: request.max_fret_span,
         beam_width: BEAM,
         explored_choices: 0,
@@ -373,11 +467,25 @@ pub fn plan_guitar_fingering(
         diagnostics: compiled.diagnostics.clone(),
     };
     plan.diagnostics.push(Diagnostic::warning("guitar_fingering_model", "Advisory bounded whole-phrase search, not a global or biomechanical optimum. It models exact held strings, four ordered fretting fingers, simple barres and a configurable fret span. Bends, slides, harmonics, thumb fretting, muting, sound decay and physical technique are not modeled. Pitch-only MIDI cannot verify this fingering. Picking hints are separate heuristics.",None));
+    if plan.planning_scope.is_some() {
+        plan.diagnostics.push(Diagnostic::warning("guitar_fingering_phrase_scope", "Exact half-open written phrase: entry holds and complete tails are preserved, without clipping or new attacks. Later attacks outside the phrase and transitions from unselected notes are not optimized. Playback loops and assessment are unchanged.", None));
+    }
+    if request.inventory_only {
+        plan.diagnostics.push(Diagnostic::warning(
+            "guitar_fingering_scope_inventory",
+            "Exact Rust phrase inventory only; no route has been requested yet.",
+            None,
+        ));
+        return finish_plan(plan);
+    }
     if selected_count > MAX_NOTES || references > MAX_SOURCE_REFERENCES {
         plan.diagnostics.push(Diagnostic::warning("guitar_fingering_limit","Plan at most 1,000 sounding occurrences and 16,384 tied-source references; choose a shorter phrase or part. No score events were removed.",None));
         return finish_plan(plan);
     }
-    let notes = exact_notes(&compiled, request.part_id.as_deref())?;
+    let notes = match scoped_notes {
+        Some(notes) => notes,
+        None => exact_notes(&compiled, request.part_id.as_deref())?,
+    };
     let selected = crate::Timeline {
         notes: notes.iter().map(|n| n.note.clone()).collect(),
         duration_ms: compiled.timeline.duration_ms,
@@ -633,6 +741,8 @@ mod tests {
             },
             max_fret_span: 3,
             locks: vec![],
+            planning_scope: None,
+            inventory_only: false,
         }
     }
     fn standard(events: &[(u8, i64, i64)], frets: u8) -> GuitarFingeringRequest {
@@ -903,5 +1013,193 @@ mod tests {
             finger: None,
         });
         assert!(plan_guitar_fingering(bad).is_err());
+    }
+    fn phrase(input: &mut GuitarFingeringRequest, from: Beat, to: Beat) {
+        input.planning_scope = Some(GuitarPlanningScope {
+            version: 1,
+            from,
+            to,
+        });
+    }
+    #[test]
+    fn bounded_phrase_plans_a_large_score_without_changing_any_sources() {
+        let events: Vec<_> = (0..1001).map(|i| (60, i, 1)).collect();
+        let mut input = request(&events, vec![60], 4, 0);
+        let before = serde_json::to_value(&input.score).unwrap();
+        let whole = plan_guitar_fingering(input.clone()).unwrap();
+        assert_eq!(whole.status, "unavailable");
+        assert!(serde_json::to_value(whole)
+            .unwrap()
+            .get("planning_scope")
+            .is_none());
+        phrase(&mut input, Beat::new(500, 1), Beat::new(503, 1));
+        let mut preflight = input.clone();
+        preflight.inventory_only = true;
+        let inventory = plan_guitar_fingering(preflight).unwrap();
+        assert_eq!(inventory.purpose.as_deref(), Some("scope_inventory"));
+        assert!(!inventory.complete);
+        assert!(inventory.assignments.is_empty());
+        let plan = plan_guitar_fingering(input.clone()).unwrap();
+        assert_eq!(plan.status, "ready");
+        assert_eq!(plan.assignments.len(), 3);
+        assert_eq!(plan.purpose.as_deref(), Some("phrase_plan"));
+        let scope = plan.planning_scope.unwrap();
+        assert_eq!(scope.full_occurrence_count, 1001);
+        assert_eq!(scope.selected_occurrence_count, 3);
+        assert_eq!(
+            scope.included_occurrence_ids,
+            vec!["source-500", "source-501", "source-502"]
+        );
+        assert_eq!(
+            serde_json::to_value(scope).unwrap(),
+            serde_json::to_value(inventory.planning_scope.unwrap()).unwrap()
+        );
+        assert_eq!(serde_json::to_value(input.score).unwrap(), before);
+    }
+    #[test]
+    fn phrase_preserves_entry_holds_chord_edges_full_tails_and_tempo_clock() {
+        let mut input = request(
+            &[(60, 0, 1), (64, 0, 4), (67, 1, 3), (71, 1, 1), (60, 2, 1)],
+            vec![60, 64, 67, 71],
+            0,
+            0,
+        );
+        input.score.tempo = vec![
+            crate::Tempo {
+                at: Beat::ZERO,
+                bpm: 120.,
+            },
+            crate::Tempo {
+                at: Beat::new(1, 1),
+                bpm: 60.,
+            },
+        ];
+        phrase(&mut input, Beat::new(1, 1), Beat::new(2, 1));
+        let compiled = crate::compile(input.score.clone()).unwrap();
+        let plan = plan_guitar_fingering(input).unwrap();
+        assert_eq!(plan.status, "ready");
+        let scope = plan.planning_scope.unwrap();
+        assert_eq!(
+            scope.included_occurrence_ids,
+            vec!["source-1", "source-2", "source-3"]
+        );
+        assert_eq!(scope.entry_hold_occurrence_ids, vec!["source-1"]);
+        assert_eq!((scope.start_ms, scope.end_ms), (500., 1500.));
+        for assignment in plan.assignments {
+            let original = compiled
+                .timeline
+                .notes
+                .iter()
+                .find(|n| n.id == assignment.occurrence_id)
+                .unwrap();
+            assert_eq!(assignment.start_ms, original.start_ms);
+            assert_eq!(assignment.end_ms, original.start_ms + original.duration_ms);
+            assert_eq!(assignment.source_note_ids, original.source_note_ids);
+        }
+    }
+    #[test]
+    fn phrase_membership_uses_exact_adjacent_rationals_instead_of_milliseconds() {
+        let mut input = request(&[(60, 0, 1), (60, 1, 1), (60, 2, 1)], vec![60], 0, 0);
+        input.score.parts[0].notes[0].duration = Beat::new(1, 3);
+        input.score.parts[0].notes[1].at = Beat::new(2, 6);
+        input.score.parts[0].notes[1].duration = Beat::new(1, 3);
+        input.score.parts[0].notes[2].at = Beat::new(4, 6);
+        input.score.parts[0].notes[2].duration = Beat::new(1, 3);
+        phrase(&mut input, Beat::new(3, 9), Beat::new(2, 3));
+        let plan = plan_guitar_fingering(input).unwrap();
+        assert_eq!(plan.status, "ready");
+        assert_eq!(
+            plan.planning_scope.unwrap().included_occurrence_ids,
+            vec!["source-1"]
+        );
+    }
+    #[test]
+    fn phrase_locks_use_complete_tie_chains_and_reject_outside_source_locks() {
+        let mut input = request(&[(60, 0, 1), (60, 1, 2), (60, 3, 1)], vec![60], 0, 0);
+        input.score.parts[0].notes[0].tie_start = true;
+        input.score.parts[0].notes[1].tie_stop = true;
+        phrase(&mut input, Beat::new(1, 1), Beat::new(2, 1));
+        input.locks = vec![GuitarFingeringLock {
+            source_note_id: "source-1".into(),
+            string: Some(1),
+            fret: Some(0),
+            finger: Some(0),
+        }];
+        let plan = plan_guitar_fingering(input.clone()).unwrap();
+        assert_eq!(plan.status, "ready");
+        assert_eq!(
+            plan.assignments[0].source_note_ids,
+            vec!["source-0", "source-1"]
+        );
+        assert_eq!(plan.assignments[0].start_ms, 0.);
+        assert_eq!(plan.assignments[0].end_ms, 1500.);
+        input.locks[0].source_note_id = "source-2".into();
+        assert!(plan_guitar_fingering(input)
+            .unwrap_err()
+            .contains("selected sounding"));
+    }
+    #[test]
+    fn phrase_source_reference_budget_applies_after_exact_selection() {
+        let events: Vec<_> = (0..16_386).map(|i| (60, i, 1)).collect();
+        let mut input = request(&events, vec![60], 0, 0);
+        for (i, note) in input.score.parts[0]
+            .notes
+            .iter_mut()
+            .enumerate()
+            .take(16_385)
+        {
+            note.tie_start = i < 16_384;
+            note.tie_stop = i > 0;
+        }
+        assert_eq!(
+            plan_guitar_fingering(input.clone()).unwrap().status,
+            "unavailable"
+        );
+        phrase(&mut input, Beat::new(16_385, 1), Beat::new(16_386, 1));
+        let plan = plan_guitar_fingering(input).unwrap();
+        assert_eq!(plan.status, "ready");
+        assert_eq!(plan.assignments.len(), 1);
+    }
+    #[test]
+    fn phrase_rejects_repeats_invalid_ranges_and_scope_inventory_with_locks() {
+        let mut input = request(&[(60, 0, 1), (60, 1, 1)], vec![60], 0, 0);
+        phrase(&mut input, Beat::ZERO, Beat::new(2, 1));
+        input.score.repeats = vec![Repeat {
+            from: Beat::ZERO,
+            to: Beat::new(2, 1),
+            times: 2,
+        }];
+        assert!(plan_guitar_fingering(input.clone())
+            .unwrap_err()
+            .contains("repeat-pass"));
+        input.planning_scope = None;
+        assert_eq!(
+            plan_guitar_fingering(input.clone())
+                .unwrap()
+                .assignments
+                .len(),
+            4
+        );
+        input.score.repeats.clear();
+        for (from, to) in [
+            (Beat::ZERO, Beat::new(3, 1)),
+            (Beat::new(1, 1), Beat::new(1, 1)),
+            (Beat::new(-1, 1), Beat::new(1, 1)),
+            (Beat::ZERO, Beat::new(1, 0)),
+        ] {
+            phrase(&mut input, from, to);
+            assert!(plan_guitar_fingering(input.clone()).is_err());
+        }
+        phrase(&mut input, Beat::ZERO, Beat::new(1, 1));
+        input.inventory_only = true;
+        input.locks = vec![GuitarFingeringLock {
+            source_note_id: "source-0".into(),
+            string: Some(1),
+            fret: None,
+            finger: None,
+        }];
+        assert!(plan_guitar_fingering(input)
+            .unwrap_err()
+            .contains("no locks"));
     }
 }

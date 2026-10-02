@@ -1,0 +1,23 @@
+export default Object.freeze({
+  'guitar.phrase.title':'指法规划乐句',
+  'guitar.phrase.mode':'规划范围',
+  'guitar.phrase.whole':'完整所选声部',
+  'guitar.phrase.explicit':'指定谱面乐句',
+  'guitar.phrase.from':'A · 起始四分音符拍',
+  'guitar.phrase.to':'B · 结束四分音符拍（不含）',
+  'guitar.phrase.apply':'应用乐句并重新规划',
+  'guitar.phrase.revert':'撤销乐句草稿',
+  'guitar.phrase.help':'拍数从 0 开始。请输入整数或精确分数，例如 3/2。指法规划范围独立于 A–B 播放循环和评分。保留进入乐句时已持续的音符及完整尾音；不优化范围外的后续起音。',
+  'guitar.phrase.repeats':'含反复的乐谱暂不支持指定谱面乐句，需待明确的遍次选择器可用。仍可规划完整所选声部。',
+  'guitar.phrase.draft':'乐句草稿：已清除旧指法建议。请应用或撤销，以请求匹配的路径。',
+  'guitar.phrase.invalid':'请输入非负整数或精确分数，B 必须晚于 A。分子不超过 1,000,000,000，分母不超过 1,000,000。',
+  'guitar.phrase.pending':'已应用第 {from}–{to} 拍乐句。Rust 确认精确音符范围后才能提供建议。',
+  'guitar.phrase.inventory':'第 {from}–{to} 拍乐句 · 共 {total} 次事件，选中 {selected} 次 · {holds} 个进入时延音 · Rust 时间 {start}–{end}。保留完整尾音。',
+  'guitar.phrase.wholeHelp':'规划包含完整所选声部，包括 A–B 循环范围外的音符；不建模循环回到开头时的移动。',
+  'guitar.phrase.noTargets':'此规划乐句内没有相交的发声音符',
+  'guitar.phrase.ready':'一条所选乐句路径 · {count} 次发声事件',
+  'guitar.phrase.inactiveLock':'（不在此规划乐句内；已保留，未启用）',
+  'guitar.phrase.pendingLock':'（等待 Rust 确认乐句范围）',
+  'guitar.phrase.locks':'已保留 {total} 个会话锁定，其中 {active} 个适用于 Rust 确认的乐句范围。',
+  'guitar.phrase.locksPending':'已保留 {total} 个会话锁定；正在等待 Rust 确认精确乐句范围。'
+});

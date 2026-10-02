@@ -1,5 +1,23 @@
+import sourceDirectoryMessages from './source-directory-en.js';
+import libraryMessages from './library-en.js';
+import guitarPhraseMessages from './guitar-phrase-en.js';
+import inputMessages from './input-en.js';
+import freeMessages from './free-en.js';
+import appMessages from './app-en.js';
+import feedbackMessages from './feedback-en.js';
+import shellMessages from './shell-en.js';
+import staticMessages from './static-en.js';
 /** Application-owned display text only. Authored score data and identifiers stay unchanged. */
 export default Object.freeze({
+  ...sourceDirectoryMessages,
+  ...libraryMessages,
+  ...guitarPhraseMessages,
+  ...inputMessages,
+  ...freeMessages,
+  ...appMessages,
+  ...feedbackMessages,
+  ...staticMessages,
+  ...shellMessages,
   'i18n.unavailable': 'This text is temporarily unavailable.',
   'common.start': 'Start',
   'common.pause': 'Pause',

@@ -1,0 +1,38 @@
+.keyboard-input-settings { border-top: 1px solid var(--border, #dce2e8); margin-top: 1rem; padding-top: 1rem; }
+.keyboard-input-settings p, .keyboard-input-footer p { font-size: .8rem; line-height: 1.55; margin: .5rem 0; }
+.keyboard-input-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; align-items: end; }
+.keyboard-input-settings label { display: flex; flex-direction: column; gap: .35rem; font-size: .8rem; }
+.keyboard-input-settings input, .keyboard-input-settings select, .keyboard-input-settings textarea { min-width: 0; width: 100%; }
+.keyboard-input-settings input[type=checkbox] { width: auto; align-self: flex-start; }
+.keyboard-input-settings textarea { box-sizing: border-box; font: .78rem/1.5 ui-monospace, monospace; resize: vertical; }
+.keyboard-input-settings details { margin-top: .7rem; }
+.keyboard-input-settings details[open] summary { margin-bottom: .7rem; }
+.keyboard-footer.keyboard-input-footer { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: .35rem .65rem; flex: none; width: 100%; min-height: 0; box-sizing: border-box; padding: 5px 12px; max-height: min(300px, 28dvh); overflow: auto; overscroll-behavior: contain; background: var(--paper, #fff); color: var(--ink, #24372d); }
+.keyboard-input-status { display: flex; flex-wrap: nowrap; gap: .5rem; align-items: baseline; min-width: 0; font-size: .75rem; line-height: 1.3; white-space: nowrap; }
+#keyboard-active-range { overflow: hidden; text-overflow: ellipsis; }
+#keyboard-current-offset { flex: none; font-variant-numeric: tabular-nums; color: var(--muted, #657568); }
+.keyboard-input-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .65rem; }
+.keyboard-input-actions .button { font-size: .75rem; }
+.keyboard-transpose-actions { flex-wrap: nowrap; gap: .25rem; margin: 0; }
+.keyboard-transpose-actions .button { min-width: 30px; min-height: 28px; padding: 3px 6px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.keyboard-performance-details { min-width: 0; font-size: .75rem; }
+.keyboard-performance-details>summary { cursor: pointer; line-height: 1.3; max-width: 10rem; list-style-position: inside; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.keyboard-performance-details[open] { grid-column: 1 / -1; }
+.keyboard-performance-details[open]>summary { max-width: none; margin-bottom: .5rem; }
+.keyboard-map-status { display: flex; flex-wrap: wrap; gap: .3rem 1rem; line-height: 1.4; }
+#keyboard-configuration-limit { grid-column: 1 / -1; }
+.keyboard-map { display: flex; flex-direction: column-reverse; gap: .25rem; margin-top: .4rem; overflow-x: auto; padding-bottom: .3rem; }
+.keyboard-map-row { display: flex; gap: .25rem; width: max-content; }
+.keyboard-map-key { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 2.5rem; padding: .25rem .2rem; border: 1px solid var(--border, #cbd5e1); border-radius: .35rem; background: var(--surface, #fff); }
+.keyboard-map-key kbd { font: bold .78rem ui-monospace, monospace; }
+.keyboard-map-key small { font-size: .66rem; }
+.keyboard-map-key.held { background: #d6e9ff; color: #132a4a; outline: 2px solid #3975b9; outline-offset: -2px; }
+.keyboard-map-key[data-enabled=false] { opacity: .55; }
+@media (max-width: 600px) { .keyboard-input-fields { grid-template-columns: 1fr; } .keyboard-map-key { min-width: 2rem; } }
+
+@media (max-height: 600px) and (min-width: 651px) {
+  .keyboard-footer.keyboard-input-footer { padding: 3px 10px; max-height: min(180px, 40dvh); }
+  .keyboard-performance-details>summary { max-width: 8rem; }
+}
+@media (max-width: 650px) { .keyboard-footer.keyboard-input-footer { grid-template-columns: minmax(0, 1fr) auto; } .keyboard-performance-details { grid-column: 1 / -1; } }
+@media (max-width: 650px) { .performance-layout #workspace.with-notation .keyboard-input-footer { display: none; } }

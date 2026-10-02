@@ -1,3 +1,5 @@
+import {createI18n} from '../web/i18n.js';
+import {getAppI18n} from '../web/app-locale.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -56,7 +58,7 @@ test('static DOM shell keeps every source control exactly once and pauses on pan
   for(const id of ids)assert.equal(document.querySelectorAll(`[id="${id}"]`).length,1,id);
   assert.equal(document.querySelector('#workspace').hidden,true);assert.equal(document.querySelector('#song-lobby').hidden,false);
   assert.equal(document.querySelectorAll('#fullscreen-button').length,1);
-  assert.equal(document.querySelector('#fullscreen-button').getAttribute('aria-label'),'Enter fullscreen · 进入全屏');
+  assert.equal(document.querySelector('#fullscreen-button').getAttribute('aria-label'),'进入全屏');
   assert.equal(document.querySelector('#fullscreen-button').getAttribute('aria-disabled'),'true');
   assert.equal(document.querySelector('.skip-link').getAttribute('href'),'#lobby-title');assert.equal(document.querySelector('#song-lobby').getAttribute('role'),'main');
   for(const id of ['instrument','key-count','practice-part','latency-offset','theme-mode'])assert.equal(document.getElementById(id).closest('dialog').id,'settings-dialog');
@@ -70,17 +72,17 @@ test('static DOM shell keeps every source control exactly once and pauses on pan
  }finally{if(original)Object.defineProperty(globalThis,'document',original);else delete globalThis.document}
 });
 
-function fullscreenFixture({enabled=true,request,exit}={}) {
+function fullscreenFixture({enabled=true,request,exit,i18n=createI18n({locale:'en',onReport(){}})}={}) {
  const {document,window}=parseHTML('<html><body><button id="fullscreen"></button><span id="status"></span><dialog id="panel"><input value="Keep this draft"></dialog><button id="other">Other control</button></body></html>');
  const button=document.getElementById('fullscreen'),status=document.getElementById('status'),timers=new Map(),calls=[];
  let nextTimer=0,active=null;
  Object.defineProperties(document,{fullscreenEnabled:{configurable:true,value:enabled},fullscreenElement:{get:()=>active},hidden:{configurable:true,value:false}});
  document.documentElement.requestFullscreen=function(){calls.push({kind:'enter',target:this});return request?.()??new Promise(()=>{})};
  document.exitFullscreen=function(){calls.push({kind:'exit',target:this});return exit?.()??new Promise(()=>{})};
- const controller=setupFullscreen({document,button,status,timeoutMs:80,setTimer:(callback,ms)=>{const id=++nextTimer;timers.set(id,{callback,ms});return id},clearTimer:id=>timers.delete(id)});
+ const controller=setupFullscreen({document,button,status,...(i18n?{i18n}:{}),timeoutMs:80,setTimer:(callback,ms)=>{const id=++nextTimer;timers.set(id,{callback,ms});return id},clearTimer:id=>timers.delete(id)});
  const change=element=>{active=element;document.dispatchEvent(new window.Event('fullscreenchange'))};
  const tick=ms=>{for(const[id,timer]of [...timers])if(timer.ms===ms){timers.delete(id);timer.callback()}};
- return {document,window,button,status,calls,timers,controller,change,tick,setActive:element=>{active=element}};
+ return {document,window,button,status,calls,timers,controller,i18n:i18n||getAppI18n(document),change,tick,setActive:element=>{active=element}};
 }
 const microtasks=async()=>{await Promise.resolve();await Promise.resolve()};
 
@@ -88,9 +90,9 @@ test('fullscreen uses a direct root request, serializes clicks and follows actua
  const enter=deferred(),exit=deferred(),f=fullscreenFixture({request:()=>enter.promise,exit:()=>exit.promise});
  try{
   f.button.click();assert.equal(f.calls.length,1,'The API is invoked synchronously in the native click handler');assert.equal(f.calls[0].target,f.document.documentElement);assert.equal(f.button.getAttribute('aria-busy'),'true');
-  f.button.click();assert.equal(f.calls.length,1,'A second click cannot create an overlapping request');assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen · 进入全屏','An intent is not browser state');
-  f.change(f.document.documentElement);assert.equal(f.button.getAttribute('aria-label'),'Exit fullscreen · 退出全屏');assert.equal(f.button.getAttribute('aria-busy'),'false');assert.match(f.button.title,/Esc/);assert.equal(f.button.hasAttribute('aria-pressed'),false);
-  f.change(null);enter.resolve();await microtasks();assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen · 进入全屏','Late completion cannot undo Escape');assert.equal(f.calls.length,1);
+  f.button.click();assert.equal(f.calls.length,1,'A second click cannot create an overlapping request');assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen','An intent is not browser state');
+  f.change(f.document.documentElement);assert.equal(f.button.getAttribute('aria-label'),'Exit fullscreen');assert.equal(f.button.getAttribute('aria-busy'),'false');assert.match(f.button.title,/Esc/);assert.equal(f.button.hasAttribute('aria-pressed'),false);
+  f.change(null);enter.resolve();await microtasks();assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen','Late completion cannot undo Escape');assert.equal(f.calls.length,1);
   f.change(f.document.documentElement);f.button.click();assert.equal(f.calls.at(-1).kind,'exit');assert.equal(f.calls.at(-1).target,f.document);f.change(null);exit.reject(Error('Already exited'));await microtasks();assert.equal(f.status.textContent,'','A browser exit is authoritative even when the promise later rejects');
  }finally{f.controller.destroy()}
 });
@@ -98,7 +100,7 @@ test('fullscreen uses a direct root request, serializes clicks and follows actua
 test('fullscreen handles refusal, synchronous throws, missing support and retry without disabling other tools',async()=>{
  for(const synchronous of [false,true]){
   let reject=true;const f=fullscreenFixture({request:()=>{if(reject){if(synchronous)throw Error('Policy denied');return Promise.reject(Error('Policy denied'))}return Promise.resolve()}});
-  try{f.button.click();await microtasks();assert.match(f.status.textContent,/Could not enter fullscreen/);assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen · 进入全屏');assert.equal(f.button.getAttribute('aria-busy'),'false');assert.equal(f.document.getElementById('other').hasAttribute('disabled'),false);reject=false;f.button.click();await microtasks();assert.equal(f.calls.length,2);assert.equal(f.status.textContent,'');}finally{f.controller.destroy()}
+  try{f.button.click();await microtasks();assert.match(f.status.textContent,/Could not enter fullscreen/);assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen');assert.equal(f.button.getAttribute('aria-busy'),'false');assert.equal(f.document.getElementById('other').hasAttribute('disabled'),false);reject=false;f.button.click();await microtasks();assert.equal(f.calls.length,2);assert.equal(f.status.textContent,'');}finally{f.controller.destroy()}
  }
  for(const absent of [false,true]){
   const f=fullscreenFixture({enabled:absent});if(absent)delete f.document.documentElement.requestFullscreen;
@@ -111,8 +113,8 @@ test('fullscreen timeout cancels intent, bounds busy state and exits late entry 
  try{
   f.button.click();f.tick(80);assert.equal(f.button.getAttribute('aria-busy'),'false');assert.match(f.status.textContent,/did not finish/);
   f.button.click();assert.equal(f.calls.length,1);assert.match(f.status.textContent,/earlier fullscreen request/);
-  f.change(f.document.documentElement);assert.equal(f.calls.at(-1).kind,'exit');assert.equal(f.button.getAttribute('aria-label'),'Exit fullscreen · 退出全屏','Recovery does not pretend the browser has exited');
-  enter.resolve();await microtasks();assert.equal(f.button.getAttribute('aria-busy'),'true','Old completion cannot clear the recovery operation');f.change(null);exit.resolve();await microtasks();assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen · 进入全屏');assert.equal(f.button.getAttribute('aria-busy'),'false');f.button.click();assert.equal(f.calls.at(-1).kind,'enter');
+  f.change(f.document.documentElement);assert.equal(f.calls.at(-1).kind,'exit');assert.equal(f.button.getAttribute('aria-label'),'Exit fullscreen','Recovery does not pretend the browser has exited');
+  enter.resolve();await microtasks();assert.equal(f.button.getAttribute('aria-busy'),'true','Old completion cannot clear the recovery operation');f.change(null);exit.resolve();await microtasks();assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen');assert.equal(f.button.getAttribute('aria-busy'),'false');f.button.click();assert.equal(f.calls.at(-1).kind,'enter');
  }finally{f.controller.destroy()}
 });
 
@@ -121,7 +123,7 @@ test('Escape cancels an entry that has not appeared yet without suppressing nati
  try{
   f.button.click();const event=new f.window.Event('keydown',{bubbles:true,cancelable:true});Object.defineProperty(event,'key',{value:'Escape'});f.document.dispatchEvent(event);
   assert.equal(event.defaultPrevented,false);assert.equal(f.button.getAttribute('aria-busy'),'false');assert.match(f.status.textContent,/entry cancelled/);
-  f.change(f.document.documentElement);enter.resolve();await microtasks();assert.equal(f.calls.filter(call=>call.kind==='exit').length,1);f.change(null);exit.resolve();await microtasks();assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen · 进入全屏');
+  f.change(f.document.documentElement);enter.resolve();await microtasks();assert.equal(f.calls.filter(call=>call.kind==='exit').length,1);f.change(null);exit.resolve();await microtasks();assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen');
   f.document.dispatchEvent(event);assert.equal(f.calls.length,2,'Escape outside a pending entry remains entirely native');
  }finally{f.controller.destroy()}
 });
@@ -142,8 +144,8 @@ test('fullscreen leaves ordinary dialogs above completed entry and reports a fai
  const enter=deferred(),f=fullscreenFixture({request:()=>enter.promise,exit:()=>Promise.reject(Error('Exit denied'))});
  try{
   f.button.click();f.change(f.document.documentElement);enter.resolve();await microtasks();f.document.getElementById('panel').setAttribute('open','');f.change(f.document.documentElement);assert.equal(f.calls.length,1,'A panel opened after entry does not cancel an established fullscreen session');
-  f.button.click();await microtasks();assert.equal(f.button.getAttribute('aria-label'),'Exit fullscreen · 退出全屏');assert.equal(f.button.getAttribute('aria-busy'),'false');assert.match(f.status.textContent,/Press Esc or try again/);
-  f.change(null);assert.equal(f.status.textContent,'','A subsequent browser Escape must clear the obsolete failure message');assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen · 进入全屏');
+  f.button.click();await microtasks();assert.equal(f.button.getAttribute('aria-label'),'Exit fullscreen');assert.equal(f.button.getAttribute('aria-busy'),'false');assert.match(f.status.textContent,/Press Esc or try again/);
+  f.change(null);assert.equal(f.status.textContent,'','A subsequent browser Escape must clear the obsolete failure message');assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen');
  }finally{f.controller.destroy()}
 });
 
@@ -151,7 +153,7 @@ test('fullscreen failed modal recovery keeps its exit action and error instead o
  const enter=deferred(),f=fullscreenFixture({request:()=>enter.promise,exit:()=>{throw Error('Exit refused')}});
  try{
   f.button.click();const dialog=f.document.getElementById('panel');dialog.setAttribute('open','');f.change(f.document.documentElement);enter.resolve();await microtasks();
-  assert.equal(f.button.getAttribute('aria-label'),'Exit fullscreen · 退出全屏');assert.equal(f.button.getAttribute('aria-busy'),'false');assert.match(f.status.textContent,/Could not exit fullscreen/);assert.equal(dialog.hasAttribute('open'),true);assert.equal(f.calls.filter(call=>call.kind==='exit').length,1,'A failed recovery cannot enter an automatic retry loop');
+  assert.equal(f.button.getAttribute('aria-label'),'Exit fullscreen');assert.equal(f.button.getAttribute('aria-busy'),'false');assert.match(f.status.textContent,/Could not exit fullscreen/);assert.equal(dialog.hasAttribute('open'),true);assert.equal(f.calls.filter(call=>call.kind==='exit').length,1,'A failed recovery cannot enter an automatic retry loop');
  }finally{f.controller.destroy()}
 });
 
@@ -163,4 +165,28 @@ test('fullscreen page lifecycle cancels only entry intent and never creates an a
    f.change(f.document.documentElement);assert.equal(f.calls.at(-1).kind,'exit');enter.resolve();await microtasks();f.change(null);exit.resolve();await microtasks();Object.defineProperty(f.document,'hidden',{value:false});f.window.dispatchEvent(new f.window.Event('pageshow'));assert.equal(f.calls.filter(call=>call.kind==='enter').length,1);assert.equal(f.button.getAttribute('aria-busy'),'false');
   }finally{f.controller.destroy()}
  }
+});
+
+
+test('fullscreen defaults to Chinese and locale redraw preserves an in-flight browser request, modal and focus',async()=>{
+ const enter=deferred(),exit=deferred(),f=fullscreenFixture({i18n:null,request:()=>enter.promise,exit:()=>exit.promise});
+ let focused=null;f.window.HTMLElement.prototype.focus=function(){focused=this;};
+ try{
+  assert.equal(f.button.getAttribute('aria-label'),'进入全屏');f.button.click();
+  const input=f.document.querySelector('#panel input'),svg=f.button.querySelector('svg');input.focus();
+  f.document.getElementById('panel').setAttribute('open','');const timers=[...f.timers.keys()];
+  f.i18n.setLocale('en');assert.equal(f.button.getAttribute('aria-label'),'Enter fullscreen');assert.equal(f.button.getAttribute('aria-busy'),'true');assert.equal(f.calls.length,1);assert.deepEqual([...f.timers.keys()],timers);assert.equal(f.button.querySelector('svg'),svg);assert.equal(focused,input);assert.equal(input.value,'Keep this draft');assert.equal(f.document.getElementById('panel').hasAttribute('open'),true);
+  f.i18n.setLocale('zh-CN');assert.equal(f.button.getAttribute('aria-label'),'进入全屏');assert.equal(f.calls.length,1);
+  f.change(f.document.documentElement);enter.resolve();await microtasks();assert.equal(f.calls.length,2,'Only the actual browser event triggers modal recovery');f.change(null);exit.resolve();await microtasks();
+ }finally{f.controller.destroy()}
+});
+
+test('fullscreen current error translates without retry or timeout extension and disposal unsubscribes',async()=>{
+ const f=fullscreenFixture({request:()=>Promise.reject(Error('External browser detail'))});
+ try{
+  f.button.click();await microtasks();assert.match(f.status.textContent,/Could not enter fullscreen/);const timers=[...f.timers.keys()];
+  f.i18n.setLocale('zh-CN');assert.equal(f.status.textContent,'无法进入全屏。你可以继续演奏或重试。');assert.equal(f.button.getAttribute('aria-label'),'进入全屏');assert.equal(f.calls.length,1);assert.deepEqual([...f.timers.keys()],timers);
+  f.tick(6000);assert.equal(f.status.textContent,'');f.i18n.setLocale('en');assert.equal(f.status.textContent,'');
+  f.controller.destroy();const label=f.button.getAttribute('aria-label');f.i18n.setLocale('zh-CN');assert.equal(f.button.getAttribute('aria-label'),label);f.button.click();assert.equal(f.calls.length,1);
+ }finally{f.controller.destroy()}
 });

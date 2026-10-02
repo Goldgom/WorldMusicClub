@@ -74,3 +74,19 @@ test('library snapshots and backups retain the entire MXL envelope and all origi
  const score={...structuredClone(fixture),source:{format:'worldmusichub-mxl-archive-v1',filename:'retained-mxl.json',content}},expected=structuredClone(score),first=await create(),second=await create();
  try{const saved=await first.save(score,{label:'Retained MXL'});score.source.content='Later unsaved edit';assert.deepEqual((await first.get(saved.key)).score,expected);const backup=await first.exportBackup();let validations=0;const restored=await second.restoreBackup(backup,{validate:async restoredScore=>{validations++;assert.deepEqual(restoredScore,expected);return true}});assert.equal(validations,1);assert.equal(restored.length,1);const actual=(await second.get(restored[0].key)).score;assert.deepEqual(actual,expected);const envelope=JSON.parse(actual.source.content);assert.deepEqual(Buffer.from(envelope.files['original.mxl'].content,'base64'),raw);assert.deepEqual(Buffer.from(envelope.files['selected.musicxml'].content),xml);assert.equal(envelope.selected_score_path,'scores/duet.musicxml')}finally{first.close();second.close()}
 });
+
+test('storage and validation errors add stable codes without changing legacy text, causes or atomicity',async()=>{
+ const quota=Object.assign(new Error('Original browser quota diagnostic <raw>'),{name:'QuotaExceededError'});
+ await assert.rejects(openScoreLibrary({factory:{open(){throw quota}}}),error=>{assert.equal(error.code,'library_storage_full');assert.match(error.message,/Browser storage is full/);assert.equal(error.cause,quota);return true});
+ await assert.rejects(openScoreLibrary({factory:null}),error=>error.code==='library_storage_unsupported'&&/does not provide/.test(error.message));
+ const library=await create();try{
+  const saved=await library.save(fixture);await assert.rejects(library.remove(saved.key,{expectedRevision:0}),error=>error.code==='library_delete_revision'&&/changed in another tab/.test(error.message));
+  await assert.rejects(library.save(fixture,{key:saved.key,expectedRevision:0}),error=>error.code==='library_save_revision');
+  const backup=await library.exportBackup(),abort=new DOMException('用户取消','AbortError');
+  await assert.rejects(library.restoreBackup(backup,{validate:async()=>{throw abort}}),error=>{assert.equal(error.code,'library_restore_aborted');assert.equal(error.cause,abort);assert.deepEqual(error.params,{count:1});assert.equal(error.message,'Backup score 1 was not restored: 用户取消');return true});
+  const external=Object.assign(new Error('was not restored: abort is merely literal text'),{code:'ENGINE_FAILURE'});
+  await assert.rejects(library.restoreBackup(backup,{validate:async()=>{throw external}}),error=>{assert.equal(error.code,'library_restore_score');assert.equal(error.cause,external);return true});
+  assert.equal((await library.list()).length,1);assert.deepEqual((await library.get(saved.key)).score,fixture);
+  assert.deepEqual(Object.keys(JSON.parse(await library.exportBackup())).sort(),['entries','exported_at','format','version']);
+ }finally{library.close()}
+});

@@ -6,12 +6,15 @@ import {parseHTML} from 'linkedom';
 import {fixture} from './frontend-fixtures.js';
 import {beat,pitchMidi} from '../web/music.js';
 import {InputEvidence} from '../web/input-evidence.js';
+import {Synth} from '../web/transport.js';
+import {getAppI18n} from '../web/app-locale.js';
 
 // Node DOM integration only: no browser, layout engine, real audio or HTTP is run.
 test('application module initializes the lobby and activates only through explicit Start',async()=>{
  const {document,window}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8'));
- const requests=[],values=new Map();let audioContexts=0,holdCheck=null,heldCheck=null,holdCompile=null,heldCompile=false;
- const originalEvidenceStart=InputEvidence.prototype.start,originalCreateUrl=URL.createObjectURL;
+ const requests=[],values=new Map();let audioContexts=0,unlockCalls=0,holdCheck=null,heldCheck=null,holdCompile=null,heldCompile=false;
+ const originalEvidenceStart=InputEvidence.prototype.start,originalCreateUrl=URL.createObjectURL,originalUnlock=Synth.prototype.unlock,originalPlay=Synth.prototype.play;
+ Synth.prototype.unlock=function(...args){unlockCalls++;return originalUnlock.apply(this,args)};
  Object.defineProperty(window.HTMLSelectElement.prototype,'value',{configurable:true,get(){return this.querySelector('option[selected]')?.value||this.querySelector('option')?.value||''},set(value){for(const option of this.querySelectorAll('option'))option.toggleAttribute('selected',option.value===String(value))}});
  Object.defineProperty(window.HTMLElement.prototype,'open',{configurable:true,get(){return this.hasAttribute('open')},set(value){this.toggleAttribute('open',Boolean(value))}});
  window.HTMLElement.prototype.showModal=function(){this.setAttribute('open','')};window.HTMLElement.prototype.close=function(){this.removeAttribute('open');this.dispatchEvent(new window.Event('close'))};
@@ -32,7 +35,10 @@ test('application module initializes the lobby and activates only through explic
   else if(path==='/api/practice-targets')result={timeline:body.timeline,groups:body.timeline.notes.map(note=>({target_id:note.id,source_occurrence_ids:[note.id],source_note_ids:[note.id],part_ids:[note.part_id]})),diagnostics:[],source_note_count:body.timeline.notes.length,target_count:body.timeline.notes.length,playable:true};
   else if(path==='/api/fingering/piano')result=unavailablePianoResult(body,compile(body.score).timeline);
   else if(path==='/api/instrument-check')result={lowest_midi:36,highest_midi:96,note_options:body.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:true,positions:[]})),diagnostics:[],changed_source_notes:false};
-  else if(path==='/api/assess')result={hits:[],misses:body.timeline.notes.map(note=>note.id),extras:[],accuracy_percent:0,mean_abs_error_ms:null,grade_counts:{perfect:0,good:0,early:0,late:0,missed:2,extra:0},onset_completion:{total:2,complete:0,longest_complete_sequence:0}};
+  else if(path==='/api/assess'){
+   const counts=new Map();for(const note of body.timeline.notes)counts.set(note.midi,(counts.get(note.midi)||0)+1);
+   result={hits:[],misses:body.timeline.notes.map(note=>note.id),extras:[],accuracy_percent:0,mean_abs_error_ms:null,summary:{expected_notes:body.timeline.notes.length,coverage_percent:0,timing_bias_ms:null,timing_stddev_ms:null,advice:[{code:'missed_targets',severity:'warning',message:'Retained original diagnostic <b>verbatim</b>'}]},pitch_breakdown:[...counts].sort(([a],[b])=>a-b).map(([midi,expected])=>({midi,expected,matched:0,missed:expected,extra:0,mean_abs_error_ms:null,timing_bias_ms:null})),grade_counts:{perfect:0,good:0,early:0,late:0,missed:2,extra:0},onset_completion:{total:2,complete:0,longest_complete_sequence:0}};
+  }
   else throw Error(`Unexpected Node DOM test request: ${path}`);
   if(path==='/api/compile'&&holdCompile){const gate=holdCompile;holdCompile=null;heldCompile=true;await gate;}
   if(path==='/api/instrument-check'&&holdCheck){const gate=holdCheck;holdCheck=null;heldCheck=true;await gate;}
@@ -44,6 +50,18 @@ test('application module initializes the lobby and activates only through explic
  try{
   await import('../web/app.js?node-shell-initialization');
   await until(()=>!document.getElementById('start-practice').disabled,'Preview never became ready');
+  const i18n=getAppI18n(document);
+  const switchLanguage=locale=>{const picker=document.getElementById('interface-language');picker.value=locale;picker.dispatchEvent(new window.Event('change',{bubbles:true}));assert.equal(i18n.locale,locale);};
+  assert.equal(i18n.locale,'zh-CN');assert.equal(document.documentElement.lang,'zh-CN');
+  assert.match(document.getElementById('preview-status').textContent,/聆听乐谱/);
+  assert.match(document.getElementById('preview-gate').textContent,/键盘音域/);
+  assert.equal(document.getElementById('preview-part').firstElementChild.textContent,'所有声部');
+  assert.match(document.querySelector('.catalog-item small').textContent,/谱面事件/);
+  assert.match(document.querySelector('#keyboard [data-midi="60"]').getAttribute('aria-label'),/^弹奏 C4$/);
+  const initialRequests=requests.length;switchLanguage('en');assert.equal(requests.length,initialRequests);
+  assert.equal(document.getElementById('preview-title').textContent,fixture.title,'Source title survives an explicit locale switch');
+  assert.equal(document.getElementById('preview-part').firstElementChild.textContent,'All parts');
+  assert.match(document.querySelector('.catalog-item small').textContent,/Written events/);
   assert.equal(document.body.dataset.screen,'library');assert.equal(audioContexts,0);assert.equal(document.getElementById('resume-session').hidden,true);assert.equal(requests.filter(r=>r.path==='/api/compile').length,1);assert.equal(requests.some(r=>r.path==='/api/export/musicxml'),false,'Hidden notation is not engraved');
   const originalCard=document.querySelector('.catalog-item');originalCard.click();await until(()=>!document.getElementById('start-practice').disabled,'Reselected preview never became ready');assert.ok(document.querySelector('.catalog-item')===originalCard,'Preview readiness must not detach a card being focused or clicked');
   document.getElementById('start-listen').click();await until(()=>document.body.dataset.screen==='stage'&&!document.getElementById('start-listen').disabled,'Start never entered the stage');
@@ -65,6 +83,16 @@ test('application module initializes the lobby and activates only through explic
   const mode=document.getElementById('session-mode');mode.value='practice';mode.dispatchEvent(new window.Event('change'));await until(()=>!document.getElementById('assess-button').disabled,'Practice never became ready');document.getElementById('settings-dialog').close();
   document.getElementById('results-button').click();document.getElementById('assess-button').click();await until(()=>!document.getElementById('feedback-results').hidden,'Assessment was not rendered');
   assert.equal(document.getElementById('result-summary').dataset.passId,'1');assert.equal(document.getElementById('result-summary').dataset.assessedRevision,'0');assert.equal(document.getElementById('result-grade-missed').textContent,'2');assert.equal(document.getElementById('result-onsets-complete').textContent,'0 / 2');assert.match(document.getElementById('result-summary-status').textContent,/Previous check/);assert.deepEqual(requests.find(request=>request.path==='/api/assess').body.inputs,[]);
+  const resultIdentity=document.getElementById('result-summary').dataset.passId,assessmentCalls=requests.filter(r=>r.path==='/api/assess').length;
+  const retainedDiagnostic=document.querySelector('#feedback-advice details p');
+  assert.equal(retainedDiagnostic.textContent,'missed_targets: Retained original diagnostic <b>verbatim</b>');assert.equal(retainedDiagnostic.querySelector('b'),null);
+  switchLanguage('zh-CN');assert.equal(document.getElementById('results-dialog').open,true);assert.equal(document.getElementById('result-summary').dataset.passId,resultIdentity);
+  assert.match(document.querySelector('#feedback-advice li > span').textContent,/多个预期起音未匹配/);
+  assert.match(document.getElementById('pitch-breakdown-status').textContent,/这些数据由 Rust/);
+  assert.match(document.getElementById('pitch-breakdown-body').textContent,/没有匹配的起音/);
+  assert.match(document.getElementById('feedback-detail').textContent,/匹配窗口/);assert.equal(retainedDiagnostic.textContent,'missed_targets: Retained original diagnostic <b>verbatim</b>');
+  assert.equal(requests.filter(r=>r.path==='/api/assess').length,assessmentCalls,'Results locale redraw does not resubmit an assessment');
+  switchLanguage('en');assert.match(document.querySelector('#feedback-advice li > span').textContent,/Several expected onsets/);
   document.getElementById('results-dialog').close();document.getElementById('reset-button').click();assert.equal(document.getElementById('feedback-results').hidden,true);
   const instrument=document.getElementById('instrument');instrument.value='guitar';instrument.dispatchEvent(new window.Event('change'));await until(()=>!document.getElementById('play-button').disabled,'Guitar target verification never completed');document.getElementById('reset-button').click();
   assert.equal(document.getElementById('piano-stage').hidden,true);assert.equal(document.getElementById('guitar-stage').hidden,false);assert.match(document.getElementById('practice-hint').textContent,/upcoming pitch times/);assert.doesNotMatch(document.getElementById('practice-hint').textContent,/reaches the line/);assert.equal(document.getElementById('stage-cue-main').textContent,'READY');assert.equal(document.getElementById('stage-cue').closest('#piano-stage'),null);
@@ -72,17 +100,65 @@ test('application module initializes the lobby and activates only through explic
   assert.deepEqual([...document.querySelectorAll('.guitar-target')].map(item=>[item.dataset.targetId,Number(item.dataset.startMs)]),guitarPlan.notes.map(note=>[note.id,note.start_ms]));assert.equal(document.querySelectorAll('.fret-button').length,78);
   const key=document.querySelector('.fret-button');key.setPointerCapture=()=>{};
   const emit=(target,type,properties={})=>{const event=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(event,{repeat:false,...properties});Object.defineProperty(event,'timeStamp',{value:performance.now()});target.dispatchEvent(event)};
-  const enter={key:'Enter',code:'Enter'},typing={key:'a',code:'KeyA'};
+  const enter={key:'Enter',code:'Enter'},typing={key:'r',code:'KeyR'};
+  // A released pointer ID can be reused at the same pitch before its old audio
+  // unlock resolves. Only the newest physical contact may start a voice.
+  const countingUnlock=Synth.prototype.unlock;let resolveOldUnlock,holdFirstUnlock=true;const manualStarts=[];
+  Synth.prototype.unlock=function(...args){if(holdFirstUnlock){holdFirstUnlock=false;return new Promise(resolve=>{resolveOldUnlock=resolve})}return countingUnlock.apply(this,args)};
+  Synth.prototype.play=function(...args){if(String(args[0]).startsWith('manual:'))manualStarts.push(args);return originalPlay.apply(this,args)};
+  emit(key,'pointerdown',{pointerId:72,button:0});emit(key,'pointerup',{pointerId:72});emit(key,'pointerdown',{pointerId:72,button:0});
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(manualStarts.length,1,'The fresh reused pointer contact starts its own audio');
+  resolveOldUnlock();await new Promise(resolve=>setImmediate(resolve));assert.equal(manualStarts.length,1,'A late unlock from the released same-source, same-pitch contact cannot retrigger audio');
+  emit(key,'pointerup',{pointerId:72});Synth.prototype.unlock=countingUnlock;Synth.prototype.play=originalPlay;
+
+  assert.equal(document.querySelector('#keyboard [data-midi="60"] .key-shortcut').textContent,'R','The current displayed physical mapping identifies C4');
+  assert.equal(document.querySelectorAll('#keyboard-map [data-code]').length,47);
+  document.getElementById('sound-button').click();const beforeSilentUnlock=unlockCalls;
+  emit(document.body,'keydown',typing);emit(document.body,'keyup',typing);
+  assert.equal(unlockCalls,beforeSilentUnlock,'Silent physical input never calls AudioContext unlock');
+  document.getElementById('sound-button').click();
   let blob;URL.createObjectURL=value=>{blob=value;return 'blob:node-evidence-test'};
   const exportTake=async()=>{document.getElementById('export-takes').click();return JSON.parse(await blob.text())};
   const startPractice=async()=>{document.getElementById('count-in').checked=false;document.getElementById('play-button').click();await until(()=>document.getElementById('play-button').textContent.includes('Pause'),'Practice did not start')};
   await startPractice();
+  const unchangedScore=document.getElementById('score-title').textContent;
+  const runningBefore=await exportTake(),runningRequests=requests.length;
+  const draft=document.getElementById('custom-lowest');draft.value='D#3';
+  const draftNode=draft,heldNode=document.querySelector('#keyboard [data-midi="60"]');
+  switchLanguage('zh-CN');
+  assert.equal(document.getElementById('play-button').textContent,'Ⅱ 暂停');
+  assert.match(document.getElementById('practice-hint').textContent,/按即将出现/);
+  assert.match(document.getElementById('practice-scope').textContent,/所有声部/);
+  assert.match(document.getElementById('feedback-pass').lastElementChild.textContent,/第 1 次练习/);
+  assert.match(document.querySelector('.fret-button').getAttribute('aria-label'),/^第 1 弦/);
+  assert.equal(document.getElementById('score-title').textContent,unchangedScore);
+  assert.equal(document.getElementById('custom-lowest'),draftNode);assert.equal(draft.value,'D#3');assert.equal(document.querySelector('#keyboard [data-midi="60"]'),heldNode);
+  assert.deepEqual(await exportTake(),runningBefore,'Changing language while recording preserves every take, input, clock segment, evidence event, and configuration');
+  assert.equal(requests.length,runningRequests,'Language redraw does not recompile, validate, assess, or prepare a new request');
+  switchLanguage('en');assert.equal(document.getElementById('play-button').textContent,'Ⅱ Pause');assert.deepEqual(await exportTake(),runningBefore);
+  const initialKeyboardExport=(await exportTake()).keyboard_input_configuration;
+  assert.equal(initialKeyboardExport.current_configuration.mapping.length,47);
+  assert.equal(initialKeyboardExport.current_configuration.base_midi,36);
+  const targetsBefore=structuredClone((await exportTake()).target_plan);
+  emit(document.getElementById('stage-title'),'keydown',{key:'ArrowRight',code:'ArrowRight'});emit(document.getElementById('stage-title'),'keyup',{key:'ArrowRight',code:'ArrowRight'});
+  emit(document.getElementById('play-button'),'keydown',{key:'ArrowUp',code:'ArrowUp'});emit(document.getElementById('play-button'),'keyup',{key:'ArrowUp',code:'ArrowUp'});
+  emit(document.getElementById('stage-title'),'keydown',{key:'a',code:'KeyR'});emit(document.getElementById('stage-title'),'keyup',{key:'a',code:'KeyR'});
+  const shiftedTake=await exportTake();assert.equal(shiftedTake.input_evidence.events.filter(event=>event.kind==='note_on').at(-1).midi,61,'Evidence retains the actual input-shifted pitch from the physical code');
+  assert.equal(shiftedTake.passes.at(-1).inputs.at(-1).midi,61);assert.equal(shiftedTake.keyboard_input_configuration.current_configuration.transpose_semitones,1,'Focused widget arrows never transpose');
+  assert.deepEqual(shiftedTake.target_plan,targetsBefore);assert.equal(document.getElementById('score-title').textContent,unchangedScore);
+  emit(document.body,'keydown',{key:'ArrowLeft',code:'ArrowLeft'});emit(document.body,'keyup',{key:'ArrowLeft',code:'ArrowLeft'});
+  assert.equal(document.querySelector('#keyboard [data-midi="60"] .key-shortcut').textContent,'R');
   // A real validation notice can be read and dismissed while playing without
   // recording its keyboard controls, retrying a request or pausing the take.
   const beforeNotice=await exportTake(),beforeNoticeRequests=requests.length;
   const beforeNoticeControls=['score-title','transport-status','play-button','practice-gate','retry-assessments','diagnostic-list'].map(id=>document.getElementById(id).outerHTML);
   document.getElementById('tempo').value='0';emit(document.getElementById('tempo'),'change');
   assert.equal(document.getElementById('notice').hidden,false);assert.match(document.getElementById('notice-message').textContent,/Choose a tempo/);
+  const noticeRows=document.querySelectorAll('#notice-history-list li').length;
+  switchLanguage('zh-CN');assert.match(document.getElementById('notice-message').textContent,/请选择每分钟/);assert.match(document.getElementById('notice-history-list').textContent,/请选择每分钟/);
+  assert.equal(document.querySelectorAll('#notice-history-list li').length,noticeRows);assert.deepEqual(await exportTake(),beforeNotice);
+  switchLanguage('en');assert.match(document.getElementById('notice-message').textContent,/Choose a tempo/);
+
   for(const id of ['notice-message','notice-dismiss']){
    for(const properties of [typing,enter,{key:' ',code:'Space'}]){emit(document.getElementById(id),'keydown',properties);emit(document.getElementById(id),'keyup',properties)}
   }
@@ -109,8 +185,42 @@ test('application module initializes the lobby and activates only through explic
   assert.equal(lifecycle.filter(event=>event.reason==='lostpointercapture').length,0);
   assert.ok(lifecycle.some(event=>event.kind==='note_off'&&event.encoding==='pointer_up'&&event.midi===null));
   const hiddenBoundary=lifecycle.findIndex(event=>event.reason==='hidden'&&event.kind==='boundary');
-  assert.ok(lifecycle.slice(hiddenBoundary+1).some(event=>event.kind==='note_on'&&event.input_kind==='typing_keyboard'),'Hidden/audio-suppressed notes are still observed independently of held sound state');
-  const pausedSnapshot=await exportTake();
+  assert.equal(lifecycle.slice(hiddenBoundary+1).filter(event=>event.kind==='note_on'&&event.input_kind==='typing_keyboard').length,1,'Only the fresh visible contact after resume is recorded; hidden physical typing is suppressed');
+  const beforeComposition=(await exportTake()).input_evidence.events.length;
+  emit(document.body,'keydown',typing);emit(document,'compositionstart');
+  emit(document.body,'keydown',{key:'s',code:'KeyS'});emit(document.body,'keyup',typing);emit(document,'compositionend');
+  const composition=(await exportTake()).input_evidence.events.slice(beforeComposition);
+  assert.equal(composition.filter(event=>event.kind==='note_on').length,1);assert.equal(composition.find(event=>event.kind==='synthetic_release').reason,'keyboard_composition');
+  emit(document.body,'keydown',typing);emit(document.getElementById('tempo'),'focusin');emit(document.body,'keyup',typing);
+  assert.equal((await exportTake()).input_evidence.events.filter(event=>event.kind==='synthetic_release').at(-1).reason,'keyboard_focus_changed');
+  let pausedSnapshot=await exportTake();
+  const pausedRequests=requests.length;switchLanguage('zh-CN');
+  assert.equal(document.getElementById('play-button').textContent,'▶ 播放');
+  assert.match(document.getElementById('transport-status').textContent,/已暂停/);
+  assert.equal(document.getElementById('custom-lowest').value,'D#3');
+  assert.deepEqual(await exportTake(),pausedSnapshot,'Changing language while paused preserves the entire saved take');assert.equal(requests.length,pausedRequests);
+  switchLanguage('en');assert.deepEqual(await exportTake(),pausedSnapshot);
+  const imeUnlocks=unlockCalls;
+  emit(document.body,'keydown',{key:' ',code:'Space',isComposing:true});emit(document.body,'keyup',{key:' ',code:'Space',isComposing:true});
+  emit(document.body,'keydown',{key:' ',code:'Space',keyCode:229});emit(document.body,'keyup',{key:' ',code:'Space',keyCode:229});
+  emit(document,'compositionstart');emit(document.body,'keydown',{key:' ',code:'Space'});emit(document.body,'keyup',{key:' ',code:'Space'});emit(document,'compositionend');
+  assert.equal(unlockCalls,imeUnlocks,'IME Space must not start transport or audio');assert.equal(document.getElementById('play-button').textContent,'▶ Play');
+  const afterIme=await exportTake();assert.deepEqual(afterIme.passes,pausedSnapshot.passes,'IME Space must not alter recorded passes or transport segments');assert.equal(afterIme.input_evidence.events.filter(event=>event.kind==='note_on').length,pausedSnapshot.input_evidence.events.filter(event=>event.kind==='note_on').length,'IME Space never starts musical input');pausedSnapshot=afterIme;
+
+  // Entering the independent screen pauses and retains the complete scored take.
+  const beforeFree=await exportTake(),requestsBeforeFree=requests.length;
+  document.getElementById('back-to-library').click();document.getElementById('start-free-practice').click();
+  assert.equal(document.body.dataset.screen,'free');assert.equal(document.getElementById('workspace').hidden,true);
+  document.getElementById('free-sound').click();document.getElementById('free-start').click();await new Promise(resolve=>setImmediate(resolve));
+  emit(document.getElementById('free-practice-title'),'keydown',typing);emit(document.getElementById('free-practice-title'),'keyup',typing);
+  document.getElementById('free-stop').click();await new Promise(resolve=>setImmediate(resolve));
+  document.getElementById('free-export-draft').click();await new Promise(resolve=>setImmediate(resolve));const freeRecord=JSON.parse(await blob.text());
+  assert.equal(freeRecord.score_context,null);assert.equal(freeRecord.observations.events.filter(event=>event.kind==='note_on').length,1);
+  document.getElementById('free-exit').click();document.getElementById('resume-session').click();
+  assert.equal(document.body.dataset.screen,'stage');assert.equal(document.getElementById('free-practice-screen').hidden,true);
+  assert.deepEqual(await exportTake(),beforeFree,'Free recording leaves every scored take, target, clock segment and evidence event unchanged');
+  assert.equal(requests.length,requestsBeforeFree,'Free entry and recording need no score APIs');document.getElementById('sound-button').click();
+
   for(let opening=0;opening<2;opening++){
    document.getElementById('results-button').click();assert.deepEqual(await exportTake(),pausedSnapshot,'Entering Results and exporting an idle paused take changes no export field');document.getElementById('results-dialog').close();
   }
@@ -152,5 +262,6 @@ test('application module initializes the lobby and activates only through explic
   openTranspose();await previewTranspose();heldCheck=false;let releaseCompatibility;holdCheck=new Promise(resolve=>{releaseCompatibility=resolve});document.getElementById('transposition-activate').click();await until(()=>heldCheck,'Committed copy did not wait for instrument checks');
   assert.equal(document.getElementById('transposition-dialog').open,false,'Review ends at score commit before the instrument request settles');assert.equal(document.getElementById('score-title').textContent,originalTitle+' [+12 semitones]');assert.equal(document.getElementById('export-takes').disabled,true,'Confirmed replacement clears the explicitly warned take history');assert.match(document.getElementById('notice').textContent,/copy loaded.*checks are updating/);
   openTranspose();releaseCompatibility();await until(()=>!document.getElementById('play-button').disabled,'Committed compatibility check never finished');assert.equal(document.getElementById('transposition-dialog').open,true,'Late activation completion does not dismiss a new review');assert.equal(document.getElementById('transposition-preview').disabled,true);assert.equal(document.getElementById('transposition-restore-preview').hidden,false);
- }finally{InputEvidence.prototype.start=originalEvidenceStart;URL.createObjectURL=originalCreateUrl;for(const[key,descriptor]of originals)if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key]}
+  assert.deepEqual(i18n.getReports().filter(issue=>['message_key_missing','message_param_invalid','message_param_missing','message_param_unexpected','locale_subscriber_failed'].includes(issue.code)),[],'Every exercised dynamic locale binding satisfies its catalog contract');
+ }finally{Synth.prototype.play=originalPlay;Synth.prototype.unlock=originalUnlock;InputEvidence.prototype.start=originalEvidenceStart;URL.createObjectURL=originalCreateUrl;for(const[key,descriptor]of originals)if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key]}
 });

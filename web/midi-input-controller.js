@@ -5,19 +5,20 @@ export function createMidiInputController({requestAccess, pressNote, releaseNote
   onChange = () => {}, choice = {mode:'all', id:null}, now = () => performance.now(),
   timeOrigin = () => performance.timeOrigin, getConfiguredRange = () => null}) {
   let access = null, requesting = null, phase = requestAccess ? 'idle' : 'unsupported';
-  let message = '', away = false, serial = 0, timingAmbiguous = false, omitted = 0;
+  let message = '', messageCode = '', messageDetails = '', away = false, serial = 0, timingAmbiguous = false, omitted = 0;
   const bound = new Map(), queues = new WeakMap(), history = [], errors = new Map();
-  const test = {active:false,last:null,held:new Map(),range:null,message:''};
+  const test = {active:false,last:null,held:new Map(),range:null,message:'',code:'',reason:''};
+  const errorDetail = error => typeof error?.message === 'string' ? error.message : typeof error === 'string' ? error : '';
   const selected = input => choice.mode === 'all' || (choice.mode === 'single' && choice.id === input.id);
   const inputs = () => access ? [...access.inputs.values()] : [];
   const live = binding => !away && bound.get(binding.input.id) === binding && binding.end === null;
   function snapshot() {
-    return {phase, choice:{...choice}, devices:inputs().map(input => ({id:input.id,name:input.name || 'MIDI input',
+    return {phase, choice:{...choice}, devices:inputs().map(input => ({id:input.id,name:input.name || '',
       state:input.state,connection:input.connection || (bound.get(input.id)?.ready ? 'open' : 'closed'),
-      opening:Boolean(bound.get(input.id) && !bound.get(input.id).ready), error:errors.get(input.id) || ''})),
-      message, configuredRange:getConfiguredRange(), canTest:!away && [...bound.values()].some(binding=>binding.ready),
+      opening:Boolean(bound.get(input.id) && !bound.get(input.id).ready), error:errors.get(input.id)?.message || '', errorCode:errors.has(input.id) ? 'midi_open_failed' : '', errorDetails:errors.get(input.id)?.details || ''})),
+      message, messageCode, messageDetails, configuredRange:getConfiguredRange(), canTest:!away && [...bound.values()].some(binding=>binding.ready),
       test:{active:test.active,last:test.last,held:[...test.held.values()],range:test.range,
-        message:test.message}, omittedTimingEvents:omitted};
+        message:test.message,code:test.code,reason:test.reason}, omittedTimingEvents:omitted};
   }
   const emit = () => onChange(snapshot());
   // Serialize lease operations per port object. A late close must finish before
@@ -38,8 +39,8 @@ export function createMidiInputController({requestAccess, pressNote, releaseNote
     if (close) lease(binding.input,()=>binding.input.close?.()).catch(()=>{});
   }
   function discard() {
-    omitted++;
-    message = `${omitted} MIDI messages with ambiguous routing time were excluded from practice. Event timestamps are required after switching key-test mode. · 已排除时间不明的输入`;
+    omitted++;messageCode='midi_timing_ambiguous';messageDetails='';
+    message = `${omitted} MIDI messages with ambiguous routing time were excluded from practice. Event timestamps are required after switching key-test mode.`;
     emit();
   }
   function deliver(calledBinding,event) {
@@ -85,29 +86,29 @@ export function createMidiInputController({requestAccess, pressNote, releaseNote
     // actual Web MIDI ports provide open/close and take the serialized path.
     if(typeof input.open!=='function'){install();return;}
     lease(input,async()=>{if(live(binding))await input.open();}).then(install,error=>{
-      if(!live(binding))return;errors.set(input.id,'Could not open this input. Retry Connect MIDI. · 无法打开输入，请重试');
-      retire(binding,'midi_open_failed',now(),false);if(test.active)setTest(false,'input could not open');
-      message='A selected MIDI input could not be opened. · 所选 MIDI 输入无法打开';emit();
+      if(!live(binding))return;errors.set(input.id,{message:'Could not open this input. Retry Connect MIDI.',details:errorDetail(error)});
+      retire(binding,'midi_open_failed',now(),false);if(test.active)setTest(false,'input_open_failed');
+      message='A selected MIDI input could not be opened.';messageCode='midi_open_failed';messageDetails='';emit();
     });
   }
   function reconcile(event) {
     if(!access||away)return;
     const desired=inputs().filter(input=>input.state!=='disconnected'&&selected(input));
-    if(test.active && ([...bound.values()].some(binding=>!desired.includes(binding.input)) || desired.some(input=>bound.get(input.id)?.input!==input)))setTest(false,'device changed');
+    if(test.active && ([...bound.values()].some(binding=>!desired.includes(binding.input)) || desired.some(input=>bound.get(input.id)?.input!==input)))setTest(false,'device_changed');
     for(const binding of [...bound.values()])if(!desired.includes(binding.input))
       retire(binding,binding.input.state==='disconnected'?'midi_disconnected':desired.some(input=>input.id===binding.input.id)?'midi_replaced':'midi_selection_changed',event?.timeStamp);
-    if(test.active && !desired.length) {test.active=false;test.held.clear();test.message='Key test stopped: selected input unavailable. · 选定输入不可用，已停止测试';}
+    if(test.active && !desired.length) {test.active=false;test.held.clear();test.message='Key test stopped: selected input unavailable.';test.code='midi_test_stopped';test.reason='input_unavailable';}
     for(const input of desired)if(!bound.has(input.id))bind(input);
     emit();
   }
   async function connect() {
     if(requesting)return requesting;
     if(!requestAccess){phase='unsupported';emit();return;}
-    if(access){message='';reconcile();return;}
-    phase='requesting';emit();
+    if(access){message='';messageCode='';messageDetails='';reconcile();return;}
+    phase='requesting';message='';messageCode='';messageDetails='';emit();
     requesting=Promise.resolve().then(()=>requestAccess({sysex:false})).then(value=>{
-      access=value;phase='ready';message='';if(!away){access.onstatechange=reconcile;reconcile();}
-    },()=>{phase='error';message='MIDI permission was not granted or input is unavailable. You can retry. · MIDI 未授权或不可用，可重试';})
+      access=value;phase='ready';message='';messageCode='';messageDetails='';if(!away){access.onstatechange=reconcile;reconcile();}
+    },error=>{phase='error';message='MIDI permission was not granted or input is unavailable. You can retry.';messageCode='midi_access_failed';messageDetails=errorDetail(error);})
       .finally(()=>{requesting=null;emit();});
     return requesting;
   }
@@ -115,7 +116,8 @@ export function createMidiInputController({requestAccess, pressNote, releaseNote
     active=Boolean(active);if(active===test.active)return;
     if(active&&!snapshot().canTest)return;
     timingAmbiguous=true;test.active=active;test.held.clear();
-    test.message=active?'Visual key test only; these messages are excluded from practice. · 仅测试按键，不计入练习':`Key test stopped · 按键测试已停止 (${reason})`;
+    test.code=active?'midi_test_active':'midi_test_stopped';test.reason=active?'':reason;
+    test.message=active?'Visual key test only; these messages are excluded from practice.':`Key test stopped (${reason})`;
     if(active){test.last=null;test.range=null;}
     // Keep device leases while creating fresh observation/routing generations.
     const current=[...bound.values()];for(const binding of current)retire(binding,'midi_test_boundary',now(),false);
@@ -125,11 +127,11 @@ export function createMidiInputController({requestAccess, pressNote, releaseNote
   function select(next) {
     if(!next||!['all','single','none'].includes(next.mode)||(next.mode==='single'&&(typeof next.id!=='string'||!next.id)))throw Error('Invalid MIDI input choice');
     if(choice.mode===next.mode&&choice.id===next.id)return;
-    if(test.active)setTest(false,'selection changed');
-    choice={mode:next.mode,id:next.mode==='single'?next.id:null};message='';reconcile();emit();
+    if(test.active)setTest(false,'selection_changed');
+    choice={mode:next.mode,id:next.mode==='single'?next.id:null};message='';messageCode='';messageDetails='';reconcile();emit();
   }
   function suspend(event) {
-    away=true;if(test.active){test.active=false;test.held.clear();test.message='Key test stopped while away. · 已暂停按键测试';}
+    away=true;if(test.active){test.active=false;test.held.clear();test.message='Key test stopped while away.';test.code='midi_test_stopped';test.reason='pagehide';}
     if(access)access.onstatechange=null;
     for(const binding of [...bound.values()])retire(binding,'pagehide',event?.timeStamp);
     emit();

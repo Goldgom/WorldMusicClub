@@ -90,6 +90,6 @@ test('a port-open failure during test transition stops the monitor and exposes t
  const f=fixture({choice:{mode:'single',id:'private-one'}});await f.controller.connect();await tick();
  f.one.open=async()=>{throw Error('Port became unavailable');};f.at(120);f.controller.setTest(true);await tick();
  assert.equal(f.controller.snapshot().test.active,false);assert.equal(f.controller.snapshot().canTest,false);
- assert.match(f.controller.snapshot().test.message,/could not open/);assert.match(f.controller.snapshot().devices[0].error,/Could not open/);
+ assert.equal(f.controller.snapshot().test.code,'midi_test_stopped');assert.equal(f.controller.snapshot().test.reason,'input_open_failed');assert.match(f.controller.snapshot().devices[0].error,/Could not open/);
  assert.equal(f.calls.filter(event=>event[0]==='on').length,0);
 });

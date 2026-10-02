@@ -1,42 +1,48 @@
 import {stageFeedbackView} from './hud-feedback.js';
+import {getAppI18n} from './app-locale.js';
+import {localizeStatic} from './locale-view.js';
 
 const gradeKeys=['perfect','good','early','late','missed','extra'];
-const unavailable='Unavailable in this saved result or server response · 此结果未提供';
-const phases={
-  ready:'No checked result yet · 尚无检查结果',
-  capturing:'Capturing notes; check this take after pausing · 记录中，暂停后检查',
-  grace:'Receiving delayed input; previous counts are hidden · 接收延迟输入，暂不显示旧计数',
-  pending:'Check pending for this input revision · 当前输入版本等待检查',
-  error:'Check failed; retry in Results · 检查失败，请重试',
-  assessed:'Previous check · 上次检查',
-  review:'Provisional check; review boundary or clock-gap warnings below · 暂定结果，请查看下方边界或时钟中断提示',
-  empty:'Unavailable: no note-on targets; this is not a successful take · 无目标音符，不能表示练习成功',
-};
+const phases=new Set(['ready','capturing','grace','pending','error','assessed','review','empty']);
+const inconsistentReasons=new Set(['grade_counts_inconsistent','onset_counts_inconsistent']);
 
 /** Present only the selected pass's checked Rust snapshot, with the HUD's freshness rules. */
-export function resultsSummaryView({pass,now=0,running=false,interrupted=false,latencyMs=0,toleranceMs=180}){
+export function resultsSummaryView({pass,passLabel,now=0,running=false,interrupted=false,latencyMs=0,toleranceMs=180},i18n=getAppI18n()){
   const checked=stageFeedbackView({mode:'practice',pass,now,running,interrupted,latencyMs,toleranceMs});
   const settled=['assessed','review'].includes(checked.phase);
-  const missing=checked.phase==='empty'?'Unavailable: no note-on targets · 无目标音符':settled?unavailable:'Unavailable until this take is checked · 等待本次检查';
-  const inconsistent=settled&&checked.message.includes('inconsistent');
+  const missing=i18n.t(checked.phase==='empty'?'resultSummary.noTargets':settled?'resultSummary.unavailable':'resultSummary.notChecked');
+  const inconsistent=settled&&inconsistentReasons.has(checked.summaryReasonCode);
+  let title=pass?.label||i18n.t('resultSummary.noSelection');
+  // An explicit app-owned display adapter may localize generated take names.
+  // Retain canonical/source labels unchanged, including when the adapter fails.
+  if(pass){
+    try{
+      const display=typeof passLabel==='function'?passLabel():passLabel;
+      if(typeof display==='string'&&display.length>0)title=display;
+    }catch{/* A display callback cannot prevent checked counters from rendering. */}
+  }
   return{
-    phase:checked.phase,passId:pass?.id??null,revision:pass?.revision??null,assessedRevision:pass?.assessedRevision??null,
-    title:pass?.label||'No take selected · 未选择记录',
-    status:phases[checked.phase]||phases.ready,
-    revisionText:pass?.assessment?`Checked input revision ${pass.assessedRevision} · Current input revision ${pass.revision} · 已检查 / 当前输入版本`:'',
+    phase:checked.phase,summaryReasonCode:checked.summaryReasonCode,passId:pass?.id??null,revision:pass?.revision??null,assessedRevision:pass?.assessedRevision??null,
+    title,
+    status:i18n.t(`resultSummary.phase.${phases.has(checked.phase)?checked.phase:'ready'}`),
+    revisionText:pass?.assessment?i18n.t('resultSummary.revisions',{checked:pass.assessedRevision,current:pass.revision}):'',
     grades:checked.grades,onsets:checked.onsets,
-    gradeStatus:checked.grades?'Exclusive attack counts · 每次起音只计入一类':inconsistent?'Unavailable: inconsistent Rust summary · 结果计数不一致':missing,
-    onsetStatus:checked.onsets?'Coverage in expected score order · 按乐谱顺序统计覆盖':inconsistent?'Unavailable: inconsistent Rust summary · 结果计数不一致':missing,
+    gradeStatus:checked.grades?i18n.t('resultSummary.gradeStatus'):inconsistent?i18n.t('resultSummary.inconsistent'):missing,
+    onsetStatus:checked.onsets?i18n.t('resultSummary.onsetStatus'):inconsistent?i18n.t('resultSummary.inconsistent'):missing,
   };
 }
 
 /** Stable DOM updates avoid repeatedly announcing an unchanged assessment. */
-export function setupResultsSummary(document){
-  const $=id=>document.getElementById(id);let previous='';
-  return context=>{
-    const view=resultsSummaryView(context),signature=JSON.stringify(view);
-    if(signature===previous)return;previous=signature;
+export function setupResultsSummary(document,{i18n=getAppI18n(document)}={}){
+  const $=id=>document.getElementById(id);let previous='',context=null,disposed=false;
+  function render(next){
+    if(disposed)return;
+    if(next)context=next;
     const region=$('result-summary');
+    localizeStatic(region,i18n);
+    if(!context)return;
+    const view=resultsSummaryView(context,i18n),signature=JSON.stringify([i18n.revision,view]);
+    if(signature===previous)return;previous=signature;
     region.dataset.phase=view.phase;region.dataset.passId=String(view.passId??'');
     region.dataset.revision=String(view.revision??'');region.dataset.assessedRevision=String(view.assessedRevision??'');
     $('result-summary-take').textContent=view.title;
@@ -44,8 +50,12 @@ export function setupResultsSummary(document){
     $('result-summary-revision').textContent=view.revisionText;
     $('result-grade-status').textContent=view.gradeStatus;
     $('result-onset-status').textContent=view.onsetStatus;
-    for(const key of gradeKeys)$(`result-grade-${key}`).textContent=view.grades?String(view.grades[key]):'—';
-    $('result-onsets-complete').textContent=view.onsets?`${view.onsets.complete} / ${view.onsets.total}`:'—';
-    $('result-onsets-sequence').textContent=view.onsets?String(view.onsets.longest_complete_sequence):'—';
-  };
+    for(const key of gradeKeys)$(`result-grade-${key}`).textContent=view.grades?i18n.formatNumber(view.grades[key]):'—';
+    $('result-onsets-complete').textContent=view.onsets?i18n.t('resultSummary.onsetCount',{complete:view.onsets.complete,total:view.onsets.total}):'—';
+    $('result-onsets-sequence').textContent=view.onsets?i18n.formatNumber(view.onsets.longest_complete_sequence):'—';
+  }
+  render();
+  const unsubscribe=i18n.subscribe(()=>render());
+  render.destroy=()=>{if(disposed)return;disposed=true;unsubscribe();};
+  return render;
 }

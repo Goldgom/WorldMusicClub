@@ -1,4 +1,33 @@
-# Development after the accepted 108 recovery
+# Source development and accepted snapshots
+
+## After accepted 155
+
+The [155 recovery](0.2.0-alpha.1-commit-155.md) passed exact-source acceptance.
+The following source changes require their own hosted browser and native Windows
+checks and are not in its ZIP:
+
+- Free practice works independently of score availability, with optional live
+  sound, explicit Start/Pause/Stop, immutable local saves, backups, imports and
+  descriptive A/B records. Preview uses bounded fixed-length synthesized tones;
+  it does not reconstruct the original performance audio or grade improvement.
+- Four physical PC keyboard rows cover 47 chromatic notes by default. Settings
+  support custom mappings and octave/semitone performance-input shifts. Mapping
+  changes release old contacts and retain full configuration history without
+  transposing the score. Hardware rollover remains a keyboard limitation.
+- The shared display preference defaults to Chinese and offers English. Owned
+  shell, settings, input, free-practice, results and source-library views redraw
+  without changing musical state. [Remaining runtime localization](../I18N.md)
+  is explicit; this is not yet an application-wide single-language claim.
+- Guitar phrase planning can select an explicit exact written-beat range before
+  solver budgets. Rust includes entering holds and full tails, inventories selected
+  occurrences, and replans with only applicable retained locks. Repeated-score
+  phrase selection is explicitly refused. This remains a bounded recommendation,
+  not a claim of universal physical optimality or completed right-hand guidance.
+- Delayed MIDI evidence is kept separate from newer live sound ownership. Unknown
+  timing after route changes is retained in a separately exportable, bounded
+  unassigned journal, never guessed into a newer performance.
+
+## Historical changes after accepted 108
 
 The [108 recovery snapshot](0.2.0-alpha.1-recovery.md) passed its exact-source Linux/Windows, browser, and native Windows package checks. It contains the 101–107 changes summarized below. Its files and the original 100 milestone remain immutable. Use a package's exact commit and `BUILD-INFO.json` to identify which features it includes.
 

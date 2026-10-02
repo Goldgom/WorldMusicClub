@@ -1,0 +1,29 @@
+const plain=Object.freeze({params:Object.freeze({})});
+const params=value=>Object.freeze({params:Object.freeze(value)});
+export default Object.freeze({
+  'midiQuarantine.title':plain,'midiQuarantine.status':params({retained:'count',omitted:'count'}),
+  'midiQuarantine.help':plain,'midiQuarantine.export':plain,
+  'free.exit':plain,'free.discard':plain,'free.discardConfirm':plain,'free.save.unsaved':plain,
+  'free.libraryTitle':plain,'free.refresh':plain,'free.load':plain,'free.recordSelect':plain,
+  'free.recordOption':params({label:'text',date:'text'}),'free.unnamed':plain,'free.emptyLibrary':plain,
+  'free.exportDraft':plain,'free.exportBackup':plain,'free.importFile':plain,'free.importRecord':plain,'free.restoreBackup':plain,
+  'free.imported':params({count:'count'}),'free.fileRequired':plain,'free.fileTooLarge':plain,'free.operationFailed':plain,'free.loaded':plain,
+  'free.connectMidi':plain,'free.inputTitle':plain,'free.inputHelp':plain,
+  'free.mappingStatus':params({low:'text',high:'text',count:'count'}),
+  'free.preview':plain,'free.previewStop':plain,'free.previewHelp':plain,'free.previewTimbre':plain,
+  'free.timbre.piano':plain,'free.timbre.guitar':plain,
+  'free.previewStatus':params({state:'text',scheduled:'count',skipped:'count',excluded:'count'}),
+  'free.preview.state.idle':plain,'free.preview.state.preparing':plain,'free.preview.state.playing':plain,
+  'free.preview.state.stopped':plain,'free.preview.state.finished':plain,'free.preview.state.failed':plain,
+  'free.preview.state.muted':plain,'free.preview.state.empty':plain,
+  'free.summaryTitle':plain,'free.compareTitle':plain,'free.compareHelp':plain,'free.baseline':plain,
+  'free.baselineName':params({label:'text'}),'free.selectedName':params({label:'text'}),
+  'free.countSummary':params({onsets:'count',releases:'count',synthetic:'count'}),
+  'free.pitchRange':params({low:'text',high:'text'}),'free.noOnsets':plain,'free.gaps':params({count:'count'}),
+  'free.omissions':params({count:'count'}),'free.activeDuration':params({duration:'text'}),
+  'free.intervalSummary':params({count:'count',reordered:'count',unassigned:'count',boundaries:'count'}),
+  'free.distribution':plain,'free.pitchCount':params({note:'text',count:'count'}),'free.inputCount':params({kind:'text',count:'count'}),
+  'free.input.midi':plain,'free.input.typing_keyboard':plain,'free.input.on_screen_pointer':plain,'free.input.on_screen_keyboard':plain,
+  'free.captureFull':plain,'free.boundaryPause':plain,'free.saveHelp':plain,
+  'free.error.refresh':plain,'free.error.configuration':plain,'free.error.storage':plain,'free.error.invalidRecord':plain,'free.error.recordLimit':plain
+});

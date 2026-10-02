@@ -1,0 +1,18 @@
+.free-practice-screen{max-width:1180px;margin:0 auto;padding:clamp(1rem,3vw,2.5rem);color:var(--text,#eef3ff)}
+.free-practice-screen[hidden],.free-practice-screen [hidden]{display:none!important}
+.free-practice-heading,.free-practice-actions{display:flex;gap:.7rem;flex-wrap:wrap;align-items:center}
+.free-practice-heading{justify-content:space-between}.free-practice-heading h1{margin:.3rem 0}
+.free-practice-screen h2{font-size:1.25rem}.free-practice-screen p{line-height:1.55}
+.free-practice-screen section{margin-top:1.2rem;padding:1rem;border:1px solid var(--line,#344258);border-radius:14px;background:var(--panel,#162033)}
+.free-practice-screen label{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin:.8rem 0}
+.free-practice-screen input[type=text],.free-practice-screen select{max-width:100%;min-height:2.5rem;padding:.45rem .65rem;border:1px solid var(--line,#566279);border-radius:7px;background:var(--surface,#101827);color:inherit}
+.free-practice-screen input[type=text]{width:min(100%,28rem)}
+.free-practice-screen button:disabled{opacity:.48;cursor:not-allowed}.free-practice-screen button:focus-visible,.free-practice-screen input:focus-visible,.free-practice-screen select:focus-visible{outline:3px solid var(--accent,#81adff);outline-offset:3px}
+#free-state,#free-event-count{display:inline-block;margin-top:.8rem;margin-right:1rem}
+.free-practice-keys{display:flex;gap:.35rem;flex-wrap:wrap;margin-top:1rem}
+.free-practice-key{display:flex;flex-direction:column;gap:.5rem;align-items:center;justify-content:space-between;min-height:5.5rem;min-width:3.5rem;padding:.65rem .4rem;border:2px solid #c4d1e5;border-radius:7px;background:#eff4ff;color:#152137;touch-action:none;user-select:none}
+.free-practice-key kbd{font:inherit;font-size:.8rem;color:#344a6e}.free-practice-key.held{background:#91bcff;border-color:#365ac4;transform:translateY(2px)}
+.free-comparison-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.free-comparison-columns section{margin:0;overflow-wrap:anywhere}
+.free-practice-screen .warning{color:var(--warning,#ffd58c)}#free-operation-status{overflow-wrap:anywhere;min-height:1.5rem}
+@media(max-width:600px){.free-comparison-columns{grid-template-columns:1fr}.free-practice-screen .button{max-width:100%;white-space:normal}.free-practice-actions{align-items:stretch}.free-practice-actions>*{flex:1 1 auto}.free-practice-key{min-width:3rem}.free-practice-screen input[type=file]{max-width:100%}}
+@media(prefers-reduced-motion:reduce){.free-practice-key.held{transform:none}}

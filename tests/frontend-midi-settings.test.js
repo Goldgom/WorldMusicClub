@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseHTML} from 'linkedom';
-import {MIDI_CHOICE_KEY,normalizeMidiChoice,readMidiChoice,saveMidiChoice,midiTestReadout,setupMidiSettings} from '../web/midi-settings.js';
+import {MIDI_CHOICE_KEY,normalizeMidiChoice,readMidiChoice as sourceReadChoice,saveMidiChoice as sourceSaveChoice,midiTestReadout as sourceReadout,setupMidiSettings} from '../web/midi-settings.js';
+
+import {createI18n} from '../web/i18n.js';
+const english=createI18n({locale:'en'});
+const readMidiChoice=storage=>sourceReadChoice(storage,english);
+const saveMidiChoice=(value,storage)=>sourceSaveChoice(value,storage,english);
+const midiTestReadout=snapshot=>sourceReadout(snapshot,english);
 
 const model = (overrides={}) => ({phase:'ready',choice:{mode:'all',id:null},devices:[{id:'one',name:'Keyboard',state:'connected',connection:'open'}],canTest:true,configuredRange:{low:36,high:96},test:{active:false,last:null,held:[],range:null,message:''},...overrides});
 const note = (overrides={}) => ({inputId:'one',kind:'on',midi:60,channel:0,velocity:90,...overrides});
@@ -11,7 +17,7 @@ function fixture() {
  Object.defineProperty(prototype,'value',{configurable:true,get(){return this.querySelector('option[selected]')?.value||this.querySelector('option')?.value||''},set(value){for(const option of this.querySelectorAll('option'))option.toggleAttribute('selected',option.value===String(value))}});
  const choices=[],tests=[],button=document.getElementById('midi-button'),help=document.getElementById('midi-help');let connects=0;
  button.addEventListener('click',()=>connects++);
- const view=setupMidiSettings({document,onSelection:choice=>choices.push(choice),onTest:active=>tests.push(active)});
+ const view=setupMidiSettings({document,i18n:english,onSelection:choice=>choices.push(choice),onTest:active=>tests.push(active)});
  return{document,window,view,button,help,choices,tests,get connects(){return connects},$:id=>document.getElementById(id),restore(){view.destroy();if(descriptor)Object.defineProperty(prototype,'value',descriptor);else delete prototype.value}};
 }
 
@@ -35,14 +41,14 @@ test('MIDI preference failure never broadens to All or overwrites an unreadable 
 
 test('MIDI readout separates observed extrema, configured endpoints and note-off velocity',()=>{
  const input=model({configuredRange:{low:60,high:72},test:{active:true,last:note({kind:'off',midi:72,channel:15,velocity:0}),held:[],range:{low:21,high:108}}});
- const before=structuredClone(input),result=midiTestReadout(input);assert.match(result.lastNote,/Note off.*C5.*72/);assert.equal(result.channel,'16');assert.equal(result.velocity,'0');assert.equal(result.observedRange,'A0–C8 · 21–108');assert.equal(result.configuredRange,'C4–C5 · 60–72');assert.equal(result.rangeState,'inside');assert.equal(result.heldText,'No held keys · 无保持按键');assert.deepEqual(input,before);
+ const before=structuredClone(input),result=midiTestReadout(input);assert.match(result.lastNote,/Note off.*C5.*72/);assert.equal(result.channel,'16');assert.equal(result.velocity,'0');assert.equal(result.observedRange,'A0–C8 · 21–108');assert.equal(result.configuredRange,'C4–C5 · 60–72');assert.equal(result.rangeState,'inside');assert.equal(result.heldText,'No held keys');assert.deepEqual(input,before);
  input.test.last=note({midi:59});assert.equal(midiTestReadout(input).rangeState,'outside');input.test.last=note({midi:60});assert.equal(midiTestReadout(input).rangeState,'inside');input.configuredRange=null;assert.equal(midiTestReadout(input).rangeState,'unknown');assert.equal(midiTestReadout(input).observedRange,result.observedRange);
  input.test.range=null;assert.match(midiTestReadout(input).observedRange,/No note-on received/,'Configured endpoints and the last event must not invent observed extrema');
 });
 
 test('MIDI held pitches preserve duplicate device/channel contacts and clear when test mode stops',()=>{
  const first=note(),second=note({inputId:'two',channel:2}),input=model({test:{active:true,last:first,held:[first,second,note({midi:64})],range:{low:60,high:64}}});
- assert.deepEqual(midiTestReadout(input).heldPitches,[60,64]);assert.match(midiTestReadout(input).heldText,/2 held pitches \/ 3 input contacts/);
+ assert.deepEqual(midiTestReadout(input).heldPitches,[60,64]);assert.match(midiTestReadout(input).heldText,/Held pitches: 2 \/ input contacts: 3/);
  input.test.held=[second];assert.deepEqual(midiTestReadout(input).heldPitches,[60]);input.test.active=false;assert.deepEqual(midiTestReadout(input).heldPitches,[]);assert.match(midiTestReadout(input).lastNote,/C4/);assert.equal(midiTestReadout(input).observedRange,'C4–E4 · 60–64');
 });
 
@@ -85,7 +91,7 @@ test('MIDI storage and timing exclusions stay explicit and extreme test pitches 
  const f=fixture();try{
   Object.defineProperty(f.$('midi-test-scroll'),'clientWidth',{value:300});Object.defineProperty(f.$('midi-test-keyboard'),'clientWidth',{value:1000});f.$('midi-test-scroll').scrollLeft=0;f.$('settings-dialog').scrollTop=140;
   f.view.render(model({omittedTimingEvents:3,storageMessage:'Current tab only; saving failed.',test:{active:true,last:note({midi:127}),held:[note({midi:127})],range:{low:127,high:127}}}));
-  assert.equal(f.$('midi-storage-status').hidden,false);assert.match(f.$('midi-storage-status').textContent,/Current tab only/);assert.equal(f.$('midi-timing-status').hidden,false);assert.match(f.$('midi-timing-status').textContent,/3 timing-ambiguous.*excluded from practice/);assert.equal(f.$('midi-test-range-status').dataset.range,'outside');assert.ok(f.$('midi-test-scroll').scrollLeft>600);assert.equal(f.$('settings-dialog').scrollTop,140);
+  assert.equal(f.$('midi-storage-status').hidden,false);assert.match(f.$('midi-storage-status').textContent,/reported a diagnostic/);assert.equal(f.$('midi-storage-details').querySelector('p').textContent,'Current tab only; saving failed.');assert.equal(f.$('midi-timing-status').hidden,false);assert.match(f.$('midi-timing-status').textContent,/3 timing-ambiguous.*excluded from practice/);assert.equal(f.$('midi-test-range-status').dataset.range,'outside');assert.ok(f.$('midi-test-scroll').scrollLeft>600);assert.equal(f.$('settings-dialog').scrollTop,140);
   f.view.render(model({test:{active:true,last:note({midi:0}),held:[note({midi:0})],range:{low:0,high:127}}}));assert.equal(f.$('midi-test-scroll').scrollLeft,0);assert.equal(f.$('settings-dialog').scrollTop,140);assert.equal(f.$('midi-storage-status').hidden,true);assert.equal(f.$('midi-timing-status').hidden,true);assert.equal(f.$('midi-test-range').textContent,'C-1–G9 · 0–127');
  }finally{f.restore()}
 });

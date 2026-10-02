@@ -1,3 +1,4 @@
+import {selectLegacyEnglish, wideKeyboardBindings, keyboardBrowserScore, observeRealAudio, guitarPhraseBrowserScore, boundedPreviewBrowserRecord} from './browser-input-fixtures.js';
 /**
  * Full-stack checks against the actual Rust executable and its embedded UI.
  * Build first: cargo build -p practice-server --locked
@@ -24,6 +25,7 @@ import {fixture} from './frontend-fixtures.js';
 import {densePianoforte} from './numbered-layout-fixtures.js';
 import {originalGuitarChordTransitions} from './guitar-live-fixtures.js';
 import {connectionDiagnostics} from './browser-connection-diagnostics.js';
+import {validatePerformanceRecord} from '../web/performance-library.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const binary = resolve(root, process.env.WMH_SERVER_BINARY || join('target', 'debug', `practice-server${process.platform === 'win32' ? '.exe' : ''}`));
@@ -91,6 +93,7 @@ async function startPreview({reset = true, notation = true, mode = 'listen'} = {
 }
 async function reloadStage(options) {
   const response = await page.reload(options);
+  await selectLegacyEnglish(page);
   await startPreview();
   return response;
 }
@@ -401,6 +404,7 @@ beforeEach(async t => {
     ]);
     initialCompilation = await responseJson(compilation);
     assert.equal(await ui('#song-lobby').isVisible(), true);
+    await selectLegacyEnglish(page,{fresh:true});
     await startPreview();
     await readyForTitle(initialCompilation.score.title);
     await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('physical attacks'));
@@ -500,10 +504,10 @@ test('embedded browser UI selects all exercises and plays, pauses, resumes and r
     assert.equal(await ui('.piano-key').count(), count);
   }
   await ui('#stage-title').click();
-  await page.keyboard.down('a');
+  await page.keyboard.down('r');
   assert.equal(await ui('.piano-key.pressed').count(), 1);
   assert.equal(await ui('.piano-key[data-midi="60"]').getAttribute('aria-pressed'), 'true');
-  await page.keyboard.up('a');
+  await page.keyboard.up('r');
   assert.equal(await ui('.piano-key.pressed').count(), 0);
   await ui('#count-in').uncheck();
   await ui('#stage-title').click();
@@ -756,7 +760,7 @@ test('browser practice records real keyboard timing and displays the Rust assess
   await ui('#session-mode').selectOption('practice');
   await ui('#count-in').uncheck();
   await ui('#stage-title').click();
-  await page.keyboard.press('a');
+  await page.keyboard.press('r');
   const [emptyResponse] = await Promise.all([nextResponse('/api/assess'), ui('#assess-button').click()]);
   const empty = await responseJson(emptyResponse);
   assert.deepEqual(emptyResponse.request().postDataJSON().inputs, [], 'Notes before playback must not enter the take');
@@ -767,7 +771,7 @@ test('browser practice records real keyboard timing and displays the Rust assess
   await ui('#stage-title').click();
   await page.keyboard.press('Space');
   await page.waitForFunction(() => document.querySelector('#play-button').textContent.includes('Pause'));
-  await page.keyboard.press('a');
+  await page.keyboard.press('r');
   const [response] = await Promise.all([nextResponse('/api/assess'), ui('#assess-button').click()]);
   const assessment = await responseJson(response);
   const submitted = response.request().postDataJSON();
@@ -961,7 +965,7 @@ test('real optional metronome distinguishes six eighth subdivisions from two com
 });
 
 test('embedded source directory remains local until a fixed official link or local import is chosen',testOptions,async()=>{
-  const before=requests.length,external=[];page.on('request',request=>{if(new URL(request.url()).origin!==origin)external.push(request.url())});await ui('#source-directory-button').click();assert.equal(await ui('.source-card').count(),3);assert.match(await ui('#score-source-directory').textContent(),/does not add license metadata/);await ui('#source-route').selectOption('musicxml');assert.equal(await ui('.source-card').count(),1);assert.equal(await ui('.source-card').getAttribute('data-source-id'),'openscore-lieder');await ui('#source-route').selectOption('all');await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-sources.png'),fullPage:true});await ui('#source-directory-close').click();assert.equal(requests.length,before);assert.deepEqual(external,[]);assert.deepEqual(await exportScore(),initialCompilation.score);
+  const before=requests.length,external=[];page.on('request',request=>{if(new URL(request.url()).origin!==origin)external.push(request.url())});await ui('#source-directory-button').click();assert.equal(await ui('.source-card').count(),3);assert.match(await ui('#score-source-directory').textContent(),/does not add license metadata/);await ui('#source-route').selectOption('musicxml');assert.equal(await ui('.source-card:not([hidden])').count(),1);assert.equal(await ui('.source-card:not([hidden])').getAttribute('data-source-id'),'openscore-lieder');await ui('#source-route').selectOption('all');await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-sources.png'),fullPage:true});await ui('#source-directory-close').click();assert.equal(requests.length,before);assert.deepEqual(external,[]);assert.deepEqual(await exportScore(),initialCompilation.score);
 });
 
 test('real explicitly confirmed part-octave copy preserves source JSON and restores it exactly',testOptions,async()=>{
@@ -1379,7 +1383,7 @@ for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:8
     }
     const preview=await selectPreview(edition.id,edition.title);assert.deepEqual(preview.score,edition);
     assert.equal(await page.locator('#preview-title').textContent(),edition.title);assert.ok((await page.locator('#preview-meta').textContent()).includes(edition.composer));
-    const musicMeta=await page.locator('#preview-music-meta').textContent();assert.match(musicMeta,/^Opening · 起始: /);assert.match(musicMeta,/2 flats · mode unspecified/);assert.ok(musicMeta.includes(`${preview.score.tempo[0].bpm} BPM`));assert.ok(musicMeta.includes(`${preview.score.parts.length} parts`));
+    const musicMeta=await page.locator('#preview-music-meta').textContent();assert.match(musicMeta,/^Opening: /);assert.match(musicMeta,/2 flats Mode unspecified/);assert.ok(musicMeta.includes(`${preview.score.tempo[0].bpm} BPM`));assert.ok(musicMeta.includes(`${preview.score.parts.length} parts`));
     assert.equal(await page.locator('#preview-notices').evaluate(element=>element.open),false);assert.equal(await page.locator('.preview-copy').evaluate(element=>element.scrollTop),0);
     if(viewport.width<651)await page.locator('.preview-footer').scrollIntoViewIfNeeded();
     const lobby=await compactGeometry();assertPinnedPreview(lobby,viewport);assert.equal(await page.locator('html').getAttribute('data-theme'),'light');assert.equal(await page.locator('#workspace').isVisible(),false);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby`);
@@ -1397,12 +1401,12 @@ for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:8
     const stage=await compactGeometry();assertBoundedDocument(stage);assertInsideViewport(stage.stage,viewport,'Performance stage');assertInsideViewport(stage.play,viewport,'Playfield and transport');assertInsideViewport(stage.transport,viewport,'Transport');assert.ok(stage.stage.scrollHeight<=stage.stage.clientHeight+1,'The stage must not become a scrolling dashboard');assert.ok(stage.play.scrollHeight<=stage.play.clientHeight+1,'Playfield and transport must fit without panel scrolling');assert.ok(stage.field.height>=viewport.height*(viewport.width>=1280?.5:.32),`The musical field needs substantial vertical space: ${JSON.stringify(stage.field)}`);
     if(viewport.width>=1280){const centers=stage.hudItems.map(item=>item.centerY);assert.ok(Math.max(...centers)-Math.min(...centers)<=2,`Desktop tools and title share one HUD row: ${JSON.stringify(stage.hudItems)}`);assert.ok(stage.hud.height<=70,JSON.stringify(stage.hud));}
     for(const item of stage.hudItems)assert.ok(item.x>=-1&&item.right<=viewport.width+1,`HUD control stays reachable: ${JSON.stringify(item)}`);
-    for(const id of ['midi-button','count-in','typing-octave']){assert.equal(await page.locator(`#${id}`).count(),1);assert.equal(await page.locator(`#settings-dialog #${id}`).count(),1);assert.equal(await page.locator(`#${id}`).isVisible(),false);}
+    for(const id of ['midi-button','count-in','keyboard-base-midi','keyboard-input-offset','keyboard-preset']){assert.equal(await page.locator(`#${id}`).count(),1);assert.equal(await page.locator(`#settings-dialog #${id}`).count(),1);assert.equal(await page.locator(`#${id}`).isVisible(),false);}
     assert.equal(await page.locator('.transport #sound-button').count(),1);assert.match(await page.locator('#keyboard-range-context').textContent(),/61 keys/);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-stage`);
     if(viewport.width>=1280){await ui('#theme-mode').selectOption('dark');await closeShellPanels();assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');const darkStage=await compactGeometry();assertBoundedDocument(darkStage);assertInsideViewport(darkStage.transport,viewport,'Dark transport');assert.ok(darkStage.field.height>=viewport.height*.5);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-stage-dark`);await ui('#theme-mode').selectOption('light');await closeShellPanels();assert.equal(await page.locator('html').getAttribute('data-theme'),'light');}
     const keyboardRange=await page.locator('#piano-scroll').evaluate(element=>({left:element.scrollLeft,width:element.clientWidth,total:element.scrollWidth}));
     if(keyboardRange.total>keyboardRange.width+1){const direction=await page.locator('#keyboard-pan-right').isEnabled()?'right':'left';await page.locator(`#keyboard-pan-${direction}`).click();await page.waitForFunction(previous=>Math.abs(document.querySelector('#piano-scroll').scrollLeft-previous)>1,keyboardRange.left);assert.equal(await page.locator('.piano-key').count(),61,'Panning never truncates the configured keyboard');}
-    for(const name of ['settings','score-tools','import-tools','results']){await page.locator(`#${name}-button`).click();await page.locator(`#${name}-dialog`).waitFor();if(name==='settings')for(const id of ['midi-button','count-in','typing-octave'])assert.equal(await page.locator(`#${id}`).isVisible(),true);await page.locator(`#${name}-dialog [data-close-panel]`).click();}
+    for(const name of ['settings','score-tools','import-tools','results']){await page.locator(`#${name}-button`).click();await page.locator(`#${name}-dialog`).waitFor();if(name==='settings')for(const id of ['midi-button','count-in','keyboard-base-midi','keyboard-input-offset','keyboard-preset'])assert.equal(await page.locator(`#${id}`).isVisible(),true);await page.locator(`#${name}-dialog [data-close-panel]`).click();}
     await page.locator('#library-button').click();await page.locator('#score-library').waitFor();await page.locator('#library-close').click();
     await page.locator('#notation-toggle').click();await waitForEngraving();assert.ok(await page.locator('#engraved-staff svg').count()>0);assert.ok(await page.locator('#engraved-staff .vf-notehead path').count()>0,'Compact headers retain the actual generated notes');
     const svgText=(await page.locator('#engraved-staff svg text').allTextContents()).join(' ').replace(/\s+/g,' ');assert.equal(svgText.includes('Wandrers Nachtlied'),false,'The dock must not repeat the score title');assert.equal(svgText.includes(edition.composer),false,'The dock must not repeat the composer');assert.equal(await page.locator('#stage-title').textContent(),edition.title);
@@ -1913,7 +1917,7 @@ test('real whole-phrase guitar route honors editable locks, exposes conflicts an
   assert.equal(await page.locator('#guitar-show-alternatives').isChecked(),false);assert.equal(await page.locator('#guitar-show-picking').isChecked(),false);
   await page.waitForFunction(()=>document.querySelectorAll('#fretboard [data-recommended="true"]').length===1);
   const chosen=page.locator('#fretboard [data-recommended="true"]');assert.equal(await chosen.getAttribute('data-string'),'1');assert.equal(await chosen.getAttribute('data-fret'),'5');assert.equal(await page.locator('#fretboard .pitch-option').count(),0);
-  await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('d');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
+  await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('i');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
   const before=await exportTakeData();assert.equal(before.passes[0].inputs.length,1);
   await page.locator('#guitar-plan-controls summary').click();await page.locator('#guitar-lock-source').selectOption('held-e');await page.locator('#guitar-lock-string').selectOption('1');await page.locator('#guitar-lock-fret').selectOption('0');await page.locator('#guitar-lock-finger').selectOption('0');
   const blockedResponse=watchPlan(body=>body.locks.some(lock=>lock.source_note_id==='held-e'&&lock.string===1));await page.locator('#guitar-apply-lock').click();const blocked=await responseJson(await blockedResponse);
@@ -1939,7 +1943,7 @@ test('real piano hands preserve merged ties and repeat targets through editable 
   const merged=initial.targets.filter(target=>target.source_note_ids.includes('tie-end'));assert.equal(merged.length,2);assert.ok(merged.every(target=>['tie-start','tie-end','unison'].every(id=>target.source_note_ids.includes(id))));assert.notEqual(merged[0].target_id,merged[1].target_id);
   await page.waitForFunction(()=>document.querySelector('#piano-fingering-status').dataset.phase==='ready');await page.locator('#piano-fingering-guidance>summary').click();await page.waitForFunction(()=>document.querySelectorAll('.piano-finger-target').length===6);
   assert.equal(await page.locator('#piano-fingering-guidance').getAttribute('aria-live'),'off');const key=page.locator('#keyboard [data-midi="60"]');assert.equal(await key.getAttribute('aria-label'),'Play C4');assert.equal(await key.getAttribute('aria-pressed'),'false');assert.equal(await key.locator('.piano-finger-label').evaluate(element=>getComputedStyle(element).pointerEvents),'none');
-  await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('a');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
+  await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('r');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
   const take=await exportTakeData();assert.equal(take.passes[0].inputs.length,1);
   if(!await ui('#instrument-settings').evaluate(element=>element.open))await ui('#instrument-settings>summary').click();if(!await ui('.piano-lock-editor').evaluate(element=>element.open))await ui('.piano-lock-editor>summary').click();await ui('#piano-source-note').selectOption('tie-end');
   const leftResponse=watchPlan(body=>body.locks.some(lock=>lock.source_note_id==='tie-end'&&lock.hand==='left'&&lock.finger===null));await ui('#piano-source-hand').selectOption('left');assert.equal((await responseJson(await leftResponse)).status,'ready');
@@ -2027,4 +2031,316 @@ test('real guitar current and next six-note recommendations are entirely visible
   }
   assert.deepEqual(await exportTakeData(),take);assert.deepEqual(await exportScore(),score);
   await writeFile(join(artifactDirectory,'worldmusichub-live-complete-guitar-chords.json'),JSON.stringify({plan,evidence,paused_take_unchanged:true,canonical_score_unchanged:true},null,2));
+});
+
+async function prepareKeyboardBrowserPractice(id) {
+  await hideNotation();
+  const score = keyboardBrowserScore(id);
+  await ui('#score-file').setInputFiles({name:`${id}.json`,mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});
+  await readyForTitle(score.title);
+  await hideNotation();
+  await ui('#session-mode').selectOption('practice');
+  await ui('#count-in').uncheck();
+  await ui('#play-button:not([disabled])').waitFor();
+  await closeShellPanels();
+  return score;
+}
+
+function assertTypingEvidence(take, expectedMidi) {
+  const observed = take.input_evidence.events.filter(event => event.input_kind === 'typing_keyboard' && ['note_on','note_off'].includes(event.kind));
+  assert.deepEqual(observed.filter(event => event.kind === 'note_on').map(event => event.midi),expectedMidi);
+  assert.equal(observed.filter(event => event.kind === 'note_off').length,expectedMidi.length);
+  for (let index=0; index<expectedMidi.length; index++) {
+    const [on,off] = observed.slice(index*2,index*2+2);
+    assert.equal(on.kind,'note_on'); assert.equal(off.kind,'note_off');
+    assert.equal(on.source_id,off.source_id); assert.equal(off.midi,null);
+    assert.equal(on.encoding,'key_down'); assert.equal(off.encoding,'key_up');
+    assert.equal(on.timestamp_basis,'event_monotonic'); assert.equal(off.timestamp_basis,'event_monotonic');
+    assert.ok(off.event_wall_ms>=on.event_wall_ms);
+    assert.ok(on.onset_capture && Number.isInteger(on.onset_capture.event_id));
+  }
+}
+
+test('real language picker starts from Chinese and preserves the paused take, source and form controls',testOptions,async()=>{
+  // The shared bootstrap proves a fresh zh-CN page before its explicit English choice.
+  const score = await prepareKeyboardBrowserPractice('original-locale-picker');
+  await page.locator('#play-button').click();
+  await page.locator('#stage-title').click(); await page.keyboard.press('r');
+  await page.locator('#settings-button').click();
+  assert.match(await page.locator('#play-button').textContent(),/Play/,'Entering Settings deliberately pauses playback');
+  const position = await page.locator('#progress').evaluate(element=>element.value);
+  const before = await exportTakeData();
+  await page.locator('#settings-button').click();
+  const compileCount = requests.filter(request=>request.path==='/api/compile').length;
+  const values = await page.locator('#settings-dialog input,#settings-dialog select,#settings-dialog textarea').evaluateAll(elements=>elements.filter(element=>element.id!=='interface-language').map(element=>({id:element.id,value:element.value,checked:element.checked})));
+  for (const [locale,label,tempoAria,keyAria] of [['zh-CN','界面语言','速度，每分钟拍数','弹奏 C4'],['en','Interface language','Tempo in beats per minute','Play C4']]) {
+    await page.locator('#interface-language').focus();
+    await page.locator('#interface-language').selectOption(locale);
+    assert.equal(await page.locator('html').getAttribute('lang'),locale);
+    assert.equal(await page.locator('#interface-language').getAttribute('aria-label'),label);
+    assert.equal(await page.locator('#tempo').getAttribute('aria-label'),tempoAria);
+    assert.equal(await page.locator('#keyboard [data-midi="60"]').getAttribute('aria-label'),keyAria);
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'interface-language');
+    assert.equal(await page.locator('#interface-language').inputValue(),locale);
+    assert.equal(await page.locator('#progress').evaluate(element=>element.value),position);
+    assert.deepEqual(await page.locator('#settings-dialog input,#settings-dialog select,#settings-dialog textarea').evaluateAll(elements=>elements.filter(element=>element.id!=='interface-language').map(element=>({id:element.id,value:element.value,checked:element.checked}))),values);
+    assert.deepEqual(await exportTakeData(),before,'Changing display language preserves every paused clock segment, input and evidence event');
+    await page.locator('#settings-button').click();
+  }
+  await page.locator('#keyboard-mapping-details>summary').click();
+  const draft='[{"code":"KeyR","offset":0,"label":"原稿 draft","row":"custom"}]';
+  await page.locator('#keyboard-mapping-editor').fill(draft);
+  const focused = await page.evaluate(async()=>{
+    const editor=document.querySelector('#keyboard-mapping-editor');editor.setSelectionRange(3,12);
+    const before={value:editor.value,start:editor.selectionStart,end:editor.selectionEnd};
+    const {getAppI18n}=await import('/app-locale.js');getAppI18n(document).setLocale('zh-CN');
+    return {before,after:{value:editor.value,start:editor.selectionStart,end:editor.selectionEnd},same:document.activeElement===editor};
+  });
+  assert.equal(focused.same,true,'Service-level relabeling preserves an actively edited form field');
+  assert.deepEqual(focused.after,focused.before);
+  await page.locator('#interface-language').selectOption('en');
+  await closeShellPanels();
+  assert.deepEqual(await exportTakeData(),before);
+  assert.deepEqual(await exportScore(),score);
+  assert.equal(requests.filter(request=>request.path==='/api/compile').length,compileCount,'Locale rendering never recompiles or transposes the score');
+  await closeShellPanels();
+  await page.reload({waitUntil:'domcontentloaded'});
+  await page.locator('#interface-language').waitFor({state:'attached'});
+  assert.equal(await page.locator('html').getAttribute('lang'),'en','An explicit English choice persists on reload');
+  assert.equal(await page.locator('#interface-language').inputValue(),'en');
+  await writeFile(join(artifactDirectory,'worldmusichub-live-locale-picker.json'),JSON.stringify({fresh_default:'zh-CN',picker_languages:['en','zh-CN','en'],paused_take_unchanged:true,source_unchanged:true,edited_field_preserved:true,persisted_locale:'en'},null,2));
+});
+
+test('real running locale-service notifications retain a held note and the advancing canonical clock',testOptions,async()=>{
+  const score=await prepareKeyboardBrowserPractice('original-running-locale');await page.evaluate(observeRealAudio);
+  await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('#progress').value>0);
+  await page.locator('#play-button').click();const before=await exportTakeData();
+  const compileCount=requests.filter(request=>request.path==='/api/compile').length;
+  await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.down('r');
+  assert.equal(await page.locator('#keyboard [data-midi="60"]').getAttribute('aria-pressed'),'true');
+  const snapshots=await page.evaluate(async()=>{
+    const {getAppI18n}=await import('/app-locale.js'),i18n=getAppI18n(document),key=document.querySelector('#keyboard [data-midi="60"]');
+    const snapshot=()=>({position:Number(document.querySelector('#progress').value),pass:document.querySelector('.performance-status').dataset.passId,revision:document.querySelector('.performance-status').dataset.revision,captured:document.querySelector('#hud-captured').textContent,focused:document.activeElement.id,held:key.getAttribute('aria-pressed'),audio:{...audioObservation},sameKey:document.querySelector('#keyboard [data-midi="60"]')===key});
+    const original=snapshot(),localized=[];
+    for(const locale of ['zh-CN','en','zh-CN']){i18n.setLocale(locale);localized.push({locale,state:snapshot(),play:document.querySelector('#play-button').textContent,keyLabel:key.getAttribute('aria-label')});}
+    return {original,localized};
+  });
+  for(const item of snapshots.localized){assert.deepEqual(item.state,snapshots.original,'Synchronous display-only notifications cannot reset a running clock, held contact or focus');assert.match(item.play,item.locale==='en'?/Pause/:/暂停/);assert.equal(item.keyLabel,item.locale==='en'?'Play C4':'弹奏 C4');}
+  await page.waitForFunction(position=>Number(document.querySelector('#progress').value)>position,snapshots.original.position);
+  assert.equal(await page.locator('#keyboard [data-midi="60"]').getAttribute('aria-pressed'),'true');
+  await page.keyboard.up('r');await page.locator('#play-button').click();
+  const after=await exportTakeData();
+  assert.equal(after.passes.length,1);assert.deepEqual(after.passes[0].inputs.map(input=>input.midi),[60]);
+  assert.deepEqual(after.passes[0].timeline,before.passes[0].timeline);assert.equal(after.passes[0].revision,before.passes[0].revision+1);
+  assert.deepEqual(after.passes[0].clock_segments.slice(0,-1),before.passes[0].clock_segments);assert.equal(after.passes[0].clock_segments.length,2);
+  assert.deepEqual(after.input_evidence.events.slice(0,before.input_evidence.events.length),before.input_evidence.events);
+  const added=after.input_evidence.events.slice(before.input_evidence.events.length);assert.deepEqual(added.map(event=>event.kind),['note_on','note_off','boundary']);assert.equal(added.at(-1).reason,'pause');
+  assertTypingEvidence(after,[60]);assert.deepEqual(after.keyboard_input_configuration,before.keyboard_input_configuration);
+  assert.deepEqual(await exportScore(),score);assert.equal(requests.filter(request=>request.path==='/api/compile').length,compileCount);
+  await writeFile(join(artifactDirectory,'worldmusichub-live-locale-running-service.json'),JSON.stringify({method:'Actual running browser; display-locale service notifications, not user picker interaction',snapshots,after,canonical_score_unchanged:true},null,2));
+});
+
+test('real wide physical keyboard records every C2 through A sharp 5 pitch with explicit releases',testOptions,async()=>{
+  const score=await prepareKeyboardBrowserPractice('original-wide-keyboard');
+  assert.equal(await page.locator('#typing-octave').count(),0);
+  assert.equal(await page.locator('#keyboard-base-midi').inputValue(),'36');assert.equal(await page.locator('#keyboard-input-offset').inputValue(),'0');
+  assert.equal(await page.locator('#keyboard-active-range').getAttribute('data-low-midi'),'36');assert.equal(await page.locator('#keyboard-active-range').getAttribute('data-high-midi'),'82');
+  const map=await page.locator('#keyboard-map [data-code]').evaluateAll(elements=>elements.map(element=>({code:element.dataset.code,midi:Number(element.dataset.noteMidi),enabled:element.dataset.enabled,row:element.parentElement.dataset.row})));
+  assert.deepEqual(map,wideKeyboardBindings.map(({code,midi,row})=>({code,midi,enabled:'true',row})));
+  assert.equal(await page.locator('#keyboard [data-midi="60"] .key-shortcut').textContent(),'R');assert.equal(await page.locator('#keyboard [data-midi="64"] .key-shortcut').textContent(),'I');
+  await page.locator('#play-button').click();await page.locator('#stage-title').click();
+  for(const binding of wideKeyboardBindings)await page.keyboard.press(binding.key);
+  await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='47');
+  assert.equal(await page.locator('#keyboard .pressed').count(),0);assert.equal(await page.locator('#keyboard-map .held').count(),0);
+  const [response]=await Promise.all([nextResponse('/api/assess'),ui('#assess-button').click()]);const assessed=await responseJson(response),submitted=response.request().postDataJSON();
+  assert.deepEqual(submitted.inputs.map(input=>input.midi),wideKeyboardBindings.map(binding=>binding.midi));assert.ok(submitted.inputs.every(input=>Number.isFinite(input.at_ms)&&input.at_ms>=0));
+  assert.equal(assessed.hits.length+assessed.extras.length,47);assert.equal(assessed.hits.length+assessed.misses.length,2);
+  const compiled=await rustApi('/api/compile',score);assert.deepEqual(submitted.timeline,compiled.timeline);
+  await ui('#feedback-results').waitFor();const take=await exportTakeData();assertTypingEvidence(take,wideKeyboardBindings.map(binding=>binding.midi));assert.deepEqual(take.passes[0].assessment,assessed);assert.deepEqual(await exportScore(),score);
+  await writeFile(join(artifactDirectory,'worldmusichub-live-wide-keyboard.json'),JSON.stringify({map,submitted,assessed,take,canonical_score_unchanged:true},null,2));
+});
+
+test('real keyboard input transposition and custom mapping retain performed MIDI without changing score pitches',testOptions,async()=>{
+  const score=await prepareKeyboardBrowserPractice('original-custom-keyboard');
+  const playKey=async key=>{await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press(key);await page.locator('#play-button').click();};
+  await playKey('r');const initial=await exportTakeData(),compileCount=requests.filter(request=>request.path==='/api/compile').length;
+  await ui('#keyboard-input-offset').fill('2');await ui('#keyboard-settings-apply').click();await closeShellPanels();
+  assert.equal(await page.locator('#keyboard [data-midi="62"] .key-shortcut').textContent(),'R');
+  await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('r');await page.keyboard.press('ArrowRight');await page.keyboard.press('r');await page.keyboard.press('ArrowUp');await page.keyboard.press('r');await page.locator('#play-button').click();
+  await ui('#keyboard-base-midi').fill('60');await ui('#keyboard-input-offset').fill('0');await ui('#keyboard-settings-apply').click();await ui('#keyboard-preset').selectOption('custom');
+  const duplicate=[{code:'KeyR',offset:0,label:'Root',row:'custom'},{code:'KeyI',offset:0,label:'Fifth',row:'custom'}];
+  const configuration=await page.locator('#keyboard-map').getAttribute('data-configuration-id');
+  await ui('#keyboard-mapping-editor').fill(JSON.stringify(duplicate));await ui('#keyboard-mapping-apply').click();assert.match(await ui('#keyboard-configuration-error').textContent(),/Multiple keys map to the same pitch/);assert.equal(await page.locator('#keyboard-map').getAttribute('data-configuration-id'),configuration);
+  const custom=duplicate.map((binding,index)=>({...binding,offset:index*7}));await ui('#keyboard-mapping-editor').fill(JSON.stringify(custom));await ui('#keyboard-mapping-apply').click();assert.equal(await ui('#keyboard-configuration-error').isVisible(),false);assert.equal(await ui('#keyboard-preset').inputValue(),'custom');await closeShellPanels();
+  await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('r');await page.keyboard.press('i');await page.locator('#play-button').click();
+  const take=await exportTakeData(),performed=[60,62,63,75,60,67];assert.deepEqual(take.passes[0].inputs.map(input=>input.midi),performed);assertTypingEvidence(take,performed);
+  assert.deepEqual(take.passes[0].timeline,initial.passes[0].timeline);assert.deepEqual(take.passes[0].timeline.notes.map(note=>note.midi),[60,64]);
+  assert.deepEqual(take.keyboard_input_configuration.current_configuration.mapping,custom);assert.equal(take.keyboard_input_configuration.current_configuration.base_midi,60);assert.equal(take.keyboard_input_configuration.current_configuration.transpose_semitones,0);
+  assert.ok(take.keyboard_input_configuration.events.some(event=>event.transpose_semitones===2));assert.ok(take.keyboard_input_configuration.events.some(event=>event.transpose_semitones===3));assert.ok(take.keyboard_input_configuration.events.some(event=>event.transpose_semitones===15));assert.ok(take.keyboard_input_configuration.events.every(event=>event.scope==='performance_input_only'));
+  assert.equal(requests.filter(request=>request.path==='/api/compile').length,compileCount);assert.equal(requests.filter(request=>request.path.startsWith('/api/transposition')||request.path.startsWith('/api/adaptation')).length,0);assert.deepEqual(await exportScore(),score);
+  await writeFile(join(artifactDirectory,'worldmusichub-live-keyboard-input-transposition.json'),JSON.stringify({performed,take,score_pitch_midi:[60,64],canonical_score_unchanged:true},null,2));
+});
+
+test('real muted keyboard controls validate MIDI bounds and never create, resume or play audio',testOptions,async()=>{
+  await hideNotation();await page.evaluate(observeRealAudio);await page.locator('#sound-button').click();assert.equal(await page.locator('#sound-button').getAttribute('aria-pressed'),'true');
+  const baseline=await page.evaluate(()=>({...audioObservation})),compileCount=requests.filter(request=>request.path==='/api/compile').length;
+  const initialMap=await page.locator('#keyboard-map').getAttribute('data-configuration-id');
+  for(const [selector,value,pattern] of [['#keyboard-base-midi','-1',/base MIDI pitch/],['#keyboard-base-midi','128',/base MIDI pitch/],['#keyboard-input-offset','128',/Input transposition/]]){
+    await ui('#keyboard-base-midi').fill('36');await ui('#keyboard-input-offset').fill('0');await ui(selector).fill(value);await ui('#keyboard-settings-apply').click();assert.match(await ui('#keyboard-configuration-error').textContent(),pattern);assert.equal(await page.locator('#keyboard-map').getAttribute('data-configuration-id'),initialMap);
+  }
+  await ui('#keyboard-base-midi').fill('127');await ui('#keyboard-input-offset').fill('0');await ui('#keyboard-settings-apply').click();assert.equal(await ui('#keyboard-base-midi').getAttribute('min'),'0');assert.equal(await ui('#keyboard-base-midi').getAttribute('max'),'127');assert.equal(await ui('#keyboard-input-offset').getAttribute('min'),'-127');assert.equal(await ui('#keyboard-input-offset').getAttribute('max'),'127');
+  assert.equal(await page.locator('#keyboard-map [data-enabled="true"]').count(),1);assert.equal(await page.locator('#keyboard-map [data-enabled="false"]').count(),46);assert.equal(await page.locator('#keyboard-active-range').getAttribute('data-high-midi'),'127');await closeShellPanels();
+  await page.locator('#stage-title').click();await page.keyboard.down('z');assert.equal(await page.locator('#keyboard-map [data-code="KeyZ"]').getAttribute('class'),'keyboard-map-key held');await page.keyboard.up('z');await page.keyboard.press('x');assert.equal(await page.locator('#keyboard-map .held').count(),0);
+  await page.locator('#keyboard-semitone-down').click();assert.equal(await page.locator('#keyboard-input-offset').inputValue(),'-1');await page.locator('#keyboard-octave-down').click();assert.equal(await page.locator('#keyboard-input-offset').inputValue(),'-13');await page.locator('#keyboard-performance-details>summary').click();await page.locator('#keyboard-offset-reset').click();assert.equal(await page.locator('#keyboard-input-offset').inputValue(),'0');
+  await ui('#keyboard-preset').selectOption('legacy');assert.equal(await page.locator('#keyboard-map [data-code]').count(),17);assert.equal(await page.locator('#keyboard-base-midi').inputValue(),'60');await ui('#keyboard-preset').selectOption('wide');assert.equal(await page.locator('#keyboard-map [data-code]').count(),47);assert.equal(await page.locator('#keyboard-base-midi').inputValue(),'36');await closeShellPanels();await page.locator('#stage-title').click();await page.keyboard.press('r');
+  assert.deepEqual(await page.evaluate(()=>audioObservation),baseline,'Muted configuration, transposition and manual input cannot initialize or resume an audio graph');assert.equal(requests.filter(request=>request.path==='/api/compile').length,compileCount);assert.deepEqual(await exportScore(),initialCompilation.score);
+});
+
+test('real IME and form-focus boundaries release physical notes without inventing note offs or captures',testOptions,async()=>{
+  const score=await prepareKeyboardBrowserPractice('original-keyboard-ime');await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.down('r');assert.equal(await page.locator('#keyboard [data-midi="60"]').getAttribute('aria-pressed'),'true');
+  await page.locator('#stage-title').dispatchEvent('compositionstart',{data:'中'});assert.equal(await page.locator('#keyboard .pressed').count(),0);assert.equal(await page.locator('#keyboard-map .held').count(),0);
+  await page.keyboard.press('a');await page.locator('#stage-title').dispatchEvent('keydown',{key:'Process',code:'KeyI',keyCode:229,isComposing:true});await page.keyboard.up('r');await page.locator('#stage-title').dispatchEvent('compositionend',{data:'中文'});
+  assert.equal(await page.locator('#hud-captured').textContent(),'1');await page.keyboard.down('i');assert.equal(await page.locator('#keyboard [data-midi="64"]').getAttribute('aria-pressed'),'true');
+  await page.locator('#settings-button').click();assert.equal(await page.locator('#keyboard .pressed').count(),0);await page.keyboard.up('i');
+  await page.locator('#keyboard-input-offset').focus();await page.keyboard.press('a');await page.keyboard.press('ArrowUp');assert.equal(await page.locator('#keyboard-map').getAttribute('data-configuration-id'),'1','An editable field owns its arrow keys until explicit Apply');
+  const take=await exportTakeData();assert.deepEqual(take.passes[0].inputs.map(input=>input.midi),[60,64]);assert.equal(take.passes[0].revision,2);
+  const events=take.input_evidence.events,ons=events.filter(event=>event.kind==='note_on');assert.deepEqual(ons.map(event=>event.midi),[60,64]);
+  for(const onset of ons){const contact=events.filter(event=>event.source_id===onset.source_id);assert.deepEqual(contact.map(event=>event.kind),['note_on','synthetic_release','note_off']);assert.equal(contact[1].midi,onset.midi);assert.equal(contact[2].midi,null);assert.equal(contact[2].encoding,'key_up');assert.equal(contact[2].input_kind,'typing_keyboard');}
+  assert.equal(events.find(event=>event.kind==='synthetic_release'&&event.midi===60).reason,'keyboard_composition');assert.equal(events.filter(event=>event.kind==='note_off').length,2,'Only the two real physical keyups become note-off observations');assert.equal(take.input_evidence.pairing,'not_implemented');assert.equal(take.input_evidence.release_assessment,'not_implemented');assert.deepEqual(await exportScore(),score);
+  await writeFile(join(artifactDirectory,'worldmusichub-live-keyboard-ime.json'),JSON.stringify({take,canonical_score_unchanged:true,composition_not_recorded:true,physical_releases_retained:true},null,2));
+});
+
+test('real Sound Off scored Start and Play capture silently without creating an AudioContext',testOptions,async()=>{
+  await page.addInitScript(observeRealAudio);await page.reload({waitUntil:'domcontentloaded'});await page.locator('#start-practice:not([disabled])').waitFor();
+  assert.deepEqual(await page.evaluate(()=>audioObservation),{construct:0,resume:0,oscillator:0,start:0,stop:0});
+  // Free practice exposes the shared Sound switch before any scored activation.
+  // No free recording is started; every sound change is a visible user action.
+  await page.locator('#start-free-practice').click();await page.locator('#free-sound').click();assert.equal(await page.locator('#free-sound').getAttribute('aria-pressed'),'false');await page.locator('#free-exit').click();
+  await ui('#count-in').uncheck();await closeShellPanels();await startPreview({reset:false,notation:false,mode:'practice'});assert.equal(await page.locator('#sound-button').getAttribute('aria-pressed'),'true');
+  await page.waitForFunction(()=>document.querySelector('#progress').value>0);await page.locator('#stage-title').click();await page.keyboard.press('r');await page.locator('#play-button').click();
+  const position=await page.locator('#progress').evaluate(element=>element.value);await page.locator('#play-button').click();await page.waitForFunction(previous=>document.querySelector('#progress').value>previous,position);await page.locator('#stage-title').click();await page.keyboard.press('i');await page.locator('#play-button').click();
+  const take=await exportTakeData();assert.equal(take.passes.length,1);assert.deepEqual(take.passes[0].inputs.map(input=>input.midi),[60,64]);assert.equal(take.passes[0].clock_segments.length,2);assertTypingEvidence(take,[60,64]);
+  assert.deepEqual(await page.evaluate(()=>audioObservation),{construct:0,resume:0,oscillator:0,start:0,stop:0},'Silent Start, Play, resume and manual input must not initialize any audio graph');assert.deepEqual(await exportScore(),initialCompilation.score);
+});
+
+test('real delayed audio resume cannot start a scored transport after Settings cancels its play ticket',testOptions,async()=>{
+  await page.addInitScript(observeRealAudio);await reloadStage();await hideNotation();await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();
+  await page.evaluate(async()=>{
+    if(audioObservedContexts.length!==1)throw new Error('Expected one real initialized audio context');
+    await audioObservedContexts[0].suspend();
+    const prototype=(globalThis.AudioContext||globalThis.webkitAudioContext).prototype,resume=prototype.resume;
+    window.audioResumePending=false;
+    prototype.resume=function(...args){audioResumePending=true;return new Promise(resolve=>{window.finishAudioResume=async()=>{await resume.apply(this,args);resolve();};});};
+  });
+  await page.locator('#play-button').click();await page.waitForFunction(()=>audioResumePending);
+  assert.equal(await page.locator('#progress').evaluate(element=>element.value),0);
+  await page.locator('#settings-button').click();await page.evaluate(()=>finishAudioResume());
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal(await page.locator('#progress').evaluate(element=>element.value),0);assert.match(await page.locator('#play-button').textContent(),/Play/);assert.equal(await page.locator('#export-takes').isDisabled(),true,'A canceled async unlock cannot create a hidden pass');assert.equal(await page.locator('#keyboard .pressed').count(),0);
+  await closeShellPanels();await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('#progress').value>0);await page.locator('#play-button').click();
+  const take=await exportTakeData();assert.equal(take.passes.length,1);assert.deepEqual(take.passes[0].inputs,[]);assert.equal(take.passes[0].clock_segments.length,1);assert.deepEqual(await exportScore(),initialCompilation.score);
+});
+
+async function downloadFreeRecord(selector='#free-export-record') {
+  const [download]=await Promise.all([page.waitForEvent('download'),page.locator(selector).click()]);
+  assert.equal(await download.failure(),null);const text=await readFile(await download.path(),'utf8');
+  return {text,data:JSON.parse(text),filename:download.suggestedFilename()};
+}
+async function enterSilentFreePractice() {
+  if(await page.locator('#workspace').isVisible())await page.locator('#back-to-library').click();
+  await page.locator('#start-free-practice').click();await page.locator('#free-practice-screen').waitFor();
+  if(await page.locator('#free-sound').getAttribute('aria-pressed')==='true')await page.locator('#free-sound').click();
+  assert.equal(await page.locator('#free-sound').getAttribute('aria-pressed'),'false');
+}
+async function recordAndSaveFreeKeys(label,keys) {
+  const previous=await page.locator('#free-record-select option').evaluateAll(options=>options.map(option=>option.value).filter(Boolean));
+  await page.locator('#free-start:not([disabled])').click();await page.waitForFunction(()=>document.querySelector('#free-practice-screen').dataset.state==='recording');
+  await page.locator('#free-practice-title').focus();for(const key of keys)await page.keyboard.press(key);
+  await page.locator('#free-stop').click();await page.waitForFunction(()=>document.querySelector('#free-practice-screen').dataset.state==='stopped');
+  const draft=await downloadFreeRecord('#free-export-draft');validatePerformanceRecord(draft.data);
+  await page.locator('#free-record-label').fill(label);await page.locator('#free-save').click();await page.locator('#free-start:not([disabled])').waitFor();
+  const saved=await downloadFreeRecord();assert.equal(saved.text,draft.text,'Saving only adds library metadata; the immutable record remains byte-for-byte complete');
+  const current=await page.locator('#free-record-select option').evaluateAll(options=>options.map(option=>option.value).filter(Boolean)),added=current.filter(key=>!previous.includes(key));assert.equal(added.length,1);
+  return {...saved,key:added[0]};
+}
+function assertFreeMusicalEvents(record,midi) {
+  validatePerformanceRecord(record);assert.equal(record.score_context,null);assert.equal(record.mode,'free');assert.equal(record.state,'stopped');assert.ok(Object.values(record.capabilities).every(value=>value===false));
+  const ons=record.observations.events.filter(event=>event.kind==='note_on');assert.deepEqual(ons.map(event=>event.midi),midi);assert.ok(ons.every(event=>event.input_kind==='typing_keyboard'&&event.timestamp_basis==='event_monotonic'&&event.onset_capture===null));
+  assert.equal(record.observations.pairing,'not_implemented');assert.equal(record.observations.release_assessment,'not_implemented');assert.equal(record.observations.truncated,false);assert.equal(record.observations.omitted_observations,0);
+}
+
+test('real no-score Free practice survives an unavailable catalog and saves the complete silent immutable PC record',testOptions,async()=>{
+  await page.addInitScript(observeRealAudio);
+  const unavailable=route=>route.abort('failed');await page.route('**/api/catalog/index',unavailable);const requestStart=requests.length;
+  try{
+    await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>document.querySelector('#catalog-status').textContent.includes('metadata is unavailable'));
+    assert.equal(await page.locator('#resume-session').isVisible(),false);assert.equal(await page.locator('#score-tools-button').isDisabled(),true);assert.equal(await page.locator('#start-listen').isDisabled(),true);assert.ok(failedResources.some(failure=>failure.path==='/api/catalog/index'));
+    await enterSilentFreePractice();assert.equal(await page.locator('#free-practice-keys [data-midi]').count(),47);assert.equal(await page.locator('#free-practice-keys [data-code="KeyR"]').getAttribute('data-midi'),'60');assert.equal(await page.locator('#free-practice-keys [data-code="KeyI"]').getAttribute('data-midi'),'64');
+    await page.locator('#free-start').click();await page.locator('#free-practice-title').focus();await page.keyboard.press('r');
+    await page.locator('#free-pause').click();await page.locator('#free-practice-title').focus();await page.keyboard.press('i');
+    await page.locator('#free-resume').click();await page.locator('#free-practice-title').focus();await page.keyboard.press('i');await page.keyboard.down('p');await page.locator('#free-stop').click();
+    const sealed=await downloadFreeRecord('#free-export-draft');assertFreeMusicalEvents(sealed.data,[60,64,64,66]);
+    const ons=sealed.data.observations.events.filter(event=>event.kind==='note_on');assert.deepEqual(ons.map(event=>event.segment_id),[1,null,2,2]);assert.equal(ons[1].routing,'outside_recording_segment');assert.equal(sealed.data.segments.length,2);assert.ok(sealed.data.segments[1].start_wall_ms>sealed.data.segments[0].end_wall_ms);
+    const heldSource=ons.at(-1).source_id;assert.equal(sealed.data.observations.events.filter(event=>event.source_id===heldSource&&event.kind==='synthetic_release').length,1);assert.equal(sealed.data.observations.events.filter(event=>event.source_id===heldSource&&event.kind==='note_off').length,0);
+    const configuration=sealed.data.configuration.find(item=>item.key==='keyboard_configuration').value;assert.equal(configuration.base_midi,36);assert.equal(configuration.transpose_semitones,0);assert.equal(configuration.mapping.length,47);assert.equal(sealed.data.configuration.find(item=>item.key==='sound').value,false);
+    await page.keyboard.up('p');await page.locator('#free-practice-title').focus();await page.keyboard.press('r');assert.equal((await downloadFreeRecord('#free-export-draft')).text,sealed.text,'Stop seals the record before late physical release or later keys arrive');
+    await page.locator('#free-record-label').fill('Silent PC performance');await page.locator('#free-save').click();await page.locator('#free-start:not([disabled])').waitFor();assert.equal((await downloadFreeRecord()).text,sealed.text);assert.equal(await page.locator('#free-record-select option[value]:not([value=""])').count(),1);
+    assert.deepEqual(await page.evaluate(()=>audioObservation),{construct:0,resume:0,oscillator:0,start:0,stop:0});assert.deepEqual(requests.slice(requestStart).map(request=>request.path),['/api/catalog/index'],'A missing score cannot force Free capture through compilation, targets or assessment');
+    await writeFile(join(artifactDirectory,'worldmusichub-live-free-no-score.json'),JSON.stringify({catalog_unavailable:true,actual_pc_input:true,audio_calls:await page.evaluate(()=>audioObservation),record:sealed.data,saved_export_unchanged:true},null,2));
+  }finally{await page.unroute('**/api/catalog/index',unavailable);}
+});
+
+test('real Free A/B selection, import and backup preserve records while fixed-tone preview stays bounded and unscored',testOptions,async()=>{
+  await enterSilentFreePractice();await page.evaluate(observeRealAudio);
+  await page.evaluate(async()=>{const{Synth}=await import('/transport.js'),play=Synth.prototype.play;window.freePreviewToneCalls=[];Synth.prototype.play=function(...args){if(String(args[0]).startsWith('free-preview:'))freePreviewToneCalls.push({midi:args[1],duration_ms:args[2],instrument:args[4]});return play.apply(this,args);};});
+  const requestStart=requests.length,A=await recordAndSaveFreeKeys('A original',['r']);assertFreeMusicalEvents(A.data,[60]);await page.locator('#free-choose-baseline').click();
+  const B=await recordAndSaveFreeKeys('B original',['i','p']);assertFreeMusicalEvents(B.data,[64,66]);assert.notEqual(A.key,B.key);
+  assert.equal(await page.locator('#free-comparison').isVisible(),true);assert.deepEqual(await page.locator('#free-comparison-body h3').allTextContents(),['A · A original','B · B original']);assert.match(await page.locator('#free-comparison-body').textContent(),/Onsets: 1.*Onsets: 2/);assert.match(await page.locator('#free-comparison').textContent(),/without alignment, accuracy, improvement/);
+  await page.locator('#free-record-select').selectOption(A.key);await page.locator('#free-load').click();await page.locator('#free-performance-library').scrollIntoViewIfNeeded();await page.waitForFunction(()=>document.querySelector('#free-operation-status').textContent.includes('Recording opened'));assert.equal((await downloadFreeRecord()).text,A.text);
+  await page.locator('#free-record-select').selectOption(B.key);await page.locator('#free-load').click();await page.waitForFunction(()=>document.querySelector('#free-practice-screen').getAttribute('aria-busy')==='false'&&[...document.querySelectorAll('#free-comparison-body h3')].at(-1)?.textContent==='B · B original');assert.equal((await downloadFreeRecord()).text,B.text);
+  await page.locator('#free-sound').click();await page.locator('#free-preview-timbre').selectOption('guitar');await page.locator('#free-preview').click();await page.waitForFunction(()=>document.querySelector('#free-preview-status').textContent.startsWith('Preview finished'));
+  assert.deepEqual(await page.evaluate(()=>freePreviewToneCalls),[{midi:64,duration_ms:160,instrument:'guitar'},{midi:66,duration_ms:160,instrument:'guitar'}]);assert.match(await page.locator('#free-preview-status').textContent(),/scheduled tones: 2 · skipped during playback: 0 · excluded before playback: 0/);assert.equal((await downloadFreeRecord()).text,B.text);assert.equal((await downloadFreeRecord('#free-export-draft')).text,B.text);
+  assert.match(await page.locator('#free-performance-detail').textContent(),/fixed 160 ms tones.*2 minutes or 4,096 tones/);
+  await page.locator('#free-import-file').setInputFiles({name:'retained-A.json',mimeType:'application/json',buffer:Buffer.from(A.text)});await page.locator('#free-import-record').click();await page.waitForFunction(()=>document.querySelectorAll('#free-record-select option').length===3&&!document.querySelector('#free-import-record').disabled);assert.equal((await downloadFreeRecord()).text,A.text);
+  const bounded=boundedPreviewBrowserRecord();await page.locator('#free-import-file').setInputFiles({name:'original-preview-window-fixture.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(bounded))});await page.locator('#free-import-record').click();await page.waitForFunction(()=>document.querySelectorAll('#free-record-select option').length===4&&!document.querySelector('#free-import-record').disabled);
+  await page.locator('#free-preview-timbre').selectOption('piano');await page.locator('#free-preview').click();await page.waitForFunction(()=>document.querySelector('#free-preview-status').textContent.startsWith('Preview finished'));
+  assert.match(await page.locator('#free-preview-status').textContent(),/scheduled tones: 1 · skipped during playback: 0 · excluded before playback: 1/);assert.deepEqual(await page.evaluate(()=>freePreviewToneCalls.at(-1)),{midi:60,duration_ms:160,instrument:'piano'});assert.deepEqual((await downloadFreeRecord()).data,bounded,'A tone outside the preview window stays intact in the immutable exported observations');
+  const backup=await downloadFreeRecord('#free-export-backup');assert.equal(backup.filename,'worldmusichub-performance-backup.json');assert.equal(backup.data.format,'worldmusichub-performance-backup');assert.equal(backup.data.entries.length,4);assert.equal(backup.data.entries.filter(entry=>isDeepStrictEqual(entry.record,A.data)).length,2);assert.ok(backup.data.entries.some(entry=>isDeepStrictEqual(entry.record,B.data)));assert.ok(backup.data.entries.some(entry=>isDeepStrictEqual(entry.record,bounded)));
+  const originalKeys=await page.locator('#free-record-select option').evaluateAll(options=>options.map(option=>option.value));await page.locator('#free-import-file').setInputFiles({name:'performance-backup.json',mimeType:'application/json',buffer:Buffer.from(backup.text)});await page.locator('#free-restore-backup').click();await page.waitForFunction(()=>document.querySelectorAll('#free-record-select option').length===8&&!document.querySelector('#free-restore-backup').disabled);
+  const restored=await downloadFreeRecord('#free-export-backup'),allKeys=await page.locator('#free-record-select option').evaluateAll(options=>options.map(option=>option.value));assert.equal(new Set(allKeys).size,8);assert.ok(originalKeys.every(key=>allKeys.includes(key)));for(const entry of backup.data.entries)assert.equal(restored.data.entries.filter(candidate=>isDeepStrictEqual(candidate,entry)).length,backup.data.entries.filter(candidate=>isDeepStrictEqual(candidate,entry)).length*2);
+  assert.deepEqual(requests.slice(requestStart),[],'Saving, describing, previewing, importing and backing up performances never invoke score assessment or compilation');
+  await writeFile(join(artifactDirectory,'worldmusichub-live-free-library-preview.json'),JSON.stringify({actual_pc_records:[A.data,B.data],synthetic_preview_window_fixture:bounded,preview_calls:await page.evaluate(()=>freePreviewToneCalls),backup:backup.data,restored:restored.data},null,2));
+});
+
+test('real Free recording and return preserve the complete paused scored take, loop and canonical source',testOptions,async()=>{
+  const score=await prepareKeyboardBrowserPractice('original-score-beside-free');await ui('.practice-options>summary').click();await ui('#loop-from').fill('0');await ui('#loop-to').fill('4');await ui('#loop-apply').click();await page.waitForFunction(()=>document.querySelector('#loop-enabled').checked);await closeShellPanels();
+  await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('r');await page.locator('#play-button').click();
+  const before=await exportTakeData(),snapshot=await pausedTakeSnapshot(),loop=await page.locator('#loop-from,#loop-to,#loop-enabled').evaluateAll(elements=>elements.map(element=>({id:element.id,value:element.value,checked:element.checked})));
+  const requestStart=requests.length;await enterSilentFreePractice();const free=await recordAndSaveFreeKeys('Separate free record',['i','p']);assertFreeMusicalEvents(free.data,[64,66]);assert.equal(await page.locator('#workspace').isVisible(),false);
+  await page.locator('#free-exit').click();await page.locator('#resume-session').click();assert.deepEqual(await pausedTakeSnapshot(),snapshot);assert.deepEqual(await page.locator('#loop-from,#loop-to,#loop-enabled').evaluateAll(elements=>elements.map(element=>({id:element.id,value:element.value,checked:element.checked}))),loop);assert.deepEqual(await exportTakeData(),before,'Free observations, library writes and navigation cannot leak into the scored recorder or its keyboard-configuration history');assert.deepEqual(await exportScore(),score);
+  assert.deepEqual(requests.slice(requestStart),[]);await closeShellPanels();await page.locator('#back-to-library').click();await page.locator('#start-free-practice').click();assert.equal((await downloadFreeRecord()).text,free.text,'Returning to Free practice retains its independently saved selection');
+});
+
+test('real explicit guitar phrase uses Rust inventory then filtered locks without changing source, take or playback loop',testOptions,async()=>{
+  await hideNotation();await ui('#instrument').selectOption('guitar');await ui('#count-in').uncheck();
+  const score=guitarPhraseBrowserScore(),watch=predicate=>page.waitForResponse(response=>new URL(response.url()).pathname==='/api/fingering/guitar'&&response.request().method()==='POST'&&response.request().postDataJSON()?.score?.id===score.id&&predicate(response.request().postDataJSON()));
+  const initialPlan=watch(body=>!body.planning_scope&&body.locks.length===0);await ui('#score-file').setInputFiles({name:'original-guitar-phrase.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);assert.equal((await responseJson(await initialPlan)).status,'ready');
+  const compiled=await rustApi('/api/compile',score),source=id=>compiled.timeline.notes.find(note=>note.source_note_ids.includes(id));assert.equal(compiled.timeline.duration_ms,8000);
+  await ui('#session-mode').selectOption('practice');await ui('.practice-options>summary').click();await ui('#loop-from').fill('0');await ui('#loop-to').fill('8');await ui('#loop-apply').click();await page.waitForFunction(()=>document.querySelector('#loop-enabled').checked);await closeShellPanels();await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('r');await page.locator('#play-button').click();
+  const before=await exportTakeData(),snapshot=await pausedTakeSnapshot(),loop=await page.locator('#loop-from,#loop-to,#loop-enabled').evaluateAll(elements=>elements.map(element=>({id:element.id,value:element.value,checked:element.checked})));
+  await page.locator('#guitar-plan-controls>summary').click();
+  const locks=[{source_note_id:'entry-e',string:2,fret:5,finger:3},{source_note_id:'outside-after',string:1,fret:5,finger:3}];
+  for(const [index,lock]of locks.entries()){await page.locator('#guitar-lock-source').selectOption(lock.source_note_id);await page.locator('#guitar-lock-string').selectOption(String(lock.string));await page.locator('#guitar-lock-fret').selectOption(String(lock.fret));await page.locator('#guitar-lock-finger').selectOption(String(lock.finger));const response=watch(body=>!body.planning_scope&&body.locks.length===index+1);await page.locator('#guitar-apply-lock').click();assert.equal((await responseJson(await response)).status,'ready');}
+  await page.waitForFunction(()=>document.querySelector('#guitar-planning').dataset.status==='ready');const requestStart=requests.length;
+  await page.locator('#guitar-phrase-mode').selectOption('explicit');await page.locator('#guitar-phrase-from').fill('5/2');await page.locator('#guitar-phrase-to').fill('4');assert.equal(await page.locator('#guitar-planning').getAttribute('data-status'),'draft');assert.match(await page.locator('#guitar-phrase-status').textContent(),/old guidance is cleared/);assert.equal(requests.length,requestStart,'Editing a phrase remains a draft until Apply');
+  const inventoryResponse=watch(body=>body.inventory_only===true),planResponse=watch(body=>!!body.planning_scope&&!body.inventory_only);await page.locator('#guitar-phrase-apply').click();const inventory=await responseJson(await inventoryResponse),plan=await responseJson(await planResponse);
+  const scope={version:1,from:{numerator:5,denominator:2},to:{numerator:4,denominator:1}},included=[source('entry-e').id,source('inside-g').id];
+  const expectedInventory={requested:scope,start_ms:2500,end_ms:4000,full_occurrence_count:4,selected_occurrence_count:2,included_occurrence_ids:included,entry_hold_occurrence_ids:[source('entry-e').id]};
+  assert.equal(inventory.purpose,'scope_inventory');assert.equal(inventory.status,'unavailable');assert.equal(inventory.complete,false);assert.deepEqual(inventory.assignments,[]);assert.deepEqual(inventory.planning_scope,expectedInventory);assert.equal(plan.purpose,'phrase_plan');assert.equal(plan.status,'ready');assert.deepEqual(plan.planning_scope,expectedInventory);assert.deepEqual(plan.requested_locks,[locks[0]]);assert.deepEqual(plan.assignments.map(assignment=>assignment.occurrence_id),included);
+  const held=plan.assignments.find(assignment=>assignment.occurrence_id===source('entry-e').id);assert.equal(held.start_ms,1000);assert.equal(held.end_ms,5000,'An entering sustain retains its full original tail beyond the exclusive phrase end');assert.deepEqual([held.string,held.fret,held.finger],[2,5,3]);
+  const sent=requests.slice(requestStart);assert.deepEqual(sent.map(request=>request.path),['/api/fingering/guitar','/api/fingering/guitar']);const [inventoryBody,planBody]=sent.map(request=>JSON.parse(request.body));assert.equal(inventoryBody.inventory_only,true);assert.deepEqual(inventoryBody.locks,[]);assert.deepEqual(inventoryBody.planning_scope,scope);assert.deepEqual(planBody.locks,[locks[0]]);assert.deepEqual(planBody.planning_scope,scope);assert.deepEqual(planBody.score,score);
+  await page.waitForFunction(()=>document.querySelector('#guitar-planning').dataset.status==='ready');assert.match(await page.locator('#guitar-phrase-status').textContent(),/2 of 4 occurrences · 1 entry holds/);assert.match(await page.locator('#guitar-lock-list').textContent(),/outside-after:.*outside this planning phrase; stored, inactive/);assert.match(await page.locator('#guitar-lock-count').textContent(),/2 session locks; 1 apply/);
+  assert.deepEqual(await pausedTakeSnapshot(),snapshot);assert.deepEqual(await page.locator('#loop-from,#loop-to,#loop-enabled').evaluateAll(elements=>elements.map(element=>({id:element.id,value:element.value,checked:element.checked}))),loop);assert.deepEqual(await exportTakeData(),before);assert.deepEqual(await exportScore(),score);
+  await closeShellPanels();const invalidRequestStart=requests.length;await page.locator('#guitar-phrase-from').fill('1/0');await page.locator('#guitar-phrase-apply').click();assert.match(await page.locator('#guitar-phrase-status').textContent(),/denominator/);assert.equal(requests.length,invalidRequestStart,'Invalid phrase text never sends a partial or coerced scope to Rust');const revertInventory=watch(body=>body.inventory_only===true),revertPlan=watch(body=>!!body.planning_scope&&!body.inventory_only);await page.locator('#guitar-phrase-revert').click();assert.deepEqual((await responseJson(await revertInventory)).planning_scope,expectedInventory);assert.deepEqual((await responseJson(await revertPlan)).assignments,plan.assignments);assert.equal(await page.locator('#guitar-phrase-from').inputValue(),'5/2');assert.deepEqual(await exportTakeData(),before);assert.deepEqual(await exportScore(),score);
+  await writeFile(join(artifactDirectory,'worldmusichub-live-guitar-explicit-phrase.json'),JSON.stringify({inventory,plan,requests:[inventoryBody,planBody],outside_lock_retained:true,entry_tail_unchanged:true,paused_take_unchanged:true,canonical_score_unchanged:true,loop_unchanged:true},null,2));
 });

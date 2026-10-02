@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
 import {fixture} from './frontend-fixtures.js';
+import {getAppI18n} from '../web/app-locale.js';
 import {setupGuitarFingering} from '../web/guitar-fingering.js';
 import {setupGuitarFingeringView,guitarRowLabel,guitarPlanSummary,highlightGuitarRoute} from '../web/guitar-fingering-view.js';
 import {setupGuitarGuidance} from '../web/guitar-guidance.js';
@@ -12,6 +13,13 @@ function context(){return{score:structuredClone(fixture),part_id:null,profile:{k
 function result(ctx,settings){
  const notes=ctx.timeline.notes.filter(note=>ctx.part_id===null||ctx.part_id===note.part_id),locked=settings.locks.find(lock=>lock.source_note_id==='c4');
  const plan={version:1,algorithm:'deterministic_guitar_beam_v1',score_id:ctx.score.id,part_id:ctx.part_id,status:notes.length?'ready':'no_targets',profile:structuredClone(ctx.profile),complete:true,changed_source_notes:false,source_occurrence_count:notes.length,max_fret_span:settings.max_fret_span,requested_locks:structuredClone(settings.locks),beam_width:64,beam_pruned:false,explored_choices:24,objective_cost:notes.length?5:0,diagnostics:[],assignments:notes.map((note,index)=>({...note,occurrence_id:note.id,end_ms:note.start_ms+note.duration_ms,onset_index:index,string:index?1:locked?.string??2,fret:index?0:locked?.fret??1,finger:index?0:locked?.finger??1,picking_hint:index?'upstroke_suggestion':'downstroke_suggestion'}))};
+ if(settings.planning_scope){
+  const selected=notes.filter(note=>note.source_note_ids.includes(settings.planning_scope.from.numerator===1?'e4':'c4'));
+  plan.planning_scope={requested:structuredClone(settings.planning_scope),start_ms:settings.planning_scope.from.numerator*500,end_ms:settings.planning_scope.to.numerator*500,full_occurrence_count:notes.length,selected_occurrence_count:selected.length,included_occurrence_ids:selected.map(note=>note.id),entry_hold_occurrence_ids:[]};
+  plan.purpose=settings.inventory_only?'scope_inventory':'phrase_plan';plan.source_occurrence_count=selected.length;
+  plan.assignments=plan.assignments.filter(choice=>plan.planning_scope.included_occurrence_ids.includes(choice.occurrence_id)).map(choice=>({...choice,onset_index:0,picking_hint:'downstroke_suggestion'}));
+  if(settings.inventory_only)Object.assign(plan,{status:'unavailable',complete:false,assignments:[],objective_cost:null});
+ }
  return plan;
 }
 async function harness(){
@@ -25,7 +33,7 @@ async function harness(){
 test('guitar editor labels actual tuning rows, limits, session scope and default optional views',async()=>{
  const h=await harness();assert.equal(h.calls.length,0);await h.controller.prepare();
  assert.equal(h.$('guitar-planning').dataset.status,'ready');assert.match(h.$('guitar-plan-status').textContent,/One whole-phrase route · 2/);
- assert.match(h.$('guitar-annotation-scope').textContent,/Session-only.*v1/);assert.match(h.$('guitar-annotation-scope').textContent,/transposing.*clears/);
+ assert.match(h.$('guitar-annotation-scope').textContent,/仅限本次会话.*第 1 版/);assert.match(h.$('guitar-annotation-scope').textContent,/移调.*清除/);
  assert.match(h.$('guitar-lock-string').textContent,/Row 1 \(E4 tuning\)/);assert.match(h.$('guitar-lock-string').textContent,/Row 6 \(E2 tuning\)/);
  assert.deepEqual(h.view.options(),{showAlternatives:false,showPicking:false});assert.match(guitarRowLabel({tuning:[40,64],capo:2},1),/Row 1 \(E2 tuning; F♯2 capo-open\)/);
  assert.equal(h.$('guitar-plan-status').getAttribute('aria-live'),'polite');assert.equal(h.$('guitar-lock-source').getAttribute('aria-describedby'),'guitar-source-count');
@@ -85,4 +93,38 @@ test('next chosen shape has distinct text/outline, keeps held identities, and ne
  assert.equal(h.document.querySelectorAll('.fret-button.playing').length,1);assert.equal(h.document.querySelectorAll('.fret-button.route-next').length,2);assert.equal(current.classList.contains('route-next'),true);assert.equal(next.classList.contains('pitch-option'),false);assert.equal(next.dataset.routeLabel,'Next 0');assert.equal(current.dataset.routeLabel,'Now 1 · Next 1');assert.deepEqual(JSON.parse(current.dataset.nextOccurrenceIds),['c4@pass1']);assert.match(current.getAttribute('aria-description'),/hold, no new attack/);assert.match(next.getAttribute('aria-description'),/new attack/);
  highlightGuitarRoute(h.document,{...args,nextNotes:[],nextOnsetMs:null});assert.equal(h.document.querySelectorAll('.route-next').length,0);assert.equal(next.dataset.routeLabel,'');assert.equal(current.dataset.routeLabel,'Now 1');
  highlightGuitarRoute(h.document,{...args,plan:null});assert.equal(h.document.querySelectorAll('.playing,.route-next').length,0);assert.equal(current.dataset.nextSourceIds,'[]');assert.equal(current.getAttribute('aria-description'),null);
+});
+
+test('explicit phrase editor clears invalid drafts, applies exact beats, and reverts without touching playback scope',async()=>{
+ const h=await harness(),ctx=h.getContext(),before=structuredClone(ctx);await h.controller.prepare();
+ const i18n=getAppI18n(h.document);assert.match(h.$('guitar-phrase-fields').textContent,/指法规划乐句/);
+ h.$('guitar-phrase-mode').value='explicit';h.$('guitar-phrase-mode').dispatchEvent(new h.window.Event('change'));
+ assert.equal(h.controller.assignment('c4@pass1'),null);assert.equal(h.controller.state().scopeDraft,true);
+ h.$('guitar-phrase-from').value='1/0';h.$('guitar-phrase-from').dispatchEvent(new h.window.Event('input'));
+ h.$('guitar-phrase-form').dispatchEvent(new h.window.Event('submit',{cancelable:true}));
+ assert.match(h.$('guitar-phrase-status').textContent,/分母/);assert.equal(h.controller.state().plan,null);await h.controller.prepare();assert.equal(h.calls.length,1);
+ i18n.setLocale('en');assert.equal(h.$('guitar-phrase-from').value,'1/0');assert.match(h.$('guitar-phrase-status').textContent,/denominator/);
+ h.$('guitar-phrase-revert').click();await h.controller.prepare();assert.equal(h.$('guitar-phrase-mode').value,'whole');assert.ok(h.controller.assignment('c4@pass1'));
+ h.$('guitar-phrase-mode').value='explicit';h.$('guitar-phrase-mode').dispatchEvent(new h.window.Event('change'));
+ h.$('guitar-phrase-from').value='1';h.$('guitar-phrase-to').value='2';h.$('guitar-phrase-form').dispatchEvent(new h.window.Event('submit',{cancelable:true}));await h.controller.prepare();
+ assert.deepEqual(h.calls.at(-1).body.planning_scope,{version:1,from:{numerator:1,denominator:1},to:{numerator:2,denominator:1}});
+ assert.equal(h.controller.assignment('c4@pass1'),null);assert.ok(h.controller.assignment('e4@pass1'));assert.match(h.$('guitar-plan-status').textContent,/One selected-phrase route · 1/);
+ assert.match(h.$('guitar-phrase-status').textContent,/1 of 2 occurrences/);assert.doesNotMatch(h.$('guitar-plan-model').textContent,/Whole selected part/);
+ assert.equal(h.$('loop-from').value,'0');assert.equal(h.$('loop-to').value,'4');assert.deepEqual(ctx,before);
+});
+test('phrase inventory marks outside locks inactive while keeping them editable and stored',async()=>{
+ const h=await harness();getAppI18n(h.document).setLocale('en');
+ h.controller.setSettings({max_fret_span:3,locks:[{source_note_id:'c4',finger:1},{source_note_id:'e4',finger:0}]});
+ h.controller.setPlanningScope({version:1,from:{numerator:1,denominator:1},to:{numerator:2,denominator:1}});await h.controller.prepare();
+ assert.equal(h.controller.state().phase,'ready');assert.match(h.$('guitar-lock-list').textContent,/c4:.*outside this planning phrase; stored, inactive/);
+ assert.equal(h.$('guitar-lock-source').children.length,2);assert.match(h.$('guitar-lock-count').textContent,/2 session locks; 1 apply/);
+ assert.deepEqual(h.calls.at(-1).body.locks,[{source_note_id:'e4',string:null,fret:null,finger:0}]);assert.equal(h.controller.state().settings.locks.length,2);
+ h.controller.setPlanningScope(null);await h.controller.prepare();assert.equal(h.calls.at(-1).body.locks.length,2);assert.doesNotMatch(h.$('guitar-lock-list').textContent,/outside this planning phrase/);
+});
+test('repeated scores explain explicit phrase refusal and new score resets the planning annotation',async()=>{
+ const h=await harness();getAppI18n(h.document).setLocale('en');
+ h.controller.setPlanningScope({version:1,from:{numerator:0,denominator:1},to:{numerator:1,denominator:1}});await h.controller.prepare();
+ const ctx=context();ctx.score.repeats=[{from:{numerator:0,denominator:1},to:{numerator:2,denominator:1},times:2}];h.setContext(ctx);
+ assert.equal(h.controller.state().planningScope,null);assert.equal(h.$('guitar-phrase-mode').value,'whole');assert.equal(h.$('guitar-phrase-mode').querySelector('option[value="explicit"]').disabled,true);
+ assert.match(h.$('guitar-phrase-status').textContent,/repeat-pass selection/);await h.controller.prepare();assert.ok(h.controller.assignment('c4@pass1'));
 });

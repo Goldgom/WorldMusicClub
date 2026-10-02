@@ -1,0 +1,23 @@
+export default Object.freeze({
+  'guitar.phrase.title':'Planning phrase',
+  'guitar.phrase.mode':'Planning scope',
+  'guitar.phrase.whole':'Whole selection',
+  'guitar.phrase.explicit':'Explicit written phrase',
+  'guitar.phrase.from':'A · start quarter-note beat',
+  'guitar.phrase.to':'B · exclusive end quarter-note beat',
+  'guitar.phrase.apply':'Apply phrase & replan',
+  'guitar.phrase.revert':'Revert phrase draft',
+  'guitar.phrase.help':'Beats start at 0. Enter whole numbers or exact fractions, such as 3/2. Planning scope is separate from the A–B playback loop and assessment. Entry holds and full tails are preserved; later attacks outside the phrase are not optimized.',
+  'guitar.phrase.repeats':'Explicit written phrases are unavailable for repeated scores until repeat-pass selection exists. Whole selection remains available.',
+  'guitar.phrase.draft':'Phrase draft: the old guidance is cleared. Apply or revert to request a matching route.',
+  'guitar.phrase.invalid':'Enter nonnegative whole numbers or exact fractions. B must be later than A, with numerator at most 1,000,000,000 and denominator at most 1,000,000.',
+  'guitar.phrase.pending':'Phrase {from}–{to} beats is applied. Rust must confirm its exact notes before guidance is available.',
+  'guitar.phrase.inventory':'Phrase {from}–{to} beats · {selected} of {total} occurrences · {holds} entry holds · Rust time {start}–{end}. Full note tails are retained.',
+  'guitar.phrase.wholeHelp':'Planning includes the complete selected part(s), including outside an A–B loop. Loop-wrap movement is not modeled.',
+  'guitar.phrase.noTargets':'No sounding notes intersect this planning phrase',
+  'guitar.phrase.ready':'One selected-phrase route · {count} sounding occurrences',
+  'guitar.phrase.inactiveLock':' (outside this planning phrase; stored, inactive)',
+  'guitar.phrase.pendingLock':' (phrase membership awaiting Rust)',
+  'guitar.phrase.locks':'{total} session locks; {active} apply to this Rust phrase inventory.',
+  'guitar.phrase.locksPending':'{total} session locks retained; exact phrase membership is awaiting Rust.'
+});

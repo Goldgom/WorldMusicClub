@@ -93,3 +93,88 @@ test('tied source locks constrain the whole occurrence and repeated unisons reta
  plan.assignments=ctx.timeline.notes.map((note,index)=>({occurrence_id:note.id,source_note_ids:note.source_note_ids,part_id:note.part_id,midi:64,start_ms:note.start_ms,end_ms:note.start_ms+note.duration_ms,onset_index:index===2?1:0,string:index===1?5:6,fret:index===1?5:0,finger:index===1?4:0,picking_hint:index===2?'upstroke_suggestion':'simultaneous_pluck_review'}));
  assert.equal(validateGuitarFingering(plan,ctx,settings),plan);plan.assignments[2].source_note_ids=['tie-head'];assert.throws(()=>validateGuitarFingering(plan,ctx,settings));
 });
+
+const phrase=(from=0,to=1)=>({version:1,from:{numerator:from,denominator:1},to:{numerator:to,denominator:1}});
+function phraseResult(ctx,body,ids=['c4'],entry=[]){
+ const plan=result(ctx,body),notes=ctx.timeline.notes.filter(note=>ids.includes(note.id));
+ const starts=[...new Set(notes.map(note=>note.start_ms))].sort((a,b)=>a-b);
+ plan.purpose=body.inventory_only?'scope_inventory':'phrase_plan';
+ plan.planning_scope={requested:structuredClone(body.planning_scope),start_ms:250,end_ms:500,full_occurrence_count:ctx.timeline.notes.filter(note=>ctx.part_id===null||ctx.part_id===note.part_id).length,selected_occurrence_count:ids.length,included_occurrence_ids:ids,entry_hold_occurrence_ids:entry};
+ plan.source_occurrence_count=ids.length;
+ plan.assignments=plan.assignments.filter(choice=>ids.includes(choice.occurrence_id)).map(choice=>({...choice,onset_index:starts.indexOf(choice.start_ms),picking_hint:notes.filter(note=>note.start_ms===choice.start_ms).length>1?'simultaneous_pluck_review':starts.indexOf(choice.start_ms)%2?'upstroke_suggestion':'downstroke_suggestion'}));
+ if(body.inventory_only)Object.assign(plan,{status:'unavailable',complete:false,assignments:[],objective_cost:null});
+ return plan;
+}
+test('phrase planning uses Rust inventory before excluding outside locks and retains session annotations',async()=>{
+ const ctx=context(),calls=[],guide=setupGuitarFingering({getContext:()=>ctx,api:async(path,body)=>{calls.push(body);return phraseResult(ctx,body,['c4'],['c4']);}});
+ guide.setSettings({max_fret_span:3,locks:[{source_note_id:'c4',finger:1},{source_note_id:'e4',finger:0}]});guide.setPlanningScope(phrase());
+ const before=structuredClone(ctx);await guide.prepare();assert.equal(calls.length,2);
+ assert.equal(calls[0].inventory_only,true);assert.deepEqual(calls[0].locks,[]);
+ assert.deepEqual(calls[1].locks,[{source_note_id:'c4',string:null,fret:null,finger:1}]);
+ assert.equal(guide.state().settings.locks.length,2);assert.equal(guide.state().plan.purpose,'phrase_plan');assert.equal(guide.assignment('e4'),null);
+ assert.deepEqual(guide.state().scopeInventory.entry_hold_occurrence_ids,['c4']);assert.deepEqual(ctx,before);
+});
+test('phrase inventory is authoritative even when rounded boundary times cannot establish note ownership',()=>{
+ const ctx=context(),scope=phrase(),body={...defaults(),planning_scope:scope},plan=phraseResult(ctx,body,['e4'],[]);
+ // Inventory deliberately includes the note at its displayed end boundary: membership is not inferred from ms.
+ assert.equal(plan.assignments[0].start_ms,plan.planning_scope.end_ms);
+ const settings={...body,scope_inventory:structuredClone(plan.planning_scope)};
+ assert.equal(validateGuitarFingering(plan,ctx,settings),plan);
+ for(const mutate of [p=>p.planning_scope.included_occurrence_ids=['c4'],p=>p.planning_scope.entry_hold_occurrence_ids=['e4'],p=>p.planning_scope.requested.to.numerator=2,p=>p.planning_scope.start_ms=251,p=>p.purpose='scope_inventory']){
+  const wrong=structuredClone(plan);mutate(wrong);assert.throws(()=>validateGuitarFingering(wrong,ctx,settings));
+ }
+});
+test('invalid Rust scope inventories never advance to a lock-bearing planner request',async()=>{
+ for(const mutate of [p=>p.planning_scope.included_occurrence_ids=['missing'],p=>{p.planning_scope.included_occurrence_ids=['c4','c4'];p.planning_scope.selected_occurrence_count=2},p=>p.planning_scope.entry_hold_occurrence_ids=['e4'],p=>p.planning_scope.full_occurrence_count=1,p=>p.purpose='phrase_plan',p=>p.complete=true,p=>p.assignments=[result(context()).assignments[0]]]){
+  const ctx=context(),calls=[],guide=setupGuitarFingering({getContext:()=>ctx,api:async(_path,body)=>{calls.push(body);const plan=phraseResult(ctx,body);mutate(plan);return plan}});
+  guide.setPlanningScope(phrase());await guide.prepare();assert.equal(calls.length,1);assert.equal(guide.state().phase,'error');assert.equal(guide.state().plan,null);
+ }
+});
+test('phrase edits clear old guidance immediately and invalid drafts block auto preparation until revert',async()=>{
+ const ctx=context(),calls=[],guide=setupGuitarFingering({getContext:()=>ctx,api:async(_path,body)=>{calls.push(body);return body.planning_scope?phraseResult(ctx,body):result(ctx,body)}});
+ await guide.prepare();assert.ok(guide.assignment('c4'));guide.editPlanningScope();assert.equal(guide.assignment('c4'),null);
+ assert.throws(()=>guide.setPlanningScope(phrase(2,1)));await guide.prepare();assert.equal(calls.length,1);assert.equal(guide.state().phase,'draft');
+ guide.revertPlanningScopeDraft();await guide.prepare();assert.ok(guide.assignment('c4'));assert.equal(calls.length,2);
+ guide.setPlanningScope(phrase());await guide.prepare();assert.equal(calls.length,4);assert.equal(guide.state().plan.assignments.length,1);
+ guide.setPlanningScope(null);await guide.prepare();assert.equal(calls.length,5);assert.equal(calls[4].planning_scope,undefined);assert.equal(guide.state().plan.assignments.length,2);
+});
+test('older range preflight and plan responses cannot win after either request phase is invalidated',async()=>{
+ const ctx=context(),calls=[],guide=setupGuitarFingering({getContext:()=>ctx,api:(_path,body,signal)=>new Promise(resolve=>calls.push({body,signal,resolve}))});
+ guide.setPlanningScope(phrase());const old=guide.prepare();await Promise.resolve();
+ guide.setPlanningScope(phrase(1,2));const fresh=guide.prepare();await Promise.resolve();
+ assert.equal(calls[0].signal.aborted,true);calls[0].resolve(phraseResult(ctx,calls[0].body));await old;assert.equal(calls.length,2);
+ calls[1].resolve(phraseResult(ctx,calls[1].body,['e4']));await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.length,3);
+ guide.editPlanningScope();calls[2].resolve(phraseResult(ctx,calls[2].body,['e4']));await fresh;
+ assert.equal(guide.state().plan,null);assert.equal(guide.state().phase,'draft');assert.equal(calls[2].signal.aborted,true);
+});
+test('scope final response is rejected if its exact inventory differs from preflight',async()=>{
+ const ctx=context(),guide=setupGuitarFingering({getContext:()=>ctx,api:async(_path,body)=>phraseResult(ctx,body,body.inventory_only?['c4']:['e4'])});
+ guide.setPlanningScope(phrase());await guide.prepare();assert.equal(guide.state().phase,'error');assert.equal(guide.state().plan,null);
+});
+test('scoped requests validate a small complete plan in a score with more than one thousand occurrences',async()=>{
+ const ctx=context();ctx.timeline.notes.push(...Array.from({length:1000},(_,i)=>({...ctx.timeline.notes[1],id:`outside-${i}`,source_note_ids:[`outside-source-${i}`],start_ms:1000+i*500})));
+ const guide=setupGuitarFingering({getContext:()=>ctx,api:async(_path,body)=>phraseResult(ctx,body)});guide.setPlanningScope(phrase());await guide.prepare();
+ assert.equal(guide.state().phase,'ready');assert.equal(guide.state().plan.assignments.length,1);assert.equal(guide.state().scopeInventory.full_occurrence_count,1002);
+});
+
+test('scoped bounded or infeasible results retain the exact inventory without presenting partial assignments',()=>{
+ const ctx=context(),body={...defaults(),planning_scope:phrase()},base=phraseResult(ctx,body),settings={...body,scope_inventory:base.planning_scope};
+ for(const status of ['infeasible_under_model','no_plan_found','search_limit','unavailable']){
+  const plan={...base,status,complete:false,assignments:[],objective_cost:null};assert.equal(validateGuitarFingering(plan,ctx,settings),plan);
+  assert.throws(()=>validateGuitarFingering({...plan,assignments:base.assignments},ctx,settings));
+ }
+});
+test('score, selected part, profile and lock revisions invalidate both phases of scoped work',async()=>{
+ for(const change of ['score','part','profile','locks'])for(const phase of ['inventory','plan']){
+  let ctx=context();const initial=ctx,calls=[],guide=setupGuitarFingering({getContext:()=>ctx,api:(_path,body,signal)=>new Promise(resolve=>calls.push({body,signal,resolve}))});
+  guide.setPlanningScope(phrase());const pending=guide.prepare();await Promise.resolve();
+  if(phase==='plan'){calls[0].resolve(phraseResult(initial,calls[0].body));await new Promise(resolve=>setImmediate(resolve));}
+  const current=calls.at(-1);
+  if(change==='score')ctx={...ctx,score:structuredClone(ctx.score)};
+  else if(change==='part')ctx={...ctx,part_id:'piano'};
+  else if(change==='profile')ctx={...ctx,profile:{...ctx.profile,frets:15}};
+  else guide.setSettings({max_fret_span:4,locks:[{source_note_id:'c4',finger:1}]});
+  guide.state();assert.equal(current.signal.aborted,true);current.resolve(phraseResult(initial,current.body));await pending;
+  assert.equal(guide.state().plan,null);assert.equal(calls.length,phase==='plan'?2:1);
+ }
+});

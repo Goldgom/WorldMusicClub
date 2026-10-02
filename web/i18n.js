@@ -1,3 +1,12 @@
+import sourceDirectorySchema from './locales/source-directory-schema.js';
+import librarySchema from './locales/library-schema.js';
+import guitarPhraseSchema from './locales/guitar-phrase-schema.js';
+import inputSchema from './locales/input-schema.js';
+import freeSchema from './locales/free-schema.js';
+import appSchema from './locales/app-schema.js';
+import feedbackSchema from './locales/feedback-schema.js';
+import shellSchema from './locales/shell-schema.js';
+import staticSchema from './locales/static-schema.js';
 import zhCN from './locales/zh-CN.js';
 import en from './locales/en.js';
 
@@ -12,6 +21,15 @@ const parameterized = (params, plural) => Object.freeze({params: Object.freeze(p
 
 /** Explicit display contracts. A machine code/identifier is never inferred from prose. */
 export const MESSAGE_SCHEMA = Object.freeze({
+  ...sourceDirectorySchema,
+  ...librarySchema,
+  ...guitarPhraseSchema,
+  ...inputSchema,
+  ...freeSchema,
+  ...appSchema,
+  ...feedbackSchema,
+  ...staticSchema,
+  ...shellSchema,
   'i18n.unavailable': plain,
   'common.start': plain,
   'common.pause': plain,
@@ -206,7 +224,7 @@ export function createDocumentLanguageAdapter(document) {
  */
 export function createI18n({locale: requestedLocale, storage = null, onReport = issue => console.warn('[i18n]', issue), setDocumentLanguage = null} = {}) {
   const reports = [], listeners = new Set(), eventQueue = [];
-  let locale = DEFAULT_LOCALE, revision = 0, notifying = false;
+  let locale = DEFAULT_LOCALE, revision = 0, notifying = false, preferenceStatus = 'memory';
   const report = (code, details = {}) => {
     // Report names, never source text, parameter values, storage contents or errors.
     const issue = Object.freeze({code, locale, ...details});
@@ -221,13 +239,14 @@ export function createI18n({locale: requestedLocale, storage = null, onReport = 
   try {
     const adapter = getStorage();
     if (adapter) {
+      preferenceStatus = 'ready';
       const saved = adapter.getItem(LOCALE_STORAGE_KEY);
       if (saved !== null && saved !== undefined) {
         if (typeof saved === 'string' && saved.length <= 16 && isSupportedLocale(saved)) locale = saved;
-        else report('locale_storage_invalid');
+        else { preferenceStatus = 'failed'; report('locale_storage_invalid'); }
       }
     }
-  } catch { report('locale_storage_read_failed'); }
+  } catch { preferenceStatus = 'failed'; report('locale_storage_read_failed'); }
   if (requestedLocale !== undefined) {
     if (isSupportedLocale(requestedLocale)) locale = requestedLocale;
     else report('locale_unsupported');
@@ -291,6 +310,7 @@ export function createI18n({locale: requestedLocale, storage = null, onReport = 
   return Object.freeze({
     get locale() { return locale; },
     get revision() { return revision; },
+    get preferenceStatus() { return preferenceStatus; },
     t,
     message(code, params = {}) {
       if (typeof code !== 'string' || !own(ERROR_MESSAGE_KEYS, code)) {
@@ -304,8 +324,8 @@ export function createI18n({locale: requestedLocale, storage = null, onReport = 
       if (!isSupportedLocale(next)) { report('locale_unsupported'); return false; }
       const previousLocale = locale;
       locale = next;
-      try { getStorage()?.setItem(LOCALE_STORAGE_KEY, locale); }
-      catch { report('locale_storage_write_failed'); }
+      try { const adapter = getStorage(); adapter?.setItem(LOCALE_STORAGE_KEY, locale); preferenceStatus = adapter ? 'ready' : 'memory'; }
+      catch { preferenceStatus = 'failed'; report('locale_storage_write_failed'); }
       reflectLanguage();
       if (locale !== previousLocale) { revision++; notify('locale', previousLocale); }
       return true;

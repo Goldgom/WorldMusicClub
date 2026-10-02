@@ -295,3 +295,18 @@ test('reports are bounded, deduplicated, immutable and exclude parameter values'
   i18n.t('results.recordTitle', {title: {privateData: 'not for diagnostics'}});
   assert.doesNotMatch(JSON.stringify(i18n.getReports()), /privateData|not for diagnostics/);
 });
+
+
+test('current preference status recovers after a successful retry without erasing diagnostic history', () => {
+  assert.equal(make().preferenceStatus, 'memory');
+  let blocked = true;
+  const storage = {getItem() { throw Error('Read unavailable'); }, setItem() { if (blocked) throw Error('Write unavailable'); }};
+  const i18n = make({storage});
+  assert.equal(i18n.preferenceStatus, 'failed');
+  i18n.setLocale('en');
+  assert.equal(i18n.preferenceStatus, 'failed');
+  blocked = false;
+  i18n.setLocale('en');
+  assert.equal(i18n.preferenceStatus, 'ready');
+  assert.ok(i18n.getReports().some(issue => issue.code === 'locale_storage_write_failed'));
+});

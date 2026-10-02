@@ -1,3 +1,4 @@
+import {createI18n} from '../web/i18n.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -6,7 +7,7 @@ import {setupNoticeView} from '../web/notice-view.js';
 
 const html = await readFile(new URL('../web/index.html', import.meta.url), 'utf8');
 
-function noticeFixture() {
+function noticeFixture({i18n=createI18n({onReport(){}})}={}) {
   const {document, window} = parseHTML(html);
   const $ = id => document.getElementById(id);
   const settings = document.createElement('dialog');
@@ -18,8 +19,8 @@ function noticeFixture() {
   let active = null, scope = 'Original source';
   Object.defineProperty(document, 'activeElement', {get:()=>active});
   window.HTMLElement.prototype.focus = function() { active = this; };
-  const view = setupNoticeView({document, getScope:()=>scope});
-  return {document, window, $, view, setScope:value=>{scope=value;}};
+  const view = setupNoticeView({document, i18n, getScope:()=>scope});
+  return {document, window, $, view, i18n, setScope:value=>{scope=value;}};
 }
 
 test('notice keeps complete literal text and an accessible explicit dismissal without a timer', t => {
@@ -35,7 +36,7 @@ test('notice keeps complete literal text and an accessible explicit dismissal wi
   assert.equal(f.$('notice-message').getAttribute('aria-atomic'), 'true');
   assert.equal(f.$('notice-message').getAttribute('tabindex'), '0', 'Long text can receive keyboard scrolling focus');
   assert.equal(f.$('notice-dismiss').getAttribute('type'), 'button');
-  assert.match(f.$('notice-dismiss').textContent, /Dismiss message/);
+  assert.equal(f.$('notice-dismiss').textContent, '关闭消息');
   assert.equal(f.$('notice').classList.contains('error'), true);
   assert.equal(f.$('notice').querySelector('img'), null);
   assert.equal(f.$('notice-history-list').querySelector('img'), null);
@@ -76,8 +77,8 @@ test('showing messages and clearing an old score notice never steal outside focu
   assert.equal(f.$('notice').hidden, true);
   assert.equal(f.document.activeElement.id, 'tempo');
   assert.equal(f.$('notice-history-list').firstElementChild.dataset.presentation, 'cleared');
-  assert.match(f.$('notice-history-list').textContent, /Cleared after score preparation/);
-  assert.match(f.$('notice-history-list').textContent, /Active score when reported: Original source/);
+  assert.match(f.$('notice-history-list').textContent, /乐谱准备后已清除横幅/);
+  assert.match(f.$('notice-history-list').textContent, /消息出现时的当前乐谱： Original source/);
   f.setScope('Different score');
   f.view.show('Complete score download requested.');
   assert.equal(f.$('notice').hidden, false);
@@ -99,10 +100,34 @@ test('session message history is newest-first, bounded, clearly historical and k
   assert.equal(rows[1].dataset.presentation, 'replaced');
   assert.equal(rows[1].classList.contains('error'), true);
   assert.equal(rows[1].querySelector('p').textContent, 'Message 22 · 完整内容');
-  assert.match(f.$('notice-history-summary').textContent, /latest 20/);
-  assert.match(f.$('notice-history').textContent, /from this tab.*Earlier messages are omitted/);
+  assert.match(f.$('notice-history-summary').textContent, /仅保留最近 20 条/);
+  assert.match(f.$('notice-history').textContent, /当前标签页最近的 20 条消息.*较早消息会被省略/);
   assert.equal(f.$('notice-history').closest('dialog').id, 'settings-dialog');
   assert.equal(f.document.querySelectorAll('#notice-dismiss').length, 1);
   assert.equal(f.document.querySelectorAll('#notice-history').length, 1);
   assert.equal(noticeFixture().$('notice-history-list').children.length, 0, 'New sessions never inherit message history');
+});
+
+
+test('notice locale switches translate only chrome and preserve exact long literal history, scope and focus',()=>{
+ const f=noticeFixture();
+ try{
+  const full='Original external error <script> 不翻译 '+ 'details '.repeat(1600),scope='Source <img> 原稿 '+ 'title '.repeat(1800);
+  f.setScope(scope);f.view.show(full,true);f.$('notice-history').setAttribute('open','');f.$('notice-message').focus();
+  const row=f.$('notice-history-list').firstElementChild,body=row.querySelector('p'),source=row.querySelector('small').lastElementChild,dismiss=f.$('notice-dismiss');f.$('notice-message').scrollTop=75;
+  f.i18n.setLocale('en');assert.equal(dismiss.textContent,'Dismiss message');assert.equal(dismiss.title,'Keep this message in Settings → Recent messages');assert.equal(f.$('notice-history-summary').textContent,'Recent messages (1)');assert.equal(f.$('notice-message').textContent,full);assert.equal(body.textContent,full);assert.equal(source.textContent,scope);assert.equal(f.$('notice-history-list').firstElementChild,row);assert.equal(row.querySelector('p'),body);assert.equal(row.querySelector('small').lastElementChild,source);assert.equal(f.document.activeElement,f.$('notice-message'));assert.equal(f.$('notice-message').scrollTop,75);assert.equal(f.$('notice-history').hasAttribute('open'),true);assert.equal(f.$('notice').querySelector('script'),null);
+  f.i18n.setLocale('zh-CN');assert.equal(dismiss.textContent,'关闭消息');assert.equal(f.$('notice-message').textContent,full);assert.equal(f.$('notice').hidden,false);assert.equal(row.dataset.presentation,'shown');
+  f.view.destroy();const header=f.$('notice-history-summary').textContent;f.i18n.setLocale('en');assert.equal(f.$('notice-history-summary').textContent,header);dismiss.click();assert.equal(f.$('notice').hidden,false);
+ }finally{f.view.destroy()}
+});
+
+test('explicit app-owned notice callbacks redraw while literal history and first-text fallback remain intact',()=>{
+ const f=noticeFixture();let broken=false,calls=0;
+ try{
+  f.view.show('Literal original error.');
+  f.view.show(()=>{calls++;if(broken)throw Error('render unavailable');return f.i18n.t('common.retry');},true);assert.equal(calls,1,'Initial app-owned notice renders once');
+  const row=f.$('notice-history-list').firstElementChild,literal=f.$('notice-history-list').lastElementChild;
+  assert.equal(f.$('notice-message').textContent,'重试');f.i18n.setLocale('en');assert.equal(f.$('notice-message').textContent,'Retry');assert.equal(row.querySelector('p').textContent,'Retry');assert.equal(calls,2,'A locale redraw renders each app-owned notice once');assert.equal(literal.querySelector('p').textContent,'Literal original error.');assert.equal(literal.dataset.presentation,'replaced');
+  broken=true;f.i18n.setLocale('zh-CN');assert.equal(f.$('notice-message').textContent,'重试');assert.equal(row.querySelector('p').textContent,'重试');assert.equal(f.$('notice-history-list').children.length,2);
+ }finally{f.view.destroy()}
 });

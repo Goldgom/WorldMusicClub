@@ -1,24 +1,27 @@
+import {getAppI18n} from './app-locale.js';
+
 const icons = {
   enter: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5"/></svg>',
   exit: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M4 9h5V4m6 0v5h5M9 20v-5H4m16 0h-5v5"/></svg>',
 };
 
 /** Browser presentation only: this controller never starts, pauses or resets a take. */
-export function setupFullscreen({document: doc = globalThis.document, button, status, timeoutMs = 8000, setTimer = setTimeout, clearTimer = clearTimeout}) {
+export function setupFullscreen({document: doc = globalThis.document, button, status, timeoutMs = 8000, setTimer = setTimeout, clearTimer = clearTimeout, i18n = getAppI18n(doc)}) {
   const root = doc.documentElement, view = doc.defaultView;
-  let pending = null, entry = null, messageTimer = null, away = false, disposed = false, lastFullscreen = doc.fullscreenElement;
+  let pending = null, entry = null, messageTimer = null, away = false, disposed = false, lastFullscreen = doc.fullscreenElement, messageCode = null;
   const capable = () => typeof root.requestFullscreen === 'function' && typeof doc.exitFullscreen === 'function' && doc.fullscreenEnabled === true;
   const modalOpen = () => Boolean(doc.querySelector('dialog[open]'));
 
-  function message(text) {
+  function message(code) {
     clearTimer(messageTimer);
-    status.textContent = text;
-    messageTimer = text ? setTimer(() => { status.textContent = ''; }, 6000) : null;
+    messageCode = code || null;
+    status.textContent = messageCode ? i18n.t(messageCode) : '';
+    messageTimer = messageCode ? setTimer(() => { messageCode = null; status.textContent = ''; }, 6000) : null;
   }
   function render() {
     const active = Boolean(doc.fullscreenElement), action = active ? 'exit' : 'enter';
     const available = active ? typeof doc.exitFullscreen === 'function' : capable();
-    const label = active ? 'Exit fullscreen · 退出全屏' : 'Enter fullscreen · 进入全屏';
+    const label = i18n.t(active ? 'fullscreen.exit' : 'fullscreen.enter');
     if (button.dataset.fullscreenAction !== action) {
       button.innerHTML = icons[action];
       button.dataset.fullscreenAction = action;
@@ -26,7 +29,8 @@ export function setupFullscreen({document: doc = globalThis.document, button, st
     button.setAttribute('aria-label', label);
     button.setAttribute('aria-disabled', String(Boolean(pending) || !available));
     button.setAttribute('aria-busy', String(Boolean(pending)));
-    button.title = available ? `${label}${active ? ' (Esc)' : ''}` : 'Fullscreen is unavailable in this browser or window · 当前浏览器或窗口不支持全屏';
+    button.title = i18n.t(available ? active ? 'fullscreen.exitTitle' : 'fullscreen.enter' : 'fullscreen.unavailable');
+    status.textContent = messageCode ? i18n.t(messageCode) : '';
   }
   function release(operation) {
     clearTimer(operation.timer);
@@ -60,8 +64,8 @@ export function setupFullscreen({document: doc = globalThis.document, button, st
     if (entry === operation) entry = null;
     if (current && error && !operation.cancelled) {
       // Escape can complete an exit before that exit promise rejects.
-      if (operation.kind === 'enter' && !doc.fullscreenElement) message('Could not enter fullscreen. You can keep playing and try again. · 无法进入全屏，可继续演奏或重试');
-      if (operation.kind === 'exit' && doc.fullscreenElement) message('Could not exit fullscreen. Press Esc or try again. · 无法退出全屏，请按 Esc 或重试');
+      if (operation.kind === 'enter' && !doc.fullscreenElement) message('fullscreen.enterFailed');
+      if (operation.kind === 'exit' && doc.fullscreenElement) message('fullscreen.exitFailed');
     }
     render();
   }
@@ -74,12 +78,12 @@ export function setupFullscreen({document: doc = globalThis.document, button, st
       operation.cancelled = true;
       release(operation);
       message(kind === 'enter'
-        ? 'Fullscreen did not finish. You can keep using the app. · 全屏请求未完成，可继续使用'
-        : 'Fullscreen exit did not finish. Press Esc or try again. · 退出全屏未完成，请按 Esc 或重试');
+        ? 'fullscreen.enterTimeout'
+        : 'fullscreen.exitTimeout');
       sync();
     }, timeoutMs);
     render();
-    if (recovery) message('Fullscreen entry cancelled; your current view is preserved. · 已取消全屏，保留当前界面');
+    if (recovery) message('fullscreen.recovery');
     try {
       // Keep the browser call in the native click stack: no fetch/audio/await
       // precedes it and no keyboard or orientation lock is requested.
@@ -95,8 +99,8 @@ export function setupFullscreen({document: doc = globalThis.document, button, st
     if (doc.fullscreenElement && typeof doc.exitFullscreen === 'function') { start('exit'); return; }
     // A timed-out request cannot be aborted. Do not overlap it with a second
     // entry whose browser events would be indistinguishable from the old one.
-    if (entry) { message('The earlier fullscreen request is still finishing. You can keep using the app. · 上次全屏请求仍在处理，可继续使用'); return; }
-    if (!capable()) { message('Fullscreen is unavailable in this browser or window. · 当前浏览器或窗口不支持全屏'); return; }
+    if (entry) { message('fullscreen.earlierPending'); return; }
+    if (!capable()) { message('fullscreen.unavailable'); return; }
     if (doc.hidden || modalOpen()) return;
     start('enter');
   }
@@ -104,7 +108,7 @@ export function setupFullscreen({document: doc = globalThis.document, button, st
     if (event.key !== 'Escape' || !entry) return;
     entry.cancelled = true;
     release(entry);
-    message('Fullscreen entry cancelled. · 已取消进入全屏');
+    message('fullscreen.cancelled');
     sync();
     // Never prevent Escape: the browser and any open native dialog keep it.
   }
@@ -124,8 +128,12 @@ export function setupFullscreen({document: doc = globalThis.document, button, st
   view?.addEventListener('pagehide', pagehide);
   view?.addEventListener('pageshow', pageshow);
   render();
+  // A locale redraw reads browser state only; it must never call sync/start.
+  const unsubscribe = i18n.subscribe(render);
   return {destroy() {
+    if (disposed) return;
     disposed = true;
+    unsubscribe();
     if (pending) release(pending);
     clearTimer(messageTimer);
     button.removeEventListener('click', toggle);

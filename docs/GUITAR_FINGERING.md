@@ -1,6 +1,8 @@
-# Advisory whole-phrase guitar fingering
+# Advisory guitar phrase fingering
 
 `POST /api/fingering/guitar` accepts `{score, part_id, profile, max_fret_span, locks}`.
+An optional versioned `planning_scope` selects an exact written phrase; omitting
+it preserves the whole-selection request and response contract described below.
 The full canonical score is compiled by Rust. `part_id:null` plans all parts;
 an existing part ID explicitly selects that part. The profile is the existing
 `{kind:"guitar", tuning:[40,45,50,55,59,64], frets:12, capo:0}` shape.
@@ -15,6 +17,64 @@ global or biomechanical optimum, a claim of safe technique, or a performance
 assessment. Canonical notes, sources, timestamps and existing scored-mode gates
 are unchanged. Existing import/compile and range diagnostics remain in the
 response. A successful guidance response must never bypass a practice range gate.
+
+## Exact bounded planning phrase
+
+The optional request field is:
+
+```json
+{"planning_scope":{"version":1,"from":{"numerator":1,"denominator":1},"to":{"numerator":5,"denominator":2}}}
+```
+
+The half-open `[from, to)` range uses nonnegative rational quarter-note beats,
+starting at zero. B must be later than A and cannot exceed the exact written
+score duration. Numerators are at most 1,000,000,000 and denominators 1,000,000.
+Explicit written phrases reject scores containing repeats until an actual
+performance-pass selector exists. Whole-selection planning still supports repeats.
+
+Rust compiles the complete unchanged canonical score, resolves exact endpoints
+through the complete tied source IDs, and selects every sounding occurrence with
+`start < B && end > A`. A note ending exactly at A or attacking exactly at B is
+excluded. Every held note entering A and every full tail beyond B is included
+without clipping, rearticulation, identity changes or source removal. The existing
+1,000 occurrence and 16,384 source-reference budgets apply after this selection.
+Search considers the original start times of included entry holds and keeps the
+original end times; transitions from unselected notes and later attacks outside
+the range are not optimized. Playback/loop, assessment, takes and original exports
+retain their own unchanged scopes.
+
+Scoped responses add `purpose:"phrase_plan"` and a `planning_scope` inventory:
+`requested` (the exact version/from/to request, without normalization), Rust
+`start_ms`/`end_ms`, `full_occurrence_count` (the complete selected part or parts),
+`selected_occurrence_count`, `included_occurrence_ids`, and
+`entry_hold_occurrence_ids`. `source_occurrence_count` counts the scoped sounding
+occurrences. Assignments retain full compiled times and source chains. Incomplete
+plans retain this inventory and return no assignments under the existing statuses.
+Neither additional response field is serialized when scope is omitted, and the
+existing deterministic search algorithm and objective are unchanged.
+
+The browser first sends the same scope with `inventory_only:true` and no locks.
+This explicit `purpose:"scope_inventory"` preflight is `complete:false`, has status
+`unavailable`, no assignments, no objective and a `guitar_fingering_scope_inventory`
+diagnostic. It is an identity inventory, never playable guidance. The browser
+checks its exact request, counts, unique IDs and entry-hold subset against the
+current compiled timeline. It then submits a normal scoped plan containing only
+locks whose source IDs belong to inventory occurrences, including all segments
+of complete tie chains. Outside locks remain editable and stored in the session.
+The final response must echo the identical Rust scope inventory before any route
+is displayed; JavaScript does not infer membership from rounded milliseconds.
+Both requests use the complete score. This costs two Rust compilations for an
+explicit phrase; omitted scope keeps the existing single request.
+
+The existing guitar editor offers **Whole selection** and **Explicit written
+phrase**, with exact integer/fraction A and B inputs, Apply and Revert. Editing
+any range field immediately removes old guidance, including invalid drafts, and
+blocks automatic preparation until apply/revert. A new loaded score resets the
+planning scope. Part, profile, score, timeline, locks and range changes invalidate
+both preflight and final request phases, so old replies cannot publish a route.
+Planning scope is displayed separately from playback A–B; there is no A–B shortcut
+or implied synchronization. The new controls and scope/lock status support the
+application English and Simplified Chinese locale without losing entered drafts.
 
 ## Preserved identities and timing
 
@@ -113,8 +173,9 @@ finger semantics or search semantics requires a new algorithm identifier.
 The guitar stage has a concise live status and expandable **Edit route,
 source-note locks & limits** controls. Each current/upcoming occurrence card
 includes its selected tuning row, tuning pitch, capo-relative fret and left-hand
-finger. The complete chosen route covers the selected part(s), even outside an
-A–B playback loop; movement across the artificial loop wrap is not modeled.
+finger. By default the complete chosen route covers the selected part(s), even outside
+an A–B playback loop. An applied explicit planning phrase covers its Rust inventory
+instead; movement across the artificial loop wrap is not modeled.
 Only currently sounding chosen positions highlight on the fretboard. Finger
 badges and source identities distinguish recommendations from pitch input.
 
@@ -135,7 +196,7 @@ simultaneous or still-held source IDs as review context. A failed bounded search
 is never labeled as proof of impossibility, and no failed/partial plan displays
 assignments.
 
-Annotation policy version 1 is deliberately **session-only**. Locks and span are
+Annotation policy version 1 is deliberately **session-only**. Locks, span and planning scope are
 retained only while that exact loaded score object remains current in the tab.
 A new import, score load, tempo compilation, semitone copy, or restoration clears
 annotations and requests a fresh route. There is no implicit browser persistence
@@ -184,7 +245,12 @@ new JavaScript ergonomic planner. Picking suggestions remain a limited onset-
 parity heuristic; chord technique, rest-aware picking and string changes are not
 optimized by that hint.
 
-The original whole-score planning limit and session-only annotation scope still
-apply. A dedicated short-phrase planning selection and stronger bounded-search
-quality evidence remain open; this live display change does not complete every
-guitar requirement.
+The 1,000-occurrence limit now applies to the selected exact planning phrase,
+with whole selection remaining the default. Dedicated Node and Rust regressions
+cover large full scores with small ranges, exact adjacent fractions, entry holds,
+chord boundaries, complete tails, tempo changes, tied and outside locks, inventory
+mismatch and stale replies. DOM tests exercise apply, invalid draft, revert,
+locale changes and repeated-score explanations. Real GUI acceptance of the new
+phrase controls remains pending in an authorized browser environment. An independent
+small-phrase exhaustive quality oracle and richer right-hand technique guidance
+remain open; this change does not claim a global biomechanical optimum.

@@ -182,6 +182,7 @@ test('metronome synthesis is opt-in, shares one audio context, respects mute and
 });
 
 import {SCORE_SOURCES,filterScoreSources,unsupportedImportHint} from '../web/score-sources.js';
+import {createI18n} from '../web/i18n.js';
 test('source directory is an explicit three-source list with fixed official HTTPS references',()=>{
  assert.equal(SCORE_SOURCES.length,3);assert.deepEqual(SCORE_SOURCES.map(source=>source.url),['https://github.com/OpenScore/Lieder','https://www.mutopiaproject.org/','https://imslp.org/wiki/Main_Page']);for(const source of SCORE_SOURCES){assert.equal(new URL(source.url).protocol,'https:');assert.equal(new URL(source.rightsUrl).protocol,'https:');assert.ok(source.importNote.length>20);assert.ok(source.rights.length>20)}assert.match(SCORE_SOURCES[0].importNote,/does not import MSCX/);assert.match(SCORE_SOURCES[2].rights,/your country/);
 });
@@ -189,7 +190,7 @@ test('source search only filters local directory metadata and distinguishes impo
  assert.deepEqual(filterScoreSources('ＭＩＤＩ').map(source=>source.id),['openscore-lieder','mutopia']);assert.deepEqual(filterScoreSources('','musicxml').map(source=>source.id),['openscore-lieder']);assert.equal(filterScoreSources('PDF','image').length,3);assert.deepEqual(filterScoreSources('cc BY-SA').map(source=>source.id),['mutopia']);assert.equal(filterScoreSources('a score that is not in this directory').length,0);assert.equal(filterScoreSources('','unknown').length,0);assert.equal(SCORE_SOURCES.length,3);
 });
 test('unsupported score formats explain conversion or review instead of treating scans as playable JSON',()=>{
- assert.match(unsupportedImportHint('scan.PDF'),/not imported as playable/);for(const name of ['score.mscx','score.MSCZ'])assert.match(unsupportedImportHint(name),/not imported directly/);assert.match(unsupportedImportHint('source.ly'),/Renaming/);assert.match(unsupportedImportHint('staff.jpeg'),/Review image/);for(const name of ['score.json','score.musicxml','score.mxl','score.mid','score.jianpu'])assert.equal(unsupportedImportHint(name),null);
+ const i18n=createI18n({locale:'en'});assert.match(unsupportedImportHint('scan.PDF',i18n),/not imported as playable/);for(const name of ['score.mscx','score.MSCZ'])assert.match(unsupportedImportHint(name,i18n),/not imported directly/);assert.match(unsupportedImportHint('source.ly',i18n),/Renaming/);assert.match(unsupportedImportHint('staff.jpeg',i18n),/Review image/);for(const name of ['score.json','score.musicxml','score.mxl','score.mid','score.jianpu'])assert.equal(unsupportedImportHint(name,i18n),null);
 });
 
 import {beat} from '../web/music.js';

@@ -2,7 +2,7 @@
 
 A local-first music practice and rhythm-game project with a Rust score engine.
 
-[中文上手指南](docs/QUICKSTART.zh-CN.md) · [Verified Windows UI preview 119](docs/releases/0.2.0-alpha.1-ui-preview.md) · [Newer source changes](docs/releases/unreleased.md)
+[中文上手指南](docs/QUICKSTART.zh-CN.md) · [Accepted Windows recovery 155](docs/releases/0.2.0-alpha.1-commit-155.md) · [Newer source changes](docs/releases/unreleased.md)
 
 ## Current alpha
 
@@ -10,6 +10,8 @@ A local-first music practice and rhythm-game project with a Rust score engine.
 - Derived staff notation, numbered jianpu and repeat-expanded performance views
 - Piano and guitar practice; configurable keyboard ranges; playable exercises and falling-note guidance
 - Optional MIDI input and explainable timing/pitch feedback
+- Independent free practice with optional sound, explicit recording saves, backups and descriptive A/B comparison
+- Configurable 47-key PC input, separate performed-input transposition and a shared Chinese/English display preference
 - Bounded MusicXML/MXL, MIDI and numbered-text import; a limited local printed-staff image aid with mandatory manual correction
 - Offline staff engraving, local saved-score backups and exact monophonic numbered-text export
 
@@ -20,6 +22,10 @@ Install a current stable Rust toolchain from https://rust-lang.org/tools/install
 The first shell is a portable Rust local server with a browser UI. It binds only to 127.0.0.1 and works without a cloud account. A native Windows wrapper can be added without moving music logic out of Rust.
 
 The current source tree opens in a searchable song lobby and uses a landscape performance stage with falling notes, keyboard and optional notation. Settings, import, sources and results use secondary panels. Browsing previews preserves a paused take; starting another score is explicit. See [interface behavior](docs/GAME_UI.md). This redesign follows the accepted 108 snapshot and is not included in that older Windows ZIP.
+
+Free practice and the expanded keyboard/language integration are newer source
+features than the accepted 155 package. Runtime localization is still incremental;
+the exact remaining surfaces are listed in [locale coverage](docs/I18N.md).
 
 ## Distribution and rights
 
@@ -35,6 +41,6 @@ A limited local recognizer suggests note positions from one clean horizontal pri
 
 ## Windows builds
 
-The [verified 119 UI preview](docs/releases/0.2.0-alpha.1-ui-preview.md) includes the landscape lobby and piano stage, with exact source, ZIP checksum and native Windows test evidence. It is an additional preview between the regular milestones. Check `BUILD-INFO.json` to distinguish its contents from newer source features and earlier packages.
+The [accepted 155 recovery](docs/releases/0.2.0-alpha.1-commit-155.md) includes notation-following and compact guitar display repairs, with exact source, ZIP checksum and native Windows evidence. The [published 119 preview](https://github.com/Goldgom/WorldMusicHub/releases/tag/v0.2.0-alpha.1-commit-119) remains a separate earlier build. Check `BUILD-INFO.json` to distinguish package contents from newer source features.
 
 CI checks Rust on Linux and Windows. The Windows milestone workflow packages a portable executable at each 50-commit milestone, or when manually dispatched. See [Windows usage and verification boundaries](docs/WINDOWS.md). No Windows artifact has been verified merely because these workflow files exist.

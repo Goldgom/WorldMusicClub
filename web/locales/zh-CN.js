@@ -1,5 +1,23 @@
+import sourceDirectoryMessages from './source-directory-zh-CN.js';
+import libraryMessages from './library-zh-CN.js';
+import guitarPhraseMessages from './guitar-phrase-zh-CN.js';
+import inputMessages from './input-zh-CN.js';
+import freeMessages from './free-zh-CN.js';
+import appMessages from './app-zh-CN.js';
+import feedbackMessages from './feedback-zh-CN.js';
+import shellMessages from './shell-zh-CN.js';
+import staticMessages from './static-zh-CN.js';
 /** Application-owned display text only. Authored score data and identifiers stay unchanged. */
 export default Object.freeze({
+  ...sourceDirectoryMessages,
+  ...libraryMessages,
+  ...guitarPhraseMessages,
+  ...inputMessages,
+  ...freeMessages,
+  ...appMessages,
+  ...feedbackMessages,
+  ...staticMessages,
+  ...shellMessages,
   'i18n.unavailable': '此内容暂时无法显示。',
   'common.start': '开始',
   'common.pause': '暂停',

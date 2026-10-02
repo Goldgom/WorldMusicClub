@@ -66,3 +66,11 @@ test('MXL source inspection preserves XML BOM and CRLF and exposes incorrect dec
 test('incomplete or unknown MXL envelopes remain available whole without partial inferred files',()=>{
  for(const mutate of[record=>record.version=2,record=>delete record.selected_score_path,record=>delete record.files['original.mxl'],record=>record.files['original.mxl'].encoding='utf-8',record=>record.files['selected.musicxml'].bytes=-1,record=>record.files.unrecognized={encoding:'utf-8',bytes:1,content:'x'}]){const record=mxlRecord();mutate(record);const score=mxlSource(record),archive=retainedSourceArchive(score);assert.equal(archive.files.length,1);assert.equal(archive.files[0].content,score.source.content);assert.match(archive.warnings.join(' '),/Individual MXL files are unavailable/)}
 });
+
+test('source presentation descriptors and stable error codes are additive to exact archival data',async()=>{
+ const archive=retainedSourceArchive(edition);assert.equal(archive.files[0].roleCode,'complete');assert.equal(archive.files.find(file=>file.id==='edition:converter.musicxml').roleCode,'converter');assert.equal(archive.files.find(file=>file.id==='edition:import.musicxml').noteCode,'compatible');assert.equal(archive.warningDetails.at(-1).code,'local');
+ const original=archive.files.find(file=>file.id==='edition:reference.mid');
+ await assert.rejects(inspectRetainedSourceFile({...original,content:'AQ==\n'}),error=>error.code==='source_base64_noncanonical'&&/not canonical/.test(error.message));
+ const unavailable=retainedSourceArchive({source:{format:'worldmusichub-curated-edition-v1',filename:'original.json',content:'{"version":2,"files":{}}'}});assert.equal(unavailable.warningDetails[0].code,'filesUnavailable');assert.equal(unavailable.warningDetails[0].cause.code,'source_archive_version');assert.match(unavailable.warnings[0],/Unknown archive version/);assert.equal(unavailable.files[0].content,'{"version":2,"files":{}}');
+ const mxl=retainedSourceArchive(mxlSource(mxlRecord()));assert.deepEqual(mxl.files.map(file=>file.roleCode),['complete','mxl','selected']);assert.deepEqual(mxl.files[2].noteParams,{path:'scores/duet.musicxml'});assert.equal(mxl.files[2].noteCode,'selected');
+});

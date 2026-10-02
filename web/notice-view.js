@@ -1,49 +1,75 @@
+import {getAppI18n} from './app-locale.js';
+
 /** Session-only presentation. This controller never receives score, transport,
  * admission or take objects, and cannot retry or resolve a reported problem. */
-export function setupNoticeView({document, getScope = () => ''}) {
+export function setupNoticeView({document, getScope = () => '', i18n = getAppI18n(document)}) {
   const $ = id => document.getElementById(id);
   const banner = $('notice'), message = $('notice-message'), dismiss = $('notice-dismiss');
   const limit = 20, entries = [];
-  let sequence = 0, current = null;
+  let sequence = 0, current = null, disposed = false;
 
   const history = document.createElement('details');
   history.id = 'notice-history';
   const summary = document.createElement('summary');
   summary.id = 'notice-history-summary';
   const explanation = document.createElement('p');
-  explanation.textContent = 'The latest 20 messages from this tab, newest first. Earlier messages are omitted. Dismissing a message only hides its banner. Check Score, Settings and Results for current diagnostics. 最近消息仅保留于当前标签页。';
   const list = document.createElement('ol');
   list.id = 'notice-history-list';
   const empty = document.createElement('p');
-  empty.textContent = 'No messages yet · 暂无消息';
   history.append(summary, explanation, list, empty);
   $('settings-dialog').querySelector('.shell-dialog-content').append(history);
+  // This view now owns the dismiss chrome, including runtime locale redraws.
+  dismiss.removeAttribute('data-i18n');
+  dismiss.removeAttribute('data-i18n-title');
 
-  function renderHistory() {
-    summary.textContent = `Recent messages · 最近消息 (${entries.length}${sequence > limit ? ' / latest 20' : ''})`;
+  function renderText(entry) {
+    // Plain strings are original/literal notices. Only an explicit app-owned
+    // callback may redraw display text. Its first text remains a safe fallback.
+    if (!entry.renderMessage) return entry.message;
+    try { const next = entry.renderMessage(); return typeof next === 'string' ? next : entry.message; }
+    catch { return entry.message; }
+  }
+  function renderHistory({redrawMessages = false} = {}) {
+    summary.textContent = i18n.t(sequence > limit ? 'notice.historyLimited' : 'notice.historyCount', {count:entries.length});
     empty.hidden = entries.length > 0;
-    list.replaceChildren();
-    for (const entry of [...entries].reverse()) {
-      const row = document.createElement('li');
-      row.dataset.messageId = String(entry.id);
-      row.dataset.presentation = entry.presentation;
-      row.classList.toggle('error', entry.error);
-      const heading = document.createElement('strong');
-      const presentation = {shown:'Shown above', dismissed:'Dismissed', replaced:'Earlier message', cleared:'Cleared after score preparation'}[entry.presentation];
-      heading.textContent = `${entry.error ? 'Error · 错误' : 'Message · 消息'} ${entry.id} · ${presentation}`;
-      const body = document.createElement('p');
-      body.textContent = entry.message;
-      row.append(heading, body);
-      if (entry.scope) {
-        const scope = document.createElement('small');
-        scope.textContent = `Active score when reported: ${entry.scope}`;
-        row.append(scope);
+    explanation.textContent = i18n.t('notice.historyExplanation');
+    empty.textContent = i18n.t('notice.empty');
+    dismiss.textContent = i18n.t('notice.dismiss');
+    dismiss.title = i18n.t('notice.dismissTitle');
+    for (const [index, entry] of [...entries].reverse().entries()) {
+      if (!entry.row) {
+        entry.row = document.createElement('li');
+        entry.row.dataset.messageId = String(entry.id);
+        entry.heading = document.createElement('strong');
+        entry.body = document.createElement('p');
+        entry.row.append(entry.heading, entry.body);
+        if (entry.scope) {
+          const scope = document.createElement('small');
+          entry.scopeLabel = document.createElement('span');
+          const source = document.createElement('span');
+          source.textContent = entry.scope; // Original source, no display length bound.
+          scope.append(entry.scopeLabel, document.createTextNode(' '), source);
+          entry.row.append(scope);
+        }
       }
-      list.append(row);
+      entry.row.dataset.presentation = entry.presentation;
+      entry.row.classList.toggle('error', entry.error);
+      entry.heading.textContent = i18n.t(entry.error ? 'notice.errorHeading' : 'notice.messageHeading', {id:entry.id,presentation:i18n.t(`notice.presentation.${entry.presentation}`)});
+      if (redrawMessages) entry.displayText = renderText(entry);
+      const text = entry.displayText;
+      if (entry.body.textContent !== text) entry.body.textContent = text;
+      if (entry.scopeLabel) entry.scopeLabel.textContent = i18n.t('notice.scopeLabel');
+      if (list.children[index] !== entry.row) list.insertBefore(entry.row, list.children[index] || null);
+    }
+    while (list.children.length > entries.length) list.lastElementChild.remove();
+    if (current) {
+      const text = current.displayText;
+      if (message.textContent !== text) message.textContent = text;
     }
   }
 
   function hide(presentation) {
+    if (disposed) return;
     const hadFocus = banner.contains(document.activeElement);
     banner.hidden = true;
     if (current) current.presentation = presentation;
@@ -57,12 +83,21 @@ export function setupNoticeView({document, getScope = () => ''}) {
     }
   }
 
-  dismiss.addEventListener('click', () => hide('dismissed'));
+  const onDismiss = () => hide('dismissed');
+  dismiss.addEventListener('click', onDismiss);
   renderHistory();
+  const unsubscribe = i18n.subscribe(() => renderHistory({redrawMessages:true}));
   return {
+    /** Localized callbacks must capture immutable event-specific display data. */
     show(text, error = false) {
+      if (disposed) return;
+      const renderMessage = typeof text === 'function' ? text : null;
+      let original;
+      if (renderMessage) { try { original = renderMessage(); } catch { original = i18n.t('error.unknown'); } }
+      else original = String(text ?? '');
+      if (typeof original !== 'string') original = i18n.t('error.unknown');
       if (current) current.presentation = 'replaced';
-      current = {id:++sequence, message:String(text ?? ''), error:Boolean(error), scope:String(getScope() || ''), presentation:'shown'};
+      current = {id:++sequence, message:original, displayText:original, renderMessage, error:Boolean(error), scope:String(getScope() || ''), presentation:'shown'};
       entries.push(current);
       if (entries.length > limit) entries.shift();
       message.textContent = current.message;
@@ -74,5 +109,6 @@ export function setupNoticeView({document, getScope = () => ''}) {
     // Existing successful score preparation may clear obsolete scoped messages.
     // Keep their text available as history; never label them resolved.
     clear() { hide('cleared'); },
+    destroy() { if (disposed) return; disposed = true; unsubscribe(); dismiss.removeEventListener('click', onDismiss); },
   };
 }

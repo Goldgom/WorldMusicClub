@@ -33,9 +33,17 @@ export class InputEvidence {
         identity = {id:`source-${this.sources.size + 1}`, source, generationToken, inputKind, channel, midi};
         this.sources.set(key, identity);
       }
-      if (kind === 'note_on') { identity.midi = midi; this.active.set(key, {...identity, midi}); this.awaitingRelease.add(key); }
-      else if (kind === 'note_off' || kind === 'synthetic_release') {
-        this.active.delete(key);
+      // Raw observations remain in receipt order. This watermark only owns
+      // cleanup state; it does not pair releases or infer played durations.
+      const current = identity.latestInputWall === undefined || eventWall >= identity.latestInputWall;
+      // Even a reordered onset licenses retaining its later UI keyup; this
+      // receipt-side observation eligibility is independent of live cleanup.
+      if (kind === 'note_on') this.awaitingRelease.add(key);
+      if (kind === 'note_on' && current) {
+        identity.latestInputWall = eventWall; identity.midi = midi;
+        this.active.set(key, {...identity, midi, eventWall});
+      } else if ((kind === 'note_off' || kind === 'synthetic_release') && current) {
+        identity.latestInputWall = eventWall; this.active.delete(key);
         if (kind === 'note_off') this.awaitingRelease.delete(key);
       }
     }
@@ -57,7 +65,7 @@ export class InputEvidence {
     if (!expected && midi === null && !event.inputKind) return null;
     return this.append({...event, source, generationToken, midi, kind:'note_off'});
   }
-  cancel({source = null, prefix = null, generationToken = null, channel = null, ...event}) {
+  cancel({source = null, prefix = null, generationToken = null, channel = null, notAfterEventWall = null, ...event}) {
     if (!this.enabled) return;
     const generation = generationToken == null ? null : this.generations.get(generationToken);
     if (source !== null && !this.active.has(`${generation ?? 'local'}:${source}`)) return;
@@ -68,6 +76,7 @@ export class InputEvidence {
       if (source !== null && identity.source !== source) continue;
       if (prefix !== null && !identity.source.startsWith(prefix)) continue;
       if (generationToken !== null && identity.generationToken !== generationToken) continue;
+      if (notAfterEventWall !== null && identity.eventWall > notAfterEventWall) continue;
       this.append({...event, kind:'synthetic_release', source:identity.source,
         generationToken:identity.generationToken, inputKind:identity.inputKind, channel:identity.channel, midi:identity.midi});
       this.active.delete(key);

@@ -40,3 +40,15 @@ test('a 100 percent onset match snapshot can contain only late grades and never 
  const late={hits:[{grade:'late'},{grade:'late'},{grade:'late'}],misses:[],extras:[],accuracy_percent:100,grade_counts:{perfect:0,good:0,early:0,late:3,missed:0,extra:0},onset_completion:{total:3,complete:3,longest_complete_sequence:3}};
  const view=rustSnapshotSummary(late,3);assert.equal(view.accuracy,'100%');assert.equal(view.grades.perfect,0);assert.equal(view.grades.late,3);assert.match(view.message,/does not mean perfect timing/);
 });
+
+
+test('snapshot validation exposes stable reasons without changing legacy snapshot prose or readiness',()=>{
+ const ready=rustSnapshotSummary(assessment,3);assert.equal(ready.reasonCode,'summary_ready');
+ const missing=rustSnapshotSummary({...assessment,grade_counts:undefined,onset_completion:undefined},3);assert.equal(missing.reasonCode,'summary_unavailable');assert.equal(missing.available,false);assert.match(missing.message,/unavailable/);
+ assert.equal(rustSnapshotSummary({...assessment,hits:null},3).reasonCode,'summary_unavailable');
+ assert.equal(rustSnapshotSummary({...assessment,grade_counts:{...assessment.grade_counts,perfect:2}},3).reasonCode,'grade_counts_inconsistent');
+ assert.equal(rustSnapshotSummary({...assessment,onset_completion:{total:2,complete:1,longest_complete_sequence:2}},3).reasonCode,'onset_counts_inconsistent');
+ const value=pass(),before=structuredClone(value);assert.equal(stageFeedbackView({mode:'practice',pass:value,now:700}).summaryReasonCode,'summary_ready');assert.deepEqual(value,before);
+ value.boundaryReviews.push({});value.assessment.grade_counts.perfect=99;const checked=stageFeedbackView({mode:'practice',pass:value,now:700});assert.equal(checked.summaryReasonCode,'grade_counts_inconsistent');assert.equal(checked.phase,'review');assert.match(checked.message,/cross-pass/);
+ for(const context of [{mode:'listen',pass:value,now:700},{mode:'practice',pass:value,now:650},{mode:'practice',pass:{...value,revision:99},now:700}])assert.equal(stageFeedbackView(context).summaryReasonCode,null);
+});

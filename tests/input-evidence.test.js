@@ -135,3 +135,19 @@ test('evidence cap is visible, never evicts, bounds aliases, and leaves later on
  assert.equal(exported.input_evidence.events.at(-1).event_wall_ms,1101);
  assert.equal(INPUT_EVIDENCE_LIMIT,100_000);assert.throws(()=>new InputEvidence({limit:0}));
 });
+
+
+test('reordered contacts keep raw receipt order while cleanup owns only the latest observed state',()=>{
+ const e=new InputEvidence();e.start();const common={source:'midi:one:0:60',inputKind:'midi',midi:60};
+ e.append({...common,kind:'note_on',eventWall:30,receivedWall:30,velocity:110});
+ e.append({...common,kind:'note_on',eventWall:10,receivedWall:31,velocity:40});
+ e.release({...common,eventWall:20,receivedWall:32,velocity:0});
+ e.cancel({prefix:'midi:',reason:'late_panic',eventWall:33,receivedWall:33,notAfterEventWall:20});
+ assert.equal(e.exportData().events.filter(event=>event.kind==='synthetic_release').length,0);
+ e.cancel({prefix:'midi:',reason:'stop',eventWall:40,receivedWall:40});
+ assert.equal(e.exportData().events.filter(event=>event.kind==='synthetic_release').length,1);
+ assert.deepEqual(e.exportData().events.slice(0,3).map(event=>event.event_wall_ms),[30,10,20]);
+ e.append({...common,kind:'note_on',eventWall:35,receivedWall:41,velocity:41});
+ e.cancel({prefix:'midi:',reason:'stop',eventWall:42,receivedWall:42});
+ assert.equal(e.exportData().events.filter(event=>event.kind==='synthetic_release').length,1);
+});
