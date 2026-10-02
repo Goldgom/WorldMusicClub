@@ -21,6 +21,8 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
 import {isDeepStrictEqual} from 'node:util';
 import {fixture} from './frontend-fixtures.js';
+import {densePianoforte} from './numbered-layout-fixtures.js';
+import {originalGuitarChordTransitions} from './guitar-live-fixtures.js';
 import {connectionDiagnostics} from './browser-connection-diagnostics.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -1061,9 +1063,48 @@ test('real external duet corrections keep every part/staff/tie while fixing onse
 
 test('real Rust measure following turns engraved pages through repeat passes without changing playback or source', {timeout:60_000},async()=>{
  const score=structuredClone(initialCompilation.score);score.id='original-follow-study';score.title='Original repeated measure study';score.tempo=[{at:{numerator:0,denominator:1},bpm:300}];score.meters=[{at:{numerator:0,denominator:1},numerator:1,denominator:4}];score.measures=Array.from({length:20},(_,index)=>({number:42,at:{numerator:index,denominator:1},length:{numerator:1,denominator:1}}));const seed=score.parts[0].notes[0];score.parts[0].notes=Array.from({length:20},(_,index)=>({...structuredClone(seed),id:`follow-note-${index}`,at:{numerator:index,denominator:1},duration:{numerator:1,denominator:1},pitch:{step:['C','D','E','F','G'][index%5],alter:0,octave:4}}));score.repeats=[{from:{numerator:0,denominator:1},to:{numerator:12,denominator:1},times:2}];
- await ui('#score-file').setInputFiles({name:'original-follow-study.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await waitForEngraving();await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.status==='ready');const scoreNavigationRequests=()=>requests.filter(request=>request.path==='/api/notation-navigation'&&JSON.parse(request.body).id===score.id);assert.equal(scoreNavigationRequests().length,1,'Current-note positions prepare separately from optional page following');assert.equal(await ui('#engraving-follow').isChecked(),false);const[response]=await Promise.all([nextResponse('/api/notation-navigation'),ui('#engraving-follow').check()]);const navigation=await responseJson(response);assert.equal(navigation.occurrences.length,32);assert.equal(navigation.source_measure_count,20);assert.equal(navigation.duration_ms,6400);await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('Paused at written measure 42'));
+ const navigationResponse=nextResponse('/api/notation-navigation');await ui('#score-file').setInputFiles({name:'original-follow-study.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await waitForEngraving();await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.status==='ready');const scoreNavigationRequests=()=>requests.filter(request=>request.path==='/api/notation-navigation'&&JSON.parse(request.body).id===score.id);assert.equal(scoreNavigationRequests().length,1,'Written cursor and page following share one validated navigation response');assert.equal(await ui('#engraving-follow').isChecked(),true);const navigation=await responseJson(await navigationResponse);assert.equal(navigation.occurrences.length,32);assert.equal(navigation.source_measure_count,20);assert.equal(navigation.duration_ms,6400);await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('Paused at written measure 42'));
  await ui('#count-in').uncheck();await ui('#play-button').click();await page.waitForFunction(()=>document.querySelector('#engraving-range').textContent.startsWith('Measures 9–'));assert.match(await ui('#play-button').textContent(),/Pause/);await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('pass 2/2')&&document.querySelector('#engraving-range').textContent.startsWith('Measures 1–8'));assert.match(await ui('#play-button').textContent(),/Pause/);await page.waitForFunction(()=>document.querySelector('#transport-status').textContent.includes('Complete'));assert.match(await ui('#engraving-follow-status').textContent(),/End of performance/);assert.match(await ui('#engraving-range').textContent(),/Measures 17–20/);await screenshot('measure-following');assert.deepEqual(await exportScore(),score);
- await ui('#engraving-prev').click();assert.equal(await ui('#engraving-follow').isChecked(),false);assert.match(await ui('#engraving-follow-status').textContent(),/Manual navigation suspended/);assert.equal(scoreNavigationRequests().length,2,'Manual paging does not refetch either current-note or page-following data');
+ await ui('#engraving-prev').click();assert.equal(await ui('#engraving-follow').isChecked(),false);assert.match(await ui('#engraving-follow-status').textContent(),/Manual navigation suspended/);assert.equal(scoreNavigationRequests().length,1,'Manual paging does not refetch the shared current-note/page-following data');
+});
+
+test('real Rust follow crosses Jianpu rests and silent measures while manual browsing and view changes keep playback running', {timeout:60_000},async()=>{
+  await page.setViewportSize({width:1280,height:720});
+  const score=structuredClone(fixture),beat=n=>({numerator:n,denominator:1}),seed=score.parts[0].notes[0];
+  score.id='original-shared-follow-study';score.title='Original shared follow study';score.tempo=[{at:beat(0),bpm:120}];
+  score.meters=[{at:beat(0),numerator:1,denominator:4}];
+  score.measures=Array.from({length:24},(_,index)=>({number:7,at:beat(index),length:beat(1)}));
+  score.parts[0].notes=Array.from({length:24},(_,index)=>({...structuredClone(seed),id:`shared-${index}`,at:beat(index),duration:beat(1),pitch:index===8?null:{step:'C',alter:0,octave:4},velocity:index===8?0:90})).filter((_,index)=>index!==9&&index!==10&&index!==11);
+  score.repeats=[{from:beat(0),to:beat(16),times:2}];
+  await ui('#score-file').setInputFiles({name:'shared-follow.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);
+  await ui('#jianpu-button').click();await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.status==='ready');
+  assert.equal(await page.locator('#engraving-follow').isVisible(),true);assert.equal(await page.locator('#engraving-follow').isChecked(),true);
+  await ui('#count-in').uncheck();await closeShellPanels();await page.locator('#reset-button').click();
+  const firstPage=await page.locator('#notation-page').textContent();
+  await page.locator('#play-button').click();
+  await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex==='8');
+  assert.notEqual(await page.locator('#notation-page').textContent(),firstPage,'An explicit written rest turns the basic page');
+  assert.equal(await page.locator('#notation .score-note.active[data-note-id="shared-8"]').count(),1);
+  await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex==='9');
+  assert.equal(await page.locator('#notation .score-note.active').count(),0);assert.notEqual(await page.locator('#notation-page').textContent(),firstPage,'Silent measures retain the correct source page');
+  await page.locator('#notation-prev').click();const manualPage=await page.locator('#notation-page').textContent();
+  assert.equal(await page.locator('#engraving-follow').isChecked(),false);assert.match(await page.locator('#play-button').textContent(),/Pause/);
+  const position=await page.locator('#progress').evaluate(element=>element.value);
+  await page.waitForFunction(previous=>document.querySelector('#progress').value>previous+250,position);
+  assert.equal(await page.locator('#notation-page').textContent(),manualPage,'Live playback does not undo a manual page choice');
+  await page.locator('#staff-button').click();assert.equal(await page.locator('#notation-page').textContent(),manualPage);assert.equal(await page.locator('#engraving-follow').isChecked(),false);
+  await page.locator('#notation-toggle').click();await page.locator('#notation-toggle').click();await page.locator('#jianpu-button').click();
+  assert.equal(await page.locator('#engraving-follow').isChecked(),false);assert.equal(await page.locator('#notation-page').textContent(),manualPage);assert.match(await page.locator('#play-button').textContent(),/Pause/);
+  await page.locator('#engraving-follow').check();
+  await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('pass 2/2')&&document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex==='0');
+  assert.equal(await page.locator('#notation-page').textContent(),firstPage,'The Rust repeat occurrence turns back to the first written page');
+  await page.locator('#engraved-button').click();assert.match(await page.locator('#play-button').textContent(),/Pause/);assert.equal(await page.locator('#engraving-follow').isChecked(),true);
+  await waitForEngraving();await page.locator('#jianpu-button').click();assert.match(await page.locator('#play-button').textContent(),/Pause/);
+  await page.locator('#play-button').click();const paused=await page.locator('#progress').evaluate(element=>element.value);
+  await page.locator('#engraved-button').click();await waitForEngraving();await page.locator('#staff-button').click();
+  assert.equal(await page.locator('#progress').evaluate(element=>element.value),paused,'Paused view changes never change the transport position');
+  assert.equal(requests.filter(request=>request.path==='/api/notation-navigation'&&JSON.parse(request.body).id===score.id).length,1);
+  assert.deepEqual(await exportScore(),score);await screenshot('shared-follow-jianpu-manual');
 });
 
 test('real written-note cursor separates tied continuations, short unisons, rests and selected-part keys', testOptions, async () => {
@@ -1081,7 +1122,7 @@ test('real written-note cursor separates tied continuations, short unisons, rest
     {...structuredClone(seed),id:'repeated-C',at:beat(3),duration:beat(1)},
   ]});
   await ui('#score-file').setInputFiles({name:'original-written-cursor-study.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});
-  await readyForTitle(score.title);await ui('#jianpu-button').click();
+  await readyForTitle(score.title);await ui('#engraving-follow').uncheck();await ui('#jianpu-button').click();
   await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.status==='ready');
   await ui('#session-mode').selectOption('practice');await ui('#play-button:not([disabled])').waitFor();
   await ui('#count-in').uncheck();await ui('#reset-button').click();await closeShellPanels();
@@ -1094,6 +1135,7 @@ test('real written-note cursor separates tied continuations, short unisons, rest
   }));
   await waitIds(['short-D','short-unison','tie-start']);
   const initial=await snapshot();assert.deepEqual(initial.activeWritten,['short-D','tie-start']);assert.deepEqual(initial.expectedKeys,[60,62]);assert.equal(initial.heldKeys,0);
+  await ui('#notation-part').selectOption('');await page.waitForFunction(()=>document.querySelectorAll('#notation .score-note.active').length===3);const allParts=await snapshot();assert.deepEqual(allParts.activeWritten,['short-D','short-unison','tie-start']);assert.deepEqual(allParts.expectedKeys,initial.expectedKeys);assert.equal(await ui('#practice-part').inputValue(),'','Shown parts do not edit the practice target');await ui('#notation-part').selectOption('piano');
   await ui('#play-button').click();await waitIds(['tie-start','written-rest']);await ui('#play-button').click();
   const first=await snapshot();assert.deepEqual(first.activeWritten,['tie-start','written-rest']);assert.deepEqual(first.expectedKeys,[60]);assert.equal(first.heldKeys,0);
   await ui('#play-button').click();await waitIds(['tie-stop','written-rest']);await ui('#play-button').click();
@@ -1102,6 +1144,7 @@ test('real written-note cursor separates tied continuations, short unisons, rest
   await screenshot('written-cursor-tie-jianpu');
   await ui('#practice-part').selectOption('counter');await ui('#play-button:not([disabled])').waitFor();await ui('#reset-button').click();await closeShellPanels();
   await waitIds(['short-unison']);const selected=await snapshot();assert.deepEqual(selected.activeWritten,['short-unison']);assert.deepEqual(selected.expectedKeys,[60]);
+  await ui('#notation-part').selectOption('');await page.waitForFunction(()=>document.querySelectorAll('#notation .score-note.active').length===3);assert.deepEqual((await snapshot()).expectedKeys,[60]);assert.equal(await ui('#practice-part').inputValue(),'counter');await ui('#notation-part').selectOption('counter');
   await ui('#play-button').click();await waitIds(['repeated-C']);await ui('#play-button').click();const repeat=await snapshot();assert.deepEqual(repeat.activeWritten,['repeated-C']);assert.deepEqual(repeat.expectedKeys,[60]);
   assert.deepEqual(await exportScore(),score,'Display tracking never rewrites canonical music');
   await writeFile(join(artifactDirectory,'worldmusichub-live-written-cursor.json'),JSON.stringify({initial,first,continuation,selected,repeat,source_retained:true,scope:'Real Rust navigation/timeline and browser; expected notes only, no physical input or sustain assessment'},null,2));
@@ -1112,14 +1155,14 @@ test('complete CC0 D768 edition retains every event and source while range gates
   const written=edition.parts.flatMap(part=>part.notes),pitched=written.filter(note=>note.pitch),voice=edition.parts.find(part=>part.instrument==='Voice'),piano=edition.parts.find(part=>part.instrument==='piano');
   assert.equal(written.length,334);assert.equal(pitched.length,324);assert.equal(edition.measures.length,14);assert.equal(edition.provenance.kind,'curated_cc0_edition');assert.equal(edition.provenance.license,'CC0-1.0');assert.ok(voice&&piano);
   const editionPath=`/api/catalog/score/${edition.id}`;assert.equal(requests.filter(request=>request.path===editionPath).length,0,'The complete edition source must not load before selection');
-  const selectionStarted=performance.now();const[response]=await Promise.all([nextResponse('/api/compile'),ui('.catalog-item').filter({hasText:edition.title}).click()]);const compiled=await responseJson(response);await activateCatalogTitle(edition.title);await waitForEngraving();const selectionToReadyMs=performance.now()-selectionStarted;assert.deepEqual(compiled.score,edition);assert.equal(requests.filter(request=>request.path===editionPath).length,1);assert.equal(compiled.timeline.notes.length,321);assert.deepEqual(compiled.timeline.notes.flatMap(note=>note.source_note_ids).sort(),pitched.map(note=>note.id).sort(),'All pitched source IDs survive tie compilation');
+  const editionNavigation=nextResponse('/api/notation-navigation');const selectionStarted=performance.now();const[response]=await Promise.all([nextResponse('/api/compile'),ui('.catalog-item').filter({hasText:edition.title}).click()]);const compiled=await responseJson(response);await activateCatalogTitle(edition.title);await waitForEngraving();const selectionToReadyMs=performance.now()-selectionStarted;assert.deepEqual(compiled.score,edition);assert.equal(requests.filter(request=>request.path===editionPath).length,1);assert.equal(compiled.timeline.notes.length,321);assert.deepEqual(compiled.timeline.notes.flatMap(note=>note.source_note_ids).sort(),pitched.map(note=>note.id).sort(),'All pitched source IDs survive tie compilation');
   assert.match(await ui('#score-meta').textContent(),/334 written events.*321 playback note events.*14 measures/);assert.match(await ui('#score-retention-note').textContent(),/324 pitched note segments \+ 10 rests/);assert.equal(await ui('#score-origin-label').textContent(),'CC0 source edition');assert.equal(await ui(`#practice-part option[value="${voice.id}"]`).textContent(),voice.name,'Raw part names are retained rather than silently cleaned');
   await waitForEngraving();assert.equal(await ui('#engraved-button').getAttribute('aria-pressed'),'true');assert.ok(await ui('#engraved-staff svg path').count()>100);await screenshot('cc0-d768-light');
   await ui('#score-details-button').click();assert.match(await ui('#provenance').textContent(),/Johann Wolfgang von Goethe/);assert.match(await ui('#provenance').textContent(),/pental/);assert.match(await ui('#diagnostic-list').textContent(),/327 key attacks versus 321 canonical/);assert.match(await ui('#diagnostic-list').textContent(),/fermata/);assert.equal(await ui('#provenance-link').getAttribute('href'),edition.provenance.source_url);await ui('#score-details>summary').click();assert.deepEqual(await exportScore(),edition);
   assert.equal(await ui('#key-count').inputValue(),'61');await ui('#session-mode').selectOption('practice');await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));assert.equal(await ui('#play-button').isDisabled(),true);assert.equal(await ui('#assess-button').isDisabled(),true);
   await ui('#practice-part').selectOption(voice.id);await ui('#play-button:not([disabled])').waitFor();assert.equal(await ui('#key-count').inputValue(),'61');await ui('#practice-part').selectOption(piano.id);await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));assert.equal(await ui('#play-button').isDisabled(),true);await ui('#practice-part').selectOption('');await ui('#key-count').selectOption('76');await ui('#play-button:not([disabled])').waitFor();await ui('#session-mode').selectOption('listen');assert.deepEqual(await exportScore(),edition,'Part/profile changes never adapt or discard source events');
   const pageTurnStarted=performance.now();await ui('#engraving-next').click();await page.waitForFunction(()=>document.querySelector('#engraving-status').textContent.includes('Measures 9–14'));await waitForEngraving();const laterPageToReadyMs=performance.now()-pageTurnStarted;assert.match(await ui('#engraving-range').textContent(),/Measures 9–14 \/ 14/);await screenshot('cc0-d768-later-page');await ui('#theme-mode').selectOption('dark');await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark'&&document.querySelector('#engraving-status').textContent.includes('Measures 9–14'));await screenshot('cc0-d768-dark');
-  await ui('.practice-options summary').click();await ui('#loop-from').fill('32');await ui('#loop-to').fill('36');const[windowResponse]=await Promise.all([nextResponse('/api/practice-window'),ui('#loop-apply').click()]);const window=await responseJson(windowResponse);await page.waitForFunction(()=>document.querySelector('#loop-status').textContent.includes('ready'));await ui('#count-in').uncheck();const[navigationResponse]=await Promise.all([nextResponse('/api/notation-navigation'),ui('#engraving-follow').check()]);const navigation=await responseJson(navigationResponse);assert.equal(navigation.occurrences.length,14);assert.equal(navigation.sounding_groups.length,321);assert.ok(navigation.occurrences.every(occurrence=>occurrence.repeat_region_index===null));await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('source 9/14'));
+  await ui('.practice-options summary').click();await ui('#loop-from').fill('32');await ui('#loop-to').fill('36');const[windowResponse]=await Promise.all([nextResponse('/api/practice-window'),ui('#loop-apply').click()]);const window=await responseJson(windowResponse);await page.waitForFunction(()=>document.querySelector('#loop-status').textContent.includes('ready'));await ui('#count-in').uncheck();await ui('#engraving-follow').check();const navigation=await responseJson(await editionNavigation);assert.equal(navigation.occurrences.length,14);assert.equal(navigation.sounding_groups.length,321);assert.ok(navigation.occurrences.every(occurrence=>occurrence.repeat_region_index===null));await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('source 9/14'));
   await ui('#play-button').click();await page.waitForFunction(start=>document.querySelector('#progress').value>start,window.start_ms);assert.match(await ui('#engraving-follow-status').textContent(),/Following written measure 9/);assert.match(await ui('#engraving-range').textContent(),/Measures 9–14/);await ui('#play-button').click();assert.match(await ui('#transport-status').textContent(),/Paused/);assert.deepEqual(await exportScore(),edition);await ui('#engraving-prev').click();assert.equal(await ui('#engraving-follow').isChecked(),false);assert.match(await ui('#engraving-follow-status').textContent(),/Manual navigation suspended/);
   const[firstResponse]=await Promise.all([nextResponse('/api/compile'),ui(`[data-score-id="${initialCompilation.score.id}"]`).click()]);await responseJson(firstResponse);await activateCatalogTitle(initialCompilation.score.title);const cachedSelectionStarted=performance.now();const[againResponse]=await Promise.all([nextResponse('/api/compile'),ui(`[data-score-id="${edition.id}"]`).click()]);await responseJson(againResponse);await activateCatalogTitle(edition.title);await waitForEngraving();const cachedSelectionToReadyMs=performance.now()-cachedSelectionStarted;assert.equal(requests.filter(request=>request.path===editionPath).length,1,'Re-selecting a cached edition preserves the original without transferring its archive again');assert.deepEqual(await exportScore(),edition);
   await writeFile(join(artifactDirectory,'worldmusichub-live-cc0-d768-performance.json'),JSON.stringify({measured_at:new Date().toISOString(),platform:process.platform,architecture:process.arch,node:process.version,browser:browser.version(),viewport:page.viewportSize(),score_id:edition.id,written_events:334,sounding_events:321,source_measures:14,page_measures:8,selection_to_ready_svg_ms:selectionToReadyMs,later_page_to_ready_svg_ms:laterPageToReadyMs,cached_selection_to_ready_svg_ms:cachedSelectionToReadyMs,edition_score_requests:requests.filter(request=>request.path===editionPath).length,catalog_index_requests:requests.filter(request=>request.path==='/api/catalog/index').length,legacy_catalog_requests:requests.filter(request=>request.path==='/api/catalog').length,method:'One local CI browser run. Node monotonic clock from explicit click until actual generated SVG is visible; timings include browser automation and local HTTP. These observations are not a universal latency guarantee.'},null,2));
@@ -1151,7 +1194,7 @@ test('complete D768 browser library backup and restore preserve sources while gu
   await ui('#instrument').selectOption('guitar');await ui('#session-mode').selectOption('practice');await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));assert.equal(await ui('#play-button').isDisabled(),true);assert.equal(await ui('#assess-button').isDisabled(),true);assert.equal(await ui('#guitar-frets').inputValue(),'12');
   const [voiceResponse]=await Promise.all([nextResponse('/api/instrument-check'),ui('#practice-part').selectOption(voice.id)]);const voiceReport=await responseJson(voiceResponse);assert.equal(voiceReport.highest_midi,76);assert.ok(voiceReport.note_options.some(note=>note.midi===77&&!note.playable));await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));assert.equal(await ui('#play-button').isDisabled(),true);
   await ui('#guitar-frets').fill('13');assert.match(await ui('#practice-gate-reason').textContent(),/edited|validate|Apply/);const[rangeResponse,voiceTargetResponse]=await Promise.all([nextResponse('/api/instrument-check'),nextResponse('/api/practice-targets'),ui('#instrument-apply').click()]);const rangeReport=await responseJson(rangeResponse),voicePlan=await responseJson(voiceTargetResponse);assert.equal(rangeReport.highest_midi,77);assert.ok(rangeReport.note_options.every(note=>note.playable));await ui('#play-button:not([disabled])').waitFor();assert.equal(await ui('#guitar-frets').inputValue(),'13');assert.equal(await ui('#practice-part').inputValue(),voice.id);assert.match(await ui('#instrument-diagnostics').textContent(),/fingering|pitch|duration|technique/i);assert.deepEqual(await exportScore(),edition,'An explicit playable voice range does not transpose, fold or remove any original part');
-  await hideNotation();await page.waitForFunction(()=>document.querySelector('#guitar-guidance-state').textContent.includes('next onset'));assert.equal(await page.locator('dialog[open]').count(),0);assert.equal(await page.locator('#guitar-guidance').isVisible(),true);assert.equal(await page.locator('#stage-cue').isVisible(),true);const firstVoice=voicePlan.timeline.notes[0];assert.ok(firstVoice.start_ms>4000);assert.equal(await page.locator('.guitar-target').count(),0,'The opening vocal rest is explicit instead of inventing near-term targets');assert.ok((await page.locator('#guitar-guidance-state').textContent()).includes((firstVoice.start_ms/1000).toFixed(1)+'s'));assert.equal(voicePlan.source_note_count,voicePlan.target_count);assert.ok(voicePlan.groups.every(group=>group.part_ids.every(id=>id===voice.id)));await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-cc0-d768-guitar-voice.png'),fullPage:true});await ui('#practice-part').selectOption('');await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));assert.equal(await ui('#play-button').isDisabled(),true);await ui('#session-mode').selectOption('listen');assert.equal(await ui('#play-button').isEnabled(),true);assert.deepEqual(await exportScore(),edition);
+  await hideNotation();await page.waitForFunction(()=>document.querySelector('#guitar-guidance-state').textContent.includes('next onset'));assert.equal(await page.locator('dialog[open]').count(),0);assert.equal(await page.locator('#guitar-guidance').isVisible(),true);assert.equal(await page.locator('#stage-cue').isVisible(),true);const firstVoice=voicePlan.timeline.notes[0];assert.ok(firstVoice.start_ms>4000);assert.equal(await page.locator('.guitar-target').count(),voicePlan.timeline.notes.filter(note=>note.start_ms===firstVoice.start_ms).length,'The complete next onset remains available through a long rest; its true countdown is preserved');assert.ok((await page.locator('#guitar-guidance-state').textContent()).includes((firstVoice.start_ms/1000).toFixed(1)+'s'));assert.equal(voicePlan.source_note_count,voicePlan.target_count);assert.ok(voicePlan.groups.every(group=>group.part_ids.every(id=>id===voice.id)));await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-cc0-d768-guitar-voice.png'),fullPage:true});await ui('#practice-part').selectOption('');await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('cannot be played'));assert.equal(await ui('#play-button').isDisabled(),true);await ui('#session-mode').selectOption('listen');assert.equal(await ui('#play-button').isEnabled(),true);assert.deepEqual(await exportScore(),edition);
 });
 
 test('real Rust pitch feedback exposes independent missed targets and an extra played pitch without changing the score',testOptions,async()=>{
@@ -1363,7 +1406,7 @@ for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:8
     await page.locator('#library-button').click();await page.locator('#score-library').waitFor();await page.locator('#library-close').click();
     await page.locator('#notation-toggle').click();await waitForEngraving();assert.ok(await page.locator('#engraved-staff svg').count()>0);assert.ok(await page.locator('#engraved-staff .vf-notehead path').count()>0,'Compact headers retain the actual generated notes');
     const svgText=(await page.locator('#engraved-staff svg text').allTextContents()).join(' ').replace(/\s+/g,' ');assert.equal(svgText.includes('Wandrers Nachtlied'),false,'The dock must not repeat the score title');assert.equal(svgText.includes(edition.composer),false,'The dock must not repeat the composer');assert.equal(await page.locator('#stage-title').textContent(),edition.title);
-    assert.match(await page.locator('#engraving-range').textContent(),/Measures 1–8 \/ 14/);assert.equal(await page.locator('#engraving-follow').isVisible(),true);assert.equal(await page.locator('#engraving-follow-status').isVisible(),true);assert.match(await page.locator('#engraving-follow-status').textContent(),/Following is off/);
+    assert.match(await page.locator('#engraving-range').textContent(),/Measures 1–8 \/ 14/);assert.equal(await page.locator('#engraving-follow').isVisible(),true);assert.equal(await page.locator('#engraving-follow-status').isVisible(),true);assert.equal(await page.locator('#engraving-follow').isChecked(),true);await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('Paused at written measure'));
     for(const selector of ['#engraving-range','#engraving-follow-status']){const bounds=await page.locator(selector).boundingBox();assertInsideViewport({...bounds,right:bounds.x+bounds.width,bottom:bounds.y+bounds.height},viewport,`Visible notation state ${selector}`);}
     const help=await page.locator('#engraving-follow-help').evaluate(element=>({inDetails:Boolean(element.closest('details')),open:element.closest('details')?.open}));assert.deepEqual(help,{inDetails:true,open:false});assert.equal(await page.locator('#dock-warning-count').isVisible(),true);assert.match(await page.locator('#dock-warning-count').textContent(),/Notation notices.*\d/);
     if(viewport.height<=600&&viewport.width>=651){assert.equal(await page.locator('#engraving-part').isVisible(),false);await page.locator('.dock-help>summary').click();assert.equal(await page.locator('#engraving-part').isVisible(),true);assert.equal(await page.locator('#engraving-page-size').isVisible(),true);await page.locator('.dock-help>summary').click();assert.equal(await page.locator('#engraving-part').isVisible(),false);assert.equal(await page.locator('#engraving-range').isVisible(),true);}
@@ -1511,6 +1554,7 @@ for(const viewport of [{width:1280,height:720},{width:844,height:390},{width:390
 
 test('complete Beethoven edition renders all 18 measures and keeps every source event through piano range gates', {timeout:60_000}, async()=>{
   const edition=JSON.parse(await readFile(join(root,'catalog/editions/cc0-beethoven-gottes-macht-op48-5/score.json'),'utf8'));
+  const editionNavigation=nextResponse('/api/notation-navigation');
   const written=edition.parts.flatMap(part=>part.notes),pitched=written.filter(note=>note.pitch);
   const voice=edition.parts.find(part=>part.id==='P1'),piano=edition.parts.find(part=>part.id==='P2');
   const editionPath=`/api/catalog/score/${edition.id}`;
@@ -1624,8 +1668,8 @@ test('complete Beethoven edition renders all 18 measures and keeps every source 
   const [windowResponse]=await Promise.all([nextResponse('/api/practice-window'),ui('#loop-apply').click()]);
   const window=await responseJson(windowResponse);await page.waitForFunction(()=>document.querySelector('#loop-status').textContent.includes('ready'));
   await ui('#count-in').uncheck();
-  const [navigationResponse]=await Promise.all([nextResponse('/api/notation-navigation'),ui('#engraving-follow').check()]);
-  const navigation=await responseJson(navigationResponse);
+  await ui('#engraving-follow').check();
+  const navigation=await responseJson(await editionNavigation);
   assert.equal(navigation.occurrences.length,18);assert.equal(navigation.sounding_groups.length,198);
   await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('source 17/18'));
   await ui('#play-button').click();await page.waitForFunction(start=>document.querySelector('#progress').value>start,window.start_ms);
@@ -1894,4 +1938,74 @@ test('real piano hands preserve merged ties and repeat targets through editable 
   const geometry=await simultaneousStageGeometry();assertSimultaneousPiano(geometry);assert.ok(geometry.canvasVisible.height>withNotice.canvasVisible.height,'Explicit dismissal restores space without hiding messages automatically');assert.equal(await page.locator('#progress').evaluate(element=>element.value),position);assert.deepEqual(await exportTakeData(),take,'Dismissing a status message does not alter the paused take');
   await ui('#notice-history>summary').click();assert.match(await ui('#notice-history-list').textContent(),/Complete score download/);await closeShellPanels();await screenshot('piano-two-hand-guidance-844x390');
   await writeFile(join(artifactDirectory,'worldmusichub-live-piano-two-hands.json'),JSON.stringify({initial,leftPlan,conflict,restored,withNotice,geometry,notice_dismissed_by_user:true,paused_take_unchanged:true,canonical_score_unchanged:true},null,2));
+});
+
+/** Actual rendered clipping, including each overflow ancestor; no mocked boxes. */
+async function actualMarkerVisibility(selector) {
+  return page.locator(selector).evaluateAll(nodes=>nodes.map(node=>{
+    const r=node.getBoundingClientRect(),clip={left:Math.max(0,r.left),top:Math.max(0,r.top),right:Math.min(innerWidth,r.right),bottom:Math.min(innerHeight,r.bottom)};
+    let painted=true;
+    for(let parent=node;parent;parent=parent.parentElement){
+      const style=getComputedStyle(parent);if(style.display==='none'||style.visibility!=='visible'||Number(style.opacity)===0)painted=false;
+      if(parent instanceof SVGElement&&!(parent instanceof SVGSVGElement))continue;
+      const box=parent.getBoundingClientRect(),html=parent instanceof HTMLElement;
+      const left=box.left+(html?parent.clientLeft:0),top=box.top+(html?parent.clientTop:0);
+      if(/^(auto|scroll|hidden|clip|overlay)$/.test(style.overflowX)){clip.left=Math.max(clip.left,left);clip.right=Math.min(clip.right,html?left+parent.clientWidth:box.right)}
+      if(/^(auto|scroll|hidden|clip|overlay)$/.test(style.overflowY)){clip.top=Math.max(clip.top,top);clip.bottom=Math.min(clip.bottom,html?top+parent.clientHeight:box.bottom)}
+    }
+    const fraction=r.width*r.height>0?Math.max(0,clip.right-clip.left)*Math.max(0,clip.bottom-clip.top)/(r.width*r.height):0;
+    return{id:node.dataset.noteId,occurrences:node.dataset.occurrenceIds?JSON.parse(node.dataset.occurrenceIds):[],string:node.dataset.string,text:node.textContent,painted,fraction,width:r.width,height:r.height};
+  }));
+}
+
+test('dense real Jianpu separates every chord and voice without shrinking glyphs or losing scroll access', {timeout:60_000}, async()=>{
+  await page.setViewportSize({width:1280,height:720});await ui('#jianpu-button').click();
+  const score=densePianoforte(),compiled=await rustApi('/api/compile',score);assert.equal(compiled.timeline.notes.length,192);
+  await ui('#score-file').setInputFiles({name:'original-dense-jianpu.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);
+  await ui('#jianpu-button').click();await ui('#engraving-follow').uncheck();
+  for(let attempt=0;attempt<12&&await page.locator('#notation [data-note-id="dense-0-1-0"]').count()===0;attempt++)await ui('#notation-next').click();
+  const evidence=[];
+  for(const viewport of [{width:1280,height:720},{width:844,height:390},{width:390,height:844}]){
+    await page.setViewportSize(viewport);await page.waitForFunction(()=>document.querySelectorAll('#notation .score-note').length===193);
+    const geometry=await page.locator('#notation').evaluate(container=>{
+      const svg=container.querySelector('svg');return{clientWidth:container.clientWidth,scrollWidth:container.scrollWidth,svgWidth:svg.getBoundingClientRect().width,
+        notes:[...svg.querySelectorAll('.score-note')].map(note=>{const b=note.getBBox();return{id:note.dataset.noteId,x:b.x,y:b.y,width:b.width,height:b.height,font:parseFloat(getComputedStyle(note.querySelector('.jianpu-note')).fontSize)}})};
+    });
+    assert.deepEqual(geometry.notes.map(n=>n.id),score.parts[0].notes.map(n=>n.id));assert.ok(geometry.scrollWidth>geometry.clientWidth,'Dense notation remains horizontally scrollable');
+    for(const note of geometry.notes)assert.ok(note.font>=25&&note.width>0&&note.height>0,`Readable original-size glyph ${note.id}`);
+    for(let i=0;i<geometry.notes.length;i++)for(let j=i+1;j<geometry.notes.length;j++){
+      const a=geometry.notes[i],b=geometry.notes[j];assert.ok(a.x+a.width<=b.x||b.x+b.width<=a.x||a.y+a.height<=b.y||b.y+b.height<=a.y,`Rendered notation overlaps: ${a.id} / ${b.id} at ${viewport.width}x${viewport.height}`);
+    }
+    await page.locator('#notation [data-note-id="dense-31-2-2"]').scrollIntoViewIfNeeded();
+    const last=await actualMarkerVisibility('#notation [data-note-id="dense-31-2-2"]');assert.equal(last.length,1);assert.ok(last[0].painted&&last[0].fraction>=.95,'Later dense notes remain readable through real scroll controls');
+    assert.equal(await ui('#engraving-follow').isChecked(),false);await screenshot(`dense-jianpu-${viewport.width}x${viewport.height}`);evidence.push({viewport,geometry,last});
+  }
+  assert.deepEqual(await exportScore(),score,'Presentation never drops, revoices or rewrites canonical events');
+  await writeFile(join(artifactDirectory,'worldmusichub-live-dense-jianpu.json'),JSON.stringify({original_fixture:true,events:193,evidence,canonical_score_unchanged:true},null,2));
+});
+
+
+test('real guitar current and next six-note recommendations are entirely visible beside the score', {timeout:60_000}, async()=>{
+  await page.setViewportSize({width:1280,height:720});await ui('#instrument').selectOption('guitar');await ui('#jianpu-button').click();
+  const score=originalGuitarChordTransitions();
+  const planResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/fingering/guitar'&&response.request().postDataJSON()?.score?.id===score.id);
+  await ui('#score-file').setInputFiles({name:'original-guitar-chords.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);
+  const plan=await responseJson(await planResponse);assert.equal(plan.status,'ready');assert.equal(plan.assignments.length,18);
+  await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#play-button:not([disabled])').waitFor();await closeShellPanels();
+  await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('#progress').value>0);await page.locator('#play-button').click();
+  await page.waitForFunction(()=>document.querySelector('#guitar-live-route')?.dataset.currentCount==='6'&&document.querySelector('#guitar-live-route')?.dataset.nextCount==='6');
+  const take=await exportTakeData(),position=await page.locator('#progress').evaluate(el=>el.value);assert.ok(position<1500);
+  const evidence=[];
+  for(const viewport of [{width:1280,height:720},{width:844,height:390}]){
+    await page.setViewportSize(viewport);await ui('#jianpu-button').click();
+    const current=await actualMarkerVisibility('.guitar-live-current .guitar-live-choice'),next=await actualMarkerVisibility('.guitar-live-next .guitar-live-choice');
+    assert.equal(current.length,6);assert.equal(next.length,6);
+    assert.deepEqual(new Set(current.flatMap(x=>x.occurrences)),new Set(plan.assignments.filter(x=>x.onset_index===0).map(x=>x.occurrence_id)));
+    assert.deepEqual(new Set(next.flatMap(x=>x.occurrences)),new Set(plan.assignments.filter(x=>x.onset_index===1).map(x=>x.occurrence_id)));
+    for(const marker of [...current,...next])assert.ok(marker.painted&&marker.fraction>=.98&&marker.height>=24,`Entire chosen guitar position must be visible: ${JSON.stringify({viewport,marker})}`);
+    assert.equal(await page.locator('#guitar-show-alternatives').isChecked(),false);assert.match(await page.locator('#guitar-live-transition').textContent(),/Chosen frets/);
+    assert.equal(await page.locator('#progress').evaluate(el=>el.value),position);evidence.push({viewport,current,next});await screenshot(`guitar-complete-chords-${viewport.width}x${viewport.height}`);
+  }
+  assert.deepEqual(await exportTakeData(),take);assert.deepEqual(await exportScore(),score);
+  await writeFile(join(artifactDirectory,'worldmusichub-live-complete-guitar-chords.json'),JSON.stringify({plan,evidence,paused_take_unchanged:true,canonical_score_unchanged:true},null,2));
 });

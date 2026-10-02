@@ -9,7 +9,7 @@ import {setupGuitarFingering} from './guitar-fingering.js';
 import {setupGuitarFingeringView,highlightGuitarRoute} from './guitar-fingering-view.js';
 import {prepareScoreDownload} from './score-download.js';
 import {validateCatalogIndex,CatalogScoreCache,fetchCatalogScore} from './catalog-loader.js';
-import {setupNotationFollowing} from './notation-follow.js';
+import {setupNotationFollowing,basicNotationPage,createBasicNotationReveal} from './notation-follow.js';
 import {setupExternalOmrReview} from './external-omr-view.js';
 import {setupAdaptationView} from './adaptation-view.js';
 import {setupTranspositionView} from './transposition-view.js';
@@ -62,7 +62,7 @@ function createRecorder() {
   }});
 }
 state.recorder = createRecorder();
-shell=setupGameShell({pausePlayback,onPanel:name=>{cancelPendingStart();if(name==='results')updateResultsSummary()},onScreen:screen=>{if(!enteringPreview)cancelPendingStart();performanceView?.screenChanged(screen);engravedView.surfaceChanged();drawFrame()},onNotation:visible=>{if(!visible)notationFollowing?.suspend('Following suspended while the notation dock is closed.');engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
+shell=setupGameShell({pausePlayback,onPanel:name=>{cancelPendingStart();if(name==='results')updateResultsSummary()},onScreen:screen=>{if(!enteringPreview)cancelPendingStart();performanceView?.screenChanged(screen);engravedView.surfaceChanged();drawFrame()},onNotation:()=>{engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
 const noticeView=setupNoticeView({document,getScope:()=>state.score?.title});
 preview=new ScorePreview({compile:(score,signal)=>api('/api/compile',score,signal),check:checkPreview,onChange:()=>{renderPreview();renderCatalog()}});
 
@@ -167,8 +167,9 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     state.notationPage = 0; state.notationPart = state.practicePart || state.score.parts[0].id;
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
     clearNotice();
+    notationFollowing?.scoreChanged();
     resetPlayback();
-    renderScore(); notationFollowing?.scoreChanged(); sourceArchiveView?.scoreChanged(); libraryView.scoreChanged(); adaptationView?.scoreChanged(); transpositionView?.scoreChanged(); renderCatalog(); updateRangeWarning();
+    renderScore(); sourceArchiveView?.scoreChanged(); libraryView.scoreChanged(); adaptationView?.scoreChanged(); transpositionView?.scoreChanged(); renderCatalog(); updateRangeWarning();
     $('catalog-status').textContent=`Current session: ${state.score.title}. Browsing a preview keeps this take intact.`;
     const clockScore=state.score;await checkInstrument();if(state.score===clockScore){metronome?.setScore();preview.adopt(state.compiled,previewCompatibility(state.compatibility),state.practicePart);}
     return state.score===clockScore&&(expectedIntent===null||expectedIntent===state.loadIntent);
@@ -215,8 +216,9 @@ function renderScore() {
   $('score-retention-note').textContent=`Written events: ${summary.count} pitched note segments + ${summary.rests} rests. Ties can join segments; repeats can create additional playback events. ${score.provenance.kind==='curated_cc0_edition'?'This complete source edition retains its written notes/rests; some expressive or visual instructions may be source-only.':'Event counts do not certify expressive playback.'} Review the source notices; onset-only practice targets are a separate count.`;
   $('score-key').textContent = `${score.meters[0]?.numerator || 4}/${score.meters[0]?.denominator || 4} time · 1 = C display`;
   $('notation-part').replaceChildren();
+  const shownAll=document.createElement('option');shownAll.value='';shownAll.textContent='All parts';$('notation-part').append(shownAll);
   for (const part of score.parts) { const option = document.createElement('option'); option.value = part.id; option.textContent = part.name; $('notation-part').append(option); }
-  $('notation-part').value = state.notationPart;
+  $('notation-part').value = state.notationPart || '';
   $('practice-part').replaceChildren();
   const all = document.createElement('option'); all.value = ''; all.textContent = 'All parts · 所有声部'; $('practice-part').append(all);
   for (const part of score.parts) { const option = document.createElement('option'); option.value = part.id; option.textContent = part.name; $('practice-part').append(option); }
@@ -266,7 +268,7 @@ function renderNotationPage() {
   if (layout.spanBeats !== state.notationSpan) { state.notationSpan = layout.spanBeats; state.notationPage = Math.floor(previousBeat / state.notationSpan); }
   const count = notationPageCount(state.score, state.notationSpan);
   state.notationPage = Math.max(0, Math.min(count - 1, state.notationPage));
-  $('notation').innerHTML = renderNotation(state.score, state.notation, {startBeat: state.notationPage * state.notationSpan, spanBeats: state.notationSpan, width: layout.width, partId: state.notationPart, numberedMode: state.numberedMode});
+  $('notation').innerHTML = renderNotation(state.score, state.notation, {startBeat: state.notationPage * state.notationSpan, spanBeats: state.notationSpan, width: layout.width, partId: state.notationPart, allParts: state.notationPart===null, numberedMode: state.numberedMode});
   const tonic = keyTonic(keyAt(state.score, state.notationPage * state.notationSpan));
   if (!state.engravingActive) $('score-key').textContent = state.notation === 'jianpu' && state.numberedMode === 'movable' ? (tonic ? `1 = ${tonic.name}${tonic.octave} · tonic-based numbering (minor too)` : 'Unknown key mode: fixed C display') : `${state.score.meters[0]?.numerator || 4}/${state.score.meters[0]?.denominator || 4} time · 1 = C4 display`;
   $('notation-page').textContent = `Page ${state.notationPage + 1} / ${count}`;
@@ -570,6 +572,12 @@ function advanceLoopClock(now) {
   }
   updateButtons();refreshPassHistory();
 }
+// Displayed parts are independent of playback keys and assessed practice targets.
+function displayedPartId(){return state.engravingActive?$('engraving-part').value||null:state.notationPart}
+function displayedWrittenEntries(written) {
+  const part=displayedPartId();
+  return (written?.entries||[]).filter(entry=>part===null||entry.partId===part);
+}
 function drawFrame() {
   const now = performance.now();
   advanceLoopClock(now);
@@ -608,35 +616,30 @@ function drawFrame() {
   const written = position < segmentStart ? null : writtenCursor?.at(position);
   const soundingSources = new Set(active.flatMap(note=>mappedSourceIds(note,state.mode==='practice'?state.targetGroups.get(note.id):null)));
   const currentWritten = (written?.entries || []).filter(entry=>entry.note.pitch?soundingSources.has(entry.sourceNoteId):state.practicePart===null||entry.partId===state.practicePart);
-  if (shell.notationVisible() && !state.engravingActive && transport.running && currentWritten.length) {
-    const source = currentWritten.find(item=>item.partId===state.notationPart);
-    const page = source ? Math.floor(beat(source.note.at) / state.notationSpan) : state.notationPage;
-    if (page !== state.notationPage) { state.notationPage = page; renderNotationPage(); }
-  }
-  const signature = JSON.stringify([written?.occurrence?.id || null,currentWritten.map(entry=>entry.sourceNoteId)]);
+  const displayedWritten=displayedWrittenEntries(written);
+  if(shell.notationVisible()&&state.engravingActive&&written?.occurrence)engravedView.setExpectedWrittenNotes?.({sourceNoteIds:displayedWritten.map(entry=>entry.sourceNoteId),sourceMeasureIndex:written.occurrence.source_measure_index});
+  else engravedView.clearExpectedWrittenNotes?.();
+  if(shell.notationVisible())notationFollowing?.tick(position < segmentStart ? -1 : position,transport.running,{...written,entries:displayedWritten,pageAnchor:writtenCursor?.pageAnchor(position,displayedPartId())});
+  const signature = JSON.stringify([written?.occurrence?.id || null,currentWritten.map(entry=>entry.sourceNoteId),displayedWritten.map(entry=>entry.sourceNoteId)]);
   if (signature !== state.lastHighlight) {
-    const activeSources=new Set(currentWritten.map(entry=>entry.sourceNoteId));
+    const activeSources=new Set(displayedWritten.map(entry=>entry.sourceNoteId));
     document.querySelectorAll('.score-note').forEach(note => note.classList.toggle('active', activeSources.has(note.dataset.noteId)));
     state.lastHighlight = signature;
     if(writtenCursor?.state().status==='ready'&&writtenCursorStatus){
       const pitches=currentWritten.filter(entry=>entry.note.pitch),rests=currentWritten.length-pitches.length;
       const labels=pitches.slice(0,8).map(({note})=>`${note.pitch.step}${({'-2':'𝄫','-1':'♭','0':'','1':'♯','2':'𝄪'})[note.pitch.alter]}${note.pitch.octave} → ${midiName(pitchMidi(note.pitch))}`);
       writtenCursorStatus.textContent=`Expected written notes · 当前谱面: ${labels.join(', ')||'—'}${pitches.length>8?` +${pitches.length-8} more`:''}${rests?` · ${rests} written rest(s)`:''}. Expected keys and held input colors are separate; duration and fingering are not assessed.`;
-      writtenCursorStatus.dataset.sourceNoteIds=JSON.stringify([...activeSources]);
+      writtenCursorStatus.dataset.sourceNoteIds=JSON.stringify(currentWritten.map(entry=>entry.sourceNoteId));
       writtenCursorStatus.dataset.sourceMeasureIndex=written?.occurrence?String(written.occurrence.source_measure_index):'';
     }
-    const focused = $('notation').querySelector('.score-note.active');
-    if (!state.engravingActive && transport.running && focused) { const box = focused.getBoundingClientRect(); const view = $('notation').getBoundingClientRect(); if (box.left < view.left + 20 || box.right > view.right - 20) $('notation').scrollLeft += box.left - view.left - view.width * 0.35; }
   }
-  if(shell.notationVisible()&&state.engravingActive&&written?.occurrence)engravedView.setExpectedWrittenNotes?.({sourceNoteIds:currentWritten.map(entry=>entry.sourceNoteId),sourceMeasureIndex:written.occurrence.source_measure_index});
-  else engravedView.clearExpectedWrittenNotes?.();
-  if(shell.notationVisible())notationFollowing?.tick(position < segmentStart ? -1 : position,transport.running);
   highlightKeys(active);
   $('progress').max = Math.max(1, duration); $('progress').value = Math.min(duration, Math.max(0, position));
   $('time-label').textContent = `${formatTime(position)} / ${formatTime(duration)}`;
   if (state.instrument === 'guitar') {
     guitarFingering?.prepare();
-    renderGuitarGuidance({plan:guitarFingering?.state().plan,...guitarFingeringView?.options(),timeline:state.mode==='practice'?state.targetTimeline:state.practiceTimeline||timeline,groups:state.mode==='practice'?state.targetGroups:new Map(),parts:state.score?.parts||[],position,segmentStart,segmentEnd:state.loop?.end_ms||duration,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,mode:state.mode,loopIteration:state.loop?state.loopIteration:null});
+    const guidance=renderGuitarGuidance({profile:currentProfile(),plan:guitarFingering?.state().plan,...guitarFingeringView?.options(),timeline:state.mode==='practice'?state.targetTimeline:state.practiceTimeline||timeline,groups:state.mode==='practice'?state.targetGroups:new Map(),parts:state.score?.parts||[],position,segmentStart,segmentEnd:state.loop?.end_ms||duration,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,mode:state.mode,loopIteration:state.loop?state.loopIteration:null});
+    highlightGuitarRoute(document,{notes:guidance.currentNotes,nextNotes:guidance.nextNotes,nextOnsetMs:guidance.nextOnsetMs,position,groups:state.mode==='practice'?state.targetGroups:new Map(),plan:guitarFingering?.state().plan,...guitarFingeringView?.options()});
     return;
   }
   const canvas = $('falling-notes'); const width = canvas.clientWidth; const height = canvas.clientHeight;
@@ -703,9 +706,9 @@ $('latency-offset').addEventListener('change', () => {
 });
 $('practice-part').addEventListener('change', () => { state.practicePart = $('practice-part').value || null; rebuildPracticeScope(); resetPlayback(); if (state.practicePart !== null) { state.notationPart = state.practicePart; $('notation-part').value = state.practicePart; renderNotationPage(); } engravedView.selectPart(state.practicePart); updateRangeWarning(); checkInstrument(); });
 $('jianpu-reference').addEventListener('change', () => { state.numberedMode = $('jianpu-reference').value; renderNotationPage(); });
-$('notation-part').addEventListener('change', () => { state.notationPart = $('notation-part').value; renderNotationPage(); });
-$('notation-prev').addEventListener('click', () => { state.notationPage--; renderNotationPage(); });
-$('notation-next').addEventListener('click', () => { state.notationPage++; renderNotationPage(); });
+$('notation-part').addEventListener('change', () => { notationFollowing?.suspend();state.notationPart = $('notation-part').value || null; renderNotationPage(); });
+$('notation-prev').addEventListener('click', () => { notationFollowing?.suspend();state.notationPage--; renderNotationPage(); });
+$('notation-next').addEventListener('click', () => { notationFollowing?.suspend();state.notationPage++; renderNotationPage(); });
 $('play-button').addEventListener('click', togglePlayback);
 $('reset-button').addEventListener('click', resetPlayback);
 $('assess-button').addEventListener('click', () => assess());
@@ -720,7 +723,7 @@ $('tempo').addEventListener('change', () => {
 });
 function selectBasicNotation(mode,{remember=true}={}) { engravedView.hide({remember}); state.notation = mode; $('engraved-button').setAttribute('aria-pressed','false'); $('engraved-button').classList.remove('selected'); $('jianpu-reference-label').hidden = mode !== 'jianpu'; ['staff', 'jianpu'].forEach(m => { $(m + '-button').classList.toggle('selected', m === mode); $(m + '-button').setAttribute('aria-pressed', String(m === mode)); }); renderScore(); }
 for (const mode of ['staff', 'jianpu']) $(mode + '-button').addEventListener('click', () => selectBasicNotation(mode));
-$('engraved-button').addEventListener('click', () => {notationFollowing?.suspend();engravedView.show()});
+$('engraved-button').addEventListener('click', () => {engravedView.show();drawFrame()});
 $('sound-button').addEventListener('click', () => { synth.muted = !synth.muted; if (synth.muted) synth.silence(); $('sound-button').textContent = synth.muted ? 'Sound off ♫' : 'Sound on ♫'; $('sound-button').setAttribute('aria-pressed', String(synth.muted));metronome?.updateMute(); });
 $('import-button').addEventListener('click', () => $('score-file').click());
 $('mobile-import-button').addEventListener('click', () => $('score-file').click());
@@ -879,14 +882,33 @@ async function importCanonicalScore(score, signal, {practicePart=undefined,diagn
   finally{signal.removeEventListener('abort',cancel)}
 }
 const libraryView = setupScoreLibrary({getScore:()=>state.score,onLoad:importCanonicalScore,validate:(score,signal)=>api('/api/compile',score,signal),pausePlayback,notice});
-const engravedView = setupEngravedView({getScore:()=>state.score,getPracticePart:()=>state.practicePart,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),pausePlayback,notice,onVisibility:active=>{
-  if(!active)notationFollowing?.suspend('Following suspended because the engraved view changed. Enable it again after returning.');
-  state.engravingActive=active;$('engraving-view').hidden=!active;$('notation-controls').hidden=active;$('notation').hidden=active;$('basic-notation-note').hidden=active;
+const engravedView = setupEngravedView({getScore:()=>state.score,getPracticePart:()=>state.practicePart,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),notice,onVisibility:active=>{
+  state.engravingActive=active;
+  document.querySelector('.engraving-pages').hidden=!active;
+  const displayOptions=document.querySelector('.notation-display-options');if(displayOptions)displayOptions.hidden=!active;
+  $('engraving-view').hidden=!active;$('notation-controls').hidden=active;$('notation').hidden=active;$('basic-notation-note').hidden=active;
   $('score-key').hidden=active;
   if($('dock-warning-count'))$('dock-warning-count').hidden=!active&&$('engraving-fallback').hidden;
   if(active){$('score-key').textContent='Generated staff · 生成谱面';for(const id of ['staff-button','jianpu-button']){$(id).classList.remove('selected');$(id).setAttribute('aria-pressed','false')}$('engraved-button').classList.add('selected');$('engraved-button').setAttribute('aria-pressed','true')}
 },onFallback:()=>selectBasicNotation('staff',{remember:false}),onManualNavigation:()=>notationFollowing?.suspend()});
-notationFollowing = setupNotationFollowing({api,getContext:()=>({score:state.score,timeline:state.compiled?.timeline}),getPlayback:()=>{const position=transport.time(performance.now());return{position:position<(state.loop?.start_ms||0)?-1:position,running:transport.running}},view:engravedView});
+const basicNotationReveal=createBasicNotationReveal({container:$('notation'),dock:$('notation-dock')});
+$('notation-dock').addEventListener('toggle',()=>basicNotationReveal.reset(),true);
+const followingView={
+  isActive:()=>shell.screen()==='stage'&&shell.notationVisible(),
+  resetReveal(){basicNotationReveal.reset();engravedView.resetReveal()},
+  navigationState:()=>state.engravingActive?engravedView.navigationState():{ready:true},
+  followMeasure(index,occurrence,written){
+    if(state.engravingActive)return engravedView.followMeasure(index);
+    const page=basicNotationPage(occurrence,written?.entries,state.notationPart,state.notationSpan,written?.pageAnchor);
+    if(page!==null&&page!==state.notationPage){state.notationPage=page;renderNotationPage()}
+  },
+  revealExpectedWrittenNotes(occurrenceId,index,written){
+    return state.engravingActive?engravedView.revealExpectedWrittenNotes(occurrenceId,index):basicNotationReveal.reveal(occurrenceId,(written?.entries||[]).filter(entry=>state.notationPart===null||entry.partId===state.notationPart).map(entry=>entry.sourceNoteId));
+  },
+};
+notationFollowing = setupNotationFollowing({getContext:()=>({score:state.score,timeline:state.compiled?.timeline}),
+  prepareNavigation:async options=>{const cached=writtenCursor.navigation();if(cached)return cached;await writtenCursor.prepare(options);const navigation=writtenCursor.navigation();if(!navigation)throw Error(writtenCursor.state().message);return navigation},
+  getPlayback:()=>{const position=transport.time(performance.now()),written=writtenCursor?.at(position);return{position:position<(state.loop?.start_ms||0)?-1:position,running:transport.running,written:{...written,entries:displayedWrittenEntries(written),pageAnchor:writtenCursor?.pageAnchor(position,displayedPartId())}}},view:followingView});
 setupJianpuEditor({onImport:importJianpuText,pausePlayback});
 setupJianpuExport({getScore:()=>state.score,pausePlayback,api});
 setupSourceDirectory({pausePlayback,onScoreFile:()=>$('score-file').click(),onImageFile:()=>$('score-image-file').click(),onExternalOmr:()=>externalOmrView.open()});

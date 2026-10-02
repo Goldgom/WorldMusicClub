@@ -33,7 +33,7 @@ export function setupPerformanceView({getContext}) {
   $('engraving-part').closest('label').firstChild.textContent='Part · 声部 ';$('engraving-page-size').closest('label').firstChild.textContent='Per page · 每页 ';
   const displayOptions=document.createElement('div');displayOptions.className='notation-display-options';displayOptions.setAttribute('role','group');displayOptions.setAttribute('aria-label','Engraved staff display options');displayOptions.append($('engraving-part').closest('label'),$('engraving-page-size').closest('label'));
   const engravingControls=notation.querySelector('.engraving-controls'),pageControls=notation.querySelector('.engraving-pages'),followingControls=notation.querySelector('.engraving-follow-controls');
-  const followingLabel=$('engraving-follow').closest('label');followingLabel.lastChild.textContent=' Follow measures · 跟随小节';
+  const followingLabel=$('engraving-follow').closest('label');followingLabel.lastChild.textContent=' Follow playback';
   const shortLandscape=window.matchMedia?.('(max-height:600px) and (min-width:651px)');
   function arrangeNotationTools(){const compact=Boolean(shortLandscape?.matches);notation.classList.toggle('short-notation',compact);if(compact){help.insertBefore(displayOptions,help.children[1]);followingControls.prepend(pageControls);}else{engravingControls.prepend(displayOptions);engravingControls.append(pageControls);}}
   shortLandscape?.addEventListener('change',arrangeNotationTools);arrangeNotationTools();

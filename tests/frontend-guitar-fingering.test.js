@@ -71,6 +71,18 @@ test('cards and fretboard use exact occurrence route; pitch alternatives and pic
  assert.equal(h.document.querySelectorAll('.fret-button.playing').length,1);assert.equal(h.document.querySelector('.fret-button.playing').dataset.string,'1');assert.equal(h.document.querySelector('.fret-button.playing').dataset.fingers,'1');assert.equal(h.document.querySelectorAll('.fret-button.pitch-option').length,0);
  highlightGuitarRoute(h.document,{...args,showAlternatives:true});assert.equal(h.document.querySelectorAll('.fret-button.playing').length,1);assert.equal(h.document.querySelectorAll('.fret-button.pitch-option').length,2);
  render({timeline:ctx.timeline,parts:ctx.score.parts,plan});const card=h.document.querySelector('.guitar-target');assert.deepEqual(JSON.parse(card.dataset.route),[{string:2,fret:1,finger:1}]);assert.match(card.querySelector('.guitar-target-route').textContent,/Row 2 \(B3 tuning\).*finger 1 · index/);assert.equal(card.querySelector('.guitar-target-picking').hidden,true);
- render({timeline:ctx.timeline,parts:ctx.score.parts,plan,showPicking:true});assert.match(card.querySelector('.guitar-target-picking').textContent,/Picking heuristic: Downstroke suggestion/);
+ render({timeline:ctx.timeline,parts:ctx.score.parts,plan,showPicking:true});assert.match(card.querySelector('.guitar-target-picking').textContent,/Limited picking heuristic: Downstroke suggestion.*Single-note onset parity only/);
  highlightGuitarRoute(h.document,{...args,plan:null});render({timeline:ctx.timeline,plan:null});assert.equal(h.document.querySelectorAll('.fret-button.playing,.fret-button.pitch-option').length,0);assert.equal(card.dataset.route,'[]');assert.match(card.querySelector('.guitar-target-route').textContent,/No current recommended route/);
+});
+
+test('next chosen shape has distinct text/outline, keeps held identities, and never becomes a pitch alternative',async()=>{
+ const h=await harness(),ctx=h.getContext();
+ ctx.timeline.notes[0].duration_ms=1000;ctx.timeline.notes[1].start_ms=500;
+ const plan=result(ctx,{max_fret_span:3,locks:[]});
+ for(const[string,fret,midi]of [[0,0,64],[1,1,60],[2,5,60]]){const button=h.document.createElement('button');button.className='fret-button';Object.assign(button.dataset,{string:String(string),fret:String(fret),midi:String(midi)});button.append(h.document.createElement('span'));h.$('fretboard').append(button);}
+ const args={notes:[ctx.timeline.notes[0]],nextNotes:[ctx.timeline.notes[1]],plan,position:250,nextOnsetMs:500,showAlternatives:true};highlightGuitarRoute(h.document,args);
+ const current=h.document.querySelector('[data-string="1"][data-fret="1"]'),next=h.document.querySelector('[data-string="0"][data-fret="0"]');
+ assert.equal(h.document.querySelectorAll('.fret-button.playing').length,1);assert.equal(h.document.querySelectorAll('.fret-button.route-next').length,2);assert.equal(current.classList.contains('route-next'),true);assert.equal(next.classList.contains('pitch-option'),false);assert.equal(next.dataset.routeLabel,'Next 0');assert.equal(current.dataset.routeLabel,'Now 1 · Next 1');assert.deepEqual(JSON.parse(current.dataset.nextOccurrenceIds),['c4@pass1']);assert.match(current.getAttribute('aria-description'),/hold, no new attack/);assert.match(next.getAttribute('aria-description'),/new attack/);
+ highlightGuitarRoute(h.document,{...args,nextNotes:[],nextOnsetMs:null});assert.equal(h.document.querySelectorAll('.route-next').length,0);assert.equal(next.dataset.routeLabel,'');assert.equal(current.dataset.routeLabel,'Now 1');
+ highlightGuitarRoute(h.document,{...args,plan:null});assert.equal(h.document.querySelectorAll('.playing,.route-next').length,0);assert.equal(current.dataset.nextSourceIds,'[]');assert.equal(current.getAttribute('aria-description'),null);
 });

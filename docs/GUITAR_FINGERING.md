@@ -163,3 +163,28 @@ views, source search bounds and score immutability. Real Rust/browser acceptance
 covers the integrated route and unchanged take/score exports. A mocked browser
 server explicitly returns unavailable guidance rather than pretending to solve
 fingering in JavaScript.
+
+## Complete live current/next shapes
+
+The live route now separates every current score hold from the complete next
+onset group. A compact matrix displays each configured tuning row, the chosen
+fret/finger, and explicit Now/Next and Hold/Release/New labels. These are score
+instructions, not detected hand positions or measured releases. One through
+12 tuning rows remain represented in bands of at most six columns. Detailed
+cards and exact source mappings remain available in the tuning/source details;
+only additional later attacks are bounded by the lookahead/card budget.
+
+Merged physical targets may contain sources with different release times. Each
+recommended source assignment is filtered by its own Rust end time; a longer
+unison does not falsely extend another source's fingering. Multiple assignments
+at the same displayed position retain their occurrence/source IDs in the marker.
+The optional full-board alternatives remain separate from solid current and
+dashed next-route cues. Fret-range changes are factual display summaries, not a
+new JavaScript ergonomic planner. Picking suggestions remain a limited onset-
+parity heuristic; chord technique, rest-aware picking and string changes are not
+optimized by that hint.
+
+The original whole-score planning limit and session-only annotation scope still
+apply. A dedicated short-phrase planning selection and stronger bounded-search
+quality evidence remain open; this live display change does not complete every
+guitar requirement.

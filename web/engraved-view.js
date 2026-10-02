@@ -11,7 +11,7 @@ export function mappedPartIds(exported, canonicalId) {
   return [map[canonicalId]];
 }
 /** Optional presentation surface. All score conversion and timing stay in Rust. */
-export function setupEngravedView({getScore, getPracticePart, pausePlayback, onVisibility, onFallback, notice, onManualNavigation=()=>{},isVisible=()=>true,loadAdapter=()=>import('./engraving.js')}) {
+export function setupEngravedView({getScore, getPracticePart, onVisibility, onFallback, notice, onManualNavigation=()=>{},isVisible=()=>true,loadAdapter=()=>import('./engraving.js')}) {
   const $ = id => document.getElementById(id);
   let active = false, preferred = true, score = null, selectedPart = null, from = 1, pageSize = 8;
   let generation = 0, controller = null, cached = null, adapter = null, rendered = null;
@@ -82,10 +82,10 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
     hide(); $('engraving-fallback').textContent = `Engraved staff unavailable: ${message} Showing the simplified pitch guide. It does not fully engrave rhythm, voices, ties or key signatures. Playback still uses the Rust score.`; $('engraving-fallback').hidden = false; onFallback();
     if($('dock-warning-count')){$('dock-warning-count').hidden=false;$('dock-warning-count').textContent='View notation error · 查看提示';}
   }
-  async function render({automatic=false}={}) {
+  async function render() {
     if (!active || !score || !isVisible()) return;
     cancel(); const current = generation; controller = new AbortController(); const signal = controller.signal; const target = score;
-    $('engraving-fallback').hidden = true; onVisibility(true); if(!automatic)pausePlayback(); rangeControls(); $('engraving-status').textContent = 'Preparing exact MusicXML with Rust, then engraving locally…';
+    $('engraving-fallback').hidden = true; onVisibility(true); rangeControls(); $('engraving-status').textContent = 'Preparing exact MusicXML with Rust, then engraving locally…';
     $('engraving-diagnostics').replaceChildren();if($('dock-warning-count'))$('dock-warning-count').textContent='Notation notices · preparing…';
     try {
       const exported = await exportScore(target, signal);
@@ -110,7 +110,8 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
   }
   function show() {
     if (!getScore()) return;
-    score = getScore(); selectedPart = getPracticePart(); from = 1; active = true; preferred = true;
+    if(score!==getScore()){score=getScore();selectedPart=getPracticePart();from=1}
+    active = true; preferred = true;
     setParts(); onVisibility(true); render();
   }
   function hide({remember=false}={}) { if(remember){preferred=false;$('engraving-fallback').hidden=true;}clearExpectedWrittenNotes();active = false; cancel(); container.replaceChildren(); onVisibility(false); }
@@ -141,7 +142,7 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
   if(dock?.setAttribute){dock.setAttribute('tabindex','0');dock.setAttribute('aria-label','Score notation scroll area · 乐谱滚动区域')}
   const manualScroll=()=>{if($('engraving-follow').checked){lastReveal='';onManualNavigation()}};
   dock?.addEventListener('wheel',manualScroll,{passive:true});dock?.addEventListener('touchmove',manualScroll,{passive:true});
-  dock?.addEventListener('pointerdown',event=>{if(event.target===dock||event.target?.closest?.('.engraving-scroll'))manualScroll()},{passive:true});
+  dock?.addEventListener('pointerdown',event=>{if(event.target===dock||event.target?.closest?.('.engraving-scroll,.notation-scroll'))manualScroll()},{passive:true});
   dock?.addEventListener('keydown',event=>{if(!event.defaultPrevented&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','PageUp','PageDown','Home','End',' '].includes(event.key)&&!event.target?.isContentEditable&&!event.target?.closest?.('input,select,textarea,button,summary,[contenteditable]:not([contenteditable="false"])'))manualScroll()});
   const invalidateReveal=()=>{lastReveal=''};
   window.addEventListener('resize',invalidateReveal);
@@ -152,8 +153,8 @@ export function setupEngravedView({getScore, getPracticePart, pausePlayback, onV
     const observe=()=>surfaces.forEach(surface=>resizeObserver.observe(surface));observe();
     window.addEventListener('pagehide',()=>resizeObserver.disconnect());window.addEventListener('pageshow',event=>{if(event.persisted){invalidateReveal();observe()}});
   }
-  return {show,hide,updateScore,selectPart,setExpectedWrittenNotes,clearExpectedWrittenNotes,revealExpectedWrittenNotes,resetReveal(){lastReveal=''},mappingStatus,isActive:()=>active,surfaceChanged(){if(active&&isVisible())render({automatic:true});else cancel()},
+  return {show,hide,updateScore,selectPart,setExpectedWrittenNotes,clearExpectedWrittenNotes,revealExpectedWrittenNotes,resetReveal(){lastReveal=''},mappingStatus,isActive:()=>active,surfaceChanged(){if(active&&isVisible())render();else cancel()},
     navigationState:()=>({from,ready:Boolean(rendered)}),
-    followMeasure(index){if(!active||!score||!Number.isInteger(index)||index<0||index>=score.measures.length)return false;const page=sourceMeasurePage(index,pageSize);if(page===from)return false;from=page;render({automatic:true});return true}
+    followMeasure(index){if(!active||!score||!Number.isInteger(index)||index<0||index>=score.measures.length)return false;const page=sourceMeasurePage(index,pageSize);if(page===from)return false;from=page;render();return true}
   };
 }

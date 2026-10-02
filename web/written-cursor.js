@@ -41,8 +41,21 @@ export class WrittenCursorIndex {
       const entries = rows[index].sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
       let end = -Infinity;
       const maxEnds = entries.map(entry => (end = Math.max(end, entry.endMs)));
-      return [occurrence.id, {entries, maxEnds}];
+      const byPart=new Map();
+      for(const entry of entries){if(!byPart.has(entry.partId))byPart.set(entry.partId,[]);byPart.get(entry.partId).push(entry)}
+      return [occurrence.id, {entries, maxEnds, byPart}];
     }));
+  }
+
+  /** Latest started source event in this Rust occurrence, including ended events.
+   * Sparse gaps stay at that written onset; no wall-clock-to-beat interpolation. */
+  pageAnchor(position,partId=null) {
+    const occurrence=this.navigation.at(position);if(!occurrence)return null;
+    const row=this.byOccurrence.get(occurrence.id),entries=partId===null?row.entries:row.byPart.get(partId)||[];
+    let low=0,high=entries.length;
+    while(low<high){const middle=(low+high)>>>1;if(entries[middle].startMs<=position)low=middle+1;else high=middle}
+    const at=entries[low-1]?.note.at,from=occurrence.source_from;
+    return at&&BigInt(at.numerator)*BigInt(from.denominator)>BigInt(from.numerator)*BigInt(at.denominator)?at:from;
   }
 
   /** Half-open written segments, including rests. Caller applies part/target scope. */
@@ -61,12 +74,12 @@ export class WrittenCursorIndex {
 
 /** Lazy score-scoped preparation. A failed response is retried only explicitly. */
 export function setupWrittenCursor({api, getContext, onStatus = () => {}}) {
-  let target = null, timeline = null, index = null, controller = null, pending = null;
+  let target = null, timeline = null, index = null, navigation = null, controller = null, pending = null;
   let generation = 0, status = 'idle', message = 'Current-note following is idle.';
   const publish = (next, text) => { status = next; message = text; onStatus({status, message}); };
   function reset() {
     generation++; controller?.abort(); controller = null; pending = null;
-    target = null; timeline = null; index = null;
+    target = null; timeline = null; index = null; navigation = null;
     publish('idle', 'Current-note following is idle.');
   }
   function prepare({retry = false} = {}) {
@@ -86,7 +99,7 @@ export function setupWrittenCursor({api, getContext, onStatus = () => {}}) {
       try {
         const response = await api('/api/notation-navigation', score, signal);
         if (!isCurrent()) return null;
-        const navigation = new NotationNavigationIndex(response, score, compiled);
+        navigation = new NotationNavigationIndex(response, score, compiled);
         if (!response.written_cursor) throw Error(response.diagnostics?.find(item => item.code === 'notation_written_cursor_unavailable')?.message || 'This server response has no complete written-note cursor. Restart with a current server build.');
         const prepared = new WrittenCursorIndex(response.written_cursor, navigation);
         if (!isCurrent()) return null;
@@ -105,6 +118,14 @@ export function setupWrittenCursor({api, getContext, onStatus = () => {}}) {
   return {
     prepare, reset,
     state: () => ({status, message}),
+    navigation() {
+      const context = getContext();
+      return context?.score === target && context?.timeline === timeline ? navigation : null;
+    },
+    pageAnchor(position,partId=null) {
+      const context=getContext();
+      return index&&context?.score===target&&context?.timeline===timeline?index.pageAnchor(position,partId):null;
+    },
     at(position) {
       const context = getContext();
       return index && context?.score === target && context?.timeline === timeline ? index.at(position) : null;

@@ -16,7 +16,7 @@ test('the first score requests engraved presentation by default, without startin
 test('explicit simplified or numbered selection survives score changes and cancels old exports',()=>{const env=environment();try{env.setScore();env.view.hide({remember:true});assert.equal(env.calls[0].options.signal.aborted,true);env.setScore({...structuredClone(fixture),id:'next'});assert.equal(env.calls.length,1);assert.equal(env.view.isActive(),false);env.view.show();assert.equal(env.calls.length,2);assert.equal(env.view.isActive(),true);}finally{env.close()}});
 test('failed engraving retains its exact reason with a named fallback and retries only for a new score or explicit request',async()=>{const env=environment();try{env.setScore();env.calls[0].resolve({ok:false,status:400,json:async()=>({error:'Unsupported nonrepresentable rhythm.'})});await env.failure.promise;assert.equal(env.view.isActive(),false);assert.equal(env.elements.get('engraving-fallback').hidden,false);assert.match(env.failures[0],/Unsupported nonrepresentable rhythm/);assert.match(env.failures[0],/simplified pitch guide/);env.view.updateScore();assert.equal(env.calls.length,1);env.setScore({...structuredClone(fixture),id:'new-source'});assert.equal(env.calls.length,2);assert.equal(env.view.isActive(),true);assert.equal(env.elements.get('engraving-fallback').hidden,true);}finally{env.close()}});
 
-test('automatic following renders only changed source pages and never pauses the audio transport',()=>{const env=environment();try{const score=structuredClone(fixture);score.measures=Array.from({length:20},(_,index)=>({number:99-index,at:{numerator:index*4,denominator:1},length:{numerator:4,denominator:1}}));env.setScore(score);assert.equal(env.pauses,1);assert.equal(env.view.followMeasure(7),false);assert.equal(env.calls.length,1);assert.equal(env.view.followMeasure(8),true);assert.equal(env.calls.length,2);assert.equal(env.calls[0].options.signal.aborted,true);assert.equal(env.pauses,1);for(let index=8;index<16;index++)assert.equal(env.view.followMeasure(index),false);assert.equal(env.calls.length,2);assert.equal(env.view.navigationState().from,9);assert.equal(env.view.followMeasure(0),true);assert.equal(env.calls.length,3);assert.equal(env.pauses,1);}finally{env.close()}});
+test('automatic following renders only changed source pages and never pauses the audio transport',()=>{const env=environment();try{const score=structuredClone(fixture);score.measures=Array.from({length:20},(_,index)=>({number:99-index,at:{numerator:index*4,denominator:1},length:{numerator:4,denominator:1}}));env.setScore(score);assert.equal(env.pauses,0);assert.equal(env.view.followMeasure(7),false);assert.equal(env.calls.length,1);assert.equal(env.view.followMeasure(8),true);assert.equal(env.calls.length,2);assert.equal(env.calls[0].options.signal.aborted,true);assert.equal(env.pauses,0);for(let index=8;index<16;index++)assert.equal(env.view.followMeasure(index),false);assert.equal(env.calls.length,2);assert.equal(env.view.navigationState().from,9);assert.equal(env.view.followMeasure(0),true);assert.equal(env.calls.length,3);assert.equal(env.pauses,0);}finally{env.close()}});
 
 test('pending expected-note requests validate exact membership without rerendering or requesting timing',()=>{const env=environment();try{env.setScore();const pauses=env.pauses;for(let frame=0;frame<20;frame++)assert.equal(env.view.setExpectedWrittenNotes({sourceNoteIds:frame%2?['c4']:['e4'],sourceMeasureIndex:0}),true);assert.equal(env.calls.length,1);assert.equal(env.pauses,pauses);for(const value of [{sourceNoteIds:['c4','c4'],sourceMeasureIndex:0},{sourceNoteIds:['missing'],sourceMeasureIndex:0},{sourceNoteIds:'c4',sourceMeasureIndex:0},{sourceNoteIds:[],sourceMeasureIndex:1}])assert.equal(env.view.setExpectedWrittenNotes(value),false);env.view.clearExpectedWrittenNotes();env.view.hide();assert.equal(env.view.setExpectedWrittenNotes({sourceNoteIds:['c4'],sourceMeasureIndex:0}),false);assert.equal(env.view.mappingStatus().verifiedGlyphCount,0);}finally{env.close()}});
 
@@ -38,7 +38,7 @@ test('successful static adapters without note mapping retain staff and report hi
    const notices=env.elements.get('engraving-diagnostics').children.map(item=>item.textContent);
    assert.ok(notices.includes('Original source warning.'));assert.ok(notices.some(message=>/notehead mapping.*unavailable/i.test(message)));
    assert.equal(env.view.setExpectedWrittenNotes(expected),false);assert.equal(env.view.clearExpectedWrittenNotes(),false);
-   assert.equal(env.calls.length,1);assert.equal(env.pauses,1);
+   assert.equal(env.calls.length,1);assert.equal(env.pauses,0);
    env.view.hide();assert.equal(disposals,1);assert.equal(env.view.navigationState().ready,false);
   }finally{env.close()}
  }
@@ -99,7 +99,7 @@ test('following reveals fresh verified bounds once per identity or geometry chan
   dock.scrollTop=0;boundsStatus='unavailable';env.view.resetReveal();assert.equal(env.view.revealExpectedWrittenNotes('repeat-2').status,'unavailable');assert.equal(dock.scrollTop,0,'Unverified rectangles are never scroll targets');
   boundsStatus='ready';throwBounds=true;env.view.resetReveal();assert.doesNotThrow(()=>env.view.revealExpectedWrittenNotes('repeat-2'));assert.equal(dock.scrollTop,0,'Optional geometry errors preserve the playback frame and pane');throwBounds=false;
   env.view.setExpectedWrittenNotes({sourceNoteIds:['unknown'],sourceMeasureIndex:0});env.view.setExpectedWrittenNotes(expected);assert.equal(env.view.revealExpectedWrittenNotes('repeat-2').status,'ready');assert.equal(dock.scrollTop,272);
-  const readCount=reads;env.elements.get('engraving-follow').checked=false;env.view.revealExpectedWrittenNotes('repeat-3');assert.equal(reads,readCount);assert.equal(env.calls.length,1);assert.equal(env.pauses,1);assert.equal(JSON.stringify(score),before);
+  const readCount=reads;env.elements.get('engraving-follow').checked=false;env.view.revealExpectedWrittenNotes('repeat-3');assert.equal(reads,readCount);assert.equal(env.calls.length,1);assert.equal(env.pauses,0);assert.equal(JSON.stringify(score),before);
   assert.deepEqual(env.resizeObservers[0].observed,[dock]);for(const listener of env.windowListeners.get('pagehide'))listener();assert.deepEqual(env.resizeObservers[0].observed,[]);for(const listener of env.windowListeners.get('pageshow'))listener({persisted:true});assert.deepEqual(env.resizeObservers[0].observed,[dock]);
  }finally{env.close()}
 });
@@ -111,5 +111,14 @@ test('intentional notation scrolling suspends optional follow without preventing
   assert.equal(manual,4);checkbox.checked=true;dock.listeners.get('keydown')({key:' ',target:{closest:()=>({})}});assert.equal(checkbox.checked,true,'Space on controls keeps its normal control action');dock.listeners.get('keydown')({key:'a',target:dock});assert.equal(checkbox.checked,true,'Piano letters are not scroll shortcuts');
   for(const event of [{key:'Home',target:{isContentEditable:true}},{key:'Home',ctrlKey:true,target:dock},{key:'PageDown',defaultPrevented:true,target:dock}]){dock.listeners.get('keydown')(event);assert.equal(checkbox.checked,true,'Handled and editing keys do not suspend follow')}
   checkbox.checked=false;dock.listeners.get('wheel')({});assert.equal(manual,4);
+ }finally{env.close()}
+});
+
+
+test('manual engraved pages survive switching away and back without pausing playback',()=>{
+ const env=environment();try{
+  const score=structuredClone(fixture);score.measures=Array.from({length:20},(_,index)=>({number:index+1,at:{numerator:index*4,denominator:1},length:{numerator:4,denominator:1}}));
+  env.setScore(score);env.elements.get('engraving-next').listeners.get('click')();assert.equal(env.view.navigationState().from,9);
+  env.view.hide({remember:true});env.view.show();assert.equal(env.view.navigationState().from,9);assert.equal(env.pauses,0);
  }finally{env.close()}
 });

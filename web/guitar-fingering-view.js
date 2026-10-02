@@ -120,22 +120,33 @@ export function setupGuitarFingeringView({document,controller,getContext,onRefre
   return{render,options:()=>({...options})};
 }
 
-/** One chosen row/fret per source occurrence, never a pitch-to-position solver. */
-export function highlightGuitarRoute(document,{notes=[],groups=new Map(),plan=null,showAlternatives=false}){
-  const assignments=guitarAssignmentIndex(plan);
-  const chosen=new Map(),pitches=new Set(notes.map(note=>note.midi));
+/** One chosen row/fret per source occurrence, never a pitch-to-position solver.
+ * `nextNotes` is the complete strictly-next attack group from guitarGuidanceView.
+ * Retained assignments join the next shape only when their score end is later.
+ */
+export function highlightGuitarRoute(document,{notes=[],nextNotes=[],groups=new Map(),plan=null,position=null,nextOnsetMs=nextNotes[0]?.start_ms??null,showAlternatives=false}){
+  const assignments=guitarAssignmentIndex(plan),chosen=new Map(),next=new Map(),pitches=new Set(notes.map(note=>note.midi));
+  const add=(map,choice)=>{const key=`${choice.string-1}:${choice.fret}`;if(!map.has(key))map.set(key,[]);if(!map.get(key).some(other=>other.occurrence_id===choice.occurrence_id))map.get(key).push(choice);};
+  const currentChoices=[];
   for(const note of notes)for(const id of groups.get(note.id)?.source_occurrence_ids||[note.id]){
-    const choice=assignments.get(id);if(choice){const key=`${choice.string-1}:${choice.fret}`;if(!chosen.has(key))chosen.set(key,[]);chosen.get(key).push(choice);}
+    const choice=assignments.get(id);if(choice&&(!Number.isFinite(position)||choice.end_ms>position)){add(chosen,choice);currentChoices.push(choice);}
   }
+  for(const note of nextNotes)for(const id of groups.get(note.id)?.source_occurrence_ids||[note.id]){const choice=assignments.get(id);if(choice)add(next,choice);}
+  if(nextOnsetMs!==null)for(const choice of currentChoices)if(choice.end_ms>nextOnsetMs)add(next,choice);
   for(const button of document.querySelectorAll('#fretboard .fret-button')){
-    const choices=chosen.get(`${button.dataset.string}:${button.dataset.fret}`)||[];
-    button.classList.toggle('playing',choices.length>0);
-    button.classList.toggle('pitch-option',showAlternatives&&pitches.has(Number(button.dataset.midi))&&!choices.length);
+    const key=`${button.dataset.string}:${button.dataset.fret}`,choices=chosen.get(key)||[],nextChoices=next.get(key)||[];
+    button.classList.toggle('playing',choices.length>0);button.classList.toggle('route-next',nextChoices.length>0);
+    button.classList.toggle('pitch-option',showAlternatives&&pitches.has(Number(button.dataset.midi))&&!choices.length&&!nextChoices.length);
     const setData=(name,value)=>{if(button.dataset[name]!==value)button.dataset[name]=value;};
-    setData('recommended',String(choices.length>0));
-    const ids=choices.flatMap(choice=>choice.source_note_ids);
-    setData('sourceIds',JSON.stringify(ids));setData('fingers',choices.map(choice=>choice.finger).join(','));
-    const description=choices.length?`Recommended ${choices.map(choice=>guitarChoiceLabel(choice,plan.profile)).join('; ')}. Sources ${ids.join(', ')}. Pitch input does not verify this string or finger.`:null;
+    const ids=[...new Set(choices.flatMap(choice=>choice.source_note_ids))],nextIds=[...new Set(nextChoices.flatMap(choice=>choice.source_note_ids))];
+    setData('recommended',String(choices.length>0));setData('nextRecommended',String(nextChoices.length>0));
+    setData('sourceIds',JSON.stringify(ids));setData('occurrenceIds',JSON.stringify(choices.map(choice=>choice.occurrence_id)));setData('fingers',[...new Set(choices.map(choice=>choice.finger))].join(','));
+    setData('nextSourceIds',JSON.stringify(nextIds));setData('nextOccurrenceIds',JSON.stringify(nextChoices.map(choice=>choice.occurrence_id)));setData('nextFingers',[...new Set(nextChoices.map(choice=>choice.finger))].join(','));
+    setData('routeLabel',[choices.length?`Now ${button.dataset.fingers}`:'',nextChoices.length?`Next ${button.dataset.nextFingers}`:''].filter(Boolean).join(' · '));
+    const descriptions=[];
+    if(choices.length)descriptions.push(`Recommended now: ${choices.map(choice=>guitarChoiceLabel(choice,plan.profile)).join('; ')}. Sources ${ids.join(', ')}.`);
+    if(nextChoices.length)descriptions.push(`Recommended next shape: ${nextChoices.map(choice=>`${guitarChoiceLabel(choice,plan.profile)} (${choices.some(current=>current.occurrence_id===choice.occurrence_id)?'hold, no new attack':'new attack'})`).join('; ')}. Sources ${nextIds.join(', ')}.`);
+    const description=descriptions.length?`${descriptions.join(' ')} Pitch input does not verify this string or finger.`:null;
     if(button.getAttribute('aria-description')!==description){if(description)button.setAttribute('aria-description',description);else button.removeAttribute('aria-description');}
   }
 }
