@@ -6,15 +6,18 @@ import {createKeyboardInput,DEFAULT_KEYBOARD_MAPPING} from '../web/keyboard-inpu
 import {setupKeyboardInputView} from '../web/keyboard-input-view.js';
 import {createI18n} from '../web/i18n.js';
 
-function fixture(options={},viewOptions={}) {
-  const {document,window}=parseHTML('<html><body><dialog id="settings-dialog"><div class="shell-dialog-content"></div></dialog><section class="play-panel"><div class="piano-stage"><canvas id="falling-notes"></canvas><div id="keyboard"><button data-midi="60"><span class="key-shortcut"></span></button><button data-midi="36"><span class="key-shortcut"></span></button></div></div><div class="keyboard-footer"></div><div class="transport"><button id="play-button">Play</button><button id="stop-button">Stop</button></div></section></body></html>');
+function fixture(options={},viewOptions={},short=false) {
+  const {document,window}=parseHTML('<html><body><div class="stage-heading"><h1 id="stage-title">Score</h1><p id="stage-subtitle">Practice</p></div><dialog id="settings-dialog"><div class="shell-dialog-content"></div></dialog><section class="play-panel"><div class="piano-stage"><canvas id="falling-notes"></canvas><div id="keyboard"><button data-midi="60"><span class="key-shortcut"></span></button><button data-midi="36"><span class="key-shortcut"></span></button></div></div><div class="keyboard-footer"></div><div class="transport"><button id="play-button">Play</button><button id="stop-button">Stop</button></div></section></body></html>');
+  const mediaListeners=new Set(),media={matches:short,addEventListener(type,listener){assert.equal(type,'change');mediaListeners.add(listener);},removeEventListener(type,listener){assert.equal(type,'change');mediaListeners.delete(listener);}};
+  window.matchMedia=query=>{assert.equal(query,'(max-height:600px) and (min-width:651px)');return media;};
+  const setShortLandscape=matches=>{media.matches=matches;for(const listener of mediaListeners)listener({matches});};
   Object.defineProperty(window.HTMLSelectElement.prototype,'value',{configurable:true,get(){return this.querySelector('option[selected]')?.value||this.querySelector('option')?.value||''},set(value){for(const option of this.querySelectorAll('option'))option.toggleAttribute('selected',option.value===String(value))}});
   const $=id=>document.getElementById(id), events=[],i18n=createI18n({locale:'en',onReport:()=>{}});let view;
   const stageNodes=['falling-notes','keyboard','play-button','stop-button'].map(id=>[id,$(id),$(id).parentElement]);
   const controller=createKeyboardInput({getContext:()=>({screen:'stage'}),pressNote:(...args)=>events.push(['on',...args]),releaseNote:(...args)=>events.push(['off',...args]),releaseMatching:(...args)=>events.push(['cleanup',...args]),onChange:next=>view?.render(next),...options});
   view=setupKeyboardInputView({document,controller,i18n,getVisualRange:()=>({low:48,high:72}),...viewOptions});
   const emit=(target,type,properties={})=>{const event=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(event,properties);target.dispatchEvent(event);return event;};
-  return {document,window,$,controller,view,events,i18n,emit,stageNodes};
+  return {document,window,$,controller,view,events,i18n,emit,stageNodes,setShortLandscape,mediaListeners};
 }
 
 test('wide physical mapping is available, with accurate matching piano labels and separate display range',()=>{
@@ -65,6 +68,52 @@ test('compact range and transpose controls retain their full localized accessibl
   assert.deepEqual(i18n.getReports(),[]);
 });
 
+test('short landscape uses Settings for the same keyboard controls and keeps live range in the existing header row',()=>{
+  let configured=0,scrolled=0;
+  const {$,document,controller,i18n,emit,stageNodes,setShortLandscape}=fixture({}, {onConfigure:()=>{configured++;}});
+  $('keyboard-input-settings').scrollIntoView=options=>{assert.equal(options.block,'start');scrolled++;};
+  const footer=document.querySelector('.keyboard-input-footer'),details=$('keyboard-performance-details'),mapKey=document.querySelector('#keyboard-map [data-code="KeyR"]'),subtitle=$('stage-subtitle'),indicator=$('keyboard-compact-status');
+  details.setAttribute('open','');$('keyboard-map').scrollLeft=73;
+  $('keyboard-mapping-editor').value='[unfinished';emit($('keyboard-mapping-editor'),'input');
+  controller.keydown({code:'KeyR',key:'r',target:document.body,timeStamp:1,preventDefault(){}});
+  const before=controller.exportConfigurationData();
+  for(let cycle=0;cycle<2;cycle++){
+    setShortLandscape(true);
+    assert.equal(footer.parentElement,$('keyboard-input-settings'));
+    assert.equal(footer.nextElementSibling.className,'keyboard-input-fields');
+    assert.equal(document.querySelector('.play-panel>.keyboard-input-footer'),null);
+    assert.equal(indicator.hidden,false);assert.equal(indicator.previousElementSibling,subtitle);
+    assert.equal(indicator.textContent,'⌨ C2–A♯5 +0');
+    indicator.click();assert.equal(configured,cycle+1);assert.equal(scrolled,cycle+1,'The range button reveals its controls in Settings');
+    i18n.setLocale(cycle?'en':'zh-CN');
+    for(const text of [i18n.t('keyboard.title'),i18n.t('keyboard.span',{low:'C2',high:'A♯5'}),i18n.t('keyboard.offset',{semitones:0}),i18n.t('keyboard.configure')])assert.ok(indicator.getAttribute('aria-label').includes(text));
+    setShortLandscape(false);
+    assert.equal(indicator.hidden,true);assert.equal(footer.nextElementSibling,document.querySelector('.transport'));
+    assert.equal(details.hasAttribute('open'),true);assert.equal($('keyboard-map').scrollLeft,73);
+    assert.equal(document.querySelector('#keyboard-map [data-code="KeyR"]'),mapKey);assert.equal(mapKey.classList.contains('held'),true);
+    assert.equal($('keyboard-mapping-editor').value,'[unfinished');
+    assert.deepEqual(controller.exportConfigurationData(),before,'Responsive presentation never changes input history');
+    assert.equal(document.querySelectorAll('#keyboard-map').length,1);assert.equal(document.querySelectorAll('#keyboard-compact-status').length,1);
+    for(const[id,node,parent]of stageNodes){assert.equal($(id),node);assert.equal(node.parentElement,parent);}
+  }
+  setShortLandscape(true);
+  controller.keyup({code:'KeyR',timeStamp:2});
+  controller.keydown({code:'ArrowUp',target:document.body,timeStamp:3,preventDefault(){}});
+  controller.keydown({code:'ArrowLeft',target:document.body,timeStamp:4,preventDefault(){}});
+  assert.equal(indicator.textContent,'⌨ B2–A6 +11');
+  assert.equal($('keyboard-current-offset').textContent,'+11');
+  assert.equal($('keyboard-active-range').textContent,'B2–A6');
+  assert.ok(indicator.getAttribute('aria-label').includes(i18n.t('keyboard.offset',{semitones:11})));
+});
+
+test('an initially short viewport restores the original stage footer and subtitle when the view is destroyed',()=>{
+  const {$,document,view,setShortLandscape,mediaListeners}=fixture({}, {},true),footer=document.querySelector('.keyboard-input-footer'),subtitle=$('stage-subtitle');
+  assert.equal(footer.closest('dialog').id,'settings-dialog');assert.equal($('keyboard-compact-status').hidden,false);assert.equal(mediaListeners.size,1);
+  view.destroy();assert.equal(mediaListeners.size,0);assert.equal(footer.closest('.play-panel')!==null,true);assert.equal(footer.nextElementSibling,document.querySelector('.transport'));
+  assert.equal($('keyboard-input-settings'),null);assert.equal($('keyboard-compact-status'),null);assert.equal(subtitle.parentElement.className,'stage-heading');
+  setShortLandscape(false);assert.equal(footer.closest('.play-panel')!==null,true);
+});
+
 test('disclosure state, mapping identity, drafts and settings action survive held-note and locale renders',()=>{
   let configured=0;
   const {$,document,controller,i18n,emit}=fixture({}, {onConfigure:()=>{configured++;}}),details=$('keyboard-performance-details');
@@ -93,9 +142,15 @@ test('compact footer CSS reserves one toolbar row and expands mapping only when 
   assert.equal(style('.keyboard-transpose-actions .button')['min-height'],'28px');
   assert.equal(style('.keyboard-performance-details[open]')['grid-column'],'1 / -1');
   assert.equal(style('.keyboard-performance-details>summary')['list-style-position'],'inside');
+  assert.equal(style('#keyboard-input-settings>.keyboard-input-footer')['max-height'],'none');
+  assert.equal(style('#keyboard-input-settings>.keyboard-input-footer').overflow,'visible','The Settings dialog owns scrolling for the complete map');
+  assert.equal(style('.keyboard-stage-meta').display,'contents');
+  assert.equal(style('.keyboard-compact-status')['white-space'],'nowrap');
   const compact=rules.find(rule=>/max-height:\s*600px/.test(rule.media?.mediaText||''));
   const footer=[...compact.cssRules].find(rule=>rule.selectorText==='.keyboard-footer.keyboard-input-footer').style;
   assert.equal(footer.padding,'3px 10px');assert.equal(footer['max-height'],'min(180px, 40dvh)');
+  const meta=[...compact.cssRules].find(rule=>rule.selectorText==='.keyboard-stage-meta').style;
+  assert.equal(meta.display,'flex');assert.equal(meta['flex-wrap'],undefined,'The live range shares the subtitle row without wrapping into another stage row');
 });
 
 test('octave, semitone, base and legacy preset controls update input without score operations',()=>{

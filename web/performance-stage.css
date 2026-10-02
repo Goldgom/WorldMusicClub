@@ -198,7 +198,9 @@
   .performance-layout .play-panel[data-instrument=guitar] #stage-cue{min-height:28px;padding:2px 10px;gap:8px}
   .performance-layout .play-panel[data-instrument=guitar] #stage-cue-main{font-size:20px}
   .performance-layout .play-panel[data-instrument=guitar] #stage-cue-detail{padding:2px 6px}
-  .performance-layout .guitar-stage{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto minmax(56px,1fr) auto;align-content:start;gap:3px 8px}
+  /* Overflowing disclosures have a zero automatic minimum. Size their row to
+     its content so the summaries remain real controls when space is tight. */
+  .performance-layout .guitar-stage{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:max-content minmax(56px,1fr) max-content;align-content:start;gap:3px 8px}
   .performance-layout #guitar-guidance,.performance-layout .guitar-scroll{grid-column:1/-1}
   .performance-layout #guitar-planning{grid-column:1;min-width:0}
   .performance-layout .guitar-details{grid-column:2;min-width:0}

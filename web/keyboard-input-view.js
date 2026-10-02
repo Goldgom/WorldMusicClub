@@ -46,11 +46,32 @@ export function setupKeyboardInputView({document, controller, i18n, getVisualRan
   const mapStatus = element('div',null,'keyboard-map-status'); mapStatus.append(counts,visualRange);
   const mapActions = element('div',null,'keyboard-input-actions'); mapActions.dataset.keyboardInput = 'off';
   const reset = button('keyboard-offset-reset','keyboard.resetOffset'); reset.addEventListener('click',event=>apply(()=>controller.configure({transpose:0},{reason:'keyboard_input_reset',eventTime:event.timeStamp}))); mapActions.append(reset);
-  const configure = button('keyboard-open-settings','keyboard.configure'); configure.addEventListener('click',onConfigure); mapActions.append(configure);
+  const openKeyboardSettings = () => { onConfigure(); panel.scrollIntoView?.({block:'start'}); };
+  const configure = button('keyboard-open-settings','keyboard.configure'); configure.addEventListener('click',openKeyboardSettings); mapActions.append(configure);
   const map = element('div','keyboard-map','keyboard-map'); map.setAttribute('role','list'); map.setAttribute('aria-labelledby','keyboard-map-label');
   const limit = localized('p','keyboard-configuration-limit','keyboard.historyLimit','warning'); limit.hidden = true;
   mapDetails.append(mapStatus,localized('p','keyboard-input-shortcuts','keyboard.shortcuts'),map,mapActions);
   footer.append(status,actions,mapDetails,limit);
+  // Short landscape cannot afford a second permanent instrument toolbar: it
+  // takes space from the falling notes and the complete first guitar row. Keep
+  // the same controls in Settings there, with an anchor for their stage home.
+  // Moving existing nodes retains their handlers, disclosure state and map.
+  const footerHome = document.createComment('Keyboard input stage position');
+  footer.before(footerHome);
+  const subtitle = $('stage-subtitle'), stageMeta = subtitle ? element('div',null,'keyboard-stage-meta') : null;
+  const compactStatus = element('button','keyboard-compact-status','keyboard-compact-status'); compactStatus.type = 'button'; compactStatus.hidden = true;
+  compactStatus.setAttribute('aria-controls','settings-dialog'); compactStatus.setAttribute('aria-haspopup','dialog'); compactStatus.dataset.keyboardInput = 'off';
+  compactStatus.addEventListener('click',openKeyboardSettings);
+  if (stageMeta) { subtitle.replaceWith(stageMeta); stageMeta.append(subtitle,compactStatus); }
+  const shortLandscape = document.defaultView?.matchMedia?.('(max-height:600px) and (min-width:651px)');
+  function arrangeFooter() {
+    const compact = Boolean(shortLandscape?.matches && host && stageMeta);
+    compactStatus.hidden = !compact;
+    if (compact) {
+      if (footer.parentElement !== panel) panel.insertBefore(footer,fields);
+    } else if (footerHome.parentNode && footer.previousSibling !== footerHome) footerHome.after(footer);
+  }
+  shortLandscape?.addEventListener('change',arrangeFooter); arrangeFooter();
   let snapshot = controller.snapshot(), lastConfiguration = null, issue = null, editorDirty = false;
   const signature = mapping => JSON.stringify(mapping.map(({code,offset,label,row})=>({code,offset,label,row})));
   const presetValue = current => signature(current.bindings) === signature(DEFAULT_KEYBOARD_MAPPING) ? 'wide' : signature(current.bindings) === signature(LEGACY_KEYBOARD_MAPPING) ? 'legacy' : 'custom';
@@ -89,6 +110,9 @@ export function setupKeyboardInputView({document, controller, i18n, getVisualRan
     counts.textContent = i18n.t('keyboard.counts',{playable:next.playableKeyCount,total:next.keyCount,disabled:next.disabledKeyCount});
     currentOffset.textContent = next.transpose >= 0 ? `+${next.transpose}` : `−${-next.transpose}`;
     currentOffset.title = i18n.t('keyboard.offset',{semitones:next.transpose}); currentOffset.setAttribute('aria-label',currentOffset.title);
+    compactStatus.textContent = `⌨ ${range.textContent} ${currentOffset.textContent}`;
+    compactStatus.title = [i18n.t('keyboard.title'),range.title,currentOffset.title,i18n.t('keyboard.configure')].join(' · ');
+    compactStatus.setAttribute('aria-label',compactStatus.title);
     baseNote.textContent = i18n.t('keyboard.baseNote',{note:midiName(next.baseMidi)});
     if (lastConfiguration !== next.configurationId) {
       base.value = String(next.baseMidi); offset.value = String(next.transpose); preset.value = presetValue(next);
@@ -112,5 +136,5 @@ export function setupKeyboardInputView({document, controller, i18n, getVisualRan
     showError(issue); refreshRange();
   }
   const unsubscribe = i18n.subscribe?.(()=>render()); render(snapshot);
-  return {render,refreshRange,destroy(){unsubscribe?.();panel.remove();footer.replaceChildren();}};
+  return {render,refreshRange,destroy(){unsubscribe?.();shortLandscape?.removeEventListener('change',arrangeFooter);if(footerHome.parentNode)footerHome.replaceWith(footer);if(stageMeta?.parentNode)stageMeta.replaceWith(subtitle);panel.remove();footer.replaceChildren();}};
 }

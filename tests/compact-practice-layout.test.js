@@ -6,6 +6,9 @@ import {notationRevealViewport,createBasicNotationReveal} from '../web/notation-
 import {planEngravingReveal} from '../web/engraving-reveal.js';
 import {setupGameShell} from '../web/game-shell.js';
 import {setupPerformanceView} from '../web/performance-view.js';
+import {setupKeyboardInputView} from '../web/keyboard-input-view.js';
+import {createKeyboardInput} from '../web/keyboard-input.js';
+import {createI18n} from '../web/i18n.js';
 
 function notationGeometry() {
   const {document}=parseHTML('<aside id="dock"><section class="short-notation"><div class="engraving-follow-controls"></div><div id="notation"><svg><g class="score-note" data-note-id="current"></g></svg></div></section></aside>');
@@ -49,19 +52,27 @@ test('compact guitar footer retains both original controls and full labels with 
   const {document,window}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8'));
   const prior=new Map(['document','window'].map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)]));
   Object.defineProperty(globalThis,'document',{configurable:true,value:document});Object.defineProperty(globalThis,'window',{configurable:true,value:window});
-  window.matchMedia=()=>({matches:true,addEventListener(){}});
+  window.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});
+  Object.defineProperty(window.HTMLSelectElement.prototype,'value',{configurable:true,get(){return this.querySelector('option[selected]')?.value||this.querySelector('option')?.value||''},set(value){for(const option of this.querySelectorAll('option'))option.toggleAttribute('selected',option.value===String(value))}});
   window.HTMLElement.prototype.showModal=function(){this.setAttribute('open','')};
   window.HTMLElement.prototype.close=function(){this.removeAttribute('open')};
   try {
     const controls=document.getElementById('guitar-plan-controls'),route=controls.querySelector('summary'),sources=document.querySelector('.guitar-details summary'),status=document.getElementById('guitar-plan-status');
     const routeLabel=route.textContent,sourceLabel=sources.textContent;
     setupGameShell({pausePlayback(){},onNotation(){},onScreen(){}});
+    const keyboardView=setupKeyboardInputView({document,controller:createKeyboardInput(),i18n:createI18n({locale:'zh-CN'})});
+    const inputFooter=document.querySelector('.keyboard-input-footer');
     setupPerformanceView({getContext:()=>({instrument:'guitar',mode:'practice',position:0,segmentStart:0,now:0,recorder:{active:null,interruptions:[]}})});
     assert.equal(controls.querySelector('summary'),route);assert.equal(document.querySelector('.guitar-details summary'),sources);
     assert.equal(status.parentElement,controls);assert.equal(status.previousElementSibling,route);
     assert.equal(route.getAttribute('aria-label'),routeLabel);assert.equal(sources.getAttribute('aria-label'),sourceLabel);
     assert.equal(route.textContent,'指法设置');assert.equal(sources.textContent,'调弦与来源');
     assert.equal(document.querySelectorAll('#guitar-plan-status').length,1);
+    assert.equal(inputFooter.parentElement.id,'keyboard-input-settings','Performance setup must leave compact keyboard controls in their Settings section');
+    assert.equal(document.querySelector('.play-panel>.keyboard-input-footer'),null);
+    assert.equal(document.querySelector('#keyboard-compact-status').hidden,false);
+    assert.equal(document.querySelector('#keyboard-compact-status').previousElementSibling.id,'stage-subtitle');
+    keyboardView.destroy();
   } finally {
     for(const[name,descriptor]of prior)if(descriptor)Object.defineProperty(globalThis,name,descriptor);else delete globalThis[name];
   }
@@ -76,7 +87,7 @@ test('compact CSS reserves a complete fret row and allows the Follow toolbar to 
   const rule=selector=>rules.findLast(item=>item.selectorText===selector).style;
   assert.equal(rule('.performance-layout #notation-dock .short-notation').overflow,'visible');
   assert.equal(rule('.performance-layout #notation-dock .short-notation .engraving-follow-controls').position,'sticky');
-  assert.equal(rule('.performance-layout .guitar-stage')['grid-template-rows'],'auto minmax(56px,1fr) auto');
+  assert.equal(rule('.performance-layout .guitar-stage')['grid-template-rows'],'max-content minmax(56px,1fr) max-content','Full guidance and both disclosure summaries reserve their content height around a complete first fret row');
   assert.equal(rule('.performance-layout #guitar-planning')['grid-column'],'1');
   assert.equal(rule('.performance-layout .guitar-details')['grid-column'],'2');
   const expanded=rule('.performance-layout .guitar-stage:has(#guitar-plan-controls[open]),.performance-layout .guitar-stage:has(.guitar-details[open]),.performance-layout .play-panel:has(#practice-gate:not([hidden])) .guitar-stage');
