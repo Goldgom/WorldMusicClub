@@ -1,3 +1,4 @@
+import rhythmMessages from './rhythm-zh-CN.js';
 import preferencesRuntimeMessages from './preferences-runtime-zh-CN.js';
 import beginnerMessages from './beginner-zh-CN.js';
 import notationRuntimeMessages from './notation-runtime-zh-CN.js';
@@ -16,6 +17,7 @@ import shellMessages from './shell-zh-CN.js';
 import staticMessages from './static-zh-CN.js';
 /** Application-owned display text only. Authored score data and identifiers stay unchanged. */
 export default Object.freeze({
+  ...rhythmMessages,
   ...preferencesRuntimeMessages,
   ...beginnerMessages,
   ...notationRuntimeMessages,

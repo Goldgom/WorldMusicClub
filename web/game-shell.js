@@ -1,3 +1,4 @@
+import {setupRhythmShell} from './rhythm-shell.js';
 import {setupFullscreen} from './fullscreen.js';
 import {getAppI18n} from './app-locale.js';
 import {setupLocaleView} from './locale-view.js';
@@ -46,8 +47,10 @@ export function setupGameShell({pausePlayback,onScreen,onNotation,onPanel=()=>{}
   function open(name){const el=dialogs.get(name);if(!el)return;pausePlayback();onPanel(name);if(!el.open)el.showModal();}
   for(const name of dialogs.keys())$(`${name}-button`).addEventListener('click',()=>open(name));
   $('preview-setup').addEventListener('click',()=>open('settings'));
+  const rhythm=setupRhythmShell({document,i18n,show});
   function render(){
     const {score,mode,part,passes=0,hasSession=Boolean(score),hasPerformanceRecords=false}=current;
+    rhythm.update({screen,hasSession});
     for(const node of scoreSettings)node?.classList.toggle('free-score-settings-hidden',screen==='free');
     $('resume-session').hidden=!hasSession;$('score-tools-button').disabled=!score;$('results-button').disabled=!score&&!hasPerformanceRecords;
     $('stage-title').textContent=score?.title||i18n.t('shell.stageTitle');
@@ -65,6 +68,6 @@ export function setupGameShell({pausePlayback,onScreen,onNotation,onPanel=()=>{}
   localeView.refresh();render();const unsubscribe=i18n.subscribe(render);
   return {show,open,screen:()=>screen,notationVisible:()=>notation,localeView,
     update(value){current=value;render();},
-    destroy(){unsubscribe();fullscreen.destroy();localeView.destroy();}
+    destroy(){unsubscribe();rhythm.destroy();fullscreen.destroy();localeView.destroy();}
   };
 }

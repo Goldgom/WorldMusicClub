@@ -84,8 +84,9 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
     $('hud-result').hidden=view.accuracy===null;$('hud-accuracy').textContent=view.accuracy||'—';
   }
   function update(){
-    const context=getContext();if(play.dataset.instrument!==context.instrument)play.dataset.instrument=context.instrument||'piano';renderFeedback(context);const cue=performanceCue(context,i18n),signature=JSON.stringify([i18n.revision,cue]);
-    if(signature!==lastCue){lastCue=signature;$('stage-cue').hidden=!cue;$('stage-cue-main').textContent=cue?.main||'';$('stage-cue-detail').textContent=cue?.detail||'';}updateRange();
+    const context=getContext();if(play.dataset.instrument!==context.instrument)play.dataset.instrument=context.instrument||'piano';renderFeedback(context);const cue=performanceCue(context,i18n);
+    const cueState=!cue?null:context.running?'countdown':context.completed?'complete':context.hasStarted?'paused':'ready',signature=JSON.stringify([i18n.revision,cue,cueState]);
+    if(signature!==lastCue){lastCue=signature;const node=$('stage-cue');node.hidden=!cue;if(cueState)node.dataset.cueState=cueState;else node.removeAttribute('data-cue-state');$('stage-cue-main').textContent=cue?.main||'';$('stage-cue-detail').textContent=cue?.detail||'';}updateRange();
   }
   function screenChanged(screen){if(screen==='stage'){hud.append(nav);header.hidden=true;}else{header.append(nav);header.hidden=false;}update();}
   const refreshLocale=()=>{localizeStatic(document,i18n);update();};

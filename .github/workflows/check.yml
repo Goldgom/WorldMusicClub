@@ -1,7 +1,7 @@
 name: Verify WorldMusicHub
 on:
   push:
-    branches: ['dev/initial-prototype']
+    branches: ['dev/initial-prototype', 'integration/rhythm-ui']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -72,6 +72,16 @@ jobs:
       - name: Check real offline engraving
         if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
         run: npm run test:engraving-browser
+      - name: Check actual rhythm shell
+        if: ${{ !cancelled() && contains(fromJSON('["integration/rhythm-ui", "dev/initial-prototype", "main"]'), github.head_ref || github.ref_name) && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
+        timeout-minutes: 10
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_ARTIFACT_DIR: ${{ runner.temp }}/worldmusichub-rhythm
+          WMH_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          WMH_SOURCE_REF: ${{ github.head_ref || github.ref_name }}
+          WMH_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/hosted-rhythm-check.mjs
       - name: Preserve browser screenshots
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -82,4 +92,5 @@ jobs:
             /tmp/worldmusichub-omr-*.json
             /tmp/worldmusichub-live-*.json
             /tmp/worldmusichub-binding-*.json
+            ${{ runner.temp }}/worldmusichub-rhythm/
           if-no-files-found: ignore

@@ -1,0 +1,182 @@
+/* Rhythm presentation is opt-in to this shell. Custom theme tokens stay owned by
+   the existing appearance controller. The fixed musical canvas keeps its palette. */
+html:not([data-theme-mode=custom]) .rhythm-shell {
+  --page-background:#f5f4fa;--paper:#ffffff;--surface:#eeedf6;--page-ink:#272438;
+  --ink:#272438;--page-muted:#625d77;--muted:#625d77;--border:#d5d1e4;
+  --green:#6450a4;--accent-ink:#ffffff;--link:#60459c;
+  --focus-ring:#362665;--focus-halo:#ffffff;
+}
+html[data-theme=dark]:not([data-theme-mode=custom]) .rhythm-shell {
+  --page-background:#0e111a;--paper:#171b27;--surface:#202534;--page-ink:#f0eef9;
+  --ink:#f0eef9;--page-muted:#abb4cc;--muted:#abb4cc;--border:#343b50;
+  --green:#c2aff6;--accent-ink:#211737;--link:#cbbbff;
+  --focus-ring:#cbbbff;--focus-halo:#0e111a;
+}
+.rhythm-shell {--rhythm-mint:#80e0cb;--rhythm-mint-ink:#122923;--rhythm-stage:#151d2c}
+.rhythm-shell .app-shell {background:radial-gradient(ellipse at 75% 0%,color-mix(in srgb,var(--green) 7%,transparent),transparent 45%),var(--page-background)}
+.rhythm-shell .shell-header {min-height:60px;height:auto;padding:10px 28px;background:var(--page-background);border-color:var(--border)}
+.rhythm-shell #shell-brand {display:flex;align-items:center;gap:16px;min-width:0}
+.rhythm-shell .shell-header .brand {white-space:nowrap}
+.rhythm-shell .shell-header .brand-mark {transform:rotate(-8deg);background:var(--green);border-radius:11px}
+.rhythm-shell .shell-header .brand small {display:none}
+.rhythm-shell .rhythm-location {font-size:11px;color:var(--page-muted);line-height:1.5;border-left:1px solid var(--border);padding-left:14px}
+.rhythm-shell .button {border-radius:9px}
+.rhythm-shell .button:focus-visible,.rhythm-shell a:focus-visible,.rhythm-shell summary:focus-visible,.rhythm-shell input:focus-visible,.rhythm-shell select:focus-visible {outline:3px solid var(--focus-ring);outline-offset:3px;box-shadow:0 0 0 2px var(--focus-halo)}
+.rhythm-shell #song-lobby {max-width:1500px;padding:20px 32px 24px;gap:18px;overflow:auto;overscroll-behavior:contain}
+.rhythm-shell .lobby-heading {gap:14px;flex:none;margin:0}
+.rhythm-shell #lobby-title {font-size:28px;letter-spacing:-.5px;margin-top:5px}
+.rhythm-shell .lobby-heading>.button {margin-left:auto;white-space:normal}
+.rhythm-shell .rhythm-local {display:flex;align-items:center;gap:7px;color:var(--page-muted);font-size:11px;line-height:1.5}
+.rhythm-shell .rhythm-local i {width:6px;height:6px;border-radius:50%;background:var(--green);flex:none}
+.rhythm-shell .rhythm-lobby-intro {display:grid;grid-template-columns:minmax(0,1.65fr) minmax(290px,1fr);gap:24px;flex:none}
+.rhythm-shell .rhythm-hero {display:flex;position:relative;min-width:0;align-items:center;min-height:188px;isolation:isolate}
+.rhythm-shell .rhythm-hero-copy {z-index:1;max-width:78%}
+.rhythm-shell .rhythm-kicker {font-size:11px;letter-spacing:.7px;color:var(--green);margin:0 0 9px}
+.rhythm-shell .rhythm-hero h2 {font-size:clamp(28px,3.1vw,45px);line-height:1.19;letter-spacing:-1.3px;margin:0}
+.rhythm-shell .rhythm-hero h2>span {display:block}
+.rhythm-shell .rhythm-hero-accent {color:var(--green)}
+.rhythm-shell .rhythm-hero-description {font-size:12px;line-height:1.8;color:var(--page-muted);max-width:510px;margin:12px 0 0}
+.rhythm-shell .rhythm-hero-art {position:absolute;right:0;width:180px;height:180px;z-index:0;opacity:.65;pointer-events:none}
+.rhythm-shell .rhythm-orbit {position:absolute;inset:28px -8px;border:1px solid var(--border);border-radius:50%;transform:rotate(-28deg)}
+.rhythm-shell .rhythm-orbit-two {inset:45px -23px;transform:rotate(-50deg)}
+.rhythm-shell .rhythm-note-tile {position:absolute;top:48px;right:35px;display:grid;place-items:center;width:77px;height:88px;border:1px solid color-mix(in srgb,var(--green) 50%,transparent);border-radius:22px;background:linear-gradient(135deg,var(--green),color-mix(in srgb,var(--green) 65%,var(--paper)));color:var(--accent-ink);font-size:58px;transform:rotate(-13deg);box-shadow:0 15px 60px color-mix(in srgb,var(--green) 20%,transparent)}
+.rhythm-shell .rhythm-note-trail {position:absolute;right:40px;bottom:10px;font-size:11px;letter-spacing:9px;color:var(--page-muted)}
+.rhythm-shell .rhythm-free-entry {position:relative;align-self:center;min-width:0;padding:20px 22px;border:1px solid var(--border);border-radius:17px;background:var(--paper)}
+.rhythm-shell .rhythm-free-entry h2 {font-size:20px;margin:0 35px 10px 0;line-height:1.35;overflow-wrap:anywhere}
+.rhythm-shell .rhythm-free-entry p {font-size:12px;line-height:1.8;color:var(--muted);margin:0 0 17px}
+.rhythm-shell .rhythm-free-icon {position:absolute;right:20px;top:12px;font-size:35px;color:var(--green)}
+.rhythm-shell .rhythm-entry-actions {display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.rhythm-shell .rhythm-entry-actions>span {font-size:10px;color:var(--muted);line-height:1.6}
+.rhythm-shell #start-free-practice {font-size:12px;min-height:40px;padding:10px 13px;white-space:normal;max-width:100%}
+.rhythm-shell .lobby-grid {grid-template-columns:minmax(270px,1fr) minmax(330px,1.05fr);gap:24px;flex:1 0 340px;min-height:340px}
+.rhythm-shell .song-browser {border:1px solid var(--border);border-radius:17px;padding:17px;background:var(--paper)}
+.rhythm-shell .song-filters {grid-template-columns:minmax(0,1fr) minmax(110px,.5fr);gap:10px;margin-bottom:13px}
+.rhythm-shell .song-filters label {color:var(--muted)}
+.rhythm-shell .song-filters input,.rhythm-shell .song-filters select {background:var(--surface);height:38px;font-size:12px}
+.rhythm-shell .catalog {max-height:420px}
+.rhythm-shell .catalog-item {background:var(--paper);min-height:72px;border-radius:10px}
+.rhythm-shell .catalog-item:hover,.rhythm-shell .catalog-item.selected {background:var(--surface)}
+.rhythm-shell .catalog-item.selected .number {background:var(--green);color:var(--accent-ink)}
+.rhythm-shell .song-preview {border-radius:17px;min-height:340px}
+.rhythm-shell .preview-identity {background:linear-gradient(120deg,var(--surface),var(--paper));padding:18px 20px}
+.rhythm-shell .preview-identity .preview-art {width:82px;height:90px;background:linear-gradient(145deg,#42365b,#1e3f45);border:1px solid #b6a1ed30}
+.rhythm-shell #preview-title {color:var(--ink)}
+.rhythm-shell .preview-footer {background:var(--paper)}
+.rhythm-shell .preview-actions .button {white-space:normal;min-height:44px}
+
+/* The existing instrument and notation scroll ownership stays intact. */
+.rhythm-shell.performance-layout .stage-hud {align-items:center;gap:12px}
+.rhythm-shell .stage-heading h1 {color:var(--page-ink);font-weight:650}
+.rhythm-shell #rhythm-stage-free {flex:none;white-space:normal;max-width:120px}
+/* Padding only shortens title text; it does not shorten its pointer hit box.
+   Give the compact guide a real grid cell beside a usable title hit target. */
+.rhythm-shell.performance-layout .stage-heading:has(>.beginner-controls-compact) {display:grid;grid-template-columns:minmax(64px,1fr) max-content;column-gap:6px;align-items:center;min-width:160px}
+.rhythm-shell.performance-layout .stage-heading:has(>.beginner-controls-compact)>#stage-title {grid-column:1;grid-row:1;min-width:0;padding-right:0}
+.rhythm-shell #beginner-controls.beginner-controls-compact {position:static;grid-column:2;grid-row:1}
+.rhythm-shell .stage-heading:has(>.beginner-controls-compact)>.keyboard-stage-meta {grid-column:1/-1}
+.rhythm-shell .play-panel {border-color:var(--border);background:var(--rhythm-stage)}
+.rhythm-shell.performance-layout .performance-status-copy {border-color:#9b94bb44;background:#171e2cea}
+.rhythm-shell .onset-counter>span,.rhythm-shell #hud-accuracy {color:var(--rhythm-mint)}
+.rhythm-shell .transport {background:var(--paper);border-color:var(--border)}
+.rhythm-shell .transport #play-button {background:var(--rhythm-mint);color:var(--rhythm-mint-ink);border-color:var(--rhythm-mint);font-weight:650}
+.rhythm-shell #notation-dock {border-radius:15px;border-color:var(--border);background:var(--paper)}
+.rhythm-shell #notation-dock .section-heading {background:var(--paper)}
+.rhythm-shell #falling-notes {min-height:100px}
+.rhythm-shell .performance-piano {overflow:auto;overscroll-behavior:contain}
+.rhythm-shell .performance-piano .piano-surface {min-height:calc(var(--keybed-height,110px) + 104px)}
+
+/* The free console reuses the app's real record, pause, save and history nodes. */
+.rhythm-shell #free-practice-screen {max-width:1320px;padding:24px 30px 30px}
+.rhythm-shell .free-practice-heading {gap:16px;padding-bottom:5px}
+.rhythm-shell .free-practice-heading h1 {font-size:29px;font-weight:650;letter-spacing:-.6px}
+.rhythm-shell .rhythm-free-navigation {display:flex;gap:10px;flex-wrap:wrap}
+.rhythm-shell #free-practice-screen>p {font-size:13px;color:var(--page-muted)}
+.rhythm-shell .rhythm-free-console {display:flex;align-items:center;justify-content:space-between;gap:16px;padding:17px 20px;border:1px solid var(--border);border-radius:14px;background:var(--paper);margin:18px 0}
+.rhythm-shell .rhythm-free-meter {display:flex;align-items:center;gap:15px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.rhythm-shell .rhythm-free-meter #free-state,.rhythm-shell .rhythm-free-meter #free-event-count {margin:0}
+.rhythm-shell #free-state {display:flex;gap:8px;align-items:center;color:var(--ink)}
+.rhythm-shell #free-state::before {content:'';height:7px;width:7px;border-radius:50%;background:var(--muted)}
+.rhythm-shell .free-practice-screen[data-state=recording] #free-state::before {background:var(--rhythm-mint);box-shadow:0 0 0 4px #80e0cb18}
+.rhythm-shell #free-start,.rhythm-shell #free-resume {background:var(--green);color:var(--accent-ink);border-color:var(--green)}
+.rhythm-shell #free-practice-screen section {border-radius:15px}
+.rhythm-shell #free-practice-screen h2 {font-size:17px;font-weight:650;margin:0 0 14px}
+.rhythm-shell #free-practice-screen p {font-size:12px;line-height:1.8;overflow-wrap:anywhere}
+.rhythm-shell .free-input-section {background:linear-gradient(115deg,var(--paper),var(--surface))}
+.rhythm-shell .free-practice-keys {gap:5px;padding:10px 0;margin:8px 0;overflow:auto}
+.rhythm-shell .free-practice-key {min-height:105px;min-width:46px;flex:1 0 46px;max-width:75px;border-color:#bdc3d5;border-radius:6px 6px 9px 9px;background:#f4f1fc;color:#29273d;border-bottom-width:5px;box-shadow:0 4px 0 #0002}
+.rhythm-shell .free-practice-key.held {background:var(--rhythm-mint);border-color:#48a994;color:var(--rhythm-mint-ink);box-shadow:0 0 20px #80e0cb28}
+.rhythm-shell .free-practice-key kbd {color:#5e5775;background:#e4e1ec;padding:3px 7px;border-radius:4px}
+.rhythm-shell #free-performance-library,.rhythm-shell #free-save-panel,.rhythm-shell #free-performance-detail,.rhythm-shell #free-comparison {min-width:0}
+.rhythm-shell .free-practice-actions .button {white-space:normal;min-height:38px;font-size:12px}
+.rhythm-shell #free-practice-screen input[type=file] {max-width:100%}
+
+@media(min-width:1000px) and (min-height:700px) {
+  .rhythm-shell #free-practice-screen {display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:0 20px;align-content:start;align-items:start}
+  .rhythm-shell .free-practice-heading,.rhythm-shell #free-practice-screen>p,.rhythm-shell .rhythm-free-console,.rhythm-shell #free-capture-full,.rhythm-shell #free-comparison {grid-column:1/-1}
+  .rhythm-shell .free-input-section {grid-column:1;grid-row:4/span 3}
+  .rhythm-shell #free-save-panel,.rhythm-shell #free-performance-library,.rhythm-shell #free-performance-detail {grid-column:2}
+}
+@media(max-width:1050px) {
+  .rhythm-shell .rhythm-location {display:none}
+  .rhythm-shell .rhythm-hero-art {opacity:.3;right:-10px}
+  .rhythm-shell .rhythm-hero-copy {max-width:95%}
+  .rhythm-shell .rhythm-lobby-intro {gap:18px;grid-template-columns:minmax(0,1.3fr) minmax(270px,1fr)}
+  .rhythm-shell.performance-layout .stage-hud {gap:7px}
+  .rhythm-shell #rhythm-stage-free {max-width:95px;font-size:11px}
+}
+@media(max-height:600px) and (min-width:651px) {
+  /* Keep the full canvas, largest guide keybed and horizontal scrollbar in
+     view. Reclaim empty chrome padding; existing button hit targets stay 34px. */
+  .rhythm-shell.performance-layout #workspace.with-notation .stage-hud nav .button {padding-top:2px;padding-bottom:2px}
+  .rhythm-shell.performance-layout #workspace.with-notation .play-panel[data-instrument=piano]>.transport {min-height:40px;padding-top:2px;padding-bottom:2px}
+  .rhythm-shell .shell-header {min-height:46px;padding:6px 20px}
+  .rhythm-shell #song-lobby {padding:12px 20px;gap:12px}
+  .rhythm-shell #lobby-title {font-size:23px}
+  .rhythm-shell .rhythm-lobby-intro {grid-template-columns:minmax(0,1fr) minmax(300px,1fr);gap:20px}
+  .rhythm-shell .rhythm-hero {min-height:100px}
+  .rhythm-shell .rhythm-hero h2 {font-size:25px}
+  .rhythm-shell .rhythm-kicker,.rhythm-shell .rhythm-hero-description,.rhythm-shell .rhythm-hero-art {display:none}
+  .rhythm-shell .rhythm-free-entry {padding:12px 15px}
+  .rhythm-shell .rhythm-free-entry h2 {font-size:16px;margin-bottom:6px}
+  .rhythm-shell .rhythm-free-entry p {margin-bottom:9px;font-size:11px;line-height:1.5}
+  .rhythm-shell .lobby-grid {min-height:300px;flex-basis:300px;gap:20px}
+  .rhythm-shell .song-browser {padding:12px}
+  .rhythm-shell .song-preview {min-height:300px}
+  .rhythm-shell .preview-identity {padding:10px 13px}
+  .rhythm-shell .preview-identity .preview-art {width:42px;height:52px}
+  .rhythm-shell #free-practice-screen {padding:12px 20px}
+  .rhythm-shell .free-practice-heading h1 {font-size:23px}
+  .rhythm-shell .rhythm-free-console {margin:10px 0;padding:10px 12px;gap:10px}
+  .rhythm-shell #falling-notes {min-height:100px}
+  .rhythm-shell .guitar-scroll {min-height:56px}
+}
+@media(max-width:650px) {
+  .rhythm-shell .shell-header {padding:10px 12px}
+  .rhythm-shell #song-lobby {padding:18px 14px}
+  .rhythm-shell .lobby-heading {margin-bottom:18px;flex-wrap:wrap}
+  .rhythm-shell #lobby-title {font-size:25px}
+  .rhythm-shell .rhythm-local {margin-left:auto}
+  .rhythm-shell .rhythm-lobby-intro {grid-template-columns:minmax(0,1fr);gap:18px;margin-bottom:18px}
+  .rhythm-shell .rhythm-hero {min-height:185px}
+  .rhythm-shell .rhythm-hero h2 {font-size:37px}
+  .rhythm-shell .rhythm-hero-art {right:0;opacity:.25}
+  .rhythm-shell .rhythm-hero-copy {max-width:100%}
+  .rhythm-shell .rhythm-free-entry {padding:18px}
+  .rhythm-shell .lobby-grid {display:flex;gap:18px;min-height:0}
+  .rhythm-shell .song-browser {min-height:300px;max-height:430px;padding:13px}
+  .rhythm-shell .song-preview {min-height:370px;max-height:650px}
+  .rhythm-shell .preview-identity {padding:15px}
+  .rhythm-shell .preview-identity .preview-art {width:54px;height:72px}
+  .rhythm-shell #free-practice-screen {padding:16px 14px}
+  .rhythm-shell .free-practice-heading h1 {font-size:25px}
+  .rhythm-shell .rhythm-free-console {align-items:stretch;flex-direction:column;padding:13px}
+  .rhythm-shell .rhythm-free-navigation {gap:7px}
+  .rhythm-shell #rhythm-stage-free {margin-left:auto;max-width:110px}
+  .rhythm-shell .free-practice-key {min-width:40px;min-height:90px}
+}
+@media(prefers-reduced-motion:reduce) {
+  /* The canvas keeps its reduced-motion explanation. Pause/resume remains in
+     the transport; only the duplicate paused piano overlay is suppressed. */
+  .rhythm-shell .play-panel[data-instrument=piano] #stage-cue[data-cue-state=paused] {display:none}
+  .rhythm-shell .rhythm-note-tile,.rhythm-shell .free-practice-key {transition:none;animation:none}
+}
