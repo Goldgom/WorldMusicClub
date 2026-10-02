@@ -231,3 +231,23 @@ test('only a paused piano cue in the rhythm shell is visually suppressed by redu
   assert.equal(matches[0].rule.selectorText,selector);assert.equal(matches[0].rule.style.display,'none');
   assert.equal(matches[0].rule.style.length,1,'No transport, pointer, timing, or motion behavior is overridden');
 });
+
+
+test('compact notation budget reclaims chrome padding while retaining canvas, extreme keybed and control minima', async () => {
+  const css=await readFile(new URL('../web/rhythm-shell.css',import.meta.url),'utf8');
+  const {document}=parseHTML(`<style>${css}</style>`);
+  const compact=[...document.querySelector('style').sheet.cssRules].find(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:651px)');
+  const nav=[...compact.cssRules].find(rule=>rule.selectorText==='.rhythm-shell.performance-layout #workspace.with-notation .stage-hud nav .button');
+  const transport=[...compact.cssRules].find(rule=>rule.selectorText==='.rhythm-shell.performance-layout #workspace.with-notation .play-panel[data-instrument=piano]>.transport');
+  for(const rule of [nav,transport]){
+    assert.equal(rule.style['padding-top'],'2px');assert.equal(rule.style['padding-bottom'],'2px');
+    for(const property of ['font-size','line-height','height','max-height','overflow','pointer-events','display','visibility'])assert.equal(rule.style.getPropertyValue(property),'',`Preserve control behavior and text: ${property}`);
+  }
+  assert.equal(nav.style['min-height'],undefined,'Navigation keeps its inherited 34px hit targets');
+  assert.equal(transport.style['min-height'],'40px','A 34px button plus padding and borders fits without a 48px chrome floor');
+  const performance=await readFile(new URL('../web/performance-stage.css',import.meta.url),'utf8');
+  assert.match(performance,/\.performance-layout #workspace\.with-notation \.transport \.button\{[^}]*min-height:34px/);
+  const beginner=await readFile(new URL('../web/beginner-notes.css',import.meta.url),'utf8');
+  assert.match(beginner,/--keybed-height:104px/,'Extreme octave guides retain the complete keybed');
+  assert.match(css,/\.rhythm-shell #falling-notes \{min-height:100px\}/,'The existing canvas minimum is unchanged');
+});

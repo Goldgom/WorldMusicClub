@@ -125,6 +125,10 @@ html[data-theme=dark]:not([data-theme-mode=custom]) .rhythm-shell {
   .rhythm-shell #rhythm-stage-free {max-width:95px;font-size:11px}
 }
 @media(max-height:600px) and (min-width:651px) {
+  /* Keep the full canvas, largest guide keybed and horizontal scrollbar in
+     view. Reclaim empty chrome padding; existing button hit targets stay 34px. */
+  .rhythm-shell.performance-layout #workspace.with-notation .stage-hud nav .button {padding-top:2px;padding-bottom:2px}
+  .rhythm-shell.performance-layout #workspace.with-notation .play-panel[data-instrument=piano]>.transport {min-height:40px;padding-top:2px;padding-bottom:2px}
   .rhythm-shell .shell-header {min-height:46px;padding:6px 20px}
   .rhythm-shell #song-lobby {padding:12px 20px;gap:12px}
   .rhythm-shell #lobby-title {font-size:23px}
