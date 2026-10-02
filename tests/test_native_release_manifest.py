@@ -1,11 +1,14 @@
 """Synthetic provenance failures are not claims of Windows acceptance."""
+import contextlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -147,6 +150,135 @@ class NativeReleaseTests(unittest.TestCase):
             answers = {**outputs, command: replacement}
             with self.subTest(command=command), patch.object(native.platform, 'system', return_value='Windows'), patch.object(native.subprocess, 'check_output', side_effect=lambda args, **kw: answers[args]), self.assertRaisesRegex(ValueError, message):
                 native.source_metadata('b' * 40, 164)
+
+    def test_complete_native_package_uses_utf8_with_a_cp1252_host_default(self):
+        # Only host/tool observations are synthetic. Source/catalog/license reads,
+        # evidence checks, hashing, JSON, ZIP and checksum operations remain real.
+        commands = {('git', 'rev-parse', '--is-shallow-repository'): 'false',
+                    ('git', 'rev-parse', 'HEAD'): 'b' * 40,
+                    ('git', 'rev-list', '--count', 'HEAD'): '169',
+                    ('git', 'status', '--porcelain', '--untracked-files=all'): '',
+                    ('git', 'rev-parse', 'HEAD^{tree}'): 'c' * 40,
+                    ('rustc', '-vV'): 'rustc fixture\nhost: x86_64-pc-windows-msvc',
+                    ('cargo', '--version'): 'cargo fixture', ('node', '--version'): 'node fixture'}
+        def command_output(args, **kwargs):
+            self.assertEqual(kwargs.get('encoding'), 'utf-8')
+            return commands[args]
+        real_open = io.open
+        def cp1252_open(file, mode='r', buffering=-1, encoding=None, errors=None,
+                        newline=None, closefd=True, opener=None):
+            if 'b' not in mode and encoding in [None, 'locale']:
+                encoding = 'cp1252'
+            return real_open(file, mode, buffering, encoding, errors, newline, closefd, opener)
+
+        with tempfile.TemporaryDirectory(prefix='native package 拼谱 ') as temporary:
+            root = Path(temporary)
+            source = root / 'source 初学者'
+            source.mkdir()
+            for relative in ['Cargo.toml', 'Cargo.lock', 'package-lock.json', 'crates/score-core/src/lib.rs']:
+                destination = source / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / relative, destination)
+            # Guarantee that both metadata inputs expose a cp1252 fallback, even
+            # if future repository comments happen to become entirely ASCII.
+            for relative, marker in [('Cargo.toml', '# 初学者\n'), ('crates/score-core/src/lib.rs', '// 初学者\n')]:
+                path = source / relative
+                path.write_bytes(marker.encode('utf-8') + path.read_bytes())
+            cargo_hash = native.sha((source / 'Cargo.lock').read_bytes())
+            npm_hash = native.sha((source / 'package-lock.json').read_bytes())
+            expected_version = native.tomllib.loads((source / 'Cargo.toml').read_text(encoding='utf-8'))['workspace']['package']['version']
+            expected_revision = int(native.re.search(r'pub const SCORE_SCHEMA_REVISION: u32 = (\d+);',
+                                                    (source / 'crates/score-core/src/lib.rs').read_text(encoding='utf-8')).group(1))
+            directory = root / 'portable output' / native.FOLDER
+            self.package(directory)
+            shutil.copytree(ROOT / 'catalog', directory / 'catalog', dirs_exist_ok=True)
+            notices_path = directory / 'licenses/rust/manifest.json'
+            notices = native.read_json(notices_path)
+            notices['cargo_lock_sha256'] = cargo_hash
+            write_json(notices_path, notices)
+            startup, acceptance, _ = self.evidence(root)
+            for path in startup.glob('*.json'):
+                shutil.copyfile(path, directory / 'evidence' / path.name)
+            for path in acceptance.glob('*.json'):
+                shutil.copyfile(path, directory / 'evidence' / path.name)
+            unicode_name = 'docs/初学者说明.txt'
+            unicode_bytes = '原始乐谱说明\r\n'.encode('utf-8')
+            (directory / 'docs').mkdir()
+            (directory / unicode_name).write_bytes(unicode_bytes)
+            archive = root / '原生预览.zip'
+            with patch.object(native, 'ROOT', source), \
+                    patch.object(native.platform, 'system', return_value='Windows'), \
+                    patch.object(native.platform, 'platform', return_value='Windows-test-fixture'), \
+                    patch.object(native.subprocess, 'check_output', side_effect=command_output), \
+                    patch.dict(native.os.environ, {'RUSTFLAGS': '-C target-feature=+crt-static'}), \
+                    patch.object(io, 'open', side_effect=cp1252_open):
+                for relative in ['Cargo.toml', 'crates/score-core/src/lib.rs']:
+                    with self.subTest(relative=relative), self.assertRaises(UnicodeDecodeError):
+                        (source / relative).read_text()
+                metadata = native.source_metadata('b' * 40, 169)
+                self.assertEqual(metadata, {
+                    'name': native.FOLDER, 'executable': native.EXE, 'git_commit': 'b' * 40,
+                    'git_tree': 'c' * 40, 'commit_count': 169, 'release_label': 'commit-169',
+                    'target': 'x86_64-pc-windows-msvc', 'app_version': expected_version,
+                    'score_schema_revision': expected_revision, 'rustc_verbose': commands[('rustc', '-vV')],
+                    'cargo': 'cargo fixture', 'node': 'node fixture', 'build_platform': 'Windows-test-fixture',
+                    'rustflags': '-C target-feature=+crt-static', 'cargo_lock_sha256': cargo_hash,
+                    'npm_lock_sha256': npm_hash,
+                    'distribution': 'unsigned native portable preview; installed Microsoft WebView2 Runtime required',
+                    'runtime_bundled': False, 'installer': False, 'http_server_process': False})
+                for arguments in [
+                    ['create', str(directory), '--commit', 'b' * 40, '--count', '169',
+                     '--startup', str(startup), '--acceptance', str(acceptance)],
+                    ['archive', str(directory), str(archive)], ['verify', str(archive)]]:
+                    with patch('sys.argv', ['native-release-manifest', *arguments]), contextlib.redirect_stdout(io.StringIO()):
+                        native.main()
+                info = native.verify_archive(archive)
+                self.assertTrue(info['curated_editions'])
+                self.assertEqual(info['app_version'], expected_version)
+                self.assertEqual(info['score_schema_revision'], expected_revision)
+                self.assertEqual(info['cargo_lock_sha256'], cargo_hash)
+                self.assertEqual(info['npm_lock_sha256'], npm_hash)
+                self.assertFalse(info['acceptance']['physical_midi_validated'])
+                self.assertEqual(info['files'][unicode_name], {'sha256': native.sha(unicode_bytes), 'bytes': len(unicode_bytes)})
+                with zipfile.ZipFile(archive) as package:
+                    self.assertEqual(package.read(f'{native.FOLDER}/{unicode_name}'), unicode_bytes)
+                    self.assertTrue(all('\\' not in name for name in package.namelist()))
+                self.assertEqual(archive.with_suffix('.zip.sha256').read_text(encoding='utf-8'),
+                                 f'{native.sha(archive.read_bytes())}  {archive.name}\n')
+
+    @unittest.skipUnless(native.platform.system() == 'Windows', 'Requires actual Windows Git and MSVC toolchain')
+    def test_windows_source_metadata_uses_real_git_and_installed_tools(self):
+        # This verifies the Windows metadata path, not application acceptance.
+        with tempfile.TemporaryDirectory(prefix='native source 拼谱 ') as temporary:
+            source = Path(temporary)
+            def git(*args):
+                return subprocess.check_output(['git', *args], cwd=source, text=True, encoding='utf-8').rstrip('\r\n')
+            git('init', '--quiet')
+            excludes = source / '.git' / 'empty-global-excludes'
+            excludes.write_text('', encoding='utf-8')
+            git('config', 'core.excludesFile', str(excludes))
+            git('config', 'core.autocrlf', 'false')
+            git('config', 'core.hooksPath', str(source / 'unused-hooks'))
+            for relative in ['Cargo.toml', 'Cargo.lock', 'package-lock.json', 'crates/score-core/src/lib.rs']:
+                path = source / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / relative, path)
+            for relative, marker in [('Cargo.toml', '# 初学者\n'), ('crates/score-core/src/lib.rs', '// 初学者\n')]:
+                path = source / relative
+                path.write_bytes(marker.encode('utf-8') + path.read_bytes())
+            git('add', '.')
+            git('-c', 'user.name=Native packaging test', '-c', 'user.email=native-test@example.invalid',
+                '-c', 'commit.gpgsign=false', 'commit', '--quiet', '--no-verify', '-m', 'Synthetic source fixture')
+            commit, tree = git('rev-parse', 'HEAD'), git('rev-parse', 'HEAD^{tree}')
+            with patch.object(native, 'ROOT', source):
+                metadata = native.source_metadata(commit, 1)
+            self.assertEqual(metadata['git_commit'], commit)
+            self.assertEqual(metadata['git_tree'], tree)
+            self.assertEqual(metadata['commit_count'], 1)
+            self.assertIn('host: x86_64-pc-windows-msvc', metadata['rustc_verbose'].splitlines())
+            self.assertEqual(metadata['cargo_lock_sha256'], native.sha((source / 'Cargo.lock').read_bytes()))
+            self.assertEqual(metadata['npm_lock_sha256'], native.sha((source / 'package-lock.json').read_bytes()))
+            self.assertEqual(git('status', '--porcelain', '--untracked-files=all'), '')
 
     def test_generated_windows_build_inventory_keeps_real_source_gate_strict(self):
         # Real Git semantics, isolated from the checkout and any global excludes.

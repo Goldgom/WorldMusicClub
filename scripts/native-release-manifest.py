@@ -180,7 +180,7 @@ def create_archive(directory, archive):
 
 def source_metadata(commit, count):
     def command(*args):
-        return subprocess.check_output(args, cwd=ROOT, text=True).rstrip('\r\n')
+        return subprocess.check_output(args, cwd=ROOT, text=True, encoding='utf-8').rstrip('\r\n')
     require(command('git', 'rev-parse', '--is-shallow-repository') == 'false', 'Complete history is required')
     require(re.fullmatch('[0-9a-f]{40}', commit) and command('git', 'rev-parse', 'HEAD') == commit
             and int(command('git', 'rev-list', '--count', 'HEAD')) == count, 'Exact source/count mismatch')
@@ -192,8 +192,8 @@ def source_metadata(commit, count):
     return {'name': FOLDER, 'executable': EXE, 'git_commit': commit,
             'git_tree': command('git', 'rev-parse', 'HEAD^{tree}'), 'commit_count': count,
             'release_label': f'commit-{count}', 'target': 'x86_64-pc-windows-msvc',
-            'app_version': tomllib.loads((ROOT / 'Cargo.toml').read_text())['workspace']['package']['version'],
-            'score_schema_revision': int(re.search(r'pub const SCORE_SCHEMA_REVISION: u32 = (\d+);', (ROOT / 'crates/score-core/src/lib.rs').read_text()).group(1)),
+            'app_version': tomllib.loads((ROOT / 'Cargo.toml').read_text(encoding='utf-8'))['workspace']['package']['version'],
+            'score_schema_revision': int(re.search(r'pub const SCORE_SCHEMA_REVISION: u32 = (\d+);', (ROOT / 'crates/score-core/src/lib.rs').read_text(encoding='utf-8')).group(1)),
             'rustc_verbose': rust, 'cargo': command('cargo', '--version'), 'node': command('node', '--version'),
             'build_platform': platform.platform(), 'rustflags': os.environ.get('RUSTFLAGS', ''),
             'cargo_lock_sha256': sha((ROOT / 'Cargo.lock').read_bytes()),

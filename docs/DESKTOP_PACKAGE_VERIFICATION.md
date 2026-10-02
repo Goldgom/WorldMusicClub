@@ -118,3 +118,32 @@ Windows rejects the `nul` device as `core.excludesFile`. The fixture now uses
 an actual empty file inside its temporary `.git` directory, preserving the
 same global-ignore isolation and all source-cleanliness assertions. No app,
 permission, package gate or workflow assertion is relaxed by this correction.
+
+## Native168 UTF-8 metadata recovery
+
+Native168 passed startup and all four feature phases, including the corrected
+clean-source check. Its manifest then failed reading the UTF-8 Rust source
+through Windows' default cp1252 decoder (`UnicodeDecodeError`, byte `0x9d`).
+Both repository text inputs, `Cargo.toml` and `crates/score-core/src/lib.rs`,
+now select strict UTF-8. Git and tool metadata output also selects UTF-8.
+
+The full native packaging audit found that JSON reads already use UTF-8-SIG
+(including PowerShell BOMs), JSON/checksum writes specify UTF-8, and byte
+`.encode()`/`.decode()` calls use Python's platform-independent UTF-8 default.
+Native filesystem paths use `Path`; ZIP names use POSIX separators. The real
+catalog paths are relative and have no Windows drive or reserved component.
+Tests include spaces and non-ASCII directory, payload and archive names and
+verify that exported ZIP names retain forward slashes and exact UTF-8 bytes.
+
+The new successful metadata/CLI regression keeps real repository source,
+lockfiles, catalog, licenses, file decoding, hashes and ZIP operations. It
+forces unspecified text I/O to cp1252 and confirms both source files fail
+without an explicit encoding, then completes `create`, `archive` and `verify`
+with all metadata fields and checksum bytes checked. Only host/tool responses
+and native application evidence/PE fixtures are synthetic; no actual Windows
+application acceptance is claimed by this test. A separate Windows-only test
+uses a real temporary Git repository, Unicode source paths and the installed
+MSVC/Rust/Node tools to exercise successful `source_metadata` without simulated
+host/tool responses. That test must pass on hosted Windows; it is skipped on
+Linux. Existing wrong-source, dirty-source, wrong-host and package-tampering
+rejections remain in force.
