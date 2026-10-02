@@ -167,6 +167,8 @@
         const expected={scoreHash,performanceHash:report.performanceHash,scoreCount:(await scores.list()).length,performanceCount:(await performances.list()).length};
         localStorage.setItem('wmh.desktop.acceptance.v1',JSON.stringify(expected));
         click('free-exit');
+        report.referenceListening=await checkNativeReferenceListening({document,native,click,closeDialogs,download,until,delay,requests});
+        report.checks.push('actual-native-complete-midi-reference-listening');
       } else {
         const expected=JSON.parse(localStorage.getItem('wmh.desktop.acceptance.v1')||'null');assert(expected,'Previous process did not persist its acceptance marker');
         assert(document.documentElement.lang==='en','Language setting did not persist');

@@ -1,5 +1,10 @@
 //! Shared, bounded-operation engine entry points for HTTP and desktop adapters.
 use serde::Deserialize;
+mod song_api;
+pub use song_api::{
+    api_response, is_song_api_route, request_limit_response, song_api_error, ApiResponse,
+    MAX_REQUEST_BYTES, MAX_SONG_RESPONSE_BYTES,
+};
 include!(concat!(env!("OUT_DIR"), "/web_assets.rs"));
 
 #[derive(Deserialize)]
@@ -57,6 +62,12 @@ fn json_input_error(context: &str, error: serde_json::Error) -> String {
 }
 
 pub fn content_type_allowed(path: &str, content_type: &str) -> bool {
+    if path == "/api/midi/events" {
+        return matches!(
+            content_type,
+            "audio/midi" | "audio/x-midi" | "application/octet-stream"
+        );
+    }
     content_type.starts_with("application/json")
         || (path == "/api/import/jianpu" && content_type.starts_with("text/plain"))
         || (path == "/api/import/midi"

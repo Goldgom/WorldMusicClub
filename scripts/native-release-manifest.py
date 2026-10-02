@@ -37,6 +37,70 @@ def windows_executable(data):
     require(data[offset:offset + 6] == b'PE\x00\x00\x64\x86', 'Expected native x64 PE executable')
 
 
+def accepted_reference_evidence(acceptance, report):
+    """Keep reference proof separate from the established four-file backup gate."""
+    acceptance = Path(acceptance)
+    path = acceptance / 'native-reference-files.json'
+    proof = read_json(path)
+    fixture = ROOT / 'tests/fixtures/original-reference-overlap.mid'
+    expected_hash = sha(fixture.read_bytes())
+    require(proof.get('version') == 1 and proof.get('ok') is True
+            and proof.get('renderer_seed_sha256') == sha((acceptance / 'renderer-seed.json').read_bytes()),
+            'Native reference proof must match the exact seed renderer report')
+    reference = report.get('referenceListening', {})
+    require(reference.get('ok') is True and reference.get('sourceSha256') == expected_hash
+            and proof.get('source_sha256') == expected_hash
+            and proof.get('fixture') == 'original-reference-overlap.mid',
+            'Native reference complete source identity differs')
+    for proof_key, renderer_key, value in [('track_count', 'trackCount', 3), ('event_count', 'eventCount', 26), ('onset_count', 'onsetCount', 8)]:
+        require(proof.get(proof_key) == value and reference.get(renderer_key) == value,
+                'Native reference complete source counts differ')
+    require(type(proof.get('typing_note_on_count')) is int and proof['typing_note_on_count'] > 0
+            and type(proof.get('scored_input_count')) is int and proof['scored_input_count'] > 0,
+            'Native reference proof needs a retained scored keyboard take')
+    required_checks = {'native-filechooser', 'complete-original-source', 'explicit-rendition-policy',
+                       'play-pause-resume-stop', 'all-tracks-complete', 'independent-track-mute', 'shared-sound-mute',
+                       'close-cleanup', 'live-locale-preserved', 'reference-input-isolated',
+                       'canonical-score-unchanged', 'scored-take-unchanged'}
+    require(required_checks.issubset(reference.get('checks', [])), 'Native reference UI checks are incomplete')
+    audio = reference.get('audio', {})
+    require(type(audio.get('sourceStarts')) is int and audio['sourceStarts'] > 0
+            and type(audio.get('cleanupChecks')) is int and audio['cleanupChecks'] >= 4
+            and audio.get('activeSources') == 0 and audio.get('pendingSources') == 0,
+            'Native reference audio start/cleanup evidence is incomplete')
+    kinds = {'original', 'beforeScore', 'afterScore', 'beforeTake', 'afterTake'}
+    artifacts = proof.get('artifacts', [])
+    require(len(artifacts) == 5 and {item.get('kind') for item in artifacts} == kinds
+            and len({item.get('file') for item in artifacts}) == 5,
+            'Five distinct native reference files are required')
+    original_files = set(report.get('files', {}).values())
+    values = {}
+    for item in artifacts:
+        name = item.get('file', '')
+        require(re.fullmatch(r'seed-(?:[1-9]|1[0-6])\.json', name) and name not in original_files,
+                'Invalid or reused native reference evidence path')
+        require(reference.get('files', {}).get(item['kind']) == name,
+                'Native reference proof file roles differ from renderer')
+        matching = [row for row in report.get('downloads', []) if row.get('file') == name]
+        require(len(matching) == 1 and matching[0].get('complete') is True and matching[0].get('success') is True,
+                'Native reference download did not complete')
+        data = (acceptance / 'downloads' / name).read_bytes()
+        require(sha(data) == item.get('sha256') and len(data) == item.get('bytes'),
+                'Accepted native reference download changed')
+        if item['kind'] == 'original':
+            require(data == fixture.read_bytes(), 'Native reference MIDI original bytes differ')
+        else:
+            values[item['kind']] = json.loads(data)
+    require(values['beforeScore'] == values['afterScore'] and values['beforeTake'] == values['afterTake'],
+            'Native reference changed the existing score or scored take')
+    # Re-derive the independent Node proof in read-only mode, including actual
+    # typed-onset -> capture -> scored-input routing, rather than trust counts.
+    checked = subprocess.run(['node', str(ROOT / 'scripts/verify-reference-native-evidence.mjs'), str(acceptance), '--check'],
+                             cwd=ROOT, capture_output=True, text=True, encoding='utf-8', timeout=15, check=False)
+    require(checked.returncode == 0, 'Native reference proof failed independent routed-input verification: ' + checked.stderr.strip())
+    return {'complete_midi_reference_validated': True, 'native_reference_proof_sha256': sha(path.read_bytes())}
+
+
 def accepted_evidence(startup, acceptance, executable, commit, tree):
     """Reject partial, stale or differently built evidence before packaging any bytes."""
     startup, acceptance = Path(startup), Path(acceptance)
@@ -73,7 +137,8 @@ def accepted_evidence(startup, acceptance, executable, commit, tree):
         require(re.fullmatch(r'seed-(?:[1-9]|1[0-6])\.json', item.get('file', '')), 'Invalid download evidence path')
         data = (acceptance / 'downloads' / item['file']).read_bytes()
         require(sha(data) == item['sha256'] and len(data) == item['bytes'], 'Accepted downloaded file changed')
-    return {'native_permission_callback': 'deny-all', 'ordinary_midi_api': midi,
+    return {**accepted_reference_evidence(acceptance, reports['seed']),
+            'native_permission_callback': 'deny-all', 'ordinary_midi_api': midi,
             'observed_webview_user_agent': renderer.get('userAgent'),
             'physical_midi_validated': False, 'audio_output_or_latency_validated': False,
             'clean_machine_installation_validated': False}
@@ -87,7 +152,7 @@ def create_manifest(directory, metadata):
                 'licenses/engraving/opensheetmusicdisplay.min.js.LICENSE.txt',
                 'licenses/rust/manifest.json', 'licenses/rust/CARGO-THIRD-PARTY-NOTICES.txt',
                 'licenses/rust/RUST-STANDARD-LIBRARY-COPYRIGHT.html',
-                'evidence/native-acceptance.json', 'evidence/downloaded-files.json',
+                'evidence/native-acceptance.json', 'evidence/downloaded-files.json', 'evidence/native-reference-files.json',
                 'evidence/native-report.json', 'evidence/renderer-report.json',
                 *[f'evidence/renderer-{phase}.json' for phase in PHASES]]
     for name in required:
@@ -220,6 +285,9 @@ def main():
     if args.command == 'create':
         metadata = source_metadata(args.commit, args.count)
         metadata['acceptance'] = accepted_evidence(args.startup, args.acceptance, args.directory / EXE, args.commit, metadata['git_tree'])
+        # The source-bound gate above verified this separate proof. Keep it in
+        # the package inventory without changing the dependency-cache workflow.
+        (args.directory / 'evidence/native-reference-files.json').write_bytes((args.acceptance / 'native-reference-files.json').read_bytes())
         info = create_manifest(args.directory, metadata)
     elif args.command == 'archive':
         info = create_archive(args.directory, args.archive)

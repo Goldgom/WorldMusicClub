@@ -1,11 +1,13 @@
 //! WorldMusicHub's canonical musical model and deterministic performance engine.
 //! Musical time is rational quarter-note time; wall-clock time is derived only at playback boundaries.
 pub mod adaptation;
+pub mod assistance;
 mod fingering_clock;
 pub mod guitar_fingering;
 mod jianpu;
 mod matching;
 mod midi;
+pub mod midi_events;
 pub mod piano_fingering;
 mod ties;
 pub use jianpu::{export_jianpu, import_jianpu, ExportedJianpu};

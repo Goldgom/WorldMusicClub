@@ -111,7 +111,7 @@ public static class NativeAcceptance {
   }
   public static string ResolveFixturePath(string fixtures,string output,string name) {
     string directory;
-    if(Array.IndexOf(new[]{"original-duet.musicxml","original-duet.mxl","midi-original-ppq.mid","jianpu-original-steps.jianpu","malformed.json"},name)>=0)
+    if(Array.IndexOf(new[]{"original-duet.musicxml","original-duet.mxl","midi-original-ppq.mid","original-reference-overlap.mid","jianpu-original-steps.jianpu","malformed.json"},name)>=0)
       directory=fixtures;
     else if(name!=null && Regex.IsMatch(name,@"\A(seed|restart|close-active|reopen)-(?:[1-9]|1[0-6])\.json\z",RegexOptions.CultureInvariant))
       directory=Path.Combine(output,"downloads");

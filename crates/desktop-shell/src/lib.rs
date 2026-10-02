@@ -3,7 +3,7 @@ pub mod acceptance;
 use http::{Request, Response};
 use serde_json::{json, Value};
 
-pub const MAX_BODY: usize = 8 * 1024 * 1024;
+pub const MAX_BODY: usize = practice_server::MAX_REQUEST_BYTES;
 const MAX_RESPONSE: usize = 32 * 1024 * 1024;
 pub const ORIGIN: &str = "https://wmh.localhost";
 const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'";
@@ -33,6 +33,16 @@ pub fn error(status: u16, message: &str) -> Response<Vec<u8>> {
     )
 }
 
+/// Keep transport failures structured for the new routes, including the
+/// asynchronous Windows admission/computation wrappers. Old errors are unchanged.
+pub fn operation_error(path: &str, status: u16, code: &str, message: &str) -> Response<Vec<u8>> {
+    if practice_server::is_song_api_route(path) {
+        engine_response(practice_server::song_api_error(status, code, message))
+    } else {
+        error(status, message)
+    }
+}
+
 /// Wry may deliver its canonical custom URI or the Windows HTTPS mapping.
 pub fn allowed_uri(uri: &http::Uri) -> bool {
     matches!(
@@ -42,24 +52,43 @@ pub fn allowed_uri(uri: &http::Uri) -> bool {
 }
 
 pub fn admission(request: &Request<Vec<u8>>) -> Option<Response<Vec<u8>>> {
+    let path = request.uri().path();
     if !allowed_uri(request.uri()) || request.uri().query().is_some() {
-        return Some(error(403, "Only the bundled app origin is allowed"));
+        return Some(operation_error(
+            path,
+            403,
+            "forbidden_origin",
+            "Only the bundled app origin is allowed",
+        ));
     }
     if request
         .headers()
         .get("origin")
         .is_some_and(|origin| origin != ORIGIN && origin != "wmh://localhost")
     {
-        return Some(error(403, "Cross-origin requests are not allowed"));
+        return Some(operation_error(
+            path,
+            403,
+            "forbidden_origin",
+            "Cross-origin requests are not allowed",
+        ));
     }
     if request.body().len() > MAX_BODY {
+        if request.method() == "POST" && practice_server::is_song_api_route(request.uri().path()) {
+            return Some(engine_response(practice_server::request_limit_response()));
+        }
         return Some(error(413, "Import exceeds 8 MiB limit"));
     }
     if request.method() == "GET" && !request.body().is_empty() {
         return Some(error(400, "GET request bodies are not accepted"));
     }
     if request.method() != "GET" && request.method() != "POST" {
-        return Some(error(405, "Method not allowed"));
+        return Some(operation_error(
+            path,
+            405,
+            "method_not_allowed",
+            "Method not allowed",
+        ));
     }
     None
 }
@@ -75,6 +104,17 @@ fn json_response(result: Result<Value, String>) -> Response<Vec<u8>> {
         }
         Err(message) => error(400, &message),
     }
+}
+
+fn engine_response(result: practice_server::ApiResponse) -> Response<Vec<u8>> {
+    if result.body.len() > MAX_RESPONSE {
+        return error(413, "Engine response exceeds desktop limit");
+    }
+    response(
+        result.status,
+        "application/json; charset=utf-8",
+        result.body,
+    )
 }
 
 pub fn dispatch(request: Request<Vec<u8>>) -> Response<Vec<u8>> {
@@ -130,11 +170,22 @@ pub fn dispatch(request: Request<Vec<u8>>) -> Response<Vec<u8>> {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     if !practice_server::content_type_allowed(path, content_type) {
+        if practice_server::is_song_api_route(path) {
+            return engine_response(practice_server::song_api_error(
+                415,
+                "unsupported_content_type",
+                "Unsupported request content type",
+            ));
+        }
         return error(415, "Unsupported import content type");
     }
     let path = path.to_owned();
-    json_response(practice_server::api(&path, request.into_body()))
+    engine_response(practice_server::api_response(&path, request.into_body()))
 }
+
+#[cfg(test)]
+#[path = "../../practice-server/tests/support/song_contract.rs"]
+mod song_contract;
 
 #[cfg(test)]
 mod tests {
@@ -147,6 +198,59 @@ mod tests {
             .body(body)
             .unwrap()
     }
+    #[test]
+    fn asynchronous_failures_preserve_codes_and_legacy_error_shape() {
+        for (status, code, message) in [
+            (
+                503,
+                "engine_busy",
+                "The local engine is busy; retry shortly",
+            ),
+            (500, "engine_operation_failed", "The score operation failed"),
+        ] {
+            let expected = practice_server::song_api_error(status, code, message);
+            let actual = operation_error("/api/midi/events", status, code, message);
+            assert_eq!(actual.status().as_u16(), expected.status);
+            assert_eq!(actual.body(), &expected.body);
+            let legacy = operation_error("/api/compile", status, code, message);
+            assert_eq!(legacy.status(), status);
+            assert_eq!(
+                serde_json::from_slice::<Value>(legacy.body()).unwrap(),
+                json!({"error":message})
+            );
+        }
+    }
+
+    #[test]
+    fn song_native_status_and_bytes_match_the_shared_http_contract_exactly() {
+        for case in song_contract::cases() {
+            let expected = practice_server::api_response(case.path, case.bytes.clone());
+            let mut req = request("POST", case.path, case.bytes);
+            req.headers_mut()
+                .insert("content-type", case.content_type.parse().unwrap());
+            let actual = dispatch(req);
+            assert_eq!(actual.status(), case.status, "{}", case.path);
+            assert_eq!(actual.status().as_u16(), expected.status);
+            assert_eq!(actual.body(), &expected.body, "{}", case.path);
+        }
+        let expected = practice_server::request_limit_response();
+        let actual = dispatch(request(
+            "POST",
+            "/api/assistance/create",
+            vec![b' '; MAX_BODY + 1],
+        ));
+        assert_eq!(actual.status().as_u16(), expected.status);
+        assert_eq!(actual.body(), &expected.body);
+        let expected = practice_server::song_api_error(
+            415,
+            "unsupported_content_type",
+            "Unsupported request content type",
+        );
+        let actual = dispatch(request("POST", "/api/midi/events", vec![]));
+        assert_eq!(actual.status().as_u16(), expected.status);
+        assert_eq!(actual.body(), &expected.body);
+    }
+
     #[test]
     fn exact_embedded_ui_and_engine_compile_survive_native_transport() {
         let page = dispatch(request("GET", "/", vec![]));

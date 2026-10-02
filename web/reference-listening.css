@@ -1,0 +1,12 @@
+.reference-listening { width: min(850px, calc(100vw - 28px)); }
+.reference-listening .shell-dialog-content { display: grid; gap: 12px; }
+.reference-listening p { margin: 0; line-height: 1.55; }
+.reference-listening h3 { margin: 8px 0; }
+.reference-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.reference-choice { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; }
+.reference-choice input { width: auto; margin-top: .3em; }
+.reference-hash { overflow-wrap: anywhere; font-size: .8rem; opacity: .8; }
+#reference-tracks { list-style: none; padding: 0; display: grid; gap: 10px; }
+#reference-tracks li { display: grid; gap: 5px; border: 1px solid currentColor; border-radius: 10px; padding: 12px; }
+#reference-problems { white-space: pre-line; border-left: 4px solid #b74335; padding: 10px; }
+#reference-clock { font-variant-numeric: tabular-nums; }

@@ -1,3 +1,4 @@
+import {setupReferenceListening} from './reference-listening.js';
 import {getAppI18n} from './app-locale.js';
 import {createFreePracticeSession, createFreePracticePreview} from './free-practice.js';
 import {setupFreePracticeView} from './free-practice-view.js';
@@ -102,7 +103,7 @@ let transpositionView = null;
 let externalOmrView = null;
 let notationFollowing = null;
 let writtenCursor = null, writtenCursorStatus = null, writtenCursorRetry = null;
-let sourceArchiveView=null;
+let sourceArchiveView=null,referenceListening=null;
 let midiController=null;
 let freeSession=null,freeView=null,freePreview=null,freeLiveOwner=null,freeLiveStart=0,freeCaptureState='idle',freeRecordInstrument=null,freeClockWall=0;
 const inputRoutes=[],inputContacts=new Map();
@@ -130,6 +131,7 @@ state.recorder = createRecorder();routedScoreRecorder=state.recorder;
 inputRoutes.push({kind:'score',recorder:state.recorder,start:0,end:null});
 function refreshFreeTone(){bindText($('free-live-tone'),()=>`${i18n.t('ui.instrument')}: ${i18n.t(`free.timbre.${state.instrument}`)}`);}
 function changeScreen(screen){
+  referenceListening?.close();
   keyboardInput?.contextChanged('screen_changed');
   if(screen==='free'){
     if(freeRecordInstrument!==state.instrument){try{if(freeSession?.configure('instrument',state.instrument))freeRecordInstrument=state.instrument;}catch{/* Free displays the retained configuration error. */}}
@@ -138,7 +140,7 @@ function changeScreen(screen){
   syncInputRoute();if(!enteringPreview)cancelPendingStart();
   performanceView?.screenChanged(screen);engravedView.surfaceChanged();drawFrame();
 }
-shell=setupGameShell({i18n,pausePlayback,onPanel:name=>{cancelPendingStart();if(name==='results')updateResultsSummary()},onScreen:changeScreen,
+shell=setupGameShell({i18n,pausePlayback,onPanel:name=>{referenceListening?.close();cancelPendingStart();if(name==='results')updateResultsSummary()},onScreen:changeScreen,
   onNotation:()=>{engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
 const noticeView=setupNoticeView({document,i18n,getScope:()=>state.score?.title});
 preview=new ScorePreview({compile:(score,signal)=>api('/api/compile',score,signal),check:checkPreview,onChange:()=>{renderPreview();renderCatalog()}});
@@ -187,6 +189,7 @@ function silenceHeld(reason = 'application_cleanup', eventWall = performance.now
   document.querySelectorAll('.pressed').forEach(el => el.classList.remove('pressed'));
 }
 function pausePlayback(reason = 'app.paused', evidenceReason = 'pause') {
+  if(referenceListening?.isOpen()){referenceListening.pause();return;}
   state.playTicket++;
   if(shell?.screen()==='free'){freeView?.interrupt(evidenceReason);cleanupFreeInputs(evidenceReason);return;}
   // Opening a panel or browsing an already-paused session is not a new input
@@ -491,7 +494,7 @@ $('instrument-apply').addEventListener('click', () => {
 // Completed intervals and contacts are bounded; an event older than retained
 // history is excluded rather than assigned to a newer recording.
 function syncInputRoute(boundaryWall=performance.now()) {
-  const next=shell?.screen()==='free'?{kind:'free',owner:freeSession?.owner() ?? null}:{kind:'score',recorder:state.recorder};
+  const next=referenceListening?.isOpen()?{kind:'reference'}:shell?.screen()==='free'?{kind:'free',owner:freeSession?.owner() ?? null}:{kind:'score',recorder:state.recorder};
   // A score reset already discarded its take. Keep only a routing tombstone,
   // so history cannot retain hundreds of obsolete scored evidence buffers.
   if(routedScoreRecorder!==state.recorder){
@@ -566,13 +569,16 @@ function setupMidiQuarantinePanel(host,id){
   const button=document.createElement('button');button.id=`${id}-export`;button.type='button';button.className='button secondary';bindText(button,()=>i18n.t('midiQuarantine.export'));button.addEventListener('click',exportMidiQuarantine);
   panel.append(title,status,help,button);host.append(panel);midiQuarantineViews.push({panel,status,button});refreshMidiQuarantine();
 }
+function referenceInputInterval(time){return inputRoutes.some(route=>route.kind==='reference'&&time.eventWall>=route.start&&(route.end===null||time.eventWall<route.end));}
 function inputRoute(source,time,options={},release=false) {
+  if(referenceInputInterval(time))return null;
   if(Object.hasOwn(options,'owner'))return {kind:'free',owner:options.owner};
   const contact=inputContacts.get(source);
   if(options.inputKind!=='midi' && release)return contact?.route ?? heldAudioTokens.get(source)?.route ?? null;
   // The shared adapter quarantines these before scored/free evidence or sound.
   if(isAmbiguousMidi(time,options))return null;
-  return inputRoutes.findLast(route=>time.eventWall>=route.start && (route.end===null || time.eventWall<route.end)) ?? null;
+  const route=inputRoutes.findLast(route=>time.eventWall>=route.start && (route.end===null || time.eventWall<route.end));
+  return route?.kind==='reference'?null:route ?? null;
 }
 function rememberMidiCleanup(route,prefix,eventWall){
   if(!route)return;
@@ -613,6 +619,7 @@ function releaseOwnedSound(source,time,route) {
 }
 async function pressNote(source, midi, velocity = 90, eventTime = null, options = {}) {
   const observationTime=eventTimeEvidence(eventTime,{now:performance.now(),timeOrigin:performance.timeOrigin});
+  if(referenceInputInterval(observationTime))return;
   if(quarantineMidi('note_on',source,observationTime,eventTime,options,midi,velocity))return;
   const route=inputRoute(source,observationTime,options);
   if(!route)return;
@@ -658,6 +665,7 @@ async function pressNote(source, midi, velocity = 90, eventTime = null, options 
 }
 function releaseMatching(prefix, eventTime = null, options = {}) {
   const time=eventTimeEvidence(eventTime),routes=new Set();
+  if(referenceInputInterval(time))return;
   if(quarantineMidi('cleanup',prefix,time,eventTime,options))return;
   const current=inputRoute('',time,options);if(current)routes.add(current);
   if(options.inputKind==='midi')rememberMidiCleanup(current,prefix,time.eventWall);
@@ -677,6 +685,7 @@ function releaseMatching(prefix, eventTime = null, options = {}) {
 }
 function releaseNote(source, eventTime = null, options = {}) {
   const time=eventTimeEvidence(eventTime);
+  if(referenceInputInterval(time))return;
   if(quarantineMidi(options.synthetic?'cleanup':'note_off',source,time,eventTime,options,options.midi,options.velocity))return;
   const route=inputRoute(source,time,options,true);
   if(!route || (route.kind==='score'&&!route.recorder))return;
@@ -714,6 +723,7 @@ function connectPlayable(container) {
   container.addEventListener('keyup', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); releaseNote('accessible-key',event.timeStamp,{inputKind:'on_screen_keyboard',encoding:'key_up'}); } });
 }
 async function togglePlayback() {
+  if(referenceListening?.isOpen())return;
   if (shell.screen()!=='stage' || !state.compiled) return;
   if (transport.running) { pausePlayback(); return; }
   if (state.mode === 'practice' && state.compatibility.status !== 'ready') { notice(compatibilityNotice(state.compatibility), true); return; }
@@ -809,22 +819,26 @@ function updateResultsSummary(pass=chosenPass(),now=performance.now()) {
 function displayChosenPass() {
   showPassAssessment(chosenPass());
 }
+async function waitForReferenceClose(){while(referenceListening?.isOpen())await referenceListening.whenClosed();}
 async function drainAssessments() {
-  if(state.assessmentBusy)return;
+  if(state.assessmentBusy||referenceListening?.isOpen())return;
   const recorder=state.recorder;state.assessmentBusy=true;
   try {
     while(recorder===state.recorder){
+      if(referenceListening?.isOpen())break;
       const pass=recorder.ready(performance.now())[0];if(!pass)break;
       const job=recorder.submit(pass);updateButtons();refreshPassHistory();
       try{
         const assessment=await api('/api/assess',{timeline:job.timeline,inputs:job.inputs,tolerance_ms:recorder.toleranceMs});
+        await waitForReferenceClose();
         if(recorder!==state.recorder)return;
         recorder.complete(job,assessment);if(pass===recorder.active&&pass.closedWall===null&&!transport.running)bindText($('transport-status'), () => t('app.paused'));refreshPassHistory();displayChosenPass();
-      }catch(error){if(recorder!==state.recorder)return;recorder.fail(job,error.message);notice(() => t('app.assessmentError', {pass:passLabel(pass),detail:errorDetail(error)}),true);refreshPassHistory()}
+      }catch(error){await waitForReferenceClose();if(recorder!==state.recorder)return;recorder.fail(job,error.message);notice(() => t('app.assessmentError', {pass:passLabel(pass),detail:errorDetail(error)}),true);refreshPassHistory()}
     }
   }finally{if(recorder===state.recorder){state.assessmentBusy=false;updateButtons();refreshPassHistory()}}
 }
 function assess() {
+  if(referenceListening?.isOpen())return;
   if(!state.compiled||state.mode!=='practice')return;
   if(state.compatibility.status!=='ready'){notice(compatibilityNotice(state.compatibility),true);return}
   const played=Boolean(state.recorder.active?.captureEnabled);
@@ -881,7 +895,7 @@ function drawFrame(displayOnly = false) {
     } else if (state.mode==='listen' && position>=duration+80) {transport.finish(duration);silenceHeld('completion',now);updateButtons();bindText($('transport-status'), () => t('app.complete'))}
     else bindText($('transport-status'), () => position < segmentStart ? t('app.countIn', {count:Math.ceil((segmentStart-position)/(60000/(Number($('tempo').value)||100)))}) : state.mode === 'practice' ? t('app.yourTurn', {loop:state.loop?t('app.loopSuffix',{count:state.loopIteration}):''}) : t('app.listening', {loop:state.loop?t('app.loopSuffix',{count:state.loopIteration}):''}));
   }
-  if(displayOnly!==true&&state.mode==='practice'){
+  if(displayOnly!==true&&state.mode==='practice'&&!referenceListening?.isOpen()){
     const pass=state.recorder.active;
     if(!transport.running&&!state.loop&&pass&&pass.closedWall!==null&&pass.deadline!==null&&now>=pass.deadline&&!transport.completed){transport.finish(duration);bindText($('transport-status'), () => t('app.complete'));updateButtons()}
     if(state.recorder.ready(now).length)drainAssessments();
@@ -1008,14 +1022,15 @@ for (const mode of ['staff', 'jianpu']) $(mode + '-button').addEventListener('cl
 $('engraved-button').addEventListener('click', () => {engravedView.show();drawFrame()});
 function setSoundEnabled(enabled){
   synth.muted=!enabled;if(enabled&&transport.running)synth.unlock().catch(error=>notice(()=>errorDetail(error),true));if(synth.muted){synth.silence();heldAudioTokens.clear();freePreview?.stop('muted');}
-  bindText($('sound-button'),()=>synth.muted?t('app.soundOff'):t('app.soundOn'));$('sound-button').setAttribute('aria-pressed',String(synth.muted));metronome?.updateMute();
+  bindText($('sound-button'),()=>synth.muted?t('app.soundOff'):t('app.soundOn'));$('sound-button').setAttribute('aria-pressed',String(synth.muted));metronome?.updateMute();referenceListening?.soundChanged();
   try{freeSession?.configure('sound',enabled);}catch{/* Session reports configuration failures without losing retained input. */}freeView?.render();
 }
 $('sound-button').addEventListener('click',()=>setSoundEnabled(synth.muted));
-$('import-button').addEventListener('click', () => $('score-file').click());
-$('mobile-import-button').addEventListener('click', () => $('score-file').click());
+$('import-button').addEventListener('click', () => {referenceListening?.close();$('score-file').click();});
+$('mobile-import-button').addEventListener('click', () => {referenceListening?.close();$('score-file').click();});
 $('score-file').addEventListener('change', async event => {
   const file = event.target.files[0]; event.target.value = ''; if (!file) return;
+  referenceListening?.close();
   const intent = ++state.loadIntent;cancelCatalogSelection();state.compileController?.abort();
   const guidance=unsupportedImportHint(file.name,i18n);if(guidance){notice(() => unsupportedImportHint(file.name,i18n),true);return}
   if (file.size > 8 * 1024 * 1024) { notice(() => t('app.fileTooLarge'), true); return; }
@@ -1226,8 +1241,9 @@ notationFollowing = setupNotationFollowing({i18n,getContext:()=>({score:state.sc
   getPlayback:()=>{const position=transport.time(performance.now()),written=writtenCursor?.at(position);return{position:position<(state.loop?.start_ms||0)?-1:position,running:transport.running,written:{...written,entries:displayedWrittenEntries(written),pageAnchor:writtenCursor?.pageAnchor(position,displayedPartId())}}},view:followingView});
 setupJianpuEditor({onImport:importJianpuText,pausePlayback});
 setupJianpuExport({getScore:()=>state.score,pausePlayback,api});
-setupSourceDirectory({pausePlayback,onScoreFile:()=>$('score-file').click(),onImageFile:()=>$('score-image-file').click(),onExternalOmr:()=>externalOmrView.open()});
+setupSourceDirectory({pausePlayback,onScoreFile:()=>{referenceListening?.close();$('score-file').click();},onImageFile:()=>$('score-image-file').click(),onExternalOmr:()=>externalOmrView.open()});
 setupImageReview({onImport:importCanonicalScore, pausePlayback, notice,onExternalOmr:imageFile=>externalOmrView.open({imageFile})});
+referenceListening=setupReferenceListening({document,i18n,synth,pausePlayback,onActiveChange:()=>syncInputRoute(),getSoundEnabled:()=>!synth.muted,onSoundChange:setSoundEnabled});
 sourceArchiveView=setupSourceArchiveView({getContext:()=>({score:state.score,version:state.loadIntent}),pausePlayback});
 externalOmrView = setupExternalOmrReview({api,onActivate:importCanonicalScore,pausePlayback,notice,getSourceVersion:()=>state.loadIntent});
 adaptationView = setupAdaptationView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.score,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});

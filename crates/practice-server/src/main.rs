@@ -8,7 +8,12 @@ use hyper::{
     Method, Request, Response,
 };
 use hyper_util::rt::{TokioIo, TokioTimer};
-use practice_server::{api, asset as web_asset, content_type_allowed};
+#[cfg(test)]
+use practice_server::api;
+use practice_server::{
+    api_response, asset as web_asset, content_type_allowed, is_song_api_route,
+    request_limit_response, song_api_error, ApiResponse, MAX_REQUEST_BYTES,
+};
 use serde_json::json;
 use std::{
     convert::Infallible,
@@ -20,7 +25,7 @@ use std::{
     time::Duration,
 };
 use tokio::{net::TcpListener, sync::Semaphore, time::timeout};
-const MAX_BODY: usize = 8 * 1024 * 1024;
+const MAX_BODY: usize = MAX_REQUEST_BYTES;
 const BODY_TIMEOUT: Duration = Duration::from_secs(5);
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_REQUESTS_PER_CONNECTION: usize = 64;
@@ -72,23 +77,39 @@ fn json_reply(result: Result<serde_json::Value, String>) -> WebResponse {
     )
 }
 
+fn engine_reply(result: ApiResponse) -> WebResponse {
+    reply(
+        result.status,
+        "application/json; charset=utf-8",
+        result.body,
+    )
+}
+
 async fn route(
     request: Request<Incoming>,
     authority: &str,
     computations: Arc<Semaphore>,
 ) -> WebResponse {
+    let path = request.uri().path().to_owned();
+    let song_route = is_song_api_route(&path);
     let host = request.headers().get("host").and_then(|v| v.to_str().ok());
     let origin = request.headers().get("origin");
     let expected = format!("http://{authority}");
     if host != Some(authority) || origin.is_some_and(|o| o.to_str().ok() != Some(expected.as_str()))
     {
+        if song_route {
+            return engine_reply(song_api_error(
+                403,
+                "forbidden_origin",
+                "Local same-origin requests only",
+            ));
+        }
         return reply(
             403,
             "text/plain; charset=utf-8",
             "Local same-origin requests only",
         );
     }
-    let path = request.uri().path().to_owned();
     if request.method() == Method::GET {
         return match path.as_str() {
             "/api/health" => json_reply(Ok(
@@ -138,6 +159,13 @@ async fn route(
         };
     }
     if request.method() != Method::POST || !path.starts_with("/api/") {
+        if song_route {
+            return engine_reply(song_api_error(
+                405,
+                "method_not_allowed",
+                "Method not allowed",
+            ));
+        }
         return reply(405, "text/plain; charset=utf-8", "Method not allowed");
     }
     let content_type = request
@@ -146,6 +174,13 @@ async fn route(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     if !content_type_allowed(&path, content_type) {
+        if is_song_api_route(&path) {
+            return engine_reply(song_api_error(
+                415,
+                "unsupported_content_type",
+                "Unsupported request content type",
+            ));
+        }
         return reply(
             415,
             "text/plain; charset=utf-8",
@@ -159,17 +194,27 @@ async fn route(
         .and_then(|v| v.parse::<u64>().ok())
         .is_some_and(|size| size > MAX_BODY as u64)
     {
+        if is_song_api_route(&path) {
+            return engine_reply(request_limit_response());
+        }
         return json_reply(Err("Import exceeds 8 MiB limit".into()));
     }
     // Acquire before reading/allocating a body; keep the permit through CPU work.
     let permit = match timeout(Duration::from_secs(2), computations.acquire_owned()).await {
         Ok(Ok(permit)) => permit,
         _ => {
+            if song_route {
+                return engine_reply(song_api_error(
+                    503,
+                    "engine_busy",
+                    "The local engine is busy; retry shortly",
+                ));
+            }
             return reply(
                 503,
                 "application/json; charset=utf-8",
                 r#"{"error":"The local engine is busy; retry shortly"}"#,
-            )
+            );
         }
     };
     let bytes = match timeout(
@@ -179,27 +224,50 @@ async fn route(
     .await
     {
         Ok(Ok(body)) => body.to_bytes().to_vec(),
-        Ok(Err(_)) => {
+        Ok(Err(error)) => {
+            if is_song_api_route(&path) {
+                return engine_reply(if error.is::<http_body_util::LengthLimitError>() {
+                    request_limit_response()
+                } else {
+                    song_api_error(
+                        400,
+                        "invalid_request_body",
+                        "Cannot read complete request body",
+                    )
+                });
+            }
             return json_reply(Err(
                 "Cannot read request body or import exceeds 8 MiB limit".into(),
-            ))
+            ));
         }
         Err(_) => {
+            if song_route {
+                return engine_reply(song_api_error(
+                    408,
+                    "request_body_timeout",
+                    "Request body timed out",
+                ));
+            }
             return reply(
                 408,
                 "application/json; charset=utf-8",
                 r#"{"error":"Request body timed out"}"#,
-            )
+            );
         }
     };
     // Imported-score processing cannot stall static assets or the asynchronous I/O threads.
     match tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        api(&path, bytes)
+        api_response(&path, bytes)
     })
     .await
     {
-        Ok(result) => json_reply(result),
+        Ok(result) => engine_reply(result),
+        Err(_) if song_route => engine_reply(song_api_error(
+            500,
+            "engine_operation_failed",
+            "The score operation failed",
+        )),
         Err(_) => reply(
             500,
             "application/json; charset=utf-8",
@@ -334,8 +402,81 @@ fn main() {
 }
 
 #[cfg(test)]
+#[path = "../tests/support/song_contract.rs"]
+mod song_contract;
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    // Ordinary one-request functional HTTP exchange against an ephemeral
+    // loopback listener, using the production route. No browser or GUI.
+    fn http_post(path: &str, mime: &str, bytes: Vec<u8>, declared_size: usize) -> (u16, Vec<u8>) {
+        use std::io::{Read, Write};
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let authority = listener.local_addr().unwrap().to_string();
+            let header = format!("POST {path} HTTP/1.1\r\nHost: {authority}\r\nContent-Type: {mime}\r\nContent-Length: {declared_size}\r\nConnection: close\r\n\r\n");
+            let client_authority = authority.clone();
+            let client = std::thread::spawn(move || {
+                let mut stream = std::net::TcpStream::connect(client_authority).unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+                stream.set_write_timeout(Some(Duration::from_secs(10))).unwrap();
+                stream.write_all(header.as_bytes()).unwrap();
+                stream.write_all(&bytes).unwrap();
+                let mut response = Vec::new();
+                stream.read_to_end(&mut response).unwrap();
+                response
+            });
+            let (stream, _) = listener.accept().await.unwrap();
+            let computations = Arc::new(Semaphore::new(2));
+            let service = service_fn(move |request| {
+                let authority = authority.clone();
+                let computations = computations.clone();
+                async move { Ok::<_, Infallible>(route(request, &authority, computations).await) }
+            });
+            http1::Builder::new().keep_alive(false).serve_connection(TokioIo::new(stream), service).await.unwrap();
+            let response = client.join().unwrap();
+            let boundary = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+            let header = std::str::from_utf8(&response[..boundary]).unwrap();
+            let status = header.split_whitespace().nth(1).unwrap().parse().unwrap();
+            assert!(header.to_lowercase().contains("content-type: application/json; charset=utf-8"));
+            (status, response[boundary + 4..].to_vec())
+        })
+    }
+    #[test]
+    fn song_http_status_and_body_match_the_shared_native_contract_exactly() {
+        for case in song_contract::cases() {
+            let expected = api_response(case.path, case.bytes.clone());
+            let actual = http_post(
+                case.path,
+                case.content_type,
+                case.bytes.clone(),
+                case.bytes.len(),
+            );
+            assert_eq!(actual.0, case.status, "{}", case.path);
+            assert_eq!(actual, (expected.status, expected.body), "{}", case.path);
+        }
+        let expected = request_limit_response();
+        assert_eq!(
+            http_post(
+                "/api/assistance/create",
+                "application/json",
+                vec![],
+                MAX_BODY + 1
+            ),
+            (expected.status, expected.body)
+        );
+        let expected = song_api_error(
+            415,
+            "unsupported_content_type",
+            "Unsupported request content type",
+        );
+        assert_eq!(
+            http_post("/api/midi/events", "application/json", vec![], 0),
+            (expected.status, expected.body)
+        );
+    }
+
     #[test]
     fn only_known_empty_get_requests_can_reuse_a_connection() {
         for (method, body, expected) in [

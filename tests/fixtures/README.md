@@ -18,3 +18,5 @@ under CC0-1.0. They test timing/import behavior, not MusicXML engraving fidelity
   all entries use the fixed 1980-01-01 timestamp
 
 `midi-original-ppq.mid` is an original three-note synthetic parser fixture generated for WorldMusicHub, with exact PPQ timing and attack velocities. It contains no third-party song.
+
+`original-reference-overlap.mid` is a new 208-byte original synthetic format-1 fixture generated from `tests/reference-listening-fixture.js`. Its three independent tracks contain 26 events and eight positive onsets, including overlapping identical keys and channel-index-9 program 118. It is used only by the complete-source reference listening acceptance checks and contains no third-party song.

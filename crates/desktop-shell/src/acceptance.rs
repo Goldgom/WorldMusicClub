@@ -34,9 +34,10 @@ impl Acceptance {
     }
     pub fn script(&self) -> String {
         format!(
-            "globalThis.__WMH_ACCEPTANCE_PHASE__={};\n{}\n{}",
+            "globalThis.__WMH_ACCEPTANCE_PHASE__={};\n{}\n{}\n{}",
             serde_json::to_string(self.phase).unwrap(),
             include_str!("../acceptance-wait.js"),
+            include_str!("../reference-acceptance.js"),
             include_str!("../acceptance.js")
         )
     }
@@ -250,6 +251,7 @@ fn valid_action(value: &Value) -> bool {
             "original-duet.musicxml",
             "original-duet.mxl",
             "midi-original-ppq.mid",
+            "original-reference-overlap.mid",
             "jianpu-original-steps.jianpu",
             "malformed.json",
         ]
@@ -365,6 +367,12 @@ mod tests {
         assert!(valid_action(&action));
         action["file"] = json!("original-duet.musicxml");
         assert!(valid_action(&action));
+        action["file"] = json!("original-reference-overlap.mid");
+        assert!(valid_action(&action));
+        action["file"] = json!("../original-reference-overlap.mid");
+        assert!(!valid_action(&action));
+        action["file"] = json!("original-reference-overlap.mid.extra");
+        assert!(!valid_action(&action));
         action["file"] = json!("../anything.json");
         assert!(!valid_action(&action));
         action["file"] = json!("seed-17.json");

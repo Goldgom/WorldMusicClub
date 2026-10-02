@@ -191,3 +191,90 @@ Canonical beats remain exact rational numbers. Derived timeline milliseconds are
 The frontend starts with the lightweight index and fetches one complete score when it is selected. It does not request the legacy full archive list for startup. Metadata counts distinguish all written events from pitched segments and rests; every activated score still goes through normal Rust compilation and instrument/target validation.
 
 A session-only LRU cache holds at most three canonical score snapshots and 16 MiB of serialized score data, with 8 MiB per score. Each read returns an independent copy, so tempo edits never modify a cached original. A fresh index read clears the cache. New catalog selections, local imports and saved-score loads cancel older catalog work; the shared load intent is checked again after compilation. Failed loading keeps the previous score available, and metadata retry remains available after local import. This temporary cache is separate from explicit saved-library copies and backups.
+
+## Song assistance and raw MIDI inspection
+
+These stateless POST contracts share `practice_server::api_response(path, bytes)`
+between the socket HTTP server and native protocol. It returns a status and the
+complete encoded JSON body. Existing GET handlers and legacy `api()` operations,
+including the strict `/api/import/midi` importer, retain their previous contracts.
+This is an engine contract only: no difficulty authoring, saved song format,
+application controls, instrument assignment, audio playback or persistence is
+implemented here.
+
+- `POST /api/assistance/create` with JSON
+  `{score: Score, selected_part_ids: string[], profile: InstrumentProfile,
+  human_source_note_ids: string[]}` creates and checks revision 1
+- `POST /api/assistance/validate` with JSON `{score: Score, plan: AssistancePlan}`
+  checks an existing plan against the exact saved score and regenerates its views
+- Both return `CheckedAssistancePlan` directly on 200: `plan`, `human_targets`,
+  `machine_timeline`, `source_ownership`, `selected_target_groups`, `coverage`,
+  `all_selected_human`, `full_scope_playable`, `full_scope_diagnostics`,
+  `scored_mode_allowed`, and `diagnostics`. See [assistance core](assistance-core.md)
+  for exact content-binding and atomic tie/unison ownership rules
+
+Requests must include the explicit part scope, profile and human written source
+IDs; the engine does not infer hands, instruments or levels. Unknown request and
+plan fields are rejected. A changed score or retained source fails with
+`assistance_source_mismatch`; unsupported plan versions and invalid selections
+return 400 with the core's stable code and relevant written source IDs, never a
+successful invalid-plan result. A valid machine-only plan returns 200 with zero
+human targets and `scored_mode_allowed: false`. A valid ownership selection can
+still report instrument infeasibility; inspect the returned feasibility flags
+and diagnostics before enabling scored practice.
+
+Only `human_targets.timeline` belongs in the existing `/api/assess` request,
+alongside actual human inputs. The unchanged assessment endpoint accepts a
+caller-provided timeline; it does not validate a saved assistance plan or enforce
+ownership by itself. The caller must revalidate the plan, route only human targets
+to assessment, and never convert `machine_timeline` to input events. Machine
+notes retain their complete source identities and timing separately.
+
+`POST /api/midi/events` accepts complete original SMF bytes, with exactly
+`audio/midi`, `audio/x-midi`, or `application/octet-stream`. JSON is output-only;
+posting event JSON is unsupported. The 200 body is `RawMidiTimeline`:
+`source_sha256`, `format`, `track_count`, `ppq`, `end_tick`,
+`relative_clock_available`, `events`, and `diagnostics`. Every source event is
+retained, including metadata, controllers, programs, percussion-channel events,
+SysEx, escape packets and releases. Event identity is the complete source SHA-256
+plus zero-based original track/event coordinates; `source_range` indexes the
+original encoded bytes. No notes are paired, sound mappings resolved, or gradeable
+targets created. See [raw MIDI events](RAW_MIDI_EVENTS.md) for framing, order and
+clock limitations.
+
+The caller must retain the exact original MIDI bytes and reparse them when needed.
+The server does not persist them, and response JSON omits the original byte copy.
+The hash covers every input byte, including metadata and running-status encoding.
+An available `relative_microseconds` value has a decimal-string `numerator` and a
+positive integer `denominator`; unavailable clocks use null. Use exact integer
+arithmetic for this rational value, not a JavaScript Number conversion that can
+lose integer precision.
+
+### Transport limits and errors
+
+The complete request body, including score, plan, selections, metadata and JSON
+whitespace, must fit **8 MiB (8,388,608 bytes)**. A score that fits by itself may
+still exceed the envelope cap. Raw MIDI additionally keeps its **5 MiB** source,
+128-track, 250,000-event and 1,000,000,000-tick core limits. Each complete new-route
+serialized response must fit **16 MiB (16,777,216 bytes)**, including diagnostic
+text and IDs. Serialization stops at this cap and returns a separate error; no
+partial event list, plan or source IDs are returned. A generated original fixture
+with 10,669 events and under 45 KB of SMF input fits the response budget. Input
+size alone does not guarantee fit because detailed event JSON is larger.
+
+New operation/admission errors retain a plain string `error` plus a stable `code`
+and `source_note_ids` array, for example
+`{"error":"Human selection must reference existing written source note IDs",
+"code":"assistance_unknown_note","source_note_ids":["missing"]}`.
+The array is empty when a failure has no identifiable canonical notes, including
+raw MIDI failures. These are structured fields, never JSON embedded in an error
+string. Source/plan failures return 400; request, raw resource and serialized
+response bounds return 413. Unsupported content types return 415. Core MIDI codes
+(such as `invalid_container`, `unsupported_format`, `unsupported_smpte` and
+`invalid_event`) and assistance codes are preserved. Transport caps use
+`request_body_limit` and `response_body_limit`. Asynchronous failures use
+`engine_busy` (503), `request_body_timeout` (408, socket HTTP only), and
+`engine_operation_failed` (500), preserving the same string-error shape.
+Messages explain the failure;
+clients should branch on codes, preserve their original source and avoid treating
+a failed response as a partial success.

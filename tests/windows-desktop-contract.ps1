@@ -135,7 +135,7 @@ $temporary=Join-Path ([System.IO.Path]::GetTempPath()) ('wmh picker 拼谱 '+[gu
 try {
   $fixtures=Join-Path $temporary 'fixtures';$downloads=Join-Path $temporary 'downloads'
   New-Item -ItemType Directory $fixtures,$downloads | Out-Null
-  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','jianpu-original-steps.jianpu','malformed.json')
+  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu','malformed.json')
   foreach($name in $fixed) {
     $expected=Join-Path $fixtures $name;[System.IO.File]::WriteAllText($expected,'fixture')
     Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) -ceq $expected) "fixed path $name"
@@ -147,7 +147,7 @@ try {
       Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) -ceq $expected) "download path $name"
     }
   }
-  foreach($name in @('../original-duet.mxl','fixtures/original-duet.mxl','C:\Windows\win.ini','seed-0.json','seed-17.json','seed-01.json','Seed-1.json','other-1.json','seed-1.json.extra',"seed-1.json`n",'',"original-duet.mxl`0")) {
+  foreach($name in @('../original-duet.mxl','../original-reference-overlap.mid','original-reference-overlap.mid.extra','fixtures/original-duet.mxl','C:\Windows\win.ini','seed-0.json','seed-17.json','seed-01.json','Seed-1.json','other-1.json','seed-1.json.extra',"seed-1.json`n",'',"original-duet.mxl`0")) {
     Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) } "unapproved name $name"
   }
   [System.IO.File]::Delete((Join-Path $fixtures 'malformed.json'))

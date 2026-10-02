@@ -14,3 +14,4 @@ image = { version = "=0.25.8", default-features = false, features = ["png", "jpe
 zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
 midly = { version = "=0.5.3", default-features = false, features = ["std", "strict"] }
 base64 = "0.22"
+sha2 = "=0.10.9"

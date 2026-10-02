@@ -1,3 +1,5 @@
+import './reference-native-acceptance.test.js';
+import './reference-native-evidence.test.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';

@@ -48,7 +48,7 @@ class NativeReleaseTests(unittest.TestCase):
                    'standard_library': {'copyright_sha256': native.sha(b'Rust copyright'), 'license_texts': []}}
         write_json(directory / 'licenses/rust/manifest.json', notices)
         write_json(directory / 'catalog/index.json', {'version': 1, 'editions': []})
-        for name in ['native-acceptance', 'downloaded-files', 'native-report', 'renderer-report', *[f'renderer-{phase}' for phase in native.PHASES]]:
+        for name in ['native-acceptance', 'downloaded-files', 'native-reference-files', 'native-report', 'renderer-report', *[f'renderer-{phase}' for phase in native.PHASES]]:
             write_json(directory / f'evidence/{name}.json', {})
         return {'name': native.FOLDER, 'executable': native.EXE, 'cargo_lock_sha256': 'a' * 64, 'git_commit': 'b' * 40, 'commit_count': 164}
 
@@ -68,6 +68,37 @@ class NativeReleaseTests(unittest.TestCase):
             write_json(path, {'synthetic': number})
             artifacts.append({'file': path.name, 'sha256': native.sha(path.read_bytes()), 'bytes': path.stat().st_size})
         write_json(acceptance / 'downloaded-files.json', {'ok': True, 'artifacts': artifacts})
+        seed = native.read_json(acceptance / 'renderer-seed.json')
+        roles = ['original', 'beforeScore', 'afterScore', 'beforeTake', 'afterTake']
+        source = (ROOT / 'tests/fixtures/original-reference-overlap.mid').read_bytes()
+        score = {'version': 1, 'id': 'original-native-source', 'parts': [{'notes': []}]}
+        input_note = {'midi': 60, 'at_ms': 100, 'velocity': 90}
+        take = {'version': 1, 'passes': [{'id': 1, 'capture_enabled': True, 'inputs': [input_note],
+                'captures': [{'event_id': 1, 'event_wall_ms': 1100, 'received_wall_ms': 1101, 'input': input_note}]}],
+                'input_evidence': {'version': 1, 'truncated': False, 'omitted_observations': 0, 'events': [
+                    {'event_id': 1, 'source_id': 'native-key', 'kind': 'note_on', 'input_kind': 'typing_keyboard',
+                     'encoding': 'key_down', 'midi': 60, 'velocity': 90, 'event_wall_ms': 1100, 'received_wall_ms': 1101,
+                     'onset_capture': {'pass_id': 1, 'event_id': 1}}]}}
+        payloads = [source, json.dumps(score).encode(), json.dumps(score).encode(), json.dumps(take).encode(), json.dumps(take).encode()]
+        proof_artifacts = []
+        for number, (kind, data) in enumerate(zip(roles, payloads), 5):
+            path = acceptance / f'downloads/seed-{number}.json'
+            path.write_bytes(data)
+            proof_artifacts.append({'kind': kind, 'file': path.name, 'bytes': len(data), 'sha256': native.sha(data)})
+        seed['files'] = {str(index): f'seed-{index}.json' for index in range(1, 5)}
+        seed['downloads'] = [{'file': f'seed-{index}.json', 'complete': True, 'success': True} for index in range(1, 10)]
+        seed['referenceListening'] = {'ok': True, 'fixture': 'original-reference-overlap.mid', 'sourceSha256': native.sha(source), 'trackCount': 3, 'eventCount': 26, 'onsetCount': 8,
+                                      'files': {item['kind']: item['file'] for item in proof_artifacts},
+                                      'checks': ['native-filechooser', 'complete-original-source', 'explicit-rendition-policy', 'play-pause-resume-stop', 'all-tracks-complete', 'independent-track-mute', 'shared-sound-mute', 'close-cleanup', 'live-locale-preserved', 'reference-input-isolated', 'canonical-score-unchanged', 'scored-take-unchanged'],
+                                      'audio': {'sourceStarts': 1, 'cleanupChecks': 4, 'activeSources': 0, 'pendingSources': 0}}
+        write_json(acceptance / 'renderer-seed.json', seed)
+        proof = {'version': 1, 'ok': True, 'fixture': 'original-reference-overlap.mid', 'source_sha256': native.sha(source),
+                 'renderer_seed_sha256': native.sha((acceptance / 'renderer-seed.json').read_bytes()),
+                 'track_count': 3, 'event_count': 26, 'onset_count': 8, 'typing_note_on_count': 1, 'scored_input_count': 1,
+                 'artifacts': proof_artifacts}
+        write_json(acceptance / 'native-reference-files.json', proof)
+        native.subprocess.run(['node', str(ROOT / 'scripts/verify-reference-native-evidence.mjs'), str(acceptance)],
+                              cwd=ROOT, capture_output=True, check=True)
         return startup, acceptance, exe
 
     def test_distinct_native_zip_preserves_inventory_and_detects_altered_bytes(self):
@@ -138,6 +169,29 @@ class NativeReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'downloaded file changed'):
                 native.accepted_evidence(*args, 'b' * 40, 'c' * 40)
 
+    def test_reference_proof_is_required_and_bound_to_actual_renderer_and_downloads(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            args = self.evidence(Path(temporary))
+            proof_path = args[1] / 'native-reference-files.json'
+            proof = native.read_json(proof_path)
+            outcome = native.accepted_evidence(*args, 'b' * 40, 'c' * 40)
+            self.assertTrue(outcome['complete_midi_reference_validated'])
+            self.assertEqual(outcome['native_reference_proof_sha256'], native.sha(proof_path.read_bytes()))
+            changed = {**proof, 'renderer_seed_sha256': '0' * 64}
+            write_json(proof_path, changed)
+            with self.assertRaisesRegex(ValueError, 'exact seed renderer'):
+                native.accepted_evidence(*args, 'b' * 40, 'c' * 40)
+            write_json(proof_path, {**proof, 'onset_count': 7})
+            with self.assertRaisesRegex(ValueError, 'source counts differ'):
+                native.accepted_evidence(*args, 'b' * 40, 'c' * 40)
+            write_json(proof_path, proof)
+            (args[1] / 'downloads/seed-5.json').write_bytes(b'changed original')
+            with self.assertRaisesRegex(ValueError, 'reference download changed'):
+                native.accepted_evidence(*args, 'b' * 40, 'c' * 40)
+            proof_path.unlink()
+            with self.assertRaises(FileNotFoundError):
+                native.accepted_evidence(*args, 'b' * 40, 'c' * 40)
+
     def test_source_metadata_rejects_shallow_dirty_wrong_count_and_wrong_host(self):
         outputs = {('git', 'rev-parse', '--is-shallow-repository'): 'false', ('git', 'rev-parse', 'HEAD'): 'b' * 40,
                    ('git', 'rev-list', '--count', 'HEAD'): '164', ('git', 'status', '--porcelain', '--untracked-files=all'): '',
@@ -175,7 +229,12 @@ class NativeReleaseTests(unittest.TestCase):
             root = Path(temporary)
             source = root / 'source 初学者'
             source.mkdir()
-            for relative in ['Cargo.toml', 'Cargo.lock', 'package-lock.json', 'crates/score-core/src/lib.rs']:
+            # The combined package also rederives its native reference proof.
+            # Keep that real verifier and its original fixture in the source
+            # copy instead of mocking away the added package gate.
+            for relative in ['Cargo.toml', 'Cargo.lock', 'package-lock.json', 'crates/score-core/src/lib.rs',
+                             'package.json', 'scripts/verify-reference-native-evidence.mjs',
+                             'tests/reference-listening-fixture.js', 'tests/fixtures/original-reference-overlap.mid']:
                 destination = source / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / relative, destination)

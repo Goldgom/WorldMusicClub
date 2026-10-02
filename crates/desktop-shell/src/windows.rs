@@ -4,7 +4,7 @@ use tauri::{
     WebviewUrl, WebviewWindowBuilder,
 };
 use tokio::{sync::Semaphore, time::timeout};
-use worldmusichub_desktop::{admission, allowed_uri, dispatch, error, response};
+use worldmusichub_desktop::{admission, allowed_uri, dispatch, error, operation_error, response};
 
 pub fn run() {
     // This optional, process-owned path is used only by the bounded CI smoke.
@@ -28,7 +28,12 @@ pub fn run() {
     tauri::Builder::default()
         .register_asynchronous_uri_scheme_protocol("wmh", move |context, request, responder| {
             if context.webview_label() != "main" {
-                responder.respond(error(403, "Only the main app can request resources"));
+                responder.respond(operation_error(
+                    request.uri().path(),
+                    403,
+                    "forbidden_origin",
+                    "Only the main app can request resources",
+                ));
                 return;
             }
             if let Some(reply) = admission(&request) {
@@ -91,8 +96,14 @@ pub fn run() {
                 respond(dispatch(request));
                 return;
             }
+            let operation_path = request.uri().path().to_owned();
             let Ok(admission_permit) = admitted.clone().try_acquire_owned() else {
-                respond(error(503, "The local engine is busy; retry shortly"));
+                respond(operation_error(
+                    &operation_path,
+                    503,
+                    "engine_busy",
+                    "The local engine is busy; retry shortly",
+                ));
                 return;
             };
             let computations = computations.clone();
@@ -100,7 +111,12 @@ pub fn run() {
                 let Ok(Ok(computation_permit)) =
                     timeout(Duration::from_secs(2), computations.acquire_owned()).await
                 else {
-                    respond(error(503, "The local engine is busy; retry shortly"));
+                    respond(operation_error(
+                        &operation_path,
+                        503,
+                        "engine_busy",
+                        "The local engine is busy; retry shortly",
+                    ));
                     return;
                 };
                 let result = tauri::async_runtime::spawn_blocking(move || {
@@ -109,7 +125,14 @@ pub fn run() {
                     dispatch(request)
                 })
                 .await;
-                respond(result.unwrap_or_else(|_| error(500, "The score operation failed")));
+                respond(result.unwrap_or_else(|_| {
+                    operation_error(
+                        &operation_path,
+                        500,
+                        "engine_operation_failed",
+                        "The score operation failed",
+                    )
+                }));
             });
         })
         .setup(move |app| {

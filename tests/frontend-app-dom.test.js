@@ -12,6 +12,11 @@ import {getAppI18n} from '../web/app-locale.js';
 // Node DOM integration only: no browser, layout engine, real audio or HTTP is run.
 test('application module initializes the lobby and activates only through explicit Start',async()=>{
  const {document,window}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8'));
+ // UI/export work and setImmediate polling must not consume the mock score's
+ // 1000 ms performance window. Only explicit input events advance this clock;
+ // real timers still run normally, and epoch timestamps keep a real timeOrigin.
+ let eventWall=1000;const timeOrigin=performance.timeOrigin;
+ const advanceEventTime=milliseconds=>{assert.ok(Number.isFinite(milliseconds)&&milliseconds>0);eventWall+=milliseconds;return eventWall;};
  const requests=[],values=new Map();let audioContexts=0,unlockCalls=0,holdCheck=null,heldCheck=null,holdCompile=null,heldCompile=false;
  const originalEvidenceStart=InputEvidence.prototype.start,originalCreateUrl=URL.createObjectURL,originalUnlock=Synth.prototype.unlock,originalPlay=Synth.prototype.play;
  Synth.prototype.unlock=function(...args){unlockCalls++;return originalUnlock.apply(this,args)};
@@ -24,7 +29,7 @@ test('application module initializes the lobby and activates only through explic
  const compile=score=>({score,timeline:{notes:score.parts.flatMap(part=>part.notes.filter(note=>note.pitch).map(note=>({id:note.id,source_note_id:note.id,source_note_ids:[note.id],velocity:note.velocity,part_id:part.id,midi:pitchMidi(note.pitch),start_ms:beat(note.at)*500,duration_ms:beat(note.duration)*500,voice:note.voice,staff:note.staff}))),duration_ms:1000},diagnostics:[]});
  const item={id:fixture.id,title:fixture.title,composer:fixture.composer,provenance:fixture.provenance,written_event_count:2,pitched_note_count:2,rest_count:0,opening_bpm:120,part_count:1};
  const otherScore={...structuredClone(fixture),id:'other-preview',title:'Another selected score'};
- const installed={window,document,location:{origin:'http://local-node-dom.invalid'},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},matchMedia:()=>({matches:false,addEventListener(){}}),MutationObserver:class{observe(){}disconnect(){}},requestAnimationFrame:()=>0,cancelAnimationFrame:()=>{},AudioContext:Audio,fetch:async(path,options={})=>{
+ const installed={window,document,performance:{now:()=>eventWall,timeOrigin},location:{origin:'http://local-node-dom.invalid'},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},matchMedia:()=>({matches:false,addEventListener(){}}),MutationObserver:class{observe(){}disconnect(){}},requestAnimationFrame:()=>0,cancelAnimationFrame:()=>{},AudioContext:Audio,fetch:async(path,options={})=>{
   const body=options.body?JSON.parse(options.body):null;requests.push({path,body});let result;
   if(path==='/api/catalog/index')result={version:1,items:[item,{...item,id:otherScore.id,title:otherScore.title}]};
   else if(path==='/api/catalog/score/'+fixture.id)result=structuredClone(fixture);
@@ -99,7 +104,7 @@ test('application module initializes the lobby and activates only through explic
   const guitarPlan=requests.filter(r=>r.path==='/api/practice-targets'&&r.body.profile.kind==='guitar').at(-1).body.timeline;
   assert.deepEqual([...document.querySelectorAll('.guitar-target')].map(item=>[item.dataset.targetId,Number(item.dataset.startMs)]),guitarPlan.notes.map(note=>[note.id,note.start_ms]));assert.equal(document.querySelectorAll('.fret-button').length,78);
   const key=document.querySelector('.fret-button');key.setPointerCapture=()=>{};
-  const emit=(target,type,properties={})=>{const event=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(event,{repeat:false,...properties});Object.defineProperty(event,'timeStamp',{value:performance.now()});target.dispatchEvent(event)};
+  const emit=(target,type,properties={},basis='monotonic')=>{const at=advanceEventTime(1),event=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(event,{repeat:false,...properties});Object.defineProperty(event,'timeStamp',{value:basis==='epoch'?timeOrigin+at:at});target.dispatchEvent(event);return at;};
   const enter={key:'Enter',code:'Enter'},typing={key:'r',code:'KeyR'};
   // A released pointer ID can be reused at the same pitch before its old audio
   // unlock resolves. Only the newest physical contact may start a voice.
@@ -142,8 +147,11 @@ test('application module initializes the lobby and activates only through explic
   const targetsBefore=structuredClone((await exportTake()).target_plan);
   emit(document.getElementById('stage-title'),'keydown',{key:'ArrowRight',code:'ArrowRight'});emit(document.getElementById('stage-title'),'keyup',{key:'ArrowRight',code:'ArrowRight'});
   emit(document.getElementById('play-button'),'keydown',{key:'ArrowUp',code:'ArrowUp'});emit(document.getElementById('play-button'),'keyup',{key:'ArrowUp',code:'ArrowUp'});
-  emit(document.getElementById('stage-title'),'keydown',{key:'a',code:'KeyR'});emit(document.getElementById('stage-title'),'keyup',{key:'a',code:'KeyR'});
+  const shiftedOnsetTime=emit(document.getElementById('stage-title'),'keydown',{key:'a',code:'KeyR'},'epoch');const shiftedReleaseTime=emit(document.getElementById('stage-title'),'keyup',{key:'a',code:'KeyR'});
+  assert.equal(shiftedReleaseTime-shiftedOnsetTime,1,'Physical release follows its onset by a positive explicit interval');
   const shiftedTake=await exportTake();assert.equal(shiftedTake.input_evidence.events.filter(event=>event.kind==='note_on').at(-1).midi,61,'Evidence retains the actual input-shifted pitch from the physical code');
+  const shiftedEvidence=shiftedTake.input_evidence.events.filter(event=>event.kind==='note_on').at(-1);
+  assert.equal(shiftedEvidence.timestamp_basis,'event_epoch');assert.equal(shiftedEvidence.raw_timestamp_ms,timeOrigin+shiftedOnsetTime);assert.equal(shiftedEvidence.event_wall_ms,shiftedOnsetTime);assert.equal(shiftedEvidence.received_wall_ms,shiftedOnsetTime);
   assert.equal(shiftedTake.passes.at(-1).inputs.at(-1).midi,61);assert.equal(shiftedTake.keyboard_input_configuration.current_configuration.transpose_semitones,1,'Focused widget arrows never transpose');
   assert.deepEqual(shiftedTake.target_plan,targetsBefore);assert.equal(document.getElementById('score-title').textContent,unchangedScore);
   emit(document.body,'keydown',{key:'ArrowLeft',code:'ArrowLeft'});emit(document.body,'keyup',{key:'ArrowLeft',code:'ArrowLeft'});
@@ -216,6 +224,8 @@ test('application module initializes the lobby and activates only through explic
   document.getElementById('free-stop').click();await new Promise(resolve=>setImmediate(resolve));
   document.getElementById('free-export-draft').click();await new Promise(resolve=>setImmediate(resolve));const freeRecord=JSON.parse(await blob.text());
   assert.equal(freeRecord.score_context,null);assert.equal(freeRecord.observations.events.filter(event=>event.kind==='note_on').length,1);
+  const freeOnset=freeRecord.observations.events.find(event=>event.kind==='note_on'),freeRelease=freeRecord.observations.events.find(event=>event.kind==='note_off');
+  assert.equal(freeOnset.timestamp_basis,'event_monotonic');assert.equal(freeRelease.event_wall_ms-freeOnset.event_wall_ms,1,'Free input retains a positive physical hold, not a frozen zero-duration pair');
   document.getElementById('free-exit').click();document.getElementById('resume-session').click();
   assert.equal(document.body.dataset.screen,'stage');assert.equal(document.getElementById('free-practice-screen').hidden,true);
   assert.deepEqual(await exportTake(),beforeFree,'Free recording leaves every scored take, target, clock segment and evidence event unchanged');

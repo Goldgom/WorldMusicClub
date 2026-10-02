@@ -10,7 +10,7 @@ New-Item -ItemType Directory $OutputDirectory | Out-Null
 $OutputDirectory=(Resolve-Path $OutputDirectory).Path
 $Fixtures=Join-Path $OutputDirectory 'fixtures'
 New-Item -ItemType Directory $Fixtures | Out-Null
-foreach($name in @('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','jianpu-original-steps.jianpu')) {
+foreach($name in @('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu')) {
   Copy-Item (Join-Path $Repository "tests/fixtures/$name") (Join-Path $Fixtures $name)
 }
 Set-Content -NoNewline -Encoding utf8 (Join-Path $Fixtures 'malformed.json') '{invalid canonical score'
@@ -303,6 +303,8 @@ try {
   }
   & node (Join-Path $PSScriptRoot 'verify-desktop-evidence.mjs') $OutputDirectory
   if($LASTEXITCODE -ne 0){throw 'Actual downloaded-file verification failed'}
+  & node (Join-Path $PSScriptRoot 'verify-reference-native-evidence.mjs') $OutputDirectory
+  if($LASTEXITCODE -ne 0){throw 'Actual native reference source/score/take verification failed'}
   $native.ok=$true;Save-Json $native (Join-Path $OutputDirectory 'native-acceptance.json')
   Write-Output 'Native file import/export, exact backups, same-profile restart, keyboard/free/history, navigation and normal/active close gates passed.'
 } catch {
