@@ -56,11 +56,11 @@ test('static DOM shell keeps every source control exactly once and pauses on pan
  try{
   const ids=[...document.querySelectorAll('[id]')].map(el=>el.id),shell=setupGameShell({pausePlayback:()=>pauses++,onScreen:value=>screens.push(value),onNotation:value=>notation.push(value)});
   for(const id of ids)assert.equal(document.querySelectorAll(`[id="${id}"]`).length,1,id);
-  assert.equal(document.querySelector('#workspace').hidden,true);assert.equal(document.querySelector('#song-lobby').hidden,false);
+  assert.equal(document.querySelector('#workspace').hidden,true);assert.equal(document.querySelector('#song-lobby').hidden,true);assert.equal(document.querySelector('#game-home').hidden,false);
   assert.equal(document.querySelectorAll('#fullscreen-button').length,1);
   assert.equal(document.querySelector('#fullscreen-button').getAttribute('aria-label'),'进入全屏');
   assert.equal(document.querySelector('#fullscreen-button').getAttribute('aria-disabled'),'true');
-  assert.equal(document.querySelector('.skip-link').getAttribute('href'),'#lobby-title');assert.equal(document.querySelector('#song-lobby').getAttribute('role'),'main');
+  assert.equal(document.querySelector('.skip-link').getAttribute('href'),'#home-title');assert.equal(document.querySelector('#song-lobby').getAttribute('role'),'main');
   for(const id of ['instrument','key-count','practice-part','latency-offset','theme-mode'])assert.equal(document.getElementById(id).closest('dialog').id,'settings-dialog');
   for(const id of ['export-button','source-files-button','score-details'])assert.equal(document.getElementById(id).closest('dialog').id,'score-tools-dialog');
   for(const id of ['score-file','score-image-file','jianpu-editor-button'])assert.equal(document.getElementById(id).closest('dialog').id,'import-tools-dialog');

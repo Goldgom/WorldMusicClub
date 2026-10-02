@@ -1,6 +1,6 @@
 # Song lobby and performance stage
 
-The application opens in a song lobby. Search uses title/composer text and the explicit edition origin. Selecting a bundled card prepares a separate candidate with the local Rust compiler and instrument checks. It does not replace the current score, clear an existing take, or start audio.
+The application opens in a main menu; Single player opens the song lobby. Search uses title/composer text and the explicit edition origin. Selecting a bundled card prepares a separate candidate with the local Rust compiler and instrument checks. It does not replace the current score, clear an existing take, or start audio.
 
 **Listen** and **Practice** explicitly start a new session. Practice remains unavailable while the candidate is pending, out of range, unverified, or incompatible with the chosen instrument. Activation uses the normal canonical load path and checks the actual selected targets again. Listen does not remove unavailable notes or adapt their pitches.
 
@@ -16,7 +16,7 @@ Importing a valid local score, opening a saved copy, or activating a reviewed/ad
 - Results contains assessed passes and take-data export
 - Saved scores retains explicit Save/Open/Delete and backup/restore
 
-Opening a secondary panel pauses playback. Closing it never starts playback automatically. Native modal focus stays inside the panel. The skip link targets the visible lobby or stage heading. Computer piano shortcuts only operate on the stage, outside modal/text controls; Space keeps normal button activation. Genuine delayed MIDI timestamps can still be retained in their previous pass buffer after pausing, without sounding new notes in a panel or lobby.
+Opening a secondary panel pauses playback. Closing it never starts playback automatically. Native modal focus stays inside the panel. The skip link targets the visible home, lobby, free-practice or stage heading. Computer piano shortcuts only operate on the stage, outside modal/text controls; Space keeps normal button activation. Genuine delayed MIDI timestamps can still be retained in their previous pass buffer after pausing, without sounding new notes in a panel or lobby.
 
 MIDI Settings keeps the existing explicit Connect control and adds All / one device / None selection. Browser-reported connected/disconnected state and open/closed/pending connection are separate; an outstanding open request or open error is labeled independently. A missing selected identity stays unavailable instead of silently selecting another input. The versioned browser-local choice saves only mode and an opaque device ID, never its display name. Unavailable or corrupt storage starts with None and explains the problem; failed writes keep the choice in this tab. No device identity belongs in score or take exports.
 
@@ -69,3 +69,12 @@ Semitone-copy coverage includes pure preservation/interval/timeline checks, Node
 Registered simultaneous-layout cases inspect the real game field, rendered staff or numbered view, current keybed, keyboard panning and transport together at 1280×720 and 844×390. A separate 844×390 guitar case verifies the labelled 56px row and keyboard-focus access to the last fret while notation remains open. They preserve complete paused-take and score exports, exercise modal focus and reduced-motion settings, and capture geometry/screenshots in hosted CI. These registrations are not a local browser or visual acceptance result.
 
 This redesign follows the immutable recovery108 baseline. It does not change that release artifact.
+
+
+## Main menu and source-score audition
+
+The initial screen is `home`. `#home-single-player` enters the equal-width library/detail lobby, while `#lobby-home` and the brand return home. The existing `#start-free-practice` control now lives on the home screen. Appearance focuses the existing theme control in Settings. Collaboration and Online are explicitly planned, disabled entries; they do not create accounts, connections or sessions. Native acceptance and browser bootstrap must enter the lobby before clicking its controls.
+
+`lobby-preview.js` reuses `Synth` and `Transport` with a separate instance, clock, mute and volume. Its explicit Preview button consumes the selected Rust compilation's timeline, starting at its first sounding note for at most 30 seconds. This is synthesized source-score audio, not a recording or an adapted difficulty. It never writes score data, captures input, starts a practice pass, or resumes a paused session. Changing selection, starting a session, opening a panel, navigation, page hide, blur and background clock gaps stop it. Cancellation generations reject late unlock completions. Returning to the page or enabling sound never restarts playback. `.song-preview` and `#preview-part` remain stable mount points for separately integrated difficulty controls.
+
+Node tests cover generation races, independent sound settings, original pitches and durations, excerpt limits, real app wiring, locale redraw and preserved canonical/take exports. `game-lobby-browser-regression.js` registers actual Rust-backed 1280×720 and 1920×1080 main-menu/lobby screenshots, equal-half geometry and real AudioContext activity. It starts no process on import; local Node results do not establish browser rendering or physical audio output.

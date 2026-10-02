@@ -1,3 +1,4 @@
+import {registerGameLobbyBrowserRegressions} from './game-lobby-browser-regression.js';
 import {assertLocaleRoundTrip,registerLocaleBrowserRegressions} from './locale-browser-regression.js';
 import {registerBeginnerBrowserRegressions} from './beginner-browser-regression.js';
 import {registerStaffRegisterBrowserRegressions} from './staff-register-browser-regression.js';
@@ -59,6 +60,7 @@ async function revealControl(locator) {
   const owner = await locator.first().evaluate(element => ({
     dialog: element.closest('dialog')?.id,
     lobby: Boolean(element.closest('#song-lobby')),
+    home: Boolean(element.closest('#game-home')),
     notation: Boolean(element.closest('#notation-dock')),
     stage: Boolean(element.closest('#workspace')),
     notationOptions: Boolean(element.closest('.dock-help') && !element.matches('.dock-help>summary')),
@@ -67,7 +69,16 @@ async function revealControl(locator) {
   if (owner.dialog && !panel) return; // Existing review dialogs keep their own explicit lifecycle.
   await closeShellPanels(panel);
   if (panel && !await page.locator(`#${panel}-dialog`).isVisible()) await page.locator(`#${panel}-button`).click();
-  if (owner.lobby && !await page.locator('#song-lobby').isVisible()) await page.locator('#back-to-library').click();
+  if (owner.home && !await page.locator('#game-home').isVisible()) {
+    if (await page.locator('#workspace').isVisible()) await page.locator('#back-to-library').click();
+    if (await page.locator('#free-practice-screen').isVisible()) await page.locator('#free-exit').click();
+    await page.locator('#lobby-home').click();
+  }
+  if (owner.lobby && !await page.locator('#song-lobby').isVisible()) {
+    if (await page.locator('#game-home').isVisible()) await page.locator('#home-single-player').click();
+    else await page.locator('#back-to-library').click();
+  }
+  if (owner.stage && await page.locator('#game-home').isVisible()) await page.locator('#home-single-player').click();
   if (owner.stage && await page.locator('#song-lobby').isVisible()) await page.locator('#resume-session').click();
   if (owner.notation && !await page.locator('#notation-dock').isVisible()) {
     if (await page.locator('#song-lobby').isVisible()) await page.locator('#resume-session').click();
@@ -93,6 +104,7 @@ function ui(selector) {
 }
 async function startPreview({reset = true, notation = true, mode = 'listen'} = {}) {
   await closeShellPanels();
+  if (await page.locator('#game-home').isVisible()) await page.locator('#home-single-player').click();
   await page.locator(`#start-${mode}:not([disabled])`).waitFor();
   await page.locator(`#start-${mode}`).click();
   await page.locator('#play-button').waitFor({state: 'visible'});
@@ -2379,3 +2391,5 @@ registerReferenceListeningBrowserRegressions({test,getPage:()=>page,ui,readyForT
 registerFreePianoBrowserRegressions({test,getPage:()=>page,closeShellPanels,artifactDirectory});
 
 registerLocaleBrowserRegressions({test,getPage:()=>page,ui,closeShellPanels,waitForEngraving,readyForTitle,exportScore,getRequests:getRequestsForLocale});
+
+registerGameLobbyBrowserRegressions({test,getPage:()=>page,ui,closeShellPanels,exportScore,exportTakeData,artifactDirectory});

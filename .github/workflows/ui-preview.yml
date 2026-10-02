@@ -1,0 +1,41 @@
+name: Functional game UI preview
+on:
+  push:
+    branches: ['integration/game-ui']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ui-preview:
+    name: Real Rust and browser UI preview (not package acceptance)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: npx playwright install --with-deps chromium
+      - run: cargo build -p practice-server --locked
+      - name: Exercise the three actual UI changes and capture their viewports
+        env:
+          WMH_ARTIFACT_DIR: ui-preview
+        run: |
+          mkdir -p ui-preview
+          node --test --test-reporter=tap --test-name-pattern='^(real free piano fills desktop|original grand staff and Jianpu follow|game menu and audible song preview)' tests/full-app-browser.test.js | tee ui-preview/tests.tap
+      - name: Verify preview provenance and required real screenshots
+        run: node scripts/verify-ui-preview.mjs ui-preview
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: game-ui-preview-${{ github.sha }}
+          path: |
+            ui-preview/*.png
+            ui-preview/*.json
+            ui-preview/tests.tap
+          if-no-files-found: warn

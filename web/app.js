@@ -1,3 +1,4 @@
+import {setupLobbyPreview} from './lobby-preview.js';
 import {setupReferenceListening} from './reference-listening.js';
 import {getAppI18n} from './app-locale.js';
 import {createFreePracticeSession, createFreePracticePreview} from './free-practice.js';
@@ -103,7 +104,7 @@ let transpositionView = null;
 let externalOmrView = null;
 let notationFollowing = null;
 let writtenCursor = null, writtenCursorStatus = null, writtenCursorRetry = null;
-let sourceArchiveView=null,referenceListening=null;
+let sourceArchiveView=null,referenceListening=null,lobbyPreview=null;
 let midiController=null;
 let freeSession=null,freeView=null,freePreview=null,freeLiveOwner=null,freeLiveStart=0,freeCaptureState='idle',freeRecordInstrument=null,freeClockWall=0;
 const inputRoutes=[],inputContacts=new Map();
@@ -143,6 +144,7 @@ function changeScreen(screen){
 shell=setupGameShell({i18n,pausePlayback,onPanel:name=>{referenceListening?.close();cancelPendingStart();if(name==='results')updateResultsSummary()},onScreen:changeScreen,
   onNotation:()=>{engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
 const noticeView=setupNoticeView({document,i18n,getScope:()=>state.score?.title});
+lobbyPreview=setupLobbyPreview({document,i18n,allowed:()=>shell.screen()==='library'&&!startingPreview&&!document.hidden&&!document.querySelector('dialog[open]')});
 preview=new ScorePreview({compile:(score,signal)=>api('/api/compile',score,signal),check:checkPreview,onChange:()=>{renderPreview();renderCatalog()}});
 
 function notice(message, error = false) {
@@ -189,6 +191,7 @@ function silenceHeld(reason = 'application_cleanup', eventWall = performance.now
   document.querySelectorAll('.pressed').forEach(el => el.classList.remove('pressed'));
 }
 function pausePlayback(reason = 'app.paused', evidenceReason = 'pause') {
+  lobbyPreview?.stop(['blur','hidden','pagehide'].includes(evidenceReason)?'interrupted':'stopped');
   if(referenceListening?.isOpen()){referenceListening.pause();return;}
   state.playTicket++;
   if(shell?.screen()==='free'){freeView?.interrupt(evidenceReason);cleanupFreeInputs(evidenceReason);return;}
@@ -1134,6 +1137,7 @@ async function checkPreview(compiled,part,signal){
   return previewCompatibility(result,profile);
 }
 function renderPreview(){
+  lobbyPreview?.select(preview.value);
   const value=preview.value,changedIdentity=$('song-lobby').dataset.previewId!==(value.identity||'');$('song-lobby').dataset.previewStatus=value.status;$('song-lobby').dataset.previewId=value.identity||'';
   const item=value.score||state.catalog.find(item=>item.id===value.identity);
   bindText($('preview-title'), () => item?.title||t('app.chooseScore'));
@@ -1164,6 +1168,7 @@ function refreshPreview(){
 }
 async function startPreview(mode){
   if(startingPreview||!preview.canStart(mode))return;
+  lobbyPreview?.stop();
   const candidate=preview.value,version=preview.version,request=++startRequest;startingPreview=true;renderPreview();
   try{
     if(!synth.muted)await synth.unlock();if(request!==startRequest||version!==preview.version||candidate.score!==preview.value.score)return;

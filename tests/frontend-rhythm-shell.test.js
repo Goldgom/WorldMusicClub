@@ -98,14 +98,14 @@ test('rhythm entry keeps real controls, records silently and retains a draft acr
     assert.ok(app.document.body.classList.contains('rhythm-shell'));
     assert.equal(app.$('start-free-practice').closest('section').className, 'rhythm-free-entry');
     assert.equal(app.document.querySelectorAll('#start-free-practice').length, 1);
-    assert.equal(app.$('rhythm-location').textContent, '练习大厅');
+    assert.equal(app.$('rhythm-location').textContent, '主菜单');
     await app.click('start-free-practice');
     const start = app.$('free-start'), state = app.$('free-state'), input = app.$('free-practice-keys').firstElementChild;
     assert.equal(start.closest('.rhythm-free-console')?.getAttribute('role'), 'group');
     assert.equal(app.$('rhythm-free-resume').hidden, true);
     await app.click('free-sound'); await app.click('free-start'); playKey(app);
     app.emit(app.document.querySelector('#shell-brand .brand'), 'click', {button:0});
-    assert.equal(app.document.body.dataset.screen, 'library');
+    assert.equal(app.document.body.dataset.screen, 'home');
     assert.equal(app.$('free-practice-screen').dataset.state, 'paused');
     await app.click('start-free-practice');
     assert.equal(app.$('free-start'), start); assert.equal(app.$('free-state'), state);

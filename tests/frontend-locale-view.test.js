@@ -123,7 +123,7 @@ test('open shell dialogs switch language without pausing, resetting, refocusing 
     for(const locale of ['en','zh-CN','en'])i18n.setLocale(locale);
     assert.deepEqual(events,before);assert.equal(dialog.open,true);assert.equal(f.focused(),draft);assert.equal(draft.value,'D4 A3 F3 C3 G2 D2');assert.deepEqual([...f.document.querySelectorAll('input,select,button,dialog')],controls);
     assert.equal(f.document.getElementById('settings-title').textContent,'Session settings');assert.equal(f.document.getElementById('results-button').textContent,'Results (2)');assert.equal(f.document.getElementById('stage-title').textContent,'原作 <img> · Source');assert.equal(f.document.querySelector('#stage-title img'),null);assert.match(f.document.getElementById('stage-subtitle').textContent,/part_ID · Original/);
-    assert.equal(f.document.querySelector('.skip-link').textContent,'Skip to song selection');
+    assert.equal(f.document.querySelector('.skip-link').textContent,'Main menu');
     shell.update({hasSession:true,hasPerformanceRecords:true});assert.equal(f.document.getElementById('resume-session').hidden,false);assert.equal(f.document.getElementById('results-button').disabled,false);assert.equal(f.document.getElementById('score-tools-button').disabled,true);
   } finally {shell?.destroy();f.close();}
 });

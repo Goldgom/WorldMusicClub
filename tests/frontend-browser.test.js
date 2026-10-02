@@ -27,6 +27,7 @@ async function revealControl(locator) {
   const owner = await locator.first().evaluate(element => ({
     dialog: element.closest('dialog')?.id,
     lobby: Boolean(element.closest('#song-lobby')),
+    home: Boolean(element.closest('#game-home')),
     notation: Boolean(element.closest('#notation-dock')),
     stage: Boolean(element.closest('#workspace')),
     notationOptions: Boolean(element.closest('.dock-help') && !element.matches('.dock-help>summary')),
@@ -35,7 +36,16 @@ async function revealControl(locator) {
   if (owner.dialog && !panel) return; // Existing review dialogs keep their own explicit lifecycle.
   await closeShellPanels(panel);
   if (panel && !await page.locator(`#${panel}-dialog`).isVisible()) await page.locator(`#${panel}-button`).click();
-  if (owner.lobby && !await page.locator('#song-lobby').isVisible()) await page.locator('#back-to-library').click();
+  if (owner.home && !await page.locator('#game-home').isVisible()) {
+    if (await page.locator('#workspace').isVisible()) await page.locator('#back-to-library').click();
+    if (await page.locator('#free-practice-screen').isVisible()) await page.locator('#free-exit').click();
+    await page.locator('#lobby-home').click();
+  }
+  if (owner.lobby && !await page.locator('#song-lobby').isVisible()) {
+    if (await page.locator('#game-home').isVisible()) await page.locator('#home-single-player').click();
+    else await page.locator('#back-to-library').click();
+  }
+  if (owner.stage && await page.locator('#game-home').isVisible()) await page.locator('#home-single-player').click();
   if (owner.stage && await page.locator('#song-lobby').isVisible()) await page.locator('#resume-session').click();
   if (owner.notation && !await page.locator('#notation-dock').isVisible()) {
     if (await page.locator('#song-lobby').isVisible()) await page.locator('#resume-session').click();
@@ -61,6 +71,7 @@ function ui(selector) {
 }
 async function startPreview({reset = true, notation = true, mode = 'listen'} = {}) {
   await closeShellPanels();
+  if (await page.locator('#game-home').isVisible()) await page.locator('#home-single-player').click();
   await page.locator(`#start-${mode}:not([disabled])`).waitFor();
   await page.locator(`#start-${mode}`).click();
   await page.locator('#play-button').waitFor({state: 'visible'});
@@ -535,7 +546,7 @@ test('complete source editions expose retained-event counts and credits while th
 const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return{promise,resolve}};
 const catalogCopy=(id,title=id)=>({...structuredClone(fixture),id,title,source:{format:'original-test',filename:`${id}.xml`,content:`Exact source ${id}\r\n原稿`}});
 async function routeCatalog(scores,onScore=null){const reads=[];await page.route('**/api/catalog/index',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({version:1,items:scores.map(catalogItem)})}));await page.route('**/api/catalog/score/*',async route=>{const id=decodeURIComponent(new URL(route.request().url()).pathname.split('/').at(-1));reads.push(id);if(onScore&&await onScore(route,id))return;const score=scores.find(score=>score.id===id);await route.fulfill({status:score?200:404,contentType:'application/json',body:JSON.stringify(score||{error:'Unknown bundled score'})})});return reads}
-async function expectCatalogTitle(title){await page.waitForFunction(expected=>document.querySelector('#preview-title').textContent===expected&&!document.querySelector('#start-listen').disabled,title);if(await ui('#song-lobby').isVisible())await startPreview();await page.waitForFunction(expected=>document.querySelector('#score-title').textContent===expected&&!document.querySelector('#play-button').disabled,title)}
+async function expectCatalogTitle(title){if(await page.locator('#game-home').isVisible())await page.locator('#home-single-player').click();await page.waitForFunction(expected=>document.querySelector('#preview-title').textContent===expected&&!document.querySelector('#start-listen').disabled,title);if(await ui('#song-lobby').isVisible())await startPreview();await page.waitForFunction(expected=>document.querySelector('#score-title').textContent===expected&&!document.querySelector('#play-button').disabled,title)}
 test('catalog startup loads metadata and one score, and cached originals survive private tempo edits',async()=>{
  const first=catalogCopy('catalog-a','Catalog A'),second=catalogCopy('catalog-b','Catalog B'),reads=await routeCatalog([first,second]),paths=[];page.on('request',request=>paths.push(new URL(request.url()).pathname));await page.reload();await expectCatalogTitle(first.title);assert.deepEqual(reads,[first.id]);assert.ok(paths.includes('/api/catalog/index'));assert.equal(paths.includes('/api/catalog'),false);await ui(`[data-score-id="${second.id}"]`).click();await expectCatalogTitle(second.title);assert.deepEqual(reads,[first.id,second.id]);await ui(`[data-score-id="${first.id}"]`).click();await expectCatalogTitle(first.title);await ui('#tempo').fill('90');const edited=page.waitForResponse(response=>response.url().endsWith('/api/compile')&&response.request().postDataJSON().tempo[0].bpm===90);await ui('#tempo').dispatchEvent('change');await edited;await page.waitForFunction(()=>document.querySelector('#transport-status').textContent==='Ready when you are');await ui(`[data-score-id="${second.id}"]`).click();await expectCatalogTitle(second.title);await ui(`[data-score-id="${first.id}"]`).click();await expectCatalogTitle(first.title);assert.equal(await ui('#tempo').inputValue(),'120');assert.deepEqual(reads,[first.id,second.id]);const download=page.waitForEvent('download');await ui('#export-button').click();assert.deepEqual(JSON.parse(await readFile(await(await download).path(),'utf8')),first);
 });
