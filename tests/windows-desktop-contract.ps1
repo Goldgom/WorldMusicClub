@@ -48,6 +48,51 @@ foreach($case in $hostCases) {
   $candidate=New-ValidHost;$candidate.($case.field)=$case.value
   Assert-Rejected { [NativeAcceptance]::SelectFileNameHost([NativeFileNameHost[]]@($candidate),42) } "host identity $($case.field)"
 }
+function New-ValidOpenButton {
+  $button=[NativePickerButton]::new()
+  $button.Window=[IntPtr]104;$button.AutomationId='1';$button.IsButton=$true
+  $button.AutomationProcess=42;$button.NativeProcess=42;$button.NativeClass='Button';$button.NativeControlId=1
+  $button.AutomationEnabled=$true;$button.InDialog=$true;$button.Enabled=$true;$button.Visible=$true
+  return $button
+}
+$openButton=New-ValidOpenButton;$otherControl=New-ValidOpenButton;$otherControl.Window=[IntPtr]105;$otherControl.IsButton=$false;$otherControl.NativeClass='Static'
+Assert-True ([NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]@($otherControl,$openButton),42) -eq [IntPtr]104) 'Open resolves by complete identity rather than first ID match'
+Assert-True ([NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]@($openButton,(New-ValidOpenButton)),42) -eq [IntPtr]104) 'Open duplicate UIA references to one native button'
+$secondOpen=New-ValidOpenButton;$secondOpen.Window=[IntPtr]106
+Assert-Rejected { [NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]@($openButton,$secondOpen),42) } 'two verified Open buttons'
+Assert-Rejected { [NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]](@($openButton)*9),42) } 'oversized Open inventory'
+Assert-Rejected { [NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]@(),42) } 'missing Open button'
+foreach($case in @(
+  @{field='Window';value=[IntPtr]::Zero},@{field='AutomationId';value='2'},@{field='IsButton';value=$false},
+  @{field='AutomationProcess';value=[uint32]43},@{field='NativeProcess';value=[uint32]43},
+  @{field='NativeClass';value='Static'},@{field='NativeControlId';value=2},
+  @{field='AutomationEnabled';value=$false},@{field='InDialog';value=$false},
+  @{field='Enabled';value=$false},@{field='Visible';value=$false}
+)) {
+  $button=New-ValidOpenButton;$button.($case.field)=$case.value
+  Assert-Rejected { [NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]@($button),42) } "Open identity $($case.field)"
+}
+function New-Rectangle([int]$Left,[int]$Top,[int]$Right,[int]$Bottom) {
+  $bounds=[NativeAcceptance+RECT]::new();$bounds.Left=$Left;$bounds.Top=$Top;$bounds.Right=$Right;$bounds.Bottom=$Bottom;return $bounds
+}
+$dialogBounds=New-Rectangle 100 100 800 600;$buttonBounds=New-Rectangle 610 520 700 560
+$point=[NativeAcceptance]::PickerClickPoint($dialogBounds,$buttonBounds)
+Assert-True ($point.X -eq 655 -and $point.Y -eq 540) 'Open native screen center'
+$negativePoint=[NativeAcceptance]::PickerClickPoint((New-Rectangle -10 -10 10 10),(New-Rectangle -3 -3 -2 -2))
+Assert-True ($negativePoint.X -eq -3 -and $negativePoint.Y -eq -3) 'negative monitor coordinates stay inside one-pixel bounds'
+foreach($bounds in @((New-Rectangle 610 520 610 560),(New-Rectangle 610 520 700 520),(New-Rectangle 99 520 700 560),(New-Rectangle 610 99 700 560),(New-Rectangle 610 520 801 560),(New-Rectangle 610 520 700 601))) {
+  Assert-Rejected { [NativeAcceptance]::PickerClickPoint($dialogBounds,$bounds) } 'empty or escaped Open bounds'
+}
+[NativeAcceptance]::ValidatePickerClick([IntPtr]101,[IntPtr]100,[IntPtr]100,[IntPtr]101,42,42,$true);$script:checks++
+Assert-Rejected { [NativeAcceptance]::ValidatePickerClick([IntPtr]::Zero,[IntPtr]100,[IntPtr]100,[IntPtr]101,42,42,$true) } 'missing click dialog'
+Assert-Rejected { [NativeAcceptance]::ValidatePickerClick([IntPtr]101,[IntPtr]100,[IntPtr]999,[IntPtr]101,42,42,$true) } 'foreign click owner'
+Assert-Rejected { [NativeAcceptance]::ValidatePickerClick([IntPtr]101,[IntPtr]100,[IntPtr]100,[IntPtr]999,42,42,$true) } 'another foreground window'
+Assert-Rejected { [NativeAcceptance]::ValidatePickerClick([IntPtr]101,[IntPtr]100,[IntPtr]100,[IntPtr]101,42,43,$true) } 'foreign dialog process'
+Assert-Rejected { [NativeAcceptance]::ValidatePickerClick([IntPtr]101,[IntPtr]100,[IntPtr]100,[IntPtr]101,42,42,$false) } 'Open point obscured by another control'
+Assert-True (-not [NativeAcceptance]::PickerDismissed($true,$true,$false)) 'Invoke or click return does not dismiss a visible chooser'
+Assert-True (-not [NativeAcceptance]::PickerDismissed($false,$false,$true)) 'replacement owned popup is not completion'
+Assert-True ([NativeAcceptance]::PickerDismissed($false,$false,$false)) 'destroyed chooser with no replacement modal'
+Assert-True ([NativeAcceptance]::PickerDismissed($true,$false,$false)) 'hidden chooser with no replacement modal'
 function New-ValidTarget {
   $target=[NativeFileNameTarget]::new()
   $target.Dialog=[IntPtr]101;$target.AppWindow=[IntPtr]100;$target.RootOwner=[IntPtr]100
@@ -111,4 +156,4 @@ try {
 } finally {
   if(Test-Path $temporary){Remove-Item -LiteralPath $temporary -Recurse -Force}
 }
-Write-Output "$script:checks native filename identity, ownership and fixture-path contract checks passed without GUI or native calls."
+Write-Output "$script:checks native picker identity, completion and fixture-path contract checks passed without GUI or native calls."

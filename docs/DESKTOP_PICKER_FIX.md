@@ -165,10 +165,13 @@ Open control was invoked. Its result file is 2,309 bytes, below the existing
 4,096-byte result limit.
 
 The next action and final renderer report never arrived. After 240 seconds the
-retained app screenshot shows the Import modal, with the OS picker closed.
-These facts establish the completed native action, but not a file-change event,
-successful import or renderer acknowledgment of the action result. The absent
-report does not identify a host deadlock, file-read failure or parsing error.
+retained parent-window `PrintWindow` capture shows the Import modal. This image
+does not establish whether an owned OS picker or popup remained open. The action
+result establishes exact filename readback and return from `InvokePattern`,
+but not chooser dismissal, a file-change event, successful import or renderer
+acknowledgment. The absent report does not identify a host deadlock, file-read
+failure or parsing error. The earlier claim that the picker had closed was an
+incorrect inference from a parent-window-only capture.
 
 Source review identified a definite timeout defect: `until` awaited each async
 condition before inspecting its deadline. A pending result fetch or response
@@ -197,3 +200,41 @@ propagation without launching a browser. Rust tests retain the existing result
 size contract, reject nonmetadata progress and verify bounded trace retention.
 The next exact-source hosted run must locate the remaining stall or demonstrate
 actual import completion; this change is not a claim of full native acceptance.
+
+## Source 164 result and native Open completion
+
+[Run 37024968887](https://github.com/Goldgom/WorldMusicHub/actions/runs/37024968887)
+tested source `84313de909140bbf878f35db76dfea540e77f8c1`, tree
+`b9bd2062e8aece398ac463ef73278d66c0a63cbc` (local equivalent
+`752e3a4f40449aa17d7c4cd9172b20551c2412a4`). Its trace records ordinary
+host/renderer traffic, completed action 1 and action 2's result polling. The
+last record is a normal `/__desktop_smoke/result/2` 404 at 2,956 ms. No later
+renderer checkpoint, picker event, import API request or final report arrived.
+The action result still reports exact filename readback and successful return
+from Open's UIA invocation. No code had checked the chooser HWND afterward.
+
+The correction uses one real mouse click on Open. Up to eight UIA ID `1` matches
+are checked against native `Button` class, ID, PID, dialog ancestry and enabled/
+visible state; only one verified native HWND is accepted. The harness refreshes
+that control, requires the owned dialog in the foreground, and derives the click
+point from nonempty native button bounds inside the dialog. The screen hit test
+must identify that same button or its native child before input is sent. An
+owned-dialog screenshot is retained immediately before the Open operation.
+
+Open and Cancel now require the known chooser HWND to disappear or become hidden
+with no replacement owned foreground popup within five seconds. Merely returning
+from a click or invocation is no longer success. On failure the harness captures
+the exact still-owned chooser and any replacement app-owned foreground popup;
+it also reads at most 256 characters from the previously verified filename Edit,
+its parent and its host, using the existing 1000-ms native message bound. This
+will distinguish visible filename/notification state from successful selection.
+The app, native text-entry method, renderer acceptance and 240-second phase limit
+are unchanged. The prior artifacts and frozen source remain retained.
+
+The pure C# contract adds Open identity/ambiguity, live-owner/foreground/hit-test,
+native geometry (including negative monitor coordinates), and dismissal-state
+regressions. A representative successful action result including the new compact
+button/completion fields is 2,941 bytes, within the unchanged 4,096-byte result
+limit; detailed candidate/text inventories are attached only to failed actions.
+PowerShell/.NET and actual native clicking remain hosted-Windows checks. No local
+GUI is launched, and this preparation does not claim a successful native import.

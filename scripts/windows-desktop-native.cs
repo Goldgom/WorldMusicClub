@@ -17,6 +17,13 @@ public sealed class NativeFileNameTarget {
   public string HostClass, EditClass;
   public bool HostInDialog, EditInHost, HostEnabled, EditEnabled, EditVisible, EditReadOnly;
 }
+public sealed class NativePickerButton {
+  public IntPtr Window;
+  public uint AutomationProcess, NativeProcess;
+  public string AutomationId, NativeClass;
+  public int NativeControlId;
+  public bool IsButton, AutomationEnabled, InDialog, Enabled, Visible;
+}
 public static class NativeAcceptance {
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left,Top,Right,Bottom; }
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X,Y; }
@@ -29,6 +36,9 @@ public static class NativeAcceptance {
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint processId);
   [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h,StringBuilder text,int length);
   [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent,IntPtr child);
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
   [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr h);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
   [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr h);
@@ -43,7 +53,7 @@ public static class NativeAcceptance {
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int command);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h,IntPtr device,uint flags);
   public static void Key(byte key) { byte scan=(byte)MapVirtualKey(key,0); keybd_event(key,scan,0,UIntPtr.Zero); keybd_event(key,scan,2,UIntPtr.Zero); }
-  public static void Click(int x,int y) { SetCursorPos(x,y); mouse_event(2,0,0,0,UIntPtr.Zero); mouse_event(4,0,0,0,UIntPtr.Zero); }
+  public static void Click(int x,int y) { if(!SetCursorPos(x,y))throw new InvalidOperationException("Cannot position the native pointer"); mouse_event(2,0,0,0,UIntPtr.Zero); mouse_event(4,0,0,0,UIntPtr.Zero); }
   public static IntPtr SelectFileNameHost(NativeFileNameHost[] candidates,uint appProcess) {
     if(candidates==null || candidates.Length==0 || candidates.Length>8 || appProcess==0)
       throw new InvalidOperationException("Windows filename host inventory is missing or exceeds eight candidates");
@@ -64,6 +74,38 @@ public static class NativeAcceptance {
   public static void ValidateFileNameTarget(NativeFileNameTarget target) {
     if(target==null || target.Dialog==IntPtr.Zero || target.AppWindow==IntPtr.Zero || target.Host==IntPtr.Zero || target.Edit==IntPtr.Zero || target.Host==target.Edit || target.RootOwner!=target.AppWindow || target.AppProcess==0 || target.DialogProcess!=target.AppProcess || target.HostProcess!=target.AppProcess || target.EditProcess!=target.AppProcess || target.HostControlId!=1148 || target.HostClass!="ComboBoxEx32" || target.EditClass!="Edit" || !target.HostInDialog || !target.EditInHost || !target.HostEnabled || !target.EditEnabled || !target.EditVisible || target.EditReadOnly)
       throw new InvalidOperationException("Native filename handle ownership, class, identity or writable state does not match");
+  }
+  public static IntPtr SelectPickerOpenButton(NativePickerButton[] candidates,uint appProcess) {
+    if(candidates==null || candidates.Length==0 || candidates.Length>8 || appProcess==0)
+      throw new InvalidOperationException("Open button inventory is missing or exceeds eight candidates");
+    IntPtr selected=IntPtr.Zero;
+    foreach(var candidate in candidates) {
+      if(candidate==null || candidate.Window==IntPtr.Zero || candidate.AutomationId!="1" || !candidate.IsButton || candidate.NativeClass!="Button" || candidate.NativeControlId!=1 || candidate.AutomationProcess!=appProcess || candidate.NativeProcess!=appProcess || !candidate.AutomationEnabled || !candidate.InDialog || !candidate.Enabled || !candidate.Visible)
+        continue;
+      if(selected!=IntPtr.Zero && selected!=candidate.Window)
+        throw new InvalidOperationException("Open button has multiple verified native handles");
+      selected=candidate.Window;
+    }
+    if(selected==IntPtr.Zero)throw new InvalidOperationException("Open button has no verified native handle");
+    return selected;
+  }
+  public static POINT PickerClickPoint(RECT dialog,RECT button) {
+    if(dialog.Right<=dialog.Left || dialog.Bottom<=dialog.Top || button.Right<=button.Left || button.Bottom<=button.Top || button.Left<dialog.Left || button.Top<dialog.Top || button.Right>dialog.Right || button.Bottom>dialog.Bottom)
+      throw new InvalidOperationException("Open button bounds are empty or outside the owned picker");
+    return new POINT { X=(int)((long)button.Left+((long)button.Right-button.Left)/2), Y=(int)((long)button.Top+((long)button.Bottom-button.Top)/2) };
+  }
+  public static void ValidatePickerClick(IntPtr dialog,IntPtr appWindow,IntPtr rootOwner,IntPtr foreground,uint appProcess,uint dialogProcess,bool hitInButton) {
+    if(dialog==IntPtr.Zero || appWindow==IntPtr.Zero || dialog==appWindow || rootOwner!=appWindow || foreground!=dialog || appProcess==0 || dialogProcess!=appProcess || !hitInButton)
+      throw new InvalidOperationException("Open click ownership, foreground or button hit test does not match");
+  }
+  public static bool PickerDismissed(bool exists,bool visible,bool ownedPopupVisible) {
+    return (!exists || !visible) && !ownedPopupVisible;
+  }
+  public static string ReadControlText(IntPtr window) {
+    var value=new StringBuilder(257);UIntPtr copied;
+    if(ReadText(window,0x000D,new UIntPtr((uint)value.Capacity),value,0x23,1000,out copied)==IntPtr.Zero)
+      throw new InvalidOperationException("Owned control text read exceeded 1000 ms or failed");
+    return value.ToString();
   }
   public static string ResolveFixturePath(string fixtures,string output,string name) {
     string directory;

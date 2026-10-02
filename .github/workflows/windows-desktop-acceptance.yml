@@ -11,6 +11,7 @@ jobs:
     timeout-minutes: 45
     env:
       RUSTFLAGS: '-C target-feature=+crt-static'
+      CARGO_INCREMENTAL: '0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -42,10 +43,50 @@ jobs:
       - name: Test native filename ownership and approved fixture paths without GUI
         shell: pwsh
         run: ./tests/windows-desktop-contract.ps1
+      # Only public generated build artifacts; no Cargo home, credentials, UI
+      # evidence, incremental state or packaged executable/ZIP. Keep both lists equal.
+      - name: Restore native Rust build cache
+        id: native_rust_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
+        with:
+          path: |
+            target/debug/.fingerprint
+            target/debug/build
+            target/debug/deps
+            target/release/.fingerprint
+            target/release/build
+            target/release/deps
+          # Reuse across source-only edits; Cargo still checks source freshness.
+          # No broad restore key can cross dependency/build-configuration changes.
+          key: native-rust-v1-${{ runner.os }}-${{ runner.arch }}-msvc-1.99.0-crt-static-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', '.cargo/config*', 'rust-toolchain*', '.github/workflows/windows-desktop-acceptance.yml') }}
+          fail-on-cache-miss: false
+          enableCrossOsArchive: false
       - run: cargo fmt --all --check
       - run: cargo test --workspace --all-targets --locked
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - run: cargo build -p worldmusichub-desktop --release --locked
+      - id: native_build
+        run: cargo build -p worldmusichub-desktop --release --locked
+      # Save after successful compilation, before UI acceptance can fail. This is
+      # a build cache only; all native acceptance, provenance and ZIP gates still run.
+      - name: Save native Rust build cache
+        if: success() && steps.native_build.outcome == 'success' && steps.native_rust_cache.outputs.cache-hit != 'true' && steps.native_rust_cache.outputs.cache-primary-key != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          path: |
+            target/debug/.fingerprint
+            target/debug/build
+            target/debug/deps
+            target/release/.fingerprint
+            target/release/build
+            target/release/deps
+          key: ${{ steps.native_rust_cache.outputs.cache-primary-key }}
+          enableCrossOsArchive: false
       - run: cargo fetch --locked --target x86_64-pc-windows-msvc
       - run: python -m unittest discover -s tests -p 'test_*.py'
       - run: python scripts/prepare-rust-notices.py --target x86_64-pc-windows-msvc --output dist/licenses/native-rust

@@ -122,6 +122,84 @@ function Set-NativeFileName($Root,[IntPtr]$Dialog,$App,[string]$Path,[hashtable]
   $Evidence.filename_native_edit.exact_readback=$true
   $Evidence.filename_entry_method='native_ComboBoxEx32_edit'
 }
+function Get-PickerButtonCandidate($Element,[IntPtr]$Dialog) {
+  $current=$Element.Current;$handle=[IntPtr]$current.NativeWindowHandle
+  [uint32]$process=0;[void][NativeAcceptance]::GetWindowThreadProcessId($handle,[ref]$process)
+  $class=[System.Text.StringBuilder]::new(256);[void][NativeAcceptance]::GetClassName($handle,$class,256)
+  $candidate=[NativePickerButton]::new()
+  $candidate.Window=$handle;$candidate.AutomationId=$current.AutomationId;$candidate.IsButton=$current.ControlType -eq [System.Windows.Automation.ControlType]::Button
+  $candidate.AutomationProcess=$current.ProcessId;$candidate.AutomationEnabled=$current.IsEnabled
+  $candidate.NativeProcess=$process;$candidate.NativeClass=$class.ToString();$candidate.NativeControlId=[NativeAcceptance]::GetDlgCtrlID($handle)
+  $candidate.InDialog=[NativeAcceptance]::IsChild($Dialog,$handle);$candidate.Enabled=[NativeAcceptance]::IsWindowEnabled($handle);$candidate.Visible=[NativeAcceptance]::IsWindowVisible($handle)
+  return $candidate
+}
+function Click-PickerOpen($Root,[IntPtr]$Dialog,$App,[hashtable]$Evidence) {
+  $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'1')
+  $buttons=@($Root.FindAll([System.Windows.Automation.TreeScope]::Descendants,$condition))
+  $Evidence.open_button_candidate_count=$buttons.Count;$candidates=@()
+  if($buttons.Count -gt 8){throw 'Open button inventory exceeds eight candidates'}
+  foreach($button in $buttons){$candidates+=,(Get-PickerButtonCandidate $button $Dialog)}
+  try {$handle=[NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]$candidates,[uint32]$App.Id)}
+  catch {$Evidence.open_button_candidates=@($candidates | ForEach-Object {[ordered]@{hwnd=$_.Window.ToInt64();id=$_.AutomationId;is_button=$_.IsButton;class=$_.NativeClass;control_id=$_.NativeControlId;process_id=$_.NativeProcess;uia_process_id=$_.AutomationProcess;uia_enabled=$_.AutomationEnabled;enabled=$_.Enabled;visible=$_.Visible;dialog_descendant=$_.InDialog}});throw}
+  [void][NativeAcceptance]::SetForegroundWindow($Dialog);Start-Sleep -Milliseconds 100
+  # Re-read the live control and require its screen center to hit that exact
+  # button (or a native child), rather than trusting a stale UIA rectangle.
+  $live=Get-PickerButtonCandidate ([System.Windows.Automation.AutomationElement]::FromHandle($handle)) $Dialog
+  if([NativeAcceptance]::SelectPickerOpenButton([NativePickerButton[]]@($live),[uint32]$App.Id) -ne $handle){throw 'Open button native handle changed during verification'}
+  $dialogBounds=New-Object NativeAcceptance+RECT;$buttonBounds=New-Object NativeAcceptance+RECT
+  if(-not [NativeAcceptance]::GetWindowRect($Dialog,[ref]$dialogBounds) -or -not [NativeAcceptance]::GetWindowRect($handle,[ref]$buttonBounds)){throw 'Cannot read owned picker/button bounds'}
+  $point=[NativeAcceptance]::PickerClickPoint($dialogBounds,$buttonBounds)
+  $hit=[NativeAcceptance]::WindowFromPoint($point);[uint32]$hitProcess=0
+  [void][NativeAcceptance]::GetWindowThreadProcessId($hit,[ref]$hitProcess)
+  [uint32]$dialogProcess=0;[void][NativeAcceptance]::GetWindowThreadProcessId($Dialog,[ref]$dialogProcess)
+  [NativeAcceptance]::ValidatePickerClick($Dialog,$App.MainWindowHandle,[NativeAcceptance]::GetAncestor($Dialog,3),[NativeAcceptance]::GetForegroundWindow(),[uint32]$App.Id,$dialogProcess,($hitProcess -eq $App.Id -and ($hit -eq $handle -or [NativeAcceptance]::IsChild($handle,$hit))))
+  $Evidence.open_button=[ordered]@{hwnd=$handle.ToInt64();class=$live.NativeClass;control_id=$live.NativeControlId;process_id=$live.NativeProcess;enabled=$live.Enabled;visible=$live.Visible;dialog_descendant=$live.InDialog;bounds=@($buttonBounds.Left,$buttonBounds.Top,$buttonBounds.Right,$buttonBounds.Bottom);hit_hwnd=$hit.ToInt64();point=@($point.X,$point.Y);method='verified_native_mouse_click'}
+  [NativeAcceptance]::Click($point.X,$point.Y)
+}
+function Wait-PickerDismissal([IntPtr]$Dialog,$App,[hashtable]$Evidence) {
+  $started=[DateTime]::UtcNow;$deadline=$started.AddSeconds(5)
+  while($true) {
+    $exists=[NativeAcceptance]::IsWindow($Dialog);$visible=[NativeAcceptance]::IsWindowVisible($Dialog)
+    $foreground=[NativeAcceptance]::GetForegroundWindow();[uint32]$process=0
+    [void][NativeAcceptance]::GetWindowThreadProcessId($foreground,[ref]$process)
+    $popup=$foreground -ne $App.MainWindowHandle -and $process -eq $App.Id -and [NativeAcceptance]::GetAncestor($foreground,3) -eq $App.MainWindowHandle -and [NativeAcceptance]::IsWindowVisible($foreground)
+    $dismissed=[NativeAcceptance]::PickerDismissed($exists,$visible,$popup)
+    $Evidence.picker_completion=[ordered]@{dialog_exists=$exists;dialog_visible=$visible;foreground_hwnd=$foreground.ToInt64();owned_popup_visible=$popup;dialog_dismissed=$dismissed;elapsed_ms=[int]([DateTime]::UtcNow-$started).TotalMilliseconds}
+    if($dismissed){return}
+    if([DateTime]::UtcNow -ge $deadline){throw 'Owned Windows picker did not dismiss within 5 seconds'}
+    Start-Sleep -Milliseconds 100
+  }
+}
+function Capture-PickerFailure([IntPtr]$Dialog,$App,$Action,[hashtable]$Evidence) {
+  $suffix="$($env:WMH_DESKTOP_ACCEPTANCE_PHASE)-$($Action.sequence)"
+  try {
+    [uint32]$process=0;[void][NativeAcceptance]::GetWindowThreadProcessId($Dialog,[ref]$process)
+    if([NativeAcceptance]::IsWindow($Dialog) -and $process -eq $App.Id -and [NativeAcceptance]::GetAncestor($Dialog,3) -eq $App.MainWindowHandle){Capture-Handle $Dialog "owned-picker-failure-$suffix"}
+  } catch {$Evidence.dialog_screenshot_error=$_.Exception.Message}
+  try {
+    $popup=[NativeAcceptance]::GetForegroundWindow();[uint32]$process=0
+    [void][NativeAcceptance]::GetWindowThreadProcessId($popup,[ref]$process)
+    if($popup -ne $Dialog -and $popup -ne $App.MainWindowHandle -and $process -eq $App.Id -and [NativeAcceptance]::GetAncestor($popup,3) -eq $App.MainWindowHandle -and [NativeAcceptance]::IsWindowVisible($popup)) {
+      $class=[System.Text.StringBuilder]::new(256);[void][NativeAcceptance]::GetClassName($popup,$class,256)
+      $Evidence.owned_popup=[ordered]@{hwnd=$popup.ToInt64();process_id=$process;class=$class.ToString();root_owner_hwnd=$App.MainWindowHandle.ToInt64();text=[NativeAcceptance]::ReadControlText($popup)}
+      Capture-Handle $popup "owned-popup-failure-$suffix"
+    }
+  } catch {$Evidence.popup_capture_error=$_.Exception.Message}
+  # Read only the previously verified filename edit, its parent and its host.
+  # The text cap is 256 characters and each read has a 1000-ms native bound.
+  if($Evidence.filename_native_edit) {
+    $edit=[IntPtr]$Evidence.filename_native_edit.hwnd;$Evidence.filename_failure_text=@()
+    foreach($handle in (@($edit,[NativeAcceptance]::GetParent($edit),[IntPtr]$Evidence.filename_host.hwnd) | Select-Object -Unique)) {
+      try {
+        [uint32]$process=0;[void][NativeAcceptance]::GetWindowThreadProcessId($handle,[ref]$process)
+        if($process -eq $App.Id -and [NativeAcceptance]::IsChild($Dialog,$handle)) {
+          $class=[System.Text.StringBuilder]::new(256);[void][NativeAcceptance]::GetClassName($handle,$class,256)
+          $Evidence.filename_failure_text+=,[ordered]@{hwnd=$handle.ToInt64();class=$class.ToString();control_id=[NativeAcceptance]::GetDlgCtrlID($handle);text=[NativeAcceptance]::ReadControlText($handle)}
+        }
+      } catch {$Evidence.filename_readback_error=$_.Exception.Message}
+    }
+  }
+}
 function Native-Action($App,$Action,[hashtable]$Evidence) {
   $App.Refresh();$window=$App.MainWindowHandle
   if($window -eq [IntPtr]::Zero){throw 'Application window disappeared'}
@@ -153,8 +231,9 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
   [uint32]$dialogProcess=0
   [void][NativeAcceptance]::GetWindowThreadProcessId($dialog,[ref]$dialogProcess)
   $Evidence.owned_dialog=[ordered]@{hwnd=$dialog.ToInt64();process_id=$dialogProcess;class=$class.ToString();root_owner_hwnd=[NativeAcceptance]::GetAncestor($dialog,3).ToInt64();app_hwnd=$window.ToInt64();app_process_id=$App.Id}
-  if($Action.kind -eq 'cancel-picker'){[NativeAcceptance]::Key(0x1B);return}
   try {
+    if($dialogProcess -ne $App.Id){throw 'Windows picker process does not match its app owner'}
+    if($Action.kind -eq 'cancel-picker'){[NativeAcceptance]::Key(0x1B);Wait-PickerDismissal $dialog $App $Evidence;return}
     $path=[NativeAcceptance]::ResolveFixturePath($Fixtures,$OutputDirectory,[string]$Action.file)
     $root=[System.Windows.Automation.AutomationElement]::FromHandle($dialog)
     $entry=$null
@@ -168,13 +247,13 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
       if($entry.Pattern.Current.Value -cne $path){throw 'Windows filename control did not retain the selected fixture path'}
       $Evidence.filename_entry_method='UIA_ValuePattern'
     }
-    $open=Find-Control $root '1'
-    if($null -eq $open){throw 'Windows Open button is missing'}
-    ([System.Windows.Automation.InvokePattern]$open.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
+    Capture-Handle $dialog "owned-picker-before-open-$($env:WMH_DESKTOP_ACCEPTANCE_PHASE)-$($Action.sequence)"
+    Click-PickerOpen $root $dialog $App $Evidence
+    Wait-PickerDismissal $dialog $App $Evidence
   } catch {
     $failure=$_.Exception.Message
-    try { Capture-Handle $dialog "owned-picker-failure-$($env:WMH_DESKTOP_ACCEPTANCE_PHASE)-$($Action.sequence)" }
-    catch { $Evidence.dialog_screenshot_error=$_.Exception.Message }
+    try {Capture-PickerFailure $dialog $App $Action $Evidence}
+    catch {$Evidence.failure_capture_error=$_.Exception.Message}
     throw $failure
   }
 }
