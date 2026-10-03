@@ -33,12 +33,22 @@ foreground hit, finite fixture allowlist, normal close, no-listener checks and
 file snapshots remain required. Every action uses the actual client geometry;
 controls must scroll into the viewport and pass a center-point occlusion check.
 All action screenshots remain in evidence, including English and Chinese choices.
+Screenshot markers use foreground titles or statuses. The following screenshot
+uses the stage heading during live reference notes. Both capture boundaries must
+retain exact active native-note identities and active audio; frame collection
+continues through the source tail and end. The score background is checked for
+visible in-viewport SVG paint. Its pointer-inert notation and cursor diagnostics
+are observed, never clicked. Interactive targets retain the same hit tests.
 
 The scenario requires a chooser preflight reporting every original track, a
 saved `playable:false` selection, visibly unavailable full vocal mode, explicit
 base-note choice without automatic audio, real reference scheduling, and actual
 frame observations matching the native note and written-measure intervals. It
 checks native PreMeasure, note-off gap, and the source-declared unwritten tail.
+Frame evidence also retains the visible cue state. The clean player's scheduled
+lead-in can show progress clamped to zero while the cue still says countdown;
+that row must have no written IDs or measure. Every positive displayed time
+continues to require the exact native note and measure identities.
 Practice must silence the human part, grade that native target only, keep machine
 accompaniment out of input evidence, and capture one trusted keyboard onset.
 Pause, navigation, reload and fresh-process choice reset remain separate checks.

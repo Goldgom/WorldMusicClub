@@ -11,15 +11,22 @@ export const VSQ_REPORT_BYTES=1024*1024;
 export const VSQ_COMMON_CHECKS=Object.freeze(['stored-nonplayable-explicit-choice-no-autoaudio','listen-real-reference-native-following','pause-navigation-cleanup','human-target-machine-input-separation','reload-requires-choice']);
 const positive=n=>Number.isSafeInteger(n)&&n>0,sha=s=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s),sort=rows=>[...rows].sort((a,b)=>a.path.localeCompare(b.path));
 const silent=(audio,label)=>assert.ok(audio&&audio.activeSources===0&&audio.pendingSources===0,`${label}: audio did not stop`);
+function validateVsqFollowingFrame(row,response,target=null){
+ assert.ok(Number.isFinite(row.positionMs)&&row.positionMs>=0&&row.positionMs<=response.runtime.end_ms,'VSQ following position is outside the native clock');
+ assert.equal(row.durationMs,response.runtime.end_ms,'VSQ renderer duration changed native clock');
+ assert.ok([null,'ready','countdown','paused','complete'].includes(row.cue),'VSQ following cue observation missing');
+ const preRoll=row.cue==='countdown';if(preRoll){assert.equal(row.positionMs,0,'VSQ countdown must precede displayed clock advancement');assert.equal(row.renderer,'playing','VSQ countdown must belong to active scheduling');}
+ const occurrence=!preRoll&&row.positionMs<response.runtime.end_ms?response.navigation.occurrences.find(o=>o.start_ms<=row.positionMs&&row.positionMs<o.end_ms):null;
+ const expected=response.runtime.notes.filter(n=>(target===null||n.part_id===target)&&n.start_ms<=row.positionMs&&row.positionMs<n.end_ms).map(n=>n.note_id).sort();
+ assert.deepEqual([...row.ids].sort(),occurrence?expected:[],'VSQ written IDs disagree with exact native interval');assert.equal(row.measure,occurrence?String(occurrence.source_measure_index):'','VSQ written measure disagrees with native bounds');
+ return{occurrence,expected};
+}
 export function validateVsqFollowing(rows,response,{target=null}={}) {
  assert.ok(Array.isArray(rows)&&rows.length>=8&&rows.length<=512,'VSQ following needs bounded actual frame observations');
  let sounding=false,gap=false,tail=false,last=-1;
  for(const row of rows){
   assert.ok(Number.isFinite(row.positionMs)&&row.positionMs>=0&&row.positionMs>=last&&row.positionMs<=response.runtime.end_ms,'VSQ following clock is not monotonic');last=row.positionMs;
-  assert.equal(row.durationMs,response.runtime.end_ms,'VSQ renderer duration changed native clock');
-  const occurrence=row.positionMs<response.runtime.end_ms?response.navigation.occurrences.find(o=>o.start_ms<=row.positionMs&&row.positionMs<o.end_ms):null;
-  const expected=response.runtime.notes.filter(n=>(target===null||n.part_id===target)&&n.start_ms<=row.positionMs&&row.positionMs<n.end_ms).map(n=>n.note_id).sort();
-  assert.deepEqual([...row.ids].sort(),occurrence?expected:[],'VSQ written IDs disagree with exact native interval');assert.equal(row.measure,occurrence?String(occurrence.source_measure_index):'','VSQ written measure disagrees with native bounds');
+  const {occurrence,expected}=validateVsqFollowingFrame(row,response,target);
   if(expected.length&&row.positionMs>100&&row.renderer==='playing')sounding=true;
   if(!expected.length&&occurrence&&row.positionMs>response.runtime.notes[0].end_ms+100)gap=true;
   if(!occurrence&&row.positionMs>response.navigation.written_end_ms&&row.positionMs<response.runtime.end_ms)tail=true;
@@ -27,6 +34,17 @@ export function validateVsqFollowing(rows,response,{target=null}={}) {
  assert.ok(sounding&&gap,'VSQ observation must include native note-on and note-off gap');
  if(response.navigation.written_end_ms<response.runtime.end_ms)assert.ok(tail,'VSQ source-declared tail must have no invented written measure');
  assert.equal(rows.at(-1).positionMs,response.runtime.end_ms,'VSQ observation did not reach native playback end');
+}
+export function validateVsqFollowingCapture(capture,response){
+ assert.deepEqual(Object.keys(capture||{}).sort(),['after','before'],'VSQ live screenshot boundaries absent');
+ for(const sample of [capture.before,capture.after]){const row=sample.frame,{occurrence,expected}=validateVsqFollowingFrame(row,response);assert.ok(occurrence&&expected.length>0&&row.positionMs>0&&row.renderer==='playing'&&row.cue===null&&sample.audio?.activeSources>0,'VSQ following screenshot missed the live native-note interval');}
+ assert.ok(capture.after.frame.positionMs>=capture.before.frame.positionMs,'VSQ live screenshot clock moved backwards');
+}
+export function validateVsqFollowingSurface(surface){
+ assert.equal(surface?.id,'notation-lane-overlay','VSQ following screenshot must show score paint');
+ const {x,y,width,height}=surface.bounds||{},viewport=surface.viewport;
+ assert.ok([x,y,width,height,viewport?.width,viewport?.height].every(Number.isFinite)&&width>0&&height>0&&viewport.width>0&&viewport.height>0&&x+width/2>0&&x+width/2<viewport.width&&y+height/2>0&&y+height/2<viewport.height,'VSQ following score paint is not inside its actual viewport');
+ assert.ok(positive(surface.visibleSvgCount),'VSQ following screenshot has no visible notation SVG');
 }
 export function validateVsqPickerEvidence(report){
  const rows=report.pickerObservations;assert.ok(Array.isArray(rows),'VSQ picker delegation observations missing');assert.equal(rows.length,report.phase==='vsq-seed'?1:0,'VSQ picker observation count differs');
@@ -45,7 +63,7 @@ export function validateVsqRenderer(report,fixture=vsqAcceptanceFixture()) {
  assert.equal(before.audio.sourceStarts,0);assert.equal(before.runtimeRequests,0);assert.equal(after.audio.sourceStarts,0);assert.equal(after.runtimeRequests,1);assert.equal(after.preview,'ready');assert.equal(after.listenDisabled,false);assert.equal(after.practiceDisabled,false);assert.equal(after.fullVocalDisabled,true);assert.equal(reload.runtimeRequests,1);
  assert.deepEqual(report.runtimeResponses,[{path:'/api/library/runtime',status:200,body:fixture.runtime}],'VSQ actual native runtime/navigation changed');assert.deepEqual(report.responseObservations,[...report.imports,...report.runtimeResponses].map(row=>({path:row.path,status:row.status,state:'consumed'})),'VSQ evidence must observe the actual fully consumed application bodies');
  assert.ok(Array.isArray(report.requests)&&report.requests.length<=128);assert.deepEqual(report.requests.filter(r=>r.path==='/api/library/runtime'),[{path:'/api/library/runtime',body:{key:fixture.key,profile:'wmh-vsq-clean-v1',choice:'base_notes_instrumental'}}],'VSQ must request only explicit base-note choice once');assert.equal(report.requests.filter(r=>r.path==='/api/notation-navigation'&&r.body?.id===fixture.metadata.id).length,0,'VSQ requested generic BPM navigation');
- validateVsqFollowing(report.following,fixture.runtime);
+ validateVsqFollowing(report.following,fixture.runtime);validateVsqFollowingSurface(report.followingSurface);validateVsqFollowingCapture(report.followingCapture,fixture.runtime);
  assert.ok(report.listenAudio?.sourceStarts>0&&report.listenAudio.oscillatorStarts>0,'VSQ listen did not schedule real reference sources');for(const label of ['listenStopped','pauseAudio','navigationAudio','machineStopped','finalAudio'])silent(report[label],label);assert.equal(report.pauseClock.before,report.pauseClock.after);assert.ok(report.pauseClock.before>0&&report.pauseClock.before<fixture.runtime.runtime.end_ms);
  assert.deepEqual(report.controls,{initial:'vsq-track-1',target:'vsq-track-2',other:'vsq-track-1',humanDisabled:true,humanMachineEnabled:false,otherRestored:true});assert.equal(report.machinePlaying.captured,'0');assert.ok(report.machinePlaying.positionMs>0&&report.machinePlaying.positionMs<fixture.runtime.runtime.end_ms&&report.machinePlaying.audio.oscillatorStarts>0,'VSQ practice machine did not advance');
  assert.ok(Array.isArray(report.trusted)&&report.trusted.length<=128&&report.trusted.every(e=>e.trusted===true),'VSQ observed synthetic control/input events');validateVsqPickerEvidence(report);assert.ok(report.trusted.some(e=>e.type==='click'&&e.id==='vsq-choose-base-notes'));assert.ok(report.trusted.some(e=>e.type==='change'&&e.id==='clean-song-target'&&e.value===report.controls.target));for(const checked of [false,true])assert.ok(report.trusted.some(e=>e.type==='change'&&e.part===report.controls.other&&e.checked===checked),'VSQ accompaniment toggle lacks trusted event');
