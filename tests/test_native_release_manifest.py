@@ -12,6 +12,7 @@ import zipfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+SCHEMAS = ('schema/worldmusichub-score-v1.schema.json', 'schemas/vsq-complete-score-v1.schema.json')
 spec = importlib.util.spec_from_file_location('native_release', ROOT / 'scripts/native-release-manifest.py')
 native = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(native)
@@ -33,12 +34,13 @@ def executable():
 class NativeReleaseTests(unittest.TestCase):
     def package(self, directory):
         files = {native.EXE: executable(), 'README.md': b'Native preview', 'START-HERE.md': b'Requires installed WebView2',
-                 'LICENSE': b'MIT', 'schema/worldmusichub-score-v1.schema.json': b'{}',
+                 'LICENSE': b'MIT',
                  'licenses/engraving/engraving-manifest.json': b'{}',
                  'licenses/engraving/opensheetmusicdisplay.min.js.LICENSE.txt': b'Notice',
                  'licenses/rust/CARGO-THIRD-PARTY-NOTICES.txt': b'Notices',
                  'licenses/rust/RUST-STANDARD-LIBRARY-COPYRIGHT.html': b'Rust copyright',
                  'licenses/rust/sources/example.crate': b'MPL source'}
+        files.update({name: (ROOT / name).read_bytes() for name in SCHEMAS})
         for name, data in files.items():
             path = directory / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -270,14 +272,69 @@ class NativeReleaseTests(unittest.TestCase):
             root = Path(temporary)
             directory = root / native.FOLDER
             metadata = self.package(directory)
-            native.create_manifest(directory, metadata)
+            info = native.create_manifest(directory, metadata)
             archive = root / 'native.zip'
             native.create_archive(directory, archive)
             self.assertEqual(native.verify_archive(archive)['commit_count'], 164)
             self.assertTrue(archive.with_suffix('.zip.sha256').is_file())
+            with zipfile.ZipFile(archive) as package:
+                sums = package.read(f'{native.FOLDER}/{native.SUMS}').decode('utf-8').splitlines()
+                for name in SCHEMAS:
+                    data = (ROOT / name).read_bytes()
+                    digest = native.sha(data)
+                    self.assertEqual(info['files'][name], {'sha256': digest, 'bytes': len(data)})
+                    self.assertEqual(package.read(f'{native.FOLDER}/{name}'), data)
+                    self.assertIn(f'{digest}  {name}', sums)
             (directory / native.EXE).write_bytes(executable() + b'changed')
             with self.assertRaisesRegex(ValueError, 'checksum differs'):
                 native.create_archive(directory, archive)
+
+    def test_native_package_requires_both_score_schemas_before_writing_inventory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / native.FOLDER
+            metadata = self.package(directory)
+            for name in SCHEMAS:
+                path = directory / name
+                data = path.read_bytes()
+                path.unlink()
+                with self.subTest(missing=name), self.assertRaisesRegex(ValueError, 'Native package is missing ' + name):
+                    native.create_manifest(directory, metadata)
+                self.assertFalse((directory / native.INFO).exists())
+                self.assertFalse((directory / native.SUMS).exists())
+                path.write_bytes(data)
+
+    def test_archived_native_vsq_schema_tampering_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / native.FOLDER
+            metadata = self.package(directory)
+            native.create_manifest(directory, metadata)
+            name = 'schemas/vsq-complete-score-v1.schema.json'
+            path = directory / name
+            path.write_bytes(path.read_bytes() + b'\n')
+            with self.assertRaisesRegex(ValueError, 'Native ZIP checksum differs: ' + name):
+                native.create_archive(directory, root / 'changed-schema.zip')
+
+    def test_native_archive_cannot_omit_a_schema_even_with_rewritten_inventory_and_checksums(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / native.FOLDER
+            metadata = self.package(directory)
+            original = native.create_manifest(directory, metadata)
+            for name in SCHEMAS:
+                path = directory / name
+                data = path.read_bytes()
+                path.unlink()
+                files = {key: value for key, value in original['files'].items() if key != name}
+                info = {**original, 'file_count': len(files), 'files': files}
+                write_json(directory / native.INFO, info)
+                sums = {key: value['sha256'] for key, value in files.items()}
+                sums[native.INFO] = native.sha((directory / native.INFO).read_bytes())
+                (directory / native.SUMS).write_text(''.join(f'{sums[key]}  {key}\n' for key in sorted(sums)),
+                                                     encoding='utf-8', newline='\n')
+                with self.subTest(missing=name), self.assertRaisesRegex(ValueError, 'Native package is missing ' + name):
+                    native.create_archive(directory, root / 'omitted-schema.zip')
+                path.write_bytes(data)
 
     def test_browser_executable_or_missing_mpl_source_cannot_be_packaged(self):
         with tempfile.TemporaryDirectory() as temporary:

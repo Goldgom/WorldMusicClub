@@ -11,8 +11,9 @@ export class ScorePreview {
     try {
       const loaded=await load(controller.signal);if(!valid())return false;
       const cleanSong=isCleanSong(loaded?.cleanSong)?loaded.cleanSong:null,score=cleanSong?loaded.score:loaded;
-      if(cleanSong&&part===null)part=cleanSong.score.notation.parts[0]?.id||null;
-      const compiled=cleanSong?cleanSong.runtime.compilation:await this.compile(score,controller.signal);if(!valid())return false;
+      if(cleanSong&&part===null)part=cleanSong.notation.parts[0]?.id||null;
+      if(cleanSong&&!cleanSong.compilation){this.publish({status:'choice',identity,part,cleanSong,score,compiled:null,compatibility:{status:'pending',reason:'Choose base-note instrumental practice.'}});return valid();}
+      const compiled=cleanSong?cleanSong.compilation:await this.compile(score,controller.signal);if(!valid())return false;
       const candidate={status:'ready',identity,part,cleanSong,score:compiled.score,compiled,compatibility:{status:'pending',reason:'Checking selected pitches with your instrument…'}};
       this.publish(candidate);
       try {const compatibility=await this.check(compiled,part,controller.signal);if(valid())this.publish({...candidate,compatibility});}
@@ -20,6 +21,19 @@ export class ScorePreview {
       return valid();
     } catch(error) {
       if(valid())this.publish({status:'error',identity,part,score:null,compiled:null,message:error.message,errorCode:error.code,compatibility:{status:'error',reason:'Preview unavailable. Try this selection again.'}});
+      return false;
+    } finally {if(this.controller===controller)this.controller=null;}
+  }
+  async chooseVsqPractice(derive) {
+    const previous=this.value;if(previous.status!=='choice'||!previous.cleanSong)return false;
+    this.cancel();const version=this.version,controller=new AbortController();this.controller=controller;
+    this.publish({...previous,status:'choosing',message:null,errorCode:null});
+    try {
+      const cleanSong=await derive(previous.cleanSong,controller.signal);
+      if(version!==this.version||controller.signal.aborted)return false;
+      return await this.select(previous.identity,async()=>({score:previous.score,cleanSong}),{part:previous.part});
+    } catch(error) {
+      if(version===this.version&&!controller.signal.aborted)this.publish({...previous,message:error.message,errorCode:error.code});
       return false;
     } finally {if(this.controller===controller)this.controller=null;}
   }

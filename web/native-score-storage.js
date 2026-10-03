@@ -1,4 +1,4 @@
-import {prepareCleanSong} from './clean-song-package.js';
+import {prepareCleanSong,prepareVsqPractice,isVsqSong,VSQ_PROFILE} from './clean-song-package.js';
 import {openScoreLibrary,LIBRARY_LIMITS,libraryError} from './local-library.js';
 
 const bytes=value=>new TextEncoder().encode(value).byteLength;
@@ -92,9 +92,15 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
    if(value.clean_package)saved.cleanSong=prepareCleanSong(key,value.clean_package,saved.score);
    if(saved.entry.storageKey!==storageKey)throw issue('library_invalid_response','The loaded archive does not match the selected library key.');
   }
-  await validate(saved.score,signal);
+  if(!isVsqSong(saved.cleanSong))await validate(saved.score,signal);
+  signal?.throwIfAborted();
   if(kind==='native'&&!closed){if(saved.cleanSong)allowedAssets.set(key,saved.cleanSong);else allowedAssets.delete(key);}
   return saved;
+ }
+ async function chooseVsqPractice(song,{signal}={}){
+  if(kind!=='native'||!isVsqSong(song)||song.runtime!==null||allowedAssets.get(song.libraryKey)!==song)throw issue('library_runtime_choice','Choose practice for the currently loaded VSQ package.');
+  const value=await request('/api/library/runtime',{body:{key:rawKey(kind,song.libraryKey),profile:VSQ_PROFILE,choice:'base_notes_instrumental'},signal});
+  signal?.throwIfAborted();if(allowedAssets.get(song.libraryKey)!==song)throw issue('library_runtime_choice','The VSQ package was reloaded; make the choice for the new load.');return prepareVsqPractice(song,value);
  }
  async function exportBackup({libraryKeys,signal}={}){
   if(kind==='browser'&&libraryKeys===undefined){const text=await browser.exportBackup();signal?.throwIfAborted();return{text,filename:'worldmusichub-library-backup.json',storage:info.storage}}
@@ -157,5 +163,5 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
   for(const job of assetReads.splice(0)){job.detach();job.reject(issue('library_storage_closed','The local library is closed.'));}
   browser?.close();
  }
- return{info,list,save,load,loadAsset,exportBackup,close};
+ return{info,list,save,load,loadAsset,chooseVsqPractice,exportBackup,close};
 }

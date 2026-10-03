@@ -1,3 +1,4 @@
+import {isVsqNavigationIndex} from './vsq-navigation.js';
 import {planEngravingReveal} from './engraving-reveal.js';
 import {getAppI18n} from './app-locale.js';
 const navigationError=key=>Object.assign(new Error(getAppI18n().t(`notationRuntime.${key}`)),{code:`notation_${key}`});
@@ -151,7 +152,7 @@ export function setupNotationFollowing({api,getContext,getPlayback,view,prepareN
       try {
         const prepared=prepareNavigation?await prepareNavigation({retry}):new NotationNavigationIndex(await api('/api/notation-navigation',context.score,signal),context.score,context.timeline);
         if(!isCurrent())return null;
-        if(!(prepared instanceof NotationNavigationIndex))throw navigationError('followMap');
+        if(!(prepared instanceof NotationNavigationIndex)&&!isVsqNavigationIndex(prepared))throw navigationError('followMap');
         index=prepared;last='';const playback=getPlayback();tick(playback.position,playback.running,playback.written);return index;
       }catch(error){if(isCurrent())suspend({error});return null}
     })().finally(()=>{if(pending===request)pending=null;if(current===generation)controller=null});

@@ -14,6 +14,7 @@ import zipfile
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 INFO='BUILD-INFO.json'
 SUMS='SHA256.txt'
+SCORE_SCHEMAS=('schema/worldmusichub-score-v1.schema.json','schemas/vsq-complete-score-v1.schema.json')
 
 def sha(data): return hashlib.sha256(data).hexdigest()
 
@@ -25,7 +26,7 @@ def require_windows_x64(data):
 
 def create_manifest(directory,metadata):
     directory=pathlib.Path(directory)
-    required=['WorldMusicHub.exe','README.md','LICENSE','START-HERE.md','schema/worldmusichub-score-v1.schema.json','licenses/engraving/engraving-manifest.json','licenses/engraving/opensheetmusicdisplay.min.js.LICENSE.txt','licenses/rust/manifest.json','licenses/rust/CARGO-THIRD-PARTY-NOTICES.txt','licenses/rust/RUST-STANDARD-LIBRARY-COPYRIGHT.html']
+    required=['WorldMusicHub.exe','README.md','LICENSE','START-HERE.md',*SCORE_SCHEMAS,'licenses/engraving/engraving-manifest.json','licenses/engraving/opensheetmusicdisplay.min.js.LICENSE.txt','licenses/rust/manifest.json','licenses/rust/CARGO-THIRD-PARTY-NOTICES.txt','licenses/rust/RUST-STANDARD-LIBRARY-COPYRIGHT.html']
     for name in required:
         if not (directory/name).is_file(): raise ValueError(f'Package is missing {name}')
     index_path=directory/'catalog/index.json'
@@ -67,6 +68,8 @@ def verify_archive(archive):
         if len(names)!=len(set(names)):raise ValueError('Archive contains duplicate paths')
         prefix='WorldMusicHub/'
         info=json.loads(package.read(prefix+INFO))
+        for name in SCORE_SCHEMAS:
+            if name not in info['files']:raise ValueError(f'Package is missing {name}')
         required=set(info['files'])|{INFO,SUMS}
         if set(names)!={prefix+name for name in required}:raise ValueError('Archive contents differ from the release inventory')
         for name,item in info['files'].items():

@@ -1,12 +1,14 @@
 import {ReferenceAudioReceiver} from './midi-reference-synth.js';
 import {createReferenceRoom} from './clean-song-reverb.js';
-import {CleanSongError,isCleanSong} from './clean-song-package.js';
+import {VsqPracticePlayer} from './vsq-practice-player.js';
+import {CleanSongError,isCleanSong,isVsqSong} from './clean-song-package.js';
 const metadata=new Set(['tempo','meter','key_signature','text','sequence_number','track_end']);
 const supported=new Set(['instrument_program','volume','pan','expression','reverb_send','initial_controller_reset','initial_sustain_off']);
 export const CLEAN_RENDITION = 'wmh-procedural-reference-v1';
 export function inspectCleanRendition(song) {
   const blockers=[];
   if(!isCleanSong(song))return{supported:false,blockers:['clean_package_invalid'],rendition:CLEAN_RENDITION};
+  if(isVsqSong(song))return{supported:Boolean(song.runtime)&&song.runtime.parts.length<=128,blockers:!song.runtime?['vsq_choice_required']:song.runtime.parts.length>128?['part_budget_exceeded']:[],rendition:'wmh-vsq-base-note-reference-v1'};
   if(song.score.performance.parts.length>128)blockers.push('part_budget_exceeded');
   for(const event of song.runtime.events){const command=event.command;
     if(metadata.has(command.kind)||supported.has(command.kind))continue;
@@ -21,17 +23,19 @@ function apply(state,command){if(command.kind==='instrument_program')state.progr
 export class CleanSongPlayer {
   constructor({getPositionMs,onError=()=>{},setTimer=(...args)=>globalThis.setTimeout(...args),clearTimer=(...args)=>globalThis.clearTimeout(...args),lookAheadMs=100}={}) {
     if(typeof getPositionMs!=='function')throw new TypeError('The shared transport clock is required.');
+    this.vsq=new VsqPracticePlayer({getPositionMs,onError,setTimer,clearTimer,lookAheadMs});
     Object.assign(this,{getPositionMs,onError,setTimer,clearTimer,lookAheadMs});this.epoch=0;this.timer=null;this.lanes=new Map();this.song=null;this.running=false;
   }
-  select(song){this.stop();this.song=song;this.profile=inspectCleanRendition(song);this.programs=new Map();if(!song)return;
+  select(song){this.stop();this.song=song;this.profile=inspectCleanRendition(song);this.programs=new Map();this.vsq.select(isVsqSong(song)?song:null);if(!song||isVsqSong(song))return;
     const merged=[...song.runtime.events.map(event=>({...event,type:'command'})),...song.runtime.notes.map(note=>({at_ms:note.start_ms,origin:note.attack,note,type:'note'}))].sort((a,b)=>a.at_ms-b.at_ms||a.origin.track-b.origin.track||a.origin.event-b.origin.event);
     const channels=new Map();for(const item of merged){const channel=item.command?.channel??item.note?.channel;const state=channels.get(channel)||defaults();channels.set(channel,state);if(item.type==='command')apply(state,item.command);else this.programs.set(item.note.event_id,state.program);}
   }
-  start({context,output,mode='listen',targetPart=null,mutedParts=[],resumePositionMs=null}={}) {
+  start({context,output,mode='listen',targetPart=null,mutedParts=null,resumePositionMs=null,instrument='piano'}={}) {
+    if(isVsqSong(this.song))return this.vsq.start({context,output,mode,targetPart,mutedParts,resumePositionMs,instrument});
     this.stop();if(!this.song||!this.profile.supported)throw new CleanSongError('clean_renderer_unsupported','The reference renderer cannot represent these retained commands.',{blockers:this.profile?.blockers});
     if(!context||context.state!=='running'||!output)throw new CleanSongError('clean_audio_unavailable','Audio must be unlocked by a user gesture.');
     if(mode==='practice'&&!this.song.score.performance.parts.some(part=>part.id===targetPart))throw new CleanSongError('clean_target_required','Choose one human part.');
-    this.resumePositionMs=resumePositionMs;this.context=context;this.output=output;this.mode=mode;this.targetPart=targetPart;this.mutedParts=new Set(mutedParts);this.channels=new Map();this.running=true;
+    this.resumePositionMs=resumePositionMs;this.context=context;this.output=output;this.mode=mode;this.targetPart=targetPart;this.mutedParts=new Set(mutedParts||[]);this.channels=new Map();this.running=true;
     const position=this.getPositionMs(),events=this.song.runtime.events;this.eventCursor=0;this.noteCursor=0;
     try{
       for(const part of this.song.score.performance.parts){let gain,pan,room;try{gain=context.createGain();pan=context.createStereoPanner();room=createReferenceRoom(context,output);gain.connect(pan);pan.connect(room.input);const receiver=new ReferenceAudioReceiver(context,gain,{maxVoices:128,ErrorType:CleanSongError});this.lanes.set(part.id,{part,gain,pan,room,receiver});}catch(error){gain?.disconnect();pan?.disconnect();room?.close();throw error;}}
@@ -59,6 +63,6 @@ export class CleanSongPlayer {
     }catch(error){this.stop();if(initial)throw error;this.onError(error);}
   }
   pause(){this.stop();}
-  stop(){this.epoch++;this.running=false;if(this.timer!==null)this.clearTimer(this.timer);this.timer=null;for(const lane of this.lanes.values()){lane.receiver.silence();lane.gain.disconnect();lane.pan.disconnect();lane.room.close();}this.lanes.clear();}
+  stop(){this.vsq.stop();this.epoch++;this.running=false;if(this.timer!==null)this.clearTimer(this.timer);this.timer=null;for(const lane of this.lanes.values()){lane.receiver.silence();lane.gain.disconnect();lane.pan.disconnect();lane.room.close();}this.lanes.clear();}
   destroy(){this.stop();this.song=null;}
 }

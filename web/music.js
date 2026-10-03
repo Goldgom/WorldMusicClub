@@ -25,7 +25,7 @@ export function keyboardGeometry(count, lowest = null) {
   return keys.map(key => ({...key, x:(key.x - min)/(max - min), width:key.width/(max - min)}));
 }
 export function keyAt(score, atBeat) {
-  let current = {fifths: 0, mode: 'major'};
+  let current = null;
   for (const key of score.keys) if (beat(key.at) <= atBeat) current = key; else break;
   return current;
 }

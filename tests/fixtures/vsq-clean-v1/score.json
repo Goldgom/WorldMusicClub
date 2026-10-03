@@ -1,0 +1,652 @@
+{
+  "format": "worldmusichub-complete-score",
+  "version": 1,
+  "profile": "wmh-vsq-clean-v1",
+  "source": {
+    "format": "vsq",
+    "bytes": 1500,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "notation": {
+    "format_metadata": {
+      "schema_revision": 2,
+      "producer": "WorldMusicHub",
+      "producer_version": "0.2.0-alpha.1"
+    },
+    "version": 1,
+    "id": "vsq-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "title": "Original VSQ native bridge fixture",
+    "composer": "",
+    "provenance": {
+      "kind": "user-import",
+      "attribution": "VSQ authored notes; derived base-pitch audition only; vocal synthesis and voicebank equivalence are unverified",
+      "source_url": null,
+      "license": null
+    },
+    "parts": [
+      {
+        "id": "vsq-track-1",
+        "name": "Test voice",
+        "instrument": "voice",
+        "notes": [
+          {
+            "id": "vsq-t1-ID#0001",
+            "at": {
+              "numerator": 4,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 267,
+              "denominator": 160
+            },
+            "pitch": {
+              "step": "D",
+              "alter": 1,
+              "octave": 4
+            },
+            "voice": "ID#0000",
+            "staff": 1,
+            "velocity": 0,
+            "tie_start": false,
+            "tie_stop": false
+          }
+        ]
+      },
+      {
+        "id": "vsq-track-2",
+        "name": "Original muted voice",
+        "instrument": "voice",
+        "notes": [
+          {
+            "id": "vsq-t2-ID#0001",
+            "at": {
+              "numerator": 4,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 267,
+              "denominator": 160
+            },
+            "pitch": {
+              "step": "D",
+              "alter": 1,
+              "octave": 4
+            },
+            "voice": "ID#0000",
+            "staff": 1,
+            "velocity": 0,
+            "tie_start": false,
+            "tie_stop": false
+          }
+        ]
+      }
+    ],
+    "tempo": [
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "bpm": 120.0
+      },
+      {
+        "at": {
+          "numerator": 9,
+          "denominator": 2
+        },
+        "bpm": 59.99994000006
+      }
+    ],
+    "meters": [
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "numerator": 4,
+        "denominator": 4
+      }
+    ],
+    "keys": [],
+    "measures": [
+      {
+        "number": 1,
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 2,
+        "at": {
+          "numerator": 4,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      }
+    ],
+    "repeats": [],
+    "source": null
+  },
+  "authoring": {
+    "profile": "wmh-vsq-dsb301-v1",
+    "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "ppq": 480,
+    "master_track_name": "Original exact-clock test",
+    "master_end_tick": 4000,
+    "tempo": [
+      {
+        "tick": 0,
+        "event_order": 1,
+        "microseconds_per_quarter": 500000
+      },
+      {
+        "tick": 2160,
+        "event_order": 3,
+        "microseconds_per_quarter": 1000001
+      }
+    ],
+    "meters": [
+      {
+        "tick": 0,
+        "event_order": 2,
+        "numerator": 4,
+        "denominator_power": 2,
+        "clocks_per_click": 24,
+        "thirty_seconds_per_quarter": 8
+      }
+    ],
+    "premeasure_bars": 1,
+    "premeasure_ticks": 1920,
+    "mixer": {
+      "master_fader": -3,
+      "master_panpot": 2,
+      "master_mute": false,
+      "output_mode": 0,
+      "tracks": [
+        {
+          "fader": 4,
+          "panpot": -9,
+          "mute": false,
+          "solo": false
+        },
+        {
+          "fader": 4,
+          "panpot": -9,
+          "mute": true,
+          "solo": false
+        }
+      ]
+    },
+    "tracks": [
+      {
+        "source_track_index": 1,
+        "smf_track_name": "Test track",
+        "project_text_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "common": {
+          "version": "DSB301",
+          "name": "Test voice",
+          "color_components": [
+            1,
+            2,
+            3
+          ],
+          "dynamics_mode": 1,
+          "play_mode": 1
+        },
+        "end_tick": 4000,
+        "eos_tick": 4000,
+        "singers": [
+          {
+            "id": "ID#0000",
+            "event_order": 0,
+            "tick": 0,
+            "handle_id": "h#0000",
+            "voice": {
+              "icon_id": "$07010000",
+              "ids": "Synthetic voice",
+              "original": 0,
+              "caption": "Descriptor only",
+              "length": 1,
+              "language": 0,
+              "program": 7
+            }
+          }
+        ],
+        "notes": [
+          {
+            "id": "ID#0001",
+            "event_order": 1,
+            "tick": 1920,
+            "length_ticks": 801,
+            "note_number": 63,
+            "dynamics": 0,
+            "singer_event_id": "ID#0000",
+            "expression": {
+              "bend_depth": 8,
+              "bend_length": 10,
+              "portamento_use": 2,
+              "decay_gain_rate": 41,
+              "accent": 61
+            },
+            "lyric_handle_id": "h#0001",
+            "lyrics": [
+              {
+                "index": 0,
+                "lyric": "Original あ",
+                "phonetic": "a",
+                "numeric_fields": [
+                  {
+                    "coefficient": 9007199254740993,
+                    "scale": 6
+                  },
+                  {
+                    "coefficient": 31,
+                    "scale": 0
+                  },
+                  {
+                    "coefficient": 0,
+                    "scale": 0
+                  }
+                ]
+              }
+            ],
+            "vibrato": {
+              "handle_id": "h#0002",
+              "delay_ticks": 266,
+              "icon_id": "$04040001",
+              "ids": "Synthetic vibrato",
+              "original": 1,
+              "caption": "Exact decimal envelopes",
+              "length_ticks": 534,
+              "depth": {
+                "start": 40,
+                "points": [
+                  {
+                    "position": {
+                      "coefficient": 250000,
+                      "scale": 6
+                    },
+                    "value": 20
+                  }
+                ]
+              },
+              "rate": {
+                "start": 60,
+                "points": [
+                  {
+                    "position": {
+                      "coefficient": 1,
+                      "scale": 0
+                    },
+                    "value": 0
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "curves": [
+          {
+            "parameter": "PitchBend",
+            "points": [
+              {
+                "tick": 1920,
+                "value": -234
+              }
+            ]
+          },
+          {
+            "parameter": "PitchBendSensitivity",
+            "points": [
+              {
+                "tick": 0,
+                "value": 12
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "source_track_index": 2,
+        "smf_track_name": "Second authored track",
+        "project_text_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "common": {
+          "version": "DSB301",
+          "name": "Original muted voice",
+          "color_components": [
+            1,
+            2,
+            3
+          ],
+          "dynamics_mode": 1,
+          "play_mode": 1
+        },
+        "end_tick": 4000,
+        "eos_tick": 4000,
+        "singers": [
+          {
+            "id": "ID#0000",
+            "event_order": 0,
+            "tick": 0,
+            "handle_id": "h#0000",
+            "voice": {
+              "icon_id": "$07010000",
+              "ids": "Synthetic voice",
+              "original": 0,
+              "caption": "Descriptor only",
+              "length": 1,
+              "language": 0,
+              "program": 7
+            }
+          }
+        ],
+        "notes": [
+          {
+            "id": "ID#0001",
+            "event_order": 1,
+            "tick": 1920,
+            "length_ticks": 801,
+            "note_number": 63,
+            "dynamics": 0,
+            "singer_event_id": "ID#0000",
+            "expression": {
+              "bend_depth": 8,
+              "bend_length": 10,
+              "portamento_use": 2,
+              "decay_gain_rate": 41,
+              "accent": 61
+            },
+            "lyric_handle_id": "h#0001",
+            "lyrics": [
+              {
+                "index": 0,
+                "lyric": "Original あ",
+                "phonetic": "a",
+                "numeric_fields": [
+                  {
+                    "coefficient": 9007199254740993,
+                    "scale": 6
+                  },
+                  {
+                    "coefficient": 31,
+                    "scale": 0
+                  },
+                  {
+                    "coefficient": 0,
+                    "scale": 0
+                  }
+                ]
+              }
+            ],
+            "vibrato": {
+              "handle_id": "h#0002",
+              "delay_ticks": 266,
+              "icon_id": "$04040001",
+              "ids": "Synthetic vibrato",
+              "original": 1,
+              "caption": "Exact decimal envelopes",
+              "length_ticks": 534,
+              "depth": {
+                "start": 40,
+                "points": [
+                  {
+                    "position": {
+                      "coefficient": 250000,
+                      "scale": 6
+                    },
+                    "value": 20
+                  }
+                ]
+              },
+              "rate": {
+                "start": 60,
+                "points": [
+                  {
+                    "position": {
+                      "coefficient": 1,
+                      "scale": 0
+                    },
+                    "value": 0
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "curves": [
+          {
+            "parameter": "PitchBend",
+            "points": [
+              {
+                "tick": 1920,
+                "value": -234
+              }
+            ]
+          },
+          {
+            "parameter": "PitchBendSensitivity",
+            "points": [
+              {
+                "tick": 0,
+                "value": 12
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "interpretation_limits": [
+      "VoicebankIdentityAndAvailabilityUnverified",
+      "PhoneticNumericFieldMeaningsUnverified",
+      "VocalExpressionAndPitchInterpolationNotRendered",
+      "NrpnDispatchAndPresendNotEvaluated",
+      "Resonance255MeaningUnverified",
+      "CommonModeAndMixerOutputModeNotInterpreted",
+      "SingerHandleMetadataNotAcousticIdentity",
+      "EosDoesNotEstablishAcousticTailOrAccompaniment"
+    ]
+  },
+  "engine_dispatch": {
+    "profile": "wmh-vocaloid2-named-dispatch-v1",
+    "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "source_controller_events": 122,
+    "tracks": [
+      {
+        "source_track_index": 1,
+        "commands": [
+          {
+            "tick": 0,
+            "source_order_first": 10,
+            "source_order_last": 18,
+            "explicit_transport": {
+              "identity": {
+                "version": 0,
+                "device": 0
+              },
+              "delay_ms": 0
+            },
+            "command": {
+              "kind": "voice_bank",
+              "bank": 0
+            }
+          },
+          {
+            "tick": 0,
+            "source_order_first": 19,
+            "source_order_last": 21,
+            "explicit_transport": null,
+            "command": {
+              "kind": "voice_program",
+              "program": 7
+            }
+          },
+          {
+            "tick": 1440,
+            "source_order_first": 22,
+            "source_order_last": 70,
+            "explicit_transport": null,
+            "command": {
+              "kind": "note",
+              "note": {
+                "authored_note_id": "ID#0001",
+                "note_number": 63,
+                "velocity": 0,
+                "duration_ms": 1419,
+                "location": "isolated",
+                "vibrato": {
+                  "database_index": 0,
+                  "type_index": 2,
+                  "duration_parameter": 85,
+                  "delay_parameter": 43
+                },
+                "phonetic_symbols": [
+                  {
+                    "symbol": "a",
+                    "consonant_adjustment": 31
+                  }
+                ],
+                "intonation": {
+                  "v1_mean_parameter": 8,
+                  "d1_mean_parameter": 20,
+                  "d1_mean_first_note_parameter": 20,
+                  "d2_mean_parameter": 40,
+                  "d4_mean_parameter": 24,
+                  "p_mean_onset_first_note_parameter": 10,
+                  "v_mean_note_transition_parameter": 12,
+                  "p_mean_ending_note_parameter": 12
+                },
+                "portamento_flags": 2,
+                "decay": 41,
+                "accent": 61
+              }
+            }
+          }
+        ]
+      },
+      {
+        "source_track_index": 2,
+        "commands": [
+          {
+            "tick": 0,
+            "source_order_first": 10,
+            "source_order_last": 18,
+            "explicit_transport": {
+              "identity": {
+                "version": 0,
+                "device": 0
+              },
+              "delay_ms": 0
+            },
+            "command": {
+              "kind": "voice_bank",
+              "bank": 0
+            }
+          },
+          {
+            "tick": 0,
+            "source_order_first": 19,
+            "source_order_last": 21,
+            "explicit_transport": null,
+            "command": {
+              "kind": "voice_program",
+              "program": 7
+            }
+          },
+          {
+            "tick": 1440,
+            "source_order_first": 22,
+            "source_order_last": 70,
+            "explicit_transport": null,
+            "command": {
+              "kind": "note",
+              "note": {
+                "authored_note_id": "ID#0001",
+                "note_number": 63,
+                "velocity": 0,
+                "duration_ms": 1419,
+                "location": "isolated",
+                "vibrato": {
+                  "database_index": 0,
+                  "type_index": 2,
+                  "duration_parameter": 85,
+                  "delay_parameter": 43
+                },
+                "phonetic_symbols": [
+                  {
+                    "symbol": "a",
+                    "consonant_adjustment": 31
+                  }
+                ],
+                "intonation": {
+                  "v1_mean_parameter": 8,
+                  "d1_mean_parameter": 20,
+                  "d1_mean_first_note_parameter": 20,
+                  "d2_mean_parameter": 40,
+                  "d4_mean_parameter": 24,
+                  "p_mean_onset_first_note_parameter": 10,
+                  "v_mean_note_transition_parameter": 12,
+                  "p_mean_ending_note_parameter": 12
+                },
+                "portamento_flags": 2,
+                "decay": 41,
+                "accent": 61
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "interpretation_limits": [
+      "cross_group_transport_inheritance_unverified",
+      "engine_duration_rounding_not_reconstructed",
+      "vibrato_parameter_units_unverified",
+      "d1_mean_first_note_unit_unverified",
+      "legacy_resonance255_meaning_unverified",
+      "vocal_synthesis_not_implemented"
+    ]
+  },
+  "coverage": {
+    "status": "structurally_complete_authoring_and_named_dispatch",
+    "notation": "all_authored_base_notes",
+    "project": {
+      "tracks": 2,
+      "notes": 2,
+      "singers": 2,
+      "lyrics": 2,
+      "vibratos": 2,
+      "envelope_points": 4,
+      "curves": 4,
+      "curve_points": 4,
+      "tempo_changes": 2,
+      "meter_changes": 1
+    },
+    "named_dispatch": {
+      "tracks": 2,
+      "commands": 6,
+      "parameter_fields": 52,
+      "source_controller_records_accounted": 122
+    }
+  },
+  "capabilities": {
+    "whole_vocal_rendering": "blocked",
+    "instrumental_practice": "requires_explicit_base_note_choice"
+  },
+  "interpretation_limits": [
+    "whole_vocal_rendering_unavailable",
+    "practice_uses_authored_base_notes_only",
+    "pitch_bend_and_sensitivity_not_rendered",
+    "vibrato_and_expression_not_rendered",
+    "lyrics_and_phonetics_not_synthesized",
+    "source_voice_program_is_descriptor_not_general_midi",
+    "mixer_gain_pan_and_output_mode_not_interpreted",
+    "engine_dispatch_timing_and_acoustic_tails_not_rendered"
+  ]
+}

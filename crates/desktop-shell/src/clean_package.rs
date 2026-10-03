@@ -95,6 +95,12 @@ pub struct Asset {
 #[serde(deny_unknown_fields)]
 pub struct Summary {
     pub version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<score_core::vsq_clean::Capabilities>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub interpretation_limits: Vec<score_core::vsq_clean::CleanInterpretationLimit>,
     pub content_sha256: String,
     pub bytes: u64,
     pub media: Vec<Asset>,
@@ -104,6 +110,12 @@ pub struct Summary {
 #[derive(Clone, Debug, Serialize)]
 pub struct OpenPackage {
     pub version: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<score_core::vsq_clean::Capabilities>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub interpretation_limits: Vec<score_core::vsq_clean::CleanInterpretationLimit>,
     pub content_sha256: String,
     pub metadata_json: String,
     pub score_json: String,
@@ -112,6 +124,9 @@ pub struct OpenPackage {
 }
 #[derive(Clone, Debug)]
 pub struct Package {
+    pub profile: Option<String>,
+    pub capabilities: Option<score_core::vsq_clean::Capabilities>,
+    pub interpretation_limits: Vec<score_core::vsq_clean::CleanInterpretationLimit>,
     pub metadata_json: String,
     pub score_json: String,
     pub notation_json: String,
@@ -125,6 +140,9 @@ impl Package {
     pub fn summary(&self) -> Summary {
         Summary {
             version: 2,
+            profile: self.profile.clone(),
+            capabilities: self.capabilities.clone(),
+            interpretation_limits: self.interpretation_limits.clone(),
             content_sha256: self.identity.clone(),
             bytes: self.bytes,
             media: self
@@ -152,6 +170,9 @@ impl Package {
     fn opened(&self) -> OpenPackage {
         OpenPackage {
             version: 2,
+            profile: self.profile.clone(),
+            capabilities: self.capabilities.clone(),
+            interpretation_limits: self.interpretation_limits.clone(),
             content_sha256: self.identity.clone(),
             metadata_json: self.metadata_json.clone(),
             score_json: self.score_json.clone(),
@@ -227,18 +248,69 @@ fn parse_inner(
     }
     let metadata: Metadata = serde_json::from_slice(metadata_bytes)
         .map_err(|e| invalid(format!("Invalid clean metadata: {e}")))?;
-    let score = score_core::clean_song::decode_json(score_bytes).map_err(invalid)?;
+    // Dispatch before interpreting any coverage, channel or authoring fields.
+    // This small header is not validation; the selected closed Rust decoder is.
+    #[derive(Deserialize)]
+    struct Header {
+        profile: Option<String>,
+    }
+    let header: Header = serde_json::from_slice(score_bytes)
+        .map_err(|e| invalid(format!("Invalid complete-score header: {e}")))?;
+    let (notation, source, coverage, runtime, profile, capabilities, interpretation_limits) =
+        match header.profile.as_deref() {
+            Some(score_core::vsq_clean::PROFILE) => {
+                let score = score_core::vsq_clean::decode_json(score_bytes).map_err(invalid)?;
+                (
+                    score.notation,
+                    SourceEvidence {
+                        format: score.source.format,
+                        bytes: score.source.bytes,
+                        sha256: score.source.sha256,
+                    },
+                    serde_json::to_value(score.coverage).map_err(|e| invalid(e.to_string()))?,
+                    Value::Null,
+                    Some(score.profile),
+                    Some(score.capabilities),
+                    score.interpretation_limits,
+                )
+            }
+            None => {
+                let score = score_core::clean_song::decode_json(score_bytes).map_err(invalid)?;
+                let runtime = if with_runtime {
+                    serde_json::to_value(
+                        score_core::clean_song::compile_complete(&score).map_err(invalid)?,
+                    )
+                    .map_err(|e| invalid(e.to_string()))?
+                } else {
+                    Value::Null
+                };
+                (
+                    score.notation,
+                    SourceEvidence {
+                        format: score.source.format,
+                        bytes: score.source.bytes,
+                        sha256: score.source.sha256,
+                    },
+                    serde_json::to_value(score.coverage).map_err(|e| invalid(e.to_string()))?,
+                    runtime,
+                    None,
+                    None,
+                    vec![],
+                )
+            }
+            Some(_) => return Err(invalid("Unsupported complete-score profile")),
+        };
     if metadata.format != "worldmusichub-song"
         || metadata.version != 2
-        || metadata.id != score.notation.id
-        || metadata.title != score.notation.title
+        || metadata.id != notation.id
+        || metadata.title != notation.title
         || metadata.score.path != "score.json"
         || metadata.score.bytes != score_bytes.len() as u64
         || metadata.score.sha256 != digest(score_bytes)
         || metadata.sources.len() != 1
-        || metadata.sources[0].format != score.source.format
-        || metadata.sources[0].bytes != score.source.bytes
-        || metadata.sources[0].sha256 != score.source.sha256
+        || metadata.sources[0].format != source.format
+        || metadata.sources[0].bytes != source.bytes
+        || metadata.sources[0].sha256 != source.sha256
     {
         return Err(invalid(
             "Metadata must exactly describe the complete score and source evidence",
@@ -250,12 +322,7 @@ fn parse_inner(
             "A clean song allows at most 32 declared media assets",
         ));
     }
-    let part_ids: BTreeSet<_> = score
-        .performance
-        .parts
-        .iter()
-        .map(|p| p.id.as_str())
-        .collect();
+    let part_ids: BTreeSet<_> = notation.parts.iter().map(|p| p.id.as_str()).collect();
     let mut paths = BTreeSet::from(["metadata.json".to_string(), "score.json".to_string()]);
     let mut ids = BTreeSet::new();
     let mut singleton_roles = BTreeSet::new();
@@ -358,12 +425,14 @@ fn parse_inner(
     if bytes > MAX_PACKAGE_BYTES {
         return Err(invalid("Complete clean song exceeds 128 MiB"));
     }
-    let notation_json =
-        serde_json::to_string(&score.notation).map_err(|e| invalid(e.to_string()))?;
+    let notation_json = serde_json::to_string(&notation).map_err(|e| invalid(e.to_string()))?;
     checked_score(&notation_json)?;
     // Metadata whitespace is not identity; exact score and every asset digest are.
     let identity = digest(&serde_json::to_vec(&metadata).map_err(|e| invalid(e.to_string()))?);
     let package = Package {
+        profile,
+        capabilities,
+        interpretation_limits,
         metadata_json: String::from_utf8(metadata_bytes.to_vec())
             .map_err(|_| invalid("Metadata must be UTF-8"))?,
         score_json: String::from_utf8(score_bytes.to_vec())
@@ -372,13 +441,8 @@ fn parse_inner(
         metadata,
         identity,
         bytes,
-        runtime: if with_runtime {
-            serde_json::to_value(score_core::clean_song::compile_complete(&score).map_err(invalid)?)
-                .map_err(|e| invalid(e.to_string()))?
-        } else {
-            Value::Null
-        },
-        coverage: serde_json::to_value(&score.coverage).map_err(|e| invalid(e.to_string()))?,
+        runtime,
+        coverage,
     };
     if serde_json::to_vec(
         &serde_json::json!({"score_json":package.notation_json,"clean_package":package.opened()}),

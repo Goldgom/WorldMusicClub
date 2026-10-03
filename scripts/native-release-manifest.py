@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FOLDER = 'WorldMusicHub-Native'
 EXE = 'WorldMusicHub-Native.exe'
 INFO, SUMS = 'BUILD-INFO.json', 'SHA256.txt'
+SCORE_SCHEMAS = ('schema/worldmusichub-score-v1.schema.json', 'schemas/vsq-complete-score-v1.schema.json')
 PHASES = ['seed', 'restart', 'close-active', 'reopen']
 SONG_FOLDER_PHASES = ['folder-seed', 'folder-restart', 'folder-failure']
 SONG_FOLDER_EVIDENCE = ['native-song-folder.json', 'native-song-folder-files.json',
@@ -201,7 +202,7 @@ def accepted_song_folder_evidence(directory, executable, commit, tree):
 def create_manifest(directory, metadata):
     directory = Path(directory)
     required = [EXE, 'README.md', 'LICENSE', 'START-HERE.md',
-                'schema/worldmusichub-score-v1.schema.json', 'catalog/index.json',
+                *SCORE_SCHEMAS, 'catalog/index.json',
                 'licenses/engraving/engraving-manifest.json',
                 'licenses/engraving/opensheetmusicdisplay.min.js.LICENSE.txt',
                 'licenses/rust/manifest.json', 'licenses/rust/CARGO-THIRD-PARTY-NOTICES.txt',
@@ -273,6 +274,8 @@ def verify_archive(archive):
         prefix = FOLDER + '/'
         info = json.loads(package.read(prefix + INFO))
         require(info.get('name') == FOLDER and info.get('executable') == EXE, 'Wrong native product identity')
+        for name in SCORE_SCHEMAS:
+            require(name in info['files'], f'Native package is missing {name}')
         require(set(names) == {prefix + name for name in set(info['files']) | {INFO, SUMS}}, 'Native ZIP inventory differs')
         sums = {}
         for name, item in info['files'].items():

@@ -171,7 +171,7 @@ jobs:
           Copy-Item LICENSE $folder
           Copy-Item docs/WINDOWS_NATIVE.md "$folder/README.md"
           Copy-Item docs/WINDOWS_NATIVE.md "$folder/START-HERE.md"
-          Copy-Item -Recurse docs,schema,catalog $folder
+          Copy-Item -Recurse docs,schema,schemas,catalog $folder
           Copy-Item web/vendor/*.txt,web/vendor/engraving-manifest.json "$folder/licenses/engraving/"
           Copy-Item -Recurse dist/licenses/native-rust "$folder/licenses/rust"
           Copy-Item desktop-startup/native-report.json,desktop-startup/renderer-report.json "$folder/evidence/"

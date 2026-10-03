@@ -1,3 +1,5 @@
+import {isVsqSong} from './clean-song-package.js';
+import {VsqNavigationIndex} from './vsq-navigation.js';
 import {NotationNavigationIndex} from './notation-follow.js';
 
 /** Index Rust's written-event clock. Never derive tempo, repeats or scoring here. */
@@ -77,16 +79,19 @@ export class WrittenCursorIndex {
  * A failed response is retried only explicitly. */
 export function setupWrittenCursor({api, getContext, onStatus = () => {}}) {
   let target = null, timeline = null, index = null, navigation = null, controller = null, pending = null;
-  let nativeRuntime = null, nativeNavigation = null;
+  let cleanSong = null, nativeRuntime = null, nativeNavigation = null;
   let generation = 0, status = 'idle', message = 'Current-note following is idle.';
   const publish = (next, text) => { status = next; message = text; onStatus({status, message}); };
+  const runtimeFor = context => isVsqSong(context?.cleanSong) ? null : context?.nativeRuntime ?? context?.cleanSong?.runtime ?? null;
+  const navigationFor = context => isVsqSong(context?.cleanSong) ? context.cleanSong.navigation ?? null : runtimeFor(context)?.navigation ?? null;
   const sameContext = context => context?.score === target && context?.timeline === timeline
-    && (context?.nativeRuntime ?? null) === nativeRuntime && (nativeRuntime?.navigation ?? null) === nativeNavigation;
+    && (context?.cleanSong ?? null) === cleanSong && runtimeFor(context) === nativeRuntime
+    && navigationFor(context) === nativeNavigation;
   const boundRuntime = () => !nativeRuntime || nativeRuntime.compilation?.score === target && nativeRuntime.compilation?.timeline === timeline;
   function reset() {
     generation++; controller?.abort(); controller = null; pending = null;
     target = null; timeline = null; index = null; navigation = null;
-    nativeRuntime = null; nativeNavigation = null;
+    cleanSong = null; nativeRuntime = null; nativeNavigation = null;
     publish('idle', 'Current-note following is idle.');
   }
   function prepare({retry = false} = {}) {
@@ -94,12 +99,12 @@ export function setupWrittenCursor({api, getContext, onStatus = () => {}}) {
     if (!context?.score || !context.timeline) { if (target) reset(); return Promise.resolve(null); }
     if (!sameContext(context) || (index || navigation) && !boundRuntime()) {
       reset(); target = context.score; timeline = context.timeline;
-      nativeRuntime = context.nativeRuntime ?? null; nativeNavigation = nativeRuntime?.navigation ?? null;
+      cleanSong = context.cleanSong ?? null; nativeRuntime = runtimeFor(context); nativeNavigation = navigationFor(context);
     }
     if (index) return Promise.resolve(index);
     if (pending) return pending;
     if (status === 'unavailable' && !retry) return Promise.resolve(null);
-    const current = ++generation, score = target, compiled = timeline;
+    const current = ++generation, score = target, compiled = timeline, sourceSong = cleanSong;
     controller = new AbortController(); const signal = controller.signal;
     publish('loading', 'Preparing exact current-note positions…');
     const isCurrent = () => current === generation && !signal.aborted && sameContext(getContext());
@@ -107,9 +112,10 @@ export function setupWrittenCursor({api, getContext, onStatus = () => {}}) {
       try {
         if (!boundRuntime()) throw Error('The native navigation is not bound to this admitted score and performance timeline. Reload the complete song.');
         if (nativeRuntime && !nativeNavigation) throw Error(nativeRuntime.compilation.diagnostics?.find(item => item.code === 'clean_song_navigation_unavailable')?.message || 'This native complete song has no exact navigation map. Reload it with a current native build.');
-        const response = nativeRuntime ? await nativeNavigation : await api('/api/notation-navigation', score, signal);
+        const response = nativeRuntime || isVsqSong(sourceSong) ? await nativeNavigation : await api('/api/notation-navigation', score, signal);
         if (!isCurrent()) return null;
-        const preparedNavigation = new NotationNavigationIndex(response, score, compiled);
+        if (isVsqSong(sourceSong) && !response) throw Error(sourceSong.navigation_unavailable?.message || 'Native VSQ written-note navigation is unavailable. Reload with a compatible native runtime.');
+        const preparedNavigation = isVsqSong(sourceSong) ? new VsqNavigationIndex(response, sourceSong, score, compiled) : new NotationNavigationIndex(response, score, compiled);
         // A bounded Rust response may explicitly omit optional written spans
         // while retaining a complete, strictly validated measure map.
         const cursorUnavailable = response.written_cursor == null

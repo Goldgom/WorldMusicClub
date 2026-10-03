@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
+import {performance as monotonicClock} from 'node:perf_hooks';
 import {parseHTML} from 'linkedom';
 import {IDBFactory} from 'fake-indexeddb';
 import {Synth} from '../web/transport.js';
@@ -83,7 +84,11 @@ export async function nativeStorageApp(server,{now}={}) {
   const originals=new Map(Object.keys(installed).map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
   for(const [key,value]of Object.entries(installed))Object.defineProperty(globalThis,key,{configurable:true,value});
   const $=id=>document.getElementById(id),tick=()=>new Promise(resolve=>setImmediate(resolve));
-  const until=async(predicate,label='Native app state did not settle')=>{for(let i=0;i<200;i++){if(predicate())return;await tick();}assert.fail(label);};
+  // Real WebCrypto/file completions may wait behind other test processes. A
+  // fixed number of empty event-loop turns is not a bound on that async work.
+  // Keep all state assertions, using a real monotonic deadline independent of
+  // the deliberately frozen musical performance clock installed above.
+  const until=async(predicate,label='Native app state did not settle')=>{const deadline=monotonicClock.now()+5000;do{if(predicate())return;await tick();}while(monotonicClock.now()<deadline);assert.fail(`${label} within 5 seconds; screen=${document.body.dataset.screen}, media=${$('clean-song-media-status')?.textContent||''}`);};
   const emit=(target,type,properties={})=>{const event=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(event,{repeat:false,...properties});Object.defineProperty(event,'timeStamp',{value:performance.now()});target.dispatchEvent(event);return event;};
   const click=async id=>{assert.ok($(id),`Missing control ${id}`);$(id).click();await tick();};
   const exported=async id=>{const before=downloads.length;await click(id);await until(()=>downloads.length===before+1,`${id} did not export`);return JSON.parse(await downloads.at(-1).text());};

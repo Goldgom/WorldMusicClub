@@ -116,7 +116,7 @@ jobs:
           New-Item -ItemType Directory -Path dist/WorldMusicHub/licenses/engraving -Force | Out-Null
           Copy-Item web/vendor/*.txt,web/vendor/engraving-manifest.json dist/WorldMusicHub/licenses/engraving/
           Copy-Item -Recurse docs dist/WorldMusicHub/
-          Copy-Item -Recurse schema dist/WorldMusicHub/
+          Copy-Item -Recurse schema,schemas dist/WorldMusicHub/
           Copy-Item -Recurse catalog dist/WorldMusicHub/
           Copy-Item -Recurse dist/licenses/rust dist/WorldMusicHub/licenses/
           python scripts/release-manifest.py create dist/WorldMusicHub --commit '${{ needs.milestone.outputs.sha }}' --count '${{ needs.milestone.outputs.count }}' --recovery-for '${{ needs.milestone.outputs.recovery }}'

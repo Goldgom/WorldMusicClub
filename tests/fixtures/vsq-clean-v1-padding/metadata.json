@@ -1,0 +1,24 @@
+{
+  "format": "worldmusichub-song",
+  "version": 2,
+  "id": "vsq-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "title": "Original VSQ native bridge fixture",
+  "score": {
+    "path": "score.json",
+    "bytes": 17359,
+    "sha256": "4907f6fbf3d06c7989085f683464e90e464600e3f0fd724eb5d8ce45bc219eab"
+  },
+  "sources": [
+    {
+      "format": "vsq",
+      "bytes": 1500,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "rights": {
+    "status": "original_authored",
+    "attribution": "Original synthetic semantic test project; source byte count and hashes are synthetic evidence claims, not a bundled original or voicebank",
+    "license": "CC0-1.0"
+  },
+  "media": []
+}

@@ -93,7 +93,7 @@ export class ReferenceAudioReceiver {
           source.connect(filter); filter.connect(envelope);
         }
       } else {
-        const timbre = PROGRAM_FAMILIES[note.program >> 3], hz = 440 * 2 ** ((note.key - 69) / 12);
+        const timbre = note.referenceTimbre || PROGRAM_FAMILIES[note.program >> 3], hz = 440 * 2 ** ((note.key - 69) / 12);
         addTone(timbre.wave, hz, 0.8); addTone(timbre.harmonic, hz * timbre.ratio, 0.2);
       }
       // A conservative reference level, not a loudness-normalization promise.

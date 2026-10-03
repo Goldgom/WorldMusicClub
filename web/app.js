@@ -1,3 +1,4 @@
+import {isVsqSong} from './clean-song-package.js';
 import {CleanSongPlayer,inspectCleanRendition} from './clean-song-player.js';
 import {createCleanSongMedia} from './clean-song-media.js';
 import {setupCleanSongView} from './clean-song-view.js';
@@ -261,13 +262,13 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
   $('play-button').disabled = true;
   bindText($('transport-status'), () => t('app.preparingScore'));
   try {
-    const compiled = cleanSong?cleanSong.runtime.compilation:await api('/api/compile', score, controller.signal);
+    const compiled = cleanSong?cleanSong.compilation:await api('/api/compile', score, controller.signal);
     if (generation !== state.generation || controller.signal.aborted || expectedIntent!==null&&expectedIntent!==state.loadIntent) return;
     // Reset before publishing the new score: resetPlayback() can immediately
     // draw and start the new score's lazy cursor request.
     writtenCursor?.reset();
     const previousPart = requestedPracticePart !== undefined ? requestedPracticePart : preserveTempo ? state.practicePart : null;
-    state.cleanSong=cleanSong;if(!cleanSong){previewMedia?.clear();previewMediaKey=null;}cleanMutedParts.clear();cleanPlayer.select(cleanSong);activeMedia?.clear();activeMediaKey=null;
+    state.cleanSong=cleanSong;if(!cleanSong){previewMedia?.clear();previewMediaKey=null;}cleanMutedParts.clear();if(isVsqSong(cleanSong))for(const part of cleanSong.runtime.parts)if(!part.audible)cleanMutedParts.add(part.part_id);cleanPlayer.select(cleanSong);activeMedia?.clear();activeMediaKey=null;
     state.score = compiled.score;
     if(requestedMode!==undefined){state.mode=requestedMode;$('session-mode').value=requestedMode;}
     state.importDiagnostics = importDiagnostics;
@@ -803,7 +804,7 @@ async function togglePlayback() {
   const now = performance.now()+(state.cleanSong?50:0);
   transport.start(now, state.loop?.notes || state.practiceTimeline?.notes || state.compiled.timeline.notes, $('count-in').checked ? beatMs * 4 : 0);
   if(state.mode==='practice')beginPracticePass(now);
-  if(state.cleanSong){try{if(!synth.muted)cleanPlayer.start({context:synth.context,output:synth.output,mode:state.mode,targetPart:state.practicePart,mutedParts:cleanMutedParts,resumePositionMs:transport.position});activeMedia?.sync({positionMs:transport.time(performance.now()),running:true,userGesture:true});}catch(error){pausePlayback();notice(()=>cleanErrorText(i18n.locale,error),true);return;}}
+  if(state.cleanSong){try{if(!synth.muted)cleanPlayer.start({context:synth.context,output:synth.output,mode:state.mode,targetPart:state.practicePart,mutedParts:cleanMutedParts,instrument:state.instrument,resumePositionMs:transport.position});activeMedia?.sync({positionMs:transport.time(performance.now()),running:true,userGesture:true});}catch(error){pausePlayback();notice(()=>cleanErrorText(i18n.locale,error),true);return;}}
   updateButtons();
 }
 function beginPracticePass(now, captureEnabled = true) {
@@ -1224,9 +1225,9 @@ function renderPreview(){
   bindAttribute($('preview-title'),'title',()=>item?.title||t('app.chooseScore'));
   bindText($('preview-meta'), () => item?t('app.previewMeta', {composer:item.composer||t('app.composerUnknown'),origin:originLabel(item)}):t('app.browseScores'));
   bindAttribute($('preview-meta'),'title',()=>item?t('app.previewMeta',{composer:item.composer||t('app.composerUnknown'),origin:originLabel(item)}):t('app.browseScores'));
-  if($('preview-music-meta'))bindText($('preview-music-meta'), () => previewMusicMetadata(value.compiled?.score,i18n));
-  bindText($('preview-status'), () => startingPreview?t('app.preparingSession'):value.status==='loading'?t('app.preparingPreview'):value.status==='error'?(value.errorCode?.startsWith('clean_')?cleanErrorText(i18n.locale,{code:value.errorCode}):t('app.previewError', {detail:originalDetail(value.message)})):value.status==='ready'?t('app.previewReady'):t('app.previewBrowsing'));
-  bindText($('preview-gate'), () => compatibilityText(value.compatibility));$('preview-gate').classList.toggle('preview-blocked',['blocked','error','dirty'].includes(value.compatibility.status));
+  if($('preview-music-meta'))bindText($('preview-music-meta'), () => previewMusicMetadata(value.compiled?.score||value.score,i18n));
+  bindText($('preview-status'), () => startingPreview?t('app.preparingSession'):['loading','choosing'].includes(value.status)?t('app.preparingPreview'):value.status==='choice'?(i18n.locale==='en'?'Choose base-note instrumental practice to continue':'请选择基础音符器乐练习以继续'):value.status==='error'?(value.errorCode?.startsWith('clean_')?cleanErrorText(i18n.locale,{code:value.errorCode}):t('app.previewError', {detail:originalDetail(value.message)})):value.status==='ready'?t('app.previewReady'):t('app.previewBrowsing'));
+  bindText($('preview-gate'), () => ['choice','choosing'].includes(value.status)?(i18n.locale==='en'?'Full vocal rendering unavailable':'完整歌声渲染不可用'):compatibilityText(value.compatibility));$('preview-gate').classList.toggle('preview-blocked',['blocked','error','dirty'].includes(value.compatibility.status));
   $('start-listen').disabled=startingPreview||!preview.canStart('listen');$('start-practice').disabled=startingPreview||!preview.canStart('practice');
   const diagnostics=value.compiled?.diagnostics||[];$('preview-notices').hidden=!diagnostics.length;bindText($('preview-notices-title'), () => t('app.previewNotices', {count:diagnostics.length}));$('preview-notice-list').replaceChildren();for(const diagnostic of diagnostics.slice(0,20)){const row=document.createElement('li');bindText(row, () => diagnostic.message);$('preview-notice-list').append(row)}if(diagnostics.length>20){const row=document.createElement('li');bindText(row, () => t('app.moreNotices', {count:diagnostics.length-20}));$('preview-notice-list').append(row)}
   const select=$('preview-part'),signature=JSON.stringify([i18n.revision,Boolean(value.cleanSong),item?.parts?.map(part=>[part.id,part.name])||[]]);
@@ -1368,7 +1369,7 @@ performanceView.setPianoGuidance($('piano-fingering-guidance'));
 writtenCursorStatus=document.createElement('p');writtenCursorStatus.id='written-cursor-status';writtenCursorStatus.setAttribute('aria-live','off');
 writtenCursorRetry=document.createElement('button');writtenCursorRetry.id='written-cursor-retry';writtenCursorRetry.type='button';writtenCursorRetry.className='button compact';bindText(writtenCursorRetry, () => t('app.retryNotePositions'));writtenCursorRetry.hidden=true;
 document.querySelector('#notation-dock .dock-help').append(writtenCursorStatus,writtenCursorRetry);
-writtenCursor=setupWrittenCursor({api,getContext:()=>({score:state.score,timeline:state.compiled?.timeline,nativeRuntime:state.cleanSong?.runtime}),onStatus:({status,message})=>{writtenCursorStatus.dataset.status=status;writtenCursorStatus.dataset.sourceNoteIds='[]';bindText(writtenCursorStatus, () => t(({idle:'app.cursorIdle',loading:'app.cursorLoading',ready:'app.cursorReady',unavailable:'app.cursorUnavailable'})[status]||'app.cursorUnavailable'));bindAttribute(writtenCursorStatus,'title',()=>originalDetail(message));writtenCursorRetry.hidden=status!=='unavailable';state.lastHighlight='';beginnerView?.refresh();}});
+writtenCursor=setupWrittenCursor({api,getContext:()=>({score:state.score,timeline:state.compiled?.timeline,cleanSong:state.cleanSong,nativeRuntime:state.cleanSong?.runtime}),onStatus:({status,message})=>{writtenCursorStatus.dataset.status=status;writtenCursorStatus.dataset.sourceNoteIds='[]';bindText(writtenCursorStatus, () => t(({idle:'app.cursorIdle',loading:'app.cursorLoading',ready:'app.cursorReady',unavailable:'app.cursorUnavailable'})[status]||'app.cursorUnavailable'));bindAttribute(writtenCursorStatus,'title',()=>originalDetail(message));writtenCursorRetry.hidden=status!=='unavailable';state.lastHighlight='';beginnerView?.refresh();}});
 beginnerView=setupBeginnerView({document,i18n,getContext:()=>({score:state.score,numberedMode:state.numberedMode,written:beginnerView?.enabled()&&state.numberedMode==='movable'?writtenCursor?.at(transport.time(performance.now())):null}),onNumberedMode:setNumberedMode});
 writtenCursorRetry.addEventListener('click',()=>writtenCursor.prepare({retry:true}));
 window.addEventListener('pagehide',()=>writtenCursor.reset());
@@ -1383,7 +1384,7 @@ function renderCleanActive(){
   cleanView.renderActive({song:state.cleanSong,score:state.score,timeline:state.compiled?.timeline,targetPart:state.practicePart,mode:state.mode,mutedParts:cleanMutedParts,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,range,instrument:state.instrument});
 }
 function renderCleanPreview(){
-  if(!cleanView)return;const song=preview?.value.cleanSong||null;cleanView.renderPreview(song);
+  if(!cleanView)return;const song=preview?.value.cleanSong||null;cleanView.renderPreview(song,preview?.value);
   if(previewMediaKey!==song?.identity){previewMediaKey=song?.identity||null;void previewMedia.select(song?.libraryKey,song);}
   const lobby=document.querySelector('.lobby-audition');if(lobby)lobby.hidden=Boolean(song);
 }
@@ -1392,7 +1393,7 @@ function syncCleanMedia(){
   if(activeMediaKey!==song?.identity){activeMediaKey=song?.identity||null;void activeMedia.select(song?.libraryKey,song);}
   renderCleanActive();
 }
-cleanView=setupCleanSongView({document,i18n,onOpen:()=>pausePlayback(),onTarget:part=>{if(!state.cleanSong||transport.running)return;state.practicePart=part;$('practice-part').value=part;rebuildPracticeScope();resetPlayback();void checkInstrument();},onMute:(part,muted)=>{if(transport.running)return;if(muted)cleanMutedParts.add(part);else cleanMutedParts.delete(part);resetPlayback();},onRange:()=>{$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}});
+cleanView=setupCleanSongView({document,i18n,onVsqChoice:()=>preview.chooseVsqPractice(async(song,signal)=>(await scoreStorage.storage()).chooseVsqPractice(song,{signal})),onOpen:()=>pausePlayback(),onTarget:part=>{if(!state.cleanSong||transport.running)return;state.practicePart=part;$('practice-part').value=part;rebuildPracticeScope();resetPlayback();void checkInstrument();},onMute:(part,muted)=>{if(transport.running)return;if(muted)cleanMutedParts.add(part);else cleanMutedParts.delete(part);resetPlayback();},onRange:()=>{$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}});
 const loadCleanAsset=async(key,handle,options)=>(await scoreStorage.storage()).loadAsset(key,handle,options);
 previewMedia=createCleanSongMedia({loadAsset:loadCleanAsset,cover:cleanView.cover,onStatus:value=>cleanView.renderPreviewMedia(value)});
 activeMedia=createCleanSongMedia({loadAsset:loadCleanAsset,background:cleanView.background,video:cleanView.video,onStatus:value=>cleanView.renderMedia(value)});

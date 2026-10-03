@@ -1,0 +1,1726 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vsq-complete-score-v1.schema.json",
+  "title": "WorldMusicHub VSQ clean score v1",
+  "description": "Closed structural shape. Rust validation additionally verifies every cross-layer binding, exact timing map, coverage count and mandatory limitation; schema validation alone does not authorize playback.",
+  "$ref": "#/$defs/VsqCompleteScore",
+  "$defs": {
+    "SourceEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "format": {
+          "type": "string",
+          "maxLength": 16384,
+          "const": "vsq"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5242880
+        },
+        "sha256": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "AuthoringProject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "source_sha256",
+        "ppq",
+        "master_track_name",
+        "master_end_tick",
+        "tempo",
+        "meters",
+        "premeasure_bars",
+        "premeasure_ticks",
+        "mixer",
+        "tracks",
+        "interpretation_limits"
+      ],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "maxLength": 16384,
+          "const": "wmh-vsq-dsb301-v1"
+        },
+        "source_sha256": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "ppq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32767
+        },
+        "master_track_name": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "master_end_tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "tempo": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VsqTempo"
+          },
+          "maxItems": 1000000,
+          "minItems": 1
+        },
+        "meters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VsqMeter"
+          },
+          "maxItems": 1000000,
+          "minItems": 1
+        },
+        "premeasure_bars": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1024
+        },
+        "premeasure_ticks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "mixer": {
+          "$ref": "#/$defs/VsqMixer"
+        },
+        "tracks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AuthoringTrack"
+          },
+          "maxItems": 127,
+          "minItems": 1
+        },
+        "interpretation_limits": {
+          "const": [
+            "VoicebankIdentityAndAvailabilityUnverified",
+            "PhoneticNumericFieldMeaningsUnverified",
+            "VocalExpressionAndPitchInterpolationNotRendered",
+            "NrpnDispatchAndPresendNotEvaluated",
+            "Resonance255MeaningUnverified",
+            "CommonModeAndMixerOutputModeNotInterpreted",
+            "SingerHandleMetadataNotAcousticIdentity",
+            "EosDoesNotEstablishAcousticTailOrAccompaniment"
+          ]
+        }
+      }
+    },
+    "AuthoringTrack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_track_index",
+        "smf_track_name",
+        "project_text_sha256",
+        "common",
+        "end_tick",
+        "eos_tick",
+        "singers",
+        "notes",
+        "curves"
+      ],
+      "properties": {
+        "source_track_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "smf_track_name": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "project_text_sha256": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "common": {
+          "$ref": "#/$defs/VsqCommon"
+        },
+        "end_tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "eos_tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "singers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VsqSinger"
+          },
+          "maxItems": 100000,
+          "minItems": 1
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VsqNote"
+          },
+          "maxItems": 100000
+        },
+        "curves": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VsqCurve"
+          },
+          "maxItems": 21
+        }
+      }
+    },
+    "Coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "notation",
+        "project",
+        "named_dispatch"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/CoverageStatus"
+        },
+        "notation": {
+          "$ref": "#/$defs/NotationCoverage"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectCoverage"
+        },
+        "named_dispatch": {
+          "$ref": "#/$defs/DispatchCoverage"
+        }
+      }
+    },
+    "ProjectCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tracks",
+        "notes",
+        "singers",
+        "lyrics",
+        "vibratos",
+        "envelope_points",
+        "curves",
+        "curve_points",
+        "tempo_changes",
+        "meter_changes"
+      ],
+      "properties": {
+        "tracks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "notes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "singers": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "lyrics": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "vibratos": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "envelope_points": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "curves": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "curve_points": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "tempo_changes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "meter_changes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        }
+      }
+    },
+    "DispatchCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tracks",
+        "commands",
+        "parameter_fields",
+        "source_controller_records_accounted"
+      ],
+      "properties": {
+        "tracks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "commands": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "parameter_fields": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "source_controller_records_accounted": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        }
+      }
+    },
+    "Capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "whole_vocal_rendering",
+        "instrumental_practice"
+      ],
+      "properties": {
+        "whole_vocal_rendering": {
+          "$ref": "#/$defs/VocalRendering"
+        },
+        "instrumental_practice": {
+          "$ref": "#/$defs/InstrumentalPractice"
+        }
+      }
+    },
+    "PackageMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "version",
+        "id",
+        "title",
+        "score",
+        "sources",
+        "rights",
+        "media"
+      ],
+      "properties": {
+        "format": {
+          "type": "string",
+          "maxLength": 16384,
+          "const": "worldmusichub-song"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "const": 2
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "score": {
+          "$ref": "#/$defs/PackageScore"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SourceEvidence"
+          },
+          "maxItems": 1000000
+        },
+        "rights": {
+          "$ref": "#/$defs/PackageRights"
+        },
+        "media": {
+          "type": "array",
+          "maxItems": 0,
+          "items": false
+        }
+      }
+    },
+    "PackageScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 16384,
+          "const": "score.json"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864
+        },
+        "sha256": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "PackageRights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "attribution"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "maxLength": 16384,
+          "const": "user_supplied_unverified"
+        },
+        "attribution": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "license": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 16384
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "VsqCompleteScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "version",
+        "profile",
+        "source",
+        "notation",
+        "authoring",
+        "engine_dispatch",
+        "coverage",
+        "capabilities",
+        "interpretation_limits"
+      ],
+      "properties": {
+        "format": {
+          "type": "string",
+          "maxLength": 16384,
+          "const": "worldmusichub-complete-score"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "const": 1
+        },
+        "profile": {
+          "type": "string",
+          "maxLength": 16384,
+          "const": "wmh-vsq-clean-v1"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceEvidence"
+        },
+        "notation": {
+          "$ref": "#/$defs/Score"
+        },
+        "authoring": {
+          "$ref": "#/$defs/AuthoringProject"
+        },
+        "engine_dispatch": {
+          "$ref": "#/$defs/EngineDispatch"
+        },
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/Capabilities"
+        },
+        "interpretation_limits": {
+          "const": [
+            "whole_vocal_rendering_unavailable",
+            "practice_uses_authored_base_notes_only",
+            "pitch_bend_and_sensitivity_not_rendered",
+            "vibrato_and_expression_not_rendered",
+            "lyrics_and_phonetics_not_synthesized",
+            "source_voice_program_is_descriptor_not_general_midi",
+            "mixer_gain_pan_and_output_mode_not_interpreted",
+            "engine_dispatch_timing_and_acoustic_tails_not_rendered"
+          ]
+        }
+      }
+    },
+    "EngineDispatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "source_sha256",
+        "source_controller_events",
+        "tracks",
+        "interpretation_limits"
+      ],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "maxLength": 16384,
+          "const": "wmh-vocaloid2-named-dispatch-v1"
+        },
+        "source_sha256": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_controller_events": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "tracks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EngineTrack"
+          },
+          "maxItems": 127,
+          "minItems": 1
+        },
+        "interpretation_limits": {
+          "const": [
+            "cross_group_transport_inheritance_unverified",
+            "engine_duration_rounding_not_reconstructed",
+            "vibrato_parameter_units_unverified",
+            "d1_mean_first_note_unit_unverified",
+            "legacy_resonance255_meaning_unverified",
+            "vocal_synthesis_not_implemented"
+          ]
+        }
+      }
+    },
+    "EngineTrack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_track_index",
+        "commands"
+      ],
+      "properties": {
+        "source_track_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EngineCommand"
+          },
+          "maxItems": 250000
+        }
+      }
+    },
+    "EngineCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tick",
+        "source_order_first",
+        "source_order_last",
+        "command"
+      ],
+      "properties": {
+        "tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "source_order_first": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "source_order_last": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "explicit_transport": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EngineTransport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "command": {
+          "$ref": "#/$defs/EngineCommandKind"
+        }
+      }
+    },
+    "EngineTransport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "identity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EngineIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delay_ms": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "EngineIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "device"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "device": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        }
+      }
+    },
+    "EngineNote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authored_note_id",
+        "note_number",
+        "velocity",
+        "duration_ms",
+        "location",
+        "phonetic_symbols",
+        "intonation",
+        "portamento_flags",
+        "decay",
+        "accent"
+      ],
+      "properties": {
+        "authored_note_id": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "note_number": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "velocity": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16383
+        },
+        "location": {
+          "$ref": "#/$defs/EngineNoteLocation"
+        },
+        "vibrato": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EngineVibrato"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "phonetic_symbols": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EnginePhoneticSymbol"
+          },
+          "maxItems": 60,
+          "minItems": 1
+        },
+        "intonation": {
+          "$ref": "#/$defs/EngineIntonation"
+        },
+        "portamento_flags": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "decay": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "accent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "EngineVibrato": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "database_index",
+        "type_index",
+        "duration_parameter",
+        "delay_parameter"
+      ],
+      "properties": {
+        "database_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16383
+        },
+        "type_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "duration_parameter": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "delay_parameter": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        }
+      }
+    },
+    "EnginePhoneticSymbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol"
+      ],
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "maxLength": 1,
+          "minLength": 1,
+          "pattern": "^[!-~]$"
+        },
+        "consonant_adjustment": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "EngineIntonation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "v1_mean_parameter",
+        "d1_mean_parameter",
+        "d1_mean_first_note_parameter",
+        "d2_mean_parameter",
+        "d4_mean_parameter",
+        "p_mean_onset_first_note_parameter",
+        "v_mean_note_transition_parameter",
+        "p_mean_ending_note_parameter"
+      ],
+      "properties": {
+        "v1_mean_parameter": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "d1_mean_parameter": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "d1_mean_first_note_parameter": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "d2_mean_parameter": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "d4_mean_parameter": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "p_mean_onset_first_note_parameter": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "v_mean_note_transition_parameter": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "p_mean_ending_note_parameter": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        }
+      }
+    },
+    "CoverageStatus": {
+      "type": "string",
+      "enum": [
+        "structurally_complete_authoring_and_named_dispatch"
+      ]
+    },
+    "NotationCoverage": {
+      "type": "string",
+      "enum": [
+        "all_authored_base_notes"
+      ]
+    },
+    "VocalRendering": {
+      "type": "string",
+      "enum": [
+        "blocked"
+      ]
+    },
+    "InstrumentalPractice": {
+      "type": "string",
+      "enum": [
+        "requires_explicit_base_note_choice"
+      ]
+    },
+    "CleanInterpretationLimit": {
+      "type": "string",
+      "enum": [
+        "whole_vocal_rendering_unavailable",
+        "practice_uses_authored_base_notes_only",
+        "pitch_bend_and_sensitivity_not_rendered",
+        "vibrato_and_expression_not_rendered",
+        "lyrics_and_phonetics_not_synthesized",
+        "source_voice_program_is_descriptor_not_general_midi",
+        "mixer_gain_pan_and_output_mode_not_interpreted",
+        "engine_dispatch_timing_and_acoustic_tails_not_rendered"
+      ]
+    },
+    "EngineNoteLocation": {
+      "type": "string",
+      "enum": [
+        "connected_before_and_after",
+        "connected_after",
+        "connected_before",
+        "isolated"
+      ]
+    },
+    "EngineVoiceParameter": {
+      "type": "string",
+      "enum": [
+        "breathiness",
+        "brightness",
+        "clearness",
+        "portamento_timing",
+        "opening",
+        "gender_factor",
+        "resonance1_frequency",
+        "resonance2_frequency",
+        "resonance3_frequency",
+        "resonance4_frequency",
+        "resonance1_bandwidth",
+        "resonance2_bandwidth",
+        "resonance3_bandwidth",
+        "resonance4_bandwidth",
+        "resonance1_amplitude",
+        "resonance2_amplitude",
+        "resonance3_amplitude",
+        "resonance4_amplitude"
+      ]
+    },
+    "EngineInterpretationLimit": {
+      "type": "string",
+      "enum": [
+        "cross_group_transport_inheritance_unverified",
+        "engine_duration_rounding_not_reconstructed",
+        "vibrato_parameter_units_unverified",
+        "d1_mean_first_note_unit_unverified",
+        "legacy_resonance255_meaning_unverified",
+        "vocal_synthesis_not_implemented"
+      ]
+    },
+    "VsqTempo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tick",
+        "event_order",
+        "microseconds_per_quarter"
+      ],
+      "properties": {
+        "tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "event_order": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "microseconds_per_quarter": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777215
+        }
+      }
+    },
+    "VsqMeter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tick",
+        "event_order",
+        "numerator",
+        "denominator_power",
+        "clocks_per_click",
+        "thirty_seconds_per_quarter"
+      ],
+      "properties": {
+        "tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "event_order": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "numerator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255
+        },
+        "denominator_power": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "clocks_per_click": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "thirty_seconds_per_quarter": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        }
+      }
+    },
+    "VsqMixer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "master_fader",
+        "master_panpot",
+        "master_mute",
+        "output_mode",
+        "tracks"
+      ],
+      "properties": {
+        "master_fader": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "master_panpot": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "master_mute": {
+          "type": "boolean"
+        },
+        "output_mode": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "tracks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VsqMixerTrack"
+          },
+          "maxItems": 1000000
+        }
+      }
+    },
+    "VsqMixerTrack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fader",
+        "panpot",
+        "mute",
+        "solo"
+      ],
+      "properties": {
+        "fader": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "panpot": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "mute": {
+          "type": "boolean"
+        },
+        "solo": {
+          "type": "boolean"
+        }
+      }
+    },
+    "VsqCommon": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "name",
+        "color_components",
+        "dynamics_mode",
+        "play_mode"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "maxLength": 16384,
+          "const": "DSB301"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "color_components": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "dynamics_mode": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "play_mode": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "VsqSinger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "event_order",
+        "tick",
+        "handle_id",
+        "voice"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "event_order": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "handle_id": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "voice": {
+          "$ref": "#/$defs/VsqVoice"
+        }
+      }
+    },
+    "VsqVoice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "icon_id",
+        "ids",
+        "original",
+        "caption",
+        "length",
+        "language",
+        "program"
+      ],
+      "properties": {
+        "icon_id": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "ids": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "original": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "caption": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "language": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "program": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "VsqNote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "event_order",
+        "tick",
+        "length_ticks",
+        "note_number",
+        "dynamics",
+        "singer_event_id",
+        "expression",
+        "lyric_handle_id",
+        "lyrics"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "event_order": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "length_ticks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "note_number": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "dynamics": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "singer_event_id": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "expression": {
+          "$ref": "#/$defs/VsqNoteExpression"
+        },
+        "lyric_handle_id": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "lyrics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VsqLyric"
+          },
+          "maxItems": 1,
+          "minItems": 1
+        },
+        "vibrato": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VsqVibrato"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "VsqNoteExpression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bend_depth",
+        "bend_length",
+        "portamento_use",
+        "decay_gain_rate",
+        "accent"
+      ],
+      "properties": {
+        "bend_depth": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "bend_length": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "portamento_use": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "decay_gain_rate": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "accent": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "VsqLyric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index",
+        "lyric",
+        "phonetic",
+        "numeric_fields"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "lyric": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "phonetic": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "numeric_fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VsqDecimal"
+          },
+          "maxItems": 4,
+          "minItems": 3
+        }
+      }
+    },
+    "VsqDecimal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coefficient",
+        "scale"
+      ],
+      "properties": {
+        "coefficient": {
+          "type": "integer",
+          "minimum": -999999999999999999,
+          "maximum": 999999999999999999
+        },
+        "scale": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 12
+        }
+      }
+    },
+    "VsqVibrato": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "handle_id",
+        "delay_ticks",
+        "icon_id",
+        "ids",
+        "original",
+        "caption",
+        "length_ticks",
+        "depth",
+        "rate"
+      ],
+      "properties": {
+        "handle_id": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "delay_ticks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "icon_id": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "ids": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "original": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "caption": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "length_ticks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "depth": {
+          "$ref": "#/$defs/VsqEnvelope"
+        },
+        "rate": {
+          "$ref": "#/$defs/VsqEnvelope"
+        }
+      }
+    },
+    "VsqEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "points"
+      ],
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VsqEnvelopePoint"
+          },
+          "maxItems": 100000
+        }
+      }
+    },
+    "VsqEnvelopePoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "position",
+        "value"
+      ],
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/VsqDecimal"
+        },
+        "value": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "VsqCurve": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parameter",
+        "points"
+      ],
+      "properties": {
+        "parameter": {
+          "$ref": "#/$defs/VsqCurveParameter"
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VsqCurvePoint"
+          },
+          "maxItems": 1000000
+        }
+      }
+    },
+    "VsqCurvePoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tick",
+        "value"
+      ],
+      "properties": {
+        "tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "value": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "VsqCurveParameter": {
+      "type": "string",
+      "enum": [
+        "PitchBend",
+        "PitchBendSensitivity",
+        "Dynamics",
+        "Breathiness",
+        "Brightness",
+        "Clearness",
+        "Resonance1Frequency",
+        "Resonance2Frequency",
+        "Resonance3Frequency",
+        "Resonance4Frequency",
+        "Resonance1Bandwidth",
+        "Resonance2Bandwidth",
+        "Resonance3Bandwidth",
+        "Resonance4Bandwidth",
+        "Resonance1Amplitude",
+        "Resonance2Amplitude",
+        "Resonance3Amplitude",
+        "Resonance4Amplitude",
+        "GenderFactor",
+        "PortamentoTiming",
+        "Opening"
+      ]
+    },
+    "VsqInterpretationLimit": {
+      "type": "string",
+      "enum": [
+        "VoicebankIdentityAndAvailabilityUnverified",
+        "PhoneticNumericFieldMeaningsUnverified",
+        "VocalExpressionAndPitchInterpolationNotRendered",
+        "NrpnDispatchAndPresendNotEvaluated",
+        "Resonance255MeaningUnverified",
+        "CommonModeAndMixerOutputModeNotInterpreted",
+        "SingerHandleMetadataNotAcousticIdentity",
+        "EosDoesNotEstablishAcousticTailOrAccompaniment"
+      ]
+    },
+    "EngineCommandKind": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "note",
+            "kind"
+          ],
+          "properties": {
+            "note": {
+              "$ref": "#/$defs/EngineNote"
+            },
+            "kind": {
+              "const": "note"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bank",
+            "kind"
+          ],
+          "properties": {
+            "bank": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "kind": {
+              "const": "voice_bank"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "program",
+            "kind"
+          ],
+          "properties": {
+            "program": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "kind": {
+              "const": "voice_program"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "kind"
+          ],
+          "properties": {
+            "value": {
+              "type": "integer",
+              "minimum": -32768,
+              "maximum": 32767
+            },
+            "kind": {
+              "const": "pitch_bend"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "kind"
+          ],
+          "properties": {
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "kind": {
+              "const": "dynamics"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "kind"
+          ],
+          "properties": {
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "kind": {
+              "const": "vibrato_rate"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "kind"
+          ],
+          "properties": {
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "kind": {
+              "const": "vibrato_depth"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "parameter",
+            "value",
+            "kind"
+          ],
+          "properties": {
+            "parameter": {
+              "$ref": "#/$defs/EngineVoiceParameter"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "kind": {
+              "const": "voice_parameter"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "semitones",
+            "kind"
+          ],
+          "properties": {
+            "semitones": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "kind": {
+              "const": "pitch_bend_sensitivity"
+            }
+          }
+        }
+      ]
+    },
+    "Score": {
+      "allOf": [
+        {
+          "$ref": "../schema/worldmusichub-score-v1.schema.json"
+        },
+        {
+          "type": "object",
+          "required": [
+            "source"
+          ],
+          "properties": {
+            "source": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$comment": "No original bytes or controller-event arrays. Runtime and native integration acceptance require independent validation."
+}

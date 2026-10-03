@@ -66,6 +66,8 @@ pub struct Item {
     pub message: String,
     pub playable: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clean_package: Option<clean_package::Summary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub derivation: Option<Derivation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entry: Option<Entry>,
@@ -205,6 +207,7 @@ pub fn is_large_operation(path: &str) -> bool {
             | "/api/library/import/export"
             | "/api/library/pack/export"
             | "/api/library/asset"
+            | "/api/library/runtime"
     )
 }
 pub fn valid_history_query(uri: &http::Uri) -> bool {
@@ -988,7 +991,7 @@ fn check_report_budget(plan: &Plan) -> Result<()> {
     for c in &plan.candidates {
         budget += c.path.len() * 2 + 4096 + 8192;
         if let Some(clean) = &c.clean {
-            budget += serde_json::to_vec(&clean.summary())
+            budget += 2 * serde_json::to_vec(&clean.summary())
                 .map_err(|e| invalid(e.to_string()))?
                 .len();
         }
@@ -1066,6 +1069,7 @@ pub fn import(
             code: "pack_source_only".into(),
             message: String::new(),
             playable: false,
+            clean_package: candidate.clean.as_ref().map(|p| p.summary()),
             derivation: candidate.derivation,
             entry: None,
         };
@@ -1083,7 +1087,11 @@ pub fn import(
                 } else {
                     score.title
                 };
-                item.playable = true;
+                let explicit_practice = candidate
+                    .clean
+                    .as_ref()
+                    .is_some_and(|p| p.profile.as_deref() == Some(score_core::vsq_clean::PROFILE));
+                item.playable = !explicit_practice;
                 item.status = "ready".into();
                 item.code = "pack_valid_score".into();
                 item.message = "Canonical score validated by Rust".into();
@@ -1152,6 +1160,9 @@ pub fn import(
                             item.entry = error.existing.map(|e| *e);
                         }
                     }
+                }
+                if explicit_practice {
+                    item.message.push_str(" All authored VSQ tracks and expressions are retained. Choose limited base-note instrumental practice explicitly; every authored note, including Dynamics 0, remains a practice target. Whole-vocal rendering is unsupported.");
                 }
                 if !commit {
                     planned_hashes.insert(hash);
