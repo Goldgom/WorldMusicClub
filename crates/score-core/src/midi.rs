@@ -275,6 +275,9 @@ fn check_meta_bytes(raw: &[u8]) -> Result<(), String> {
             "Malformed MIDI metadata 0x{kind:02x}: unexpected payload length"
         ));
     }
+    if kind == 0x54 {
+        crate::midi_timecode::Timecode::decode(data)?;
+    }
     if kind == 0x59 && data[1] > 1 {
         return Err("MIDI key mode must be 0 (major) or 1 (minor)".into());
     }
@@ -391,6 +394,7 @@ pub fn import_midi(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
     let mut initial_controls = [InitialControls::default(); 16];
     let mut initial_sensitivity = [InitialPitchBendSensitivity::default(); 16];
     let mut has_channel_prefix = false;
+    let mut offset_placement = crate::midi_timecode::Placement::default();
     for (track_index, events) in tracks.enumerate() {
         if track_index >= expected_tracks {
             return Err("MIDI parsed track count exceeds its header".into());
@@ -420,6 +424,7 @@ pub fn import_midi(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
             end_tick = end_tick.max(tick);
             match event.kind {
                 TrackEventKind::Midi { channel, message } => {
+                    offset_placement.channel(track_index as u16);
                     let channel = channel.as_int();
                     let sensitivity = &mut initial_sensitivity[usize::from(channel)];
                     let sensitivity_step = sensitivity.observe(track_index, index, tick, message)?;
@@ -507,7 +512,12 @@ pub fn import_midi(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
                         has_channel_prefix = true;
                         warnings.add("midi_metadata_source_only", "MIDI text, lyrics, copyright notices, instrument labels and other non-timing metadata are retained in the original source only. Copyright text is not treated as a license grant.");
                     }
-                    MetaMessage::SmpteOffset(_) => return Err("MIDI SMPTE offset is unsupported; absolute track offsets must be resolved before import".into()),
+                    MetaMessage::SmpteOffset(_) => {
+                        // check_meta_bytes checked exact length and unmasked fields.
+                        let timecode = crate::midi_timecode::Timecode::decode(&raw[raw.len() - 5..])?;
+                        offset_placement.offset(&timecode, track_index as u16, beat(tick, ppq)?)?;
+                        warnings.add("midi_zero_smpte_offset", "A zero SMPTE origin was validated. The complete semantic score retains its frame-rate identity; practice uses the exact relative PPQ clock and does not synchronize external timecode devices.");
+                    },
                     MetaMessage::MidiPort(_) => return Err("MIDI port routing is unsupported; export a single-port MIDI file to avoid conflating independent channels".into()),
                     MetaMessage::Unknown(_, _) => return Err("Unknown or malformed MIDI metadata is unsupported; it may contain performance semantics".into()),
                     MetaMessage::SequencerSpecific(_) => return Err("Sequencer-specific MIDI metadata is unsupported; tuning and playback semantics cannot be inferred safely".into()),

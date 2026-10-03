@@ -33,7 +33,6 @@ pub fn convert_midi(bytes: &[u8], id: &str, title: &str) -> Result<CompletePerfo
             DiagnosticCode::CrossTrackChannelOrder
                 | DiagnosticCode::CrossTrackTempoOrder
                 | DiagnosticCode::RoutingUninterpreted
-                | DiagnosticCode::SmpteOffsetUninterpreted
         ) {
             return Err(format!(
                 "Performance conversion requires resolved semantics: {}",
@@ -117,6 +116,9 @@ pub fn convert_midi(bytes: &[u8], id: &str, title: &str) -> Result<CompletePerfo
                 },
                 1..=9 => text_command(*meta_type, data)?,
                 47 if data.is_empty() => Command::TrackEnd,
+                84 => Command::SmpteOffset {
+                    timecode: crate::midi_timecode::Timecode::decode(data)?,
+                },
                 89 if data.len() == 2 && data[1] <= 1 => Command::KeySignature {
                     fifths: data[0] as i8,
                     mode: if data[1] == 0 {

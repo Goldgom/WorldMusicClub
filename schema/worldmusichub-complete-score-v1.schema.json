@@ -688,6 +688,56 @@
           "required": [
             "kind"
           ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "timecode"
+          ],
+          "properties": {
+            "kind": {
+              "const": "smpte_offset"
+            },
+            "timecode": {
+              "type": "object",
+              "required": [
+                "frame_rate",
+                "hours",
+                "minutes",
+                "seconds",
+                "frames",
+                "fractional_frames"
+              ],
+              "properties": {
+                "frame_rate": {
+                  "enum": [
+                    "fps24",
+                    "fps25",
+                    "drop_frame30",
+                    "fps30"
+                  ]
+                },
+                "hours": {
+                  "const": 0
+                },
+                "minutes": {
+                  "const": 0
+                },
+                "seconds": {
+                  "const": 0
+                },
+                "frames": {
+                  "const": 0
+                },
+                "fractional_frames": {
+                  "const": 0
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
         }
       ]
     },

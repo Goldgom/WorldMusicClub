@@ -67,3 +67,19 @@ test('renderer refuses malformed or mismatched sensitivity groups before allocat
     assert.throws(()=>h.start(),error=>error.code==='clean_renderer_unsupported');assert.equal(h.nodes.length,1);
   }
 });
+
+test('canonical reference supports only named zero origins with rate identity preserved',()=>{
+ const timecode={frame_rate:'fps30',hours:0,minutes:0,seconds:0,frames:0,fractional_frames:0};
+ const good=cleanSong(({runtime,score})=>{for(const events of [runtime.events,score.performance.events])events[0].command={kind:'smpte_offset',timecode};});
+ assert.equal(inspectCleanRendition(good).supported,true);const h=harness(good);h.start();assert.equal(h.nodes.filter(node=>node.kind==='oscillator').length,4);h.player.stop();
+ for(const change of [e=>e.command.timecode.hours=1,e=>e.command.timecode.frame_rate='unknown',e=>e.at_ms=1,e=>e.origin.track=1,e=>e.exact_microseconds={numerator:'1',denominator:3},e=>e.exact_microseconds={numerator:'0',denominator:0}]){
+  const bad=cleanSong(({runtime})=>{runtime.events[0].command={kind:'smpte_offset',timecode:{...timecode}};change(runtime.events[0]);});
+  assert.equal(inspectCleanRendition(bad).supported,false);
+ }
+});
+
+test('zero origin checks channel source coordinates even in reordered runtime arrays',()=>{
+ const timecode={frame_rate:'fps30',hours:0,minutes:0,seconds:0,frames:0,fractional_frames:0};
+ const bad=cleanSong(({runtime})=>{runtime.events[0].origin.event=1;runtime.events[0].command={kind:'smpte_offset',timecode};runtime.events[1].origin={track:0,event:0};runtime.events[1].command={kind:'instrument_program',channel:0,program:0};});
+ assert.equal(inspectCleanRendition(bad).supported,false);
+});

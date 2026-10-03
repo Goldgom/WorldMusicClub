@@ -1,15 +1,17 @@
+import {hasValidZeroSmpteOffsets} from './clean-song-timecode.js';
 import {ReferenceAudioReceiver} from './midi-reference-synth.js';
 import {createReferenceRoom} from './clean-song-reverb.js';
 import {VsqPracticePlayer} from './vsq-practice-player.js';
 import {CleanSongError,isCleanSong,isVsqSong} from './clean-song-package.js';
 import {INITIAL_SENSITIVITY_KIND,validInitialSensitivity,applyInitialSensitivity,unbentReferenceKey} from './clean-song-initial-sensitivity.js';
-const metadata=new Set(['tempo','meter','key_signature','text','sequence_number','track_end']);
+const metadata=new Set(['tempo','meter','key_signature','text','sequence_number','track_end','smpte_offset']);
 const supported=new Set(['instrument_program','volume','pan','expression','reverb_send','initial_controller_reset','initial_sustain_off']);
 export const CLEAN_RENDITION = 'wmh-procedural-reference-v1';
 export function inspectCleanRendition(song) {
   const blockers=[];
   if(!isCleanSong(song))return{supported:false,blockers:['clean_package_invalid'],rendition:CLEAN_RENDITION};
   if(isVsqSong(song))return{supported:Boolean(song.runtime)&&song.runtime.parts.length<=128,blockers:!song.runtime?['vsq_choice_required']:song.runtime.parts.length>128?['part_budget_exceeded']:[],rendition:'wmh-vsq-base-note-reference-v1'};
+  if(!hasValidZeroSmpteOffsets(song.runtime))blockers.push('invalid_smpte_offset');
   if(song.score.performance.parts.length>128)blockers.push('part_budget_exceeded');
   const sensitivityValid=validInitialSensitivity(song);
   if(!sensitivityValid)blockers.push('initial_pitch_bend_sensitivity_invalid');

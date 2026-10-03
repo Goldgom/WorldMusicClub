@@ -186,6 +186,9 @@ pub enum Command {
         role: TextRole,
         text: String,
     },
+    SmpteOffset {
+        timecode: crate::midi_timecode::Timecode,
+    },
     SequenceNumber {
         number: Option<u16>,
     },
@@ -237,6 +240,7 @@ impl Command {
                 ..
             } => *numerator > 0 && denominator.is_power_of_two() && *thirty_seconds_per_quarter > 0,
             Self::KeySignature { fifths, .. } => (-7..=7).contains(fifths),
+            Self::SmpteOffset { timecode } => timecode.validate_zero().is_ok(),
             Self::Text { text, .. } => valid_text(text, 4096),
             Self::InitialControllerReset { .. } | Self::SequenceNumber { .. } | Self::TrackEnd => {
                 true
@@ -387,6 +391,7 @@ pub fn validate(score: &CompletePerformance) -> Result<(), String> {
     let mut channel_last = BTreeMap::<u8, &Event>::new();
     let mut channel_key_activity = BTreeSet::new();
     let mut pending_initial_resets = BTreeMap::<u8, &Event>::new();
+    let mut offset_placement = crate::midi_timecode::Placement::default();
     let mut tempo_first: Option<(&Event, u32)> = None;
     let mut tempo_tracks_differ = false;
     let mut tempo_values_differ = false;
@@ -413,6 +418,11 @@ pub fn validate(score: &CompletePerformance) -> Result<(), String> {
         }
         prior = Some(event);
         event.command.validate()?;
+        if let Command::SmpteOffset { timecode } = &event.command {
+            offset_placement.offset(timecode, event.origin.track, event.at)?;
+        } else if event.command.channel().is_some() {
+            offset_placement.channel(event.origin.track);
+        }
         if let Some(channel) = event.command.channel() {
             if !parts.contains(&(event.origin.track, channel)) {
                 return Err("Missing channel part".into());

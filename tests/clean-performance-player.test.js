@@ -625,3 +625,30 @@ test('a scheduled downstream gate cuts reference room tails at exact global end 
   h.advance(0.08); // Admit the end marker before deliberately delaying its disposal poll.
   h.context.currentTime = 1; h.timers.fire(); assert.equal(h.player.snapshot().state, 'ended'); h.silent();
 });
+
+test('zero SMPTE origin retains all four rate identities and exact unchanged scheduling', async () => {
+  for (const frame_rate of ['fps24', 'fps25', 'drop_frame30', 'fps30']) {
+    const timecode = { frame_rate, hours: 0, minutes: 0, seconds: 0, frames: 0, fractional_frames: 0 };
+    const prepared = await load(fixture([[row(0, 'smpte_offset', { timecode }), program(0, 0), on(exact(500001, 3)), off(500001)]]));
+    assert.equal(prepared.playable, true);
+    assert.equal(prepared.acknowledgements[0].disposition, 'zero_timecode_origin');
+    assert.deepEqual(prepared.acknowledgements[0].event.command.timecode, timecode);
+    assert.deepEqual(prepared.voices[0].start, exact(500001, 3));
+    assert.deepEqual(prepared.voices[0].end, exact(500001));
+  }
+});
+test('receiver refuses unreviewed nonzero, malformed, repeated and misplaced origins', async () => {
+  const timecode = { frame_rate: 'fps30', hours: 0, minutes: 0, seconds: 0, frames: 0, fractional_frames: 0 };
+  for (const field of ['hours', 'minutes', 'seconds', 'frames', 'fractional_frames']) {
+    await assert.rejects(load(fixture([[row(0, 'smpte_offset', { timecode: { ...timecode, [field]: 1 } }), on(1), off(2)]])), e => e.code === 'invalid_smpte_offset');
+  }
+  const zero = () => row(0, 'smpte_offset', { timecode });
+  for (const tracks of [
+    [[zero(), zero(), on(1), off(2)]],
+    [[program(0, 0), zero(), on(1), off(2)]],
+    [[row(1, 'smpte_offset', { timecode }), on(2), off(3)]],
+    [[row(0, 'text', { role: 'text', text: 'Original' })], [zero(), on(1), off(2)]],
+    [[row(0, 'smpte_offset', { timecode: { ...timecode, frame_rate: 'unknown' } }), on(1), off(2)]],
+    [[row(0, 'smpte_offset', { timecode: { ...timecode, payload: [96,0,0,0,0] } }), on(1), off(2)]],
+  ]) await assert.rejects(load(fixture(tracks)), e => e.code === 'invalid_smpte_offset');
+});

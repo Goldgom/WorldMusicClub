@@ -1,4 +1,5 @@
 /* Additive clean JSON reference rendition. No MIDI parser, notation or grading. */
+import { isZeroSmpteOffset } from './clean-song-timecode.js';
 import { ReferenceAudioReceiver, REFERENCE_PERCUSSION, PROGRAM_FAMILIES } from './midi-reference-synth.js';
 import { REFERENCE_RECEIVER_POLICY } from './midi-reference-player.js';
 import { COMPLETE_CONTROLS_POLICY, CompletePerformanceMixer, EXTENDED_CONTROL_KINDS } from './clean-performance-controls.js';
@@ -57,7 +58,7 @@ function prepare(runtime, scoreHash) {
   const keyActivity = Array(16).fill(false), pendingReset = Array(16).fill(false), reverbChannels = new Set();
   let extendedControls = false;
   const counts = Array(runtime.tracks.length).fill(0), ended = new Set();
-  let prior = null, attacks = 0, releases = 0;
+  let prior = null, attacks = 0, releases = 0, offsetSeen = false, firstTrackChannel = false;
   for (const event of runtime.events) {
     const origin = event.origin, c = event.command;
     if (!origin || !integer(origin.track, 0, runtime.tracks.length - 1) || origin.event !== counts[origin.track]++ ||
@@ -73,7 +74,11 @@ function prepare(runtime, scoreHash) {
       if (c.kind !== 'sustain' || c.value !== 0 || event.exact_microseconds.numerator !== '0') fail('invalid_initial_reset', 'Initial reset must be immediately followed by sustain zero on the same channel.');
       pendingReset[c.channel] = false;
     }
-    if (c.kind === 'key_attack' || c.kind === 'key_release') {
+    if (c.kind === 'smpte_offset') {
+      if (!isZeroSmpteOffset(c) || offsetSeen || origin.track !== 0 || firstTrackChannel ||
+          BigInt(event.exact_microseconds.numerator) !== 0n) fail('invalid_smpte_offset', 'Only one zero SMPTE origin on track zero before channel messages is supported.');
+      offsetSeen = true; ack.disposition = 'zero_timecode_origin';
+    } else if (c.kind === 'key_attack' || c.kind === 'key_release') {
       keyActivity[c.channel] = true;
       const part = parts.get(c.part_id);
       if (!part || part.track_id !== runtime.tracks[origin.track].id || part.channel !== c.channel ||
@@ -128,6 +133,7 @@ function prepare(runtime, scoreHash) {
       if (c.kind === 'key_pressure') keyActivity[c.channel] = true;
       ack.disposition = 'blocked'; addBlocker(`unsupported_${c.kind}`, `This reference receiver cannot apply ${c.kind}; complete data remains preserved.`, event);
     } else if (!metadataKinds.has(c.kind)) fail('unknown_semantics', 'Unknown runtime command cannot be ignored.');
+    if (origin.track === 0 && c.channel !== undefined) firstTrackChannel = true;
     if (c.kind === 'track_end') ended.add(origin.track);
   }
   if (pendingReset.some(Boolean)) fail('invalid_initial_reset', 'Initial reset is missing its explicit sustain zero.');

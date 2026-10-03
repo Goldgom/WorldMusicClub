@@ -164,6 +164,9 @@ pub enum Command {
         role: TextRole,
         text: String,
     },
+    SmpteOffset {
+        timecode: crate::midi_timecode::Timecode,
+    },
     SequenceNumber {
         number: Option<u16>,
     },
@@ -277,6 +280,10 @@ impl Command {
                 if !(-7..=7).contains(fifths) {
                     return Err("Invalid performance key".into());
                 }
+                &[]
+            }
+            Self::SmpteOffset { timecode } => {
+                timecode.validate_zero()?;
                 &[]
             }
             Self::Text { text, .. } => {
@@ -465,9 +472,22 @@ pub fn validate(score: &CompleteScore) -> Result<(), String> {
     }
     let mut ended = BTreeSet::new();
     let mut prior_event: Option<&Event> = None;
+    let mut offset_placement = crate::midi_timecode::Placement::default();
     let mut initial_state = BTreeMap::<u8, (Coordinate, u8)>::new();
     for event in &performance.events {
         event.command.validate(event.at)?;
+        if let Command::SmpteOffset { timecode } = &event.command {
+            if performance.notes.iter().any(|note| {
+                [note.attack, note.release]
+                    .iter()
+                    .any(|origin| origin.track == 0 && origin.event < event.origin.event)
+            }) {
+                return Err("SMPTE offset must precede channel messages".into());
+            }
+            offset_placement.offset(timecode, event.origin.track, event.at)?;
+        } else if event.command.channel().is_some() {
+            offset_placement.channel(event.origin.track);
+        }
         if prior_event.is_some_and(|p| {
             p.at.compare(event.at).is_gt()
                 || (p.at.equivalent(event.at) && p.origin >= event.origin)

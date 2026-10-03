@@ -74,3 +74,9 @@ test('named initial sensitivity steps are closed and retain all source tracks',(
     c=>{c.step='set_semitones12';},c=>{c.value=24;},c=>{c.controller=6;},c=>{c.parameter=0;},c=>{delete c.step;},c=>{c.channel=16;},
   ]){const wrong=structuredClone(fixture);change(wrong.performance.events.find(e=>e.command.kind==='initial_pitch_bend_sensitivity').command);assert.equal(validate(wrong),false);}
 });
+
+test('schema retains a closed named zero SMPTE origin and distinct rate identities',()=>{
+ const t={frame_rate:'fps30',hours:0,minutes:0,seconds:0,frames:0,fractional_frames:0};
+ for(const rate of ['fps24','fps25','drop_frame30','fps30']){const f=structuredClone(fixture);f.performance.events[0].command={kind:'smpte_offset',timecode:{...t,frame_rate:rate}};assert.equal(validate(f),true,ajv.errorsText(validate.errors));}
+ for(const change of [t=>t.hours=1,t=>t.fractional_frames=1,t=>t.frame_rate='unknown',t=>t.raw=[96,0,0,0,0],t=>delete t.minutes]){const f=structuredClone(fixture);f.performance.events[0].command={kind:'smpte_offset',timecode:{...t}};change(f.performance.events[0].command.timecode);assert.equal(validate(f),false);}
+});

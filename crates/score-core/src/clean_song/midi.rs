@@ -65,7 +65,6 @@ pub fn convert_midi(bytes: &[u8]) -> Result<CompleteScore, String> {
             DiagnosticCode::CrossTrackChannelOrder
                 | DiagnosticCode::CrossTrackTempoOrder
                 | DiagnosticCode::RoutingUninterpreted
-                | DiagnosticCode::SmpteOffsetUninterpreted
         ) {
             return Err(format!(
                 "Clean conversion requires resolved source semantics: {}",
@@ -133,6 +132,7 @@ pub fn convert_midi(bytes: &[u8]) -> Result<CompleteScore, String> {
                 0 if data.len() == 2 => Command::SequenceNumber { number: Some(u16::from_be_bytes([data[0], data[1]])) },
                 1..=9 => text_command(*meta_type, data)?,
                 47 if data.is_empty() => Command::TrackEnd,
+                84 => Command::SmpteOffset { timecode: crate::midi_timecode::Timecode::decode(data)? },
                 89 if data.len() == 2 && data[1] <= 1 => Command::KeySignature { fifths: data[0] as i8, mode: if data[1] == 0 { KeyMode::Major } else { KeyMode::Minor } },
                 _ => return Err(format!("Metadata type {meta_type} has no supported complete semantic conversion")),
             },

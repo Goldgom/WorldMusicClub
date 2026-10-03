@@ -11,6 +11,7 @@ mod jianpu;
 mod matching;
 mod midi;
 pub mod midi_events;
+pub mod midi_timecode;
 pub mod piano_fingering;
 mod ties;
 pub mod vsq;
