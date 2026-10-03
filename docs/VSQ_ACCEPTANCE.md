@@ -103,3 +103,24 @@ subscription timing, so it cannot uniquely establish that boundary as its cause.
 The next exact hosted snapshot must validate the candidate and its diagnostics.
 Official APIs: [Page filechooser event](https://playwright.dev/docs/api/class-page#page-event-file-chooser)
 and [FileChooser element identity](https://playwright.dev/docs/api/class-filechooser#file-chooser-element).
+
+Hosted console evidence groups exact type, complete bounded text and location,
+retaining every group's count and first/last observation. Ordinary information
+is visible and counted. Unknown warnings/errors and activation-related messages
+remain fatal. Missing locations are unassigned; a generic 404 text never grants
+an exception. Full-identity overflow is counted and fails acceptance.
+
+The runner records each active owned GET `/__desktop_smoke/result/<sequence>`
+404 pending response before fulfillment, then records its actual completion.
+Only the exact observed Chromium 404 message at that exact source and zero source
+line/column, with no more console events than fulfilled responses, is expected.
+Reconciliation occurs at the scene boundary and again after page close, so a
+console event arriving before the fulfillment promise resolves is retained.
+Distinct unknown identities keep a 32-group bound; controlled result sources
+are bounded by the existing 64-action protocol. Repetition does not consume
+additional identity slots or discard event counts.
+
+The 213 720px seed renderer passed its full feature assertions; the host failed
+after 32 repeated 404 console rows and 44 omitted rows. Those old rows lack source
+locations and cannot retrospectively be attributed to controlled polling. New
+complete viewport/restart and Windows evidence remains required.
