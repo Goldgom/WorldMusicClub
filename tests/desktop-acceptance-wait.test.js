@@ -231,3 +231,35 @@ test('native song smoke bounds both pending fetch and response body with one rep
   }
   await assert.rejects(songSmoke.checkNativeSongApi({fetch:async()=>({status:200,text:async()=>' '.repeat(128*1024+1)}),crypto:webcrypto}),/response exceeds fixture evidence bound/);
 });
+
+const bulkSource=await readFile(new URL('../crates/desktop-shell/bulk-import-acceptance.js',import.meta.url),'utf8');
+const bulkHelpers=runInNewContext(`${bulkSource.slice(0,bulkSource.indexOf('(() => {'))}\n({postBulkAcceptanceReport,createBulkChooserObserver,BULK_ACCEPTANCE_REPORT_BYTES})`,{TextEncoder,setTimeout,WeakMap,Promise});
+const bulkReply=(status=200)=>({ok:status>=200&&status<300,status,json:async()=>status<400?{}:{error:'Authored report rejection'}});
+const fastBulkWait=()=>createWait({setTimer:(callback,ms)=>setTimeout(callback,Math.min(ms,15)),clearTimer:clearTimeout});
+
+test('all bulk phases deliver the entire UTF-8 report above 64 KiB without dropping observations',async()=>{
+ for(const phase of ['bulk-seed','bulk-restart','bulk-failure']){
+  const report={version:1,phase,ok:true,actions:29,importReports:[{complete:'Original 中文 日本語 '.repeat(6000)}]},calls=[];
+  const result=await bulkHelpers.postBulkAcceptanceReport({report,waits:fastBulkWait(),fetcher:async(path,options)=>{calls.push({path,options});return bulkReply()}});
+  assert.equal(result.delivered,true);assert.equal(result.bytes,Buffer.byteLength(JSON.stringify(report)));assert.ok(result.bytes>64*1024&&result.bytes<bulkHelpers.BULK_ACCEPTANCE_REPORT_BYTES);const posted=calls.filter(row=>row.path==='/__desktop_smoke/report');assert.equal(posted.length,1);assert.equal(posted[0].options.body,JSON.stringify(report));assert.deepEqual(JSON.parse(posted[0].options.body),report);assert.deepEqual(calls.filter(row=>row.path.endsWith('/progress')).map(row=>JSON.parse(row.options.body).stage),['renderer-report-posting','renderer-report-sent']);
+ }
+});
+
+test('bulk report rejection, lost transport and unreadable or pending body get one bounded failed fallback',async()=>{
+ for(const fail of ['400','500','throw','body-error','fetch-pending','body-pending']){
+  const report={version:1,phase:'bulk-seed',ok:true,actions:29,importReports:[{exact:'retained observation'}]},calls=[];let reports=0;
+  const result=await bulkHelpers.postBulkAcceptanceReport({report,waits:fastBulkWait(),fetcher:async(path,options)=>{calls.push({path,options});if(path.endsWith('/report')&&++reports===1){if(fail==='throw')throw Error('Connection lost');if(fail==='fetch-pending')return never();if(fail==='body-pending')return{ok:true,json:never};if(fail==='body-error')return{ok:true,json:async()=>{throw Error('Unreadable response')}};return bulkReply(Number(fail))}return bulkReply()}});
+  assert.equal(result.delivered,false,fail);assert.equal(result.failureDelivered,true,fail);const posted=calls.filter(row=>row.path.endsWith('/report'));assert.equal(posted.length,2,fail);assert.equal(posted[0].options.body,JSON.stringify(report));const failure=JSON.parse(posted[1].options.body);assert.equal(failure.ok,false);assert.equal(failure.phase,'bulk-seed');if(['400','500'].includes(fail))assert.equal(failure.report_failure.detail,'Error: /__desktop_smoke/report: Authored report rejection');assert.equal(failure.report_failure.received_bytes,Buffer.byteLength(JSON.stringify(report)));assert.ok(Buffer.byteLength(posted[1].options.body)<2048);assert.equal(JSON.parse(calls.at(-1).options.body).stage,'renderer-report-failed');assert.equal(report.ok,true,'The complete original report object is retained for diagnosis');
+ }
+});
+
+test('bulk report serialization, byte limit and failed fallback remain explicit and finite',async()=>{
+ const circular={version:1,phase:'bulk-seed',ok:true};circular.self=circular;
+ const oversized={version:1,phase:'bulk-restart',ok:true,source:'界'.repeat(1500000)};assert.ok(JSON.stringify(oversized).length<4*1024*1024);
+ for(const report of [circular,oversized]){const calls=[];const result=await bulkHelpers.postBulkAcceptanceReport({report,waits:fastBulkWait(),fetcher:async(path,options)=>{calls.push({path,options});return bulkReply(path.endsWith('/report')?500:200)}});assert.equal(result.delivered,false);assert.equal(result.failureDelivered,false);const posted=calls.filter(row=>row.path.endsWith('/report'));assert.equal(posted.length,1);const failure=JSON.parse(posted[0].options.body);assert.equal(failure.ok,false);assert.ok(Buffer.byteLength(posted[0].options.body)<2048);assert.equal(failure.report_failure.limit_bytes,4*1024*1024);assert.equal(JSON.parse(calls.at(-1).options.body).stage,'renderer-report-failed')}
+});
+
+test('passive native chooser observation brackets synchronous blur handlers with the same clock and accepts no blur',async()=>{
+ let listener,clock=10;const tasks=[],target={addEventListener(type,callback,capture){assert.equal(type,'blur');assert.equal(capture,true);listener=callback},removeEventListener(type,callback,capture){assert.equal(type,'blur');assert.equal(callback,listener);assert.equal(capture,true);listener=null}};
+ const observer=bulkHelpers.createBulkChooserObserver({target,now:()=>clock,defer:callback=>tasks.push(callback)});observer.begin(7,'picker');clock=11;listener({isTrusted:true,target:{}});assert.equal(observer.records[0].blurs.length,0,'Descendant focus blur is not a window blur');listener({isTrusted:true,target});clock=12;const actualBoundary=clock;let settled=false;const done=observer.end(7,true).then(()=>{settled=true});await Promise.resolve();assert.equal(settled,false,'Ending the action awaits the task after synchronous app handlers');clock=13;tasks.shift()();await done;const record=observer.records[0];assert.equal(record.completed,true);assert.ok(record.blurs[0].started_wall_ms<=actualBoundary&&record.blurs[0].finished_wall_ms>=actualBoundary);assert.equal(record.blurs[0].trusted,true);clock=20;observer.begin(8,'cancel-picker');clock=21;await observer.end(8,true);assert.equal(observer.records[1].blurs.length,0);observer.stop();assert.equal(listener,null);
+});

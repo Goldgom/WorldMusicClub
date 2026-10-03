@@ -1,9 +1,39 @@
+/* Bulk evidence is lossless within the same finite bound as its verifier. */
+const BULK_ACCEPTANCE_REPORT_BYTES=4*1024*1024;
+async function postBulkAcceptanceReport({report,fetcher,waits}) {
+ const sequence=Number.isInteger(report.actions)&&report.actions>=0&&report.actions<=64?report.actions:0;
+ const progress=stage=>waits.json(fetcher,'/__desktop_smoke/progress',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:1,stage,sequence})},2000).catch(()=>{});
+ let bytes=null;
+ try {
+  const body=JSON.stringify(report);bytes=new TextEncoder().encode(body).length;
+  if(bytes>BULK_ACCEPTANCE_REPORT_BYTES)throw Error('Complete bulk report exceeds its finite evidence limit');
+  await progress('renderer-report-posting');
+  await waits.json(fetcher,'/__desktop_smoke/report',{method:'POST',headers:{'Content-Type':'application/json'},body},10000);
+  await progress('renderer-report-sent');return {delivered:true,bytes};
+ } catch(error) {
+  const failure={version:1,phase:report.phase,ok:false,error:'Complete bulk acceptance report could not be delivered',report_failure:{code:'bulk_report_delivery_failed',received_bytes:bytes,limit_bytes:BULK_ACCEPTANCE_REPORT_BYTES,detail:String(error).slice(0,512)}};
+  let failureDelivered=false;
+  try{await waits.json(fetcher,'/__desktop_smoke/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(failure)},10000);failureDelivered=true}catch{/* The independently persisted host/progress trace also fails the run. */}
+  await progress('renderer-report-failed');return {delivered:false,failureDelivered,bytes};
+ }
+}
+
+/* Observe only trusted chooser-induced blur dispatches; never generate input. */
+function createBulkChooserObserver({target,now=()=>performance.now(),defer=callback=>setTimeout(callback,0)}) {
+ const records=[],pending=new WeakMap();let active=null;
+ // A queued task runs after all synchronous native blur handlers. Microtasks
+ // may checkpoint between listeners, so they cannot bound the whole dispatch.
+ const observe=event=>{if(!active||event.target!==target)return;const row={trusted:event.isTrusted===true,started_wall_ms:now(),finished_wall_ms:null};active.blurs.push(row);pending.get(active).push(new Promise(resolve=>defer(()=>{row.finished_wall_ms=now();resolve()})))};
+ target.addEventListener('blur',observe,true);
+ return {records,begin(sequence,kind){if(active)throw Error('Overlapping native chooser observations');active={sequence,kind,started_wall_ms:now(),finished_wall_ms:null,completed:false,blurs:[]};records.push(active);pending.set(active,[])},async end(sequence,completed){if(!active||active.sequence!==sequence)throw Error('Native chooser observation ownership changed');const record=active;active=null;await Promise.all(pending.get(record));record.finished_wall_ms=now();record.completed=completed},stop(){target.removeEventListener('blur',observe,true)}};
+}
+
 /* Real Windows chooser + native protocol + isolated filesystem proof. No
  * injected FileList, replaced persistence, or app-state setters are used. */
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(value,message)=>{if(!value)throw Error(message)};
  const originalFetch=globalThis.fetch.bind(globalThis),waits=createAcceptanceWait(),until=waits.until,json=(path,options)=>waits.json(originalFetch,path,options),delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
- const importReports=[],openedScoreDatabases=[],errors=[],screenshots={};let sequence=0;
+ const importReports=[],openedScoreDatabases=[],errors=[],screenshots={},chooserObserver=createBulkChooserObserver({target:globalThis});let sequence=0;
  const open=IDBFactory.prototype.open;IDBFactory.prototype.open=function(name,...args){if(String(name)==='worldmusichub.scores.v1')openedScoreDatabases.push(String(name));return open.call(this,name,...args)};
  globalThis.fetch=(...args)=>{
   const path=String(args[0]),promise=originalFetch(...args);
@@ -15,7 +45,8 @@
  async function native(kind,node,file){
   assert(node&&!node.disabled,'Native bulk control unavailable');node.scrollIntoView({block:'center',inline:'center'});node.focus();await delay(150);const bounds=node.getBoundingClientRect();assert(bounds.width>0&&bounds.height>0,'Native bulk target invisible');assert(sequence<64,'Bulk phase exceeded native action bound');
   const action={version:1,sequence:++sequence,kind,x:bounds.x+bounds.width/2,y:bounds.y+bounds.height/2,width:innerWidth,height:innerHeight,...(file?{file}:{})};
-  await json('/__desktop_smoke/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action)});let result;await until(async signal=>{const response=await originalFetch(`/__desktop_smoke/result/${sequence}`,{signal});if(response.status===404)return false;result=await response.json();assert(response.ok,result.error||'Native bulk action failed');return true},`native bulk ${kind} ${sequence}`);assert(result.ok,result.error||'Native bulk action failed');return sequence;
+  const chooser=['picker','cancel-picker'].includes(kind);let completed=false;if(chooser)chooserObserver.begin(sequence,kind);
+  try{await json('/__desktop_smoke/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action)});let result;await until(async signal=>{const response=await originalFetch(`/__desktop_smoke/result/${sequence}`,{signal});if(response.status===404)return false;result=await response.json();assert(response.ok,result.error||'Native bulk action failed');return true},`native bulk ${kind} ${sequence}`);assert(result.ok,result.error||'Native bulk action failed');completed=true;return sequence}finally{if(chooser)await chooserObserver.end(sequence,completed)}
  }
  const inventory=()=>json('/api/library/list'),reviewReady=()=>$('bulk-import-dialog')?.open&&$('bulk-import-dialog').dataset.phase==='review';
  const rows=()=>[...document.querySelectorAll('#bulk-import-groups .bulk-import-song')],count=status=>rows().filter(row=>row.dataset.status===status).length;
@@ -31,7 +62,7 @@
  async function history(){closeDialogs();click('import-tools-button');click('bulk-import-history-button');$('bulk-import-history').open=true;await until(()=>document.querySelector('[data-import-archive]'),'retained original visible');return[...document.querySelectorAll('#bulk-import-history-list li')].find(row=>row.querySelector(':scope > span')?.textContent==='原创曲包_日本語.zip')?.querySelector('[data-import-archive]')}
  const stableSession=()=>({title:$('score-title').textContent,stage:$('stage-title').textContent,pass:document.querySelector('.performance-status')?.dataset.passId,revision:document.querySelector('.performance-status')?.dataset.revision,captured:$('hud-captured').textContent,position:$('progress').value});
  addEventListener('DOMContentLoaded',async()=>{
-  const report={version:1,phase,ok:false,origin:location.origin,checks:[],importReports,openedScoreDatabases,errors,screenshots,files:{}};
+  const report={version:1,phase,ok:false,origin:location.origin,checks:[],importReports,openedScoreDatabases,errors,screenshots,chooserObservations:chooserObserver.records,files:{}};
   try{
    assert(localStorage.getItem('wmh.bulk.acceptance.marker')===null,'Bulk scenario requires a fresh WebView profile');report.profileMarkerAbsent=true;localStorage.setItem('wmh.bulk.acceptance.marker',phase);
    await menu.enterLibrary();const {getAppI18n}=await import('/app-locale.js');getAppI18n(document).setLocale('en');assert((await json('/api/health')).network==='native-protocol-no-listener','Bulk proof requires native protocol');
@@ -56,6 +87,6 @@
    }else throw Error('Unknown native bulk phase');
    assert(openedScoreDatabases.length===0,'Bulk import opened fallback browser score storage');assert(errors.length===0,errors.join('; '));report.actions=sequence;report.downloads=(await json('/__desktop_smoke/state')).downloads;report.ok=true;
   }catch(error){report.error=String(error);if(error.nativeReferenceTransport)report.transportAdmission=error.nativeReferenceTransport}
-  await json('/__desktop_smoke/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(report)});
+  chooserObserver.stop();await postBulkAcceptanceReport({report,fetcher:originalFetch,waits});
  },{once:true});
 })();

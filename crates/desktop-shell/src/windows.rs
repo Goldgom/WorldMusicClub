@@ -9,9 +9,9 @@ use tauri::{
 };
 use tokio::{sync::Semaphore, time::timeout};
 use worldmusichub_desktop::{
-    admission, allowed_uri, dispatch, dispatch_with_library, error,
+    admission, allowed_uri, dispatch, dispatch_with_library,
     native_library::{self, NativeLibrary},
-    operation_error, response,
+    operation_error,
 };
 
 pub fn run() {
@@ -63,6 +63,9 @@ pub fn run() {
                 return;
             }
             if let Some(reply) = admission(&request) {
+                if let Some(acceptance) = &protocol_acceptance {
+                    acceptance.trace_report_admission_failure(&request, reply.status().as_u16());
+                }
                 responder.respond(reply);
                 return;
             }
@@ -85,36 +88,11 @@ pub fn run() {
                 }
             }
             if request.uri().path() == "/__desktop_smoke/report" {
-                let Some(directory) = &report_directory else {
-                    respond(error(404, "Not found"));
-                    return;
-                };
-                if request.method() != "POST" || request.body().len() > 64 * 1024 {
-                    respond(error(400, "Invalid smoke report"));
-                    return;
-                }
-                let Ok(value) = serde_json::from_slice::<serde_json::Value>(request.body()) else {
-                    respond(error(400, "Invalid smoke report"));
-                    return;
-                };
-                if value["version"] != 1 || !value["ok"].is_boolean() {
-                    respond(error(400, "Invalid smoke report"));
-                    return;
-                }
-                let name = protocol_acceptance
-                    .as_ref()
-                    .map(|acceptance| acceptance.report_name())
-                    .unwrap_or_else(|| "renderer-report.json".into());
-                let result = worldmusichub_desktop::acceptance::atomic_json(
-                    directory,
-                    &name,
-                    request.body(),
-                );
-                respond(if result.is_ok() {
-                    response(200, "application/json", b"{}".as_slice())
-                } else {
-                    error(500, "Cannot save smoke evidence")
-                });
+                respond(worldmusichub_desktop::acceptance::receive_report(
+                    report_directory.as_deref(),
+                    protocol_acceptance.as_deref(),
+                    &request,
+                ));
                 return;
             }
             // Static bytes avoid the computation queue; no runtime paths are read.

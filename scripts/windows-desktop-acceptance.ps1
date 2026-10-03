@@ -345,11 +345,23 @@ try {
     }
     $env:WMH_DESKTOP_ACCEPTANCE_PHASE=$phase
     $app=Start-Process -FilePath $Executable -PassThru -RedirectStandardError (Join-Path $OutputDirectory "stderr-$phase.log")
-    $phaseStart=[DateTime]::UtcNow;$deadline=$phaseStart.AddSeconds(240);$sequence=1
+    $phaseStart=[DateTime]::UtcNow;$deadline=$phaseStart.AddSeconds(240);$sequence=1;$reportDeliveryWatch=$null
     $reportFile=Join-Path $OutputDirectory "renderer-$phase.json"
     while(-not (Test-Path $reportFile)) {
       $app.Refresh();if($app.HasExited){throw "Process exited before $phase evidence: $($app.ExitCode)"}
       if([DateTime]::UtcNow -ge $deadline){throw "Native $phase exceeded 240 seconds"}
+      if($Scenario -eq 'bulk-import') {
+        $traceFile=Join-Path $OutputDirectory "trace-$phase.json"
+        if(Test-Path $traceFile) {
+          if((Get-Item -LiteralPath $traceFile).Length -gt 512KB){throw "Native $phase trace exceeds its bounded diagnostic size"}
+          $trace=Get-Content -Raw $traceFile | ConvertFrom-Json
+          $rejected=@($trace.events | Where-Object { $_.event.stage -eq 'renderer-report-rejected' -or $_.event.checkpoint.stage -eq 'renderer-report-failed' -or ($_.event.path -eq '/__desktop_smoke/report' -and $_.event.stage -eq 'reply-submitted' -and $_.event.status -ge 400) })
+          if($rejected.Count -gt 0){$last=$rejected[-1].event;throw "Native $phase report delivery failed; see trace-$phase.json (status=$($last.status), code=$($last.code))"}
+          $posting=@($trace.events | Where-Object { $_.event.path -eq '/__desktop_smoke/report' -and $_.event.stage -eq 'received' })
+          if($posting.Count -gt 0 -and $null -eq $reportDeliveryWatch){$reportDeliveryWatch=[Diagnostics.Stopwatch]::StartNew()}
+          if($null -ne $reportDeliveryWatch -and $reportDeliveryWatch.ElapsedMilliseconds -gt 30000){throw "Native $phase report delivery did not finish within 30 seconds; see trace-$phase.json"}
+        }
+      }
       $actionFile=Join-Path $OutputDirectory "action-$phase-$sequence.json"
       if(Test-Path $actionFile) {
         $action=Get-Content -Raw $actionFile | ConvertFrom-Json
