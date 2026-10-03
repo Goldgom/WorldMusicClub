@@ -1,0 +1,734 @@
+{
+  "provenance": "Original authored PPQ96 C4/E4/G4 regression at 333333 microseconds per quarter. Source, runtime and ordinary navigation are actual Rust output; no private music.",
+  "complete_score": {
+    "format": "worldmusichub-complete-score",
+    "version": 1,
+    "source": {
+      "format": "midi",
+      "bytes": 57,
+      "sha256": "1e9cb9a76184b4f17b4be794a09d5b5e3f793a63b42a85ad7d36b32bd2b39b25"
+    },
+    "notation": {
+      "format_metadata": {
+        "schema_revision": 2,
+        "producer": "WorldMusicHub",
+        "producer_version": "0.2.0-alpha.1"
+      },
+      "version": 1,
+      "id": "midi-0495caaad07fe52d",
+      "title": "Imported MIDI performance",
+      "composer": "",
+      "provenance": {
+        "kind": "user_import",
+        "attribution": "User-supplied MIDI performance; ownership and usage rights are not verified. Notation is inferred, not original sheet music.",
+        "source_url": null,
+        "license": null
+      },
+      "parts": [
+        {
+          "id": "midi-t1-c1",
+          "name": "Track 1 · channel 1",
+          "instrument": "MIDI channel 1",
+          "notes": [
+            {
+              "id": "midi-t1-c1-e2",
+              "at": {
+                "numerator": 1,
+                "denominator": 96
+              },
+              "duration": {
+                "numerator": 1,
+                "denominator": 96
+              },
+              "pitch": {
+                "step": "C",
+                "alter": 0,
+                "octave": 4
+              },
+              "voice": "inferred-1",
+              "staff": 1,
+              "velocity": 80,
+              "tie_start": false,
+              "tie_stop": false
+            },
+            {
+              "id": "midi-t1-c1-e4",
+              "at": {
+                "numerator": 1,
+                "denominator": 32
+              },
+              "duration": {
+                "numerator": 1,
+                "denominator": 96
+              },
+              "pitch": {
+                "step": "E",
+                "alter": 0,
+                "octave": 4
+              },
+              "voice": "inferred-1",
+              "staff": 1,
+              "velocity": 80,
+              "tie_start": false,
+              "tie_stop": false
+            },
+            {
+              "id": "midi-t1-c1-e6",
+              "at": {
+                "numerator": 5,
+                "denominator": 96
+              },
+              "duration": {
+                "numerator": 1,
+                "denominator": 96
+              },
+              "pitch": {
+                "step": "G",
+                "alter": 0,
+                "octave": 4
+              },
+              "voice": "inferred-1",
+              "staff": 1,
+              "velocity": 80,
+              "tie_start": false,
+              "tie_stop": false
+            }
+          ]
+        }
+      ],
+      "tempo": [
+        {
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "bpm": 180.00018000018
+        }
+      ],
+      "meters": [
+        {
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "numerator": 4,
+          "denominator": 4
+        }
+      ],
+      "keys": [],
+      "measures": [
+        {
+          "number": 1,
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "length": {
+            "numerator": 1,
+            "denominator": 16
+          }
+        }
+      ],
+      "repeats": [],
+      "source": null
+    },
+    "performance": {
+      "profile": "wmh-semantic-midi1-v1",
+      "end": {
+        "numerator": 1,
+        "denominator": 16
+      },
+      "tracks": [
+        {
+          "id": "track-1",
+          "name": "Track 1",
+          "source_index": 0,
+          "source_event_count": 8,
+          "end": {
+            "numerator": 1,
+            "denominator": 16
+          }
+        }
+      ],
+      "parts": [
+        {
+          "id": "midi-t1-c1",
+          "track_id": "track-1",
+          "channel": 0,
+          "notation_origin": "inferred",
+          "target": "key_release"
+        }
+      ],
+      "notes": [
+        {
+          "note_id": "midi-t1-c1-e2",
+          "part_id": "midi-t1-c1",
+          "attack": {
+            "track": 0,
+            "event": 1
+          },
+          "release": {
+            "track": 0,
+            "event": 2
+          },
+          "release_velocity": 0
+        },
+        {
+          "note_id": "midi-t1-c1-e4",
+          "part_id": "midi-t1-c1",
+          "attack": {
+            "track": 0,
+            "event": 3
+          },
+          "release": {
+            "track": 0,
+            "event": 4
+          },
+          "release_velocity": 0
+        },
+        {
+          "note_id": "midi-t1-c1-e6",
+          "part_id": "midi-t1-c1",
+          "attack": {
+            "track": 0,
+            "event": 5
+          },
+          "release": {
+            "track": 0,
+            "event": 6
+          },
+          "release_velocity": 0
+        }
+      ],
+      "events": [
+        {
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "origin": {
+            "track": 0,
+            "event": 0
+          },
+          "command": {
+            "kind": "tempo",
+            "microseconds_per_quarter": 333333
+          }
+        },
+        {
+          "at": {
+            "numerator": 1,
+            "denominator": 16
+          },
+          "origin": {
+            "track": 0,
+            "event": 7
+          },
+          "command": {
+            "kind": "track_end"
+          }
+        }
+      ]
+    },
+    "coverage": {
+      "status": "complete",
+      "notation": "inferred",
+      "source_tracks": 1,
+      "source_events": 8,
+      "represented_events": 8,
+      "pitched_notes": 3
+    }
+  },
+  "runtime": {
+    "compilation": {
+      "score": {
+        "format_metadata": {
+          "schema_revision": 2,
+          "producer": "WorldMusicHub",
+          "producer_version": "0.2.0-alpha.1"
+        },
+        "version": 1,
+        "id": "midi-0495caaad07fe52d",
+        "title": "Imported MIDI performance",
+        "composer": "",
+        "provenance": {
+          "kind": "user_import",
+          "attribution": "User-supplied MIDI performance; ownership and usage rights are not verified. Notation is inferred, not original sheet music.",
+          "source_url": null,
+          "license": null
+        },
+        "parts": [
+          {
+            "id": "midi-t1-c1",
+            "name": "Track 1 · channel 1",
+            "instrument": "MIDI channel 1",
+            "notes": [
+              {
+                "id": "midi-t1-c1-e2",
+                "at": {
+                  "numerator": 1,
+                  "denominator": 96
+                },
+                "duration": {
+                  "numerator": 1,
+                  "denominator": 96
+                },
+                "pitch": {
+                  "step": "C",
+                  "alter": 0,
+                  "octave": 4
+                },
+                "voice": "inferred-1",
+                "staff": 1,
+                "velocity": 80,
+                "tie_start": false,
+                "tie_stop": false
+              },
+              {
+                "id": "midi-t1-c1-e4",
+                "at": {
+                  "numerator": 1,
+                  "denominator": 32
+                },
+                "duration": {
+                  "numerator": 1,
+                  "denominator": 96
+                },
+                "pitch": {
+                  "step": "E",
+                  "alter": 0,
+                  "octave": 4
+                },
+                "voice": "inferred-1",
+                "staff": 1,
+                "velocity": 80,
+                "tie_start": false,
+                "tie_stop": false
+              },
+              {
+                "id": "midi-t1-c1-e6",
+                "at": {
+                  "numerator": 5,
+                  "denominator": 96
+                },
+                "duration": {
+                  "numerator": 1,
+                  "denominator": 96
+                },
+                "pitch": {
+                  "step": "G",
+                  "alter": 0,
+                  "octave": 4
+                },
+                "voice": "inferred-1",
+                "staff": 1,
+                "velocity": 80,
+                "tie_start": false,
+                "tie_stop": false
+              }
+            ]
+          }
+        ],
+        "tempo": [
+          {
+            "at": {
+              "numerator": 0,
+              "denominator": 1
+            },
+            "bpm": 180.00018000018
+          }
+        ],
+        "meters": [
+          {
+            "at": {
+              "numerator": 0,
+              "denominator": 1
+            },
+            "numerator": 4,
+            "denominator": 4
+          }
+        ],
+        "keys": [],
+        "measures": [
+          {
+            "number": 1,
+            "at": {
+              "numerator": 0,
+              "denominator": 1
+            },
+            "length": {
+              "numerator": 1,
+              "denominator": 16
+            }
+          }
+        ],
+        "repeats": [],
+        "source": null
+      },
+      "timeline": {
+        "notes": [
+          {
+            "velocity": 80,
+            "id": "midi-t1-c1-e2",
+            "source_note_id": "midi-t1-c1-e2",
+            "source_note_ids": [
+              "midi-t1-c1-e2"
+            ],
+            "part_id": "midi-t1-c1",
+            "midi": 60,
+            "start_ms": 3.47221875,
+            "duration_ms": 3.47221875,
+            "voice": "inferred-1",
+            "staff": 1
+          },
+          {
+            "velocity": 80,
+            "id": "midi-t1-c1-e4",
+            "source_note_id": "midi-t1-c1-e4",
+            "source_note_ids": [
+              "midi-t1-c1-e4"
+            ],
+            "part_id": "midi-t1-c1",
+            "midi": 64,
+            "start_ms": 10.41665625,
+            "duration_ms": 3.4722187499999997,
+            "voice": "inferred-1",
+            "staff": 1
+          },
+          {
+            "velocity": 80,
+            "id": "midi-t1-c1-e6",
+            "source_note_id": "midi-t1-c1-e6",
+            "source_note_ids": [
+              "midi-t1-c1-e6"
+            ],
+            "part_id": "midi-t1-c1",
+            "midi": 67,
+            "start_ms": 17.36109375,
+            "duration_ms": 3.4722187500000032,
+            "voice": "inferred-1",
+            "staff": 1
+          }
+        ],
+        "duration_ms": 20.8333125
+      },
+      "diagnostics": []
+    },
+    "navigation": {
+      "version": 1,
+      "source_measure_count": 1,
+      "duration_ms": 20.8333125,
+      "occurrences": [
+        {
+          "id": "measure-occurrence-0",
+          "source_measure_index": 0,
+          "measure_number": 1,
+          "source_from": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "source_to": {
+            "numerator": 1,
+            "denominator": 16
+          },
+          "start_ms": 0.0,
+          "end_ms": 20.8333125,
+          "repeat_region_index": null,
+          "repeat_pass": null,
+          "repeat_times": null,
+          "written_note_ids": [
+            "midi-t1-c1-e2",
+            "midi-t1-c1-e4",
+            "midi-t1-c1-e6"
+          ],
+          "continuing_note_ids": []
+        }
+      ],
+      "sounding_groups": [
+        {
+          "occurrence_id": "midi-t1-c1-e2",
+          "part_id": "midi-t1-c1",
+          "source_note_ids": [
+            "midi-t1-c1-e2"
+          ],
+          "start_ms": 3.47221875,
+          "end_ms": 6.9444375
+        },
+        {
+          "occurrence_id": "midi-t1-c1-e4",
+          "part_id": "midi-t1-c1",
+          "source_note_ids": [
+            "midi-t1-c1-e4"
+          ],
+          "start_ms": 10.41665625,
+          "end_ms": 13.888875
+        },
+        {
+          "occurrence_id": "midi-t1-c1-e6",
+          "part_id": "midi-t1-c1",
+          "source_note_ids": [
+            "midi-t1-c1-e6"
+          ],
+          "start_ms": 17.36109375,
+          "end_ms": 20.8333125
+        }
+      ],
+      "written_cursor": {
+        "version": 1,
+        "source_note_ids": [
+          "midi-t1-c1-e2",
+          "midi-t1-c1-e4",
+          "midi-t1-c1-e6"
+        ],
+        "spans": [
+          {
+            "source_note_index": 0,
+            "measure_occurrence_index": 0,
+            "start_ms": 3.47221875,
+            "end_ms": 6.9444375
+          },
+          {
+            "source_note_index": 1,
+            "measure_occurrence_index": 0,
+            "start_ms": 10.41665625,
+            "end_ms": 13.888875
+          },
+          {
+            "source_note_index": 2,
+            "measure_occurrence_index": 0,
+            "start_ms": 17.36109375,
+            "end_ms": 20.8333125
+          }
+        ]
+      },
+      "diagnostics": [
+        {
+          "severity": "warning",
+          "code": "notation_following_scope",
+          "message": "Measure intervals are half-open full-performance navigation. Written anchors include rests and tied continuations; sounding groups retain compiled attack identities. Duplicate written measure labels are not ordinal positions. Manual paging and the Rust playback clock remain independent.",
+          "note_id": null
+        }
+      ]
+    },
+    "events": [
+      {
+        "event_id": "midi:1e9cb9a76184b4f17b4be794a09d5b5e3f793a63b42a85ad7d36b32bd2b39b25:t0:e0",
+        "at_ms": 0.0,
+        "exact_microseconds": {
+          "numerator": "0",
+          "denominator": 1
+        },
+        "origin": {
+          "track": 0,
+          "event": 0
+        },
+        "command": {
+          "kind": "tempo",
+          "microseconds_per_quarter": 333333
+        }
+      },
+      {
+        "event_id": "midi:1e9cb9a76184b4f17b4be794a09d5b5e3f793a63b42a85ad7d36b32bd2b39b25:t0:e7",
+        "at_ms": 20.8333125,
+        "exact_microseconds": {
+          "numerator": "333333",
+          "denominator": 16
+        },
+        "origin": {
+          "track": 0,
+          "event": 7
+        },
+        "command": {
+          "kind": "track_end"
+        }
+      }
+    ],
+    "notes": [
+      {
+        "event_id": "midi:1e9cb9a76184b4f17b4be794a09d5b5e3f793a63b42a85ad7d36b32bd2b39b25:t0:e1",
+        "note_id": "midi-t1-c1-e2",
+        "part_id": "midi-t1-c1",
+        "track_id": "track-1",
+        "channel": 0,
+        "start_ms": 3.47221875,
+        "end_ms": 6.9444375,
+        "start_microseconds": {
+          "numerator": "111111",
+          "denominator": 32
+        },
+        "end_microseconds": {
+          "numerator": "111111",
+          "denominator": 16
+        },
+        "key": 60,
+        "velocity": 80,
+        "release_velocity": 0,
+        "attack": {
+          "track": 0,
+          "event": 1
+        },
+        "release": {
+          "track": 0,
+          "event": 2
+        }
+      },
+      {
+        "event_id": "midi:1e9cb9a76184b4f17b4be794a09d5b5e3f793a63b42a85ad7d36b32bd2b39b25:t0:e3",
+        "note_id": "midi-t1-c1-e4",
+        "part_id": "midi-t1-c1",
+        "track_id": "track-1",
+        "channel": 0,
+        "start_ms": 10.41665625,
+        "end_ms": 13.888875,
+        "start_microseconds": {
+          "numerator": "333333",
+          "denominator": 32
+        },
+        "end_microseconds": {
+          "numerator": "111111",
+          "denominator": 8
+        },
+        "key": 64,
+        "velocity": 80,
+        "release_velocity": 0,
+        "attack": {
+          "track": 0,
+          "event": 3
+        },
+        "release": {
+          "track": 0,
+          "event": 4
+        }
+      },
+      {
+        "event_id": "midi:1e9cb9a76184b4f17b4be794a09d5b5e3f793a63b42a85ad7d36b32bd2b39b25:t0:e5",
+        "note_id": "midi-t1-c1-e6",
+        "part_id": "midi-t1-c1",
+        "track_id": "track-1",
+        "channel": 0,
+        "start_ms": 17.36109375,
+        "end_ms": 20.8333125,
+        "start_microseconds": {
+          "numerator": "555555",
+          "denominator": 32
+        },
+        "end_microseconds": {
+          "numerator": "333333",
+          "denominator": 16
+        },
+        "key": 67,
+        "velocity": 80,
+        "release_velocity": 0,
+        "attack": {
+          "track": 0,
+          "event": 5
+        },
+        "release": {
+          "track": 0,
+          "event": 6
+        }
+      }
+    ],
+    "duration_ms": 20.8333125,
+    "duration_microseconds": {
+      "numerator": "333333",
+      "denominator": 16
+    }
+  },
+  "ordinary_navigation": {
+    "diagnostics": [
+      {
+        "code": "notation_following_scope",
+        "message": "Measure intervals are half-open full-performance navigation. Written anchors include rests and tied continuations; sounding groups retain compiled attack identities. Duplicate written measure labels are not ordinal positions. Manual paging and the Rust playback clock remain independent.",
+        "note_id": null,
+        "severity": "warning"
+      }
+    ],
+    "duration_ms": 20.8333125,
+    "occurrences": [
+      {
+        "continuing_note_ids": [],
+        "end_ms": 20.8333125,
+        "id": "measure-occurrence-0",
+        "measure_number": 1,
+        "repeat_pass": null,
+        "repeat_region_index": null,
+        "repeat_times": null,
+        "source_from": {
+          "denominator": 1,
+          "numerator": 0
+        },
+        "source_measure_index": 0,
+        "source_to": {
+          "denominator": 16,
+          "numerator": 1
+        },
+        "start_ms": 0.0,
+        "written_note_ids": [
+          "midi-t1-c1-e2",
+          "midi-t1-c1-e4",
+          "midi-t1-c1-e6"
+        ]
+      }
+    ],
+    "sounding_groups": [
+      {
+        "end_ms": 6.9444375,
+        "occurrence_id": "midi-t1-c1-e2",
+        "part_id": "midi-t1-c1",
+        "source_note_ids": [
+          "midi-t1-c1-e2"
+        ],
+        "start_ms": 3.47221875
+      },
+      {
+        "end_ms": 13.888875,
+        "occurrence_id": "midi-t1-c1-e4",
+        "part_id": "midi-t1-c1",
+        "source_note_ids": [
+          "midi-t1-c1-e4"
+        ],
+        "start_ms": 10.41665625
+      },
+      {
+        "end_ms": 20.8333125,
+        "occurrence_id": "midi-t1-c1-e6",
+        "part_id": "midi-t1-c1",
+        "source_note_ids": [
+          "midi-t1-c1-e6"
+        ],
+        "start_ms": 17.361093750000002
+      }
+    ],
+    "source_measure_count": 1,
+    "version": 1,
+    "written_cursor": {
+      "source_note_ids": [
+        "midi-t1-c1-e2",
+        "midi-t1-c1-e4",
+        "midi-t1-c1-e6"
+      ],
+      "spans": [
+        {
+          "end_ms": 6.9444375,
+          "measure_occurrence_index": 0,
+          "source_note_index": 0,
+          "start_ms": 3.47221875
+        },
+        {
+          "end_ms": 13.888875,
+          "measure_occurrence_index": 0,
+          "source_note_index": 1,
+          "start_ms": 10.41665625
+        },
+        {
+          "end_ms": 20.8333125,
+          "measure_occurrence_index": 0,
+          "source_note_index": 2,
+          "start_ms": 17.361093750000002
+        }
+      ],
+      "version": 1
+    }
+  }
+}

@@ -20,14 +20,48 @@ function createCleanChooserObserver({target,now=()=>performance.now(),defer=call
  target.addEventListener('blur',observe,true);
  return{records,begin(sequence,kind){if(active)throw Error('Overlapping native chooser observations');active={sequence,kind,started_wall_ms:now(),finished_wall_ms:null,completed:false,blurs:[]};records.push(active);pending.set(active,[]);},async end(sequence,completed){if(!active||active.sequence!==sequence)throw Error('Native chooser ownership changed');const row=active;active=null;await Promise.all(pending.get(row));row.finished_wall_ms=now();row.completed=completed;},stop(){target.removeEventListener('blur',observe,true);}};
 }
+/* Observe the app's exact Blob/URL pairs without creating URLs or fetching blob:
+ * (native connect-src deliberately excludes it). Limits cover this small fixture,
+ * including its ordinary downloads; overflow fails evidence, not the app call. */
+function createCleanMediaBlobObserver({urls=URL,BlobType=Blob,maxUrls=64,maxBlobBytes=1024*1024,maxRetainedBytes=8*1024*1024}={}) {
+ for(const limit of [maxUrls,maxBlobBytes,maxRetainedBytes])if(!Number.isSafeInteger(limit)||limit<=0)throw Error('Invalid clean Blob observation bound');
+ const create=urls.createObjectURL,revoke=urls.revokeObjectURL,size=Object.getOwnPropertyDescriptor(BlobType.prototype,'size').get,read=BlobType.prototype.arrayBuffer,records=new Map();let count=0,retainedBytes=0,failure=null,stopped=false;
+ const fail=message=>{failure??=message;},assertHealthy=()=>{if(stopped||failure)throw Error(failure||'Clean Blob observation stopped');};
+ function observedCreate(...args){
+  const url=Reflect.apply(create,this,args);if(failure)return url;
+  try{
+   if(++count>maxUrls)throw Error('Clean Blob URL observation bound exceeded');
+   if(typeof url!=='string'||!url.startsWith('blob:')||url.length>2048||records.has(url))throw Error('Clean Blob URL identity is invalid');
+   const bytes=Reflect.apply(size,args[0],[]);
+   if(!Number.isSafeInteger(bytes)||bytes<=0||bytes>maxBlobBytes)throw Error('Clean Blob byte observation bound exceeded');
+   if(retainedBytes+bytes>maxRetainedBytes)throw Error('Clean retained Blob observation bound exceeded');
+   records.set(url,{blob:args[0],bytes});retainedBytes+=bytes;
+  }catch(error){fail(String(error));}
+  return url;
+ }
+ function observedRevoke(...args){const result=Reflect.apply(revoke,this,args);if(typeof args[0]!=='string'){fail('Clean Blob revocation identity is not a string');return result;}const record=records.get(args[0]);if(record){retainedBytes-=record.bytes;records.delete(args[0]);}return result;}
+ urls.createObjectURL=observedCreate;urls.revokeObjectURL=observedRevoke;
+ return{assertHealthy,async readBytes(node,source){
+  assertHealthy();const record=records.get(source);
+  const check=()=>{assertHealthy();if(typeof source!=='string'||!source.startsWith('blob:')||!record||records.get(source)!==record||node.currentSrc!==source)throw Error('Clean media Blob is missing, revoked or no longer current');};
+  check();const bytes=await Reflect.apply(read,record.blob,[]);check();if(bytes.byteLength!==record.bytes)throw Error('Clean media Blob byte length changed');return bytes;
+ },restore(){if(urls.createObjectURL===observedCreate)urls.createObjectURL=create;if(urls.revokeObjectURL===observedRevoke)urls.revokeObjectURL=revoke;records.clear();retainedBytes=0;stopped=true;}};
+}
+function createCleanNavigationObserver(){
+ let scoreId=null,requests=0,failure=null;
+ return{select(id){if(typeof id!=='string'||!id||id.length>256||scoreId!==null)throw Error('Clean navigation score identity is invalid');scoreId=id;},observe(path,options){
+  if(scoreId===null||path!=='/api/notation-navigation')return;
+  try{const body=options?.body;if(typeof body!=='string'||body.length>1024*1024)throw Error('Clean navigation request observation bound exceeded');if(JSON.parse(body)?.id===scoreId)requests=Math.min(requests+1,65);}catch(error){failure??=String(error);}
+ },ready(status){if(failure)throw Error(failure);if(scoreId===null||status!=='ready'||requests!==0)throw Error('Clean written following is not ready or requested ordinary notation navigation');return{status,ordinaryNavigationRequests:requests};}};
+}
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(value,message)=>{if(!value)throw Error(message);};
  const fetcher=globalThis.fetch.bind(globalThis),waits=createAcceptanceWait(),until=waits.until,json=(path,options)=>waits.json(fetcher,path,options);
  const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,stable(value[key])])):value;
  const frame=()=>new Promise(resolve=>requestAnimationFrame(resolve)),hash=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),n=>n.toString(16).padStart(2,'0')).join('');
- const importReports=[],openedScoreDatabases=[],errors=[],trusted=[],chooser=createCleanChooserObserver({target:globalThis});let sequence=0;
+ const importReports=[],openedScoreDatabases=[],errors=[],trusted=[],chooser=createCleanChooserObserver({target:globalThis}),mediaBlobs=createCleanMediaBlobObserver(),navigation=createCleanNavigationObserver();let sequence=0;
  const open=IDBFactory.prototype.open;IDBFactory.prototype.open=function(name,...args){if(String(name)==='worldmusichub.scores.v1')openedScoreDatabases.push(String(name));return open.call(this,name,...args);};
- globalThis.fetch=(...args)=>{const path=String(args[0]),promise=fetcher(...args);if(['/api/library/import/preview','/api/library/import/commit'].includes(path))promise.then(response=>response.clone().json().then(body=>{assert(importReports.length<8,'Clean import report bound exceeded');importReports.push({status:response.status,filename:decodeURIComponent(args[1]?.headers?.['x-wmh-filename']||''),mode:path.endsWith('preview')?'preview':'commit',body});}).catch(error=>errors.push(String(error)))).catch(()=>{});return promise;};
+ globalThis.fetch=(...args)=>{const path=String(args[0]),promise=fetcher(...args);navigation.observe(path,args[1]);if(['/api/library/import/preview','/api/library/import/commit'].includes(path))promise.then(response=>response.clone().json().then(body=>{assert(importReports.length<8,'Clean import report bound exceeded');importReports.push({status:response.status,filename:decodeURIComponent(args[1]?.headers?.['x-wmh-filename']||''),mode:path.endsWith('preview')?'preview':'commit',body});}).catch(error=>errors.push(String(error)))).catch(()=>{});return promise;};
  addEventListener('error',event=>errors.push(String(event.message)));addEventListener('unhandledrejection',event=>errors.push(String(event.reason)));
  for(const type of ['click','change','keydown','keyup'])document.addEventListener(type,event=>{const id=event.target?.id,part=event.target?.dataset?.partId;if(!['play-button','clean-song-target','stage-title','bulk-import-save'].includes(id)&&!part)return;if(trusted.length>=128){errors.push('Native clean event observation bound exceeded');return;}trusted.push({type,trusted:event.isTrusted===true,id:id||null,part:part||null,code:event.code||null,value:event.target?.value||null,checked:typeof event.target?.checked==='boolean'?event.target.checked:null});},true);
  const click=id=>{assert($(id)&&!$(id).disabled,`Unavailable clean control ${id}`);$(id).click();},closeDialogs=()=>{for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();},menu=createAcceptanceNavigation({document,until,click});
@@ -45,18 +79,20 @@ function createCleanChooserObserver({target,now=()=>performance.now(),defer=call
  async function observeMedia(node,role){
   await until(()=>node&&!node.hidden&&node.currentSrc&&getComputedStyle(node).display!=='none'&&(role==='pv'?node.readyState>=2&&node.videoWidth>0:node.complete&&node.naturalWidth>0),`decoded ${role}`);
   const width=role==='pv'?node.videoWidth:node.naturalWidth,height=role==='pv'?node.videoHeight:node.naturalHeight,bounds=node.getBoundingClientRect();assert(bounds.width>0&&bounds.height>0,`${role} has no drawn bounds`);if(role==='cover')assert(document.elementFromPoint(bounds.x+bounds.width/2,bounds.y+bounds.height/2)===node,'Cover is obscured by another painted element');
-  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(node,0,0);const pixels=context.getImageData(0,0,width,height).data;assert(new Set(pixels).size>16,`${role} decoded blank pixels`);const response=await fetcher(node.currentSrc);assert(response.ok,`${role} Blob unavailable`);const bytes=await response.arrayBuffer();return{role,width,height,drawnWidth:bounds.width,drawnHeight:bounds.height,bytes:bytes.byteLength,sha256:await hash(bytes),pixels_sha256:await hash(pixels),unique_pixel_values:new Set(pixels).size,visible:true,...(role==='pv'?{muted:node.muted,paused:node.paused,currentTime:node.currentTime,readyState:node.readyState}: {})};
+  const source=node.currentSrc,canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(node,0,0);const pixels=context.getImageData(0,0,width,height).data;assert(new Set(pixels).size>16,`${role} decoded blank pixels`);const bytes=await mediaBlobs.readBytes(node,source);return{role,width,height,drawnWidth:bounds.width,drawnHeight:bounds.height,bytes:bytes.byteLength,sha256:await hash(bytes),pixels_sha256:await hash(pixels),unique_pixel_values:new Set(pixels).size,visible:true,...(role==='pv'?{muted:node.muted,paused:node.paused,currentTime:node.currentTime,readyState:node.readyState}: {})};
  }
  function grades(){return Object.fromEntries(['hud-accuracy','accuracy','hits','misses','timing','result-grade-perfect','result-grade-good','result-grade-early','result-grade-late','result-grade-missed','result-grade-extra'].map(id=>[id,$(id)?.textContent||'']));}
  async function activate(entry,report){
+  navigation.select(entry.score_id);
   const key=`native:${entry.key}`;await until(()=>$('catalog').querySelector(`[data-library-key="${key}"]`),'ordinary clean library row');await native('click',$('catalog').querySelector(`[data-library-key="${key}"]`));await until(()=>$('song-lobby').dataset.previewId===key&&$('song-lobby').dataset.previewStatus==='ready'&&!$('start-practice').disabled,'ordinary clean preview ready');
   report.media={cover:await observeMedia($('clean-song-cover'),'cover')};report.screenshots.cover=await native('click',$('clean-song-preview-status'));
   const load=await json('/api/library/load',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:entry.key})}),p=load.clean_package,score=JSON.parse(p.score_json);
   assert(p.version===2,'Wrong clean package version');const counts=validateCleanFixtureInventory(score,p.runtime);
   report.package={key:entry.key,content_sha256:p.content_sha256,metadata_sha256:await hash(new TextEncoder().encode(p.metadata_json)),score_sha256:await hash(new TextEncoder().encode(p.score_json)),runtime_sha256:await hash(new TextEncoder().encode(JSON.stringify(stable(p.runtime)))),...counts,media:p.media};
   await native('click',$('start-practice'));await menu.waitScreen('stage','play-button','clean practice active');await until(()=>!$('play-button').disabled,'clean practice instrument ready');assert($('clean-song-stage').dataset.packageId,'Clean stage was not activated');report.media.background=await observeMedia($('clean-song-background'),'background');
+  if($('notation-toggle').getAttribute('aria-expanded')!=='true')await native('click',$('notation-toggle'));await until(()=>$('written-cursor-status')?.dataset.status==='ready','clean written following ready');report.following=navigation.ready($('written-cursor-status').dataset.status);
   await native('click',$('song-parts-summary'));await until(()=>$('song-parts-tools').open,'clean parts panel open');const first=$('clean-song-target').value;
-  await native('select-last',$('clean-song-target'));await until(()=>$('clean-song-target').value!==first&&!$('play-button').disabled,'actual target selection');const target=$('clean-song-target').value,parts=[...document.querySelectorAll('#clean-song-parts input[data-part-id]')],human=parts.find(node=>node.dataset.partId===target),other=parts.find(node=>node.dataset.partId!==target);assert(human.disabled&&!human.checked&&other.checked&&!other.disabled,'Human target machine gate is wrong');
+  await native('select-last',$('clean-song-target'));await until(()=>$('clean-song-target').value!==first&&!$('play-button').disabled&&$('written-cursor-status')?.dataset.status==='ready','actual target selection and written following');report.following=navigation.ready($('written-cursor-status').dataset.status);const target=$('clean-song-target').value,parts=[...document.querySelectorAll('#clean-song-parts input[data-part-id]')],human=parts.find(node=>node.dataset.partId===target),other=parts.find(node=>node.dataset.partId!==target);assert(human.disabled&&!human.checked&&other.checked&&!other.disabled,'Human target machine gate is wrong');
   await native('click',other);await until(()=>!document.querySelector(`#clean-song-parts input[data-part-id="${other.dataset.partId}"]`).checked,'other part muted');await native('click',document.querySelector(`#clean-song-parts input[data-part-id="${other.dataset.partId}"]`));await until(()=>document.querySelector(`#clean-song-parts input[data-part-id="${other.dataset.partId}"]`).checked,'other part restored');report.controls={initialTarget:first,target,other:other.dataset.partId,humanDisabled:true,humanMachineEnabled:false,otherRestored:true};report.screenshots.parts=await native('click',$('clean-song-stage-status'));await native('click',$('song-parts-summary'));
   closeDialogs();click('settings-button');if($('count-in').checked)await native('click',$('count-in'));closeDialogs();assert($('sound-button').getAttribute('aria-pressed')!=='true','Clean native sound starts muted');
   // An actual Reset establishes a fresh song clock before the two-second PV.
@@ -81,8 +117,8 @@ function createCleanChooserObserver({target,now=()=>performance.now(),defer=call
    if(phase==='clean-seed'){
     await menu.returnToLibrary();closeDialogs();click('import-tools-button');click('bulk-import-history-button');const history=$('bulk-import-history');if(!history.open)await native('click',history.querySelector('summary'));await until(()=>document.querySelector('#bulk-import-export-songs input[data-import-export-key]'),'clean export row');await native('click',$('bulk-import-export-all'));report.files.package=await download($('bulk-import-export-pack'));report.reimportAfterSequence=sequence;await choose(report.files.package);await save();assert(importReports.at(-1).body.items[0].status==='duplicate'&&(await inventory()).entries.length===1,'Complete clean export did not round trip as one exact duplicate');await native('click',$('bulk-import-done'));report.files.afterReimportTake=await take();report.checks.push('complete-clean-export-reimport','trusted-native-input-causality');
    }else report.checks.push('fresh-process-exact-assets-and-music');
-   assert(openedScoreDatabases.length===0,'Native clean workflow opened browser song storage');assert(errors.length===0,errors.join('; '));report.actions=sequence;report.downloads=(await json('/__desktop_smoke/state')).downloads;report.ok=true;
+   assert(openedScoreDatabases.length===0,'Native clean workflow opened browser song storage');assert(errors.length===0,errors.join('; '));report.actions=sequence;report.downloads=(await json('/__desktop_smoke/state')).downloads;mediaBlobs.assertHealthy();report.following=navigation.ready(report.following.status);report.ok=true;
   }catch(error){report.error=String(error);if(error.nativeReferenceTransport)report.transportAdmission=error.nativeReferenceTransport;}
-  chooser.stop();await postCleanAcceptanceReport({report,fetcher,waits});
+  chooser.stop();mediaBlobs.restore();await postCleanAcceptanceReport({report,fetcher,waits});
  },{once:true});
 })();

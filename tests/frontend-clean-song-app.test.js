@@ -1,17 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {getAppI18n} from '../web/app-locale.js';
 import {cleanDescriptor,fixtureKey,mediaFixture} from './clean-song-fixtures.js';
 import {nativeScoreServer,nativeStorageApp,deferred} from './native-storage-app-fixtures.js';
-async function setup({media=false,now}={}){
+async function setup({media=false,now,descriptor:providedDescriptor}={}){
  const assets=media?[mediaFixture(),mediaFixture({id:'bg',role:'background',content:'authored-bg'}),mediaFixture({id:'pv',role:'pv',mime:'video/webm',content:'authored-pv'})]:[];
- const descriptor=cleanDescriptor(({metadata})=>metadata.media=assets.map(item=>item.descriptor)),score=descriptor.runtime.compilation.score,server=await nativeScoreServer(),key=fixtureKey.slice(7);
+ const descriptor=providedDescriptor||cleanDescriptor(({metadata})=>metadata.media=assets.map(item=>item.descriptor)),score=descriptor.runtime.compilation.score,server=await nativeScoreServer(),key=fixtureKey.slice(7);
  server.records.set(key,{entry:{key,revision:1,title:score.title,composer:'',score_id:score.id,label:score.title,score_bytes:JSON.stringify(score).length,saved_at_unix_ms:1700000000000,clean_package:{version:2,content_sha256:descriptor.content_sha256,media:descriptor.media}},score_json:JSON.stringify(score),clean_package:descriptor});
  if(media)server.setRoute(({path,body})=>{if(path==='/api/library/asset'){const asset=assets.find(item=>'asset-'+item.descriptor.sha256===body.handle);return{ok:true,url:'https://wmh.localhost/api/library/asset',headers:{get:()=>asset.descriptor.mime},arrayBuffer:async()=>Uint8Array.from(asset.data).buffer};}});
  const app=await nativeStorageApp(server,{now});await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('start-listen').disabled&&!app.$('clean-song-preview').hidden,'Clean preview did not load');app.$('count-in').checked=false;return{app,server,descriptor,score,key};
 }
 async function activate(app,mode){await app.click(`start-${mode}`);await app.until(()=>app.document.body.dataset.screen==='stage'&&!app.$('play-button').disabled);}
 const runningOscillators=app=>app.audioNodes.filter(node=>node.kind==='oscillator'&&!node.disconnected);
+const readFixture=path=>JSON.parse(readFileSync(new URL(`./fixtures/${path}`,import.meta.url),'utf8'));
+function longDescriptor(){return{version:2,content_sha256:fixtureKey.slice('native:song-'.length),metadata_json:JSON.stringify(readFixture('clean-song-v2-long/metadata.json')),score_json:JSON.stringify(readFixture('clean-song-v2-long/score.json')),runtime:readFixture('clean-song-v2-long-runtime.json'),media:[]};}
+function fractionalDescriptor(){
+ const fixture=readFixture('clean-midi-fractional-navigation.json'),descriptor=cleanDescriptor(),metadata=JSON.parse(descriptor.metadata_json);
+ descriptor.score_json=JSON.stringify(fixture.complete_score);descriptor.runtime=fixture.runtime;
+ metadata.id=fixture.complete_score.notation.id;metadata.title=fixture.complete_score.notation.title;metadata.sources=[fixture.complete_score.source];
+ metadata.score={path:'score.json',bytes:Buffer.byteLength(descriptor.score_json),sha256:createHash('sha256').update(descriptor.score_json).digest('hex')};
+ descriptor.metadata_json=JSON.stringify(metadata);return descriptor;
+}
 
 test('ordinary library consumes exact runtime, all-part notation and program-aware Listen without recompiling timing',async()=>{const {app,descriptor}=await setup();try{
  assert.equal(app.$('preview-part').children.length,2);assert.equal(app.$('preview-part').value,descriptor.runtime.compilation.score.parts[0].id);assert.match(app.$('clean-song-preview-status').textContent,/3 tracks.*2 parts.*5 notes/);assert.equal(app.document.querySelector('.lobby-audition').hidden,true);
@@ -40,3 +51,77 @@ test('ordinary source part selection keeps written focus and does not add comple
  await app.click('home-single-player');const standard=structuredClone(score);standard.id='ordinary-two-part';app.importFile(standard);await app.until(()=>app.$('score-title')?.textContent===standard.title&&!app.$('play-button').disabled);
  assert.equal(app.$('song-parts-tools').hidden,true);const second=standard.parts[1].id;app.$('practice-part').value=second;app.emit(app.$('practice-part'),'change');await app.until(()=>!app.$('play-button').disabled);assert.equal(app.$('notation-part').value,second);assert.equal(app.$('engraving-part').value,second);
  }finally{await app.close();}});
+
+test('native current-note and page following use the admitted all-part runtime through part changes',async()=>{
+ let clock=1000;const descriptor=longDescriptor(),before=JSON.stringify(descriptor),{app,score}=await setup({descriptor,now:()=>clock});
+ try{
+  await activate(app,'listen');await app.click('staff-button');await app.click('notation-toggle');app.frame();
+  await app.until(()=>app.$('written-cursor-status').dataset.status==='ready','Native written cursor did not become ready');
+  clock=1051;app.frame();
+  const at=position=>descriptor.runtime.notes.filter(n=>n.start_ms<=position&&position<n.end_ms).map(n=>n.note_id).sort();
+  const active=()=>[...app.document.querySelectorAll('#notation .score-note.active')].map(n=>n.dataset.noteId).sort();
+  assert.deepEqual(active(),at(1));assert.equal(active().length,2);
+  const second=score.parts[1].id;app.$('notation-part').value=second;app.emit(app.$('notation-part'),'change');app.frame();
+  assert.deepEqual(active(),at(1).filter(id=>score.parts[1].notes.some(n=>n.id===id)));
+  app.$('engraving-follow').checked=true;app.emit(app.$('engraving-follow'),'change');await app.tick();
+  clock=1050+28010;app.frame();
+  assert.equal(app.$('written-cursor-status').dataset.sourceMeasureIndex,'14');
+  assert.match(app.$('notation-page').textContent,/15\s*\/\s*16/);
+  assert.deepEqual(active(),at(28010).filter(id=>score.parts[1].notes.some(n=>n.id===id)));
+  assert.equal(app.requests.filter(r=>r.path==='/api/notation-navigation'&&r.body.id===score.id).length,0);
+  assert.equal(JSON.stringify(descriptor),before);
+  await app.click('play-button');app.$('clean-song-target').value=second;app.emit(app.$('clean-song-target'),'change');await app.until(()=>!app.$('play-button').disabled);app.frame();
+  assert.equal(app.$('written-cursor-status').dataset.status,'ready');assert.equal(app.$('notation-part').value,second);
+  assert.equal(app.$('written-cursor-status').dataset.sourceMeasureIndex,'0');
+  const ordinary=structuredClone(score);ordinary.id='ordinary-after-native';ordinary.title='Ordinary after native';
+  for(const part of ordinary.parts)for(const note of part.notes)note.id=`ordinary-${note.id}`;
+  app.importFile(ordinary);await app.until(()=>app.$('score-title').textContent===ordinary.title&&!app.$('play-button').disabled);app.frame();await app.tick();
+  assert.ok(app.requests.some(r=>r.path==='/api/notation-navigation'&&r.body.id===ordinary.id),'A later ordinary import uses its own legacy request');
+  assert.equal(app.$('written-cursor-status').dataset.status,'unavailable','The unimplemented ordinary fixture response cannot reuse native readiness');
+  assert.equal(app.$('written-cursor-status').dataset.sourceNoteIds,'[]');assert.deepEqual(active(),[]);
+ }finally{await app.close();}
+});
+
+test('actual fractional-tempo Rust package reaches ready and highlights each native current note in the app',async()=>{
+ let clock=1000;const descriptor=fractionalDescriptor(),before=JSON.stringify(descriptor),{app,score}=await setup({descriptor,now:()=>clock});
+ try{
+  await activate(app,'listen');await app.click('staff-button');await app.click('notation-toggle');app.frame();
+  await app.until(()=>app.$('written-cursor-status').dataset.status==='ready');
+  for(const note of descriptor.runtime.notes){
+   clock=1050+(note.start_ms+note.end_ms)/2;app.frame();
+   assert.deepEqual(JSON.parse(app.$('written-cursor-status').dataset.sourceNoteIds),[note.note_id]);
+   assert.deepEqual([...app.document.querySelectorAll('#notation .score-note.active')].map(n=>n.dataset.noteId),[note.note_id]);
+   assert.equal(app.$('written-cursor-status').dataset.sourceMeasureIndex,'0');assert.match(app.$('notation-page').textContent,/1\s*\/\s*1/);
+  }
+  assert.equal(app.requests.filter(r=>r.path==='/api/notation-navigation'&&r.body.id===score.id).length,0);
+  assert.equal(JSON.stringify(descriptor),before);
+ }finally{await app.close();}
+});
+
+test('native unavailable maps expose an explicit retry state without a floating-BPM fallback',async()=>{
+ const descriptor=cleanDescriptor(({runtime})=>{runtime.navigation=null;runtime.compilation.diagnostics.push({severity:'warning',code:'clean_song_navigation_unavailable',message:'Original test: native navigation limit reached.'});});
+ const {app,score}=await setup({descriptor});
+ try{
+  await activate(app,'listen');await app.click('staff-button');await app.click('notation-toggle');app.frame();
+  await app.until(()=>app.$('written-cursor-status').dataset.status==='unavailable');
+  assert.match(app.$('written-cursor-status').title,/native navigation limit reached/);
+  assert.equal(app.$('written-cursor-retry').hidden,false);assert.ok(app.document.querySelector('#notation .score-note'));
+  await app.click('written-cursor-retry');assert.equal(app.$('written-cursor-status').dataset.status,'unavailable');
+  assert.equal(app.requests.filter(r=>r.path==='/api/notation-navigation'&&r.body.id===score.id).length,0);
+ }finally{await app.close();}
+});
+
+test('native cursor bounds keep measure pages following without claiming exact current notes',async()=>{
+ let clock=1000;const descriptor=longDescriptor();descriptor.runtime.navigation.written_cursor=null;
+ descriptor.runtime.navigation.diagnostics.push({severity:'warning',code:'notation_written_cursor_unavailable',message:'Original test: written cursor exceeds its bound; measure following remains available.'});
+ const {app,score}=await setup({descriptor,now:()=>clock});
+ try{
+  await activate(app,'listen');await app.click('staff-button');await app.click('notation-toggle');app.frame();
+  await app.until(()=>app.$('written-cursor-status').dataset.status==='unavailable');await app.tick();
+  clock=1050+28010;app.frame();
+  assert.equal(app.$('engraving-follow').checked,true);assert.match(app.$('notation-page').textContent,/15\s*\/\s*16/);
+  assert.match(app.$('engraving-follow-status').textContent,/written measure 15/);
+  assert.equal(app.$('written-cursor-status').dataset.sourceNoteIds,'[]');assert.equal(app.document.querySelectorAll('#notation .score-note.active').length,0);
+  assert.equal(app.requests.filter(r=>r.path==='/api/notation-navigation'&&r.body.id===score.id).length,0);
+ }finally{await app.close();}
+});

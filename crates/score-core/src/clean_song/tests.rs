@@ -233,6 +233,188 @@ fn exact_fractional_tempo_crossing_is_not_rounded_through_bpm() {
     assert_eq!(runtime.notes[0].start_microseconds.denominator, 160);
     assert_eq!(runtime.duration_microseconds.numerator, "1400003");
     assert_eq!(runtime.duration_microseconds.denominator, 480);
+    assert!(runtime.navigation.is_some());
+}
+
+#[test]
+fn clean_navigation_uses_the_exact_clock_instead_of_recompiled_bpm() {
+    // New original C4/E4/G4 exercise, PPQ 96 and 333333 us per quarter.
+    // The third onset differs by one binary64 step after a BPM round trip.
+    let mut source = smf(vec![track(&[
+        (0, &[0xff, 0x51, 3, 5, 0x16, 0x15]),
+        (1, &[0x90, 60, 80]),
+        (1, &[0x80, 60, 0]),
+        (1, &[0x90, 64, 80]),
+        (1, &[0x80, 64, 0]),
+        (1, &[0x90, 67, 80]),
+        (1, &[0x80, 67, 0]),
+        (0, &[0xff, 47, 0]),
+    ])]);
+    source[12..14].copy_from_slice(&96u16.to_be_bytes());
+    let score = convert_midi(&source).unwrap();
+    let runtime = compile_complete(&score).unwrap();
+    let ordinary = crate::navigation::notation_navigation(score.notation.clone()).unwrap();
+    let navigation = runtime.navigation.as_ref().unwrap();
+    assert_eq!(runtime.notes[2].start_ms, 17.36109375);
+    assert_ne!(
+        ordinary.sounding_groups[2].start_ms,
+        runtime.notes[2].start_ms
+    );
+    assert_eq!(
+        navigation.sounding_groups[2].start_ms,
+        runtime.notes[2].start_ms
+    );
+    assert_eq!(
+        navigation.written_cursor.as_ref().unwrap().spans[2].start_ms,
+        runtime.notes[2].start_ms
+    );
+    assert_eq!(navigation.duration_ms, runtime.duration_ms);
+    assert_eq!(
+        navigation.occurrences.last().unwrap().end_ms,
+        runtime.duration_ms
+    );
+}
+
+#[test]
+fn clean_navigation_keeps_multiple_tempo_changes_cross_measure_notes_and_silent_tail() {
+    // Entirely original fractional exercise. One endpoint intentionally cannot
+    // be reconstructed bit-for-bit as start + (end - start).
+    let source = smf(vec![track(&[
+        (0, &[0xff, 0x51, 3, 7, 0xa1, 0x21]),
+        (1, &[0x90, 60, 90]),
+        (1, &[0xff, 0x51, 3, 6, 0x1a, 0x81]),
+        (0, &[0x90, 64, 80]),
+        (1, &[0x80, 60, 0]),
+        (15, &[0x80, 64, 0]),
+        (223, &[0x90, 60, 88]),
+        (240, &[0xff, 0x51, 3, 9, 0x27, 0xc7]),
+        (479, &[0x80, 60, 0]),
+        (1, &[0x90, 67, 92]),
+        (40, &[0xff, 0x51, 3, 5, 0x16, 0x19]),
+        (3000, &[0x80, 67, 0]),
+        (1759, &[0xff, 0x51, 3, 10, 0x2c, 0x2b]),
+        (1441, &[0xff, 47, 0]),
+    ])]);
+    let score = convert_midi(&source).unwrap();
+    let before = encode_json(&score).unwrap();
+    let runtime = compile_complete(&score).unwrap();
+    let navigation = runtime.navigation.as_ref().unwrap();
+    let ordinary = crate::navigation::notation_navigation(score.notation.clone()).unwrap();
+    let milliseconds = |beat: Beat| {
+        let scaled = beat.numerator as u64 * 480;
+        assert_eq!(scaled % beat.denominator as u64, 0);
+        let tick = scaled / beat.denominator as u64;
+        let changes = [
+            (0, 500001),
+            (2, 400001),
+            (481, 600007),
+            (1001, 333337),
+            (5760, 666667),
+            (7201, 0),
+        ];
+        let numerator: u64 = changes
+            .windows(2)
+            .map(|pair| tick.min(pair[1].0).saturating_sub(pair[0].0) * pair[0].1)
+            .sum();
+        (numerator / 480000) as f64 + (numerator % 480000) as f64 / 480000.0
+    };
+    assert_eq!(navigation.occurrences.len(), 4);
+    assert_eq!(navigation.duration_ms, milliseconds(score.performance.end));
+    for (occurrence, original) in navigation.occurrences.iter().zip(&ordinary.occurrences) {
+        assert_eq!(occurrence.start_ms, milliseconds(occurrence.source_from));
+        assert_eq!(occurrence.end_ms, milliseconds(occurrence.source_to));
+        assert_eq!(occurrence.written_note_ids, original.written_note_ids);
+        assert_eq!(occurrence.continuing_note_ids, original.continuing_note_ids);
+    }
+    for pair in navigation.occurrences.windows(2) {
+        assert_eq!(pair[0].end_ms, pair[1].start_ms);
+    }
+    let tail = navigation.occurrences.last().unwrap();
+    assert!(tail.written_note_ids.is_empty() && tail.continuing_note_ids.is_empty());
+    assert_eq!(tail.end_ms, runtime.duration_ms);
+    assert!(runtime
+        .notes
+        .iter()
+        .all(|note| note.end_ms < runtime.duration_ms));
+    let cursor = navigation.written_cursor.as_ref().unwrap();
+    let canonical: BTreeMap<_, _> = score
+        .notation
+        .parts
+        .iter()
+        .flat_map(|part| part.notes.iter().map(|note| (note.id.as_str(), note)))
+        .collect();
+    assert_eq!(
+        cursor.spans.len(),
+        ordinary.written_cursor.as_ref().unwrap().spans.len()
+    );
+    for span in &cursor.spans {
+        let note = canonical[cursor.source_note_ids[span.source_note_index].as_str()];
+        let occurrence = &navigation.occurrences[span.measure_occurrence_index];
+        let end = note.at.checked_add(note.duration).unwrap();
+        assert_eq!(
+            span.start_ms,
+            milliseconds(note.at).max(occurrence.start_ms)
+        );
+        assert_eq!(span.end_ms, milliseconds(end).min(occurrence.end_ms));
+    }
+    for (group, compiled) in navigation
+        .sounding_groups
+        .iter()
+        .zip(&runtime.compilation.timeline.notes)
+    {
+        assert_eq!(group.occurrence_id, compiled.id);
+        assert_eq!(group.part_id, compiled.part_id);
+        assert_eq!(group.source_note_ids, compiled.source_note_ids);
+        assert_eq!(group.start_ms, compiled.start_ms);
+        assert_eq!(group.end_ms, compiled.start_ms + compiled.duration_ms);
+    }
+    let separate_end = &runtime.notes[1];
+    assert_eq!(separate_end.end_ms, milliseconds(Beat::new(18, 480)));
+    assert_ne!(separate_end.end_ms, navigation.sounding_groups[1].end_ms);
+    assert_eq!(encode_json(&score).unwrap(), before);
+}
+
+#[test]
+fn mismatched_or_missing_written_extent_disables_only_clean_navigation() {
+    let source = smf(vec![track(&[
+        (0, &[0x90, 60, 90]),
+        (480, &[0x80, 60, 0]),
+        (960, &[0xff, 47, 0]),
+    ])]);
+    let score = convert_midi(&source).unwrap();
+    let expected = compile_complete(&score).unwrap();
+    // A shorter measure map still covers every written note, but must not
+    // silently discard the two-beat semantic track tail.
+    for length in [None, Some(Beat::new(8, 1)), Some(Beat::new(1, 1))] {
+        let mut score = score.clone();
+        if let Some(length) = length {
+            score.notation.measures.last_mut().unwrap().length = length;
+        } else {
+            score.notation.measures.clear();
+        }
+        let before = encode_json(&score).unwrap();
+        let actual = compile_complete(&score).unwrap();
+        assert!(actual.navigation.is_none());
+        assert!(actual
+            .compilation
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "clean_song_navigation_unavailable"));
+        assert_eq!(actual.duration_ms, expected.duration_ms);
+        assert_eq!(
+            serde_json::to_value(actual.notes).unwrap(),
+            serde_json::to_value(&expected.notes).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(actual.events).unwrap(),
+            serde_json::to_value(&expected.events).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(actual.compilation.timeline).unwrap(),
+            serde_json::to_value(&expected.compilation.timeline).unwrap()
+        );
+        assert_eq!(encode_json(&score).unwrap(), before);
+    }
 }
 
 #[test]

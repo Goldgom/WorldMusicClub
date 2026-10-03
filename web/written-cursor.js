@@ -72,21 +72,29 @@ export class WrittenCursorIndex {
   }
 }
 
-/** Lazy score-scoped preparation. A failed response is retried only explicitly. */
+/** Lazy score-scoped preparation. Native runtimes retain their admitted score,
+ * timeline and navigation identities; never recompile their clock through BPM.
+ * A failed response is retried only explicitly. */
 export function setupWrittenCursor({api, getContext, onStatus = () => {}}) {
   let target = null, timeline = null, index = null, navigation = null, controller = null, pending = null;
+  let nativeRuntime = null, nativeNavigation = null;
   let generation = 0, status = 'idle', message = 'Current-note following is idle.';
   const publish = (next, text) => { status = next; message = text; onStatus({status, message}); };
+  const sameContext = context => context?.score === target && context?.timeline === timeline
+    && (context?.nativeRuntime ?? null) === nativeRuntime && (nativeRuntime?.navigation ?? null) === nativeNavigation;
+  const boundRuntime = () => !nativeRuntime || nativeRuntime.compilation?.score === target && nativeRuntime.compilation?.timeline === timeline;
   function reset() {
     generation++; controller?.abort(); controller = null; pending = null;
     target = null; timeline = null; index = null; navigation = null;
+    nativeRuntime = null; nativeNavigation = null;
     publish('idle', 'Current-note following is idle.');
   }
   function prepare({retry = false} = {}) {
     const context = getContext();
     if (!context?.score || !context.timeline) { if (target) reset(); return Promise.resolve(null); }
-    if (target !== context.score || timeline !== context.timeline) {
+    if (!sameContext(context) || (index || navigation) && !boundRuntime()) {
       reset(); target = context.score; timeline = context.timeline;
+      nativeRuntime = context.nativeRuntime ?? null; nativeNavigation = nativeRuntime?.navigation ?? null;
     }
     if (index) return Promise.resolve(index);
     if (pending) return pending;
@@ -94,15 +102,23 @@ export function setupWrittenCursor({api, getContext, onStatus = () => {}}) {
     const current = ++generation, score = target, compiled = timeline;
     controller = new AbortController(); const signal = controller.signal;
     publish('loading', 'Preparing exact current-note positions…');
-    const isCurrent = () => current === generation && !signal.aborted && getContext()?.score === score && getContext()?.timeline === compiled;
+    const isCurrent = () => current === generation && !signal.aborted && sameContext(getContext());
     pending = (async () => {
       try {
-        const response = await api('/api/notation-navigation', score, signal);
+        if (!boundRuntime()) throw Error('The native navigation is not bound to this admitted score and performance timeline. Reload the complete song.');
+        if (nativeRuntime && !nativeNavigation) throw Error(nativeRuntime.compilation.diagnostics?.find(item => item.code === 'clean_song_navigation_unavailable')?.message || 'This native complete song has no exact navigation map. Reload it with a current native build.');
+        const response = nativeRuntime ? await nativeNavigation : await api('/api/notation-navigation', score, signal);
         if (!isCurrent()) return null;
-        navigation = new NotationNavigationIndex(response, score, compiled);
+        const preparedNavigation = new NotationNavigationIndex(response, score, compiled);
+        // A bounded Rust response may explicitly omit optional written spans
+        // while retaining a complete, strictly validated measure map.
+        const cursorUnavailable = response.written_cursor == null
+          && response.diagnostics.some(item => item.code === 'notation_written_cursor_unavailable');
+        if (!nativeRuntime || cursorUnavailable) navigation = preparedNavigation;
         if (!response.written_cursor) throw Error(response.diagnostics?.find(item => item.code === 'notation_written_cursor_unavailable')?.message || 'This server response has no complete written-note cursor. Restart with a current server build.');
-        const prepared = new WrittenCursorIndex(response.written_cursor, navigation);
+        const prepared = new WrittenCursorIndex(response.written_cursor, preparedNavigation);
         if (!isCurrent()) return null;
+        navigation = preparedNavigation;
         index = prepared;
         publish('ready', 'Expected written notes follow the Rust clock. Held inputs and assessment are separate.');
         return index;
@@ -120,15 +136,15 @@ export function setupWrittenCursor({api, getContext, onStatus = () => {}}) {
     state: () => ({status, message}),
     navigation() {
       const context = getContext();
-      return context?.score === target && context?.timeline === timeline ? navigation : null;
+      return sameContext(context) && boundRuntime() ? navigation : null;
     },
     pageAnchor(position,partId=null) {
       const context=getContext();
-      return index&&context?.score===target&&context?.timeline===timeline?index.pageAnchor(position,partId):null;
+      return index&&sameContext(context)&&boundRuntime()?index.pageAnchor(position,partId):null;
     },
     at(position) {
       const context = getContext();
-      return index && context?.score === target && context?.timeline === timeline ? index.at(position) : null;
+      return index && sameContext(context) && boundRuntime() ? index.at(position) : null;
     },
   };
 }

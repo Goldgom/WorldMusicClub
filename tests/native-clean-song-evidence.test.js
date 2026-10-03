@@ -26,7 +26,7 @@ async function evidence(t){
  const media=Object.fromEntries(fixture.metadata.media.map(a=>[a.role,{role:a.role,width:a.role==='cover'?96:a.role==='background'?160:320,height:a.role==='cover'?64:a.role==='background'?90:180,drawnWidth:100,drawnHeight:80,bytes:a.bytes,sha256:a.sha256,pixels_sha256:'4'.repeat(64),unique_pixel_values:128,visible:true,...(a.role==='pv'?{muted:true,paused:false,currentTime:.5,readyState:4}:{})}]));
  const files={'clean-seed':{machineTake:'clean-seed-1.json',humanTake:'clean-seed-2.json',package:'clean-seed-3.zip',afterReimportTake:'clean-seed-4.json'},'clean-restart':{machineTake:'clean-restart-1.json'}},reports={},rows=[];
  const save=async(path,value)=>writeFile(join(directory,path),JSON.stringify(value,null,2)+'\n');
- for(const phase of CLEAN_PHASES){const host=native.phases.find(p=>p.phase===phase),grades=Object.fromEntries(Array.from({length:11},(_,i)=>[`grade-${i}`,'—']));reports[phase]={version:1,phase,ok:true,origin:'https://wmh.localhost',profileMarkerAbsent:true,actions:host.actions,checks:[...CLEAN_CHECKS[phase]],errors:[],openedScoreDatabases:[],package:structuredClone(pkg),directory:native.directory,inventory:[entry],media:structuredClone(media),machineBefore:{captured:'0',grades},machinePlaying:{captured:'0',grades,positionMs:600,audio:{sourceStarts:3,oscillatorStarts:3}},audioStopped:{sourceStarts:3,activeSources:0,pendingSources:0},videoFrames:{count:5,last:{presentedFrames:5,width:320,height:180,mediaTime:.5}},controls:{initialTarget:parts[0],target:parts[1],other:parts[0],humanDisabled:true,humanMachineEnabled:false,otherRestored:true},trusted:[{type:'change',trusted:true,id:'clean-song-target',value:parts[1]},{type:'change',trusted:true,part:parts[0],checked:false},{type:'change',trusted:true,part:parts[0],checked:true}],chooserObservations:definitions[phase].flatMap(([kind],i)=>kind==='picker'?[{sequence:i+1,kind,started_wall_ms:2000+i*100,finished_wall_ms:2050+i*100,completed:true,blurs:[]}]:[]),files:files[phase],downloads:Object.values(files[phase]).map(file=>({file,complete:true,success:true})),screenshots:phase==='clean-seed'?{cover:3,parts:5,playing:7,preflight:2}:{cover:1,parts:3,playing:5},importReports:[]};
+ for(const phase of CLEAN_PHASES){const host=native.phases.find(p=>p.phase===phase),grades=Object.fromEntries(Array.from({length:11},(_,i)=>[`grade-${i}`,'—']));reports[phase]={version:1,phase,ok:true,origin:'https://wmh.localhost',profileMarkerAbsent:true,actions:host.actions,checks:[...CLEAN_CHECKS[phase]],errors:[],openedScoreDatabases:[],package:structuredClone(pkg),directory:native.directory,inventory:[entry],media:structuredClone(media),following:{status:'ready',ordinaryNavigationRequests:0},machineBefore:{captured:'0',grades},machinePlaying:{captured:'0',grades,positionMs:600,audio:{sourceStarts:3,oscillatorStarts:3}},audioStopped:{sourceStarts:3,activeSources:0,pendingSources:0},videoFrames:{count:5,last:{presentedFrames:5,width:320,height:180,mediaTime:.5}},controls:{initialTarget:parts[0],target:parts[1],other:parts[0],humanDisabled:true,humanMachineEnabled:false,otherRestored:true},trusted:[{type:'change',trusted:true,id:'clean-song-target',value:parts[1]},{type:'change',trusted:true,part:parts[0],checked:false},{type:'change',trusted:true,part:parts[0],checked:true}],chooserObservations:definitions[phase].flatMap(([kind],i)=>kind==='picker'?[{sequence:i+1,kind,started_wall_ms:2000+i*100,finished_wall_ms:2050+i*100,completed:true,blurs:[]}]:[]),files:files[phase],downloads:Object.values(files[phase]).map(file=>({file,complete:true,success:true})),screenshots:phase==='clean-seed'?{cover:3,parts:5,playing:7,preflight:2}:{cover:1,parts:3,playing:5},importReports:[]};
   for(const [i,[kind,file]]of definitions[phase].entries()){await save(`action-${phase}-${i+1}.json`,{version:1,sequence:i+1,kind,x:10,y:20,width:1024,height:768,...(file?{file}:{})});await save(`result-${phase}-${i+1}.json`,{ok:true,client_click:{app_hwnd:1,foreground:1,actual:[10,20],requested:[10,20],viewport:[1024,768],hit_hwnd:1},...(kind==='picker'?{owned_dialog:{class:'#32770',hwnd:2,app_hwnd:1,root_owner_hwnd:1,process_id:host.process_id,app_process_id:host.process_id},picker_completion:{dialog_dismissed:true,app_enabled:true,owned_popup_visible:false}}:{})});}
   for(const n of Object.values(reports[phase].screenshots))await writeFile(join(directory,`native-action-${phase}-${n}.png`),PNG);await writeFile(join(directory,`native-${phase}.png`),PNG);await save(`downloads/${files[phase].machineTake}`,take(fixture.metadata.id,parts[1]));
  }
@@ -39,7 +39,7 @@ async function evidence(t){
 }
 
 test('clean native verifier rederives the complete authored package and new-process evidence',async t=>{const f=await evidence(t),proof=await verifyNativeCleanSongEvidence(f.directory);assert.equal(proof.ok,true);assert.equal(proof.notes,30);assert.equal(proof.events,14);assert.equal(proof.source_events,74);assert.equal(proof.decoded_media,3);assert.equal(proof.claims.actual_audibility,false);assert.equal(proof.claims.latency_or_hardware,false);});
-test('clean native verifier rejects changed native process, media, inputs and inventory',async t=>{const f=await evidence(t),original=f.reports['clean-restart'];for(const change of [r=>r.package.events=74,r=>r.package.source_events=73,r=>r.media.pv.sha256='0'.repeat(64),r=>r.media.cover.width=0,r=>r.videoFrames.count=0,r=>r.machinePlaying.captured='1',r=>r.machinePlaying.grades={grade:100},r=>r.audioStopped.pendingSources=1,r=>r.trusted[0].trusted=false,r=>r.controls.humanMachineEnabled=true,r=>r.inventory=[]]){const value=structuredClone(original);change(value);await f.save('renderer-clean-restart.json',value);await assert.rejects(verifyNativeCleanSongEvidence(f.directory));}await f.save('renderer-clean-restart.json',original);const host=structuredClone(f.native);host.phases[1].process_id=host.phases[0].process_id;await f.save('native-clean-song.json',host);await assert.rejects(verifyNativeCleanSongEvidence(f.directory),/new process/);});
+test('clean native verifier rejects changed native process, media, inputs and inventory',async t=>{const f=await evidence(t),original=f.reports['clean-restart'];for(const change of [r=>r.package.events=74,r=>r.package.source_events=73,r=>r.media.pv.sha256='0'.repeat(64),r=>r.media.cover.width=0,r=>r.videoFrames.count=0,r=>delete r.following,r=>r.following.status='unavailable',r=>r.following.ordinaryNavigationRequests=1,r=>r.machinePlaying.captured='1',r=>r.machinePlaying.grades={grade:100},r=>r.audioStopped.pendingSources=1,r=>r.trusted[0].trusted=false,r=>r.controls.humanMachineEnabled=true,r=>r.inventory=[]]){const value=structuredClone(original);change(value);await f.save('renderer-clean-restart.json',value);await assert.rejects(verifyNativeCleanSongEvidence(f.directory));}await f.save('renderer-clean-restart.json',original);const host=structuredClone(f.native);host.phases[1].process_id=host.phases[0].process_id;await f.save('native-clean-song.json',host);await assert.rejects(verifyNativeCleanSongEvidence(f.directory),/new process/);});
 test('clean native verifier rejects exact asset loss, backup tampering and absent native chooser ownership',async t=>{const f=await evidence(t),path=`Scores/clean-backups/${f.key}/package/media/pv.webm`,original=await readFile(join(f.directory,path));await writeFile(join(f.directory,path),original.subarray(0,-1));await assert.rejects(verifyNativeCleanSongEvidence(f.directory),/exact file changed/);await writeFile(join(f.directory,path),original);await f.save('result-clean-seed-1.json',{ok:true,client_click:{app_hwnd:1,foreground:1,actual:[10,20],requested:[10,20],viewport:[1024,768],hit_hwnd:1}});await assert.rejects(verifyNativeCleanSongEvidence(f.directory),/picker ownership/);});
 test('clean native verifier rejects machine notes masquerading as recorded human input',async t=>{const f=await evidence(t),path=`downloads/${f.reports['clean-seed'].files.machineTake}`;await f.save(path,take(f.fixture.metadata.id,f.reports['clean-seed'].controls.target,true));await assert.rejects(verifyNativeCleanSongEvidence(f.directory),/Machine sources entered/);});
 test('clean report producer, Rust admission, verifier and boundary tests share 1 MiB budget',async()=>{const source=await readFile(new URL('../crates/desktop-shell/clean-song-acceptance.js',import.meta.url),'utf8'),prefix=source.slice(0,source.indexOf('(() => {')),post=runInNewContext(`${prefix}\npostCleanAcceptanceReport`,{TextEncoder});assert.equal(CLEAN_REPORT_BYTES,1024*1024);const rust=await readFile(new URL('../crates/desktop-shell/src/acceptance.rs',import.meta.url),'utf8');assert.match(rust,/MAX_CLEAN_REPORT_BYTES: usize = 1024 \* 1024/);assert.match(rust,/MAX_CLEAN_REPORT_BYTES \+ 1/);let sent=[];const waits={json:async(_,path,options)=>{sent.push(JSON.parse(options.body));return{};}};const large={version:1,phase:'clean-seed',ok:true,padding:'x'.repeat(77092)};assert.equal((await post({report:large,fetcher:null,waits})).delivered,true);assert.deepEqual(sent[0],large);sent=[];assert.equal((await post({report:{...large,padding:'x'.repeat(CLEAN_REPORT_BYTES)},fetcher:null,waits})).delivered,false);assert.equal(sent.length,1);assert.equal(sent[0].ok,false);assert.equal(sent[0].report_failure.limit_bytes,CLEAN_REPORT_BYTES);});
@@ -54,4 +54,72 @@ test('clean reimport preserves distinct boundary and receipt clocks within its o
  value.input_evidence.events.push({event_id:4,kind:'boundary',source_id:null,source_generation:null,input_kind:null,channel:null,midi:null,velocity:null,encoding:null,reason:'blur',event_wall_ms:time,received_wall_ms:time+.1,timestamp_basis:'application_clock',raw_timestamp_ms:null,boundary_wall_ms:time,onset_capture:null});
  await f.save(file,value);assert.equal((await verifyNativeCleanSongEvidence(f.directory)).ok,true);
  for(const edit of [event=>event.received_wall_ms=time-1,event=>event.received_wall_ms=time+2,event=>event.received_wall_ms=String(time),event=>event.boundary_wall_ms=event.received_wall_ms]){const changed=structuredClone(value);edit(changed.input_evidence.events.at(-1));await f.save(file,changed);await assert.rejects(verifyNativeCleanSongEvidence(f.directory),/boundary|evidence/i);}
+});
+
+async function blobObservation(t,limits={}){
+ const source=await readFile(new URL('../crates/desktop-shell/clean-song-acceptance.js',import.meta.url),'utf8'),prefix=source.slice(0,source.indexOf('(() => {'));
+ const create=runInNewContext(`${prefix}\ncreateCleanMediaBlobObserver`,{Blob}),calls=[],revokes=[],live=[];
+ const urls={createObjectURL(...args){calls.push({receiver:this,args});const url=Reflect.apply(URL.createObjectURL,this,args);live.push(url);return url;},revokeObjectURL(...args){revokes.push({receiver:this,args});return Reflect.apply(URL.revokeObjectURL,this,args);}},originals={...urls};
+ const observer=create({urls,...limits});t.after(()=>{observer.restore();for(const url of live)URL.revokeObjectURL(url);});return{source,create,observer,urls,originals,calls,revokes};
+}
+test('clean media observes exact real Blob bytes without creating or substituting URLs',async t=>{
+ const f=await blobObservation(t),blob=new Blob(['actual native asset'],{type:'image/png'}),extra={untouched:true};
+ blob.arrayBuffer=()=>{throw Error('Instance byte substitution must not be read');};
+ const source=f.urls.createObjectURL(blob,extra),node={currentSrc:source};
+ assert.equal(f.calls.length,1);assert.equal(f.calls[0].receiver,f.urls);assert.deepEqual(f.calls[0].args,[blob,extra]);assert.match(source,/^blob:/);
+ assert.equal(Buffer.from(await f.observer.readBytes(node,source)).toString(),'actual native asset');assert.equal(f.calls.length,1);
+ assert.equal(f.urls.revokeObjectURL(source,extra),undefined);assert.equal(f.revokes.length,1);assert.equal(f.revokes[0].receiver,f.urls);assert.deepEqual(f.revokes[0].args,[source,extra]);
+ f.observer.restore();assert.equal(f.urls.createObjectURL,f.originals.createObjectURL);assert.equal(f.urls.revokeObjectURL,f.originals.revokeObjectURL);
+ await assert.rejects(f.observer.readBytes(node,source),/stopped/);
+});
+test('clean media rejects missing, revoked and mismatched currentSrc associations',async t=>{
+ const f=await blobObservation(t),first=f.urls.createObjectURL(new Blob(['first'])),second=f.urls.createObjectURL(new Blob(['other'])),node={currentSrc:first};
+ await assert.rejects(f.observer.readBytes(node,'blob:missing'),/missing|current/);
+ await assert.rejects(f.observer.readBytes({currentSrc:'https://wmh.localhost/asset'},'https://wmh.localhost/asset'),/missing|current/);
+ await assert.rejects(f.observer.readBytes(node,second),/current/);
+ node.currentSrc=second;assert.equal(Buffer.from(await f.observer.readBytes(node,second)).toString(),'other');
+ assert.notEqual(digest(Buffer.from(await f.observer.readBytes(node,second))),digest('first'));
+ f.urls.revokeObjectURL(second);await assert.rejects(f.observer.readBytes(node,second),/revoked/);
+ assert.equal(f.calls.length,2);assert.equal(f.revokes.length,1);
+});
+test('clean media rejects source changes or revocation during the actual Blob read',async t=>{
+ const f=await blobObservation(t),blob=new Blob(['asset']),source=f.urls.createObjectURL(blob),other=f.urls.createObjectURL(blob),node={currentSrc:source};
+ const changed=f.observer.readBytes(node,source);node.currentSrc=other;await assert.rejects(changed,/current/);
+ const revoked=f.observer.readBytes(node,other);f.urls.revokeObjectURL(other);await assert.rejects(revoked,/revoked/);
+});
+test('clean media fails closed for native revocation with a coercible non-string argument',async t=>{
+ const f=await blobObservation(t),source=f.urls.createObjectURL(new Blob(['asset']));let conversions=0;
+ const argument={toString(){conversions++;return source;}};f.urls.revokeObjectURL(argument);assert.equal(conversions,1);assert.equal(f.revokes[0].args[0],argument);
+ await assert.rejects(f.observer.readBytes({currentSrc:source},source),/revocation identity/);
+});
+test('clean Blob bounds fail evidence while preserving native creation and revocation',async t=>{
+ for(const [limits,contents,pattern]of [[{maxBlobBytes:4},['large'],/byte observation bound/],[{maxBlobBytes:4},[''],/byte observation bound/],[{maxRetainedBytes:5},['abc','def'],/retained Blob observation bound/],[{maxUrls:1},['one','two'],/URL observation bound/]]){
+  const f=await blobObservation(t,limits),sources=contents.map(value=>f.urls.createObjectURL(new Blob([value])));
+  assert.equal(f.calls.length,contents.length);assert.ok(sources.every(value=>value.startsWith('blob:')));assert.throws(()=>f.observer.assertHealthy(),pattern);
+  await assert.rejects(f.observer.readBytes({currentSrc:sources.at(-1)},sources.at(-1)),pattern);
+  for(const source of sources)f.urls.revokeObjectURL(source);assert.equal(f.revokes.length,sources.length);
+  const later=f.urls.createObjectURL(new Blob(['still native']));assert.match(later,/^blob:/);assert.equal(f.calls.length,contents.length+1);
+ }
+});
+test('clean Blob observation releases retained bytes but keeps a lifetime creation bound',async t=>{
+ const f=await blobObservation(t,{maxBlobBytes:3,maxRetainedBytes:3,maxUrls:2}),first=f.urls.createObjectURL(new Blob(['one']));
+ f.urls.revokeObjectURL(first);const second=f.urls.createObjectURL(new Blob(['two']));assert.equal(Buffer.from(await f.observer.readBytes({currentSrc:second},second)).toString(),'two');
+ f.urls.revokeObjectURL(second);f.urls.createObjectURL(new Blob(['new']));assert.throws(()=>f.observer.assertHealthy(),/URL observation bound/);
+});
+test('clean Blob observation forwards native errors and rejects fake Blob shapes',async t=>{
+ const f=await blobObservation(t);assert.throws(()=>f.urls.createObjectURL({size:3,arrayBuffer:async()=>new ArrayBuffer(3)}),/Blob/);f.observer.assertHealthy();
+ const fake={size:3,arrayBuffer:async()=>new ArrayBuffer(3)},urls={createObjectURL:()=> 'blob:fake',revokeObjectURL:()=>{}},observer=f.create({urls});
+ assert.equal(urls.createObjectURL(fake),'blob:fake');assert.throws(()=>observer.assertHealthy());await assert.rejects(observer.readBytes({currentSrc:'blob:fake'},'blob:fake'));observer.restore();
+});
+test('clean media keeps decoded canvas pixels and video frame checks under the production CSP',async()=>{
+ const source=await readFile(new URL('../crates/desktop-shell/clean-song-acceptance.js',import.meta.url),'utf8'),rust=await readFile(new URL('../crates/desktop-shell/src/lib.rs',import.meta.url),'utf8');
+ assert.match(source,/const source=node.currentSrc,canvas=document.createElement\('canvas'\)/);assert.match(source,/context.drawImage\(node,0,0\)/);assert.match(source,/getImageData\(0,0,width,height\)/);assert.match(source,/new Set\(pixels\).size>16/);assert.match(source,/await mediaBlobs.readBytes\(node,source\)/);assert.match(source,/frameCount>=2&&lastFrame\?\.mediaTime>0/);
+ assert.doesNotMatch(source,/fetcher\(node.currentSrc\)|new Blob\(/);assert.match(rust,/img-src 'self' blob: data:; connect-src 'self'; media-src 'self' blob:/);
+});
+test('clean navigation observation filters the selected score and requires actual readiness',async()=>{
+ const source=await readFile(new URL('../crates/desktop-shell/clean-song-acceptance.js',import.meta.url),'utf8'),prefix=source.slice(0,source.indexOf('(() => {')),create=runInNewContext(`${prefix}\ncreateCleanNavigationObserver`),observer=create(),path='/api/notation-navigation',options=id=>({body:JSON.stringify({id})});
+ observer.observe(path,options('bundled'));assert.throws(()=>observer.ready('ready'));observer.select('clean');observer.observe(path,options('bundled'));observer.observe('/api/compile',options('clean'));
+ assert.throws(()=>observer.ready('loading'),/not ready/);assert.deepEqual(JSON.parse(JSON.stringify(observer.ready('ready'))),{status:'ready',ordinaryNavigationRequests:0});
+ observer.observe(path,options('clean'));assert.throws(()=>observer.ready('ready'),/ordinary notation navigation/);
+ for(const body of [null,'{','x'.repeat(1024*1024+1)]){const invalid=create();invalid.select('clean');invalid.observe(path,{body});assert.throws(()=>invalid.ready('ready'));}
 });

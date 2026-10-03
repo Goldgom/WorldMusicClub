@@ -9,6 +9,9 @@ pub struct ExactMicroseconds {
 #[derive(Clone, Debug, Serialize)]
 pub struct Runtime {
     pub compilation: crate::Compilation,
+    /// Display membership from canonical notation, timed by the exact semantic clock.
+    /// Unavailable maps leave playback intact and add a compilation diagnostic.
+    pub navigation: Option<crate::navigation::NotationNavigation>,
     pub events: Vec<RuntimeEvent>,
     pub notes: Vec<RuntimeNote>,
     pub duration_ms: f64,
@@ -162,6 +165,119 @@ fn event_id(hash: &str, origin: Coordinate) -> String {
     format!("midi:{hash}:t{}:e{}", origin.track, origin.event)
 }
 
+// Remapping binary64 boundaries can change their serialized lengths. Keep the
+// existing navigation/cursor byte bounds after remapping, without allocating a
+// second response or weakening the generic navigation limits.
+fn fits_display_limit(value: &impl Serialize, limit: usize) -> bool {
+    struct Remaining(usize);
+    impl std::io::Write for Remaining {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self
+                .0
+                .checked_sub(bytes.len())
+                .ok_or_else(|| std::io::Error::other("Display response limit exceeded"))?;
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    serde_json::to_writer(Remaining(limit), value).is_ok()
+}
+
+fn complete_navigation(
+    score: &CompleteScore,
+    clock: &Clock,
+    compilation: &crate::Compilation,
+) -> Result<crate::navigation::NotationNavigation, String> {
+    // Reuse all canonical membership, count and response limits. This profile
+    // is validated as an unfolded, untied performance, so source Beats are also
+    // performance Beats; the BPM-derived boundaries must not survive this step.
+    let mut navigation = crate::navigation::notation_navigation(score.notation.clone())?;
+    if navigation
+        .occurrences
+        .last()
+        .is_none_or(|last| !last.source_to.equivalent(score.performance.end))
+    {
+        return Err("The complete written measure map and semantic performance have different extents. No written intervals or performance tail were clipped".into());
+    }
+    for occurrence in &mut navigation.occurrences {
+        occurrence.start_ms = clock.at(occurrence.source_from)?.milliseconds();
+        occurrence.end_ms = clock.at(occurrence.source_to)?.milliseconds();
+        if occurrence.end_ms <= occurrence.start_ms {
+            return Err("Written intervals are too small for a reliable exact display clock; use manual notation paging".into());
+        }
+    }
+    if let Some(cursor) = &mut navigation.written_cursor {
+        let notes: BTreeMap<_, _> = score
+            .notation
+            .parts
+            .iter()
+            .flat_map(|part| part.notes.iter().map(|note| (note.id.as_str(), note)))
+            .collect();
+        for span in &mut cursor.spans {
+            let note = notes[cursor.source_note_ids[span.source_note_index].as_str()];
+            let occurrence = &navigation.occurrences[span.measure_occurrence_index];
+            let from = if note.at.compare(occurrence.source_from).is_gt() {
+                note.at
+            } else {
+                occurrence.source_from
+            };
+            let note_end = note
+                .at
+                .checked_add(note.duration)
+                .ok_or("Note duration overflow")?;
+            let to = if note_end.compare(occurrence.source_to).is_lt() {
+                note_end
+            } else {
+                occurrence.source_to
+            };
+            span.start_ms = clock.at(from)?.milliseconds();
+            span.end_ms = clock.at(to)?.milliseconds();
+        }
+    }
+    if navigation.written_cursor.as_ref().is_some_and(|cursor| {
+        cursor.spans.iter().any(|span| span.end_ms <= span.start_ms)
+            || !fits_display_limit(cursor, 4 * 1024 * 1024)
+    }) {
+        navigation.written_cursor = None;
+        navigation.diagnostics.push(crate::Diagnostic::warning(
+            "notation_written_cursor_unavailable",
+            "The complete exact written-note cursor exceeds 4 MiB or contains intervals too small for a reliable display clock. Measure navigation, canonical notes and playback are unchanged.",
+            None,
+        ));
+    }
+    // The display validator binds to the actual compilation, including its
+    // start + duration binary64 representation. RuntimeNote::end_ms remains the
+    // separately integrated exact endpoint and must not be replaced by this sum.
+    navigation.sounding_groups = compilation
+        .timeline
+        .notes
+        .iter()
+        .map(|note| crate::navigation::SoundingGroup {
+            occurrence_id: note.id.clone(),
+            part_id: note.part_id.clone(),
+            source_note_ids: note.source_note_ids.clone(),
+            start_ms: note.start_ms,
+            end_ms: note.start_ms + note.duration_ms,
+        })
+        .collect();
+    navigation.duration_ms = compilation.timeline.duration_ms;
+    if !fits_display_limit(&navigation, 16 * 1024 * 1024)
+        && navigation.written_cursor.take().is_some()
+    {
+        navigation.diagnostics.push(crate::Diagnostic::warning(
+            "notation_written_cursor_unavailable",
+            "Adding the complete exact written-note cursor exceeds the navigation response limit. Use measure following; canonical notes and playback are unchanged.",
+            None,
+        ));
+    }
+    if !fits_display_limit(&navigation, 16 * 1024 * 1024) {
+        return Err("Exact notation following exceeds 16 MiB; use manual paging or a smaller score. No source events were removed".into());
+    }
+    Ok(navigation)
+}
+
 /// Same validated canonical engine, with times integrated from exact semantic
 /// tempo values. Runtime is derived and must never be imported as a score.
 pub fn compile_complete(score: &CompleteScore) -> Result<Runtime, String> {
@@ -232,6 +348,17 @@ pub fn compile_complete(score: &CompleteScore) -> Result<Runtime, String> {
         .notes
         .sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms).then(a.id.cmp(&b.id)));
     compilation.timeline.duration_ms = duration.milliseconds();
+    let navigation = match complete_navigation(score, &clock, &compilation) {
+        Ok(navigation) => Some(navigation),
+        Err(error) => {
+            compilation.diagnostics.push(crate::Diagnostic::warning(
+                "clean_song_navigation_unavailable",
+                format!("Exact clean-song notation following is unavailable: {error}. Static notation and playback remain available."),
+                None,
+            ));
+            None
+        }
+    };
     let events = score
         .performance
         .events
@@ -249,6 +376,7 @@ pub fn compile_complete(score: &CompleteScore) -> Result<Runtime, String> {
         .collect::<Result<Vec<_>, String>>()?;
     Ok(Runtime {
         compilation,
+        navigation,
         events,
         notes,
         duration_ms: duration.milliseconds(),

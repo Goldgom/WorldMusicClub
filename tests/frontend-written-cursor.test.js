@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {WrittenCursorIndex, setupWrittenCursor} from '../web/written-cursor.js';
-import {NotationNavigationIndex} from '../web/notation-follow.js';
+import {NotationNavigationIndex, basicNotationPage} from '../web/notation-follow.js';
 import {fixture} from './frontend-fixtures.js';
 
 const beat = numerator => ({numerator, denominator: 1});
@@ -130,4 +131,129 @@ test('a synchronous request failure does not strand the explicit retry', async (
   }});
   await cursor.prepare(); assert.equal(cursor.state().status, 'unavailable');
   await cursor.prepare({retry: true}); assert.equal(cursor.state().status, 'ready'); assert.equal(calls, 2);
+});
+
+function nativeSetup() {
+  const data = setup();
+  data.nativeRuntime = {compilation: {score: data.score, timeline: data.timeline, diagnostics: []},
+    navigation: {...data.response, written_cursor: data.cursor}};
+  return data;
+}
+
+test('actual authored fractional Rust runtime follows exactly while its ordinary BPM map is rejected', async () => {
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/clean-midi-fractional-navigation.json', import.meta.url), 'utf8'));
+  const runtime = fixture.runtime, {score, timeline} = runtime.compilation, before = JSON.stringify(runtime);
+  assert.deepEqual(score, fixture.complete_score.notation);
+  assert.throws(() => new NotationNavigationIndex(fixture.ordinary_navigation, score, timeline), {code: 'notation_followInvalid'});
+  const data = {score, timeline, nativeRuntime: runtime};
+  const cursor = setupWrittenCursor({getContext: () => data, api: () => assert.fail('Fractional MIDI must use its admitted native clock')});
+  await cursor.prepare(); assert.equal(cursor.state().status, 'ready');
+  for (const note of runtime.notes) {
+    const written = cursor.at(note.start_ms);
+    assert.deepEqual(written.entries.map(entry => entry.sourceNoteId), [note.note_id]);
+    assert.equal(written.entries[0].startMs, note.start_ms); assert.equal(written.entries[0].endMs, note.end_ms);
+    assert.deepEqual(cursor.pageAnchor(note.start_ms, note.part_id), written.entries[0].note.at);
+    assert.equal(basicNotationPage(written.occurrence, written.entries, note.part_id, 4, cursor.pageAnchor(note.start_ms, note.part_id)), 0);
+    assert.ok(!cursor.at(note.end_ms).entries.some(entry => entry.sourceNoteId === note.note_id));
+  }
+  assert.equal(JSON.stringify(runtime), before);
+  data.nativeRuntime = {...runtime, navigation: fixture.ordinary_navigation};
+  assert.equal(cursor.navigation(), null); await cursor.prepare(); assert.equal(cursor.state().status, 'unavailable');
+});
+
+test('bound native navigation uses the strict indexes without a score API request', async () => {
+  const data = nativeSetup(), before = JSON.stringify(data);
+  const cursor = setupWrittenCursor({getContext: () => data, api: () => assert.fail('Native timing must not be recompiled')});
+  await cursor.prepare();
+  assert.equal(cursor.state().status, 'ready');
+  assert.ok(cursor.navigation() instanceof NotationNavigationIndex);
+  assert.deepEqual(ids(await cursor.prepare(), 1000), ['rest', 'tie-stop']);
+  assert.deepEqual(cursor.pageAnchor(1500, 'piano'), beat(2));
+  assert.equal(JSON.stringify(data), before);
+});
+
+test('bounded native responses retain strict measure following when optional cursor absence is diagnosed', async () => {
+  for (const omitted of [false, true]) {
+    const data = nativeSetup(), response = data.nativeRuntime.navigation;
+    response.written_cursor = null;
+    if (omitted) delete response.written_cursor;
+    response.diagnostics.push({code: 'notation_written_cursor_unavailable', message: 'Complete cursor exceeds its bound; measure following remains available.'});
+    const cursor = setupWrittenCursor({getContext: () => data, api: () => assert.fail('Bounded native maps cannot fall back to BPM')});
+    await cursor.prepare();
+    assert.equal(cursor.state().status, 'unavailable'); assert.match(cursor.state().message, /exceeds its bound/);
+    assert.ok(cursor.navigation() instanceof NotationNavigationIndex);
+    assert.equal(cursor.navigation().at(1000).source_measure_index, 1);
+    assert.equal(cursor.at(1000), null); assert.equal(cursor.pageAnchor(1000), null);
+  }
+});
+
+test('a cursor-unavailable diagnostic cannot admit a malformed supplied cursor or invalid measure map', async () => {
+  for (const mutate of [
+    d => d.nativeRuntime.navigation.written_cursor.source_note_ids[0] = 'other',
+    d => d.nativeRuntime.navigation.written_cursor.spans[0].end_ms -= 1e-10,
+    d => d.nativeRuntime.navigation.written_cursor = false,
+    d => {d.nativeRuntime.navigation.written_cursor = null; d.nativeRuntime.navigation.sounding_groups[0].end_ms += 1e-10;},
+  ]) {
+    const data = nativeSetup();
+    data.nativeRuntime.navigation.diagnostics.push({code: 'notation_written_cursor_unavailable', message: 'Cursor omitted.'});
+    mutate(data);
+    const cursor = setupWrittenCursor({getContext: () => data, api: () => assert.fail('Invalid native maps cannot fall back')});
+    await cursor.prepare();
+    assert.equal(cursor.state().status, 'unavailable'); assert.equal(cursor.navigation(), null); assert.equal(cursor.at(0), null);
+  }
+});
+
+test('native navigation rejects missing maps, stale identity and exact clock/ID mismatches without fallback', async () => {
+  for (const mutate of [
+    d => delete d.nativeRuntime.navigation, d => d.nativeRuntime.navigation = null,
+    d => d.nativeRuntime.compilation.score = structuredClone(d.score),
+    d => d.nativeRuntime.compilation.timeline = structuredClone(d.timeline),
+    d => d.nativeRuntime.navigation.duration_ms += 1e-10,
+    d => d.nativeRuntime.navigation.sounding_groups[0].end_ms += 1e-10,
+    d => d.nativeRuntime.navigation.sounding_groups[0].source_note_ids = ['other'],
+    d => d.nativeRuntime.navigation.occurrences[0].written_note_ids = ['other'],
+    d => d.nativeRuntime.navigation.written_cursor.source_note_ids[0] = 'other',
+    d => d.nativeRuntime.navigation.written_cursor.spans[0].end_ms -= 1e-10,
+    d => d.nativeRuntime.navigation.written_cursor = null,
+  ]) {
+    const data = nativeSetup(); mutate(data);
+    const cursor = setupWrittenCursor({getContext: () => data, api: () => assert.fail('Invalid native maps cannot use the legacy API')});
+    await cursor.prepare();
+    assert.equal(cursor.state().status, 'unavailable');
+    assert.equal(cursor.navigation(), null); assert.equal(cursor.at(0), null); assert.equal(cursor.pageAnchor(0), null);
+    await cursor.prepare({retry: true}); assert.equal(cursor.state().status, 'unavailable');
+  }
+});
+
+test('native source, timeline and map replacement invalidate every cached read immediately', async () => {
+  for (const replace of [
+    d => ({...d, score: structuredClone(d.score)}),
+    d => ({...d, timeline: structuredClone(d.timeline)}),
+    d => ({...d, nativeRuntime: {...d.nativeRuntime, navigation: null}}),
+    d => {d.nativeRuntime.navigation = null; return d;},
+    () => ({score: null, timeline: null}),
+  ]) {
+    let data = nativeSetup();
+    const cursor = setupWrittenCursor({getContext: () => data, api: () => assert.fail('A replaced native map cannot fall back')});
+    await cursor.prepare(); assert.equal(cursor.state().status, 'ready');
+    data = replace(data);
+    assert.equal(cursor.navigation(), null); assert.equal(cursor.at(0), null); assert.equal(cursor.pageAnchor(0), null);
+    await cursor.prepare();
+    assert.equal(cursor.state().status, data.score ? 'unavailable' : 'idle');
+  }
+});
+
+test('late legacy replies and queued native preparation cannot cross a score replacement or clear', async () => {
+  let data = setup(); const old = data, calls = [];
+  const cursor = setupWrittenCursor({getContext: () => data, api: (path, score, signal) => new Promise(resolve => calls.push({path, score, signal, resolve}))});
+  const legacy = cursor.prepare(); data = nativeSetup();
+  await cursor.prepare(); assert.equal(cursor.state().status, 'ready'); assert.equal(calls[0].signal.aborted, true);
+  const current = cursor.navigation(); calls[0].resolve({...old.response, written_cursor: old.cursor}); await legacy;
+  assert.equal(cursor.navigation(), current); assert.equal(calls.length, 1);
+  cursor.reset(); const native = cursor.prepare(); data = {score: null, timeline: null}; await cursor.prepare(); await native;
+  assert.equal(cursor.state().status, 'idle'); assert.equal(cursor.navigation(), null); assert.equal(cursor.at(0), null);
+  data = setup(); const ordinary = cursor.prepare();
+  assert.equal(calls[1].path, '/api/notation-navigation'); assert.equal(calls[1].score, data.score);
+  calls[1].resolve({...data.response, written_cursor: data.cursor}); await ordinary;
+  assert.equal(cursor.state().status, 'ready'); assert.equal(calls.length, 2);
 });
