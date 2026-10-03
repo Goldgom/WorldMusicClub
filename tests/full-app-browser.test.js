@@ -277,31 +277,71 @@ function soundingMusic(compilation) {
     .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 }
 
-async function libraryRoundtrip(compilation, label, filename) {
+// Inspect the real origin-local database read-only; all saves/restores still use
+// the app's import controls and archive dialog, never a test-injected write.
+async function browserLibrarySnapshot() {
+  await page.waitForFunction(() => document.querySelector('[data-score-storage]').getAttribute('aria-busy') === 'false');
+  return page.evaluate(async () => {
+    const {openScoreLibrary} = await import('/local-library.js'), library = await openScoreLibrary();
+    try { return await Promise.all((await library.list()).sort((a, b) => a.key.localeCompare(b.key)).map(row => library.get(row.key))); }
+    finally { library.close(); }
+  });
+}
+
+async function waitForBrowserImportCopies(count) {
+  await page.waitForFunction(expected => document.querySelector('[data-score-storage]').getAttribute('aria-busy') === 'false'
+    && document.querySelector('.score-storage-status').dataset.persistence === 'saved'
+    && document.querySelectorAll('#catalog [data-library-key^="browser:"]').length === expected, count);
+  const copies = await browserLibrarySnapshot();
+  assert.equal(copies.length, count, 'Each accepted file import persists exactly one browser copy');
+  assert.deepEqual(await page.locator('#catalog [data-library-key]').evaluateAll(rows => rows.map(row => row.dataset.libraryKey).sort()),
+    copies.map(row => `browser:${row.key}`).sort(), 'The lobby and archive use the same saved-copy identities');
+  return copies;
+}
+
+function assertAddedLibraryCopies(before, after, expected) {
+  assert.equal(new Set(after.map(row => row.key)).size, after.length, 'Saved copies have distinct storage keys');
+  for (const row of before) assert.deepEqual(after.find(copy => copy.key === row.key), row, 'Existing identities, metadata and exact sources remain unchanged');
+  const added = after.filter(row => !before.some(copy => copy.key === row.key));
+  const ordered = entries => entries.map(entry => JSON.stringify(entry)).sort();
+  assert.deepEqual(ordered(added.map(({label, score}) => ({label, score}))), ordered(expected));
+  assert.ok(added.every(row => row.revision === 1 && row.key !== row.score.id && row.score_id === row.score.id), 'New copy identities are independent of canonical score IDs');
+  return added;
+}
+
+async function downloadLibraryBackup() {
+  const [download] = await Promise.all([page.waitForEvent('download'), ui('#library-export-backup').click()]);
+  assert.equal(await download.failure(), null);
+  const bytes = await readFile(await download.path()), backup = JSON.parse(bytes);
+  assert.equal(backup.format, 'worldmusichub-library-backup');
+  assert.equal(backup.version, 1);
+  return {bytes, entries: backup.entries};
+}
+
+async function libraryRoundtrip(compilation, label, filename, importedCopies) {
   await ui('#library-button').click();
   await page.waitForFunction(() => document.querySelector('#library-status').textContent.startsWith('Ready.'));
-  assert.equal(await ui('#library-list>li').count(), 0);
+  assert.deepEqual(await browserLibrarySnapshot(), importedCopies);
+  assert.deepEqual(await ui('#library-list>li').evaluateAll(rows => rows.map(row => row.dataset.libraryKey).sort()), importedCopies.map(row => row.key));
   await ui('#library-label').fill(label);
   await ui('#library-save-copy').click();
   await page.waitForFunction(() => document.querySelector('#library-status').textContent.startsWith('Saved'));
-  const originalKey = await ui('#library-list>li').getAttribute('data-library-key');
-  const [download] = await Promise.all([page.waitForEvent('download'), ui('#library-export-backup').click()]);
-  assert.equal(await download.failure(), null);
-  const backup = await readFile(await download.path());
-  const entries = JSON.parse(backup).entries;
-  assert.equal(entries.length, 1);
-  assert.deepEqual(entries[0].score, compilation.score);
-  const [validationResponse] = await Promise.all([
-    nextResponse('/api/compile'),
-    ui('#library-backup-file').setInputFiles({name: filename, mimeType: 'application/json', buffer: backup}),
-  ]);
-  assert.deepEqual(await responseJson(validationResponse), compilation, 'Backup restoration validates the retained score and diagnostics with Rust');
-  await page.waitForFunction(() => document.querySelector('#library-status').textContent.startsWith('Restored 1 new copies'));
-  const keys = await ui('#library-list>li').evaluateAll(rows => rows.map(row => row.dataset.libraryKey));
-  assert.equal(keys.length, 2);
-  assert.ok(keys.includes(originalKey));
-  assert.equal(new Set(keys).size, 2);
-  const restoredKey = keys.find(key => key !== originalKey);
+  const savedCopies = await browserLibrarySnapshot();
+  const [saved] = assertAddedLibraryCopies(importedCopies, savedCopies, [{label, score: compilation.score}]);
+  const {bytes: backup, entries} = await downloadLibraryBackup();
+  assert.deepEqual(entries, savedCopies.map(({label, score}) => ({label, score})), 'Backup includes both imported snapshots and the explicit labeled copy');
+  const validations = [], collect = response => { if (new URL(response.url()).pathname === '/api/compile') validations.push(response); };
+  page.on('response', collect);
+  try {
+    await ui('#library-backup-file').setInputFiles({name: filename, mimeType: 'application/json', buffer: backup});
+    await page.waitForFunction(count => document.querySelector('#library-status').textContent.startsWith(`Restored ${count} new copies`), entries.length);
+  } finally { page.off('response', collect); }
+  assert.equal(validations.length, entries.length, 'Every backup entry receives its own Rust validation before atomic restoration');
+  for (const response of validations) assert.deepEqual(await responseJson(response), compilation, 'Each restored source retains its complete score and diagnostics');
+  const restoredCopies = await browserLibrarySnapshot(), added = assertAddedLibraryCopies(savedCopies, restoredCopies, entries);
+  assert.deepEqual(await ui('#library-list>li').evaluateAll(rows => rows.map(row => row.dataset.libraryKey).sort()), restoredCopies.map(row => row.key));
+  const restoredKey = added.find(row => row.label === label).key;
+  assert.notEqual(restoredKey, saved.key);
   const [restoredResponse] = await Promise.all([
     nextResponse('/api/compile'),
     ui(`[data-library-key="${restoredKey}"] [data-library-open]`).click(),
@@ -311,6 +351,7 @@ async function libraryRoundtrip(compilation, label, filename) {
   await ui('#score-library').waitFor({state: 'hidden'});
   await readyForTitle(compilation.score.title);
   assert.deepEqual(await exportScore(), compilation.score);
+  assert.deepEqual(await browserLibrarySnapshot(), restoredCopies, 'Opening and exporting a saved copy must not persist another import');
   return restored;
 }
 
@@ -647,6 +688,8 @@ for (const version of ['3.1', '4.0']) {
     assertHeaderNormalization(imported);
     assertHeaderNormalization(compiled);
     await readyForTitle(imported.score.title);
+    const firstImportCopies = await waitForBrowserImportCopies(1);
+    assertAddedLibraryCopies([], firstImportCopies, [{label: null, score: compiled.score}]);
     assert.equal(await ui('#diagnostic-list>li').filter({hasText: 'musicxml_header_normalized:'}).count(), 1);
     await assertStoppedAtZero();
 
@@ -670,7 +713,9 @@ for (const version of ['3.1', '4.0']) {
     assert.deepEqual(reloaded, compiled);
     assertHeaderNormalization(reloaded);
     await readyForTitle(imported.score.title);
-    const restored = await libraryRoundtrip(compiled, `MusicXML ${version} with its original header`, 'standard-header-backup.json');
+    const importedCopies = await waitForBrowserImportCopies(2);
+    assertAddedLibraryCopies(firstImportCopies, importedCopies, [{label: null, score: compiled.score}]);
+    const restored = await libraryRoundtrip(compiled, `MusicXML ${version} with its original header`, 'standard-header-backup.json', importedCopies);
     assertHeaderNormalization(restored);
     assert.deepEqual(Buffer.from(restored.score.source.content), bytes);
     assert.equal(await ui('#diagnostic-list>li').filter({hasText: 'musicxml_header_normalized:'}).count(), 1);
@@ -954,15 +999,20 @@ test('real Rust physical targets retain unison source voices and score one piano
 test('real local library preserves a source snapshot across reload and validates backup restoration', testOptions, async () => {
   const score=structuredClone(initialCompilation.score);score.title='Saved original exercise';score.source={format:'original-test-text',filename:'original.txt',content:'Original local source · 文本\r\nPreserve this exact payload.'};
   await ui('#score-file').setInputFiles({name:'original-library-score.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);
-  await ui('#library-button').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Ready.'));assert.equal(await ui('#library-list>li').count(),0);
+  const importedCopies=await waitForBrowserImportCopies(1);assertAddedLibraryCopies([],importedCopies,[{label:null,score}]);
+  await ui('#library-button').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Ready.'));assert.equal(await ui('#library-list>li').getAttribute('data-library-key'),importedCopies[0].key);
   await ui('#library-label').fill('Original source copy');await ui('#library-save-copy').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Saved'));
-  const backupPromise=page.waitForEvent('download');await ui('#library-export-backup').click();const backup=await readFile(await(await backupPromise).path(),'utf8');assert.deepEqual(JSON.parse(backup).entries[0].score,score);
-  await ui('#library-close').click();await reloadStage();await readyForTitle(initialCompilation.score.title);await ui('#library-button').click();await ui('[data-library-open]').waitFor();await ui('[data-library-open]').click();await page.waitForFunction(()=>!document.querySelector('#score-library').open);await readyForTitle(score.title);
+  const savedCopies=await browserLibrarySnapshot(),[saved]=assertAddedLibraryCopies(importedCopies,savedCopies,[{label:'Original source copy',score}]);
+  const {bytes:backup,entries}=await downloadLibraryBackup();assert.deepEqual(entries,savedCopies.map(({label,score})=>({label,score})));
+  await ui('#library-close').click();await reloadStage();await readyForTitle(initialCompilation.score.title);assert.deepEqual(await browserLibrarySnapshot(),savedCopies,'Reload inventories the same immutable copies without saving the initial catalog score');
+  await ui('#library-button').click();await ui(`[data-library-key="${saved.key}"] [data-library-open]`).click();await page.waitForFunction(()=>!document.querySelector('#score-library').open);await readyForTitle(score.title);
   assert.deepEqual(await exportScore(),score);
+  assert.deepEqual(await browserLibrarySnapshot(),savedCopies,'Opening the labeled copy does not create another saved import');
   await ui('#library-button').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Ready.'));
   const before=requests.filter(request=>request.path==='/api/compile').length;
   await ui('#library-backup-file').setInputFiles({name:'worldmusichub-library-backup.json',mimeType:'application/json',buffer:Buffer.from(backup)});await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Restored'));
-  assert.equal(await ui('#library-list>li').count(),2);assert.equal(requests.filter(request=>request.path==='/api/compile').length,before+1);
+  const restoredCopies=await browserLibrarySnapshot();assertAddedLibraryCopies(savedCopies,restoredCopies,entries);
+  assert.equal(await ui('#library-list>li').count(),restoredCopies.length);assert.deepEqual(requests.filter(request=>request.path==='/api/compile').slice(before).map(request=>JSON.parse(request.body)),entries.map(entry=>entry.score),'Rust validates every complete backup score before restore');
   await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-library.png'),fullPage:true});
 });
 
@@ -1025,15 +1075,18 @@ test('real whole-score semitone preview retains exact sources, timeline, JSON an
   source.parts[0].notes.push({...structuredClone(source.parts[0].notes[0]),id:'rest',at:{numerator:2,denominator:1},pitch:null,tie_start:false,tie_stop:false});
   source.parts.push({...structuredClone(fixture.parts[0]),id:'bass',name:'Bass',notes:fixture.parts[0].notes.map(note=>({...structuredClone(note),id:`bass-${note.id}`,pitch:{...note.pitch,octave:3}}))});source.keys.push({at:{numerator:2,denominator:1},fifths:-3,mode:'minor'});
   await ui('#score-file').setInputFiles({name:'whole-score.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(source))});await readyForTitle(source.title);
+  const importedCopies=await waitForBrowserImportCopies(1);assertAddedLibraryCopies([],importedCopies,[{label:null,score:source}]);
   const original=await exportScore(),compiled=await rustApi('/api/compile',original);await ui('#practice-part').selectOption('piano');await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('physical attacks'));
   await ui('.practice-options>summary').click();
   await ui('#loop-from').fill('0');await ui('#loop-to').fill('2');await ui('#loop-apply').click();await page.waitForFunction(()=>document.querySelector('#loop-status').textContent.includes('ready'));
   const copiesBefore=requests.filter(request=>request.path==='/api/compile').length,result=await realSemitonePreview(2);
   assert.equal(await ui('#score-title').textContent(),original.title);assert.equal(requests.filter(request=>request.path==='/api/compile').length,copiesBefore);assert.equal(await ui('#transposition-activate').isDisabled(),true);assert.equal(result.changed_note_count,4);assert.deepEqual(JSON.parse(result.compilation.score.source.content).original,original);assert.deepEqual(result.compilation.timeline,{...compiled.timeline,notes:compiled.timeline.notes.map(note=>({...note,midi:note.midi+2}))});
   assert.match(await ui('#transposition-result-summary').textContent(),/whole score/);assert.match(await ui('#transposition-key-sample').textContent(),/C major.*D major/);await ui('#transposition-confirm').check();await ui('#transposition-activate').click();await ui('#transposition-dialog').waitFor({state:'hidden'});await readyForTitle(result.compilation.score.title);assert.equal(await ui('#practice-part').inputValue(),'piano');assert.equal(await ui('#loop-enabled').isChecked(),false);assert.deepEqual(await exportScore(),result.compilation.score);
-  await ui('#library-button').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Ready.'));await ui('#library-save-copy').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Saved'));await ui('#library-close').click();
+  assert.deepEqual(await browserLibrarySnapshot(),importedCopies,'Previewing and activating a derived score do not autosave or overwrite its original import');
+  await ui('#library-button').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Ready.'));await ui('#library-save-copy').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Saved'));
+  const savedCopies=await browserLibrarySnapshot();assertAddedLibraryCopies(importedCopies,savedCopies,[{label:null,score:result.compilation.score}]);await ui('#library-close').click();
   await openSemitoneReview();assert.equal(await ui('#transposition-preview').isDisabled(),true);const [response]=await Promise.all([nextResponse('/api/transposition/restore'),ui('#transposition-restore-preview').click()]);assert.deepEqual((await responseJson(response)).score,original);await page.waitForFunction(()=>document.querySelector('#transposition-status').textContent.startsWith('Original preview ready'));assert.equal(await ui('#score-title').textContent(),result.compilation.score.title);await ui('#transposition-confirm').check();await ui('#transposition-activate').click();await ui('#transposition-dialog').waitFor({state:'hidden'});await readyForTitle(original.title);assert.deepEqual(await exportScore(),original);
-  await ui('#library-button').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Ready.'));const [download]=await Promise.all([page.waitForEvent('download'),ui('#library-export-backup').click()]);assert.equal(await download.failure(),null);const backup=JSON.parse(await readFile(await download.path(),'utf8'));assert.equal(backup.entries.length,1);assert.deepEqual(backup.entries[0].score,result.compilation.score,'Restoration cannot overwrite a saved derived copy or its original record');await ui('#library-close').click();
+  await ui('#library-button').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Ready.'));const backup=await downloadLibraryBackup();assert.deepEqual(backup.entries,savedCopies.map(({label,score})=>({label,score})),'Backup retains both the imported original and the independently saved derived score');assert.deepEqual(await browserLibrarySnapshot(),savedCopies,'Restoration cannot overwrite either saved source or create another copy');await ui('#library-close').click();
 });
 
 test('real semitone copy keeps out-of-range notes visible while actual Practice admission stays blocked',testOptions,async()=>{
@@ -1266,6 +1319,8 @@ for (const fixtureName of ['original-duet', 'original-duet-standard-header']) {
     assert.deepEqual(Buffer.from(envelope.files['selected.musicxml'].content), xml);
     assert.equal(envelope.files['selected.musicxml'].bytes, xml.length);
     await readyForTitle(imported.score.title);
+    const firstImportCopies = await waitForBrowserImportCopies(1);
+    assertAddedLibraryCopies([], firstImportCopies, [{label: null, score: compiled.score}]);
     assert.equal(await ui('#diagnostic-list>li').filter({hasText: 'musicxml_header_normalized:'}).count(), expectedHeaderCount);
     await ui('#source-files-button').click();
     assert.equal(await ui('#source-archive-files>li').count(), 3);
@@ -1297,7 +1352,9 @@ for (const fixtureName of ['original-duet', 'original-duet-standard-header']) {
     assert.deepEqual(reloaded, compiled);
     assertHeaderNormalization(reloaded, expectedHeaderCount);
     await readyForTitle(imported.score.title);
-    const restored = await libraryRoundtrip(compiled, 'Complete MXL archive', 'mxl-library-backup.json');
+    const importedCopies = await waitForBrowserImportCopies(2);
+    assertAddedLibraryCopies(firstImportCopies, importedCopies, [{label: null, score: compiled.score}]);
+    const restored = await libraryRoundtrip(compiled, 'Complete MXL archive', 'mxl-library-backup.json', importedCopies);
     assertHeaderNormalization(restored, expectedHeaderCount);
     assert.equal(restored.score.source.content, source.content);
     assert.equal(await ui('#diagnostic-list>li').filter({hasText: 'musicxml_header_normalized:'}).count(), expectedHeaderCount);
@@ -2339,7 +2396,10 @@ test('real no-score Free practice survives an unavailable catalog and saves the 
   await page.addInitScript(observeRealAudio);
   const unavailable=route=>route.abort('failed');await page.route('**/api/catalog/index',unavailable);const requestStart=requests.length;
   try{
-    await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>document.querySelector('#catalog-status').textContent.includes('metadata is unavailable'));
+    const healthResponse=nextResponse('/api/health');
+    await page.reload({waitUntil:'domcontentloaded'});const health=await responseJson(await healthResponse);
+    assert.equal(health.name,'WorldMusicHub');assert.equal(health.engine,'rust');assert.equal(health.score_format_version,1);assert.equal(health.network,'loopback-only');
+    await page.waitForFunction(()=>document.querySelector('#catalog-status').textContent.includes('metadata is unavailable')&&document.querySelector('[data-score-storage]').getAttribute('aria-busy')==='false');
     assert.equal(await page.locator('#resume-session').isVisible(),false);assert.equal(await page.locator('#score-tools-button').isDisabled(),true);assert.equal(await page.locator('#start-listen').isDisabled(),true);assert.ok(failedResources.some(failure=>failure.path==='/api/catalog/index'));
     await enterSilentFreePractice();const configuredKeys=Number(await page.locator('#key-count').inputValue());assert.equal(configuredKeys,61);assert.equal(await page.locator('#free-practice-keys [data-midi]').count(),configuredKeys);assert.deepEqual(await page.locator('#free-practice-keys [data-midi]').evaluateAll(keys=>[Number(keys[0].dataset.midi),Number(keys.at(-1).dataset.midi)]),[36,96]);assert.equal(await page.locator('#free-practice-keys [data-code]').count(),47);assert.equal(await page.locator('#free-practice-keys [data-code="KeyR"]').getAttribute('data-midi'),'60');assert.equal(await page.locator('#free-practice-keys [data-code="KeyI"]').getAttribute('data-midi'),'64');
     await page.locator('#free-start').click();await page.locator('#free-practice-title').focus();await page.keyboard.press('r');
@@ -2351,7 +2411,10 @@ test('real no-score Free practice survives an unavailable catalog and saves the 
     const configuration=sealed.data.configuration.find(item=>item.key==='keyboard_configuration').value;assert.equal(configuration.base_midi,36);assert.equal(configuration.transpose_semitones,0);assert.equal(configuration.mapping.length,47);assert.equal(sealed.data.configuration.find(item=>item.key==='sound').value,false);
     await page.keyboard.up('p');await page.locator('#free-practice-title').focus();await page.keyboard.press('r');assert.equal((await downloadFreeRecord('#free-export-draft')).text,sealed.text,'Stop seals the record before late physical release or later keys arrive');
     await page.locator('#free-record-label').fill('Silent PC performance');await page.locator('#free-save').click();await page.locator('#free-start:not([disabled])').waitFor();assert.equal((await downloadFreeRecord()).text,sealed.text);assert.equal(await page.locator('#free-record-select option[value]:not([value=""])').count(),1);
-    assert.deepEqual(await page.evaluate(()=>audioObservation),{construct:0,resume:0,oscillator:0,start:0,stop:0});assert.deepEqual(requests.slice(requestStart).map(request=>request.path),['/api/catalog/index'],'A missing score cannot force Free capture through compilation, targets or assessment');
+    assert.deepEqual(await page.evaluate(()=>audioObservation),{construct:0,resume:0,oscillator:0,start:0,stop:0});
+    assert.deepEqual(requests.slice(requestStart).map(({path,method,body})=>({path,method,body})).sort((a,b)=>a.path.localeCompare(b.path)),[
+      {path:'/api/catalog/index',method:'GET',body:null},{path:'/api/health',method:'GET',body:null},
+    ],'Only the failed catalog read and verified storage capability probe are allowed; no compilation, targets, assessment or other score requests');
     await writeFile(join(artifactDirectory,'worldmusichub-live-free-no-score.json'),JSON.stringify({catalog_unavailable:true,actual_pc_input:true,audio_calls:await page.evaluate(()=>audioObservation),record:sealed.data,saved_export_unchanged:true},null,2));
   }finally{await page.unroute('**/api/catalog/index',unavailable);}
 });

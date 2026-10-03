@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {nativeStorageApp,deferred,nativeResponse} from './native-storage-app-fixtures.js';
-import {bulkNativeFixture,importFile,authoredImportScore,selectImportFiles} from './bulk-import-fixtures.js';
+import {bulkNativeFixture,importFile,importReport,importItem,authoredImportScore,selectImportFiles} from './bulk-import-fixtures.js';
 import {getAppI18n} from '../web/app-locale.js';
 import {IMPORT_COPY,IMPORT_ERROR_KEYS} from '../web/bulk-import-view.js';
 
@@ -126,4 +126,52 @@ test('reviewing an already retained original describes this preview without deny
   await ready(app);selectImportFiles(app,[file]);await app.until(()=>reviewed(app));await app.click('bulk-import-save');await settled(app);selectImportFiles(app,[file]);await app.until(()=>reviewed(app)&&app.document.querySelector('[data-import-file]').dataset.phase==='ready'&&app.document.querySelector('[data-import-archive]'));
   assert.equal(server.originals.size,1);assert.match(app.document.querySelector('.bulk-import-source-status').textContent,/This review has not saved the original; earlier retained copies/);assert.match(app.$('bulk-import-history-list').textContent,/再次检查.zip/);getAppI18n(app.document).setLocale('zh-CN');assert.match(app.document.querySelector('.bulk-import-source-status').textContent,/本次检查尚未保存原件；已有保留记录/);
  }finally{await app.close()}
+});
+
+test('invalid single JSON scores retain ordinary validation and preserve the active score and take',async()=>{
+ const server=await bulkNativeFixture(),app=await nativeStorageApp(server);
+ server.setImportRoute(({path,body})=>path==='/api/compile'&&(!body?.parts?.length||body.version!==1)?nativeResponse({error:body?.version===2?'Unsupported score version':'Score must contain at least one part'},400):undefined);
+ try{
+  await ready(app);app.$('count-in').checked=false;await app.click('start-practice');await app.until(()=>app.document.body.dataset.screen==='stage'&&!app.$('play-button').disabled);const key=app.$('keyboard').querySelector('[data-midi="60"]');app.emit(key,'pointerdown',{pointerId:87,button:0});app.emit(key,'pointerup',{pointerId:87});await app.click('play-button');
+  const original=await app.exported('export-button'),take=await app.exported('export-takes');assert.ok(take.passes[0].inputs.length);
+  for(const [name,raw,expected]of [['bad.json','{oops',/Could not read/],['shape.json','{}',/at least one part/],['version.json',JSON.stringify({...original,version:2}),/Unsupported score version/]]){
+   selectImportFiles(app,[importFile(name,raw)]);await app.until(()=>expected.test(app.$('notice').textContent));assert.equal(app.$('bulk-import-dialog').open,false);assert.equal(app.$('play-button').disabled,false);assert.deepEqual(await app.exported('export-button'),original);assert.deepEqual(await app.exported('export-takes'),take);
+  }
+  assert.equal(server.requests.filter(row=>row.path==='/api/library/import/preview').length,0);assert.equal(server.records.size,0);assert.equal(server.originals.size,0);
+ }finally{await app.close()}
+});
+
+test('a rejected single JSON replacement preserves a pending assessment and restores its controls',async()=>{
+ const server=await bulkNativeFixture(),gate=deferred();let assessing=false;
+ server.setImportRoute(async({path,body})=>{if(path==='/api/compile'&&!body?.parts?.length)return nativeResponse({error:'Score must contain at least one part'},400);if(path==='/api/assess'){assessing=true;await gate.promise;return nativeResponse({hits:[],misses:[],extras:[],accuracy_percent:0,mean_abs_error_ms:null})}});
+ const app=await nativeStorageApp(server);
+ try{
+  await ready(app);await app.click('start-listen');await app.until(()=>app.document.body.dataset.screen==='stage'&&!app.$('play-button').disabled);await app.click('play-button');app.$('session-mode').value='practice';app.emit(app.$('session-mode'),'change');await app.until(()=>!app.$('assess-button').disabled);const original=await app.exported('export-button');await app.click('assess-button');await app.until(()=>assessing);assert.equal(app.$('assess-button').disabled,true);
+  selectImportFiles(app,[importFile('invalid.json','{}')]);await app.until(()=>app.$('notice').textContent.includes('at least one part'));assert.equal(app.$('bulk-import-dialog').open,false);gate.resolve();await app.until(()=>!app.$('feedback-results').hidden&&!app.$('assess-button').disabled);assert.deepEqual(await app.exported('export-button'),original);assert.equal(server.requests.filter(row=>row.path==='/api/assess').length,1);assert.equal(server.requests.filter(row=>row.path==='/api/library/import/preview').length,0);
+ }finally{gate.resolve();await app.close()}
+});
+
+test('recognized backup and legacy source JSON envelopes use native review without canonical activation',async()=>{
+ const server=await bulkNativeFixture();server.setImportRoute(({path,body})=>path==='/api/library/import/preview'?nativeResponse(importReport(body,{items:[importItem({status:'retained_nonplayable',playable:false,code:'pack_unsupported',message:'Original synthetic envelope retained for review'})]})):undefined);const app=await nativeStorageApp(server);
+ try{
+  await ready(app);await app.click('start-listen');await app.until(()=>app.document.body.dataset.screen==='stage'&&!app.$('play-button').disabled);await app.click('play-button');const original=await app.exported('export-button'),compiles=server.requests.filter(row=>row.path==='/api/compile').length;
+  for(const format of ['worldmusichub-library-backup','worldmusichub-native-score-backup','worldmusichub-song-pack','worldmusichub-song','private-complete-midi-source-folder','private-complete-midi-collection']){
+   const file=importFile(format+'.json',JSON.stringify({format,version:1,entries:[],imports:{canonical_score:null}}));selectImportFiles(app,[file]);await app.until(()=>reviewed(app)&&app.$('bulk-import-dialog').open&&server.requests.filter(row=>row.path==='/api/library/import/preview').at(-1)?.body===file);assert.equal(app.$('bulk-import-dialog').open,true);assert.equal(server.requests.filter(row=>row.path==='/api/library/import/preview').at(-1).body,file);assert.deepEqual(await app.exported('export-button'),original);app.$('bulk-import-dialog').close();
+  }
+  assert.equal(server.requests.filter(row=>row.path==='/api/compile').length,compiles);assert.equal(server.records.size,0);assert.equal(server.originals.size,0);
+ }finally{await app.close()}
+});
+
+for(const action of ['catalog preview','session activation','free navigation','newer file'])test(`delayed JSON envelope sniff cannot supersede ${action}`,async()=>{
+ const saved=authoredImportScore('newer-library-preview','Newer saved preview'),server=await bulkNativeFixture({scores:[saved]}),gate=deferred(),file=importFile('delayed-backup.json','{"format":"worldmusichub-library-backup","version":1,"entries":[]}');let reading=false;
+ Object.defineProperty(file,'text',{value:async()=>{reading=true;return gate.promise}});const app=await nativeStorageApp(server);
+ try{
+  await ready(app);selectImportFiles(app,[file]);await app.until(()=>reading);
+  if(action==='catalog preview'){app.document.querySelector('[data-library-key]').click();await app.until(()=>app.$('preview-title').textContent===saved.title&&!app.$('start-listen').disabled)}
+  else if(action==='session activation'){await app.click('start-listen');await app.until(()=>app.document.body.dataset.screen==='stage'&&!app.$('play-button').disabled)}
+  else if(action==='free navigation'){await app.click('lobby-home');await app.click('start-free-practice');assert.equal(app.document.body.dataset.screen,'free')}
+  else{const newer=authoredImportScore('newer-file','Newer canonical file');selectImportFiles(app,[importFile('newer.json',JSON.stringify(newer))]);await app.until(()=>app.$('score-title').textContent===newer.title&&server.records.size===2)}
+  const screen=app.document.body.dataset.screen,preview=app.$('song-lobby').dataset.previewId,title=app.$('score-title').textContent;gate.resolve('{"format":"worldmusichub-library-backup","version":1,"entries":[]}');await app.tick();await app.tick();
+  assert.equal(app.$('bulk-import-dialog').open,false);assert.equal(server.requests.filter(row=>row.path==='/api/library/import/preview').length,0);assert.equal(server.originals.size,0);assert.equal(app.document.body.dataset.screen,screen);assert.equal(app.$('song-lobby').dataset.previewId,preview);assert.equal(app.$('score-title').textContent,title);
+ }finally{gate.resolve('{}');await app.close()}
 });

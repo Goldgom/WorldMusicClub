@@ -38,3 +38,29 @@ jobs:
           name: bulk-import-ui-preview-${{ github.sha }}
           path: test-results/bulk-import/
           if-no-files-found: warn
+      - name: Build the real backend for affected checkpoint regressions
+        id: recovery_backend
+        run: cargo build -p practice-server --locked
+      - name: Check invalid single-score routing and assessment ownership
+        if: ${{ !cancelled() && steps.recovery_backend.outcome == 'success' }}
+        run: >-
+          node --test
+          --test-name-pattern='tempo recompiles, export retains canonical JSON|a failed replacement import cannot strand a take'
+          tests/frontend-browser.test.js
+      - name: Check saved sources and compact piano controls
+        if: ${{ !cancelled() && steps.recovery_backend.outcome == 'success' }}
+        env:
+          WMH_ARTIFACT_DIR: ${{ runner.temp }}/worldmusichub-import-recovery
+        run: >-
+          node --test
+          --test-name-pattern='standard MusicXML|real local library preserves|real whole-score semitone preview|MXL .* browser import retains|real no-score Free practice|real initial compact guide|real compact 88-key|normal and free piano share'
+          tests/full-app-browser.test.js
+      - name: Preserve affected-regression evidence without replacing full acceptance
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: import-recovery-browser-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/worldmusichub-import-recovery/
+            /tmp/worldmusichub-mock-failure-*.png
+          if-no-files-found: warn

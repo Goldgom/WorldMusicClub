@@ -45,7 +45,7 @@ function observeNativeReferenceTransport(document, {now=()=>performance.now(),de
     while(rows.length&&(rows.length>=64||rowBytes+bytes>24*1024)){rowBytes-=encoder.encode(JSON.stringify(rows.shift())).length+1;omitted++;}
     if(rowBytes+bytes<=24*1024){rows.push(row);rowBytes+=bytes;}else omitted++;
   }
-  function changed(label){const current=state(),signature=JSON.stringify({...current,positionMs:undefined});if(signature!==lastState){lastState=signature;append(label);}return current;}
+  function changed(label,{checkpoint=false}={}){const current=state(),signature=JSON.stringify({...current,positionMs:undefined});if(checkpoint||signature!==lastState){lastState=signature;append(label);}return current;}
   function observe(event){
     const element=event.target?.closest?.('[id]'),target=text(element?.id||event.target?.localName||'window');
     const control=text(event.target?.closest?.('button')?.id),surface=text(event.target?.closest?.('[data-keyboard-performance]')?.id);
@@ -75,7 +75,9 @@ async function prepareNativeReferenceScoredTake({document,native,click,closeDial
     await until(()=>document.body.dataset.screen==='stage'&&!$('play-button').disabled,'resumed score stage');
     if($('sound-button').getAttribute('aria-pressed')!=='true')click('sound-button');
     click('settings-button');$('session-mode').value='practice';$('session-mode').dispatchEvent(new Event('change',{bubbles:true}));$('count-in').checked=false;closeDialogs();
-    await until(()=>!$('play-button').disabled,'score practice ready');const initialPosition=trace.changed('ready').positionMs;
+    // Readiness is a required evidence boundary even when an event callback
+    // already sampled the same state; ordinary polling remains deduplicated.
+    await until(()=>!$('play-button').disabled,'score practice ready');const initialPosition=trace.changed('ready',{checkpoint:true}).positionMs;
     stage='transport-start';await native('click',$('play-button'));
     // The actual native key is never sent merely because the OS helper returned.
     // Require its trusted Play click and observable recorder/clock admission.

@@ -3,6 +3,22 @@ import {readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {keyboardBrowserScore} from './browser-input-fixtures.js';
 
+export async function readBeginnerHelpGeometry(page,prefix='') {
+  return page.evaluate(prefix=>{
+    const panel=document.getElementById(`${prefix}beginner-controls`),body=panel.querySelector('.beginner-help-body');
+    const rect=node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
+    const control=node=>{const r=rect(node),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return{id:node.id||node.tagName,rect:r,hit:node===hit||node.contains(hit),hitTarget:hit?.id||hit?.className||hit?.tagName||null};};
+    return{prefix,viewport:{width:innerWidth,height:innerHeight},heading:rect(panel.closest('.piano-workspace-heading')),body:rect(body),open:panel.querySelector('details').open,
+      controls:[...panel.querySelectorAll('summary,input,select')].filter(node=>node.getBoundingClientRect().width>0&&node.getBoundingClientRect().height>0).map(control)};
+  },prefix);
+}
+export function assertBeginnerHelpGeometry(proof) {
+  assert.equal(proof.open,true);
+  assert.ok(proof.body.y>=proof.heading.bottom+3,'Expanded guide starts below the complete heading, so its opener stays uncovered');
+  assert.ok(proof.body.x>=0&&proof.body.right<=proof.viewport.width+1&&proof.body.bottom<=proof.viewport.height+1,`Expanded guide stays in the viewport: ${JSON.stringify(proof)}`);
+  for(const control of proof.controls)assert.equal(control.hit,true,`Open guide keeps ${control.id} clickable: ${JSON.stringify(proof)}`);
+}
+
 // Registration only: the host suite owns its already-authorized real browser,
 // Rust server, fixtures and lifecycle. Importing this module launches nothing.
 export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForTitle, exportScore, exportTakeData, closeShellPanels, artifactDirectory}) {
@@ -113,10 +129,11 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
   async function compactStageGeometry(page) {
     return page.evaluate(()=>{
       const rect=element=>{const r=element.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
-      const control=selector=>{const element=document.querySelector(selector),r=rect(element),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return{selector,...r,reachable:element===hit||element.contains(hit)};};
+      const control=selector=>{const element=document.querySelector(selector),r=rect(element),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return{selector,...r,reachable:element===hit||element.contains(hit),hitTarget:hit?.id||hit?.className||hit?.tagName||null};};
       const canvas=document.querySelector('#falling-notes'),r=canvas.getBoundingClientRect();let top=Math.max(0,r.top),bottom=Math.min(innerHeight,r.bottom),left=Math.max(0,r.left),right=Math.min(innerWidth,r.right);
       for(let ancestor=canvas.parentElement;ancestor;ancestor=ancestor.parentElement){const css=getComputedStyle(ancestor),box=ancestor.getBoundingClientRect();if(/auto|hidden|scroll|clip/.test(css.overflowY)){top=Math.max(top,box.top+ancestor.clientTop);bottom=Math.min(bottom,box.top+ancestor.clientTop+ancestor.clientHeight);}if(/auto|hidden|scroll|clip/.test(css.overflowX)){left=Math.max(left,box.left+ancestor.clientLeft);right=Math.min(right,box.left+ancestor.clientLeft+ancestor.clientWidth);}}
-      return{viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},canvas:{...rect(canvas),visibleHeight:Math.max(0,bottom-top),visibleWidth:Math.max(0,right-left)},keybed:rect(document.querySelector('#keyboard')),stage:rect(document.querySelector('#workspace')),play:rect(document.querySelector('.play-panel')),overlay:rect(document.querySelector('#notation-lane-overlay')),overlayInLane:Boolean(document.querySelector('#notation-lane-overlay').closest('.piano-lanes-shared')),panControls:document.querySelector('.keyboard-pan').hidden?[]:['#keyboard-pan-left','#keyboard-pan-right'].map(control),controls:['#beginner-enabled','#beginner-controls summary','#keyboard-compact-status','#reset-button','#play-button','#sound-button'].map(control),stagePanel:document.querySelector('#beginner-controls').parentElement.className,range:document.querySelector('#keyboard-compact-status').textContent};
+      const notice=document.querySelector('#notice'),controls=['#beginner-enabled','#beginner-controls summary','#keyboard-compact-status','#reset-button','#play-button','#sound-button'];if(!notice.hidden)controls.push('#notice-dismiss');
+      return{viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},canvas:{...rect(canvas),visibleHeight:Math.max(0,bottom-top),visibleWidth:Math.max(0,right-left)},keybed:rect(document.querySelector('#keyboard')),stage:rect(document.querySelector('#workspace')),heading:rect(document.querySelector('.stage-hud')),notice:notice.hidden?null:rect(notice),transport:rect(document.querySelector('.piano-compact-transport')),play:rect(document.querySelector('.play-panel')),overlay:rect(document.querySelector('#notation-lane-overlay')),overlayInLane:Boolean(document.querySelector('#notation-lane-overlay').closest('.piano-lanes-shared')),panControls:document.querySelector('.keyboard-pan').hidden?[]:['#keyboard-pan-left','#keyboard-pan-right'].map(control),controls:controls.map(control),stagePanel:document.querySelector('#beginner-controls').parentElement.className,range:document.querySelector('#keyboard-compact-status').textContent};
     });
   }
   function assertCompactStage(layout) {
@@ -125,6 +142,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
     assert.ok(layout.keybed.height>=70);assert.equal(layout.overlayInLane,true);assert.ok(Math.min(layout.overlay.right,layout.canvas.right)-Math.max(layout.overlay.x,layout.canvas.x)>=250&&Math.min(layout.overlay.bottom,layout.canvas.bottom)-Math.max(layout.overlay.y,layout.canvas.y)>=100,'Notation occupies the actual falling-lane background');
     for(const control of [...layout.controls,...layout.panControls])assert.ok(control.width>0&&control.height>0&&control.x>=0&&control.y>=0&&control.right<=layout.viewport.width+1&&control.bottom<=layout.viewport.height+1&&control.reachable,`Compact control remains visible and clickable: ${JSON.stringify(control)}`);
     for(const control of layout.panControls)assert.ok(control.width>=40&&control.height>=34,`Compact panning retains its full arrow target: ${JSON.stringify(control)}`);
+    if(layout.notice)assert.ok(layout.controls.find(control=>control.selector==='#notice-dismiss').height>=34,'Compact notices keep their existing dismissal target');
     assert.equal(layout.stagePanel,'stage-heading');assert.match(layout.range,/C2.*A♯5/);
   }
 
@@ -150,15 +168,21 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
       assert.equal(await page.locator('#beginner-enabled').isVisible(),true);
       if(viewport.height<600){const layout=await compactStageGeometry(page);assertCompactStage(layout);layouts.push(layout);}
     }
-    const help=page.locator('#beginner-controls details');await help.locator('summary').click();
-    assert.equal(await page.locator('#beginner-help').isVisible(),true);assert.equal(await page.locator('#beginner-numbered-mode').isVisible(),true);assert.equal(await page.locator('#beginner-reference').isVisible(),true);
-    await help.locator('summary').click();await page.locator('#beginner-enabled').uncheck();await page.locator('#beginner-enabled').check();
+    const help=page.locator('#beginner-controls details'),helpCycles=[];
+    for(let cycle=0;cycle<2;cycle++){
+      await help.locator('summary').click();
+      assert.equal(await page.locator('#beginner-help').isVisible(),true);assert.equal(await page.locator('#beginner-numbered-mode').isVisible(),true);assert.equal(await page.locator('#beginner-reference').isVisible(),true);
+      const proof=await readBeginnerHelpGeometry(page);helpCycles.push(proof);await artifact('live-beginner-initial-compact-help',{helpCycles});assertBeginnerHelpGeometry(proof);
+      if(cycle===0&&artifactDirectory)await page.screenshot({path:join(artifactDirectory,'worldmusichub-beginner-initial-compact-help.png'),fullPage:false,animations:'disabled'});
+      await help.locator('summary').click();assert.equal(await help.evaluate(node=>node.open),false);assert.equal(await page.locator('#beginner-help').isVisible(),false);
+    }
+    await page.locator('#beginner-enabled').uncheck();await page.locator('#beginner-enabled').check();
     assert.equal(await page.locator('#keyboard [data-midi="60"]').getAttribute('aria-pressed'),'true');
     await page.keyboard.up('r');await page.locator('#play-button').click();
     const take=await exportTakeData();assert.deepEqual(take.passes.at(-1).inputs.map(input=>input.midi),[60]);
     assert.deepEqual(take.input_evidence.events.filter(event=>['note_on','note_off','synthetic_release'].includes(event.kind)).map(event=>event.kind),['note_on','note_off']);
     assert.deepEqual(await exportScore(),score);
-    await artifact('beginner-initial-compact',{off,on,layouts,resizes,score_preserved:true,contacts:['note_on','note_off']});
+    await artifact('beginner-initial-compact',{off,on,layouts,resizes,helpCycles,score_preserved:true,contacts:['note_on','note_off']});
   });
 
   test('real compact 88-key and custom extreme guides retain every octave dot beside the unchanged falling-note field',{timeout:60_000},async()=>{
@@ -176,7 +200,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
         await ui('#custom-key-count').fill('128');await ui('#custom-lowest').fill('C-1');await ui('#instrument-apply').click();
       }
       await page.waitForFunction(midi=>Boolean(document.querySelector(`#keyboard [data-midi="${midi}"] .beginner-note-label`)),configuration.midis.at(-1));await closeShellPanels();
-      const layout=await compactStageGeometry(page);assertCompactStage(layout);assert.equal(layout.panControls.length,2,'Every wide keyboard keeps both visible pan arrows');const labels=[];
+      const layout=await compactStageGeometry(page);await artifact(`live-beginner-compact-extremes-${configuration.count}`,{configuration,layout});assertCompactStage(layout);assert.equal(layout.panControls.length,2,'Every wide keyboard keeps both visible pan arrows');const labels=[];
       for(const midi of configuration.midis){
         const selector=`#keyboard [data-midi="${midi}"]`,actual=await glyph(page,selector),octave=Math.floor(midi/12)-5;
         assertGlyph(actual,{midi,tone:['1','♯1','2','♯2','3','4','♯4','5','♯5','6','♯6','7'][midi%12],above:'•\n'.repeat(Math.max(0,octave)).trim(),below:'•\n'.repeat(Math.max(0,-octave)).trim()});

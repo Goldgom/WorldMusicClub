@@ -14,6 +14,7 @@ import {openScoreStorage} from './native-score-storage.js';
 import {ScoreStorageModel,createImportPersistenceTicket,buildSongList,loadSongListItem} from './score-storage-model.js';
 import {setupScoreStorageView,setupScoreStorageLobbyStatus,describePersistenceResult} from './score-storage-view.js';
 import {setupBulkImportView} from './bulk-import-view.js';
+import {isImportEnvelope} from './bulk-import.js';
 import {setupPerformanceView,FIELD_COLORS,previewMusicMetadata} from './performance-view.js';
 import {renderPianoKeybed,renderPianoRails,pianoMinimumWidth} from './piano-stage-view.js';
 import {setupGuitarGuidance} from './guitar-guidance.js';
@@ -1079,8 +1080,10 @@ $('score-file').addEventListener('change', async event => {
   const intent = ++state.loadIntent;cancelCatalogSelection();state.compileController?.abort();
   let initialText;
   if(/\.json$/i.test(file.name)){
-    try{initialText=await file.text();if(selection!==fileSelectionVersion)return;const value=JSON.parse(initialText);if(value?.version!==1||!Array.isArray(value?.parts)){void bulkImportView.select(files);return}}catch{/* Ordinary malformed JSON keeps the existing explicit source error. */}
-    if(selection!==fileSelectionVersion)return;
+    const previewVersion=preview.version,navigation=scoreSaveNavigation;
+    const current=()=>selection===fileSelectionVersion&&intent===state.loadIntent&&previewVersion===preview.version&&navigation===scoreSaveNavigation;
+    try{initialText=await file.text();if(!current())return;const value=JSON.parse(initialText);if(isImportEnvelope(value)){void bulkImportView.select(files);return}}catch{/* Ordinary malformed JSON keeps the existing explicit source error. */}
+    if(!current())return;
   }
   const persistenceTicket=createImportPersistenceTicket('file-import');
   const guidance=unsupportedImportHint(file.name,i18n);if(guidance){notice(() => unsupportedImportHint(file.name,i18n),true);return}

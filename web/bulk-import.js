@@ -6,7 +6,8 @@ const issue=(code,message,persistence='not-saved')=>Object.assign(new Error(mess
 const failure=error=>({code:error?.code||'pack_request_failed',message:error?.message||String(error),persistence:error?.persistence||'not-saved'});
 const isZip=name=>/\.(zip|wmhpack)$/i.test(name);
 export const isImportOutcomeUnconfirmed=item=>item?.status==='error'&&item.code==='library_commit_uncertain';
-export function isImportEnvelope(value){return ['worldmusichub-library-backup','worldmusichub-native-score-backup','worldmusichub-song-pack'].includes(value?.format)}
+// Recognized metadata enters review too; Rust may retain it as nonplayable.
+export function isImportEnvelope(value){return ['worldmusichub-library-backup','worldmusichub-native-score-backup','worldmusichub-song-pack','worldmusichub-song','private-complete-midi-source-folder','private-complete-midi-collection'].includes(value?.format)}
 function checkFile(file){
  const limit=isZip(file.name)?BULK_IMPORT_LIMITS.zipBytes:/\.json$/i.test(file.name)?BULK_IMPORT_LIMITS.backupBytes:BULK_IMPORT_LIMITS.fileBytes;
  if(!Number.isSafeInteger(file.size)||file.size<1)throw issue('pack_empty_file','The selected file is empty or unreadable.');

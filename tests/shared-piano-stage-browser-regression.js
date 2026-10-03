@@ -4,6 +4,7 @@ import {join} from 'node:path';
 import {originalAboveKeyboardScore} from './above-keyboard-browser-regression.js';
 import {compareScreenshotPixels} from './browser-png-evidence.js';
 import {contrastRatio} from '../web/themes.js';
+import {readBeginnerHelpGeometry,assertBeginnerHelpGeometry} from './beginner-browser-regression.js';
 
 export const settlePianoPaint=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))));
 
@@ -30,10 +31,10 @@ async function readCompactPianoHeading(page,mode){
   return page.evaluate(mode=>{
     const prefix=mode==='free'?'free-':'',heading=document.querySelector(mode==='free'?'.free-practice-heading':'.stage-hud'),panel=document.getElementById(`${prefix}beginner-controls`);
     const rect=node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
-    const control=node=>{const r=rect(node),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return{id:node.id||node.tagName,rect:r,hit:hit===node||node.contains(hit)};};
+    const control=node=>{const r=rect(node),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return{id:node.id||node.tagName,rect:r,hit:hit===node||node.contains(hit),hitTarget:hit?.id||hit?.className||hit?.tagName||null};};
     const label=panel.querySelector('.beginner-toggle-label'),help=panel.querySelector('summary'),title=document.getElementById(mode==='free'?'free-practice-title':'stage-title');
     const controls=[...heading.querySelectorAll('button,input,summary')].filter(node=>node.getBoundingClientRect().width>0&&node.getBoundingClientRect().height>0).map(control);
-    return{mode,locale:document.documentElement.lang,viewport:{width:innerWidth,height:innerHeight},heading:rect(heading),title:rect(title),track:rect(panel.parentElement),panel:rect(panel),label:rect(label),help:rect(help),glyphs:[...panel.querySelectorAll('.beginner-short-label')].map(rect),controls,resume:mode==='free'?rect(document.getElementById('rhythm-free-resume')):null};
+    return{mode,locale:document.documentElement.lang,viewport:{width:innerWidth,height:innerHeight},heading:rect(heading),navigation:rect(heading.querySelector('nav')),title:rect(title),track:rect(panel.parentElement),panel:rect(panel),label:rect(label),help:rect(help),glyphs:[...panel.querySelectorAll('.beginner-short-label')].map(rect),controls,resume:mode==='free'?rect(document.getElementById('rhythm-free-resume')):null};
   },mode);
 }
 function assertCompactPianoHeading(proof){
@@ -42,8 +43,12 @@ function assertCompactPianoHeading(proof){
   assert.ok(proof.title.right<=proof.panel.x+1,'Title and guide use separate grid cells');
   assert.ok(proof.label.right<=proof.help.x+1,'Guide label and help retain separate readable bounds');
   assert.ok(proof.glyphs.every(glyph=>glyph.width>0&&glyph.height>0&&inside(glyph,proof.panel)),'Every rendered beginner label remains inside its guide');
-  if(proof.resume)assert.ok(proof.panel.right<=proof.resume.x+1,'Free guide does not cover any part of Return to stage');
-  for(const control of proof.controls){assert.ok(inside(control.rect,{x:0,y:0,right:proof.viewport.width,bottom:proof.viewport.height}),`${control.id} stays inside the viewport`);assert.equal(control.hit,true,`${proof.locale} ${proof.mode} ${control.id} receives its own pointer hit`);}
+  if(proof.resume){assert.ok(proof.panel.right<=proof.resume.x+1,'Free guide does not cover any part of Return to stage');assert.ok(proof.resume.right<=proof.navigation.x+1,'Session tools reserve their own track after Return to stage');}
+  for(const control of proof.controls){assert.ok(inside(control.rect,{x:0,y:0,right:proof.viewport.width,bottom:proof.viewport.height}),`${control.id} stays inside the viewport`);assert.equal(control.hit,true,`${proof.locale} ${proof.mode} ${control.id} receives its own pointer hit: ${JSON.stringify(control)}`);}
+  for(let index=0;index<proof.controls.length;index++)for(const other of proof.controls.slice(index+1)){
+    const a=proof.controls[index].rect,b=other.rect,overlap=Math.max(0,Math.min(a.right,b.right)-Math.max(a.x,b.x))*Math.max(0,Math.min(a.bottom,b.bottom)-Math.max(a.y,b.y));
+    assert.ok(overlap<1,`Heading controls never overlap: ${proof.controls[index].id}, ${other.id}: ${JSON.stringify(proof)}`);
+  }
   const toggle=proof.controls.find(control=>control.id===(proof.mode==='free'?'free-beginner-enabled':'beginner-enabled'));
   assert.ok(toggle.rect.width>=18&&toggle.rect.height>=18,'The actual checkbox target is not reduced');assert.ok(proof.help.width>=20&&proof.help.height>=20,'The actual help target is not reduced');
 }
@@ -200,9 +205,14 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,read
       await page.locator('#rhythm-stage-free').click();await settlePianoPaint(page);
       const free=await readCompactPianoHeading(page,'free');
       await page.screenshot({path:join(artifactDirectory,`worldmusichub-compact-heading-${locale}-${width}x390-free.png`),fullPage:false,animations:'disabled'});
-      compactHeaderProof.push({normal,free});await writeFile(join(artifactDirectory,'worldmusichub-compact-heading-bounds.json'),JSON.stringify(compactHeaderProof,null,2));assertCompactPianoHeading(free);
-      const checkbox=page.locator('#free-beginner-enabled'),before=await checkbox.isChecked();await checkbox.click();assert.equal(await checkbox.isChecked(),!before);await checkbox.click();assert.equal(await checkbox.isChecked(),before);
-      const help=page.locator('#free-beginner-controls summary');await help.click();assert.equal(await page.locator('#free-beginner-controls details').evaluate(node=>node.open),true);await help.click();
+      compactHeaderProof.push({normal,free});await writeFile(join(artifactDirectory,'worldmusichub-live-compact-heading-bounds.json'),JSON.stringify(compactHeaderProof,null,2));assertCompactPianoHeading(free);
+      const checkbox=page.locator('#free-beginner-enabled'),before=await checkbox.isChecked(),helpCycles=[];
+      for(const enabled of [!before,before]){
+        await checkbox.click();assert.equal(await checkbox.isChecked(),enabled);
+        const help=page.locator('#free-beginner-controls summary');await help.click();
+        const proof=await readBeginnerHelpGeometry(page,'free-');helpCycles.push({enabled,...proof});await writeFile(join(artifactDirectory,`worldmusichub-live-compact-help-${locale}-${width}x390-free.json`),JSON.stringify(helpCycles,null,2));assertBeginnerHelpGeometry(proof);
+        await help.click();assert.equal(await page.locator('#free-beginner-controls details').evaluate(node=>node.open),false);
+      }
       await page.locator('#rhythm-free-resume').click();assert.equal(await page.locator('body').getAttribute('data-screen'),'stage');
     }
     await page.setViewportSize({width:1280,height:720});await ui('#theme-mode').selectOption('light');await closeShellPanels();

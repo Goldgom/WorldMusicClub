@@ -3,7 +3,7 @@
 .piano-workspace{--piano-toolbar-height:56px;--piano-lane-height:max(100px,calc(clamp(300px,50dvh,580px) - var(--piano-notice-space,0px)));--piano-key-height:clamp(110px,17dvh,170px);--piano-field:#142333;--piano-field-end:#1d3b4b;--piano-ink:#e0effc;--piano-pressed:#7bced7;--piano-pressed-black:#64598e}
 .game-shell #workspace.piano-workspace,.game-shell #free-practice-screen.piano-workspace{display:flex;flex-direction:column;align-items:stretch;gap:10px;max-width:none;width:100%;margin:0;padding:12px 18px 16px;overflow:auto;min-height:0;flex:1}
 .game-shell .piano-workspace>*{flex:none;min-width:0}
-.game-shell .piano-workspace .piano-workspace-heading{display:flex;align-items:center;gap:12px;min-height:46px;margin:0;padding:0;flex-wrap:nowrap}
+.game-shell .piano-workspace .piano-workspace-heading{position:relative;display:flex;align-items:center;gap:12px;min-height:46px;margin:0;padding:0;flex-wrap:nowrap}
 .game-shell .piano-workspace .piano-workspace-heading .stage-heading{flex:1;min-width:100px}
 .game-shell .piano-workspace .piano-workspace-heading h1{font-size:20px;line-height:1.3;font-weight:650;letter-spacing:0;margin:0;color:var(--page-ink)}
 .game-shell .piano-workspace .piano-workspace-heading nav{display:flex;align-items:center;gap:5px;min-width:0}
@@ -138,6 +138,10 @@
 /* The physical-key footer is one existing view, moved between mode hosts. */
 .game-shell :is(#workspace,#free-practice-screen).piano-workspace .keyboard-footer.keyboard-input-footer{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:.35rem .65rem;padding:5px 12px;background:var(--paper);color:var(--ink);border-bottom:1px solid var(--border)}
 .game-shell .piano-workspace .stage-heading>.keyboard-compact-status{grid-column:1/-1;justify-self:start}
+/* Anchor the disclosure below the complete heading, including its metadata.
+   A viewport-fixed top can cover the opener when a notice moves the heading. */
+.game-shell .piano-workspace .stage-heading:has(>.beginner-controls-compact){position:static}
+.game-shell .piano-workspace .beginner-controls-compact .beginner-help-body{position:absolute;left:0;top:calc(100% + 4px);max-height:50dvh}
 @media(max-width:650px){.game-shell :is(#workspace,#free-practice-screen).piano-workspace .keyboard-footer.keyboard-input-footer{grid-template-columns:minmax(0,1fr) auto}}
 
 /* Keep the lane's viewing time useful on laptop and portrait screens. The
@@ -154,7 +158,7 @@
  .game-shell .piano-workspace .piano-workspace-heading .stage-heading{min-width:140px}
  .game-shell .piano-workspace .piano-workspace-heading .stage-heading:has(>.beginner-controls-compact){min-width:min-content}
  .game-shell .piano-workspace .piano-workspace-heading nav{flex:1 1 310px;flex-wrap:nowrap;gap:3px}
- .game-shell .piano-workspace .piano-workspace-heading nav .button{font-size:11px;padding-left:5px;padding-right:5px}
+ .game-shell .piano-workspace .piano-workspace-heading nav .button{flex:1;min-width:0;white-space:normal;font-size:11px;padding-left:5px;padding-right:5px}
  .game-shell .piano-workspace #rhythm-stage-free{max-width:80px;font-size:11px}
 }
 /* Guitar retains the original two-column reading surface, independently of the
@@ -172,6 +176,9 @@
 @media(max-height:600px) and (min-width:651px){
  .piano-workspace{--piano-toolbar-height:40px;--piano-lane-height:max(100px,calc(32dvh + 1px - var(--piano-notice-space,0px)))}
  .game-shell #workspace.piano-workspace,.game-shell #free-practice-screen.piano-workspace{padding-top:4px;padding-bottom:6px;gap:4px}
+ /* Retain the notice and its 34px dismissal target without spending 18px on
+    padding and a gap above it. The lane and extreme guide keybed keep their size. */
+ .game-shell:has(.piano-workspace:not([hidden])) #notice{margin-top:4px;padding-top:2px;padding-bottom:2px}
  .game-shell .piano-stage-shared .piano-stage-toolbar{min-height:40px;padding-top:3px;padding-bottom:3px}
  .game-shell .piano-workspace .performance-status{top:47px}
  .game-shell .piano-workspace .performance-overlay{top:40px}

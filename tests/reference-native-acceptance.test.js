@@ -132,6 +132,25 @@ test('a displayed capture without trusted Windows key receipt is rejected, with 
   assert.equal(error.nativeReferenceTransport.current.captured,'1');assert.equal(error.nativeReferenceTransport.trustedKeyDowns,0);
 });
 
+test('native readiness remains an explicit evidence boundary after an identical lifecycle callback sample',async()=>{
+  const f=transportFixture(),until=f.options.until;
+  f.options.until=async(condition,label)=>{
+    if(label==='score practice ready'){
+      f.emit('blur',f.document.defaultView,{},f.windowListeners);
+      for(const fn of f.deferred.splice(0))fn();
+    }
+    return until(condition,label);
+  };
+  const result=await f.prepareNativeReferenceScoredTake(f.options);
+  const ready=result.rows.filter(row=>row.kind==='ready');
+  assert.equal(ready.length,1,'Independent folder and pack verifiers require the recorded start boundary');
+  assert.equal(ready[0].state.positionMs,0);assert.equal(ready[0].state.phase,'ready');
+  assert.ok(result.rows.some(row=>row.kind==='after-blur'&&row.state.phase==='ready'));
+  assert.ok(result.rows.some(row=>row.state.phase==='capturing'&&row.state.passId===result.current.passId&&row.state.positionMs>ready[0].state.positionMs));
+  assert.equal(result.omitted,0);assert.ok(result.rowBytes<=24*1024);
+  assert.deepEqual(f.actions,[['click','play-button'],['key-r','stage-title'],['click','play-button']]);
+});
+
 test('functional transport diagnostics have finite rows and byte budget and stop observing after cleanup',()=>{
   const f=transportFixture(),trace=f.observeNativeReferenceTransport(f.document,{now:()=>1000,defer:fn=>f.deferred.push(fn)});
   for(let i=0;i<150;i++)f.emit('click',f.ids['play-button']);
