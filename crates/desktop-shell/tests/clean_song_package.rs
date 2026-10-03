@@ -124,7 +124,7 @@ fn complete_package_roundtrips_assets_semantics_and_restart() {
     assert_eq!(clean.metadata_json.as_bytes(), &original["metadata.json"]);
     assert_eq!(clean.score_json.as_bytes(), &original["score.json"]);
     assert!(clean.runtime["notes"].as_array().unwrap().len() > 1);
-    let notation: Value = serde_json::from_str(&loaded.score_json).unwrap();
+    let notation: Value = serde_json::from_str(loaded.score_json.as_deref().unwrap()).unwrap();
     assert!(notation["source"].is_null());
     let asset = request(
         &reopened,

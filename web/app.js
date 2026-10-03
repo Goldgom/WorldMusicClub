@@ -1,10 +1,11 @@
-import {isVsqSong} from './clean-song-package.js';
+import {isVsqSong,isPerformanceSong} from './clean-song-package.js';
 import {CleanSongPlayer,inspectCleanRendition} from './clean-song-player.js';
 import {createCleanSongMedia} from './clean-song-media.js';
 import {setupCleanSongView} from './clean-song-view.js';
 import {cleanErrorText} from './clean-song-text.js';
 import {setupLobbyPreview} from './lobby-preview.js';
 import {setupReferenceListening} from './reference-listening.js';
+import {setupCompletePerformanceListening} from './complete-performance-listening.js';
 import {getAppI18n} from './app-locale.js';
 import {createFreePracticeSession, createFreePracticePreview} from './free-practice.js';
 import {setupFreePracticeView} from './free-practice-view.js';
@@ -118,7 +119,7 @@ let transpositionView = null;
 let externalOmrView = null;
 let notationFollowing = null;
 let writtenCursor = null, writtenCursorStatus = null, writtenCursorRetry = null;
-let sourceArchiveView=null,referenceListening=null,lobbyPreview=null,scoreStorage=null,scoreStorageView=null,bulkImportView=null,fileSelectionVersion=0;
+let sourceArchiveView=null,referenceListening=null,performanceListening=null,lobbyPreview=null,scoreStorage=null,scoreStorageView=null,bulkImportView=null,fileSelectionVersion=0;
 let pendingScoreSaveOwner=null,scoreSaveNavigation=0,noticeRevision=0;
 let midiController=null;
 let freeSession=null,freeView=null,freePreview=null,freeLiveOwner=null,freeLiveStart=0,freeCaptureState='idle',freeRecordInstrument=null,freeClockWall=0,freeWindowFocused=true;
@@ -149,6 +150,7 @@ function refreshFreeTone(){bindText($('free-live-tone'),()=>`${i18n.t('ui.instru
 function changeScreen(screen){
   scoreSaveNavigation++;
   referenceListening?.close();
+  performanceListening?.screenChanged();
   cleanPlayer.stop();activeMedia?.clear();activeMediaKey=null;previewMedia?.clear();previewMediaKey=null;
   if(screen==='stage')syncCleanMedia();else if(screen==='library')renderCleanPreview();
   keyboardInput?.contextChanged('screen_changed');
@@ -160,7 +162,7 @@ function changeScreen(screen){
   keyboardInputView?.setScreen(screen);
   performanceView?.screenChanged(screen);engravedView.surfaceChanged();drawFrame();
 }
-shell=setupGameShell({i18n,pausePlayback,onPanel:name=>{scoreSaveNavigation++;referenceListening?.close();cancelPendingStart();if(name==='results')updateResultsSummary()},onScreen:changeScreen,
+shell=setupGameShell({i18n,pausePlayback,onPanel:name=>{scoreSaveNavigation++;referenceListening?.close();performanceListening?.stop({revokePolicy:true});cancelPendingStart();if(name==='results')updateResultsSummary()},onScreen:changeScreen,
   onNotation:()=>{engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
 const noticeView=setupNoticeView({document,i18n,getScope:()=>state.score?.title});
 lobbyPreview=setupLobbyPreview({document,i18n,allowed:()=>shell.screen()==='library'&&!startingPreview&&!document.hidden&&!document.querySelector('dialog[open]')});
@@ -216,6 +218,7 @@ function silenceHeld(reason = 'application_cleanup', eventWall = performance.now
 function pausePlayback(reason = 'app.paused', evidenceReason = 'pause') {
   lobbyPreview?.stop(['blur','hidden','pagehide'].includes(evidenceReason)?'interrupted':'stopped');
   if(referenceListening?.isOpen()){referenceListening.pause();return;}
+  if(performanceListening?.isActive()){if(['blur','hidden','pagehide'].includes(evidenceReason))performanceListening.stop();else performanceListening.pause();return;}
   state.playTicket++;cleanPlayer.pause();activeMedia?.pause();
   if(shell?.screen()==='free'){freeView?.interrupt(evidenceReason);cleanupFreeInputs(evidenceReason);return;}
   // Opening a panel or browsing an already-paused session is not a new input
@@ -545,7 +548,7 @@ $('instrument-apply').addEventListener('click', () => {
 // Completed intervals and contacts are bounded; an event older than retained
 // history is excluded rather than assigned to a newer recording.
 function syncInputRoute(boundaryWall=performance.now()) {
-  const next=referenceListening?.isOpen()?{kind:'reference'}:shell?.screen()==='free'?{kind:'free',owner:freeSession?.owner() ?? null}:{kind:'score',recorder:state.recorder};
+  const next=referenceInputActive()?{kind:'reference'}:shell?.screen()==='free'?{kind:'free',owner:freeSession?.owner() ?? null}:{kind:'score',recorder:state.recorder};
   // A score reset already discarded its take. Keep only a routing tombstone,
   // so history cannot retain hundreds of obsolete scored evidence buffers.
   if(routedScoreRecorder!==state.recorder){
@@ -788,7 +791,7 @@ function connectPlayable(container) {
   container.addEventListener('keyup', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); releaseNote('accessible-key',event.timeStamp,{inputKind:'on_screen_keyboard',encoding:'key_up'}); } });
 }
 async function togglePlayback() {
-  if(referenceListening?.isOpen())return;
+  if(referenceInputActive())return;
   if (shell.screen()!=='stage' || !state.compiled) return;
   if (transport.running) { pausePlayback(); return; }
   if(state.cleanSong&&!inspectCleanRendition(state.cleanSong).supported){notice(()=>cleanErrorText(i18n.locale,{code:'clean_renderer_unsupported'}),true);return;}
@@ -886,13 +889,14 @@ function updateResultsSummary(pass=chosenPass(),now=performance.now()) {
 function displayChosenPass() {
   showPassAssessment(chosenPass());
 }
-async function waitForReferenceClose(){while(referenceListening?.isOpen())await referenceListening.whenClosed();}
+function referenceInputActive(){return referenceListening?.isOpen()||performanceListening?.isActive();}
+async function waitForReferenceClose(){while(referenceInputActive())await Promise.all([referenceListening?.whenClosed(),performanceListening?.whenClosed()]);}
 async function drainAssessments() {
-  if(state.assessmentBusy||referenceListening?.isOpen())return;
+  if(state.assessmentBusy||referenceInputActive())return;
   const recorder=state.recorder;state.assessmentBusy=true;
   try {
     while(recorder===state.recorder){
-      if(referenceListening?.isOpen())break;
+      if(referenceInputActive())break;
       const pass=recorder.ready(performance.now())[0];if(!pass)break;
       const job=recorder.submit(pass);updateButtons();refreshPassHistory();
       try{
@@ -905,7 +909,7 @@ async function drainAssessments() {
   }finally{if(recorder===state.recorder){state.assessmentBusy=false;updateButtons();refreshPassHistory()}}
 }
 function assess() {
-  if(referenceListening?.isOpen())return;
+  if(referenceInputActive())return;
   if(!state.compiled||state.mode!=='practice')return;
   if(state.compatibility.status!=='ready'){notice(compatibilityNotice(state.compatibility),true);return}
   const played=Boolean(state.recorder.active?.captureEnabled);
@@ -962,7 +966,7 @@ function drawFrame(displayOnly = false) {
     } else if (state.mode==='listen' && position>=duration+80) {transport.finish(duration);silenceHeld('completion',now);updateButtons();bindText($('transport-status'), () => t('app.complete'))}
     else bindText($('transport-status'), () => position < segmentStart ? t('app.countIn', {count:Math.ceil((segmentStart-position)/(60000/(Number($('tempo').value)||100)))}) : state.mode === 'practice' ? t('app.yourTurn', {loop:state.loop?t('app.loopSuffix',{count:state.loopIteration}):''}) : t('app.listening', {loop:state.loop?t('app.loopSuffix',{count:state.loopIteration}):''}));
   }
-  if(displayOnly!==true&&state.mode==='practice'&&!referenceListening?.isOpen()){
+  if(displayOnly!==true&&state.mode==='practice'&&!referenceInputActive()){
     const pass=state.recorder.active;
     if(!transport.running&&!state.loop&&pass&&pass.closedWall!==null&&pass.deadline!==null&&now>=pass.deadline&&!transport.completed){transport.finish(duration);bindText($('transport-status'), () => t('app.complete'));updateButtons()}
     if(state.recorder.ready(now).length)drainAssessments();
@@ -1088,15 +1092,16 @@ $('engraved-button').addEventListener('click', () => {engravedView.show();drawFr
 function setSoundEnabled(enabled){
   if(state.cleanSong&&transport.running)pausePlayback();
   synth.muted=!enabled;if(enabled&&transport.running)synth.unlock().catch(error=>notice(()=>errorDetail(error),true));if(synth.muted){synth.silence();heldAudioTokens.clear();freePreview?.stop('muted');}
-  bindText($('sound-button'),()=>synth.muted?t('app.soundOff'):t('app.soundOn'));$('sound-button').setAttribute('aria-pressed',String(synth.muted));metronome?.updateMute();referenceListening?.soundChanged();
+  bindText($('sound-button'),()=>synth.muted?t('app.soundOff'):t('app.soundOn'));$('sound-button').setAttribute('aria-pressed',String(synth.muted));metronome?.updateMute();referenceListening?.soundChanged();performanceListening?.soundChanged();
   try{freeSession?.configure('sound',enabled);}catch{/* Session reports configuration failures without losing retained input. */}freeView?.render();
 }
 $('sound-button').addEventListener('click',()=>setSoundEnabled(synth.muted));
-$('import-button').addEventListener('click', () => {referenceListening?.close();$('score-file').click();});
-$('mobile-import-button').addEventListener('click', () => {referenceListening?.close();$('score-file').click();});
+$('import-button').addEventListener('click', () => {referenceListening?.close();performanceListening?.stop({revokePolicy:true});$('score-file').click();});
+$('mobile-import-button').addEventListener('click', () => {referenceListening?.close();performanceListening?.stop({revokePolicy:true});$('score-file').click();});
 $('score-file').addEventListener('change', async event => {
   const files=Array.from(event.target.files||[]),file=files[0],selection=++fileSelectionVersion;event.target.value='';if(!file)return;
   referenceListening?.close();
+  performanceListening?.stop({revokePolicy:true});
   // The same visible picker accepts packs and multiple scores. Review owns no
   // active score or take; saving a batch only updates the storage inventory.
   if(files.length>1||/\.(zip|wmhpack)$/i.test(file.name)||(/\.json$/i.test(file.name)&&file.size>8*1024*1024)){void bulkImportView.select(files);return}
@@ -1220,14 +1225,15 @@ function renderPreview(){
   lobbyPreview?.select(preview.value.cleanSong?{status:'empty'}:preview.value);
   renderCleanPreview();
   const value=preview.value,changedIdentity=$('song-lobby').dataset.previewId!==(value.identity||'');$('song-lobby').dataset.previewStatus=value.status;$('song-lobby').dataset.previewId=value.identity||'';
+  const performance=isPerformanceSong(value.cleanSong);
   const item=value.score||rowScore(songRows().find(item=>item.selectionKey===value.identity));
   bindText($('preview-title'), () => item?.title||t('app.chooseScore'));
   bindAttribute($('preview-title'),'title',()=>item?.title||t('app.chooseScore'));
   bindText($('preview-meta'), () => item?t('app.previewMeta', {composer:item.composer||t('app.composerUnknown'),origin:originLabel(item)}):t('app.browseScores'));
   bindAttribute($('preview-meta'),'title',()=>item?t('app.previewMeta',{composer:item.composer||t('app.composerUnknown'),origin:originLabel(item)}):t('app.browseScores'));
-  if($('preview-music-meta'))bindText($('preview-music-meta'), () => previewMusicMetadata(value.compiled?.score||value.score,i18n));
-  bindText($('preview-status'), () => startingPreview?t('app.preparingSession'):['loading','choosing'].includes(value.status)?t('app.preparingPreview'):value.status==='choice'?(i18n.locale==='en'?'Choose base-note instrumental practice to continue':'请选择基础音符器乐练习以继续'):value.status==='error'?(value.errorCode?.startsWith('clean_')?cleanErrorText(i18n.locale,{code:value.errorCode}):t('app.previewError', {detail:originalDetail(value.message)})):value.status==='ready'?t('app.previewReady'):t('app.previewBrowsing'));
-  bindText($('preview-gate'), () => ['choice','choosing'].includes(value.status)?(i18n.locale==='en'?'Full vocal rendering unavailable':'完整歌声渲染不可用'):compatibilityText(value.compatibility));$('preview-gate').classList.toggle('preview-blocked',['blocked','error','dirty'].includes(value.compatibility.status));
+  if($('preview-music-meta'))bindText($('preview-music-meta'), () => performance?(i18n.locale==='en'?'Notation unavailable':'记谱不可用'):previewMusicMetadata(value.compiled?.score||value.score,i18n));
+  bindText($('preview-status'), () => performance?(i18n.locale==='en'?'Complete performance saved · Choose reference listening below':'完整演奏已保存 · 请在下方选择参考聆听'):startingPreview?t('app.preparingSession'):['loading','choosing'].includes(value.status)?t('app.preparingPreview'):value.status==='choice'?(i18n.locale==='en'?'Choose base-note instrumental practice to continue':'请选择基础音符器乐练习以继续'):value.status==='error'?(value.errorCode?.startsWith('clean_')?cleanErrorText(i18n.locale,{code:value.errorCode}):t('app.previewError', {detail:originalDetail(value.message)})):value.status==='ready'?t('app.previewReady'):t('app.previewBrowsing'));
+  bindText($('preview-gate'), () => performance?(i18n.locale==='en'?'Notation, practice targets and grades unavailable':'记谱、练习目标与评分不可用'):['choice','choosing'].includes(value.status)?(i18n.locale==='en'?'Full vocal rendering unavailable':'完整歌声渲染不可用'):compatibilityText(value.compatibility));$('preview-gate').classList.toggle('preview-blocked',['blocked','error','dirty'].includes(value.compatibility.status));
   $('start-listen').disabled=startingPreview||!preview.canStart('listen');$('start-practice').disabled=startingPreview||!preview.canStart('practice');
   const diagnostics=value.compiled?.diagnostics||[];$('preview-notices').hidden=!diagnostics.length;bindText($('preview-notices-title'), () => t('app.previewNotices', {count:diagnostics.length}));$('preview-notice-list').replaceChildren();for(const diagnostic of diagnostics.slice(0,20)){const row=document.createElement('li');bindText(row, () => diagnostic.message);$('preview-notice-list').append(row)}if(diagnostics.length>20){const row=document.createElement('li');bindText(row, () => t('app.moreNotices', {count:diagnostics.length-20}));$('preview-notice-list').append(row)}
   const select=$('preview-part'),signature=JSON.stringify([i18n.revision,Boolean(value.cleanSong),item?.parts?.map(part=>[part.id,part.name])||[]]);
@@ -1311,7 +1317,7 @@ const legacyLibraryButton=$('library-button');legacyLibraryButton.removeAttribut
 bindText(legacyLibraryButton,()=>i18n.locale==='en'?(scoreStorage?.snapshot().kind==='native'?'Legacy browser archives':'Browser archives'):(scoreStorage?.snapshot().kind==='native'?'旧版浏览器收藏':'浏览器收藏管理'));
 scoreStorage=new ScoreStorageModel({openStorage:()=>openScoreStorage({origin:location.origin,validateScore:(score,signal)=>api('/api/compile',score,signal)})});
 bulkImportView=setupBulkImportView({document,i18n,getStorageKind:async()=>(await scoreStorage.storage()).info.kind,
-  onOpen:()=>{scoreSaveNavigation++;state.loadIntent++;state.compileController?.abort();referenceListening?.close();cancelPendingStart();},pausePlayback,
+  onOpen:()=>{scoreSaveNavigation++;state.loadIntent++;state.compileController?.abort();referenceListening?.close();performanceListening?.stop({revokePolicy:true});cancelPendingStart();},pausePlayback,
   onCommitted:async()=>{if(!await scoreStorage.rescan())throw new Error('Saved-song inventory refresh failed.');},
   onBrowse:identity=>{shell.show('library');void selectSongScore(identity);},onDone:()=>shell.show('library'),getSavedEntries:()=>scoreStorage.snapshot().entries});
 $('bulk-import-history-button').addEventListener('click',()=>bulkImportView.open());
@@ -1351,9 +1357,9 @@ notationFollowing = setupNotationFollowing({i18n,getContext:()=>({score:state.sc
   getPlayback:()=>{const position=transport.time(performance.now()),written=writtenCursor?.at(position);return{position:position<(state.loop?.start_ms||0)?-1:position,running:transport.running,written:{...written,entries:displayedWrittenEntries(written),pageAnchor:writtenCursor?.pageAnchor(position,displayedPartId())}}},view:followingView});
 setupJianpuEditor({onImport:importJianpuText,pausePlayback});
 setupJianpuExport({getScore:()=>state.score,pausePlayback,api});
-setupSourceDirectory({pausePlayback,onScoreFile:()=>{referenceListening?.close();$('score-file').click();},onImageFile:()=>$('score-image-file').click(),onExternalOmr:()=>externalOmrView.open()});
+setupSourceDirectory({pausePlayback,onScoreFile:()=>{referenceListening?.close();performanceListening?.stop({revokePolicy:true});$('score-file').click();},onImageFile:()=>$('score-image-file').click(),onExternalOmr:()=>externalOmrView.open()});
 setupImageReview({onImport:(score,signal)=>importReviewedScore('confirmed-image-import',score,signal), pausePlayback, notice,onExternalOmr:imageFile=>externalOmrView.open({imageFile})});
-referenceListening=setupReferenceListening({document,i18n,synth,pausePlayback,onActiveChange:()=>syncInputRoute(),getSoundEnabled:()=>!synth.muted,onSoundChange:setSoundEnabled});
+referenceListening=setupReferenceListening({document,i18n,synth,pausePlayback:()=>{performanceListening?.stop({revokePolicy:true});pausePlayback();},onActiveChange:()=>syncInputRoute(),getSoundEnabled:()=>!synth.muted,onSoundChange:setSoundEnabled});
 sourceArchiveView=setupSourceArchiveView({getContext:()=>({score:state.score,version:state.loadIntent}),pausePlayback});
 externalOmrView = setupExternalOmrReview({api,onActivate:(score,signal,options)=>importReviewedScore('confirmed-omr-import',score,signal,options),pausePlayback,notice,getSourceVersion:()=>state.loadIntent});
 adaptationView = setupAdaptationView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.cleanSong?null:state.score,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
@@ -1385,8 +1391,10 @@ function renderCleanActive(){
 }
 function renderCleanPreview(){
   if(!cleanView)return;const song=preview?.value.cleanSong||null;cleanView.renderPreview(song,preview?.value);
+  performanceListening?.select(song);
   if(previewMediaKey!==song?.identity){previewMediaKey=song?.identity||null;void previewMedia.select(song?.libraryKey,song);}
   const lobby=document.querySelector('.lobby-audition');if(lobby)lobby.hidden=Boolean(song);
+  const options=document.querySelector('.lobby-options');if(options)options.hidden=isPerformanceSong(song);
 }
 function syncCleanMedia(){
   if(!activeMedia)return;const song=state.cleanSong;
@@ -1394,9 +1402,10 @@ function syncCleanMedia(){
   renderCleanActive();
 }
 cleanView=setupCleanSongView({document,i18n,onVsqChoice:()=>preview.chooseVsqPractice(async(song,signal)=>(await scoreStorage.storage()).chooseVsqPractice(song,{signal})),onOpen:()=>pausePlayback(),onTarget:part=>{if(!state.cleanSong||transport.running)return;state.practicePart=part;$('practice-part').value=part;rebuildPracticeScope();resetPlayback();void checkInstrument();},onMute:(part,muted)=>{if(transport.running)return;if(muted)cleanMutedParts.add(part);else cleanMutedParts.delete(part);resetPlayback();},onRange:()=>{$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}});
+performanceListening=setupCompletePerformanceListening({document,i18n,synth,host:$('clean-song-preview'),isVisible:()=>shell.screen()==='library',allowed:()=>!document.hidden&&!document.querySelector('dialog[open]'),onBeforePlay:()=>pausePlayback(),onActiveChange:()=>syncInputRoute(),getSoundEnabled:()=>!synth.muted,onSoundChange:setSoundEnabled});
 const loadCleanAsset=async(key,handle,options)=>(await scoreStorage.storage()).loadAsset(key,handle,options);
 previewMedia=createCleanSongMedia({loadAsset:loadCleanAsset,cover:cleanView.cover,onStatus:value=>cleanView.renderPreviewMedia(value)});
 activeMedia=createCleanSongMedia({loadAsset:loadCleanAsset,background:cleanView.background,video:cleanView.video,onStatus:value=>cleanView.renderMedia(value)});
-window.addEventListener('pagehide',()=>{cleanPlayer.destroy();previewMedia.destroy();activeMedia.destroy();});
+window.addEventListener('pagehide',()=>{cleanPlayer.destroy();performanceListening.stop({revokePolicy:true});previewMedia.destroy();activeMedia.destroy();});
 
 renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); void scoreStorage.start(); loadCatalog();

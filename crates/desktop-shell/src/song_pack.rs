@@ -1002,7 +1002,10 @@ fn check_report_budget(plan: &Plan) -> Result<()> {
                 .map_err(|e| invalid(e.to_string()))?
                 .len();
         }
-        if let Ok(raw) = &c.score {
+        if let Some(package) = &c.clean {
+            let (composer, provenance) = package.catalog_fields()?;
+            budget += serde_json::to_vec(&json!({"title":package.metadata.title,"composer":composer,"score_id":package.metadata.id,"provenance":provenance,"label":c.label.as_ref().unwrap_or(&package.metadata.title)})).map_err(|e|invalid(e.to_string()))?.len()+2048;
+        } else if let Ok(raw) = &c.score {
             let score: score_core::Score =
                 serde_json::from_str(raw).map_err(|e| invalid(e.to_string()))?;
             let retained = score
@@ -1078,25 +1081,37 @@ pub fn import(
         match candidate.score {
             Err(message) => item.message = clipped(&message, 4096),
             Ok(score_json) => {
-                let (score, canonical_hash) = checked_score(&score_json)?;
-                let hash = candidate
-                    .clean
-                    .as_ref()
-                    .map(|p| p.identity.clone())
-                    .unwrap_or(canonical_hash);
-                item.title = if item.derivation.is_some() {
-                    candidate.label.clone().unwrap_or(score.title)
+                let (score_id, score_title, hash) = if let Some(package) = &candidate.clean {
+                    (
+                        package.metadata.id.clone(),
+                        package.metadata.title.clone(),
+                        package.identity.clone(),
+                    )
                 } else {
-                    score.title
+                    let (score, hash) = checked_score(&score_json)?;
+                    (score.id, score.title, hash)
+                };
+                item.title = if item.derivation.is_some() {
+                    candidate.label.clone().unwrap_or(score_title)
+                } else {
+                    score_title
                 };
                 let explicit_practice = candidate
                     .clean
                     .as_ref()
                     .is_some_and(|p| p.profile.as_deref() == Some(score_core::vsq_clean::PROFILE));
-                item.playable = !explicit_practice;
+                let performance_only = candidate.clean.as_ref().is_some_and(|p| {
+                    p.profile.as_deref() == Some(score_core::clean_performance::PROFILE)
+                });
+                item.playable = !explicit_practice && !performance_only;
                 item.status = "ready".into();
                 item.code = "pack_valid_score".into();
-                item.message = "Canonical score validated by Rust".into();
+                item.message = if performance_only {
+                    "Complete performance validated by Rust; canonical notation is unavailable"
+                } else {
+                    "Canonical score validated by Rust"
+                }
+                .into();
                 if let Some(entry) = existing.iter().find(|e| e.content_sha256 == hash) {
                     item.status = "duplicate".into();
                     item.code = "library_duplicate".into();
@@ -1111,13 +1126,13 @@ pub fn import(
                     item.code = "pack_duplicate_in_source".into();
                     item.message = "Duplicate canonical score within this source".into();
                 } else if !keep_both
-                    && (planned_ids.contains(&score.id)
-                        || existing.iter().any(|e| e.score_id == score.id))
+                    && (planned_ids.contains(&score_id)
+                        || existing.iter().any(|e| e.score_id == score_id))
                 {
                     item.status = "conflict".into();
                     item.code = "library_id_conflict".into();
                     item.message="A different edition has this score ID; explicitly keep both to save another edition".into();
-                    item.entry = existing.iter().find(|e| e.score_id == score.id).cloned();
+                    item.entry = existing.iter().find(|e| e.score_id == score_id).cloned();
                 } else if commit && selected.is_none_or(|i| i == index) {
                     let saved = if let Some(package) = &candidate.clean {
                         let folder = item.path.rsplit_once('/').map(|p| p.0).unwrap_or("");
@@ -1146,9 +1161,12 @@ pub fn import(
                             item.entry = Some(entry);
                             item.status = "saved".into();
                             item.code = "pack_saved".into();
-                            item.message =
+                            item.message = if performance_only {
+                                "Saved complete performance with its independent native backup"
+                            } else {
                                 "Saved complete canonical score with its independent native backup"
-                                    .into();
+                            }
+                            .into();
                         }
                         Err(error) => {
                             item.status = match error.code {
@@ -1163,12 +1181,15 @@ pub fn import(
                         }
                     }
                 }
+                if performance_only {
+                    item.message.push_str(" Complete independent performance commands retained for all tracks. Notation and practice targets are unavailable. Listening requires an explicitly selected, fully supported reference receiver.");
+                }
                 if explicit_practice {
                     item.message.push_str(" All authored VSQ tracks and expressions are retained. Choose limited base-note instrumental practice explicitly; every authored note, including Dynamics 0, remains a practice target. Whole-vocal rendering is unsupported.");
                 }
                 if !commit {
                     planned_hashes.insert(hash);
-                    planned_ids.insert(score.id);
+                    planned_ids.insert(score_id);
                 }
             }
         }
@@ -1356,7 +1377,11 @@ fn export_pack(library: &NativeLibrary, bytes: &[u8]) -> Result<http::Response<V
             return Err(invalid("Duplicate song selection"));
         }
         let loaded = library.load(&key)?;
-        expanded += loaded.score_json.len();
+        let raw = loaded
+            .score_json
+            .as_deref()
+            .ok_or_else(|| invalid("Complete performances require clean package export"))?;
+        expanded += raw.len();
         if expanded > MAX_PACK_BYTES {
             return Err(fail(
                 413,
@@ -1370,7 +1395,7 @@ fn export_pack(library: &NativeLibrary, bytes: &[u8]) -> Result<http::Response<V
             .start_file(format!("{folder}/score.json"), options)
             .map_err(|e| invalid(e.to_string()))?;
         archive
-            .write_all(loaded.score_json.as_bytes())
+            .write_all(raw.as_bytes())
             .map_err(native_library::io_error)?;
         let metadata = json!({"format":"worldmusichub-song","version":1,"title":loaded.entry.title,"score":"score.json","sources":[],"media":{},"label":loaded.entry.label});
         archive
@@ -1553,7 +1578,7 @@ fn clean_candidates(
                     path,
                     package.metadata.title.clone(),
                     None,
-                    Ok(package.notation_json.clone()),
+                    Ok(package.index_json().to_string()),
                 );
                 item.clean = Some(package);
                 out.push(item);

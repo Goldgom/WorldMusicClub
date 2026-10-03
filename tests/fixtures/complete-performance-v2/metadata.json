@@ -1,0 +1,42 @@
+{
+  "format": "worldmusichub-song",
+  "id": "authored-performance-consumer",
+  "media": [
+    {
+      "bytes": 24,
+      "id": "authored-stem",
+      "mime": "audio/wav",
+      "offset_ms": 0,
+      "parts": [
+        "midi-t2-c1"
+      ],
+      "path": "media/stem.wav",
+      "rights": {
+        "attribution": "WMH authored integration fixture",
+        "license": "MIT",
+        "status": "original_authored"
+      },
+      "role": "stem",
+      "sha256": "837129b49a411b022c6e05eafb9b7806f6117f79ed569aecb59da564010c7ca1"
+    }
+  ],
+  "rights": {
+    "attribution": "WMH authored integration fixture",
+    "license": "MIT",
+    "status": "original_authored"
+  },
+  "score": {
+    "bytes": 20074,
+    "path": "score.json",
+    "sha256": "94750f98c504fdac22703cfc311e946834c4ccef501d016b143a0bd0bdb551e8"
+  },
+  "sources": [
+    {
+      "bytes": 406,
+      "format": "midi",
+      "sha256": "4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a"
+    }
+  ],
+  "title": "Original complete performance consumer fixture",
+  "version": 2
+}

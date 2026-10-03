@@ -156,7 +156,8 @@ pub struct Inventory {
 #[derive(Debug, Serialize)]
 pub struct LoadedScore {
     pub entry: Entry,
-    pub score_json: String,
+    /// Null for a complete performance that has no proved canonical notation.
+    pub score_json: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clean_package: Option<clean_package::OpenPackage>,
 }
@@ -471,7 +472,7 @@ impl NativeLibrary {
         }
         Ok(LoadedScore {
             entry,
-            score_json,
+            score_json: Some(score_json),
             clean_package: None,
         })
     }
@@ -501,9 +502,13 @@ impl NativeLibrary {
                 "Cannot allocate a new save stage; no existing files were changed",
             )
         })?;
-        write_new(&folder.join("score.json"), loaded.score_json.as_bytes())?;
+        let raw = loaded
+            .score_json
+            .as_deref()
+            .ok_or_else(|| corrupt("Canonical staging requires notation"))?;
+        write_new(&folder.join("score.json"), raw.as_bytes())?;
         let score: score_core::Score =
-            serde_json::from_str(&loaded.score_json).map_err(|error| corrupt(error.to_string()))?;
+            serde_json::from_str(raw).map_err(|error| corrupt(error.to_string()))?;
         if let Some(source) = score.source {
             write_new(&folder.join("source.payload"), source.content.as_bytes())?;
         }
@@ -750,7 +755,7 @@ impl NativeLibrary {
         };
         let loaded = LoadedScore {
             entry: entry.clone(),
-            score_json: request.score_json,
+            score_json: Some(request.score_json),
             clean_package: None,
         };
         // All payloads are synced before either directory becomes visible.
@@ -1140,7 +1145,12 @@ mod concurrency_tests {
         assert_eq!(entries.len(), 2);
         for entry in entries {
             assert_eq!(
-                reopened.load(&entry.key).unwrap().score_json,
+                reopened
+                    .load(&entry.key)
+                    .unwrap()
+                    .score_json
+                    .as_deref()
+                    .unwrap(),
                 expected_scores[entry.score_id.as_str()]
             );
         }

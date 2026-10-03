@@ -129,7 +129,7 @@ pub struct Package {
     pub interpretation_limits: Vec<score_core::vsq_clean::CleanInterpretationLimit>,
     pub metadata_json: String,
     pub score_json: String,
-    pub notation_json: String,
+    pub notation_json: Option<String>,
     pub metadata: Metadata,
     pub identity: String,
     pub bytes: u64,
@@ -137,6 +137,27 @@ pub struct Package {
     pub coverage: Value,
 }
 impl Package {
+    /// Index the actual authoritative payload when no notation exists. Never
+    /// construct a placeholder Score merely to pass canonical-score consumers.
+    pub(crate) fn index_json(&self) -> &str {
+        self.notation_json.as_deref().unwrap_or(&self.score_json)
+    }
+    pub(crate) fn catalog_fields(&self) -> Result<(String, score_core::Provenance)> {
+        if let Some(raw) = &self.notation_json {
+            let (score, _) = checked_score(raw)?;
+            Ok((score.composer, score.provenance))
+        } else {
+            Ok((
+                String::new(),
+                score_core::Provenance {
+                    kind: "user_supplied".into(),
+                    attribution: self.metadata.rights.attribution.clone(),
+                    source_url: None,
+                    license: self.metadata.rights.license.clone(),
+                },
+            ))
+        }
+    }
     pub fn summary(&self) -> Summary {
         Summary {
             version: 2,
@@ -164,7 +185,7 @@ impl Package {
                 })
                 .collect(),
             coverage: self.coverage.clone(),
-            notation_available: true,
+            notation_available: self.notation_json.is_some(),
         }
     }
     fn opened(&self) -> OpenPackage {
@@ -252,58 +273,135 @@ fn parse_inner(
     // This small header is not validation; the selected closed Rust decoder is.
     #[derive(Deserialize)]
     struct Header {
+        format: String,
+        version: u32,
         profile: Option<String>,
+        performance: Option<PerformanceHeader>,
+    }
+    #[derive(Deserialize)]
+    struct PerformanceHeader {
+        profile: String,
     }
     let header: Header = serde_json::from_slice(score_bytes)
         .map_err(|e| invalid(format!("Invalid complete-score header: {e}")))?;
-    let (notation, source, coverage, runtime, profile, capabilities, interpretation_limits) =
-        match header.profile.as_deref() {
-            Some(score_core::vsq_clean::PROFILE) => {
-                let score = score_core::vsq_clean::decode_json(score_bytes).map_err(invalid)?;
-                (
-                    score.notation,
-                    SourceEvidence {
-                        format: score.source.format,
-                        bytes: score.source.bytes,
-                        sha256: score.source.sha256,
-                    },
-                    serde_json::to_value(score.coverage).map_err(|e| invalid(e.to_string()))?,
-                    Value::Null,
-                    Some(score.profile),
-                    Some(score.capabilities),
-                    score.interpretation_limits,
+    if header.format != "worldmusichub-complete-score" {
+        return Err(invalid("Unsupported complete-score format"));
+    }
+    let (
+        id,
+        title,
+        notation,
+        part_ids,
+        source,
+        coverage,
+        runtime,
+        profile,
+        capabilities,
+        interpretation_limits,
+    ) = match (
+        header.version,
+        header.profile.as_deref(),
+        header.performance.as_ref().map(|p| p.profile.as_str()),
+    ) {
+        (1, Some(score_core::vsq_clean::PROFILE), None) => {
+            let score = score_core::vsq_clean::decode_json(score_bytes).map_err(invalid)?;
+            (
+                score.notation.id.clone(),
+                score.notation.title.clone(),
+                Some(score.notation.clone()),
+                score
+                    .notation
+                    .parts
+                    .iter()
+                    .map(|p| p.id.clone())
+                    .collect::<BTreeSet<_>>(),
+                SourceEvidence {
+                    format: score.source.format,
+                    bytes: score.source.bytes,
+                    sha256: score.source.sha256,
+                },
+                serde_json::to_value(score.coverage).map_err(|e| invalid(e.to_string()))?,
+                Value::Null,
+                Some(score.profile),
+                Some(score.capabilities),
+                score.interpretation_limits,
+            )
+        }
+        (1, None, Some("wmh-semantic-midi1-v1")) => {
+            let score = score_core::clean_song::decode_json(score_bytes).map_err(invalid)?;
+            let runtime = if with_runtime {
+                serde_json::to_value(
+                    score_core::clean_song::compile_complete(&score).map_err(invalid)?,
                 )
-            }
-            None => {
-                let score = score_core::clean_song::decode_json(score_bytes).map_err(invalid)?;
-                let runtime = if with_runtime {
-                    serde_json::to_value(
-                        score_core::clean_song::compile_complete(&score).map_err(invalid)?,
-                    )
-                    .map_err(|e| invalid(e.to_string()))?
-                } else {
-                    Value::Null
-                };
-                (
-                    score.notation,
-                    SourceEvidence {
-                        format: score.source.format,
-                        bytes: score.source.bytes,
-                        sha256: score.source.sha256,
-                    },
-                    serde_json::to_value(score.coverage).map_err(|e| invalid(e.to_string()))?,
-                    runtime,
-                    None,
-                    None,
-                    vec![],
+                .map_err(|e| invalid(e.to_string()))?
+            } else {
+                Value::Null
+            };
+            (
+                score.notation.id.clone(),
+                score.notation.title.clone(),
+                Some(score.notation.clone()),
+                score
+                    .notation
+                    .parts
+                    .iter()
+                    .map(|p| p.id.clone())
+                    .collect::<BTreeSet<_>>(),
+                SourceEvidence {
+                    format: score.source.format,
+                    bytes: score.source.bytes,
+                    sha256: score.source.sha256,
+                },
+                serde_json::to_value(score.coverage).map_err(|e| invalid(e.to_string()))?,
+                runtime,
+                None,
+                None,
+                vec![],
+            )
+        }
+        (2, None, Some(score_core::clean_performance::PROFILE)) => {
+            let score = score_core::clean_performance::decode_json(score_bytes).map_err(invalid)?;
+            let runtime = if with_runtime {
+                serde_json::to_value(
+                    score_core::clean_performance::compile_performance(score_bytes)
+                        .map_err(invalid)?,
                 )
-            }
-            Some(_) => return Err(invalid("Unsupported complete-score profile")),
-        };
+                .map_err(|e| invalid(e.to_string()))?
+            } else {
+                Value::Null
+            };
+            (
+                score.id,
+                score.title,
+                None,
+                score
+                    .performance
+                    .parts
+                    .iter()
+                    .map(|p| p.id.clone())
+                    .collect::<BTreeSet<_>>(),
+                SourceEvidence {
+                    format: score.source.format,
+                    bytes: score.source.bytes,
+                    sha256: score.source.sha256,
+                },
+                serde_json::to_value(score.coverage).map_err(|e| invalid(e.to_string()))?,
+                runtime,
+                Some(score_core::clean_performance::PROFILE.to_string()),
+                None,
+                vec![],
+            )
+        }
+        _ => {
+            return Err(invalid(
+                "Unsupported complete-score version/profile combination",
+            ))
+        }
+    };
     if metadata.format != "worldmusichub-song"
         || metadata.version != 2
-        || metadata.id != notation.id
-        || metadata.title != notation.title
+        || metadata.id != id
+        || metadata.title != title
         || metadata.score.path != "score.json"
         || metadata.score.bytes != score_bytes.len() as u64
         || metadata.score.sha256 != digest(score_bytes)
@@ -322,7 +420,6 @@ fn parse_inner(
             "A clean song allows at most 32 declared media assets",
         ));
     }
-    let part_ids: BTreeSet<_> = notation.parts.iter().map(|p| p.id.as_str()).collect();
     let mut paths = BTreeSet::from(["metadata.json".to_string(), "score.json".to_string()]);
     let mut ids = BTreeSet::new();
     let mut singleton_roles = BTreeSet::new();
@@ -425,8 +522,14 @@ fn parse_inner(
     if bytes > MAX_PACKAGE_BYTES {
         return Err(invalid("Complete clean song exceeds 128 MiB"));
     }
-    let notation_json = serde_json::to_string(&notation).map_err(|e| invalid(e.to_string()))?;
-    checked_score(&notation_json)?;
+    let notation_json = notation
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|e| invalid(e.to_string()))?;
+    if let Some(raw) = &notation_json {
+        checked_score(raw)?;
+    }
     // Metadata whitespace is not identity; exact score and every asset digest are.
     let identity = digest(&serde_json::to_vec(&metadata).map_err(|e| invalid(e.to_string()))?);
     let package = Package {
@@ -654,24 +757,22 @@ fn load_folder_mode(folder: &Path, key: &str, asset_only: bool) -> Result<(Entry
     )?)
     .map_err(|e| invalid(e.to_string()))?;
     let package = read_package(&folder.join("package"), asset_only)?;
-    let score: score_core::Score =
-        serde_json::from_str(&package.notation_json).map_err(|e| invalid(e.to_string()))?;
+    let (composer, provenance) = package.catalog_fields()?;
     if entry.library_format_version != 2
         || entry.revision != 1
         || entry.key != key
         || key != format!("song-{}", package.identity)
         || entry.content_sha256 != package.identity
-        || entry.score_bytes != package.notation_json.len()
-        || entry.score_sha256 != digest(package.notation_json.as_bytes())
-        || entry.score_id != score.id
-        || entry.title != score.title
-        || entry.composer != score.composer
+        || entry.score_bytes != package.index_json().len()
+        || entry.score_sha256 != digest(package.index_json().as_bytes())
+        || entry.score_id != package.metadata.id
+        || entry.title != package.metadata.title
+        || entry.composer != composer
         || entry.label.is_empty()
         || entry.label.len() > 1024
         || entry.retained_source.is_some()
         || entry.clean_package.as_ref() != Some(&package.summary())
-        || serde_json::to_value(&entry.provenance).ok()
-            != serde_json::to_value(&score.provenance).ok()
+        || serde_json::to_value(&entry.provenance).ok() != serde_json::to_value(&provenance).ok()
     {
         return Err(invalid(
             "Clean library entry does not describe its complete package",
@@ -887,15 +988,19 @@ fn save_checked(
         error.existing = Some(Box::new(existing.clone()));
         return Err(error);
     }
-    let (score, _) = checked_score(&package.notation_json)?;
+    let (composer, provenance) = package.catalog_fields()?;
     if !keep_both {
-        if let Some(existing) = inventory.entries.iter().find(|e| e.score_id == score.id) {
+        if let Some(existing) = inventory
+            .entries
+            .iter()
+            .find(|e| e.score_id == package.metadata.id)
+        {
             let mut error=fail(409,"library_id_conflict","A different edition has this score ID; explicitly keep both to preserve both packages");
             error.existing = Some(Box::new(existing.clone()));
             return Err(error);
         }
     }
-    let label = label.unwrap_or_else(|| score.title.clone());
+    let label = label.unwrap_or_else(|| package.metadata.title.clone());
     if label.trim().is_empty() || label.len() > 1024 {
         return Err(invalid("Invalid clean song label"));
     }
@@ -905,7 +1010,7 @@ fn save_checked(
             .iter()
             .map(|e| e.score_bytes)
             .sum::<usize>()
-            + package.notation_json.len()
+            + package.index_json().len()
             > super::MAX_LIBRARY_BYTES
     {
         return Err(fail(
@@ -940,11 +1045,11 @@ fn save_checked(
         revision: 1,
         key: key.clone(),
         content_sha256: package.identity.clone(),
-        score_sha256: digest(package.notation_json.as_bytes()),
-        score_bytes: package.notation_json.len(),
-        score_id: score.id,
-        title: score.title,
-        composer: score.composer,
+        score_sha256: digest(package.index_json().as_bytes()),
+        score_bytes: package.index_json().len(),
+        score_id: package.metadata.id.clone(),
+        title: package.metadata.title.clone(),
+        composer,
         label,
         saved_at_unix_ms: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -952,7 +1057,7 @@ fn save_checked(
             .as_millis()
             .try_into()
             .map_err(|_| invalid("Clock overflow"))?,
-        provenance: score.provenance,
+        provenance,
         retained_source: None,
         clean_package: Some(package.summary()),
     };

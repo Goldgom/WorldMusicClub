@@ -91,7 +91,15 @@ fn unified_preview_commit_restart_export_preserves_all_bytes() {
     assert!(report.source.retained);
     assert_eq!(report.inventory.files.len(), 5);
     let entry = report.items[0].entry.as_ref().unwrap();
-    assert_eq!(library.load(&entry.key).unwrap().score_json, raw);
+    assert_eq!(
+        library
+            .load(&entry.key)
+            .unwrap()
+            .score_json
+            .as_deref()
+            .unwrap(),
+        raw
+    );
     drop(library);
     let library = sandbox.library();
     let history: Value =
@@ -199,7 +207,10 @@ fn legacy_retained_midi_recheck_is_explicit_exact_deduplicated_and_append_only()
     assert_eq!(entry.label, "Original retained MIDI");
     assert_eq!(report.items[0].title, entry.label);
     let (expected, _) = score_core::import_midi(&source).unwrap();
-    assert_eq!(loaded.score_json, serde_json::to_string(&expected).unwrap());
+    assert_eq!(
+        loaded.score_json.as_deref().unwrap(),
+        serde_json::to_string(&expected).unwrap()
+    );
     let mut before = Vec::new();
     for area in ["imports", "import-backups"] {
         let folder = sandbox
@@ -253,8 +264,13 @@ fn legacy_retained_midi_recheck_is_explicit_exact_deduplicated_and_append_only()
     );
     assert_eq!(exported.body(), &bytes);
     assert_eq!(
-        library.load(&entry.key).unwrap().score_json,
-        loaded.score_json
+        library
+            .load(&entry.key)
+            .unwrap()
+            .score_json
+            .as_deref()
+            .unwrap(),
+        loaded.score_json.as_deref().unwrap()
     );
     assert_eq!(library.load(&entry.key).unwrap().entry.label, entry.label);
 }
@@ -293,7 +309,12 @@ fn derived_midi_caption_uses_valid_title_only_without_explicit_label_and_never_r
         assert_eq!(report.items[0].title, entry.label);
         assert_eq!(entry.title, canonical.title);
         assert_eq!(
-            library.load(&entry.key).unwrap().score_json,
+            library
+                .load(&entry.key)
+                .unwrap()
+                .score_json
+                .as_deref()
+                .unwrap(),
             serde_json::to_string(&canonical).unwrap()
         );
     }
@@ -367,7 +388,9 @@ fn retained_midi_recheck_never_replaces_supplied_canonical_or_uses_unlisted_sour
         library
             .load(&report.items[0].entry.as_ref().unwrap().key)
             .unwrap()
-            .score_json,
+            .score_json
+            .as_deref()
+            .unwrap(),
         canonical
     );
     for metadata in [
@@ -680,7 +703,9 @@ fn export_unified_pack_roundtrips_exact_canonical_json() {
             .library()
             .load(&report.items[0].entry.as_ref().unwrap().key)
             .unwrap()
-            .score_json,
+            .score_json
+            .as_deref()
+            .unwrap(),
         raw
     );
 }

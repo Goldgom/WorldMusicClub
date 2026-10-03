@@ -1,4 +1,4 @@
-import {isCleanSong} from './clean-song-package.js';
+import {isCleanSong,isPerformanceSong} from './clean-song-package.js';
 /** A browsing candidate never owns, pauses, or replaces the active performance. */
 export class ScorePreview {
   constructor({compile,check,onChange=()=>{}}) { this.compile=compile;this.check=check;this.onChange=onChange;this.version=0;this.controller=null;this.value={status:'empty',score:null,compiled:null,identity:null,part:null,compatibility:{status:'pending',reason:'Choose a score.'}}; }
@@ -11,6 +11,10 @@ export class ScorePreview {
     try {
       const loaded=await load(controller.signal);if(!valid())return false;
       const cleanSong=isCleanSong(loaded?.cleanSong)?loaded.cleanSong:null,score=cleanSong?loaded.score:loaded;
+      if(isPerformanceSong(cleanSong)){
+        this.publish({status:'performance',identity,part:null,cleanSong,score:null,compiled:null,compatibility:{status:'blocked',reason:'Notation and practice targets are unavailable for independent performance events.'}});
+        return valid();
+      }
       if(cleanSong&&part===null)part=cleanSong.notation.parts[0]?.id||null;
       if(cleanSong&&!cleanSong.compilation){this.publish({status:'choice',identity,part,cleanSong,score,compiled:null,compatibility:{status:'pending',reason:'Choose base-note instrumental practice.'}});return valid();}
       const compiled=cleanSong?cleanSong.compilation:await this.compile(score,controller.signal);if(!valid())return false;

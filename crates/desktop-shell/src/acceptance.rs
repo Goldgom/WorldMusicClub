@@ -994,7 +994,15 @@ mod tests {
                 })
                 .unwrap();
             assert_eq!(entry.key, expected_key);
-            assert_eq!(library.load(&entry.key).unwrap().score_json, raw);
+            assert_eq!(
+                library
+                    .load(&entry.key)
+                    .unwrap()
+                    .score_json
+                    .as_deref()
+                    .unwrap(),
+                raw
+            );
         }
     }
     #[test]

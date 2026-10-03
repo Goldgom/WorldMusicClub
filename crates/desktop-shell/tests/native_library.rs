@@ -116,7 +116,15 @@ fn save_restart_scan_load_and_export_keep_exact_json_source_and_rational_time() 
     assert_eq!(inventory.entries.len(), 1);
     assert!(inventory.issues.is_empty());
     assert_eq!(inventory.storage, "native-filesystem");
-    assert_eq!(restarted.load(&entry.key).unwrap().score_json, exact);
+    assert_eq!(
+        restarted
+            .load(&entry.key)
+            .unwrap()
+            .score_json
+            .as_deref()
+            .unwrap(),
+        exact
+    );
     let export = dispatch_with_library(
         request("POST", "/api/library/export", json!({"key":entry.key})),
         &restarted,
@@ -157,8 +165,24 @@ fn content_identity_detects_duplicates_across_json_whitespace_and_requires_expli
     let second = library.save(copy).unwrap();
     assert_ne!(entry.key, second.key);
     assert_eq!(library.list().unwrap().entries.len(), 2);
-    assert_eq!(library.load(&entry.key).unwrap().score_json, original);
-    assert_eq!(library.load(&second.key).unwrap().score_json, changed);
+    assert_eq!(
+        library
+            .load(&entry.key)
+            .unwrap()
+            .score_json
+            .as_deref()
+            .unwrap(),
+        original
+    );
+    assert_eq!(
+        library
+            .load(&second.key)
+            .unwrap()
+            .score_json
+            .as_deref()
+            .unwrap(),
+        changed
+    );
 }
 
 #[test]
@@ -216,7 +240,15 @@ fn interrupted_publish_recovers_only_from_complete_verified_backup() {
         .issues
         .iter()
         .any(|issue| issue.code == "library_incomplete_stages"));
-    assert_eq!(restarted.load(&entry.key).unwrap().score_json, exact);
+    assert_eq!(
+        restarted
+            .load(&entry.key)
+            .unwrap()
+            .score_json
+            .as_deref()
+            .unwrap(),
+        exact
+    );
     assert_eq!(fs::read(stage.join("score.json")).unwrap(), b"partial");
     assert!(!restarted
         .list()
@@ -390,7 +422,12 @@ fn separate_process_restart_probe() {
     assert_eq!(inventory.entries.len(), 1);
     assert!(inventory.issues.is_empty());
     assert_eq!(
-        library.load(&inventory.entries[0].key).unwrap().score_json,
+        library
+            .load(&inventory.entries[0].key)
+            .unwrap()
+            .score_json
+            .as_deref()
+            .unwrap(),
         score_json()
     );
 }
@@ -428,7 +465,12 @@ fn unknown_inert_source_envelopes_and_assets_survive_export_and_restore() {
         .save(save(export["score_json"].as_str().unwrap().to_string()))
         .unwrap();
     assert_eq!(
-        restored.load(&restored_entry.key).unwrap().score_json,
+        restored
+            .load(&restored_entry.key)
+            .unwrap()
+            .score_json
+            .as_deref()
+            .unwrap(),
         exact
     );
     assert_eq!(

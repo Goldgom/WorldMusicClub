@@ -1,4 +1,4 @@
-import {isVsqSong} from './clean-song-package.js';
+import {isVsqSong,isPerformanceSong} from './clean-song-package.js';
 import {inspectCleanRendition} from './clean-song-player.js';
 import {cleanText,cleanFamily,cleanMediaError,cleanCommand} from './clean-song-text.js';
 import {midiName} from './music.js';
@@ -18,6 +18,8 @@ export function setupCleanSongView({document,i18n,onTarget,onMute,onRange,onOpen
   const visuals=make('div',null);visuals.className='clean-song-visuals';const background=make('img','clean-song-background',visuals),video=make('video','clean-song-pv',visuals);background.alt='';background.hidden=true;video.hidden=true;video.muted=true;video.defaultMuted=true;video.playsInline=true;video.autoplay=false;(document.querySelector('#piano-stage .piano-lanes-shared')||document.getElementById('piano-stage')).prepend(visuals);
   let active=null,candidate=null,context=null,media={media:[]},previewMedia={media:[]},choiceState={},partSignature=null;const partControls=new Map();const text=(en,zh)=>cleanText(i18n.locale,en,zh);
   function renderPreview(song,state={}){candidate=song;choiceState=state;preview.hidden=!song;preview.dataset.packageId=song?.identity||'';choice.hidden=!isVsqSong(song);if(!song)return;
+    const performance=isPerformanceSong(song);for(const node of [previewStatus,rendition,tracks])node.hidden=performance;
+    if(performance)return;
     if(isVsqSong(song)){
       previewStatus.textContent=text(`${song.score.authoring.tracks.length} authored tracks · ${song.notation.parts.length} parts · ${song.score.coverage.project.notes} base notes retained`,`${song.score.authoring.tracks.length} 条创作音轨 · ${song.notation.parts.length} 个声部 · 保留 ${song.score.coverage.project.notes} 个基础音符`);
       rendition.textContent=text('Full vocal rendering is unavailable. This package preserves the authored data; it does not reproduce the original singing voice or timbre.','完整歌声渲染不可用。曲包保留完整创作数据，但不复现原歌声或原音色。');

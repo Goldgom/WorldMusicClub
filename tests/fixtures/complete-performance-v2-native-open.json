@@ -1,0 +1,1534 @@
+{
+  "entry": {
+    "library_format_version": 2,
+    "revision": 1,
+    "key": "song-1e7db0530aeadf0b5ed923915df7771b2312a0a7d55cb39271f10d5c462c400d",
+    "content_sha256": "1e7db0530aeadf0b5ed923915df7771b2312a0a7d55cb39271f10d5c462c400d",
+    "score_sha256": "94750f98c504fdac22703cfc311e946834c4ccef501d016b143a0bd0bdb551e8",
+    "score_bytes": 20074,
+    "score_id": "authored-performance-consumer",
+    "title": "Original complete performance consumer fixture",
+    "composer": "",
+    "label": "Original complete performance consumer fixture",
+    "saved_at_unix_ms": 1700000000000,
+    "provenance": {
+      "kind": "user_supplied",
+      "attribution": "WMH authored integration fixture",
+      "source_url": null,
+      "license": "MIT"
+    },
+    "retained_source": null,
+    "clean_package": {
+      "version": 2,
+      "profile": "wmh-performance-midi1-v1",
+      "content_sha256": "1e7db0530aeadf0b5ed923915df7771b2312a0a7d55cb39271f10d5c462c400d",
+      "bytes": 21147,
+      "media": [
+        {
+          "id": "authored-stem",
+          "role": "stem",
+          "mime": "audio/wav",
+          "bytes": 24,
+          "sha256": "837129b49a411b022c6e05eafb9b7806f6117f79ed569aecb59da564010c7ca1",
+          "handle": "asset-83eec49aa796f7dcd4fdb647cbc7527c6260c558ae0f517626e7cd7ef68c5e2f",
+          "parts": [
+            "midi-t2-c1"
+          ],
+          "offset_ms": 0
+        }
+      ],
+      "coverage": {
+        "notation": {
+          "reason": "not_derived_from_independent_events",
+          "represented_attacks": 0,
+          "status": "unavailable"
+        },
+        "performance": {
+          "key_attacks": 20,
+          "key_releases": 20,
+          "represented_events": 74,
+          "source_events": 74,
+          "source_tracks": 11,
+          "status": "complete"
+        },
+        "targets": {
+          "reason": "not_derived_from_independent_events",
+          "represented_attacks": 0,
+          "status": "unavailable"
+        }
+      },
+      "notation_available": false
+    }
+  },
+  "score_json": null,
+  "clean_package": {
+    "version": 2,
+    "profile": "wmh-performance-midi1-v1",
+    "content_sha256": "1e7db0530aeadf0b5ed923915df7771b2312a0a7d55cb39271f10d5c462c400d",
+    "metadata_json": "{\n  \"format\": \"worldmusichub-song\",\n  \"id\": \"authored-performance-consumer\",\n  \"media\": [\n    {\n      \"bytes\": 24,\n      \"id\": \"authored-stem\",\n      \"mime\": \"audio/wav\",\n      \"offset_ms\": 0,\n      \"parts\": [\n        \"midi-t2-c1\"\n      ],\n      \"path\": \"media/stem.wav\",\n      \"rights\": {\n        \"attribution\": \"WMH authored integration fixture\",\n        \"license\": \"MIT\",\n        \"status\": \"original_authored\"\n      },\n      \"role\": \"stem\",\n      \"sha256\": \"837129b49a411b022c6e05eafb9b7806f6117f79ed569aecb59da564010c7ca1\"\n    }\n  ],\n  \"rights\": {\n    \"attribution\": \"WMH authored integration fixture\",\n    \"license\": \"MIT\",\n    \"status\": \"original_authored\"\n  },\n  \"score\": {\n    \"bytes\": 20074,\n    \"path\": \"score.json\",\n    \"sha256\": \"94750f98c504fdac22703cfc311e946834c4ccef501d016b143a0bd0bdb551e8\"\n  },\n  \"sources\": [\n    {\n      \"bytes\": 406,\n      \"format\": \"midi\",\n      \"sha256\": \"4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a\"\n    }\n  ],\n  \"title\": \"Original complete performance consumer fixture\",\n  \"version\": 2\n}",
+    "score_json": "{\"format\":\"worldmusichub-complete-score\",\"version\":2,\"id\":\"authored-performance-consumer\",\"title\":\"Original complete performance consumer fixture\",\"source\":{\"format\":\"midi\",\"bytes\":406,\"sha256\":\"4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a\"},\"notation\":null,\"performance\":{\"profile\":\"wmh-performance-midi1-v1\",\"end\":{\"numerator\":4,\"denominator\":1},\"tracks\":[{\"id\":\"track-1\",\"name\":\"A\",\"source_index\":0,\"source_event_count\":4,\"end\":{\"numerator\":4,\"denominator\":1}},{\"id\":\"track-2\",\"name\":\"B\",\"source_index\":1,\"source_event_count\":7,\"end\":{\"numerator\":4,\"denominator\":1}},{\"id\":\"track-3\",\"name\":\"C\",\"source_index\":2,\"source_event_count\":7,\"end\":{\"numerator\":4,\"denominator\":1}},{\"id\":\"track-4\",\"name\":\"D\",\"source_index\":3,\"source_event_count\":7,\"end\":{\"numerator\":4,\"denominator\":1}},{\"id\":\"track-5\",\"name\":\"E\",\"source_index\":4,\"source_event_count\":7,\"end\":{\"numerator\":4,\"denominator\":1}},{\"id\":\"track-6\",\"name\":\"F\",\"source_index\":5,\"source_event_count\":7,\"end\":{\"numerator\":4,\"denominator\":1}},{\"id\":\"track-7\",\"name\":\"G\",\"source_index\":6,\"source_event_count\":7,\"end\":{\"numerator\":4,\"denominator\":1}},{\"id\":\"track-8\",\"name\":\"H\",\"source_index\":7,\"source_event_count\":7,\"end\":{\"numerator\":4,\"denominator\":1}},{\"id\":\"track-9\",\"name\":\"I\",\"source_index\":8,\"source_event_count\":7,\"end\":{\"numerator\":4,\"denominator\":1}},{\"id\":\"track-10\",\"name\":\"J\",\"source_index\":9,\"source_event_count\":7,\"end\":{\"numerator\":4,\"denominator\":1}},{\"id\":\"track-11\",\"name\":\"K\",\"source_index\":10,\"source_event_count\":7,\"end\":{\"numerator\":4,\"denominator\":1}}],\"parts\":[{\"id\":\"midi-t2-c1\",\"track_id\":\"track-2\",\"channel\":0,\"sound_identity\":\"unspecified_midi_route\"},{\"id\":\"midi-t3-c2\",\"track_id\":\"track-3\",\"channel\":1,\"sound_identity\":\"unspecified_midi_route\"},{\"id\":\"midi-t4-c3\",\"track_id\":\"track-4\",\"channel\":2,\"sound_identity\":\"unspecified_midi_route\"},{\"id\":\"midi-t5-c4\",\"track_id\":\"track-5\",\"channel\":3,\"sound_identity\":\"unspecified_midi_route\"},{\"id\":\"midi-t6-c5\",\"track_id\":\"track-6\",\"channel\":4,\"sound_identity\":\"unspecified_midi_route\"},{\"id\":\"midi-t7-c6\",\"track_id\":\"track-7\",\"channel\":5,\"sound_identity\":\"unspecified_midi_route\"},{\"id\":\"midi-t8-c7\",\"track_id\":\"track-8\",\"channel\":6,\"sound_identity\":\"unspecified_midi_route\"},{\"id\":\"midi-t9-c8\",\"track_id\":\"track-9\",\"channel\":7,\"sound_identity\":\"unspecified_midi_route\"},{\"id\":\"midi-t10-c9\",\"track_id\":\"track-10\",\"channel\":8,\"sound_identity\":\"unspecified_midi_route\"},{\"id\":\"midi-t11-c10\",\"track_id\":\"track-11\",\"channel\":9,\"sound_identity\":\"unspecified_midi_route\"}],\"events\":[{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t0:e0\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":0,\"event\":0},\"command\":{\"kind\":\"text\",\"role\":\"track_name\",\"text\":\"A\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t0:e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":0,\"event\":1},\"command\":{\"kind\":\"tempo\",\"microseconds_per_quarter\":500001}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t0:e2\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":0,\"event\":2},\"command\":{\"kind\":\"meter\",\"numerator\":4,\"denominator\":4,\"clocks_per_click\":24,\"thirty_seconds_per_quarter\":8}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t1:e0\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":1,\"event\":0},\"command\":{\"kind\":\"text\",\"role\":\"track_name\",\"text\":\"B\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t1:e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":1,\"event\":1},\"command\":{\"kind\":\"instrument_program\",\"channel\":0,\"program\":0}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t2:e0\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":2,\"event\":0},\"command\":{\"kind\":\"text\",\"role\":\"track_name\",\"text\":\"C\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t2:e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":2,\"event\":1},\"command\":{\"kind\":\"instrument_program\",\"channel\":1,\"program\":8}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t3:e0\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":3,\"event\":0},\"command\":{\"kind\":\"text\",\"role\":\"track_name\",\"text\":\"D\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t3:e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":3,\"event\":1},\"command\":{\"kind\":\"instrument_program\",\"channel\":2,\"program\":16}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t4:e0\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":4,\"event\":0},\"command\":{\"kind\":\"text\",\"role\":\"track_name\",\"text\":\"E\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t4:e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":4,\"event\":1},\"command\":{\"kind\":\"instrument_program\",\"channel\":3,\"program\":24}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t5:e0\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":5,\"event\":0},\"command\":{\"kind\":\"text\",\"role\":\"track_name\",\"text\":\"F\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t5:e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":5,\"event\":1},\"command\":{\"kind\":\"instrument_program\",\"channel\":4,\"program\":32}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t6:e0\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":6,\"event\":0},\"command\":{\"kind\":\"text\",\"role\":\"track_name\",\"text\":\"G\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t6:e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":6,\"event\":1},\"command\":{\"kind\":\"instrument_program\",\"channel\":5,\"program\":40}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t7:e0\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":7,\"event\":0},\"command\":{\"kind\":\"text\",\"role\":\"track_name\",\"text\":\"H\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t7:e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":7,\"event\":1},\"command\":{\"kind\":\"instrument_program\",\"channel\":6,\"program\":48}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t8:e0\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":8,\"event\":0},\"command\":{\"kind\":\"text\",\"role\":\"track_name\",\"text\":\"I\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t8:e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":8,\"event\":1},\"command\":{\"kind\":\"instrument_program\",\"channel\":7,\"program\":56}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t9:e0\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":9,\"event\":0},\"command\":{\"kind\":\"text\",\"role\":\"track_name\",\"text\":\"J\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t9:e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":9,\"event\":1},\"command\":{\"kind\":\"instrument_program\",\"channel\":8,\"program\":64}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t10:e0\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":10,\"event\":0},\"command\":{\"kind\":\"text\",\"role\":\"track_name\",\"text\":\"K\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t10:e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":10,\"event\":1},\"command\":{\"kind\":\"instrument_program\",\"channel\":9,\"program\":72}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t1:e2\",\"at\":{\"numerator\":1,\"denominator\":3},\"origin\":{\"track\":1,\"event\":2},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":48,\"velocity\":90}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t2:e2\",\"at\":{\"numerator\":1,\"denominator\":3},\"origin\":{\"track\":2,\"event\":2},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t3-c2\",\"channel\":1,\"key\":49,\"velocity\":90}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t3:e2\",\"at\":{\"numerator\":1,\"denominator\":3},\"origin\":{\"track\":3,\"event\":2},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t4-c3\",\"channel\":2,\"key\":50,\"velocity\":90}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t4:e2\",\"at\":{\"numerator\":1,\"denominator\":3},\"origin\":{\"track\":4,\"event\":2},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t5-c4\",\"channel\":3,\"key\":51,\"velocity\":90}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t5:e2\",\"at\":{\"numerator\":1,\"denominator\":3},\"origin\":{\"track\":5,\"event\":2},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t6-c5\",\"channel\":4,\"key\":52,\"velocity\":90}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t6:e2\",\"at\":{\"numerator\":1,\"denominator\":3},\"origin\":{\"track\":6,\"event\":2},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t7-c6\",\"channel\":5,\"key\":53,\"velocity\":90}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t7:e2\",\"at\":{\"numerator\":1,\"denominator\":3},\"origin\":{\"track\":7,\"event\":2},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t8-c7\",\"channel\":6,\"key\":54,\"velocity\":90}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t8:e2\",\"at\":{\"numerator\":1,\"denominator\":3},\"origin\":{\"track\":8,\"event\":2},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t9-c8\",\"channel\":7,\"key\":55,\"velocity\":90}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t9:e2\",\"at\":{\"numerator\":1,\"denominator\":3},\"origin\":{\"track\":9,\"event\":2},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t10-c9\",\"channel\":8,\"key\":56,\"velocity\":90}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t10:e2\",\"at\":{\"numerator\":1,\"denominator\":3},\"origin\":{\"track\":10,\"event\":2},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t11-c10\",\"channel\":9,\"key\":85,\"velocity\":90}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t1:e3\",\"at\":{\"numerator\":2,\"denominator\":3},\"origin\":{\"track\":1,\"event\":3},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":48,\"velocity\":70}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t2:e3\",\"at\":{\"numerator\":2,\"denominator\":3},\"origin\":{\"track\":2,\"event\":3},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t3-c2\",\"channel\":1,\"key\":49,\"velocity\":70}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t3:e3\",\"at\":{\"numerator\":2,\"denominator\":3},\"origin\":{\"track\":3,\"event\":3},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t4-c3\",\"channel\":2,\"key\":50,\"velocity\":70}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t4:e3\",\"at\":{\"numerator\":2,\"denominator\":3},\"origin\":{\"track\":4,\"event\":3},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t5-c4\",\"channel\":3,\"key\":51,\"velocity\":70}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t5:e3\",\"at\":{\"numerator\":2,\"denominator\":3},\"origin\":{\"track\":5,\"event\":3},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t6-c5\",\"channel\":4,\"key\":52,\"velocity\":70}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t6:e3\",\"at\":{\"numerator\":2,\"denominator\":3},\"origin\":{\"track\":6,\"event\":3},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t7-c6\",\"channel\":5,\"key\":53,\"velocity\":70}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t7:e3\",\"at\":{\"numerator\":2,\"denominator\":3},\"origin\":{\"track\":7,\"event\":3},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t8-c7\",\"channel\":6,\"key\":54,\"velocity\":70}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t8:e3\",\"at\":{\"numerator\":2,\"denominator\":3},\"origin\":{\"track\":8,\"event\":3},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t9-c8\",\"channel\":7,\"key\":55,\"velocity\":70}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t9:e3\",\"at\":{\"numerator\":2,\"denominator\":3},\"origin\":{\"track\":9,\"event\":3},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t10-c9\",\"channel\":8,\"key\":56,\"velocity\":70}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t10:e3\",\"at\":{\"numerator\":2,\"denominator\":3},\"origin\":{\"track\":10,\"event\":3},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t11-c10\",\"channel\":9,\"key\":85,\"velocity\":70}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t1:e4\",\"at\":{\"numerator\":1,\"denominator\":1},\"origin\":{\"track\":1,\"event\":4},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":48,\"velocity\":19}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t2:e4\",\"at\":{\"numerator\":1,\"denominator\":1},\"origin\":{\"track\":2,\"event\":4},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t3-c2\",\"channel\":1,\"key\":49,\"velocity\":19}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t3:e4\",\"at\":{\"numerator\":1,\"denominator\":1},\"origin\":{\"track\":3,\"event\":4},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t4-c3\",\"channel\":2,\"key\":50,\"velocity\":19}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t4:e4\",\"at\":{\"numerator\":1,\"denominator\":1},\"origin\":{\"track\":4,\"event\":4},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t5-c4\",\"channel\":3,\"key\":51,\"velocity\":19}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t5:e4\",\"at\":{\"numerator\":1,\"denominator\":1},\"origin\":{\"track\":5,\"event\":4},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t6-c5\",\"channel\":4,\"key\":52,\"velocity\":19}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t6:e4\",\"at\":{\"numerator\":1,\"denominator\":1},\"origin\":{\"track\":6,\"event\":4},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t7-c6\",\"channel\":5,\"key\":53,\"velocity\":19}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t7:e4\",\"at\":{\"numerator\":1,\"denominator\":1},\"origin\":{\"track\":7,\"event\":4},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t8-c7\",\"channel\":6,\"key\":54,\"velocity\":19}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t8:e4\",\"at\":{\"numerator\":1,\"denominator\":1},\"origin\":{\"track\":8,\"event\":4},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t9-c8\",\"channel\":7,\"key\":55,\"velocity\":19}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t9:e4\",\"at\":{\"numerator\":1,\"denominator\":1},\"origin\":{\"track\":9,\"event\":4},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t10-c9\",\"channel\":8,\"key\":56,\"velocity\":19}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t10:e4\",\"at\":{\"numerator\":1,\"denominator\":1},\"origin\":{\"track\":10,\"event\":4},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t11-c10\",\"channel\":9,\"key\":85,\"velocity\":19}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t1:e5\",\"at\":{\"numerator\":4,\"denominator\":3},\"origin\":{\"track\":1,\"event\":5},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":48,\"velocity\":0}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t2:e5\",\"at\":{\"numerator\":4,\"denominator\":3},\"origin\":{\"track\":2,\"event\":5},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t3-c2\",\"channel\":1,\"key\":49,\"velocity\":0}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t3:e5\",\"at\":{\"numerator\":4,\"denominator\":3},\"origin\":{\"track\":3,\"event\":5},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t4-c3\",\"channel\":2,\"key\":50,\"velocity\":0}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t4:e5\",\"at\":{\"numerator\":4,\"denominator\":3},\"origin\":{\"track\":4,\"event\":5},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t5-c4\",\"channel\":3,\"key\":51,\"velocity\":0}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t5:e5\",\"at\":{\"numerator\":4,\"denominator\":3},\"origin\":{\"track\":5,\"event\":5},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t6-c5\",\"channel\":4,\"key\":52,\"velocity\":0}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t6:e5\",\"at\":{\"numerator\":4,\"denominator\":3},\"origin\":{\"track\":6,\"event\":5},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t7-c6\",\"channel\":5,\"key\":53,\"velocity\":0}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t7:e5\",\"at\":{\"numerator\":4,\"denominator\":3},\"origin\":{\"track\":7,\"event\":5},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t8-c7\",\"channel\":6,\"key\":54,\"velocity\":0}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t8:e5\",\"at\":{\"numerator\":4,\"denominator\":3},\"origin\":{\"track\":8,\"event\":5},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t9-c8\",\"channel\":7,\"key\":55,\"velocity\":0}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t9:e5\",\"at\":{\"numerator\":4,\"denominator\":3},\"origin\":{\"track\":9,\"event\":5},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t10-c9\",\"channel\":8,\"key\":56,\"velocity\":0}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t10:e5\",\"at\":{\"numerator\":4,\"denominator\":3},\"origin\":{\"track\":10,\"event\":5},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t11-c10\",\"channel\":9,\"key\":85,\"velocity\":0}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t0:e3\",\"at\":{\"numerator\":4,\"denominator\":1},\"origin\":{\"track\":0,\"event\":3},\"command\":{\"kind\":\"track_end\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t1:e6\",\"at\":{\"numerator\":4,\"denominator\":1},\"origin\":{\"track\":1,\"event\":6},\"command\":{\"kind\":\"track_end\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t2:e6\",\"at\":{\"numerator\":4,\"denominator\":1},\"origin\":{\"track\":2,\"event\":6},\"command\":{\"kind\":\"track_end\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t3:e6\",\"at\":{\"numerator\":4,\"denominator\":1},\"origin\":{\"track\":3,\"event\":6},\"command\":{\"kind\":\"track_end\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t4:e6\",\"at\":{\"numerator\":4,\"denominator\":1},\"origin\":{\"track\":4,\"event\":6},\"command\":{\"kind\":\"track_end\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t5:e6\",\"at\":{\"numerator\":4,\"denominator\":1},\"origin\":{\"track\":5,\"event\":6},\"command\":{\"kind\":\"track_end\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t6:e6\",\"at\":{\"numerator\":4,\"denominator\":1},\"origin\":{\"track\":6,\"event\":6},\"command\":{\"kind\":\"track_end\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t7:e6\",\"at\":{\"numerator\":4,\"denominator\":1},\"origin\":{\"track\":7,\"event\":6},\"command\":{\"kind\":\"track_end\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t8:e6\",\"at\":{\"numerator\":4,\"denominator\":1},\"origin\":{\"track\":8,\"event\":6},\"command\":{\"kind\":\"track_end\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t9:e6\",\"at\":{\"numerator\":4,\"denominator\":1},\"origin\":{\"track\":9,\"event\":6},\"command\":{\"kind\":\"track_end\"}},{\"event_id\":\"midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t10:e6\",\"at\":{\"numerator\":4,\"denominator\":1},\"origin\":{\"track\":10,\"event\":6},\"command\":{\"kind\":\"track_end\"}}]},\"coverage\":{\"performance\":{\"status\":\"complete\",\"source_tracks\":11,\"source_events\":74,\"represented_events\":74,\"key_attacks\":20,\"key_releases\":20},\"notation\":{\"status\":\"unavailable\",\"represented_attacks\":0,\"reason\":\"not_derived_from_independent_events\"},\"targets\":{\"status\":\"unavailable\",\"represented_attacks\":0,\"reason\":\"not_derived_from_independent_events\"}}}\n",
+    "media": [
+      {
+        "id": "authored-stem",
+        "role": "stem",
+        "mime": "audio/wav",
+        "bytes": 24,
+        "sha256": "837129b49a411b022c6e05eafb9b7806f6117f79ed569aecb59da564010c7ca1",
+        "handle": "asset-83eec49aa796f7dcd4fdb647cbc7527c6260c558ae0f517626e7cd7ef68c5e2f",
+        "parts": [
+          "midi-t2-c1"
+        ],
+        "offset_ms": 0
+      }
+    ],
+    "runtime": {
+      "coverage": {
+        "notation": {
+          "reason": "not_derived_from_independent_events",
+          "represented_attacks": 0,
+          "status": "unavailable"
+        },
+        "performance": {
+          "key_attacks": 20,
+          "key_releases": 20,
+          "represented_events": 74,
+          "source_events": 74,
+          "source_tracks": 11,
+          "status": "complete"
+        },
+        "targets": {
+          "reason": "not_derived_from_independent_events",
+          "represented_attacks": 0,
+          "status": "unavailable"
+        }
+      },
+      "duration_microseconds": {
+        "denominator": 1,
+        "numerator": "2000004"
+      },
+      "events": [
+        {
+          "command": {
+            "kind": "text",
+            "role": "track_name",
+            "text": "A"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t0:e0",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 0,
+            "track": 0
+          }
+        },
+        {
+          "command": {
+            "kind": "tempo",
+            "microseconds_per_quarter": 500001
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t0:e1",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 1,
+            "track": 0
+          }
+        },
+        {
+          "command": {
+            "clocks_per_click": 24,
+            "denominator": 4,
+            "kind": "meter",
+            "numerator": 4,
+            "thirty_seconds_per_quarter": 8
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t0:e2",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 2,
+            "track": 0
+          }
+        },
+        {
+          "command": {
+            "kind": "text",
+            "role": "track_name",
+            "text": "B"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t1:e0",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 0,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "instrument_program",
+            "program": 0
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t1:e1",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 1,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "kind": "text",
+            "role": "track_name",
+            "text": "C"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t2:e0",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 0,
+            "track": 2
+          }
+        },
+        {
+          "command": {
+            "channel": 1,
+            "kind": "instrument_program",
+            "program": 8
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t2:e1",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 1,
+            "track": 2
+          }
+        },
+        {
+          "command": {
+            "kind": "text",
+            "role": "track_name",
+            "text": "D"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t3:e0",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 0,
+            "track": 3
+          }
+        },
+        {
+          "command": {
+            "channel": 2,
+            "kind": "instrument_program",
+            "program": 16
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t3:e1",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 1,
+            "track": 3
+          }
+        },
+        {
+          "command": {
+            "kind": "text",
+            "role": "track_name",
+            "text": "E"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t4:e0",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 0,
+            "track": 4
+          }
+        },
+        {
+          "command": {
+            "channel": 3,
+            "kind": "instrument_program",
+            "program": 24
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t4:e1",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 1,
+            "track": 4
+          }
+        },
+        {
+          "command": {
+            "kind": "text",
+            "role": "track_name",
+            "text": "F"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t5:e0",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 0,
+            "track": 5
+          }
+        },
+        {
+          "command": {
+            "channel": 4,
+            "kind": "instrument_program",
+            "program": 32
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t5:e1",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 1,
+            "track": 5
+          }
+        },
+        {
+          "command": {
+            "kind": "text",
+            "role": "track_name",
+            "text": "G"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t6:e0",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 0,
+            "track": 6
+          }
+        },
+        {
+          "command": {
+            "channel": 5,
+            "kind": "instrument_program",
+            "program": 40
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t6:e1",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 1,
+            "track": 6
+          }
+        },
+        {
+          "command": {
+            "kind": "text",
+            "role": "track_name",
+            "text": "H"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t7:e0",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 0,
+            "track": 7
+          }
+        },
+        {
+          "command": {
+            "channel": 6,
+            "kind": "instrument_program",
+            "program": 48
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t7:e1",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 1,
+            "track": 7
+          }
+        },
+        {
+          "command": {
+            "kind": "text",
+            "role": "track_name",
+            "text": "I"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t8:e0",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 0,
+            "track": 8
+          }
+        },
+        {
+          "command": {
+            "channel": 7,
+            "kind": "instrument_program",
+            "program": 56
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t8:e1",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 1,
+            "track": 8
+          }
+        },
+        {
+          "command": {
+            "kind": "text",
+            "role": "track_name",
+            "text": "J"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t9:e0",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 0,
+            "track": 9
+          }
+        },
+        {
+          "command": {
+            "channel": 8,
+            "kind": "instrument_program",
+            "program": 64
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t9:e1",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 1,
+            "track": 9
+          }
+        },
+        {
+          "command": {
+            "kind": "text",
+            "role": "track_name",
+            "text": "K"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t10:e0",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 0,
+            "track": 10
+          }
+        },
+        {
+          "command": {
+            "channel": 9,
+            "kind": "instrument_program",
+            "program": 72
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t10:e1",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 1,
+            "track": 10
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 48,
+            "kind": "key_attack",
+            "part_id": "midi-t2-c1",
+            "velocity": 90
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t1:e2",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "166667"
+          },
+          "origin": {
+            "event": 2,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 1,
+            "key": 49,
+            "kind": "key_attack",
+            "part_id": "midi-t3-c2",
+            "velocity": 90
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t2:e2",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "166667"
+          },
+          "origin": {
+            "event": 2,
+            "track": 2
+          }
+        },
+        {
+          "command": {
+            "channel": 2,
+            "key": 50,
+            "kind": "key_attack",
+            "part_id": "midi-t4-c3",
+            "velocity": 90
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t3:e2",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "166667"
+          },
+          "origin": {
+            "event": 2,
+            "track": 3
+          }
+        },
+        {
+          "command": {
+            "channel": 3,
+            "key": 51,
+            "kind": "key_attack",
+            "part_id": "midi-t5-c4",
+            "velocity": 90
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t4:e2",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "166667"
+          },
+          "origin": {
+            "event": 2,
+            "track": 4
+          }
+        },
+        {
+          "command": {
+            "channel": 4,
+            "key": 52,
+            "kind": "key_attack",
+            "part_id": "midi-t6-c5",
+            "velocity": 90
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t5:e2",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "166667"
+          },
+          "origin": {
+            "event": 2,
+            "track": 5
+          }
+        },
+        {
+          "command": {
+            "channel": 5,
+            "key": 53,
+            "kind": "key_attack",
+            "part_id": "midi-t7-c6",
+            "velocity": 90
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t6:e2",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "166667"
+          },
+          "origin": {
+            "event": 2,
+            "track": 6
+          }
+        },
+        {
+          "command": {
+            "channel": 6,
+            "key": 54,
+            "kind": "key_attack",
+            "part_id": "midi-t8-c7",
+            "velocity": 90
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t7:e2",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "166667"
+          },
+          "origin": {
+            "event": 2,
+            "track": 7
+          }
+        },
+        {
+          "command": {
+            "channel": 7,
+            "key": 55,
+            "kind": "key_attack",
+            "part_id": "midi-t9-c8",
+            "velocity": 90
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t8:e2",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "166667"
+          },
+          "origin": {
+            "event": 2,
+            "track": 8
+          }
+        },
+        {
+          "command": {
+            "channel": 8,
+            "key": 56,
+            "kind": "key_attack",
+            "part_id": "midi-t10-c9",
+            "velocity": 90
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t9:e2",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "166667"
+          },
+          "origin": {
+            "event": 2,
+            "track": 9
+          }
+        },
+        {
+          "command": {
+            "channel": 9,
+            "key": 85,
+            "kind": "key_attack",
+            "part_id": "midi-t11-c10",
+            "velocity": 90
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t10:e2",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "166667"
+          },
+          "origin": {
+            "event": 2,
+            "track": 10
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 48,
+            "kind": "key_attack",
+            "part_id": "midi-t2-c1",
+            "velocity": 70
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t1:e3",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "333334"
+          },
+          "origin": {
+            "event": 3,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 1,
+            "key": 49,
+            "kind": "key_attack",
+            "part_id": "midi-t3-c2",
+            "velocity": 70
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t2:e3",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "333334"
+          },
+          "origin": {
+            "event": 3,
+            "track": 2
+          }
+        },
+        {
+          "command": {
+            "channel": 2,
+            "key": 50,
+            "kind": "key_attack",
+            "part_id": "midi-t4-c3",
+            "velocity": 70
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t3:e3",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "333334"
+          },
+          "origin": {
+            "event": 3,
+            "track": 3
+          }
+        },
+        {
+          "command": {
+            "channel": 3,
+            "key": 51,
+            "kind": "key_attack",
+            "part_id": "midi-t5-c4",
+            "velocity": 70
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t4:e3",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "333334"
+          },
+          "origin": {
+            "event": 3,
+            "track": 4
+          }
+        },
+        {
+          "command": {
+            "channel": 4,
+            "key": 52,
+            "kind": "key_attack",
+            "part_id": "midi-t6-c5",
+            "velocity": 70
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t5:e3",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "333334"
+          },
+          "origin": {
+            "event": 3,
+            "track": 5
+          }
+        },
+        {
+          "command": {
+            "channel": 5,
+            "key": 53,
+            "kind": "key_attack",
+            "part_id": "midi-t7-c6",
+            "velocity": 70
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t6:e3",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "333334"
+          },
+          "origin": {
+            "event": 3,
+            "track": 6
+          }
+        },
+        {
+          "command": {
+            "channel": 6,
+            "key": 54,
+            "kind": "key_attack",
+            "part_id": "midi-t8-c7",
+            "velocity": 70
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t7:e3",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "333334"
+          },
+          "origin": {
+            "event": 3,
+            "track": 7
+          }
+        },
+        {
+          "command": {
+            "channel": 7,
+            "key": 55,
+            "kind": "key_attack",
+            "part_id": "midi-t9-c8",
+            "velocity": 70
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t8:e3",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "333334"
+          },
+          "origin": {
+            "event": 3,
+            "track": 8
+          }
+        },
+        {
+          "command": {
+            "channel": 8,
+            "key": 56,
+            "kind": "key_attack",
+            "part_id": "midi-t10-c9",
+            "velocity": 70
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t9:e3",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "333334"
+          },
+          "origin": {
+            "event": 3,
+            "track": 9
+          }
+        },
+        {
+          "command": {
+            "channel": 9,
+            "key": 85,
+            "kind": "key_attack",
+            "part_id": "midi-t11-c10",
+            "velocity": 70
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t10:e3",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "333334"
+          },
+          "origin": {
+            "event": 3,
+            "track": 10
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 48,
+            "kind": "key_release",
+            "part_id": "midi-t2-c1",
+            "velocity": 19
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t1:e4",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "500001"
+          },
+          "origin": {
+            "event": 4,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 1,
+            "key": 49,
+            "kind": "key_release",
+            "part_id": "midi-t3-c2",
+            "velocity": 19
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t2:e4",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "500001"
+          },
+          "origin": {
+            "event": 4,
+            "track": 2
+          }
+        },
+        {
+          "command": {
+            "channel": 2,
+            "key": 50,
+            "kind": "key_release",
+            "part_id": "midi-t4-c3",
+            "velocity": 19
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t3:e4",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "500001"
+          },
+          "origin": {
+            "event": 4,
+            "track": 3
+          }
+        },
+        {
+          "command": {
+            "channel": 3,
+            "key": 51,
+            "kind": "key_release",
+            "part_id": "midi-t5-c4",
+            "velocity": 19
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t4:e4",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "500001"
+          },
+          "origin": {
+            "event": 4,
+            "track": 4
+          }
+        },
+        {
+          "command": {
+            "channel": 4,
+            "key": 52,
+            "kind": "key_release",
+            "part_id": "midi-t6-c5",
+            "velocity": 19
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t5:e4",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "500001"
+          },
+          "origin": {
+            "event": 4,
+            "track": 5
+          }
+        },
+        {
+          "command": {
+            "channel": 5,
+            "key": 53,
+            "kind": "key_release",
+            "part_id": "midi-t7-c6",
+            "velocity": 19
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t6:e4",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "500001"
+          },
+          "origin": {
+            "event": 4,
+            "track": 6
+          }
+        },
+        {
+          "command": {
+            "channel": 6,
+            "key": 54,
+            "kind": "key_release",
+            "part_id": "midi-t8-c7",
+            "velocity": 19
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t7:e4",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "500001"
+          },
+          "origin": {
+            "event": 4,
+            "track": 7
+          }
+        },
+        {
+          "command": {
+            "channel": 7,
+            "key": 55,
+            "kind": "key_release",
+            "part_id": "midi-t9-c8",
+            "velocity": 19
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t8:e4",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "500001"
+          },
+          "origin": {
+            "event": 4,
+            "track": 8
+          }
+        },
+        {
+          "command": {
+            "channel": 8,
+            "key": 56,
+            "kind": "key_release",
+            "part_id": "midi-t10-c9",
+            "velocity": 19
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t9:e4",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "500001"
+          },
+          "origin": {
+            "event": 4,
+            "track": 9
+          }
+        },
+        {
+          "command": {
+            "channel": 9,
+            "key": 85,
+            "kind": "key_release",
+            "part_id": "midi-t11-c10",
+            "velocity": 19
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t10:e4",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "500001"
+          },
+          "origin": {
+            "event": 4,
+            "track": 10
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 48,
+            "kind": "key_release",
+            "part_id": "midi-t2-c1",
+            "velocity": 0
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t1:e5",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "666668"
+          },
+          "origin": {
+            "event": 5,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 1,
+            "key": 49,
+            "kind": "key_release",
+            "part_id": "midi-t3-c2",
+            "velocity": 0
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t2:e5",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "666668"
+          },
+          "origin": {
+            "event": 5,
+            "track": 2
+          }
+        },
+        {
+          "command": {
+            "channel": 2,
+            "key": 50,
+            "kind": "key_release",
+            "part_id": "midi-t4-c3",
+            "velocity": 0
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t3:e5",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "666668"
+          },
+          "origin": {
+            "event": 5,
+            "track": 3
+          }
+        },
+        {
+          "command": {
+            "channel": 3,
+            "key": 51,
+            "kind": "key_release",
+            "part_id": "midi-t5-c4",
+            "velocity": 0
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t4:e5",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "666668"
+          },
+          "origin": {
+            "event": 5,
+            "track": 4
+          }
+        },
+        {
+          "command": {
+            "channel": 4,
+            "key": 52,
+            "kind": "key_release",
+            "part_id": "midi-t6-c5",
+            "velocity": 0
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t5:e5",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "666668"
+          },
+          "origin": {
+            "event": 5,
+            "track": 5
+          }
+        },
+        {
+          "command": {
+            "channel": 5,
+            "key": 53,
+            "kind": "key_release",
+            "part_id": "midi-t7-c6",
+            "velocity": 0
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t6:e5",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "666668"
+          },
+          "origin": {
+            "event": 5,
+            "track": 6
+          }
+        },
+        {
+          "command": {
+            "channel": 6,
+            "key": 54,
+            "kind": "key_release",
+            "part_id": "midi-t8-c7",
+            "velocity": 0
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t7:e5",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "666668"
+          },
+          "origin": {
+            "event": 5,
+            "track": 7
+          }
+        },
+        {
+          "command": {
+            "channel": 7,
+            "key": 55,
+            "kind": "key_release",
+            "part_id": "midi-t9-c8",
+            "velocity": 0
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t8:e5",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "666668"
+          },
+          "origin": {
+            "event": 5,
+            "track": 8
+          }
+        },
+        {
+          "command": {
+            "channel": 8,
+            "key": 56,
+            "kind": "key_release",
+            "part_id": "midi-t10-c9",
+            "velocity": 0
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t9:e5",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "666668"
+          },
+          "origin": {
+            "event": 5,
+            "track": 9
+          }
+        },
+        {
+          "command": {
+            "channel": 9,
+            "key": 85,
+            "kind": "key_release",
+            "part_id": "midi-t11-c10",
+            "velocity": 0
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t10:e5",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "666668"
+          },
+          "origin": {
+            "event": 5,
+            "track": 10
+          }
+        },
+        {
+          "command": {
+            "kind": "track_end"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t0:e3",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "2000004"
+          },
+          "origin": {
+            "event": 3,
+            "track": 0
+          }
+        },
+        {
+          "command": {
+            "kind": "track_end"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t1:e6",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "2000004"
+          },
+          "origin": {
+            "event": 6,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "kind": "track_end"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t2:e6",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "2000004"
+          },
+          "origin": {
+            "event": 6,
+            "track": 2
+          }
+        },
+        {
+          "command": {
+            "kind": "track_end"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t3:e6",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "2000004"
+          },
+          "origin": {
+            "event": 6,
+            "track": 3
+          }
+        },
+        {
+          "command": {
+            "kind": "track_end"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t4:e6",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "2000004"
+          },
+          "origin": {
+            "event": 6,
+            "track": 4
+          }
+        },
+        {
+          "command": {
+            "kind": "track_end"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t5:e6",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "2000004"
+          },
+          "origin": {
+            "event": 6,
+            "track": 5
+          }
+        },
+        {
+          "command": {
+            "kind": "track_end"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t6:e6",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "2000004"
+          },
+          "origin": {
+            "event": 6,
+            "track": 6
+          }
+        },
+        {
+          "command": {
+            "kind": "track_end"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t7:e6",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "2000004"
+          },
+          "origin": {
+            "event": 6,
+            "track": 7
+          }
+        },
+        {
+          "command": {
+            "kind": "track_end"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t8:e6",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "2000004"
+          },
+          "origin": {
+            "event": 6,
+            "track": 8
+          }
+        },
+        {
+          "command": {
+            "kind": "track_end"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t9:e6",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "2000004"
+          },
+          "origin": {
+            "event": 6,
+            "track": 9
+          }
+        },
+        {
+          "command": {
+            "kind": "track_end"
+          },
+          "event_id": "midi:4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a:t10:e6",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "2000004"
+          },
+          "origin": {
+            "event": 6,
+            "track": 10
+          }
+        }
+      ],
+      "parts": [
+        {
+          "channel": 0,
+          "id": "midi-t2-c1",
+          "sound_identity": "unspecified_midi_route",
+          "track_id": "track-2"
+        },
+        {
+          "channel": 1,
+          "id": "midi-t3-c2",
+          "sound_identity": "unspecified_midi_route",
+          "track_id": "track-3"
+        },
+        {
+          "channel": 2,
+          "id": "midi-t4-c3",
+          "sound_identity": "unspecified_midi_route",
+          "track_id": "track-4"
+        },
+        {
+          "channel": 3,
+          "id": "midi-t5-c4",
+          "sound_identity": "unspecified_midi_route",
+          "track_id": "track-5"
+        },
+        {
+          "channel": 4,
+          "id": "midi-t6-c5",
+          "sound_identity": "unspecified_midi_route",
+          "track_id": "track-6"
+        },
+        {
+          "channel": 5,
+          "id": "midi-t7-c6",
+          "sound_identity": "unspecified_midi_route",
+          "track_id": "track-7"
+        },
+        {
+          "channel": 6,
+          "id": "midi-t8-c7",
+          "sound_identity": "unspecified_midi_route",
+          "track_id": "track-8"
+        },
+        {
+          "channel": 7,
+          "id": "midi-t9-c8",
+          "sound_identity": "unspecified_midi_route",
+          "track_id": "track-9"
+        },
+        {
+          "channel": 8,
+          "id": "midi-t10-c9",
+          "sound_identity": "unspecified_midi_route",
+          "track_id": "track-10"
+        },
+        {
+          "channel": 9,
+          "id": "midi-t11-c10",
+          "sound_identity": "unspecified_midi_route",
+          "track_id": "track-11"
+        }
+      ],
+      "profile": "wmh-performance-midi1-v1",
+      "score_id": "authored-performance-consumer",
+      "score_sha256": "94750f98c504fdac22703cfc311e946834c4ccef501d016b143a0bd0bdb551e8",
+      "source_sha256": "4262bcf214602659aa3f73fbf2ce2728dc81a90ae3a1de4e84621b39539a065a",
+      "tracks": [
+        {
+          "end": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "id": "track-1",
+          "name": "A",
+          "source_event_count": 4,
+          "source_index": 0
+        },
+        {
+          "end": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "id": "track-2",
+          "name": "B",
+          "source_event_count": 7,
+          "source_index": 1
+        },
+        {
+          "end": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "id": "track-3",
+          "name": "C",
+          "source_event_count": 7,
+          "source_index": 2
+        },
+        {
+          "end": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "id": "track-4",
+          "name": "D",
+          "source_event_count": 7,
+          "source_index": 3
+        },
+        {
+          "end": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "id": "track-5",
+          "name": "E",
+          "source_event_count": 7,
+          "source_index": 4
+        },
+        {
+          "end": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "id": "track-6",
+          "name": "F",
+          "source_event_count": 7,
+          "source_index": 5
+        },
+        {
+          "end": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "id": "track-7",
+          "name": "G",
+          "source_event_count": 7,
+          "source_index": 6
+        },
+        {
+          "end": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "id": "track-8",
+          "name": "H",
+          "source_event_count": 7,
+          "source_index": 7
+        },
+        {
+          "end": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "id": "track-9",
+          "name": "I",
+          "source_event_count": 7,
+          "source_index": 8
+        },
+        {
+          "end": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "id": "track-10",
+          "name": "J",
+          "source_event_count": 7,
+          "source_index": 9
+        },
+        {
+          "end": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "id": "track-11",
+          "name": "K",
+          "source_event_count": 7,
+          "source_index": 10
+        }
+      ]
+    }
+  }
+}

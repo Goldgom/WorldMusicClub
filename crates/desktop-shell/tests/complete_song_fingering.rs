@@ -660,7 +660,8 @@ fn binding_rejects_missing_stale_wrong_and_generic_sources_and_all_score_or_time
     let native_score = library
         .load(midi["key"].as_str().unwrap())
         .unwrap()
-        .score_json;
+        .score_json
+        .expect("The complete MIDI fixture retains canonical notation");
     let generic = library
         .save(SaveRequest {
             score_json: native_score.clone(),

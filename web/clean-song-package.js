@@ -1,3 +1,4 @@
+import {loadCleanPerformance} from './clean-performance-player.js';
 /** Admission of a native-validated package. Portable paths never become browser URLs. */
 const prepared = new WeakSet();
 const hash = /^[0-9a-f]{64}$/;
@@ -8,6 +9,12 @@ export class CleanSongError extends Error {
 const fail = message => { throw new CleanSongError('clean_package_invalid',message); };
 const stable = value => JSON.stringify(value, (_, item) => item && !Array.isArray(item) && typeof item === 'object' ? Object.fromEntries(Object.entries(item).sort(([a],[b])=>a.localeCompare(b))) : item);
 function freeze(value) { if(value&&typeof value==='object'){Object.freeze(value);for(const item of Object.values(value))freeze(item);}return value; }
+export const PERFORMANCE_PROFILE='wmh-performance-midi1-v1';
+export function isPerformanceSummary(value) {
+  const coverage=value?.coverage;
+  return value?.version===2&&value.profile===PERFORMANCE_PROFILE&&hash.test(value.content_sha256)&&value.notation_available===false&&coverage?.performance?.status==='complete'&&Number.isSafeInteger(coverage.performance.source_tracks)&&coverage.performance.source_tracks>0&&coverage.notation?.status==='unavailable'&&coverage.notation.represented_attacks===0&&coverage.targets?.status==='unavailable'&&coverage.targets.represented_attacks===0;
+}
+export function isPerformanceSong(value) { return isCleanSong(value)&&value.profile===PERFORMANCE_PROFILE; }
 export const VSQ_PROFILE='wmh-vsq-clean-v1';
 export const VSQ_PRACTICE_PROFILE='wmh-vsq-base-note-practice-v1';
 export const VSQ_LIMITS=Object.freeze(['whole_vocal_rendering_unavailable','practice_uses_authored_base_notes_only','pitch_bend_and_sensitivity_not_rendered','vibrato_and_expression_not_rendered','lyrics_and_phonetics_not_synthesized','source_voice_program_is_descriptor_not_general_midi','mixer_gain_pan_and_output_mode_not_interpreted','engine_dispatch_timing_and_acoustic_tails_not_rendered']);
@@ -62,4 +69,23 @@ export function prepareVsqPractice(song,response) {
   for(const note of runtime.notes){const projected=timeline.get(note.note_id);if(expected.get(note.note_id)!==note.part_id||ids.has(note.note_id)||!runtimeParts.has(note.part_id)||typeof note.authored_note_id!=='string'||typeof note.singer_event_id!=='string'||typeof note.audible!=='boolean'||'channel' in note||'program' in note||!Number.isInteger(note.key)||note.key<0||note.key>127||!Number.isFinite(note.start_ms)||!Number.isFinite(note.end_ms)||note.start_ms<0||note.end_ms<=note.start_ms||note.end_ms>runtime.end_ms+0.001||note.part_id!==`vsq-track-${note.source_track_index}`||note.note_id!==`vsq-t${note.source_track_index}-${note.authored_note_id}`||projected?.part_id!==note.part_id||projected.source_note_id!==note.note_id||stable(projected.source_note_ids)!==stable([note.note_id])||projected.voice!==note.singer_event_id||!Number.isFinite(projected.duration_ms)||projected.midi!==note.key||projected.start_ms!==note.start_ms||Math.abs(projected.duration_ms-(note.end_ms-note.start_ms))>0.001||projected.velocity!==response.reference_velocity)fail('A native VSQ practice note has invalid identity or timing.');ids.add(note.note_id);}
   if(runtime.notes.some((note,index)=>index>0&&note.start_ms<runtime.notes[index-1].start_ms))fail('The native practice notes are not in scheduling order.');
   return admitted({...song,runtime:structuredClone(runtime),compilation:structuredClone(compilation),navigation:structuredClone(response.navigation??null),navigation_unavailable:structuredClone(response.navigation_unavailable??null),reference_velocity:response.reference_velocity});
+}
+
+/** Native response only: exact clean bytes bind the separate authoritative runtime.
+ * A null notation never enters the canonical compiler, preview or target pipeline.
+ */
+export async function preparePerformanceSong(libraryKey, descriptor, normalizedScore) {
+  if (!descriptor || descriptor.version!==2 || descriptor.profile!==PERFORMANCE_PROFILE || !hash.test(descriptor.content_sha256) || libraryKey!==`native:song-${descriptor.content_sha256}` || normalizedScore!==null) fail('The complete performance does not match the selected package or has unexpected notation.');
+  let metadata,score;
+  try {metadata=JSON.parse(descriptor.metadata_json);score=JSON.parse(descriptor.score_json);}catch{fail('The complete performance package is unreadable.');}
+  const runtime=descriptor.runtime;
+  if(metadata?.format!=='worldmusichub-song'||metadata.version!==2||score?.format!=='worldmusichub-complete-score'||score.version!==2||score.performance?.profile!==PERFORMANCE_PROFILE||score.profile!==undefined||score.notation!==null||score.id!==metadata.id||score.title!==metadata.title||metadata.score?.path!=='score.json'||!hash.test(metadata.score.sha256)||!hash.test(score.source?.sha256)||metadata.sources?.length!==1||stable(metadata.sources[0])!==stable(score.source)||runtime?.profile!==PERFORMANCE_PROFILE||runtime.score_id!==score.id||runtime.source_sha256!==score.source.sha256||runtime.score_sha256!==metadata.score.sha256||stable(runtime.tracks)!==stable(score.performance.tracks)||stable(runtime.parts)!==stable(score.performance.parts)||stable(runtime.coverage)!==stable(score.coverage)||!Array.isArray(score.performance.events)||!Array.isArray(runtime.events)||runtime.events.length!==score.performance.events.length||runtime.events.some((event,index)=>event.event_id!==score.performance.events[index].event_id||stable(event.origin)!==stable(score.performance.events[index].origin)||stable(event.command)!==stable(score.performance.events[index].command)))fail('The native complete performance identity, coverage or events are inconsistent.');
+  const scoreBytes=new TextEncoder().encode(descriptor.score_json);
+  if(scoreBytes.byteLength!==metadata.score.bytes)fail('The complete score byte count does not match its metadata.');
+  const media=descriptor.media;
+  if(!Array.isArray(media)||!Array.isArray(metadata.media)||media.length!==metadata.media.length)fail('The media descriptor is incomplete.');
+  const mediaIds=new Set(),parts=new Set(score.performance.parts.map(part=>part.id));
+  for(const item of media){const source=metadata.media.find(asset=>asset.id===item.id);if(!source||mediaIds.has(item.id)||!roles.has(item.role)||source.role!==item.role||source.mime!==item.mime||source.bytes!==item.bytes||source.sha256!==item.sha256||stable(source.parts??null)!==stable(item.parts??null)||(source.offset_ms??null)!==(item.offset_ms??null)||!hash.test(item.sha256)||!/^asset-[0-9a-f]{64}$/.test(item.handle)||!Number.isSafeInteger(item.bytes)||item.bytes<=0||Object.keys(item).some(key=>['path','url','data','base64'].includes(key))||(item.parts&&item.parts.some(id=>!parts.has(id))))fail('Media identity is not bound to the complete performance package.');mediaIds.add(item.id);}
+  const reference=await loadCleanPerformance({scoreBytes,expectedScoreSha256:metadata.score.sha256,compile:async()=>runtime});
+  return admitted({libraryKey,identity:descriptor.content_sha256,profile:PERFORMANCE_PROFILE,metadata,score,notation:null,compilation:null,runtime:reference.runtime,reference,media:structuredClone(media),metadata_json:descriptor.metadata_json,score_json:descriptor.score_json});
 }
