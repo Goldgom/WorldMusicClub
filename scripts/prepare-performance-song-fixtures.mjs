@@ -9,7 +9,7 @@ import {digest} from '../tests/clean-song-package-fixtures.js';
 import {loadCleanPerformance} from '../web/clean-performance-player.js';
 
 export const PERFORMANCE_FIXTURE_FILENAME='performance-authored-songs.zip';
-export const PERFORMANCE_FIXTURE_NAMES=Object.freeze(['performance-overlap-v2','performance-controls-v2']);
+export const PERFORMANCE_FIXTURE_NAMES=Object.freeze(['performance-overlap-v2','performance-controls-v2','performance-controls-rpn12-route-v2','performance-bank-rpn12-route-v2']);
 const generated=[];
 for(const [index,name] of PERFORMANCE_FIXTURE_NAMES.entries()) {
   const files=new Map(['metadata.json','score.json'].map(path=>[path,readFileSync(new URL(`../tests/fixtures/${name}/${path}`,import.meta.url))]));
@@ -25,8 +25,8 @@ for(const [index,name] of PERFORMANCE_FIXTURE_NAMES.entries()) {
   // This is the production receiver's derived expectation, not serialized or
   // authoritative notation, targets, note pairing, or a second timing compiler.
   const reference=await loadCleanPerformance({scoreBytes:files.get('score.json'),expectedScoreSha256:metadata.score.sha256,compile:async()=>opened.clean_package.runtime});
-  assert.equal(reference.playable,true);assert.ok(reference.durationSeconds>=5&&reference.durationSeconds<5.01);
-  const folder=index===0?'songs/original-performance-overlap':'songs/original-performance-controls';
+  assert.equal(reference.playable,index!==3);assert.deepEqual(reference.blockers.map(b=>b.code),index===3?['unsupported_bank_select']:[]);assert.ok(reference.durationSeconds>=5&&reference.durationSeconds<5.01);
+  const folder=`songs/original-${name.slice(0,-3)}`;
   generated.push({name,filename:PERFORMANCE_FIXTURE_FILENAME,folder,key,files,metadata,score,opened,summary,reference});
 }
 

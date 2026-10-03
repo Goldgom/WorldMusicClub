@@ -56,28 +56,28 @@ const verifyUnavailablePractice=async()=>{
 
 try {
   const library=join(directory,'original');driver=startBoundedNativeDriver({binary,directory:library});
-  const preview=await upload('preview');assert.equal(preview.summary.ready,2);assert.equal(preview.items.length,2);
+  const preview=await upload('preview');assert.equal(preview.summary.ready,pack.fixtures.length);assert.equal(preview.items.length,pack.fixtures.length);
   for(const item of preview.items){assert.equal(item.playable,false);assert.equal(item.clean_package.profile,'wmh-performance-midi1-v1');assert.equal(item.clean_package.notation_available,false);}
   assert.equal((await json('/api/library/list')).entries.length,0);
-  const saved=await upload('commit');assert.equal(saved.summary.saved,2);
+  const saved=await upload('commit');assert.equal(saved.summary.saved,pack.fixtures.length);
   assert.deepEqual(saved.items.map(item=>item.entry.key).sort(),pack.fixtures.map(f=>f.key).sort());await verifyLibrary();
-  report.cases.push({name:'both-authored-complete-songs-coexist-without-notation-or-targets',ok:true});
+  report.cases.push({name:'all-authored-complete-songs-coexist-without-notation-or-targets',ok:true});
   await verifyUnavailablePractice();await verifyLibrary();
-  report.cases.push({name:'explicit-piano-guitar-and-vsq-practice-probes-reject-both-typed-songs',probes:report.negative_probes.length,ok:true});
-  assert.equal((await upload('commit')).summary.duplicate,2);await verifyLibrary();
+  report.cases.push({name:'explicit-piano-guitar-and-vsq-practice-probes-reject-all-typed-songs',probes:report.negative_probes.length,ok:true});
+  assert.equal((await upload('commit')).summary.duplicate,pack.fixtures.length);await verifyLibrary();
   report.cases.push({name:'whole-pack-content-deduplication',ok:true});
   const exported=await request('/api/library/pack/export',{keys:pack.fixtures.map(f=>f.key)});assert.ok(exported.ok);
   const bytes=await exported.bytes(),inventory=inspectAuthoredZip(bytes),expected=new Map();
   for(const fixture of pack.fixtures)for(const[path,data] of fixture.files)expected.set(`songs/${fixture.key}/${path}`,{bytes:data.length,sha256:digest(data)});
   assert.equal(Object.keys(inventory).length,expected.size+1);assert.ok(inventory['manifest.json']);
   for(const[path,entry]of expected)assert.deepEqual(inventory[path],entry);
-  assert.equal((await upload('commit',bytes)).summary.duplicate,2);await verifyLibrary();
-  report.cases.push({name:'exact-metadata-and-score-pair-export-reimport',export_sha256:digest(bytes),files:inventory,ok:true});
+  assert.equal((await upload('commit',bytes)).summary.duplicate,pack.fixtures.length);await verifyLibrary();
+  report.cases.push({name:'exact-metadata-and-score-pack-export-reimport',export_sha256:digest(bytes),files:inventory,ok:true});
   await driver.close();driver=null;driver=startBoundedNativeDriver({binary,directory:library});await verifyLibrary();
-  report.cases.push({name:'fresh-native-process-reloads-both-original-runtimes',ok:true});
+  report.cases.push({name:'fresh-native-process-reloads-all-original-runtimes',ok:true});
   await driver.close();driver=null;driver=startBoundedNativeDriver({binary,directory:join(directory,'reimport')});
-  assert.equal((await upload('commit',bytes)).summary.saved,2);await verifyLibrary();
-  report.cases.push({name:'export-imports-both-songs-into-a-fresh-library',ok:true});
+  assert.equal((await upload('commit',bytes)).summary.saved,pack.fixtures.length);await verifyLibrary();
+  report.cases.push({name:'export-imports-all-songs-into-a-fresh-library',ok:true});
   assert.ok(report.requests.every(path=>['/api/library/list','/api/library/load','/api/library/import/preview','/api/library/import/commit','/api/library/pack/export'].includes(path)));
   report.cases.push({name:'no-compile-runtime-practice-or-fingering-endpoints',scope:'ordinary-library-flow',ok:true});
   await driver.close();driver=null;

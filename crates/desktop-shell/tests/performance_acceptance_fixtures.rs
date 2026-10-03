@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, fs, path::PathBuf};
 use worldmusichub_desktop::native_library::{clean_package, NativeLibrary};
 
 #[test]
-fn committed_acceptance_fixtures_are_exact_native_outputs_for_both_original_songs() {
+fn committed_acceptance_fixtures_are_exact_native_outputs_for_original_songs() {
     let root = std::env::temp_dir().join(format!(
         "wmh-performance-fixture-contract-{}",
         std::process::id()
@@ -63,7 +63,16 @@ fn committed_acceptance_fixtures_are_exact_native_outputs_for_both_original_song
             .iter()
             .filter(|event| event["command"]["kind"] == "key_release")
             .collect::<Vec<_>>();
-        assert_eq!(attacks.len(), if index == 0 { 20 } else { 2 });
+        assert_eq!(
+            attacks.len(),
+            if index == 0 {
+                20
+            } else if index == 1 {
+                2
+            } else {
+                3
+            }
+        );
         assert_eq!(attacks.len(), releases.len());
         for event in attacks.iter().chain(&releases) {
             assert!(event["command"].get("duration").is_none());
@@ -94,8 +103,61 @@ fn committed_acceptance_fixtures_are_exact_native_outputs_for_both_original_song
                 2
             );
         }
+        if index >= 2 {
+            let setup = events
+                .iter()
+                .filter(|event| event["command"]["kind"] == "initial_pitch_bend_sensitivity12")
+                .collect::<Vec<_>>();
+            let steps = [
+                "select_least_significant_zero",
+                "select_most_significant_zero",
+                "select_least_significant_zero",
+                "select_most_significant_zero",
+                "set_semitones12",
+                "set_semitones12",
+                "set_cents_zero",
+                "set_cents_zero",
+            ];
+            assert_eq!(setup.len(), steps.len());
+            for (i, event) in setup.iter().enumerate() {
+                assert_eq!(event["command"]["step"], steps[i]);
+                assert_eq!(event["origin"], json!({"track":1,"event":5+i}));
+                let at = &event["exact_microseconds"];
+                assert_eq!(
+                    at["numerator"].as_str().unwrap().parse::<u64>().unwrap() * 6,
+                    (i as u64 + 1) * 500001 * at["denominator"].as_u64().unwrap()
+                );
+            }
+            let names = events
+                .iter()
+                .filter(|event| event["command"]["role"] == "device_name")
+                .collect::<Vec<_>>();
+            assert_eq!(names.len(), 1);
+            assert_eq!(names[0]["command"]["text"], fixture::AUTHORED_DEVICE);
+            for (notes, ticks) in [(&attacks, [9, 15, 21]), (&releases, [33, 39, 45])] {
+                for ((event, key), tick) in notes.iter().zip([60, 64, 67]).zip(ticks) {
+                    assert_eq!(event["command"]["key"], key);
+                    let at = &event["exact_microseconds"];
+                    assert_eq!(
+                        at["numerator"].as_str().unwrap().parse::<u64>().unwrap() * 6,
+                        tick * 500001 * at["denominator"].as_u64().unwrap()
+                    );
+                }
+            }
+            assert!(events
+                .iter()
+                .all(|event| event["command"]["kind"] != "pitch_bend"));
+            let bank = events
+                .iter()
+                .find(|event| event["command"]["kind"] == "bank_select")
+                .unwrap();
+            assert_eq!(bank["command"]["value"], u8::from(index == 3));
+        }
     }
-    assert_eq!(library.list().unwrap().entries.len(), 2);
+    assert_eq!(
+        library.list().unwrap().entries.len(),
+        fixture::FIXTURES.len()
+    );
     drop(library);
     fs::remove_dir_all(root).unwrap();
 }

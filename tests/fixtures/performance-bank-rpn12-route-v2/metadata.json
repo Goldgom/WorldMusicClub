@@ -1,0 +1,24 @@
+{
+  "format": "worldmusichub-song",
+  "id": "performance-bank-rpn12-route-v2",
+  "media": [],
+  "rights": {
+    "attribution": "WorldMusicHub original acceptance commands",
+    "license": "CC0-1.0",
+    "status": "original_authored"
+  },
+  "score": {
+    "bytes": 6905,
+    "path": "score.json",
+    "sha256": "ce3a9e823bde2de2175d9a4256da89eb46ba04853e12d20acbc2391f7a30d816"
+  },
+  "sources": [
+    {
+      "bytes": 157,
+      "format": "midi",
+      "sha256": "e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a"
+    }
+  ],
+  "title": "Original C E G named receiver with unsupported bank",
+  "version": 2
+}

@@ -6,6 +6,7 @@ import {performanceAcceptanceFixtures} from '../scripts/prepare-performance-song
 import {nativeStorageApp,nativeResponse} from './native-storage-app-fixtures.js';
 import {bulkNativeFixture,importFile,importItem,importReport,selectImportFiles} from './bulk-import-fixtures.js';
 import {PerformanceAudio} from './complete-performance-ui-fixture.js';
+import {getAppI18n} from '../web/app-locale.js';
 
 // Node-only contracts: production app handlers and acceptance setup helpers,
 // authored in-memory native replies, modeled DOM input and Web Audio. These
@@ -43,12 +44,12 @@ async function fixture(){
   await app.click('import-tools-button');await app.click('import-button');
   if(blur){clock+=100;app.emit(app.window,'blur');clock+=100;app.emit(app.window,'focus');}
   selectImportFiles(app,[importFile(pack.filename,pack.bytes)]);
-  await app.until(()=>app.$('bulk-import-dialog').dataset.phase==='review'&&app.document.querySelectorAll('.bulk-import-song').length===2);
+  await app.until(()=>app.$('bulk-import-dialog').dataset.phase==='review'&&app.document.querySelectorAll('.bulk-import-song').length===pack.fixtures.length);
   assert.equal(server.records.size,0,'Preflight must not save typed songs');
   assert.equal(app.$('complete-performance-listening').hidden,true,'Import review must not select a typed preview');
   await app.click('bulk-import-save');
   await app.until(()=>app.$('bulk-import-dialog').dataset.phase==='review'&&app.document.querySelector('[data-import-file]')?.dataset.phase==='complete');
-  assert.equal(server.records.size,2);assert.equal(app.document.querySelectorAll('#catalog [data-library-key]').length,2);
+  assert.equal(server.records.size,pack.fixtures.length);assert.equal(app.document.querySelectorAll('#catalog [data-library-key]').length,pack.fixtures.length);
   assert.deepEqual([...server.records.values()],opened,'Commit retains the exact null-notation packages');
   await app.click('bulk-import-done');
   assert.deepEqual(snapshot(),before,'Typed import/save must not change the original preview or active score/take display');
@@ -128,4 +129,25 @@ test('controls and restart prepare the human baseline without repeating seed imp
  for(const phase of ['performance-controls','performance-restart']){
   const calls=[];await helpers.preparePerformanceBaseline({phase,importSeed:async()=>{throw Error('Non-seed import is forbidden');},prepareHumanTake:async()=>{calls.push('human');}});assert.deepEqual(calls,['human']);
  }
+});
+
+test('new authored named and bank previews disclose their route in the actual app and stay silent before policy',async()=>{
+ const f=await fixture();try{
+  await f.importSeed();const take=await f.prepareHumanTake(),requestStart=f.app.requests.length;
+  for(const song of f.pack.fixtures.slice(2)){
+   f.app.savedButton(song.key).click();await f.app.until(()=>f.app.$('song-lobby').dataset.previewId===`native:${song.key}`&&f.app.$('song-lobby').dataset.previewStatus==='performance');
+   const routing=f.app.$('complete-performance-policy-routing'),policy=f.app.$('complete-performance-policy-accept');
+   assert.equal(routing.hidden,false);assert.equal(policy.checked,false);assert.equal(policy.disabled,!song.reference.playable);
+   assert.equal(f.app.$('complete-performance-play').disabled,true);assert.equal(f.app.$('start-listen').disabled,true);assert.equal(f.app.$('start-practice').disabled,true);
+   getAppI18n(f.app.document).setLocale('en');assert.equal(routing.textContent,'Logical destination “WMH Authored Receiver A” is mapped to the selected procedural reference receiver. The source device and timbre are unverified.');
+   assert.equal(f.app.$('complete-performance-policy-label').textContent,'I select this reference sound, event playback and logical device mapping policy');
+   getAppI18n(f.app.document).setLocale('zh-CN');assert.equal(routing.textContent,'逻辑目标“WMH Authored Receiver A”映射到所选程序合成参考接收器。未验证源设备与原始音色。');
+   assert.equal(f.app.$('complete-performance-policy-label').textContent,'我选择此参考声音、事件播放与逻辑设备映射策略');
+   getAppI18n(f.app.document).setLocale('en');
+   if(song.reference.playable){policy.checked=true;f.app.emit(policy,'change');if(!f.app.$('complete-performance-sound').checked){f.app.$('complete-performance-sound').checked=true;f.app.emit(f.app.$('complete-performance-sound'),'change');}assert.equal(f.app.$('complete-performance-play').disabled,false);}
+   else{assert.match(f.app.$('complete-performance-problems').textContent,/unsupported_bank_select/);await f.app.click('complete-performance-play');assert.equal(policy.checked,false);}
+   assert.equal(f.starts(),0);assert.equal(f.contexts.length,0);assert.deepEqual(await f.app.exported('export-takes'),take);
+  }
+  assert.deepEqual(f.app.requests.slice(requestStart).filter(row=>forbidden(row.path)),[]);
+ }finally{await f.close();}
 });

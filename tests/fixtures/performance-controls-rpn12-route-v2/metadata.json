@@ -1,0 +1,24 @@
+{
+  "format": "worldmusichub-song",
+  "id": "performance-controls-rpn12-route-v2",
+  "media": [],
+  "rights": {
+    "attribution": "WorldMusicHub original acceptance commands",
+    "license": "CC0-1.0",
+    "status": "original_authored"
+  },
+  "score": {
+    "bytes": 6906,
+    "path": "score.json",
+    "sha256": "0be209f77cec086b8da2a782e97ae331d415ec299725e7fae8242659c6b0add4"
+  },
+  "sources": [
+    {
+      "bytes": 157,
+      "format": "midi",
+      "sha256": "2282fa902ccd4be41b2e9d2860c5f59d2493f980fd28a439f956beb943e0bbe6"
+    }
+  ],
+  "title": "Original C E G named receiver and centered RPN12",
+  "version": 2
+}

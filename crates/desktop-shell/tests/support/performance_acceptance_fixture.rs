@@ -3,8 +3,14 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
-pub const FIXTURES: [&str; 2] = ["performance-overlap-v2", "performance-controls-v2"];
+pub const FIXTURES: [&str; 4] = [
+    "performance-overlap-v2",
+    "performance-controls-v2",
+    "performance-controls-rpn12-route-v2",
+    "performance-bank-rpn12-route-v2",
+];
 pub const SAVED_AT_UNIX_MS: u64 = 1_700_000_000_000;
+pub const AUTHORED_DEVICE: &str = "WMH Authored Receiver A";
 
 pub fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -102,6 +108,43 @@ pub fn authored_source(name: &str) -> Vec<u8> {
             controls.extend([12, 255, 47, 0]);
             tracks.push(controls);
         }
+        "performance-controls-rpn12-route-v2" | "performance-bank-rpn12-route-v2" => {
+            // New original C/E/G only, with an invented logical destination.
+            // The negative sibling differs only in its explicit bank value.
+            let bank = u8::from(name == "performance-bank-rpn12-route-v2");
+            let mut routed = vec![0, 255, 9, AUTHORED_DEVICE.len() as u8];
+            routed.extend(AUTHORED_DEVICE.bytes());
+            routed.extend([
+                0, 255, 3, 1, b'R', 0, 0xb0, 0, bank, 0, 0xb0, 32, 0, 0, 0xc0, 40,
+            ]);
+            // Retain all eight writes, including repeated selectors/data, at
+            // separate exact ticks. No pitch bend or note transposition.
+            for (controller, value) in [
+                (100, 0),
+                (101, 0),
+                (100, 0),
+                (101, 0),
+                (6, 12),
+                (6, 12),
+                (38, 0),
+                (38, 0),
+            ] {
+                routed.extend([1, 0xb0, controller, value]);
+            }
+            for (delta, event) in [
+                (1, [0x90, 60, 90]),
+                (6, [0x90, 64, 80]),
+                (6, [0x90, 67, 70]),
+                (12, [0x80, 60, 19]),
+                (6, [0x80, 64, 20]),
+                (6, [0x80, 67, 21]),
+            ] {
+                routed.push(delta);
+                routed.extend(event);
+            }
+            routed.extend([15, 255, 47, 0]);
+            tracks.push(routed);
+        }
         _ => panic!("Unknown authored acceptance fixture"),
     }
     source(tracks)
@@ -111,6 +154,8 @@ pub fn files(name: &str) -> BTreeMap<String, Vec<u8>> {
     let title = match name {
         "performance-overlap-v2" => "Original eleven-track overlap and percussion",
         "performance-controls-v2" => "Original sustained keys and channel controls",
+        "performance-controls-rpn12-route-v2" => "Original C E G named receiver and centered RPN12",
+        "performance-bank-rpn12-route-v2" => "Original C E G named receiver with unsupported bank",
         _ => panic!("Unknown authored acceptance fixture"),
     };
     let midi = authored_source(name);

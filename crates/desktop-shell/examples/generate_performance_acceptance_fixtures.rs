@@ -1,4 +1,4 @@
-//! Reproduce both original acceptance fixtures through the actual native library.
+//! Reproduce original acceptance fixtures through the actual native library.
 #[path = "../tests/support/performance_acceptance_fixture.rs"]
 mod fixture;
 use std::{collections::BTreeMap, fs, path::PathBuf};
@@ -45,7 +45,10 @@ fn main() {
         )
         .unwrap();
     }
-    assert_eq!(library.list().unwrap().entries.len(), 2);
+    assert_eq!(
+        library.list().unwrap().entries.len(),
+        fixture::FIXTURES.len()
+    );
     drop(library);
     fs::remove_dir_all(root).unwrap();
 }

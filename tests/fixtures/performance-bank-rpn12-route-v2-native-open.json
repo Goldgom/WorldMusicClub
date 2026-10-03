@@ -1,0 +1,516 @@
+{
+  "entry": {
+    "library_format_version": 2,
+    "revision": 1,
+    "key": "song-21ef36e754dd3bc082d31a2a430edf083eda1da9f1093557c0e9457b42e28c7a",
+    "content_sha256": "21ef36e754dd3bc082d31a2a430edf083eda1da9f1093557c0e9457b42e28c7a",
+    "score_sha256": "ce3a9e823bde2de2175d9a4256da89eb46ba04853e12d20acbc2391f7a30d816",
+    "score_bytes": 6905,
+    "score_id": "performance-bank-rpn12-route-v2",
+    "title": "Original C E G named receiver with unsupported bank",
+    "composer": "",
+    "label": "Original C E G named receiver with unsupported bank",
+    "saved_at_unix_ms": 1700000000000,
+    "provenance": {
+      "kind": "user_supplied",
+      "attribution": "WorldMusicHub original acceptance commands",
+      "source_url": null,
+      "license": "CC0-1.0"
+    },
+    "retained_source": null,
+    "clean_package": {
+      "version": 2,
+      "profile": "wmh-performance-midi1-v1",
+      "content_sha256": "21ef36e754dd3bc082d31a2a430edf083eda1da9f1093557c0e9457b42e28c7a",
+      "bytes": 7528,
+      "media": [],
+      "coverage": {
+        "notation": {
+          "reason": "not_derived_from_independent_events",
+          "represented_attacks": 0,
+          "status": "unavailable"
+        },
+        "performance": {
+          "key_attacks": 3,
+          "key_releases": 3,
+          "represented_events": 24,
+          "source_events": 24,
+          "source_tracks": 2,
+          "status": "complete"
+        },
+        "targets": {
+          "reason": "not_derived_from_independent_events",
+          "represented_attacks": 0,
+          "status": "unavailable"
+        }
+      },
+      "notation_available": false
+    }
+  },
+  "score_json": null,
+  "clean_package": {
+    "version": 2,
+    "profile": "wmh-performance-midi1-v1",
+    "content_sha256": "21ef36e754dd3bc082d31a2a430edf083eda1da9f1093557c0e9457b42e28c7a",
+    "metadata_json": "{\n  \"format\": \"worldmusichub-song\",\n  \"id\": \"performance-bank-rpn12-route-v2\",\n  \"media\": [],\n  \"rights\": {\n    \"attribution\": \"WorldMusicHub original acceptance commands\",\n    \"license\": \"CC0-1.0\",\n    \"status\": \"original_authored\"\n  },\n  \"score\": {\n    \"bytes\": 6905,\n    \"path\": \"score.json\",\n    \"sha256\": \"ce3a9e823bde2de2175d9a4256da89eb46ba04853e12d20acbc2391f7a30d816\"\n  },\n  \"sources\": [\n    {\n      \"bytes\": 157,\n      \"format\": \"midi\",\n      \"sha256\": \"e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a\"\n    }\n  ],\n  \"title\": \"Original C E G named receiver with unsupported bank\",\n  \"version\": 2\n}",
+    "score_json": "{\"format\":\"worldmusichub-complete-score\",\"version\":2,\"id\":\"performance-bank-rpn12-route-v2\",\"title\":\"Original C E G named receiver with unsupported bank\",\"source\":{\"format\":\"midi\",\"bytes\":157,\"sha256\":\"e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a\"},\"notation\":null,\"performance\":{\"profile\":\"wmh-performance-midi1-v1\",\"end\":{\"numerator\":10,\"denominator\":1},\"tracks\":[{\"id\":\"track-1\",\"name\":\"A\",\"source_index\":0,\"source_event_count\":4,\"end\":{\"numerator\":10,\"denominator\":1}},{\"id\":\"track-2\",\"name\":\"R\",\"source_index\":1,\"source_event_count\":20,\"end\":{\"numerator\":10,\"denominator\":1}}],\"parts\":[{\"id\":\"midi-t2-c1\",\"track_id\":\"track-2\",\"channel\":0,\"sound_identity\":\"unspecified_midi_route\"}],\"events\":[{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t0:e0\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":0,\"event\":0},\"command\":{\"kind\":\"text\",\"role\":\"track_name\",\"text\":\"A\"}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t0:e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":0,\"event\":1},\"command\":{\"kind\":\"tempo\",\"microseconds_per_quarter\":500001}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t0:e2\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":0,\"event\":2},\"command\":{\"kind\":\"meter\",\"numerator\":4,\"denominator\":4,\"clocks_per_click\":24,\"thirty_seconds_per_quarter\":8}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e0\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":1,\"event\":0},\"command\":{\"kind\":\"text\",\"role\":\"device_name\",\"text\":\"WMH Authored Receiver A\"}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":1,\"event\":1},\"command\":{\"kind\":\"text\",\"role\":\"track_name\",\"text\":\"R\"}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e2\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":1,\"event\":2},\"command\":{\"kind\":\"bank_select\",\"channel\":0,\"component\":\"most_significant\",\"value\":1}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e3\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":1,\"event\":3},\"command\":{\"kind\":\"bank_select\",\"channel\":0,\"component\":\"least_significant\",\"value\":0}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e4\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":1,\"event\":4},\"command\":{\"kind\":\"instrument_program\",\"channel\":0,\"program\":40}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e5\",\"at\":{\"numerator\":1,\"denominator\":6},\"origin\":{\"track\":1,\"event\":5},\"command\":{\"kind\":\"initial_pitch_bend_sensitivity12\",\"channel\":0,\"step\":\"select_least_significant_zero\"}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e6\",\"at\":{\"numerator\":1,\"denominator\":3},\"origin\":{\"track\":1,\"event\":6},\"command\":{\"kind\":\"initial_pitch_bend_sensitivity12\",\"channel\":0,\"step\":\"select_most_significant_zero\"}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e7\",\"at\":{\"numerator\":1,\"denominator\":2},\"origin\":{\"track\":1,\"event\":7},\"command\":{\"kind\":\"initial_pitch_bend_sensitivity12\",\"channel\":0,\"step\":\"select_least_significant_zero\"}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e8\",\"at\":{\"numerator\":2,\"denominator\":3},\"origin\":{\"track\":1,\"event\":8},\"command\":{\"kind\":\"initial_pitch_bend_sensitivity12\",\"channel\":0,\"step\":\"select_most_significant_zero\"}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e9\",\"at\":{\"numerator\":5,\"denominator\":6},\"origin\":{\"track\":1,\"event\":9},\"command\":{\"kind\":\"initial_pitch_bend_sensitivity12\",\"channel\":0,\"step\":\"set_semitones12\"}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e10\",\"at\":{\"numerator\":1,\"denominator\":1},\"origin\":{\"track\":1,\"event\":10},\"command\":{\"kind\":\"initial_pitch_bend_sensitivity12\",\"channel\":0,\"step\":\"set_semitones12\"}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e11\",\"at\":{\"numerator\":7,\"denominator\":6},\"origin\":{\"track\":1,\"event\":11},\"command\":{\"kind\":\"initial_pitch_bend_sensitivity12\",\"channel\":0,\"step\":\"set_cents_zero\"}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e12\",\"at\":{\"numerator\":4,\"denominator\":3},\"origin\":{\"track\":1,\"event\":12},\"command\":{\"kind\":\"initial_pitch_bend_sensitivity12\",\"channel\":0,\"step\":\"set_cents_zero\"}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e13\",\"at\":{\"numerator\":3,\"denominator\":2},\"origin\":{\"track\":1,\"event\":13},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":60,\"velocity\":90}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e14\",\"at\":{\"numerator\":5,\"denominator\":2},\"origin\":{\"track\":1,\"event\":14},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":64,\"velocity\":80}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e15\",\"at\":{\"numerator\":7,\"denominator\":2},\"origin\":{\"track\":1,\"event\":15},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":67,\"velocity\":70}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e16\",\"at\":{\"numerator\":11,\"denominator\":2},\"origin\":{\"track\":1,\"event\":16},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":60,\"velocity\":19}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e17\",\"at\":{\"numerator\":13,\"denominator\":2},\"origin\":{\"track\":1,\"event\":17},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":64,\"velocity\":20}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e18\",\"at\":{\"numerator\":15,\"denominator\":2},\"origin\":{\"track\":1,\"event\":18},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":67,\"velocity\":21}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t0:e3\",\"at\":{\"numerator\":10,\"denominator\":1},\"origin\":{\"track\":0,\"event\":3},\"command\":{\"kind\":\"track_end\"}},{\"event_id\":\"midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e19\",\"at\":{\"numerator\":10,\"denominator\":1},\"origin\":{\"track\":1,\"event\":19},\"command\":{\"kind\":\"track_end\"}}]},\"coverage\":{\"performance\":{\"status\":\"complete\",\"source_tracks\":2,\"source_events\":24,\"represented_events\":24,\"key_attacks\":3,\"key_releases\":3},\"notation\":{\"status\":\"unavailable\",\"represented_attacks\":0,\"reason\":\"not_derived_from_independent_events\"},\"targets\":{\"status\":\"unavailable\",\"represented_attacks\":0,\"reason\":\"not_derived_from_independent_events\"}}}\n",
+    "media": [],
+    "runtime": {
+      "coverage": {
+        "notation": {
+          "reason": "not_derived_from_independent_events",
+          "represented_attacks": 0,
+          "status": "unavailable"
+        },
+        "performance": {
+          "key_attacks": 3,
+          "key_releases": 3,
+          "represented_events": 24,
+          "source_events": 24,
+          "source_tracks": 2,
+          "status": "complete"
+        },
+        "targets": {
+          "reason": "not_derived_from_independent_events",
+          "represented_attacks": 0,
+          "status": "unavailable"
+        }
+      },
+      "duration_microseconds": {
+        "denominator": 1,
+        "numerator": "5000010"
+      },
+      "events": [
+        {
+          "command": {
+            "kind": "text",
+            "role": "track_name",
+            "text": "A"
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t0:e0",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 0,
+            "track": 0
+          }
+        },
+        {
+          "command": {
+            "kind": "tempo",
+            "microseconds_per_quarter": 500001
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t0:e1",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 1,
+            "track": 0
+          }
+        },
+        {
+          "command": {
+            "clocks_per_click": 24,
+            "denominator": 4,
+            "kind": "meter",
+            "numerator": 4,
+            "thirty_seconds_per_quarter": 8
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t0:e2",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 2,
+            "track": 0
+          }
+        },
+        {
+          "command": {
+            "kind": "text",
+            "role": "device_name",
+            "text": "WMH Authored Receiver A"
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e0",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 0,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "kind": "text",
+            "role": "track_name",
+            "text": "R"
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e1",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 1,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "component": "most_significant",
+            "kind": "bank_select",
+            "value": 1
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e2",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 2,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "component": "least_significant",
+            "kind": "bank_select",
+            "value": 0
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e3",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 3,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "instrument_program",
+            "program": 40
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e4",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 4,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "initial_pitch_bend_sensitivity12",
+            "step": "select_least_significant_zero"
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e5",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "166667"
+          },
+          "origin": {
+            "event": 5,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "initial_pitch_bend_sensitivity12",
+            "step": "select_most_significant_zero"
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e6",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "166667"
+          },
+          "origin": {
+            "event": 6,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "initial_pitch_bend_sensitivity12",
+            "step": "select_least_significant_zero"
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e7",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "500001"
+          },
+          "origin": {
+            "event": 7,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "initial_pitch_bend_sensitivity12",
+            "step": "select_most_significant_zero"
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e8",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "333334"
+          },
+          "origin": {
+            "event": 8,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "initial_pitch_bend_sensitivity12",
+            "step": "set_semitones12"
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e9",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "833335"
+          },
+          "origin": {
+            "event": 9,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "initial_pitch_bend_sensitivity12",
+            "step": "set_semitones12"
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e10",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "500001"
+          },
+          "origin": {
+            "event": 10,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "initial_pitch_bend_sensitivity12",
+            "step": "set_cents_zero"
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e11",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "1166669"
+          },
+          "origin": {
+            "event": 11,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "initial_pitch_bend_sensitivity12",
+            "step": "set_cents_zero"
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e12",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "666668"
+          },
+          "origin": {
+            "event": 12,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 60,
+            "kind": "key_attack",
+            "part_id": "midi-t2-c1",
+            "velocity": 90
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e13",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "1500003"
+          },
+          "origin": {
+            "event": 13,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 64,
+            "kind": "key_attack",
+            "part_id": "midi-t2-c1",
+            "velocity": 80
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e14",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "2500005"
+          },
+          "origin": {
+            "event": 14,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 67,
+            "kind": "key_attack",
+            "part_id": "midi-t2-c1",
+            "velocity": 70
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e15",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "3500007"
+          },
+          "origin": {
+            "event": 15,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 60,
+            "kind": "key_release",
+            "part_id": "midi-t2-c1",
+            "velocity": 19
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e16",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "5500011"
+          },
+          "origin": {
+            "event": 16,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 64,
+            "kind": "key_release",
+            "part_id": "midi-t2-c1",
+            "velocity": 20
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e17",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "6500013"
+          },
+          "origin": {
+            "event": 17,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 67,
+            "kind": "key_release",
+            "part_id": "midi-t2-c1",
+            "velocity": 21
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e18",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "7500015"
+          },
+          "origin": {
+            "event": 18,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "kind": "track_end"
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t0:e3",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "5000010"
+          },
+          "origin": {
+            "event": 3,
+            "track": 0
+          }
+        },
+        {
+          "command": {
+            "kind": "track_end"
+          },
+          "event_id": "midi:e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a:t1:e19",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "5000010"
+          },
+          "origin": {
+            "event": 19,
+            "track": 1
+          }
+        }
+      ],
+      "parts": [
+        {
+          "channel": 0,
+          "id": "midi-t2-c1",
+          "sound_identity": "unspecified_midi_route",
+          "track_id": "track-2"
+        }
+      ],
+      "profile": "wmh-performance-midi1-v1",
+      "score_id": "performance-bank-rpn12-route-v2",
+      "score_sha256": "ce3a9e823bde2de2175d9a4256da89eb46ba04853e12d20acbc2391f7a30d816",
+      "source_sha256": "e80ae740d0ed1b1f3f9c24cd2e672f0ea63e100f78b134571e46259facb9112a",
+      "tracks": [
+        {
+          "end": {
+            "denominator": 1,
+            "numerator": 10
+          },
+          "id": "track-1",
+          "name": "A",
+          "source_event_count": 4,
+          "source_index": 0
+        },
+        {
+          "end": {
+            "denominator": 1,
+            "numerator": 10
+          },
+          "id": "track-2",
+          "name": "R",
+          "source_event_count": 20,
+          "source_index": 1
+        }
+      ]
+    }
+  }
+}
