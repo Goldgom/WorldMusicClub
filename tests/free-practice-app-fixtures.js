@@ -1,3 +1,4 @@
+import {waitForTestCondition} from './async-test-wait.js';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
@@ -33,7 +34,7 @@ export async function freePracticeApp({fetchResult=null}={}) {
   for(const [key,value]of Object.entries(installed))Object.defineProperty(globalThis,key,{configurable:true,value});
   const $=id=>document.getElementById(id);
   const tick=()=>new Promise(resolve=>setImmediate(resolve));
-  const until=async(predicate,label='App state did not settle')=>{for(let i=0;i<200;i++){if(predicate())return;await tick();}assert.fail(label);};
+  const until=(predicate,label='App state did not settle')=>waitForTestCondition(predicate,{label});
   const emit=(target,type,properties={},timestamp=performance.now())=>{const event=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(event,{repeat:false,...properties});Object.defineProperty(event,'timeStamp',{value:timestamp});target.dispatchEvent(event);return event;};
   const click=async id=>{$(id).click();await until(()=>$('free-practice-screen').getAttribute('aria-busy')!=='true');await tick();};
   const exported=async id=>{const count=downloads.length;await click(id);assert.equal(downloads.length,count+1,`${id} did not export`);return JSON.parse(await downloads.at(-1).text());};

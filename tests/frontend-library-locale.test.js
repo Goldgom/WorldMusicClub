@@ -1,3 +1,4 @@
+import {waitForTestCondition} from './async-test-wait.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseHTML} from 'linkedom';
@@ -8,7 +9,7 @@ import {setupScoreLibrary} from '../web/library-view.js';
 import {fixture as scoreFixture} from './frontend-fixtures.js';
 
 const settle=async()=>{for(let i=0;i<40;i++)await Promise.resolve()};
-const finishIO=async(predicate)=>{for(let i=0;i<100&&!predicate();i++)await new Promise(resolve=>setImmediate(resolve));assert.equal(predicate(),true)};
+const finishIO=predicate=>waitForTestCondition(predicate,{label:'Library I/O did not settle'});
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return{promise,resolve,reject}};
 function fixture(locale='zh-CN',overrides={}){
  const {document,window}=parseHTML('<html><body><button id="library-button"></button></body></html>');

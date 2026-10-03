@@ -1,3 +1,4 @@
+import {waitForTestCondition} from './async-test-wait.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {prepareCleanSong,isCleanSong} from '../web/clean-song-package.js';
@@ -14,7 +15,7 @@ const storage=await openScoreStorage({fetcher:server.fetcher,origin:'https://wmh
 
 const gate=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-const until=async predicate=>{for(let i=0;i<200;i++){if(predicate())return;await tick();}assert.fail('Asset transport did not settle');};
+const until=predicate=>waitForTestCondition(predicate,{label:'Asset transport did not settle'});
 const outcome=promise=>promise.then(value=>({value}),error=>({error}));
 
 /** The native Windows permit stays held until response bytes finish, not merely

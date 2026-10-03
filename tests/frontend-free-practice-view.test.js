@@ -1,3 +1,4 @@
+import {waitForTestCondition} from './async-test-wait.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -25,7 +26,7 @@ async function setup(t,options={}){
  const view=setupFreePracticeView({document,session,preview,i18n,onExit:()=>exits++,onConnectMidi:()=>connects++,onConfigureKeyboard:()=>settings++,getSoundEnabled:()=>sound,onSoundChange:value=>{sound=value;},getConfiguration:()=>({sound,instrument:'piano'}),getPianoRange:options.getPianoRange||(()=>({keyCount:61,lowestMidi:36})),
  onInput:(kind,input)=>{inputs.push({kind,...input});if(kind==='cleanup')session.cleanup(wall,input.reason,{source:input.source});else session.observe(kind,{...input,eventWall:wall,receivedWall:wall},input.owner);},download:(text,name)=>downloads.push({text,name})});
  t.after(()=>{view.destroy();library.close?.();});
- const $=id=>document.getElementById(id),click=async id=>{$(id).click();for(let i=0;i<1000;i++){await settle();if($('free-practice-screen').getAttribute('aria-busy')!=='true')return;}throw Error('UI operation did not settle');},event=(node,type,props={})=>{const value=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(value,props);node.dispatchEvent(value);return value;};
+ const $=id=>document.getElementById(id),click=async id=>{$(id).click();await settle();await waitForTestCondition(()=>$('free-practice-screen').getAttribute('aria-busy')!=='true',{label:'Free practice UI operation did not settle'});},event=(node,type,props={})=>{const value=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(value,props);node.dispatchEvent(value);return value;};
  return {document,window,library,session,preview,view,i18n,$,click,event,inputs,boundaries,downloads,reports,audioCalls,at(value){wall=value;},exits:()=>exits,connects:()=>connects,settings:()=>settings};
 }
 

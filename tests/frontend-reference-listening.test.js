@@ -1,3 +1,4 @@
+import {waitForTestCondition} from './async-test-wait.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
@@ -53,11 +54,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 // Web Crypto runs outside the JS turn queue. Two hundred setImmediate turns
 // exhausted in 23 ms on hosted Linux before SHA-256 completed. Keep the exact
 // state assertion and a finite elapsed-time deadline, allowing real async work.
-async function until(predicate,label='State did not settle') {
-  const deadline=performance.now()+2000;
-  while(performance.now()<deadline){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,1));}
-  assert.fail(label);
-}
+const until=(predicate,label='State did not settle')=>waitForTestCondition(predicate,{label,timeoutMs:2000});
 function emit(window,node,type,values={}) {const event=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(event,values);node.dispatchEvent(event);return event;}
 function setFile(window,input,file) {Object.defineProperty(input,'files',{configurable:true,value:file?[file]:[]});emit(window,input,'change');}
 const sourceFile=f=>({name:f.name,size:f.bytes.length,arrayBuffer:async()=>Uint8Array.from(f.bytes).buffer});

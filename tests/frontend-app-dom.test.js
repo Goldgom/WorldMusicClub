@@ -1,3 +1,4 @@
+import {waitForTestCondition} from './async-test-wait.js';
 import {unavailablePianoResult} from './piano-fingering-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -51,7 +52,7 @@ test('application module initializes the lobby and activates only through explic
  }};
  const originals=new Map(Object.keys(installed).map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
  for(const[key,value]of Object.entries(installed))Object.defineProperty(globalThis,key,{configurable:true,value});
- const until=async(predicate,label)=>{for(let attempt=0;attempt<100;attempt++){if(predicate())return;await new Promise(resolve=>setImmediate(resolve))}assert.fail(label)};
+ const until=(predicate,label)=>waitForTestCondition(predicate,{label});
  try{
   await import('../web/app.js?node-shell-initialization');
   await until(()=>!document.getElementById('start-practice').disabled,'Preview never became ready');
