@@ -28,6 +28,10 @@ jobs:
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
         run: node scripts/check-clean-song-native.mjs
+      - name: Complete authored VSQ package through actual Rust protocol
+        env:
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: node scripts/check-vsq-song-native.mjs
       - name: Real DOM and native Rust disk route without a listener
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
@@ -40,6 +44,14 @@ jobs:
           WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
         run: npm run test:bulk-import-hosted
+      - name: VSQ chooser, explicit practice, native following, exact export and restart
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: |
+          WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-vsq-song-check.mjs
+          WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-vsq-song-check.mjs
       - name: Preserve authored bulk-import evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -48,6 +60,7 @@ jobs:
           path: |
             test-results/bulk-import-dom.json
             test-results/bulk-import/**
+            test-results/vsq-song/**
           if-no-files-found: warn
   native-feature-acceptance:
     needs: bulk-import-browser
@@ -75,7 +88,7 @@ jobs:
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
       - run: npm test
-      - run: node --test tests/desktop-evidence.test.js tests/desktop-acceptance-wait.test.js tests/native-song-folder-evidence.test.js tests/native-bulk-import-evidence.test.js tests/native-clean-song-evidence.test.js
+      - run: node --test tests/desktop-evidence.test.js tests/desktop-acceptance-wait.test.js tests/native-song-folder-evidence.test.js tests/native-bulk-import-evidence.test.js tests/native-clean-song-evidence.test.js tests/native-vsq-song-evidence.test.js
       - name: Parse the exact native acceptance script
         shell: pwsh
         run: |
@@ -149,6 +162,9 @@ jobs:
       - name: Native complete clean song, decoded media, export and new-process persistence
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-clean-song -Scenario clean-song
+      - name: Native VSQ chooser, explicit choice, exact following, export and fresh-process reset
+        shell: pwsh
+        run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-vsq-song -Scenario vsq-song
       # Default success() keeps all package steps behind the actual native gates.
       - name: Package accepted native executable with exact provenance and notices
         id: native_package
@@ -164,6 +180,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native clean-song exact-source proof failed' }
           $cleanProof=Get-Content -Raw desktop-clean-song/native-clean-song-files.json | ConvertFrom-Json
           if ($cleanProof.source_sha -cne '${{ github.sha }}' -or $cleanProof.source_tree -cne $currentTree -or $cleanProof.executable_sha256 -cne $currentExe) { throw 'Clean-song evidence does not match the exact packaged source and executable' }
+          node scripts/verify-native-vsq-song-evidence.mjs --check desktop-vsq-song
+          if ($LASTEXITCODE -ne 0) { throw 'Native VSQ exact-source proof failed' }
+          $vsqProof=Get-Content -Raw desktop-vsq-song/native-vsq-song-files.json | ConvertFrom-Json
+          if ($vsqProof.source_sha -cne '${{ github.sha }}' -or $vsqProof.source_tree -cne $currentTree -or $vsqProof.executable_sha256 -cne $currentExe) { throw 'VSQ evidence does not match the exact packaged source and executable' }
           $count=(git rev-list --count HEAD).Trim()
           $folder='dist/WorldMusicHub-Native'
           New-Item -ItemType Directory "$folder/licenses/engraving","$folder/evidence" -Force | Out-Null
@@ -178,6 +198,7 @@ jobs:
           Copy-Item desktop-acceptance/native-acceptance.json,desktop-acceptance/downloaded-files.json,desktop-acceptance/renderer-*.json "$folder/evidence/"
           Copy-Item desktop-bulk-import/native-bulk-import.json,desktop-bulk-import/native-bulk-import-files.json,desktop-bulk-import/renderer-bulk-*.json "$folder/evidence/"
           Copy-Item desktop-clean-song/native-clean-song.json,desktop-clean-song/native-clean-song-files.json,desktop-clean-song/renderer-clean-*.json "$folder/evidence/"
+          Copy-Item desktop-vsq-song/native-vsq-song.json,desktop-vsq-song/native-vsq-song-files.json,desktop-vsq-song/renderer-vsq-*.json "$folder/evidence/"
           python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder
           if ($LASTEXITCODE -ne 0) { throw 'Native provenance/acceptance inventory failed' }
           $zip="dist/WorldMusicHub-Native-Windows-x64-commit-$count.zip"
@@ -227,6 +248,15 @@ jobs:
             desktop-clean-song/Scores/clean-backups/**
             desktop-clean-song/Scores/imports/**
             desktop-clean-song/Scores/import-backups/**
+            desktop-vsq-song/*.json
+            desktop-vsq-song/*.png
+            desktop-vsq-song/*.log
+            desktop-vsq-song/downloads/*
+            desktop-vsq-song/fixtures/*
+            desktop-vsq-song/Scores/clean-songs/**
+            desktop-vsq-song/Scores/clean-backups/**
+            desktop-vsq-song/Scores/imports/**
+            desktop-vsq-song/Scores/import-backups/**
             desktop-portable/*.json
             desktop-portable/*.png
             desktop-portable/*.log

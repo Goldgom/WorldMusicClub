@@ -37,6 +37,7 @@ pub fn run() {
                 worldmusichub_desktop::acceptance::FOLDER_PHASES.contains(&run.phase)
                     || worldmusichub_desktop::acceptance::BULK_PHASES.contains(&run.phase)
                     || worldmusichub_desktop::acceptance::CLEAN_PHASES.contains(&run.phase)
+                    || worldmusichub_desktop::acceptance::VSQ_PHASES.contains(&run.phase)
             }) {
                 "Scores"
             } else {

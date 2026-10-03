@@ -39,10 +39,22 @@ jobs:
           WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
         run: node scripts/hosted-clean-song-check.mjs
+      - name: Authored VSQ protocol, evidence verifier and actual browser flow
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: |
+          node scripts/check-vsq-song-native.mjs
+          node --test tests/native-vsq-song-evidence.test.js
+          WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-vsq-song-check.mjs
+          WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-vsq-song-check.mjs
       - name: Retain exact-source clean package evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: clean-song-ui-preview-${{ github.sha }}
-          path: test-results/clean-song/
+          path: |
+            test-results/clean-song/
+            test-results/vsq-song/
           if-no-files-found: warn

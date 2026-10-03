@@ -12,6 +12,7 @@ pub const PHASES: [&str; 4] = ["seed", "restart", "close-active", "reopen"];
 pub const FOLDER_PHASES: [&str; 3] = ["folder-seed", "folder-restart", "folder-failure"];
 pub const BULK_PHASES: [&str; 3] = ["bulk-seed", "bulk-restart", "bulk-failure"];
 pub const CLEAN_PHASES: [&str; 2] = ["clean-seed", "clean-restart"];
+pub const VSQ_PHASES: [&str; 2] = ["vsq-seed", "vsq-restart"];
 pub const MAX_CLEAN_REPORT_BYTES: usize = 1024 * 1024;
 pub const MAX_SMOKE_REPORT_BYTES: usize = 64 * 1024;
 pub const MAX_BULK_REPORT_BYTES: usize = 4 * 1024 * 1024;
@@ -29,6 +30,7 @@ impl Acceptance {
             .chain(FOLDER_PHASES)
             .chain(BULK_PHASES)
             .chain(CLEAN_PHASES)
+            .chain(VSQ_PHASES)
             .find(|candidate| *candidate == phase)
             .ok_or("Unknown acceptance phase")?;
         std::fs::create_dir_all(directory.join("downloads"))
@@ -47,7 +49,9 @@ impl Acceptance {
             serde_json::to_string(self.phase).unwrap(),
             include_str!("../acceptance-wait.js"),
             include_str!("../reference-acceptance.js"),
-            if CLEAN_PHASES.contains(&self.phase) {
+            if VSQ_PHASES.contains(&self.phase) {
+                include_str!("../vsq-song-acceptance.js")
+            } else if CLEAN_PHASES.contains(&self.phase) {
                 include_str!("../clean-song-acceptance.js")
             } else if BULK_PHASES.contains(&self.phase) {
                 include_str!("../bulk-import-acceptance.js")
@@ -62,7 +66,7 @@ impl Acceptance {
         format!("renderer-{}.json", self.phase)
     }
     fn report_limit(&self) -> usize {
-        if CLEAN_PHASES.contains(&self.phase) {
+        if CLEAN_PHASES.contains(&self.phase) || VSQ_PHASES.contains(&self.phase) {
             MAX_CLEAN_REPORT_BYTES
         } else if BULK_PHASES.contains(&self.phase) {
             MAX_BULK_REPORT_BYTES
@@ -77,7 +81,10 @@ impl Acceptance {
         message: &'static str,
         received_bytes: usize,
     ) {
-        if !BULK_PHASES.contains(&self.phase) && !CLEAN_PHASES.contains(&self.phase) {
+        if !BULK_PHASES.contains(&self.phase)
+            && !CLEAN_PHASES.contains(&self.phase)
+            && !VSQ_PHASES.contains(&self.phase)
+        {
             return;
         }
         // Never include rejected body content or parser/OS diagnostics. Both the
@@ -156,7 +163,9 @@ impl Acceptance {
         if rows.len() >= 16 {
             return None;
         }
-        let extension = if (BULK_PHASES.contains(&self.phase) || CLEAN_PHASES.contains(&self.phase))
+        let extension = if (BULK_PHASES.contains(&self.phase)
+            || CLEAN_PHASES.contains(&self.phase)
+            || VSQ_PHASES.contains(&self.phase))
             && name.to_lowercase().ends_with(".zip")
         {
             "zip"
@@ -257,8 +266,11 @@ pub fn receive_report(
     let Some(directory) = directory else {
         return error(404, "Not found");
     };
-    let bulk = acceptance
-        .filter(|run| BULK_PHASES.contains(&run.phase) || CLEAN_PHASES.contains(&run.phase));
+    let bulk = acceptance.filter(|run| {
+        BULK_PHASES.contains(&run.phase)
+            || CLEAN_PHASES.contains(&run.phase)
+            || VSQ_PHASES.contains(&run.phase)
+    });
     let limit = bulk.map_or(MAX_SMOKE_REPORT_BYTES, Acceptance::report_limit);
     let reject = |status, code, message| {
         if let Some(run) = bulk {
@@ -417,6 +429,7 @@ fn valid_action(value: &Value) -> bool {
             "bulk-standard-a.json",
             "bulk-standard-b.json",
             "clean-authored-song.zip",
+            "vsq-authored-song.zip",
         ]
         .contains(&file);
         let download = PHASES.iter().any(|phase| {
@@ -425,12 +438,16 @@ fn valid_action(value: &Value) -> bool {
                 .and_then(|n| n.parse::<u8>().ok())
                 .is_some_and(|n| (1..=16).contains(&n))
         });
-        let bulk_download = BULK_PHASES.iter().chain(CLEAN_PHASES.iter()).any(|phase| {
-            file.strip_prefix(&format!("{phase}-"))
-                .and_then(|n| n.strip_suffix(".json").or_else(|| n.strip_suffix(".zip")))
-                .and_then(|n| n.parse::<u8>().ok())
-                .is_some_and(|n| (1..=16).contains(&n))
-        });
+        let bulk_download = BULK_PHASES
+            .iter()
+            .chain(CLEAN_PHASES.iter())
+            .chain(VSQ_PHASES.iter())
+            .any(|phase| {
+                file.strip_prefix(&format!("{phase}-"))
+                    .and_then(|n| n.strip_suffix(".json").or_else(|| n.strip_suffix(".zip")))
+                    .and_then(|n| n.parse::<u8>().ok())
+                    .is_some_and(|n| (1..=16).contains(&n))
+            });
         if !fixture && !download && !bulk_download {
             return false;
         }
@@ -445,10 +462,14 @@ mod tests {
 
     #[test]
     fn clean_reports_have_exact_inclusive_budget_and_finite_native_actions() {
-        for phase in CLEAN_PHASES {
+        for phase in CLEAN_PHASES.into_iter().chain(VSQ_PHASES) {
             let evidence = Evidence::new();
             let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
-            assert!(run.script().contains("Native clean control unavailable"));
+            assert!(run.script().contains(if VSQ_PHASES.contains(&phase) {
+                "VSQ native control unavailable"
+            } else {
+                "Native clean control unavailable"
+            }));
             assert!(run
                 .download("complete.zip")
                 .unwrap()
@@ -491,7 +512,10 @@ mod tests {
         }
         for file in [
             "clean-authored-song.zip",
+            "vsq-authored-song.zip",
             "clean-seed-1.zip",
+            "vsq-seed-1.zip",
+            "vsq-restart-16.json",
             "clean-restart-16.json",
         ] {
             assert!(valid_action(
@@ -501,6 +525,8 @@ mod tests {
         for file in [
             "clean-any-1.zip",
             "clean-seed-17.zip",
+            "vsq-seed-17.zip",
+            "../vsq-authored-song.zip",
             "../clean-authored-song.zip",
         ] {
             assert!(!valid_action(
