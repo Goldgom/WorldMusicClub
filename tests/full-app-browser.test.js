@@ -6,7 +6,7 @@ import {registerAboveKeyboardBrowserRegressions} from './above-keyboard-browser-
 import {registerReferenceListeningBrowserRegressions} from './reference-listening-browser-regression.js';
 import {registerSharedPianoStageBrowserRegressions} from './shared-piano-stage-browser-regression.js';
 import {registerFreePianoBrowserRegressions} from './free-piano-browser-regression.js';
-import {selectLegacyEnglish, wideKeyboardBindings, keyboardBrowserScore, observeRealAudio, guitarPhraseBrowserScore, boundedPreviewBrowserRecord} from './browser-input-fixtures.js';
+import {selectLegacyEnglish, wideKeyboardBindings, keyboardBrowserScore, observeRealAudio, guitarPhraseBrowserScore, boundedPreviewBrowserRecord, orderedInitialTempoBrowserMidi} from './browser-input-fixtures.js';
 /**
  * Full-stack checks against the actual Rust executable and its embedded UI.
  * Build first: cargo build -p practice-server --locked
@@ -621,6 +621,63 @@ test('live Rust-backed desktop light/dark and mobile layouts produce real screen
   assert.ok(geometry.piano > geometry.pianoViewport, 'The full keyboard scrolls inside its mobile container');
   assert.equal(await ui('#import-tools-button').isVisible(), true);
   await screenshot('mobile');
+});
+
+test('real Rust ordered initial MIDI tempos retain source bytes, effective timing and localized projection notices', testOptions, async () => {
+  const bytes = orderedInitialTempoBrowserMidi(), code = 'midi_initial_tempo_projection';
+  await ui('#interface-language').selectOption('zh-CN');
+  const [importResponse, compileResponse] = await Promise.all([
+    nextResponse('/api/import/midi'), nextResponse('/api/compile'),
+    ui('#score-file').setInputFiles({name:'original-ordered-tempos.mid',mimeType:'audio/midi',buffer:bytes}),
+  ]);
+  const imported = await responseJson(importResponse), compiled = await responseJson(compileResponse);
+  assert.equal(imported.score.source.format, 'midi-base64');
+  assert.deepEqual(Buffer.from(imported.score.source.content, 'base64'), bytes, 'Every original FF51 declaration survives the real Rust import');
+  assert.deepEqual(compiled.score, imported.score);
+  assert.deepEqual(compiled.score.tempo, [{at:{numerator:0,denominator:1},bpm:100}]);
+  assert.equal(compiled.score.parts.flatMap(part => part.notes).length, 3);
+  const timing = compiled.timeline.notes.map(({midi,start_ms,duration_ms}) => ({midi,start_ms,duration_ms}));
+  assert.deepEqual(timing, [
+    {midi:60,start_ms:0,duration_ms:600},
+    {midi:64,start_ms:600,duration_ms:600},
+    {midi:67,start_ms:1200,duration_ms:600},
+  ]);
+  assert.equal(compiled.timeline.duration_ms, 1800);
+  const projection = imported.diagnostics.filter(item => item.code === code);
+  assert.equal(projection.length, 1);
+  assert.equal(projection[0].severity, 'warning');
+  assert.deepEqual(imported.score.source.import_diagnostics.filter(item => item.code === code), projection);
+  assert.ok(compiled.diagnostics.some(item => item.code === code));
+  await readyForTitle('Original ordered tempo study');
+  await waitForBrowserImportCopies(1);
+  const notices = [];
+  for (const [locale, expected] of [
+    ['zh-CN','起始速度遵循来源事件顺序：零时刻最后一次速度声明用于后续计时，先前声明仍被保留。'],
+    ['en','The opening tempo follows source event order: the final declaration at tick zero controls subsequent timing. Earlier declarations are retained.'],
+  ]) {
+    await ui('#interface-language').selectOption(locale);
+    await closeShellPanels();
+    assert.equal(await page.locator('html').getAttribute('lang'), locale);
+    await page.waitForFunction(text => document.querySelector('#notice').textContent.includes(text), expected);
+    assert.equal(await page.locator('#notice').isVisible(), true);
+    const importNotice = await page.locator('#notice').textContent();
+    await ui('#score-details-button').click();
+    const detail = page.locator('#diagnostic-list>li').filter({hasText:code}).first();
+    await detail.waitFor({state:'visible'});
+    assert.equal(await detail.textContent(), `${code}: ${expected}`);
+    await page.screenshot({path:join(artifactDirectory,`worldmusichub-live-initial-tempo-${locale}.png`),fullPage:true,animations:'disabled'});
+    await ui('#back-to-library').click();
+    await page.waitForFunction(() => document.querySelector('#preview-title').textContent === 'Original ordered tempo study' && !document.querySelector('#start-listen').disabled);
+    if (!await page.locator('#preview-notices').evaluate(element => element.open)) await page.locator('#preview-notices>summary').click();
+    const preview = page.locator('#preview-notice-list>li').filter({hasText:expected}).first();
+    await preview.waitFor({state:'visible'});
+    assert.equal(await preview.textContent(), expected);
+    notices.push({locale,import:importNotice,details:await detail.textContent(),preview:await preview.textContent()});
+    await page.locator('#resume-session').click();
+  }
+  assert.equal(await page.locator('#tempo').inputValue(), '100');
+  assert.deepEqual(await exportScore(), imported.score, 'Language and screen changes preserve the original source and retained diagnostics');
+  await writeFile(join(artifactDirectory,'worldmusichub-live-initial-tempo.json'),JSON.stringify({source_sha256:createHash('sha256').update(bytes).digest('hex'),source_bytes:bytes.length,source_retained:true,canonical_bpm:100,timing,duration_ms:compiled.timeline.duration_ms,projection,notices},null,2));
 });
 
 test('.xml browser import reaches the Rust parser and exports its exact source, chord spelling and ties', testOptions, async () => {

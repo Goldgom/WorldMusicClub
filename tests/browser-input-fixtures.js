@@ -12,6 +12,22 @@ const rows = [
 ];
 export const wideKeyboardBindings = Object.freeze(rows.flatMap(([row,codes,keys]) => codes.map((code,index) => ({row,code,key:keys[index]}))).map((binding,index) => Object.freeze({...binding,midi:36+index})));
 
+// Original C4/E4/G4 quarter notes, not a transcription. All three FF51 events
+// occur in one track at tick zero; the last declaration makes each quarter 600 ms.
+export function orderedInitialTempoBrowserMidi() {
+  const title = Buffer.from('Original ordered tempo study');
+  const events = [0, 0xff, 0x03, title.length, ...title,
+    0, 0xff, 0x58, 4, 3, 2, 24, 8, // Explicit 3/4 meter.
+    0, 0xff, 0x51, 3, 0x07, 0xa1, 0x20, // 500,000 us/quarter.
+    0, 0xff, 0x51, 3, 0x0b, 0x71, 0xb0, // 750,000 us/quarter.
+    0, 0xff, 0x51, 3, 0x09, 0x27, 0xc0]; // 600,000 us/quarter.
+  for (const midi of [60, 64, 67]) events.push(0, 0x90, midi, 80, 96, 0x80, midi, 0);
+  events.push(0, 0xff, 0x2f, 0);
+  const track = Buffer.from(events), length = Buffer.alloc(4);
+  length.writeUInt32BE(track.length);
+  return Buffer.concat([Buffer.from('MThd'), Buffer.from([0, 0, 0, 6, 0, 0, 0, 1, 0, 96]), Buffer.from('MTrk'), length, track]);
+}
+
 export async function selectLegacyEnglish(page, {fresh = false} = {}) {
   const picker = page.locator('#interface-language');
   await picker.waitFor({state:'attached'});
