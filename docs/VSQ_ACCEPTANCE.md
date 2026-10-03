@@ -61,3 +61,18 @@ remain visible to the source guard.
 Adding or passing local checks does not establish hosted or native acceptance.
 No original vocal, voicebank, acoustic fidelity, audibility, latency or hardware
 claim is made. Full vocal rendering remains unavailable.
+
+## Consumed response evidence
+
+The VSQ observer records the exact JSON value delivered to the application by
+its original response.json() promise. It does not clone or re-read a response
+body: adopting a successful preview can abort the old controller after that
+original body has already been consumed. Fetch/body rejection still fails
+evidence. The observer forwards the original promises and caller-visible values,
+and restores the original methods and listeners at teardown.
+
+A real Import-button click intentionally delegates to the hidden file input's
+click() method. That single synthetic delegation is recorded separately, only
+inside the corresponding process-owned chooser action, and must pair with one
+trusted change carrying the approved original fixture filename. All other
+observed control/input events still require trusted delivery.
