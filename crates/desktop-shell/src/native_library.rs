@@ -6,10 +6,14 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashMap,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Component, Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex, MutexGuard, OnceLock, Weak,
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -20,6 +24,38 @@ const MAX_METADATA_BYTES: usize = 64 * 1024;
 const MAX_DIRECTORY_ITEMS: usize = 4096;
 const VERSION: u32 = 1;
 static STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static PROCESS_LOCKS: OnceLock<Mutex<HashMap<PathBuf, Weak<ProcessLock>>>> = OnceLock::new();
+
+#[derive(Debug, Default)]
+struct ProcessLock {
+    mutex: Mutex<()>,
+    #[cfg(test)]
+    waiting: std::sync::atomic::AtomicUsize,
+}
+
+fn process_lock(root: &Path) -> Result<Arc<ProcessLock>> {
+    // Keep display/storage paths unchanged. Canonical identity lets independently
+    // opened handles for the same verified directory share one process gate.
+    let identity = fs::canonicalize(root).map_err(io_error)?;
+    let mut locks = PROCESS_LOCKS
+        .get_or_init(Mutex::default)
+        .lock()
+        .map_err(|_| {
+            fail(
+                500,
+                "library_io",
+                "Native storage coordination was interrupted; restart the app to recover",
+            )
+        })?;
+    // No stale-root growth: the registry owns weak references only.
+    locks.retain(|_, value| value.strong_count() != 0);
+    if let Some(lock) = locks.get(&identity).and_then(Weak::upgrade) {
+        return Ok(lock);
+    }
+    let lock = Arc::new(ProcessLock::default());
+    locks.insert(identity, Arc::downgrade(&lock));
+    Ok(lock)
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct LibraryError {
@@ -120,15 +156,21 @@ pub struct LoadedScore {
 #[derive(Debug)]
 pub struct NativeLibrary {
     pub(crate) root: PathBuf,
+    process_lock: Arc<ProcessLock>,
 }
 
-pub(crate) struct LibraryLock(File);
-impl Drop for LibraryLock {
+pub(crate) struct LibraryLock<'a> {
+    file: File,
+    // Released only after Drop explicitly unlocks the file, so another local
+    // worker cannot race the OS unlock with its own nonblocking file acquisition.
+    _process: MutexGuard<'a, ()>,
+}
+impl Drop for LibraryLock<'_> {
     fn drop(&mut self) {
         // Explicit unlock also releases an open-file-description lock when a
         // concurrently spawned child briefly inherits the descriptor before
         // exec closes it. Closing our descriptor alone can leave that lock held.
-        let _ = self.0.unlock();
+        let _ = self.file.unlock();
     }
 }
 
@@ -293,10 +335,26 @@ impl NativeLibrary {
         for name in ["songs", "backups", ".staging"] {
             create_directory_tree(&root.join(name))?;
         }
-        Ok(Self { root })
+        let process_lock = process_lock(&root)?;
+        Ok(Self { root, process_lock })
     }
 
-    pub(crate) fn lock(&self) -> Result<LibraryLock> {
+    pub(crate) fn lock(&self) -> Result<LibraryLock<'_>> {
+        // Windows invokes library operations on its bounded blocking-worker pool.
+        // Queue legitimate local readers/writers here; never wait on an external
+        // process's file lock or spin/retry an operation that may have committed.
+        #[cfg(test)]
+        self.process_lock.waiting.fetch_add(1, Ordering::SeqCst);
+        let process = self.process_lock.mutex.lock();
+        #[cfg(test)]
+        self.process_lock.waiting.fetch_sub(1, Ordering::SeqCst);
+        let process = process.map_err(|_| {
+            fail(
+                500,
+                "library_io",
+                "A native storage operation was interrupted; restart the app to recover",
+            )
+        })?;
         check_node(&self.root, true)?;
         for name in ["songs", "backups", ".staging"] {
             check_node(&self.root.join(name), true)?;
@@ -321,7 +379,10 @@ impl NativeLibrary {
                 format!("The library is in use; retry shortly: {error}"),
             )
         })?;
-        Ok(LibraryLock(file))
+        Ok(LibraryLock {
+            file,
+            _process: process,
+        })
     }
 
     fn children(&self, directory: &str) -> Result<Vec<PathBuf>> {
@@ -775,5 +836,241 @@ pub fn dispatch(
             }
         }
         Err(error) => error_response(error),
+    }
+}
+
+#[cfg(test)]
+mod concurrency_tests {
+    use super::*;
+    use http::Request;
+    use serde_json::{json, Value};
+    use std::{
+        sync::{mpsc, Barrier},
+        thread,
+        time::{Duration, Instant},
+    };
+
+    struct Sandbox(PathBuf);
+    impl Sandbox {
+        fn new() -> Self {
+            let sequence = STAGE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let root = std::env::temp_dir().join(format!(
+                "wmh-native-queue-{}-{}-{sequence}",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            fs::create_dir(&root).unwrap();
+            Self(root)
+        }
+    }
+    impl Drop for Sandbox {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    fn authored_score(id: &str) -> String {
+        let mut score = score_core::catalog().remove(0);
+        score.id = id.into();
+        serde_json::to_string(&score).unwrap()
+    }
+
+    fn request(method: &str, path: &str, body: Vec<u8>) -> Request<Vec<u8>> {
+        Request::builder()
+            .method(method)
+            .uri(format!("{}{path}", crate::ORIGIN))
+            .header("content-type", "application/json")
+            .header("x-wmh-filename", "original.json")
+            .body(body)
+            .unwrap()
+    }
+
+    #[test]
+    fn startup_read_preview_save_and_history_queue_across_handles_and_clones() {
+        let sandbox = Sandbox::new();
+        let root = sandbox.0.join("Scores");
+        let library = Arc::new(NativeLibrary::open(&root).unwrap());
+        let second = Arc::new(NativeLibrary::open(&root).unwrap());
+        assert!(Arc::ptr_eq(&library.process_lock, &second.process_lock));
+        let unrelated = NativeLibrary::open(sandbox.0.join("OtherScores")).unwrap();
+        assert!(!Arc::ptr_eq(&library.process_lock, &unrelated.process_lock));
+
+        let imported = authored_score("queued-import");
+        let saved = authored_score("queued-save");
+        let another = authored_score("queued-next-preview");
+        let expected_scores = HashMap::from([
+            ("queued-import", imported.clone()),
+            ("queued-save", saved.clone()),
+        ]);
+        let cases = vec![
+            (library.clone(), request("GET", "/api/library/list", vec![])),
+            (
+                second.clone(),
+                request(
+                    "POST",
+                    "/api/library/import/preview",
+                    imported.as_bytes().to_vec(),
+                ),
+            ),
+            (
+                library.clone(),
+                request(
+                    "POST",
+                    "/api/library/save",
+                    serde_json::to_vec(&json!({"score_json":saved})).unwrap(),
+                ),
+            ),
+            (
+                second.clone(),
+                request("GET", "/api/library/imports", vec![]),
+            ),
+            (
+                library.clone(),
+                request("POST", "/api/library/import/preview", another.into_bytes()),
+            ),
+            (
+                second.clone(),
+                request(
+                    "POST",
+                    "/api/library/import/commit",
+                    imported.as_bytes().to_vec(),
+                ),
+            ),
+        ];
+        let count = cases.len();
+        let start = Arc::new(Barrier::new(count + 1));
+        let (completed, completion) = mpsc::channel();
+        let held = library.lock().unwrap();
+        // A held root does not block another configured native library.
+        assert!(unrelated.list().unwrap().entries.is_empty());
+        let handles: Vec<_> = cases
+            .into_iter()
+            .enumerate()
+            .map(|(index, (handle, request))| {
+                let start = start.clone();
+                let completed = completed.clone();
+                let root = root.clone();
+                thread::spawn(move || {
+                    start.wait();
+                    // Include initialization racing immediate first-use requests.
+                    let opened = (index == 5).then(|| NativeLibrary::open(root).unwrap());
+                    let response =
+                        crate::dispatch_with_library(request, opened.as_ref().unwrap_or(&handle));
+                    completed.send(index).unwrap();
+                    (
+                        response.status().as_u16(),
+                        serde_json::from_slice::<Value>(response.body()).unwrap(),
+                    )
+                })
+            })
+            .collect();
+        start.wait();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while library.process_lock.waiting.load(Ordering::SeqCst) != count
+            && Instant::now() < deadline
+        {
+            thread::yield_now();
+        }
+        // Unlike a sequential or merely barrier-started test, this observes all
+        // six threads inside acquisition while the first lock is still held.
+        let waiting = library.process_lock.waiting.load(Ordering::SeqCst);
+        let premature = completion.try_recv().ok();
+        drop(held);
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        assert_eq!(
+            waiting, count,
+            "Every real request must reach the held process gate"
+        );
+        assert!(
+            premature.is_none(),
+            "No request should return self-contention as library_busy"
+        );
+        for (status, body) in &results {
+            assert_eq!(*status, 200, "{body}");
+        }
+        assert_eq!(results[5].1["summary"]["saved"], 1);
+        assert_eq!(library.list().unwrap().entries.len(), 2);
+        let history =
+            crate::dispatch_with_library(request("GET", "/api/library/imports", vec![]), &library);
+        let history: Value = serde_json::from_slice(history.body()).unwrap();
+        assert_eq!(history["imports"].as_array().unwrap().len(), 1);
+        assert!(history["issues"].as_array().unwrap().is_empty());
+
+        // Rapid subsequent selections remain usable after the queued activity.
+        for _ in 0..3 {
+            let response = crate::dispatch_with_library(
+                request(
+                    "POST",
+                    "/api/library/import/preview",
+                    imported.as_bytes().to_vec(),
+                ),
+                &second,
+            );
+            assert_eq!(response.status(), 200);
+            let body: Value = serde_json::from_slice(response.body()).unwrap();
+            assert_eq!(body["summary"]["duplicate"], 1);
+        }
+        let reopened = NativeLibrary::open(root).unwrap();
+        let entries = reopened.list().unwrap().entries;
+        assert_eq!(entries.len(), 2);
+        for entry in entries {
+            assert_eq!(
+                reopened.load(&entry.key).unwrap().score_json,
+                expected_scores[entry.score_id.as_str()]
+            );
+        }
+    }
+
+    #[test]
+    fn registry_does_not_keep_unused_library_roots_alive() {
+        let sandbox = Sandbox::new();
+        let root = sandbox.0.join("TransientScores");
+        let weak = {
+            let library = NativeLibrary::open(&root).unwrap();
+            Arc::downgrade(&library.process_lock)
+        };
+        assert!(weak.upgrade().is_none());
+        let _next = NativeLibrary::open(sandbox.0.join("NextScores")).unwrap();
+        let identity = fs::canonicalize(root).unwrap();
+        assert!(!PROCESS_LOCKS
+            .get()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .contains_key(&identity));
+    }
+
+    #[test]
+    fn cross_process_busy_probe() {
+        let Some(root) = std::env::var_os("WMH_NATIVE_QUEUE_BUSY_ROOT") else {
+            return;
+        };
+        let library = NativeLibrary::open(root).unwrap();
+        let error = library.list().unwrap_err();
+        assert_eq!(error.status, 503);
+        assert_eq!(error.code, "library_busy");
+    }
+
+    #[test]
+    fn another_process_still_gets_retryable_busy_without_waiting_on_the_gate() {
+        let sandbox = Sandbox::new();
+        let root = sandbox.0.join("Scores");
+        let library = NativeLibrary::open(&root).unwrap();
+        let held = library.lock().unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "native_library::concurrency_tests::cross_process_busy_probe",
+                "--nocapture",
+            ])
+            .env("WMH_NATIVE_QUEUE_BUSY_ROOT", &root)
+            .status()
+            .unwrap();
+        drop(held);
+        assert!(status.success());
+        assert!(library.list().unwrap().entries.is_empty());
     }
 }

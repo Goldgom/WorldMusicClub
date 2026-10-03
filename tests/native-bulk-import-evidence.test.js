@@ -9,10 +9,22 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {fileURLToPath} from 'node:url';
 import {bulkAcceptanceFixtures} from '../scripts/prepare-bulk-import-fixtures.mjs';
-import {storedZip} from './native-import-driver-fixtures.js';
+import {storedZip,authoredLegacyPack} from './native-import-driver-fixtures.js';
 import {verifyNativeBulkImportEvidence,bulkFixtureContentHash,readBulkEvidenceZip,BULK_IMPORT_PHASES,BULK_IMPORT_CHECKS} from '../scripts/verify-native-bulk-import-evidence.mjs';
 
 const hash=value=>createHash('sha256').update(value).digest('hex'),clone=structuredClone,run=promisify(execFile);
+
+test('streaming ZIP fixture preserves UTF-8 member names independently of Python text encoding',async()=>{
+ const fixture=authoredLegacyPack(),moduleUrl=new URL('./native-import-driver-fixtures.js',import.meta.url).href;
+ const program=`import {authoredLegacyPack} from ${JSON.stringify(moduleUrl)};process.stdout.write(authoredLegacyPack().bytes.toString('base64'));`;
+ const {stdout}=await run(process.execPath,['--input-type=module','-e',program],{env:{...process.env,PYTHONIOENCODING:'latin-1'}});
+ const fromNonUtf8=Buffer.from(stdout.trim(),'base64');
+ assert.deepEqual(fromNonUtf8,fixture.bytes,'Binary UTF-8 input must not depend on a Windows stdin code page');
+ const members=readBulkEvidenceZip(fromNonUtf8);
+ assert.deepEqual([...members.keys()].sort(),fixture.entries.map(([name])=>name).sort());
+ for(const [name,bytes]of fixture.entries)assert.deepEqual(members.get(name),Buffer.from(bytes),`Complete authored member retained: ${name}`);
+ assert.ok(members.has('原创曲包/一键导入曲库.json'));
+});
 const script=fileURLToPath(new URL('../scripts/verify-native-bulk-import-evidence.mjs',import.meta.url));
 const statuses=['ready','saved','duplicate','conflict','retained_nonplayable','error'];
 function crc32(bytes){let crc=0xffffffff;for(const byte of bytes){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return(crc^0xffffffff)>>>0;}

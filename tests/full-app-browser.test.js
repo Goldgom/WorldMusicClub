@@ -34,6 +34,7 @@ import {densePianoforte} from './numbered-layout-fixtures.js';
 import {originalGuitarChordTransitions} from './guitar-live-fixtures.js';
 import {connectionDiagnostics} from './browser-connection-diagnostics.js';
 import {validatePerformanceRecord} from '../web/performance-library.js';
+import {assertAddedLibraryCopies} from './library-copy-assertions.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const binary = resolve(root, process.env.WMH_SERVER_BINARY || join('target', 'debug', `practice-server${process.platform === 'win32' ? '.exe' : ''}`));
@@ -297,16 +298,6 @@ async function waitForBrowserImportCopies(count) {
   assert.deepEqual(await page.locator('#catalog [data-library-key]').evaluateAll(rows => rows.map(row => row.dataset.libraryKey).sort()),
     copies.map(row => `browser:${row.key}`).sort(), 'The lobby and archive use the same saved-copy identities');
   return copies;
-}
-
-function assertAddedLibraryCopies(before, after, expected) {
-  assert.equal(new Set(after.map(row => row.key)).size, after.length, 'Saved copies have distinct storage keys');
-  for (const row of before) assert.deepEqual(after.find(copy => copy.key === row.key), row, 'Existing identities, metadata and exact sources remain unchanged');
-  const added = after.filter(row => !before.some(copy => copy.key === row.key));
-  const ordered = entries => entries.map(entry => JSON.stringify(entry)).sort();
-  assert.deepEqual(ordered(added.map(({label, score}) => ({label, score}))), ordered(expected));
-  assert.ok(added.every(row => row.revision === 1 && row.key !== row.score.id && row.score_id === row.score.id), 'New copy identities are independent of canonical score IDs');
-  return added;
 }
 
 async function downloadLibraryBackup() {
@@ -1839,7 +1830,7 @@ test('complete Beethoven browser library restore retains all originals and guita
   const edition=JSON.parse(await readFile(join(root,'catalog/editions/cc0-beethoven-gottes-macht-op48-5/score.json'),'utf8'));
   const [response]=await Promise.all([nextResponse('/api/compile'),ui(`[data-score-id="${edition.id}"]`).click()]);
   const compiled=await responseJson(response);await activateCatalogTitle(edition.title);
-  const restored=await libraryRoundtrip(compiled,'Complete Beethoven archive','beethoven-library-backup.json');
+  const restored=await libraryRoundtrip(compiled,'Complete Beethoven archive','beethoven-library-backup.json',[]);
   assert.deepEqual(restored.score,edition);assert.equal(restored.score.source.content,edition.source.content);
   const savedKey=await ui('#library-list>li').first().getAttribute('data-library-key');
   await reloadStage();await readyForTitle(initialCompilation.score.title);await ui('#library-button').click();

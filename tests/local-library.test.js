@@ -5,7 +5,34 @@ import {openScoreLibrary} from '../web/local-library.js';
 import {fixture} from './frontend-fixtures.js';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
+import {assertAddedLibraryCopies} from './library-copy-assertions.js';
 const create=()=>openScoreLibrary({factory:new IDBFactory()});
+
+test('browser archive assertions ignore object key order while matching complete copies one to one',()=>{
+ const score={...structuredClone(fixture),source:{format:'original-test-text',filename:'original.txt',content:'\uFEFFExact original · 文本\r\n{"a":1,"b":2}'}};
+ const reordered={...score,source:{content:score.source.content,filename:score.source.filename,format:score.source.format}};
+ const row=(key,value=score,label=null)=>({key,revision:1,score_id:value.id,label,score:structuredClone(value)});
+ const old=row('old-copy'),first=row('first-copy',reordered),second=row('second-copy',score,'Labeled copy');
+ const expected=[{label:'Labeled copy',score},{label:null,score}];
+ const before=structuredClone({old,first,second,expected});
+ assert.deepEqual(assertAddedLibraryCopies([old],[second,old,first],expected),[second,first]);
+ assert.deepEqual({old,first,second,expected},before,'Comparison must not mutate scores or expected entries');
+ assert.equal(assertAddedLibraryCopies([],[first,row('another-copy',reordered)],[{label:null,score},{label:null,score}]).length,2,'Identical imports remain distinct permitted copies');
+ for(const changedContent of [score.source.content.slice(1),score.source.content.replace('\r\n','\n'),score.source.content.replace('{"a":1,"b":2}','{"b":2,"a":1}')]){
+  const changed=row('changed-source');changed.score.source.content=changedContent;
+  assert.throws(()=>assertAddedLibraryCopies([],[changed],[{label:null,score}]),assert.AssertionError,'Retained source strings stay exact even when parsed content could be equivalent');
+ }
+ const reversed=row('reversed-notes');reversed.score.parts[0].notes.reverse();
+ assert.throws(()=>assertAddedLibraryCopies([],[reversed],[{label:null,score}]),assert.AssertionError,'Ordered note arrays are never treated as sets');
+ const changedTime=row('changed-time');changedTime.score.parts[0].notes[0].at={numerator:1,denominator:3};
+ assert.throws(()=>assertAddedLibraryCopies([],[changedTime],[{label:null,score}]),assert.AssertionError,'Exact rational note time remains part of the comparison');
+ assert.throws(()=>assertAddedLibraryCopies([old],[old,first],expected),assert.AssertionError,'A missing copy fails');
+ assert.throws(()=>assertAddedLibraryCopies([old],[old,first,row('substituted-copy')],expected),assert.AssertionError,'A duplicate cannot substitute for a missing labeled edition');
+ assert.throws(()=>assertAddedLibraryCopies([old],[old,first,first],expected),assert.AssertionError,'Repeated storage keys fail');
+ assert.throws(()=>assertAddedLibraryCopies([old],[first,second],expected),assert.AssertionError,'Existing copies cannot disappear');
+ assert.throws(()=>assertAddedLibraryCopies([old],[{...old,revision:2},first,second],expected),assert.AssertionError,'Existing metadata cannot change');
+});
+
 test('explicit local save keeps a complete immutable canonical/source snapshot',async()=>{
  const library=await create();try{const score=structuredClone(fixture);score.source={format:'musicxml',filename:'fragment.xml',content:'<score>\r\n音符 &amp; 原稿</score>'};const saved=await library.save(score,{label:'My fragment'});score.title='Changed elsewhere';const loaded=await library.get(saved.key);assert.equal(loaded.score.title,fixture.title);assert.equal(loaded.score.source.content,'<score>\r\n音符 &amp; 原稿</score>');assert.equal(loaded.label,'My fragment');const rows=await library.list();assert.equal(rows.length,1);assert.ok(!('score'in rows[0]));}finally{library.close()}
 });

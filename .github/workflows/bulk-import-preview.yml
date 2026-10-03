@@ -53,7 +53,7 @@ jobs:
           WMH_ARTIFACT_DIR: ${{ runner.temp }}/worldmusichub-import-recovery
         run: >-
           node --test
-          --test-name-pattern='standard MusicXML|real local library preserves|real whole-score semitone preview|MXL .* browser import retains|real no-score Free practice|real initial compact guide|real compact 88-key|normal and free piano share'
+          --test-name-pattern='standard MusicXML|real local library preserves|real whole-score semitone preview|MXL .* browser import retains|complete Beethoven browser library|real no-score Free practice|real initial compact guide|real compact 88-key|normal and free piano share'
           tests/full-app-browser.test.js
       - name: Preserve affected-regression evidence without replacing full acceptance
         if: always()

@@ -100,8 +100,14 @@ bulk restore and automatic migration from IndexedDB are separate UI work.
 
 ## Write ordering and recovery
 
-1. Validate the full canonical score and acquire an OS file lock. Other instances
-   receive `library_busy`; process termination releases the OS lock automatically
+1. Validate the full canonical score, queue behind the in-process gate for the
+   same canonical library directory, then acquire the existing nonblocking OS
+   file lock. Local readers/writers, including separately opened handles, share
+   that gate. Another process holding the OS lock still receives `library_busy`;
+   process termination releases the OS lock automatically. The gate is held until
+   the file is explicitly unlocked; stale directory gates are weakly held and
+   discarded. Windows keeps this waiting off the UI thread in its existing bounded
+   worker/admission pool; there are no sleeps, operation retries or relaxed locks
 2. Rebuild inventory from published folders, detecting duplicates/conflicts
 3. Write complete primary and backup stages using exclusive file creation; sync
    every file. Metadata is written last
