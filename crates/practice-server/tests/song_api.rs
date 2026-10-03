@@ -141,6 +141,54 @@ fn raw_event_output_retains_every_source_identity_encoding_and_hash() {
         "invalid_container"
     );
 }
+
+#[test]
+fn initial_controller_pair_imports_complete_parts_with_retained_warning_and_raw_events() {
+    // Original two-part fixture; no private input or transcribed music.
+    let bytes = smf(
+        1,
+        7,
+        &[
+            vec![
+                0, 0xc0, 13, 0, 0xb0, 121, 0, 0, 0xb0, 64, 0, 1, 0x90, 61, 103, 6, 0x80, 61, 13, 0,
+                0xff, 0x2f, 0,
+            ],
+            vec![
+                0, 0xb1, 121, 0, 0, 0xb1, 64, 0, 0, 0xc1, 42, 0, 0x91, 72, 57, 7, 72, 0, 0, 0xff,
+                0x2f, 0,
+            ],
+        ],
+    );
+    let imported = api_response("/api/import/midi", bytes.clone());
+    assert_eq!(imported.status, 200);
+    let compiled: Value = serde_json::from_slice(&imported.body).unwrap();
+    let score = &compiled["score"];
+    assert_eq!(score["parts"].as_array().unwrap().len(), 2);
+    assert_eq!(score["parts"][0]["notes"][0]["id"], "midi-t1-c1-e4");
+    assert_eq!(score["parts"][1]["notes"][0]["id"], "midi-t2-c2-e4");
+    assert!(score["source"]["import_diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|d| d["code"] == "midi_initial_controls"));
+    assert_eq!(body("/api/compile", score), compiled);
+    let raw = api_response("/api/midi/events", bytes.clone());
+    assert_eq!(raw.status, 200);
+    let timeline: Value = serde_json::from_slice(&raw.body).unwrap();
+    assert_eq!(timeline["events"].as_array().unwrap().len(), 12);
+    assert_eq!(
+        timeline["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["kind"]["message"]["kind"] == "controller")
+            .count(),
+        4
+    );
+    let parsed = score_core::midi_events::parse_midi_events(&bytes, None).unwrap();
+    assert_eq!(parsed.original_bytes(), bytes);
+    assert_eq!(timeline["source_sha256"], parsed.source_sha256().hex());
+}
 #[test]
 fn complete_envelopes_source_bytes_and_encoded_responses_have_distinct_limits() {
     for route in [

@@ -42,6 +42,62 @@ struct NoteEvent {
     on: bool,
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum InitialControlPhase {
+    #[default]
+    Untouched,
+    ResetPending,
+    Initialized,
+    OtherState,
+}
+
+/// A narrowly declared initial state, never an implementation of MIDI pedals
+/// or arbitrary Reset All Controllers behavior during a performance.
+#[derive(Clone, Copy, Default)]
+struct InitialControls {
+    tracks: u128,
+    phase: InitialControlPhase,
+    used: bool,
+}
+impl InitialControls {
+    fn observe(&mut self, track: usize, tick: u64, message: MidiMessage) -> Result<bool, String> {
+        self.tracks |= 1_u128 << track;
+        if self.used && self.tracks.count_ones() != 1 {
+            return Err("MIDI initial reset/sustain-off requires a channel owned by one source track; cross-track initialization order is not inferred".into());
+        }
+        match message {
+            MidiMessage::Controller { controller, value } if controller.as_int() == 121 => {
+                if self.tracks.count_ones() != 1 {
+                    return Err("MIDI initial reset/sustain-off requires a channel owned by one source track; cross-track initialization order is not inferred".into());
+                }
+                if tick != 0 || value.as_int() != 0 || self.phase != InitialControlPhase::Untouched {
+                    return Err("MIDI controller 121 is supported only once as initial reset value 0 at tick zero, before notes or other controller state, followed by sustain-off value 0".into());
+                }
+                self.phase = InitialControlPhase::ResetPending;
+                self.used = true;
+                Ok(true)
+            }
+            MidiMessage::Controller { controller, value }
+                if controller.as_int() == 64
+                    && tick == 0
+                    && value.as_int() == 0
+                    && self.phase == InitialControlPhase::ResetPending =>
+            {
+                self.phase = InitialControlPhase::Initialized;
+                Ok(true)
+            }
+            _ if self.phase == InitialControlPhase::ResetPending => Err(
+                "MIDI controller 121 initial reset must be followed by sustain-off pedal value 0 at tick zero before any further channel state".into(),
+            ),
+            MidiMessage::ProgramChange { .. } => Ok(false),
+            _ => {
+                self.phase = InitialControlPhase::OtherState;
+                Ok(false)
+            }
+        }
+    }
+}
+
 /// Reject structural truncation and mismatched counts before allocating events.
 /// Only plain SMF is supported, not RIFF-wrapped MIDI or unknown chunk types.
 fn check_container(bytes: &[u8]) -> Result<usize, String> {
@@ -280,6 +336,8 @@ pub fn import_midi(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
     let mut total_events = 0;
     let mut note_count = 0;
     let mut end_tick = 0;
+    let mut initial_controls = [InitialControls::default(); 16];
+    let mut has_channel_prefix = false;
     for (track_index, events) in tracks.enumerate() {
         if track_index >= expected_tracks {
             return Err("MIDI parsed track count exceeds its header".into());
@@ -310,6 +368,13 @@ pub fn import_midi(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
             match event.kind {
                 TrackEventKind::Midi { channel, message } => {
                     let channel = channel.as_int();
+                    let controls = &mut initial_controls[usize::from(channel)];
+                    if controls.observe(track_index, tick, message)? {
+                        if controls.phase == InitialControlPhase::Initialized {
+                            warnings.add("midi_initial_controls", "A single-track channel begins with Reset All Controllers value 0 followed by sustain-off value 0 at tick zero, before notes or other controller state. This practice rendition starts with no held keys, centered pitch and sustain off. Both events remain in the complete original source; later resets/pedals, external device state and original instrument behavior are not reproduced.");
+                        }
+                        continue;
+                    }
                     let note = match message {
                         MidiMessage::NoteOn { key, vel } => Some((key.as_int(), vel.as_int(), vel.as_int() != 0)),
                         MidiMessage::NoteOff { key, vel } => {
@@ -377,6 +442,10 @@ pub fn import_midi(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
                     }
                     MetaMessage::TrackName(bytes) if name.is_empty() => name = display_name(bytes, &mut warnings),
                     MetaMessage::EndOfTrack => ended = true,
+                    MetaMessage::MidiChannel(_) => {
+                        has_channel_prefix = true;
+                        warnings.add("midi_metadata_source_only", "MIDI text, lyrics, copyright notices, instrument labels and other non-timing metadata are retained in the original source only. Copyright text is not treated as a license grant.");
+                    }
                     MetaMessage::SmpteOffset(_) => return Err("MIDI SMPTE offset is unsupported; absolute track offsets must be resolved before import".into()),
                     MetaMessage::MidiPort(_) => return Err("MIDI port routing is unsupported; export a single-port MIDI file to avoid conflating independent channels".into()),
                     MetaMessage::Unknown(_, _) => return Err("Unknown or malformed MIDI metadata is unsupported; it may contain performance semantics".into()),
@@ -396,6 +465,15 @@ pub fn import_midi(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
     }
     if names.len() != expected_tracks {
         return Err("MIDI parsed track count disagrees with its header".into());
+    }
+    if initial_controls
+        .iter()
+        .any(|controls| controls.phase == InitialControlPhase::ResetPending)
+    {
+        return Err("MIDI controller 121 initial reset requires a complete sustain-off pedal value 0 pair at tick zero".into());
+    }
+    if has_channel_prefix && initial_controls.iter().any(|controls| controls.used) {
+        return Err("MIDI initial reset/sustain-off does not support channel-prefix routing; resolve routing before importing this initialization".into());
     }
     // MIDI channels are shared across type-1 tracks. Match across tracks rather
     // than closing every track independently or treating tracks as MIDI ports.
@@ -707,6 +785,271 @@ mod tests {
         assert!(note.duration.equivalent(Beat::new(2, 7)));
         assert_eq!(note.velocity, 117);
         assert_eq!(note.pitch.as_ref().unwrap().midi(), Some(61));
+    }
+
+    #[test]
+    fn midi_initial_controls_preserve_complete_source_parts_ids_and_exact_times() {
+        let bytes = smf(
+            1,
+            7,
+            &[
+                track(&[
+                    (0, &[0xff, 0x51, 3, 7, 0xa1, 0x23]),
+                    (0, &[0xff, 0x58, 4, 3, 2, 24, 8]),
+                    (0, &[0xff, 0x59, 2, 253, 1]),
+                    (3, &[0xff, 0x51, 3, 9, 0x27, 0xc7]),
+                    (6, &[0xff, 0x2f, 0]),
+                ]),
+                track(&[
+                    (0, &[0xc0, 13]),
+                    (0, &[0xb0, 121, 0]),
+                    (0, &[0xff, 1, 1, 255]),
+                    (0, &[0xb0, 64, 0]),
+                    (0, &[0xb0, 7, 100]),
+                    (1, &[0x90, 61, 103]),
+                    (6, &[0x80, 61, 13]),
+                    (2, &[0xff, 0x2f, 0]),
+                ]),
+                track(&[
+                    (0, &[0xb1, 121, 0]),
+                    (0, &[0xb1, 64, 0]),
+                    (0, &[0xc1, 42]),
+                    (0, &[0x91, 72, 57]),
+                    (7, &[72, 0]),
+                    (1, &[0xff, 2, 0]),
+                    (1, &[0xff, 0x2f, 0]),
+                ]),
+            ],
+        );
+        let (score, warnings) = import_midi(&bytes).unwrap();
+        assert_eq!(score.parts.len(), 2);
+        let a = &score.parts[0].notes[0];
+        let b = &score.parts[1].notes[0];
+        assert_eq!(
+            (&*a.id, a.pitch.as_ref().unwrap().midi(), a.velocity),
+            ("midi-t2-c1-e6", Some(61), 103)
+        );
+        assert_eq!(
+            (&*b.id, b.pitch.as_ref().unwrap().midi(), b.velocity),
+            ("midi-t3-c2-e4", Some(72), 57)
+        );
+        assert!(a.at.equivalent(Beat::new(1, 7)));
+        assert!(a.duration.equivalent(Beat::new(6, 7)));
+        assert!(b.at.equivalent(Beat::new(0, 1)));
+        assert!(b.duration.equivalent(Beat::new(1, 1)));
+        assert_eq!(score.tempo.len(), 2);
+        assert!(score.tempo[1].at.equivalent(Beat::new(3, 7)));
+        assert_eq!(score.meters[0].numerator, 3);
+        assert_eq!(score.meters[0].denominator, 4);
+        assert_eq!(score.keys[0].fifths, -3);
+        assert_eq!(
+            warnings
+                .iter()
+                .filter(|d| d.code == "midi_initial_controls")
+                .count(),
+            1
+        );
+        for code in [
+            "midi_program_source_only",
+            "midi_controller_source_only",
+            "midi_release_velocity_source_only",
+            "midi_metadata_source_only",
+        ] {
+            assert!(warnings.iter().any(|d| d.code == code));
+        }
+        assert_eq!(
+            STANDARD
+                .decode(&score.source.as_ref().unwrap().content)
+                .unwrap(),
+            bytes
+        );
+        let raw = crate::midi_events::parse_midi_events(&bytes, None).unwrap();
+        assert_eq!(raw.original_bytes(), bytes);
+        assert_eq!(raw.track_count(), 3);
+        assert_eq!(raw.events().len(), 20);
+        let compiled = crate::compile(score.clone()).unwrap();
+        let reread: Score = serde_json::from_slice(&serde_json::to_vec(&score).unwrap()).unwrap();
+        let restored = crate::compile(reread).unwrap();
+        assert!(restored
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "midi_initial_controls"));
+        assert_eq!(
+            serde_json::to_value(compiled).unwrap(),
+            serde_json::to_value(restored).unwrap()
+        );
+    }
+
+    #[test]
+    fn midi_initial_controls_reject_invalid_values_order_timing_and_prior_state() {
+        let cases: Vec<Vec<(u32, Vec<u8>)>> = vec![
+            vec![(0, vec![0xb0, 121, 1]), (0, vec![0xb0, 64, 0])],
+            vec![(0, vec![0xb0, 121, 0]), (0, vec![0xb0, 64, 1])],
+            vec![(0, vec![0xb0, 121, 0]), (0, vec![0xb0, 64, 127])],
+            vec![(0, vec![0xb0, 64, 0]), (0, vec![0xb0, 121, 0])],
+            vec![(1, vec![0xb0, 121, 0]), (0, vec![0xb0, 64, 0])],
+            vec![(0, vec![0xb0, 121, 0]), (1, vec![0xb0, 64, 0])],
+            vec![(0, vec![0xb0, 121, 0])],
+            vec![
+                (0, vec![0xb0, 121, 0]),
+                (0, vec![0xb0, 121, 0]),
+                (0, vec![0xb0, 64, 0]),
+            ],
+            vec![
+                (0, vec![0xb0, 121, 0]),
+                (0, vec![0xb0, 64, 0]),
+                (0, vec![0xb0, 64, 0]),
+            ],
+            vec![
+                (0, vec![0xb0, 121, 0]),
+                (0, vec![0xb0, 64, 0]),
+                (0, vec![0xb0, 121, 0]),
+            ],
+            vec![
+                (0, vec![0xb0, 7, 100]),
+                (0, vec![0xb0, 121, 0]),
+                (0, vec![0xb0, 64, 0]),
+            ],
+            vec![
+                (0, vec![0xa0, 60, 0]),
+                (0, vec![0xb0, 121, 0]),
+                (0, vec![0xb0, 64, 0]),
+            ],
+            vec![
+                (0, vec![0xd0, 0]),
+                (0, vec![0xb0, 121, 0]),
+                (0, vec![0xb0, 64, 0]),
+            ],
+            vec![
+                (0, vec![0x90, 62, 90]),
+                (0, vec![0xb0, 121, 0]),
+                (0, vec![0xb0, 64, 0]),
+            ],
+            vec![
+                (0, vec![0x80, 62, 0]),
+                (0, vec![0xb0, 121, 0]),
+                (0, vec![0xb0, 64, 0]),
+            ],
+            vec![
+                (0, vec![0xb0, 121, 0]),
+                (0, vec![0xc0, 0]),
+                (0, vec![0xb0, 64, 0]),
+            ],
+        ];
+        for prefix in cases {
+            let mut data: Vec<u8> = prefix
+                .iter()
+                .flat_map(|(delta, bytes)| event(*delta, bytes))
+                .collect();
+            data.extend(track(&[
+                (0, &[0x90, 60, 90]),
+                (7, &[0x80, 60, 0]),
+                (0, &[0xff, 0x2f, 0]),
+            ]));
+            assert!(
+                import_midi(&smf(0, 7, &[data])).is_err(),
+                "accepted {prefix:?}"
+            );
+        }
+        error(
+            &smf(
+                0,
+                7,
+                &[track(&[(0, &[0xb0, 121, 0]), (0, &[0xff, 0x2f, 0])])],
+            ),
+            "complete sustain-off",
+        );
+    }
+
+    #[test]
+    fn midi_initial_controls_require_whole_source_channel_ownership() {
+        let initialized = track(&[
+            (0, &[0xb0, 121, 0]),
+            (0, &[0xb0, 64, 0]),
+            (0, &[0x90, 60, 90]),
+            (7, &[0x80, 60, 0]),
+            (0, &[0xff, 0x2f, 0]),
+        ]);
+        for other in [
+            track(&[(0, &[0xc0, 8]), (0, &[0xff, 0x2f, 0])]),
+            track(&[
+                (8, &[0x90, 67, 90]),
+                (7, &[0x80, 67, 0]),
+                (0, &[0xff, 0x2f, 0]),
+            ]),
+        ] {
+            error(
+                &smf(1, 7, &[initialized.clone(), other.clone()]),
+                "one source track",
+            );
+            error(
+                &smf(1, 7, &[other, initialized.clone()]),
+                "one source track",
+            );
+        }
+        let independent = track(&[
+            (0, &[0x91, 67, 90]),
+            (7, &[0x81, 67, 0]),
+            (0, &[0xff, 0x2f, 0]),
+        ]);
+        assert_eq!(
+            import_midi(&smf(1, 7, &[independent, initialized]))
+                .unwrap()
+                .0
+                .parts
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn midi_initial_controls_do_not_relax_other_semantic_or_note_boundaries() {
+        let pair = [(0, &[0xb0, 121, 0][..]), (0, &[0xb0, 64, 0][..])];
+        for (tail, needle) in [
+            (vec![(0, vec![0xb0, 64, 127])], "pedal"),
+            (vec![(8, vec![0xb0, 64, 0])], "pedal"),
+            (vec![(8, vec![0xb0, 121, 0])], "121"),
+            (vec![(0, vec![0xe0, 0, 64])], "pitch-bend"),
+            (vec![(0, vec![0xb0, 101, 0])], "101"),
+            (vec![(0, vec![0xff, 0x20, 1, 0])], "channel-prefix"),
+            (vec![(0, vec![0xff, 0x21, 1, 0])], "port routing"),
+            (vec![(0, vec![0xff, 0x54, 5, 0, 0, 0, 0, 0])], "SMPTE"),
+            (vec![(0, vec![0xff, 0x59, 2, 0, 2])], "key mode"),
+            (vec![(0, vec![0xff, 0x59, 1, 0])], "malformed"),
+            (vec![(0, vec![0xff, 0x7f, 0])], "Sequencer-specific"),
+            (vec![(0, vec![0xf0, 1, 0xf7])], "SysEx"),
+            (vec![(0, vec![0x99, 35, 90])], "percussion"),
+            (vec![(0, vec![0x90, 60, 90])], "overlapping"),
+            (vec![(0, vec![0x80, 60, 0])], "Unmatched"),
+        ] {
+            let mut data = track(&pair);
+            data.extend(
+                tail.iter()
+                    .flat_map(|(delta, payload)| event(*delta, payload)),
+            );
+            data.extend(track(&[
+                (0, &[0x90, 60, 90]),
+                (7, &[0x80, 60, 0]),
+                (0, &[0xff, 0x2f, 0]),
+            ]));
+            error(&smf(0, 7, &[data]), needle);
+        }
+        for (notes, needle) in [
+            (
+                vec![(0, vec![0x90, 60, 90]), (0, vec![0x80, 60, 0])],
+                "zero key-down",
+            ),
+            (vec![(0, vec![0x90, 60, 90])], "Unclosed"),
+        ] {
+            let mut data = track(&pair);
+            data.extend(
+                notes
+                    .iter()
+                    .flat_map(|(delta, payload)| event(*delta, payload)),
+            );
+            data.extend(event(7, &[0xff, 0x2f, 0]));
+            error(&smf(0, 7, &[data]), needle);
+        }
     }
 
     #[test]
