@@ -26,6 +26,28 @@ export async function readSharedPianoGeometry(page,mode='normal') {
   },mode);
 }
 
+async function readCompactPianoHeading(page,mode){
+  return page.evaluate(mode=>{
+    const prefix=mode==='free'?'free-':'',heading=document.querySelector(mode==='free'?'.free-practice-heading':'.stage-hud'),panel=document.getElementById(`${prefix}beginner-controls`);
+    const rect=node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
+    const control=node=>{const r=rect(node),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return{id:node.id||node.tagName,rect:r,hit:hit===node||node.contains(hit)};};
+    const label=panel.querySelector('.beginner-toggle-label'),help=panel.querySelector('summary'),title=document.getElementById(mode==='free'?'free-practice-title':'stage-title');
+    const controls=[...heading.querySelectorAll('button,input,summary')].filter(node=>node.getBoundingClientRect().width>0&&node.getBoundingClientRect().height>0).map(control);
+    return{mode,locale:document.documentElement.lang,viewport:{width:innerWidth,height:innerHeight},heading:rect(heading),title:rect(title),track:rect(panel.parentElement),panel:rect(panel),label:rect(label),help:rect(help),glyphs:[...panel.querySelectorAll('.beginner-short-label')].map(rect),controls,resume:mode==='free'?rect(document.getElementById('rhythm-free-resume')):null};
+  },mode);
+}
+function assertCompactPianoHeading(proof){
+  const inside=(inner,outer)=>inner.x>=outer.x-1&&inner.right<=outer.right+1&&inner.y>=outer.y-1&&inner.bottom<=outer.bottom+1;
+  assert.ok(inside(proof.panel,proof.track),`The ${proof.mode} guide fits its intrinsic heading track: ${JSON.stringify(proof)}`);
+  assert.ok(proof.title.right<=proof.panel.x+1,'Title and guide use separate grid cells');
+  assert.ok(proof.label.right<=proof.help.x+1,'Guide label and help retain separate readable bounds');
+  assert.ok(proof.glyphs.every(glyph=>glyph.width>0&&glyph.height>0&&inside(glyph,proof.panel)),'Every rendered beginner label remains inside its guide');
+  if(proof.resume)assert.ok(proof.panel.right<=proof.resume.x+1,'Free guide does not cover any part of Return to stage');
+  for(const control of proof.controls){assert.ok(inside(control.rect,{x:0,y:0,right:proof.viewport.width,bottom:proof.viewport.height}),`${control.id} stays inside the viewport`);assert.equal(control.hit,true,`${proof.locale} ${proof.mode} ${control.id} receives its own pointer hit`);}
+  const toggle=proof.controls.find(control=>control.id===(proof.mode==='free'?'free-beginner-enabled':'beginner-enabled'));
+  assert.ok(toggle.rect.width>=18&&toggle.rect.height>=18,'The actual checkbox target is not reduced');assert.ok(proof.help.width>=20&&proof.help.height>=20,'The actual help target is not reduced');
+}
+
 function assertPianoToolbarLabels(geometry){
   const values=geometry.locale==='zh-CN'?['钢琴','连接 MIDI','编辑按键映射','轨道背景乐谱','不透明度','读谱设置']:['Piano','Connect MIDI','Edit key mapping','Score background','Opacity','Score options'];
   const names=['title','midi','keyboard',...(geometry.mode==='normal'?['background','opacity','options']:[])];
@@ -171,6 +193,18 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,read
       assertSamePianoStage(normal,free);
       evidence.push({viewport,theme,reduced_motion:theme==='dark',normal,free,normalFooter,freeFooter});await page.locator('#rhythm-free-resume').click();
     }
+    const compactHeaderProof=[];
+    for(const locale of ['en','zh-CN'])for(const width of [651,700,731]){
+      await page.setViewportSize({width,height:390});await ui('#interface-language').selectOption(locale);await closeShellPanels();await settlePianoPaint(page);
+      const normal=await readCompactPianoHeading(page,'normal');assertCompactPianoHeading(normal);
+      await page.locator('#rhythm-stage-free').click();await settlePianoPaint(page);
+      const free=await readCompactPianoHeading(page,'free');
+      await page.screenshot({path:join(artifactDirectory,`worldmusichub-compact-heading-${locale}-${width}x390-free.png`),fullPage:false,animations:'disabled'});
+      compactHeaderProof.push({normal,free});await writeFile(join(artifactDirectory,'worldmusichub-compact-heading-bounds.json'),JSON.stringify(compactHeaderProof,null,2));assertCompactPianoHeading(free);
+      const checkbox=page.locator('#free-beginner-enabled'),before=await checkbox.isChecked();await checkbox.click();assert.equal(await checkbox.isChecked(),!before);await checkbox.click();assert.equal(await checkbox.isChecked(),before);
+      const help=page.locator('#free-beginner-controls summary');await help.click();assert.equal(await page.locator('#free-beginner-controls details').evaluate(node=>node.open),true);await help.click();
+      await page.locator('#rhythm-free-resume').click();assert.equal(await page.locator('body').getAttribute('data-screen'),'stage');
+    }
     await page.setViewportSize({width:1280,height:720});await ui('#theme-mode').selectOption('light');await closeShellPanels();
     const held=async mode=>{const root=mode==='normal'?'#keyboard':'#free-practice-keys';await page.locator(mode==='normal'?'#stage-title':'#free-practice-title').focus();await page.keyboard.down('r');await page.waitForFunction(root=>document.querySelector(`${root} [data-midi="60"]`).getAttribute('aria-pressed')==='true',root);const geometry=await readSharedPianoGeometry(page,mode);await page.screenshot({path:join(artifactDirectory,`worldmusichub-shared-piano-1280x720-${mode}-held.png`),fullPage:true,animations:'disabled'});await page.keyboard.up('r');await page.waitForFunction(root=>!document.querySelector(`${root} .pressed`),root);return geometry.keys.find(key=>key.midi===60);};
     const normalHeld=await held('normal');await page.locator('#rhythm-stage-free').click();
@@ -191,7 +225,7 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,read
     assert.deepEqual(footerRecord.observations.events.filter(event=>event.kind==='note_on').map(event=>event.midi),[60,60,60,61]);assert.deepEqual(footerRecord.configuration.filter(row=>row.key==='keyboard_configuration').map(row=>row.value.transpose_semitones),[0,1]);
     await page.locator('#rhythm-free-resume').click();await footerProof('normal');assert.equal(await page.locator('#keyboard .pressed').count(),0);const {keyboard_input_configuration:oldConfiguration,...oldTake}=freeIsolationTake,{keyboard_input_configuration:newConfiguration,...newTake}=await exportTakeData();assert.deepEqual(newTake,oldTake,'Using shared free transpose leaves every retained score pass, clock and assessment unchanged');assert.deepEqual(newConfiguration.events.slice(0,oldConfiguration.events.length),oldConfiguration.events);assert.equal(newConfiguration.current_configuration.transpose_semitones,1);assert.deepEqual(await exportScore(),score);await footerNode.dispose();
     const sharedFooter={one_original_node:true,mode_cleanup_preserved:true,transpose_configuration:footerRecord.configuration.filter(row=>row.key==='keyboard_configuration'),actual_free_onsets:footerRecord.observations.events.filter(event=>event.kind==='note_on').map(event=>event.midi),score_passes_preserved:true};
-    await writeFile(join(artifactDirectory,'worldmusichub-shared-piano-stage.json'),JSON.stringify({original_fixtures_only:true,configured_range:{key_count:61,lowest_midi:36,highest_midi:96},localeProof,evidence,normalProbe,sharedFooter,held:{normal:normalHeld,free:freeHeld},actual_paired_screenshots:true,normal_take_preserved:true,score_preserved:true,ime_suppressed:true,protected_control_released_input:true,navigation_released_input:true},null,2));
+    await writeFile(join(artifactDirectory,'worldmusichub-shared-piano-stage.json'),JSON.stringify({original_fixtures_only:true,configured_range:{key_count:61,lowest_midi:36,highest_midi:96},localeProof,evidence,compactHeaderProof,normalProbe,sharedFooter,held:{normal:normalHeld,free:freeHeld},actual_paired_screenshots:true,normal_take_preserved:true,score_preserved:true,ime_suppressed:true,protected_control_released_input:true,navigation_released_input:true},null,2));
   });
   test('original falling bars visibly cross staff and Jianpu lane background during actual playback',{timeout:90_000},async()=>{
     const page=getPage(),score=originalAboveKeyboardScore(),evidence=[];score.id='original-live-overlay';score.title='Original live falling-lane overlay';score.tempo[0].bpm=60;

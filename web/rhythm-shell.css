@@ -71,8 +71,8 @@ html[data-theme=dark]:not([data-theme-mode=custom]) .rhythm-shell {
 /* Padding only shortens title text; it does not shorten its pointer hit box.
    Give the compact guide a real grid cell beside a usable title hit target. */
 .rhythm-shell.performance-layout .stage-heading:has(>.beginner-controls-compact) {display:grid;grid-template-columns:minmax(64px,1fr) max-content;column-gap:6px;align-items:center;min-width:160px}
-.rhythm-shell.performance-layout .stage-heading:has(>.beginner-controls-compact)>#stage-title {grid-column:1;grid-row:1;min-width:0;padding-right:0}
-.rhythm-shell #beginner-controls.beginner-controls-compact {position:static;grid-column:2;grid-row:1}
+.rhythm-shell.performance-layout .stage-heading:has(>.beginner-controls-compact)>:is(#stage-title,#free-practice-title) {grid-column:1;grid-row:1;min-width:0;padding-right:0}
+.rhythm-shell :is(#beginner-controls,#free-beginner-controls).beginner-controls-compact {position:static;grid-column:2;grid-row:1}
 .rhythm-shell .stage-heading:has(>.beginner-controls-compact)>.keyboard-stage-meta {grid-column:1/-1}
 .rhythm-shell .play-panel {border-color:var(--border);background:var(--rhythm-stage)}
 .rhythm-shell.performance-layout .performance-status-copy {border-color:#9b94bb44;background:#171e2cea}

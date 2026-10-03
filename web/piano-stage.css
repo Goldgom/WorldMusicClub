@@ -152,6 +152,7 @@
 @media(max-height:600px) and (min-width:651px){
  .game-shell .piano-workspace .piano-workspace-heading{flex-wrap:nowrap!important;gap:6px}
  .game-shell .piano-workspace .piano-workspace-heading .stage-heading{min-width:140px}
+ .game-shell .piano-workspace .piano-workspace-heading .stage-heading:has(>.beginner-controls-compact){min-width:min-content}
  .game-shell .piano-workspace .piano-workspace-heading nav{flex:1 1 310px;flex-wrap:nowrap;gap:3px}
  .game-shell .piano-workspace .piano-workspace-heading nav .button{font-size:11px;padding-left:5px;padding-right:5px}
  .game-shell .piano-workspace #rhythm-stage-free{max-width:80px;font-size:11px}

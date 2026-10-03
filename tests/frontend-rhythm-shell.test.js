@@ -151,7 +151,7 @@ test('rhythm CSS scopes visual changes, reserves the falling field and leaves co
   const {document} = parseHTML(`<style>${css}</style>`);
   const flatten = rules => [...rules].flatMap(rule => rule.cssRules ? flatten(rule.cssRules) : [rule]);
   const rules = flatten(document.querySelector('style').sheet.cssRules);
-  for (const rule of rules) for (const selector of rule.selectorText.split(',')) {
+  for (const rule of rules) for (const selector of rule.selectorText.split(/,(?![^()]*\))/)) {
     assert.match(selector, /\.rhythm-shell(?:\b|[.# ])/);
     assert.doesNotMatch(selector, /\.stage-heading\s+(?:>|)\s*span\b/);
   }
@@ -214,8 +214,8 @@ test('compact rhythm title and guide reserve separate real hit boxes without hid
   const {document} = parseHTML(`<style>${css}</style>`);
   const rules = [...document.querySelector('style').sheet.cssRules];
   const heading = rules.find(rule => rule.selectorText === '.rhythm-shell.performance-layout .stage-heading:has(>.beginner-controls-compact)');
-  const title = rules.find(rule => rule.selectorText === '.rhythm-shell.performance-layout .stage-heading:has(>.beginner-controls-compact)>#stage-title');
-  const guide = rules.find(rule => rule.selectorText === '.rhythm-shell #beginner-controls.beginner-controls-compact');
+  const title = rules.find(rule => rule.selectorText === '.rhythm-shell.performance-layout .stage-heading:has(>.beginner-controls-compact)>:is(#stage-title,#free-practice-title)');
+  const guide = rules.find(rule => rule.selectorText === '.rhythm-shell :is(#beginner-controls,#free-beginner-controls).beginner-controls-compact');
   const metadata = rules.find(rule => rule.selectorText === '.rhythm-shell .stage-heading:has(>.beginner-controls-compact)>.keyboard-stage-meta');
   assert.equal(heading.style.display, 'grid');
   assert.equal(heading.style['grid-template-columns'], 'minmax(64px,1fr) max-content', 'Title retains a useful minimum width beside the guide intrinsic width');
@@ -225,6 +225,17 @@ test('compact rhythm title and guide reserve separate real hit boxes without hid
   assert.equal(guide.style.position, 'static', 'Guide participates in the heading layout instead of overlaying the title');
   assert.equal(guide.style['grid-column'], '2'); assert.equal(guide.style['grid-row'], '1');
   assert.equal(metadata.style['grid-column'], '1/-1', 'The existing subtitle and keyboard status keep their shared full-width row');
+  const guideCss=await readFile(new URL('../web/beginner-notes.css',import.meta.url),'utf8');
+  const guideDocument=parseHTML(`<style>${guideCss}</style>`).document;
+  const sharedGuide=[...guideDocument.querySelector('style').sheet.cssRules].find(rule=>rule.selectorText===':is(#beginner-controls,#free-beginner-controls).beginner-controls-compact');
+  for(const [property,value]of Object.entries({padding:'0',margin:'0',gap:'4px','flex-wrap':'nowrap'}))assert.equal(sharedGuide.style[property],value,`Both mode guides discard the full-row ${property}`);
+  for(const id of ['stage-title','free-practice-title'])assert.ok(title.selectorText.includes('#'+id));
+  for(const id of ['beginner-controls','free-beginner-controls'])assert.ok(guide.selectorText.includes('#'+id)&&sharedGuide.selectorText.includes('#'+id));
+  const stageCss=await readFile(new URL('../web/piano-stage.css',import.meta.url),'utf8');
+  const stageDocument=parseHTML(`<style>${stageCss}</style>`).document;
+  const compactRules=[...stageDocument.querySelector('style').sheet.cssRules].filter(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:651px)').flatMap(rule=>[...rule.cssRules]);
+  const intrinsic=compactRules.findLast(rule=>rule.selectorText==='.game-shell .piano-workspace .piano-workspace-heading .stage-heading:has(>.beginner-controls-compact)');
+  assert.equal(intrinsic.style['min-width'],'min-content','The heading cannot shrink below its 64px title plus the real guide label and help widths');
   for (const rule of [heading,title,guide,metadata]) {
     assert.notEqual(rule.style['pointer-events'], 'none');
     assert.notEqual(rule.style.display, 'none');
