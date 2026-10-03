@@ -46,10 +46,22 @@ export function validateVsqFollowingSurface(surface){
  assert.ok([x,y,width,height,viewport?.width,viewport?.height].every(Number.isFinite)&&width>0&&height>0&&viewport.width>0&&viewport.height>0&&x+width/2>0&&x+width/2<viewport.width&&y+height/2>0&&y+height/2<viewport.height,'VSQ following score paint is not inside its actual viewport');
  assert.ok(positive(surface.visibleSvgCount),'VSQ following screenshot has no visible notation SVG');
 }
+export function validateVsqPickerGestures(gestures){
+ assert.ok(Array.isArray(gestures)&&gestures.length===6,'VSQ picker needs one complete trusted gesture chain');
+ let previous=-Infinity;for(const row of gestures){assert.ok(Number.isFinite(row.observedAtMs)&&row.observedAtMs>=previous,'VSQ picker gesture observation clock is missing or backwards');previous=row.observedAtMs;if(row.type!=='before-action')assert.ok(Number.isFinite(row.eventTimeMs)&&row.eventTimeMs>=0,'VSQ picker event timestamp missing');}
+ assert.deepEqual(gestures.map(row=>[row.type,row.targetId,row.trusted]),[['before-action',null,null],['pointerdown','import-button',true],['pointerup','import-button',true],['click','import-button',true],['click','score-file',false],['change','score-file',true]],'VSQ picker gesture order or trust changed');
+ for(const row of gestures.slice(0,5)){
+  assert.ok(row.trigger?.id==='import-button'&&row.trigger.tag==='BUTTON'&&['button','submit'].includes(row.trigger.type)&&row.trigger.disabled===false&&row.trigger.connected===true&&row.trigger.inert===false,'VSQ Import trigger is unavailable');
+  assert.deepEqual(row.input,{id:'score-file',tag:'INPUT',type:'file',disabled:false,connected:true,inert:false,multiple:true},'VSQ original file control changed');
+  assert.deepEqual(row.dialog,{id:'import-tools-dialog',open:true,modal:true},'VSQ import modal was not active');
+ }
+ for(const row of gestures.slice(1,4)){assert.equal(row.button,0,'VSQ picker must use one left-button gesture');assert.equal(row.defaultPrevented,false);}
+ for(const row of gestures.slice(3,5)){assert.deepEqual(row.activation,{isActive:true,hasBeenActive:true},'VSQ file picker lacks transient user activation');assert.equal(row.focus.hasFocus,true,'VSQ picker trigger is unfocused');assert.equal(row.focus.visibility,'visible');assert.equal(row.focus.activeId,'import-button');}
+}
 export function validateVsqPickerEvidence(report){
  const rows=report.pickerObservations;assert.ok(Array.isArray(rows),'VSQ picker delegation observations missing');assert.equal(rows.length,report.phase==='vsq-seed'?1:0,'VSQ picker observation count differs');
  const changes=report.trusted.filter(row=>row.id==='score-file');assert.equal(changes.length,rows.length,'VSQ file events must pair with actual chooser changes');
- for(const row of rows){assert.ok(positive(row.sequence)&&row.sequence<=64);assert.equal(row.filename,VSQ_FIXTURE_FILENAME);assert.equal(row.completed,true);assert.deepEqual(row.delegatedClicks,[{type:'click',trusted:false,id:'score-file',sequence:row.sequence}],'VSQ only permits one hidden-input delegation inside its owned picker');assert.deepEqual(row.changes,[{type:'change',trusted:true,id:'score-file',sequence:row.sequence,filename:VSQ_FIXTURE_FILENAME}],'VSQ picker requires one trusted original-file change');assert.equal(changes.filter(event=>event.type==='change'&&event.trusted===true&&event.pickerSequence===row.sequence).length,1,'VSQ picker change was not delivered to the actual file control');}
+ for(const row of rows){validateVsqPickerGestures(row.gestures);assert.ok(positive(row.sequence)&&row.sequence<=64);assert.equal(row.filename,VSQ_FIXTURE_FILENAME);assert.equal(row.completed,true);assert.deepEqual(row.delegatedClicks,[{type:'click',trusted:false,id:'score-file',sequence:row.sequence}],'VSQ only permits one hidden-input delegation inside its owned picker');assert.deepEqual(row.changes,[{type:'change',trusted:true,id:'score-file',sequence:row.sequence,filename:VSQ_FIXTURE_FILENAME}],'VSQ picker requires one trusted original-file change');assert.equal(changes.filter(event=>event.type==='change'&&event.trusted===true&&event.pickerSequence===row.sequence).length,1,'VSQ picker change was not delivered to the actual file control');}
 }
 export function validateVsqRenderer(report,fixture=vsqAcceptanceFixture()) {
  assert.equal(report.version,1);assert.equal(report.ok,true,report.error);assert.ok(VSQ_PHASES.includes(report.phase));assert.equal(report.origin,'https://wmh.localhost');assert.equal(report.profileMarkerAbsent,true);assert.equal(report.stage,'complete');assert.deepEqual(report.errors,[]);

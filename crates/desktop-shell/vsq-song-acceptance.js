@@ -52,11 +52,19 @@ function createVsqJsonObserver({onValue,onError,maxRows=16}) {
 /* The app deliberately calls hiddenInput.click() from the real Import control.
  * That one untrusted delegation is admitted only inside the owned picker action,
  * paired with exactly one trusted change for the approved original fixture. */
+function readVsqPickerGesture(document,event=null) {
+ const button=document.getElementById?.('import-button'),input=document.getElementById?.('score-file'),dialog=button?.closest?.('dialog'),activation=document.defaultView?.navigator?.userActivation;
+ const clock=document.defaultView?.performance,observedAtMs=clock?clock.timeOrigin+clock.now():null;
+ const control=node=>node?{id:node.id,tag:node.tagName,type:node.type,disabled:Boolean(node.disabled),connected:Boolean(node.isConnected),inert:Boolean(node.inert)}:null;
+ return{observedAtMs,eventTimeMs:event?.timeStamp??null,type:event?.type??'before-action',targetId:event?.target?.id||event?.target?.closest?.('#import-button')?.id||null,trusted:event?event.isTrusted===true:null,button:event?.button??null,buttons:event?.buttons??null,defaultPrevented:event?.defaultPrevented===true,activation:{isActive:activation?.isActive??null,hasBeenActive:activation?.hasBeenActive??null},focus:{hasFocus:document.hasFocus?.()??null,activeId:document.activeElement?.id??null,visibility:document.visibilityState??null},trigger:control(button),input:{...control(input),multiple:input?.multiple??null},dialog:dialog?{id:dialog.id,open:dialog.open,modal:dialog.matches(':modal')}:null};
+}
 function createVsqControlObserver(document) {
  const trusted=[],pickers=[],listeners=[];let active=null;
  function observe(event){
-  const id=event.target?.id,part=event.target?.dataset?.partId;
-  if(!['vsq-choose-base-notes','play-button','clean-song-target','stage-title','bulk-import-save','score-file'].includes(id)&&!part)return;
+  const trigger=event.target?.closest?.('#import-button'),id=trigger?'import-button':event.target?.id,part=event.target?.dataset?.partId;
+  if(active&&((id==='import-button'&&['pointerdown','pointerup','click'].includes(event.type))||(id==='score-file'&&['click','change'].includes(event.type)))){if(active.gestures.length>=8)throw Error('VSQ picker gesture bound exceeded');active.gestures.push(readVsqPickerGesture(document,event));}
+  if(['pointerdown','pointerup'].includes(event.type))return;
+  if(!['vsq-choose-base-notes','play-button','clean-song-target','stage-title','bulk-import-save','score-file','import-button'].includes(id)&&!part)return;
   const row={type:event.type,trusted:event.isTrusted===true,id:id||null,part:part||null,code:event.code||null,value:event.target?.value||null,checked:typeof event.target?.checked==='boolean'?event.target.checked:null};
   if(id==='score-file'&&active){
    if(event.type==='click'&&event.isTrusted===false){if(active.delegatedClicks.length>=1)throw Error('VSQ picker has repeated hidden-input delegation');active.delegatedClicks.push({type:'click',trusted:false,id,sequence:active.sequence});return;}
@@ -64,8 +72,8 @@ function createVsqControlObserver(document) {
   }
   if(trusted.length>=128)throw Error('VSQ event observation bound exceeded');trusted.push(row);
  }
- for(const type of ['click','change','keydown','keyup']){document.addEventListener(type,observe,true);listeners.push(()=>document.removeEventListener(type,observe,true));}
- return{trusted,pickers,beginPicker(sequence,filename){if(active||pickers.length>=8)throw Error('VSQ picker observation ownership/bound invalid');active={sequence,filename,completed:false,delegatedClicks:[],changes:[]};pickers.push(active);},endPicker(sequence,completed){if(!active||active.sequence!==sequence)throw Error('VSQ picker observation ownership changed');active.completed=completed;active=null;},restore(){active=null;for(const remove of listeners)remove();}};
+ for(const type of ['pointerdown','pointerup','click','change','keydown','keyup']){document.addEventListener(type,observe,true);listeners.push(()=>document.removeEventListener(type,observe,true));}
+ return{trusted,pickers,beginPicker(sequence,filename){if(active||pickers.length>=8)throw Error('VSQ picker observation ownership/bound invalid');active={sequence,filename,completed:false,delegatedClicks:[],changes:[],gestures:[readVsqPickerGesture(document)]};pickers.push(active);},endPicker(sequence,completed){if(!active||active.sequence!==sequence)throw Error('VSQ picker observation ownership changed');active.completed=completed;active=null;},restore(){active=null;for(const remove of listeners)remove();}};
 }
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(v,m)=>{if(!v)throw Error(m);};

@@ -86,3 +86,20 @@ click() method. That single synthetic delegation is recorded separately, only
 inside the corresponding process-owned chooser action, and must pair with one
 trusted change carrying the approved original fixture filename. All other
 observed control/input events still require trusted delivery.
+
+The hosted runner installs one bounded FileChooser observer before navigation.
+It records listener/navigation/action/event timing, binds the event to one actual
+coordinate click and the original enabled `score-file` input, and retains late,
+extra or unowned chooser events as failures through page close. It does not use
+private Playwright APIs, retry clicks or add a fixed wait. Bounded browser
+console warnings/errors are retained. Both hosted and Windows renderer evidence
+records the trusted Import pointer/click chain, delegated input click, real file
+change, transient activation, focus, modal state and event timing.
+
+This addresses an unawaited first-listener boundary in the locked Playwright
+1.63.0 client: subscription setup is asynchronous, while a raw coordinate click
+can begin immediately. The old 212 failure retained neither activation nor
+subscription timing, so it cannot uniquely establish that boundary as its cause.
+The next exact hosted snapshot must validate the candidate and its diagnostics.
+Official APIs: [Page filechooser event](https://playwright.dev/docs/api/class-page#page-event-file-chooser)
+and [FileChooser element identity](https://playwright.dev/docs/api/class-filechooser#file-chooser-element).

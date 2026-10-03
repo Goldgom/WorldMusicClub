@@ -27,3 +27,10 @@ test('predicate errors propagate once and successful values retain identity',asy
   const ready={complete:true};assert.equal(await waitForTestCondition(()=>ready),ready);
   for(const timeoutMs of [0,-1,NaN,Infinity])await assert.rejects(waitForTestCondition(()=>true,{timeoutMs}),/finite positive/);
 });
+
+
+test('a pending asynchronous predicate cannot outlive its real deadline or start another poll',async()=>{
+  let release,calls=0;const pending=new Promise(resolve=>{release=resolve;});
+  await assert.rejects(waitForTestCondition(()=>{calls++;return pending;},{label:'Pending callback',timeoutMs:20}),/Pending callback within 20 ms/);
+  assert.equal(calls,1);release(false);await delay(5);assert.equal(calls,1);
+});
