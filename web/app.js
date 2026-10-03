@@ -107,7 +107,7 @@ let notationFollowing = null;
 let writtenCursor = null, writtenCursorStatus = null, writtenCursorRetry = null;
 let sourceArchiveView=null,referenceListening=null,lobbyPreview=null;
 let midiController=null;
-let freeSession=null,freeView=null,freePreview=null,freeLiveOwner=null,freeLiveStart=0,freeCaptureState='idle',freeRecordInstrument=null,freeClockWall=0;
+let freeSession=null,freeView=null,freePreview=null,freeLiveOwner=null,freeLiveStart=0,freeCaptureState='idle',freeRecordInstrument=null,freeClockWall=0,freeWindowFocused=true;
 const inputRoutes=[],inputContacts=new Map();
 const midiQuarantine={events:[],sources:new Map(),generations:new Map(),bytes:2,omitted:0,firstOmitted:null,omissionReason:null};
 const MIDI_QUARANTINE_LIMITS=Object.freeze({observations:4096,observationBytes:1024*1024});
@@ -601,16 +601,24 @@ function rememberContact(source,value) {
     inputContacts.delete(expired ?? inputContacts.keys().next().value);
   }
 }
-function cleanupFreeInputs(reason='free_boundary') {
+function cleanupFreeInputs(reason='free_boundary',stopPreview=true) {
+  freeLiveStart=performance.now();
   if(shell?.screen()==='free'){cleaningAllInputs=true;try{keyboardInput?.releaseAll(reason);}finally{cleaningAllInputs=false;}}
   for(const contact of inputContacts.values())if(contact.route.kind==='free')contact.active=false;
   for(const source of [...state.held.keys()])if((heldAudioTokens.get(source)??inputContacts.get(source))?.route.kind==='free'){state.held.delete(source);heldAudioTokens.delete(source);synth.stop(`manual:${source}`);}
-  freePreview?.stop();highlightKeys();
+  if(stopPreview)freePreview?.stop();highlightKeys();
 }
 function releaseOwnedSound(source,time,route) {
   const token=heldAudioTokens.get(source)??inputContacts.get(source);
   if(token && (time.eventWall<token.eventWall || token.route.kind!==route?.kind || token.route.owner!==route?.owner || token.route.recorder!==route?.recorder))return;
   state.held.delete(source);heldAudioTokens.delete(source);synth.stop(`manual:${source}`);
+}
+function freeLiveInputAllowed(route,captureTime,options={}) {
+  return route.kind==='free' && shell.screen()==='free' && freeWindowFocused
+    && route.owner===freeSession.owner() && ['idle','recording','stopped'].includes(freeSession.snapshot().state)
+    && captureTime>=freeLiveStart && (!Object.hasOwn(options,'liveOwner') || options.liveOwner===freeSession.liveOwner())
+    && options.liveInput!==false && !document.hidden && !document.querySelector('dialog[open]')
+    && !['preparing','playing'].includes(freePreview?.snapshot().status);
 }
 async function pressNote(source, midi, velocity = 90, eventTime = null, options = {}) {
   const observationTime=eventTimeEvidence(eventTime,{now:performance.now(),timeOrigin:performance.timeOrigin});
@@ -622,8 +630,10 @@ async function pressNote(source, midi, velocity = 90, eventTime = null, options 
   const {receivedWall,eventWall:captureTime}=observationTime;
   let admitted=true;
   if(route.kind==='free'){
-    const result=freeSession?.observe('note_on',{...observationTime,...options,source,midi,velocity},route.owner);
-    admitted=Boolean(result?.accepted);
+    // Idle/stopped contacts own live sound only. They never enter a recorder;
+    // event-time routes with a recording owner retain their evidence path.
+    if(route.owner===null)admitted=freeLiveInputAllowed(route,captureTime,options);
+    else admitted=Boolean(freeSession?.observe('note_on',{...observationTime,...options,source,midi,velocity},route.owner)?.accepted);
   }else{
     const recorder=route.recorder;
     if(recorder!==state.recorder)return;
@@ -646,7 +656,7 @@ async function pressNote(source, midi, velocity = 90, eventTime = null, options 
   if(captureTime<(inputContacts.get(source)?.eventWall ?? -Infinity))return;
   if(options.inputKind==='midi' && !afterMidiCleanup(route,source,captureTime))return;
   rememberContact(source,{route,eventWall:captureTime,active:true});
-  const freeLive=route.kind==='free' && shell.screen()==='free' && route.owner===freeSession.owner() && freeSession.snapshot().state==='recording' && captureTime>=freeLiveStart && (!Object.hasOwn(options,'liveOwner') || options.liveOwner===freeSession.liveOwner());
+  const freeLive=freeLiveInputAllowed(route,captureTime,options);
   const scoreLive=route.kind==='score' && shell.screen()==='stage';
   if(options.liveInput===false || document.hidden || document.querySelector('dialog[open]') || (!freeLive&&!scoreLive))return;
   const audioToken={route,eventWall:captureTime,liveOwner:freeLive?freeSession.liveOwner():null};heldAudioTokens.set(source,audioToken);
@@ -655,7 +665,7 @@ async function pressNote(source, midi, velocity = 90, eventTime = null, options 
   if(synth.muted)return;
   try{
     await synth.unlock();
-    if(!synth.muted && heldAudioTokens.get(source)===audioToken && state.held.get(source)===midi && (!freeLive || (freeSession.liveOwner()===audioToken.liveOwner && freeSession.owner()===route.owner)))synth.play(`manual:${source}`,midi,null,0,state.instrument,velocity);
+    if(!synth.muted && heldAudioTokens.get(source)===audioToken && state.held.get(source)===midi && (!freeLive || (freeSession.liveOwner()===audioToken.liveOwner && freeLiveInputAllowed(route,captureTime,options))))synth.play(`manual:${source}`,midi,null,0,state.instrument,velocity);
   }catch(error){notice(route.kind==='free'?()=>i18n.t('error.audioUnavailable'):()=>errorDetail(error),true);}
 }
 function releaseMatching(prefix, eventTime = null, options = {}) {
@@ -1075,7 +1085,10 @@ freeSession=createFreePracticeSession({now:()=>{freeClockWall=performance.now();
   const next=freeSession?.liveOwner();if(next!==freeLiveOwner){freeLiveOwner=next;freeLiveStart=performance.now();}
   if(snapshot.entered&&snapshot.state==='recording'&&freeCaptureState!=='recording')$('free-practice-title')?.focus();freeCaptureState=snapshot.state;
 }});
-freePreview=createFreePracticePreview({audio:synth,soundEnabled:()=>!synth.muted});
+freePreview=createFreePracticePreview({audio:synth,soundEnabled:()=>!synth.muted,onChange:snapshot=>{
+  if(snapshot.status==='preparing')cleanupFreeInputs('free_preview',false);
+  else if(snapshot.status!=='playing')freeLiveStart=performance.now();
+}});
 freeView=setupFreePracticeView({document,i18n,session:freeSession,preview:freePreview,host:document.querySelector('.app-shell'),
   onExit:()=>shell.show('library'),onConnectMidi:()=>{$('midi-button').click();shell.open('settings');},onConfigureKeyboard:()=>shell.open('settings'),
   getSoundEnabled:()=>!synth.muted,onSoundChange:setSoundEnabled,
@@ -1100,8 +1113,9 @@ document.addEventListener('keyup', event => {
 document.addEventListener('compositionstart',event=>{keyboardComposing=true;keyboardInput.compositionStart(event)});
 document.addEventListener('compositionend',()=>{keyboardComposing=false;keyboardInput.compositionEnd()});
 document.addEventListener('focusin',event=>{if(event.target.closest?.('.beginner-controls'))return;if(!keyboardInputAllowed(event,keyboardContext()))keyboardInput.contextChanged('keyboard_focus_changed',event.timeStamp)});
-window.addEventListener('blur', () => {keyboardComposing=false;keyboardInput.compositionEnd();pausePlayback('app.blurPaused','blur')});
-document.addEventListener('visibilitychange', () => { if (document.hidden) pausePlayback('app.hiddenPaused','hidden'); });
+window.addEventListener('blur', () => {freeWindowFocused=false;keyboardComposing=false;keyboardInput.compositionEnd();pausePlayback('app.blurPaused','blur')});
+window.addEventListener('focus', () => {if(!freeWindowFocused)freeLiveStart=performance.now();freeWindowFocused=true;});
+document.addEventListener('visibilitychange', () => { if (document.hidden) pausePlayback('app.hiddenPaused','hidden');else freeLiveStart=performance.now(); });
 window.addEventListener('pagehide', () => { pausePlayback(undefined,'pagehide'); cancelAnimationFrame(state.frame);cancelPendingStart();if(preview.controller){preview.cancel();preview.publish({...preview.value,status:'error',message:t('app.previewStopped')})} });
 let notationResizeFrame = 0;
 window.addEventListener('resize', () => { cancelAnimationFrame(notationResizeFrame); notationResizeFrame = requestAnimationFrame(() => { renderNotationPage(); drawFrame(); }); });
@@ -1251,7 +1265,7 @@ guitarFingeringView.render();
 metronome = setupMetronome({api,getScore:()=>state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:transport.time(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
 performanceView=setupPerformanceView({i18n,getContext:()=>({geometry:state.geometry,rangeLabel:`${midiName(state.geometry[0].midi)}–${midiName(state.geometry.at(-1).midi)}`,mode:state.mode,instrument:state.instrument,position:transport.time(performance.now()),segmentStart:state.loop?.start_ms||0,countInBeatMs:60000/(Number($('tempo').value)||100),running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,now:performance.now(),recorder:state.recorder})});
 pianoFingering=setupPianoFingeringView({document,api,getContext:()=>({score:state.score,timeline:state.compiled?.timeline,part_id:state.practicePart,profile:currentProfile(),dirty:state.profileDirty}),onChange:()=>drawFrame(),openSettings:()=>shell.open('settings')});
-$('piano-stage').after($('piano-fingering-guidance'));
+performanceView.setPianoGuidance($('piano-fingering-guidance'));
 writtenCursorStatus=document.createElement('p');writtenCursorStatus.id='written-cursor-status';writtenCursorStatus.setAttribute('aria-live','off');
 writtenCursorRetry=document.createElement('button');writtenCursorRetry.id='written-cursor-retry';writtenCursorRetry.type='button';writtenCursorRetry.className='button compact';bindText(writtenCursorRetry, () => t('app.retryNotePositions'));writtenCursorRetry.hidden=true;
 document.querySelector('#notation-dock .dock-help').append(writtenCursorStatus,writtenCursorRetry);
@@ -1261,4 +1275,6 @@ writtenCursorRetry.addEventListener('click',()=>writtenCursor.prepare({retry:tru
 window.addEventListener('pagehide',()=>writtenCursor.reset());
 midiController=setupMidi({pressNote, releaseNote, releaseMatching, notice, pausePlayback,
   getConfiguredRange:()=>state.instrument==='guitar'?{low:Math.min(...state.guitar.tuning)+state.guitar.capo,high:Math.max(...state.guitar.tuning)+state.guitar.frets}:state.geometry.length?{low:state.geometry[0].midi,high:state.geometry.at(-1).midi}:null});
+// End blocked intervals without changing native focus or recording ownership.
+for(const dialog of document.querySelectorAll('dialog'))dialog.addEventListener('close',()=>{freeLiveStart=performance.now();});
 renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); loadCatalog();

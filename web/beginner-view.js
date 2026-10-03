@@ -78,7 +78,7 @@ export function setupBeginnerView({document, i18n, getContext, onNumberedMode}) 
   const stageControl = control('', transport.parentElement, transport);
   const stageHome = document.createComment('Beginner guide stage position'); stageControl.panel.before(stageHome);
   const heading = $('stage-title')?.parentElement;
-  const shortLandscape = document.defaultView?.matchMedia?.('(max-height:600px) and (min-width:651px)');
+  const shortLandscape = document.defaultView?.matchMedia?.('(max-height:800px), (max-width:650px)');
   const freeControlsHost=document.querySelector('.free-stage-footer')||$('free-practice-keys').parentElement;
   const freeControl=control('free-', freeControlsHost, freeControlsHost.firstElementChild);
   const freeHome=document.createComment('Free guide stage position');freeControl.panel.before(freeHome);

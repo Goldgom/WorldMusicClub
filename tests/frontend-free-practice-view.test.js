@@ -108,7 +108,7 @@ async function freePianoStylesheetRules(){
  return result;
 }
 function cascadeLayout(element,rules,size){
- const properties=['display','flex-direction','align-items','align-self','gap','max-width','padding','grid-area','order'],winners={};
+ const properties=['display','flex-direction','align-items','align-self','gap','max-width','padding','padding-top','padding-right','padding-bottom','padding-left','grid-area','order'],winners={};
  const mediaMatches=media=>media.every(query=>query.split(',').some(branch=>{
   if(/prefers-/.test(branch))return false;
   return [...branch.matchAll(/\((min|max)-(width|height):\s*(\d+)px\)/g)].every(([,bound,axis,value])=>bound==='min'?size[axis]>=Number(value):size[axis]<=Number(value));
@@ -127,7 +127,8 @@ function cascadeLayout(element,rules,size){
     return [(adjusted.match(/#[\w-]+/g)||[]).length,(adjusted.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g)||[]).length,(adjusted.replace(/#[\w-]+|\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g,'').match(/[a-zA-Z][\w-]*/g)||[]).length];
    };
    const [ids,classes,types]=specificity(selector);
-   for(const property of properties){const value=rule.style.getPropertyValue(property);if(!value)continue;const rank=[rule.style.getPropertyPriority(property)==='important'?1:0,ids,classes,types];
+   const declarations=[];for(let index=0;index<rule.style.length;index++){const property=rule.style[index],value=rule.style.getPropertyValue(property),priority=rule.style.getPropertyPriority(property);if(!properties.includes(property))continue;declarations.push({property,value,priority});if(property==='padding'){const [top,right=top,bottom=top,left=right]=value.trim().split(/\s+/);for(const [edge,part]of Object.entries({top,right,bottom,left}))declarations.push({property:`padding-${edge}`,value:part,priority});}}
+   for(const {property,value,priority}of declarations){const rank=[priority==='important'?1:0,ids,classes,types];
     const old=winners[property],comparison=old?rank.reduce((difference,part,index)=>difference||part-old.rank[index],0):1;
     if(comparison>=0)winners[property]={value,rank,selector,href};
    }
@@ -138,9 +139,9 @@ function cascadeLayout(element,rules,size){
 test('production stylesheet order keeps the free piano full-width and recordings below it at every viewport',async t=>{
  const ui=await setup(t);ui.document.body.classList.add('game-shell','rhythm-shell');await ui.view.enter();const rules=await freePianoStylesheetRules();
  assert.ok(rules.findIndex(({href})=>href==='/rhythm-shell.css')>rules.findIndex(({href})=>href==='/free-practice.css'),'Exercise the real order that previously let the dashboard win');
- const cases=[{width:1280,height:720,padding:'12px 18px 16px',gap:'10px'},{width:1920,height:1080,padding:'12px 18px 16px',gap:'10px'},{width:900,height:560,padding:'6px 10px 8px',gap:'6px'},{width:390,height:844,padding:'8px',gap:'8px'}];
+ const cases=[{width:1280,height:720,padding:['6px','18px','8px','18px'],gap:'6px'},{width:1920,height:1080,padding:['12px','18px','16px','18px'],gap:'10px'},{width:900,height:560,padding:['4px','10px','6px','10px'],gap:'4px'},{width:390,height:844,padding:['8px','8px','8px','8px'],gap:'8px'}];
  for(const size of cases){const styles=cascadeLayout(ui.$('free-practice-screen'),rules,size);
-  for(const [property,value]of Object.entries({display:'flex','flex-direction':'column','align-items':'stretch','max-width':'none',padding:size.padding,gap:size.gap}))assert.equal(styles[property]?.value,value,`${size.width}×${size.height}: ${property} winner ${JSON.stringify(styles[property])}`);
+  for(const [property,value]of Object.entries({display:'flex','flex-direction':'column','align-items':'stretch','max-width':'none',...Object.fromEntries(['top','right','bottom','left'].map((edge,index)=>[`padding-${edge}`,size.padding[index]])),gap:size.gap}))assert.equal(styles[property]?.value,value,`${size.width}×${size.height}: ${property} winner ${JSON.stringify(styles[property])}`);
   for(const id of ['.free-performance-panel','#free-recordings']){const child=cascadeLayout(ui.document.querySelector(id),rules,size);assert.equal(child['grid-area']?.value??'auto','auto',`${id} cannot retain a legacy grid row`);assert.equal(child.order?.value??'0','0');assert.ok(['auto','stretch'].includes(child['align-self']?.value??'auto'),'A flex child uses the shared root stretch alignment');}
  }
  const children=[...ui.$('free-practice-screen').children];assert.ok(children.indexOf(ui.document.querySelector('.free-performance-panel'))<children.indexOf(ui.$('free-recordings')),'Normal flex order keeps recording/history below the piano');assert.equal(ui.$('free-save-panel').closest('#free-recordings'),ui.$('free-recordings'),'Saving and history remain in the dedicated disclosure below the shared stage');

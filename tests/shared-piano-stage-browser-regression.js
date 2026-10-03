@@ -19,8 +19,10 @@ export async function readSharedPianoGeometry(page,mode='normal') {
     const controls=[...toolbar.querySelectorAll('.piano-stage-actions > button')].map(node=>({id:node.id,rect:rect(node),style:style(node),hit:(()=>{const r=node.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return hit===node||node.contains(hit);})()}));
     const layoutMetrics=node=>{const css=getComputedStyle(node);return {id:node.id,className:node.className,rect:rect(node),css:Object.fromEntries(['display','height','minHeight','maxHeight','lineHeight','fontSize','paddingTop','paddingBottom','marginTop','marginBottom','borderTopWidth','borderBottomWidth','boxSizing','alignItems','alignSelf','rowGap'].map(name=>[name,css[name]]))};};
     const layoutDiagnostics={stage:layoutMetrics(root),toolbar:layoutMetrics(toolbar),toolbarChildren:[...toolbar.children].map(layoutMetrics),actionChildren:[...toolbar.querySelectorAll('.piano-stage-actions > *')].map(layoutMetrics),surface:layoutMetrics(surface),lane:layoutMetrics(lane),keyboard:layoutMetrics(keyboard)};
+    const transport=document.querySelector(mode==='free'?'#free-practice-screen .piano-transport':'.transport');
+    const auxiliary=mode==='normal'?['#keyboard-pan-left','#keyboard-pan-right','#piano-fingering-guidance>summary'].map(selector=>document.querySelector(selector)).filter(node=>node&&node.getBoundingClientRect().width>0).map(node=>{const r=rect(node),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return{id:node.id||'piano-guidance-summary',rect:r,hit:hit===node||node.contains(hit)}}):[];
     const label=selector=>root.querySelector(selector)?.textContent.trim()??null;const labels={title:label('.piano-stage-title'),midi:label(mode==='free'?'#free-connect-midi':'#piano-connect-midi'),keyboard:label(mode==='free'?'#free-keyboard-settings':'#piano-keyboard-settings'),...(mode==='normal'?{background:label('[data-i18n="performance.scoreBackground"]'),opacity:label('[data-i18n="performance.scoreOpacity"]'),options:label('#notation-tools>summary')}: {})};
-    return {labels,locale:document.documentElement.lang,layoutDiagnostics,mode,viewport:{width:innerWidth,height:innerHeight},documentWidth:document.documentElement.scrollWidth,stage:rect(root),surface:rect(surface),keyboard:rect(keyboard),lane:rect(lane),strike:rect(strike),toolbar:rect(toolbar),style:{stage:style(root),lane:style(lane),strike:style(strike),toolbar:style(toolbar)},keys,controls,scroll:{width:scroll.clientWidth,content:scroll.scrollWidth,left:scroll.scrollLeft}};
+    return {labels,transport:rect(transport),auxiliary,locale:document.documentElement.lang,layoutDiagnostics,mode,viewport:{width:innerWidth,height:innerHeight},documentWidth:document.documentElement.scrollWidth,stage:rect(root),surface:rect(surface),keyboard:rect(keyboard),lane:rect(lane),strike:rect(strike),toolbar:rect(toolbar),style:{stage:style(root),lane:style(lane),strike:style(strike),toolbar:style(toolbar)},keys,controls,scroll:{width:scroll.clientWidth,content:scroll.scrollWidth,left:scroll.scrollLeft}};
   },mode);
 }
 
@@ -37,6 +39,10 @@ export function assertSamePianoStage(normal,free) {
   for(const surface of ['stage','surface','keyboard','lane','strike','toolbar'])for(const axis of ['width','height'])nearly(normal[surface][axis],free[surface][axis],`Shared ${surface} ${axis}`);
   for(const mode of [normal,free]){
     assert.ok(mode.documentWidth<=mode.viewport.width,`${mode.mode} has no document-width overflow`);
+    assert.ok(mode.transport.x>=0&&mode.transport.right<=mode.viewport.width+1&&mode.transport.y>=0&&mode.transport.bottom<=mode.viewport.height+1,`${mode.mode}: transport stays inside the viewport`);
+    for(const control of mode.auxiliary){assert.ok(control.rect.x>=0&&control.rect.right<=mode.viewport.width+1&&control.rect.y>=0&&control.rect.bottom<=mode.viewport.height+1,`${control.id}: auxiliary control stays visible`);assert.equal(control.hit,true,`${control.id}: auxiliary control is reachable`);}
+    if(mode.mode==='normal'&&mode.viewport.width===700)assert.equal(mode.auxiliary.filter(control=>control.id.startsWith('keyboard-pan-')).length,2,'The narrow landscape case exercises both actual pan controls');
+
     for(const node of ['lane','strike','keyboard'])nearly(mode[node].width,mode.surface.width,`${mode.mode} ${node} spans the same coordinate surface`);
     nearly(mode.lane.bottom,mode.strike.y,`${mode.mode}: lane ends exactly on strike line`);nearly(mode.strike.bottom,mode.keyboard.y,`${mode.mode}: strike line ends exactly at keybed`);
     assert.ok(mode.lane.height>=100,`${mode.mode}: visible falling field is usable`);
@@ -150,7 +156,7 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,read
       if(locale==='en')await page.screenshot({path:join(artifactDirectory,'worldmusichub-shared-piano-1280x720-en-free.png'),fullPage:true,animations:'disabled'});
       localeProof.push({locale,normal:normal.labels,free:free.labels});await page.locator('#rhythm-free-resume').click();
     }
-    const layouts=[{width:1280,height:720},{width:1920,height:1080},{width:844,height:390},{width:390,height:844}];
+    const layouts=[{width:1280,height:720},{width:1920,height:1080},{width:844,height:390},{width:700,height:390},{width:390,height:844}];
     for(const viewport of layouts)for(const theme of viewport.width>=1280?['light','dark']:['light']){
       await page.setViewportSize(viewport);await page.emulateMedia({reducedMotion:theme==='dark'?'reduce':'no-preference'});await ui('#theme-mode').selectOption(theme);await closeShellPanels();
       await page.locator('#piano-scroll').evaluate(node=>{node.scrollLeft=0;});await settlePianoPaint(page);

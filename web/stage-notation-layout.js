@@ -5,6 +5,7 @@ import {getAppI18n} from './app-locale.js';
 export function setupStageNotationLayout({document,i18n=getAppI18n(document),onChange=()=>{}}) {
   const $=id=>document.getElementById(id),window=document.defaultView,stage=$('workspace'),play=stage.querySelector('.play-panel');
   const dock=$('notation-dock'),lane=$('piano-stage').querySelector('.piano-lanes-shared'),toolbar=$('piano-stage').querySelector('.piano-stage-toolbar');
+  const fallback=$('engraving-fallback'),fallbackHome=document.createComment('Engraving fallback home');fallback?.before(fallbackHome);
   const basic=$('notation'),engraved=document.querySelector('.engraving-scroll'),engravingView=$('engraving-view');
   const basicHome=document.createComment('Basic notation home'),engravedHome=document.createComment('Engraved notation home'),dockHome=document.createComment('Notation controls home');
   basic.before(basicHome);engraved.before(engravedHome);dock.before(dockHome);
@@ -24,8 +25,8 @@ export function setupStageNotationLayout({document,i18n=getAppI18n(document),onC
   function refresh(){
     if(disposed)return;
     const piano=play.dataset.instrument!=='guitar';stage.classList.toggle('notation-on-lanes',piano);
-    if(piano){if(dock.parentElement!==tools)tools.append(dock);if(basic.parentElement!==overlay)overlay.append(basic);if(engraved.parentElement!==overlay)overlay.append(engraved);dock.removeAttribute('tabindex');}
-    else{if(dock.previousSibling!==dockHome)dockHome.after(dock);if(basic.previousSibling!==basicHome)basicHome.after(basic);if(engraved.previousSibling!==engravedHome)engravedHome.after(engraved);dock.tabIndex=0;}
+    if(piano){if(fallback&&fallback.parentElement!==$('piano-stage'))$('piano-stage').append(fallback);if(dock.parentElement!==tools)tools.append(dock);if(basic.parentElement!==overlay)overlay.append(basic);if(engraved.parentElement!==overlay)overlay.append(engraved);dock.removeAttribute('tabindex');}
+    else{if(fallback&&fallback.previousSibling!==fallbackHome)fallbackHome.after(fallback);if(dock.previousSibling!==dockHome)dockHome.after(dock);if(basic.previousSibling!==basicHome)basicHome.after(basic);if(engraved.previousSibling!==engravedHome)engravedHome.after(engraved);dock.tabIndex=0;}
     const enabled=piano&&!dock.hidden&&visible.checked;overlay.hidden=!enabled;engraved.hidden=piano?engravingView.hidden:false;options.hidden=!piano;tools.hidden=!piano||dock.hidden;pan.hidden=!piano;
     opacity.disabled=!visible.checked;overlay.style.setProperty('--notation-opacity',String(Number(opacity.value)/100));value.textContent=`${opacity.value}%`;opacity.setAttribute('aria-valuetext',value.textContent);
     if(lastVisible!==enabled){lastVisible=enabled;stage.dispatchEvent(new window.Event('notationviewportchange'));}
@@ -34,5 +35,5 @@ export function setupStageNotationLayout({document,i18n=getAppI18n(document),onC
   visible.addEventListener('change',refresh);opacity.addEventListener('input',refresh);
   const observer=window.MutationObserver?new window.MutationObserver(refresh):null;
   for(const node of [dock,engravingView])observer?.observe(node,{attributes:true,attributeFilter:['hidden']});
-  refresh();return {refresh,destroy(){disposed=true;observer?.disconnect();visible.removeEventListener('change',refresh);opacity.removeEventListener('input',refresh);basicHome.after(basic);engravedHome.after(engraved);dockHome.after(dock);engraved.hidden=false;stage.classList.remove('notation-on-lanes');overlay.remove();options.remove();tools.remove();pan.remove();basicHome.remove();engravedHome.remove();dockHome.remove();}};
+  refresh();return {refresh,destroy(){disposed=true;observer?.disconnect();visible.removeEventListener('change',refresh);opacity.removeEventListener('input',refresh);basicHome.after(basic);engravedHome.after(engraved);dockHome.after(dock);if(fallback)fallbackHome.after(fallback);fallbackHome.remove();engraved.hidden=false;stage.classList.remove('notation-on-lanes');overlay.remove();options.remove();tools.remove();pan.remove();basicHome.remove();engravedHome.remove();dockHome.remove();}};
 }

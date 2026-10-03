@@ -18,7 +18,7 @@ export async function freePracticeApp({fetchResult=null}={}) {
   window.HTMLElement.prototype.setPointerCapture=function(){};
   const paint=new Proxy({createLinearGradient:()=>({addColorStop(){}})},{get:(target,key)=>target[key]||(()=>{})});
   window.HTMLCanvasElement.prototype.getContext=()=>paint;
-  const param={setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){},cancelScheduledValues(){}};
+  const param={setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){},setTargetAtTime(){},cancelScheduledValues(){}};
   class Audio{constructor(){audioContexts++;this.state='running';this.currentTime=0;this.destination={};}createGain(){return{gain:{...param},connect(){},disconnect(){}};}createOscillator(){return{frequency:{},connect(){},disconnect(){},start(){},stop(){}};}}
   const originalUnlock=Synth.prototype.unlock,originalPlay=Synth.prototype.play,originalURL=URL.createObjectURL;
   Synth.prototype.unlock=function(...args){unlockCalls++;return unlockImpl?unlockImpl():originalUnlock.apply(this,args);};

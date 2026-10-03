@@ -73,7 +73,7 @@ jobs:
         if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
         run: npm run test:engraving-browser
       - name: Check actual rhythm shell
-        if: ${{ !cancelled() && contains(fromJSON('["integration/rhythm-ui", "dev/initial-prototype", "main"]'), github.head_ref || github.ref_name) && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
+        if: ${{ !cancelled() && (contains(fromJSON('["integration/rhythm-ui", "dev/initial-prototype", "main"]'), github.head_ref || github.ref_name) || startsWith(github.head_ref || github.ref_name, 'validation/')) && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
         timeout-minutes: 10
         env:
           WMH_HOSTED_BROWSER: '1'
@@ -82,6 +82,64 @@ jobs:
           WMH_SOURCE_REF: ${{ github.head_ref || github.ref_name }}
           WMH_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node scripts/hosted-rhythm-check.mjs
+      # Additive, bounded copies of the same evidence. The complete artifact
+      # below remains unchanged; each part has a full source/hash inventory.
+      - name: Partition browser evidence for bounded retrieval
+        if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' }}
+        run: >-
+          python3 scripts/partition-browser-evidence.py
+          /tmp "${{ runner.temp }}/worldmusichub-rhythm"
+          "${{ runner.temp }}/worldmusichub-browser-parts"
+          --source-sha "${{ github.event.pull_request.head.sha || github.sha }}"
+          --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      - name: Preserve bounded browser evidence 1
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: browser-evidence-part-01
+          path: ${{ runner.temp }}/worldmusichub-browser-parts/part-01/
+          if-no-files-found: ignore
+          compression-level: 0
+      - name: Preserve bounded browser evidence 2
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: browser-evidence-part-02
+          path: ${{ runner.temp }}/worldmusichub-browser-parts/part-02/
+          if-no-files-found: ignore
+          compression-level: 0
+      - name: Preserve bounded browser evidence 3
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: browser-evidence-part-03
+          path: ${{ runner.temp }}/worldmusichub-browser-parts/part-03/
+          if-no-files-found: ignore
+          compression-level: 0
+      - name: Preserve bounded browser evidence 4
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: browser-evidence-part-04
+          path: ${{ runner.temp }}/worldmusichub-browser-parts/part-04/
+          if-no-files-found: ignore
+          compression-level: 0
+      - name: Preserve bounded browser evidence 5
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: browser-evidence-part-05
+          path: ${{ runner.temp }}/worldmusichub-browser-parts/part-05/
+          if-no-files-found: ignore
+          compression-level: 0
+      - name: Preserve bounded browser evidence 6
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: browser-evidence-part-06
+          path: ${{ runner.temp }}/worldmusichub-browser-parts/part-06/
+          if-no-files-found: ignore
+          compression-level: 0
       - name: Preserve browser screenshots
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

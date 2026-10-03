@@ -101,13 +101,14 @@ export function registerStaffRegisterBrowserRegressions({test, getPage, ui, read
         await page.locator('#play-button').click();
         const active = '#notation [data-note-id="register-low-0"]';
         const visible = await actualMarkerVisibility(active);
-        assert.ok(visible[0]?.painted && visible[0].fraction >= .95, `Current low note is completely visible in the dock: ${JSON.stringify(visible)}`);
+        assert.ok(visible[0]?.painted && visible[0].fraction >= .95, `Current low note is completely visible in the lane overlay: ${JSON.stringify(visible)}`);
         assert.equal(await ui('#engraving-follow').isChecked(), true);
-        const colors = await page.locator(active).evaluate(note => ({head: getComputedStyle(note.querySelector('.note-head')).fill,
+        const colors = await page.locator(active).evaluate(note => ({id:note.dataset.noteId,open:note.querySelector('.note-head').classList.contains('open-head'),head:getComputedStyle(note.querySelector('.note-head')).fill,stroke:getComputedStyle(note.querySelector('.note-head')).stroke,
           accidental: getComputedStyle(note.querySelector('.accidental')).fill,
-          inactive: getComputedStyle(document.querySelector('#notation .score-note:not(.active) .note-head')).fill}));
-        assert.equal(colors.head, colors.accidental);
-        assert.notEqual(colors.head, colors.inactive, 'The complete low note retains the current-note highlight');
+          inactive: getComputedStyle(document.querySelector('#notation .score-note:not(.active) .note-head')).stroke}));
+        assert.equal(colors.id,'register-low-0');assert.equal(colors.open,true);assert.equal(colors.head,'none','The current half-note retains its hollow rhythmic form');
+        assert.equal(colors.stroke,colors.accidental);assert.equal(colors.stroke,'rgb(255, 215, 140)');
+        assert.notEqual(colors.stroke, colors.inactive, 'The complete low note retains the current-note highlight');
         evidence.push({currentLowNote: visible, colors, following: true});
         await page.screenshot({path: join(artifactDirectory, 'worldmusichub-live-low-staff-current-dark.png'), fullPage: true, animations: 'disabled'});
       }

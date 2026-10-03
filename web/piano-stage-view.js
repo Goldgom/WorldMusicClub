@@ -39,3 +39,23 @@ export function renderPianoKeybed({document,keyboard,geometry,bindings=[],labelF
   }
   keyboard.replaceChildren(fragment);keyboard.dataset.low=String(geometry[0]?.midi??'');keyboard.dataset.high=String(geometry.at(-1)?.midi??'');
 }
+
+/** Notices consume the same lane budget in either mode. Reading their rendered
+ * size never changes their lifetime, focus, or the musical transport. */
+export function observePianoNoticeBudget({document}) {
+  const window=document.defaultView,banner=document.getElementById('notice');
+  if(!banner)return()=>{};
+  let previous=null;
+  const refresh=()=>{
+    const rect=!banner.hidden&&banner.getBoundingClientRect?.();
+    const css=rect&&window.getComputedStyle?.(banner);
+    const height=rect?Math.ceil(rect.height+(parseFloat(css?.marginTop)||0)+(parseFloat(css?.marginBottom)||0)):0;
+    if(height===previous)return;previous=height;
+    document.body.style.setProperty('--piano-notice-space',`${height}px`);
+  };
+  const resize=window.ResizeObserver?new window.ResizeObserver(refresh):null;
+  const mutation=window.MutationObserver?new window.MutationObserver(refresh):null;
+  resize?.observe(banner);mutation?.observe(banner,{attributes:true,attributeFilter:['hidden']});
+  window.addEventListener('resize',refresh);refresh();
+  return()=>{resize?.disconnect();mutation?.disconnect();window.removeEventListener('resize',refresh);document.body.style.removeProperty('--piano-notice-space');};
+}

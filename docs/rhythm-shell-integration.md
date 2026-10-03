@@ -83,6 +83,27 @@ The same palette, key dimensions and pressed feedback are used in both modes.
 A narrow screen may scroll the configured range; it must not silently crop the
 musical source or change instrument feasibility.
 
+### Responsive controls and live free input
+
+The laptop and portrait layouts reserve substantial lane height. At short
+landscape sizes the original keyboard pan and piano fingering controls share the
+transport row; expanded fingering opens above it. Their original handlers and
+focus identities remain intact. Larger sizes and guitar restore the controls to
+their original anchors. Optional beginner labels reserve the same complete key
+height in normal and free modes, including extreme-register octave dots.
+
+An engraving failure remains visible outside the collapsed score controls. Its
+warning still identifies the fallback limitations; collapsing the controls does
+not hide a rendering failure. Notice banners participate in the shared height
+budget without being dismissed or shortened by the presentation layer.
+
+Free piano input is available before recording starts and after a recording
+stops. Those live-only contacts do not create recording events, segments or
+scored input, and cannot modify the sealed draft. Recording-owned delayed events
+keep their existing evidence route. Replay, hidden or blurred pages, modal
+controls and obsolete input owners cannot revive sound; a late audio unlock must
+still belong to the current live contact.
+
 ### Verification scope
 
 The new shared-stage browser regression compares actual ordinary/free stage,
@@ -92,6 +113,11 @@ fallbacks. Overlay tests check both staff and Jianpu inside the lane, paint orde
 pointer hit targets, actual score pixel visibility, toggle/opacity changes,
 themes and reduced motion. Playing captures must visibly show falling bars over
 the score; paused captures support stable pixel and geometry comparisons.
+
+Full validation branches run the independent hosted rhythm-shell matrix before
+main promotion, in addition to the dedicated UI preview and full-app suites.
+The runner still requires the hosted Actions environment and explicitly allowed
+source refs; it is never a local browser workaround.
 
 Existing source/take exports, exact current-note/page following, manual-page
 suspension, input cleanup, fresh attacks and renderer identity assertions remain

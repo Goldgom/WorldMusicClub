@@ -37,6 +37,10 @@ export function registerFreePianoBrowserRegressions({test,getPage,closeShellPane
       evidence.push({size,layout});
     }
     await page.setViewportSize({width:1280,height:720});
+    assert.equal(await page.locator('#free-practice-screen').getAttribute('data-state'),'idle');assert.equal(await page.locator('#free-export-draft').isDisabled(),true);
+    await page.locator('#free-practice-title').focus();await page.keyboard.down('r');
+    await page.waitForFunction(()=>document.querySelector('#free-practice-keys [data-midi="60"]').getAttribute('aria-pressed')==='true');assert.equal(await page.locator('#free-live-notes').textContent(),'C4');assert.equal(await page.locator('#free-practice-screen').getAttribute('data-state'),'idle');assert.equal(await page.locator('#free-export-draft').isDisabled(),true);
+    await page.keyboard.up('r');await page.waitForFunction(()=>!document.querySelector('#free-practice-keys [aria-pressed="true"]'));assert.equal(await page.locator('#free-practice-screen').getAttribute('data-state'),'idle');
     await page.locator('#free-start').click();await page.locator('#free-practice-title').focus();await page.keyboard.down('r');
     await page.waitForFunction(()=>document.querySelector('#free-practice-keys [data-midi="60"]').getAttribute('aria-pressed')==='true');
     assert.equal(await page.locator('#free-live-notes').textContent(),'C4');
@@ -59,9 +63,11 @@ export function registerFreePianoBrowserRegressions({test,getPage,closeShellPane
     const [download]=await Promise.all([page.waitForEvent('download'),page.locator('#free-export-draft').click()]);
     const stream=await download.createReadStream();let json='';for await(const chunk of stream)json+=chunk;
     const record=JSON.parse(json);assert.deepEqual(record.observations.events.filter(event=>event.kind==='note_on').map(event=>event.midi),[60,21,61]);
+    await page.locator('#free-practice-title').focus();await page.keyboard.down('i');await page.waitForFunction(()=>document.querySelector('#free-practice-keys [data-midi="64"]').getAttribute('aria-pressed')==='true');assert.equal(await page.locator('#free-live-notes').textContent(),'E4');assert.equal(await page.locator('#free-practice-screen').getAttribute('data-state'),'stopped');await page.keyboard.up('i');await page.waitForFunction(()=>!document.querySelector('#free-practice-keys [aria-pressed="true"]'));
+    const [sealedDownload]=await Promise.all([page.waitForEvent('download'),page.locator('#free-export-draft').click()]);const sealedStream=await sealedDownload.createReadStream();let sealedJson='';for await(const chunk of sealedStream)sealedJson+=chunk;assert.equal(sealedJson,json,'A fresh stopped live key preserves every byte of the sealed draft');
     await page.locator('#free-record-label').fill('自由钢琴回归');await page.locator('#free-save').click();await page.locator('#free-start:not([disabled])').waitFor();
     assert.equal(await page.locator('#free-recordings').evaluate(node=>node.open),true);
     assert.equal(await page.locator('#free-preview').isDisabled(),true,'Silent recording remains independent of audio');
-    await writeFile(join(artifactDirectory,'worldmusichub-free-piano-stage.json'),JSON.stringify({evidence,held,actual_inputs:record.observations.events,paused_after_navigation:true},null,2));
+    await writeFile(join(artifactDirectory,'worldmusichub-free-piano-stage.json'),JSON.stringify({evidence,held,idle_live_input:true,stopped_live_input:true,sealed_draft_unchanged:true,muted:true,actual_inputs:record.observations.events,paused_after_navigation:true},null,2));
   });
 }

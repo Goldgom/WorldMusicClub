@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseHTML} from 'linkedom';
 import {keyboardGeometry} from '../web/music.js';
-import {mountPianoStage,renderPianoKeybed,renderPianoRails,createPianoToolbar,pianoMinimumWidth} from '../web/piano-stage-view.js';
+import {mountPianoStage,renderPianoKeybed,renderPianoRails,createPianoToolbar,pianoMinimumWidth,observePianoNoticeBudget} from '../web/piano-stage-view.js';
 
 test('shared stage mounting keeps the original interactive keybed, falling canvas and strike nodes',()=>{
   const {document}=parseHTML('<section id="stage"><div id="scroll"><div id="surface"><canvas></canvas><div class="strike-line"></div><div id="keyboard"><button data-midi="60" aria-pressed="true"></button></div></div></div></section>');
@@ -35,3 +35,12 @@ test('shared toolbar reuses mode-owned action handlers and marks them as nonmusi
   const {document}=parseHTML('<h2>Piano</h2><div><button>Sound</button></div>'),title=document.querySelector('h2'),actions=document.querySelector('div'),button=actions.firstElementChild;let count=0;button.addEventListener('click',()=>count++);
   const toolbar=createPianoToolbar({document,title,actions});assert.equal(toolbar.dataset.keyboardInput,'off');assert.equal(toolbar.firstElementChild,title);assert.equal(toolbar.lastElementChild,actions);assert.equal(actions.firstElementChild,button);button.click();assert.equal(count,1);
 });
+
+ test('notice budget tracks the rendered original banner and restores the shared lane allocation on dismissal',()=>{
+  const {document:dom}=parseHTML('<html><body><p id="notice" hidden>Notice</p></body></html>'),banner=dom.getElementById('notice'),callbacks={},observed=[];let height=32,disposed=0;const window={addEventListener(type,callback){callbacks[type]=callback},removeEventListener(type,callback){assert.ok(callbacks[type]===callback);delete callbacks[type]}},document={defaultView:window,body:dom.body,getElementById:id=>dom.getElementById(id)};
+  banner.getBoundingClientRect=()=>({height});window.getComputedStyle=()=>({marginTop:'2px',marginBottom:'3px'});
+  window.ResizeObserver=class{constructor(callback){callbacks.resizeObserver=callback}observe(node){observed.push(node)}disconnect(){disposed++}};window.MutationObserver=class{constructor(callback){callbacks.mutation=callback}observe(node,options){observed.push(node);assert.deepEqual(options.attributeFilter,['hidden'])}disconnect(){disposed++}};
+  const stop=observePianoNoticeBudget({document}),budget=()=>document.body.style.getPropertyValue('--piano-notice-space');assert.equal(budget(),'0px');assert.ok(observed.every(node=>node===banner));
+  banner.hidden=false;callbacks.mutation();assert.equal(budget(),'37px');height=54.2;callbacks.resizeObserver();assert.equal(budget(),'60px');banner.hidden=true;callbacks.mutation();assert.equal(budget(),'0px','Dismissal restores the complete shared normal/free lane budget');
+  banner.hidden=false;callbacks.resize();assert.equal(budget(),'60px');stop();assert.equal(disposed,2);assert.ok(!budget());
+ });

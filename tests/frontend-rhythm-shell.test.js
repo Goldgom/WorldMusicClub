@@ -14,7 +14,7 @@ import {setupStageNotationLayout} from '../web/stage-notation-layout.js';
 const onsetCount = record => record.observations.events.filter(event => event.kind === 'note_on').length;
 
 function laneOverlayFixture(){
- const {document,window}=parseHTML('<main id="workspace" class="with-notation"><aside id="notation-dock"><section class="notation-panel"><div class="section-heading"></div><label><input id="engraving-follow" type="checkbox"></label><div id="notation"><svg><g data-note-id="exact-source-id"></g></svg></div><div id="engraving-view"><div class="engraving-scroll"><div id="engraved-staff"><svg></svg></div></div></div></section></aside><section class="play-panel" data-instrument="piano"><div id="piano-stage"><div class="piano-stage-toolbar"></div><div class="piano-lanes-shared"><canvas id="falling-notes"></canvas></div><div id="keyboard"><button data-midi="60" aria-pressed="true"></button></div></div></section></main>');
+ const {document,window}=parseHTML('<main id="workspace" class="with-notation"><aside id="notation-dock"><section class="notation-panel"><div class="section-heading"></div><label><input id="engraving-follow" type="checkbox"></label><div id="notation"><svg><g data-note-id="exact-source-id"></g></svg></div><p id="engraving-fallback" role="status">Original rendering limitation</p><div id="engraving-view"><div class="engraving-scroll"><div id="engraved-staff"><svg></svg></div></div></div></section></aside><section class="play-panel" data-instrument="piano"><div id="piano-stage"><div class="piano-stage-toolbar"></div><div class="piano-lanes-shared"><canvas id="falling-notes"></canvas></div><div id="keyboard"><button data-midi="60" aria-pressed="true"></button></div></div></section></main>');
  const $=id=>document.getElementById(id),changes=[],layout=setupStageNotationLayout({document,i18n:createI18n({locale:'en'}),onChange:value=>changes.push(value)});$('notation-overlay-visible').checked=true;layout.refresh();return{document,window,$,layout,changes};
 }
 test('score paint lives inside the falling lane while every original page/follow control stays outside it',()=>{
@@ -44,6 +44,14 @@ test('manual overlay navigation uses its own scrollers and guitar/disposal resto
  document.querySelector('.play-panel').dataset.instrument='guitar';layout.refresh();assert.equal(dock.parentElement.id,'workspace');assert.equal(basic.closest('#notation-dock'),dock);assert.equal(engraved.parentElement,$('engraving-view'));assert.equal(overlay.hidden,true);assert.equal($('keyboard').firstElementChild,key);
  document.querySelector('.play-panel').dataset.instrument='piano';layout.refresh();assert.equal(basic.parentElement,overlay);assert.equal($('keyboard').firstElementChild,key);layout.destroy();layout.refresh();
  assert.equal($('notation-lane-overlay'),null);assert.equal($('notation-tools'),null);assert.equal(basic.closest('#notation-dock'),dock);assert.equal(engraved.parentElement,$('engraving-view'));assert.equal(document.querySelectorAll('#engraved-staff').length,1);assert.equal($('keyboard').firstElementChild,key);
+});
+test('the original fallback remains outside closed piano controls and returns to its guitar anchor',()=>{
+ const {document,$,layout}=laneOverlayFixture(),fallback=$('engraving-fallback'),basic=$('notation');
+ try{
+  $('notation-tools').open=false;fallback.hidden=false;layout.refresh();assert.equal(fallback.parentElement.id,'piano-stage');assert.equal(fallback.closest('details'),null);assert.equal(fallback.closest('#notation-lane-overlay'),null);assert.equal(fallback.getAttribute('role'),'status');assert.equal(fallback.textContent,'Original rendering limitation');
+  for(const instrument of ['guitar','piano','guitar','piano']){document.querySelector('.play-panel').dataset.instrument=instrument;layout.refresh();assert.ok($('engraving-fallback')===fallback);assert.equal(document.querySelectorAll('#engraving-fallback').length,1);assert.equal(fallback.hidden,false);if(instrument==='guitar')assert.ok(fallback.previousElementSibling===basic);else assert.equal(fallback.parentElement.id,'piano-stage');}
+ }finally{layout.destroy();}
+ assert.ok(fallback.previousElementSibling===basic);assert.equal(fallback.parentElement.className,'notation-panel');
 });
 function playKey(app) {
   const properties = {code:'KeyR', key:'r'};

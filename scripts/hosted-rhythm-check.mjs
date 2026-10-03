@@ -8,7 +8,7 @@ import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 
-if (process.env.WMH_HOSTED_BROWSER !== '1' || process.env.GITHUB_ACTIONS !== 'true' || !['integration/rhythm-ui', 'dev/initial-prototype', 'main'].includes(process.env.WMH_SOURCE_REF)) {
+if (process.env.WMH_HOSTED_BROWSER !== '1' || process.env.GITHUB_ACTIONS !== 'true' || !(['integration/rhythm-ui', 'dev/initial-prototype', 'main'].includes(process.env.WMH_SOURCE_REF) || /^validation\/.+/.test(process.env.WMH_SOURCE_REF || ''))) {
   throw new Error('Requires an authorized GitHub Actions WorldMusicHub source runner with WMH_HOSTED_BROWSER=1; local browser execution is not authorized.');
 }
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -27,23 +27,35 @@ const cases = [
 const failures = [], results = [], sourceHashes = {};
 const startedAt = new Date().toISOString();
 let browser, server, serverOutput = '', provenance = null, status = 'running';
-async function checkAboveKeyboard(page, entry, view) {
-  const required = entry.width >= 1280 && entry.height >= 720;
-  if (required) await page.waitForFunction(() => document.querySelector('#workspace').classList.contains('notation-above'));
+async function scoreControls(page) {
+  if(await page.locator('#notation-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#notation-toggle').click();
+  if(await page.locator('#notation-tools').isVisible()&&!await page.locator('#notation-tools').evaluate(node=>node.open))await page.locator('#notation-tools>summary').click();
+}
+async function closeScoreControls(page) {
+  if(await page.locator('#notation-tools').isVisible()&&await page.locator('#notation-tools').evaluate(node=>node.open))await page.locator('#notation-tools>summary').click();
+}
+async function checkLaneOverlay(page, entry, view) {
+  await closeScoreControls(page);
+  await page.waitForFunction(() => document.querySelector('#workspace').classList.contains('notation-on-lanes')&&!document.querySelector('#notation-lane-overlay').hidden);
   const geometry = await page.evaluate(() => {
     const box = selector => {const node=document.querySelector(selector),r=node.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height,clientHeight:node.clientHeight,scrollHeight:node.scrollHeight};};
-    return {above:document.querySelector('#workspace').classList.contains('notation-above'),dock:box('#notation-dock'),play:box('.play-panel'),canvas:box('#falling-notes'),strike:box('.strike-line'),keyboard:box('#keyboard'),transport:box('.transport'),stage:box('#workspace')};
+    const overlay=document.querySelector('#notation-lane-overlay'),canvas=document.querySelector('#falling-notes'),r=overlay.getBoundingClientRect(),hit=document.elementFromPoint(Math.min(innerWidth-1,r.x+r.width/2),r.y+r.height/2);
+    return {above:document.querySelector('#workspace').classList.contains('notation-above'),overlay:box('#notation-lane-overlay'),overlayInLane:overlay.parentElement===canvas.parentElement,
+      overlayStyle:{pointer:getComputedStyle(overlay).pointerEvents,background:getComputedStyle(overlay).backgroundColor,z:Number(getComputedStyle(overlay).zIndex),canvasZ:Number(getComputedStyle(canvas).zIndex)},intercepted:Boolean(hit&&overlay.contains(hit)),interactivePaint:overlay.querySelectorAll('button,input,select,textarea').length,
+      range:[...document.querySelectorAll('#keyboard .piano-key')].map(node=>Number(node.dataset.midi)),document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},
+      play:box('.play-panel'),canvas:box('#falling-notes'),strike:box('.strike-line'),keyboard:box('#keyboard'),transport:box('.transport'),stage:box('#workspace')};
   });
   await writeFile(path.join(output,`${entry.name}-${view}-notation-geometry.json`),JSON.stringify(geometry,null,2)+'\n');
-  if (required) {
-    assert.equal(geometry.above,true,`${entry.name}: score must appear above keys at the primary desktop size`);
-    assert.ok(geometry.dock.bottom <= geometry.play.y + 1, 'Score ends above the falling field');
-    assert.ok(Math.abs(geometry.dock.x - geometry.play.x) < 2 && Math.abs(geometry.dock.width - geometry.play.width) < 2, 'Score fills the piano stage width');
-    assert.ok(geometry.dock.height >= 240 && geometry.canvas.height >= 100 && geometry.keyboard.height >= 100, 'Readable score, falling field and complete keybed remain reserved');
-    assert.ok(geometry.transport.bottom <= entry.height + 1 && geometry.stage.scrollHeight <= geometry.stage.clientHeight + 1, 'Transport stays anchored inside the viewport');
-    for (const surface of [geometry.strike,geometry.keyboard]) assert.ok(Math.abs(surface.x-geometry.canvas.x)<1 && Math.abs(surface.width-geometry.canvas.width)<1,'Notes, strike line and keys stay aligned');
-    assert.ok(Math.abs(geometry.canvas.bottom-geometry.strike.y)<1 && Math.abs(geometry.strike.bottom-geometry.keyboard.y)<1);
-  }
+  assert.equal(geometry.above,false);assert.equal(geometry.overlayInLane,true,`${entry.name}: original score paint is inside the falling lane`);
+  assert.ok(Math.min(geometry.overlay.right,geometry.canvas.right)-Math.max(geometry.overlay.x,geometry.canvas.x)>=250&&Math.min(geometry.overlay.bottom,geometry.canvas.bottom)-Math.max(geometry.overlay.y,geometry.canvas.y)>=100,'Score physically intersects the lane background');
+  assert.equal(geometry.overlayStyle.pointer,'none');assert.equal(geometry.overlayStyle.background,'rgba(0, 0, 0, 0)');assert.ok(geometry.overlayStyle.z<geometry.overlayStyle.canvasZ);assert.equal(geometry.intercepted,false);assert.equal(geometry.interactivePaint,0);
+  assert.ok(geometry.canvas.height>=100,'The musical field keeps its original readable minimum');
+  if(entry.width>=1280&&entry.height>=720)assert.ok(geometry.overlay.height>=240,'The desktop score retains its readable paint area inside the lane');
+  assert.ok(geometry.keyboard.height>=(entry.height<=600?70:100),'The complete keybed remains reserved');
+  assert.ok(geometry.transport.y>=0&&geometry.transport.bottom<=entry.height+1&&geometry.stage.scrollHeight<=geometry.stage.clientHeight+1,'Transport stays anchored inside the viewport');
+  assert.ok(geometry.document.width<=entry.width+1&&geometry.document.height<=entry.height+1,'The performance stays bounded');
+  for(const surface of [geometry.strike,geometry.keyboard])assert.ok(Math.abs(surface.x-geometry.canvas.x)<1&&Math.abs(surface.width-geometry.canvas.width)<1,'Notes, strike line and keys stay aligned');
+  assert.ok(Math.abs(geometry.canvas.bottom-geometry.strike.y)<1&&Math.abs(geometry.strike.bottom-geometry.keyboard.y)<1);
   return geometry;
 }
 async function checkCompactHeader(page, entry, view) {
@@ -132,7 +144,7 @@ try {
   };
   assert.match(provenance.sourceCommit ?? '', /^[a-f0-9]{40}$/, 'A source commit is required');
   assert.equal(provenance.checkoutCommit, provenance.workflowCommit, 'Report must identify the exact checkout that built the server');
-  for (const name of ['package.json','package-lock.json','.github/workflows/check.yml','.github/workflows/windows-release.yml','scripts/hosted-rhythm-check.mjs','web/app.js','web/music.js','web/performance-view.js','web/stage-notation-layout.js','web/rhythm-shell.js','web/rhythm-shell.css','web/game-shell.js','web/index.html','web/i18n.js','web/locales/en.js','web/locales/zh-CN.js','web/locales/rhythm-en.js','web/locales/rhythm-zh-CN.js','web/locales/rhythm-schema.js']) {
+  for (const name of ['package.json','package-lock.json','.github/workflows/check.yml','.github/workflows/windows-release.yml','scripts/hosted-rhythm-check.mjs','web/app.js','web/music.js','web/performance-view.js','web/stage-notation-layout.js','web/piano-stage-view.js','web/piano-stage.css','web/rhythm-shell.js','web/rhythm-shell.css','web/game-shell.js','web/index.html','web/i18n.js','web/locales/en.js','web/locales/zh-CN.js','web/locales/rhythm-en.js','web/locales/rhythm-zh-CN.js','web/locales/rhythm-schema.js']) {
     sourceHashes[name] = createHash('sha256').update(await readFile(path.join(root,name))).digest('hex');
   }
   provenance.serverBinarySha256 = createHash('sha256').update(await readFile(binary)).digest('hex');
@@ -181,7 +193,7 @@ try {
       if (await page.locator('#game-home').isVisible()) await page.locator('#home-single-player').click();
       await page.locator('#start-listen').click();
       await page.waitForFunction(() => document.body.dataset.screen === 'stage' && document.querySelector('#progress').value > 0);
-      if (entry.width >= 1280 && entry.height >= 720) assert.equal(await page.locator('#notation-dock').isVisible(),true,'The first desktop piano entry shows its score without an extra toggle');
+      if (entry.width >= 1280 && entry.height >= 720) assert.equal(await page.locator('#notation-lane-overlay').isVisible(),true,'The first desktop piano entry shows its background score without an extra toggle');
       await page.locator('#play-button').click();
       const reducedMotionPause = await checkReducedMotionPause(page, entry);
       const compactHeader = await checkCompactHeader(page, entry, 'piano');
@@ -193,17 +205,18 @@ try {
       assert.ok(geometry.falling.height >= 100, `${entry.name}: falling canvas is too short`);
       assert.ok(geometry.transport.y >= 0 && geometry.transport.bottom <= entry.height + 1, `${entry.name}: transport outside viewport`);
       await page.screenshot({path:path.join(output, `${entry.name}-piano.png`), fullPage:true});
-      if (!await page.locator('#notation-dock').isVisible()) await page.locator('#notation-toggle').click();
+      await scoreControls(page);
       await page.locator('#engraved-button').click();
       await page.waitForFunction(() => document.querySelector('#engraved-staff svg .vf-notehead path'));
       assert.equal(await page.locator('#engraving-fallback').isVisible(), false);
+      await closeScoreControls(page);
       const notationHeader = await checkCompactHeader(page, entry, 'staff');
-      const staffGeometry = await checkAboveKeyboard(page, entry, 'staff');
+      const staffGeometry = await checkLaneOverlay(page, entry, 'staff');
       await page.screenshot({path:path.join(output, `${entry.name}-staff.png`), fullPage:true});
-      await page.locator('#jianpu-button').click();
+      await scoreControls(page);await page.locator('#jianpu-button').click();
       await page.waitForFunction(() => document.querySelector('#notation .score-note') && document.querySelector('#written-cursor-status').dataset.status === 'ready');
       assert.equal(await page.locator('#engraving-follow').isChecked(), true);
-      const jianpuGeometry = await checkAboveKeyboard(page, entry, 'jianpu');
+      const jianpuGeometry = await checkLaneOverlay(page, entry, 'jianpu');assert.deepEqual(jianpuGeometry.range,staffGeometry.range,'Changing notation preserves every configured key');
       await page.screenshot({path:path.join(output, `${entry.name}-jianpu.png`), fullPage:true});
       await page.locator('#notation-toggle').click();
       await page.locator('#settings-button').click();
@@ -223,6 +236,7 @@ try {
       await page.locator('#free-practice-title').focus();
       await page.keyboard.press('r'); await page.keyboard.press('t');
       await page.locator('#free-stop').click();
+      if(!await page.locator('#free-recordings').evaluate(node=>node.open))await page.locator('#free-recordings-toggle').click();
       await page.locator('#free-record-label').fill('节奏练习 / rhythm session');
       await page.locator('#free-save').click();
       await page.waitForFunction(() => !document.querySelector('#free-start').disabled);
@@ -250,13 +264,6 @@ try {
       results.push({...entry,status:failures.length === caseFailuresBefore ? 'passed' : 'failed',compactHeader,notationHeader,staffGeometry,jianpuGeometry,reducedMotionPause,readyPianoCueVisible:true,guitarCueVisible:true,geometry,fret,recordedOnsets:2,responses});
     } catch (error) {
       failures.push({case:entry.name,error:error.stack ?? error.message});
-      await page.locator('#reset-button').click();
-      await page.waitForFunction(() => document.querySelector('#stage-cue').dataset.cueState === 'ready');
-      await page.locator('#settings-button').click();
-      await page.locator('#instrument').selectOption('piano');
-      await page.locator('#settings-dialog [data-close-panel]').click();
-      await page.waitForFunction(() => !document.querySelector('#piano-stage').hidden && document.querySelector('#stage-cue').dataset.cueState === 'ready');
-      assert.equal(await page.locator('#stage-cue').isVisible(), true, 'Ready piano is not suppressed by the paused-only rule');
       results.push({...entry,status:'failed',responses});
       if (page) await page.screenshot({path:path.join(output, `${entry.name}-failure.png`), fullPage:true}).catch(screenshotError => failures.push({case:entry.name,error:`Failure screenshot: ${screenshotError.message}`}));
     } finally { await context.close(); await report(); }

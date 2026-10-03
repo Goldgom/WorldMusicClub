@@ -9,7 +9,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
   const options = {timeout:45_000};
   async function hideNotation(page) {
     await closeShellPanels();
-    if(await page.locator('#notation-dock').isVisible())await page.locator('#notation-toggle').click();
+    if(await page.locator('#notation-toggle').getAttribute('aria-expanded')==='true')await page.locator('#notation-toggle').click();
   }
   async function prepare(id) {
     const page=getPage(), score=keyboardBrowserScore(id); score.title=`Original ${id} exercise`;
@@ -57,6 +57,8 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
     });
   }
   async function downloadFree(page) {
+    if(!await page.locator('#free-recordings').evaluate(node=>node.open))await page.locator('#free-recordings-toggle').click();
+    assert.equal(await page.locator('#free-export-draft').isVisible(),true);
     const [download]=await Promise.all([page.waitForEvent('download'),page.locator('#free-export-draft').click()]);
     assert.equal(await download.failure(),null);
     return JSON.parse(await readFile(await download.path(),'utf8'));
@@ -80,7 +82,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
           referenceInHelp:reference.parentElement===panel.querySelector('.beginner-help-body'),
           footerInSettings:Boolean(document.querySelector('.keyboard-input-footer').closest('#keyboard-input-settings')),
           statusHidden:document.querySelector('#keyboard-compact-status').hidden,
-          notationAbove:document.querySelector('#workspace').classList.contains('notation-above'),
+          notationOverlay:document.querySelector('#workspace').classList.contains('notation-on-lanes'),
           notationCompact:document.querySelector('#notation-dock .notation-panel').classList.contains('short-notation')});
       };
       const resized=()=>sample('resize'),changed=()=>sample('media-change');
@@ -97,11 +99,11 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
         });
       });
       await artifact(name,{requested:viewport,samples});
-      const before=samples[0],settled=samples.at(-1),compact=viewport.height<=600&&viewport.width>=651;
+      const before=samples[0],settled=samples.at(-1),compact=viewport.height<=600&&viewport.width>=651,guideCompact=viewport.height<=800||viewport.width<=650;
       assert.deepEqual({width:settled.width,height:settled.height},viewport,JSON.stringify(samples));
       assert.deepEqual({compact:settled.compact,guide:settled.guideCompact,reference:settled.referenceInHelp,footer:settled.footerInSettings,statusHidden:settled.statusHidden,notation:settled.notationCompact},
-        {compact,guide:compact,reference:compact,footer:compact,statusHidden:!compact,notation:compact||settled.notationAbove},`All responsive handlers finish before the first rendered frame: ${JSON.stringify(samples)}`);
-      assert.equal(settled.guideParent,compact?'stage-heading':'play-panel panel',JSON.stringify(samples));
+        {compact,guide:guideCompact,reference:guideCompact,footer:compact,statusHidden:!compact,notation:compact||settled.notationOverlay},`All responsive handlers finish before the first rendered frame: ${JSON.stringify(samples)}`);
+      assert.equal(settled.guideParent,guideCompact?'stage-heading':'play-panel panel',JSON.stringify(samples));
       assert.equal(samples.filter(sample=>sample.phase==='media-change').length,Number(before.compact!==compact),`Observe the actual breakpoint notification: ${JSON.stringify(samples)}`);
       return samples;
     } finally {
@@ -114,13 +116,13 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
       const control=selector=>{const element=document.querySelector(selector),r=rect(element),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return{selector,...r,reachable:element===hit||element.contains(hit)};};
       const canvas=document.querySelector('#falling-notes'),r=canvas.getBoundingClientRect();let top=Math.max(0,r.top),bottom=Math.min(innerHeight,r.bottom),left=Math.max(0,r.left),right=Math.min(innerWidth,r.right);
       for(let ancestor=canvas.parentElement;ancestor;ancestor=ancestor.parentElement){const css=getComputedStyle(ancestor),box=ancestor.getBoundingClientRect();if(/auto|hidden|scroll|clip/.test(css.overflowY)){top=Math.max(top,box.top+ancestor.clientTop);bottom=Math.min(bottom,box.top+ancestor.clientTop+ancestor.clientHeight);}if(/auto|hidden|scroll|clip/.test(css.overflowX)){left=Math.max(left,box.left+ancestor.clientLeft);right=Math.min(right,box.left+ancestor.clientLeft+ancestor.clientWidth);}}
-      return{viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},canvas:{...rect(canvas),visibleHeight:Math.max(0,bottom-top),visibleWidth:Math.max(0,right-left)},keybed:rect(document.querySelector('#keyboard')),stage:rect(document.querySelector('#workspace')),play:rect(document.querySelector('.play-panel')),dock:rect(document.querySelector('#notation-dock')),panControls:document.querySelector('.play-panel>.keyboard-pan').hidden?[]:['#keyboard-pan-left','#keyboard-pan-right'].map(control),controls:['#beginner-enabled','#beginner-controls summary','#keyboard-compact-status','#reset-button','#play-button','#sound-button'].map(control),stagePanel:document.querySelector('#beginner-controls').parentElement.className,range:document.querySelector('#keyboard-compact-status').textContent};
+      return{viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},canvas:{...rect(canvas),visibleHeight:Math.max(0,bottom-top),visibleWidth:Math.max(0,right-left)},keybed:rect(document.querySelector('#keyboard')),stage:rect(document.querySelector('#workspace')),play:rect(document.querySelector('.play-panel')),overlay:rect(document.querySelector('#notation-lane-overlay')),overlayInLane:Boolean(document.querySelector('#notation-lane-overlay').closest('.piano-lanes-shared')),panControls:document.querySelector('.keyboard-pan').hidden?[]:['#keyboard-pan-left','#keyboard-pan-right'].map(control),controls:['#beginner-enabled','#beginner-controls summary','#keyboard-compact-status','#reset-button','#play-button','#sound-button'].map(control),stagePanel:document.querySelector('#beginner-controls').parentElement.className,range:document.querySelector('#keyboard-compact-status').textContent};
     });
   }
   function assertCompactStage(layout) {
     assert.ok(layout.document.width<=layout.viewport.width+1&&layout.document.height<=layout.viewport.height+1,JSON.stringify(layout));
     assert.ok(layout.canvas.visibleHeight>=100&&layout.canvas.visibleWidth>=250,`The existing falling-note acceptance remains unchanged: ${JSON.stringify(layout)}`);
-    assert.ok(layout.keybed.height>=70);assert.ok(layout.play.right<=layout.dock.x+1,'Notation retains its separate column');
+    assert.ok(layout.keybed.height>=70);assert.equal(layout.overlayInLane,true);assert.ok(Math.min(layout.overlay.right,layout.canvas.right)-Math.max(layout.overlay.x,layout.canvas.x)>=250&&Math.min(layout.overlay.bottom,layout.canvas.bottom)-Math.max(layout.overlay.y,layout.canvas.y)>=100,'Notation occupies the actual falling-lane background');
     for(const control of [...layout.controls,...layout.panControls])assert.ok(control.width>0&&control.height>0&&control.x>=0&&control.y>=0&&control.right<=layout.viewport.width+1&&control.bottom<=layout.viewport.height+1&&control.reachable,`Compact control remains visible and clickable: ${JSON.stringify(control)}`);
     for(const control of layout.panControls)assert.ok(control.width>=40&&control.height>=34,`Compact panning retains its full arrow target: ${JSON.stringify(control)}`);
     assert.equal(layout.stagePanel,'stage-heading');assert.match(layout.range,/C2.*A♯5/);

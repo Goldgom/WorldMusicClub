@@ -57,7 +57,8 @@ test('free input is limited to explicit surfaces and survives pause, screen chan
 test('MIDI permission is explicit, key-test input stays isolated and delayed events retain original free ownership',async()=>{
   const app=await freePracticeApp();try{
     await silentStart(app);assert.equal(app.midiRequests(),0);await app.click('free-connect-midi');await app.until(()=>app.device.onmidimessage);assert.equal(app.midiRequests(),1);app.$('settings-dialog').close();await app.click('free-resume');
-    const firstTime=performance.now();app.midi([0x90,60,101],firstTime);app.midi([0x80,60,44]);
+    // The later-delivered note must precede this onset, not share its timestamp.
+    const firstTime=performance.now();await app.tick();app.midi([0x90,60,101]);app.midi([0x80,60,44]);
     await app.click('free-pause');const gapTime=performance.now();await app.tick();await app.click('free-resume');
     app.midi([0x90,62,90],gapTime);app.midi([0x80,62,0]);app.midi([0x90,64,80],firstTime);app.midi([0x80,64,0]);
     const settings=app.$('settings-button');settings.click();const testButton=app.$('midi-test-toggle');assert.ok(testButton,'MIDI key-test control exists');testButton.click();app.midi([0x90,90,127]);testButton.click();app.$('settings-dialog').close();await app.click('free-resume');
