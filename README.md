@@ -2,7 +2,7 @@
 
 A local-first music practice and rhythm-game project with a Rust score engine.
 
-[中文上手指南](docs/QUICKSTART.zh-CN.md) · [Accepted Windows recovery 155](docs/releases/0.2.0-alpha.1-commit-155.md) · [Newer source changes](docs/releases/unreleased.md)
+[中文上手指南](docs/QUICKSTART.zh-CN.md) · [完整曲包格式](docs/SONG_PACKAGE_FORMAT.md) · [Accepted Windows recovery 155](docs/releases/0.2.0-alpha.1-commit-155.md) · [Newer source changes](docs/releases/unreleased.md)
 
 ## Current alpha
 
