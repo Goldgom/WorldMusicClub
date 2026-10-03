@@ -168,9 +168,11 @@ export function validateBulkTakePreservation(before,after,observations,actions){
  const blurs=validateBulkChooserObservations(observations,actions),suffix=events.slice(prefix.length);assert(suffix.length===blurs.length,'Appended input evidence lacks matching native chooser causality');
  const onsets=prefix.filter(event=>event?.kind==='note_on'),onset=onsets[0];assert(onsets.length===1&&onset.input_kind==='typing_keyboard'&&prefix.some(event=>event.kind==='note_off'&&event.event_id>onset.event_id&&event.source_id===onset.source_id&&event.source_generation===onset.source_generation&&event.input_kind==='typing_keyboard'&&event.encoding==='key_up'&&event.onset_capture===null),'Native chooser began with an unreleased scored input');
  let previous=prefix.at(-1);assert(positive(previous?.event_id)&&Number.isFinite(previous.received_wall_ms),'Prior input evidence end invalid');
+ // Application boundary time and evidence receipt time are separate clock reads.
+ // Both must be causally inside the same observed trusted blur dispatch.
  for(const [index,event]of suffix.entries()){
-  const blur=blurs[index],time=event.event_wall_ms;assert(Number.isFinite(time)&&time>=previous.received_wall_ms&&time>=blur.started_wall_ms&&time<=blur.finished_wall_ms,'Appended blur boundary falls outside its trusted native chooser dispatch');
-  equal(event,{event_id:previous.event_id+1,kind:'boundary',source_id:null,source_generation:null,input_kind:null,channel:null,midi:null,velocity:null,encoding:null,reason:'blur',event_wall_ms:time,received_wall_ms:time,timestamp_basis:'application_clock',raw_timestamp_ms:null,boundary_wall_ms:time,onset_capture:null},'Unexpected appended musical or boundary evidence');previous=event;
+  const blur=blurs[index],time=event.event_wall_ms,received=event.received_wall_ms;assert(Number.isFinite(time)&&Number.isFinite(received)&&time>=previous.received_wall_ms&&time>=blur.started_wall_ms&&received>=time&&received<=blur.finished_wall_ms,'Appended blur boundary clocks fall outside their trusted native chooser dispatch');
+  equal(event,{event_id:previous.event_id+1,kind:'boundary',source_id:null,source_generation:null,input_kind:null,channel:null,midi:null,velocity:null,encoding:null,reason:'blur',event_wall_ms:time,received_wall_ms:received,timestamp_basis:'application_clock',raw_timestamp_ms:null,boundary_wall_ms:time,onset_capture:null},'Unexpected appended musical or boundary evidence');previous=event;
  }
  return {chooser_blur_boundary_count:suffix.length};
 }
