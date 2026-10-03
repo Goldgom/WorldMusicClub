@@ -48,8 +48,8 @@ the current native storage profile.
 
 ## What the artifact verifies
 
-The workflow builds and checks one exact source commit before creating the
-native ZIP. It requires actual native startup/offline notation, Windows file
+The Windows job builds and checks one exact source commit before creating the
+native candidate ZIP. It requires actual native startup/offline notation, Windows file
 imports, real export files and backups, four-process profile continuity,
 PC-keyboard free-recording boundaries, navigation and normal/active close.
 After extraction it starts the exact packaged EXE without test hooks, waits
@@ -64,6 +64,17 @@ packaged file's SHA-256. `SHA256.txt` covers those files and the build manifest;
 the ZIP has a separate `.sha256` file. These are integrity/provenance records,
 not a digital signature. Check the exact workflow's successful conclusion and
 native screenshots before relying on the preview.
+
+The Windows and Linux browser jobs run independently. A native candidate can
+therefore exist even when browser checks fail. The manifest explicitly records
+`acceptance_scope: native-windows-only` and `acceptance_workflow_run_id`; these
+do not claim full checkpoint acceptance. Before package delivery or main
+promotion, require the successful `acceptance-summary` job in that exact
+**Native Windows feature acceptance** run, the separate full **Verify
+WorldMusicHub** workflow for the same source SHA, and the artifact checks above.
+The summary requires both native and browser jobs to succeed with matching
+source SHA/tree and run identity; failed, cancelled, skipped or missing jobs
+cannot pass.
 
 Keep `licenses`, `catalog`, `schema`, `docs` and `evidence` with the EXE when
 redistributing. Rust notices include lockfile-verified MPL source archives,

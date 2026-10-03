@@ -500,7 +500,7 @@ class NativeReleaseTests(unittest.TestCase):
                     patch.object(native.platform, 'platform', return_value='Windows-test-fixture'), \
                     patch.object(native.subprocess, 'check_output', side_effect=command_output), \
                     patch.object(native.subprocess, 'run', side_effect=verify_evidence), \
-                    patch.dict(native.os.environ, {'RUSTFLAGS': '-C target-feature=+crt-static'}), \
+                    patch.dict(native.os.environ, {'RUSTFLAGS': '-C target-feature=+crt-static', 'GITHUB_RUN_ID': '123456'}), \
                     patch.object(io, 'open', side_effect=cp1252_open):
                 for relative in ['Cargo.toml', 'crates/score-core/src/lib.rs']:
                     with self.subTest(relative=relative), self.assertRaises(UnicodeDecodeError):
@@ -514,7 +514,11 @@ class NativeReleaseTests(unittest.TestCase):
                     'cargo': 'cargo fixture', 'node': 'node fixture', 'build_platform': 'Windows-test-fixture',
                     'rustflags': '-C target-feature=+crt-static', 'cargo_lock_sha256': cargo_hash,
                     'npm_lock_sha256': npm_hash,
-                    'distribution': 'unsigned native portable preview; installed Microsoft WebView2 Runtime required',
+                    'distribution': 'unsigned native portable candidate; installed Microsoft WebView2 Runtime required',
+                    'acceptance_scope': 'native-windows-only', 'acceptance_workflow_run_id': '123456',
+                    'checkpoint_requirements': [
+                        'Native Windows feature acceptance / acceptance-summary for this source and workflow run',
+                        'Verify WorldMusicHub for this source'],
                     'runtime_bundled': False, 'installer': False, 'http_server_process': False})
                 for arguments in [
                     ['create', str(directory), '--commit', 'b' * 40, '--count', '169',
@@ -528,6 +532,9 @@ class NativeReleaseTests(unittest.TestCase):
                 self.assertEqual(info['score_schema_revision'], expected_revision)
                 self.assertEqual(info['cargo_lock_sha256'], cargo_hash)
                 self.assertEqual(info['npm_lock_sha256'], npm_hash)
+                self.assertEqual(info['acceptance_scope'], 'native-windows-only')
+                self.assertEqual(info['acceptance_workflow_run_id'], '123456')
+                self.assertEqual(info['checkpoint_requirements'], metadata['checkpoint_requirements'])
                 self.assertFalse(info['acceptance']['physical_midi_validated'])
                 self.assertTrue(info['acceptance']['complete_midi_reference_validated'])
                 self.assertTrue(info['acceptance']['native_song_folder_validated'])

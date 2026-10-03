@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inventory an accepted, source-bound Windows native preview; never a browser ZIP."""
+"""Inventory a source-bound Windows native candidate; not full checkpoint acceptance."""
 import argparse
 import hashlib
 import json
@@ -321,7 +321,12 @@ def source_metadata(commit, count):
             'build_platform': platform.platform(), 'rustflags': os.environ.get('RUSTFLAGS', ''),
             'cargo_lock_sha256': sha((ROOT / 'Cargo.lock').read_bytes()),
             'npm_lock_sha256': sha((ROOT / 'package-lock.json').read_bytes()),
-            'distribution': 'unsigned native portable preview; installed Microsoft WebView2 Runtime required',
+            'distribution': 'unsigned native portable candidate; installed Microsoft WebView2 Runtime required',
+            'acceptance_scope': 'native-windows-only',
+            'acceptance_workflow_run_id': os.environ.get('GITHUB_RUN_ID'),
+            'checkpoint_requirements': [
+                'Native Windows feature acceptance / acceptance-summary for this source and workflow run',
+                'Verify WorldMusicHub for this source'],
             'runtime_bundled': False, 'installer': False, 'http_server_process': False}
 
 

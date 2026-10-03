@@ -9,10 +9,21 @@ jobs:
   bulk-import-browser:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      source_sha: ${{ steps.acceptance_source.outputs.source_sha }}
+      source_tree: ${{ steps.acceptance_source.outputs.source_tree }}
+      run_id: ${{ github.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.sha }}
+      - name: Record exact acceptance source
+        id: acceptance_source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "source_tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           toolchain: '1.99.0'
@@ -63,9 +74,13 @@ jobs:
             test-results/vsq-song/**
           if-no-files-found: warn
   native-feature-acceptance:
-    needs: bulk-import-browser
+    # Independent runners retain Windows diagnostics when browser checks fail.
     runs-on: windows-latest
     timeout-minutes: 45
+    outputs:
+      source_sha: ${{ steps.acceptance_source.outputs.source_sha }}
+      source_tree: ${{ steps.acceptance_source.outputs.source_tree }}
+      run_id: ${{ github.run_id }}
     env:
       RUSTFLAGS: '-C target-feature=+crt-static'
       CARGO_INCREMENTAL: '0'
@@ -74,6 +89,13 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+      - name: Record exact acceptance source
+        id: acceptance_source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "source_tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           toolchain: '1.99.0'
@@ -165,8 +187,9 @@ jobs:
       - name: Native VSQ chooser, explicit choice, exact following, export and fresh-process reset
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-vsq-song -Scenario vsq-song
-      # Default success() keeps all package steps behind the actual native gates.
-      - name: Package accepted native executable with exact provenance and notices
+      # Default success() keeps candidate packaging behind every native gate.
+      # This job cannot establish browser or whole-checkpoint acceptance.
+      - name: Package native candidate with exact provenance and notices
         id: native_package
         shell: pwsh
         run: |
@@ -261,12 +284,60 @@ jobs:
             desktop-portable/*.png
             desktop-portable/*.log
           if-no-files-found: warn
-      - name: Upload verified native portable preview
+      - name: Upload native-only candidate pending final acceptance
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: WorldMusicHub-Native-Windows-x64-commit-${{ steps.native_package.outputs.count }}-${{ github.sha }}
+          name: WorldMusicHub-Native-Candidate-Windows-x64-commit-${{ steps.native_package.outputs.count }}-${{ github.sha }}
           path: |
             dist/WorldMusicHub-Native-Windows-x64-*.zip
             dist/WorldMusicHub-Native-Windows-x64-*.zip.sha256
           if-no-files-found: error
       # No WebView profile, private fixtures, installer or GitHub Release upload.
+  acceptance-summary:
+    name: Native and browser acceptance summary
+    needs: [bulk-import-browser, native-feature-acceptance]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # No checkout/download/network dependency: report failures and skips too.
+      - name: Require both jobs for this exact source and run
+        env:
+          ACCEPTANCE_NEEDS: ${{ toJSON(needs) }}
+          ACCEPTANCE_SHA: ${{ github.sha }}
+          ACCEPTANCE_RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const jobs = ['bulk-import-browser', 'native-feature-acceptance'];
+          const needs = JSON.parse(process.env.ACCEPTANCE_NEEDS);
+          const sha = process.env.ACCEPTANCE_SHA;
+          const run = process.env.ACCEPTANCE_RUN_ID;
+          const errors = [];
+          if (!/^[0-9a-f]{40}$/.test(sha || '') || !/^[1-9][0-9]*$/.test(run || '')) {
+            errors.push('Missing or invalid expected source/run identity');
+          }
+          const lines = [`Source: ${sha}`, `Workflow run: ${run}`];
+          for (const job of jobs) {
+            const { result = 'missing', outputs = {} } = needs[job] || {};
+            lines.push(`${job}: ${result}; source=${outputs.source_sha || 'missing'}; tree=${outputs.source_tree || 'missing'}; run=${outputs.run_id || 'missing'}`);
+            if (result !== 'success') {
+              errors.push(`${job}: ${result} (success required)`);
+            } else if (outputs.source_sha !== sha || outputs.run_id !== run || !/^[0-9a-f]{40}$/.test(outputs.source_tree || '')) {
+              errors.push(`${job}: source/run identity is missing or differs`);
+            }
+          }
+          if (needs[jobs[0]]?.outputs?.source_tree !== needs[jobs[1]]?.outputs?.source_tree) {
+            errors.push('Browser and Windows source trees differ');
+          }
+          const summary = [
+            `Native/browser acceptance: ${errors.length ? 'FAIL' : 'PASS'}`,
+            ...lines, ...errors,
+            'A native candidate artifact alone is not checkpoint acceptance.',
+            'The separate full Verify WorldMusicHub workflow must also succeed for this exact source before package delivery or main promotion.',
+          ].join('\n') + '\n';
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+          console.log(summary);
+          if (errors.length) process.exitCode = 1;
+          NODE
