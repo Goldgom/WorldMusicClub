@@ -110,6 +110,23 @@ test('native coordinate success and a displayed clock cannot replace trusted Pla
   assert.ok([...f.listeners.values(),...f.windowListeners.values()].every(set=>set.size===0));
 });
 
+test('scored-take preparation rejects a hidden resume control before exposing an empty stage or sending input',async()=>{
+  const f=transportFixture(),clicks=[];f.document.body.dataset.screen='library';f.ids['resume-session'].hidden=true;f.options.click=id=>clicks.push(id);let error;
+  await assert.rejects(f.prepareNativeReferenceScoredTake(f.options),value=>{error=value;return /requires an active score before resuming/.test(value.message);});
+  assert.deepEqual(clicks,[]);assert.deepEqual(f.actions,[]);assert.equal(f.document.body.dataset.screen,'library');
+  assert.equal(error.nativeReferenceTransport.stage,'prepare');assert.equal(error.nativeReferenceTransport.current.screen,'library');
+  assert.equal(error.nativeReferenceTransport.trustedPlayClicks,0);assert.ok([...f.listeners.values(),...f.windowListeners.values()].every(set=>set.size===0));
+});
+
+test('scored-take preparation still resumes a visible active session before the trusted transport proof',async()=>{
+  const f=transportFixture(),clicks=[];f.document.body.dataset.screen='library';f.ids['resume-session'].hidden=false;
+  f.options.click=id=>{clicks.push(id);if(id==='resume-session')f.document.body.dataset.screen='stage';};
+  const result=await f.prepareNativeReferenceScoredTake(f.options);
+  assert.equal(clicks[0],'resume-session');assert.equal(result.stage,'complete');
+  assert.deepEqual(f.actions,[['click','play-button'],['key-r','stage-title'],['click','play-button']]);
+  assert.equal(result.trustedPlayClicks,2);assert.equal(result.trustedKeyDowns,1);assert.equal(result.trustedKeyUps,1);
+});
+
 test('trusted Play followed by focus loss fails at transport admission with bounded lifecycle evidence',async()=>{
   const f=transportFixture({blurBeforeStart:true});let error;
   await assert.rejects(f.prepareNativeReferenceScoredTake(f.options),value=>{error=value;return /native scored transport started/.test(value.message);});

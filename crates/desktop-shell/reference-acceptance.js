@@ -71,7 +71,11 @@ async function prepareNativeReferenceScoredTake({document,native,click,closeDial
   const $=id=>document.getElementById(id),trace=observeNativeReferenceTransport(document);
   let stage='prepare';
   try {
-    closeDialogs();if(document.body.dataset.screen!=='stage')click('resume-session');
+    closeDialogs();if(document.body.dataset.screen!=='stage'){
+      const resume=$('resume-session');
+      if(!resume||resume.hidden||resume.closest('[hidden]'))throw Error('Scored take preparation requires an active score before resuming');
+      click('resume-session');
+    }
     await until(()=>document.body.dataset.screen==='stage'&&!$('play-button').disabled,'resumed score stage');
     if($('sound-button').getAttribute('aria-pressed')!=='true')click('sound-button');
     click('settings-button');$('session-mode').value='practice';$('session-mode').dispatchEvent(new Event('change',{bubbles:true}));$('count-in').checked=false;closeDialogs();

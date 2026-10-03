@@ -28,6 +28,19 @@ function observeCompletePerformanceAudio(root=globalThis) {
  }
  return{snapshot(){return {sourceStarts:sources.reduce((n,r)=>n+r.starts.length,0),oscillatorStarts:sources.filter(r=>r.kind==='createOscillator'&&r.starts.length).length,activeSources:sources.filter(r=>!r.disconnected&&r.starts.length&&r.starts[0]<=r.context.currentTime&&r.stops.at(-1)>r.context.currentTime).length,pendingSources:sources.filter(r=>!r.disconnected&&r.starts.length&&r.starts[0]>r.context.currentTime&&r.stops.at(-1)>r.starts[0]).length,sources:sources.map(({context,source,...r})=>({...r,currentTime:context.currentTime,sampleRate:context.sampleRate,wave:source.type||null})),parameters:structuredClone(parameters)};},restore(){for(const restore of restores.reverse())restore();}};
 }
+// Preview loading is separate from admitting the score to the stage. These
+// scripted setup controls are not human input evidence; that begins with the
+// unchanged native Play/KeyR/Pause proof after the visible stage is ready.
+async function activatePerformanceOriginalScore({document,click,menu}) {
+ const $=id=>document.getElementById(id),setup={kind:'scripted-menu',controls:[]};
+ await menu.waitScreen('library','start-listen','original catalog preview ready');
+ setup.previewId=$('song-lobby').dataset.previewId;
+ // Silent setup must not wait for AudioContext activation without a gesture.
+ if($('sound-button').getAttribute('aria-pressed')!=='true'){click('sound-button');setup.controls.push('sound-button');}
+ click('start-listen');setup.controls.push('start-listen');
+ await menu.waitScreen('stage','play-button','original score admitted to stage');
+ setup.title=$('stage-title').textContent;return setup;
+}
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(v,m)=>{if(!v)throw Error(m);};
  const originalFetch=globalThis.fetch,fetcher=originalFetch.bind(globalThis),waits=createAcceptanceWait(),json=(path,body)=>waits.json(fetcher,path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},10000);
@@ -61,7 +74,7 @@ function observeCompletePerformanceAudio(root=globalThis) {
   try{
    assert(['performance-seed','performance-controls','performance-restart'].includes(phase),'Unknown performance phase');assert(localStorage.getItem('wmh.performance.acceptance.marker')===null,'Performance needs a fresh browser profile');report.profileMarkerAbsent=true;localStorage.setItem('wmh.performance.acceptance.marker',phase);
    await menu.enterLibrary();const {getAppI18n}=await import('/app-locale.js');getAppI18n(document).setLocale('en');assert((await json('/api/health')).network==='native-protocol-no-listener','Performance requires actual Rust native protocol');
-   checkpoint('prepare-real-human-take');report.transportAdmission=await prepareNativeReferenceScoredTake({document,native,click,closeDialogs,until});await menu.returnToLibrary();report.files.beforeTake=await take();report.beforeTakeState=takeState();
+   checkpoint('prepare-real-human-take');report.originalScoreSetup=await activatePerformanceOriginalScore({document,click,menu});report.transportAdmission=await prepareNativeReferenceScoredTake({document,native,click,closeDialogs,until});await menu.returnToLibrary();report.files.beforeTake=await take();report.beforeTakeState=takeState();
    if(phase==='performance-seed'){
     checkpoint('chooser-preflight');assert((await inventory()).entries.length===0,'Performance seed requires empty library');await choose();const preflight=report.imports[0].body;assert(preflight.summary.ready===2&&preflight.items.every(i=>i.playable===false&&i.clean_package.notation_available===false),'Performance preflight omitted a song or enabled notation');assert((await inventory()).entries.length===0,'Preflight saved files');report.preflight=preflight.items.map(i=>({status:i.status,playable:i.playable,coverage:i.clean_package.coverage}));report.screenshots.preflight=await native('click',$('bulk-import-title'));
     await native('click',$('bulk-import-save'));await until(()=>ready()&&report.imports.length===2,'both native commits consumed');assert(report.imports[1].body.summary.saved===2,'Performance save missing songs');await native('click',$('bulk-import-done'));report.checks.push('chooser-preflight-both-songs-all-tracks-save');
@@ -86,7 +99,7 @@ function observeCompletePerformanceAudio(root=globalThis) {
    if(phase==='performance-seed'){checkpoint('exact-pair-export');closeDialogs();click('import-tools-button');click('bulk-import-history-button');if(!$('bulk-import-history').open)$('bulk-import-history').querySelector('summary').click();await until(()=>document.querySelectorAll('#bulk-import-export-songs input').length===2,'both complete songs export selection');await native('click',$('bulk-import-export-all'));report.files.package=await download($('bulk-import-export-pack'));await native('click',$('bulk-import-done'));observe();report.variants[0].reloadChoice=await select(selected[0]);finish();report.checks.push('exact-complete-pair-export');}
    report.afterTakeState=takeState();assert(JSON.stringify(report.afterTakeState)===JSON.stringify(report.beforeTakeState),'Complete reference listener changed prior take');report.files.afterTake=await take();
    assert(!report.requests.slice(report.referenceRequestStart).some(r=>/assess|fingering|\/api\/compile|notation-navigation|\/api\/library\/runtime/.test(r.path)),'Reference-only song invoked target/scoring/fingering compiler');assert(report.errors.length===0,report.errors.join('; '));report.actions=sequence;report.downloads=(await json('/__desktop_smoke/state')).downloads;checkpoint('complete');report.ok=true;
-  }catch(error){report.error=String(error);report.failureStage=report.stage;}
+  }catch(error){report.error=String(error);report.failureStage=report.stage;if(error.nativeReferenceTransport)report.transportAdmission=error.nativeReferenceTransport;}
   finally{if(probe){report.finalAudio=audio();probe.restore();probe=null;}report.responseObservations=responses.snapshot();responses.restore();controls.restore();observing=false;removeEventListener('error',onError);removeEventListener('unhandledrejection',onRejection);if(globalThis.fetch===observedFetch)globalThis.fetch=originalFetch;}
   try{assert(new TextEncoder().encode(JSON.stringify(report)).length<=1024*1024,'Performance report exceeds1MiB');await json('/__desktop_smoke/report',report);}catch(error){await json('/__desktop_smoke/report',{version:1,phase,ok:false,error:'Performance report delivery failed',failureStage:report.stage,detail:String(error).slice(0,512)});}
  },{once:true});
