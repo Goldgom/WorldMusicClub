@@ -11,6 +11,7 @@ import {setupGameShell} from './game-shell.js';
 import {setupNoticeView} from './notice-view.js';
 import {ScorePreview,filterCatalog} from './score-preview.js';
 import {setupPerformanceView,FIELD_COLORS,previewMusicMetadata} from './performance-view.js';
+import {renderPianoKeybed,renderPianoRails,pianoMinimumWidth} from './piano-stage-view.js';
 import {setupGuitarGuidance} from './guitar-guidance.js';
 import {setupPianoFingeringView} from './piano-fingering-view.js';
 import {setupGuitarFingering} from './guitar-fingering.js';
@@ -374,22 +375,12 @@ function updateRangeWarning() {
 }
 function renderKeyboard() {
   state.geometry = keyboardGeometry(state.keys, state.lowestMidi);
-  const fragment = document.createDocumentFragment();
-  for (const key of state.geometry) {
-    const button = document.createElement('button');
-    button.type = 'button'; button.className = `piano-key${key.black ? ' black' : ''}`;
-    button.style.left = `${key.x * 100}%`; button.style.width = `${key.width * 100}%`;
-    button.dataset.midi = String(key.midi);
-    bindAttribute(button, 'aria-label', () => t('app.playNote', {note:midiName(key.midi)})); button.title = midiName(key.midi);
-    button.setAttribute('aria-pressed', 'false');
-    const name = document.createElement('span'); bindText(name, () => key.midi % 12 === 0 ? midiName(key.midi) : '');
-    const shortcut = document.createElement('span'); shortcut.className = 'key-shortcut';
-    button.append(shortcut, name); fragment.append(button);
-  }
-  $('keyboard').replaceChildren(fragment);
+  renderPianoKeybed({document,keyboard:$('keyboard'),geometry:state.geometry,labelForNote:note=>t('app.playNote',{note:midiName(note)}),decorateKey:(button,key)=>bindAttribute(button,'aria-label',()=>t('app.playNote',{note:midiName(key.midi)}))});
+  const rails=$('piano-stage').querySelector('.piano-rails-shared');if(rails)renderPianoRails({document,rails,geometry:state.geometry});
+  freeView?.setKeyboard(keyboardInput?.snapshot());
   keyboardInputView?.refreshRange();
   beginnerView?.refresh(true);
-  $('piano-surface').style.minWidth = `${Math.max(640, state.geometry.filter(key => !key.black).length * 22)}px`;
+  $('piano-surface').style.minWidth = `${pianoMinimumWidth(state.geometry)}px`;
   midiController?.refresh();
   requestAnimationFrame(() => { const center = state.geometry.find(k => k.midi === (keyboardInput?.snapshot().range.low ?? 60)); if (center) $('piano-scroll').scrollLeft = Math.max(0, center.x * $('piano-surface').clientWidth - $('piano-scroll').clientWidth / 2.5); drawFrame(); });
 }
@@ -708,6 +699,7 @@ function highlightKeys(activeNotes = []) {
   freeView?.setHeldNotes([...held]);
   const active = new Set(activeNotes.map(n => n.midi));
   document.querySelectorAll('[data-midi]').forEach(button => { const midi = Number(button.dataset.midi); button.classList.toggle('pressed', held.has(midi)); if(!button.classList.contains('fret-button'))button.classList.toggle('playing', active.has(midi)); button.setAttribute('aria-pressed', String(held.has(midi))); });
+  for(const rail of document.querySelectorAll('#piano-stage .piano-rails-shared [data-pitch]'))rail.classList.toggle('held',held.has(Number(rail.dataset.pitch)));
   highlightGuitarRoute(document,{notes:activeNotes,groups:state.mode==='practice'?state.targetGroups:new Map(),plan:guitarFingering?.state().plan,...guitarFingeringView?.options()});
 }
 function connectPlayable(container) {
@@ -945,13 +937,8 @@ function drawFrame(displayOnly = false) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) { canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr); }
   const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, width, height);
-  const background=ctx.createLinearGradient(0,0,width,height);background.addColorStop(0,FIELD_COLORS.background);background.addColorStop(1,FIELD_COLORS.backgroundEnd);
-  ctx.fillStyle = background; ctx.fillRect(0, 0, width, height);
-  for(const key of state.geometry.filter(key=>key.black)){ctx.fillStyle='#07162130';ctx.fillRect(key.x*width,0,key.width*width,height);}
-  for (const key of state.geometry.filter(k => !k.black)) { ctx.strokeStyle = '#88aac518'; ctx.beginPath(); ctx.moveTo(key.x * width, 0); ctx.lineTo(key.x * width, height); ctx.stroke(); }
-  // Equal screen-space guides are decorative, not guessed beats or barlines.
+  // Shared DOM rails and notation remain behind this transparent note layer.
   const windowMs = 4000;
-  for(let line=1;line<5;line++){const y=line*height/5;ctx.strokeStyle='#88aac51c';ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(width,y);ctx.stroke();}
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   for (const note of reducedMotion ? active : playbackIndex?.range(position, position + windowMs) || []) {
     if (note.start_ms + note.duration_ms < position || note.start_ms > position + windowMs) continue;
@@ -1091,6 +1078,7 @@ freePreview=createFreePracticePreview({audio:synth,soundEnabled:()=>!synth.muted
 freeView=setupFreePracticeView({document,i18n,session:freeSession,preview:freePreview,host:document.querySelector('.app-shell'),
   onExit:()=>shell.show('library'),onConnectMidi:()=>{$('midi-button').click();shell.open('settings');},onConfigureKeyboard:()=>shell.open('settings'),
   getSoundEnabled:()=>!synth.muted,onSoundChange:setSoundEnabled,
+  getPianoRange:()=>({keyCount:state.keys,lowestMidi:state.lowestMidi}),
   getConfiguration:()=>{freeRecordInstrument=state.instrument;return {sound:!synth.muted,instrument:state.instrument,keyboard_configuration:keyboardInput.exportConfigurationData().current_configuration};},
   onInput:(kind,{source,midi,velocity,eventTime,...options})=>kind==='note_on'?pressNote(source,midi,velocity,eventTime,options):releaseNote(source,eventTime,{...options,midi,velocity,synthetic:kind==='cleanup'})});
 freeView.element.setAttribute('role','main');freeView.setKeyboard(keyboardInput.snapshot());
@@ -1229,6 +1217,7 @@ const engravedView = setupEngravedView({i18n,getScore:()=>state.score,getPractic
 },onFallback:()=>selectBasicNotation('staff',{remember:false}),onManualNavigation:()=>notationFollowing?.suspend()});
 const basicNotationReveal=createBasicNotationReveal({container:$('notation'),dock:$('notation-dock')});
 $('notation-dock').addEventListener('toggle',()=>basicNotationReveal.reset(),true);
+$('workspace').addEventListener('notationviewportchange',()=>{basicNotationReveal.reset();engravedView.resetReveal();});
 const followingView={
   isActive:()=>shell.screen()==='stage'&&shell.notationVisible(),
   resetReveal(){basicNotationReveal.reset();engravedView.resetReveal()},
@@ -1261,6 +1250,7 @@ guitarFingeringView.render();
 metronome = setupMetronome({api,getScore:()=>state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:transport.time(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
 performanceView=setupPerformanceView({i18n,getContext:()=>({geometry:state.geometry,rangeLabel:`${midiName(state.geometry[0].midi)}–${midiName(state.geometry.at(-1).midi)}`,mode:state.mode,instrument:state.instrument,position:transport.time(performance.now()),segmentStart:state.loop?.start_ms||0,countInBeatMs:60000/(Number($('tempo').value)||100),running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,now:performance.now(),recorder:state.recorder})});
 pianoFingering=setupPianoFingeringView({document,api,getContext:()=>({score:state.score,timeline:state.compiled?.timeline,part_id:state.practicePart,profile:currentProfile(),dirty:state.profileDirty}),onChange:()=>drawFrame(),openSettings:()=>shell.open('settings')});
+$('piano-stage').after($('piano-fingering-guidance'));
 writtenCursorStatus=document.createElement('p');writtenCursorStatus.id='written-cursor-status';writtenCursorStatus.setAttribute('aria-live','off');
 writtenCursorRetry=document.createElement('button');writtenCursorRetry.id='written-cursor-retry';writtenCursorRetry.type='button';writtenCursorRetry.className='button compact';bindText(writtenCursorRetry, () => t('app.retryNotePositions'));writtenCursorRetry.hidden=true;
 document.querySelector('#notation-dock .dock-help').append(writtenCursorStatus,writtenCursorRetry);

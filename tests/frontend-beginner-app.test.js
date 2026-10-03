@@ -99,7 +99,7 @@ for (const initiallyCompact of [true, false]) test(`real shell/input/performance
       assert.equal(reference.parentElement,compact?panel.querySelector('.beginner-help-body'):panel);
       assert.equal(footer.closest('dialog')?.id,compact?'settings-dialog':undefined);
       assert.equal(badge.hidden,!compact);assert.equal(badge.previousElementSibling.id,'stage-subtitle');
-      assert.equal(document.querySelector('#notation-dock .notation-panel').classList.contains('short-notation'),compact);
+      assert.equal(document.querySelector('#notation-dock .notation-panel').classList.contains('short-notation'),true,'Piano overlay controls use their compact disclosure at every viewport');
       for(const id of ['beginner-controls','beginner-enabled','beginner-reference','beginner-help','beginner-numbered-mode','keyboard-map','keyboard-compact-status'])assert.equal(document.querySelectorAll(`#${id}`).length,1);
     };
     state(initiallyCompact);

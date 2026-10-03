@@ -3,6 +3,7 @@ import {localizeStatic} from './locale-view.js';
 import {stageFeedbackView} from './hud-feedback.js';
 import {keyTonic} from './music.js';
 import {setupStageNotationLayout} from './stage-notation-layout.js';
+import {mountPianoStage,createPianoToolbar,renderPianoRails} from './piano-stage-view.js';
 export const FIELD_COLORS=Object.freeze({background:'#142333',backgroundEnd:'#1d3b4b',natural:'#7be4ce',accidental:'#acb0f5',scheduled:'#f4ce78',noteText:'#112538'});
 
 export function previewMusicMetadata(score,i18n=getAppI18n()){
@@ -33,6 +34,8 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
   const details=document.createElement('details');details.className='preview-session-help';const summary=document.createElement('summary');summary.setAttribute('data-i18n','performance.startHelp');summary.textContent=i18n.t('performance.startHelp');details.append(summary,document.querySelector('.preview-footnote'));copy.append(details);preview.append(controls);
   const settings=$('settings-dialog').querySelector('.shell-dialog-content'),inputTools=document.createElement('div');inputTools.className='performance-input-settings';inputTools.append($('midi-button'),document.querySelector('.count-in-label'));const keyboardFooter=document.querySelector('.keyboard-footer');if(!keyboardFooter.classList.contains('keyboard-input-footer'))inputTools.append(keyboardFooter);settings.prepend(inputTools);
   document.querySelector('.transport').append($('sound-button'));
+  document.querySelector('.transport').classList.add('piano-transport');
+  $('workspace').classList.add('piano-workspace');hud.classList.add('piano-workspace-heading');
   // The compact footer keeps both controls and their complete localized names.
   const routeControls=$('guitar-plan-controls'),routeSummary=routeControls.querySelector('summary'),sourceSummary=document.querySelector('.guitar-details summary');
   for(const[control,key]of[[routeSummary,'performance.guitarRouteShort'],[sourceSummary,'performance.guitarSourcesShort']]){
@@ -54,7 +57,7 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
   const followingLabel=$('engraving-follow').closest('label');label(followingLabel,'follow.label');
   const shortLandscape=window.matchMedia?.('(max-height:600px) and (min-width:651px)');
   function arrangeNotationTools(){
-    const above=$('workspace').classList.contains('notation-above'),compact=Boolean(shortLandscape?.matches)||above,focused=document.activeElement;
+    const above=$('workspace').classList.contains('notation-on-lanes'),compact=Boolean(shortLandscape?.matches)||above,focused=document.activeElement;
     notation.classList.toggle('short-notation',compact);
     if(compact){
       if(displayOptions.parentElement!==help)help.insertBefore(displayOptions,help.children[1]);
@@ -76,8 +79,14 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
   play.querySelector('.section-heading').replaceWith(status);
   const piano=$('piano-stage');piano.classList.add('performance-piano');const overlay=document.createElement('div');overlay.className='performance-overlay';overlay.innerHTML='<div id="stage-cue" aria-live="off" hidden><strong id="stage-cue-main"></strong><span id="stage-cue-detail"></span></div><div class="keyboard-pan"><button id="keyboard-pan-left" class="button secondary" data-i18n-aria-label="performance.panLower" aria-label="显示更低的琴键音高">←</button><span id="keyboard-range-context"></span><button id="keyboard-pan-right" class="button secondary" data-i18n-aria-label="performance.panHigher" aria-label="显示更高的琴键音高">→</button></div>';
   const field=document.createElement('div');field.className='performance-field';piano.before(field);field.append(overlay,piano,$('guitar-stage'));const pan=overlay.querySelector('.keyboard-pan');play.insertBefore(pan,document.querySelector('.transport'));const scroll=$('piano-scroll');for(const[id,direction]of[['keyboard-pan-left',-1],['keyboard-pan-right',1]])$(id).addEventListener('click',()=>{scroll.scrollBy({left:direction*scroll.clientWidth*.65,behavior:'auto'});updateRange()});
+  const pianoPresentation=mountPianoStage({document,stage:piano,scroll,surface:$('piano-surface'),keyboard:$('keyboard'),canvas:$('falling-notes')});
+  renderPianoRails({document,rails:pianoPresentation.rails,geometry:getContext().geometry||[]});
+  const pianoTitle=document.createElement('h2');pianoTitle.setAttribute('data-i18n','free.pianoTitle');
+  const pianoActions=document.createElement('div');
+  for(const [id,key,target]of [['piano-connect-midi','free.connectMidi','midi-button'],['piano-keyboard-settings','keyboard.configure','keyboard-open-settings']]){const button=document.createElement('button');button.type='button';button.id=id;button.className='button secondary';button.setAttribute('data-i18n',key);button.addEventListener('click',()=>$(target)?.click());pianoActions.append(button);}
+  pianoActions.append($('sound-button'));piano.prepend(createPianoToolbar({document,title:pianoTitle,actions:pianoActions}));
   const rangeText=(context,wide)=>context.geometry?.length?i18n.t(wide?'performance.rangeWide':'performance.range',{count:context.geometry.length,range:context.rangeLabel||''}):'';
-  const notationLayout=setupStageNotationLayout({document,getPanLabel:()=>rangeText(getContext(),true),onChange(){arrangeNotationTools();$('workspace').dispatchEvent(new Event('notationlayoutchange'));}});
+  const notationLayout=setupStageNotationLayout({document,i18n,onChange(){arrangeNotationTools();$('workspace').dispatchEvent(new window.Event('notationlayoutchange'));}});
   let lastFeedback='',lastCue='',lastRange='';
   function updateRange(){
     const context=getContext(),keys=context.geometry||[],wide=scroll.scrollWidth>scroll.clientWidth+1;
@@ -102,11 +111,11 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
     $('hud-result').hidden=view.accuracy===null;$('hud-accuracy').textContent=view.accuracy||'—';
   }
   function update(){
-    const context=getContext();if(play.dataset.instrument!==context.instrument){play.dataset.instrument=context.instrument||'piano';notationLayout.refresh();}renderFeedback(context);const cue=performanceCue(context,i18n);
+    const context=getContext();if(play.dataset.instrument!==(context.instrument||'piano')){play.dataset.instrument=context.instrument||'piano';$('workspace').classList.toggle('piano-workspace',context.instrument!=='guitar');const sound=$('sound-button'),soundHost=context.instrument==='guitar'?document.querySelector('.transport'):pianoActions;if(sound.parentElement!==soundHost)soundHost.append(sound);notationLayout.refresh();}renderFeedback(context);const cue=performanceCue(context,i18n);
     const cueState=!cue?null:context.running?'countdown':context.completed?'complete':context.hasStarted?'paused':'ready',signature=JSON.stringify([i18n.revision,cue,cueState]);
     if(signature!==lastCue){lastCue=signature;const node=$('stage-cue');node.hidden=!cue;if(cueState)node.dataset.cueState=cueState;else node.removeAttribute('data-cue-state');$('stage-cue-main').textContent=cue?.main||'';$('stage-cue-detail').textContent=cue?.detail||'';}updateRange();
   }
-  function screenChanged(screen){if(screen==='stage'){hud.append(nav);header.hidden=true;}else{header.append(nav);header.hidden=false;}update();notationLayout.refresh();}
+  function screenChanged(screen){if(screen==='stage'){hud.append(nav);header.hidden=true;}else if(screen==='free'){$('free-practice-screen').querySelector('.free-practice-heading').append(nav);header.hidden=true;}else{header.append(nav);header.hidden=false;}update();notationLayout.refresh();}
   const refreshLocale=()=>{localizeStatic(document,i18n);update();notationLayout.refresh();};
   localizeStatic(document,i18n);screenChanged(document.body.dataset.screen);
   const unsubscribe=i18n.subscribe(refreshLocale);

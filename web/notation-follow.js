@@ -47,7 +47,13 @@ export function basicNotationPage(occurrence, entries, partId, spanBeats, pageAn
  * Use its height at the pinned position, not its current flow position: scrolling
  * the dock can move the toolbar to the top while the same reveal is in progress.
  */
+export function notationScrollViewport(dock) {
+  const overlay=dock.ownerDocument?.getElementById('notation-lane-overlay');
+  return overlay&&!overlay.hidden?overlay:dock;
+}
+
 export function notationRevealViewport(dock,container) {
+  dock=notationScrollViewport(dock);
   const outer=dock.getBoundingClientRect(),inner=container.getBoundingClientRect();
   const toolbar=dock.querySelector?.('.short-notation .engraving-follow-controls');
   const toolbarHeight=toolbar?.getBoundingClientRect().height||0;
@@ -74,7 +80,8 @@ export function createBasicNotationReveal({container,dock}) {
       if(!nodes.length)return result;
       const plan=planEngravingReveal(nodes.map(node=>node.getBoundingClientRect()),notationRevealViewport(dock,container));
       if(!plan)return result;
-      if(plan.scrollTop!==dock.scrollTop)dock.scrollTo({top:plan.scrollTop,left:dock.scrollLeft,behavior:'instant'});
+      const viewport=notationScrollViewport(dock);
+      if(plan.scrollTop!==viewport.scrollTop)viewport.scrollTo({top:plan.scrollTop,left:viewport.scrollLeft,behavior:'instant'});
       if(plan.scrollLeft!==container.scrollLeft)container.scrollTo({left:plan.scrollLeft,top:container.scrollTop,behavior:'instant'});
       return result={status:plan.partial||new Set(nodes.map(node=>node.dataset.noteId)).size<ids.size?'partial':'ready'};
     } catch { return result; } // Optional layout must not interrupt audio or the game frame.

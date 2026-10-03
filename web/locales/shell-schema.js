@@ -1,5 +1,13 @@
 const plain = Object.freeze({params: Object.freeze({})});
 export default Object.freeze({
+  "performance.scoreBackground": plain,
+  "performance.scoreOpacity": plain,
+  "performance.scoreOptions": plain,
+  "performance.scoreScroll": plain,
+  "performance.scoreScroll.up": plain,
+  "performance.scoreScroll.down": plain,
+  "performance.scoreScroll.left": plain,
+  "performance.scoreScroll.right": plain,
   "performance.guitarRouteShort": plain,
   "performance.guitarSourcesShort": plain,
   "keyboard.preset": plain,

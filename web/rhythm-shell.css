@@ -85,40 +85,6 @@ html[data-theme=dark]:not([data-theme-mode=custom]) .rhythm-shell {
 .rhythm-shell .performance-piano {overflow:auto;overscroll-behavior:contain}
 .rhythm-shell .performance-piano .piano-surface {min-height:calc(var(--keybed-height,110px) + 104px)}
 
-/* One opaque score band above the original instrument surface. The measured
-   budget retains the full keybed, a 100px falling field and all fixed controls.
-   Compact windows use the existing side layout when that budget cannot fit. */
-@media(min-width:651px) {
-  .rhythm-shell #workspace.with-notation:not(.notation-above)>.play-panel {grid-column:1;grid-row:2}
-  .rhythm-shell #workspace.with-notation:not(.notation-above)>#notation-dock {grid-column:2;grid-row:2}
-}
-.rhythm-shell.performance-layout #workspace.with-notation.notation-above {grid-template-columns:minmax(0,1fr);grid-template-rows:auto var(--notation-band-height) minmax(0,1fr)}
-.rhythm-shell.performance-layout #workspace.notation-above>#notation-dock {grid-column:1;grid-row:2;isolation:isolate;min-width:0;background:var(--paper);overscroll-behavior:contain}
-.rhythm-shell.performance-layout #workspace.notation-above>.play-panel {grid-column:1;grid-row:3;display:flex;min-height:0}
-.rhythm-shell.performance-layout #workspace.notation-above #notation-dock .short-notation {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);overflow:visible}
-.rhythm-shell.performance-layout #workspace.notation-above #notation-dock .short-notation .engraving-follow-controls {position:sticky;top:0;z-index:3;background:var(--paper);border-bottom:1px solid var(--border)}
-.rhythm-shell.performance-layout #workspace.notation-above #notation-dock .section-heading {padding:5px 10px}
-.rhythm-shell.performance-layout #workspace.notation-above #notation-dock .engraving-follow-controls {padding:4px 10px}
-.rhythm-shell.performance-layout #workspace.notation-above #notation-dock .engraving-controls:empty {display:none}
-.rhythm-shell.performance-layout #workspace.notation-above #notation-dock .engraving-scroll {margin-top:0}
-/* Reclaim toolbar padding at laptop height before choosing a side fallback.
-   The 38px transport buttons and the complete input/guide controls stay intact. */
-.rhythm-shell.performance-layout #workspace.notation-above .play-panel>.transport {padding-top:5px;padding-bottom:5px;min-height:49px}
-.rhythm-shell.performance-layout #workspace.notation-above .play-panel>.keyboard-input-footer {padding-top:3px;padding-bottom:3px}
-/* The synchronous budget probe measures a needed pan row even when the previous
-   layout hid it. The probe class is removed before the chosen layout is shown. */
-.rhythm-shell.performance-layout #workspace.notation-budget-probe .keyboard-pan {display:flex!important}
-.rhythm-shell.performance-layout #workspace.notation-budget-probe .keyboard-pan .button {display:inline-flex!important}
-@media(max-width:650px) {
-  .rhythm-shell.performance-layout #workspace.notation-above .performance-field,
-  .rhythm-shell.performance-layout #workspace.notation-above .piano-stage:not([hidden]),
-  .rhythm-shell.performance-layout #workspace.notation-above .performance-status,
-  .rhythm-shell.performance-layout #workspace.notation-above .keyboard-pan:not([hidden]) {display:flex!important}
-  .rhythm-shell.performance-layout #workspace.notation-above .beginner-controls {display:flex}
-  .rhythm-shell.performance-layout #workspace.notation-above .transport {grid-row:auto;grid-column:auto;border:0;border-radius:0}
-  .rhythm-shell.performance-layout #workspace.notation-above #notation-dock .short-notation {display:block}
-}
-
 /* The free console reuses the app's real record, pause, save and history nodes. */
 .rhythm-shell #free-practice-screen {max-width:1320px;padding:24px 30px 30px}
 .rhythm-shell .free-practice-heading {gap:16px;padding-bottom:5px}
@@ -135,11 +101,6 @@ html[data-theme=dark]:not([data-theme-mode=custom]) .rhythm-shell {
 .rhythm-shell #free-practice-screen section {border-radius:15px}
 .rhythm-shell #free-practice-screen h2 {font-size:17px;font-weight:650;margin:0 0 14px}
 .rhythm-shell #free-practice-screen p {font-size:12px;line-height:1.8;overflow-wrap:anywhere}
-.rhythm-shell .free-input-section {background:linear-gradient(115deg,var(--paper),var(--surface))}
-.rhythm-shell .free-practice-keys {gap:5px;padding:10px 0;margin:8px 0;overflow:auto}
-.rhythm-shell .free-practice-key {min-height:105px;min-width:46px;flex:1 0 46px;max-width:75px;border-color:#bdc3d5;border-radius:6px 6px 9px 9px;background:#f4f1fc;color:#29273d;border-bottom-width:5px;box-shadow:0 4px 0 #0002}
-.rhythm-shell .free-practice-key.held {background:var(--rhythm-mint);border-color:#48a994;color:var(--rhythm-mint-ink);box-shadow:0 0 20px #80e0cb28}
-.rhythm-shell .free-practice-key kbd {color:#5e5775;background:#e4e1ec;padding:3px 7px;border-radius:4px}
 .rhythm-shell #free-performance-library,.rhythm-shell #free-save-panel,.rhythm-shell #free-performance-detail,.rhythm-shell #free-comparison {min-width:0}
 .rhythm-shell .free-practice-actions .button {white-space:normal;min-height:38px;font-size:12px}
 .rhythm-shell #free-practice-screen input[type=file] {max-width:100%}
@@ -147,8 +108,7 @@ html[data-theme=dark]:not([data-theme-mode=custom]) .rhythm-shell {
 @media(min-width:1000px) and (min-height:700px) {
   .rhythm-shell #free-practice-screen {display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:0 20px;align-content:start;align-items:start}
   .rhythm-shell .free-practice-heading,.rhythm-shell #free-practice-screen>p,.rhythm-shell .rhythm-free-console,.rhythm-shell #free-capture-full,.rhythm-shell #free-comparison {grid-column:1/-1}
-  .rhythm-shell .free-input-section {grid-column:1;grid-row:4/span 3}
-  .rhythm-shell #free-save-panel,.rhythm-shell #free-performance-library,.rhythm-shell #free-performance-detail {grid-column:2}
+    .rhythm-shell #free-save-panel,.rhythm-shell #free-performance-library,.rhythm-shell #free-performance-detail {grid-column:2}
 }
 @media(max-width:1050px) {
   .rhythm-shell .rhythm-location {display:none}
@@ -206,14 +166,12 @@ html[data-theme=dark]:not([data-theme-mode=custom]) .rhythm-shell {
   .rhythm-shell .rhythm-free-console {align-items:stretch;flex-direction:column;padding:13px}
   .rhythm-shell .rhythm-free-navigation {gap:7px}
   .rhythm-shell #rhythm-stage-free {margin-left:auto;max-width:110px}
-  .rhythm-shell .free-practice-key {min-width:40px;min-height:90px}
-}
+  }
 @media(prefers-reduced-motion:reduce) {
   /* The canvas keeps its reduced-motion explanation. Pause/resume remains in
      the transport; only the duplicate paused piano overlay is suppressed. */
   .rhythm-shell .play-panel[data-instrument=piano] #stage-cue[data-cue-state=paused] {display:none}
-  .rhythm-shell .rhythm-note-tile,.rhythm-shell .free-practice-key {transition:none;animation:none}
-}
+  .rhythm-shell .rhythm-note-tile,}
 
 /* Main menu is a real screen; the library gets the entire half-screen below it. */
 .rhythm-shell .game-home {flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:24px;width:100%;max-width:1600px;margin:auto;padding:36px 48px}

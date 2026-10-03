@@ -6,10 +6,11 @@ import {join} from 'node:path';
 export function registerFreePianoBrowserRegressions({test,getPage,closeShellPanels,artifactDirectory}) {
   test('real free piano fills desktop and compact stages, records actual key input and preserves held keys across locale redraw', {timeout:60_000}, async()=>{
     const page=getPage(),evidence=[];
-    await closeShellPanels();await page.locator('#settings-button').click();await page.locator('#interface-language').selectOption('zh-CN');await closeShellPanels();
+    await closeShellPanels();await page.locator('#settings-button').click();await page.locator('#interface-language').selectOption('zh-CN');await page.locator('#key-count').selectOption('88');await closeShellPanels();
     await page.locator('#back-to-library').click();await page.locator('#lobby-home').click();await page.locator('#start-free-practice').click();
     if(await page.locator('#free-sound').getAttribute('aria-pressed')==='true')await page.locator('#free-sound').click();
-    assert.equal(await page.locator('#free-practice-keys button').count(),88);
+    assert.equal(await page.locator('#free-practice-keys button').count(),88,'Free mode uses the explicitly configured 88-key range shared with normal mode');
+    assert.equal(await page.locator('#keyboard button').count(),88);
     assert.equal(await page.locator('#free-practice-keys .white').count(),52);
     assert.equal(await page.locator('#free-practice-keys .black').count(),36);
     assert.equal(await page.locator('#free-practice-keys [data-code="KeyR"]').getAttribute('data-midi'),'60');

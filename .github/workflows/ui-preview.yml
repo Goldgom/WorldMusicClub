@@ -22,13 +22,13 @@ jobs:
       - run: npm run prepare:engraving
       - run: npx playwright install --with-deps chromium
       - run: cargo build -p practice-server --locked
-      - name: Exercise the three actual UI changes and capture their viewports
+      - name: Exercise shared piano geometry and actual falling-lane notation paint
         env:
           WMH_ARTIFACT_DIR: ui-preview
         run: |
           set -o pipefail
           mkdir -p ui-preview
-          node --test --test-reporter=tap --test-name-pattern='^(real free piano fills desktop|original grand staff and Jianpu follow|game menu and audible song preview)' tests/full-app-browser.test.js | tee ui-preview/tests.tap
+          node --test --test-reporter=tap --test-name-pattern='^(real free piano fills desktop|original grand staff and Jianpu follow|game menu and audible song preview|normal and free piano share|original falling bars visibly cross)' tests/full-app-browser.test.js | tee ui-preview/tests.tap
       - name: Verify preview provenance and required real screenshots
         run: node scripts/verify-ui-preview.mjs ui-preview
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

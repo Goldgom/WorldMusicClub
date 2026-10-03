@@ -91,14 +91,14 @@ export function setupRhythmShell({document, i18n, show, open}) {
     freeResume = action('rhythm-free-resume', 'nav.resumeSession', 'stage');
     const freeHeading = screen.querySelector('.free-practice-heading');
     const navigation = make('div', 'rhythm-free-navigation');
-    navigation.append(freeResume, $('free-exit')); freeHeading.append(navigation);
-    const console = make('div', 'rhythm-free-console');
+    navigation.append(freeResume); freeHeading.append(navigation);
+    const console = make('div', 'rhythm-free-console piano-transport');
     console.setAttribute('role', 'group');
     console.setAttribute('data-i18n-aria-label', 'rhythm.recordingControls');
     const meter = make('div', 'rhythm-free-meter');
     meter.append($('free-state'), $('free-event-count'));
     const controls = screen.querySelector(':scope > .free-practice-actions');
-    controls.before(console); console.append(controls, meter);
+    screen.querySelector('.free-performance-panel').append(console); console.append(controls, meter);
     localizeStatic(screen, i18n);
   }
 

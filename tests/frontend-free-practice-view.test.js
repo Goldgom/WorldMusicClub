@@ -22,7 +22,7 @@ async function setup(t,options={}){
  const inputs=[],boundaries=[],downloads=[],reports=[],audioCalls=[];const i18n=createI18n({locale:options.locale||'en',onReport:issue=>reports.push(issue)});
  const session=createFreePracticeSession({now:()=>wall,dateNow:()=>date,newId:()=>`view-${++id}`,openLibrary:()=>library,onBoundary:reason=>boundaries.push(reason),recorderOptions:options.recorderOptions});
  const preview=createFreePracticePreview({audio:options.audio||{unlock:async()=>audioCalls.push('unlock'),play:(...args)=>audioCalls.push(args),stop:()=>audioCalls.push('stop')},soundEnabled:()=>sound});
- const view=setupFreePracticeView({document,session,preview,i18n,onExit:()=>exits++,onConnectMidi:()=>connects++,onConfigureKeyboard:()=>settings++,getSoundEnabled:()=>sound,onSoundChange:value=>{sound=value;},getConfiguration:()=>({sound,instrument:'piano'}),
+ const view=setupFreePracticeView({document,session,preview,i18n,onExit:()=>exits++,onConnectMidi:()=>connects++,onConfigureKeyboard:()=>settings++,getSoundEnabled:()=>sound,onSoundChange:value=>{sound=value;},getConfiguration:()=>({sound,instrument:'piano'}),getPianoRange:options.getPianoRange||(()=>({keyCount:61,lowestMidi:36})),
  onInput:(kind,input)=>{inputs.push({kind,...input});if(kind==='cleanup')session.cleanup(wall,input.reason,{source:input.source});else session.observe(kind,{...input,eventWall:wall,receivedWall:wall},input.owner);},download:(text,name)=>downloads.push({text,name})});
  t.after(()=>{view.destroy();library.close?.();});
  const $=id=>document.getElementById(id),click=async id=>{$(id).click();for(let i=0;i<1000;i++){await settle();if($('free-practice-screen').getAttribute('aria-busy')!=='true')return;}throw Error('UI operation did not settle');},event=(node,type,props={})=>{const value=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(value,props);node.dispatchEvent(value);return value;};
@@ -52,19 +52,24 @@ test('focus loss pauses recording, releases only owned free contacts and cancels
 test('on-screen accessible activation owns release across focus changes and ignores key repeat',async t=>{
  const ui=await setup(t);await ui.view.enter();await ui.click('free-start');const key=ui.$('free-practice-keys').querySelector('button');ui.at(20);ui.event(key,'keydown',{key:'Enter',repeat:false});ui.event(key,'keydown',{key:'Enter',repeat:true});assert.equal(ui.inputs.filter(row=>row.kind==='note_on').length,1);ui.at(25);ui.event(key,'focusout');assert.equal(ui.inputs.at(-1).kind,'cleanup');ui.event(key,'keyup',{key:'Enter'});assert.equal(ui.inputs.filter(row=>row.kind==='note_off').length,0);assert.equal(ui.inputs[0].inputKind,'on_screen_keyboard');
 });
-test('full chromatic piano uses shared geometry, retains live contacts, and displays the actual PC mapping',async t=>{
+test('configured chromatic piano uses shared geometry, retains live contacts, and displays the actual PC mapping',async t=>{
  const ui=await setup(t);await ui.view.enter();const mapping={configurationId:1,bindings:[{code:'KeyA',label:'用户键',midi:70,enabled:true,held:false},{code:'KeyS',label:'S',midi:null,enabled:false}]};ui.view.setKeyboard(mapping);
  const piano=ui.$('free-practice-keys'),first=piano.querySelector('[data-midi="70"]');
- assert.equal(piano.querySelectorAll('button').length,88);assert.equal(piano.querySelectorAll('.white').length,52);assert.equal(piano.querySelectorAll('.black').length,36);assert.equal(piano.firstElementChild.dataset.midi,'21');assert.equal(piano.lastElementChild.dataset.midi,'108');
+ assert.equal(piano.querySelectorAll('button').length,61);assert.equal(piano.querySelectorAll('.white').length,36);assert.equal(piano.querySelectorAll('.black').length,25);assert.equal(piano.firstElementChild.dataset.midi,'36');assert.equal(piano.lastElementChild.dataset.midi,'96');
  assert.equal(piano.querySelector('[data-code="KeyS"]'),null,'A disabled PC mapping must not become a playable shortcut');assert.equal(piano.querySelectorAll('button:disabled').length,0,'The piano stays playable independently of PC shortcut availability');
- assert.equal(first.querySelector('kbd').textContent,'用户键');assert.equal(first.dataset.code,'KeyA');assert.equal(first.classList.contains('black'),true);
+ assert.equal(first.querySelector('.key-shortcut').textContent,'用户键');assert.equal(first.dataset.code,'KeyA');assert.equal(first.classList.contains('black'),true);
  const c=piano.querySelector('[data-midi="60"]'),sharp=piano.querySelector('[data-midi="61"]'),d=piano.querySelector('[data-midi="62"]');
  assert.ok(parseFloat(c.style.left)<parseFloat(sharp.style.left)&&parseFloat(sharp.style.left)<parseFloat(d.style.left));assert.ok(parseFloat(sharp.style.width)<parseFloat(c.style.width));
  ui.view.setKeyboard({...mapping,bindings:mapping.bindings.map(row=>({...row,held:true}))});assert.equal(piano.querySelector('[data-midi="70"]'),first);
  ui.view.setHeldNotes([70,60,70]);assert.equal(first.classList.contains('held'),true);assert.equal(first.getAttribute('aria-pressed'),'true');assert.equal(ui.$('free-live-notes').textContent,'C4 · A♯4');assert.match(first.getAttribute('aria-label'),/A♯4/);
  ui.i18n.setLocale('zh-CN');assert.equal(piano.querySelector('[data-midi="70"]'),first);assert.equal(first.getAttribute('aria-pressed'),'true');assert.equal(ui.$('free-recordings-toggle').textContent,'演奏记录与回放');
- ui.view.setKeyboard({...mapping,configurationId:2,bindings:[{code:'KeyA',label:'用户键',midi:127,enabled:true}]});assert.equal(piano.querySelector('[data-code="KeyA"]').dataset.midi,'127');assert.equal(piano.lastElementChild.dataset.midi,'127');assert.equal(piano.querySelector('[data-midi="70"]').classList.contains('held'),true);
+ ui.view.setKeyboard({...mapping,configurationId:2,bindings:[{code:'KeyA',label:'用户键',midi:127,enabled:true}]});assert.equal(piano.querySelector('[data-code="KeyA"]'),null,'An input binding outside the configured visual range never silently expands the piano');assert.equal(piano.lastElementChild.dataset.midi,'96');assert.equal(piano.querySelector('[data-midi="70"]').classList.contains('held'),true);
  ui.view.setHeldNotes([]);assert.equal(ui.$('free-live-notes').textContent,'从任意琴键开始');assert.equal(piano.querySelectorAll('[aria-pressed="true"]').length,0);
+});
+test('explicit 88-key configuration keeps the complete A0–C8 piano while input beyond the visual range remains available',async t=>{
+ const ui=await setup(t,{getPianoRange:()=>({keyCount:88,lowestMidi:21})});await ui.view.enter();ui.view.setKeyboard({configurationId:1,bindings:[{code:'KeyR',label:'R',midi:60,enabled:true},{code:'KeyP',label:'P',midi:127,enabled:true}]});
+ const piano=ui.$('free-practice-keys');assert.equal(piano.children.length,88);assert.equal(piano.querySelectorAll('.white').length,52);assert.equal(piano.querySelectorAll('.black').length,36);assert.equal(piano.firstElementChild.dataset.midi,'21');assert.equal(piano.lastElementChild.dataset.midi,'108');
+ ui.view.setHeldNotes([21,108,127]);assert.equal(piano.querySelectorAll('[aria-pressed="true"]').length,2);assert.match(ui.$('free-live-notes').textContent,/G9/,'Out-of-view musical input is still reported without changing the explicit range');
 });
 test('recordings start collapsed, open on explicit saved selection and preserve disclosure state during live input',async t=>{
  const ui=await setup(t);await ui.view.enter();assert.ok(!ui.$('free-recordings').open);await ui.click('free-start');assert.ok(!ui.$('free-recordings').open);ui.at(30);await ui.click('free-stop');assert.equal(ui.$('free-save-panel').hidden,false);await ui.click('free-save');assert.equal(ui.$('free-recordings').open,true);
@@ -114,9 +119,14 @@ function cascadeLayout(element,rules,size){
   const selectors=rule.selectorText.split(/,(?![^()]*\))/);
   for(const selector of selectors){
    if(selector.includes('::')||!element.matches(selector))continue;
-   assert.doesNotMatch(selector,/:is\(|:not\(|:where\(|:has\(/,'Extend the specificity resolver before adding functional selectors to the root layout contract');
-   const ids=(selector.match(/#[\w-]+/g)||[]).length,classes=(selector.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g)||[]).length;
-   const types=(selector.replace(/#[\w-]+|\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g,'').match(/[a-zA-Z][\w-]*/g)||[]).length;
+   const specificity=value=>{
+    let adjusted=value;
+    while(/:(?:is|not|where|has)\(/.test(adjusted))adjusted=adjusted.replace(/:(is|not|where|has)\(([^()]*)\)/g,(_,kind,args)=>{
+      if(kind==='where')return '';const maximum=args.split(',').map(specificity).sort((a,b)=>b[0]-a[0]||b[1]-a[1]||b[2]-a[2])[0];return '#specificity'.repeat(maximum[0])+'.specificity'.repeat(maximum[1])+' type'.repeat(maximum[2]);
+    });
+    return [(adjusted.match(/#[\w-]+/g)||[]).length,(adjusted.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g)||[]).length,(adjusted.replace(/#[\w-]+|\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g,'').match(/[a-zA-Z][\w-]*/g)||[]).length];
+   };
+   const [ids,classes,types]=specificity(selector);
    for(const property of properties){const value=rule.style.getPropertyValue(property);if(!value)continue;const rank=[rule.style.getPropertyPriority(property)==='important'?1:0,ids,classes,types];
     const old=winners[property],comparison=old?rank.reduce((difference,part,index)=>difference||part-old.rank[index],0):1;
     if(comparison>=0)winners[property]={value,rank,selector,href};
@@ -128,10 +138,10 @@ function cascadeLayout(element,rules,size){
 test('production stylesheet order keeps the free piano full-width and recordings below it at every viewport',async t=>{
  const ui=await setup(t);ui.document.body.classList.add('game-shell','rhythm-shell');await ui.view.enter();const rules=await freePianoStylesheetRules();
  assert.ok(rules.findIndex(({href})=>href==='/rhythm-shell.css')>rules.findIndex(({href})=>href==='/free-practice.css'),'Exercise the real order that previously let the dashboard win');
- const cases=[{width:1280,height:720,padding:'18px 28px 24px',gap:'12px'},{width:1920,height:1080,padding:'18px 28px 24px',gap:'12px'},{width:900,height:560,padding:'12px 16px 18px',gap:'8px'},{width:390,height:844,padding:'12px 10px',gap:'10px'}];
+ const cases=[{width:1280,height:720,padding:'12px 18px 16px',gap:'10px'},{width:1920,height:1080,padding:'12px 18px 16px',gap:'10px'},{width:900,height:560,padding:'6px 10px 8px',gap:'6px'},{width:390,height:844,padding:'8px',gap:'8px'}];
  for(const size of cases){const styles=cascadeLayout(ui.$('free-practice-screen'),rules,size);
-  for(const [property,value]of Object.entries({display:'flex','flex-direction':'column','align-items':'stretch','max-width':'1840px',padding:size.padding,gap:size.gap}))assert.equal(styles[property]?.value,value,`${size.width}×${size.height}: ${property} winner ${JSON.stringify(styles[property])}`);
-  for(const id of ['free-piano-stage','free-save-panel','free-recordings']){const child=cascadeLayout(ui.$(id),rules,size);assert.equal(child['grid-area']?.value,'auto',`${id} cannot retain a legacy grid row`);assert.equal(child.order?.value,'0');assert.equal(child['align-self']?.value,'stretch');}
+  for(const [property,value]of Object.entries({display:'flex','flex-direction':'column','align-items':'stretch','max-width':'none',padding:size.padding,gap:size.gap}))assert.equal(styles[property]?.value,value,`${size.width}×${size.height}: ${property} winner ${JSON.stringify(styles[property])}`);
+  for(const id of ['.free-performance-panel','#free-recordings']){const child=cascadeLayout(ui.document.querySelector(id),rules,size);assert.equal(child['grid-area']?.value??'auto','auto',`${id} cannot retain a legacy grid row`);assert.equal(child.order?.value??'0','0');assert.ok(['auto','stretch'].includes(child['align-self']?.value??'auto'),'A flex child uses the shared root stretch alignment');}
  }
- const children=[...ui.$('free-practice-screen').children].map(node=>node.id);assert.ok(children.indexOf('free-piano-stage')<children.indexOf('free-save-panel'));assert.ok(children.indexOf('free-save-panel')<children.indexOf('free-recordings'),'Normal flex order keeps recording/history below the piano');
+ const children=[...ui.$('free-practice-screen').children];assert.ok(children.indexOf(ui.document.querySelector('.free-performance-panel'))<children.indexOf(ui.$('free-recordings')),'Normal flex order keeps recording/history below the piano');assert.equal(ui.$('free-save-panel').closest('#free-recordings'),ui.$('free-recordings'),'Saving and history remain in the dedicated disclosure below the shared stage');
 });

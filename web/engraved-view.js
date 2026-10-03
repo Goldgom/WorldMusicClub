@@ -1,4 +1,4 @@
-import {sourceMeasurePage,notationRevealViewport} from './notation-follow.js';
+import {sourceMeasurePage,notationRevealViewport,notationScrollViewport} from './notation-follow.js';
 import {planEngravingReveal} from './engraving-reveal.js';
 import {getAppI18n} from './app-locale.js';
 import notationMessages from './locales/notation-runtime-schema.js';
@@ -45,7 +45,8 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
       if(!['ready','partial'].includes(bounds?.status)||!bounds?.rects?.length||!dock||!scroller)return revealStatus;
       const plan=planEngravingReveal(bounds.rects,notationRevealViewport(dock,scroller));
       if(!plan)return revealStatus;
-      if(plan.scrollTop!==dock.scrollTop)dock.scrollTo({top:plan.scrollTop,left:dock.scrollLeft,behavior:'instant'});
+      const viewport=notationScrollViewport(dock);
+      if(plan.scrollTop!==viewport.scrollTop)viewport.scrollTo({top:plan.scrollTop,left:viewport.scrollLeft,behavior:'instant'});
       if(plan.scrollLeft!==scroller.scrollLeft)scroller.scrollTo({left:plan.scrollLeft,top:scroller.scrollTop,behavior:'instant'});
       return revealStatus={status:plan.partial||bounds.status==='partial'?'partial':'ready'};
     }catch{return revealStatus} // Optional presentation failures never break the playback frame.
@@ -123,7 +124,7 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
       const {total,to} = rangeControls();
       if (!total) throw presentationError('missingMap');
       const mapped = mappedPartIds(exported,selectedPart);
-      const result = await adapter.renderEngravedStaff(container, exported.xml, {i18n,dark:lastDark,fromMeasure:from,toMeasure:to,partIds:mapped,responsive:true,compactHeader:true,
+      const result = await adapter.renderEngravedStaff(container, exported.xml, {i18n,dark:lastDark||Boolean(document.getElementById('workspace')?.classList?.contains('notation-on-lanes')),fromMeasure:from,toMeasure:to,partIds:mapped,responsive:true,compactHeader:true,
         identity:{score:target,noteMap:exported.note_id_map,partIdMap:exported.part_id_map,voiceIdMap:exported.voice_id_map},
         onMappingChange:mapping=>{if(current===generation&&active&&getScore()===target)showNotices(exported,mapping)},
         onError:failure=>{if(current===generation&&active&&getScore()===target)fallback(failure)}}, signal);
@@ -169,6 +170,7 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
   const dock=$('notation-dock');
   if(dock?.setAttribute){dock.setAttribute('tabindex','0');dock.setAttribute('aria-label',t('scrollArea'))}
   const manualScroll=()=>{if($('engraving-follow').checked){lastReveal='';onManualNavigation()}};
+  dock?.addEventListener('notationmanualscroll',manualScroll);
   dock?.addEventListener('wheel',manualScroll,{passive:true});dock?.addEventListener('touchmove',manualScroll,{passive:true});
   dock?.addEventListener('pointerdown',event=>{if(event.target===dock||event.target?.closest?.('.engraving-scroll,.notation-scroll'))manualScroll()},{passive:true});
   dock?.addEventListener('keydown',event=>{if(!event.defaultPrevented&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','PageUp','PageDown','Home','End',' '].includes(event.key)&&!event.target?.isContentEditable&&!event.target?.closest?.('input,select,textarea,button,summary,[contenteditable]:not([contenteditable="false"])'))manualScroll()});

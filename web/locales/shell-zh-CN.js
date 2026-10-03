@@ -1,4 +1,12 @@
 export default Object.freeze({
+  "performance.scoreBackground": "轨道背景乐谱",
+  "performance.scoreOpacity": "不透明度",
+  "performance.scoreOptions": "读谱设置",
+  "performance.scoreScroll": "滚动背景乐谱",
+  "performance.scoreScroll.up": "向上滚动乐谱",
+  "performance.scoreScroll.down": "向下滚动乐谱",
+  "performance.scoreScroll.left": "向左滚动乐谱",
+  "performance.scoreScroll.right": "向右滚动乐谱",
   "performance.guitarRouteShort": "指法设置",
   "performance.guitarSourcesShort": "调弦与来源",
   "keyboard.preset": "映射预设",

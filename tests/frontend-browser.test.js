@@ -17,6 +17,7 @@ const requests=[];
 // Inspection only discovers the owning surface; every state change is a real click.
 const shellPanels = ['settings', 'score-tools', 'import-tools', 'results'];
 async function closeShellPanels(except = null) {
+  if(await page.locator('#notation-tools').count()&&await page.locator('#notation-tools').isVisible()&&await page.locator('#notation-tools').evaluate(node=>node.open))await page.locator('#notation-tools>summary').click();
   for (const name of shellPanels) {
     const dialog = page.locator(`#${name}-dialog`);
     if (name !== except && await dialog.isVisible()) await dialog.locator('[data-close-panel]').click();
@@ -47,10 +48,11 @@ async function revealControl(locator) {
   }
   if (owner.stage && await page.locator('#game-home').isVisible()) await page.locator('#home-single-player').click();
   if (owner.stage && await page.locator('#song-lobby').isVisible()) await page.locator('#resume-session').click();
-  if (owner.notation && !await page.locator('#notation-dock').isVisible()) {
+  if (owner.notation && await page.locator('#notation-toggle').getAttribute('aria-expanded')!=='true') {
     if (await page.locator('#song-lobby').isVisible()) await page.locator('#resume-session').click();
     await page.locator('#notation-toggle').click();
   }
+  if (owner.notation && await page.locator('#notation-tools').count() && await page.locator('#notation-tools').isVisible() && !await page.locator('#notation-tools').evaluate(node=>node.open)) await page.locator('#notation-tools>summary').click();
   if (owner.notationOptions && !await page.locator('.dock-help').evaluate(node=>node.open)) await page.locator('.dock-help>summary').click();
 }
 function ui(selector) {
@@ -78,7 +80,7 @@ async function startPreview({reset = true, notation = true, mode = 'listen'} = {
   await page.waitForFunction(() => !document.querySelector('#start-listen').disabled);
   if (reset) await page.locator('#reset-button').click();
   // This helper makes an explicit test view choice; desktop startup may already show notation.
-  if (await page.locator('#notation-dock').isVisible() !== notation) await page.locator('#notation-toggle').click();
+  if ((await page.locator('#notation-toggle').getAttribute('aria-expanded')==='true') !== notation) await page.locator('#notation-toggle').click();
 }
 async function reloadStage(options) {
   const response = await page.reload(options);
@@ -139,15 +141,15 @@ after(async()=>{await browser?.close();await new Promise(resolve=>server?.close(
 beforeEach(async()=>{context=await browser.newContext({viewport:{width:1440,height:1100}});page=await context.newPage();pageErrors=[];page.on('pageerror',e=>pageErrors.push(e.message));await page.goto(origin);await selectLegacyEnglish(page,{fresh:true});await startPreview();await ui('#play-button:not([disabled])').waitFor();await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('physical attacks'));await ui('#engraving-fallback').waitFor();await ui('#staff-button').click();});
 afterEach(async t=>{try{assert.deepEqual(pageErrors,[]);}finally{if(t.passed===false||t.error||pageErrors.length){const observed=await page.evaluate(()=>({backend:'mocked',screen:document.body.dataset.screen,activeElement:document.activeElement?.id||document.activeElement?.tagName,openDialogs:[...document.querySelectorAll('dialog[open]')].map(el=>el.id),lobbyHidden:document.querySelector('#song-lobby')?.hidden,previewStatus:document.querySelector('#song-lobby')?.dataset.previewStatus,cards:[...document.querySelectorAll('.catalog-item')].slice(0,8).map(el=>({id:el.dataset.scoreId,connected:el.isConnected,width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height}))})).catch(()=>({unavailable:true}));console.error('Mocked browser failure state:',JSON.stringify(observed));await page.screenshot({path:`/tmp/worldmusichub-mock-failure-${t.name.replace(/[^a-zA-Z0-9]+/g,'-').slice(0,90)}.png`,fullPage:true,timeout:3000}).catch(()=>{});}await context.close();}});
 test('complete exercise UI, notation modes, all keyboard ranges and guitar',async()=>{
- assert.equal(await ui('#score-title').textContent(),'Test <score>');assert.equal(await ui('.piano-key').count(),61);
+ assert.equal(await ui('#score-title').textContent(),'Test <score>');assert.equal(await ui('#keyboard .piano-key').count(),61);
  await ui('#jianpu-button').click();assert.equal(await ui('.jianpu-note').count(),2);await ui('#staff-button').click();assert.equal(await ui('.note-head').count(),2);
- for(const count of [49,76,88,61]){await ui('#key-count').selectOption(String(count));assert.equal(await ui('.piano-key').count(),count)}
+ for(const count of [49,76,88,61]){await ui('#key-count').selectOption(String(count));assert.equal(await ui('#keyboard .piano-key').count(),count)}
  await ui('#instrument').selectOption('guitar');assert.equal(await ui('.fret-button').count(),78);assert.equal(await ui('#guitar-stage').isVisible(),true);await ui('[data-string="5"][data-fret="0"]').click();
  await ui('#instrument').selectOption('piano');await closeShellPanels();await page.screenshot({path:'/tmp/worldmusichub-desktop.png',fullPage:true});
 });
 test('keyboard notes are released on blur; pause/reset remain repeatable',async()=>{
- await ui('#stage-title').click();await page.keyboard.down('a');assert.equal(await ui('.piano-key.pressed').count(),1);await page.evaluate(()=>window.dispatchEvent(new Event('blur')));assert.equal(await ui('.piano-key.pressed').count(),0);await page.keyboard.up('a');
- await ui('#count-in').uncheck();await ui('#play-button').click();await page.waitForTimeout(130);await ui('#play-button').click();assert.match(await ui('#transport-status').textContent(),/Paused/);await ui('#play-button').click();await page.waitForTimeout(100);await ui('#reset-button').click();assert.equal(await ui('#progress').getAttribute('value'),'0');assert.equal(await ui('.piano-key.pressed').count(),0);
+ await ui('#stage-title').click();await page.keyboard.down('a');assert.equal(await ui('#keyboard .piano-key.pressed').count(),1);await page.evaluate(()=>window.dispatchEvent(new Event('blur')));assert.equal(await ui('#keyboard .piano-key.pressed').count(),0);await page.keyboard.up('a');
+ await ui('#count-in').uncheck();await ui('#play-button').click();await page.waitForTimeout(130);await ui('#play-button').click();assert.match(await ui('#transport-status').textContent(),/Paused/);await ui('#play-button').click();await page.waitForTimeout(100);await ui('#reset-button').click();assert.equal(await ui('#progress').getAttribute('value'),'0');assert.equal(await ui('#keyboard .piano-key.pressed').count(),0);
 });
 test('practice records input only after playback begins and submits canonical clock',async()=>{
  await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#play-button').click();await ui('#stage-title').click();await page.keyboard.press('r');await ui('#assess-button').click();await ui('#feedback-results').waitFor();assert.equal(await ui('#accuracy').textContent(),'50%');const request=requests.filter(r=>r.url==='/api/assess').at(-1);const data=JSON.parse(request.body);assert.equal(data.inputs.length,1);assert.equal(data.inputs[0].midi,60);assert.ok(data.inputs[0].at_ms>=0);assert.equal(data.tolerance_ms,180);
@@ -159,7 +161,7 @@ test('tempo recompiles, export retains canonical JSON and invalid import is reco
  await ui('#score-file').setInputFiles({name:'shape.json',mimeType:'application/json',buffer:Buffer.from('{}')});await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('at least one part'));assert.equal(await ui('#score-title').textContent(),'Test <score>');
 });
 test('mobile layout keeps document within viewport and piano scrolls locally',async()=>{
- await page.setViewportSize({width:390,height:844});if(await page.locator('#notation-dock').isVisible())await page.locator('#notation-toggle').click();await page.waitForTimeout(80);const geometry=await page.evaluate(()=>({doc:document.documentElement.scrollWidth,view:innerWidth,piano:document.querySelector('#piano-scroll').scrollWidth}));assert.ok(geometry.doc<=geometry.view+1,JSON.stringify(geometry));assert.ok(geometry.piano>geometry.view);await closeShellPanels();await page.screenshot({path:'/tmp/worldmusichub-mobile.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});if(await page.locator('#notation-toggle').getAttribute('aria-expanded')==='true')await page.locator('#notation-toggle').click();await page.waitForTimeout(80);const geometry=await page.evaluate(()=>({doc:document.documentElement.scrollWidth,view:innerWidth,piano:document.querySelector('#piano-scroll').scrollWidth}));assert.ok(geometry.doc<=geometry.view+1,JSON.stringify(geometry));assert.ok(geometry.piano>geometry.view);await closeShellPanels();await page.screenshot({path:'/tmp/worldmusichub-mobile.png',fullPage:true});
 });
 test('themes persist across reload and custom colors never become CSS source',async()=>{
  await ui('#theme-mode').selectOption('dark');assert.equal(await ui('html').getAttribute('data-theme'),'dark');await reloadStage();await ui('#play-button:not([disabled])').waitFor();assert.equal(await ui('#theme-mode').inputValue(),'dark');
@@ -178,14 +180,14 @@ test('MusicXML import submits raw XML and preserves the returned source',async()
 });
 test('MIDI access is user-triggered; simulated note on/off drives the piano',async()=>{
  await page.addInitScript(()=>{window.midiRequests=0;window.testMidiInput={id:'test-input',name:'Simulated piano',state:'connected',onmidimessage:null};Object.defineProperty(navigator,'requestMIDIAccess',{configurable:true,value:async(options)=>{window.midiRequests++;window.midiOptions=options;return{inputs:new Map([['test-input',window.testMidiInput]]),onstatechange:null}}})});await reloadStage();await ui('#play-button:not([disabled])').waitFor();assert.equal(await page.evaluate(()=>window.midiRequests),0);await ui('#midi-button').click();await closeShellPanels();assert.equal(await page.evaluate(()=>window.midiRequests),1);assert.equal(await page.evaluate(()=>window.midiOptions.sysex),false);
- await page.evaluate(()=>window.testMidiInput.onmidimessage({data:[0x90,60,90],timeStamp:performance.now()}));assert.equal(await ui('.piano-key.pressed').count(),1);await page.evaluate(()=>window.testMidiInput.onmidimessage({data:[0x90,60,0],timeStamp:performance.now()}));assert.equal(await ui('.piano-key.pressed').count(),0);
+ await page.evaluate(()=>window.testMidiInput.onmidimessage({data:[0x90,60,90],timeStamp:performance.now()}));assert.equal(await ui('#keyboard .piano-key.pressed').count(),1);await page.evaluate(()=>window.testMidiInput.onmidimessage({data:[0x90,60,0],timeStamp:performance.now()}));assert.equal(await ui('#keyboard .piano-key.pressed').count(),0);
 });
 test('newer catalog navigation wins over a delayed MusicXML import',async()=>{
  let release;const wait=new Promise(resolve=>release=resolve);await page.route('**/api/import/musicxml',async route=>{await wait;const score=structuredClone(fixture);score.title='Stale XML';score.source={format:'musicxml',filename:null,content:'stale'};await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(compile(score))})});
  await ui('#score-file').setInputFiles({name:'slow.musicxml',mimeType:'application/xml',buffer:Buffer.from('<score-partwise/>')});await ui('.catalog-item').click();await startPreview();release();await page.waitForTimeout(100);assert.equal(await ui('#score-title').textContent(),'Test <score>');
 });
 test('keyboard-accessible piano note is released when focus leaves the instrument',async()=>{
- const key=ui('.piano-key[data-midi="60"]');await key.focus();await page.keyboard.down('Enter');assert.equal(await ui('.piano-key.pressed').count(),1);await ui('#tempo').focus();assert.equal(await ui('.piano-key.pressed').count(),0);await page.keyboard.up('Enter');
+ const key=ui('#keyboard .piano-key[data-midi="60"]');await key.focus();await page.keyboard.down('Enter');assert.equal(await ui('#keyboard .piano-key.pressed').count(),1);await ui('#tempo').focus();assert.equal(await ui('#keyboard .piano-key.pressed').count(),0);await page.keyboard.up('Enter');
 });
 test('loop boundaries use Rust responses, reject invalid ranges and clear take inputs each cycle',async()=>{
  await ui('.practice-options>summary').click();await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#loop-to').fill('1');await ui('#loop-apply').click();await page.waitForFunction(()=>document.querySelector('#loop-status').textContent.includes('ready'));assert.equal(await ui('#loop-enabled').isChecked(),true);
@@ -209,7 +211,7 @@ test('latency compensation persists and movable jianpu has explicit tonic refere
  await ui('#jianpu-button').click();await ui('#jianpu-reference').selectOption('movable');assert.match(await ui('#score-key').textContent(),/1 = C4/);await reloadStage();await ui('#play-button:not([disabled])').waitFor();assert.equal(await ui('#latency-offset').inputValue(),'150');
 });
 test('custom piano and guitar settings apply only valid explicit profiles',async()=>{
- await ui('#key-count').selectOption('custom');await ui('#custom-key-count').fill('25');await ui('#custom-lowest').fill('C#4');await ui('#instrument-apply').click();await page.waitForFunction(()=>document.querySelectorAll('.piano-key').length===25);assert.equal(await ui('.piano-key').first().getAttribute('data-midi'),'61');assert.equal(await ui('.piano-key').last().getAttribute('data-midi'),'85');
+ await ui('#key-count').selectOption('custom');await ui('#custom-key-count').fill('25');await ui('#custom-lowest').fill('C#4');await ui('#instrument-apply').click();await page.waitForFunction(()=>document.querySelectorAll('#keyboard .piano-key').length===25);assert.equal(await ui('#keyboard .piano-key').first().getAttribute('data-midi'),'61');assert.equal(await ui('#keyboard .piano-key').last().getAttribute('data-midi'),'85');
  await ui('#instrument').selectOption('guitar');await ui('#guitar-tuning').fill('E4 B3 G3 D3 A2 D2');await ui('#guitar-frets').fill('24');await ui('#guitar-capo').fill('2');await ui('#instrument-apply').click();await page.waitForFunction(()=>document.querySelectorAll('.fret-button').length===138);assert.equal(await ui('[data-string="5"][data-fret="0"]').getAttribute('data-midi'),'40');await ui('#guitar-capo').fill('25');await ui('#instrument-apply').click();assert.match(await ui('#instrument-report').textContent(),/capo/);assert.equal(await ui('.fret-button').count(),138);
 });
 test('binary MIDI import preserves request bytes and keeps inference warnings after tempo changes',async()=>{
@@ -296,7 +298,7 @@ test('late compensated input remains with its original loop and is exported afte
 });
 test('repeated MIDI NoteOn is retained and panic controllers release only their channel',async()=>{
  await page.addInitScript(()=>{window.retriggerPort={id:'device:with:colons',name:'Retrigger test',state:'connected',onmidimessage:null};Object.defineProperty(navigator,'requestMIDIAccess',{configurable:true,value:async()=>({inputs:new Map([['port',window.retriggerPort]]),onstatechange:null})})});await reloadStage();await ui('#play-button:not([disabled])').waitFor();await ui('#midi-button').click();await closeShellPanels();await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#play-button').click();
- await page.evaluate(()=>{for(const data of [[0x90,60,40],[0x90,60,100],[0x91,64,90],[0xb0,120,0]])window.retriggerPort.onmidimessage({data,timeStamp:performance.now()})});assert.equal(await ui('.piano-key.pressed').count(),1);assert.equal(await ui('.piano-key.pressed').getAttribute('data-midi'),'64');await page.evaluate(()=>window.retriggerPort.onmidimessage({data:[0xb1,123,0],timeStamp:performance.now()}));assert.equal(await ui('.piano-key.pressed').count(),0);await ui('#assess-button').click();await ui('#feedback-results').waitFor();const assessed=JSON.parse(requests.filter(r=>r.url==='/api/assess').at(-1).body);assert.equal(assessed.inputs.length,3);assert.deepEqual(assessed.inputs.filter(input=>input.midi===60).map(input=>input.velocity),[40,100]);
+ await page.evaluate(()=>{for(const data of [[0x90,60,40],[0x90,60,100],[0x91,64,90],[0xb0,120,0]])window.retriggerPort.onmidimessage({data,timeStamp:performance.now()})});assert.equal(await ui('#keyboard .piano-key.pressed').count(),1);assert.equal(await ui('#keyboard .piano-key.pressed').getAttribute('data-midi'),'64');await page.evaluate(()=>window.retriggerPort.onmidimessage({data:[0xb1,123,0],timeStamp:performance.now()}));assert.equal(await ui('#keyboard .piano-key.pressed').count(),0);await ui('#assess-button').click();await ui('#feedback-results').waitFor();const assessed=JSON.parse(requests.filter(r=>r.url==='/api/assess').at(-1).body);assert.equal(assessed.inputs.length,3);assert.deepEqual(assessed.inputs.filter(input=>input.midi===60).map(input=>input.velocity),[40,100]);
 });
 test('take exports retain private MIDI release observations and reconnect generations without changing onset requests',async()=>{
  await page.addInitScript(()=>{
@@ -367,7 +369,7 @@ test('saved copies require explicit deletion confirmation and backups restore as
 });
 test('closing a saved-score load cancels late activation and dialog shortcuts do not play notes',async()=>{
  await ui('#library-button').click();await ui('#library-save-copy:not([disabled])').waitFor();await ui('#library-save-copy').click();await page.waitForFunction(()=>document.querySelectorAll('#library-list>li').length===1);
- await ui('#library-refresh').focus();await page.keyboard.press('a');assert.equal(await ui('.piano-key.pressed').count(),0);
+ await ui('#library-refresh').focus();await page.keyboard.press('a');assert.equal(await ui('#keyboard .piano-key.pressed').count(),0);
  let release;const pending=new Promise(resolve=>release=resolve);await page.route('**/api/compile',async route=>{await pending;await route.fulfill({contentType:'application/json',body:JSON.stringify(compile({...fixture,title:'Late library score'}))}).catch(()=>{})});
  const request=page.waitForRequest('**/api/compile');await ui('[data-library-open]').click();await request;await ui('#library-close').click();release();await page.waitForTimeout(80);assert.equal(await ui('#score-title').textContent(),fixture.title);assert.equal(await ui('#score-library').isVisible(),false);assert.equal(await ui('#play-button').isEnabled(),true);
 });
@@ -655,15 +657,15 @@ test('lobby starts silent with separate preview validation and only explicit Sta
  const seen=[];page.on('request',request=>{if(new URL(request.url()).pathname==='/api/compile')seen.push(request.postDataJSON().id)});
  await page.reload();await page.locator('#home-single-player').click();await page.locator('#start-practice:not([disabled])').waitFor();
  assert.equal(await page.locator('#song-lobby').isVisible(),true);assert.equal(await page.locator('#workspace').isVisible(),false);assert.equal(await page.locator('#resume-session').isVisible(),false);assert.equal(await page.locator('#score-tools-button').isDisabled(),true);assert.equal(await page.locator('#preview-title').textContent(),fixture.title);assert.deepEqual(seen,[fixture.id],'Preview validates once without activating a take');
- await page.locator('#lobby-title').click();await page.keyboard.press('a');await page.keyboard.press('Space');assert.equal(await page.locator('.piano-key.pressed').count(),0);assert.equal(await page.locator('#workspace').isVisible(),false);
+ await page.locator('#lobby-title').click();await page.keyboard.press('a');await page.keyboard.press('Space');assert.equal(await page.locator('#keyboard .piano-key.pressed').count(),0);assert.equal(await page.locator('#workspace').isVisible(),false);
  await startPreview({reset:false,notation:false,mode:'practice'});await page.locator('#play-button').waitFor();assert.equal(await page.locator('#song-lobby').isVisible(),false);assert.equal(await page.locator('#stage-title').textContent(),fixture.title);assert.deepEqual(seen,[fixture.id,fixture.id],'Start uses a fresh canonical activation after preview validation');assert.equal(await page.locator('#notation-dock').isVisible(),false);assert.equal(await page.locator('#session-mode').inputValue(),'practice');
 });
 
 test('Back and Resume preserve a paused clock and suppress musical shortcuts in lobby and dialogs',async()=>{
- await ui('#count-in').uncheck();await ui('#play-button').click();await page.waitForFunction(()=>document.querySelector('#progress').value>0);await page.locator('#stage-title').click();await page.keyboard.down('a');assert.equal(await page.locator('.piano-key.pressed').count(),1);
- await page.locator('#back-to-library').click();await page.keyboard.up('a');const paused=await page.locator('#progress').evaluate(element=>element.value);assert.ok(paused>0);assert.equal(await page.locator('.piano-key.pressed').count(),0);assert.match(await page.locator('#play-button').textContent(),/Play/);
- await page.locator('#lobby-title').click();await page.keyboard.press('a');await page.keyboard.press('Space');assert.equal(await page.locator('.piano-key.pressed').count(),0);assert.equal(await page.locator('#progress').evaluate(element=>element.value),paused);
- await page.locator('#settings-button').click();await page.locator('#settings-title').click();await page.keyboard.press('a');await page.keyboard.press('Space');assert.equal(await page.locator('.piano-key.pressed').count(),0);assert.equal(await page.locator('#progress').evaluate(element=>element.value),paused);await page.locator('#settings-dialog [data-close-panel]').click();
+ await ui('#count-in').uncheck();await ui('#play-button').click();await page.waitForFunction(()=>document.querySelector('#progress').value>0);await page.locator('#stage-title').click();await page.keyboard.down('a');assert.equal(await page.locator('#keyboard .piano-key.pressed').count(),1);
+ await page.locator('#back-to-library').click();await page.keyboard.up('a');const paused=await page.locator('#progress').evaluate(element=>element.value);assert.ok(paused>0);assert.equal(await page.locator('#keyboard .piano-key.pressed').count(),0);assert.match(await page.locator('#play-button').textContent(),/Play/);
+ await page.locator('#lobby-title').click();await page.keyboard.press('a');await page.keyboard.press('Space');assert.equal(await page.locator('#keyboard .piano-key.pressed').count(),0);assert.equal(await page.locator('#progress').evaluate(element=>element.value),paused);
+ await page.locator('#settings-button').click();await page.locator('#settings-title').click();await page.keyboard.press('a');await page.keyboard.press('Space');assert.equal(await page.locator('#keyboard .piano-key.pressed').count(),0);assert.equal(await page.locator('#progress').evaluate(element=>element.value),paused);await page.locator('#settings-dialog [data-close-panel]').click();
  await page.locator('#resume-session').click();assert.equal(await page.locator('#workspace').isVisible(),true);assert.match(await page.locator('#play-button').textContent(),/Play/);await page.waitForTimeout(150);assert.equal(await page.locator('#progress').evaluate(element=>element.value),paused);await page.locator('#play-button').click();await page.waitForFunction(position=>document.querySelector('#progress').value>position,paused);
 });
 
@@ -729,7 +731,7 @@ test('fullscreen pending entry preserves newer modal focus and refusal leaves se
  await page.locator('#results-button').click();assert.equal(await page.locator('#results-dialog').isVisible(),true);await closeShellPanels();
  await fullscreen.focus();await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>fullscreenTest.enters),3,'Native keyboard activation retries without a musical shortcut');
  await page.evaluate(()=>{fullscreenTest.change(document.documentElement);fullscreenTest.resolve()});await page.waitForFunction(()=>document.querySelector('#fullscreen-button').getAttribute('aria-label').startsWith('Exit'));
- await page.keyboard.press('Space');assert.equal(await page.evaluate(()=>fullscreenTest.exits),2);assert.match(await page.locator('#play-button').textContent(),/Play/);assert.equal(await page.locator('.piano-key.pressed').count(),0);
+ await page.keyboard.press('Space');assert.equal(await page.evaluate(()=>fullscreenTest.exits),2);assert.match(await page.locator('#play-button').textContent(),/Play/);assert.equal(await page.locator('#keyboard .piano-key.pressed').count(),0);
 });
 
 test('Escape cancels an unfinished fullscreen request while retaining native modal dismissal',async()=>{
@@ -740,7 +742,7 @@ test('Escape cancels an unfinished fullscreen request while retaining native mod
 });
 
 test('fullscreen state transitions preserve an entire paused take and its controls across lobby and stage',async()=>{
- await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();if(await page.locator('#notation-dock').isVisible())await page.locator('#notation-toggle').click();
+ await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();if(await page.locator('#notation-toggle').getAttribute('aria-expanded')==='true')await page.locator('#notation-toggle').click();
  await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('#progress').value>100);await page.locator('#stage-title').click();await page.keyboard.press('a');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
  const take=async()=>{const[download]=await Promise.all([page.waitForEvent('download'),ui('#export-takes').click()]);const data=JSON.parse(await readFile(await download.path(),'utf8'));await closeShellPanels();return data};
  const before=await take(),position=await page.locator('#progress').evaluate(element=>element.value);assert.equal(before.passes.length,1);assert.equal(before.passes[0].inputs.length,1);await mockFullscreenRequest();

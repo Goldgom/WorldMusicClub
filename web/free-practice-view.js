@@ -1,11 +1,12 @@
 import {getAppI18n} from './app-locale.js';
 import {midiName,keyboardGeometry} from './music.js';
+import {mountPianoStage,createPianoToolbar,renderPianoKeybed,renderPianoRails,pianoMinimumWidth} from './piano-stage-view.js';
 import {PERFORMANCE_LIBRARY_LIMITS, describePerformance} from './performance-library.js';
 
 /** Separate accessible screen. Global MIDI/PC ownership and normalized clocks belong to the app. */
 export function setupFreePracticeView({document,session,preview=null,i18n=getAppI18n(document),host=document.body,
   onExit=()=>{},onConnectMidi=()=>{},onConfigureKeyboard=()=>{},onSoundChange=()=>{},
-  getSoundEnabled=()=>false,getConfiguration=()=>({}),onInput=()=>{},
+  getSoundEnabled=()=>false,getPianoRange=()=>({keyCount:61,lowestMidi:null}),getConfiguration=()=>({}),onInput=()=>{},
   download=(text,filename)=>{
     const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));
     const link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -15,32 +16,34 @@ export function setupFreePracticeView({document,session,preview=null,i18n=getApp
   const text=(tag,id,key,className)=>{const node=el(tag,id,className);translations.push([node,key]);return node;};
   const button=(id,key,action)=>{const node=text('button',id,key,'button secondary');node.type='button';if(action)node.addEventListener('click',action);return node;};
   const label=(key,input)=>{const node=el('label');node.append(text('span',null,key),input);return node;};
-  const screen=el('section','free-practice-screen','free-practice-screen free-piano-workspace');screen.hidden=true;screen.setAttribute('aria-labelledby','free-practice-title');
-  const heading=el('div',null,'free-practice-heading');const title=text('h1','free-practice-title','free.title');title.tabIndex=-1;title.dataset.keyboardPerformance='';
-  heading.append(title,button('free-exit','free.exit',()=>{leave();onExit();}));screen.append(heading);
+  const screen=el('section','free-practice-screen','free-practice-screen free-piano-workspace piano-workspace');screen.hidden=true;screen.setAttribute('aria-labelledby','free-practice-title');
+  const heading=el('div',null,'free-practice-heading piano-workspace-heading');const title=text('h1','free-practice-title','free.title');title.tabIndex=-1;title.dataset.keyboardPerformance='';
+  const headingText=el('div',null,'stage-heading');headingText.append(title);heading.append(button('free-exit','free.exit',()=>{leave();onExit();}),headingText);screen.append(heading);
   const controls=el('div',null,'free-practice-actions');controls.dataset.keyboardInput='off';
   controls.append(button('free-start','free.start',()=>run(()=>{preview?.stop();clearContacts('free_start');session.start({configuration:getConfiguration()});})),
     button('free-pause','common.pause',()=>run(()=>session.pause())),button('free-resume','common.resume',()=>run(()=>session.resume())),button('free-stop','free.stop',()=>run(()=>session.stop())));
   const state=el('strong','free-state');state.setAttribute('role','status');state.setAttribute('aria-live','polite');
   const count=el('span','free-event-count');const full=text('p','free-capture-full','free.captureFull','warning');full.hidden=true;full.setAttribute('role','status');
   screen.append(controls,state,count,full);
-  const inputSection=el('section','free-piano-stage','free-input-section');inputSection.setAttribute('aria-labelledby','free-input-title');
+  const modePanel=el('div',null,'free-performance-panel free-input-section');
+  const inputSection=el('section','free-piano-stage','free-stage');inputSection.setAttribute('aria-labelledby','free-input-title');
   const inputActions=el('div',null,'free-practice-actions');inputActions.dataset.keyboardInput='off';
   inputActions.append(button('free-connect-midi','free.connectMidi',()=>boundaryAction(onConnectMidi)),button('free-keyboard-settings','keyboard.configure',()=>boundaryAction(onConfigureKeyboard)),button('free-sound','settings.soundOff',()=>{try{const enabled=!getSoundEnabled();if(!enabled)preview?.stop('muted');onSoundChange(enabled);render();}catch(error){report(error);}}));
   const keys=el('div','free-practice-keys','free-practice-keys');keys.dataset.keyboardPerformance='';keys.setAttribute('role','group');keys.setAttribute('aria-labelledby','free-input-title');
   const mappingStatus=el('p','free-mapping-status');
-  const stageHeader=el('div',null,'free-stage-header');stageHeader.append(text('h2','free-input-title','free.pianoTitle'),inputActions);
+  const stageHeader=createPianoToolbar({document,title:text('h2','free-input-title','free.pianoTitle'),actions:inputActions});stageHeader.classList.add('free-stage-header');
   const keyboardScroll=el('div','free-keyboard-scroll','free-keyboard-scroll');keyboardScroll.tabIndex=0;keyboardScroll.dataset.keyboardPerformance='';keyboardScroll.setAttribute('aria-labelledby','free-input-title');
   const pianoSurface=el('div',null,'free-piano-surface');
   const liveField=el('div','free-live-field','free-live-field');liveField.setAttribute('aria-hidden','true');
-  const rails=el('div','free-piano-rails','free-piano-rails'),liveCopy=el('div',null,'free-live-copy');
+  const rails=el('div','free-piano-rails','free-piano-rails piano-rails-shared'),liveCopy=el('div',null,'free-live-copy');
   const liveCaption=text('span',null,'free.stageCaption'),liveNotes=el('strong','free-live-notes'),liveHint=text('span',null,'free.stageHint');
   liveCopy.append(liveCaption,liveNotes,liveHint);liveField.append(rails,liveCopy);
-  const keybed=el('div',null,'free-keybed-wrap');keybed.append(keys);pianoSurface.append(keybed);keyboardScroll.append(pianoSurface);
+  const keybed=el('div',null,'free-keybed-wrap');keybed.append(keys);pianoSurface.append(liveField,keybed);keyboardScroll.append(pianoSurface);
+  mountPianoStage({document,stage:inputSection,scroll:keyboardScroll,surface:pianoSurface,keyboard:keys,lane:liveField});
   const stageFooter=el('div',null,'free-stage-footer');const inputHelp=el('details','free-input-help','free-input-help');inputHelp.dataset.keyboardInput='off';
   inputHelp.append(text('summary',null,'free.inputGuide'),text('p',null,'free.inputHelp'),text('p',null,'free.defaultVelocity'),text('p',null,'keyboard.rollover'),text('p',null,'free.noAudioCapture'));
-  stageFooter.append(mappingStatus,text('span',null,'free.scrollHint','free-scroll-hint'),inputHelp);inputSection.append(stageHeader,liveField,keyboardScroll,stageFooter);
-  screen.append(inputSection);
+  stageFooter.append(mappingStatus,text('span',null,'free.scrollHint','free-scroll-hint'),inputHelp);inputSection.append(stageHeader,keyboardScroll);
+  modePanel.append(inputSection,stageFooter);screen.append(modePanel);
   const recordings=el('details','free-recordings','free-recordings');recordings.dataset.keyboardInput='off';recordings.append(text('summary','free-recordings-toggle','free.recordings'));
   const savePanel=el('section','free-save-panel','free-save-panel');savePanel.dataset.keyboardInput='off';
   const name=el('input','free-record-label');name.type='text';name.maxLength=200;name.autocomplete='off';
@@ -49,7 +52,7 @@ export function setupFreePracticeView({document,session,preview=null,i18n=getApp
   const discard=el('input','free-discard-confirm');discard.type='checkbox';discard.addEventListener('change',()=>render());
   const discardAction=button('free-discard','free.discard',()=>run(()=>{session.discardDraft();discard.checked=false;render();}));
   const saveInfo=el('details',null,'free-save-info');saveInfo.append(text('summary',null,'free.recordOptions'),text('p',null,'free.saveHelp'),label('free.discardConfirm',discard),discardAction,text('p',null,'free.localStorageNote'));
-  savePanel.append(label('free.titleLabel',name),saveActions,saveState,saveInfo);screen.append(savePanel);
+  savePanel.append(label('free.titleLabel',name),saveActions,saveState,saveInfo);recordings.append(savePanel);
   const library=el('section','free-performance-library','free-performance-library');library.dataset.keyboardInput='off';library.setAttribute('aria-labelledby','free-library-title');
   const records=el('select','free-record-select');records.addEventListener('change',()=>render());
   const libraryActions=el('div',null,'free-practice-actions');libraryActions.append(button('free-refresh','free.refresh',()=>run(()=>session.refresh())),button('free-load','free.load',()=>run(async()=>{preview?.stop();await session.load(records.value);notice='free.loaded';})),button('free-export-record','common.export',()=>run(async()=>download(await session.exportRecord(),'worldmusichub-free-performance.json'))),button('free-export-backup','free.exportBackup',()=>run(async()=>download(await session.exportBackup(),'worldmusichub-performance-backup.json'))));
@@ -115,24 +118,14 @@ export function setupFreePracticeView({document,session,preview=null,i18n=getApp
   document.defaultView?.addEventListener('blur',onBlur);document.defaultView?.addEventListener('pagehide',onBlur);document.addEventListener('visibilitychange',onVisibility);
 
   function setKeyboard(next){
-    const signature=JSON.stringify(next ? [next.configurationId,next.bindings.map(({code,midi,label,enabled})=>({code,midi,label,enabled}))] : null);
+    const signature=JSON.stringify(next ? [getPianoRange(),next.configurationId,next.bindings.map(({code,midi,label,enabled})=>({code,midi,label,enabled}))] : null);
     if(signature===lastKeyboard)return;lastKeyboard=signature;
     clearContacts('free_keyboard_change');keys.replaceChildren();rails.replaceChildren();
     keyboardBindings=(next?.bindings ?? []).filter(binding=>binding.enabled&&Number.isInteger(binding.midi)&&binding.midi>=0&&binding.midi<=127);
-    // A real chromatic piano remains playable independently of the PC mapping.
-    // Extend its ends only when a configured mapping reaches beyond A0–C8.
-    const low=Math.min(21,...keyboardBindings.map(binding=>binding.midi)),high=Math.max(108,...keyboardBindings.map(binding=>binding.midi));
-    const geometry=keyboardGeometry(high-low+1,low),whiteCount=geometry.filter(key=>!key.black).length;
-    pianoSurface.style.setProperty('--free-piano-min-width',`${whiteCount*22}px`);keys.dataset.low=String(low);keys.dataset.high=String(high);
-    for(const position of geometry){
-      const bindings=keyboardBindings.filter(binding=>binding.midi===position.midi);
-      const key=el('button',null,`free-practice-key ${position.black?'black':'white'}`);key.type='button';key.dataset.keyboardPerformance='';key.dataset.midi=String(position.midi);
-      if(bindings.length)key.dataset.code=bindings[0].code;
-      key.dataset.codes=bindings.map(binding=>binding.code).join(' ');key.classList.toggle('mapped',bindings.length>0);
-      key.style.left=`${position.x*100}%`;key.style.width=`${position.width*100}%`;
-      const note=el('span',null,'free-key-note');note.textContent=midiName(position.midi);const legend=el('kbd');legend.textContent=bindings.map(binding=>binding.label).join(' / ');key.append(note,legend);keys.append(key);
-      if(!position.black){const rail=el('i');rail.dataset.pitch=String(position.midi);rail.style.left=`${position.x*100}%`;rail.style.width=`${position.width*100}%`;rails.append(rail);}
-    }
+    const range=getPianoRange(),geometry=keyboardGeometry(range.keyCount,range.lowestMidi);
+    pianoSurface.style.minWidth=`${pianoMinimumWidth(geometry)}px`;
+    renderPianoKeybed({document,keyboard:keys,geometry,bindings:keyboardBindings,labelForNote:note=>i18n.t('stage.pianoKey',{note:midiName(note)}),decorateKey:key=>key.classList.add('free-practice-key')});
+    renderPianoRails({document,rails,geometry});
     renderKeyLabels();setHeldNotes(heldNotes);
   }
   function renderKeyLabels(){
@@ -143,8 +136,8 @@ export function setupFreePracticeView({document,session,preview=null,i18n=getApp
   }
   function setHeldNotes(notes=[]){
     heldNotes=[...new Set(notes)].filter(note=>Number.isInteger(note)&&note>=0&&note<=127).sort((a,b)=>a-b);const held=new Set(heldNotes);
-    for(const key of keys.querySelectorAll('[data-midi]')){const pressed=held.has(Number(key.dataset.midi));key.classList.toggle('held',pressed);key.setAttribute('aria-pressed',String(pressed));}
-    for(const rail of rails.children)rail.classList.toggle('held',held.has(Number(rail.dataset.pitch))||held.has(Number(rail.dataset.pitch)+1)&&![4,11].includes(Number(rail.dataset.pitch)%12));
+    for(const key of keys.querySelectorAll('[data-midi]')){const pressed=held.has(Number(key.dataset.midi));key.classList.toggle('held',pressed);key.classList.toggle('pressed',pressed);key.setAttribute('aria-pressed',String(pressed));}
+    for(const rail of rails.children)rail.classList.toggle('held',held.has(Number(rail.dataset.pitch)));
     inputSection.classList.toggle('has-held-notes',held.size>0);liveNotes.textContent=heldNotes.length?heldNotes.map(midiName).join(' · '):i18n.t('free.stageReady');
   }
   function description(parent,record){

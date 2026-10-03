@@ -1,4 +1,12 @@
 export default Object.freeze({
+  "performance.scoreBackground": "Score background",
+  "performance.scoreOpacity": "Opacity",
+  "performance.scoreOptions": "Score options",
+  "performance.scoreScroll": "Scroll background score",
+  "performance.scoreScroll.up": "Scroll score up",
+  "performance.scoreScroll.down": "Scroll score down",
+  "performance.scoreScroll.left": "Scroll score left",
+  "performance.scoreScroll.right": "Scroll score right",
   "performance.guitarRouteShort": "Route settings",
   "performance.guitarSourcesShort": "Tuning & sources",
   "keyboard.preset": "Mapping preset",

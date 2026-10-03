@@ -79,20 +79,19 @@ export function setupBeginnerView({document, i18n, getContext, onNumberedMode}) 
   const stageHome = document.createComment('Beginner guide stage position'); stageControl.panel.before(stageHome);
   const heading = $('stage-title')?.parentElement;
   const shortLandscape = document.defaultView?.matchMedia?.('(max-height:600px) and (min-width:651px)');
+  const freeControlsHost=document.querySelector('.free-stage-footer')||$('free-practice-keys').parentElement;
+  const freeControl=control('free-', freeControlsHost, freeControlsHost.firstElementChild);
+  const freeHome=document.createComment('Free guide stage position');freeControl.panel.before(freeHome);
+  const freeHeading=$('free-practice-title')?.parentElement;
   function arrangeControls() {
-    const compact = Boolean(shortLandscape?.matches && heading);
-    const {panel, reference, body, details} = stageControl;
-    panel.classList.toggle('beginner-controls-compact', compact);
-    if (compact) {
-      if (panel.parentElement !== heading) heading.append(panel);
-      if (reference.parentElement !== body) body.prepend(reference);
-    } else {
-      if (stageHome.parentNode && panel.previousSibling !== stageHome) stageHome.after(panel);
-      if (reference.parentElement !== panel) panel.insertBefore(reference, details);
+    for(const [item,home,target]of [[stageControl,stageHome,heading],[freeControl,freeHome,freeHeading]]){
+      const compact=Boolean(shortLandscape?.matches&&target),{panel,reference,body,details}=item;
+      panel.classList.toggle('beginner-controls-compact',compact);
+      if(compact){if(panel.parentElement!==target)target.append(panel);if(reference.parentElement!==body)body.prepend(reference);}
+      else{if(home.parentNode&&panel.previousSibling!==home)home.after(panel);if(reference.parentElement!==panel)panel.insertBefore(reference,details);}
     }
   }
   shortLandscape?.addEventListener('change', arrangeControls); arrangeControls();
-  control('free-', $('free-practice-keys').parentElement, $('free-practice-keys'));
   const surfaces = [
     {root: $('keyboard')}, {root: $('fretboard')},
     {root: $('free-practice-keys'), free: true},
@@ -130,7 +129,7 @@ export function setupBeginnerView({document, i18n, getContext, onNumberedMode}) 
     refresh(changed);
   }, dispose() {
     if (disposed) return;
-    disposed = true; unsubscribe(); shortLandscape?.removeEventListener('change', arrangeControls); stageHome.remove();
+    disposed = true; unsubscribe(); shortLandscape?.removeEventListener('change', arrangeControls); stageHome.remove();freeHome.remove();
     for (const {root, labels} of surfaces) {labels.dispose(); root.classList.remove('beginner-labels-enabled');}
     for (const {panel} of controls) panel.remove();
   }};
