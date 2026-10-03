@@ -98,6 +98,58 @@ impl InitialControls {
     }
 }
 
+/// RPN 0 changes the response to pitch bend, not the unbent key pitch.
+/// Accept only this complete, source-contiguous setup; bends remain rejected.
+#[derive(Clone, Copy, Default)]
+struct InitialPitchBendSensitivity {
+    tracks: u128,
+    start: usize,
+    steps: usize,
+    other_state: bool,
+}
+impl InitialPitchBendSensitivity {
+    fn observe(
+        &mut self,
+        track: usize,
+        index: usize,
+        tick: u64,
+        message: MidiMessage,
+    ) -> Result<bool, String> {
+        const SEQUENCE: [(u8, u8); 6] =
+            [(101, 0), (100, 0), (6, 24), (38, 0), (101, 127), (100, 127)];
+        self.tracks |= 1_u128 << track;
+        if self.steps > 0 && self.tracks.count_ones() != 1 {
+            return Err(
+                "MIDI initial pitch-bend sensitivity requires one owning source track".into(),
+            );
+        }
+        if let MidiMessage::Controller { controller, value } = message {
+            if matches!(controller.as_int(), 6 | 38 | 100 | 101) {
+                if tick != 0
+                    || self.other_state
+                    || self.tracks.count_ones() != 1
+                    || SEQUENCE.get(self.steps) != Some(&(controller.as_int(), value.as_int()))
+                    || (self.steps > 0 && index != self.start + self.steps)
+                {
+                    return Err(format!("MIDI controller {} requires the reviewed contiguous initial RPN 0 sensitivity sequence: select, 24 semitones, zero cents, deselect", controller.as_int()));
+                }
+                if self.steps == 0 {
+                    self.start = index;
+                }
+                self.steps += 1;
+                return Ok(true);
+            }
+        }
+        if (1..6).contains(&self.steps) {
+            return Err("MIDI controller 101 initial pitch-bend sensitivity cannot be interleaved with other channel events".into());
+        }
+        if !matches!(message, MidiMessage::ProgramChange { .. }) {
+            self.other_state = true;
+        }
+        Ok(false)
+    }
+}
+
 /// Reject structural truncation and mismatched counts before allocating events.
 /// Only plain SMF is supported, not RIFF-wrapped MIDI or unknown chunk types.
 fn check_container(bytes: &[u8]) -> Result<usize, String> {
@@ -337,6 +389,7 @@ pub fn import_midi(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
     let mut note_count = 0;
     let mut end_tick = 0;
     let mut initial_controls = [InitialControls::default(); 16];
+    let mut initial_sensitivity = [InitialPitchBendSensitivity::default(); 16];
     let mut has_channel_prefix = false;
     for (track_index, events) in tracks.enumerate() {
         if track_index >= expected_tracks {
@@ -368,10 +421,18 @@ pub fn import_midi(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
             match event.kind {
                 TrackEventKind::Midi { channel, message } => {
                     let channel = channel.as_int();
+                    let sensitivity = &mut initial_sensitivity[usize::from(channel)];
+                    let sensitivity_step = sensitivity.observe(track_index, index, tick, message)?;
                     let controls = &mut initial_controls[usize::from(channel)];
                     if controls.observe(track_index, tick, message)? {
                         if controls.phase == InitialControlPhase::Initialized {
                             warnings.add("midi_initial_controls", "A single-track channel begins with Reset All Controllers value 0 followed by sustain-off value 0 at tick zero, before notes or other controller state. This practice rendition starts with no held keys, centered pitch and sustain off. Both events remain in the complete original source; later resets/pedals, external device state and original instrument behavior are not reproduced.");
+                        }
+                        continue;
+                    }
+                    if sensitivity_step {
+                        if sensitivity.steps == 6 {
+                            warnings.add("midi_initial_pitch_bend_sensitivity", "One source track initializes channel pitch-bend sensitivity to 24 semitones and zero cents with the complete six-event RPN 0 selector/value/deselect sequence at tick zero before notes or other control state. Fixed note pitches are unchanged because this importer rejects every pitch-bend event. The source retains all six events; no tuning, active bend, external receiver state or arbitrary parameter data is inferred.");
                         }
                         continue;
                     }
@@ -474,6 +535,20 @@ pub fn import_midi(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
     }
     if has_channel_prefix && initial_controls.iter().any(|controls| controls.used) {
         return Err("MIDI initial reset/sustain-off does not support channel-prefix routing; resolve routing before importing this initialization".into());
+    }
+    if initial_sensitivity
+        .iter()
+        .any(|state| (1..6).contains(&state.steps))
+    {
+        return Err(
+            "MIDI controller 101 initial pitch-bend sensitivity requires all six selector/value/deselect events"
+                .into(),
+        );
+    }
+    if has_channel_prefix && initial_sensitivity.iter().any(|state| state.steps > 0) {
+        return Err(
+            "MIDI initial pitch-bend sensitivity does not support channel-prefix routing".into(),
+        );
     }
     // MIDI channels are shared across type-1 tracks. Match across tracks rather
     // than closing every track independently or treating tracks as MIDI ports.

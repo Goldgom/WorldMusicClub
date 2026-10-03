@@ -16,6 +16,8 @@ CC91 uses `wmh-reference-room-v1`: an authored deterministic stereo impulse of 1
 
 Nonzero banks, nonzero chorus and pressure commands block this renderer. Neutral bank/chorus zero and typed metadata are retained and supported. The first complete-score profile itself rejects other unsupported source semantics, including percussion, pedals, pitch bend and overlap. Recorded full mixes and stems, when present, are retained for export and are not layered over reference audio.
 
+The narrowly reviewed [initial RPN 0 sensitivity sequence](INITIAL_MIDI_SENSITIVITY.md) is validated independently before audio allocation. The receiver applies all six named steps to channel selection/sensitivity state, including silent source tracks. It starts with centered bend, uses the 24-semitone/zero-cent sensitivity only as the scale of that zero displacement, and therefore schedules each unchanged source key. No bend or arbitrary parameter command is admitted. Pause/restart and resume reconstruct the same setup.
+
 The app's existing Transport is the only song clock. Audio reads that clock, schedules a bounded lookahead against AudioContext time and stops on missed deadlines. Initial and resumed playback share a 50 ms admission boundary with the recorder. The background/PV uses the same song position, honors its offset and starts only after an explicit playback gesture. Video is muted by default. Loading a song or finishing a stale promise never grants playback permission.
 
 ## Parts, notation and transformations

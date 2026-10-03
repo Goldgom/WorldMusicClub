@@ -1,0 +1,821 @@
+{
+  "format": "worldmusichub-complete-score",
+  "version": 1,
+  "source": {
+    "format": "midi",
+    "bytes": 282,
+    "sha256": "b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26"
+  },
+  "notation": {
+    "format_metadata": {
+      "schema_revision": 2,
+      "producer": "WorldMusicHub",
+      "producer_version": "0.2.0-alpha.1"
+    },
+    "version": 1,
+    "id": "midi-e8b5bd529138853d",
+    "title": "Initial Sensitivity Exercise",
+    "composer": "",
+    "provenance": {
+      "kind": "user_import",
+      "attribution": "User-supplied MIDI performance; ownership and usage rights are not verified. Notation is inferred, not original sheet music.",
+      "source_url": null,
+      "license": null
+    },
+    "parts": [
+      {
+        "id": "midi-t2-c1",
+        "name": "Upper · channel 1",
+        "instrument": "MIDI channel 1",
+        "notes": [
+          {
+            "id": "midi-t2-c1-e11",
+            "at": {
+              "numerator": 1,
+              "denominator": 480
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "C",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 80,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e13",
+            "at": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "E",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 88,
+            "tie_start": false,
+            "tie_stop": false
+          }
+        ]
+      },
+      {
+        "id": "midi-t3-c2",
+        "name": "Lower · channel 2",
+        "instrument": "MIDI channel 2",
+        "notes": [
+          {
+            "id": "midi-t3-c2-e11",
+            "at": {
+              "numerator": 1,
+              "denominator": 480
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "C",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 80,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t3-c2-e13",
+            "at": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "E",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 88,
+            "tie_start": false,
+            "tie_stop": false
+          }
+        ]
+      }
+    ],
+    "tempo": [
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "bpm": 120.0
+      }
+    ],
+    "meters": [
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "numerator": 4,
+        "denominator": 4
+      }
+    ],
+    "keys": [],
+    "measures": [
+      {
+        "number": 1,
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      }
+    ],
+    "repeats": [],
+    "source": null
+  },
+  "performance": {
+    "profile": "wmh-semantic-midi1-v1",
+    "end": {
+      "numerator": 4,
+      "denominator": 1
+    },
+    "tracks": [
+      {
+        "id": "track-1",
+        "name": "Initial Sensitivity Exercise",
+        "source_index": 0,
+        "source_event_count": 3,
+        "end": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "id": "track-2",
+        "name": "Upper",
+        "source_index": 1,
+        "source_event_count": 15,
+        "end": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "id": "track-3",
+        "name": "Lower",
+        "source_index": 2,
+        "source_event_count": 15,
+        "end": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "id": "track-4",
+        "name": "Silent setup",
+        "source_index": 3,
+        "source_event_count": 11,
+        "end": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      }
+    ],
+    "parts": [
+      {
+        "id": "midi-t2-c1",
+        "track_id": "track-2",
+        "channel": 0,
+        "notation_origin": "inferred",
+        "target": "key_release"
+      },
+      {
+        "id": "midi-t3-c2",
+        "track_id": "track-3",
+        "channel": 1,
+        "notation_origin": "inferred",
+        "target": "key_release"
+      }
+    ],
+    "notes": [
+      {
+        "note_id": "midi-t2-c1-e11",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 10
+        },
+        "release": {
+          "track": 1,
+          "event": 11
+        },
+        "release_velocity": 12
+      },
+      {
+        "note_id": "midi-t3-c2-e11",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 10
+        },
+        "release": {
+          "track": 2,
+          "event": 11
+        },
+        "release_velocity": 12
+      },
+      {
+        "note_id": "midi-t2-c1-e13",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 12
+        },
+        "release": {
+          "track": 1,
+          "event": 13
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t3-c2-e13",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 12
+        },
+        "release": {
+          "track": 2,
+          "event": 13
+        },
+        "release_velocity": 0
+      }
+    ],
+    "events": [
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 0,
+          "event": 0
+        },
+        "command": {
+          "kind": "text",
+          "role": "track_name",
+          "text": "Initial Sensitivity Exercise"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 0,
+          "event": 1
+        },
+        "command": {
+          "kind": "tempo",
+          "microseconds_per_quarter": 500000
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 0
+        },
+        "command": {
+          "kind": "text",
+          "role": "track_name",
+          "text": "Upper"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 1
+        },
+        "command": {
+          "kind": "instrument_program",
+          "channel": 0,
+          "program": 0
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 2
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 0,
+          "step": "select_most_significant_zero"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 3
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 0,
+          "step": "select_least_significant_zero"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 4
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 0,
+          "step": "set_semitones24"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 5
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 0,
+          "step": "set_cents_zero"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 6
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 0,
+          "step": "deselect_most_significant"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 7
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 0,
+          "step": "deselect_least_significant"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 8
+        },
+        "command": {
+          "kind": "volume",
+          "channel": 0,
+          "value": 96
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 9
+        },
+        "command": {
+          "kind": "pan",
+          "channel": 0,
+          "value": 32
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 0
+        },
+        "command": {
+          "kind": "text",
+          "role": "track_name",
+          "text": "Lower"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 1
+        },
+        "command": {
+          "kind": "instrument_program",
+          "channel": 1,
+          "program": 24
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 2
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 1,
+          "step": "select_most_significant_zero"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 3
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 1,
+          "step": "select_least_significant_zero"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 4
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 1,
+          "step": "set_semitones24"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 5
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 1,
+          "step": "set_cents_zero"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 6
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 1,
+          "step": "deselect_most_significant"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 7
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 1,
+          "step": "deselect_least_significant"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 8
+        },
+        "command": {
+          "kind": "volume",
+          "channel": 1,
+          "value": 96
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 9
+        },
+        "command": {
+          "kind": "pan",
+          "channel": 1,
+          "value": 96
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 3,
+          "event": 0
+        },
+        "command": {
+          "kind": "text",
+          "role": "track_name",
+          "text": "Silent setup"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 3,
+          "event": 1
+        },
+        "command": {
+          "kind": "instrument_program",
+          "channel": 2,
+          "program": 48
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 3,
+          "event": 2
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 2,
+          "step": "select_most_significant_zero"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 3,
+          "event": 3
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 2,
+          "step": "select_least_significant_zero"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 3,
+          "event": 4
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 2,
+          "step": "set_semitones24"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 3,
+          "event": 5
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 2,
+          "step": "set_cents_zero"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 3,
+          "event": 6
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 2,
+          "step": "deselect_most_significant"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 3,
+          "event": 7
+        },
+        "command": {
+          "kind": "initial_pitch_bend_sensitivity",
+          "channel": 2,
+          "step": "deselect_least_significant"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 3,
+          "event": 8
+        },
+        "command": {
+          "kind": "volume",
+          "channel": 2,
+          "value": 96
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 3,
+          "event": 9
+        },
+        "command": {
+          "kind": "pan",
+          "channel": 2,
+          "value": 64
+        }
+      },
+      {
+        "at": {
+          "numerator": 4,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 0,
+          "event": 2
+        },
+        "command": {
+          "kind": "track_end"
+        }
+      },
+      {
+        "at": {
+          "numerator": 4,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 14
+        },
+        "command": {
+          "kind": "track_end"
+        }
+      },
+      {
+        "at": {
+          "numerator": 4,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 14
+        },
+        "command": {
+          "kind": "track_end"
+        }
+      },
+      {
+        "at": {
+          "numerator": 4,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 3,
+          "event": 10
+        },
+        "command": {
+          "kind": "track_end"
+        }
+      }
+    ]
+  },
+  "coverage": {
+    "status": "complete",
+    "notation": "inferred",
+    "source_tracks": 4,
+    "source_events": 44,
+    "represented_events": 44,
+    "pitched_notes": 4
+  }
+}

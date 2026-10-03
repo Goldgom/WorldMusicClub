@@ -201,9 +201,11 @@ commands, unresolved routing, active pedals, bend, unknown metadata, SysEx and
 encoded project text are blocked. Text must be valid UTF-8, bounded, plain cues;
 VSQ `DM:` project blocks require a separate explicit semantic profile. Complete
 conversion is not claimed for these sources. Controller initialization supports
-only the existing importer-proven reset/sustain-off pair at zero, before other
+the existing importer-proven reset/sustain-off pair at zero, before other
 control/note state; a preceding program remains intact. Program/volume/pan are not
-reset by this command. Inferred staff/voice identities live in canonical notation.
+reset by this command. A separate reviewed six-event initial pitch-bend sensitivity
+sequence is described in [INITIAL_MIDI_SENSITIVITY.md](INITIAL_MIDI_SENSITIVITY.md).
+Inferred staff/voice identities live in canonical notation.
 
 Future profiles may include performance-only percussion/voices with no pitched
 notation target. That requires explicit notation/target coverage, not fake piano

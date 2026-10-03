@@ -140,6 +140,12 @@ pub enum Command {
     InitialSustainOff {
         channel: u8,
     },
+    /// One of six retained steps of the reviewed zero-time RPN 0 setup.
+    /// This does not admit arbitrary parameter selectors or data-entry values.
+    InitialPitchBendSensitivity {
+        channel: u8,
+        step: InitialPitchBendSensitivityStep,
+    },
     Tempo {
         microseconds_per_quarter: u32,
     },
@@ -167,6 +173,26 @@ pub enum Command {
 pub enum BankComponent {
     MostSignificant,
     LeastSignificant,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InitialPitchBendSensitivityStep {
+    SelectMostSignificantZero,
+    SelectLeastSignificantZero,
+    SetSemitones24,
+    SetCentsZero,
+    DeselectMostSignificant,
+    DeselectLeastSignificant,
+}
+impl InitialPitchBendSensitivityStep {
+    const ORDER: [Self; 6] = [
+        Self::SelectMostSignificantZero,
+        Self::SelectLeastSignificantZero,
+        Self::SetSemitones24,
+        Self::SetCentsZero,
+        Self::DeselectMostSignificant,
+        Self::DeselectLeastSignificant,
+    ];
 }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -200,7 +226,8 @@ impl Command {
             | Self::KeyPressure { channel, .. }
             | Self::ChannelPressure { channel, .. }
             | Self::InitialControllerReset { channel }
-            | Self::InitialSustainOff { channel } => Some(*channel),
+            | Self::InitialSustainOff { channel }
+            | Self::InitialPitchBendSensitivity { channel, .. } => Some(*channel),
             _ => None,
         }
     }
@@ -269,7 +296,9 @@ impl Command {
                 }
                 &[]
             }
-            Self::InitialControllerReset { .. } | Self::InitialSustainOff { .. } => {
+            Self::InitialControllerReset { .. }
+            | Self::InitialSustainOff { .. }
+            | Self::InitialPitchBendSensitivity { .. } => {
                 if !at.equivalent(Beat::ZERO) {
                     return Err("Controller initialization must be at zero".into());
                 }
@@ -655,6 +684,7 @@ fn validate_channel_order(
         .iter()
         .map(|e| (e.origin, &e.command))
         .collect();
+    validate_initial_pitch_bend_sensitivity(&ordered, &commands)?;
     for event in &score.performance.events {
         let Command::InitialControllerReset { channel } = event.command else {
             continue;
@@ -684,6 +714,50 @@ fn validate_channel_order(
         if !matches!(commands.get(&next), Some(Command::InitialSustainOff { channel: c }) if *c == channel)
         {
             return Err("Initial reset must be immediately followed by sustain off".into());
+        }
+    }
+    Ok(())
+}
+
+fn validate_initial_pitch_bend_sensitivity(
+    ordered: &[(Beat, u8, Coordinate)],
+    commands: &BTreeMap<Coordinate, &Command>,
+) -> Result<(), String> {
+    for channel in 0..16 {
+        let channel_order: Vec<_> = ordered.iter().filter(|item| item.1 == channel).collect();
+        let setup: Vec<_> = channel_order
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| match commands.get(&item.2) {
+                Some(Command::InitialPitchBendSensitivity { step, .. }) => {
+                    Some((index, item.2, *step))
+                }
+                _ => None,
+            })
+            .collect();
+        if setup.is_empty() {
+            continue;
+        }
+        let (start_index, start, _) = setup[0];
+        if setup.len() != 6
+            || setup
+                .iter()
+                .enumerate()
+                .any(|(index, (position, origin, step))| {
+                    *position != start_index + index
+                        || origin.track != start.track
+                        || origin.event != start.event + index as u32
+                        || *step != InitialPitchBendSensitivityStep::ORDER[index]
+                })
+            || channel_order.iter().any(|item| item.2.track != start.track)
+            || !channel_order[..start_index].iter().all(|item| {
+                matches!(
+                    commands.get(&item.2),
+                    Some(Command::InstrumentProgram { .. })
+                )
+            })
+        {
+            return Err("Initial pitch-bend sensitivity requires one exact contiguous six-step group, in one owning track before notes or other control state".into());
         }
     }
     Ok(())

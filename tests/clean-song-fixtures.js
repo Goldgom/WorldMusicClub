@@ -17,3 +17,12 @@ export function fakeAudio(){
   const context={currentTime:0,state:'running',sampleRate:8000,destination:{},createGain:()=>node('gain',{gain:parameter()}),createStereoPanner:()=>node('pan',{pan:parameter()}),createConvolver:()=>node('convolver'),createBuffer:(channels,length)=>({length,getChannelData:()=>new Float32Array(length)}),createOscillator:()=>node('oscillator',{frequency:parameter(),starts:[],stops:[],start(at){this.starts.push(at);},stop(at){this.stops.push(at);}})};
   return{context,nodes,output:node('output')};
 }
+
+export function initialSensitivitySong(change=()=>{}) {
+  const score=JSON.parse(read('./fixtures/clean-song-v2-rpn/score.json')),
+    metadata=JSON.parse(read('./fixtures/clean-song-v2-rpn/metadata.json')),
+    runtime=JSON.parse(read('./fixtures/clean-song-v2-rpn-runtime.json'));
+  change({score,metadata,runtime});
+  const descriptor={version:2,content_sha256:fixtureHash,metadata_json:JSON.stringify(metadata),score_json:JSON.stringify(score),media:[],runtime};
+  return prepareCleanSong(fixtureKey,descriptor,runtime.compilation.score);
+}

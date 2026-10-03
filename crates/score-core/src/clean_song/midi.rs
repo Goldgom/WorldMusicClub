@@ -32,6 +32,24 @@ fn text_command(meta_type: u8, data: &[u8]) -> Result<Command, String> {
     Ok(Command::Text { role, text })
 }
 
+fn initial_pitch_bend_sensitivity(
+    channel: u8,
+    controller: u8,
+    value: u8,
+) -> Result<Command, String> {
+    use InitialPitchBendSensitivityStep::*;
+    let step = match (controller, value) {
+        (101, 0) => SelectMostSignificantZero,
+        (100, 0) => SelectLeastSignificantZero,
+        (6, 24) => SetSemitones24,
+        (38, 0) => SetCentsZero,
+        (101, 127) => DeselectMostSignificant,
+        (100, 127) => DeselectLeastSignificant,
+        _ => return Err("Unreviewed initial pitch-bend sensitivity selector or value".into()),
+    };
+    Ok(Command::InitialPitchBendSensitivity { channel, step })
+}
+
 /// All-track conversion: either a complete validated semantic score or an error.
 /// Does not write files, silently skip a track, or retain the original input.
 pub fn convert_midi(bytes: &[u8]) -> Result<CompleteScore, String> {
@@ -100,6 +118,7 @@ pub fn convert_midi(bytes: &[u8]) -> Result<CompleteScore, String> {
                     93 => Command::ChorusSend { channel: *channel, value: *value },
                     121 if *value == 0 && event.tick() == 0 => Command::InitialControllerReset { channel: *channel },
                     64 if *value == 0 && event.tick() == 0 => Command::InitialSustainOff { channel: *channel },
+                    6 | 38 | 100 | 101 if event.tick() == 0 => initial_pitch_bend_sensitivity(*channel, *controller, *value)?,
                     _ => return Err(format!("Controller {controller} has no supported complete semantic conversion")),
                 },
                 ChannelMessage::PitchBend { .. } => return Err("Pitch bend requires a reviewed tuning semantic profile".into()),

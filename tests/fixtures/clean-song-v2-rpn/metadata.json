@@ -1,0 +1,24 @@
+{
+  "format": "worldmusichub-song",
+  "version": 2,
+  "id": "midi-e8b5bd529138853d",
+  "title": "Initial Sensitivity Exercise",
+  "score": {
+    "path": "score.json",
+    "bytes": 17096,
+    "sha256": "a90a8a4851c0b4367d8322d7854751b4ddbcb523e6d1b85c1d5a58e4e11c7e8c"
+  },
+  "sources": [
+    {
+      "format": "midi",
+      "bytes": 282,
+      "sha256": "b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26"
+    }
+  ],
+  "rights": {
+    "status": "original_authored",
+    "attribution": "WorldMusicHub original authored test exercise",
+    "license": "CC0-1.0"
+  },
+  "media": []
+}

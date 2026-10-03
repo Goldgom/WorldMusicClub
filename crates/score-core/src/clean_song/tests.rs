@@ -448,3 +448,184 @@ fn checked_in_fixture_matches_the_same_converter_and_runtime() {
         include_bytes!("../../../../tests/fixtures/clean-song-v2-runtime.json")
     );
 }
+
+fn sensitivity_messages() -> Vec<(u32, Vec<u8>)> {
+    [(101, 0), (100, 0), (6, 24), (38, 0), (101, 127), (100, 127)]
+        .into_iter()
+        .map(|(controller, value)| (0, vec![0xb0, controller, value]))
+        .collect()
+}
+fn sensitivity_source(mut prefix: Vec<(u32, Vec<u8>)>) -> Vec<u8> {
+    prefix.extend([
+        (0, vec![0xc0, 24]),
+        (1, vec![0x90, 60, 80]),
+        (480, vec![0x80, 60, 12]),
+        (479, vec![0xff, 47, 0]),
+    ]);
+    smf(vec![track(
+        &prefix
+            .iter()
+            .map(|(delta, message)| (*delta, message.as_slice()))
+            .collect::<Vec<_>>(),
+    )])
+}
+#[test]
+fn initial_sensitivity_preserves_all_six_meanings_coordinates_and_note_clocks() {
+    let bytes = sensitivity_source(sensitivity_messages());
+    let clean = convert_midi(&bytes).unwrap();
+    let (source_score, diagnostics) = crate::import_midi(&bytes).unwrap();
+    assert!(source_score.source.is_some());
+    assert!(diagnostics
+        .iter()
+        .any(|d| d.code == "midi_initial_pitch_bend_sensitivity"));
+    assert_eq!(clean.coverage.source_events, 10);
+    assert_eq!(clean.coverage.represented_events, 10);
+    let runtime = compile_complete(&decode_json(&encode_json(&clean).unwrap()).unwrap()).unwrap();
+    for (index, step) in InitialPitchBendSensitivityStep::ORDER.iter().enumerate() {
+        let event = &runtime.events[index];
+        assert_eq!(
+            event.origin,
+            Coordinate {
+                track: 0,
+                event: index as u32
+            }
+        );
+        assert_eq!(event.at_ms, 0.0);
+        assert_eq!(event.exact_microseconds.numerator, "0");
+        assert!(
+            matches!(event.command, Command::InitialPitchBendSensitivity { channel: 0, step: actual } if actual == *step)
+        );
+    }
+    let note = &runtime.notes[0];
+    assert_eq!(note.note_id, "midi-t1-c1-e8");
+    assert_eq!(note.start_microseconds.numerator, "3125");
+    assert_eq!(note.start_microseconds.denominator, 3);
+    assert_eq!(note.key, 60);
+    assert_eq!(note.release_velocity, 12);
+}
+#[test]
+fn initial_sensitivity_rejects_unreviewed_values_and_incomplete_or_interleaved_groups() {
+    let correct = sensitivity_messages();
+    let mut invalid = Vec::new();
+    for index in 0..6 {
+        let mut changed = correct.clone();
+        changed[index].1[2] ^= 1;
+        invalid.push(changed);
+        let mut missing = correct.clone();
+        missing.remove(index);
+        invalid.push(missing);
+        let mut delayed = correct.clone();
+        delayed[index].0 = 1;
+        invalid.push(delayed);
+    }
+    for message in [
+        vec![0xb0, 7, 80],
+        vec![0xc0, 24],
+        vec![0xff, 1, 1, b'x'],
+        vec![0xb1, 7, 80],
+    ] {
+        let mut interleaved = correct.clone();
+        interleaved.insert(2, (0, message));
+        invalid.push(interleaved);
+    }
+    let mut swapped = correct.clone();
+    swapped.swap(0, 1);
+    invalid.push(swapped);
+    let mut repeated = correct.clone();
+    repeated.extend(correct.clone());
+    invalid.push(repeated);
+    let mut after_control = vec![(0, vec![0xb0, 10, 64])];
+    after_control.extend(correct.clone());
+    invalid.push(after_control);
+    let mut after_note = vec![(0, vec![0x90, 64, 80]), (0, vec![0x80, 64, 0])];
+    after_note.extend(correct.clone());
+    invalid.push(after_note);
+    let mut with_bend = correct.clone();
+    with_bend.push((0, vec![0xe0, 0, 64]));
+    invalid.push(with_bend);
+    for prefix in invalid {
+        let bytes = sensitivity_source(prefix);
+        assert!(crate::import_midi(&bytes).is_err());
+        assert!(convert_midi(&bytes).is_err());
+    }
+    let mut preceding_program = vec![(0, vec![0xc0, 48])];
+    preceding_program.extend(correct);
+    convert_midi(&sensitivity_source(preceding_program)).unwrap();
+}
+#[test]
+fn initial_sensitivity_json_reload_rejects_semantic_relabeling_and_wrong_ownership() {
+    let clean = convert_midi(&sensitivity_source(sensitivity_messages())).unwrap();
+    for index in 0..6 {
+        let mut wrong = clean.clone();
+        wrong.performance.events[index].command = Command::InitialPitchBendSensitivity {
+            channel: 0,
+            step: InitialPitchBendSensitivityStep::ORDER[(index + 1) % 6],
+        };
+        assert!(encode_json(&wrong).is_err());
+        let mut wrong = clean.clone();
+        wrong.performance.events[index].command = Command::Volume {
+            channel: 0,
+            value: 24,
+        };
+        assert!(encode_json(&wrong).is_err());
+    }
+    let mut wrong = clean.clone();
+    wrong.performance.events[0].at = Beat::new(1, 480);
+    assert!(validate(&wrong).is_err());
+    let prefix = sensitivity_messages();
+    let mut first = prefix[..3].to_vec();
+    first.push((480, vec![0xff, 47, 0]));
+    let mut second = prefix[3..].to_vec();
+    second.extend([
+        (1, vec![0x90, 60, 80]),
+        (479, vec![0x80, 60, 0]),
+        (0, vec![0xff, 47, 0]),
+    ]);
+    let make = |events: &Vec<(u32, Vec<u8>)>| {
+        track(
+            &events
+                .iter()
+                .map(|(delta, message)| (*delta, message.as_slice()))
+                .collect::<Vec<_>>(),
+        )
+    };
+    let split = smf(vec![make(&first), make(&second)]);
+    assert!(convert_midi(&split).is_err());
+    let owner = make(&{
+        let mut complete = sensitivity_messages();
+        complete.push((960, vec![0xff, 47, 0]));
+        complete
+    });
+    let notes = track(&[
+        (1, &[0x90, 60, 80]),
+        (479, &[0x80, 60, 0]),
+        (480, &[0xff, 47, 0]),
+    ]);
+    assert!(convert_midi(&smf(vec![owner, notes])).is_err());
+}
+
+#[test]
+fn authored_initial_sensitivity_fixture_preserves_silent_tracks_and_exact_runtime() {
+    let score = decode_json(include_bytes!(
+        "../../../../tests/fixtures/clean-song-v2-rpn/score.json"
+    ))
+    .unwrap();
+    assert_eq!(score.coverage.source_tracks, 4);
+    assert_eq!(score.coverage.source_events, 44);
+    assert_eq!(score.coverage.pitched_notes, 4);
+    assert_eq!(score.performance.parts.len(), 2);
+    assert_eq!(score.performance.tracks[3].source_event_count, 11);
+    assert_eq!(
+        score
+            .performance
+            .events
+            .iter()
+            .filter(|event| matches!(event.command, Command::InitialPitchBendSensitivity { .. }))
+            .count(),
+        18
+    );
+    assert_eq!(
+        serde_json::to_vec_pretty(&compile_complete(&score).unwrap()).unwrap(),
+        include_bytes!("../../../../tests/fixtures/clean-song-v2-rpn-runtime.json")
+    );
+}

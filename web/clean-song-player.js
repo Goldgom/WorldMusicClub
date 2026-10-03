@@ -2,6 +2,7 @@ import {ReferenceAudioReceiver} from './midi-reference-synth.js';
 import {createReferenceRoom} from './clean-song-reverb.js';
 import {VsqPracticePlayer} from './vsq-practice-player.js';
 import {CleanSongError,isCleanSong,isVsqSong} from './clean-song-package.js';
+import {INITIAL_SENSITIVITY_KIND,validInitialSensitivity,applyInitialSensitivity,unbentReferenceKey} from './clean-song-initial-sensitivity.js';
 const metadata=new Set(['tempo','meter','key_signature','text','sequence_number','track_end']);
 const supported=new Set(['instrument_program','volume','pan','expression','reverb_send','initial_controller_reset','initial_sustain_off']);
 export const CLEAN_RENDITION = 'wmh-procedural-reference-v1';
@@ -10,15 +11,18 @@ export function inspectCleanRendition(song) {
   if(!isCleanSong(song))return{supported:false,blockers:['clean_package_invalid'],rendition:CLEAN_RENDITION};
   if(isVsqSong(song))return{supported:Boolean(song.runtime)&&song.runtime.parts.length<=128,blockers:!song.runtime?['vsq_choice_required']:song.runtime.parts.length>128?['part_budget_exceeded']:[],rendition:'wmh-vsq-base-note-reference-v1'};
   if(song.score.performance.parts.length>128)blockers.push('part_budget_exceeded');
+  const sensitivityValid=validInitialSensitivity(song);
+  if(!sensitivityValid)blockers.push('initial_pitch_bend_sensitivity_invalid');
   for(const event of song.runtime.events){const command=event.command;
+    if(command.kind===INITIAL_SENSITIVITY_KIND&&sensitivityValid)continue;
     if(metadata.has(command.kind)||supported.has(command.kind))continue;
     if(['bank_select','chorus_send'].includes(command.kind)&&command.value===0)continue;
     blockers.push(command.kind);
   }
   return{supported:!blockers.length,blockers:[...new Set(blockers)],rendition:CLEAN_RENDITION};
 }
-const defaults=()=>({program:0,volume:100,expression:127,pan:64,reverb_send:0});
-function apply(state,command){if(command.kind==='instrument_program')state.program=command.program;else if(command.kind==='initial_controller_reset')state.expression=127;else if(['volume','expression','pan','reverb_send'].includes(command.kind))state[command.kind]=command.value;}
+const defaults=()=>({program:0,volume:100,expression:127,pan:64,reverb_send:0,pitch_bend:0,sensitivity_semitones:2,sensitivity_cents:0});
+function apply(state,command){if(command.kind===INITIAL_SENSITIVITY_KIND)applyInitialSensitivity(state,command.step);else if(command.kind==='instrument_program')state.program=command.program;else if(command.kind==='initial_controller_reset')state.expression=127;else if(['volume','expression','pan','reverb_send'].includes(command.kind))state[command.kind]=command.value;}
 /** Schedules against the app Transport. Never owns human-input or scoring APIs. */
 export class CleanSongPlayer {
   constructor({getPositionMs,onError=()=>{},setTimer=(...args)=>globalThis.setTimeout(...args),clearTimer=(...args)=>globalThis.clearTimeout(...args),lookAheadMs=100}={}) {
@@ -27,6 +31,7 @@ export class CleanSongPlayer {
     Object.assign(this,{getPositionMs,onError,setTimer,clearTimer,lookAheadMs});this.epoch=0;this.timer=null;this.lanes=new Map();this.song=null;this.running=false;
   }
   select(song){this.stop();this.song=song;this.profile=inspectCleanRendition(song);this.programs=new Map();this.vsq.select(isVsqSong(song)?song:null);if(!song||isVsqSong(song))return;
+    if(!this.profile.supported)return;
     const merged=[...song.runtime.events.map(event=>({...event,type:'command'})),...song.runtime.notes.map(note=>({at_ms:note.start_ms,origin:note.attack,note,type:'note'}))].sort((a,b)=>a.at_ms-b.at_ms||a.origin.track-b.origin.track||a.origin.event-b.origin.event);
     const channels=new Map();for(const item of merged){const channel=item.command?.channel??item.note?.channel;const state=channels.get(channel)||defaults();channels.set(channel,state);if(item.type==='command')apply(state,item.command);else this.programs.set(item.note.event_id,state.program);}
   }
@@ -57,7 +62,8 @@ export class CleanSongPlayer {
       while(this.noteCursor<notes.length&&notes[this.noteCursor].start_ms<=limit){const note=notes[this.noteCursor++];if(note.end_ms<=position)continue;if(this.mutedParts.has(note.part_id)||(this.mode==='practice'&&note.part_id===this.targetPart))continue;
         if(!initial&&note.start_ms<position-30)throw new CleanSongError('clean_late_scheduler','A note missed its audio deadline.',{eventId:note.event_id});
         let count=0;for(const lane of this.lanes.values()){lane.receiver.prune(now);count+=lane.receiver.voices.size;}if(count>=128)throw new CleanSongError('voice_budget_exceeded','The full reference exceeds its 128 voice limit.');
-        this.lanes.get(note.part_id).receiver.schedule({eventId:note.event_id,key:note.key,velocity:note.velocity,program:this.programs.get(note.event_id),percussion:false},now+Math.max(0,Math.max(note.start_ms,initial&&Number.isFinite(this.resumePositionMs)?this.resumePositionMs:note.start_ms)-position)/1000,now+(note.end_ms-position)/1000);
+        const key=unbentReferenceKey(this.channels.get(note.channel)||defaults(),note.key);
+        this.lanes.get(note.part_id).receiver.schedule({eventId:note.event_id,key,velocity:note.velocity,program:this.programs.get(note.event_id),percussion:false},now+Math.max(0,Math.max(note.start_ms,initial&&Number.isFinite(this.resumePositionMs)?this.resumePositionMs:note.start_ms)-position)/1000,now+(note.end_ms-position)/1000);
       }
       this.timer=this.setTimer(()=>this.pump(epoch),20);
     }catch(error){this.stop();if(initial)throw error;this.onError(error);}

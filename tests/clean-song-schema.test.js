@@ -64,3 +64,13 @@ test('long authored interaction fixture has continuing two-part music for 32 sec
     assert.ok(playback.notes.some(note => note.part_id === part.id && note.start_ms > 28000));
   }
 });
+
+test('named initial sensitivity steps are closed and retain all source tracks',()=>{
+  const fixture=json('./fixtures/clean-song-v2-rpn/score.json');
+  assert.equal(validate(fixture),true,ajv.errorsText(validate.errors));
+  assert.equal(fixture.performance.tracks.length,4);
+  assert.equal(fixture.performance.events.filter(e=>e.command.kind==='initial_pitch_bend_sensitivity').length,18);
+  for(const change of [
+    c=>{c.step='set_semitones12';},c=>{c.value=24;},c=>{c.controller=6;},c=>{c.parameter=0;},c=>{delete c.step;},c=>{c.channel=16;},
+  ]){const wrong=structuredClone(fixture);change(wrong.performance.events.find(e=>e.command.kind==='initial_pitch_bend_sensitivity').command);assert.equal(validate(wrong),false);}
+});

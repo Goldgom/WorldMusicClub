@@ -1,0 +1,1055 @@
+{
+  "compilation": {
+    "score": {
+      "format_metadata": {
+        "schema_revision": 2,
+        "producer": "WorldMusicHub",
+        "producer_version": "0.2.0-alpha.1"
+      },
+      "version": 1,
+      "id": "midi-e8b5bd529138853d",
+      "title": "Initial Sensitivity Exercise",
+      "composer": "",
+      "provenance": {
+        "kind": "user_import",
+        "attribution": "User-supplied MIDI performance; ownership and usage rights are not verified. Notation is inferred, not original sheet music.",
+        "source_url": null,
+        "license": null
+      },
+      "parts": [
+        {
+          "id": "midi-t2-c1",
+          "name": "Upper · channel 1",
+          "instrument": "MIDI channel 1",
+          "notes": [
+            {
+              "id": "midi-t2-c1-e11",
+              "at": {
+                "numerator": 1,
+                "denominator": 480
+              },
+              "duration": {
+                "numerator": 1,
+                "denominator": 1
+              },
+              "pitch": {
+                "step": "C",
+                "alter": 0,
+                "octave": 4
+              },
+              "voice": "inferred-1",
+              "staff": 1,
+              "velocity": 80,
+              "tie_start": false,
+              "tie_stop": false
+            },
+            {
+              "id": "midi-t2-c1-e13",
+              "at": {
+                "numerator": 2,
+                "denominator": 1
+              },
+              "duration": {
+                "numerator": 1,
+                "denominator": 1
+              },
+              "pitch": {
+                "step": "E",
+                "alter": 0,
+                "octave": 4
+              },
+              "voice": "inferred-1",
+              "staff": 1,
+              "velocity": 88,
+              "tie_start": false,
+              "tie_stop": false
+            }
+          ]
+        },
+        {
+          "id": "midi-t3-c2",
+          "name": "Lower · channel 2",
+          "instrument": "MIDI channel 2",
+          "notes": [
+            {
+              "id": "midi-t3-c2-e11",
+              "at": {
+                "numerator": 1,
+                "denominator": 480
+              },
+              "duration": {
+                "numerator": 1,
+                "denominator": 1
+              },
+              "pitch": {
+                "step": "C",
+                "alter": 0,
+                "octave": 3
+              },
+              "voice": "inferred-1",
+              "staff": 1,
+              "velocity": 80,
+              "tie_start": false,
+              "tie_stop": false
+            },
+            {
+              "id": "midi-t3-c2-e13",
+              "at": {
+                "numerator": 2,
+                "denominator": 1
+              },
+              "duration": {
+                "numerator": 1,
+                "denominator": 1
+              },
+              "pitch": {
+                "step": "E",
+                "alter": 0,
+                "octave": 3
+              },
+              "voice": "inferred-1",
+              "staff": 1,
+              "velocity": 88,
+              "tie_start": false,
+              "tie_stop": false
+            }
+          ]
+        }
+      ],
+      "tempo": [
+        {
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "bpm": 120.0
+        }
+      ],
+      "meters": [
+        {
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "numerator": 4,
+          "denominator": 4
+        }
+      ],
+      "keys": [],
+      "measures": [
+        {
+          "number": 1,
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "length": {
+            "numerator": 4,
+            "denominator": 1
+          }
+        }
+      ],
+      "repeats": [],
+      "source": null
+    },
+    "timeline": {
+      "notes": [
+        {
+          "velocity": 80,
+          "id": "midi-t2-c1-e11",
+          "source_note_id": "midi-t2-c1-e11",
+          "source_note_ids": [
+            "midi-t2-c1-e11"
+          ],
+          "part_id": "midi-t2-c1",
+          "midi": 60,
+          "start_ms": 1.0416666666666667,
+          "duration_ms": 500.0,
+          "voice": "inferred-1",
+          "staff": 1
+        },
+        {
+          "velocity": 80,
+          "id": "midi-t3-c2-e11",
+          "source_note_id": "midi-t3-c2-e11",
+          "source_note_ids": [
+            "midi-t3-c2-e11"
+          ],
+          "part_id": "midi-t3-c2",
+          "midi": 48,
+          "start_ms": 1.0416666666666667,
+          "duration_ms": 500.0,
+          "voice": "inferred-1",
+          "staff": 1
+        },
+        {
+          "velocity": 88,
+          "id": "midi-t2-c1-e13",
+          "source_note_id": "midi-t2-c1-e13",
+          "source_note_ids": [
+            "midi-t2-c1-e13"
+          ],
+          "part_id": "midi-t2-c1",
+          "midi": 64,
+          "start_ms": 1000.0,
+          "duration_ms": 500.0,
+          "voice": "inferred-1",
+          "staff": 1
+        },
+        {
+          "velocity": 88,
+          "id": "midi-t3-c2-e13",
+          "source_note_id": "midi-t3-c2-e13",
+          "source_note_ids": [
+            "midi-t3-c2-e13"
+          ],
+          "part_id": "midi-t3-c2",
+          "midi": 52,
+          "start_ms": 1000.0,
+          "duration_ms": 500.0,
+          "voice": "inferred-1",
+          "staff": 1
+        }
+      ],
+      "duration_ms": 2000.0
+    },
+    "diagnostics": []
+  },
+  "navigation": {
+    "version": 1,
+    "source_measure_count": 1,
+    "duration_ms": 2000.0,
+    "occurrences": [
+      {
+        "id": "measure-occurrence-0",
+        "source_measure_index": 0,
+        "measure_number": 1,
+        "source_from": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "source_to": {
+          "numerator": 4,
+          "denominator": 1
+        },
+        "start_ms": 0.0,
+        "end_ms": 2000.0,
+        "repeat_region_index": null,
+        "repeat_pass": null,
+        "repeat_times": null,
+        "written_note_ids": [
+          "midi-t2-c1-e11",
+          "midi-t3-c2-e11",
+          "midi-t2-c1-e13",
+          "midi-t3-c2-e13"
+        ],
+        "continuing_note_ids": []
+      }
+    ],
+    "sounding_groups": [
+      {
+        "occurrence_id": "midi-t2-c1-e11",
+        "part_id": "midi-t2-c1",
+        "source_note_ids": [
+          "midi-t2-c1-e11"
+        ],
+        "start_ms": 1.0416666666666667,
+        "end_ms": 501.0416666666667
+      },
+      {
+        "occurrence_id": "midi-t3-c2-e11",
+        "part_id": "midi-t3-c2",
+        "source_note_ids": [
+          "midi-t3-c2-e11"
+        ],
+        "start_ms": 1.0416666666666667,
+        "end_ms": 501.0416666666667
+      },
+      {
+        "occurrence_id": "midi-t2-c1-e13",
+        "part_id": "midi-t2-c1",
+        "source_note_ids": [
+          "midi-t2-c1-e13"
+        ],
+        "start_ms": 1000.0,
+        "end_ms": 1500.0
+      },
+      {
+        "occurrence_id": "midi-t3-c2-e13",
+        "part_id": "midi-t3-c2",
+        "source_note_ids": [
+          "midi-t3-c2-e13"
+        ],
+        "start_ms": 1000.0,
+        "end_ms": 1500.0
+      }
+    ],
+    "written_cursor": {
+      "version": 1,
+      "source_note_ids": [
+        "midi-t2-c1-e11",
+        "midi-t3-c2-e11",
+        "midi-t2-c1-e13",
+        "midi-t3-c2-e13"
+      ],
+      "spans": [
+        {
+          "source_note_index": 0,
+          "measure_occurrence_index": 0,
+          "start_ms": 1.0416666666666667,
+          "end_ms": 501.0416666666667
+        },
+        {
+          "source_note_index": 1,
+          "measure_occurrence_index": 0,
+          "start_ms": 1.0416666666666667,
+          "end_ms": 501.0416666666667
+        },
+        {
+          "source_note_index": 2,
+          "measure_occurrence_index": 0,
+          "start_ms": 1000.0,
+          "end_ms": 1500.0
+        },
+        {
+          "source_note_index": 3,
+          "measure_occurrence_index": 0,
+          "start_ms": 1000.0,
+          "end_ms": 1500.0
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "severity": "warning",
+        "code": "notation_following_scope",
+        "message": "Measure intervals are half-open full-performance navigation. Written anchors include rests and tied continuations; sounding groups retain compiled attack identities. Duplicate written measure labels are not ordinal positions. Manual paging and the Rust playback clock remain independent.",
+        "note_id": null
+      }
+    ]
+  },
+  "events": [
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t0:e0",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 0,
+        "event": 0
+      },
+      "command": {
+        "kind": "text",
+        "role": "track_name",
+        "text": "Initial Sensitivity Exercise"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t0:e1",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 0,
+        "event": 1
+      },
+      "command": {
+        "kind": "tempo",
+        "microseconds_per_quarter": 500000
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t1:e0",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 1,
+        "event": 0
+      },
+      "command": {
+        "kind": "text",
+        "role": "track_name",
+        "text": "Upper"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t1:e1",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 1,
+        "event": 1
+      },
+      "command": {
+        "kind": "instrument_program",
+        "channel": 0,
+        "program": 0
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t1:e2",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 1,
+        "event": 2
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 0,
+        "step": "select_most_significant_zero"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t1:e3",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 1,
+        "event": 3
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 0,
+        "step": "select_least_significant_zero"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t1:e4",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 1,
+        "event": 4
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 0,
+        "step": "set_semitones24"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t1:e5",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 1,
+        "event": 5
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 0,
+        "step": "set_cents_zero"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t1:e6",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 1,
+        "event": 6
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 0,
+        "step": "deselect_most_significant"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t1:e7",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 1,
+        "event": 7
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 0,
+        "step": "deselect_least_significant"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t1:e8",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 1,
+        "event": 8
+      },
+      "command": {
+        "kind": "volume",
+        "channel": 0,
+        "value": 96
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t1:e9",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 1,
+        "event": 9
+      },
+      "command": {
+        "kind": "pan",
+        "channel": 0,
+        "value": 32
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t2:e0",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 2,
+        "event": 0
+      },
+      "command": {
+        "kind": "text",
+        "role": "track_name",
+        "text": "Lower"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t2:e1",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 2,
+        "event": 1
+      },
+      "command": {
+        "kind": "instrument_program",
+        "channel": 1,
+        "program": 24
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t2:e2",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 2,
+        "event": 2
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 1,
+        "step": "select_most_significant_zero"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t2:e3",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 2,
+        "event": 3
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 1,
+        "step": "select_least_significant_zero"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t2:e4",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 2,
+        "event": 4
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 1,
+        "step": "set_semitones24"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t2:e5",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 2,
+        "event": 5
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 1,
+        "step": "set_cents_zero"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t2:e6",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 2,
+        "event": 6
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 1,
+        "step": "deselect_most_significant"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t2:e7",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 2,
+        "event": 7
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 1,
+        "step": "deselect_least_significant"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t2:e8",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 2,
+        "event": 8
+      },
+      "command": {
+        "kind": "volume",
+        "channel": 1,
+        "value": 96
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t2:e9",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 2,
+        "event": 9
+      },
+      "command": {
+        "kind": "pan",
+        "channel": 1,
+        "value": 96
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t3:e0",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 3,
+        "event": 0
+      },
+      "command": {
+        "kind": "text",
+        "role": "track_name",
+        "text": "Silent setup"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t3:e1",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 3,
+        "event": 1
+      },
+      "command": {
+        "kind": "instrument_program",
+        "channel": 2,
+        "program": 48
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t3:e2",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 3,
+        "event": 2
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 2,
+        "step": "select_most_significant_zero"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t3:e3",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 3,
+        "event": 3
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 2,
+        "step": "select_least_significant_zero"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t3:e4",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 3,
+        "event": 4
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 2,
+        "step": "set_semitones24"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t3:e5",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 3,
+        "event": 5
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 2,
+        "step": "set_cents_zero"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t3:e6",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 3,
+        "event": 6
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 2,
+        "step": "deselect_most_significant"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t3:e7",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 3,
+        "event": 7
+      },
+      "command": {
+        "kind": "initial_pitch_bend_sensitivity",
+        "channel": 2,
+        "step": "deselect_least_significant"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t3:e8",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 3,
+        "event": 8
+      },
+      "command": {
+        "kind": "volume",
+        "channel": 2,
+        "value": 96
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t3:e9",
+      "at_ms": 0.0,
+      "exact_microseconds": {
+        "numerator": "0",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 3,
+        "event": 9
+      },
+      "command": {
+        "kind": "pan",
+        "channel": 2,
+        "value": 64
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t0:e2",
+      "at_ms": 2000.0,
+      "exact_microseconds": {
+        "numerator": "2000000",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 0,
+        "event": 2
+      },
+      "command": {
+        "kind": "track_end"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t1:e14",
+      "at_ms": 2000.0,
+      "exact_microseconds": {
+        "numerator": "2000000",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 1,
+        "event": 14
+      },
+      "command": {
+        "kind": "track_end"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t2:e14",
+      "at_ms": 2000.0,
+      "exact_microseconds": {
+        "numerator": "2000000",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 2,
+        "event": 14
+      },
+      "command": {
+        "kind": "track_end"
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t3:e10",
+      "at_ms": 2000.0,
+      "exact_microseconds": {
+        "numerator": "2000000",
+        "denominator": 1
+      },
+      "origin": {
+        "track": 3,
+        "event": 10
+      },
+      "command": {
+        "kind": "track_end"
+      }
+    }
+  ],
+  "notes": [
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t1:e10",
+      "note_id": "midi-t2-c1-e11",
+      "part_id": "midi-t2-c1",
+      "track_id": "track-2",
+      "channel": 0,
+      "start_ms": 1.0416666666666667,
+      "end_ms": 501.0416666666667,
+      "start_microseconds": {
+        "numerator": "3125",
+        "denominator": 3
+      },
+      "end_microseconds": {
+        "numerator": "1503125",
+        "denominator": 3
+      },
+      "key": 60,
+      "velocity": 80,
+      "release_velocity": 12,
+      "attack": {
+        "track": 1,
+        "event": 10
+      },
+      "release": {
+        "track": 1,
+        "event": 11
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t2:e10",
+      "note_id": "midi-t3-c2-e11",
+      "part_id": "midi-t3-c2",
+      "track_id": "track-3",
+      "channel": 1,
+      "start_ms": 1.0416666666666667,
+      "end_ms": 501.0416666666667,
+      "start_microseconds": {
+        "numerator": "3125",
+        "denominator": 3
+      },
+      "end_microseconds": {
+        "numerator": "1503125",
+        "denominator": 3
+      },
+      "key": 48,
+      "velocity": 80,
+      "release_velocity": 12,
+      "attack": {
+        "track": 2,
+        "event": 10
+      },
+      "release": {
+        "track": 2,
+        "event": 11
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t1:e12",
+      "note_id": "midi-t2-c1-e13",
+      "part_id": "midi-t2-c1",
+      "track_id": "track-2",
+      "channel": 0,
+      "start_ms": 1000.0,
+      "end_ms": 1500.0,
+      "start_microseconds": {
+        "numerator": "1000000",
+        "denominator": 1
+      },
+      "end_microseconds": {
+        "numerator": "1500000",
+        "denominator": 1
+      },
+      "key": 64,
+      "velocity": 88,
+      "release_velocity": 0,
+      "attack": {
+        "track": 1,
+        "event": 12
+      },
+      "release": {
+        "track": 1,
+        "event": 13
+      }
+    },
+    {
+      "event_id": "midi:b53e2c538b2ad8bbd2bdecfd4374b54b662fa525c95529991293c4e1ceeaae26:t2:e12",
+      "note_id": "midi-t3-c2-e13",
+      "part_id": "midi-t3-c2",
+      "track_id": "track-3",
+      "channel": 1,
+      "start_ms": 1000.0,
+      "end_ms": 1500.0,
+      "start_microseconds": {
+        "numerator": "1000000",
+        "denominator": 1
+      },
+      "end_microseconds": {
+        "numerator": "1500000",
+        "denominator": 1
+      },
+      "key": 52,
+      "velocity": 88,
+      "release_velocity": 0,
+      "attack": {
+        "track": 2,
+        "event": 12
+      },
+      "release": {
+        "track": 2,
+        "event": 13
+      }
+    }
+  ],
+  "duration_ms": 2000.0,
+  "duration_microseconds": {
+    "numerator": "2000000",
+    "denominator": 1
+  }
+}
