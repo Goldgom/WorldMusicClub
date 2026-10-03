@@ -96,7 +96,9 @@ pub struct Part {
 pub enum SoundIdentity {
     UnspecifiedMidiRoute,
 }
-pub use crate::clean_song::{BankComponent, Coordinate, KeyMode, TextRole};
+pub use crate::clean_song::{
+    BankComponent, Coordinate, InitialPitchBendSensitivity12Step, KeyMode, TextRole,
+};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Event {
@@ -169,6 +171,11 @@ pub enum Command {
         channel: u8,
         pressure: u8,
     },
+    /// Reviewed pre-key-activity RPN 0 setup, retaining each authored named step.
+    InitialPitchBendSensitivity12 {
+        channel: u8,
+        step: InitialPitchBendSensitivity12Step,
+    },
     Tempo {
         microseconds_per_quarter: u32,
     },
@@ -209,7 +216,8 @@ impl Command {
             | Self::ReverbSend { channel, .. }
             | Self::ChorusSend { channel, .. }
             | Self::KeyPressure { channel, .. }
-            | Self::ChannelPressure { channel, .. } => Some(*channel),
+            | Self::ChannelPressure { channel, .. }
+            | Self::InitialPitchBendSensitivity12 { channel, .. } => Some(*channel),
             _ => None,
         }
     }
@@ -241,10 +249,15 @@ impl Command {
             } => *numerator > 0 && denominator.is_power_of_two() && *thirty_seconds_per_quarter > 0,
             Self::KeySignature { fifths, .. } => (-7..=7).contains(fifths),
             Self::SmpteOffset { timecode } => timecode.validate_zero().is_ok(),
+            Self::Text {
+                role: TextRole::DeviceName,
+                text,
+            } => crate::midi_device_route::valid_structural_text(text),
             Self::Text { text, .. } => valid_text(text, 4096),
-            Self::InitialControllerReset { .. } | Self::SequenceNumber { .. } | Self::TrackEnd => {
-                true
-            }
+            Self::InitialControllerReset { .. }
+            | Self::InitialPitchBendSensitivity12 { .. }
+            | Self::SequenceNumber { .. }
+            | Self::TrackEnd => true,
         };
         valid
             .then_some(())
@@ -388,6 +401,7 @@ pub fn validate(score: &CompletePerformance) -> Result<(), String> {
     let mut counts = vec![0u32; p.tracks.len()];
     let mut ended = BTreeSet::new();
     let mut prior: Option<&Event> = None;
+    let mut initial_sensitivity = [crate::midi_initial_sensitivity::State::twelve(); 16];
     let mut channel_last = BTreeMap::<u8, &Event>::new();
     let mut channel_key_activity = BTreeSet::new();
     let mut pending_initial_resets = BTreeMap::<u8, &Event>::new();
@@ -428,6 +442,30 @@ pub fn validate(score: &CompletePerformance) -> Result<(), String> {
                 return Err("Missing channel part".into());
             }
             used_parts.insert((event.origin.track, channel));
+            use crate::midi_initial_sensitivity::Prefix;
+            let step = match event.command {
+                Command::InitialPitchBendSensitivity12 { step, .. } => Some(step.controller()),
+                _ => None,
+            };
+            let prefix = match event.command {
+                Command::InstrumentProgram { .. } => Prefix::Program,
+                Command::InitialControllerReset { .. } => Prefix::Reset,
+                Command::BankSelect { .. }
+                | Command::Volume { .. }
+                | Command::Pan { .. }
+                | Command::Expression { .. }
+                | Command::ReverbSend { .. }
+                | Command::ChorusSend { .. } => Prefix::Control,
+                _ => Prefix::Other,
+            };
+            initial_sensitivity[channel as usize].observe(
+                event.origin.track,
+                event.origin.event,
+                event.at,
+                step,
+                prefix,
+            )?;
+
             if let Some(reset) = pending_initial_resets.remove(&channel) {
                 if !matches!(event.command, Command::Sustain { value: 0, .. })
                     || !event.at.equivalent(Beat::ZERO)
@@ -504,6 +542,9 @@ pub fn validate(score: &CompletePerformance) -> Result<(), String> {
             _ => (),
         }
     }
+    for state in &initial_sensitivity {
+        state.finish()?;
+    }
     if !pending_initial_resets.is_empty() {
         return Err("Initial controller reset is missing its explicit initial sustain-off".into());
     }
@@ -522,6 +563,31 @@ pub fn validate(score: &CompletePerformance) -> Result<(), String> {
     runtime::validate_clock(score)?;
     Ok(())
 }
+/// Receiver routing capability for structurally valid complete events. An error
+/// preserves the typed data but prohibits the current single-output reference.
+/// Callers must not turn unresolved logical devices into a default output.
+pub fn resolve_device_route(score: &CompletePerformance) -> Result<Option<String>, String> {
+    validate(score)?;
+    let mut evidence = crate::midi_device_route::Evidence::default();
+    for event in &score.performance.events {
+        if let Some(channel) = event.command.channel() {
+            evidence.channel(event.origin, channel);
+        }
+        match &event.command {
+            Command::Text {
+                role: TextRole::DeviceName,
+                text,
+            } => evidence.device_name(event.origin, event.at, text),
+            Command::Text {
+                role: TextRole::ProgramName,
+                ..
+            } => evidence.program_name(event.origin),
+            _ => (),
+        }
+    }
+    evidence.resolve()
+}
+
 pub fn encode_json(score: &CompletePerformance) -> Result<Vec<u8>, String> {
     validate(score)?;
     let bytes = serde_json::to_vec(score).map_err(|e| e.to_string())?;

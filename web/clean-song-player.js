@@ -4,6 +4,8 @@ import {createReferenceRoom} from './clean-song-reverb.js';
 import {VsqPracticePlayer} from './vsq-practice-player.js';
 import {CleanSongError,isCleanSong,isVsqSong} from './clean-song-package.js';
 import {INITIAL_SENSITIVITY_KIND,validInitialSensitivity,applyInitialSensitivity,unbentReferenceKey} from './clean-song-initial-sensitivity.js';
+import {INITIAL_SENSITIVITY12_KIND,validInitialSensitivity12Song,applyInitialSensitivity12,centeredPitchState,unbentReferenceKey12} from './clean-song-initial-sensitivity12.js';
+import {inspectLogicalDeviceRoute,isDeviceName,isUnsupportedRouteCommand,LOGICAL_DEVICE_POLICY_SUFFIX} from './clean-song-device-routing.js';
 const metadata=new Set(['tempo','meter','key_signature','text','sequence_number','track_end','smpte_offset']);
 const supported=new Set(['instrument_program','volume','pan','expression','reverb_send','initial_controller_reset','initial_sustain_off']);
 export const CLEAN_RENDITION = 'wmh-procedural-reference-v1';
@@ -15,16 +17,22 @@ export function inspectCleanRendition(song) {
   if(song.score.performance.parts.length>128)blockers.push('part_budget_exceeded');
   const sensitivityValid=validInitialSensitivity(song);
   if(!sensitivityValid)blockers.push('initial_pitch_bend_sensitivity_invalid');
+  const sensitivity12Valid=validInitialSensitivity12Song(song);
+  if(!sensitivity12Valid)blockers.push('initial_pitch_bend_sensitivity12_invalid');
+  const routing=inspectLogicalDeviceRoute(song.score,song.runtime,{strict:true});
+  if(routing.blocker)blockers.push(routing.blocker);
   for(const event of song.runtime.events){const command=event.command;
+    if(isDeviceName(command)||isUnsupportedRouteCommand(command))continue;
     if(command.kind===INITIAL_SENSITIVITY_KIND&&sensitivityValid)continue;
+    if(command.kind===INITIAL_SENSITIVITY12_KIND&&sensitivity12Valid)continue;
     if(metadata.has(command.kind)||supported.has(command.kind))continue;
     if(['bank_select','chorus_send'].includes(command.kind)&&command.value===0)continue;
     blockers.push(command.kind);
   }
-  return{supported:!blockers.length,blockers:[...new Set(blockers)],rendition:CLEAN_RENDITION};
+  return{supported:!blockers.length,blockers:[...new Set(blockers)],rendition:CLEAN_RENDITION+(routing.logical_device_mapping?LOGICAL_DEVICE_POLICY_SUFFIX:''),logical_device_mapping:routing.logical_device_mapping,logical_device_route_reason:routing.reason};
 }
-const defaults=()=>({program:0,volume:100,expression:127,pan:64,reverb_send:0,pitch_bend:0,sensitivity_semitones:2,sensitivity_cents:0});
-function apply(state,command){if(command.kind===INITIAL_SENSITIVITY_KIND)applyInitialSensitivity(state,command.step);else if(command.kind==='instrument_program')state.program=command.program;else if(command.kind==='initial_controller_reset')state.expression=127;else if(['volume','expression','pan','reverb_send'].includes(command.kind))state[command.kind]=command.value;}
+const defaults=()=>({program:0,volume:100,expression:127,pan:64,reverb_send:0,...centeredPitchState()});
+function apply(state,command){if(command.kind===INITIAL_SENSITIVITY_KIND)applyInitialSensitivity(state,command.step);else if(command.kind===INITIAL_SENSITIVITY12_KIND)applyInitialSensitivity12(state,command.step);else if(command.kind==='instrument_program')state.program=command.program;else if(command.kind==='initial_controller_reset')state.expression=127;else if(['volume','expression','pan','reverb_send'].includes(command.kind))state[command.kind]=command.value;}
 /** Schedules against the app Transport. Never owns human-input or scoring APIs. */
 export class CleanSongPlayer {
   constructor({getPositionMs,onError=()=>{},setTimer=(...args)=>globalThis.setTimeout(...args),clearTimer=(...args)=>globalThis.clearTimeout(...args),lookAheadMs=100}={}) {
@@ -37,9 +45,10 @@ export class CleanSongPlayer {
     const merged=[...song.runtime.events.map(event=>({...event,type:'command'})),...song.runtime.notes.map(note=>({at_ms:note.start_ms,origin:note.attack,note,type:'note'}))].sort((a,b)=>a.at_ms-b.at_ms||a.origin.track-b.origin.track||a.origin.event-b.origin.event);
     const channels=new Map();for(const item of merged){const channel=item.command?.channel??item.note?.channel;const state=channels.get(channel)||defaults();channels.set(channel,state);if(item.type==='command')apply(state,item.command);else this.programs.set(item.note.event_id,state.program);}
   }
-  start({context,output,mode='listen',targetPart=null,mutedParts=null,resumePositionMs=null,instrument='piano'}={}) {
+  start({context,output,mode='listen',targetPart=null,mutedParts=null,resumePositionMs=null,instrument='piano',acceptedPolicyId}={}) {
     if(isVsqSong(this.song))return this.vsq.start({context,output,mode,targetPart,mutedParts,resumePositionMs,instrument});
     this.stop();if(!this.song||!this.profile.supported)throw new CleanSongError('clean_renderer_unsupported','The reference renderer cannot represent these retained commands.',{blockers:this.profile?.blockers});
+    if(this.profile.logical_device_mapping&&acceptedPolicyId!==this.profile.rendition)throw new CleanSongError('reference_policy_required','Select the disclosed logical device mapping to this procedural receiver.');
     if(!context||context.state!=='running'||!output)throw new CleanSongError('clean_audio_unavailable','Audio must be unlocked by a user gesture.');
     if(mode==='practice'&&!this.song.score.performance.parts.some(part=>part.id===targetPart))throw new CleanSongError('clean_target_required','Choose one human part.');
     this.resumePositionMs=resumePositionMs;this.context=context;this.output=output;this.mode=mode;this.targetPart=targetPart;this.mutedParts=new Set(mutedParts||[]);this.channels=new Map();this.running=true;
@@ -64,7 +73,8 @@ export class CleanSongPlayer {
       while(this.noteCursor<notes.length&&notes[this.noteCursor].start_ms<=limit){const note=notes[this.noteCursor++];if(note.end_ms<=position)continue;if(this.mutedParts.has(note.part_id)||(this.mode==='practice'&&note.part_id===this.targetPart))continue;
         if(!initial&&note.start_ms<position-30)throw new CleanSongError('clean_late_scheduler','A note missed its audio deadline.',{eventId:note.event_id});
         let count=0;for(const lane of this.lanes.values()){lane.receiver.prune(now);count+=lane.receiver.voices.size;}if(count>=128)throw new CleanSongError('voice_budget_exceeded','The full reference exceeds its 128 voice limit.');
-        const key=unbentReferenceKey(this.channels.get(note.channel)||defaults(),note.key);
+        const state=this.channels.get(note.channel)||defaults();
+        const key=state.sensitivity12_steps?unbentReferenceKey12(state,note.key):unbentReferenceKey(state,note.key);
         this.lanes.get(note.part_id).receiver.schedule({eventId:note.event_id,key,velocity:note.velocity,program:this.programs.get(note.event_id),percussion:false},now+Math.max(0,Math.max(note.start_ms,initial&&Number.isFinite(this.resumePositionMs)?this.resumePositionMs:note.start_ms)-position)/1000,now+(note.end_ms-position)/1000);
       }
       this.timer=this.setTimer(()=>this.pump(epoch),20);

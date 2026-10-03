@@ -535,6 +535,33 @@
           "additionalProperties": false,
           "properties": {
             "kind": {
+              "const": "initial_pitch_bend_sensitivity12"
+            },
+            "channel": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            },
+            "step": {
+              "enum": [
+                "select_most_significant_zero",
+                "select_least_significant_zero",
+                "set_semitones12",
+                "set_cents_zero"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "channel",
+            "step"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
               "const": "tempo"
             },
             "microseconds_per_quarter": {

@@ -32,7 +32,7 @@ test('complete saved events never enter the notation compiler, VSQ choice or can
 test('saved reference panel retains every track and attack, requires policy, uses shared production audio and keeps FIFO gates out of notation',async()=>{
   const f=viewFixture(),song=await completePerformanceSong(),before=song.score_json;
   try{
-    f.view.select(song);assert.equal(f.$('tracks').children.length,3);assert.equal(f.$('counts').dataset.onsetCount,'3');assert.equal(f.$('counts').dataset.eventCount,'11');
+    f.view.select(song);assert.equal(f.$('policy-routing').hidden,true);assert.equal(f.$('policy-routing').textContent,'');assert.equal(f.$('policy-label').textContent,'I select this reference sound and event playback policy');assert.equal(f.$('tracks').children.length,3);assert.equal(f.$('counts').dataset.onsetCount,'3');assert.equal(f.$('counts').dataset.eventCount,'11');
     assert.deepEqual([...f.$('tracks').children].map(row=>[row.dataset.eventCount,row.dataset.onsetCount]),[['2','0'],['6','2'],['3','1']]);
     assert.match(f.$('coverage').textContent,/Notation unavailable.*Practice targets and grades unavailable/);assert.match(f.$('policy-events').textContent,/FIFO/);assert.match(f.$('policy-gates').textContent,/reference sound gates only/);assert.match(f.$('policy-tone').textContent,/not the original instruments/);
     assert.equal(f.unlocks(),0);assert.equal(f.$('play').disabled,true);await f.play();assert.equal(f.unlocks(),0);
@@ -153,5 +153,29 @@ test('controlled COMPLETE listening discloses sustain and mix policy, preserves 
     assert.equal(song.notation,null);assert.equal(song.compilation,null);assert.equal(song.runtime.coverage.targets.represented_attacks,0);
     f.visible(false);assert.equal(sounding(f.synth.context).length,0);assert.equal(f.$('policy-accept').checked,false);
     f.i18n.setLocale('zh-CN');assert.match(f.$('policy-controls').textContent,/延音踏板/);
+  }finally{f.view.destroy();}
+});
+
+
+test('complete listening discloses exact logical destination and includes its mapping in the bilingual policy choice',async()=>{
+  const f=viewFixture(),name='Authored <device> & “键盘”  ',song=await completePerformanceSong({deviceName:name}),before=song.score_json;
+  try{
+    f.view.select(song);const routing=f.$('policy-routing');assert.equal(routing.hidden,false);assert.ok(routing.textContent.includes(name));assert.equal(routing.children.length,0);
+    assert.match(routing.textContent,/selected procedural reference receiver/);assert.match(routing.textContent,/source device and timbre are unverified/);assert.match(f.$('policy-label').textContent,/logical device mapping policy/);
+    assert.equal(f.$('policy').dataset.policyId,song.reference.policy.id);assert.equal(f.$('policy').dataset.policyId,'wmh-original-reference-fifo-v1:single-named-device-v1');assert.equal(song.reference.policy.logical_device_mapping.policy,'single_named_device_to_procedural_receiver');
+    assert.equal(f.$('play').disabled,true);await f.play();assert.equal(f.unlocks(),0);
+    f.i18n.setLocale('zh-CN');assert.equal(f.$('policy-routing'),routing);assert.ok(routing.textContent.includes(name));assert.match(routing.textContent,/逻辑目标.*所选程序合成参考接收器/);assert.match(routing.textContent,/未验证源设备与原始音色/);assert.match(f.$('policy-label').textContent,/逻辑设备映射策略/);
+    f.accept();await f.play();assert.equal(f.view.snapshot().state,'playing');assert.ok(sounding(f.synth.context).length);assert.equal(song.score_json,before);assert.equal(song.notation,null);assert.equal(song.compilation,null);
+    f.view.select(await completePerformanceSong());assert.equal(routing.hidden,true);assert.equal(routing.textContent,'');assert.doesNotMatch(f.$('policy-label').textContent,/逻辑设备/);assert.equal(f.$('policy-accept').checked,false);assert.equal(f.$('policy').dataset.policyId,'wmh-original-reference-fifo-v1');
+  }finally{f.view.destroy();}
+});
+
+test('unresolved complete-event logical routes retain data and block play with a specific bilingual reason',async()=>{
+  const f=viewFixture(),song=await completePerformanceSong({deviceName:'Authored Shared Device',shared:true}),before=song.score_json;
+  try{
+    f.view.select(song);assert.equal(f.$('policy-routing').hidden,true);assert.equal(f.$('policy-accept').disabled,true);assert.equal(f.$('play').disabled,true);
+    assert.match(f.$('problems').textContent,/unresolved_logical_device_route: Logical device routing is unresolved/);assert.match(f.$('problems').textContent,/Multiple tracks share a channel/);assert.match(f.$('problems').textContent,/Playback is blocked; all source events and device names remain saved/);
+    assert.equal(f.$('counts').dataset.eventCount,'13');assert.equal(f.$('tracks').children.length,3);f.accept();await f.play();assert.equal(f.unlocks(),0);assert.equal(f.view.snapshot().state,'stopped');
+    f.i18n.setLocale('zh-CN');assert.match(f.$('problems').textContent,/逻辑设备路由无法解析/);assert.match(f.$('problems').textContent,/多条音轨共用一个通道/);assert.match(f.$('problems').textContent,/已阻止播放；所有源事件与设备名称仍完整保存/);assert.equal(f.$('play').disabled,true);assert.equal(song.score_json,before);
   }finally{f.view.destroy();}
 });

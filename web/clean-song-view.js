@@ -1,12 +1,12 @@
 import {isVsqSong,isPerformanceSong} from './clean-song-package.js';
 import {inspectCleanRendition} from './clean-song-player.js';
-import {cleanText,cleanFamily,cleanMediaError,cleanCommand} from './clean-song-text.js';
+import {cleanText,cleanFamily,cleanMediaError,cleanCommand,cleanLogicalDeviceMapping} from './clean-song-text.js';
 import {midiName} from './music.js';
 export function setupCleanSongView({document,i18n,onTarget,onMute,onRange,onOpen,onVsqChoice}) {
   const make=(tag,id,parent)=>{const node=document.createElement(tag);if(id)node.id=id;if(parent)parent.append(node);return node;};
   const preview=make('section','clean-song-preview',document.querySelector('.preview-copy'));preview.hidden=true;
   const previewMediaStatus=make('p','clean-song-preview-media-status',preview);
-  const previewStatus=make('p','clean-song-preview-status',preview),rendition=make('p','clean-song-rendition',preview),tracks=make('ul','clean-song-tracks',preview);
+  const previewStatus=make('p','clean-song-preview-status',preview),rendition=make('p','clean-song-rendition',preview),routing=make('p','clean-song-routing',preview),tracks=make('ul','clean-song-tracks',preview);
   const choice=make('section','vsq-practice-choice',preview),choiceDescription=make('p','vsq-practice-description',choice),choiceButton=make('button','vsq-choose-base-notes',choice),vocalButton=make('button','vsq-full-vocal',choice),choiceStatus=make('p','vsq-choice-status',choice),limits=make('ul','vsq-interpretation-limits',choice);
   choiceButton.type=vocalButton.type='button';choiceButton.className='button secondary';vocalButton.disabled=true;choiceButton.addEventListener('click',()=>onVsqChoice?.());choiceStatus.setAttribute('role','status');
   const art=document.querySelector('.preview-art')||document.getElementById('song-lobby');const cover=make('img','clean-song-cover',art);cover.alt='';cover.hidden=true;
@@ -17,7 +17,7 @@ export function setupCleanSongView({document,i18n,onTarget,onMute,onRange,onOpen
   target.addEventListener('change',()=>onTarget(target.value));
   const visuals=make('div',null);visuals.className='clean-song-visuals';const background=make('img','clean-song-background',visuals),video=make('video','clean-song-pv',visuals);background.alt='';background.hidden=true;video.hidden=true;video.muted=true;video.defaultMuted=true;video.playsInline=true;video.autoplay=false;(document.querySelector('#piano-stage .piano-lanes-shared')||document.getElementById('piano-stage')).prepend(visuals);
   let active=null,candidate=null,context=null,media={media:[]},previewMedia={media:[]},choiceState={},partSignature=null;const partControls=new Map();const text=(en,zh)=>cleanText(i18n.locale,en,zh);
-  function renderPreview(song,state={}){candidate=song;choiceState=state;preview.hidden=!song;preview.dataset.packageId=song?.identity||'';choice.hidden=!isVsqSong(song);if(!song)return;
+  function renderPreview(song,state={}){candidate=song;choiceState=state;preview.hidden=!song;preview.dataset.packageId=song?.identity||'';choice.hidden=!isVsqSong(song);routing.hidden=true;routing.textContent='';if(!song)return;
     const performance=isPerformanceSong(song);for(const node of [previewStatus,rendition,tracks])node.hidden=performance;
     if(performance)return;
     if(isVsqSong(song)){
@@ -32,7 +32,9 @@ export function setupCleanSongView({document,i18n,onTarget,onMute,onRange,onOpen
       return;
     }
     const perf=song.score.performance,profile=inspectCleanRendition(song);previewStatus.textContent=text(`${perf.tracks.length} tracks · ${perf.parts.length} parts · ${song.runtime.notes.length} notes · complete semantic performance`,`${perf.tracks.length} 条音轨 · ${perf.parts.length} 个声部 · ${song.runtime.notes.length} 个音符 · 完整语义演奏`);
-    rendition.textContent=profile.supported?text('Procedural reference rendition: 16 program families, volume, expression, pan and bounded room reverb. This is not the original instrument or effect sound. Release velocity is retained without changing the reference envelope.','程序合成参考演绎：16 类程序音色、音量、表情、声像和有界房间混响。音色与效果不等同于原始声音；释放力度保留，但不改变参考包络。'):text(`Reference rendition unavailable: ${profile.blockers.map(kind=>cleanCommand(i18n.locale,kind)).join(', ')}. All retained data remains in the package.`,`参考演绎不可用：${profile.blockers.map(kind=>cleanCommand(i18n.locale,kind)).join('、')}。所有数据仍完整保存在曲包中。`);
+    rendition.textContent=profile.supported?text('Procedural reference rendition: 16 program families, volume, expression, pan and bounded room reverb. This is not the original instrument or effect sound. Release velocity is retained without changing the reference envelope.','程序合成参考演绎：16 类程序音色、音量、表情、声像和有界房间混响。音色与效果不等同于原始声音；释放力度保留，但不改变参考包络。'):text(`Reference rendition unavailable: ${profile.blockers.map(kind=>cleanCommand(i18n.locale,kind,profile.logical_device_route_reason)).join(', ')}. All retained data remains in the package.`,`参考演绎不可用：${profile.blockers.map(kind=>cleanCommand(i18n.locale,kind,profile.logical_device_route_reason)).join('、')}。所有数据仍完整保存在曲包中。`);
+    routing.hidden=!profile.logical_device_mapping;
+    if(profile.logical_device_mapping)routing.textContent=cleanLogicalDeviceMapping(i18n.locale,profile.logical_device_mapping)+text(' Listen or Practice selects this mapping.',' 选择聆听或练习即选用此映射。');
     if(song.media.some(item=>['full_mix','stem'].includes(item.role)))rendition.textContent+=text(' Recorded mixes and stems are retained for export; this playback uses only the declared reference synthesizer.',' 录音混音与分轨音频完整保留供导出；当前播放仅使用上述参考合成器。');
     tracks.replaceChildren();for(const track of perf.tracks){const li=make('li',null,tracks),trackParts=perf.parts.filter(part=>part.track_id===track.id);const programs=[...new Set(song.runtime.events.filter(event=>event.command.kind==='instrument_program'&&trackParts.some(part=>part.channel===event.command.channel)).map(event=>event.command.program))];li.textContent=text(`${track.name||track.id} · ${track.source_event_count} source events · ${trackParts.map(part=>`channel ${part.channel+1}`).join(', ')||'conductor'} · notation: inferred`,`${track.name||track.id} · ${track.source_event_count} 个源事件 · ${trackParts.map(part=>`通道 ${part.channel+1}`).join('、')||'指挥轨'} · 记谱：推导`) + (programs.length?' · '+programs.map(program=>`${program} ${cleanFamily(i18n.locale,program)}`).join(' / '):'');}
   }

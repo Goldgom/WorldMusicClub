@@ -199,13 +199,15 @@ command。验证器检查每条轨的计数、顺序、最终 `track_end`、最�
 - `instrument_program`、`bank_select`（`most_significant` / `least_significant`）、
   `volume`、`pan`、`expression`、`reverb_send`、`chorus_send`
 - `key_pressure`、`channel_pressure`、`initial_controller_reset`、`initial_sustain_off`
-- `initial_pitch_bend_sensitivity`（下面的受限六步初始化）、`smpte_offset`（仅第 3.5 节的零 origin）
+- `initial_pitch_bend_sensitivity`（下面的受限六步24初始化）、
+  `initial_pitch_bend_sensitivity12`（独立的起音前12初始化）、`smpte_offset`（仅第 3.5 节的零 origin）
 - `tempo`、`meter`（含节拍器分组字段）、`key_signature`、`sequence_number`、`track_end`
 - `text`，其 role 只能是 `text`、`copyright`、`track_name`、`instrument_name`、
   `lyric`、`marker`、`cue`、`program_name`、`device_name`
 
 不存在 `unknown`、原始 MIDI 字节、任意 controller 对象或源文件 byte offset 字段。
 普通 UTF-8 文本提示有长度和内容限制；VSQ `DM:` 工程块不允许伪装成 text。
+其中 FF09 `device_name` 是逻辑输出路由，不能当作无影响说明文字忽略；见第 3.6 节。
 
 `tempo.microseconds_per_quarter` 是权威时钟，当前为 100,000–6,000,000 的整数。
 无零时刻 tempo 时采用 MIDI 默认 500,000 微秒/四分音符，无零时刻 meter 时采用 4/4；
@@ -220,7 +222,7 @@ command。验证器检查每条轨的计数、顺序、最终 `track_end`、最�
 `repeats` 为空，因为这里保存已展开的实际序列。遇到不支持内容必须失败并说明原因，
 不能丢事件、换成钢琴或输出片段后标记“完整”。
 
-初始 RPN 只允许 `initial_pitch_bend_sensitivity { channel, step }` 的六个有序步骤：
+原有24半音初始 RPN 仍只允许 `initial_pitch_bend_sensitivity { channel, step }` 的六个有序步骤：
 `select_most_significant_zero`、`select_least_significant_zero`、`set_semitones24`、
 `set_cents_zero`、`deselect_most_significant`、`deselect_least_significant`。
 它们分别表示 CC101=0、CC100=0、CC6=24、CC38=0、CC101=127、CC100=127；每步
@@ -231,6 +233,21 @@ command。验证器检查每条轨的计数、顺序、最终 `track_end`、最�
 可以先出现但不能打断六步。不能与 reset/sustain-off 在同通道混用，也不许可活动
 pitch bend、其他参数、调音或改值。参考播放器显式执行这组状态，在居中 bend 下
 保持原 key；不通过忽略命令来通过能力检查。见[初始灵敏度](INITIAL_MIDI_SENSITIVITY.md)。
+
+另有独立的 `initial_pitch_bend_sensitivity12 { channel, step }`，四个封闭步骤为
+`select_least_significant_zero`（L）、`select_most_significant_zero`（M）、
+`set_semitones12`（S）、`set_cents_zero`（C）。只允许 L,M,S,C；L,M,L,M,S,S,C,C；
+M,L,M,L,S,S,C,C 三种整组序列，分别保留每次 CC100=0、CC101=0、CC6=12、CC38=0。
+重复写入仍是独立源事件；没有 deselect，RPN0 保持选中。
+
+12初始化不要求 tick0，但时刻必须非负、单调，整组必须在首个 attack/release/key-pressure
+之前完成；同刻以原始源事件顺序为准。每通道一组，整个通道由唯一源轨拥有，源事件坐标
+连续。组前可有 program/bank/volume/pan/expression/reverb/chorus；任何事件均不得打断组。
+不接受其他 selector、任意值、缺步、未审查的重复或顺序、后续 data entry、第二组、共享轨
+路由或任何 pitch bend（包括居中值）。两种 clean JSON 重载都会重新验证语义、时间和覆盖。
+参考 receiver 自己从居中 bend 开始，逐步应用12/零 cents并保持原 key；非零 bank 仍然
+阻止参考播放。严格音符配对和乐器适配仍需独立通过，typed 成功本身不产生练习目标。
+同一通道不能混用 reset/sustain-off 与12初始化；原有24半音六步的边界不变。
 
 ### 3.3 typed MIDI：完整独立事件，记谱和练习目标不可用
 
@@ -263,10 +280,11 @@ pitch bend、其他参数、调音或改值。参考播放器显式执行这组�
 coverage。允许局部目标将需要另一套经审查的证据绑定；不能以裁剪后的子曲冒充完整源曲。
 
 command 还支持 program、bank、volume、pan、expression、`sustain`、受限
-`initial_controller_reset`、reverb/chorus send、key/channel pressure，以及 tempo、
+`initial_controller_reset`、`initial_pitch_bend_sensitivity12`（第 3.2 节三种起音前序列）、
+reverb/chorus send、key/channel pressure，以及 tempo、
 meter、key signature、sequence number、text、track end 和第 3.5 节的 `smpte_offset`。
 `sustain { channel, value }` 保留全部 0–127 值；它与严格 profile 的
-`initial_sustain_off` 不是同一命令。严格 profile 的六步 RPN **尚不属于 typed
+`initial_sustain_off` 不是同一命令。严格 profile 的原有24半音六步 RPN **尚不属于 typed
 converter 的词汇**，不能把“更完整”理解为它包含所有严格 profile 的初始化能力。
 未知 CC、pitch bend、未解析路由、SysEx/系统设备消息和不支持的文本仍阻止整曲转换。
 同通道同刻跨轨事件的歧义仍不接受。
@@ -348,6 +366,31 @@ tick-zero 消息不据此建立跨轨先后关系。重复相同 origin、冲突
 division、非零 timecode 算术或外部设备同步。`drop_frame30` 只保留原始 rate 身份，
 不能当成非 drop 的 30 Hz 时钟。它也不是媒体的 `offset_ms`。
 见[零 SMPTE origin](ZERO_SMPTE_ORIGIN.md)。
+
+### 3.6 FF09 DeviceName：显式单逻辑设备映射
+
+`text { role: "device_name", text: <完整原名> }` 保持原有格式，但其语义是逻辑
+输出设备。[MIDI RP-019](https://amei.or.jp/midistandardcommittee/Recommended_Practice/e/rp19a.pdf)
+规定同一轨只能有一个 DeviceName，且须先于可发送 MIDI 事件以及 ProgramName、bank、
+program；多轨可指向同一名字，另一台机器的软件／用户选择实际输出。
+
+当前只支持把一个完整、明确的命名设备显式映射到用户选择的 WMH 程序参考合成器：
+每条产生通道命令的源轨都须在 tick/beat0、其首个通道命令和 ProgramName 之前拥有
+唯一且完全相同的名字。WMH 名称规则为有效 UTF-8、最多4096字节、至少一个非空白字符、
+不含 Unicode 控制字符；有意义的首尾空格和大小写原样保留。这是 WMH 边界，并非 RP-019
+的编码要求。既有不透明数据限制仍适用：去掉行首 Unicode 空白后以 `DM:` 开头的行、
+超过256字节的 ASCII 字母数字／`+`／`/`／`=` 连续词均拒绝；其他文字校验不变。同刻依据源事件坐标，不能事后重排。无通道命令的无名指挥轨
+可保留；命名静默轨也须满足同名、单次、零时刻与顺序要求。命名文件中每通道只属一条源轨。
+
+重复或改变名字、多设备名、空白名、混用命名／默认路由、晚声明和共享通道均未解析；
+port/channel-prefix/SysEx 仍不支持。源事件、原名、坐标与精确时刻不删除、不改名、不合并。
+严格 importer 必须先证明设备范围再配对音符；严格 clean JSON 重载再次验证。
+typed 可以保留结构上支持但路由未解析的独立事件，仍须通过既有结构歧义检查；不因此
+获得记谱、练习或参考播放能力。两种参考 receiver 都显式检查路由，未解析时阻止播放。
+
+中英文声音选择显示确切逻辑设备名及其到 WMH 参考输出的映射；名字只标识路由，不能证明
+GM、原声库、bank121 或音色。无 DeviceName 的来源保持既有行为。详见
+[单逻辑设备路由](MIDI_DEVICE_ROUTING.md)。
 
 ## 4. 可选媒体、默认表现与时间偏移
 

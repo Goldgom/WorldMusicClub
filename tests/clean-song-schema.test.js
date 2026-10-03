@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import Ajv2020 from 'ajv/dist/2020.js';
+import {initialSensitivity12Song} from './clean-song-fixtures.js';
 const read = path => readFileSync(new URL(path, import.meta.url));
 const json = path => JSON.parse(read(path));
 const ajv = new Ajv2020({ strict: true, allErrors: true });
@@ -79,4 +80,14 @@ test('schema retains a closed named zero SMPTE origin and distinct rate identiti
  const t={frame_rate:'fps30',hours:0,minutes:0,seconds:0,frames:0,fractional_frames:0};
  for(const rate of ['fps24','fps25','drop_frame30','fps30']){const f=structuredClone(fixture);f.performance.events[0].command={kind:'smpte_offset',timecode:{...t,frame_rate:rate}};assert.equal(validate(f),true,ajv.errorsText(validate.errors));}
  for(const change of [t=>t.hours=1,t=>t.fractional_frames=1,t=>t.frame_rate='unknown',t=>t.raw=[96,0,0,0,0],t=>delete t.minutes]){const f=structuredClone(fixture);f.performance.events[0].command={kind:'smpte_offset',timecode:{...t}};change(f.performance.events[0].command.timecode);assert.equal(validate(f),false);}
+});
+
+test('the separate twelve-semitone command has a closed four-step enum and no raw controller payload',()=>{
+ const score=initialSensitivity12Song().score;
+ assert.equal(validate(score),true,ajv.errorsText(validate.errors));
+ assert.equal(score.performance.events.filter(e=>e.command.kind==='initial_pitch_bend_sensitivity12').length,20);
+ for(const change of [c=>c.step='set_semitones24',c=>c.step='deselect_most_significant',c=>c.step='set_semitones13',
+  c=>c.value=12,c=>c.controller=6,c=>c.parameter=0,c=>delete c.step,c=>c.channel=16]){
+  const bad=structuredClone(score);change(bad.performance.events.find(e=>e.command.kind==='initial_pitch_bend_sensitivity12').command);assert.equal(validate(bad),false);
+ }
 });

@@ -26,6 +26,7 @@ function fractionalDescriptor(){
 }
 
 test('ordinary library consumes exact runtime, all-part notation and program-aware Listen without recompiling timing',async()=>{const {app,descriptor}=await setup();try{
+ assert.equal(app.$('clean-song-routing').hidden,true);assert.equal(app.$('clean-song-routing').textContent,'');
  assert.equal(app.$('preview-part').children.length,2);assert.equal(app.$('preview-part').value,descriptor.runtime.compilation.score.parts[0].id);assert.match(app.$('clean-song-preview-status').textContent,/3 tracks.*2 parts.*5 notes/);assert.equal(app.document.querySelector('.lobby-audition').hidden,true);
  const compiledBefore=app.requests.filter(request=>request.path==='/api/compile').length;await activate(app,'listen');assert.equal(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(app.$('notation-part').value,'');assert.equal(app.$('engraving-part').value,'');assert.equal(app.requests.filter(request=>request.path==='/api/compile').length,compiledBefore);assert.equal(runningOscillators(app).length,4);assert.equal(app.plays.filter(args=>String(args[0]).startsWith('score:')).length,0);assert.equal(app.$('tempo').disabled,true);assert.equal(app.$('loop-enabled').disabled,true);assert.equal(app.$('export-button').disabled,true);
  await app.click('play-button');assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');assert.equal(runningOscillators(app).length,0);assert.ok(app.audioNodes.filter(node=>node.kind==='convolver').every(node=>node.buffer===null));await app.click('play-button');assert.equal(runningOscillators(app).length,4);await app.click('reset-button');assert.equal(app.$('clean-song-stage').dataset.rendererState,'ready');assert.equal(runningOscillators(app).length,0);assert.equal(app.$('progress').value,0);
@@ -165,5 +166,35 @@ test('both app fingering contexts route the active complete song through its nat
    assert.equal(request.body.settings.part_id,score.parts[0].id);assert.equal('score' in request.body.settings,false);
   }
   assert.equal(app.requests.filter(request=>['/api/fingering/piano','/api/fingering/guitar'].includes(request.path)&&request.body.score?.id===score.id).length,0);
+ }finally{await app.close();}
+});
+
+function logicalDeviceDescriptor(name,otherName=name){
+ return cleanDescriptor(({score,runtime})=>{
+  for(const events of [score.performance.events,runtime.events])for(const event of events){
+   if(event.origin.track>0&&event.origin.event===0)event.command={kind:'text',role:'device_name',text:event.origin.track===1?name:otherName};
+  }
+ });
+}
+
+test('clean-song preview discloses the exact logical device mapping in both languages before explicit listening',async()=>{
+ const name='Authored <device> & “键盘”  ',descriptor=logicalDeviceDescriptor(name),before=JSON.stringify(descriptor),{app}=await setup({descriptor});
+ try{
+  const routing=app.$('clean-song-routing');assert.equal(routing.hidden,false);assert.ok(routing.textContent.includes(name));assert.equal(routing.children.length,0);
+  assert.match(routing.textContent,/selected procedural reference receiver/);assert.match(routing.textContent,/source device and timbre are unverified/);assert.match(routing.textContent,/Listen or Practice selects this mapping/);
+  getAppI18n(app.document).setLocale('zh-CN');assert.equal(app.$('clean-song-routing'),routing);assert.ok(routing.textContent.includes(name));assert.match(routing.textContent,/逻辑目标.*所选程序合成参考接收器/);assert.match(routing.textContent,/未验证源设备与原始音色/);assert.match(routing.textContent,/选择聆听或练习即选用此映射/);
+  await activate(app,'listen');assert.equal(app.$('clean-song-stage').dataset.rendererState,'playing');assert.ok(runningOscillators(app).length>0);
+  await app.click('back-to-library');app.document.querySelector('#catalog [data-score-id]').click();await app.until(()=>app.$('clean-song-preview').hidden);assert.equal(routing.hidden,true);assert.equal(routing.textContent,'');
+  assert.equal(JSON.stringify(descriptor),before);
+ }finally{await app.close();}
+});
+
+test('unresolved clean-song logical routes disclose retained data and block reference sound in both languages',async()=>{
+ const descriptor=logicalDeviceDescriptor('Authored Device A','Authored Device B'),before=JSON.stringify(descriptor),{app}=await setup({descriptor});
+ try{
+  assert.equal(app.$('clean-song-routing').hidden,true);assert.match(app.$('clean-song-rendition').textContent,/unresolved logical device route; playback is blocked/);assert.match(app.$('clean-song-rendition').textContent,/Tracks name different logical destinations/);assert.match(app.$('clean-song-rendition').textContent,/All retained data remains in the package/);
+  getAppI18n(app.document).setLocale('zh-CN');assert.match(app.$('clean-song-rendition').textContent,/逻辑设备路由无法解析；已阻止播放/);assert.match(app.$('clean-song-rendition').textContent,/音轨声明了不同的逻辑目标/);assert.match(app.$('clean-song-rendition').textContent,/所有数据仍完整保存在曲包中/);
+  await activate(app,'listen');assert.equal(app.$('clean-song-stage').dataset.rendererState,'unsupported');assert.equal(runningOscillators(app).length,0);
+  await app.click('play-button');assert.equal(runningOscillators(app).length,0);assert.equal(JSON.stringify(descriptor),before);
  }finally{await app.close();}
 });

@@ -4,4 +4,18 @@ export function cleanFamily(locale,program){const en=['struck keys','bright mall
 export function cleanErrorText(locale,error){return cleanText(locale,`Complete-song playback stopped (${error?.code||'clean_error'}). Retry after checking the song and audio settings.`, `完整曲目播放已停止（${error?.code||'clean_error'}）。请检查曲包和声音设置后重试。`);}
 export function cleanMediaError(locale,role){const labels={cover:['Cover','封面'],background:['Background','背景'],pv:['Video','视频']};return cleanText(locale,`${labels[role]?.[0]||'Media'} could not be displayed. Music remains available; reimport a supported, readable asset or retry.`,`${labels[role]?.[1]||'媒体'}无法显示。乐谱与音乐仍可使用；请重新导入可读取的受支持媒体，或重试。`);}
 
-export function cleanCommand(locale,kind){const names={bank_select:['bank selection','音色库选择'],chorus_send:['chorus send','合唱发送'],key_pressure:['key pressure','单键压力'],channel_pressure:['channel pressure','通道压力'],part_budget_exceeded:['part capacity exceeded','声部数量超限']};return names[kind]?.[locale==='en'?0:1]||kind;}
+export function cleanLogicalDeviceMapping(locale,mapping){return mapping?cleanText(locale,`Logical destination “${mapping.device_name}” is mapped to the selected procedural reference receiver. The source device and timbre are unverified.`,`逻辑目标“${mapping.device_name}”映射到所选程序合成参考接收器。未验证源设备与原始音色。`):'';}
+const logicalDeviceRouteReasons={
+  unsupported_route_command:['Another routing mechanism is present','存在其他路由机制'],
+  source_runtime_binding:['Source events and playback data do not establish the same route','源事件与播放数据无法确定同一路由'],
+  empty_or_invalid_name:['The device name is empty or invalid','设备名称为空或无效'],
+  duplicate_name:['A track repeats its device name','同一音轨重复声明设备名称'],
+  late_name:['The device name is late or follows channel/program data','设备名称不在起点，或位于通道／程序数据之后'],
+  multiple_names:['Tracks name different logical destinations','音轨声明了不同的逻辑目标'],
+  shared_channel:['Multiple tracks share a channel','多条音轨共用一个通道'],
+  mixed_named_default_routes:['Named and default destinations are mixed','混用了具名目标与默认目标'],
+};
+const logicalDeviceRouteReason=(locale,reason)=>logicalDeviceRouteReasons[reason]?.[locale==='en'?0:1]||'';
+export function cleanLogicalDeviceRouteError(locale,reason){const detail=logicalDeviceRouteReason(locale,reason);return cleanText(locale,`Logical device routing is unresolved.${detail?' '+detail+'.':''} Playback is blocked; all source events and device names remain saved.`,`逻辑设备路由无法解析。${detail?detail+'。':''}已阻止播放；所有源事件与设备名称仍完整保存。`);}
+
+export function cleanCommand(locale,kind,reason){const names={unresolved_logical_device_route:['unresolved logical device route; playback is blocked','逻辑设备路由无法解析；已阻止播放'],bank_select:['bank selection','音色库选择'],chorus_send:['chorus send','合唱发送'],key_pressure:['key pressure','单键压力'],channel_pressure:['channel pressure','通道压力'],part_budget_exceeded:['part capacity exceeded','声部数量超限']};const label=names[kind]?.[locale==='en'?0:1]||kind,detail=kind==='unresolved_logical_device_route'?logicalDeviceRouteReason(locale,reason):'';return label+(detail?cleanText(locale,` (${detail})`,`（${detail}）`):'');}

@@ -1,8 +1,10 @@
 # Initial MIDI pitch-bend sensitivity
 
-The existing `wmh-semantic-midi1-v1` complete-score profile admits one narrowly
-reviewed initialization: RPN 0, pitch-bend sensitivity, 24 semitones and zero cents,
-followed by RPN deselection. No active bend or tuning support is implied.
+The existing `wmh-semantic-midi1-v1` complete-score profile retains its narrowly
+reviewed six-step initialization: RPN 0, pitch-bend sensitivity, 24 semitones and zero cents,
+followed by RPN deselection. A separate pre-key-activity twelve-semitone grammar
+is now admitted by both strict and typed performance profiles, as specified below.
+No active bend or tuning support is implied.
 
 ## Musical meaning and source evidence
 
@@ -66,3 +68,54 @@ cover malformed source/JSON groups, the closed schema, actual production schedul
 with fake audio, resume, practice muting and existing strict/VSQ regressions.
 Fake-audio scheduling is not physical audibility, real-browser or native acceptance.
 Private input proofs and generated private song folders remain outside the repository.
+
+## Separate twelve-semitone initialization
+
+Both `wmh-semantic-midi1-v1` and `wmh-performance-midi1-v1` support the separate
+`initial_pitch_bend_sensitivity12 { channel, step }` command. Its closed steps are
+`select_most_significant_zero` (CC101=0), `select_least_significant_zero` (CC100=0),
+`set_semitones12` (CC6=12), and `set_cents_zero` (CC38=0). Exactly these three
+source-contiguous sequences are reviewed:
+
+- L, M, S, C
+- L, M, L, M, S, S, C, C
+- M, L, M, L, S, S, C, C
+
+Here L/M are the least/most-significant zero selector steps, S sets12 semitones,
+and C sets zero cents. Every duplicate is a separate authored event with its
+original track/event coordinate, source event ID where the profile provides one,
+and exact rational time. There is no deselection in these sequences: RPN0 stays
+selected. No free numeric sensitivity or generic controller escape exists.
+
+A channel has at most one complete reviewed group, on the sole source track that
+owns all of its channel activity. Timing is nonnegative and monotone, and the
+group must finish before the first key attack, release, or key pressure. Equal
+times are allowed only in the original source event order. The setup need not
+occur at tick zero; no source-specific tick values are hard-coded. Program,
+bank, volume, pan, expression and reverb/chorus setup may precede the group.
+Metadata and other-channel commands may occur outside it, but no event may
+interrupt its consecutive source coordinates. Incomplete groups, changed values,
+unsupported duplicates/order, later data entry, repeated groups, split owners,
+interleaved commands and all pitch-bend messages (including centered ones) fail.
+Reset/sustain initialization cannot be mixed with this group on the same channel;
+reset-after-key-activity remains rejected by its existing contract.
+
+The source importer and both authoritative clean-JSON validators apply the same
+closed state machine. The strict six-step24 contract above is unchanged, and
+that old command still is not part of the typed performance profile.
+
+Both reference receivers initialize their own bend to center, apply every named
+step at its exact runtime time, retain the selected RPN0 state and12-semitone,
+zero-cent sensitivity, and assert the unchanged key at every attack. Pause/resume
+reconstructs the same state. A silent setup track is retained. Nonzero banks
+remain blocked by the procedural receiver; sensitivity support does not supply
+a missing instrument map or reproduce an external device's prior state/timbre.
+Typed success does not create notation or graded practice: strict note pairing,
+full source coverage and normal instrument adaptation must independently pass.
+
+Original synthetic tests use all three shapes, distinct routes and silent tracks,
+unequal PPQs, arbitrary nonzero setup times, same-time source order, exact runtime
+clocks, source/JSON mutations, scheduling, pause/resume and cleanup. They retain
+the existing24 regressions. No private source bytes, titles or music enter the
+repository or CI. Local tests are not browser, audible-device or native package
+acceptance; archive coverage gains require a separate independent source audit.

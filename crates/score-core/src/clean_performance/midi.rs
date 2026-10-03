@@ -83,6 +83,9 @@ pub fn convert_midi(bytes: &[u8], id: &str, title: &str) -> Result<CompletePerfo
                         121 if *value == 0 => Command::InitialControllerReset { channel: *channel },
                         91 => Command::ReverbSend { channel: *channel, value: *value },
                         93 => Command::ChorusSend { channel: *channel, value: *value },
+                        6 | 38 | 100 | 101 => Command::InitialPitchBendSensitivity12 {
+                            channel: *channel, step: InitialPitchBendSensitivity12Step::from_controller(*controller, *value)?,
+                        },
                         _ => return Err(format!("Controller {controller} at t{}:e{} has no reviewed semantic conversion", origin.track, origin.event)),
                     },
                     ChannelMessage::PitchBend { .. } => return Err("Pitch bend requires a reviewed tuning profile".into()),

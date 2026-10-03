@@ -840,3 +840,666 @@ fn track_and_clock_bounds_fail_closed_without_rounding_or_truncating() {
     mutation.performance.end = end;
     assert!(validate(&mutation).unwrap_err().contains("24-hour"));
 }
+
+fn sensitivity12_sequences() -> Vec<Vec<(u8, u8)>> {
+    vec![
+        vec![(100, 0), (101, 0), (6, 12), (38, 0)],
+        vec![
+            (100, 0),
+            (101, 0),
+            (100, 0),
+            (101, 0),
+            (6, 12),
+            (6, 12),
+            (38, 0),
+            (38, 0),
+        ],
+        vec![
+            (101, 0),
+            (100, 0),
+            (101, 0),
+            (100, 0),
+            (6, 12),
+            (6, 12),
+            (38, 0),
+            (38, 0),
+        ],
+    ]
+}
+fn sensitivity12_steps(sequence: &[(u8, u8)], channel: u8) -> Vec<(u32, Vec<u8>)> {
+    sequence
+        .iter()
+        .enumerate()
+        .map(|(index, &(controller, value))| {
+            // Unequal arbitrary intervals exercise exact time, independent of a corpus.
+            (
+                if index == 0 { 17 } else { (index % 3) as u32 },
+                vec![0xb0 | channel, controller, value],
+            )
+        })
+        .collect()
+}
+fn sensitivity12_source(mut events: Vec<(u32, Vec<u8>)>, ppq: u16) -> Vec<u8> {
+    events.extend([
+        (23, vec![0x90, 60, 79]),
+        (29, vec![0x80, 60, 12]),
+        (11, end()),
+    ]);
+    midi(vec![events], ppq)
+}
+fn assert_sensitivity12_held(events: Vec<(u32, Vec<u8>)>) {
+    let bytes = sensitivity12_source(events, 7);
+    assert!(convert_midi(&bytes, "held", "Original held initialization").is_err());
+    assert!(crate::import_midi(&bytes).is_err());
+    assert!(crate::clean_song::convert_midi(&bytes).is_err());
+}
+#[test]
+fn sensitivity12_all_shapes_preserve_source_steps_clocks_and_strict_notes() {
+    for sequence in sensitivity12_sequences() {
+        for ppq in [3, 7, 480] {
+            let mut events = vec![
+                (0, vec![0xc0, 24]),
+                (1, vec![0xb0, 7, 91]),
+                (0, vec![0xb0, 10, 37]),
+            ];
+            events.extend(sensitivity12_steps(&sequence, 0));
+            let input = sensitivity12_source(events, ppq);
+            let score = converted(&input);
+            let runtime = assert_source_runtime(&input, &score);
+            let setup: Vec<_> = runtime
+                .events
+                .iter()
+                .filter_map(|event| match event.command {
+                    Command::InitialPitchBendSensitivity12 { channel: 0, step } => {
+                        Some(step.controller())
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(setup, sequence);
+            let strict = crate::clean_song::convert_midi(&input).unwrap();
+            let strict_bytes = crate::clean_song::encode_json(&strict).unwrap();
+            let strict = crate::clean_song::decode_json(&strict_bytes).unwrap();
+            let strict_runtime = crate::clean_song::compile_complete(&strict).unwrap();
+            assert_eq!(
+                strict.coverage.source_events,
+                score.coverage.performance.source_events
+            );
+            assert_eq!(
+                strict.coverage.represented_events,
+                score.coverage.performance.represented_events
+            );
+            assert_eq!(strict_runtime.notes.len(), 1);
+            let note = &strict_runtime.notes[0];
+            assert_eq!(
+                (note.key, note.velocity, note.release_velocity),
+                (60, 79, 12)
+            );
+            for event in &runtime.events {
+                if let Command::InitialPitchBendSensitivity12 { channel, step } = event.command {
+                    let actual = strict_runtime
+                        .events
+                        .iter()
+                        .find(|e| e.origin == event.origin)
+                        .unwrap();
+                    assert!(
+                        matches!(actual.command, crate::clean_song::Command::InitialPitchBendSensitivity12 { channel: c, step: s } if c == channel && s == step)
+                    );
+                    assert_eq!(
+                        actual.exact_microseconds.numerator,
+                        event.exact_microseconds.numerator
+                    );
+                    assert_eq!(
+                        actual.exact_microseconds.denominator,
+                        event.exact_microseconds.denominator
+                    );
+                }
+                if matches!(event.command, Command::KeyAttack { .. }) {
+                    assert_eq!(note.attack, event.origin);
+                    assert_eq!(
+                        note.start_microseconds.numerator,
+                        event.exact_microseconds.numerator
+                    );
+                    assert_eq!(
+                        note.start_microseconds.denominator,
+                        event.exact_microseconds.denominator
+                    );
+                }
+                if matches!(event.command, Command::KeyRelease { .. }) {
+                    assert_eq!(note.release, event.origin);
+                    assert_eq!(
+                        note.end_microseconds.numerator,
+                        event.exact_microseconds.numerator
+                    );
+                    assert_eq!(
+                        note.end_microseconds.denominator,
+                        event.exact_microseconds.denominator
+                    );
+                }
+            }
+        }
+    }
+}
+#[test]
+fn sensitivity12_distinct_routes_and_silent_owner_remain_complete() {
+    let mut tracks = vec![vec![(0, vec![255, 3, 1, b'T']), (150, end())]];
+    for (index, sequence) in sensitivity12_sequences().iter().enumerate() {
+        let channel = [0, 3, 1][index];
+        let mut events = sensitivity12_steps(sequence, channel);
+        if index < 2 {
+            events.extend([
+                (23, vec![0x90 | channel, 60, 79]),
+                (29, vec![0x80 | channel, 60, 12]),
+            ]);
+        }
+        events.push((11, end()));
+        tracks.push(events);
+    }
+    let input = midi(tracks, 7);
+    let score = converted(&input);
+    assert_source_runtime(&input, &score);
+    assert_eq!(score.coverage.performance.source_tracks, 4);
+    assert_eq!(score.coverage.performance.key_attacks, 2);
+    let strict = crate::clean_song::convert_midi(&input).unwrap();
+    assert_eq!(strict.coverage.source_tracks, 4);
+    assert_eq!(strict.coverage.pitched_notes, 2);
+    assert_eq!(
+        strict
+            .performance
+            .events
+            .iter()
+            .filter(|e| matches!(
+                e.command,
+                crate::clean_song::Command::InitialPitchBendSensitivity12 { .. }
+            ))
+            .count(),
+        20
+    );
+}
+#[test]
+fn sensitivity12_rejects_unreviewed_incomplete_interleaved_and_late_source_groups() {
+    for sequence in sensitivity12_sequences() {
+        let correct = sensitivity12_steps(&sequence, 0);
+        for index in 0..correct.len() {
+            let mut changed = correct.clone();
+            changed[index].1[2] ^= 1;
+            assert_sensitivity12_held(changed);
+            let mut missing = correct.clone();
+            missing.remove(index);
+            assert_sensitivity12_held(missing);
+            let mut extra = correct.clone();
+            extra.insert(index, correct[index].clone());
+            assert_sensitivity12_held(extra);
+        }
+        for message in [
+            vec![0xc0, 2],
+            vec![0xb0, 7, 90],
+            vec![0xb1, 7, 90],
+            vec![255, 1, 1, b'x'],
+        ] {
+            let mut wrong = correct.clone();
+            wrong.insert(2, (0, message));
+            assert_sensitivity12_held(wrong);
+        }
+        for message in [
+            vec![0xe0, 0, 64],
+            vec![0xe0, 1, 64],
+            vec![0xb0, 99, 0],
+            vec![0xb0, 98, 0],
+        ] {
+            let mut wrong = correct.clone();
+            wrong.push((0, message));
+            assert_sensitivity12_held(wrong);
+        }
+        let mut zero_time_reset: Vec<_> = correct
+            .iter()
+            .map(|(_, message)| (0, message.clone()))
+            .collect();
+        zero_time_reset.extend([(0, vec![0xb0, 121, 0]), (0, vec![0xb0, 64, 0])]);
+        assert_sensitivity12_held(zero_time_reset);
+        let mut twice = correct.clone();
+        twice.extend(correct.clone());
+        assert_sensitivity12_held(twice);
+        let mut after_keys = vec![(0, vec![0x90, 61, 79]), (0, vec![0x80, 61, 0])];
+        after_keys.extend(correct.clone());
+        assert_sensitivity12_held(after_keys);
+        let mut after_release = vec![(0, vec![0x80, 61, 0])];
+        after_release.extend(correct.clone());
+        assert_sensitivity12_held(after_release);
+        let mut reset = vec![(0, vec![0xb0, 121, 0]), (0, vec![0xb0, 64, 0])];
+        reset.extend(correct.clone());
+        assert_sensitivity12_held(reset);
+        let mut late_reset = correct.clone();
+        late_reset.extend([
+            (0, vec![0x90, 61, 79]),
+            (0, vec![0xb0, 121, 0]),
+            (0, vec![0xb0, 64, 0]),
+            (0, vec![0x80, 61, 0]),
+        ]);
+        assert_sensitivity12_held(late_reset);
+        let mut first = correct[..2].to_vec();
+        first.push((100, end()));
+        let mut second = correct[2..].to_vec();
+        second.extend([
+            (23, vec![0x90, 60, 79]),
+            (29, vec![0x80, 60, 0]),
+            (11, end()),
+        ]);
+        let input = midi(vec![first, second], 7);
+        assert!(convert_midi(&input, "split", "Split owner").is_err());
+        assert!(crate::clean_song::convert_midi(&input).is_err());
+        let mut owner = correct.clone();
+        owner.push((100, end()));
+        let input = midi(
+            vec![
+                owner,
+                vec![
+                    (99, vec![0x90, 60, 79]),
+                    (29, vec![0x80, 60, 0]),
+                    (11, end()),
+                ],
+            ],
+            7,
+        );
+        assert!(convert_midi(&input, "shared", "Shared channel").is_err());
+        assert!(crate::clean_song::convert_midi(&input).is_err());
+    }
+}
+#[test]
+fn sensitivity12_clean_reload_rechecks_each_step_coordinate_timing_and_coverage() {
+    for sequence in sensitivity12_sequences() {
+        let input = sensitivity12_source(sensitivity12_steps(&sequence, 0), 7);
+        let score = converted(&input);
+        let strict = crate::clean_song::convert_midi(&input).unwrap();
+        for index in 0..sequence.len() {
+            let mut wrong = score.clone();
+            wrong.performance.events[index].command = Command::Volume {
+                channel: 0,
+                value: 12,
+            };
+            assert!(decode_json(&serde_json::to_vec(&wrong).unwrap()).is_err());
+            let mut wrong = strict.clone();
+            wrong.performance.events[index].command = crate::clean_song::Command::Volume {
+                channel: 0,
+                value: 12,
+            };
+            assert!(crate::clean_song::decode_json(&serde_json::to_vec(&wrong).unwrap()).is_err());
+            for at in [Beat::new(-1, 7), Beat::new(1000, 7), Beat::new(0, 7)] {
+                let mut wrong = score.clone();
+                wrong.performance.events[index].at = at;
+                // Moving the first event earlier may still be a legal score, so only
+                // malformed/inverted source times are expected to fail.
+                if index > 0 || at.numerator != 0 {
+                    assert!(decode_json(&serde_json::to_vec(&wrong).unwrap()).is_err());
+                }
+                let mut wrong = strict.clone();
+                wrong.performance.events[index].at = at;
+                if index > 0 || at.numerator != 0 {
+                    assert!(
+                        crate::clean_song::decode_json(&serde_json::to_vec(&wrong).unwrap())
+                            .is_err()
+                    );
+                }
+            }
+            let mut wrong = score.clone();
+            wrong.performance.events[index].origin.event += 1;
+            assert!(decode_json(&serde_json::to_vec(&wrong).unwrap()).is_err());
+            let mut wrong = strict.clone();
+            wrong.performance.events[index].origin.event += 1;
+            assert!(crate::clean_song::decode_json(&serde_json::to_vec(&wrong).unwrap()).is_err());
+        }
+        let mut wrong = score.clone();
+        wrong.coverage.performance.represented_events -= 1;
+        assert!(decode_json(&serde_json::to_vec(&wrong).unwrap()).is_err());
+        let text = String::from_utf8(encode_json(&score).unwrap()).unwrap();
+        for unknown in [
+            "set_semitones24",
+            "deselect_most_significant",
+            "set_semitones13",
+        ] {
+            assert!(decode_json(text.replace("set_semitones12", unknown).as_bytes()).is_err());
+        }
+    }
+}
+
+#[test]
+fn sensitivity12_clean_reload_rejects_zero_time_reset_after_complete_group() {
+    for sequence in sensitivity12_sequences() {
+        let mut events: Vec<_> = sensitivity12_steps(&sequence, 0)
+            .into_iter()
+            .map(|(_, message)| (0, message))
+            .collect();
+        events.extend([(0, vec![0xb0, 7, 90]), (0, vec![0xb0, 7, 90])]);
+        let input = sensitivity12_source(events, 7);
+        let mut score = converted(&input);
+        score.performance.events[sequence.len()].command =
+            Command::InitialControllerReset { channel: 0 };
+        score.performance.events[sequence.len() + 1].command = Command::Sustain {
+            channel: 0,
+            value: 0,
+        };
+        assert!(decode_json(&serde_json::to_vec(&score).unwrap()).is_err());
+    }
+}
+
+fn route_text(role: u8, name: &str) -> Vec<u8> {
+    let mut event = vec![255, role];
+    event.extend(vlq(name.len() as u32));
+    event.extend_from_slice(name.as_bytes());
+    event
+}
+fn device_route_track(channel: u8, name: Option<&str>) -> Vec<(u32, Vec<u8>)> {
+    let mut events = vec![];
+    if let Some(name) = name {
+        events.push((0, route_text(9, name)));
+    }
+    events.extend([
+        (0, route_text(8, "Authored program label")),
+        (0, vec![0xc0 | channel, 0]),
+        (1, vec![0x90 | channel, 60, 79]),
+        (11, vec![0x80 | channel, 60, 12]),
+        (5, end()),
+    ]);
+    events
+}
+#[test]
+fn device_route_single_named_output_preserves_names_events_and_exact_clocks() {
+    let mut first = device_route_track(0, Some("Original logical output"));
+    first.insert(0, (0, route_text(1, "Metadata may precede a route")));
+    let input = midi(
+        vec![
+            vec![(0, route_text(3, "Conductor")), (20, end())],
+            first,
+            device_route_track(3, Some("Original logical output")),
+        ],
+        7,
+    );
+    let score = converted(&input);
+    assert_eq!(
+        resolve_device_route(&score).unwrap().as_deref(),
+        Some("Original logical output")
+    );
+    let runtime = assert_source_runtime(&input, &score);
+    assert_eq!(runtime.events.iter().filter(|e| matches!(&e.command, Command::Text { role: TextRole::DeviceName, text } if text == "Original logical output")).count(), 2);
+    let strict = crate::clean_song::convert_midi(&input).unwrap();
+    let strict =
+        crate::clean_song::decode_json(&crate::clean_song::encode_json(&strict).unwrap()).unwrap();
+    let strict_runtime = crate::clean_song::compile_complete(&strict).unwrap();
+    assert_eq!(strict_runtime.notes.len(), 2);
+    assert_eq!(
+        strict.coverage.source_events,
+        score.coverage.performance.source_events
+    );
+    for event in runtime.events.iter().filter(|e| {
+        matches!(
+            e.command,
+            Command::Text {
+                role: TextRole::DeviceName,
+                ..
+            }
+        )
+    }) {
+        let actual = strict_runtime
+            .events
+            .iter()
+            .find(|e| e.origin == event.origin)
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&actual.command).unwrap(),
+            serde_json::to_value(&event.command).unwrap()
+        );
+        assert_eq!(
+            actual.exact_microseconds.numerator,
+            event.exact_microseconds.numerator
+        );
+        assert_eq!(
+            actual.exact_microseconds.denominator,
+            event.exact_microseconds.denominator
+        );
+    }
+    let (_, diagnostics) = crate::import_midi(&input).unwrap();
+    assert!(diagnostics
+        .iter()
+        .any(|d| d.code == "midi_single_logical_device"));
+}
+#[test]
+fn device_route_unresolved_names_stay_typed_but_never_enter_strict_pairing() {
+    let name = "Authored route";
+    let mut invalid = vec![
+        vec![device_route_track(0, Some(""))],
+        vec![device_route_track(0, Some("  "))],
+        vec![
+            device_route_track(0, Some(name)),
+            device_route_track(3, Some("Another route")),
+        ],
+        vec![
+            device_route_track(0, Some(name)),
+            device_route_track(3, None),
+        ],
+    ];
+    for second_name in [name, "Changed output"] {
+        let mut events = device_route_track(0, Some(name));
+        events.insert(1, (0, route_text(9, second_name)));
+        invalid.push(vec![events]);
+    }
+    let mut delayed = device_route_track(0, Some(name));
+    delayed[0].0 = 1;
+    invalid.push(vec![delayed]);
+    let mut after_program_name = device_route_track(0, Some(name));
+    after_program_name.swap(0, 1);
+    invalid.push(vec![after_program_name]);
+    let mut after_program = device_route_track(0, Some(name));
+    after_program.swap(0, 2);
+    invalid.push(vec![after_program]);
+    let mut after_keys = vec![(0, vec![0x90, 62, 79]), (0, vec![0x80, 62, 0])];
+    after_keys.extend(device_route_track(0, Some(name)));
+    invalid.push(vec![after_keys]);
+    // Distinct source ticks avoid existing simultaneous-channel rejection: the
+    // bounded named-route profile independently rejects shared channel owners.
+    let mut later_shared = device_route_track(0, Some(name));
+    later_shared[2].0 = 50;
+    invalid.push(vec![device_route_track(0, Some(name)), later_shared]);
+    for tracks in invalid {
+        let input = midi(tracks, 7);
+        let score = converted(&input);
+        assert!(resolve_device_route(&score).is_err());
+        assert_source_runtime(&input, &score);
+        assert!(crate::import_midi(&input).is_err());
+        assert!(crate::clean_song::convert_midi(&input).is_err());
+    }
+}
+#[test]
+fn device_route_clean_reload_rechecks_identity_and_program_name_order() {
+    let input = midi(
+        vec![
+            device_route_track(0, Some("Authored route")),
+            device_route_track(3, Some("Authored route")),
+        ],
+        7,
+    );
+    let strict = crate::clean_song::convert_midi(&input).unwrap();
+    for change in 0..5 {
+        let mut wrong = strict.clone();
+        let second = wrong
+            .performance
+            .events
+            .iter_mut()
+            .find(|e| e.origin.track == 1 && e.origin.event == 0)
+            .unwrap();
+        match change {
+            0 => {
+                if let crate::clean_song::Command::Text { text, .. } = &mut second.command {
+                    *text = "Other route".into();
+                }
+            }
+            1 => {
+                if let crate::clean_song::Command::Text { text, .. } = &mut second.command {
+                    text.clear();
+                }
+            }
+            2 => {
+                second.command = crate::clean_song::Command::Text {
+                    role: TextRole::Text,
+                    text: "No route".into(),
+                }
+            }
+            3 => second.at = Beat::new(1, 7),
+            _ => {
+                let first = wrong
+                    .performance
+                    .events
+                    .iter_mut()
+                    .find(|e| e.origin.track == 1 && e.origin.event == 1)
+                    .unwrap();
+                first.command = crate::clean_song::Command::Text {
+                    role: TextRole::DeviceName,
+                    text: "Authored route".into(),
+                };
+                let second = wrong
+                    .performance
+                    .events
+                    .iter_mut()
+                    .find(|e| e.origin.track == 1 && e.origin.event == 0)
+                    .unwrap();
+                second.command = crate::clean_song::Command::Text {
+                    role: TextRole::ProgramName,
+                    text: "Before route".into(),
+                };
+            }
+        }
+        assert!(crate::clean_song::decode_json(&serde_json::to_vec(&wrong).unwrap()).is_err());
+    }
+    // Typed JSON keeps an unresolved route exactly, with no invented default.
+    let mut typed = converted(&input);
+    let second = typed
+        .performance
+        .events
+        .iter_mut()
+        .find(|e| e.origin.track == 1 && e.origin.event == 0)
+        .unwrap();
+    second.command = Command::Text {
+        role: TextRole::DeviceName,
+        text: "Other route".into(),
+    };
+    let reloaded = decode_json(&encode_json(&typed).unwrap()).unwrap();
+    assert!(resolve_device_route(&reloaded).is_err());
+}
+#[test]
+fn device_route_no_names_preserves_existing_semantics_and_other_routing_stays_held() {
+    let input = midi(
+        vec![device_route_track(0, None), device_route_track(3, None)],
+        7,
+    );
+    let score = converted(&input);
+    assert_eq!(resolve_device_route(&score).unwrap(), None);
+    crate::clean_song::convert_midi(&input).unwrap();
+    for routing in [
+        vec![255, 32, 1, 0],
+        vec![255, 33, 1, 0],
+        vec![240, 2, 1, 247],
+    ] {
+        let mut events = device_route_track(0, Some("Authored route"));
+        events.insert(1, (0, routing));
+        let input = midi(vec![events], 7);
+        assert!(convert_midi(&input, "other-routing", "Original routing fixture").is_err());
+        assert!(crate::import_midi(&input).is_err());
+        assert!(crate::clean_song::convert_midi(&input).is_err());
+    }
+}
+
+#[test]
+fn device_route_label_bounds_match_source_strict_json_and_typed_capability() {
+    let valid_input = midi(vec![device_route_track(0, Some("Authored label"))], 7);
+    let strict = crate::clean_song::convert_midi(&valid_input).unwrap();
+    let typed = converted(&valid_input);
+    let invalid = [
+        "Route\0A".into(),
+        "Route\nA".into(),
+        "Route\tA".into(),
+        "Route\rA".into(),
+        "Route\u{7f}A".into(),
+        "Route\u{85}A".into(),
+        "\u{a0}\u{2003}".into(),
+        "A".repeat(4097),
+        "é".repeat(2049),
+        "A".repeat(257),
+        "DM: literal route".into(),
+        "\u{2003}DM: literal route".into(),
+    ];
+    for name in invalid {
+        let input = midi(vec![device_route_track(0, Some(&name))], 7);
+        assert!(crate::import_midi(&input).is_err());
+        assert!(crate::clean_song::convert_midi(&input).is_err());
+        let mut changed_strict = strict.clone();
+        changed_strict.performance.events[0].command = crate::clean_song::Command::Text {
+            role: TextRole::DeviceName,
+            text: name.clone(),
+        };
+        assert!(
+            crate::clean_song::decode_json(&serde_json::to_vec(&changed_strict).unwrap()).is_err()
+        );
+        let mut changed_typed = typed.clone();
+        changed_typed.performance.events[0].command = Command::Text {
+            role: TextRole::DeviceName,
+            text: name.clone(),
+        };
+        assert!(resolve_device_route(&changed_typed).is_err());
+        if crate::midi_device_route::valid_structural_text(&name) {
+            let retained = converted(&input);
+            let reloaded = decode_json(&encode_json(&retained).unwrap()).unwrap();
+            assert!(resolve_device_route(&reloaded).is_err());
+            assert!(
+                matches!(&reloaded.performance.events[0].command, Command::Text { role: TextRole::DeviceName, text } if text == &name)
+            );
+        } else {
+            assert!(convert_midi(&input, "held-label", "Original label exercise").is_err());
+            assert!(decode_json(&serde_json::to_vec(&changed_typed).unwrap()).is_err());
+        }
+    }
+}
+#[test]
+fn device_route_exact_noncontrol_labels_keep_spaces_case_and_utf8_boundaries() {
+    for name in [
+        "  Studio A  ".into(),
+        "  studio a  ".into(),
+        "A".repeat(256),
+        "A ".repeat(2048),
+        "é".repeat(2048),
+        "🎹".repeat(1024),
+    ] {
+        let input = midi(
+            vec![
+                device_route_track(0, Some(&name)),
+                device_route_track(3, Some(&name)),
+            ],
+            7,
+        );
+        crate::import_midi(&input).unwrap();
+        let strict = crate::clean_song::convert_midi(&input).unwrap();
+        let reloaded =
+            crate::clean_song::decode_json(&crate::clean_song::encode_json(&strict).unwrap())
+                .unwrap();
+        assert!(
+            matches!(&reloaded.performance.events[0].command, crate::clean_song::Command::Text { role: TextRole::DeviceName, text } if text == &name)
+        );
+        let typed = converted(&input);
+        assert_eq!(
+            resolve_device_route(&decode_json(&encode_json(&typed).unwrap()).unwrap())
+                .unwrap()
+                .as_deref(),
+            Some(name.as_str())
+        );
+    }
+    for other in ["Studio A", "  studio a  "] {
+        let input = midi(
+            vec![
+                device_route_track(0, Some("  Studio A  ")),
+                device_route_track(3, Some(other)),
+            ],
+            7,
+        );
+        assert!(crate::import_midi(&input).is_err());
+        assert!(crate::clean_song::convert_midi(&input).is_err());
+        assert!(resolve_device_route(&converted(&input)).is_err());
+    }
+}

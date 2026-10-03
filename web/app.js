@@ -807,7 +807,7 @@ async function togglePlayback() {
   const now = performance.now()+(state.cleanSong?50:0);
   transport.start(now, state.loop?.notes || state.practiceTimeline?.notes || state.compiled.timeline.notes, $('count-in').checked ? beatMs * 4 : 0);
   if(state.mode==='practice')beginPracticePass(now);
-  if(state.cleanSong){try{if(!synth.muted)cleanPlayer.start({context:synth.context,output:synth.output,mode:state.mode,targetPart:state.practicePart,mutedParts:cleanMutedParts,instrument:state.instrument,resumePositionMs:transport.position});activeMedia?.sync({positionMs:transport.time(performance.now()),running:true,userGesture:true});}catch(error){pausePlayback();notice(()=>cleanErrorText(i18n.locale,error),true);return;}}
+  if(state.cleanSong){try{if(!synth.muted)cleanPlayer.start({context:synth.context,output:synth.output,mode:state.mode,targetPart:state.practicePart,mutedParts:cleanMutedParts,instrument:state.instrument,resumePositionMs:transport.position,acceptedPolicyId:inspectCleanRendition(state.cleanSong).rendition});activeMedia?.sync({positionMs:transport.time(performance.now()),running:true,userGesture:true});}catch(error){pausePlayback();notice(()=>cleanErrorText(i18n.locale,error),true);return;}}
   updateButtons();
 }
 function beginPracticePass(now, captureEnabled = true) {

@@ -147,6 +147,11 @@ pub enum Command {
         channel: u8,
         step: InitialPitchBendSensitivityStep,
     },
+    /// Reviewed pre-key-activity setup; RPN 0 stays selected and duplicate steps remain.
+    InitialPitchBendSensitivity12 {
+        channel: u8,
+        step: InitialPitchBendSensitivity12Step,
+    },
     Tempo {
         microseconds_per_quarter: u32,
     },
@@ -178,6 +183,7 @@ pub enum BankComponent {
     MostSignificant,
     LeastSignificant,
 }
+pub use crate::midi_initial_sensitivity::InitialPitchBendSensitivity12Step;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InitialPitchBendSensitivityStep {
@@ -231,7 +237,8 @@ impl Command {
             | Self::ChannelPressure { channel, .. }
             | Self::InitialControllerReset { channel }
             | Self::InitialSustainOff { channel }
-            | Self::InitialPitchBendSensitivity { channel, .. } => Some(*channel),
+            | Self::InitialPitchBendSensitivity { channel, .. }
+            | Self::InitialPitchBendSensitivity12 { channel, .. } => Some(*channel),
             _ => None,
         }
     }
@@ -284,6 +291,15 @@ impl Command {
             }
             Self::SmpteOffset { timecode } => {
                 timecode.validate_zero()?;
+                &[]
+            }
+            Self::Text {
+                role: TextRole::DeviceName,
+                text,
+            } => {
+                if !crate::midi_device_route::valid_name(text) {
+                    return Err("Invalid DeviceName route label".into());
+                }
                 &[]
             }
             Self::Text { text, .. } => {
@@ -705,7 +721,26 @@ fn validate_channel_order(
         .iter()
         .map(|e| (e.origin, &e.command))
         .collect();
+    let mut device_routing = crate::midi_device_route::Evidence::default();
+    for &(_, channel, origin) in &ordered {
+        device_routing.channel(origin, channel);
+    }
+    for event in &score.performance.events {
+        match &event.command {
+            Command::Text {
+                role: TextRole::DeviceName,
+                text,
+            } => device_routing.device_name(event.origin, event.at, text),
+            Command::Text {
+                role: TextRole::ProgramName,
+                ..
+            } => device_routing.program_name(event.origin),
+            _ => (),
+        }
+    }
+    device_routing.resolve()?;
     validate_initial_pitch_bend_sensitivity(&ordered, &commands)?;
+    validate_initial_pitch_bend_sensitivity12(&ordered, &commands)?;
     for event in &score.performance.events {
         let Command::InitialControllerReset { channel } = event.command else {
             continue;
@@ -780,6 +815,39 @@ fn validate_initial_pitch_bend_sensitivity(
         {
             return Err("Initial pitch-bend sensitivity requires one exact contiguous six-step group, in one owning track before notes or other control state".into());
         }
+    }
+    Ok(())
+}
+
+fn validate_initial_pitch_bend_sensitivity12(
+    ordered: &[(Beat, u8, Coordinate)],
+    commands: &BTreeMap<Coordinate, &Command>,
+) -> Result<(), String> {
+    use crate::midi_initial_sensitivity::{Prefix, State};
+    let mut states = [State::twelve(); 16];
+    for &(at, channel, origin) in ordered {
+        let command = commands.get(&origin);
+        let step = match command {
+            Some(Command::InitialPitchBendSensitivity12 { step, .. }) => Some(step.controller()),
+            _ => None,
+        };
+        let prefix = match command {
+            Some(Command::InstrumentProgram { .. }) => Prefix::Program,
+            Some(Command::InitialControllerReset { .. }) => Prefix::Reset,
+            Some(
+                Command::BankSelect { .. }
+                | Command::Volume { .. }
+                | Command::Pan { .. }
+                | Command::Expression { .. }
+                | Command::ReverbSend { .. }
+                | Command::ChorusSend { .. },
+            ) => Prefix::Control,
+            _ => Prefix::Other,
+        };
+        states[channel as usize].observe(origin.track, origin.event, at, step, prefix)?;
+    }
+    for state in &states {
+        state.finish()?;
     }
     Ok(())
 }

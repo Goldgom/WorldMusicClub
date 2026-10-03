@@ -3,6 +3,8 @@ import { isZeroSmpteOffset } from './clean-song-timecode.js';
 import { ReferenceAudioReceiver, REFERENCE_PERCUSSION, PROGRAM_FAMILIES } from './midi-reference-synth.js';
 import { REFERENCE_RECEIVER_POLICY } from './midi-reference-player.js';
 import { COMPLETE_CONTROLS_POLICY, CompletePerformanceMixer, EXTENDED_CONTROL_KINDS } from './clean-performance-controls.js';
+import { INITIAL_SENSITIVITY12_KIND, validInitialSensitivity12Events, applyInitialSensitivity12, centeredPitchState, unbentReferenceKey12 } from './clean-song-initial-sensitivity12.js';
+import { inspectLogicalDeviceRoute, isDeviceName, isUnsupportedRouteCommand, withLogicalDevicePolicy } from './clean-song-device-routing.js';
 const handles = new WeakSet();
 const PROFILE = 'wmh-performance-midi1-v1';
 const integer = (n, lo, hi) => Number.isSafeInteger(n) && n >= lo && n <= hi;
@@ -29,7 +31,7 @@ export function performanceSeconds(value) {
 }
 const metadataKinds = new Set(['tempo', 'meter', 'key_signature', 'text', 'sequence_number', 'track_end']);
 const unsupportedReceiverKinds = new Set(['key_pressure', 'channel_pressure']);
-function prepare(runtime, scoreHash) {
+function prepare(runtime, scoreHash, score) {
   if (runtime?.profile !== PROFILE || runtime.score_sha256 !== scoreHash || !/^[a-f0-9]{64}$/.test(runtime.source_sha256 || '') ||
       !Array.isArray(runtime.tracks) || !integer(runtime.tracks.length, 1, 128) || !Array.isArray(runtime.parts) ||
       !Array.isArray(runtime.events) || !integer(runtime.events.length, 1, 250000)) fail('invalid_compiler_response', 'Expected the authoritative hash-bound complete-performance runtime.');
@@ -48,14 +50,18 @@ function prepare(runtime, scoreHash) {
         parts.has(part.id) || part.sound_identity !== 'unspecified_midi_route') fail('invalid_part', 'Invalid route identity.');
     channels[track].add(part.channel); parts.set(part.id, part);
   }
+  if (!validInitialSensitivity12Events(runtime.events)) fail('invalid_initial_sensitivity12', 'Expected one reviewed source-contiguous twelve-semitone group per channel before all keys.');
   const blockers = [], addBlocker = (code, message, event) => {
-    if (!blockers.some(b => b.code === code)) blockers.push({ code, message, eventId: event.event_id });
+    if (!blockers.some(b => b.code === code)) blockers.push({ code, message, eventId: event?.event_id ?? null });
   };
+  const routing = inspectLogicalDeviceRoute(score, runtime);
+  if (routing.blocker) addBlocker(routing.blocker, 'The logical destination cannot be mapped to one procedural receiver; complete source events remain preserved.', runtime.events.find(event => isDeviceName(event.command) || isUnsupportedRouteCommand(event.command)));
   // These voices are only the explicitly selected reference receiver's FIFO
   // gates. Neither pairing nor gate lengths are added to canonical commands.
   const voices = [], acknowledgements = [], queues = new Map(), programs = Array(16).fill(0), programUse = new Map();
   const sustain = Array(16).fill(false), deferred = Array.from({ length: 16 }, () => []);
   const keyActivity = Array(16).fill(false), pendingReset = Array(16).fill(false), reverbChannels = new Set();
+  const pitchStates = Array.from({ length: 16 }, centeredPitchState);
   let extendedControls = false;
   const counts = Array(runtime.tracks.length).fill(0), ended = new Set();
   let prior = null, attacks = 0, releases = 0, offsetSeen = false, firstTrackChannel = false;
@@ -74,7 +80,11 @@ function prepare(runtime, scoreHash) {
       if (c.kind !== 'sustain' || c.value !== 0 || event.exact_microseconds.numerator !== '0') fail('invalid_initial_reset', 'Initial reset must be immediately followed by sustain zero on the same channel.');
       pendingReset[c.channel] = false;
     }
-    if (c.kind === 'smpte_offset') {
+    if (isDeviceName(c)) {
+      ack.disposition = routing.logical_device_mapping ? 'logical_device_mapping' : 'blocked';
+    } else if (isUnsupportedRouteCommand(c)) {
+      ack.disposition = 'blocked';
+    } else if (c.kind === 'smpte_offset') {
       if (!isZeroSmpteOffset(c) || offsetSeen || origin.track !== 0 || firstTrackChannel ||
           BigInt(event.exact_microseconds.numerator) !== 0n) fail('invalid_smpte_offset', 'Only one zero SMPTE origin on track zero before channel messages is supported.');
       offsetSeen = true; ack.disposition = 'zero_timecode_origin';
@@ -91,7 +101,7 @@ function prepare(runtime, scoreHash) {
         if (c.channel === 9 && !REFERENCE_PERCUSSION[c.key]) addBlocker('percussion_key_unmapped', `No declared reference percussion sound for key ${c.key}.`, event);
         const program = programs[c.channel];
         programUse.set(`${c.channel}:${program}`, { channel: c.channel, program, reference: c.channel === 9 ? 'WMH Reference Percussion v1 (kit unknown)' : PROGRAM_FAMILIES[program >> 3].name });
-        const voice = { eventId: event.event_id, partId: c.part_id, trackIndex: origin.track, channel: c.channel, key: c.key,
+        const voice = { eventId: event.event_id, partId: c.part_id, trackIndex: origin.track, channel: c.channel, key: unbentReferenceKey12(pitchStates[c.channel], c.key),
           velocity: c.velocity, program, start: event.exact_microseconds, end: null, releaseEventId: null, releaseVelocity: null, endReason: null };
         voices.push(voice); queue.items.push(voice);
         ack.disposition = queue.items.length - queue.released > 1 ? 'layered_onset' : 'onset'; ack.voiceId = voice.eventId;
@@ -105,6 +115,9 @@ function prepare(runtime, scoreHash) {
         }
         ack.disposition = voice ? (sustain[c.channel] ? 'release_fifo_sustained' : 'release_fifo') : 'unmatched_release';
       }
+    } else if (c.kind === INITIAL_SENSITIVITY12_KIND) {
+      applyInitialSensitivity12(pitchStates[c.channel], c.step);
+      ack.disposition = INITIAL_SENSITIVITY12_KIND;
     } else if (c.kind === 'instrument_program') {
       if (!integer(c.channel, 0, 15) || !integer(c.program, 0, 127)) fail('invalid_program', 'Invalid source program number.');
       programs[c.channel] = c.program;
@@ -145,9 +158,10 @@ function prepare(runtime, scoreHash) {
   if (durationSeconds > 86400) fail('duration_limit', 'Reference playback is bounded to 24 hours.');
   const tracks = runtime.tracks.map((track, index) => ({ ...track, channels: [...channels[index]],
     independent: !channels.some((other, i) => i !== index && [...channels[index]].some(c => other.has(c))) }));
-  return freeze({ scoreSha256: scoreHash, sourceSha256: runtime.source_sha256, policy: extendedControls ? COMPLETE_CONTROLS_POLICY : REFERENCE_RECEIVER_POLICY,
+  return freeze({ scoreSha256: scoreHash, sourceSha256: runtime.source_sha256, policy: withLogicalDevicePolicy(extendedControls ? COMPLETE_CONTROLS_POLICY : REFERENCE_RECEIVER_POLICY, routing.logical_device_mapping),
+    logical_device_mapping: routing.logical_device_mapping, logical_device_route_reason: routing.reason,
     playable: blockers.length === 0, blockers, trackCount: tracks.length, eventCount: runtime.events.length,
-    tracks, voices, acknowledgements, programs: [...programUse.values()], durationSeconds, runtime, extendedControls, reverbChannels: [...reverbChannels] });
+    tracks, voices, acknowledgements, programs: [...programUse.values()], durationSeconds, runtime, extendedControls, reverbChannels: [...reverbChannels], pitchStates });
 }
 /** compile is a trusted Rust/native adapter: clean bytes in, validated runtime out.
  * The native clean-package load compiles exact saved bytes. Derived runtime
@@ -160,7 +174,10 @@ export async function loadCleanPerformance({ scoreBytes, expectedScoreSha256, co
   if (!/^[a-f0-9]{64}$/.test(expectedScoreSha256 || '') || !crypto?.subtle || typeof compile !== 'function') fail('trusted_compiler_required', 'Expected score hash and trusted Rust adapter are required.');
   const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(n => n.toString(16).padStart(2, '0')).join('');
   if (hash !== expectedScoreSha256) fail('score_hash_mismatch', 'Clean score bytes do not match the package hash.');
-  const result = prepare(structuredClone(await compile(bytes)), hash); handles.add(result); return result;
+  let score;
+  try { score = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); }
+  catch { fail('invalid_score_json', 'Expected complete score JSON bytes.'); }
+  const result = prepare(structuredClone(await compile(bytes)), hash, score); handles.add(result); return result;
 }
 export function createCleanPerformancePlayer(prepared, {
   contextFactory, timers = { setTimeout: (fn, delay) => globalThis.setTimeout(fn, delay), clearTimeout: id => globalThis.clearTimeout(id) },
@@ -176,6 +193,7 @@ export function createCleanPerformancePlayer(prepared, {
   const voices = prepared.voices.map(v => ({ ...v, startSeconds: performanceSeconds(v.start), endSeconds: performanceSeconds(v.end) }));
   const voiceById = new Map(voices.map(v => [v.eventId, v]));
   let state = 'stopped', generation = 0, position = 0, anchor = 0, cursor = 0, timer = null, context = null, receiver = null, mixer = null, error = null;
+  let pitchStates = Array.from({ length: 16 }, centeredPitchState);
   const muted = new Set();
   const snapshot = () => Object.freeze({ state, generation, currentAudioTimeSeconds: context?.currentTime ?? null,
     audioAnchorSeconds: state === 'playing' ? anchor : null,
@@ -189,7 +207,12 @@ export function createCleanPerformancePlayer(prepared, {
   };
   const sound = (voice, start, resumed = false) => {
     if (muted.has(voice.trackIndex) || voice.endSeconds <= voice.startSeconds) return;
-    receiver.schedule(voice, start, anchor + voice.endSeconds, { resumed, output: mixer?.outputFor(voice.channel, start) || receiver.output });
+    const key = unbentReferenceKey12(pitchStates[voice.channel], voice.key);
+    receiver.schedule({ ...voice, key }, start, anchor + voice.endSeconds, { resumed, output: mixer?.outputFor(voice.channel, start) || receiver.output });
+  };
+  const command = (value, at) => {
+    if (value.kind === INITIAL_SENSITIVITY12_KIND) applyInitialSensitivity12(pitchStates[value.channel], value.step);
+    mixer?.command(value, at);
   };
   const pump = token => {
     if (token !== generation || state !== 'playing') return;
@@ -200,7 +223,7 @@ export function createCleanPerformancePlayer(prepared, {
       while (cursor < events.length && anchor + events[cursor].seconds <= horizon) {
         const { ack, seconds } = events[cursor], at = anchor + seconds;
         if (at < context.currentTime) fail('late_scheduler', 'An event missed its deadline; playback stopped without skipping.', { eventId: ack.eventId });
-        mixer?.command(ack.event.command, at);
+        command(ack.event.command, at);
         if (ack.voiceId && ['onset', 'layered_onset'].includes(ack.disposition)) sound(voiceById.get(ack.voiceId), at);
         cursor++;
         onEvent(Object.freeze({ eventId: ack.eventId, sourceTrackIndex: ack.event.origin.track,
@@ -230,10 +253,11 @@ export function createCleanPerformancePlayer(prepared, {
         if (token !== generation) return snapshot();
         if (context.state !== 'running') fail('audio_context_interrupted', 'Audio context could not start.');
         receiver = new ReferenceAudioReceiver(context, audio.output, { maxVoices, ErrorType: CleanPerformanceError });
+        pitchStates = Array.from({ length: 16 }, centeredPitchState);
         anchor = context.currentTime + startLeadSeconds - position;
         mixer = prepared.extendedControls ? new CompletePerformanceMixer(context, audio.output, { reverbChannels: prepared.reverbChannels, end: anchor + prepared.durationSeconds }) : null;
         cursor = events.findIndex(e => e.seconds >= position); if (cursor < 0) cursor = events.length;
-        for (let index = 0; index < cursor; index++) mixer?.command(events[index].ack.event.command, anchor + position);
+        for (let index = 0; index < cursor; index++) command(events[index].ack.event.command, anchor + position);
         for (const voice of voices) if (voice.startSeconds < position && voice.endSeconds > position) sound(voice, anchor + position, true);
         state = 'playing'; notify(); if (token === generation && state === 'playing') pump(token);
       } catch (reason) { if (token === generation) abort(reason); }

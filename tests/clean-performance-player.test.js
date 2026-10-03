@@ -5,7 +5,7 @@ import {
   CleanPerformanceError, loadCleanPerformance, createCleanPerformancePlayer, performanceSeconds,
 } from '../web/clean-performance-player.js';
 import { REFERENCE_RECEIVER_POLICY } from '../web/midi-reference-player.js';
-import { PROGRAM_FAMILIES, REFERENCE_PERCUSSION } from '../web/midi-reference-synth.js';
+import { PROGRAM_FAMILIES, REFERENCE_PERCUSSION, ReferenceAudioReceiver } from '../web/midi-reference-synth.js';
 
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 const exact = (numerator, denominator = 1) => ({ numerator: String(numerator), denominator });
@@ -58,6 +58,7 @@ function fixture(inputTracks) {
   return { scoreBytes, expectedScoreSha256, compile, crypto: webcrypto, score, runtime, calls };
 }
 const load = input => loadCleanPerformance(input);
+const deviceName = (text = 'Authored receiver', micros = 0) => row(micros, 'text', { role: 'device_name', text });
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-10, `${actual} != ${expected}`);
 
 class Param {
@@ -431,7 +432,7 @@ test('every unsupported typed command blocks playback with original event identi
   const drum = await load(fixture([[on(0, 20, 90, 9), off(500000, 20, 0, 9)]]));
   assert.equal(drum.playable, false); assert.equal(drum.blockers[0].code, 'percussion_key_unmapped');
   assert.throws(() => harness(drum), { code: 'playback_blocked' });
-  for (const kind of ['pitch_bend', 'raw_midi', 'sys_ex', 'mystery']) {
+  for (const kind of ['pitch_bend', 'raw_midi', 'mystery']) {
     await assert.rejects(load(fixture([[row(0, kind), on(0), off(500000)]])), { code: 'unknown_semantics' });
   }
 });
@@ -651,4 +652,231 @@ test('receiver refuses unreviewed nonzero, malformed, repeated and misplaced ori
     [[row(0, 'smpte_offset', { timecode: { ...timecode, frame_rate: 'unknown' } }), on(1), off(2)]],
     [[row(0, 'smpte_offset', { timecode: { ...timecode, payload: [96,0,0,0,0] } }), on(1), off(2)]],
   ]) await assert.rejects(load(fixture(tracks)), e => e.code === 'invalid_smpte_offset');
+});
+
+const sensitivity12Kind = 'initial_pitch_bend_sensitivity12';
+const select12Msb = 'select_most_significant_zero', select12Lsb = 'select_least_significant_zero';
+const semitones12 = 'set_semitones12', cents12 = 'set_cents_zero';
+const sensitivity12Sequences = [
+  [select12Lsb, select12Msb, semitones12, cents12],
+  [select12Lsb, select12Msb, select12Lsb, select12Msb, semitones12, semitones12, cents12, cents12],
+  [select12Msb, select12Lsb, select12Msb, select12Lsb, semitones12, semitones12, cents12, cents12],
+];
+const sensitivity12Rows = (steps = sensitivity12Sequences[0], channel = 0) => steps.map((step, index) =>
+  row(exact((index + 1) * 100000, 3), sensitivity12Kind, { channel, step }));
+
+test('all reviewed twelve-semitone sequences retain every exact acknowledgement, repeated write, route and original key', async () => {
+  const tracks = sensitivity12Sequences.map((steps, channel) => [
+    program(0, 24 * channel, channel), row(0, 'bank_select', { channel, component: 'most_significant', value: 0 }),
+    control(0, 'volume', 96, channel), control(0, 'pan', 64, channel), control(0, 'expression', 100, channel),
+    control(0, 'reverb_send', 0, channel), control(0, 'chorus_send', 0, channel), ...sensitivity12Rows(steps, channel),
+    ...(channel === 2 ? [] : [on(exact(800000, 3), 60 + channel, 90, channel), off(1000000, 60 + channel, 27, channel)]), row(1100000, 'track_end'),
+  ]);
+  tracks.push([row(0, 'text', { role: 'track_name', text: 'Authored silent conductor' }), row(1100000, 'track_end')]);
+  const f = fixture(tracks), before = JSON.stringify(f.runtime), p = await load(f), scheduled = [];
+  assert.equal(p.playable, true); assert.equal(p.trackCount, 4); assert.equal(p.voices.length, 2);
+  for (let channel = 0; channel < 3; channel++) {
+    assert.deepEqual(p.pitchStates[channel], { pitch_bend: 0, sensitivity_semitones: 12, sensitivity_cents: 0,
+      rpn_most_significant: 0, rpn_least_significant: 0, sensitivity12_steps: sensitivity12Sequences[channel] });
+  }
+  assert.equal(p.acknowledgements.filter(ack => ack.disposition === sensitivity12Kind).length, 20);
+  const original = ReferenceAudioReceiver.prototype.schedule;
+  ReferenceAudioReceiver.prototype.schedule = function(voice, ...args) { scheduled.push({ key: voice.key, eventId: voice.eventId }); return original.call(this, voice, ...args); };
+  try {
+    const h = harness(p); await h.play(); h.advance(1.2);
+    assert.equal(h.player.snapshot().state, 'ended');
+    assert.deepEqual(h.acknowledgements.map(a => a.eventId), f.runtime.events.map(e => e.event_id));
+    assert.deepEqual(h.acknowledgements.map(a => a.exactMicroseconds), f.runtime.events.map(e => e.exact_microseconds));
+    for (const ack of h.acknowledgements) near(ack.scheduledAudioTime, 0.05 + performanceSeconds(ack.exactMicroseconds));
+    assert.deepEqual(scheduled, f.runtime.events.filter(e => e.command.kind === 'key_attack').map(e => ({ key: e.command.key, eventId: e.event_id })));
+    assert.equal(JSON.stringify(f.runtime), before); h.silent();
+    for (let track = 0; track < 4; track++) {
+      scheduled.length = 0; const muted = harness(p); muted.player.setTrackMuted(track, true); await muted.play(); muted.advance(1.2);
+      assert.equal(muted.acknowledgements.length, p.eventCount);
+      assert.deepEqual(scheduled, p.voices.filter(voice => voice.trackIndex !== track).map(voice => ({ key: voice.key, eventId: voice.eventId }))); muted.silent();
+    }
+  } finally { ReferenceAudioReceiver.prototype.schedule = original; }
+});
+
+test('pause mid-initialization and resume rebuilds the exact prefix before sounding unchanged keys', async () => {
+  const p = await load(fixture([[...sensitivity12Rows(sensitivity12Sequences[1]), on(exact(800000, 3)), off(1000000)]])), h = harness(p);
+  await h.play(); h.advance(0.2); h.player.pause(); h.silent();
+  await h.play(); h.advance(1.3); assert.equal(h.player.snapshot().state, 'ended'); h.silent();
+  assert.deepEqual(new Set(h.acknowledgements.map(ack => ack.eventId)), new Set(p.runtime.events.map(event => event.event_id)));
+  h.player.stop(); await h.play(); h.advance(2.5); assert.equal(h.player.snapshot().state, 'ended'); h.silent();
+});
+
+test('twelve-semitone initialization retains nonzero bank semantics and blocks procedural playback', async () => {
+  const p = await load(fixture([[row(0, 'bank_select', { channel: 0, component: 'least_significant', value: 1 }),
+    ...sensitivity12Rows(), on(200000), off(400000)]]));
+  assert.equal(p.playable, false); assert.deepEqual(p.blockers.map(b => b.code), ['unsupported_bank_select']);
+  assert.equal(p.acknowledgements.filter(ack => ack.disposition === sensitivity12Kind).length, 4);
+  assert.throws(() => harness(p), { code: 'playback_blocked' });
+});
+
+test('twelve-semitone initialization rejects every unreviewed ordering, repeat, interruption and prior key activity', async t => {
+  const group = () => sensitivity12Rows(), ending = () => [on(400000), off(500000)];
+  const edits = [
+    ['truncated group', () => [group().slice(0, -1)]],
+    ['unreviewed short MSB-first group', () => [sensitivity12Rows([select12Msb, select12Lsb, semitones12, cents12])]],
+    ['twenty-four semitones', () => [sensitivity12Rows([select12Lsb, select12Msb, 'set_semitones24', cents12])]],
+    ['deselection', () => [sensitivity12Rows([select12Lsb, select12Msb, semitones12, 'deselect_least_significant'])]],
+    ['repeated whole group', () => [sensitivity12Rows([...sensitivity12Sequences[0], ...sensitivity12Sequences[0]])]],
+    ['metadata inside group', () => { const rows = group(); rows.splice(2, 0, row(70000, 'text', { role: 'text', text: 'interruption' })); return [rows]; }],
+    ['control inside group', () => { const rows = group(); rows.splice(2, 0, control(70000, 'volume', 90)); return [rows]; }],
+    ['other channel inside group', () => { const rows = group(); rows.splice(2, 0, program(70000, 0, 1)); return [rows]; }],
+    ['sustain before group', () => [[control(0, 'sustain', 0), ...group()]]],
+    ['reset before group', () => [[row(0, 'initial_controller_reset', { channel: 0 }), control(0, 'sustain', 0), ...group()]]],
+    ['zero-time reset after complete group', () => [[...group().map(event => ({...event, time: exact(0)})), row(0, 'initial_controller_reset', {channel: 0}), control(0, 'sustain', 0)]]],
+    ['pressure before group', () => [[row(0, 'key_pressure', { channel: 0, key: 60, pressure: 0 }), ...group()]]],
+    ['attack before group', () => [[on(0), ...group()]]],
+    ['release before group', () => [[off(0), ...group()]]],
+    ['attack midway', () => { const rows = group(); rows.splice(2, 0, on(70000)); return [rows]; }],
+    ['shared channel later', () => [group(), [program(300000, 0), row(500000, 'track_end')]]],
+    ['bend before group', () => [[row(0, 'pitch_bend', { channel: 0, value: 0 }), ...group()]]],
+    ['bend after group', () => [[...group(), row(300000, 'pitch_bend', { channel: 0, value: 0 })]]],
+    ['bend on another channel', () => [group(), [row(300000, 'pitch_bend', { channel: 1, value: 0 })]]],
+  ];
+  for (const [name, build] of edits) await t.test(name, async () => {
+    const tracks = build(); tracks[0].push(...ending());
+    await assert.rejects(load(fixture(tracks)), { code: 'invalid_initial_sensitivity12' });
+  });
+});
+
+test('malformed twelve-semitone runtime payloads, source coordinates and exact clocks fail before audio', async t => {
+  const edits = [
+    ['extra payload', r => r.events[0].command.value = 12],
+    ['unknown step', r => r.events[0].command.step = 'set_semitones13'],
+    ['missing step', r => delete r.events[0].command.step],
+    ['bad channel', r => r.events[0].command.channel = 16],
+    ['source gap', r => r.events[1].origin.event++],
+    ['extra source field', r => r.events[0].origin.raw = 0],
+    ['source duplicate', r => r.events[1].origin = { ...r.events[0].origin }],
+    ['wrong track', r => r.events[1].origin.track = 1],
+    ['numeric clock', r => r.events[0].exact_microseconds.numerator = 1],
+    ['negative clock', r => r.events[0].exact_microseconds.numerator = '-1'],
+    ['overflow clock', r => r.events[0].exact_microseconds.numerator = '18446744073709551616'],
+    ['invalid denominator', r => r.events[0].exact_microseconds.denominator = 0],
+    ['extra clock field', r => r.events[0].exact_microseconds.raw = 0],
+    ['regressive exact time', r => r.events[1].exact_microseconds = exact(1, 3)],
+    ['reordered events', r => [r.events[0], r.events[1]] = [r.events[1], r.events[0]]],
+  ];
+  for (const [name, edit] of edits) await t.test(name, async () => {
+    const f = fixture([[...sensitivity12Rows(), on(200000), off(400000)]]); edit(f.runtime);
+    await assert.rejects(load(f), { code: 'invalid_initial_sensitivity12' });
+  });
+});
+
+test('single logical device mapping preserves exact events, chooses an explicit policy and acknowledges FF09 as routing', async () => {
+  const name = 'Authored <device> 音源  ';
+  const f = fixture([
+    [row(0, 'tempo', { microseconds_per_quarter: 500000 }), row(500000, 'track_end')],
+    [deviceName(name), row(0, 'text', { role: 'program_name', text: 'Authored program' }), row(0, 'bank_select', { channel: 0, component: 'most_significant', value: 0 }), program(0, 24), on(0), off(500000)],
+    [deviceName(name), program(0, 48, 1), on(0, 65, 90, 1), off(500000, 65, 27, 1)],
+  ]);
+  const before = structuredClone(f.runtime), prepared = await load(f);
+  assert.equal(prepared.playable, true);
+  assert.deepEqual(prepared.logical_device_mapping, { device_name: name, receiver: 'wmh-procedural-reference-v1', policy: 'single_named_device_to_procedural_receiver' });
+  assert.equal(prepared.policy.logical_device_mapping, prepared.logical_device_mapping);
+  assert.match(prepared.policy.id, /:single-named-device-v1$/);
+  assert.deepEqual(prepared.runtime, before);
+  assert.deepEqual(prepared.acknowledgements.filter(ack => ack.disposition === 'logical_device_mapping').map(ack => ack.event.command.text), [name, name]);
+  const h = harness(prepared);
+  await assert.rejects(h.player.play({ userGesture: true, acceptedPolicyId: prepared.policy.id.replace(':single-named-device-v1', '') }), { code: 'reference_policy_required' });
+  assert.equal(h.factoryCalls(), 0);
+  await h.play(); h.advance(.7);
+  assert.deepEqual(h.acknowledgements.map(ack => [ack.eventId, ack.exactMicroseconds, ack.disposition]), prepared.acknowledgements.map(ack => [ack.eventId, ack.event.exact_microseconds, ack.disposition]));
+  assert.deepEqual(prepared.voices.map(voice => voice.key), [60, 65]);
+  assert.equal(h.player.snapshot().state, 'ended');
+});
+
+test('unresolved named routes retain complete events but block the actual typed receiver before audio', async t => {
+  const named = [deviceName(), on(0), off(500000)], conductor = [row(0, 'tempo', { microseconds_per_quarter: 500000 }), row(500000, 'track_end')];
+  const cases = [
+    ['empty', [[deviceName(''), on(0), off(500000)]]],
+    ['whitespace', [[deviceName(' \t\n'), on(0), off(500000)]]],
+    ['duplicate identical', [[deviceName(), deviceName(), on(0), off(500000)]]],
+    ['changed destination', [[deviceName(), deviceName('Other authored device'), on(0), off(500000)]]],
+    ['mixed default track', [named, [on(0, 65, 90, 1), off(500000, 65, 0, 1)]]],
+    ['different track name', [named, [deviceName('Other authored device'), on(0, 65, 90, 1), off(500000, 65, 0, 1)]]],
+    ['late time', [[deviceName('Authored receiver', 1), on(1), off(500000)]]],
+    ['after program', [[program(0, 0), deviceName(), on(0), off(500000)]]],
+    ['after bank', [[row(0, 'bank_select', { channel: 0, component: 'most_significant', value: 0 }), deviceName(), on(0), off(500000)]]],
+    ['after ProgramName', [[row(0, 'text', { role: 'program_name', text: 'Authored program' }), deviceName(), on(0), off(500000)]]],
+    ['shared channel', [named, [deviceName(), on(0, 65), off(500000, 65)]]],
+    ['control-only default track', [named, [program(0, 24, 1), row(500000, 'track_end')]]],
+    ['conflicting conductor', [[deviceName('Other authored device'), ...conductor], named]],
+    ['duplicate conductor', [[deviceName(), deviceName(), ...conductor], named]],
+    ['late conductor', [[row(0, 'text', { role: 'program_name', text: 'Authored program' }), deviceName(), ...conductor], named]],
+  ];
+  for (const [label, rows] of cases) await t.test(label, async () => {
+    const f = fixture(rows), before = structuredClone(f.runtime), prepared = await load(f);
+    assert.equal(prepared.playable, false); assert.equal(prepared.logical_device_mapping, null);
+    assert.ok(prepared.blockers.some(blocker => blocker.code === 'unresolved_logical_device_route'));
+    assert.deepEqual(prepared.runtime, before);
+    assert.ok(prepared.acknowledgements.filter(ack => ack.event.command.role === 'device_name').every(ack => ack.disposition === 'blocked'));
+    let calls = 0;
+    assert.throws(() => createCleanPerformancePlayer(prepared, { contextFactory: () => { calls++; } }), { code: 'playback_blocked' });
+    assert.equal(calls, 0);
+  });
+});
+
+test('typed routing binds source name, source beat and runtime time even when compiler identity remains valid', async () => {
+  for (const edit of [
+    f => { f.runtime.events[0].command = { kind: 'text', role: 'device_name', text: 'Changed authored device' }; },
+    f => { f.runtime.events[0].command = { kind: 'text', role: 'track_name', text: 'Authored receiver' }; },
+    f => { f.runtime.events[0].exact_microseconds = exact(1); },
+  ]) {
+    const f = fixture([[deviceName(), on(100), off(500000)]]); edit(f);
+    const prepared = await load(f);
+    assert.equal(prepared.playable, false); assert.equal(prepared.logical_device_route_reason, 'source_runtime_binding');
+    assert.equal(prepared.runtime.events.length, f.runtime.events.length);
+  }
+  const f = fixture([[deviceName(), on(100), off(500000)]]), score = structuredClone(f.score);
+  score.performance.events[0].at = { numerator: 1, denominator: 500000 };
+  const scoreBytes = new TextEncoder().encode(JSON.stringify(score)), expectedScoreSha256 = sha256(scoreBytes);
+  f.runtime.score_sha256 = expectedScoreSha256;
+  const prepared = await load({ scoreBytes, expectedScoreSha256, compile: async () => f.runtime, crypto: webcrypto });
+  assert.equal(prepared.playable, false); assert.equal(prepared.logical_device_route_reason, 'source_runtime_binding');
+});
+
+test('named routing keeps bank restrictions and no-name behavior, and rejects runtime ports, prefixes and SysEx', async () => {
+  const unchanged = await load(fixture([[on(0), off(500000)], [on(0, 65), off(500000, 65)]]));
+  assert.equal(unchanged.playable, true); assert.equal(unchanged.logical_device_mapping, null);
+  assert.equal(unchanged.policy, REFERENCE_RECEIVER_POLICY);
+  const bank = await load(fixture([[deviceName(), row(0, 'bank_select', { channel: 0, component: 'most_significant', value: 1 }), on(0), off(500000)]]));
+  assert.equal(bank.playable, false); assert.ok(bank.logical_device_mapping);
+  assert.deepEqual(bank.blockers.map(blocker => blocker.code), ['unsupported_bank_select']);
+  for (const route of [row(0, 'midi_port', { port: 0 }), row(0, 'channel_prefix', { channel: 0 }), row(0, 'sysex', { data: [] }), row(0, 'sys_ex', { data: [] }), row(0, 'text', { role: 'midi_port', text: '0' })]) {
+    const prepared = await load(fixture([[route, on(0), off(500000)]]));
+    assert.equal(prepared.playable, false); assert.equal(prepared.acknowledgements[0].disposition, 'blocked');
+    assert.ok(prepared.blockers.some(blocker => blocker.code === 'unresolved_logical_device_route'));
+  }
+});
+
+test('typed named routing retains the full native MIDI tempo range and exact native clocks', async () => {
+  for (const tempo of [1, 99999, 100000, 6000000, 6000001, 0xffffff]) {
+    const f = fixture([[deviceName(), row(0, 'tempo', { microseconds_per_quarter: tempo }), on(0), off(500000)]]);
+    const score = structuredClone(f.score), runtime = structuredClone(f.runtime);
+    for (const event of runtime.events) if (event.exact_microseconds.numerator === '500000') event.exact_microseconds = exact(tempo);
+    runtime.duration_microseconds = exact(tempo);
+    const scoreBytes = new TextEncoder().encode(JSON.stringify(score)), expectedScoreSha256 = sha256(scoreBytes);
+    runtime.score_sha256 = expectedScoreSha256;
+    const prepared = await load({ scoreBytes, expectedScoreSha256, compile: async () => runtime, crypto: webcrypto });
+    assert.equal(prepared.playable, true, `tempo ${tempo}`);
+    assert.deepEqual(prepared.voices[0].end, exact(tempo));
+  }
+});
+
+test('named route labels apply identical UTF-8 bounds and reject controls without changing exact valid names', async () => {
+  const invalid=['Route\0A','Route\nA','Route\tA','Route\rA','Route\x7fA','Route\u0085A','\u00a0\u2003','A'.repeat(4097),'é'.repeat(2049),'Route\ud800A','A'.repeat(257),'DM: literal route','\u2003DM: literal route'];
+  for(const name of invalid){
+    const f=fixture([[deviceName(name),on(0),off(500000)]]), prepared=await load(f);
+    assert.equal(prepared.playable,false);assert.equal(prepared.logical_device_route_reason,'empty_or_invalid_name');
+    assert.equal(prepared.runtime.events[0].command.text,name);
+  }
+  for(const name of ['  Studio A  ','  studio a  ','A'.repeat(256),'A '.repeat(2048),'é'.repeat(2048),'🎹'.repeat(1024)]){
+    const prepared=await load(fixture([[deviceName(name),on(0),off(500000)]]));
+    assert.equal(prepared.playable,true);assert.equal(prepared.logical_device_mapping.device_name,name);
+  }
 });

@@ -81,6 +81,23 @@ pub fn convert_midi(bytes: &[u8]) -> Result<CompleteScore, String> {
             end: Beat::ZERO,
         })
         .collect();
+    // Source validation has proved the entire grammar. Select its closed command
+    // vocabulary without coalescing any of the original selector/value writes.
+    let sensitivity12_channels: BTreeSet<_> = timeline
+        .events()
+        .iter()
+        .filter_map(|event| match event.kind() {
+            EventKind::Channel {
+                channel,
+                message:
+                    ChannelMessage::Controller {
+                        controller: 6,
+                        value: 12,
+                    },
+            } => Some(*channel),
+            _ => None,
+        })
+        .collect();
     let mut part_channels = BTreeMap::new();
     let mut notes = Vec::new();
     let mut events = Vec::new();
@@ -117,6 +134,9 @@ pub fn convert_midi(bytes: &[u8]) -> Result<CompleteScore, String> {
                     93 => Command::ChorusSend { channel: *channel, value: *value },
                     121 if *value == 0 && event.tick() == 0 => Command::InitialControllerReset { channel: *channel },
                     64 if *value == 0 && event.tick() == 0 => Command::InitialSustainOff { channel: *channel },
+                    6 | 38 | 100 | 101 if sensitivity12_channels.contains(channel) => Command::InitialPitchBendSensitivity12 {
+                        channel: *channel, step: InitialPitchBendSensitivity12Step::from_controller(*controller, *value)?,
+                    },
                     6 | 38 | 100 | 101 if event.tick() == 0 => initial_pitch_bend_sensitivity(*channel, *controller, *value)?,
                     _ => return Err(format!("Controller {controller} has no supported complete semantic conversion")),
                 },

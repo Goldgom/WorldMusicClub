@@ -204,7 +204,15 @@ conversion is not claimed for these sources. Controller initialization supports
 the existing importer-proven reset/sustain-off pair at zero, before other
 control/note state; a preceding program remains intact. Program/volume/pan are not
 reset by this command. A separate reviewed six-event initial pitch-bend sensitivity
-sequence is described in [INITIAL_MIDI_SENSITIVITY.md](INITIAL_MIDI_SENSITIVITY.md).
+sequence and the separate pre-key-activity twelve-semitone groups are described
+in [INITIAL_MIDI_SENSITIVITY.md](INITIAL_MIDI_SENSITIVITY.md). Twelve-semitone setup
+retains every authored duplicate and exact nonzero time, keeps RPN0 selected,
+and rejects all bends. Its support does not imply a nonzero-bank reference map
+or typed notation/practice coverage.
+FF09 DeviceName retains its exact text and event but requires the explicit
+[single-logical-device routing contract](MIDI_DEVICE_ROUTING.md). Strict source
+import and JSON reload must prove that scope before note pairing; typed structural
+retention alone never authorizes reference playback. Names prove no bank or timbre.
 Inferred staff/voice identities live in canonical notation.
 
 Future profiles may include performance-only percussion/voices with no pitched
