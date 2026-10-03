@@ -26,6 +26,8 @@ PERFORMANCE_SONG_EVIDENCE = ['native-performance-song.json', 'native-performance
 PERFORMANCE_SONG_CLAIMS = {
     'native_file_picker': True, 'fresh_process_restart': True, 'explicit_reference_policy': True,
     'audio_source_schedule_and_track_mute': True, 'sustain_gate_preserves_source_release': True,
+    'named_route_disclosure_both_locales': True, 'centered_rpn12_exact_events': True,
+    'unsupported_bank_blocked_before_audio': True,
     'validated_notation': False, 'practice_targets': False, 'actual_audibility': False, 'original_timbre': False}
 
 

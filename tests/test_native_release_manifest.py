@@ -291,6 +291,20 @@ class NativeReleaseTests(unittest.TestCase):
                 write_json(proof_path, {**original, 'claims': {**original['claims'], key: not original['claims'][key]}})
                 with self.subTest(claim=key), self.assertRaisesRegex(ValueError, 'acceptance scope'):
                     native.accepted_performance_song_evidence(directory, exe, 'b' * 40, 'c' * 40)
+                missing = {name: value for name, value in original['claims'].items() if name != key}
+                write_json(proof_path, {**original, 'claims': missing})
+                with self.subTest(missing_claim=key), self.assertRaisesRegex(ValueError, 'acceptance scope'):
+                    native.accepted_performance_song_evidence(directory, exe, 'b' * 40, 'c' * 40)
+            for value in [True, False]:
+                write_json(proof_path, {**original, 'claims': {**original['claims'], 'unknown_claim': value}})
+                with self.subTest(unknown_claim=value), self.assertRaisesRegex(ValueError, 'acceptance scope'):
+                    native.accepted_performance_song_evidence(directory, exe, 'b' * 40, 'c' * 40)
+            for key in ['named_route_disclosure_both_locales', 'centered_rpn12_exact_events',
+                        'unsupported_bank_blocked_before_audio']:
+                for value in [1, 'true', None]:
+                    write_json(proof_path, {**original, 'claims': {**original['claims'], key: value}})
+                    with self.subTest(claim=key, malformed=value), self.assertRaisesRegex(ValueError, 'acceptance scope'):
+                        native.accepted_performance_song_evidence(directory, exe, 'b' * 40, 'c' * 40)
             write_json(proof_path, original)
             for phase in native.PERFORMANCE_SONG_PHASES:
                 path = directory / f'renderer-{phase}.json'
