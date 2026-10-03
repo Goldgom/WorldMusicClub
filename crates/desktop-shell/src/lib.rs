@@ -1,5 +1,7 @@
-//! Socket-free adapter for the existing UI. No filesystem or process commands.
+//! Socket-free adapter for the existing UI. Native storage is a bounded archive
+//! service; renderer requests never provide filesystem paths or process commands.
 pub mod acceptance;
+pub mod native_library;
 use http::{Request, Response};
 use serde_json::{json, Value};
 
@@ -36,7 +38,13 @@ pub fn error(status: u16, message: &str) -> Response<Vec<u8>> {
 /// Keep transport failures structured for the new routes, including the
 /// asynchronous Windows admission/computation wrappers. Old errors are unchanged.
 pub fn operation_error(path: &str, status: u16, code: &str, message: &str) -> Response<Vec<u8>> {
-    if practice_server::is_song_api_route(path) {
+    if native_library::is_library_route(path) {
+        response(
+            status,
+            "application/json; charset=utf-8",
+            serde_json::to_vec(&json!({"code":code,"error":message})).expect("library error JSON"),
+        )
+    } else if practice_server::is_song_api_route(path) {
         engine_response(practice_server::song_api_error(status, code, message))
     } else {
         error(status, message)
@@ -74,13 +82,30 @@ pub fn admission(request: &Request<Vec<u8>>) -> Option<Response<Vec<u8>>> {
         ));
     }
     if request.body().len() > MAX_BODY {
+        if native_library::is_library_route(path) {
+            return Some(operation_error(
+                path,
+                413,
+                "library_request_limit",
+                "Complete library request exceeds 8 MiB; no source was discarded",
+            ));
+        }
         if request.method() == "POST" && practice_server::is_song_api_route(request.uri().path()) {
             return Some(engine_response(practice_server::request_limit_response()));
         }
         return Some(error(413, "Import exceeds 8 MiB limit"));
     }
     if request.method() == "GET" && !request.body().is_empty() {
-        return Some(error(400, "GET request bodies are not accepted"));
+        return Some(if native_library::is_library_route(path) {
+            operation_error(
+                path,
+                400,
+                "library_invalid_request",
+                "GET request bodies are not accepted",
+            )
+        } else {
+            error(400, "GET request bodies are not accepted")
+        });
     }
     if request.method() != "GET" && request.method() != "POST" {
         return Some(operation_error(
@@ -118,10 +143,54 @@ fn engine_response(result: practice_server::ApiResponse) -> Response<Vec<u8>> {
 }
 
 pub fn dispatch(request: Request<Vec<u8>>) -> Response<Vec<u8>> {
+    dispatch_inner(request, None)
+}
+
+/// Only the native host supplies storage. Existing stateless callers never
+/// acquire an implicit filesystem capability or touch application data.
+pub fn dispatch_with_library(
+    request: Request<Vec<u8>>,
+    library: &native_library::NativeLibrary,
+) -> Response<Vec<u8>> {
+    dispatch_inner(request, Some(library))
+}
+
+fn dispatch_inner(
+    request: Request<Vec<u8>>,
+    library: Option<&native_library::NativeLibrary>,
+) -> Response<Vec<u8>> {
     if let Some(reply) = admission(&request) {
         return reply;
     }
     let path = request.uri().path();
+    if native_library::is_library_route(path) {
+        if request.method() == "POST"
+            && request
+                .headers()
+                .get("content-type")
+                .and_then(|value| value.to_str().ok())
+                .map(|value| value.split(';').next().unwrap_or("").trim())
+                != Some("application/json")
+        {
+            return operation_error(
+                path,
+                415,
+                "unsupported_content_type",
+                "Native library operations require application/json",
+            );
+        }
+        return match library {
+            Some(library) => {
+                native_library::dispatch(library, request.method().as_str(), path, request.body())
+            }
+            None => operation_error(
+                path,
+                503,
+                "library_unavailable",
+                "Native filesystem storage is not attached to this adapter",
+            ),
+        };
+    }
     if request.method() == "GET" {
         return match path {
             "/api/health" => json_response(Ok(

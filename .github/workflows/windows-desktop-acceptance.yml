@@ -31,7 +31,7 @@ jobs:
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
       - run: npm test
-      - run: node --test tests/desktop-evidence.test.js tests/desktop-acceptance-wait.test.js
+      - run: node --test tests/desktop-evidence.test.js tests/desktop-acceptance-wait.test.js tests/native-song-folder-evidence.test.js
       - name: Parse the exact native acceptance script
         shell: pwsh
         run: |
@@ -96,6 +96,9 @@ jobs:
       - name: Native files, restart, keyboard, library and close acceptance
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-acceptance
+      - name: Native song folders and fresh-profile restart acceptance
+        shell: pwsh
+        run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-song-folder -Scenario song-folder
       # Default success() keeps all package steps behind the actual native gates.
       - name: Package accepted native executable with exact provenance and notices
         id: native_package
@@ -113,7 +116,7 @@ jobs:
           Copy-Item -Recurse dist/licenses/native-rust "$folder/licenses/rust"
           Copy-Item desktop-startup/native-report.json,desktop-startup/renderer-report.json "$folder/evidence/"
           Copy-Item desktop-acceptance/native-acceptance.json,desktop-acceptance/downloaded-files.json,desktop-acceptance/renderer-*.json "$folder/evidence/"
-          python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance
+          python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder
           if ($LASTEXITCODE -ne 0) { throw 'Native provenance/acceptance inventory failed' }
           $zip="dist/WorldMusicHub-Native-Windows-x64-commit-$count.zip"
           python scripts/native-release-manifest.py archive $folder $zip
@@ -138,6 +141,12 @@ jobs:
             desktop-acceptance/*.json
             desktop-acceptance/*.png
             desktop-acceptance/*.log
+            desktop-song-folder/*.json
+            desktop-song-folder/*.png
+            desktop-song-folder/*.log
+            desktop-song-folder/downloads/*
+            desktop-song-folder/Scores/songs/*/*
+            desktop-song-folder/Scores/backups/*/*
             desktop-portable/*.json
             desktop-portable/*.png
             desktop-portable/*.log

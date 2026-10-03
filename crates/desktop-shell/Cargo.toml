@@ -10,6 +10,8 @@ license.workspace = true
 practice-server = { path = "../practice-server" }
 score-core = { path = "../score-core" }
 serde_json.workspace = true
+serde.workspace = true
+sha2 = "=0.10.9"
 http = "1"
 
 [target.'cfg(windows)'.dependencies]

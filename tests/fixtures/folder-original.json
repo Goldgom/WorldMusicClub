@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "id": "native-folder-original-exercise",
+  "title": "Folder acceptance original",
+  "composer": "WorldMusicHub test authors",
+  "provenance": {
+    "kind": "original_exercise",
+    "attribution": "Newly authored native folder acceptance exercise; CC0-1.0",
+    "source_url": null,
+    "license": "CC0-1.0"
+  },
+  "parts": [
+    {
+      "id": "piano",
+      "name": "Piano",
+      "instrument": "piano",
+      "notes": [
+        {
+          "id": "folder-c",
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 3,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "C",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "folder-e",
+          "at": {
+            "numerator": 4,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 4,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "E",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "1",
+          "staff": 1,
+          "velocity": 85,
+          "tie_start": false,
+          "tie_stop": false
+        }
+      ]
+    }
+  ],
+  "tempo": [
+    {
+      "at": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "bpm": 60
+    }
+  ],
+  "meters": [
+    {
+      "at": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "numerator": 4,
+      "denominator": 4
+    }
+  ],
+  "keys": [
+    {
+      "at": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "fifths": 0,
+      "mode": "major"
+    }
+  ],
+  "measures": [
+    {
+      "number": 1,
+      "at": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "length": {
+        "numerator": 4,
+        "denominator": 1
+      }
+    },
+    {
+      "number": 2,
+      "at": {
+        "numerator": 4,
+        "denominator": 1
+      },
+      "length": {
+        "numerator": 4,
+        "denominator": 1
+      }
+    }
+  ],
+  "repeats": [],
+  "source": {
+    "format": "jianpu",
+    "filename": "folder-original.jianpu",
+    "content": "# Newly authored acceptance fixture; CC0-1.0\r\n1=C\r\n4/4\r\n1 - - 0 | 3 - - - |\r\n"
+  }
+}

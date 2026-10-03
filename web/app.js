@@ -10,6 +10,9 @@ import {setupSourceArchiveView} from './source-archive-view.js';
 import {setupGameShell} from './game-shell.js';
 import {setupNoticeView} from './notice-view.js';
 import {ScorePreview,filterCatalog} from './score-preview.js';
+import {openScoreStorage} from './native-score-storage.js';
+import {ScoreStorageModel,createImportPersistenceTicket,buildSongList,loadSongListItem} from './score-storage-model.js';
+import {setupScoreStorageView,setupScoreStorageLobbyStatus,describePersistenceResult} from './score-storage-view.js';
 import {setupPerformanceView,FIELD_COLORS,previewMusicMetadata} from './performance-view.js';
 import {renderPianoKeybed,renderPianoRails,pianoMinimumWidth} from './piano-stage-view.js';
 import {setupGuitarGuidance} from './guitar-guidance.js';
@@ -105,7 +108,8 @@ let transpositionView = null;
 let externalOmrView = null;
 let notationFollowing = null;
 let writtenCursor = null, writtenCursorStatus = null, writtenCursorRetry = null;
-let sourceArchiveView=null,referenceListening=null,lobbyPreview=null;
+let sourceArchiveView=null,referenceListening=null,lobbyPreview=null,scoreStorage=null,scoreStorageView=null;
+let pendingScoreSaveOwner=null,scoreSaveNavigation=0,noticeRevision=0;
 let midiController=null;
 let freeSession=null,freeView=null,freePreview=null,freeLiveOwner=null,freeLiveStart=0,freeCaptureState='idle',freeRecordInstrument=null,freeClockWall=0,freeWindowFocused=true;
 const inputRoutes=[],inputContacts=new Map();
@@ -133,6 +137,7 @@ state.recorder = createRecorder();routedScoreRecorder=state.recorder;
 inputRoutes.push({kind:'score',recorder:state.recorder,start:0,end:null});
 function refreshFreeTone(){bindText($('free-live-tone'),()=>`${i18n.t('ui.instrument')}: ${i18n.t(`free.timbre.${state.instrument}`)}`);}
 function changeScreen(screen){
+  scoreSaveNavigation++;
   referenceListening?.close();
   keyboardInput?.contextChanged('screen_changed');
   if(screen==='free'){
@@ -143,16 +148,17 @@ function changeScreen(screen){
   keyboardInputView?.setScreen(screen);
   performanceView?.screenChanged(screen);engravedView.surfaceChanged();drawFrame();
 }
-shell=setupGameShell({i18n,pausePlayback,onPanel:name=>{referenceListening?.close();cancelPendingStart();if(name==='results')updateResultsSummary()},onScreen:changeScreen,
+shell=setupGameShell({i18n,pausePlayback,onPanel:name=>{scoreSaveNavigation++;referenceListening?.close();cancelPendingStart();if(name==='results')updateResultsSummary()},onScreen:changeScreen,
   onNotation:()=>{engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
 const noticeView=setupNoticeView({document,i18n,getScope:()=>state.score?.title});
 lobbyPreview=setupLobbyPreview({document,i18n,allowed:()=>shell.screen()==='library'&&!startingPreview&&!document.hidden&&!document.querySelector('dialog[open]')});
 preview=new ScorePreview({compile:(score,signal)=>api('/api/compile',score,signal),check:checkPreview,onChange:()=>{renderPreview();renderCatalog()}});
 
 function notice(message, error = false) {
+  noticeRevision++;
   noticeView.show(message,error);
 }
-function clearNotice() { noticeView.clear(); }
+function clearNotice() { noticeRevision++;noticeView.clear(); }
 function compatibilityNotice(result) {const snapshot={...result,reasonParams:{...result.reasonParams}};return()=>compatibilityText(snapshot);}
 async function api(path, body, signal) {
   const response = await fetch(path, {method: body === undefined ? 'GET' : 'POST', headers: body === undefined ? {} : {'Content-Type': 'application/json'}, body: body === undefined ? undefined : JSON.stringify(body), signal});
@@ -226,7 +232,7 @@ function resetPlayback() {
   bindText($('feedback-description'), () => state.mode === 'practice' ? t('app.practiceHelp') : t('app.listenHelp'));
   updateButtons(); drawFrame();
 }
-async function compileScore(score, preserveTempo = false, expectedIntent = null, importDiagnostics = [], requestedPracticePart = undefined, requestedMode = undefined) {
+async function compileScore(score, preserveTempo = false, expectedIntent = null, importDiagnostics = [], requestedPracticePart = undefined, requestedMode = undefined, requestedIdentity = undefined) {
   if (preserveTempo) importDiagnostics = state.importDiagnostics;
   if (expectedIntent !== null && expectedIntent !== state.loadIntent) return false;
   if (expectedIntent === null) {state.loadIntent++;cancelCatalogSelection();}
@@ -261,9 +267,9 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     clearNotice();
     notationFollowing?.scoreChanged();
     resetPlayback();
-    renderScore(); sourceArchiveView?.scoreChanged(); libraryView.scoreChanged(); adaptationView?.scoreChanged(); transpositionView?.scoreChanged(); renderCatalog(); updateRangeWarning();
+    renderScore(); sourceArchiveView?.scoreChanged(); libraryView.scoreChanged(); scoreStorageView?.render(); adaptationView?.scoreChanged(); transpositionView?.scoreChanged(); renderCatalog(); updateRangeWarning();
     bindText($('catalog-status'), () => t('app.currentSession', {title:state.score.title}));
-    const clockScore=state.score;await checkInstrument();if(state.score===clockScore){metronome?.setScore();preview.adopt(state.compiled,previewCompatibility(state.compatibility),state.practicePart);}
+    const clockScore=state.score;await checkInstrument();if(state.score===clockScore){metronome?.setScore();preview.adopt(state.compiled,previewCompatibility(state.compatibility),state.practicePart,requestedIdentity);}
     return state.score===clockScore&&(expectedIntent===null||expectedIntent===state.loadIntent);
   } catch (error) {
     if (error.name === 'AbortError') return;
@@ -274,28 +280,59 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     updateButtons();
   }
 }
+function songRows() {
+  // Keep shipped catalog identifiers compatible; saved editions have their own
+  // backend/copy identity even when their canonical score.id matches a catalog.
+  return buildSongList(state.catalog,scoreStorage?.snapshot().entries||[],{catalogIdentity:item=>item.id});
+}
+function savedStorageLabel(kind) {return i18n.locale==='en'?(kind==='native'?'Saved on this computer':'Saved in this browser'):(kind==='native'?'本机已存谱面':'浏览器已存谱面');}
+function rowScore(row) {return row?.catalog||(row?.saved?{...row.saved,provenance:row.saved.provenance||{kind:'user_import'}}:null);}
 function renderCatalog() {
-  const catalog=$('catalog');
-  bindText($('catalog-count'), () => String(state.catalog.length));
-  const filtered=filterCatalog(state.catalog,$('catalog-search').value,$('catalog-origin').value),wanted=new Set(filtered.map(score=>score.id));
-  for(const child of [...catalog.children])if(!child.classList.contains('catalog-item')||!wanted.has(child.dataset.scoreId))child.remove();
-  const existing=new Map([...catalog.children].map(button=>[button.dataset.scoreId,button]));
-  filtered.forEach((score,index)=>{
-    let button=existing.get(score.id);
+  const catalog=$('catalog'),rows=songRows(),origin=$('catalog-origin').value;
+  bindText($('catalog-count'), () => String(rows.length));
+  const filtered=rows.filter(row=>filterCatalog([rowScore(row)],$('catalog-search').value,origin).length),wanted=new Set(filtered.map(row=>row.selectionKey));
+  for(const child of [...catalog.children])if(!child.classList.contains('catalog-item')||!wanted.has(child.dataset.songKey))child.remove();
+  const existing=new Map([...catalog.children].map(button=>[button.dataset.songKey,button]));
+  filtered.forEach((row,index)=>{
+    let button=existing.get(row.selectionKey);
     if(!button){
-      button=document.createElement('button');button.className='catalog-item';button.dataset.scoreId=score.id;
+      button=document.createElement('button');button.className='catalog-item';button.dataset.songKey=row.selectionKey;
+      if(row.source==='catalog')button.dataset.scoreId=row.scoreId;else button.dataset.libraryKey=row.libraryKey;
       const number=document.createElement('span');number.className='number';const label=document.createElement('span');label.append(document.createElement('strong'),document.createElement('small'));button.append(number,label);
-      button.addEventListener('click',()=>selectCatalogScore(score.id));
+      button.addEventListener('click',()=>selectSongScore(row.selectionKey));
     }
-    const selected=preview?.value.identity===score.id,loading=preview?.value.status==='loading'&&selected;
+    const selected=preview?.value.identity===row.selectionKey,loading=preview?.value.status==='loading'&&selected;
     button.classList.toggle('selected',selected);button.setAttribute('aria-pressed',String(selected));button.setAttribute('aria-busy',String(loading));button.classList.toggle('loading',loading);
-    bindText(button.querySelector('.number'), () => String(index+1).padStart(2,'0'));bindText(button.querySelector('strong'), () => score.title);
-    bindText(button.querySelector('small'), () => t('app.catalogItem', {count:score.written_event_count,bpm:score.opening_bpm,origin:originLabel(score),loading:loading?t('app.loadingSuffix'):''}));
-    // Unchanged entries stay attached, retaining focus while preview/tempo work resolves.
+    bindText(button.querySelector('.number'), () => String(index+1).padStart(2,'0'));bindText(button.querySelector('strong'), () => row.title);
+    bindText(button.querySelector('small'), () => row.source==='saved'?`${savedStorageLabel(row.saved.storageKind)} · ${row.composer||t('app.composerUnknown')}${loading?` · ${t('app.loadingSuffix')}`:''}`:t('app.catalogItem', {count:row.catalog.written_event_count,bpm:row.catalog.opening_bpm,origin:originLabel(row.catalog),loading:loading?t('app.loadingSuffix'):''}));
     if(catalog.children[index]!==button)catalog.insertBefore(button,catalog.children[index]||null);
   });
-  if(!filtered.length&&state.catalog.length){const empty=document.createElement('p');empty.className='catalog-empty';bindText(empty, () => t('app.catalogNoMatch'));catalog.append(empty)}
+  if(!filtered.length&&rows.length){const empty=document.createElement('p');empty.className='catalog-empty';bindText(empty, () => t('app.catalogNoMatch'));catalog.append(empty)}
   if(catalogIndexFailed){const retry=document.createElement('button');retry.className='button secondary';bindText(retry, () => t('app.catalogRetry'));retry.disabled=Boolean(catalogIndexController);retry.addEventListener('click',loadCatalog);catalog.append(retry)}
+}
+function scoreSaveContext(owner) {
+  return owner?{...owner,previewVersion:preview.version,navigation:scoreSaveNavigation,noticeRevision}:null;
+}
+function beginExplicitScoreSave(action) {
+  if(action==='saveCurrent')pendingScoreSaveOwner={score:state.score,intent:state.loadIntent};
+  // Retry/Keep both still belong to the original import or explicit save,
+  // even when another score with the same canonical ID is now active.
+  return scoreSaveContext(pendingScoreSaveOwner);
+}
+function finishScoreSave(result,context) {
+  // Disk/model results remain in settings. Only the matching live source and
+  // uninterrupted preview/navigation may update the app's current selection.
+  if(result.status==='skipped'||!context||state.score!==context.score||state.loadIntent!==context.intent||preview.value.score!==context.score||preview.version!==context.previewVersion||preview.controller||scoreSaveNavigation!==context.navigation)return;
+  if(['saved','duplicate'].includes(result.status)){
+    const entry=result.entry||result.existing;if(entry)preview.publish({...preview.value,identity:entry.libraryKey});
+  }
+  if(noticeRevision===context.noticeRevision)notice(()=>describePersistenceResult(result,{kind:scoreStorage.snapshot().kind,locale:i18n.locale}),['failed','uncertain','conflict'].includes(result.status));
+}
+function persistAcceptedImport(ticket,score,{intent,signal,scoreJson}={}) {
+  if(intent!==state.loadIntent||signal?.aborted)return;
+  pendingScoreSaveOwner={score:state.score,intent};
+  const context=scoreSaveContext(pendingScoreSaveOwner);
+  void scoreStorage.persistImported(ticket,score,{activated:true,signal,scoreJson}).then(result=>finishScoreSave(result,context));
 }
 function renderScore() {
   if (!state.score) return;
@@ -1033,6 +1070,7 @@ $('score-file').addEventListener('change', async event => {
   const file = event.target.files[0]; event.target.value = ''; if (!file) return;
   referenceListening?.close();
   const intent = ++state.loadIntent;cancelCatalogSelection();state.compileController?.abort();
+  const persistenceTicket=createImportPersistenceTicket('file-import');
   const guidance=unsupportedImportHint(file.name,i18n);if(guidance){notice(() => unsupportedImportHint(file.name,i18n),true);return}
   if (file.size > 8 * 1024 * 1024) { notice(() => t('app.fileTooLarge'), true); return; }
   try {
@@ -1048,9 +1086,10 @@ $('score-file').addEventListener('change', async event => {
       const result = await response.json();
       if (!response.ok) throw result.error ? new Error(result.error) : appError('app.importFailed');
       const loaded = await compileScore(result.score, false, intent, result.diagnostics || []);
+      if (loaded) persistAcceptedImport(persistenceTicket,result.score,{intent});
       if (loaded && jianpuText) activateJianpuView();
       if (loaded && Array.isArray(result.diagnostics) && result.diagnostics.length) notice(result.diagnostics.map(d => d.message).join(' '));
-    } else { const score = JSON.parse(content); await compileScore(score, false, intent); }
+    } else { const score = JSON.parse(content); const loaded=await compileScore(score, false, intent); if(loaded)persistAcceptedImport(persistenceTicket,score,{intent,scoreJson:content}); }
   }
   catch (error) { if (intent !== state.loadIntent) return; notice(() => t('app.readError', {name:file.name,detail:errorDetail(error)}), true); }
 });
@@ -1116,7 +1155,7 @@ document.addEventListener('focusin',event=>{if(event.target.closest?.('.beginner
 window.addEventListener('blur', () => {freeWindowFocused=false;keyboardComposing=false;keyboardInput.compositionEnd();pausePlayback('app.blurPaused','blur')});
 window.addEventListener('focus', () => {if(!freeWindowFocused)freeLiveStart=performance.now();freeWindowFocused=true;});
 document.addEventListener('visibilitychange', () => { if (document.hidden) pausePlayback('app.hiddenPaused','hidden');else freeLiveStart=performance.now(); });
-window.addEventListener('pagehide', () => { pausePlayback(undefined,'pagehide'); cancelAnimationFrame(state.frame);cancelPendingStart();if(preview.controller){preview.cancel();preview.publish({...preview.value,status:'error',message:t('app.previewStopped')})} });
+window.addEventListener('pagehide', () => { scoreSaveNavigation++;pausePlayback(undefined,'pagehide'); cancelAnimationFrame(state.frame);cancelPendingStart();if(preview.controller){preview.cancel();preview.publish({...preview.value,status:'error',message:t('app.previewStopped')})} });
 let notationResizeFrame = 0;
 window.addEventListener('resize', () => { cancelAnimationFrame(notationResizeFrame); notationResizeFrame = requestAnimationFrame(() => { renderNotationPage(); drawFrame(); }); });
 $('workspace').addEventListener('notationlayoutchange', () => { cancelAnimationFrame(notationResizeFrame); notationResizeFrame = requestAnimationFrame(() => { renderNotationPage(); drawFrame(); }); });
@@ -1142,7 +1181,7 @@ async function checkPreview(compiled,part,signal){
 function renderPreview(){
   lobbyPreview?.select(preview.value);
   const value=preview.value,changedIdentity=$('song-lobby').dataset.previewId!==(value.identity||'');$('song-lobby').dataset.previewStatus=value.status;$('song-lobby').dataset.previewId=value.identity||'';
-  const item=value.score||state.catalog.find(item=>item.id===value.identity);
+  const item=value.score||rowScore(songRows().find(item=>item.selectionKey===value.identity));
   bindText($('preview-title'), () => item?.title||t('app.chooseScore'));
   bindAttribute($('preview-title'),'title',()=>item?.title||t('app.chooseScore'));
   bindText($('preview-meta'), () => item?t('app.previewMeta', {composer:item.composer||t('app.composerUnknown'),origin:originLabel(item)}):t('app.browseScores'));
@@ -1157,12 +1196,13 @@ function renderPreview(){
   select.value=value.part||'';$('preview-part-label').hidden=!value.compiled;
   if(changedIdentity){$('preview-notices').open=false;document.querySelector('.preview-copy').scrollTop=0;}
 }
-async function selectCatalogScore(id){
-  const item=state.catalog.find(entry=>entry.id===id);if(!item)return;
+async function selectSongScore(identity){
+  const row=songRows().find(entry=>entry.selectionKey===identity);if(!row)return;
   cancelPendingStart();
-  bindText($('catalog-status'), () => t('app.previewing', {title:item.title}));
-  await preview.select(id,signal=>fetchCatalogScore(item,api,catalogCache,signal));
+  bindText($('catalog-status'), () => t('app.previewing', {title:row.title}));
+  await preview.select(identity,signal=>loadSongListItem(row,{model:scoreStorage,signal,loadCatalog:(item,signal)=>fetchCatalogScore(item,api,catalogCache,signal)}));
 }
+async function selectCatalogScore(id){return selectSongScore(id)}
 function refreshPreview(){
   const candidate=preview.value;
   if(candidate.score){preview.cancel();preview.publish({...candidate,compatibility:{status:state.profileDirty?'dirty':'pending',reasonKey:state.profileDirty?'app.previewDirty':'app.previewRechecking'}});}
@@ -1176,7 +1216,7 @@ async function startPreview(mode){
   try{
     if(!synth.muted)await synth.unlock();if(request!==startRequest||version!==preview.version||candidate.score!==preview.value.score)return;
     const intent=++state.loadIntent;
-    const loaded=await compileScore(candidate.score,false,intent,candidate.compiled.diagnostics||[],candidate.part,mode);
+    const loaded=await compileScore(candidate.score,false,intent,candidate.compiled.diagnostics||[],candidate.part,mode,candidate.identity);
     if(!loaded||request!==startRequest||intent!==state.loadIntent)return;
     enteringPreview=true;try{shell.show('stage')}finally{enteringPreview=false;}
     if(mode==='practice'&&state.compatibility.status!=='ready'){notice(compatibilityNotice(state.compatibility),true);return;}
@@ -1191,13 +1231,14 @@ $('preview-part').addEventListener('change',()=>{const value=preview.value;if(va
 for(const id of ['catalog-search','catalog-origin'])$(id).addEventListener(id==='catalog-search'?'input':'change',renderCatalog);
 for(const id of ['instrument','key-count','custom-key-count','custom-lowest','guitar-tuning','guitar-frets','guitar-capo'])$(id).addEventListener(['instrument','key-count'].includes(id)?'change':'input',refreshPreview);
 async function loadCatalog() {
-  const initial=state.loadIntent===0&&!state.score,intent=state.loadIntent,current=++catalogIndexRequest;catalogIndexController?.abort();const controller=new AbortController();catalogIndexController=controller;renderCatalog();bindText($('catalog-status'), () => t('app.catalogLoading'));
-  try {const response=await api('/api/catalog/index',undefined,controller.signal);if(controller.signal.aborted||current!==catalogIndexRequest)return;state.catalog=validateCatalogIndex(response);catalogIndexFailed=false;catalogCache.clear();renderCatalog();bindText($('catalog-status'), () => state.catalog.length?t('app.catalogReady', {count:state.catalog.length}):t('app.catalogEmpty'));if(initial&&intent===state.loadIntent&&state.catalog.length)await selectCatalogScore(state.catalog[0].id);}
+  const initial=state.loadIntent===0&&!state.score,intent=state.loadIntent,previewVersion=preview.version,current=++catalogIndexRequest;catalogIndexController?.abort();const controller=new AbortController();catalogIndexController=controller;renderCatalog();bindText($('catalog-status'), () => t('app.catalogLoading'));
+  try {const response=await api('/api/catalog/index',undefined,controller.signal);if(controller.signal.aborted||current!==catalogIndexRequest)return;state.catalog=validateCatalogIndex(response);catalogIndexFailed=false;catalogCache.clear();renderCatalog();bindText($('catalog-status'), () => state.catalog.length?t('app.catalogReady', {count:state.catalog.length}):t('app.catalogEmpty'));if(initial&&intent===state.loadIntent&&preview.version===previewVersion&&preview.value.status==='empty'&&state.catalog.length)await selectCatalogScore(state.catalog[0].id);}
   catch(error){if(controller.signal.aborted||current!==catalogIndexRequest)return;catalogIndexFailed=true;renderCatalog();bindText($('catalog-status'), () => t('app.catalogUnavailable'));notice(() => t('app.catalogError', {detail:errorDetail(error)}),true)}
   finally{if(catalogIndexController===controller){catalogIndexController=null;renderCatalog()}}
 }
 function activateJianpuView() { setNumberedMode('movable'); $('jianpu-button').click(); }
 async function importJianpuText(text, signal) {
+  const persistenceTicket=createImportPersistenceTicket('jianpu-import');
   const intent = ++state.loadIntent;cancelCatalogSelection();state.compileController?.abort();
   pausePlayback();
   const cancel = () => { if (intent === state.loadIntent) { state.loadIntent++; state.compileController?.abort(); resetPlayback(); } };
@@ -1208,7 +1249,7 @@ async function importJianpuText(text, signal) {
     if (!response.ok) throw result.error ? new Error(result.error) : appError('app.jianpuImportFailed');
     if (signal.aborted || intent !== state.loadIntent) return false;
     const loaded = await compileScore(result.score, false, intent, result.diagnostics || []);
-    if (loaded) { activateJianpuView(); if (result.diagnostics?.length) notice(result.diagnostics.map(item => item.message).join(' ')); }
+    if (loaded) { persistAcceptedImport(persistenceTicket,result.score,{intent,signal}); activateJianpuView(); if (result.diagnostics?.length) notice(result.diagnostics.map(item => item.message).join(' ')); }
     return loaded;
   } finally { signal.removeEventListener('abort', cancel); }
 }
@@ -1220,7 +1261,22 @@ async function importCanonicalScore(score, signal, {practicePart=undefined,diagn
   try{return await compileScore(score,false,intent,diagnostics,practicePart)}
   finally{signal.removeEventListener('abort',cancel)}
 }
+async function importReviewedScore(kind,score,signal,options) {
+  const ticket=createImportPersistenceTicket(kind);
+  const loading=importCanonicalScore(score,signal,options),intent=state.loadIntent;
+  const loaded=await loading;if(loaded)persistAcceptedImport(ticket,score,{intent,signal});return loaded;
+}
 const libraryView = setupScoreLibrary({getScore:()=>state.score,onLoad:importCanonicalScore,validate:(score,signal)=>api('/api/compile',score,signal),pausePlayback,notice});
+// Retain access to older browser-profile copies without implying migration.
+const legacyLibraryButton=$('library-button');legacyLibraryButton.removeAttribute('data-i18n');
+bindText(legacyLibraryButton,()=>i18n.locale==='en'?(scoreStorage?.snapshot().kind==='native'?'Legacy browser archives':'Browser archives'):(scoreStorage?.snapshot().kind==='native'?'旧版浏览器收藏':'浏览器收藏管理'));
+scoreStorage=new ScoreStorageModel({openStorage:()=>openScoreStorage({origin:location.origin,validateScore:(score,signal)=>api('/api/compile',score,signal)})});
+scoreStorageView=setupScoreStorageView({model:scoreStorage,host:document.querySelector('#settings-dialog .shell-dialog-content'),document,i18n,getScore:()=>state.score,onSaveStart:beginExplicitScoreSave,onSaveResult:finishScoreSave});
+$('settings-dialog').addEventListener('close',()=>{scoreSaveNavigation++});
+const storageLobbyHost=document.createElement('div');$('catalog').before(storageLobbyHost);
+setupScoreStorageLobbyStatus({model:scoreStorage,host:storageLobbyHost,document,i18n,onConfigure:()=>shell.open('settings')});
+scoreStorage.subscribe(()=>{renderCatalog();const binding=displayBindings.get(legacyLibraryButton);if(binding?.text)legacyLibraryButton.textContent=binding.text()});
+$('score-library').addEventListener('close',()=>{if(scoreStorage.snapshot().kind==='browser')void scoreStorage.rescan()});
 const engravedView = setupEngravedView({i18n,getScore:()=>state.score,getPracticePart:()=>state.practicePart,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),notice,onVisibility:active=>{
   state.engravingActive=active;
   document.querySelector('.engraving-pages').hidden=!active;
@@ -1252,10 +1308,10 @@ notationFollowing = setupNotationFollowing({i18n,getContext:()=>({score:state.sc
 setupJianpuEditor({onImport:importJianpuText,pausePlayback});
 setupJianpuExport({getScore:()=>state.score,pausePlayback,api});
 setupSourceDirectory({pausePlayback,onScoreFile:()=>{referenceListening?.close();$('score-file').click();},onImageFile:()=>$('score-image-file').click(),onExternalOmr:()=>externalOmrView.open()});
-setupImageReview({onImport:importCanonicalScore, pausePlayback, notice,onExternalOmr:imageFile=>externalOmrView.open({imageFile})});
+setupImageReview({onImport:(score,signal)=>importReviewedScore('confirmed-image-import',score,signal), pausePlayback, notice,onExternalOmr:imageFile=>externalOmrView.open({imageFile})});
 referenceListening=setupReferenceListening({document,i18n,synth,pausePlayback,onActiveChange:()=>syncInputRoute(),getSoundEnabled:()=>!synth.muted,onSoundChange:setSoundEnabled});
 sourceArchiveView=setupSourceArchiveView({getContext:()=>({score:state.score,version:state.loadIntent}),pausePlayback});
-externalOmrView = setupExternalOmrReview({api,onActivate:importCanonicalScore,pausePlayback,notice,getSourceVersion:()=>state.loadIntent});
+externalOmrView = setupExternalOmrReview({api,onActivate:(score,signal,options)=>importReviewedScore('confirmed-omr-import',score,signal,options),pausePlayback,notice,getSourceVersion:()=>state.loadIntent});
 adaptationView = setupAdaptationView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.score,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
 transpositionView = setupTranspositionView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.score,timeline:state.compiled?.timeline,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
 const guitarContext=()=>({score:state.score,timeline:state.compiled?.timeline,part_id:state.practicePart,profile:currentProfile(),dirty:state.profileDirty});
@@ -1277,4 +1333,4 @@ midiController=setupMidi({pressNote, releaseNote, releaseMatching, notice, pause
   getConfiguredRange:()=>state.instrument==='guitar'?{low:Math.min(...state.guitar.tuning)+state.guitar.capo,high:Math.max(...state.guitar.tuning)+state.guitar.frets}:state.geometry.length?{low:state.geometry[0].midi,high:state.geometry.at(-1).midi}:null});
 // End blocked intervals without changing native focus or recording ownership.
 for(const dialog of document.querySelectorAll('dialog'))dialog.addEventListener('close',()=>{freeLiveStart=performance.now();});
-renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); loadCatalog();
+renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); void scoreStorage.start(); loadCatalog();

@@ -48,8 +48,10 @@ class NativeReleaseTests(unittest.TestCase):
                    'standard_library': {'copyright_sha256': native.sha(b'Rust copyright'), 'license_texts': []}}
         write_json(directory / 'licenses/rust/manifest.json', notices)
         write_json(directory / 'catalog/index.json', {'version': 1, 'editions': []})
-        for name in ['native-acceptance', 'downloaded-files', 'native-reference-files', 'native-report', 'renderer-report', *[f'renderer-{phase}' for phase in native.PHASES]]:
-            write_json(directory / f'evidence/{name}.json', {})
+        for name in ['native-acceptance.json', 'downloaded-files.json', 'native-reference-files.json',
+                     'native-report.json', 'renderer-report.json', *native.SONG_FOLDER_EVIDENCE,
+                     *[f'renderer-{phase}.json' for phase in native.PHASES]]:
+            write_json(directory / 'evidence' / name, {})
         return {'name': native.FOLDER, 'executable': native.EXE, 'cargo_lock_sha256': 'a' * 64, 'git_commit': 'b' * 40, 'commit_count': 164}
 
     def evidence(self, root):
@@ -100,6 +102,168 @@ class NativeReleaseTests(unittest.TestCase):
         native.subprocess.run(['node', str(ROOT / 'scripts/verify-reference-native-evidence.mjs'), str(acceptance)],
                               cwd=ROOT, capture_output=True, check=True)
         return startup, acceptance, exe
+
+    def song_folder_evidence(self, root, exe):
+        # Synthetic envelope for the Python packaging boundary. The independent
+        # verifier's own fixtures test folder contents and derived file proofs.
+        directory = root / 'song folder 拼谱'
+        report = {'version': 1, 'ok': True, 'source_sha': 'b' * 40, 'source_tree': 'c' * 40,
+                  'executable_sha256': native.sha(exe.read_bytes()), 'phases': [
+                      {'phase': phase, 'renderer_ok': True, 'normal_close': True,
+                       'renderer_origin': 'https://wmh.localhost', 'executable_tcp_listeners': 0,
+                       'actions': 5, 'launched_new_process': True, 'process_id': 100 + index,
+                       'profile_fresh': True, 'profile_reused': False}
+                      for index, phase in enumerate(native.SONG_FOLDER_PHASES)]}
+        report_path = directory / 'native-song-folder.json'
+        write_json(report_path, report)
+        renderer_hashes = {}
+        for phase in native.SONG_FOLDER_PHASES:
+            path = directory / f'renderer-{phase}.json'
+            write_json(path, {'ok': True, 'phase': phase, 'origin': 'https://wmh.localhost'})
+            renderer_hashes[phase] = native.sha(path.read_bytes())
+        write_json(directory / 'native-song-folder-files.json', {
+            'version': 1, 'ok': True, 'native_report_sha256': native.sha(report_path.read_bytes()),
+            'renderer_sha256': renderer_hashes, 'files': []})
+        return directory
+
+    def test_song_folder_proof_is_source_bound_and_independently_rederived(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            exe = root / native.EXE
+            exe.write_bytes(executable())
+            directory = self.song_folder_evidence(root, exe)
+            proof_path = directory / 'native-song-folder-files.json'
+            with patch.object(native.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')) as verifier:
+                outcome = native.accepted_song_folder_evidence(directory, exe, 'b' * 40, 'c' * 40)
+                self.assertEqual(outcome, {'native_song_folder_validated': True,
+                                          'native_song_folder_proof_sha256': native.sha(proof_path.read_bytes())})
+                verifier.assert_called_once_with(
+                    ['node', str(ROOT / 'scripts/verify-native-song-folder-evidence.mjs'), str(directory), '--check'],
+                    cwd=ROOT, capture_output=True, text=True, encoding='utf-8', timeout=15, check=False)
+            for commit, tree in [('d' * 40, 'c' * 40), ('b' * 40, 'd' * 40)]:
+                with self.subTest(commit=commit, tree=tree), self.assertRaisesRegex(ValueError, 'exact source/tree/executable'):
+                    native.accepted_song_folder_evidence(directory, exe, commit, tree)
+            exe.write_bytes(executable() + b'different build')
+            with self.assertRaisesRegex(ValueError, 'exact source/tree/executable'):
+                native.accepted_song_folder_evidence(directory, exe, 'b' * 40, 'c' * 40)
+
+    def test_song_folder_incomplete_unsafe_or_reused_process_phases_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            exe = root / native.EXE
+            exe.write_bytes(executable())
+            directory = self.song_folder_evidence(root, exe)
+            path = directory / 'native-song-folder.json'
+            original = native.read_json(path)
+            mutations = [
+                ('failed report', lambda value: value.update(ok=False)),
+                ('wrong version', lambda value: value.update(version=2)),
+                ('boolean version', lambda value: value.update(version=True)),
+                ('partial phases', lambda value: value['phases'].pop()),
+                ('reordered phases', lambda value: value['phases'].reverse()),
+                ('duplicate phases', lambda value: value['phases'].__setitem__(1, value['phases'][0])),
+                ('non-object phase', lambda value: value['phases'].__setitem__(0, None)),
+                ('non-list phases', lambda value: value.update(phases=None)),
+            ]
+            for index, phase in enumerate(native.SONG_FOLDER_PHASES):
+                for key, bad in [('renderer_ok', False), ('normal_close', False), ('renderer_origin', 'http://localhost'),
+                                 ('executable_tcp_listeners', 1), ('executable_tcp_listeners', False),
+                                 ('actions', 0), ('actions', 65), ('actions', True), ('actions', '1'),
+                                 ('launched_new_process', False), ('process_id', 0), ('process_id', True)]:
+                    mutations.append((f'{phase} {key}={bad!r}',
+                                      lambda value, index=index, key=key, bad=bad: value['phases'][index].update({key: bad})))
+                if index:
+                    for key, bad in [('profile_fresh', False), ('profile_reused', True)]:
+                        mutations.append((f'{phase} {key}',
+                                          lambda value, index=index, key=key, bad=bad: value['phases'][index].update({key: bad})))
+            for label, mutate in mutations:
+                value = json.loads(json.dumps(original))
+                mutate(value)
+                write_json(path, value)
+                with self.subTest(label=label), patch.object(native.subprocess, 'run') as verifier, self.assertRaises(ValueError):
+                    native.accepted_song_folder_evidence(directory, exe, 'b' * 40, 'c' * 40)
+                verifier.assert_not_called()
+
+    def test_song_folder_stale_proof_renderer_or_independent_disk_failure_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            exe = root / native.EXE
+            exe.write_bytes(executable())
+            directory = self.song_folder_evidence(root, exe)
+            proof_path = directory / 'native-song-folder-files.json'
+            original = native.read_json(proof_path)
+            for replacement in [{'version': True}, {'ok': False}, {'native_report_sha256': '0' * 64},
+                                {'renderer_sha256': {}}, {'renderer_sha256': []},
+                                {'renderer_sha256': {**original['renderer_sha256'], 'unknown': '0' * 64}},
+                                {'renderer_sha256': {**original['renderer_sha256'], 'folder-restart': '0' * 64}}]:
+                write_json(proof_path, {**original, **replacement})
+                with self.subTest(replacement=replacement), patch.object(native.subprocess, 'run') as verifier, self.assertRaises(ValueError):
+                    native.accepted_song_folder_evidence(directory, exe, 'b' * 40, 'c' * 40)
+                verifier.assert_not_called()
+            write_json(proof_path, original)
+            for phase in native.SONG_FOLDER_PHASES:
+                path = directory / f'renderer-{phase}.json'
+                renderer = native.read_json(path)
+                for replacement in [{'ok': False}, {'phase': 'seed'}, {'origin': 'https://example.invalid'}, {'changed': True}]:
+                    write_json(path, {**renderer, **replacement})
+                    with self.subTest(phase=phase, replacement=replacement), self.assertRaisesRegex(ValueError, 'exact renderer report'):
+                        native.accepted_song_folder_evidence(directory, exe, 'b' * 40, 'c' * 40)
+                write_json(path, renderer)
+            # A self-consistent envelope cannot replace actual disk validation.
+            with patch.object(native.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'retained original changed')):
+                with self.assertRaisesRegex(ValueError, 'independent disk verification: retained original changed'):
+                    native.accepted_song_folder_evidence(directory, exe, 'b' * 40, 'c' * 40)
+            for name in native.SONG_FOLDER_EVIDENCE:
+                path = directory / name
+                data = path.read_bytes()
+                path.unlink()
+                with self.subTest(missing=name), self.assertRaises(FileNotFoundError):
+                    native.accepted_song_folder_evidence(directory, exe, 'b' * 40, 'c' * 40)
+                path.write_bytes(data)
+
+    def test_native_manifest_requires_every_song_folder_evidence_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / native.FOLDER
+            metadata = self.package(directory)
+            for name in native.SONG_FOLDER_EVIDENCE:
+                path = directory / 'evidence' / name
+                data = path.read_bytes()
+                path.unlink()
+                with self.subTest(missing=name), self.assertRaisesRegex(ValueError, 'Native package is missing evidence/' + name):
+                    native.create_manifest(directory, metadata)
+                path.write_bytes(data)
+
+    def test_create_cli_requires_separate_song_folder_acceptance(self):
+        arguments = ['native-release-manifest', 'create', 'unused', '--commit', 'b' * 40,
+                     '--count', '169', '--startup', 'startup', '--acceptance', 'acceptance']
+        with patch('sys.argv', arguments), contextlib.redirect_stderr(io.StringIO()) as error, self.assertRaises(SystemExit) as failure:
+            native.main()
+        self.assertEqual(failure.exception.code, 2)
+        self.assertIn('--song-folder', error.getvalue())
+
+    def test_create_does_not_copy_folder_evidence_or_write_inventory_after_gate_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / native.FOLDER
+            metadata = {**self.package(directory), 'git_tree': 'c' * 40}
+            startup, acceptance, _ = self.evidence(root)
+            song_folder = self.song_folder_evidence(root, directory / native.EXE)
+            before = {name: (directory / 'evidence' / name).read_bytes() for name in native.SONG_FOLDER_EVIDENCE}
+            real_run = native.subprocess.run
+            def verify_evidence(args, **kwargs):
+                if len(args) > 1 and Path(args[1]).name == 'verify-native-song-folder-evidence.mjs':
+                    return subprocess.CompletedProcess(args, 1, '', 'folder file was altered')
+                return real_run(args, **kwargs)
+            arguments = ['native-release-manifest', 'create', str(directory), '--commit', 'b' * 40,
+                         '--count', '164', '--startup', str(startup), '--acceptance', str(acceptance),
+                         '--song-folder', str(song_folder)]
+            with patch('sys.argv', arguments), patch.object(native, 'source_metadata', return_value=metadata), \
+                    patch.object(native.subprocess, 'run', side_effect=verify_evidence), \
+                    self.assertRaisesRegex(ValueError, 'folder file was altered'):
+                native.main()
+            self.assertFalse((directory / native.INFO).exists())
+            self.assertFalse((directory / native.SUMS).exists())
+            self.assertEqual(before, {name: (directory / 'evidence' / name).read_bytes() for name in native.SONG_FOLDER_EVIDENCE})
 
     def test_distinct_native_zip_preserves_inventory_and_detects_altered_bytes(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -206,8 +370,9 @@ class NativeReleaseTests(unittest.TestCase):
                 native.source_metadata('b' * 40, 164)
 
     def test_complete_native_package_uses_utf8_with_a_cp1252_host_default(self):
-        # Only host/tool observations are synthetic. Source/catalog/license reads,
-        # evidence checks, hashing, JSON, ZIP and checksum operations remain real.
+        # Host/tool observations and the separate folder verifier are synthetic.
+        # Source/catalog/license reads, reference verification, folder envelope
+        # checks, hashing, JSON, ZIP and checksum operations remain real.
         commands = {('git', 'rev-parse', '--is-shallow-repository'): 'false',
                     ('git', 'rev-parse', 'HEAD'): 'b' * 40,
                     ('git', 'rev-list', '--count', 'HEAD'): '169',
@@ -218,6 +383,13 @@ class NativeReleaseTests(unittest.TestCase):
         def command_output(args, **kwargs):
             self.assertEqual(kwargs.get('encoding'), 'utf-8')
             return commands[args]
+        real_run = native.subprocess.run
+        def verify_evidence(args, **kwargs):
+            if len(args) > 1 and Path(args[1]).name == 'verify-native-song-folder-evidence.mjs':
+                self.assertEqual(args[-1], '--check')
+                self.assertEqual(kwargs.get('encoding'), 'utf-8')
+                return subprocess.CompletedProcess(args, 0, '', '')
+            return real_run(args, **kwargs)
         real_open = io.open
         def cp1252_open(file, mode='r', buffering=-1, encoding=None, errors=None,
                         newline=None, closefd=True, opener=None):
@@ -256,6 +428,7 @@ class NativeReleaseTests(unittest.TestCase):
             notices['cargo_lock_sha256'] = cargo_hash
             write_json(notices_path, notices)
             startup, acceptance, _ = self.evidence(root)
+            song_folder = self.song_folder_evidence(root, directory / native.EXE)
             for path in startup.glob('*.json'):
                 shutil.copyfile(path, directory / 'evidence' / path.name)
             for path in acceptance.glob('*.json'):
@@ -269,6 +442,7 @@ class NativeReleaseTests(unittest.TestCase):
                     patch.object(native.platform, 'system', return_value='Windows'), \
                     patch.object(native.platform, 'platform', return_value='Windows-test-fixture'), \
                     patch.object(native.subprocess, 'check_output', side_effect=command_output), \
+                    patch.object(native.subprocess, 'run', side_effect=verify_evidence), \
                     patch.dict(native.os.environ, {'RUSTFLAGS': '-C target-feature=+crt-static'}), \
                     patch.object(io, 'open', side_effect=cp1252_open):
                 for relative in ['Cargo.toml', 'crates/score-core/src/lib.rs']:
@@ -287,7 +461,7 @@ class NativeReleaseTests(unittest.TestCase):
                     'runtime_bundled': False, 'installer': False, 'http_server_process': False})
                 for arguments in [
                     ['create', str(directory), '--commit', 'b' * 40, '--count', '169',
-                     '--startup', str(startup), '--acceptance', str(acceptance)],
+                     '--startup', str(startup), '--acceptance', str(acceptance), '--song-folder', str(song_folder)],
                     ['archive', str(directory), str(archive)], ['verify', str(archive)]]:
                     with patch('sys.argv', ['native-release-manifest', *arguments]), contextlib.redirect_stdout(io.StringIO()):
                         native.main()
@@ -298,6 +472,14 @@ class NativeReleaseTests(unittest.TestCase):
                 self.assertEqual(info['cargo_lock_sha256'], cargo_hash)
                 self.assertEqual(info['npm_lock_sha256'], npm_hash)
                 self.assertFalse(info['acceptance']['physical_midi_validated'])
+                self.assertTrue(info['acceptance']['complete_midi_reference_validated'])
+                self.assertTrue(info['acceptance']['native_song_folder_validated'])
+                self.assertEqual(info['acceptance']['native_song_folder_proof_sha256'],
+                                 native.sha((song_folder / 'native-song-folder-files.json').read_bytes()))
+                for name in native.SONG_FOLDER_EVIDENCE:
+                    data = (song_folder / name).read_bytes()
+                    self.assertEqual((directory / 'evidence' / name).read_bytes(), data)
+                    self.assertEqual(info['files']['evidence/' + name], {'sha256': native.sha(data), 'bytes': len(data)})
                 self.assertEqual(info['files'][unicode_name], {'sha256': native.sha(unicode_bytes), 'bytes': len(unicode_bytes)})
                 with zipfile.ZipFile(archive) as package:
                     self.assertEqual(package.read(f'{native.FOLDER}/{unicode_name}'), unicode_bytes)

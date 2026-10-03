@@ -20,8 +20,8 @@ export class ScorePreview {
       return false;
     } finally {if(this.controller===controller)this.controller=null;}
   }
-  adopt(compiled,compatibility,part=null) {
-    this.cancel();this.publish({status:'ready',identity:compiled.score.id,part,score:compiled.score,compiled,compatibility});
+  adopt(compiled,compatibility,part=null,identity=compiled.score.id) {
+    this.cancel();this.publish({status:'ready',identity,part,score:compiled.score,compiled,compatibility});
   }
   canStart(mode) {return this.value.status==='ready'&&(mode==='listen'||this.value.compatibility.status==='ready');}
 }

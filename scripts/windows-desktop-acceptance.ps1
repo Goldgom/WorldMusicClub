@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$Executable,
-  [string]$OutputDirectory='desktop-acceptance'
+  [string]$OutputDirectory='desktop-acceptance',
+  [ValidateSet('desktop','song-folder')][string]$Scenario='desktop'
 )
 $ErrorActionPreference='Stop'
 $Executable=(Resolve-Path $Executable).Path
@@ -10,7 +11,8 @@ New-Item -ItemType Directory $OutputDirectory | Out-Null
 $OutputDirectory=(Resolve-Path $OutputDirectory).Path
 $Fixtures=Join-Path $OutputDirectory 'fixtures'
 New-Item -ItemType Directory $Fixtures | Out-Null
-foreach($name in @('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu')) {
+$fixtureNames=if($Scenario -eq 'song-folder'){@('folder-original.json','folder-conflict.json')}else{@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu')}
+foreach($name in $fixtureNames) {
   Copy-Item (Join-Path $Repository "tests/fixtures/$name") (Join-Path $Fixtures $name)
 }
 Set-Content -NoNewline -Encoding utf8 (Join-Path $Fixtures 'malformed.json') '{invalid canonical score'
@@ -288,12 +290,53 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
     throw $failure
   }
 }
+# Disk inventory is read by the Windows process owner, independently of the
+# renderer API. Only these newly generated fixture archives are ever inspected.
+function Save-SongFolderSnapshot([string]$Phase) {
+  $root=Join-Path $OutputDirectory 'Scores';$rows=@()
+  foreach($area in @('songs','backups')) {
+    $directory=Join-Path $root $area
+    if(-not (Test-Path -LiteralPath $directory -PathType Container)){throw 'Isolated score archive directory is missing'}
+    foreach($file in (Get-ChildItem -LiteralPath $directory -Recurse -Force | Sort-Object FullName)) {
+      if(($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Reparse points cannot be acceptance artifacts'}
+      if(-not $file.PSIsContainer) {
+        $relative=$file.FullName.Substring($root.Length+1).Replace('\','/')
+        $rows+=,[ordered]@{path=$relative;sha256=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLower();bytes=$file.Length}
+      }
+    }
+  }
+  Save-Json @{version=1;files=$rows} (Join-Path $OutputDirectory "snapshot-$Phase.json")
+}
+function Rotate-SongFolderProfile([string]$Phase) {
+  $profile=Join-Path $OutputDirectory 'webview-profile'
+  if(Test-Path -LiteralPath $profile) {
+    $preserved=Join-Path $OutputDirectory "prior-profile-$Phase"
+    $deadline=[DateTime]::UtcNow.AddSeconds(10)
+    while($true) {
+      try { Move-Item -LiteralPath $profile -Destination $preserved -ErrorAction Stop;break }
+      catch { if([DateTime]::UtcNow -ge $deadline){throw 'Previous WebView profile could not be isolated after normal EXE close'};Start-Sleep -Milliseconds 200 }
+    }
+  }
+  if(Test-Path -LiteralPath $profile){throw 'Fresh profile precondition failed'}
+}
 $previousDirectory=$env:WMH_DESKTOP_SMOKE_DIR;$previousPhase=$env:WMH_DESKTOP_ACCEPTANCE_PHASE
 $env:WMH_DESKTOP_SMOKE_DIR=$OutputDirectory
 $native=[ordered]@{version=1;source_sha=(git rev-parse HEAD);source_tree=(git rev-parse 'HEAD^{tree}');executable_sha256=(Get-FileHash $Executable -Algorithm SHA256).Hash.ToLower();executable_bytes=(Get-Item $Executable).Length;os=[System.Environment]::OSVersion.VersionString;profile_reused=$true;phases=@();ok=$false}
-$app=$null
+$app=$null;$blockedStage=$false
+$nativeReportName=if($Scenario -eq 'song-folder'){'native-song-folder.json'}else{'native-acceptance.json'}
+$phases=if($Scenario -eq 'song-folder'){@('folder-seed','folder-restart','folder-failure')}else{@('seed','restart','close-active','reopen')}
+if($Scenario -eq 'song-folder'){$native.profile_reused=$false;$native.scenario='song-folder';$native.directory=Join-Path $OutputDirectory 'Scores'}
 try {
-  foreach($phase in @('seed','restart','close-active','reopen')) {
+  foreach($phase in $phases) {
+    if($Scenario -eq 'song-folder') {
+      Rotate-SongFolderProfile $phase
+      if($phase -eq 'folder-failure') {
+        $stage=Join-Path $OutputDirectory 'Scores/.staging'
+        if(-not (Test-Path -LiteralPath $stage -PathType Container) -or @(Get-ChildItem -LiteralPath $stage -Force).Count -ne 0){throw 'Failure injection requires our empty isolated staging directory'}
+        Move-Item -LiteralPath $stage -Destination (Join-Path $OutputDirectory 'Scores/.staging-preserved')
+        $blockedStage=$true;[IO.File]::WriteAllText($stage,'Isolated acceptance write blocker')
+      }
+    }
     $env:WMH_DESKTOP_ACCEPTANCE_PHASE=$phase
     $app=Start-Process -FilePath $Executable -PassThru -RedirectStandardError (Join-Path $OutputDirectory "stderr-$phase.log")
     $phaseStart=[DateTime]::UtcNow;$deadline=$phaseStart.AddSeconds(240);$sequence=1
@@ -304,7 +347,7 @@ try {
       $actionFile=Join-Path $OutputDirectory "action-$phase-$sequence.json"
       if(Test-Path $actionFile) {
         $action=Get-Content -Raw $actionFile | ConvertFrom-Json
-        if($action.sequence -ne $sequence){throw 'Out-of-order native action'}
+        if($action.sequence -ne $sequence -or $sequence -gt 64){throw 'Out-of-order or over-limit native action'}
         $result=@{ok=$false}
         try{Native-Action $app $action $result;$result.ok=$true}catch{$result.error=$_.Exception.Message}
         Save-Json $result (Join-Path $OutputDirectory "result-$phase-$sequence.json")
@@ -321,7 +364,8 @@ try {
     # One existing EXE-owned listener sample, not a network/security audit.
     $listeners=@(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object OwningProcess -eq $app.Id)
     $item=[ordered]@{phase=$phase;process_id=$app.Id;renderer_ok=$report.ok;renderer_origin=$report.origin;actions=$sequence-1;elapsed_seconds=([DateTime]::UtcNow-$phaseStart).TotalSeconds;executable_tcp_listeners=$listeners.Count;normal_close=$false}
-    $native.phases+=,$item;Save-Json $native (Join-Path $OutputDirectory 'native-acceptance.json')
+    if($Scenario -eq 'song-folder'){$item.launched_new_process=$true;$item.profile_fresh=$true;$item.profile_reused=$false}
+    $native.phases+=,$item;Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
     if(-not $report.ok){throw "Native $phase failed: $($report.error)"}
     if($report.origin -ne 'https://wmh.localhost'){throw 'Origin/profile continuity changed'}
     if($listeners.Count -ne 0){throw 'Native EXE unexpectedly opened a TCP listener'}
@@ -329,19 +373,34 @@ try {
     if(-not $app.CloseMainWindow() -or -not $app.WaitForExit(10000)){throw "Normal close timed out during $phase"}
     if($app.ExitCode -ne 0){throw "Normal close failed during $phase : $($app.ExitCode)"}
     $item.normal_close=$true;$item.close_seconds=([DateTime]::UtcNow-$closeStart).TotalSeconds
-    Save-Json $native (Join-Path $OutputDirectory 'native-acceptance.json');$app=$null
+    Save-Json $native (Join-Path $OutputDirectory $nativeReportName);$app=$null
+    if($Scenario -eq 'song-folder'){Save-SongFolderSnapshot $phase}
   }
-  & node (Join-Path $PSScriptRoot 'verify-desktop-evidence.mjs') $OutputDirectory
-  if($LASTEXITCODE -ne 0){throw 'Actual downloaded-file verification failed'}
-  & node (Join-Path $PSScriptRoot 'verify-reference-native-evidence.mjs') $OutputDirectory
-  if($LASTEXITCODE -ne 0){throw 'Actual native reference source/score/take verification failed'}
-  $native.ok=$true;Save-Json $native (Join-Path $OutputDirectory 'native-acceptance.json')
-  Write-Output 'Native file import/export, exact backups, same-profile restart, keyboard/free/history, navigation and normal/active close gates passed.'
+  if($Scenario -eq 'song-folder') {
+    # Restore only the test-owned blocker; no user folder or permissions change.
+    if($blockedStage){Remove-Item -LiteralPath (Join-Path $OutputDirectory 'Scores/.staging');Move-Item -LiteralPath (Join-Path $OutputDirectory 'Scores/.staging-preserved') -Destination (Join-Path $OutputDirectory 'Scores/.staging');$blockedStage=$false}
+    $native.ok=$true;Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
+    & node (Join-Path $PSScriptRoot 'verify-native-song-folder-evidence.mjs') $OutputDirectory
+    if($LASTEXITCODE -ne 0){throw 'Native song-folder disk/backup/profile verification failed'}
+    Write-Output 'Native disk archives, clean-profile restart, saved selection/audition, navigation and isolated failed save gates passed.'
+  } else {
+    & node (Join-Path $PSScriptRoot 'verify-desktop-evidence.mjs') $OutputDirectory
+    if($LASTEXITCODE -ne 0){throw 'Actual downloaded-file verification failed'}
+    & node (Join-Path $PSScriptRoot 'verify-reference-native-evidence.mjs') $OutputDirectory
+    if($LASTEXITCODE -ne 0){throw 'Actual native reference source/score/take verification failed'}
+    $native.ok=$true;Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
+    Write-Output 'Native file import/export, exact backups, same-profile restart, keyboard/free/history, navigation and normal/active close gates passed.'
+  }
 } catch {
   $failure=$_.Exception.Message
   if($null -ne $app -and -not $app.HasExited){try{Capture-Window $app "native-failure-$phase"}catch{}}
-  $native.error=$failure;Save-Json $native (Join-Path $OutputDirectory 'native-acceptance.json');throw
+  $native.ok=$false;$native.error=$failure;Save-Json $native (Join-Path $OutputDirectory $nativeReportName);throw
 } finally {
   if($null -ne $app -and -not $app.HasExited){Stop-Process -Id $app.Id}
+  if($blockedStage) {
+    $stage=Join-Path $OutputDirectory 'Scores/.staging'
+    if(Test-Path -LiteralPath $stage -PathType Leaf){Remove-Item -LiteralPath $stage}
+    if(-not (Test-Path -LiteralPath $stage)){Move-Item -LiteralPath (Join-Path $OutputDirectory 'Scores/.staging-preserved') -Destination $stage}
+  }
   $env:WMH_DESKTOP_SMOKE_DIR=$previousDirectory;$env:WMH_DESKTOP_ACCEPTANCE_PHASE=$previousPhase
 }

@@ -9,6 +9,7 @@ use std::{
 };
 
 pub const PHASES: [&str; 4] = ["seed", "restart", "close-active", "reopen"];
+pub const FOLDER_PHASES: [&str; 3] = ["folder-seed", "folder-restart", "folder-failure"];
 pub struct Acceptance {
     directory: PathBuf,
     pub phase: &'static str,
@@ -20,6 +21,7 @@ impl Acceptance {
     pub fn new(directory: PathBuf, phase: &str) -> Result<Self, &'static str> {
         let phase = PHASES
             .into_iter()
+            .chain(FOLDER_PHASES)
             .find(|candidate| *candidate == phase)
             .ok_or("Unknown acceptance phase")?;
         std::fs::create_dir_all(directory.join("downloads"))
@@ -38,7 +40,11 @@ impl Acceptance {
             serde_json::to_string(self.phase).unwrap(),
             include_str!("../acceptance-wait.js"),
             include_str!("../reference-acceptance.js"),
-            include_str!("../acceptance.js")
+            if FOLDER_PHASES.contains(&self.phase) {
+                include_str!("../song-folder-acceptance.js")
+            } else {
+                include_str!("../acceptance.js")
+            }
         )
     }
     pub fn report_name(&self) -> String {
@@ -254,6 +260,8 @@ fn valid_action(value: &Value) -> bool {
             "original-reference-overlap.mid",
             "jianpu-original-steps.jianpu",
             "malformed.json",
+            "folder-original.json",
+            "folder-conflict.json",
         ]
         .contains(&file);
         let download = PHASES.iter().any(|phase| {
@@ -362,6 +370,55 @@ mod tests {
             .all(|key| ["source", "stage", "path", "status"].contains(&key.as_str()))));
     }
     #[test]
+    fn folder_scenarios_are_separate_and_keep_existing_action_limits() {
+        let evidence = Evidence::new();
+        assert_eq!(PHASES, ["seed", "restart", "close-active", "reopen"]);
+        for phase in FOLDER_PHASES {
+            let acceptance = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert!(acceptance.script().contains("wmh.folder.acceptance.marker"));
+            assert!(!acceptance
+                .script()
+                .contains("async function saveScore(label,library)"));
+            assert_eq!(acceptance.report_name(), format!("renderer-{phase}.json"));
+            for sequence in [0, 65] {
+                let request = Request::builder()
+                    .uri(format!(
+                        "https://wmh.localhost/__desktop_smoke/result/{sequence}"
+                    ))
+                    .body(vec![])
+                    .unwrap();
+                assert_eq!(acceptance.handle(&request).unwrap().status(), 400);
+            }
+        }
+        assert!(Acceptance::new(evidence.0.clone(), "folder-anything").is_err());
+        assert!(Acceptance::new(evidence.0.clone(), "seed")
+            .unwrap()
+            .script()
+            .contains("async function saveScore(label,library)"));
+        let library =
+            crate::native_library::NativeLibrary::open(evidence.0.join("Scores")).unwrap();
+        for (raw, expected_key) in [
+            (
+                include_str!("../../../tests/fixtures/folder-original.json"),
+                "song-bb8051fad28349e6f49786f8a691421d297e81677abe984dbb340cb934ea1127",
+            ),
+            (
+                include_str!("../../../tests/fixtures/folder-conflict.json"),
+                "song-59713d099a383cc6736ab7c7b9f4822faf68b850b67a276a5b1fdf1694911f08",
+            ),
+        ] {
+            let entry = library
+                .save(crate::native_library::SaveRequest {
+                    score_json: raw.into(),
+                    label: None,
+                    allow_conflicting_id: true,
+                })
+                .unwrap();
+            assert_eq!(entry.key, expected_key);
+            assert_eq!(library.load(&entry.key).unwrap().score_json, raw);
+        }
+    }
+    #[test]
     fn acceptance_actions_are_a_finite_test_contract() {
         let mut action = json!({"version":1,"sequence":1,"kind":"picker","x":10,"y":20,"width":1280,"height":900,"file":"seed-1.json"});
         assert!(valid_action(&action));
@@ -373,6 +430,14 @@ mod tests {
         assert!(!valid_action(&action));
         action["file"] = json!("original-reference-overlap.mid.extra");
         assert!(!valid_action(&action));
+        for file in ["folder-original.json", "folder-conflict.json"] {
+            action["file"] = json!(file);
+            action["sequence"] = json!(64);
+            assert!(valid_action(&action));
+            action["sequence"] = json!(65);
+            assert!(!valid_action(&action));
+        }
+        action["sequence"] = json!(1);
         action["file"] = json!("../anything.json");
         assert!(!valid_action(&action));
         action["file"] = json!("seed-17.json");

@@ -72,6 +72,21 @@ jobs:
       - name: Check real offline engraving
         if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
         run: npm run test:engraving-browser
+      - name: Check score storage and native UI failure contract
+        if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
+        timeout-minutes: 5
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_ARTIFACT_DIR: ${{ runner.temp }}/worldmusichub-score-storage
+        run: npm run test:score-storage-hosted
+      - name: Preserve score storage evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: score-storage-regression
+          path: ${{ runner.temp }}/worldmusichub-score-storage/
+          if-no-files-found: ignore
       - name: Check actual rhythm shell
         if: ${{ !cancelled() && (contains(fromJSON('["integration/rhythm-ui", "dev/initial-prototype", "main"]'), github.head_ref || github.ref_name) || startsWith(github.head_ref || github.ref_name, 'validation/')) && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
         timeout-minutes: 10

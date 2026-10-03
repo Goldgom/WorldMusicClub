@@ -1,5 +1,13 @@
 # Local saved-score library
 
+The main song list and successful explicit imports now use the storage selected
+by the Rust health contract: the desktop's [native score folder](NATIVE_SCORE_LIBRARY.md)
+or browser IndexedDB in the loopback web app. Settings shows the actual backend,
+save outcomes, rescan and backup. On native, **Legacy browser archives** still
+opens the original browser-profile library described below, with no automatic
+migration or deletion. Its saved-copy and backup messages refer only to that
+browser archive, not the native folder.
+
 Saving is explicit. Opening/importing a score does not automatically put the file in the library. A saved copy retains the complete canonical score and its original-source payload; the library does not change source rights or make files public.
 
 Storage uses IndexedDB in the current browser profile and exact origin. `http://127.0.0.1:7878`, another port, another browser and a private/incognito window each have separate storage. Clearing browser data, storage eviction, or ending a private browsing session can remove copies. Export JSON scores or a library backup for durable records. There is no account, cloud synchronization, tracking upload, automatic storage-permission escalation or access to arbitrary local folders.

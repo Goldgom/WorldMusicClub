@@ -16,6 +16,9 @@ FOLDER = 'WorldMusicHub-Native'
 EXE = 'WorldMusicHub-Native.exe'
 INFO, SUMS = 'BUILD-INFO.json', 'SHA256.txt'
 PHASES = ['seed', 'restart', 'close-active', 'reopen']
+SONG_FOLDER_PHASES = ['folder-seed', 'folder-restart', 'folder-failure']
+SONG_FOLDER_EVIDENCE = ['native-song-folder.json', 'native-song-folder-files.json',
+                        *[f'renderer-{phase}.json' for phase in SONG_FOLDER_PHASES]]
 
 
 def sha(data):
@@ -144,6 +147,57 @@ def accepted_evidence(startup, acceptance, executable, commit, tree):
             'clean_machine_installation_validated': False}
 
 
+def accepted_song_folder_evidence(directory, executable, commit, tree):
+    """Require the separate disk/fresh-profile gate for the exact packaged build."""
+    directory = Path(directory)
+    report_path = directory / 'native-song-folder.json'
+    native = read_json(report_path)
+    require(type(native.get('version')) is int and native['version'] == 1
+            and native.get('ok') is True and native.get('source_sha') == commit
+            and native.get('source_tree') == tree
+            and native.get('executable_sha256') == sha(Path(executable).read_bytes()),
+            'Native song-folder acceptance must pass for this exact source/tree/executable')
+    phases = native.get('phases', [])
+    require(isinstance(phases, list) and all(isinstance(row, dict) for row in phases)
+            and [row.get('phase') for row in phases] == SONG_FOLDER_PHASES,
+            'All three ordered native song-folder phases are required')
+    for row in phases:
+        require(row.get('renderer_ok') is True and row.get('normal_close') is True
+                and row.get('renderer_origin') == 'https://wmh.localhost'
+                and type(row.get('executable_tcp_listeners')) is int
+                and row['executable_tcp_listeners'] == 0
+                and type(row.get('actions')) is int and 1 <= row['actions'] <= 64,
+                'Every native song-folder phase must render, close normally, have no EXE listener and bounded actions')
+        require(row.get('launched_new_process') is True
+                and type(row.get('process_id')) is int and row['process_id'] > 0,
+                'Every native song-folder phase must launch a new process')
+        if row['phase'] in ['folder-restart', 'folder-failure']:
+            require(row.get('profile_fresh') is True and row.get('profile_reused') is False,
+                    'Native song-folder restart/failure must use a fresh renderer profile')
+    proof_path = directory / 'native-song-folder-files.json'
+    proof = read_json(proof_path)
+    require(type(proof.get('version')) is int and proof['version'] == 1 and proof.get('ok') is True
+            and proof.get('native_report_sha256') == sha(report_path.read_bytes()),
+            'Native song-folder proof must match the exact native report')
+    renderer_hashes = proof.get('renderer_sha256', {})
+    require(isinstance(renderer_hashes, dict) and set(renderer_hashes) == set(SONG_FOLDER_PHASES),
+            'Native song-folder proof must bind all renderer reports')
+    for phase in SONG_FOLDER_PHASES:
+        path = directory / f'renderer-{phase}.json'
+        report = read_json(path)
+        require(report.get('ok') is True and report.get('phase') == phase
+                and report.get('origin') == 'https://wmh.localhost'
+                and renderer_hashes[phase] == sha(path.read_bytes()),
+                'Native song-folder proof must match each exact renderer report')
+    # Re-derive folder identity, exact retained bytes, unchanged restart files,
+    # and non-destructive failure evidence from disk before trusting the proof.
+    checked = subprocess.run(['node', str(ROOT / 'scripts/verify-native-song-folder-evidence.mjs'), str(directory), '--check'],
+                             cwd=ROOT, capture_output=True, text=True, encoding='utf-8', timeout=15, check=False)
+    require(checked.returncode == 0,
+            'Native song-folder proof failed independent disk verification: ' + checked.stderr.strip())
+    return {'native_song_folder_validated': True, 'native_song_folder_proof_sha256': sha(proof_path.read_bytes())}
+
+
 def create_manifest(directory, metadata):
     directory = Path(directory)
     required = [EXE, 'README.md', 'LICENSE', 'START-HERE.md',
@@ -154,6 +208,7 @@ def create_manifest(directory, metadata):
                 'licenses/rust/RUST-STANDARD-LIBRARY-COPYRIGHT.html',
                 'evidence/native-acceptance.json', 'evidence/downloaded-files.json', 'evidence/native-reference-files.json',
                 'evidence/native-report.json', 'evidence/renderer-report.json',
+                *[f'evidence/{name}' for name in SONG_FOLDER_EVIDENCE],
                 *[f'evidence/renderer-{phase}.json' for phase in PHASES]]
     for name in required:
         require((directory / name).is_file(), f'Native package is missing {name}')
@@ -276,6 +331,7 @@ def main():
     create.add_argument('--count', required=True, type=int)
     create.add_argument('--startup', required=True, type=Path)
     create.add_argument('--acceptance', required=True, type=Path)
+    create.add_argument('--song-folder', required=True, type=Path)
     archive = commands.add_parser('archive')
     archive.add_argument('directory', type=Path)
     archive.add_argument('archive', type=Path)
@@ -285,9 +341,12 @@ def main():
     if args.command == 'create':
         metadata = source_metadata(args.commit, args.count)
         metadata['acceptance'] = accepted_evidence(args.startup, args.acceptance, args.directory / EXE, args.commit, metadata['git_tree'])
+        metadata['acceptance'].update(accepted_song_folder_evidence(args.song_folder, args.directory / EXE, args.commit, metadata['git_tree']))
         # The source-bound gate above verified this separate proof. Keep it in
         # the package inventory without changing the dependency-cache workflow.
         (args.directory / 'evidence/native-reference-files.json').write_bytes((args.acceptance / 'native-reference-files.json').read_bytes())
+        for name in SONG_FOLDER_EVIDENCE:
+            (args.directory / 'evidence' / name).write_bytes((args.song_folder / name).read_bytes())
         info = create_manifest(args.directory, metadata)
     elif args.command == 'archive':
         info = create_archive(args.directory, args.archive)

@@ -1,10 +1,18 @@
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::{Arc, OnceLock},
+    time::Duration,
+};
 use tauri::{
     webview::{DownloadEvent, NewWindowResponse, PermissionResponse},
     WebviewUrl, WebviewWindowBuilder,
 };
 use tokio::{sync::Semaphore, time::timeout};
-use worldmusichub_desktop::{admission, allowed_uri, dispatch, error, operation_error, response};
+use worldmusichub_desktop::{
+    admission, allowed_uri, dispatch, dispatch_with_library, error,
+    native_library::{self, NativeLibrary},
+    operation_error, response,
+};
 
 pub fn run() {
     // This optional, process-owned path is used only by the bounded CI smoke.
@@ -23,8 +31,22 @@ pub fn run() {
         });
     let protocol_acceptance = acceptance.clone();
     let report_directory = evidence.clone();
+    let protocol_library_directory = evidence.as_ref().map(|root| {
+        root.join(
+            if acceptance.as_ref().is_some_and(|run| {
+                worldmusichub_desktop::acceptance::FOLDER_PHASES.contains(&run.phase)
+            }) {
+                "Scores"
+            } else {
+                "score-library"
+            },
+        )
+    });
     let admitted = Arc::new(Semaphore::new(16));
     let computations = Arc::new(Semaphore::new(2));
+    // Created lazily only when the renderer explicitly uses the native library.
+    // Smoke/acceptance without library calls never touches the user's song folder.
+    let library: Arc<OnceLock<NativeLibrary>> = Arc::new(OnceLock::new());
     tauri::Builder::default()
         .register_asynchronous_uri_scheme_protocol("wmh", move |context, request, responder| {
             if context.webview_label() != "main" {
@@ -107,6 +129,8 @@ pub fn run() {
                 return;
             };
             let computations = computations.clone();
+            let library = library.clone();
+            let library_directory = protocol_library_directory.clone();
             tauri::async_runtime::spawn(async move {
                 let Ok(Ok(computation_permit)) =
                     timeout(Duration::from_secs(2), computations.acquire_owned()).await
@@ -122,7 +146,26 @@ pub fn run() {
                 let result = tauri::async_runtime::spawn_blocking(move || {
                     let _admission = admission_permit;
                     let _computation = computation_permit;
-                    dispatch(request)
+                    if native_library::is_library_route(request.uri().path()) {
+                        // Retry initialization failures on the next request;
+                        // fixing a transient storage problem need not restart.
+                        let initialized = match library.get() {
+                            Some(library) => Ok(library),
+                            None => match library_directory.as_ref() {
+                                // Existing process-owned smoke configuration
+                                // also isolates score archives from OS app data.
+                                Some(root) => NativeLibrary::open(root),
+                                None => NativeLibrary::open_default(),
+                            }
+                            .map(|created| library.get_or_init(|| created)),
+                        };
+                        match initialized {
+                            Ok(library) => dispatch_with_library(request, library),
+                            Err(error) => native_library::error_response(error),
+                        }
+                    } else {
+                        dispatch(request)
+                    }
                 })
                 .await;
                 respond(result.unwrap_or_else(|_| {
