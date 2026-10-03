@@ -398,3 +398,62 @@ fn replaced_clean_area_symlink_never_expands_native_access() {
     );
     assert_eq!(exported.status(), 422);
 }
+
+#[test]
+fn enclosing_clean_pack_folder_resolves_manifest_paths_without_changing_identity() {
+    let sandbox = Sandbox::new();
+    let library = sandbox.library();
+    let mut original = files();
+    add_media(&mut original);
+    let wrapped =
+        |prefix: &str| {
+            let mut pack: BTreeMap<String, Vec<u8>> = original
+                .iter()
+                .map(|(path, bytes)| (format!("{prefix}songs/exercise/{path}"), bytes.clone()))
+                .collect();
+            pack.insert(format!("{prefix}manifest.json"), serde_json::to_vec(&json!({
+            "format":"worldmusichub-song-pack","version":2,"songs":[{"folder":"songs/exercise"}]
+        })).unwrap());
+            pack
+        };
+    let preview = import(&library, &wrapped("原创完整曲包/"), false);
+    assert_eq!(preview["summary"]["ready"], 1, "{preview}");
+    assert!(library.list().unwrap().entries.is_empty());
+    let saved = import(&library, &wrapped("原创完整曲包/"), true);
+    assert_eq!(saved["summary"]["saved"], 1, "{saved}");
+    let key = saved["items"][0]["entry"]["key"].as_str().unwrap();
+    assert_eq!(
+        import(&library, &wrapped(""), true)["summary"]["duplicate"],
+        1
+    );
+    let reopened = sandbox.library();
+    let loaded = reopened.load(key).unwrap().clean_package.unwrap();
+    assert_eq!(loaded.metadata_json.as_bytes(), original["metadata.json"]);
+    assert_eq!(loaded.score_json.as_bytes(), original["score.json"]);
+    let exported = request(
+        &reopened,
+        "/api/library/pack/export",
+        serde_json::to_vec(&json!({"keys":[key]})).unwrap(),
+    );
+    assert_eq!(exported.status(), 200);
+    let entries = unzip(exported.body());
+    assert_eq!(entries.len(), original.len() + 1);
+    assert!(entries.contains_key("manifest.json"));
+    for (path, bytes) in &original {
+        assert_eq!(&entries[&format!("songs/{key}/{path}")], bytes);
+    }
+    for (name, extra) in [
+        ("outside", "outside.txt"),
+        ("sibling", "原创完整曲包/not-a-song.txt"),
+        ("other_root", "another-root/score.json"),
+    ] {
+        let mut candidate = wrapped("原创完整曲包/");
+        candidate.insert(extra.into(), b"{}".to_vec());
+        let rejected = import(&library, &candidate, false);
+        assert_eq!(rejected["summary"]["ready"], 0, "{name}: {rejected}");
+        assert_eq!(
+            rejected["summary"]["retained_nonplayable"], 1,
+            "{name}: {rejected}"
+        );
+    }
+}

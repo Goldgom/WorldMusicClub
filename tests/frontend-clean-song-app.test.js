@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {getAppI18n} from '../web/app-locale.js';
 import {cleanDescriptor,fixtureKey,mediaFixture} from './clean-song-fixtures.js';
 import {nativeScoreServer,nativeStorageApp,deferred} from './native-storage-app-fixtures.js';
-async function setup({media=false}={}){
+async function setup({media=false,now}={}){
  const assets=media?[mediaFixture(),mediaFixture({id:'bg',role:'background',content:'authored-bg'}),mediaFixture({id:'pv',role:'pv',mime:'video/webm',content:'authored-pv'})]:[];
  const descriptor=cleanDescriptor(({metadata})=>metadata.media=assets.map(item=>item.descriptor)),score=descriptor.runtime.compilation.score,server=await nativeScoreServer(),key=fixtureKey.slice(7);
  server.records.set(key,{entry:{key,revision:1,title:score.title,composer:'',score_id:score.id,label:score.title,score_bytes:JSON.stringify(score).length,saved_at_unix_ms:1700000000000,clean_package:{version:2,content_sha256:descriptor.content_sha256,media:descriptor.media}},score_json:JSON.stringify(score),clean_package:descriptor});
  if(media)server.setRoute(({path,body})=>{if(path==='/api/library/asset'){const asset=assets.find(item=>'asset-'+item.descriptor.sha256===body.handle);return{ok:true,url:'https://wmh.localhost/api/library/asset',headers:{get:()=>asset.descriptor.mime},arrayBuffer:async()=>Uint8Array.from(asset.data).buffer};}});
- const app=await nativeStorageApp(server);await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('start-listen').disabled&&!app.$('clean-song-preview').hidden,'Clean preview did not load');app.$('count-in').checked=false;return{app,server,descriptor,score,key};
+ const app=await nativeStorageApp(server,{now});await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('start-listen').disabled&&!app.$('clean-song-preview').hidden,'Clean preview did not load');app.$('count-in').checked=false;return{app,server,descriptor,score,key};
 }
 async function activate(app,mode){await app.click(`start-${mode}`);await app.until(()=>app.document.body.dataset.screen==='stage'&&!app.$('play-button').disabled);}
 const runningOscillators=app=>app.audioNodes.filter(node=>node.kind==='oscillator'&&!node.disconnected);
@@ -24,10 +24,10 @@ test('practice target and accompaniment toggles keep stable controls; only human
  const target=app.$('clean-song-target'),checkbox=app.document.querySelector(`#clean-song-parts input[data-part-id="${score.parts[0].id}"]`);target.value=score.parts[1].id;app.emit(target,'change');await app.until(()=>!app.$('play-button').disabled);assert.equal(app.$('clean-song-target'),target);assert.equal(app.document.querySelector(`#clean-song-parts input[data-part-id="${score.parts[0].id}"]`),checkbox);checkbox.checked=false;app.emit(checkbox,'change');await app.click('play-button');assert.equal(runningOscillators(app).length,0);take=await app.exported('export-takes');assert.equal(take.practice_part,score.parts[1].id);assert.equal(take.passes[0].timeline.notes.length,2);assert.deepEqual(take.passes[0].inputs,[]);await app.click('play-button');checkbox.checked=true;app.emit(checkbox,'change');await app.click('play-button');assert.equal(runningOscillators(app).length,2);await app.click('back-to-library');assert.equal(runningOscillators(app).length,0);
  }finally{await app.close();}});
 
-test('complete-song media has gesture lifecycle, localized optional failure and navigation cleanup',async()=>{const {app}=await setup({media:true});try{
+test('complete-song media has gesture lifecycle, localized optional failure and navigation cleanup',async()=>{let clock=1000;const {app}=await setup({media:true,now:()=>clock});try{
  await app.until(()=>Boolean(app.$('clean-song-cover').src));app.$('clean-song-cover').onload();assert.equal(app.$('clean-song-cover').hidden,false);
  const video=app.$('clean-song-pv');let plays=0,pauses=0;video.pause=()=>{pauses++;video.paused=true;};video.play=()=>{plays++;video.paused=false;return Promise.resolve();};video.load=()=>{};
- assert.equal(plays,0);await activate(app,'listen');await app.until(()=>Boolean(video.src));video.onloadeddata();app.frame();assert.equal(video.muted,true);assert.equal(plays,0,'Shared start admission has not reached song zero yet');await new Promise(resolve=>setTimeout(resolve,65));app.frame();await app.tick();assert.equal(plays,1);
+ assert.equal(plays,0);await activate(app,'listen');await app.until(()=>Boolean(video.src));video.onloadeddata();app.frame();assert.equal(video.muted,true);assert.equal(plays,0,'Shared start admission has not reached song zero yet');clock+=65;app.frame();await app.tick();assert.equal(plays,1);
  await app.click('play-button');assert.equal(video.paused,true);getAppI18n(app.document).setLocale('zh-CN');app.$('clean-song-background').onerror();assert.match(app.$('clean-song-media-status').textContent,/背景无法显示/);assert.doesNotMatch(app.$('clean-song-preview').textContent,/inferred|Reference|channel /);await app.click('back-to-library');assert.equal(video.hidden,true);assert.equal(video.paused,true);assert.ok(pauses>0);
  }finally{await app.close();}});
 

@@ -1421,9 +1421,11 @@ fn clean_candidates(
     let mut wanted = Vec::new();
     let mut used = HashSet::new();
     if let Some((path, value)) = manifest {
-        if path != "manifest.json" {
-            return Err(invalid("Clean v2 manifest must be at the archive root"));
-        }
+        zip_guard::safe_path(path, false).map_err(invalid)?;
+        let pack_folder = path
+            .rsplit_once('/')
+            .map(|(folder, _)| folder)
+            .unwrap_or("");
         let manifest: Manifest =
             serde_json::from_value(value.clone()).map_err(|e| invalid(e.to_string()))?;
         if manifest.format != "worldmusichub-song-pack"
@@ -1434,11 +1436,14 @@ fn clean_candidates(
             return Err(invalid("Invalid clean song-pack manifest"));
         }
         for song in manifest.songs {
-            clean_package::safe_path(&song.folder)?;
+            zip_guard::safe_path(&song.folder, false).map_err(invalid)?;
             if !used.insert(song.folder.to_ascii_lowercase()) {
                 return Err(invalid("Repeated clean song folder"));
             }
-            wanted.push(format!("{}/metadata.json", song.folder));
+            wanted.push(resolve(
+                pack_folder,
+                &format!("{}/metadata.json", song.folder),
+            )?);
         }
     } else {
         if metadata.len() != 1 {
@@ -1461,8 +1466,8 @@ fn clean_candidates(
     // No raw source, report, sidecar, unlisted song, or hidden extra may ride in
     // a clean transport outside one declared complete package.
     for file in &inventory.files {
-        clean_package::safe_path(&file.path)?;
-        if manifest.is_some() && file.path == "manifest.json" {
+        zip_guard::safe_path(&file.path, false).map_err(invalid)?;
+        if manifest.is_some_and(|(path, _)| file.path == *path) {
             continue;
         }
         if !folders
@@ -1481,7 +1486,7 @@ fn clean_candidates(
             .map_err(|e| invalid(e.to_string()))?;
         if file.is_dir() {
             let directory = file.name().trim_end_matches('/');
-            clean_package::safe_path(directory)?;
+            zip_guard::safe_path(directory, true).map_err(invalid)?;
             if !inventory
                 .files
                 .iter()

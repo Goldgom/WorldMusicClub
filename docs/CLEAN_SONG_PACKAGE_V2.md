@@ -14,7 +14,7 @@ A ZIP is a transport for these folders, not an additional musical source.
 
 The pack manifest is `{ "format": "worldmusichub-song-pack", "version": 2,
 "songs": [{"folder":"songs/example"}] }`. A single clean song folder is also
-valid without a pack manifest. Folder names do not become storage paths.
+valid without a pack manifest. Folder names do not become storage paths. A ZIP may have one enclosing folder around its manifest and declared song folders. Manifest song paths resolve relative to that manifest; all other files must still belong to a declared song. Files outside that enclosing folder, duplicate manifests and undeclared sidecars are rejected. Export places the manifest at the ZIP root.
 
 `metadata.json`:
 

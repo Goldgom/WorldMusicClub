@@ -27,6 +27,10 @@ jobs:
       - run: npm run prepare:engraving
       - run: npx playwright install --with-deps chromium
       - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - name: Check complete original fixture through actual native protocol
+        env:
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: node scripts/check-clean-song-native.mjs
       - name: Check original fixture inventory
         run: node --test tests/clean-song-schema.test.js tests/clean-song-package-fixtures.test.js
       - name: Import, play, export and reopen the complete package

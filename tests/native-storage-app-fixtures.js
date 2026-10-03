@@ -51,7 +51,7 @@ export async function nativeScoreServer({scores=[],directory='C:\\Test-only\\Wor
 }
 
 /** Real app import, mocked DOM/audio/native transport and isolated browser storage. */
-export async function nativeStorageApp(server) {
+export async function nativeStorageApp(server,{now}={}) {
   const {document,window}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8'));
   const audioNodes=[];const downloads=[],plays=[],values=new Map(),factory=new IDBFactory(),openedDatabases=[];
   let unlockImpl=null,audioContexts=0,unlockCalls=0,frameId=0;const frames=new Map();
@@ -79,6 +79,7 @@ export async function nativeStorageApp(server) {
   Synth.prototype.play=function(...args){plays.push(args);return originalPlay.apply(this,args);};
   URL.createObjectURL=blob=>{downloads.push(blob);return 'blob:node-native-storage';};
   const installed={window,document,indexedDB:factory,navigator:{},location:{origin},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},matchMedia:()=>({matches:false,addEventListener(){}}),MutationObserver:class{observe(){}disconnect(){}},requestAnimationFrame:callback=>{frames.set(++frameId,callback);return frameId;},cancelAnimationFrame:id=>frames.delete(id),AudioContext:Audio,fetch:server.fetcher};
+  if(now)installed.performance={now};
   const originals=new Map(Object.keys(installed).map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
   for(const [key,value]of Object.entries(installed))Object.defineProperty(globalThis,key,{configurable:true,value});
   const $=id=>document.getElementById(id),tick=()=>new Promise(resolve=>setImmediate(resolve));
