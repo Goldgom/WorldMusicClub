@@ -1,0 +1,756 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:worldmusichub:complete-score:v1",
+  "title": "WorldMusicHub complete semantic score v1",
+  "description": "Bounded complete MIDI semantic profile plus canonical notation. Structural validation is necessary but not sufficient; Rust checks source coordinate coverage, clocks, note mapping and payload absence. Imported source hashes are claims until checked against private originals. Byte and decoded-text rules are additionally enforced in Rust.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "const": "worldmusichub-complete-score"
+    },
+    "version": {
+      "const": 1
+    },
+    "source": {
+      "$ref": "#/$defs/SourceEvidence"
+    },
+    "notation": {
+      "allOf": [
+        {
+          "$ref": "urn:worldmusichub:score:v1"
+        },
+        {
+          "properties": {
+            "source": {
+              "type": "null"
+            },
+            "repeats": {
+              "type": "array",
+              "maxItems": 0
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "performance": {
+      "$ref": "#/$defs/Performance"
+    },
+    "coverage": {
+      "$ref": "#/$defs/Coverage"
+    }
+  },
+  "required": [
+    "format",
+    "version",
+    "source",
+    "notation",
+    "performance",
+    "coverage"
+  ],
+  "$defs": {
+    "Beat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "numerator",
+        "denominator"
+      ]
+    },
+    "Coordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "track": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "event": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 249999
+        }
+      },
+      "required": [
+        "track",
+        "event"
+      ]
+    },
+    "SourceEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "const": "midi"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5242880
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "format",
+        "bytes",
+        "sha256"
+      ]
+    },
+    "Track": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "source_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "source_event_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 250000
+        },
+        "end": {
+          "$ref": "#/$defs/Beat"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "source_index",
+        "source_event_count",
+        "end"
+      ]
+    },
+    "Part": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "track_id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "channel": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 15,
+          "not": {
+            "const": 9
+          }
+        },
+        "notation_origin": {
+          "const": "inferred"
+        },
+        "target": {
+          "const": "key_release"
+        }
+      },
+      "required": [
+        "id",
+        "track_id",
+        "channel",
+        "notation_origin",
+        "target"
+      ]
+    },
+    "PerformanceNote": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "note_id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "part_id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "attack": {
+          "$ref": "#/$defs/Coordinate"
+        },
+        "release": {
+          "$ref": "#/$defs/Coordinate"
+        },
+        "release_velocity": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        }
+      },
+      "required": [
+        "note_id",
+        "part_id",
+        "attack",
+        "release",
+        "release_velocity"
+      ]
+    },
+    "Event": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Beat"
+        },
+        "origin": {
+          "$ref": "#/$defs/Coordinate"
+        },
+        "command": {
+          "$ref": "#/$defs/Command"
+        }
+      },
+      "required": [
+        "at",
+        "origin",
+        "command"
+      ]
+    },
+    "Command": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "instrument_program"
+            },
+            "channel": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            },
+            "program": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            }
+          },
+          "required": [
+            "kind",
+            "channel",
+            "program"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "bank_select"
+            },
+            "channel": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            },
+            "component": {
+              "enum": [
+                "most_significant",
+                "least_significant"
+              ]
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            }
+          },
+          "required": [
+            "kind",
+            "channel",
+            "component",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "volume"
+            },
+            "channel": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            }
+          },
+          "required": [
+            "kind",
+            "channel",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "pan"
+            },
+            "channel": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            }
+          },
+          "required": [
+            "kind",
+            "channel",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "expression"
+            },
+            "channel": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            }
+          },
+          "required": [
+            "kind",
+            "channel",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "reverb_send"
+            },
+            "channel": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            }
+          },
+          "required": [
+            "kind",
+            "channel",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "chorus_send"
+            },
+            "channel": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            }
+          },
+          "required": [
+            "kind",
+            "channel",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "key_pressure"
+            },
+            "channel": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            },
+            "key": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            },
+            "pressure": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            }
+          },
+          "required": [
+            "kind",
+            "channel",
+            "key",
+            "pressure"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "channel_pressure"
+            },
+            "channel": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            },
+            "pressure": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            }
+          },
+          "required": [
+            "kind",
+            "channel",
+            "pressure"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "initial_controller_reset"
+            },
+            "channel": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          },
+          "required": [
+            "kind",
+            "channel"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "initial_sustain_off"
+            },
+            "channel": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          },
+          "required": [
+            "kind",
+            "channel"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "tempo"
+            },
+            "microseconds_per_quarter": {
+              "type": "integer",
+              "minimum": 100000,
+              "maximum": 6000000
+            }
+          },
+          "required": [
+            "kind",
+            "microseconds_per_quarter"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "meter"
+            },
+            "numerator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255
+            },
+            "denominator": {
+              "enum": [
+                1,
+                2,
+                4,
+                8,
+                16,
+                32,
+                64,
+                128,
+                256,
+                512,
+                1024,
+                2048,
+                4096,
+                8192,
+                16384,
+                32768
+              ]
+            },
+            "clocks_per_click": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "thirty_seconds_per_quarter": {
+              "const": 8
+            }
+          },
+          "required": [
+            "kind",
+            "numerator",
+            "denominator",
+            "clocks_per_click",
+            "thirty_seconds_per_quarter"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "key_signature"
+            },
+            "fifths": {
+              "type": "integer",
+              "minimum": -7,
+              "maximum": 7
+            },
+            "mode": {
+              "enum": [
+                "major",
+                "minor"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "fifths",
+            "mode"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "text"
+            },
+            "role": {
+              "enum": [
+                "text",
+                "copyright",
+                "track_name",
+                "instrument_name",
+                "lyric",
+                "marker",
+                "cue",
+                "program_name",
+                "device_name"
+              ]
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "kind",
+            "role",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "sequence_number"
+            },
+            "number": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 65535
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "track_end"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "Performance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "const": "wmh-semantic-midi1-v1"
+        },
+        "end": {
+          "$ref": "#/$defs/Beat"
+        },
+        "tracks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Track"
+          },
+          "maxItems": 128,
+          "minItems": 1
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Part"
+          },
+          "maxItems": 128,
+          "minItems": 1
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PerformanceNote"
+          },
+          "maxItems": 100000
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "maxItems": 250000
+        }
+      },
+      "required": [
+        "profile",
+        "end",
+        "tracks",
+        "parts",
+        "notes",
+        "events"
+      ]
+    },
+    "Coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "const": "complete"
+        },
+        "notation": {
+          "const": "inferred"
+        },
+        "source_tracks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "source_events": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 250000
+        },
+        "represented_events": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 250000
+        },
+        "pitched_notes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        }
+      },
+      "required": [
+        "status",
+        "notation",
+        "source_tracks",
+        "source_events",
+        "represented_events",
+        "pitched_notes"
+      ]
+    }
+  }
+}

@@ -1,0 +1,1534 @@
+{
+  "format": "worldmusichub-complete-score",
+  "version": 1,
+  "source": {
+    "format": "midi",
+    "bytes": 422,
+    "sha256": "c3efc912bcbb03b4f7bfd582a314c9aa1caae150be2295840223d3870c79d402"
+  },
+  "notation": {
+    "format_metadata": {
+      "schema_revision": 2,
+      "producer": "WorldMusicHub",
+      "producer_version": "0.2.0-alpha.1"
+    },
+    "version": 1,
+    "id": "midi-3cc7f45634997241",
+    "title": "Clean Practice Fixture",
+    "composer": "",
+    "provenance": {
+      "kind": "user_import",
+      "attribution": "User-supplied MIDI performance; ownership and usage rights are not verified. Notation is inferred, not original sheet music.",
+      "source_url": null,
+      "license": null
+    },
+    "parts": [
+      {
+        "id": "midi-t2-c1",
+        "name": "Keys · channel 1",
+        "instrument": "MIDI channel 1",
+        "notes": [
+          {
+            "id": "midi-t2-c1-e5",
+            "at": {
+              "numerator": 0,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 4
+            },
+            "pitch": {
+              "step": "C",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 76,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e7",
+            "at": {
+              "numerator": 1,
+              "denominator": 2
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 4
+            },
+            "pitch": {
+              "step": "E",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 80,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e9",
+            "at": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 4
+            },
+            "pitch": {
+              "step": "G",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 84,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e11",
+            "at": {
+              "numerator": 3,
+              "denominator": 2
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 4
+            },
+            "pitch": {
+              "step": "E",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 88,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e13",
+            "at": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 2
+            },
+            "pitch": {
+              "step": "C",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 76,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e15",
+            "at": {
+              "numerator": 3,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 2
+            },
+            "pitch": {
+              "step": "G",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 80,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e17",
+            "at": {
+              "numerator": 4,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "C",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 84,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e19",
+            "at": {
+              "numerator": 8,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "E",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 88,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e21",
+            "at": {
+              "numerator": 12,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "G",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 76,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e23",
+            "at": {
+              "numerator": 16,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "C",
+              "alter": 0,
+              "octave": 5
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 80,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e25",
+            "at": {
+              "numerator": 24,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "C",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 84,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e27",
+            "at": {
+              "numerator": 32,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "E",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 88,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e29",
+            "at": {
+              "numerator": 40,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "G",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 76,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e31",
+            "at": {
+              "numerator": 48,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "C",
+              "alter": 0,
+              "octave": 5
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 80,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e33",
+            "at": {
+              "numerator": 56,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "C",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 84,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e35",
+            "at": {
+              "numerator": 60,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "E",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 88,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e37",
+            "at": {
+              "numerator": 62,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "G",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 76,
+            "tie_start": false,
+            "tie_stop": false
+          }
+        ]
+      },
+      {
+        "id": "midi-t3-c2",
+        "name": "Plucks · channel 2",
+        "instrument": "MIDI channel 2",
+        "notes": [
+          {
+            "id": "midi-t3-c2-e5",
+            "at": {
+              "numerator": 0,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "C",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 76,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t3-c2-e7",
+            "at": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "G",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 80,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t3-c2-e9",
+            "at": {
+              "numerator": 4,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "C",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 84,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t3-c2-e11",
+            "at": {
+              "numerator": 8,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "G",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 88,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t3-c2-e13",
+            "at": {
+              "numerator": 12,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "E",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 76,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t3-c2-e15",
+            "at": {
+              "numerator": 16,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "G",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 80,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t3-c2-e17",
+            "at": {
+              "numerator": 24,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "C",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 84,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t3-c2-e19",
+            "at": {
+              "numerator": 32,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "G",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 88,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t3-c2-e21",
+            "at": {
+              "numerator": 40,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "E",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 76,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t3-c2-e23",
+            "at": {
+              "numerator": 48,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "G",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 80,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t3-c2-e25",
+            "at": {
+              "numerator": 56,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "C",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 84,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t3-c2-e27",
+            "at": {
+              "numerator": 60,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "G",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 88,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t3-c2-e29",
+            "at": {
+              "numerator": 62,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "E",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 76,
+            "tie_start": false,
+            "tie_stop": false
+          }
+        ]
+      }
+    ],
+    "tempo": [
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "bpm": 120.0
+      }
+    ],
+    "meters": [
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "numerator": 4,
+        "denominator": 4
+      }
+    ],
+    "keys": [],
+    "measures": [
+      {
+        "number": 1,
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 2,
+        "at": {
+          "numerator": 4,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 3,
+        "at": {
+          "numerator": 8,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 4,
+        "at": {
+          "numerator": 12,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 5,
+        "at": {
+          "numerator": 16,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 6,
+        "at": {
+          "numerator": 20,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 7,
+        "at": {
+          "numerator": 24,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 8,
+        "at": {
+          "numerator": 28,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 9,
+        "at": {
+          "numerator": 32,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 10,
+        "at": {
+          "numerator": 36,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 11,
+        "at": {
+          "numerator": 40,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 12,
+        "at": {
+          "numerator": 44,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 13,
+        "at": {
+          "numerator": 48,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 14,
+        "at": {
+          "numerator": 52,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 15,
+        "at": {
+          "numerator": 56,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "number": 16,
+        "at": {
+          "numerator": 60,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      }
+    ],
+    "repeats": [],
+    "source": null
+  },
+  "performance": {
+    "profile": "wmh-semantic-midi1-v1",
+    "end": {
+      "numerator": 64,
+      "denominator": 1
+    },
+    "tracks": [
+      {
+        "id": "track-1",
+        "name": "Clean Practice Fixture",
+        "source_index": 0,
+        "source_event_count": 4,
+        "end": {
+          "numerator": 64,
+          "denominator": 1
+        }
+      },
+      {
+        "id": "track-2",
+        "name": "Keys",
+        "source_index": 1,
+        "source_event_count": 39,
+        "end": {
+          "numerator": 64,
+          "denominator": 1
+        }
+      },
+      {
+        "id": "track-3",
+        "name": "Plucks",
+        "source_index": 2,
+        "source_event_count": 31,
+        "end": {
+          "numerator": 64,
+          "denominator": 1
+        }
+      }
+    ],
+    "parts": [
+      {
+        "id": "midi-t2-c1",
+        "track_id": "track-2",
+        "channel": 0,
+        "notation_origin": "inferred",
+        "target": "key_release"
+      },
+      {
+        "id": "midi-t3-c2",
+        "track_id": "track-3",
+        "channel": 1,
+        "notation_origin": "inferred",
+        "target": "key_release"
+      }
+    ],
+    "notes": [
+      {
+        "note_id": "midi-t2-c1-e5",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 4
+        },
+        "release": {
+          "track": 1,
+          "event": 5
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e7",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 6
+        },
+        "release": {
+          "track": 1,
+          "event": 7
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t3-c2-e5",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 4
+        },
+        "release": {
+          "track": 2,
+          "event": 5
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e9",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 8
+        },
+        "release": {
+          "track": 1,
+          "event": 9
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e11",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 10
+        },
+        "release": {
+          "track": 1,
+          "event": 11
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e13",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 12
+        },
+        "release": {
+          "track": 1,
+          "event": 13
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t3-c2-e7",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 6
+        },
+        "release": {
+          "track": 2,
+          "event": 7
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e15",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 14
+        },
+        "release": {
+          "track": 1,
+          "event": 15
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e17",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 16
+        },
+        "release": {
+          "track": 1,
+          "event": 17
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t3-c2-e9",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 8
+        },
+        "release": {
+          "track": 2,
+          "event": 9
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e19",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 18
+        },
+        "release": {
+          "track": 1,
+          "event": 19
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t3-c2-e11",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 10
+        },
+        "release": {
+          "track": 2,
+          "event": 11
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e21",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 20
+        },
+        "release": {
+          "track": 1,
+          "event": 21
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t3-c2-e13",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 12
+        },
+        "release": {
+          "track": 2,
+          "event": 13
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e23",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 22
+        },
+        "release": {
+          "track": 1,
+          "event": 23
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t3-c2-e15",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 14
+        },
+        "release": {
+          "track": 2,
+          "event": 15
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e25",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 24
+        },
+        "release": {
+          "track": 1,
+          "event": 25
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t3-c2-e17",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 16
+        },
+        "release": {
+          "track": 2,
+          "event": 17
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e27",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 26
+        },
+        "release": {
+          "track": 1,
+          "event": 27
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t3-c2-e19",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 18
+        },
+        "release": {
+          "track": 2,
+          "event": 19
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e29",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 28
+        },
+        "release": {
+          "track": 1,
+          "event": 29
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t3-c2-e21",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 20
+        },
+        "release": {
+          "track": 2,
+          "event": 21
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e31",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 30
+        },
+        "release": {
+          "track": 1,
+          "event": 31
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t3-c2-e23",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 22
+        },
+        "release": {
+          "track": 2,
+          "event": 23
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e33",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 32
+        },
+        "release": {
+          "track": 1,
+          "event": 33
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t3-c2-e25",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 24
+        },
+        "release": {
+          "track": 2,
+          "event": 25
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e35",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 34
+        },
+        "release": {
+          "track": 1,
+          "event": 35
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t3-c2-e27",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 26
+        },
+        "release": {
+          "track": 2,
+          "event": 27
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t2-c1-e37",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 36
+        },
+        "release": {
+          "track": 1,
+          "event": 37
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t3-c2-e29",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 28
+        },
+        "release": {
+          "track": 2,
+          "event": 29
+        },
+        "release_velocity": 0
+      }
+    ],
+    "events": [
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 0,
+          "event": 0
+        },
+        "command": {
+          "kind": "text",
+          "role": "track_name",
+          "text": "Clean Practice Fixture"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 0,
+          "event": 1
+        },
+        "command": {
+          "kind": "tempo",
+          "microseconds_per_quarter": 500000
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 0,
+          "event": 2
+        },
+        "command": {
+          "kind": "meter",
+          "numerator": 4,
+          "denominator": 4,
+          "clocks_per_click": 24,
+          "thirty_seconds_per_quarter": 8
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 0
+        },
+        "command": {
+          "kind": "text",
+          "role": "track_name",
+          "text": "Keys"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 1
+        },
+        "command": {
+          "kind": "instrument_program",
+          "channel": 0,
+          "program": 0
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 2
+        },
+        "command": {
+          "kind": "volume",
+          "channel": 0,
+          "value": 96
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 3
+        },
+        "command": {
+          "kind": "pan",
+          "channel": 0,
+          "value": 32
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 0
+        },
+        "command": {
+          "kind": "text",
+          "role": "track_name",
+          "text": "Plucks"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 1
+        },
+        "command": {
+          "kind": "instrument_program",
+          "channel": 1,
+          "program": 24
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 2
+        },
+        "command": {
+          "kind": "volume",
+          "channel": 1,
+          "value": 96
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 3
+        },
+        "command": {
+          "kind": "pan",
+          "channel": 1,
+          "value": 96
+        }
+      },
+      {
+        "at": {
+          "numerator": 64,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 0,
+          "event": 3
+        },
+        "command": {
+          "kind": "track_end"
+        }
+      },
+      {
+        "at": {
+          "numerator": 64,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 38
+        },
+        "command": {
+          "kind": "track_end"
+        }
+      },
+      {
+        "at": {
+          "numerator": 64,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 30
+        },
+        "command": {
+          "kind": "track_end"
+        }
+      }
+    ]
+  },
+  "coverage": {
+    "status": "complete",
+    "notation": "inferred",
+    "source_tracks": 3,
+    "source_events": 74,
+    "represented_events": 74,
+    "pitched_notes": 30
+  }
+}

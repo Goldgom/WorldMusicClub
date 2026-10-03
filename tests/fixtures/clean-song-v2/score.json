@@ -1,0 +1,540 @@
+{
+  "format": "worldmusichub-complete-score",
+  "version": 1,
+  "source": {
+    "format": "midi",
+    "bytes": 176,
+    "sha256": "777e30db44e7c54ef0adfd1f21ab2fd8fcca49d7a0ffa64c8464dcce5e7fa084"
+  },
+  "notation": {
+    "format_metadata": {
+      "schema_revision": 2,
+      "producer": "WorldMusicHub",
+      "producer_version": "0.2.0-alpha.1"
+    },
+    "version": 1,
+    "id": "midi-d38ca0ab0a824ca3",
+    "title": "Clean Fixture",
+    "composer": "",
+    "provenance": {
+      "kind": "user_import",
+      "attribution": "User-supplied MIDI performance; ownership and usage rights are not verified. Notation is inferred, not original sheet music.",
+      "source_url": null,
+      "license": null
+    },
+    "parts": [
+      {
+        "id": "midi-t2-c1",
+        "name": "Keys · channel 1",
+        "instrument": "MIDI channel 1",
+        "notes": [
+          {
+            "id": "midi-t2-c1-e5",
+            "at": {
+              "numerator": 0,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "C",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 88,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e7",
+            "at": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 1,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "E",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 80,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t2-c1-e9",
+            "at": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "G",
+              "alter": 0,
+              "octave": 4
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 90,
+            "tie_start": false,
+            "tie_stop": false
+          }
+        ]
+      },
+      {
+        "id": "midi-t3-c2",
+        "name": "Plucks · channel 2",
+        "instrument": "MIDI channel 2",
+        "notes": [
+          {
+            "id": "midi-t3-c2-e5",
+            "at": {
+              "numerator": 0,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "C",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 76,
+            "tie_start": false,
+            "tie_stop": false
+          },
+          {
+            "id": "midi-t3-c2-e7",
+            "at": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "duration": {
+              "numerator": 2,
+              "denominator": 1
+            },
+            "pitch": {
+              "step": "G",
+              "alter": 0,
+              "octave": 3
+            },
+            "voice": "inferred-1",
+            "staff": 1,
+            "velocity": 82,
+            "tie_start": false,
+            "tie_stop": false
+          }
+        ]
+      }
+    ],
+    "tempo": [
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "bpm": 120.0
+      },
+      {
+        "at": {
+          "numerator": 2,
+          "denominator": 1
+        },
+        "bpm": 150.0
+      }
+    ],
+    "meters": [
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "numerator": 4,
+        "denominator": 4
+      }
+    ],
+    "keys": [],
+    "measures": [
+      {
+        "number": 1,
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "length": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      }
+    ],
+    "repeats": [],
+    "source": null
+  },
+  "performance": {
+    "profile": "wmh-semantic-midi1-v1",
+    "end": {
+      "numerator": 4,
+      "denominator": 1
+    },
+    "tracks": [
+      {
+        "id": "track-1",
+        "name": "Clean Fixture",
+        "source_index": 0,
+        "source_event_count": 5,
+        "end": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "id": "track-2",
+        "name": "Keys",
+        "source_index": 1,
+        "source_event_count": 11,
+        "end": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      },
+      {
+        "id": "track-3",
+        "name": "Plucks",
+        "source_index": 2,
+        "source_event_count": 9,
+        "end": {
+          "numerator": 4,
+          "denominator": 1
+        }
+      }
+    ],
+    "parts": [
+      {
+        "id": "midi-t2-c1",
+        "track_id": "track-2",
+        "channel": 0,
+        "notation_origin": "inferred",
+        "target": "key_release"
+      },
+      {
+        "id": "midi-t3-c2",
+        "track_id": "track-3",
+        "channel": 1,
+        "notation_origin": "inferred",
+        "target": "key_release"
+      }
+    ],
+    "notes": [
+      {
+        "note_id": "midi-t2-c1-e5",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 4
+        },
+        "release": {
+          "track": 1,
+          "event": 5
+        },
+        "release_velocity": 12
+      },
+      {
+        "note_id": "midi-t2-c1-e7",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 6
+        },
+        "release": {
+          "track": 1,
+          "event": 7
+        },
+        "release_velocity": 0
+      },
+      {
+        "note_id": "midi-t3-c2-e5",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 4
+        },
+        "release": {
+          "track": 2,
+          "event": 5
+        },
+        "release_velocity": 6
+      },
+      {
+        "note_id": "midi-t2-c1-e9",
+        "part_id": "midi-t2-c1",
+        "attack": {
+          "track": 1,
+          "event": 8
+        },
+        "release": {
+          "track": 1,
+          "event": 9
+        },
+        "release_velocity": 4
+      },
+      {
+        "note_id": "midi-t3-c2-e7",
+        "part_id": "midi-t3-c2",
+        "attack": {
+          "track": 2,
+          "event": 6
+        },
+        "release": {
+          "track": 2,
+          "event": 7
+        },
+        "release_velocity": 0
+      }
+    ],
+    "events": [
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 0,
+          "event": 0
+        },
+        "command": {
+          "kind": "text",
+          "role": "track_name",
+          "text": "Clean Fixture"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 0,
+          "event": 1
+        },
+        "command": {
+          "kind": "tempo",
+          "microseconds_per_quarter": 500000
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 0,
+          "event": 2
+        },
+        "command": {
+          "kind": "meter",
+          "numerator": 4,
+          "denominator": 4,
+          "clocks_per_click": 24,
+          "thirty_seconds_per_quarter": 8
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 0
+        },
+        "command": {
+          "kind": "text",
+          "role": "track_name",
+          "text": "Keys"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 1
+        },
+        "command": {
+          "kind": "instrument_program",
+          "channel": 0,
+          "program": 0
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 2
+        },
+        "command": {
+          "kind": "volume",
+          "channel": 0,
+          "value": 100
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 3
+        },
+        "command": {
+          "kind": "pan",
+          "channel": 0,
+          "value": 32
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 0
+        },
+        "command": {
+          "kind": "text",
+          "role": "track_name",
+          "text": "Plucks"
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 1
+        },
+        "command": {
+          "kind": "instrument_program",
+          "channel": 1,
+          "program": 24
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 2
+        },
+        "command": {
+          "kind": "volume",
+          "channel": 1,
+          "value": 90
+        }
+      },
+      {
+        "at": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 3
+        },
+        "command": {
+          "kind": "pan",
+          "channel": 1,
+          "value": 96
+        }
+      },
+      {
+        "at": {
+          "numerator": 2,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 0,
+          "event": 3
+        },
+        "command": {
+          "kind": "tempo",
+          "microseconds_per_quarter": 400000
+        }
+      },
+      {
+        "at": {
+          "numerator": 4,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 0,
+          "event": 4
+        },
+        "command": {
+          "kind": "track_end"
+        }
+      },
+      {
+        "at": {
+          "numerator": 4,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 1,
+          "event": 10
+        },
+        "command": {
+          "kind": "track_end"
+        }
+      },
+      {
+        "at": {
+          "numerator": 4,
+          "denominator": 1
+        },
+        "origin": {
+          "track": 2,
+          "event": 8
+        },
+        "command": {
+          "kind": "track_end"
+        }
+      }
+    ]
+  },
+  "coverage": {
+    "status": "complete",
+    "notation": "inferred",
+    "source_tracks": 3,
+    "source_events": 25,
+    "represented_events": 25,
+    "pitched_notes": 5
+  }
+}

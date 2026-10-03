@@ -1,0 +1,24 @@
+{
+  "format": "worldmusichub-song",
+  "version": 2,
+  "id": "midi-3cc7f45634997241",
+  "title": "Clean Practice Fixture",
+  "score": {
+    "path": "score.json",
+    "bytes": 33713,
+    "sha256": "30e8da614f6f5510b5a3cc1bf0a7d6fe282d614db8d17dbb5646d1c811c7efb1"
+  },
+  "sources": [
+    {
+      "format": "midi",
+      "bytes": 422,
+      "sha256": "c3efc912bcbb03b4f7bfd582a314c9aa1caae150be2295840223d3870c79d402"
+    }
+  ],
+  "rights": {
+    "status": "original_authored",
+    "attribution": "WorldMusicHub original authored test exercise",
+    "license": "CC0-1.0"
+  },
+  "media": []
+}

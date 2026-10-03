@@ -1,0 +1,24 @@
+{
+  "format": "worldmusichub-song",
+  "version": 2,
+  "id": "midi-d38ca0ab0a824ca3",
+  "title": "Clean Fixture",
+  "score": {
+    "path": "score.json",
+    "bytes": 11196,
+    "sha256": "45fae36dd9e93b2ebe617df073f13fc400c0d01efab7e8d863d08e6f763869ad"
+  },
+  "sources": [
+    {
+      "format": "midi",
+      "bytes": 176,
+      "sha256": "777e30db44e7c54ef0adfd1f21ab2fd8fcca49d7a0ffa64c8464dcce5e7fa084"
+    }
+  ],
+  "rights": {
+    "status": "original_authored",
+    "attribution": "WorldMusicHub original authored test exercise",
+    "license": "CC0-1.0"
+  },
+  "media": []
+}
