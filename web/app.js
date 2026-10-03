@@ -638,17 +638,20 @@ function rememberContact(source,value) {
     inputContacts.delete(expired ?? inputContacts.keys().next().value);
   }
 }
+function soundingManualSources() {
+  return new Set([...state.held.keys(),...[...synth.releasingVoices].filter(voice=>voice.id.startsWith('manual:')).map(voice=>voice.id.slice(7))]);
+}
 function cleanupFreeInputs(reason='free_boundary',stopPreview=true) {
   freeLiveStart=performance.now();
   if(shell?.screen()==='free'){cleaningAllInputs=true;try{keyboardInput?.releaseAll(reason);}finally{cleaningAllInputs=false;}}
   for(const contact of inputContacts.values())if(contact.route.kind==='free')contact.active=false;
-  for(const source of [...state.held.keys()])if((heldAudioTokens.get(source)??inputContacts.get(source))?.route.kind==='free'){state.held.delete(source);heldAudioTokens.delete(source);synth.stop(`manual:${source}`);}
+  for(const source of soundingManualSources())if((heldAudioTokens.get(source)??inputContacts.get(source))?.route.kind==='free'){state.held.delete(source);heldAudioTokens.delete(source);synth.stop(`manual:${source}`);}
   if(stopPreview)freePreview?.stop();highlightKeys();
 }
-function releaseOwnedSound(source,time,route) {
+function releaseOwnedSound(source,time,route,smooth=false) {
   const token=heldAudioTokens.get(source)??inputContacts.get(source);
   if(token && (time.eventWall<token.eventWall || token.route.kind!==route?.kind || token.route.owner!==route?.owner || token.route.recorder!==route?.recorder))return;
-  state.held.delete(source);heldAudioTokens.delete(source);synth.stop(`manual:${source}`);
+  state.held.delete(source);heldAudioTokens.delete(source);if(smooth)synth.release(`manual:${source}`);else synth.stop(`manual:${source}`);
 }
 function freeLiveInputAllowed(route,captureTime,options={}) {
   return route.kind==='free' && shell.screen()==='free' && freeWindowFocused
@@ -722,7 +725,7 @@ function releaseMatching(prefix, eventTime = null, options = {}) {
     if(route.kind==='free')freeSession?.cleanup(time.receivedWall,options.reason||'input_cleanup',{prefix,...(options.generationToken?{generationToken:options.generationToken}:{}),...(options.inputKind==='midi'?{notAfterEventWall:time.eventWall}:{})},route.owner);
     else route.recorder?.evidence.cancel({...time,...options,prefix,...(options.inputKind==='midi'?{notAfterEventWall:time.eventWall}:{})});
   }
-  for(const source of [...state.held.keys()])if(source.startsWith(prefix)){const token=heldAudioTokens.get(source)??inputContacts.get(source);releaseOwnedSound(source,time,token?.route);}
+  for(const source of soundingManualSources())if(source.startsWith(prefix)){const token=heldAudioTokens.get(source)??inputContacts.get(source);releaseOwnedSound(source,time,token?.route);}
   highlightKeys();
 }
 function releaseNote(source, eventTime = null, options = {}) {
@@ -740,7 +743,7 @@ function releaseNote(source, eventTime = null, options = {}) {
   const contact=inputContacts.get(source);
   if(contact && time.eventWall>=contact.eventWall){contact.active=false;contact.eventWall=time.eventWall;}
   else if(!contact && options.inputKind==='midi' && !options.synthetic)rememberContact(source,{route,eventWall:time.eventWall,active:false});
-  releaseOwnedSound(source,time,route);highlightKeys();
+  releaseOwnedSound(source,time,route,!options.synthetic);highlightKeys();
 }
 function highlightKeys(activeNotes = []) {
   const held = new Set(state.held.values());

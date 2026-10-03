@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {freePracticeApp,fixtureScoreServer} from './free-practice-app-fixtures.js';
+import {Synth} from '../web/transport.js';
 
 const musical={code:'KeyR',key:'r'};
 const manual=app=>app.plays.filter(([id])=>String(id).startsWith('manual:'));
@@ -131,4 +132,48 @@ test('late dialog and hidden MIDI still retain recording evidence without revivi
     app.midi([0x90,62,92],hiddenTime);app.midi([0x80,62,0],hiddenTime);await app.tick();assert.equal(manual(app).length,0);
     await app.click('free-stop');const draft=await app.exported('free-export-draft');assert.deepEqual(onsets(draft).map(event=>[event.midi,event.segment_id]),[[60,null],[62,null]]);
   }finally{await app.close();}
+});
+
+for(const screen of ['free','stage'])test(`${screen} genuine key release tapers only the instrument tone and hidden cleanup cancels its tail`,async()=>{
+  const app=await freePracticeApp({fetchResult:screen==='stage'?await fixtureScoreServer():null});
+  const play=Synth.prototype.play,click=Synth.prototype.click;let synth,clicks=0;
+  Synth.prototype.play=function(...args){synth=this;return play.apply(this,args);};
+  Synth.prototype.click=function(...args){clicks++;return click.apply(this,args);};
+  try{
+    if(screen==='free')await enter(app);else{await app.until(()=>!app.$('start-practice').disabled);app.$('count-in').checked=false;await app.click('start-practice');await app.until(()=>app.document.body.dataset.screen==='stage');}
+    const target=app.$(screen==='free'?'free-practice-title':'stage-title');
+    app.emit(target,'keydown',musical);await app.tick();
+    const voice=[...synth.voices.values()].find(value=>value.id.startsWith('manual:'));
+    assert.ok(voice);synth.context.currentTime=0.04;
+    app.emit(target,'keyup',musical);
+    assert.equal(synth.voices.has(voice.id),false);assert.ok(synth.releasingVoices.has(voice));
+    assert.equal(app.document.querySelectorAll(screen==='free'?'#free-practice-keys .held':'#keyboard .pressed').length,0,'Visual key release remains immediate');
+    assert.equal(clicks,0,'Manual input does not trigger an extra click oscillator');
+    assert.equal(synth.clickVoices.size,0);assert.equal(manual(app).length,1);
+    Object.defineProperty(app.document,'hidden',{configurable:true,value:true});app.emit(app.document,'visibilitychange');
+    assert.equal(synth.voices.size,0);assert.equal(synth.releasingVoices.size,0);assert.equal(voice.disposed,true,'Hidden cleanup must include a key whose release already cleared the held state');
+  }finally{Synth.prototype.play=play;Synth.prototype.click=click;await app.close();}
+});
+
+test('free MIDI panic cancels owned release tails while an older timestamp cannot cut a newer tail',async()=>{
+  const app=await freePracticeApp(),play=Synth.prototype.play;let synth;
+  Synth.prototype.play=function(...args){synth=this;return play.apply(this,args);};
+  try{
+    await enter(app);await connect(app);const prior=performance.now();await app.tick();
+    app.midi([0x90,64,97]);await app.tick();synth.context.currentTime=0.03;app.midi([0x80,64,0]);
+    const [tail]=synth.releasingVoices;assert.ok(tail);assert.equal(held(app),0);
+    app.midi([0xb0,123,0],prior);assert.ok(synth.releasingVoices.has(tail),'A delayed panic cannot claim a later contact');
+    await app.tick();app.midi([0xb0,123,0]);assert.equal(synth.releasingVoices.size,0);assert.equal(tail.disposed,true);
+  }finally{Synth.prototype.play=play;await app.close();}
+});
+
+test('synthetic pointer cancellation keeps immediate hard-stop semantics',async()=>{
+  const app=await freePracticeApp(),play=Synth.prototype.play;let synth;
+  Synth.prototype.play=function(...args){synth=this;return play.apply(this,args);};
+  try{
+    await enter(app);const target=app.$('free-practice-keys').querySelector('[data-midi="64"]');
+    app.emit(target,'pointerdown',{pointerId:1,button:0});await app.tick();const [voice]=synth.voices.values();synth.context.currentTime=0.02;
+    app.emit(target,'pointercancel',{pointerId:1,button:0});
+    assert.equal(synth.voices.size,0);assert.equal(synth.releasingVoices.size,0);assert.equal(voice.disposed,true);assert.equal(held(app),0);
+  }finally{Synth.prototype.play=play;await app.close();}
 });

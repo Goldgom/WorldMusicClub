@@ -227,3 +227,4 @@ import "./frontend-settings.test.js";
 import "./frontend-pitch-feedback.test.js";
 
 import "./frontend-score-download.test.js";
+import "./synth-release.test.js";
