@@ -128,6 +128,15 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,read
     if(await page.locator('#sound-button').getAttribute('aria-pressed')==='true')await ui('#sound-button').click();
     await page.locator('#play-button').click();await page.waitForFunction(()=>Number(document.querySelector('#progress').value)>150);await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
     const take=await exportTakeData();assert.equal(take.passes.length,1);await closeShellPanels();if(await page.locator('#notice-dismiss').isVisible())await page.locator('#notice-dismiss').click();
+    const localeProof=[];await page.setViewportSize({width:1280,height:720});
+    for(const locale of ['en','zh-CN']){
+      await ui('#interface-language').selectOption(locale);await closeShellPanels();await settlePianoPaint(page);
+      const normal=await readSharedPianoGeometry(page);assert.equal(normal.locale,locale);assertPianoToolbarLabels(normal);
+      if(locale==='en')await page.screenshot({path:join(artifactDirectory,'worldmusichub-shared-piano-1280x720-en-normal.png'),fullPage:true,animations:'disabled'});
+      await page.locator('#rhythm-stage-free').click();await settlePianoPaint(page);const free=await readSharedPianoGeometry(page,'free');assert.equal(free.locale,locale);assertPianoToolbarLabels(free);
+      if(locale==='en')await page.screenshot({path:join(artifactDirectory,'worldmusichub-shared-piano-1280x720-en-free.png'),fullPage:true,animations:'disabled'});
+      localeProof.push({locale,normal:normal.labels,free:free.labels});await page.locator('#rhythm-free-resume').click();
+    }
     const layouts=[{width:1280,height:720},{width:1920,height:1080},{width:844,height:390},{width:390,height:844}];
     for(const viewport of layouts)for(const theme of viewport.width>=1280?['light','dark']:['light']){
       await page.setViewportSize(viewport);await page.emulateMedia({reducedMotion:theme==='dark'?'reduce':'no-preference'});await ui('#theme-mode').selectOption(theme);await closeShellPanels();
@@ -139,7 +148,7 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,read
       await page.locator('#free-keyboard-scroll').evaluate(node=>{node.scrollLeft=0;});await settlePianoPaint(page);
       const free=await readSharedPianoGeometry(page,'free');
       await page.screenshot({path:join(artifactDirectory,`worldmusichub-shared-piano-${suffix}-free.png`),fullPage:true,animations:'disabled'});
-      await writeFile(join(artifactDirectory,'worldmusichub-shared-piano-layout-checkpoint.json'),JSON.stringify({original_fixtures_only:true,complete:false,completed_pairs:evidence,current:{viewport,theme,normal,free}},null,2));
+      await writeFile(join(artifactDirectory,'worldmusichub-shared-piano-layout-checkpoint.json'),JSON.stringify({original_fixtures_only:true,complete:false,localeProof,completed_pairs:evidence,current:{viewport,theme,normal,free}},null,2));
       assertSamePianoStage(normal,free);
       evidence.push({viewport,theme,reduced_motion:theme==='dark',normal,free});await page.locator('#rhythm-free-resume').click();
     }
@@ -151,7 +160,7 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,read
     await page.keyboard.down('r');await page.waitForFunction(()=>document.querySelector('#free-practice-keys .pressed'));await page.locator('#free-keyboard-settings').click();await page.waitForFunction(()=>!document.querySelector('#free-practice-keys .pressed'));await page.keyboard.up('r');await closeShellPanels();
     assert.equal(await page.locator('#free-practice-screen').getAttribute('data-state'),'paused');await page.locator('#rhythm-free-resume').click();assert.equal(await page.locator('#keyboard .pressed').count(),0);
     assert.deepEqual(await exportTakeData(),take,'Free input, IME and navigation cannot mutate the retained normal take');assert.deepEqual(await exportScore(),score);
-    await writeFile(join(artifactDirectory,'worldmusichub-shared-piano-stage.json'),JSON.stringify({original_fixtures_only:true,configured_range:{key_count:61,lowest_midi:36,highest_midi:96},evidence,held:{normal:normalHeld,free:freeHeld},actual_paired_screenshots:true,normal_take_preserved:true,score_preserved:true,ime_suppressed:true,protected_control_released_input:true,navigation_released_input:true},null,2));
+    await writeFile(join(artifactDirectory,'worldmusichub-shared-piano-stage.json'),JSON.stringify({original_fixtures_only:true,configured_range:{key_count:61,lowest_midi:36,highest_midi:96},localeProof,evidence,held:{normal:normalHeld,free:freeHeld},actual_paired_screenshots:true,normal_take_preserved:true,score_preserved:true,ime_suppressed:true,protected_control_released_input:true,navigation_released_input:true},null,2));
   });
   test('original falling bars visibly cross staff and Jianpu lane background during actual playback',{timeout:90_000},async()=>{
     const page=getPage(),score=originalAboveKeyboardScore(),evidence=[];score.id='original-live-overlay';score.title='Original live falling-lane overlay';score.tempo[0].bpm=60;

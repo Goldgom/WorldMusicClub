@@ -54,6 +54,8 @@ export function registerFreePianoBrowserRegressions({test,getPage,closeShellPane
     assert.equal(await page.locator('#free-practice-screen').getAttribute('data-state'),'paused','Returning must never resume recording');
     assert.equal(await page.locator('#free-practice-keys [aria-pressed="true"]').count(),0);
     await page.locator('#free-stop').click();
+    if(!await page.locator('#free-recordings').evaluate(node=>node.open))await page.locator('#free-recordings-toggle').click();
+    assert.equal(await page.locator('#free-export-draft').isVisible(),true,'Opening the real recording/history disclosure exposes draft export');
     const [download]=await Promise.all([page.waitForEvent('download'),page.locator('#free-export-draft').click()]);
     const stream=await download.createReadStream();let json='';for await(const chunk of stream)json+=chunk;
     const record=JSON.parse(json);assert.deepEqual(record.observations.events.filter(event=>event.kind==='note_on').map(event=>event.midi),[60,21,61]);

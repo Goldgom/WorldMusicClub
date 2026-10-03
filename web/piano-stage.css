@@ -79,7 +79,25 @@
 
 .game-shell .piano-stage-actions>*{flex:none}
 @media(max-width:1200px){.piano-workspace{--piano-toolbar-height:92px}.game-shell .piano-stage-shared .piano-stage-toolbar{grid-template-columns:auto 1fr;grid-template-rows:36px 28px;min-height:92px;column-gap:8px;row-gap:8px}.game-shell .piano-stage-toolbar .notation-overlay-options{grid-column:1;grid-row:2;order:initial;white-space:nowrap;flex-wrap:nowrap}.game-shell .piano-stage-toolbar .notation-tools{grid-column:2;grid-row:2;justify-self:end;order:initial}.game-shell .piano-stage-toolbar .notation-tools>summary{min-height:28px;padding:4px 8px}.game-shell .piano-workspace .performance-status{top:102px}.game-shell .piano-workspace .performance-overlay{top:92px}}
-@media(max-width:650px){.piano-workspace{--piano-toolbar-height:90px}.game-shell .piano-stage-shared .piano-stage-toolbar{grid-template-columns:auto 1fr;grid-template-rows:32px 30px;min-height:90px;column-gap:4px;row-gap:8px}.game-shell .piano-stage-shared .piano-stage-title{font-size:12px;letter-spacing:0}.game-shell .piano-stage-toolbar .notation-overlay-options{font-size:10px;gap:4px}.game-shell .piano-stage-toolbar .notation-overlay-options label{font-size:10px;gap:3px}.notation-overlay-options input[type=range]{width:52px}.game-shell .piano-stage-toolbar :is(#sound-button,#free-sound){min-width:0}.game-shell .piano-stage-shared .piano-stage-actions{flex-wrap:nowrap}.game-shell .piano-stage-toolbar .button{font-size:10px;min-height:32px;padding:5px}.game-shell .piano-workspace .performance-overlay{top:90px}}
+/* Rows use bounded tracks so score options cannot widen the title column
+   and push the input buttons beyond a narrow viewport. Both modes keep the
+   same slots, including the reserved options row in free practice. */
+@media(max-width:650px){
+ .piano-workspace{--piano-toolbar-height:98px}
+ .game-shell .piano-stage-shared .piano-stage-toolbar{grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:40px 32px;min-height:98px;column-gap:4px;row-gap:8px}
+ .game-shell .piano-stage-shared .piano-stage-title{grid-column:1/span 2;grid-row:1;min-width:0;font-size:12px;letter-spacing:0}
+ .game-shell .piano-stage-shared .piano-stage-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-column:3/-1;grid-row:1;min-width:0;gap:5px;margin:0;align-items:stretch}
+ .game-shell .piano-stage-toolbar .button{font-size:10px;min-height:32px;padding:5px}
+ .game-shell .piano-stage-actions>.button{width:100%;max-width:100%;min-width:0;min-height:40px;height:40px;white-space:normal}
+ .game-shell .piano-stage-toolbar :is(#sound-button,#free-sound){min-width:0}
+ .game-shell .piano-stage-toolbar .notation-overlay-options{grid-column:1/span 9;grid-row:2;min-width:0;font-size:10px;gap:4px}
+ .game-shell .piano-stage-toolbar .notation-overlay-options label{font-size:10px;gap:3px}
+ .notation-overlay-options input[type=range]{width:52px}
+ .game-shell .piano-stage-toolbar .notation-tools{grid-column:10/-1;grid-row:2;justify-self:stretch;min-width:0}
+ .game-shell .piano-stage-toolbar .notation-tools>summary{min-height:32px;max-width:100%;white-space:normal;padding:5px}
+ .game-shell .piano-workspace .performance-overlay{top:98px}
+}
+
 
 .game-shell .free-performance-panel{position:relative;display:flex;flex-direction:column;min-width:0;padding:0;border:0;margin:0;background:var(--piano-field);border-radius:15px}
 .game-shell .free-performance-panel>.free-stage-footer{flex:none}.game-shell .free-stage-footer #free-beginner-controls{width:100%;margin:0;border:0}
