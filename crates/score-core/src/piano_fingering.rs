@@ -432,6 +432,19 @@ impl Search<'_> {
     }
 }
 
+fn validate_request(request: &PianoFingeringRequest) -> Result<(), String> {
+    if !matches!(request.profile, InstrumentProfile::Piano { .. }) {
+        return Err("Piano fingering needs a piano keyboard profile".into());
+    }
+    if [&request.left_hand, &request.right_hand].iter().any(|p| {
+        p.lowest_midi > p.highest_midi || p.highest_midi > 127 || p.max_span_semitones > 24
+    }) || request.locks.len() > MAX_NOTES
+    {
+        return Err("Use MIDI-safe ordered hand ranges, a reach of 0–24 semitones and at most 1,000 source-note locks".into());
+    }
+    Ok(())
+}
+
 pub fn plan_piano_fingering(request: PianoFingeringRequest) -> Result<PianoFingeringPlan, String> {
     plan_with_limits(
         request,
@@ -445,16 +458,34 @@ fn plan_with_limits(
     request: PianoFingeringRequest,
     limits: SearchLimits,
 ) -> Result<PianoFingeringPlan, String> {
-    if !matches!(request.profile, InstrumentProfile::Piano { .. }) {
-        return Err("Piano fingering needs a piano keyboard profile".into());
-    }
-    if [&request.left_hand, &request.right_hand].iter().any(|p| {
-        p.lowest_midi > p.highest_midi || p.highest_midi > 127 || p.max_span_semitones > 24
-    }) || request.locks.len() > MAX_NOTES
-    {
-        return Err("Use MIDI-safe ordered hand ranges, a reach of 0–24 semitones and at most 1,000 source-note locks".into());
-    }
-    let compiled = crate::compile(request.score)?;
+    validate_request(&request)?;
+    let source = crate::fingering_source::FingeringSource::canonical(request.score.clone())?;
+    plan_source_with_limits(request, source, limits)
+}
+
+/// The opaque source can only be created by validated native compilation.
+pub fn plan_piano_fingering_from_source(
+    request: PianoFingeringRequest,
+    source: crate::fingering_source::FingeringSource,
+) -> Result<PianoFingeringPlan, String> {
+    source.verify_score(&request.score)?;
+    plan_source_with_limits(
+        request,
+        source,
+        SearchLimits {
+            beam: BEAM,
+            expansions: MAX_EXPANSIONS,
+        },
+    )
+}
+
+fn plan_source_with_limits(
+    request: PianoFingeringRequest,
+    source: crate::fingering_source::FingeringSource,
+    limits: SearchLimits,
+) -> Result<PianoFingeringPlan, String> {
+    validate_request(&request)?;
+    let compiled = &source.compilation;
     let selected: Vec<_> = compiled
         .timeline
         .notes
@@ -520,7 +551,7 @@ fn plan_with_limits(
             return Err("Each piano lock must name one unique selected sounding source note and specify a hand and/or a finger from 1–5".into());
         }
     }
-    let exact = exact_notes(&compiled, request.part_id.as_deref())?;
+    let exact = exact_notes(compiled, request.part_id.as_deref())?;
     let selected_timeline = crate::Timeline {
         notes: exact.iter().map(|n| n.note.clone()).collect(),
         duration_ms: compiled.timeline.duration_ms,

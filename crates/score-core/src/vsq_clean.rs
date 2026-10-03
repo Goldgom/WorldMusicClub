@@ -7,8 +7,9 @@ mod tests;
 mod validate;
 pub use model::*;
 pub use runtime::{
-    compile_practice, compile_vocal, ExactMicroseconds, PracticeChoice, PracticeRuntime,
-    RuntimeMasterMix, RuntimeNote, RuntimePart,
+    compile_practice, compile_practice_with_compilation, compile_vocal, ExactMicroseconds,
+    PracticeChoice, PracticeRuntime, RuntimeMasterMix, RuntimeNote, RuntimePart,
+    REFERENCE_VELOCITY,
 };
 pub use validate::{decode_json, encode_json, validate};
 pub const FORMAT: &str = "worldmusichub-complete-score";

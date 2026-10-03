@@ -4,6 +4,7 @@ pub mod adaptation;
 pub mod assistance;
 pub mod clean_song;
 mod fingering_clock;
+pub mod fingering_source;
 pub mod guitar_fingering;
 mod jianpu;
 mod matching;

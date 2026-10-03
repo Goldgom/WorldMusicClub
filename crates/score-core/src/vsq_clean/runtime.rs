@@ -171,3 +171,39 @@ pub fn compile_practice(
         interpretation_limits: CLEAN_LIMITS.to_vec(),
     })
 }
+
+/// Derive the exact same canonical target projection for every native consumer.
+/// The explicit interpretation is required; the authoring score is unchanged.
+pub fn compile_practice_with_compilation(
+    score: &VsqCompleteScore,
+    choice: PracticeChoice,
+) -> Result<(PracticeRuntime, crate::Compilation), String> {
+    let runtime = compile_practice(score, choice)?;
+    let timeline = crate::Timeline {
+        notes: runtime
+            .notes
+            .iter()
+            .map(|note| crate::TimedNote {
+                velocity: REFERENCE_VELOCITY,
+                id: note.note_id.clone(),
+                source_note_id: note.note_id.clone(),
+                source_note_ids: vec![note.note_id.clone()],
+                part_id: note.part_id.clone(),
+                midi: note.key,
+                start_ms: note.start_ms,
+                duration_ms: note.end_ms - note.start_ms,
+                voice: note.singer_event_id.clone(),
+                staff: 1,
+            })
+            .collect(),
+        duration_ms: runtime.end_ms,
+    };
+    let compilation = crate::Compilation {
+        score: score.notation.clone(),
+        timeline,
+        diagnostics: vec![],
+    };
+    Ok((runtime, compilation))
+}
+/// Instrumental reference velocity is independent of source vocal Dynamics.
+pub const REFERENCE_VELOCITY: u8 = 90;

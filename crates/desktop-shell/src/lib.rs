@@ -1,6 +1,7 @@
 //! Socket-free adapter for the existing UI. Native storage is a bounded archive
 //! service; renderer requests never provide filesystem paths or process commands.
 pub mod acceptance;
+mod native_fingering;
 pub mod native_library;
 pub mod song_pack;
 use http::{Request, Response};

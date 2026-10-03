@@ -1,5 +1,8 @@
 # Advisory guitar phrase fingering
 
+Saved complete songs use the [native package clock bridge](COMPLETE_SONG_FINGERING.md)
+with the same solver, constraints and strict response validation.
+
 `POST /api/fingering/guitar` accepts `{score, part_id, profile, max_fret_span, locks}`.
 An optional versioned `planning_scope` selects an exact written phrase; omitting
 it preserves the whole-selection request and response contract described below.

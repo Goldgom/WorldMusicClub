@@ -43,7 +43,8 @@ Existing MIDI open/runtime behavior and stored summary shapes remain compatible.
 ```
 
 The native adapter reopens and validates the complete saved package and backup,
-checks the independent profile, then calls Rust `compile_practice`. It returns:
+checks the independent profile, then calls Rust `compile_practice_with_compilation`
+(which requires the same explicit choice as `compile_practice`). It returns:
 
 ```text
 { runtime: PracticeRuntime, compilation: Compilation, reference_velocity: 90 }
@@ -111,3 +112,6 @@ original 100,000 occurrence, 1,000,000 reference, 4 MiB cursor and 16 MiB naviga
 limits remain. The adapter rechecks size limits after re-clocking. Unsupported or
 oversized navigation falls back to honest manual paging without blocking valid
 practice or changing source data; the native 32 MiB total response cap also applies.
+
+Advisory hands/fingers and guitar plans use the same native compilation through
+the [complete-song fingering bridge](COMPLETE_SONG_FINGERING.md).

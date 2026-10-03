@@ -2,7 +2,8 @@
 
 The piano controls are advisory. They cannot write the canonical score, influence
 practice admission, assess hands/fingers, send hardware commands or change held
-input. The Rust `/api/fingering/piano` endpoint remains the only planner.
+input. Rust owns every plan. Ordinary scores use `/api/fingering/piano`; saved
+complete songs use the [native package clock bridge](COMPLETE_SONG_FINGERING.md).
 
 ## Surfaces and semantics
 

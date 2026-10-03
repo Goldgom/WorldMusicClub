@@ -116,11 +116,21 @@ struct Segment {
     elapsed: Rational,
     tempo: u32,
 }
-struct Clock {
+pub(crate) struct Clock {
     segments: Vec<Segment>,
 }
 impl Clock {
-    fn new(events: &[Event]) -> Result<Self, String> {
+    pub(crate) fn new(events: &[Event]) -> Result<Self, String> {
+        Self::from_tempos(events.iter().filter_map(|event| match event.command {
+            Command::Tempo {
+                microseconds_per_quarter,
+            } => Some((event.at, microseconds_per_quarter)),
+            _ => None,
+        }))
+    }
+    pub(crate) fn from_tempos(
+        tempos: impl IntoIterator<Item = (Beat, u32)>,
+    ) -> Result<Self, String> {
         let mut result = Self {
             segments: vec![Segment {
                 at: Beat::ZERO,
@@ -128,26 +138,24 @@ impl Clock {
                 tempo: 500_000,
             }],
         };
-        for event in events {
-            let Command::Tempo {
-                microseconds_per_quarter,
-            } = event.command
-            else {
-                continue;
-            };
-            let elapsed = result.at(event.at)?;
+        for (at, tempo) in tempos {
+            let elapsed = result.at(at)?;
             let last = result.segments.last_mut().ok_or("Missing clock origin")?;
-            if last.at.equivalent(event.at) {
-                last.tempo = microseconds_per_quarter;
+            if last.at.equivalent(at) {
+                last.tempo = tempo;
             } else {
-                result.segments.push(Segment {
-                    at: event.at,
-                    elapsed,
-                    tempo: microseconds_per_quarter,
-                });
+                result.segments.push(Segment { at, elapsed, tempo });
             }
         }
         Ok(result)
+    }
+    pub(crate) fn relative_milliseconds(&self, at: Beat, origin: Beat) -> Result<f64, String> {
+        if !at.valid() || at.numerator < 0 || at.compare(origin).is_lt() {
+            return Err(
+                "Fingering phrase boundaries must be at or after the native practice origin".into(),
+            );
+        }
+        Ok(self.at(at)?.combine(self.at(origin)?, true)?.milliseconds())
     }
     fn at(&self, at: Beat) -> Result<Rational, String> {
         let index = self.segments.partition_point(|s| !s.at.compare(at).is_gt());

@@ -208,6 +208,8 @@ pub fn is_large_operation(path: &str) -> bool {
             | "/api/library/pack/export"
             | "/api/library/asset"
             | "/api/library/runtime"
+            | "/api/library/fingering/piano"
+            | "/api/library/fingering/guitar"
     )
 }
 pub fn valid_history_query(uri: &http::Uri) -> bool {

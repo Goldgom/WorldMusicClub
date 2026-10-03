@@ -341,9 +341,38 @@ impl Search<'_> {
     }
 }
 
+fn validate_request(request: &GuitarFingeringRequest) -> Result<(), String> {
+    if !matches!(request.profile, InstrumentProfile::Guitar { .. }) {
+        return Err("Guitar fingering needs a guitar profile".into());
+    }
+    if request.max_fret_span > 12 || request.locks.len() > MAX_NOTES {
+        return Err("Use a fret span of 0–12 and at most 1,000 source-note locks".into());
+    }
+    Ok(())
+}
+
 pub fn plan_guitar_fingering(
     request: GuitarFingeringRequest,
 ) -> Result<GuitarFingeringPlan, String> {
+    validate_request(&request)?;
+    let source = crate::fingering_source::FingeringSource::canonical(request.score.clone())?;
+    plan_source(request, source)
+}
+
+/// Preserve the planner and its exact occupancy model on a native clock.
+pub fn plan_guitar_fingering_from_source(
+    request: GuitarFingeringRequest,
+    source: crate::fingering_source::FingeringSource,
+) -> Result<GuitarFingeringPlan, String> {
+    source.verify_score(&request.score)?;
+    plan_source(request, source)
+}
+
+fn plan_source(
+    request: GuitarFingeringRequest,
+    source: crate::fingering_source::FingeringSource,
+) -> Result<GuitarFingeringPlan, String> {
+    validate_request(&request)?;
     let InstrumentProfile::Guitar {
         tuning,
         frets,
@@ -352,10 +381,7 @@ pub fn plan_guitar_fingering(
     else {
         return Err("Guitar fingering needs a guitar profile".into());
     };
-    if request.max_fret_span > 12 || request.locks.len() > MAX_NOTES {
-        return Err("Use a fret span of 0–12 and at most 1,000 source-note locks".into());
-    }
-    let compiled = crate::compile(request.score)?;
+    let compiled = &source.compilation;
     if request.inventory_only && (request.planning_scope.is_none() || !request.locks.is_empty()) {
         return Err("A scope inventory requires an explicit phrase and no locks".into());
     }
@@ -391,15 +417,14 @@ pub fn plan_guitar_fingering(
         {
             return Err("Guitar phrase extends past the end of the score".into());
         }
-        let notes: Vec<_> = exact_notes(&compiled, request.part_id.as_deref())?
+        let notes: Vec<_> = exact_notes(compiled, request.part_id.as_deref())?
             .into_iter()
             .filter(|n| {
                 n.start.at.compare(scope.to).is_lt() && n.end.at.compare(scope.from).is_gt()
             })
             .collect();
-        let tempo = crate::TempoIndex::new(&compiled.score.tempo);
-        let start_ms = tempo.at(scope.from.value());
-        let end_ms = tempo.at(scope.to.value());
+        let start_ms = source.at(scope.from)?;
+        let end_ms = source.at(scope.to)?;
         if !start_ms.is_finite() || !end_ms.is_finite() || end_ms <= start_ms {
             return Err("Guitar phrase boundaries exceed reliable display-clock resolution; choose another exact range".into());
         }
@@ -484,7 +509,7 @@ pub fn plan_guitar_fingering(
     }
     let notes = match scoped_notes {
         Some(notes) => notes,
-        None => exact_notes(&compiled, request.part_id.as_deref())?,
+        None => exact_notes(compiled, request.part_id.as_deref())?,
     };
     let selected = crate::Timeline {
         notes: notes.iter().map(|n| n.note.clone()).collect(),

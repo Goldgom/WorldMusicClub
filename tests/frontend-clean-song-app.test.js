@@ -4,7 +4,8 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {getAppI18n} from '../web/app-locale.js';
 import {cleanDescriptor,fixtureKey,mediaFixture} from './clean-song-fixtures.js';
-import {nativeScoreServer,nativeStorageApp,deferred} from './native-storage-app-fixtures.js';
+import {nativeScoreServer,nativeStorageApp,nativeResponse,deferred} from './native-storage-app-fixtures.js';
+import {unavailablePianoResult} from './piano-fingering-fixtures.js';
 async function setup({media=false,now,descriptor:providedDescriptor}={}){
  const assets=media?[mediaFixture(),mediaFixture({id:'bg',role:'background',content:'authored-bg'}),mediaFixture({id:'pv',role:'pv',mime:'video/webm',content:'authored-pv'})]:[];
  const descriptor=providedDescriptor||cleanDescriptor(({metadata})=>metadata.media=assets.map(item=>item.descriptor)),score=descriptor.runtime.compilation.score,server=await nativeScoreServer(),key=fixtureKey.slice(7);
@@ -141,5 +142,28 @@ test('native cursor bounds keep measure pages following without claiming exact c
   assert.match(app.$('engraving-follow-status').textContent,/written measure 15/);
   assert.equal(app.$('written-cursor-status').dataset.sourceNoteIds,'[]');assert.equal(app.document.querySelectorAll('#notation .score-note.active').length,0);
   assert.equal(app.requests.filter(r=>r.path==='/api/notation-navigation'&&r.body.id===score.id).length,0);
+ }finally{await app.close();}
+});
+
+test('both app fingering contexts route the active complete song through its native source binding',async()=>{
+ const {app,server,descriptor,score,key}=await setup({descriptor:fractionalDescriptor()});
+ server.setRoute(({path,body})=>{
+  if(!['/api/library/fingering/piano','/api/library/fingering/guitar'].includes(path))return;
+  const request=body.settings,timeline=descriptor.runtime.compilation.timeline;
+  // This transport fixture exercises routing/admission, without impersonating a Rust solver.
+  const plan=path.endsWith('/piano')?unavailablePianoResult({score,...request},timeline):{version:1,algorithm:'deterministic_guitar_beam_v1',score_id:score.id,part_id:request.part_id,profile:request.profile,status:'unavailable',complete:false,changed_source_notes:false,source_occurrence_count:timeline.notes.filter(note=>request.part_id===null||note.part_id===request.part_id).length,max_fret_span:request.max_fret_span,beam_width:64,explored_choices:0,beam_pruned:false,objective_cost:null,requested_locks:request.locks,assignments:[],diagnostics:[{code:'frontend_fixture_no_guitar_solver',severity:'warning',message:'No Rust solver in this frontend transport fixture.',note_id:null}]};
+  return nativeResponse({source:body.source,plan});
+ });
+ try{
+  await activate(app,'listen');await app.until(()=>app.requests.some(request=>request.path==='/api/library/fingering/piano'));
+  await app.until(()=>app.$('piano-fingering-status').dataset.phase==='unavailable');
+  app.$('instrument').value='guitar';app.emit(app.$('instrument'),'change');
+  await app.until(()=>app.requests.some(request=>request.path==='/api/library/fingering/guitar'));
+  await app.until(()=>app.$('guitar-planning').dataset.status==='unavailable');
+  for(const request of app.requests.filter(request=>request.path.startsWith('/api/library/fingering/'))){
+   assert.deepEqual(request.body.source,{key,content_sha256:descriptor.content_sha256,profile:'wmh-semantic-midi1-v1',choice:null});
+   assert.equal(request.body.settings.part_id,score.parts[0].id);assert.equal('score' in request.body.settings,false);
+  }
+  assert.equal(app.requests.filter(request=>['/api/fingering/piano','/api/fingering/guitar'].includes(request.path)&&request.body.score?.id===score.id).length,0);
  }finally{await app.close();}
 });

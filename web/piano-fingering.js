@@ -1,5 +1,6 @@
 import {equivalentJson} from './adaptation-view.js';
 import {keyboardGeometry} from './music.js';
+import {fingeringSource,currentFingeringSource,fingeringRequest,fingeringResponse} from './fingering-source.js';
 
 const codedError=(code,message)=>Object.assign(new Error(message),{code});
 const STATUSES=new Set(['ready','no_targets','infeasible_under_model','no_plan_found','search_limit','unavailable']);
@@ -106,7 +107,7 @@ export function pianoPlanMessage(plan){
 
 /** Advisory state only: it does not write scores, take evidence, playback or hardware state. */
 export function setupPianoFingering({api,getContext,onChange=()=>{}}){
-  let score=null,timeline=null,part=null,key='',revision=0,generation=0,controller=null,pending=null,plan=null,phase='idle',message='Prepare a piano hand/finger recommendation.',draftDirty=false;
+  let score=null,timeline=null,cleanSong=null,part=null,key='',revision=0,generation=0,controller=null,pending=null,plan=null,phase='idle',message='Prepare a piano hand/finger recommendation.',draftDirty=false;
   let messageCode='piano_initial',errorDetails=null;
   let settings=defaultPianoSettings(),assignments=new Map(),occurrences=new Map();
   function value(){return{phase,message,messageCode,errorDetails,plan,settings:structuredClone(settings),draftDirty,annotationVersion:PIANO_ANNOTATION_VERSION};}
@@ -115,13 +116,13 @@ export function setupPianoFingering({api,getContext,onChange=()=>{}}){
     generation++;controller?.abort();controller=null;pending=null;plan=null;assignments=new Map();occurrences=new Map();publish('idle',text,code);
   }
   function synchronize(){
-    const context=getContext(),currentScore=context?.score??null,currentTimeline=context?.timeline??null,currentPart=context?.part_id??null;
-    const changed=currentScore!==score||currentTimeline!==timeline;
-    const scopeChanged=currentScore!==score||currentPart!==part;
+    const context=getContext(),currentScore=context?.score??null,currentTimeline=context?.timeline??null,currentSong=context?.cleanSong??null,currentPart=context?.part_id??null;
+    const changed=currentScore!==score||currentTimeline!==timeline||currentSong!==cleanSong;
+    const scopeChanged=currentScore!==score||currentPart!==part||currentSong!==cleanSong;
     const cleared=scopeChanged&&settings.locks.length>0;
     if(scopeChanged){settings={...settings,locks:[]};revision++;draftDirty=false;}
-    score=currentScore;timeline=currentTimeline;part=currentPart;
-    const next=JSON.stringify([part,context?.profile||null,context?.score?.tempo||null,context?.revision??null,Boolean(context?.dirty),revision,draftDirty]);
+    score=currentScore;timeline=currentTimeline;cleanSong=currentSong;part=currentPart;
+    const next=JSON.stringify([part,context?.profile||null,context?.score?.tempo||null,context?.revision??null,Boolean(context?.dirty),revision,draftDirty,currentSong?.runtime?.choice??null]);
     if(changed||next!==key){key=next;invalidate(cleared?'Source-note locks were cleared for the changed score or selected part. Request a fresh plan.':undefined,cleared?'piano_locks_cleared':'piano_fresh');}
     return context;
   }
@@ -139,15 +140,17 @@ export function setupPianoFingering({api,getContext,onChange=()=>{}}){
     if(pending)return pending;
     if(phase==='error'&&!retry)return Promise.resolve(null);
     if(retry&&plan)invalidate();
+    let source;try{source=fingeringSource(context);}catch(error){publish('error',`Piano guidance unavailable: ${error.message}`,'piano_error',{code:error.code,message:error.message});return Promise.resolve(null);}
     const snapshot={score:structuredClone(context.score),timeline:structuredClone(context.timeline),part_id:context.part_id,profile:structuredClone(context.profile)};
-    const requested=structuredClone(settings),target=context.score,targetTimeline=context.timeline,targetKey=key,current=++generation;
+    const requested=structuredClone(settings),target=context.score,targetTimeline=context.timeline,targetSong=context.cleanSong??null,targetKey=key,current=++generation;
     controller=new AbortController();const signal=controller.signal;
-    const isCurrent=()=>{const value=getContext();return current===generation&&!signal.aborted&&!draftDirty&&value?.score===target&&value.timeline===targetTimeline&&!value.dirty&&value.part_id===snapshot.part_id&&equivalentJson(value.profile,snapshot.profile)&&equivalentJson(value.score,snapshot.score)&&equivalentJson(value.timeline,snapshot.timeline);};
+    const isCurrent=()=>{const value=getContext();return current===generation&&!signal.aborted&&!draftDirty&&value?.score===target&&value.timeline===targetTimeline&&!value.dirty&&value.part_id===snapshot.part_id&&currentFingeringSource(value,targetSong,source)&&equivalentJson(value.profile,snapshot.profile)&&equivalentJson(value.score,snapshot.score)&&equivalentJson(value.timeline,snapshot.timeline);};
     pending=Promise.resolve().then(async()=>{
       if(!isCurrent())return null;
       try{
-        const result=await api('/api/fingering/piano',{score:snapshot.score,part_id:snapshot.part_id,profile:snapshot.profile,...requested},signal);
+        const request=fingeringRequest('piano',snapshot,requested,source),response=await api(request.path,request.body,signal);
         if(!isCurrent()||targetKey!==key)return null;
+        const result=fingeringResponse(response,source);
         validatePianoFingering(result,snapshot,requested);plan=result;
         assignments=new Map(plan.assignments.map(choice=>[choice.target_id,choice]));
         occurrences=new Map(plan.assignments.flatMap(choice=>choice.source_occurrence_ids.map(id=>[id,choice])));
@@ -159,7 +162,7 @@ export function setupPianoFingering({api,getContext,onChange=()=>{}}){
   }
   return{prepare,setSettings,
     setDraftDirty(dirty=true){synchronize();if(draftDirty!==Boolean(dirty)){draftDirty=Boolean(dirty);revision++;synchronize();}},
-    reset(){score=null;timeline=null;part=null;key='';settings=defaultPianoSettings();draftDirty=false;revision++;invalidate();},
+    reset(){score=null;timeline=null;cleanSong=null;part=null;key='';settings=defaultPianoSettings();draftDirty=false;revision++;invalidate();},
     state(){synchronize();return value();},
     assignment(id){synchronize();return phase==='ready'?assignments.get(id)||occurrences.get(id)||null:null;},
   };

@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 mod midi;
 mod runtime;
 pub use midi::convert_midi;
+pub(crate) use runtime::Clock as SemanticClock;
 pub use runtime::{compile_complete, ExactMicroseconds, Runtime, RuntimeEvent, RuntimeNote};
 #[cfg(test)]
 mod tests;

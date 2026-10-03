@@ -856,12 +856,14 @@ fn selected_runtime(library: &NativeLibrary, request: RuntimeRequest) -> Result<
     }
     let score = score_core::vsq_clean::decode_json(package.score_json.as_bytes())
         .map_err(|e| fail(422, "clean_package_invalid", e))?;
-    let runtime = match request.choice {
-        RuntimeChoice::BaseNotesInstrumental => score_core::vsq_clean::compile_practice(
-            &score,
-            score_core::vsq_clean::PracticeChoice::BaseNotesInstrumental,
-        )
-        .map_err(|e| fail(422, "library_practice_unavailable", e))?,
+    let (runtime, compilation) = match request.choice {
+        RuntimeChoice::BaseNotesInstrumental => {
+            score_core::vsq_clean::compile_practice_with_compilation(
+                &score,
+                score_core::vsq_clean::PracticeChoice::BaseNotesInstrumental,
+            )
+            .map_err(|e| fail(422, "library_practice_unavailable", e))?
+        }
         RuntimeChoice::FullVocal => {
             return Err(fail(
                 422,
@@ -874,42 +876,20 @@ fn selected_runtime(library: &NativeLibrary, request: RuntimeRequest) -> Result<
             ));
         }
     };
-    // This is an instrument-practice reference, not an interpretation of source
-    // Dynamics. Zero Dynamics still yields a normal, independently graded note.
-    const REFERENCE_VELOCITY: u8 = 90;
-    let timeline = score_core::Timeline {
-        notes: runtime
-            .notes
-            .iter()
-            .map(|note| score_core::TimedNote {
-                velocity: REFERENCE_VELOCITY,
-                id: note.note_id.clone(),
-                source_note_id: note.note_id.clone(),
-                source_note_ids: vec![note.note_id.clone()],
-                part_id: note.part_id.clone(),
-                midi: note.key,
-                start_ms: note.start_ms,
-                duration_ms: note.end_ms - note.start_ms,
-                voice: note.singer_event_id.clone(),
-                staff: 1,
-            })
-            .collect(),
-        duration_ms: runtime.end_ms,
+    let reference_velocity = score_core::vsq_clean::REFERENCE_VELOCITY;
+    let (navigation, navigation_unavailable) = match vsq_navigation::compile(
+        &score,
+        &runtime,
+        &compilation.timeline,
+        &package.content_sha256,
+    ) {
+        Ok(navigation) => (Some(navigation), None),
+        Err(message) => (
+            None,
+            Some(serde_json::json!({"code":"vsq_navigation_unavailable","message":message})),
+        ),
     };
-    let (navigation, navigation_unavailable) =
-        match vsq_navigation::compile(&score, &runtime, &timeline, &package.content_sha256) {
-            Ok(navigation) => (Some(navigation), None),
-            Err(message) => (
-                None,
-                Some(serde_json::json!({"code":"vsq_navigation_unavailable","message":message})),
-            ),
-        };
-    let compilation = score_core::Compilation {
-        score: score.notation,
-        timeline,
-        diagnostics: vec![],
-    };
-    let mut response = serde_json::json!({"runtime":runtime,"compilation":compilation,"reference_velocity":REFERENCE_VELOCITY,"navigation":navigation,"navigation_unavailable":navigation_unavailable});
+    let mut response = serde_json::json!({"runtime":runtime,"compilation":compilation,"reference_velocity":reference_velocity,"navigation":navigation,"navigation_unavailable":navigation_unavailable});
     if !response["navigation"].is_null() && !vsq_navigation::fits(&response, 32 * 1024 * 1024) {
         response["navigation"] = serde_json::Value::Null;
         response["navigation_unavailable"] = serde_json::json!({"code":"vsq_navigation_unavailable","message":"Bundled navigation exceeds the native 32 MiB response bound. Manual notation and practice playback remain available."});
@@ -950,6 +930,7 @@ pub fn dispatch(
     let result = match (method, path) {
         ("GET", "/api/library/list") => library.list().and_then(|inventory| serde_json::to_value(inventory).map_err(|error| corrupt(error.to_string()))),
         ("POST", "/api/library/save") => decode(bytes).and_then(|request| library.save(request)).and_then(|entry| serde_json::to_value(entry).map_err(|error| corrupt(error.to_string()))),
+        ("POST", "/api/library/fingering/piano" | "/api/library/fingering/guitar") => crate::native_fingering::plan(library, bytes, path.ends_with("/piano")),
         ("POST", "/api/library/runtime") => decode::<RuntimeRequest>(bytes).and_then(|request| selected_runtime(library, request)),
         ("POST", "/api/library/load" | "/api/library/export") => decode::<KeyRequest>(bytes).and_then(|request| library.load(&request.key)).and_then(|loaded| {
             if path.ends_with("/export") && loaded.clean_package.is_some() {
@@ -960,7 +941,7 @@ pub fn dispatch(
                 serde_json::to_value(loaded).map_err(|e| corrupt(e.to_string()))
             }
         }),
-        (_, "/api/library/list" | "/api/library/save" | "/api/library/load" | "/api/library/export" | "/api/library/asset" | "/api/library/runtime") => Err(fail(405, "library_method_not_allowed", "Unsupported method for this library operation")),
+        (_, "/api/library/list" | "/api/library/save" | "/api/library/load" | "/api/library/export" | "/api/library/asset" | "/api/library/runtime" | "/api/library/fingering/piano" | "/api/library/fingering/guitar") => Err(fail(405, "library_method_not_allowed", "Unsupported method for this library operation")),
         _ => Err(fail(404, "library_unknown_route", "Unknown native library operation")),
     };
     match result {
