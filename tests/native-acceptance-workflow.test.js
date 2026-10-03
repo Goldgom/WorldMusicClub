@@ -138,9 +138,63 @@ test('all real checks fail closed and failure evidence survives independently', 
   assert.match(nativeSteps[candidateIndex], /if-no-files-found: error/);
   assert.match(nativeSteps[packageIndex], /native-release-manifest\.py create/);
   assert.match(nativeSteps[packageIndex], /native-release-manifest\.py archive/);
-  for (const scenario of ['song-folder', 'bulk-import', 'clean-song', 'vsq-song']) {
+  for (const scenario of ['song-folder', 'bulk-import', 'clean-song', 'vsq-song', 'performance-song']) {
     const index = nativeSteps.findIndex(step => step.includes(`-Scenario ${scenario}`));
     assert.ok(index > 0 && index < packageIndex, `${scenario} gates packaging`);
     assert.doesNotMatch(nativeSteps[index], /^        (?:if|continue-on-error):/m);
   }
+});
+
+test('complete performance uses the exact built driver, both viewport gates and the packaged Windows EXE', () => {
+  const browserSteps = steps(jobBlock(jobIds[0]));
+  const buildIndex = browserSteps.findIndex(step => step.includes('cargo build -p worldmusichub-desktop --example native_import_driver --locked'));
+  const protocolIndex = browserSteps.findIndex(step => step.includes('run: node scripts/check-performance-song-native.mjs'));
+  const hostedIndex = browserSteps.findIndex(step => step.includes('node scripts/hosted-performance-song-check.mjs'));
+  assert.ok(buildIndex >= 0 && protocolIndex > buildIndex && hostedIndex > protocolIndex);
+  for (const step of [browserSteps[protocolIndex], browserSteps[hostedIndex]]) {
+    assert.match(step, /WMH_NATIVE_IMPORT_DRIVER: \$\{\{ github\.workspace \}\}\/target\/debug\/examples\/native_import_driver/);
+    assert.doesNotMatch(step, /^        (?:if|continue-on-error):/m);
+  }
+  assert.match(browserSteps[hostedIndex], /WMH_HOSTED_BROWSER: '1'/);
+  assert.match(browserSteps[hostedIndex], /WMH_SOURCE_SHA: \$\{\{ github\.sha \}\}/);
+  for (const height of [720, 900]) {
+    assert.ok(browserSteps[hostedIndex].includes(`WMH_VIEWPORT_HEIGHT=${height} node scripts/hosted-performance-song-check.mjs`));
+  }
+  const nativeSteps = steps(jobBlock(jobIds[1]));
+  const scenario = nativeSteps.find(step => step.includes('-Scenario performance-song'));
+  assert.match(scenario, /-Executable target\/release\/worldmusichub-desktop\.exe -OutputDirectory desktop-performance-song -Scenario performance-song/);
+  const pack = nativeSteps.find(step => step.includes('id: native_package'));
+  assert.match(pack, /node scripts\/verify-native-performance-song-evidence\.mjs --check desktop-performance-song/);
+  assert.match(pack, /if \(\$LASTEXITCODE -ne 0\) \{ throw 'Native complete performance exact-source proof failed' \}/);
+  for (const guard of ["$performanceProof.source_sha -cne '${{ github.sha }}'", '$performanceProof.source_tree -cne $currentTree',
+    '$performanceProof.executable_sha256 -cne $currentExe', '$performanceProof.executable_bytes -ne $currentExeBytes']) {
+    assert.ok(pack.includes(guard), guard);
+  }
+  assert.match(pack, /\$currentExeBytes=\(Get-Item target\/release\/worldmusichub-desktop\.exe\)\.Length/);
+  assert.ok(pack.indexOf('verify-native-performance-song-evidence.mjs --check') < pack.indexOf('Copy-Item target/release/worldmusichub-desktop.exe'));
+  assert.match(pack, /native-release-manifest\.py create .* --performance-song desktop-performance-song/);
+  const testCommand = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).scripts.test.split(/\s+/);
+  for (const file of ['performance-song-fixtures.test.js', 'native-performance-song-evidence.test.js', 'vsq-fingering-evidence.test.js']) {
+    assert.equal(testCommand.filter(token => token === `tests/${file}`).length, 1);
+    assert.ok(nativeSteps.some(step => step.includes('run: node --test ') && step.includes(`tests/${file}`)));
+  }
+});
+
+test('performance artifacts retain bounded authored evidence without uploading profile trees', () => {
+  const suffixes = ['*.json', '*.png', 'downloads/*', 'fixtures/*', 'Scores/clean-songs/**',
+    'Scores/clean-backups/**', 'Scores/imports/**', 'Scores/import-backups/**'];
+  for (const [id, root, expected] of [
+    [jobIds[0], 'test-results/performance-song/*/', suffixes],
+    [jobIds[1], 'desktop-performance-song/', [...suffixes, '*.log']],
+  ]) {
+    const upload = steps(jobBlock(id)).find(step => step.includes('uses: actions/upload-artifact@') && step.includes(root));
+    assert.ok(upload);
+    assert.match(upload, /^        if: always\(\)$/m);
+    const paths = [...upload.matchAll(/^            (.+)$/gm)].map(match => match[1]).filter(path => path.startsWith(root));
+    assert.deepEqual(paths.sort(), expected.map(suffix => root + suffix).sort());
+    assert.doesNotMatch(paths.join('\n'), /webview-profile|prior-profile|AppData|USERPROFILE/);
+  }
+  const ignore = readFileSync(new URL('../.gitignore', import.meta.url), 'utf8');
+  assert.match(ignore, /^\/desktop-performance-song\/$/m);
+  assert.doesNotMatch(ignore, /^\/desktop-\*\/?$/m);
 });

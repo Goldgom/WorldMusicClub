@@ -13,6 +13,7 @@ class NativeOutputHygieneTests(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/windows-desktop-acceptance.yml').read_text(encoding='utf-8')
         outputs = set(re.findall(r'-OutputDirectory\s+(desktop-[a-z-]+)', workflow))
         self.assertIn('desktop-clean-song', outputs)
+        self.assertIn('desktop-performance-song', outputs)
         self.assertGreaterEqual(len(outputs), 6)
         with tempfile.TemporaryDirectory(prefix='wmh-source-guard-') as temporary:
             directory = Path(temporary)
@@ -35,10 +36,16 @@ class NativeOutputHygieneTests(unittest.TestCase):
             source.write_text('// changed source\n', encoding='utf-8')
             (directory / 'unexpected.rs').write_text('// unexpected source\n', encoding='utf-8')
             (directory / 'desktop-clean-song.rs').write_text('// source, not output directory\n', encoding='utf-8')
+            (directory / 'desktop-performance-song.rs').write_text('// source, not output directory\n', encoding='utf-8')
+            adjacent = directory / 'desktop-performance-song-extra' / 'source.rs'
+            adjacent.parent.mkdir()
+            adjacent.write_text('// unrelated source\n', encoding='utf-8')
             status = git('status', '--porcelain', '--untracked-files=all')
             self.assertIn('M source.rs', status)
             self.assertIn('?? unexpected.rs', status)
             self.assertIn('?? desktop-clean-song.rs', status)
+            self.assertIn('?? desktop-performance-song.rs', status)
+            self.assertIn('?? desktop-performance-song-extra/source.rs', status)
 
 
 if __name__ == '__main__':

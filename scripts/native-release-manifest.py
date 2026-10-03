@@ -20,6 +20,13 @@ PHASES = ['seed', 'restart', 'close-active', 'reopen']
 SONG_FOLDER_PHASES = ['folder-seed', 'folder-restart', 'folder-failure']
 SONG_FOLDER_EVIDENCE = ['native-song-folder.json', 'native-song-folder-files.json',
                         *[f'renderer-{phase}.json' for phase in SONG_FOLDER_PHASES]]
+PERFORMANCE_SONG_PHASES = ['performance-seed', 'performance-controls', 'performance-restart']
+PERFORMANCE_SONG_EVIDENCE = ['native-performance-song.json', 'native-performance-song-files.json',
+                             *[f'renderer-{phase}.json' for phase in PERFORMANCE_SONG_PHASES]]
+PERFORMANCE_SONG_CLAIMS = {
+    'native_file_picker': True, 'fresh_process_restart': True, 'explicit_reference_policy': True,
+    'audio_source_schedule_and_track_mute': True, 'sustain_gate_preserves_source_release': True,
+    'validated_notation': False, 'practice_targets': False, 'actual_audibility': False, 'original_timbre': False}
 
 
 def sha(data):
@@ -199,6 +206,48 @@ def accepted_song_folder_evidence(directory, executable, commit, tree):
     return {'native_song_folder_validated': True, 'native_song_folder_proof_sha256': sha(proof_path.read_bytes())}
 
 
+def accepted_performance_song_evidence(directory, executable, commit, tree):
+    """Require complete performance proof for the actual source and packaged EXE."""
+    directory = Path(directory)
+    executable_bytes = Path(executable).read_bytes()
+    proof_path = directory / 'native-performance-song-files.json'
+    proof = read_json(proof_path)
+    native = read_json(directory / 'native-performance-song.json')
+    for evidence in [native, proof]:
+        require(type(evidence.get('version')) is int and evidence['version'] == 1
+                and evidence.get('ok') is True and evidence.get('source_sha') == commit
+                and evidence.get('source_tree') == tree
+                and evidence.get('executable_sha256') == sha(executable_bytes)
+                and type(evidence.get('executable_bytes')) is int
+                and evidence['executable_bytes'] == len(executable_bytes),
+                'Native performance evidence must match the exact source/tree/executable bytes')
+    claims = proof.get('claims', {})
+    require(set(claims) == set(PERFORMANCE_SONG_CLAIMS)
+            and all(claims[key] is value for key, value in PERFORMANCE_SONG_CLAIMS.items()),
+            'Native performance acceptance scope cannot imply notation, targets, audibility or original timbre')
+    # Re-derive all original fixture bytes, three processes, owned picker actions,
+    # audio/control observations, screenshots, exports and unchanged snapshots.
+    checked = subprocess.run(['node', str(ROOT / 'scripts/verify-native-performance-song-evidence.mjs'),
+                              '--check', str(directory)], cwd=ROOT, capture_output=True,
+                             text=True, encoding='utf-8', timeout=30, check=False)
+    require(checked.returncode == 0,
+            'Native performance proof failed independent verification: ' + checked.stderr.strip())
+    report_hashes = {}
+    for name in PERFORMANCE_SONG_EVIDENCE:
+        if name == proof_path.name:
+            continue
+        data = (directory / name).read_bytes()
+        matching = [row for row in proof.get('files', []) if row.get('path') == name]
+        require(len(matching) == 1 and matching[0].get('sha256') == sha(data)
+                and matching[0].get('bytes') == len(data),
+                'Native performance proof must bind every exact packaged report')
+        report_hashes[name] = sha(data)
+    return {'native_performance_song_validated': True,
+            'native_performance_song_proof_sha256': sha(proof_path.read_bytes()),
+            'native_performance_song_reports_sha256': report_hashes,
+            'native_performance_song_claims': claims}
+
+
 def create_manifest(directory, metadata):
     directory = Path(directory)
     required = [EXE, 'README.md', 'LICENSE', 'START-HERE.md',
@@ -210,6 +259,7 @@ def create_manifest(directory, metadata):
                 'evidence/native-acceptance.json', 'evidence/downloaded-files.json', 'evidence/native-reference-files.json',
                 'evidence/native-report.json', 'evidence/renderer-report.json',
                 *[f'evidence/{name}' for name in SONG_FOLDER_EVIDENCE],
+                *[f'evidence/{name}' for name in PERFORMANCE_SONG_EVIDENCE],
                 *[f'evidence/renderer-{phase}.json' for phase in PHASES]]
     for name in required:
         require((directory / name).is_file(), f'Native package is missing {name}')
@@ -276,6 +326,8 @@ def verify_archive(archive):
         require(info.get('name') == FOLDER and info.get('executable') == EXE, 'Wrong native product identity')
         for name in SCORE_SCHEMAS:
             require(name in info['files'], f'Native package is missing {name}')
+        for name in PERFORMANCE_SONG_EVIDENCE:
+            require(f'evidence/{name}' in info['files'], f'Native package is missing evidence/{name}')
         require(set(names) == {prefix + name for name in set(info['files']) | {INFO, SUMS}}, 'Native ZIP inventory differs')
         sums = {}
         for name, item in info['files'].items():
@@ -340,6 +392,7 @@ def main():
     create.add_argument('--startup', required=True, type=Path)
     create.add_argument('--acceptance', required=True, type=Path)
     create.add_argument('--song-folder', required=True, type=Path)
+    create.add_argument('--performance-song', required=True, type=Path)
     archive = commands.add_parser('archive')
     archive.add_argument('directory', type=Path)
     archive.add_argument('archive', type=Path)
@@ -350,11 +403,14 @@ def main():
         metadata = source_metadata(args.commit, args.count)
         metadata['acceptance'] = accepted_evidence(args.startup, args.acceptance, args.directory / EXE, args.commit, metadata['git_tree'])
         metadata['acceptance'].update(accepted_song_folder_evidence(args.song_folder, args.directory / EXE, args.commit, metadata['git_tree']))
+        metadata['acceptance'].update(accepted_performance_song_evidence(args.performance_song, args.directory / EXE, args.commit, metadata['git_tree']))
         # The source-bound gate above verified this separate proof. Keep it in
         # the package inventory without changing the dependency-cache workflow.
         (args.directory / 'evidence/native-reference-files.json').write_bytes((args.acceptance / 'native-reference-files.json').read_bytes())
         for name in SONG_FOLDER_EVIDENCE:
             (args.directory / 'evidence' / name).write_bytes((args.song_folder / name).read_bytes())
+        for name in PERFORMANCE_SONG_EVIDENCE:
+            (args.directory / 'evidence' / name).write_bytes((args.performance_song / name).read_bytes())
         info = create_manifest(args.directory, metadata)
     elif args.command == 'archive':
         info = create_archive(args.directory, args.archive)

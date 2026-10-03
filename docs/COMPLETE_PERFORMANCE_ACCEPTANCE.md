@@ -83,9 +83,13 @@ The standalone verifier is `verify-native-performance-song-evidence.mjs`, with
 `--check` to re-derive and compare its existing file manifest. It verifies native
 picker ownership, screenshots, distinct processes, exact saved primary/backup
 bytes, fixture ZIP retention, export and restart snapshots. Host metadata binds
-source SHA/tree and EXE SHA/size; final workflow wiring must compare those with
-the independently built source/EXE before publishing evidence.
+source SHA/tree and EXE SHA/size. The native workflow compares those with the
+independently built source and packaged EXE before creating the candidate.
 
-Workflow invocations, the exact `/desktop-performance-song/` output ignore and
-final cross-scenario release/evidence binding are deliberately left for the
-integration owner. Existing VSQ gates and workflow files are unchanged.
+The native feature workflow runs the protocol checks, both hosted viewports and
+the Windows scenario. It preserves scoped evidence after either success or
+failure and ignores only the generated `/desktop-performance-song/` root.
+Package creation rechecks the complete proof and includes hashes for all five
+required performance reports. Existing VSQ gates remain required. The separate
+full Verify workflow and both independent native-workflow jobs must pass for the
+same source before acceptance; a native candidate alone is not an accepted build.
