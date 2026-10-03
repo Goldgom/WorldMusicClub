@@ -11,3 +11,13 @@ test('scheduler interruption stops all voices and stale callbacks cannot restart
 test('resume uses each held note onset program even after later program changes',()=>{const song=cleanSong(({runtime})=>{runtime.events.push({event_id:'unit-program',at_ms:100,origin:{track:1,event:50},command:{kind:'instrument_program',channel:0,program:48}});runtime.events.sort((a,b)=>a.at_ms-b.at_ms);}),h=harness(song);h.position(250);h.start();const lane=h.player.lanes.get(song.score.performance.parts[0].id);assert.equal(lane.receiver.voices.size,1);assert.equal(h.player.programs.get(song.runtime.notes[0].event_id),0);h.player.stop();});
 test('partial audio allocation failure releases all prior lanes and suppresses playback',()=>{const h=harness(),create=h.context.createStereoPanner;let count=0;h.context.createStereoPanner=()=>{if(++count===2)throw new Error('device allocation failed');return create();};assert.throws(()=>h.start(),/device allocation/);assert.equal(h.player.running,false);assert.equal(h.player.lanes.size,0);assert.ok(h.nodes.filter(node=>node.kind!=='output').every(node=>node.disconnected));assert.equal(h.timers.size,0);});
 test('resumed held notes wait for the same admission boundary as the shared transport',()=>{const h=harness();h.position(200);h.start({resumePositionMs:250});const onsets=h.nodes.filter(node=>node.kind==='oscillator').flatMap(node=>node.starts);assert.deepEqual(onsets,[.05,.05,.05,.05]);h.player.stop();});
+
+
+test('default browser timer calls retain their global receiver through start and pause',()=>{
+ const originalSet=globalThis.setTimeout,originalClear=globalThis.clearTimeout,timers=new Map();let sequence=0;
+ globalThis.setTimeout=function(callback){assert.equal(this,globalThis,'browser timer receiver');timers.set(++sequence,callback);return sequence;};
+ globalThis.clearTimeout=function(id){assert.equal(this,globalThis,'browser timer cancellation receiver');timers.delete(id);};
+ const audio=fakeAudio(),player=new CleanSongPlayer({getPositionMs:()=>-50});
+ try{player.select(cleanSong());player.start(audio);assert.equal(timers.size,1);player.pause();assert.equal(timers.size,0);assert.equal(player.running,false);player.start(audio);assert.equal(timers.size,1);player.stop();assert.equal(timers.size,0);}
+ finally{player.stop();globalThis.setTimeout=originalSet;globalThis.clearTimeout=originalClear;}
+});

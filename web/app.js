@@ -278,7 +278,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     metronome?.cancelForScore();
     state.sourceNotes = new Map(state.score.parts.flatMap(part => part.notes.map(note => [note.id, {note, partId: part.id}])));
     state.loop = null; state.loopRequest++; state.practicePart = previousPart !== null && state.score.parts.some(part => part.id === previousPart) ? previousPart : cleanSong?state.score.parts[0]?.id:null; rebuildPracticeScope(); $('loop-enabled').checked = false; bindText($('loop-status'), () => t('app.loopCleared'));
-    state.notationPage = 0; state.notationPart = null;
+    state.notationPage = 0; state.notationPart = cleanSong ? null : state.practicePart || state.score.parts[0].id;
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
     clearNotice();
     notationFollowing?.scoreChanged();
@@ -1062,7 +1062,7 @@ $('latency-offset').addEventListener('change', () => {
   if (!validLatency(value)) { $('latency-offset').value = String(state.latency); notice(() => t('app.latencyInvalid'), true); return; }
   state.latency = Number(value);const result=writeLatencyPreference(state.latency);bindText($('latency-storage-status'), () => result.saved?t('app.latencySaved'):errorDetail(result));$('latency-storage-status').hidden=false;resetPlayback();
 });
-$('practice-part').addEventListener('change', () => { state.practicePart = $('practice-part').value || (state.cleanSong?state.score.parts[0].id:null); rebuildPracticeScope(); resetPlayback(); updateRangeWarning(); checkInstrument(); });
+$('practice-part').addEventListener('change', () => { state.practicePart = $('practice-part').value || (state.cleanSong?state.score.parts[0].id:null); rebuildPracticeScope(); resetPlayback(); if(!state.cleanSong){if(state.practicePart!==null){state.notationPart=state.practicePart;$('notation-part').value=state.practicePart;renderNotationPage();}engravedView.selectPart(state.practicePart);} updateRangeWarning(); checkInstrument(); });
 function setNumberedMode(mode) { state.numberedMode = mode; $('jianpu-reference').value = mode; renderNotationPage(); beginnerView?.refresh(true); }
 $('jianpu-reference').addEventListener('change', () => setNumberedMode($('jianpu-reference').value));
 $('notation-part').addEventListener('change', () => { notationFollowing?.suspend();state.notationPart = $('notation-part').value || null; renderNotationPage(); });

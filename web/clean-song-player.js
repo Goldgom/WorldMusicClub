@@ -19,7 +19,7 @@ const defaults=()=>({program:0,volume:100,expression:127,pan:64,reverb_send:0});
 function apply(state,command){if(command.kind==='instrument_program')state.program=command.program;else if(command.kind==='initial_controller_reset')state.expression=127;else if(['volume','expression','pan','reverb_send'].includes(command.kind))state[command.kind]=command.value;}
 /** Schedules against the app Transport. Never owns human-input or scoring APIs. */
 export class CleanSongPlayer {
-  constructor({getPositionMs,onError=()=>{},setTimer=setTimeout,clearTimer=clearTimeout,lookAheadMs=100}={}) {
+  constructor({getPositionMs,onError=()=>{},setTimer=(...args)=>globalThis.setTimeout(...args),clearTimer=(...args)=>globalThis.clearTimeout(...args),lookAheadMs=100}={}) {
     if(typeof getPositionMs!=='function')throw new TypeError('The shared transport clock is required.');
     Object.assign(this,{getPositionMs,onError,setTimer,clearTimer,lookAheadMs});this.epoch=0;this.timer=null;this.lanes=new Map();this.song=null;this.running=false;
   }

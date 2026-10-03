@@ -15,7 +15,7 @@ await mkdir(output,{recursive:true});
 const report={source_sha:head,kind:'hosted-browser-real-native-clean-package',native_filesystem:true,native_window:false,physical_audio:false,cases:[],screenshots:[],page_errors:[],ok:false};
 let browser,driver,context,page;
 async function screenshot(name){await page.screenshot({path:path.join(output,name),fullPage:true});report.screenshots.push(name);}
-async function imageReady(id){await page.waitForFunction(id=>{const n=document.getElementById(id),b=n?.getBoundingClientRect();return n&&!n.hidden&&n.complete&&n.naturalWidth>0&&b.width>0&&b.height>0},id);}
+async function imageReady(id){await page.waitForFunction(id=>{const n=document.getElementById(id),b=n?.getBoundingClientRect();return n&&!n.hidden&&n.complete&&n.naturalWidth>0&&b.width>0&&b.height>0&&(id!=='clean-song-cover'||document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)===n)},id);}
 async function parts(open){if((await page.locator('#song-parts-tools').getAttribute('open')!==null)!==open)await page.locator('#song-parts-summary').click();}
 async function launch(){
  driver=startNativeImportDriver({binary,directory:library,cwd:root});context=await browser.newContext({viewport:{width:1280,height:720},acceptDownloads:true});
