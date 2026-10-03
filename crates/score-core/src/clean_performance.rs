@@ -142,6 +142,16 @@ pub enum Command {
         channel: u8,
         value: u8,
     },
+    /// Original CC64 value, including values on either side of the pedal threshold.
+    Sustain {
+        channel: u8,
+        value: u8,
+    },
+    /// CC121=0 only in validated initial setup, followed by explicit sustain-off.
+    /// This is not a general-purpose reset command during a performance.
+    InitialControllerReset {
+        channel: u8,
+    },
     ReverbSend {
         channel: u8,
         value: u8,
@@ -191,6 +201,8 @@ impl Command {
             | Self::Volume { channel, .. }
             | Self::Pan { channel, .. }
             | Self::Expression { channel, .. }
+            | Self::Sustain { channel, .. }
+            | Self::InitialControllerReset { channel }
             | Self::ReverbSend { channel, .. }
             | Self::ChorusSend { channel, .. }
             | Self::KeyPressure { channel, .. }
@@ -210,6 +222,7 @@ impl Command {
             | Self::Volume { value, .. }
             | Self::Pan { value, .. }
             | Self::Expression { value, .. }
+            | Self::Sustain { value, .. }
             | Self::ReverbSend { value, .. }
             | Self::ChorusSend { value, .. } => *value <= 127,
             Self::KeyPressure { key, pressure, .. } => *key <= 127 && *pressure <= 127,
@@ -225,7 +238,9 @@ impl Command {
             } => *numerator > 0 && denominator.is_power_of_two() && *thirty_seconds_per_quarter > 0,
             Self::KeySignature { fifths, .. } => (-7..=7).contains(fifths),
             Self::Text { text, .. } => valid_text(text, 4096),
-            Self::SequenceNumber { .. } | Self::TrackEnd => true,
+            Self::InitialControllerReset { .. } | Self::SequenceNumber { .. } | Self::TrackEnd => {
+                true
+            }
         };
         valid
             .then_some(())
@@ -350,6 +365,7 @@ pub fn validate(score: &CompletePerformance) -> Result<(), String> {
         return Err("Incomplete source extent or event coverage".into());
     }
     let mut parts = BTreeSet::new();
+    let mut channel_track_counts = [0usize; 16];
     for part in &p.parts {
         let track = p
             .tracks
@@ -362,12 +378,15 @@ pub fn validate(score: &CompletePerformance) -> Result<(), String> {
         {
             return Err("Invalid or duplicate source part".into());
         }
+        channel_track_counts[part.channel as usize] += 1;
     }
     let mut used_parts = BTreeSet::new();
     let mut counts = vec![0u32; p.tracks.len()];
     let mut ended = BTreeSet::new();
     let mut prior: Option<&Event> = None;
     let mut channel_last = BTreeMap::<u8, &Event>::new();
+    let mut channel_key_activity = BTreeSet::new();
+    let mut pending_initial_resets = BTreeMap::<u8, &Event>::new();
     let mut tempo_first: Option<(&Event, u32)> = None;
     let mut tempo_tracks_differ = false;
     let mut tempo_values_differ = false;
@@ -399,6 +418,37 @@ pub fn validate(score: &CompletePerformance) -> Result<(), String> {
                 return Err("Missing channel part".into());
             }
             used_parts.insert((event.origin.track, channel));
+            if let Some(reset) = pending_initial_resets.remove(&channel) {
+                if !matches!(event.command, Command::Sustain { value: 0, .. })
+                    || !event.at.equivalent(Beat::ZERO)
+                    || event.origin.track != reset.origin.track
+                {
+                    return Err(
+                        "Initial controller reset must be immediately followed on its channel by same-track sustain value 0 at beat 0"
+                            .into(),
+                    );
+                }
+            }
+            if matches!(event.command, Command::InitialControllerReset { .. }) {
+                if !event.at.equivalent(Beat::ZERO)
+                    || channel_key_activity.contains(&channel)
+                    || channel_track_counts[channel as usize] != 1
+                {
+                    return Err(
+                        "Initial controller reset requires beat 0, no prior key activity and one source track for the entire channel"
+                            .into(),
+                    );
+                }
+                pending_initial_resets.insert(channel, event);
+            }
+            if matches!(
+                event.command,
+                Command::KeyAttack { .. }
+                    | Command::KeyRelease { .. }
+                    | Command::KeyPressure { .. }
+            ) {
+                channel_key_activity.insert(channel);
+            }
             if channel_last.insert(channel, event).is_some_and(|last| {
                 last.at.equivalent(event.at) && last.origin.track != event.origin.track
             }) {
@@ -443,6 +493,9 @@ pub fn validate(score: &CompletePerformance) -> Result<(), String> {
             }
             _ => (),
         }
+    }
+    if !pending_initial_resets.is_empty() {
+        return Err("Initial controller reset is missing its explicit initial sustain-off".into());
     }
     if ended.len() != p.tracks.len()
         || used_parts != parts

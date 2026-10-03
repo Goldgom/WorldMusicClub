@@ -31,7 +31,8 @@ Zero-velocity note-on becomes a semantically equivalent release with velocity
 zero. No original wire representation, guessed pairing or duration is stored.
 
 The closed vocabulary includes named program/bank components, volume, pan,
-expression, reverb/chorus send, key/channel pressure, exact tempo, meter including
+expression, sustain, constrained initial controller reset, reverb/chorus send,
+key/channel pressure, exact tempo, meter including
 metronome grouping, key signature, sequence number, plain textual cues and final
 track end. Unknown controllers, bend, routing, device/system messages, encoded
 project blocks and undecodable text hold the entire conversion. No arbitrary
@@ -80,3 +81,61 @@ preserves null notation and requires an explicit supported reference receiver.
 Only authored fixtures go into CI; provided music and conversion proof stay
 private. The canonical piano/guitar practice stage is outside this null-notation
 slice.
+
+## Controlled reference extension
+
+The additive controller slice preserves `sustain { channel, value }` for all
+seven-bit CC64 values. It preserves an exact `initial_controller_reset { channel }`
+for CC121 value zero only when the reset is at beat zero, no attack, release or
+key-pressure event has preceded it on that channel, the entire channel belongs
+to one source track, and the next channel event is same-track sustain value zero
+at beat zero. Other-channel events and nonchannel metadata can intervene.
+Repeated valid setup groups are allowed; resets after even a same-tick attack,
+late resets, nonzero reset values and incomplete/interleaved groups remain held.
+The field vocabulary is closed and authoritative JSON reload repeats the guard.
+
+These commands never pair source notes. Every original key release keeps its
+own ID, velocity and exact time. The explicitly selected
+`wmh-original-reference-fifo-controls-v2` receiver interprets sustain values
+64–127 as down and 0–63 as up. FIFO releases consume only still-key-held layers;
+pedal-held layers continue until pedal-up or global end. Repeated attacks while
+the pedal is down allocate new layers; unmatched releases remain acknowledged.
+No receiver gate is serialized into score.json or passed to notation or grading.
+
+This policy applies whenever the source includes one of the extended controls.
+Control-free performances retain the existing v1 reference policy and sound.
+The controlled policy uses channel-shared state, including across source tracks:
+
+- Volume and expression multiply linearly as `(volume/127)*(expression/127)`,
+  with declared reference defaults 100 and 127. They affect existing layers
+  and future attacks, including layers held only by the sustain pedal.
+- Pan uses StereoPanner's equal-power behavior; 0, 64 and 127 map exactly to
+  -1, 0 and +1, with linear interpolation on each side of the center.
+- Reverb send uses the existing original deterministic WMH Reference Room v1.
+  This is a bounded procedural effect, not evidence of the original device.
+  Its output has a scheduled downstream gate at the exact global end so tails
+  stop even if the disposal poll runs late. Pause/Stop disconnect every tail.
+- A valid initial reset restores expression 127 and sustain off. Program, bank,
+  volume, pan and reverb remain. The required explicit sustain-zero event is
+  still independently represented and acknowledged.
+- Both bank components must remain zero for this receiver. Program selects the
+  existing procedural family only for new melodic voices. Any nonzero bank or
+  chorus send, pressure, or unmapped percussion key blocks the entire renderer.
+  Chorus zero explicitly selects no chorus. None of these rules identifies an
+  original General MIDI bank, soundfont or drum kit.
+
+The mixer schedules AudioParam changes at the same source-derived audio times as
+the event acknowledgements. Muting suppresses voice allocation without removing
+any channel control. Shared-channel track mute remains unavailable. Pause
+cancels all scheduled sound and effect nodes; resume replays prior channel state
+and restarts remaining FIFO/pedal-held gates, then processes events at and after
+the resume position in their original order. A missed deadline or allocation
+failure stops the whole rendition. The voice budget is still global across all
+channels, including sustained layers.
+
+The MIDI Association's [control-change table](https://midi.org/midi-1-0-control-change-messages)
+names the CC7/10/11/64 controls and CC64 threshold. The gain law, reference room,
+initial levels, envelopes and FIFO receiver policy above are explicit WorldMusicHub
+rendition choices. General CC121 behavior remains out of scope; the Association's
+[Reset All Controllers addendum](https://midi.org/response-to-reset-all-controllers)
+is the required starting point for reviewing that future expansion.

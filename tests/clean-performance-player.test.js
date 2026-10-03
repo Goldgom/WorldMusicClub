@@ -67,7 +67,7 @@ class Param {
 }
 class AudioNode {
   constructor(context, nodeType) {
-    Object.assign(this, { context, nodeType, gain: new Param(), frequency: new Param(), Q: new Param(), connections: [], starts: [], stops: [], disconnected: false });
+    Object.assign(this, { context, nodeType, gain: new Param(), pan: new Param(), frequency: new Param(), Q: new Param(), connections: [], starts: [], stops: [], disconnected: false });
   }
   connect(node) { assert.equal(node.context, this.context); this.connections.push(node); return node; }
   disconnect() { this.disconnected = true; }
@@ -79,6 +79,8 @@ class AudioContext {
   make(type) { const node = new AudioNode(this, type); this.nodes.push(node); return node; }
   createGain() { return this.make('gain'); }
   createOscillator() { return this.make('oscillator'); }
+  createStereoPanner() { return this.make('panner'); }
+  createConvolver() { return this.make('convolver'); }
   createBufferSource() { return this.make('noise'); }
   createBiquadFilter() { return this.make('filter'); }
   createBuffer(channels, length, sampleRate) {
@@ -415,8 +417,7 @@ test('callbacks may cancel immediately, including stop then throw, without reviv
 
 test('every unsupported typed command blocks playback with original event identity before context creation', async () => {
   const commands = [
-    ['bank_select', { component: 'msb', value: 1 }], ['volume', { value: 100 }], ['pan', { value: 64 }],
-    ['expression', { value: 110 }], ['reverb_send', { value: 0 }], ['chorus_send', { value: 0 }],
+    ['bank_select', { component: 'most_significant', value: 1 }], ['chorus_send', { value: 1 }],
     ['key_pressure', { key: 60, pressure: 22 }], ['channel_pressure', { pressure: 33 }],
   ];
   for (const [kind, values] of commands) {
@@ -430,7 +431,7 @@ test('every unsupported typed command blocks playback with original event identi
   const drum = await load(fixture([[on(0, 20, 90, 9), off(500000, 20, 0, 9)]]));
   assert.equal(drum.playable, false); assert.equal(drum.blockers[0].code, 'percussion_key_unmapped');
   assert.throws(() => harness(drum), { code: 'playback_blocked' });
-  for (const kind of ['sustain', 'pitch_bend', 'raw_midi', 'sys_ex', 'mystery']) {
+  for (const kind of ['pitch_bend', 'raw_midi', 'sys_ex', 'mystery']) {
     await assert.rejects(load(fixture([[row(0, kind), on(0), off(500000)]])), { code: 'unknown_semantics' });
   }
 });
@@ -491,4 +492,136 @@ test('invalid scheduler bounds fail before any audio and malformed output/contex
   }
   const h = harness(p); h.context.resume = async () => {};
   await h.player.play(accepted); assert.equal(h.player.snapshot().error.code, 'audio_context_interrupted'); h.silent();
+});
+
+const control = (micros, kind, value, channel = 0) => row(micros, kind, { channel, value });
+
+test('sustain changes FIFO sound gates while every original independent release remains unchanged', async () => {
+  const f = fixture([[control(0, 'sustain', 64), on(0), on(100000), off(200000), on(250000), off(300000),
+    control(350000, 'sustain', 127), control(400000, 'sustain', 63), off(450000), off(460000), row(500000, 'track_end')]]);
+  const before = JSON.stringify(f.runtime), p = await load(f), h = harness(p);
+  assert.equal(p.policy.id, 'wmh-original-reference-fifo-controls-v2');
+  assert.deepEqual(p.voices.map(v => [v.start.numerator, v.end.numerator, v.endReason]), [
+    ['0', '400000', 'sustain_release'], ['100000', '400000', 'sustain_release'], ['250000', '450000', 'key_release'],
+  ]);
+  assert.deepEqual(p.voices.map(v => v.releaseEventId), [3, 5, 8].map(i => p.runtime.events[i].event_id));
+  assert.equal(p.acknowledgements[9].disposition, 'unmatched_release');
+  assert.equal(p.voices[0].sustainReleaseEventId, p.runtime.events[7].event_id);
+  await assert.rejects(h.player.play(accepted), { code: 'reference_policy_required' });
+  await h.play(); h.advance(0.6);
+  assert.deepEqual(h.sources().map(n => n.stops[0]), [0.45, 0.45, 0.45, 0.45, 0.5, 0.5]);
+  assert.deepEqual(h.acknowledgements.map(a => a.eventId), p.runtime.events.map(e => e.event_id));
+  assert.equal(JSON.stringify(f.runtime), before); assert.equal(p.runtime.coverage.targets.represented_attacks, 0); h.silent();
+});
+
+test('pedal affects only its channel and held gates end at global end without invented key releases', async () => {
+  const p = await load(fixture([[control(0, 'sustain', 127), on(0), off(100000), row(200000, 'track_end')],
+    [on(0, 65, 90, 1), off(150000, 65, 0, 1), row(500000, 'track_end')]]));
+  assert.equal(p.voices[0].end.numerator, '500000'); assert.equal(p.voices[0].endReason, 'source_end_cleanup');
+  assert.equal(p.voices[0].releaseEventId, p.runtime.events.find(e => e.origin.track === 0 && e.command.kind === 'key_release').event_id);
+  assert.equal(p.voices[1].end.numerator, '150000');
+  const h = harness(p); await h.play(); h.advance(0.6); h.silent();
+});
+
+test('volume, expression, stereo pan and room send automate all active channel layers at exact source times', async () => {
+  const p = await load(fixture([[control(0, 'volume', 80), control(0, 'expression', 64), control(0, 'pan', 0),
+    control(0, 'reverb_send', 32), on(0), control(100000, 'volume', 127), control(200000, 'expression', 0),
+    control(300000, 'pan', 127), control(350000, 'reverb_send', 0), off(500000)]])), h = harness(p);
+  await h.play(); h.advance(0.6);
+  const pan = h.context.nodes.find(n => n.nodeType === 'panner');
+  const channelGain = h.context.nodes.find(n => n.connections.includes(pan));
+  const lastAt = (param, at) => param.calls.filter(c => Math.abs(c[2] - at) < 1e-9).at(-1)[1];
+  near(lastAt(channelGain.gain, 0.05), 80 / 127 * 64 / 127);
+  near(lastAt(channelGain.gain, 0.15), 64 / 127); near(lastAt(channelGain.gain, 0.25), 0);
+  near(lastAt(pan.pan, 0.05), -1); near(lastAt(pan.pan, 0.35), 1);
+  const convolver = h.context.nodes.find(n => n.nodeType === 'convolver');
+  const send = h.context.nodes.find(n => n.connections.includes(convolver));
+  near(lastAt(send.gain, 0.05), 32 / 127); near(lastAt(send.gain, 0.4), 0);
+  assert.equal(convolver.buffer, null, 'effect tail cleared at global end');
+  assert.deepEqual(h.acknowledgements.map(a => a.exactMicroseconds), p.runtime.events.map(e => e.exact_microseconds)); h.silent();
+});
+
+test('repeated initial resets reset expression only while preserving bank, program, mix and every event', async () => {
+  const p = await load(fixture([[row(0, 'bank_select', { channel: 0, component: 'most_significant', value: 0 }),
+    row(0, 'bank_select', { channel: 0, component: 'least_significant', value: 0 }), program(0, 80),
+    control(0, 'volume', 83), control(0, 'pan', 23), control(0, 'reverb_send', 48), control(0, 'expression', 14),
+    row(0, 'initial_controller_reset', { channel: 0 }), control(0, 'sustain', 0), control(0, 'expression', 47),
+    row(0, 'initial_controller_reset', { channel: 0 }), control(0, 'sustain', 0), control(0, 'chorus_send', 0), on(0), off(300000)]])), h = harness(p);
+  assert.equal(p.voices[0].program, 80); await h.play(); h.advance(0.4);
+  const pan = h.context.nodes.find(n => n.nodeType === 'panner'), gain = h.context.nodes.find(n => n.connections.includes(pan));
+  near(gain.gain.calls[0][1], 83 / 127); near(pan.pan.calls[0][1], (23 - 64) / 64);
+  assert.ok(h.context.nodes.some(n => n.nodeType === 'convolver'));
+  assert.equal(h.acknowledgements.length, p.eventCount); h.silent();
+});
+
+test('pause and resume rebuild channel state and restart pedal-held gates without replaying their release', async () => {
+  const p = await load(fixture([[control(0, 'volume', 91), control(0, 'pan', 127), control(0, 'sustain', 127),
+    control(0, 'reverb_send', 48), on(0), off(100000), control(250000, 'expression', 64), control(500000, 'sustain', 0), row(600000, 'track_end')]])), h = harness(p);
+  await h.play(); h.advance(0.25); h.player.pause(); near(h.player.snapshot().positionSeconds, 0.2); h.silent();
+  const oldNodes = h.context.nodes.length, oldSourceCount = h.sources().length;
+  await h.play();
+  const pan = h.context.nodes.slice(oldNodes).find(n => n.nodeType === 'panner');
+  const gain = h.context.nodes.slice(oldNodes).find(n => n.connections.includes(pan));
+  near(gain.gain.calls[0][1], 91 / 127); near(pan.pan.calls[0][1], 1);
+  assert.equal(h.sources().length, oldSourceCount + 2); near(h.sources().at(-1).starts[0], 0.3); near(h.sources().at(-1).stops[0], 0.6);
+  h.advance(0.8); assert.equal(h.player.snapshot().state, 'ended');
+  assert.equal(h.acknowledgements.filter(a => a.disposition === 'release_fifo_sustained').length, 1);
+  h.silent();
+});
+
+test('every controlled source track can mute its voices while retaining exact controls and all event acknowledgements', async () => {
+  const tracks = Array.from({ length: 3 }, (_, ch) => [control(0, 'volume', 60 + ch, ch), control(0, 'pan', 32 * ch, ch),
+    control(0, 'sustain', 127, ch), on(0, 60 + ch, 90, ch), off(100000, 60 + ch, 0, ch), control(300000, 'sustain', 0, ch), row(400000, 'track_end')]);
+  const p = await load(fixture(tracks));
+  for (let track = 0; track < 3; track++) {
+    const h = harness(p); h.player.setTrackMuted(track, true); await h.play(); h.advance(0.5);
+    assert.equal(h.sources().length, 4); assert.equal(h.acknowledgements.length, p.eventCount);
+    assert.ok(h.acknowledgements.filter(a => a.sourceTrackIndex === track).every(a => a.muted)); h.silent();
+  }
+  const h = harness(p); for (let track = 0; track < 3; track++) h.player.setTrackMuted(track, true);
+  await h.play(); h.advance(0.5); assert.equal(h.context.nodes.length, 1); assert.equal(h.acknowledgements.length, p.eventCount); h.silent();
+});
+
+test('shared-channel controls affect voices from every owning track and cannot be independently muted', async () => {
+  const p = await load(fixture([[control(0, 'sustain', 127), control(50000, 'volume', 41), row(600000, 'track_end')],
+    [on(10000), off(100000), control(400000, 'sustain', 0), row(600000, 'track_end')]])), h = harness(p);
+  assert.equal(p.voices[0].end.numerator, '400000'); assert.throws(() => h.player.setTrackMuted(0, true), { code: 'shared_channel_mute_unsupported' });
+  await h.play(); h.advance(0.7);
+  const pan = h.context.nodes.find(n => n.nodeType === 'panner'), gain = h.context.nodes.find(n => n.connections.includes(pan));
+  near(gain.gain.calls.at(-1)[1], 41 / 127); assert.equal(h.acknowledgements.length, p.eventCount); h.silent();
+});
+
+test('malformed controls and initial reset sequences fail closed before any audio', async () => {
+  for (const kind of ['volume', 'expression', 'pan', 'reverb_send', 'sustain', 'chorus_send']) {
+    for (const value of [-1, 128, 1.5, null]) await assert.rejects(load(fixture([[control(0, kind, value), on(0), off(100000)]])), { code: 'invalid_control' });
+  }
+  const reset = () => row(0, 'initial_controller_reset', { channel: 0 });
+  for (const tracks of [
+    [[reset(), on(0), off(100000)]], [[reset(), control(0, 'sustain', 1), on(0), off(100000)]],
+    [[on(0), reset(), control(0, 'sustain', 0), off(100000)]],
+    [[row(1, 'initial_controller_reset', { channel: 0 }), control(1, 'sustain', 0), on(2), off(100000)]],
+    [[reset(), control(0, 'sustain', 0), row(200000, 'track_end')], [on(10000), off(100000)]],
+  ]) await assert.rejects(load(fixture(tracks)), { code: 'invalid_initial_reset' });
+});
+
+test('controlled mixer and room allocation failures disconnect partial nodes and stop all sources', async () => {
+  const p = await load(fixture([[control(0, 'reverb_send', 48), on(0), off(500000)]]));
+  for (const method of ['createStereoPanner', 'createConvolver', 'createBuffer']) {
+    const h = harness(p); h.context[method] = () => { throw Error(`authored ${method} failure`); };
+    await h.play(); assert.equal(h.player.snapshot().state, 'error'); assert.equal(h.player.snapshot().error.code, 'audio_failure'); h.silent();
+  }
+  const h = harness(p); await h.play(); h.player.stop(); h.silent();
+  const count = h.sources().length; h.timers.all.forEach(t => t.callback()); assert.equal(h.sources().length, count); h.silent();
+});
+
+test('a scheduled downstream gate cuts reference room tails at exact global end even before a delayed cleanup poll', async () => {
+  const p = await load(fixture([[control(0, 'reverb_send', 127), on(0), off(50000), row(111111, 'track_end')]])), h = harness(p);
+  await h.play();
+  const master = h.context.nodes.find(n => n !== h.output && n.connections.includes(h.output));
+  assert.deepEqual(master.gain.calls, [['set', 1, 0.05], ['set', 0, 0.05 + 0.111111]]);
+  const convolver = h.context.nodes.find(n => n.nodeType === 'convolver');
+  const wet = h.context.nodes.find(n => convolver.connections.includes(n));
+  assert.ok(wet.connections.includes(master), 'the scheduled cutoff is downstream of convolution');
+  h.advance(0.08); // Admit the end marker before deliberately delaying its disposal poll.
+  h.context.currentTime = 1; h.timers.fire(); assert.equal(h.player.snapshot().state, 'ended'); h.silent();
 });

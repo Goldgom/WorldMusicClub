@@ -80,6 +80,8 @@ pub fn convert_midi(bytes: &[u8], id: &str, title: &str) -> Result<CompletePerfo
                         7 => Command::Volume { channel: *channel, value: *value },
                         10 => Command::Pan { channel: *channel, value: *value },
                         11 => Command::Expression { channel: *channel, value: *value },
+                        64 => Command::Sustain { channel: *channel, value: *value },
+                        121 if *value == 0 => Command::InitialControllerReset { channel: *channel },
                         91 => Command::ReverbSend { channel: *channel, value: *value },
                         93 => Command::ChorusSend { channel: *channel, value: *value },
                         _ => return Err(format!("Controller {controller} at t{}:e{} has no reviewed semantic conversion", origin.track, origin.event)),

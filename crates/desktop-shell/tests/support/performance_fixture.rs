@@ -47,12 +47,72 @@ pub fn files(volume: bool) -> BTreeMap<String, Vec<u8>> {
         midi.extend((bytes.len() as u32).to_be_bytes());
         midi.extend(bytes);
     }
-    let score = score_core::clean_performance::convert_midi(
+    files_for_source(
         &midi,
         "authored-performance-consumer",
         "Original complete performance consumer fixture",
     )
-    .unwrap();
+}
+
+/// Newly authored source for native control-semantic acceptance, not GUI/audio proof.
+#[allow(dead_code)] // Also included by the unchanged static-fixture generator.
+pub fn controls_source() -> Vec<u8> {
+    let mut midi = b"MThd\0\0\0\x06\0\x01\0\x02\0\x03".to_vec();
+    let conductor = vec![0, 255, 81, 3, 7, 161, 33, 12, 255, 47, 0];
+    let mut controls = vec![0, 0xc0, 40];
+    for (controller, value) in [
+        (0, 0),
+        (32, 0),
+        (7, 100),
+        (10, 64),
+        (11, 90),
+        (121, 0),
+        (64, 0),
+        (11, 127),
+        (121, 0),
+        (64, 0),
+    ] {
+        controls.extend([0, 0xb0, controller, value]);
+    }
+    for (delta, event) in [
+        (1, [0x90, 60, 90]),
+        (0, [0xb0, 64, 63]),
+        (1, [0xb0, 64, 64]),
+        (0, [0x90, 60, 70]),
+        (0, [0xb0, 7, 80]),
+        (0, [0xb0, 10, 20]),
+        (0, [0xb0, 11, 80]),
+        (1, [0x80, 60, 19]),
+        (0, [0xb0, 7, 70]),
+        (0, [0xb0, 10, 110]),
+        (0, [0xb0, 11, 64]),
+        (1, [0x90, 60, 0]),
+        (1, [0xb0, 64, 127]),
+        (1, [0xb0, 64, 0]),
+    ] {
+        controls.push(delta);
+        controls.extend(event);
+    }
+    controls.extend([6, 255, 47, 0]);
+    for track in [conductor, controls] {
+        midi.extend(b"MTrk");
+        midi.extend((track.len() as u32).to_be_bytes());
+        midi.extend(track);
+    }
+    midi
+}
+
+#[allow(dead_code)] // Also included by the unchanged static-fixture generator.
+pub fn controls_files() -> BTreeMap<String, Vec<u8>> {
+    files_for_source(
+        &controls_source(),
+        "authored-performance-controls",
+        "Original complete controls fixture",
+    )
+}
+
+fn files_for_source(midi: &[u8], id: &str, title: &str) -> BTreeMap<String, Vec<u8>> {
+    let score = score_core::clean_performance::convert_midi(midi, id, title).unwrap();
     let mut raw = score_core::clean_performance::encode_json(&score).unwrap();
     raw.extend(b"\n");
     let rights = json!({"status":"original_authored","attribution":"WMH authored integration fixture","license":"MIT"});

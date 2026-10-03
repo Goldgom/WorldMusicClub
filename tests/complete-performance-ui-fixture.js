@@ -4,13 +4,13 @@ import {preparePerformanceSong,PERFORMANCE_PROFILE} from '../web/clean-song-pack
 const hash=value=>createHash('sha256').update(value).digest('hex');
 /** Entirely authored, three-track UI protocol fixture. This is not a MIDI
  * decoder or a timing compiler: Rust compilation is verified in its own suite. */
-export function completePerformanceDescriptor({shared=false,blocked=false,title='Authored complete performance'}={}){
+export function completePerformanceDescriptor({shared=false,blocked=false,controls=false,title='Authored complete performance'}={}){
   const source={format:'midi',sha256:hash('original complete event UI fixture'),bytes:1};
   const channel=shared?0:1;
   const keyCommand=(kind,key,velocity,channel=0)=>({kind,key,velocity,channel});
   const rows=[
     [[0,{kind:'tempo',microseconds_per_quarter:500000}],[600000,{kind:'track_end'}]],
-    [[0,{kind:'instrument_program',channel:0,program:80}],...(blocked?[[0,{kind:'volume',channel:0,value:100}]]:[]),[0,keyCommand('key_attack',60,90)],[100000,keyCommand('key_attack',60,70)],[200000,keyCommand('key_release',60,20)],[400000,keyCommand('key_release',60,45)],[600000,{kind:'track_end'}]],
+    [[0,{kind:'instrument_program',channel:0,program:80}],...(blocked?[[0,{kind:'channel_pressure',channel:0,pressure:100}]]:[]),...(controls?[[0,{kind:'volume',channel:0,value:100}],[0,{kind:'sustain',channel:0,value:127}]]:[]),[0,keyCommand('key_attack',60,90)],[100000,keyCommand('key_attack',60,70)],[200000,keyCommand('key_release',60,20)],[400000,keyCommand('key_release',60,45)],...(controls?[[500000,{kind:'sustain',channel:0,value:0}]]:[]),[600000,{kind:'track_end'}]],
     [[0,keyCommand('key_attack',65,85,channel)],[300000,keyCommand('key_release',65,31,channel)],[600000,{kind:'track_end'}]],
   ];
   const tracks=rows.map((events,index)=>({id:`track-${index+1}`,source_index:index,name:['Authored conductor','Authored repeated attacks','Authored lower line'][index],source_event_count:events.length,end:{numerator:6,denominator:5}}));
@@ -34,7 +34,8 @@ export async function completePerformanceSong(options){const fixture=completePer
 class Parameter{constructor(){this.events=[];}setValueAtTime(value,at){this.value=value;this.events.push(['set',value,at]);}linearRampToValueAtTime(value,at){this.events.push(['ramp',value,at]);}setTargetAtTime(){}exponentialRampToValueAtTime(){}cancelScheduledValues(){}}
 export class PerformanceAudio{
   constructor(){this.currentTime=0;this.state='running';this.sampleRate=8000;this.nodes=[];this.destination={context:this};}
-  create(kind){const node={context:this,kind,gain:new Parameter(),frequency:new Parameter(),Q:new Parameter(),connections:[],starts:[],stops:[],disconnected:false,connect(target){this.connections.push(target);},disconnect(){this.disconnected=true;},start(at){this.starts.push(at);},stop(at){this.stops.push(at);}};this.nodes.push(node);return node;}
+  create(kind){const node={context:this,kind,gain:new Parameter(),pan:new Parameter(),frequency:new Parameter(),Q:new Parameter(),connections:[],starts:[],stops:[],disconnected:false,connect(target){this.connections.push(target);},disconnect(){this.disconnected=true;},start(at){this.starts.push(at);},stop(at){this.stops.push(at);}};this.nodes.push(node);return node;}
+  createStereoPanner(){return this.create('panner');}createConvolver(){return this.create('convolver');}
   createGain(){return this.create('gain');}createOscillator(){return this.create('oscillator');}createBufferSource(){return this.create('noise');}createBiquadFilter(){return this.create('filter');}
   createBuffer(channels,length){return{getChannelData:()=>new Float32Array(length)};}
   async resume(){this.state='running';}

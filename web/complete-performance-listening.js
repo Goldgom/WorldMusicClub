@@ -22,6 +22,7 @@ export function setupCompletePerformanceListening({document,i18n,synth,host,
       <p id="complete-performance-policy-tone"></p><p id="complete-performance-policy-percussion"></p>
       <p id="complete-performance-policy-events"></p><p id="complete-performance-policy-gates"></p>
       <p id="complete-performance-policy-resume"></p><p id="complete-performance-policy-limits"></p>
+      <p id="complete-performance-policy-controls"></p>
       <ul id="complete-performance-programs"></ul>
     </details>
     <label class="reference-choice"><input id="complete-performance-policy-accept" type="checkbox"><span id="complete-performance-policy-label"></span></label>
@@ -57,6 +58,9 @@ export function setupCompletePerformanceListening({document,i18n,synth,host,
     $('media').textContent=text('Recorded mixes and stems are retained for export. This playback uses only the declared reference synthesizer.','录音混音与分轨音频完整保留供导出；当前播放仅使用上述参考合成器。');
     $('policy-gates').textContent=text('FIFO lengths are reference sound gates only, never written note lengths or practice targets. Original release timing is preserved; release velocity is retained without changing the reference envelope.','先进先出时长仅用于参考发声，不是记谱音长或练习目标。保留原始释放时序；释放力度保留，但不改变参考包络。');
     const prepared=song?.reference,current=snapshot(),ready=Boolean(prepared?.playable&&player),stopped=current.state==='stopped';
+    $('policy-controls').hidden=!prepared?.extendedControls;
+    $('policy-controls').textContent=text('Controller reference: volume × expression set channel level (defaults 100/127); pan is stereo. Sustain defers FIFO sound release until pedal-up, including repeated keys. Reverb uses WMH Reference Room v1. Pause, Stop and song end cut sound and effect tails. Resume restores channel state and restarts remaining gates. Only bank zero and chorus zero are supported; original timbre is unverified.','控制器参考演奏：通道音量乘以表情值设置音量（默认 100/127），声像为立体声。延音踏板把先进先出释放推迟到抬踏板，包括重复按键。混响使用 WMH 参考房间 v1。暂停、停止和歌曲结束会切断声音及效果尾音；恢复时还原通道状态并重新触发剩余发声。仅支持音色库零和合唱零；未验证原始音色。');
+    if(prepared?.extendedControls)$('policy-events').textContent=text('Every attack creates a layer. Key releases select the oldest still-key-held layer (FIFO); sustain values 64–127 hold its sound until the next value 0–63. These are receiver choices, not recovered note durations.','每次起音创建一层声音；按键释放选择最早仍按住的层（先进先出）。延音值 64–127 保持声音至下一个 0–63 值。此为合成器策略，不是恢复出的记谱音长。');
     $('counts').textContent=prepared?t('counts',{tracks:prepared.trackCount,events:prepared.eventCount,onsets:song.runtime.coverage.performance.key_attacks}):'';
     for(const[key,value]of Object.entries({trackCount:prepared?.trackCount??'',eventCount:prepared?.eventCount??'',onsetCount:song?.runtime.coverage.performance.key_attacks??''}))$('counts').dataset[key]=String(value);
     $('policy').dataset.policyId=prepared?.policy.id||'';

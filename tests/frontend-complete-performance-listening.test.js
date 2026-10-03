@@ -48,7 +48,7 @@ test('saved reference panel retains every track and attack, requires policy, use
 
 test('unsupported commands block listening and all mute controls; shared-channel mute stays unavailable',async()=>{
   const f=viewFixture();try{
-    f.view.select(await completePerformanceSong({blocked:true}));f.accept();assert.equal(f.$('play').disabled,true);assert.match(f.$('problems').textContent,/unsupported_volume/);assert.ok([...f.$('tracks').querySelectorAll('input')].every(input=>input.disabled));await f.play();assert.equal(f.unlocks(),0);
+    f.view.select(await completePerformanceSong({blocked:true}));f.accept();assert.equal(f.$('play').disabled,true);assert.match(f.$('problems').textContent,/unsupported_channel_pressure/);assert.ok([...f.$('tracks').querySelectorAll('input')].every(input=>input.disabled));await f.play();assert.equal(f.unlocks(),0);
     assert.equal(f.$('counts').dataset.eventCount,'12');assert.equal(f.$('tracks').children.length,3);
     f.view.select(await completePerformanceSong({shared:true}));assert.equal(f.$('mute-1').disabled,true);assert.equal(f.$('mute-2').disabled,true);assert.match(f.$('tracks').textContent,/Shared channels; independent mute unavailable/);
     f.$('mute-1').checked=true;f.emit('mute-1');assert.deepEqual(f.view.snapshot().mutedTracks,[]);f.accept();await f.play();assert.equal(f.view.snapshot().state,'playing');
@@ -141,4 +141,17 @@ test('actual app newer selection and pagehide defeat late complete-performance a
     assert.equal(app.audioNodes.filter(node=>node.kind==='oscillator').length,0);assert.equal(app.$('complete-performance-status').dataset.state,'stopped');assert.equal(app.$('complete-performance-policy-accept').checked,false);
     app.emit(app.window,'pageshow',{persisted:true});assert.equal(app.$('complete-performance-status').dataset.state,'stopped');assert.equal(app.$('complete-performance-play').disabled,true);
   }finally{await app.close();}
+});
+
+test('controlled COMPLETE listening discloses sustain and mix policy, preserves null grading, and stops on navigation',async()=>{
+  const f=viewFixture(),song=await completePerformanceSong({controls:true});
+  try{
+    f.view.select(song);assert.equal(f.$('policy').dataset.policyId,'wmh-original-reference-fifo-controls-v2');
+    assert.equal(f.$('policy-controls').hidden,false);assert.match(f.$('policy-controls').textContent,/volume × expression/);assert.match(f.$('policy-events').textContent,/sustain values 64–127/);
+    assert.equal(f.$('play').disabled,true);f.accept();await f.play();assert.equal(f.view.snapshot().state,'playing');
+    const sources=sounding(f.synth.context);assert.ok(sources.length);assert.deepEqual(sources[0].stops,[0.55]);
+    assert.equal(song.notation,null);assert.equal(song.compilation,null);assert.equal(song.runtime.coverage.targets.represented_attacks,0);
+    f.visible(false);assert.equal(sounding(f.synth.context).length,0);assert.equal(f.$('policy-accept').checked,false);
+    f.i18n.setLocale('zh-CN');assert.match(f.$('policy-controls').textContent,/延音踏板/);
+  }finally{f.view.destroy();}
 });

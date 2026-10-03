@@ -23,8 +23,8 @@ test('native admission binds source, title, exact clean bytes, all runtime event
  const whitespace=clone();whitespace.clean_package.score_json+=' ';const m=JSON.parse(whitespace.clean_package.metadata_json);m.score.bytes++;whitespace.clean_package.metadata_json=JSON.stringify(m);await assert.rejects(prepare(whitespace),{code:'score_hash_mismatch'});
 });
 test('preserved unsupported semantics remain admitted but block reference playback',async()=>{
- const record=changeScore(clone(),(score,runtime)=>{for(const list of [score.performance.events,runtime.events]){const event=list.find(e=>e.command.kind==='instrument_program');event.command={kind:'volume',channel:event.command.channel,value:80};}});
- const song=await prepare(record);assert.ok(isPerformanceSong(song));assert.equal(song.reference.playable,false);assert.ok(song.reference.blockers.some(b=>b.code==='unsupported_volume'));assert.throws(()=>createCleanPerformancePlayer(song.reference,{contextFactory:()=>{throw Error('never')}}),{code:'playback_blocked'});assert.equal(song.score.performance.tracks.length,11);assert.equal(song.notation,null);
+ const record=changeScore(clone(),(score,runtime)=>{for(const list of [score.performance.events,runtime.events]){const event=list.find(e=>e.command.kind==='instrument_program');event.command={kind:'channel_pressure',channel:event.command.channel,pressure:80};}});
+ const song=await prepare(record);assert.ok(isPerformanceSong(song));assert.equal(song.reference.playable,false);assert.ok(song.reference.blockers.some(b=>b.code==='unsupported_channel_pressure'));assert.throws(()=>createCleanPerformancePlayer(song.reference,{contextFactory:()=>{throw Error('never')}}),{code:'playback_blocked'});assert.equal(song.score.performance.tracks.length,11);assert.equal(song.notation,null);
 });
 test('native storage skips canonical compilation for null notation and retains export/media access',async()=>{
  const server=await nativeScoreServer();server.records.set(original.entry.key,clone());let compileCalls=0;

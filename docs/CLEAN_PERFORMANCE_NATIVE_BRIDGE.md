@@ -56,9 +56,11 @@ gates, never source durations or practice targets. Procedural programs and the
 listed percussion substitutions do not claim original timbre.
 
 Every preserved command must be supported by the production receiver before any
-reference listening or track muting is enabled. Unsupported volume, pan, bank,
-expression, effect-send and pressure commands remain structural data and block
-this receiver. Track muting changes voices only; events remain intact. Shared
+reference listening or track muting is enabled. The separately selected controls-v2 policy supports channel volume, pan,
+expression, sustain and the declared procedural room send, plus constrained
+initial reset, bank zero and chorus zero. Nonzero bank/chorus and pressure remain
+structural data and block the receiver. See CLEAN_PERFORMANCE_PROFILE.md for
+exact state, gate and compatibility rules. Track muting changes voices only; events remain intact. Shared
 channel routes cannot be independently muted. Recorded mixes/stems are retained
 for export; this slice uses reference synthesis only.
 

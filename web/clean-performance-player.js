@@ -1,6 +1,7 @@
 /* Additive clean JSON reference rendition. No MIDI parser, notation or grading. */
 import { ReferenceAudioReceiver, REFERENCE_PERCUSSION, PROGRAM_FAMILIES } from './midi-reference-synth.js';
 import { REFERENCE_RECEIVER_POLICY } from './midi-reference-player.js';
+import { COMPLETE_CONTROLS_POLICY, CompletePerformanceMixer, EXTENDED_CONTROL_KINDS } from './clean-performance-controls.js';
 const handles = new WeakSet();
 const PROFILE = 'wmh-performance-midi1-v1';
 const integer = (n, lo, hi) => Number.isSafeInteger(n) && n >= lo && n <= hi;
@@ -26,7 +27,7 @@ export function performanceSeconds(value) {
   return Number(n / denominator) + Number(n % denominator) / Number(denominator);
 }
 const metadataKinds = new Set(['tempo', 'meter', 'key_signature', 'text', 'sequence_number', 'track_end']);
-const unsupportedReceiverKinds = new Set(['bank_select', 'volume', 'pan', 'expression', 'reverb_send', 'chorus_send', 'key_pressure', 'channel_pressure']);
+const unsupportedReceiverKinds = new Set(['key_pressure', 'channel_pressure']);
 function prepare(runtime, scoreHash) {
   if (runtime?.profile !== PROFILE || runtime.score_sha256 !== scoreHash || !/^[a-f0-9]{64}$/.test(runtime.source_sha256 || '') ||
       !Array.isArray(runtime.tracks) || !integer(runtime.tracks.length, 1, 128) || !Array.isArray(runtime.parts) ||
@@ -52,6 +53,9 @@ function prepare(runtime, scoreHash) {
   // These voices are only the explicitly selected reference receiver's FIFO
   // gates. Neither pairing nor gate lengths are added to canonical commands.
   const voices = [], acknowledgements = [], queues = new Map(), programs = Array(16).fill(0), programUse = new Map();
+  const sustain = Array(16).fill(false), deferred = Array.from({ length: 16 }, () => []);
+  const keyActivity = Array(16).fill(false), pendingReset = Array(16).fill(false), reverbChannels = new Set();
+  let extendedControls = false;
   const counts = Array(runtime.tracks.length).fill(0), ended = new Set();
   let prior = null, attacks = 0, releases = 0;
   for (const event of runtime.events) {
@@ -65,7 +69,12 @@ function prepare(runtime, scoreHash) {
     prior = event;
     const ack = { eventId: event.event_id, event, disposition: 'metadata' }; acknowledgements.push(ack);
     if (c.channel !== undefined && (!integer(c.channel, 0, 15) || !channels[origin.track].has(c.channel))) fail('invalid_channel', 'Channel command is missing its source route.');
+    if (pendingReset[c.channel]) {
+      if (c.kind !== 'sustain' || c.value !== 0 || event.exact_microseconds.numerator !== '0') fail('invalid_initial_reset', 'Initial reset must be immediately followed by sustain zero on the same channel.');
+      pendingReset[c.channel] = false;
+    }
     if (c.kind === 'key_attack' || c.kind === 'key_release') {
+      keyActivity[c.channel] = true;
       const part = parts.get(c.part_id);
       if (!part || part.track_id !== runtime.tracks[origin.track].id || part.channel !== c.channel ||
           !integer(c.key, 0, 127) || !integer(c.velocity, c.kind === 'key_attack' ? 1 : 0, 127)) fail('invalid_key', 'Invalid independent key semantics.');
@@ -85,21 +94,43 @@ function prepare(runtime, scoreHash) {
         releases++;
         const voice = queue.items[queue.released];
         if (voice) {
-          queue.released++; voice.end = event.exact_microseconds; voice.releaseEventId = event.event_id;
-          voice.releaseVelocity = c.velocity; voice.endReason = 'key_release'; ack.voiceId = voice.eventId;
+          queue.released++; voice.releaseEventId = event.event_id; voice.releaseVelocity = c.velocity; ack.voiceId = voice.eventId;
+          if (sustain[c.channel]) deferred[c.channel].push(voice);
+          else { voice.end = event.exact_microseconds; voice.endReason = 'key_release'; }
         }
-        ack.disposition = voice ? 'release_fifo' : 'unmatched_release';
+        ack.disposition = voice ? (sustain[c.channel] ? 'release_fifo_sustained' : 'release_fifo') : 'unmatched_release';
       }
     } else if (c.kind === 'instrument_program') {
       if (!integer(c.channel, 0, 15) || !integer(c.program, 0, 127)) fail('invalid_program', 'Invalid source program number.');
       programs[c.channel] = c.program;
       programUse.set(`${c.channel}:${c.program}`, { channel: c.channel, program: c.program, reference: c.channel === 9 ? 'WMH Reference Percussion v1 (kit unknown)' : PROGRAM_FAMILIES[c.program >> 3].name });
       ack.disposition = 'program';
+    } else if (EXTENDED_CONTROL_KINDS.has(c.kind)) {
+      extendedControls = true;
+      if (!integer(c.channel, 0, 15) || (c.kind !== 'initial_controller_reset' && !integer(c.value, 0, 127))) fail('invalid_control', 'Expected bounded channel control semantics.');
+      ack.disposition = 'channel_control';
+      if (c.kind === 'initial_controller_reset') {
+        if (event.exact_microseconds.numerator !== '0' || keyActivity[c.channel] || channels.filter(set => set.has(c.channel)).length !== 1) fail('invalid_initial_reset', 'Initial reset requires one owning track at zero before every key event.');
+        pendingReset[c.channel] = true; sustain[c.channel] = false;
+      } else if (c.kind === 'sustain') {
+        sustain[c.channel] = c.value >= 64;
+        if (!sustain[c.channel]) {
+          for (const voice of deferred[c.channel]) { voice.end = event.exact_microseconds; voice.endReason = 'sustain_release'; voice.sustainReleaseEventId = event.event_id; }
+          deferred[c.channel] = [];
+        }
+      } else if (c.kind === 'bank_select') {
+        if (!['most_significant', 'least_significant'].includes(c.component)) fail('invalid_control', 'Unknown bank component.');
+        if (c.value !== 0) { ack.disposition = 'blocked'; addBlocker('unsupported_bank_select', 'Only bank zero has an explicit procedural reference mapping.', event); }
+      } else if (c.kind === 'chorus_send' && c.value !== 0) {
+        ack.disposition = 'blocked'; addBlocker('unsupported_chorus_send', 'Nonzero chorus send requires a reviewed reference effect.', event);
+      } else if (c.kind === 'reverb_send' && c.value !== 0) reverbChannels.add(c.channel);
     } else if (unsupportedReceiverKinds.has(c.kind)) {
+      if (c.kind === 'key_pressure') keyActivity[c.channel] = true;
       ack.disposition = 'blocked'; addBlocker(`unsupported_${c.kind}`, `This reference receiver cannot apply ${c.kind}; complete data remains preserved.`, event);
     } else if (!metadataKinds.has(c.kind)) fail('unknown_semantics', 'Unknown runtime command cannot be ignored.');
     if (c.kind === 'track_end') ended.add(origin.track);
   }
+  if (pendingReset.some(Boolean)) fail('invalid_initial_reset', 'Initial reset is missing its explicit sustain zero.');
   if (ended.size !== runtime.tracks.length || counts.some((count, index) => count !== runtime.tracks[index].source_event_count) ||
       attacks !== coverage.performance.key_attacks || releases !== coverage.performance.key_releases ||
       compare(runtime.duration_microseconds, prior.exact_microseconds) !== 0) fail('incomplete_runtime', 'Runtime does not cover every source event and track end.');
@@ -108,9 +139,9 @@ function prepare(runtime, scoreHash) {
   if (durationSeconds > 86400) fail('duration_limit', 'Reference playback is bounded to 24 hours.');
   const tracks = runtime.tracks.map((track, index) => ({ ...track, channels: [...channels[index]],
     independent: !channels.some((other, i) => i !== index && [...channels[index]].some(c => other.has(c))) }));
-  return freeze({ scoreSha256: scoreHash, sourceSha256: runtime.source_sha256, policy: REFERENCE_RECEIVER_POLICY,
+  return freeze({ scoreSha256: scoreHash, sourceSha256: runtime.source_sha256, policy: extendedControls ? COMPLETE_CONTROLS_POLICY : REFERENCE_RECEIVER_POLICY,
     playable: blockers.length === 0, blockers, trackCount: tracks.length, eventCount: runtime.events.length,
-    tracks, voices, acknowledgements, programs: [...programUse.values()], durationSeconds, runtime });
+    tracks, voices, acknowledgements, programs: [...programUse.values()], durationSeconds, runtime, extendedControls, reverbChannels: [...reverbChannels] });
 }
 /** compile is a trusted Rust/native adapter: clean bytes in, validated runtime out.
  * The native clean-package load compiles exact saved bytes. Derived runtime
@@ -138,21 +169,21 @@ export function createCleanPerformancePlayer(prepared, {
   const events = prepared.acknowledgements.map(ack => ({ ack, seconds: performanceSeconds(ack.event.exact_microseconds) }));
   const voices = prepared.voices.map(v => ({ ...v, startSeconds: performanceSeconds(v.start), endSeconds: performanceSeconds(v.end) }));
   const voiceById = new Map(voices.map(v => [v.eventId, v]));
-  let state = 'stopped', generation = 0, position = 0, anchor = 0, cursor = 0, timer = null, context = null, receiver = null, error = null;
+  let state = 'stopped', generation = 0, position = 0, anchor = 0, cursor = 0, timer = null, context = null, receiver = null, mixer = null, error = null;
   const muted = new Set();
   const snapshot = () => Object.freeze({ state, generation, currentAudioTimeSeconds: context?.currentTime ?? null,
     audioAnchorSeconds: state === 'playing' ? anchor : null,
     positionSeconds: state === 'playing' ? Math.max(position, Math.min(prepared.durationSeconds, context.currentTime - anchor)) : position,
     error, mutedTracks: Object.freeze([...muted]) });
   const notify = () => onState(snapshot());
-  const cancel = () => { generation++; if (timer !== null) timers.clearTimeout(timer); timer = null; receiver?.silence(); };
+  const cancel = () => { generation++; if (timer !== null) timers.clearTimeout(timer); timer = null; receiver?.silence(); mixer?.close(); mixer = null; };
   const abort = reason => {
     position = snapshot().positionSeconds; cancel(); error = reason instanceof CleanPerformanceError ? reason : new CleanPerformanceError('audio_failure', String(reason?.message || reason));
     state = 'error'; notify();
   };
   const sound = (voice, start, resumed = false) => {
     if (muted.has(voice.trackIndex) || voice.endSeconds <= voice.startSeconds) return;
-    receiver.schedule(voice, start, anchor + voice.endSeconds, { resumed });
+    receiver.schedule(voice, start, anchor + voice.endSeconds, { resumed, output: mixer?.outputFor(voice.channel, start) || receiver.output });
   };
   const pump = token => {
     if (token !== generation || state !== 'playing') return;
@@ -163,6 +194,7 @@ export function createCleanPerformancePlayer(prepared, {
       while (cursor < events.length && anchor + events[cursor].seconds <= horizon) {
         const { ack, seconds } = events[cursor], at = anchor + seconds;
         if (at < context.currentTime) fail('late_scheduler', 'An event missed its deadline; playback stopped without skipping.', { eventId: ack.eventId });
+        mixer?.command(ack.event.command, at);
         if (ack.voiceId && ['onset', 'layered_onset'].includes(ack.disposition)) sound(voiceById.get(ack.voiceId), at);
         cursor++;
         onEvent(Object.freeze({ eventId: ack.eventId, sourceTrackIndex: ack.event.origin.track,
@@ -193,7 +225,9 @@ export function createCleanPerformancePlayer(prepared, {
         if (context.state !== 'running') fail('audio_context_interrupted', 'Audio context could not start.');
         receiver = new ReferenceAudioReceiver(context, audio.output, { maxVoices, ErrorType: CleanPerformanceError });
         anchor = context.currentTime + startLeadSeconds - position;
+        mixer = prepared.extendedControls ? new CompletePerformanceMixer(context, audio.output, { reverbChannels: prepared.reverbChannels, end: anchor + prepared.durationSeconds }) : null;
         cursor = events.findIndex(e => e.seconds >= position); if (cursor < 0) cursor = events.length;
+        for (let index = 0; index < cursor; index++) mixer?.command(events[index].ack.event.command, anchor + position);
         for (const voice of voices) if (voice.startSeconds < position && voice.endSeconds > position) sound(voice, anchor + position, true);
         state = 'playing'; notify(); if (token === generation && state === 'playing') pump(token);
       } catch (reason) { if (token === generation) abort(reason); }

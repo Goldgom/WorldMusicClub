@@ -57,7 +57,7 @@ export class ReferenceAudioReceiver {
     for (let i = 0; i < data.length; i++) { state ^= state << 13; state ^= state >>> 17; state ^= state << 5; data[i] = (state >>> 0) / 2147483648 - 1; }
     this.noise = buffer; return buffer;
   }
-  schedule(note, start, end) {
+  schedule(note, start, end, { output = this.output } = {}) {
     if (end <= start) return;
     this.prune(this.context.currentTime);
     if (this.voices.size >= this.maxVoices) throw new this.ErrorType('voice_budget_exceeded', 'Reference audio allocation budget exceeded; playback stops instead of stealing a voice.', { eventId: note.eventId, maxVoices: this.maxVoices });
@@ -106,7 +106,7 @@ export class ReferenceAudioReceiver {
       envelope.gain.linearRampToValueAtTime(sustain, Math.max(start + attack, sustainAt));
       envelope.gain.setValueAtTime(sustain, end - release);
       envelope.gain.linearRampToValueAtTime(0, end);
-      envelope.connect(this.output);
+      envelope.connect(output);
       for (const source of sources) {
         if (start < this.context.currentTime) throw new this.ErrorType('late_scheduler', 'Audio allocation missed the scheduled onset; playback stops without catch-up.', { eventId: note.eventId, lateSeconds: this.context.currentTime - start });
         source.start(start); source.stop(end);
