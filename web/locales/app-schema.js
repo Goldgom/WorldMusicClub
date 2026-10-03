@@ -1,5 +1,8 @@
 // Explicit parameters for application display messages.
 const schema = {
+  "app.initialTempoProjection": {
+    "params": {}
+  },
   "app.evidenceLimit": {
     "params": {}
   },

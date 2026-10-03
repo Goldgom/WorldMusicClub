@@ -370,6 +370,7 @@ pub fn import_midi(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
     let mut names = Vec::with_capacity(expected_tracks);
     let mut note_events = Vec::new();
     let mut tempo_map = BTreeMap::new();
+    let mut initial_tempo = crate::midi_initial_tempo::InitialTempo::default();
     let mut meter_map = BTreeMap::new();
     let mut key_map = BTreeMap::new();
     let mut total_events = 0;
@@ -477,7 +478,17 @@ pub fn import_midi(bytes: &[u8]) -> Result<(Score, Vec<Diagnostic>), String> {
                         if !(100_000..=6_000_000).contains(&value) {
                             return Err("MIDI tempo must be positive and within the supported 10–600 BPM range".into());
                         }
-                        metadata(&mut tempo_map, tick, value, "tempo")?;
+                        if tick == 0 {
+                            initial_tempo.observe(crate::clean_song::Coordinate { track: track_index as u16, event: index as u32 }, value)?;
+                            // All changes precede the first positive-time interval.
+                            // Source bytes retain every declaration and its order.
+                            tempo_map.insert(0, value);
+                            if initial_tempo.projects_changes() {
+                                warnings.add("midi_initial_tempo_projection", "Canonical notation uses the final source-ordered tick-zero tempo for subsequent time intervals. Every initial tempo declaration remains unchanged in the original source; differing simultaneous tempos across tracks are not ordered.");
+                            }
+                        } else {
+                            metadata(&mut tempo_map, tick, value, "tempo")?;
+                        }
                     }
                     MetaMessage::TimeSignature(numerator, power, clocks, thirty_seconds) => {
                         if numerator == 0 || power > 15 || thirty_seconds != 8 {
@@ -1236,7 +1247,7 @@ mod tests {
         // Change only the second tempo, keeping a structurally valid file.
         let last = bytes.windows(6).rposition(|b| b == prefix).unwrap();
         bytes[last + 5] += 1;
-        error(&bytes, "Conflicting MIDI tempo");
+        error(&bytes, "cross-track tempo order is not inferred");
     }
 
     #[test]

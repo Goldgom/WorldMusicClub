@@ -82,6 +82,12 @@ A serializer must reject `notation.source` rather than accidentally shipping its
 content. Public v2 import is an authoritative schema path, unlike the archival
 raw-MIDI inspection JSON API, which remains read-only and nonauthoritative.
 
+The [ordered initial-tempo projection](MIDI_INITIAL_TEMPO.md) retains every
+same-track tick-zero declaration in performance while notation uses its final
+effective value. Import and runtime diagnostics disclose the projection;
+authoritative reload checks it again. Differing cross-track declarations and
+later same-tick tempo conflicts remain outside this strict profile.
+
 ## Sound and part selection
 
 The user chooses a performance target part and practice instrument independently.

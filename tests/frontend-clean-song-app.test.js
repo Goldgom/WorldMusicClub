@@ -25,6 +25,45 @@ function fractionalDescriptor(){
  descriptor.metadata_json=JSON.stringify(metadata);return descriptor;
 }
 
+test('initial tempo projection disclosure follows locale in clean preview and score details without changing source evidence',async()=>{
+ const original='Canonical notation uses the final source-ordered tick-zero tempo; complete commands remain retained.';
+ const descriptor=cleanDescriptor(({runtime})=>runtime.compilation.diagnostics.push({severity:'warning',code:'midi_initial_tempo_projection',message:original,note_id:null}));
+ const before=JSON.stringify(descriptor),{app}=await setup({descriptor});
+ try{
+  const i18n=getAppI18n(app.document),preview=app.$('preview-notice-list');
+  assert.match(preview.textContent,/final declaration at tick zero controls subsequent timing/);
+  assert.doesNotMatch(preview.textContent,/Canonical notation uses/);
+  i18n.setLocale('zh-CN');
+  assert.match(preview.textContent,/零时刻最后一次速度声明用于后续计时/);
+  assert.match(preview.textContent,/先前声明仍被保留/);
+  assert.doesNotMatch(preview.textContent,/Canonical|opening tempo|Earlier declarations/);
+  await activate(app,'listen');await app.click('play-button');
+  const details=app.$('diagnostic-list');
+  assert.match(details.textContent,/midi_initial_tempo_projection/);
+  assert.match(details.textContent,/零时刻最后一次速度声明用于后续计时/);
+  assert.doesNotMatch(details.textContent,/Canonical|opening tempo|Earlier declarations/);
+  i18n.setLocale('en');assert.match(details.textContent,/Earlier declarations are retained/);assert.doesNotMatch(details.textContent,/起始速度|先前声明/);
+  assert.equal(JSON.stringify(descriptor),before);
+ }finally{await app.close();}
+});
+
+test('ordinary MIDI initial tempo import notice redraws in Chinese and English while the stored diagnostic stays literal',async()=>{
+ const {app,server,score}=await setup();
+ try{
+  const diagnostic={severity:'warning',code:'midi_initial_tempo_projection',message:'Original importer tempo projection detail',note_id:null};
+  const imported=structuredClone(score);imported.id='authored-initial-tempo-import';imported.title='Authored initial tempo import';
+  server.setRoute(({path})=>path==='/api/import/midi'?nativeResponse({score:imported,diagnostics:[diagnostic]}):undefined);
+  const i18n=getAppI18n(app.document);i18n.setLocale('zh-CN');
+  const file={name:'authored-initial-tempos.mid',size:24,arrayBuffer:async()=>new ArrayBuffer(24)};
+  Object.defineProperty(app.$('score-file'),'files',{configurable:true,value:[file]});app.emit(app.$('score-file'),'change');
+  await app.until(()=>app.$('score-title').textContent===imported.title&&!app.$('play-button').disabled);
+  assert.match(app.$('notice').textContent,/先前声明仍被保留/);assert.doesNotMatch(app.$('notice').textContent,/Original importer/);
+  i18n.setLocale('en');assert.match(app.$('notice').textContent,/Earlier declarations are retained/);assert.doesNotMatch(app.$('notice').textContent,/先前声明/);
+  assert.match(app.$('diagnostic-list').textContent,/final declaration at tick zero/);
+  assert.equal(diagnostic.message,'Original importer tempo projection detail');
+ }finally{await app.close();}
+});
+
 test('ordinary library consumes exact runtime, all-part notation and program-aware Listen without recompiling timing',async()=>{const {app,descriptor}=await setup();try{
  assert.equal(app.$('clean-song-routing').hidden,true);assert.equal(app.$('clean-song-routing').textContent,'');
  assert.equal(app.$('preview-part').children.length,2);assert.equal(app.$('preview-part').value,descriptor.runtime.compilation.score.parts[0].id);assert.match(app.$('clean-song-preview-status').textContent,/3 tracks.*2 parts.*5 notes/);assert.equal(app.document.querySelector('.lobby-audition').hidden,true);

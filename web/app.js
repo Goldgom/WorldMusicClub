@@ -69,6 +69,9 @@ function newDisplayBinding(node) {
 function t(key, params = {}) {
   return i18n.t(key, Object.fromEntries(Object.entries(params).map(([name, value]) => [name, typeof value === 'number' ? i18n.formatNumber(value) : String(value ?? '')])));
 }
+function diagnosticText(diagnostic) {
+  return diagnostic.code === 'midi_initial_tempo_projection' ? t('app.initialTempoProjection') : diagnostic.message;
+}
 function bindText(node, render) {
   if (!node) return;
   let binding=displayBindings.get(node);if(!binding)binding=newDisplayBinding(node);
@@ -381,7 +384,7 @@ function renderScore() {
   bindText($('diagnostic-count'), () => state.compiled.diagnostics.length ? `(${state.compiled.diagnostics.length})` : '');
   $('diagnostic-list').replaceChildren();
   state.compiled.diagnostics.forEach(diagnostic => {
-    const li = document.createElement('li'); li.className = diagnostic.severity; bindText(li, () => `${diagnostic.code}: ${diagnostic.message}`); $('diagnostic-list').append(li);
+    const li = document.createElement('li'); li.className = diagnostic.severity; bindText(li, () => `${diagnostic.code}: ${diagnosticText(diagnostic)}`); $('diagnostic-list').append(li);
   });
   state.lastHighlight = '';
   engravedView.updateScore();
@@ -1131,7 +1134,7 @@ $('score-file').addEventListener('change', async event => {
       const loaded = await compileScore(result.score, false, intent, result.diagnostics || []);
       if (loaded) persistAcceptedImport(persistenceTicket,result.score,{intent});
       if (loaded && jianpuText) activateJianpuView();
-      if (loaded && Array.isArray(result.diagnostics) && result.diagnostics.length) notice(result.diagnostics.map(d => d.message).join(' '));
+      if (loaded && Array.isArray(result.diagnostics) && result.diagnostics.length) notice(() => result.diagnostics.map(diagnosticText).join(' '));
     } else { const score = JSON.parse(content); const loaded=await compileScore(score, false, intent); if(loaded)persistAcceptedImport(persistenceTicket,score,{intent,scoreJson:content}); }
   }
   catch (error) { if (intent !== state.loadIntent) return; notice(() => t('app.readError', {name:file.name,detail:errorDetail(error)}), true); }
@@ -1235,7 +1238,7 @@ function renderPreview(){
   bindText($('preview-status'), () => performance?(i18n.locale==='en'?'Complete performance saved · Choose reference listening below':'完整演奏已保存 · 请在下方选择参考聆听'):startingPreview?t('app.preparingSession'):['loading','choosing'].includes(value.status)?t('app.preparingPreview'):value.status==='choice'?(i18n.locale==='en'?'Choose base-note instrumental practice to continue':'请选择基础音符器乐练习以继续'):value.status==='error'?(value.errorCode?.startsWith('clean_')?cleanErrorText(i18n.locale,{code:value.errorCode}):t('app.previewError', {detail:originalDetail(value.message)})):value.status==='ready'?t('app.previewReady'):t('app.previewBrowsing'));
   bindText($('preview-gate'), () => performance?(i18n.locale==='en'?'Notation, practice targets and grades unavailable':'记谱、练习目标与评分不可用'):['choice','choosing'].includes(value.status)?(i18n.locale==='en'?'Full vocal rendering unavailable':'完整歌声渲染不可用'):compatibilityText(value.compatibility));$('preview-gate').classList.toggle('preview-blocked',['blocked','error','dirty'].includes(value.compatibility.status));
   $('start-listen').disabled=startingPreview||!preview.canStart('listen');$('start-practice').disabled=startingPreview||!preview.canStart('practice');
-  const diagnostics=value.compiled?.diagnostics||[];$('preview-notices').hidden=!diagnostics.length;bindText($('preview-notices-title'), () => t('app.previewNotices', {count:diagnostics.length}));$('preview-notice-list').replaceChildren();for(const diagnostic of diagnostics.slice(0,20)){const row=document.createElement('li');bindText(row, () => diagnostic.message);$('preview-notice-list').append(row)}if(diagnostics.length>20){const row=document.createElement('li');bindText(row, () => t('app.moreNotices', {count:diagnostics.length-20}));$('preview-notice-list').append(row)}
+  const diagnostics=value.compiled?.diagnostics||[];$('preview-notices').hidden=!diagnostics.length;bindText($('preview-notices-title'), () => t('app.previewNotices', {count:diagnostics.length}));$('preview-notice-list').replaceChildren();for(const diagnostic of diagnostics.slice(0,20)){const row=document.createElement('li');bindText(row, () => diagnosticText(diagnostic));$('preview-notice-list').append(row)}if(diagnostics.length>20){const row=document.createElement('li');bindText(row, () => t('app.moreNotices', {count:diagnostics.length-20}));$('preview-notice-list').append(row)}
   const select=$('preview-part'),signature=JSON.stringify([i18n.revision,Boolean(value.cleanSong),item?.parts?.map(part=>[part.id,part.name])||[]]);
   if(select.dataset.parts!==signature){select.replaceChildren();if(!value.cleanSong){const all=document.createElement('option');all.value='';bindText(all, () => t('app.allParts'));select.append(all);}for(const part of item?.parts||[]){const option=document.createElement('option');option.value=part.id;bindText(option, () => part.name);select.append(option)}select.dataset.parts=signature;}
   select.value=value.part||'';$('preview-part-label').hidden=!value.compiled;

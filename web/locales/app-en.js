@@ -210,5 +210,6 @@ export default Object.freeze({
   "app.cursorIdle": "Current-note following is idle.",
   "app.cursorLoading": "Preparing exact current-note positions…",
   "app.cursorReady": "Expected written notes follow the Rust clock. Held inputs and assessment are separate.",
-  "app.cursorUnavailable": "Current-note following is unavailable. Static notation and playback remain available."
+  "app.cursorUnavailable": "Current-note following is unavailable. Static notation and playback remain available.",
+  "app.initialTempoProjection": "The opening tempo follows source event order: the final declaration at tick zero controls subsequent timing. Earlier declarations are retained."
 });

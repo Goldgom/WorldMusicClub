@@ -296,6 +296,24 @@ pub fn compile_complete(score: &CompleteScore) -> Result<Runtime, String> {
         return Err("Complete runtime exceeds the 24-hour playback bound".into());
     }
     let mut compilation = crate::compile(score.notation.clone())?;
+    let mut initial_tempo = crate::midi_initial_tempo::InitialTempo::default();
+    for event in &score.performance.events {
+        if let Command::Tempo {
+            microseconds_per_quarter,
+        } = event.command
+        {
+            if event.at.equivalent(Beat::ZERO) {
+                initial_tempo.observe(event.origin, microseconds_per_quarter)?;
+            }
+        }
+    }
+    if initial_tempo.projects_changes() {
+        compilation.diagnostics.push(crate::Diagnostic::warning(
+            "midi_initial_tempo_projection",
+            "Canonical notation uses the final source-ordered tick-zero tempo for subsequent time intervals. Every initial tempo command and source identity remains in the complete performance.",
+            None,
+        ));
+    }
     let canonical: BTreeMap<_, _> = score
         .notation
         .parts

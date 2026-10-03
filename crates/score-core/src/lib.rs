@@ -13,6 +13,7 @@ mod midi;
 mod midi_device_route;
 pub mod midi_events;
 mod midi_initial_sensitivity;
+mod midi_initial_tempo;
 pub mod midi_timecode;
 pub mod piano_fingering;
 mod ties;

@@ -210,5 +210,6 @@ export default Object.freeze({
   "app.cursorIdle": "当前音符跟随待命。",
   "app.cursorLoading": "正在准备精确的当前音符位置…",
   "app.cursorReady": "预期谱面音符按 Rust 时钟跟随。按住输入和评分单独处理。",
-  "app.cursorUnavailable": "当前音符跟随不可用。仍可查看静态谱面和播放乐谱。"
+  "app.cursorUnavailable": "当前音符跟随不可用。仍可查看静态谱面和播放乐谱。",
+  "app.initialTempoProjection": "起始速度遵循来源事件顺序：零时刻最后一次速度声明用于后续计时，先前声明仍被保留。"
 });

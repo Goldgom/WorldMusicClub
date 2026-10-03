@@ -120,6 +120,236 @@ fn tampering_with_track_note_or_tempo_coverage_is_rejected() {
     wrong.notation.parts[0].notes[1].at = Beat::ZERO;
     assert!(validate(&wrong).is_err());
 }
+
+// New independent synthetic source. The note may precede, interrupt, or follow
+// the zero-time declarations. No positive interval elapses between them.
+fn initial_tempo_exercise(values: &[u32], attack_position: usize) -> Vec<u8> {
+    let mut events = Vec::new();
+    for position in 0..=values.len() {
+        if position == attack_position {
+            events.push((0, vec![0x90, 61, 87]));
+        }
+        if let Some(value) = values.get(position) {
+            let bytes = value.to_be_bytes();
+            events.push((0, vec![255, 81, 3, bytes[1], bytes[2], bytes[3]]));
+        }
+    }
+    // A later ordinary change divides the held note at exactly one third beat.
+    events.extend([
+        (160, vec![255, 81, 3, 9, 39, 199]), // 600007 us / quarter
+        (320, vec![0x80, 61, 19]),
+        (480, vec![255, 47, 0]),
+    ]);
+    smf(vec![track(
+        &events
+            .iter()
+            .map(|(d, e)| (*d, e.as_slice()))
+            .collect::<Vec<_>>(),
+    )])
+}
+
+#[test]
+fn ordered_initial_tempos_preserve_all_declarations_notes_and_exact_clock() {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    for values in [
+        vec![400_001, 400_001],
+        vec![500_003, 400_001],
+        vec![400_001, 500_003, 400_001],
+    ] {
+        for attack_position in [0, 1, values.len()] {
+            for format in [0, 1] {
+                let mut bytes = initial_tempo_exercise(&values, attack_position);
+                bytes[9] = format;
+                let (canonical, warnings) = crate::import_midi(&bytes).unwrap();
+                assert_eq!(
+                    STANDARD
+                        .decode(&canonical.source.as_ref().unwrap().content)
+                        .unwrap(),
+                    bytes
+                );
+                let changed = values.iter().any(|v| *v != values[0]);
+                assert_eq!(
+                    warnings
+                        .iter()
+                        .any(|d| d.code == "midi_initial_tempo_projection"),
+                    changed
+                );
+                let clean = convert_midi(&bytes).unwrap();
+                assert_eq!(clean.notation.tempo.len(), 2);
+                assert_eq!(clean.notation.tempo[0].bpm, 60_000_000.0 / 400_001.0);
+                assert_eq!(clean.coverage.source_events, values.len() + 4);
+                assert_eq!(clean.coverage.represented_events, values.len() + 4);
+                assert_eq!(
+                    clean.performance.notes[0].attack.event as usize,
+                    attack_position
+                );
+                let encoded = encode_json(&clean).unwrap();
+                let reloaded = decode_json(&encoded).unwrap();
+                assert_eq!(encoded, encode_json(&reloaded).unwrap());
+                let runtime = compile_complete(&reloaded).unwrap();
+                assert_eq!(runtime.notes.len(), 1);
+                assert_eq!(runtime.notes[0].key, 61);
+                assert_eq!(runtime.notes[0].velocity, 87);
+                assert_eq!(runtime.notes[0].release_velocity, 19);
+                assert_eq!(runtime.notes[0].start_microseconds.numerator, "0");
+                assert_eq!(runtime.notes[0].end_microseconds.numerator, "1600015");
+                assert_eq!(runtime.notes[0].end_microseconds.denominator, 3);
+                assert_eq!(runtime.duration_microseconds.numerator, "3400036");
+                assert_eq!(runtime.duration_microseconds.denominator, 3);
+                assert_eq!(
+                    runtime
+                        .compilation
+                        .diagnostics
+                        .iter()
+                        .any(|d| d.code == "midi_initial_tempo_projection"),
+                    changed
+                );
+                let source = crate::midi_events::parse_midi_events(&bytes, None).unwrap();
+                for event in &runtime.events {
+                    let raw = &source.events()[event.origin.event as usize];
+                    assert_eq!(
+                        event.event_id,
+                        format!("midi:{}:t0:e{}", clean.source.sha256, event.origin.event)
+                    );
+                    assert_eq!(
+                        event.exact_microseconds.numerator,
+                        raw.relative_microseconds().unwrap().numerator().to_string()
+                    );
+                    assert_eq!(
+                        event.exact_microseconds.denominator,
+                        raw.relative_microseconds().unwrap().denominator() as u64
+                    );
+                }
+                let retained: Vec<_> = runtime
+                    .events
+                    .iter()
+                    .filter_map(|e| match e.command {
+                        Command::Tempo {
+                            microseconds_per_quarter,
+                        } if e.at_ms == 0. => Some(microseconds_per_quarter),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(retained, values);
+            }
+        }
+    }
+}
+
+#[test]
+fn initial_tempo_projection_is_revalidated_on_authoritative_json_load() {
+    let clean = convert_midi(&initial_tempo_exercise(&[500_003, 400_001], 1)).unwrap();
+    let mut wrong = clean.clone();
+    wrong.notation.tempo[0].bpm = 60_000_000.0 / 500_003.0;
+    assert!(validate(&wrong).unwrap_err().contains("Canonical tempo"));
+    let mut wrong = clean.clone();
+    wrong.performance.events.remove(0);
+    assert!(validate(&wrong).is_err());
+    let mut wrong = clean.clone();
+    wrong.performance.events.swap(0, 1);
+    assert!(validate(&wrong).unwrap_err().contains("order"));
+    let mut wrong = clean.clone();
+    wrong.performance.events[1].at = Beat::new(1, 480);
+    assert!(validate(&wrong).is_err());
+}
+
+#[test]
+fn equal_cross_track_initial_tempos_work_but_any_differing_value_is_held() {
+    let a: &[u8] = &[255, 81, 3, 7, 161, 32];
+    let b: &[u8] = &[255, 81, 3, 7, 161, 33];
+    let make = |values: [&[u8]; 3]| {
+        smf(vec![
+            track(&[(0, values[0]), (0, values[1]), (480, &[255, 47, 0])]),
+            track(&[
+                (0, values[2]),
+                (0, &[0x90, 60, 90]),
+                (480, &[0x80, 60, 0]),
+                (0, &[255, 47, 0]),
+            ]),
+        ])
+    };
+    let clean = convert_midi(&make([a, a, a])).unwrap();
+    assert_eq!(
+        clean
+            .performance
+            .events
+            .iter()
+            .filter(|e| matches!(e.command, Command::Tempo { .. }))
+            .count(),
+        3
+    );
+    assert_eq!(clean.notation.tempo.len(), 1);
+    for values in [[b, a, a], [a, b, a], [a, a, b]] {
+        let bytes = make(values);
+        assert!(crate::import_midi(&bytes)
+            .unwrap_err()
+            .contains("cross-track tempo"));
+        assert!(convert_midi(&bytes)
+            .unwrap_err()
+            .contains("cross-track tempo"));
+    }
+    // The same final value cannot hide a different earlier declaration on JSON load.
+    for index in [0, 1, 2] {
+        let mut wrong = clean.clone();
+        wrong.performance.events[index].command = Command::Tempo {
+            microseconds_per_quarter: 500_001,
+        };
+        assert!(validate(&wrong).unwrap_err().contains("cross-track tempo"));
+        assert!(decode_json(&serde_json::to_vec(&wrong).unwrap())
+            .unwrap_err()
+            .contains("cross-track tempo"));
+    }
+}
+
+#[test]
+fn initial_tempo_change_does_not_relax_later_tempo_meter_or_key_conflicts() {
+    for (first, second, delta, diagnostic) in [
+        (
+            vec![255, 81, 3, 7, 161, 32],
+            vec![255, 81, 3, 7, 161, 33],
+            120,
+            "tempo",
+        ),
+        (
+            vec![255, 88, 4, 4, 2, 24, 8],
+            vec![255, 88, 4, 3, 2, 24, 8],
+            0,
+            "time signature",
+        ),
+        (
+            vec![255, 89, 2, 0, 0],
+            vec![255, 89, 2, 1, 0],
+            0,
+            "key signature",
+        ),
+    ] {
+        let bytes = smf(vec![track(&[
+            (delta, &first),
+            (0, &second),
+            (0, &[0x90, 60, 90]),
+            (480, &[0x80, 60, 0]),
+            (0, &[255, 47, 0]),
+        ])]);
+        assert!(convert_midi(&bytes)
+            .unwrap_err()
+            .contains(&format!("Conflicting MIDI {diagnostic}")));
+    }
+    // Later identical tempos still work; a clean-JSON mutation must not enable later changes.
+    let bytes = smf(vec![track(&[
+        (0, &[0x90, 60, 90]),
+        (120, &[255, 81, 3, 7, 161, 32]),
+        (0, &[255, 81, 3, 7, 161, 32]),
+        (360, &[0x80, 60, 0]),
+        (0, &[255, 47, 0]),
+    ])]);
+    let mut clean = convert_midi(&bytes).unwrap();
+    clean.performance.events[0].command = Command::Tempo {
+        microseconds_per_quarter: 500_001,
+    };
+    assert!(validate(&clean)
+        .unwrap_err()
+        .contains("simultaneous tempos"));
+}
 #[test]
 fn refuses_unknown_semantics_instead_of_exporting_partial_music() {
     let percussion = smf(vec![track(&[

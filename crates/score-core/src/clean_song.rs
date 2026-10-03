@@ -584,6 +584,7 @@ pub fn validate(score: &CompleteScore) -> Result<(), String> {
 
 fn validate_clocks(score: &CompleteScore) -> Result<(), String> {
     let mut tempos: Vec<(Beat, u32)> = Vec::new();
+    let mut initial_tempo = crate::midi_initial_tempo::InitialTempo::default();
     let mut meters: Vec<(Beat, u16, u16)> = Vec::new();
     let mut keys: Vec<(Beat, i8, &str)> = Vec::new();
     for event in &score.performance.events {
@@ -591,7 +592,14 @@ fn validate_clocks(score: &CompleteScore) -> Result<(), String> {
             Command::Tempo {
                 microseconds_per_quarter: value,
             } => {
-                if let Some(previous) = tempos.last().filter(|p| p.0.equivalent(event.at)) {
+                if event.at.equivalent(Beat::ZERO) {
+                    initial_tempo.observe(event.origin, value)?;
+                    if let Some(previous) = tempos.last_mut() {
+                        previous.1 = value;
+                    } else {
+                        tempos.push((event.at, value));
+                    }
+                } else if let Some(previous) = tempos.last().filter(|p| p.0.equivalent(event.at)) {
                     if previous.1 != value {
                         return Err("Ambiguous simultaneous tempos".into());
                     }
