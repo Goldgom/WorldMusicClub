@@ -1,0 +1,24 @@
+{
+  "format": "worldmusichub-song",
+  "id": "performance-overlap-v2",
+  "media": [],
+  "rights": {
+    "attribution": "WorldMusicHub original acceptance commands",
+    "license": "CC0-1.0",
+    "status": "original_authored"
+  },
+  "score": {
+    "bytes": 20098,
+    "path": "score.json",
+    "sha256": "c1c7fde03b69b3b8e546ff78a5918f082abba2a0895922f60a158d5ed250e5f7"
+  },
+  "sources": [
+    {
+      "bytes": 406,
+      "format": "midi",
+      "sha256": "721e9164a65d533734071c1deb43e626eacb31debc96b913901ceb8e731f8432"
+    }
+  ],
+  "title": "Original eleven-track overlap and percussion",
+  "version": 2
+}

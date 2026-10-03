@@ -1,0 +1,51 @@
+// Authorized hosted GitHub Actions only; real Chromium + real Rust stdio.
+// The action/report protocol belongs to acceptance, never to the application API.
+import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {createVsqHostedConsole} from './vsq-hosted-console.mjs';
+import {createVsqHostedChooser} from './vsq-hosted-chooser.mjs';
+import {startVsqNativeDriver} from '../tests/vsq-native-driver-fixtures.js';
+import {preparePerformanceFixtures,performanceAcceptanceFixtures,PERFORMANCE_FIXTURE_FILENAME} from './prepare-performance-song-fixtures.mjs';
+import {validatePerformanceRenderer,validatePerformanceTakes,validatePerformanceExport,PERFORMANCE_PHASES} from './verify-native-performance-song-evidence.mjs';
+import {digest} from '../tests/clean-song-package-fixtures.js';
+if(process.env.GITHUB_ACTIONS!=='true'||process.env.WMH_HOSTED_BROWSER!=='1')throw Error('Only the authorized hosted browser runner may execute performance acceptance');
+const root=fileURLToPath(new URL('../',import.meta.url)),head=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
+assert.equal(execFileSync('git',['status','--porcelain','--untracked-files=normal'],{cwd:root,encoding:'utf8'}).trim(),'','Hosted performance source must be clean');assert.match(process.env.WMH_SOURCE_SHA||'',/^[a-f0-9]{40}$/);assert.equal(process.env.WMH_SOURCE_SHA,head,'Exact hosted source SHA required');assert.ok(process.env.WMH_NATIVE_IMPORT_DRIVER,'Exact-source driver required');
+const viewportHeight=Number(process.env.WMH_VIEWPORT_HEIGHT||720);assert.ok([720,900].includes(viewportHeight),'Performance hosted viewport must be 720 or 900 pixels high');
+const output=path.resolve(process.env.WMH_ARTIFACT_DIR||path.join(root,'test-results/performance-song',String(viewportHeight))),origin='https://wmh.localhost',fixture=performanceAcceptanceFixtures(),binary=path.resolve(process.env.WMH_NATIVE_IMPORT_DRIVER);
+const report={version:1,kind:'hosted-browser-real-native-performance-package',viewport:{width:1280,height:viewportHeight},source_sha:head,source_tree:execFileSync('git',['rev-parse','HEAD^{tree}'],{cwd:root,encoding:'utf8'}).trim(),native_filesystem:true,native_window:false,physical_audio:false,original_vocal_or_acoustic_fidelity:false,phases:[],ok:false};let browser,driver,context,page,chooserObserver,consoleObserver;
+async function bounded(operation,label,milliseconds=10000){let timer;try{return await Promise.race([operation,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error(`Performance ${label} exceeded ${milliseconds}ms`)),milliseconds))]);}finally{clearTimeout(timer);}}
+await mkdir(path.join(output,'downloads'),{recursive:true});await preparePerformanceFixtures(path.join(output,'fixtures'));report.driver_sha256=digest(await readFile(binary));report.fixture=fixture.manifest;
+try {
+ const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});
+ for(const phase of PERFORMANCE_PHASES){
+  const phaseReport={phase,ok:false,actions:[],results:[],page_errors:[],api_trace:[],console:null},downloads=[],results=new Map();report.phases.push(phaseReport);consoleObserver=createVsqHostedConsole({origin});phaseReport.console=consoleObserver.evidence;let renderer=null,actionFailure=null,actionPending=false;
+  driver=startVsqNativeDriver({binary,directory:path.join(output,'Scores'),cwd:root});phaseReport.process_id=driver.pid;context=await browser.newContext({viewport:{width:1280,height:viewportHeight},acceptDownloads:true});
+  const scripts=await Promise.all(['acceptance-wait.js','reference-acceptance.js','vsq-song-acceptance.js','performance-song-acceptance.js'].map(name=>readFile(path.join(root,'crates/desktop-shell',name),'utf8')));assert.equal(scripts[2].split('(() => {').length,2,'Shared observer boundary changed');scripts[2]=scripts[2].split('(() => {')[0];await context.addInitScript(`globalThis.__WMH_ACCEPTANCE_PHASE__=${JSON.stringify(phase)};\n${scripts.join('\n')}`);
+  async function action(a){try{
+   assert.ok(!actionPending,'Concurrent VSQ browser actions');actionPending=true;assert.equal(a.sequence,phaseReport.actions.length+1);phaseReport.actions.push(a);assert.ok(['click','picker','select-last','key-r'].includes(a.kind));
+   if(a.kind==='picker'){assert.equal(a.file,PERFORMANCE_FIXTURE_FILENAME);await chooserObserver.choose(a,path.join(output,'fixtures',a.file));}
+   else{await page.mouse.click(a.x,a.y);if(a.kind==='select-last'){await page.keyboard.press('End');await page.keyboard.press('Enter');}if(a.kind==='key-r')await page.keyboard.press('r');}
+   await page.screenshot({path:path.join(output,`browser-action-${phase}-${a.sequence}.png`),fullPage:true});results.set(a.sequence,{ok:true,browser_action:true});
+  }catch(error){actionFailure=String(error);results.set(a.sequence,{ok:false,error:actionFailure});}finally{phaseReport.results.push({sequence:a.sequence,...results.get(a.sequence)});actionPending=false;}}
+  await context.route(`${origin}/**`,async route=>{const q=route.request(),url=new URL(q.url()),name=url.pathname;
+   if(name.startsWith('/__desktop_smoke/')){
+    if(name==='/__desktop_smoke/action'){const a=q.postDataJSON();await route.fulfill({status:200,json:{}});void action(a);return;}
+    if(name==='/__desktop_smoke/state'){await route.fulfill({status:200,json:{phase,downloads}});return;}
+    if(name==='/__desktop_smoke/report'){renderer=q.postDataJSON();await writeFile(path.join(output,`renderer-${phase}.json`),JSON.stringify(renderer,null,2)+'\n');await route.fulfill({status:200,json:{}});return;}
+    const sequence=Number(name.slice('/__desktop_smoke/result/'.length)),result=results.get(sequence);if(result)await route.fulfill({status:200,json:result});else{const pending=consoleObserver.pendingResponse({sequence,url:q.url(),method:q.method(),owned:actionPending&&phaseReport.actions.at(-1)?.sequence===sequence,status:404,body:{error:'pending'}});try{await route.fulfill({status:404,json:{error:'pending'}});pending.finish(true);}catch(error){pending.finish(false);throw error;}}return;
+   }
+   if(name.startsWith('/api/')){try{assert.ok(phaseReport.api_trace.length<256,'Performance hosted API trace bound');const row={path:name,status:null};phaseReport.api_trace.push(row);const response=await bounded(driver.fetcher(name+url.search,{method:q.method(),headers:q.headers(),body:q.postDataBuffer()||undefined}),`native response ${name}`),body=await response.bytes();row.status=response.status;await route.fulfill({status:response.status,contentType:response.contentType,body});}catch(error){phaseReport.page_errors.push(String(error));await route.abort();}return;}
+   const file=path.resolve(root,'web','.'+decodeURIComponent(name==='/'?'/index.html':name));if(!file.startsWith(path.join(root,'web')+path.sep)){await route.abort();return;}try{await route.fulfill({status:200,contentType:({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'})[path.extname(file)]||'application/octet-stream',body:await readFile(file)});}catch{await route.fulfill({status:404,body:'Not found'});}
+  });
+  page=await context.newPage();page.setDefaultTimeout(10000);chooserObserver=createVsqHostedChooser(page,{onError:error=>{phaseReport.page_errors.push(error);actionFailure=error;}});phaseReport.chooser_observer=chooserObserver.evidence;page.on('console',message=>consoleObserver.observe(message));page.on('pageerror',error=>phaseReport.page_errors.push(String(error)));page.on('download',async download=>{const ext=download.suggestedFilename().endsWith('.zip')?'zip':'json',row={file:`${phase}-${downloads.length+1}.${ext}`,suggested_name:download.suggestedFilename(),complete:false,success:false};downloads.push(row);try{await download.saveAs(path.join(output,'downloads',row.file));row.success=true;}catch(error){phaseReport.page_errors.push(String(error));}finally{row.complete=true;}});
+  chooserObserver.navigation('start');await page.goto(origin);chooserObserver.navigation('end');await bounded((async()=>{while(!renderer&&!actionFailure){await new Promise(resolve=>setTimeout(resolve,100));}assert.equal(actionFailure,null);})(),`${phase} report (see API/action diagnostics)`,120000);assert.deepEqual(phaseReport.page_errors,[]);consoleObserver.assertComplete();chooserObserver.assertComplete(phaseReport.actions.filter(action=>action.kind==='picker').map(action=>action.sequence));validatePerformanceRenderer(renderer,fixture);assert.deepEqual(renderer.pickerObservations.map(row=>row.sequence),phaseReport.actions.filter(action=>action.kind==='picker').map(action=>action.sequence),'Performance file delegation is not bound to the actual browser picker');validatePerformanceTakes(JSON.parse(await readFile(path.join(output,'downloads',renderer.files.beforeTake))),JSON.parse(await readFile(path.join(output,'downloads',renderer.files.afterTake))),renderer);if(phase==='performance-seed')validatePerformanceExport(await readFile(path.join(output,'downloads',renderer.files.package)),fixture);
+  await page.screenshot({path:path.join(output,`browser-${phase}.png`),fullPage:true});await context.close();context=null;assert.deepEqual(phaseReport.page_errors,[]);consoleObserver.assertComplete();chooserObserver.assertComplete(phaseReport.actions.filter(action=>action.kind==='picker').map(action=>action.sequence));chooserObserver.stop();chooserObserver=null;phaseReport.ok=true;await bounded(driver.close(),`${phase} native process close`);driver=null;
+ }
+ assert.equal(new Set(report.phases.map(p=>p.process_id)).size,3,'Hosted performance must reopen a fresh native process');report.ok=true;
+}catch(error){report.error=error.stack||String(error);process.exitCode=1;try{await page?.screenshot({path:path.join(output,'browser-performance-failure.png'),fullPage:true});}catch{}}
+finally{await context?.close();consoleObserver?.reconcile();chooserObserver?.stop();await browser?.close();await driver?.close();await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2)+'\n');}
+if(!report.ok)throw Error(report.error);

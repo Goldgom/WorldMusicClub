@@ -13,6 +13,11 @@ pub const FOLDER_PHASES: [&str; 3] = ["folder-seed", "folder-restart", "folder-f
 pub const BULK_PHASES: [&str; 3] = ["bulk-seed", "bulk-restart", "bulk-failure"];
 pub const CLEAN_PHASES: [&str; 2] = ["clean-seed", "clean-restart"];
 pub const VSQ_PHASES: [&str; 2] = ["vsq-seed", "vsq-restart"];
+pub const PERFORMANCE_PHASES: [&str; 3] = [
+    "performance-seed",
+    "performance-controls",
+    "performance-restart",
+];
 pub const MAX_CLEAN_REPORT_BYTES: usize = 1024 * 1024;
 pub const MAX_SMOKE_REPORT_BYTES: usize = 64 * 1024;
 pub const MAX_BULK_REPORT_BYTES: usize = 4 * 1024 * 1024;
@@ -31,6 +36,7 @@ impl Acceptance {
             .chain(BULK_PHASES)
             .chain(CLEAN_PHASES)
             .chain(VSQ_PHASES)
+            .chain(PERFORMANCE_PHASES)
             .find(|candidate| *candidate == phase)
             .ok_or("Unknown acceptance phase")?;
         std::fs::create_dir_all(directory.join("downloads"))
@@ -44,12 +50,26 @@ impl Acceptance {
         })
     }
     pub fn script(&self) -> String {
+        let performance = if PERFORMANCE_PHASES.contains(&self.phase) {
+            // Reuse the existing bounded observers, without starting the VSQ run.
+            let (observers, _) = include_str!("../vsq-song-acceptance.js")
+                .split_once("(() => {")
+                .expect("VSQ observer prefix must precede its runner");
+            format!(
+                "{observers}\n{}",
+                include_str!("../performance-song-acceptance.js")
+            )
+        } else {
+            String::new()
+        };
         format!(
             "globalThis.__WMH_ACCEPTANCE_PHASE__={};\n{}\n{}\n{}",
             serde_json::to_string(self.phase).unwrap(),
             include_str!("../acceptance-wait.js"),
             include_str!("../reference-acceptance.js"),
-            if VSQ_PHASES.contains(&self.phase) {
+            if PERFORMANCE_PHASES.contains(&self.phase) {
+                &performance
+            } else if VSQ_PHASES.contains(&self.phase) {
                 include_str!("../vsq-song-acceptance.js")
             } else if CLEAN_PHASES.contains(&self.phase) {
                 include_str!("../clean-song-acceptance.js")
@@ -66,7 +86,10 @@ impl Acceptance {
         format!("renderer-{}.json", self.phase)
     }
     fn report_limit(&self) -> usize {
-        if CLEAN_PHASES.contains(&self.phase) || VSQ_PHASES.contains(&self.phase) {
+        if CLEAN_PHASES.contains(&self.phase)
+            || VSQ_PHASES.contains(&self.phase)
+            || PERFORMANCE_PHASES.contains(&self.phase)
+        {
             MAX_CLEAN_REPORT_BYTES
         } else if BULK_PHASES.contains(&self.phase) {
             MAX_BULK_REPORT_BYTES
@@ -84,6 +107,7 @@ impl Acceptance {
         if !BULK_PHASES.contains(&self.phase)
             && !CLEAN_PHASES.contains(&self.phase)
             && !VSQ_PHASES.contains(&self.phase)
+            && !PERFORMANCE_PHASES.contains(&self.phase)
         {
             return;
         }
@@ -165,7 +189,8 @@ impl Acceptance {
         }
         let extension = if (BULK_PHASES.contains(&self.phase)
             || CLEAN_PHASES.contains(&self.phase)
-            || VSQ_PHASES.contains(&self.phase))
+            || VSQ_PHASES.contains(&self.phase)
+            || PERFORMANCE_PHASES.contains(&self.phase))
             && name.to_lowercase().ends_with(".zip")
         {
             "zip"
@@ -270,6 +295,7 @@ pub fn receive_report(
         BULK_PHASES.contains(&run.phase)
             || CLEAN_PHASES.contains(&run.phase)
             || VSQ_PHASES.contains(&run.phase)
+            || PERFORMANCE_PHASES.contains(&run.phase)
     });
     let limit = bulk.map_or(MAX_SMOKE_REPORT_BYTES, Acceptance::report_limit);
     let reject = |status, code, message| {
@@ -430,6 +456,7 @@ fn valid_action(value: &Value) -> bool {
             "bulk-standard-b.json",
             "clean-authored-song.zip",
             "vsq-authored-song.zip",
+            "performance-authored-songs.zip",
         ]
         .contains(&file);
         let download = PHASES.iter().any(|phase| {
@@ -442,6 +469,7 @@ fn valid_action(value: &Value) -> bool {
             .iter()
             .chain(CLEAN_PHASES.iter())
             .chain(VSQ_PHASES.iter())
+            .chain(PERFORMANCE_PHASES.iter())
             .any(|phase| {
                 file.strip_prefix(&format!("{phase}-"))
                     .and_then(|n| n.strip_suffix(".json").or_else(|| n.strip_suffix(".zip")))
@@ -462,14 +490,22 @@ mod tests {
 
     #[test]
     fn clean_reports_have_exact_inclusive_budget_and_finite_native_actions() {
-        for phase in CLEAN_PHASES.into_iter().chain(VSQ_PHASES) {
+        for phase in CLEAN_PHASES
+            .into_iter()
+            .chain(VSQ_PHASES)
+            .chain(PERFORMANCE_PHASES)
+        {
             let evidence = Evidence::new();
             let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
-            assert!(run.script().contains(if VSQ_PHASES.contains(&phase) {
-                "VSQ native control unavailable"
-            } else {
-                "Native clean control unavailable"
-            }));
+            assert!(run
+                .script()
+                .contains(if PERFORMANCE_PHASES.contains(&phase) {
+                    include_str!("../performance-song-acceptance.js")
+                } else if VSQ_PHASES.contains(&phase) {
+                    "VSQ native control unavailable"
+                } else {
+                    "Native clean control unavailable"
+                }));
             assert!(run
                 .download("complete.zip")
                 .unwrap()
@@ -513,6 +549,10 @@ mod tests {
         for file in [
             "clean-authored-song.zip",
             "vsq-authored-song.zip",
+            "performance-authored-songs.zip",
+            "performance-seed-1.zip",
+            "performance-controls-16.zip",
+            "performance-restart-16.json",
             "clean-seed-1.zip",
             "vsq-seed-1.zip",
             "vsq-restart-16.json",
@@ -528,6 +568,9 @@ mod tests {
             "vsq-seed-17.zip",
             "../vsq-authored-song.zip",
             "../clean-authored-song.zip",
+            "performance-seed-17.zip",
+            "performance-any-1.zip",
+            "../performance-authored-songs.zip",
         ] {
             assert!(!valid_action(
                 &json!({"version":1,"sequence":1,"kind":"picker","x":1,"y":1,"width":900,"height":640,"file":file})
@@ -540,6 +583,21 @@ mod tests {
             &json!({"version":1,"sequence":1,"kind":"select-last","x":1,"y":1,"width":900,"height":640,"file":"clean-authored-song.zip"})
         ));
         assert!(Acceptance::new(Evidence::new().0.clone(), "clean-any").is_err());
+        assert!(Acceptance::new(Evidence::new().0.clone(), "performance-any").is_err());
+    }
+
+    #[test]
+    fn performance_observers_share_only_the_unique_vsq_prefix() {
+        let vsq = include_str!("../vsq-song-acceptance.js");
+        assert_eq!(vsq.matches("(() => {").count(), 1);
+        let (prefix, runner) = vsq.split_once("(() => {").unwrap();
+        let evidence = Evidence::new();
+        let run = Acceptance::new(evidence.0.clone(), "performance-controls").unwrap();
+        let script = run.script();
+        assert!(script.contains(prefix));
+        assert!(!script.contains(runner));
+        assert!(script.contains("createVsqJsonObserver"));
+        assert!(script.contains("readVsqPickerGesture"));
     }
 
     #[test]

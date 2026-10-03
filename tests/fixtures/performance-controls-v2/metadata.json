@@ -1,0 +1,24 @@
+{
+  "format": "worldmusichub-song",
+  "id": "performance-controls-v2",
+  "media": [],
+  "rights": {
+    "attribution": "WorldMusicHub original acceptance commands",
+    "license": "CC0-1.0",
+    "status": "original_authored"
+  },
+  "score": {
+    "bytes": 7919,
+    "path": "score.json",
+    "sha256": "def9e931e3beca37c4750be7e44b187649dd227459bad77626fb9dce5facff05"
+  },
+  "sources": [
+    {
+      "bytes": 162,
+      "format": "midi",
+      "sha256": "df4c0ae87a698d4466c087445d9c0999a5d9e31f5a83cdc72ebff129943ce197"
+    }
+  ],
+  "title": "Original sustained keys and channel controls",
+  "version": 2
+}
