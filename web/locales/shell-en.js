@@ -55,7 +55,7 @@ export default Object.freeze({
   "shell.dialog.score": "Current score and sources",
   "shell.dialog.import": "Import and review music",
   "shell.dialog.results": "Practice results",
-  "shell.importNotice": "Importing a valid score or activating a reviewed draft replaces the paused score and clears its in-memory take history. Export take data in Results first if you want to keep it. Playback stays paused.",
+  "shell.importNotice": "Opening a single score or activating a reviewed draft replaces the paused score and clears its in-memory take history. Export take data in Results first. Batch and pack imports save to the library while preserving the current score and take. Playback stays paused.",
   "shell.backLibrary": "← Songs",
   "shell.stageTitle": "Your stage",
   "shell.closeNotation": "Close score",

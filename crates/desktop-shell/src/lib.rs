@@ -2,6 +2,7 @@
 //! service; renderer requests never provide filesystem paths or process commands.
 pub mod acceptance;
 pub mod native_library;
+pub mod song_pack;
 use http::{Request, Response};
 use serde_json::{json, Value};
 
@@ -61,7 +62,9 @@ pub fn allowed_uri(uri: &http::Uri) -> bool {
 
 pub fn admission(request: &Request<Vec<u8>>) -> Option<Response<Vec<u8>>> {
     let path = request.uri().path();
-    if !allowed_uri(request.uri()) || request.uri().query().is_some() {
+    if !allowed_uri(request.uri())
+        || (request.uri().query().is_some() && !song_pack::valid_history_query(request.uri()))
+    {
         return Some(operation_error(
             path,
             403,
@@ -81,7 +84,15 @@ pub fn admission(request: &Request<Vec<u8>>) -> Option<Response<Vec<u8>>> {
             "Cross-origin requests are not allowed",
         ));
     }
-    if request.body().len() > MAX_BODY {
+    if request.body().len() > song_pack::request_limit(path) {
+        if song_pack::is_import_route(path) {
+            return Some(operation_error(
+                path,
+                413,
+                "pack_request_limit",
+                "Song pack request exceeds its bounded transport limit",
+            ));
+        }
         if native_library::is_library_route(path) {
             return Some(operation_error(
                 path,
@@ -163,6 +174,17 @@ fn dispatch_inner(
         return reply;
     }
     let path = request.uri().path();
+    if song_pack::is_import_route(path) {
+        return match library {
+            Some(library) => song_pack::dispatch(library, &request),
+            None => operation_error(
+                path,
+                503,
+                "library_unavailable",
+                "Native filesystem storage is not attached to this adapter",
+            ),
+        };
+    }
     if native_library::is_library_route(path) {
         if request.method() == "POST"
             && request

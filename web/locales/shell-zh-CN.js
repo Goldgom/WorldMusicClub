@@ -55,7 +55,7 @@ export default Object.freeze({
   "shell.dialog.score": "当前乐谱与来源",
   "shell.dialog.import": "导入与审阅乐谱",
   "shell.dialog.results": "练习结果",
-  "shell.importNotice": "导入有效乐谱或启用审阅后的草稿会替换暂停的乐谱，并清除内存中的演奏历史。如需保留，请先在结果中导出演奏数据。播放会保持暂停。",
+  "shell.importNotice": "打开单首乐谱或启用审阅后的草稿会替换暂停的乐谱，并清除内存中的演奏历史，请先在结果中导出演奏数据。批量导入和曲包导入只保存到曲库，保留当前乐谱与演奏记录。播放保持暂停。",
   "shell.backLibrary": "← 曲库",
   "shell.stageTitle": "你的演奏区",
   "shell.closeNotation": "收起乐谱",

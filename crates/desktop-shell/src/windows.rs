@@ -35,6 +35,7 @@ pub fn run() {
         root.join(
             if acceptance.as_ref().is_some_and(|run| {
                 worldmusichub_desktop::acceptance::FOLDER_PHASES.contains(&run.phase)
+                    || worldmusichub_desktop::acceptance::BULK_PHASES.contains(&run.phase)
             }) {
                 "Scores"
             } else {
@@ -44,6 +45,9 @@ pub fn run() {
     });
     let admitted = Arc::new(Semaphore::new(16));
     let computations = Arc::new(Semaphore::new(2));
+    // At most one large pack request can hold a body or response in the queue.
+    // The second compute slot remains available to ordinary score operations.
+    let large_imports = Arc::new(Semaphore::new(1));
     // Created lazily only when the renderer explicitly uses the native library.
     // Smoke/acceptance without library calls never touches the user's song folder.
     let library: Arc<OnceLock<NativeLibrary>> = Arc::new(OnceLock::new());
@@ -119,6 +123,12 @@ pub fn run() {
                 return;
             }
             let operation_path = request.uri().path().to_owned();
+            let pack_permit = if worldmusichub_desktop::song_pack::is_large_operation(&operation_path) {
+                match large_imports.clone().try_acquire_owned() {
+                    Ok(permit)=>Some(permit),
+                    Err(_)=>{respond(operation_error(&operation_path,503,"pack_busy","Another song-pack operation is running; wait for its result before retrying"));return;}
+                }
+            } else {None};
             let Ok(admission_permit) = admitted.clone().try_acquire_owned() else {
                 respond(operation_error(
                     &operation_path,
@@ -145,6 +155,7 @@ pub fn run() {
                 };
                 let result = tauri::async_runtime::spawn_blocking(move || {
                     let _admission = admission_permit;
+                    let _pack = pack_permit;
                     let _computation = computation_permit;
                     if native_library::is_library_route(request.uri().path()) {
                         // Retry initialization failures on the next request;

@@ -4163,6 +4163,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 name = "worldmusichub-desktop"
 version = "0.2.0-alpha.1"
 dependencies = [
+ "base64 0.22.1",
  "http",
  "practice-server",
  "score-core",
@@ -4172,6 +4173,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tokio",
+ "zip",
 ]
 
 [[package]]

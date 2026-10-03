@@ -6,7 +6,47 @@ on:
 permissions:
   contents: read
 jobs:
+  bulk-import-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: '1.99.0'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: npm run test:bulk-import
+      - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - name: Real DOM and native Rust disk route without a listener
+        env:
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_IMPORT_REPORT: ${{ github.workspace }}/test-results/bulk-import-dom.json
+        run: npm run test:bulk-import-native
+      - run: npx playwright install --with-deps chromium
+      - name: Real picker, original bytes, unified pack and fresh-profile screenshot proof
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: npm run test:bulk-import-hosted
+      - name: Preserve authored bulk-import evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: bulk-import-browser-${{ github.sha }}
+          path: |
+            test-results/bulk-import-dom.json
+            test-results/bulk-import/**
+          if-no-files-found: warn
   native-feature-acceptance:
+    needs: bulk-import-browser
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -31,7 +71,7 @@ jobs:
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
       - run: npm test
-      - run: node --test tests/desktop-evidence.test.js tests/desktop-acceptance-wait.test.js tests/native-song-folder-evidence.test.js
+      - run: node --test tests/desktop-evidence.test.js tests/desktop-acceptance-wait.test.js tests/native-song-folder-evidence.test.js tests/native-bulk-import-evidence.test.js
       - name: Parse the exact native acceptance script
         shell: pwsh
         run: |
@@ -99,11 +139,20 @@ jobs:
       - name: Native song folders and fresh-profile restart acceptance
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-song-folder -Scenario song-folder
+      - name: Native batch import, source retention and unified pack acceptance
+        shell: pwsh
+        run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-bulk-import -Scenario bulk-import
       # Default success() keeps all package steps behind the actual native gates.
       - name: Package accepted native executable with exact provenance and notices
         id: native_package
         shell: pwsh
         run: |
+          node scripts/verify-native-bulk-import-evidence.mjs --check desktop-bulk-import
+          if ($LASTEXITCODE -ne 0) { throw 'Native bulk-import exact-source proof failed' }
+          $bulkProof=Get-Content -Raw desktop-bulk-import/native-bulk-import-files.json | ConvertFrom-Json
+          $currentTree=(git rev-parse 'HEAD^{tree}').Trim()
+          $currentExe=(Get-FileHash target/release/worldmusichub-desktop.exe -Algorithm SHA256).Hash.ToLower()
+          if ($bulkProof.source_sha -cne '${{ github.sha }}' -or $bulkProof.source_tree -cne $currentTree -or $bulkProof.executable_sha256 -cne $currentExe) { throw 'Bulk-import evidence does not match the exact packaged source and executable' }
           $count=(git rev-list --count HEAD).Trim()
           $folder='dist/WorldMusicHub-Native'
           New-Item -ItemType Directory "$folder/licenses/engraving","$folder/evidence" -Force | Out-Null
@@ -116,6 +165,7 @@ jobs:
           Copy-Item -Recurse dist/licenses/native-rust "$folder/licenses/rust"
           Copy-Item desktop-startup/native-report.json,desktop-startup/renderer-report.json "$folder/evidence/"
           Copy-Item desktop-acceptance/native-acceptance.json,desktop-acceptance/downloaded-files.json,desktop-acceptance/renderer-*.json "$folder/evidence/"
+          Copy-Item desktop-bulk-import/native-bulk-import.json,desktop-bulk-import/native-bulk-import-files.json,desktop-bulk-import/renderer-bulk-*.json "$folder/evidence/"
           python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder
           if ($LASTEXITCODE -ne 0) { throw 'Native provenance/acceptance inventory failed' }
           $zip="dist/WorldMusicHub-Native-Windows-x64-commit-$count.zip"
@@ -147,6 +197,15 @@ jobs:
             desktop-song-folder/downloads/*
             desktop-song-folder/Scores/songs/*/*
             desktop-song-folder/Scores/backups/*/*
+            desktop-bulk-import/*.json
+            desktop-bulk-import/*.png
+            desktop-bulk-import/*.log
+            desktop-bulk-import/downloads/*
+            desktop-bulk-import/fixtures/*
+            desktop-bulk-import/Scores/songs/*/*
+            desktop-bulk-import/Scores/backups/*/*
+            desktop-bulk-import/Scores/imports/*/*
+            desktop-bulk-import/Scores/import-backups/*/*
             desktop-portable/*.json
             desktop-portable/*.png
             desktop-portable/*.log

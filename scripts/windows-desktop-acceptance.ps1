@@ -1,7 +1,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$Executable,
   [string]$OutputDirectory='desktop-acceptance',
-  [ValidateSet('desktop','song-folder')][string]$Scenario='desktop'
+  [ValidateSet('desktop','song-folder','bulk-import')][string]$Scenario='desktop'
 )
 $ErrorActionPreference='Stop'
 $Executable=(Resolve-Path $Executable).Path
@@ -11,9 +11,13 @@ New-Item -ItemType Directory $OutputDirectory | Out-Null
 $OutputDirectory=(Resolve-Path $OutputDirectory).Path
 $Fixtures=Join-Path $OutputDirectory 'fixtures'
 New-Item -ItemType Directory $Fixtures | Out-Null
-$fixtureNames=if($Scenario -eq 'song-folder'){@('folder-original.json','folder-conflict.json')}else{@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu')}
+$fixtureNames=if($Scenario -eq 'bulk-import'){@()}elseif($Scenario -eq 'song-folder'){@('folder-original.json','folder-conflict.json')}else{@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu')}
 foreach($name in $fixtureNames) {
   Copy-Item (Join-Path $Repository "tests/fixtures/$name") (Join-Path $Fixtures $name)
+}
+if($Scenario -eq 'bulk-import') {
+  & node (Join-Path $PSScriptRoot 'prepare-bulk-import-fixtures.mjs') $Fixtures
+  if($LASTEXITCODE -ne 0){throw 'Original bulk-import fixture generation failed'}
 }
 Set-Content -NoNewline -Encoding utf8 (Join-Path $Fixtures 'malformed.json') '{invalid canonical score'
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing
@@ -294,7 +298,7 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
 # renderer API. Only these newly generated fixture archives are ever inspected.
 function Save-SongFolderSnapshot([string]$Phase) {
   $root=Join-Path $OutputDirectory 'Scores';$rows=@()
-  foreach($area in @('songs','backups')) {
+  foreach($area in $(if($Scenario -eq 'bulk-import'){@('songs','backups','imports','import-backups')}else{@('songs','backups')})) {
     $directory=Join-Path $root $area
     if(-not (Test-Path -LiteralPath $directory -PathType Container)){throw 'Isolated score archive directory is missing'}
     foreach($file in (Get-ChildItem -LiteralPath $directory -Recurse -Force | Sort-Object FullName)) {
@@ -322,18 +326,20 @@ function Rotate-SongFolderProfile([string]$Phase) {
 $previousDirectory=$env:WMH_DESKTOP_SMOKE_DIR;$previousPhase=$env:WMH_DESKTOP_ACCEPTANCE_PHASE
 $env:WMH_DESKTOP_SMOKE_DIR=$OutputDirectory
 $native=[ordered]@{version=1;source_sha=(git rev-parse HEAD);source_tree=(git rev-parse 'HEAD^{tree}');executable_sha256=(Get-FileHash $Executable -Algorithm SHA256).Hash.ToLower();executable_bytes=(Get-Item $Executable).Length;os=[System.Environment]::OSVersion.VersionString;profile_reused=$true;phases=@();ok=$false}
-$app=$null;$blockedStage=$false
-$nativeReportName=if($Scenario -eq 'song-folder'){'native-song-folder.json'}else{'native-acceptance.json'}
-$phases=if($Scenario -eq 'song-folder'){@('folder-seed','folder-restart','folder-failure')}else{@('seed','restart','close-active','reopen')}
-if($Scenario -eq 'song-folder'){$native.profile_reused=$false;$native.scenario='song-folder';$native.directory=Join-Path $OutputDirectory 'Scores'}
+$app=$null;$blockedStage=$false;$blockedStagePath=$null;$preservedStagePath=$null
+$nativeReportName=if($Scenario -eq 'bulk-import'){'native-bulk-import.json'}elseif($Scenario -eq 'song-folder'){'native-song-folder.json'}else{'native-acceptance.json'}
+$phases=if($Scenario -eq 'bulk-import'){@('bulk-seed','bulk-restart','bulk-failure')}elseif($Scenario -eq 'song-folder'){@('folder-seed','folder-restart','folder-failure')}else{@('seed','restart','close-active','reopen')}
+if($Scenario -in @('song-folder','bulk-import')){$native.profile_reused=$false;$native.scenario=$Scenario;$native.directory=Join-Path $OutputDirectory 'Scores'}
 try {
   foreach($phase in $phases) {
-    if($Scenario -eq 'song-folder') {
+    if($Scenario -in @('song-folder','bulk-import')) {
       Rotate-SongFolderProfile $phase
-      if($phase -eq 'folder-failure') {
-        $stage=Join-Path $OutputDirectory 'Scores/.staging'
+      if($phase -in @('folder-failure','bulk-failure')) {
+        $stageName=if($phase -eq 'bulk-failure'){'.import-staging'}else{'.staging'}
+        $stage=Join-Path $OutputDirectory "Scores/$stageName"
+        $blockedStagePath=$stage;$preservedStagePath=Join-Path $OutputDirectory "Scores/$stageName-preserved"
         if(-not (Test-Path -LiteralPath $stage -PathType Container) -or @(Get-ChildItem -LiteralPath $stage -Force).Count -ne 0){throw 'Failure injection requires our empty isolated staging directory'}
-        Move-Item -LiteralPath $stage -Destination (Join-Path $OutputDirectory 'Scores/.staging-preserved')
+        Move-Item -LiteralPath $stage -Destination $preservedStagePath
         $blockedStage=$true;[IO.File]::WriteAllText($stage,'Isolated acceptance write blocker')
       }
     }
@@ -349,7 +355,7 @@ try {
         $action=Get-Content -Raw $actionFile | ConvertFrom-Json
         if($action.sequence -ne $sequence -or $sequence -gt 64){throw 'Out-of-order or over-limit native action'}
         $result=@{ok=$false}
-        try{Native-Action $app $action $result;$result.ok=$true}catch{$result.error=$_.Exception.Message}
+        try{Native-Action $app $action $result;if($Scenario -eq 'bulk-import'){Capture-Window $app "native-action-$phase-$sequence"};$result.ok=$true}catch{$result.error=$_.Exception.Message}
         Save-Json $result (Join-Path $OutputDirectory "result-$phase-$sequence.json")
         # A native modal can suspend the renderer, including its result poll.
         # Fail here after preserving the real action error instead of waiting
@@ -364,7 +370,7 @@ try {
     # One existing EXE-owned listener sample, not a network/security audit.
     $listeners=@(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object OwningProcess -eq $app.Id)
     $item=[ordered]@{phase=$phase;process_id=$app.Id;renderer_ok=$report.ok;renderer_origin=$report.origin;actions=$sequence-1;elapsed_seconds=([DateTime]::UtcNow-$phaseStart).TotalSeconds;executable_tcp_listeners=$listeners.Count;normal_close=$false}
-    if($Scenario -eq 'song-folder'){$item.launched_new_process=$true;$item.profile_fresh=$true;$item.profile_reused=$false}
+    if($Scenario -in @('song-folder','bulk-import')){$item.launched_new_process=$true;$item.profile_fresh=$true;$item.profile_reused=$false}
     $native.phases+=,$item;Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
     if(-not $report.ok){throw "Native $phase failed: $($report.error)"}
     if($report.origin -ne 'https://wmh.localhost'){throw 'Origin/profile continuity changed'}
@@ -374,13 +380,14 @@ try {
     if($app.ExitCode -ne 0){throw "Normal close failed during $phase : $($app.ExitCode)"}
     $item.normal_close=$true;$item.close_seconds=([DateTime]::UtcNow-$closeStart).TotalSeconds
     Save-Json $native (Join-Path $OutputDirectory $nativeReportName);$app=$null
-    if($Scenario -eq 'song-folder'){Save-SongFolderSnapshot $phase}
+    if($Scenario -in @('song-folder','bulk-import')){Save-SongFolderSnapshot $phase}
   }
-  if($Scenario -eq 'song-folder') {
+  if($Scenario -in @('song-folder','bulk-import')) {
     # Restore only the test-owned blocker; no user folder or permissions change.
-    if($blockedStage){Remove-Item -LiteralPath (Join-Path $OutputDirectory 'Scores/.staging');Move-Item -LiteralPath (Join-Path $OutputDirectory 'Scores/.staging-preserved') -Destination (Join-Path $OutputDirectory 'Scores/.staging');$blockedStage=$false}
+    if($blockedStage){Remove-Item -LiteralPath $blockedStagePath;Move-Item -LiteralPath $preservedStagePath -Destination $blockedStagePath;$blockedStage=$false}
     $native.ok=$true;Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
-    & node (Join-Path $PSScriptRoot 'verify-native-song-folder-evidence.mjs') $OutputDirectory
+    $verifier=if($Scenario -eq 'bulk-import'){'verify-native-bulk-import-evidence.mjs'}else{'verify-native-song-folder-evidence.mjs'}
+    & node (Join-Path $PSScriptRoot $verifier) $OutputDirectory
     if($LASTEXITCODE -ne 0){throw 'Native song-folder disk/backup/profile verification failed'}
     Write-Output 'Native disk archives, clean-profile restart, saved selection/audition, navigation and isolated failed save gates passed.'
   } else {
@@ -398,9 +405,9 @@ try {
 } finally {
   if($null -ne $app -and -not $app.HasExited){Stop-Process -Id $app.Id}
   if($blockedStage) {
-    $stage=Join-Path $OutputDirectory 'Scores/.staging'
+    $stage=$blockedStagePath
     if(Test-Path -LiteralPath $stage -PathType Leaf){Remove-Item -LiteralPath $stage}
-    if(-not (Test-Path -LiteralPath $stage)){Move-Item -LiteralPath (Join-Path $OutputDirectory 'Scores/.staging-preserved') -Destination $stage}
+    if(-not (Test-Path -LiteralPath $stage)){Move-Item -LiteralPath $preservedStagePath -Destination $stage}
   }
   $env:WMH_DESKTOP_SMOKE_DIR=$previousDirectory;$env:WMH_DESKTOP_ACCEPTANCE_PHASE=$previousPhase
 }

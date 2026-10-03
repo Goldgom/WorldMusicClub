@@ -17,6 +17,7 @@ export default Object.freeze({
   "ui.open-json-musicxml-or-midi-locally": plain,
   "ui.source-directory-button": plain,
   "ui.import-button": plain,
+  "ui.bulk-import-history-button": plain,
   "ui.image-import-button": plain,
   "ui.jianpu-editor-button": plain,
   "ui.appearance": plain,

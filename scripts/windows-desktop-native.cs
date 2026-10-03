@@ -137,10 +137,16 @@ public static class NativeAcceptance {
     return value.ToString();
   }
   public static string ResolveFixturePath(string fixtures,string output,string name) {
+    if(name=="bulk-multiple") {
+      string first=ResolveFixturePath(fixtures,output,"bulk-standard-a.json"),second=ResolveFixturePath(fixtures,output,"bulk-standard-b.json");
+      return "\""+first+"\" \""+second+"\"";
+    }
     string directory;
-    if(Array.IndexOf(new[]{"original-duet.musicxml","original-duet.mxl","midi-original-ppq.mid","original-reference-overlap.mid","jianpu-original-steps.jianpu","malformed.json","folder-original.json","folder-conflict.json"},name)>=0)
+    if(Array.IndexOf(new[]{"original-duet.musicxml","original-duet.mxl","midi-original-ppq.mid","original-reference-overlap.mid","jianpu-original-steps.jianpu","malformed.json","folder-original.json","folder-conflict.json","原创曲包_日本語.zip","bulk-conflict.zip","bulk-backup.json","bulk-failure.zip","bulk-malformed.zip","bulk-standard-a.json","bulk-standard-b.json"},name)>=0)
       directory=fixtures;
     else if(name!=null && Regex.IsMatch(name,@"\A(seed|restart|close-active|reopen)-(?:[1-9]|1[0-6])\.json\z",RegexOptions.CultureInvariant))
+      directory=Path.Combine(output,"downloads");
+    else if(name!=null && Regex.IsMatch(name,@"\A(bulk-seed|bulk-restart|bulk-failure)-(?:[1-9]|1[0-6])\.(zip|json)\z",RegexOptions.CultureInvariant))
       directory=Path.Combine(output,"downloads");
     else throw new InvalidOperationException("File is outside the finite acceptance fixture list");
     string path=Path.GetFullPath(Path.Combine(directory,name));

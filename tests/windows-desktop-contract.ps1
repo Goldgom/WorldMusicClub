@@ -172,10 +172,18 @@ $temporary=Join-Path ([System.IO.Path]::GetTempPath()) ('wmh picker 拼谱 '+[gu
 try {
   $fixtures=Join-Path $temporary 'fixtures';$downloads=Join-Path $temporary 'downloads'
   New-Item -ItemType Directory $fixtures,$downloads | Out-Null
-  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu','malformed.json','folder-original.json','folder-conflict.json')
+  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu','malformed.json','folder-original.json','folder-conflict.json','原创曲包_日本語.zip','bulk-conflict.zip','bulk-backup.json','bulk-failure.zip','bulk-malformed.zip','bulk-standard-a.json','bulk-standard-b.json')
   foreach($name in $fixed) {
     $expected=Join-Path $fixtures $name;[System.IO.File]::WriteAllText($expected,'fixture')
     Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) -ceq $expected) "fixed path $name"
+  }
+  $multiple=[NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,'bulk-multiple')
+  Assert-True ($multiple -ceq ('"'+(Join-Path $fixtures 'bulk-standard-a.json')+'" "'+(Join-Path $fixtures 'bulk-standard-b.json')+'"')) 'Finite native multi-file selection'
+  foreach($phase in @('bulk-seed','bulk-restart','bulk-failure')) {
+    foreach($sequence in 1..16) {
+      $name="$phase-$sequence.zip";$expected=Join-Path $downloads $name;[System.IO.File]::WriteAllText($expected,'authored ZIP fixture')
+      Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) -ceq $expected) "bulk download $name"
+    }
   }
   foreach($phase in @('seed','restart','close-active','reopen')) {
     foreach($sequence in 1..16) {
@@ -184,7 +192,7 @@ try {
       Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) -ceq $expected) "download path $name"
     }
   }
-  foreach($name in @('../folder-original.json','folder-original.json.extra','folder-restart-1.json','../original-duet.mxl','../original-reference-overlap.mid','original-reference-overlap.mid.extra','fixtures/original-duet.mxl','C:\Windows\win.ini','seed-0.json','seed-17.json','seed-01.json','Seed-1.json','other-1.json','seed-1.json.extra',"seed-1.json`n",'',"original-duet.mxl`0")) {
+  foreach($name in @('bulk-seed-17.zip','bulk-restart-0.zip','bulk-any-1.zip','../bulk-conflict.zip','bulk-multiple.extra','bulk-standard-a.json.extra','../folder-original.json','folder-original.json.extra','folder-restart-1.json','../original-duet.mxl','../original-reference-overlap.mid','original-reference-overlap.mid.extra','fixtures/original-duet.mxl','C:\Windows\win.ini','seed-0.json','seed-17.json','seed-01.json','Seed-1.json','other-1.json','seed-1.json.extra',"seed-1.json`n",'',"original-duet.mxl`0")) {
     Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) } "unapproved name $name"
   }
   [System.IO.File]::Delete((Join-Path $fixtures 'malformed.json'))

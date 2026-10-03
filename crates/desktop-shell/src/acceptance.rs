@@ -10,6 +10,7 @@ use std::{
 
 pub const PHASES: [&str; 4] = ["seed", "restart", "close-active", "reopen"];
 pub const FOLDER_PHASES: [&str; 3] = ["folder-seed", "folder-restart", "folder-failure"];
+pub const BULK_PHASES: [&str; 3] = ["bulk-seed", "bulk-restart", "bulk-failure"];
 pub struct Acceptance {
     directory: PathBuf,
     pub phase: &'static str,
@@ -22,6 +23,7 @@ impl Acceptance {
         let phase = PHASES
             .into_iter()
             .chain(FOLDER_PHASES)
+            .chain(BULK_PHASES)
             .find(|candidate| *candidate == phase)
             .ok_or("Unknown acceptance phase")?;
         std::fs::create_dir_all(directory.join("downloads"))
@@ -40,7 +42,9 @@ impl Acceptance {
             serde_json::to_string(self.phase).unwrap(),
             include_str!("../acceptance-wait.js"),
             include_str!("../reference-acceptance.js"),
-            if FOLDER_PHASES.contains(&self.phase) {
+            if BULK_PHASES.contains(&self.phase) {
+                include_str!("../bulk-import-acceptance.js")
+            } else if FOLDER_PHASES.contains(&self.phase) {
                 include_str!("../song-folder-acceptance.js")
             } else {
                 include_str!("../acceptance.js")
@@ -85,7 +89,13 @@ impl Acceptance {
         if rows.len() >= 16 {
             return None;
         }
-        let file = format!("{}-{}.json", self.phase, rows.len() + 1);
+        let extension =
+            if BULK_PHASES.contains(&self.phase) && name.to_lowercase().ends_with(".zip") {
+                "zip"
+            } else {
+                "json"
+            };
+        let file = format!("{}-{}.{extension}", self.phase, rows.len() + 1);
         rows.push(json!({"file":file,"suggested_name":name.chars().take(160).collect::<String>(),"complete":false,"success":false}));
         Some(self.directory.join("downloads").join(file))
     }
@@ -262,6 +272,14 @@ fn valid_action(value: &Value) -> bool {
             "malformed.json",
             "folder-original.json",
             "folder-conflict.json",
+            "原创曲包_日本語.zip",
+            "bulk-conflict.zip",
+            "bulk-backup.json",
+            "bulk-failure.zip",
+            "bulk-malformed.zip",
+            "bulk-multiple",
+            "bulk-standard-a.json",
+            "bulk-standard-b.json",
         ]
         .contains(&file);
         let download = PHASES.iter().any(|phase| {
@@ -270,7 +288,13 @@ fn valid_action(value: &Value) -> bool {
                 .and_then(|n| n.parse::<u8>().ok())
                 .is_some_and(|n| (1..=16).contains(&n))
         });
-        if !fixture && !download {
+        let bulk_download = BULK_PHASES.iter().any(|phase| {
+            file.strip_prefix(&format!("{phase}-"))
+                .and_then(|n| n.strip_suffix(".json").or_else(|| n.strip_suffix(".zip")))
+                .and_then(|n| n.parse::<u8>().ok())
+                .is_some_and(|n| (1..=16).contains(&n))
+        });
+        if !fixture && !download && !bulk_download {
             return false;
         }
     } else if object.contains_key("file") {
@@ -281,6 +305,49 @@ fn valid_action(value: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bulk_phases_keep_zip_downloads_and_finite_picker_actions() {
+        let evidence = Evidence::new();
+        for phase in BULK_PHASES {
+            let acceptance = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert!(acceptance
+                .script()
+                .contains("Native bulk control unavailable"));
+            assert!(acceptance
+                .download("original.zip")
+                .unwrap()
+                .ends_with(format!("{phase}-1.zip")));
+            assert!(acceptance
+                .download("backup.json")
+                .unwrap()
+                .ends_with(format!("{phase}-2.json")));
+        }
+        for file in [
+            "原创曲包_日本語.zip",
+            "bulk-multiple",
+            "bulk-seed-1.zip",
+            "bulk-restart-16.json",
+        ] {
+            assert!(valid_action(
+                &json!({"version":1,"sequence":1,"kind":"picker","x":1,"y":1,"width":900,"height":640,"file":file})
+            ));
+        }
+        for file in [
+            "bulk-seed-17.zip",
+            "bulk-anything-1.zip",
+            "../bulk-conflict.zip",
+        ] {
+            assert!(!valid_action(
+                &json!({"version":1,"sequence":1,"kind":"picker","x":1,"y":1,"width":900,"height":640,"file":file})
+            ));
+        }
+        assert!(Acceptance::new(evidence.0.clone(), "bulk-anything").is_err());
+        assert!(!crate::song_pack::is_large_operation("/api/compile"));
+        assert!(crate::song_pack::is_large_operation(
+            "/api/library/import/commit"
+        ));
+    }
     struct Evidence(PathBuf);
     impl Evidence {
         fn new() -> Self {

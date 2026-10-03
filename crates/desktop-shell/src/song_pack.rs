@@ -1,0 +1,1059 @@
+//! Versioned song containers around the existing canonical Score. Pack contents
+//! are data only. ZIP paths are never used as filesystem paths.
+use crate::native_library::{
+    self, checked_score, digest, fail, Entry, LibraryError, NativeLibrary, SaveRequest,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::{
+    collections::{BTreeMap, HashSet},
+    io::{Cursor, Read, Write},
+};
+use zip::ZipArchive;
+
+#[path = "song_pack_storage.rs"]
+mod storage;
+#[path = "song_pack_zip.rs"]
+mod zip_guard;
+
+pub const MAX_PACK_BYTES: usize = 128 * 1024 * 1024;
+pub const MAX_BACKUP_BYTES: usize = 40 * 1024 * 1024;
+pub const MAX_ENTRY_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_EXPANDED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+pub const MAX_ZIP_ENTRIES: usize = 4096;
+pub const MAX_SONGS: usize = 1024;
+const MAX_METADATA_BYTES: usize = 256 * 1024;
+type Result<T> = std::result::Result<T, LibraryError>;
+fn invalid(message: impl Into<String>) -> LibraryError {
+    fail(400, "pack_invalid", message)
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FileInventory {
+    pub path: String,
+    pub bytes: u64,
+    pub sha256: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Inventory {
+    pub files: Vec<FileInventory>,
+    pub expanded_bytes: u64,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Source {
+    pub filename: String,
+    pub sha256: String,
+    pub bytes: usize,
+    pub retained: bool,
+    pub archive_key: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Item {
+    pub index: usize,
+    pub path: String,
+    pub title: String,
+    pub status: String,
+    pub code: String,
+    pub message: String,
+    pub playable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entry: Option<Entry>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Report {
+    pub format: String,
+    pub version: u32,
+    pub mode: String,
+    pub source: Source,
+    pub items: Vec<Item>,
+    pub summary: BTreeMap<String, usize>,
+    pub inventory: Inventory,
+    pub warnings: Vec<String>,
+}
+struct Candidate {
+    path: String,
+    title: String,
+    label: Option<String>,
+    score: std::result::Result<String, String>,
+    explicit_only: bool,
+}
+struct Plan {
+    report: Report,
+    candidates: Vec<Candidate>,
+}
+
+pub fn is_import_route(path: &str) -> bool {
+    matches!(
+        path,
+        "/api/library/import/preview"
+            | "/api/library/import/commit"
+            | "/api/library/imports"
+            | "/api/library/import/export"
+            | "/api/library/import/report"
+            | "/api/library/pack/export"
+    )
+}
+pub fn is_large_operation(path: &str) -> bool {
+    matches!(
+        path,
+        "/api/library/import/preview"
+            | "/api/library/import/commit"
+            | "/api/library/import/export"
+            | "/api/library/pack/export"
+    )
+}
+pub fn valid_history_query(uri: &http::Uri) -> bool {
+    uri.path() == "/api/library/imports"
+        && uri.query().is_some_and(|q| {
+            q.strip_prefix("cursor=").is_some_and(|c| {
+                !c.is_empty()
+                    && c.len() <= 3
+                    && c.bytes().all(|b| b.is_ascii_digit())
+                    && c.parse::<usize>().is_ok_and(|n| n <= 128)
+            })
+        })
+}
+pub fn request_limit(path: &str) -> usize {
+    if matches!(
+        path,
+        "/api/library/import/preview" | "/api/library/import/commit"
+    ) {
+        MAX_PACK_BYTES
+    } else {
+        crate::MAX_BODY
+    }
+}
+
+fn read_zip(archive: &mut ZipArchive<Cursor<&[u8]>>, path: &str, limit: usize) -> Result<Vec<u8>> {
+    let file = archive
+        .by_name(path)
+        .map_err(|e| invalid(format!("Cannot read {path}: {e}")))?;
+    let size = file.size();
+    if size > limit as u64 {
+        return Err(fail(
+            413,
+            "pack_entry_limit",
+            format!("{path} exceeds its {limit}-byte parsing limit; original retained on commit"),
+        ));
+    }
+    let mut bytes = Vec::new();
+    file.take(limit as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| invalid(format!("Corrupt ZIP entry {path}: {e}")))?;
+    if bytes.len() as u64 != size || bytes.len() > limit {
+        return Err(invalid("ZIP expanded size does not match its inventory"));
+    }
+    Ok(bytes)
+}
+fn inventory_zip(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Result<Inventory> {
+    let mut files = Vec::new();
+    let mut expanded_bytes = 0;
+    // Hash and CRC-check every entry with a fixed-size buffer before a write.
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).map_err(|e| invalid(e.to_string()))?;
+        if file.is_dir() {
+            continue;
+        }
+        let path = file.name().to_owned();
+        let declared = file.size();
+        let mut hasher = Sha256::new();
+        let mut count = 0u64;
+        let mut buf = [0u8; 65536];
+        loop {
+            let n = file
+                .read(&mut buf)
+                .map_err(|e| invalid(format!("Corrupt ZIP entry {path}: {e}")))?;
+            if n == 0 {
+                break;
+            }
+            count += n as u64;
+            if count > declared || count > MAX_ENTRY_BYTES as u64 {
+                return Err(invalid("ZIP expansion exceeds declared size"));
+            }
+            hasher.update(&buf[..n]);
+        }
+        if count != declared {
+            return Err(invalid("ZIP expanded size mismatch"));
+        }
+        expanded_bytes += count;
+        if expanded_bytes > MAX_EXPANDED_BYTES {
+            return Err(invalid("Actual ZIP expansion exceeds 2 GiB"));
+        }
+        zip_guard::safe_path(&path, false).map_err(invalid)?;
+        files.push(FileInventory {
+            path,
+            bytes: count,
+            sha256: format!("{:x}", hasher.finalize()),
+        });
+    }
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    let names: HashSet<&str> = files.iter().map(|f| f.path.as_str()).collect();
+    for file in &files {
+        for (at, b) in file.path.bytes().enumerate() {
+            if b == b'/' && names.contains(&file.path[..at]) {
+                return Err(invalid("ZIP file/directory path collision"));
+            }
+        }
+    }
+    Ok(Inventory {
+        files,
+        expanded_bytes,
+    })
+}
+fn canonical(bytes: &[u8]) -> std::result::Result<String, String> {
+    let raw = std::str::from_utf8(bytes).map_err(|_| "Canonical JSON must be UTF-8")?;
+    checked_score(raw).map_err(|e| e.error)?;
+    Ok(raw.to_owned())
+}
+fn standard(path: &str, bytes: &[u8]) -> std::result::Result<String, String> {
+    if bytes.len() > native_library::MAX_SCORE_BYTES {
+        return Err("Source exceeds the unchanged 8 MiB score/import limit".into());
+    }
+    let lower = path.to_lowercase();
+    if lower.ends_with(".json") {
+        return canonical(bytes);
+    }
+    let result =
+        if bytes.starts_with(b"MThd") || lower.ends_with(".mid") || lower.ends_with(".midi") {
+            score_core::import_midi(bytes)
+        } else if lower.ends_with(".mxl") || bytes.starts_with(b"PK\x03\x04") {
+            score_core::import_mxl(bytes)
+        } else {
+            let text = std::str::from_utf8(bytes).map_err(|_| "Text score must be UTF-8")?;
+            if lower.ends_with(".xml")
+                || lower.ends_with(".musicxml")
+                || text.trim_start().starts_with('<')
+            {
+                score_core::import_musicxml(text)
+            } else {
+                score_core::import_jianpu(text)
+            }
+        };
+    let (score, _) = result?;
+    let raw = serde_json::to_string(&score).map_err(|e| e.to_string())?;
+    checked_score(&raw).map_err(|e| e.error)?;
+    Ok(raw)
+}
+fn candidate(
+    path: String,
+    title: String,
+    label: Option<String>,
+    score: std::result::Result<String, String>,
+) -> Candidate {
+    Candidate {
+        path,
+        title,
+        label,
+        score,
+        explicit_only: false,
+    }
+}
+fn json_candidates(path: &str, bytes: &[u8]) -> Result<Vec<Candidate>> {
+    let v: Value = serde_json::from_slice(bytes).map_err(|e| invalid(e.to_string()))?;
+    match v.get("format").and_then(Value::as_str) {
+        Some("worldmusichub-library-backup") => {
+            if v["version"] != 1 {
+                return Err(invalid("Unsupported library backup version"));
+            }
+            let entries = v["entries"]
+                .as_array()
+                .ok_or_else(|| invalid("Backup entries must be an array"))?;
+            if entries.len() > MAX_SONGS {
+                return Err(fail(
+                    413,
+                    "pack_song_limit",
+                    "Backup exceeds 1024 song entries",
+                ));
+            }
+            Ok(entries
+                .iter()
+                .enumerate()
+                .map(|(i, e)| {
+                    let score = serde_json::to_vec(&e["score"])
+                        .map_err(|e| e.to_string())
+                        .and_then(|b| canonical(&b));
+                    candidate(
+                        format!("{path}#entries/{i}"),
+                        e["score"]["title"].as_str().unwrap_or(path).into(),
+                        e["label"].as_str().map(str::to_owned),
+                        score,
+                    )
+                })
+                .collect())
+        }
+        Some("worldmusichub-native-score-backup") => {
+            if v["version"] != 1 {
+                return Err(invalid("Unsupported native score backup version"));
+            }
+            Ok(vec![candidate(
+                path.into(),
+                path.into(),
+                v["entry"]["label"].as_str().map(str::to_owned),
+                v["score_json"]
+                    .as_str()
+                    .ok_or_else(|| "Native backup score_json is missing".into())
+                    .and_then(|s| canonical(s.as_bytes())),
+            )])
+        }
+        _ => Ok(vec![candidate(
+            path.into(),
+            path.into(),
+            None,
+            canonical(bytes),
+        )]),
+    }
+}
+fn resolve(folder: &str, relative: &str) -> Result<String> {
+    zip_guard::safe_path(relative, false).map_err(invalid)?;
+    Ok(if folder.is_empty() {
+        relative.into()
+    } else {
+        format!("{folder}/{relative}")
+    })
+}
+fn metadata_candidate(
+    archive: &mut ZipArchive<Cursor<&[u8]>>,
+    inventory: &Inventory,
+    path: &str,
+    metadata: &Value,
+) -> Candidate {
+    let folder = path.rsplit_once('/').map(|x| x.0).unwrap_or("");
+    let title = metadata["title"].as_str().unwrap_or(folder).to_owned();
+    let score = (|| -> Result<String> {
+        if metadata["version"] != 1 {
+            return Err(invalid("Unsupported song metadata version"));
+        }
+        let unified = metadata["format"] == "worldmusichub-song";
+        let descriptors = if unified {
+            metadata.get("sources")
+        } else {
+            metadata.get("source_files")
+        };
+        if let Some(sources) = descriptors {
+            let sources = sources
+                .as_array()
+                .ok_or_else(|| invalid("Song sources must be an array"))?;
+            for source in sources {
+                let target = resolve(
+                    folder,
+                    source["path"]
+                        .as_str()
+                        .ok_or_else(|| invalid("Source path is missing"))?,
+                )?;
+                let actual = inventory
+                    .files
+                    .iter()
+                    .find(|f| f.path == target)
+                    .ok_or_else(|| invalid(format!("Missing retained source {target}")))?;
+                if source
+                    .get("bytes")
+                    .is_some_and(|v| v.as_u64() != Some(actual.bytes))
+                    || source
+                        .get("sha256")
+                        .is_some_and(|v| v.as_str() != Some(actual.sha256.as_str()))
+                {
+                    return Err(invalid(format!(
+                        "Retained source checksum/size mismatch: {target}"
+                    )));
+                }
+            }
+        }
+        if unified {
+            if let Some(media) = metadata.get("media") {
+                let media = media
+                    .as_object()
+                    .ok_or_else(|| invalid("Media must be an object of relative paths"))?;
+                for (role, value) in media {
+                    if !matches!(role.as_str(), "cover" | "background" | "pv" | "audio") {
+                        return Err(invalid("Unsupported media role"));
+                    }
+                    if value.is_null() {
+                        continue;
+                    }
+                    let target = resolve(
+                        folder,
+                        value
+                            .as_str()
+                            .ok_or_else(|| invalid("Media path must be a string"))?,
+                    )?;
+                    if !inventory.files.iter().any(|f| f.path == target) {
+                        return Err(invalid(format!("Missing optional media {target}")));
+                    }
+                }
+            }
+        }
+        let score_path = if unified {
+            metadata.get("score").and_then(Value::as_str)
+        } else {
+            metadata["imports"]["canonical_score"].as_str()
+        };
+        if let Some(relative) = score_path {
+            let target = resolve(folder, relative)?;
+            return canonical(&read_zip(
+                archive,
+                &target,
+                native_library::MAX_SCORE_BYTES,
+            )?)
+            .map_err(invalid);
+        }
+        // Legacy delivered source folders explicitly distinguish source-only
+        // songs. Never reinterpret their events JSON as a canonical score.
+        Err(fail(
+            422,
+            "pack_source_only",
+            metadata["imports"]["canonical_error"]
+                .as_str()
+                .unwrap_or("Original source retained; no validated canonical score is supplied"),
+        ))
+    })()
+    .map_err(|e| e.error);
+    candidate(
+        path.into(),
+        title,
+        metadata["label"].as_str().map(str::to_owned),
+        score,
+    )
+}
+
+fn check_candidates(candidates: &[Candidate]) -> Result<()> {
+    if candidates.len() > MAX_SONGS
+        || candidates
+            .iter()
+            .filter_map(|c| c.score.as_ref().ok())
+            .map(String::len)
+            .sum::<usize>()
+            > MAX_PACK_BYTES
+    {
+        return Err(fail(413,"pack_song_limit","A pack is bounded to 1024 song entries and 128 MiB of parsed canonical JSON; split the pack without discarding sources"));
+    }
+    Ok(())
+}
+
+fn plan(filename: &str, bytes: &[u8]) -> Result<Plan> {
+    if bytes.len() > MAX_PACK_BYTES {
+        return Err(fail(
+            413,
+            "pack_request_limit",
+            "Pack exceeds 128 MiB compressed limit",
+        ));
+    }
+    let sha256 = digest(bytes);
+    let mut warnings = Vec::new();
+    let (inventory, candidates) = if bytes.starts_with(b"PK") {
+        let expected_entries = zip_guard::preflight(bytes).map_err(invalid)?;
+        let mut archive =
+            ZipArchive::new(Cursor::new(bytes)).map_err(|e| invalid(e.to_string()))?;
+        if archive.len() != expected_entries {
+            return Err(invalid("Parsed ZIP entry count differs from preflight; ambiguous transformed names are forbidden"));
+        }
+        let inventory = inventory_zip(&mut archive)?;
+        let mxl = inventory
+            .files
+            .iter()
+            .any(|f| f.path == "META-INF/container.xml");
+        let mut metadata = Vec::new();
+        let mut pack_manifest = None;
+        let mut metadata_failures = Vec::new();
+        let mut invalid_manifest = false;
+        let mut metadata_bytes = 0u64;
+        let mut metadata_count = 0usize;
+        for f in &inventory.files {
+            let is_metadata = f.path.ends_with("/metadata.json") || f.path == "metadata.json";
+            let is_manifest = f.path.ends_with("/manifest.json") || f.path == "manifest.json";
+            if !is_metadata && !is_manifest {
+                continue;
+            }
+            metadata_bytes = metadata_bytes.saturating_add(f.bytes);
+            metadata_count += 1;
+            if metadata_bytes > 8 * 1024 * 1024 || metadata_count > MAX_SONGS + 1 {
+                return Err(fail(
+                    413,
+                    "pack_metadata_limit",
+                    "Song metadata is bounded to 8 MiB aggregate and 1025 descriptors",
+                ));
+            }
+            let parsed = read_zip(&mut archive, &f.path, MAX_METADATA_BYTES).and_then(|data| {
+                serde_json::from_slice::<Value>(&data).map_err(|e| invalid(e.to_string()))
+            });
+            match parsed {
+                Ok(value)
+                    if is_metadata
+                        && matches!(
+                            value["format"].as_str(),
+                            Some("worldmusichub-song" | "private-complete-midi-source-folder")
+                        ) =>
+                {
+                    metadata.push((f.path.clone(), value))
+                }
+                Ok(value) if is_manifest && value["format"] == "worldmusichub-song-pack" => {
+                    if pack_manifest.is_some() {
+                        return Err(invalid("Multiple pack manifests are ambiguous"));
+                    }
+                    if value["version"] != 1 {
+                        invalid_manifest = true;
+                        metadata_failures.push(candidate(f.path.clone(),f.path.clone(),None,Err("Unsupported song-pack version; original retained without interpreting future semantics".into())));
+                    } else {
+                        pack_manifest = Some((f.path.clone(), value));
+                    }
+                }
+                Ok(value)
+                    if is_manifest && value["format"] == "private-complete-midi-collection" => {}
+                result => {
+                    if is_manifest {
+                        invalid_manifest = true;
+                    }
+                    let message = result
+                        .err()
+                        .map(|e| e.error)
+                        .unwrap_or_else(|| "Unsupported song metadata format".into());
+                    metadata_failures.push(candidate(
+                        f.path.clone(),
+                        f.path.clone(),
+                        None,
+                        Err(message),
+                    ));
+                }
+            }
+        }
+        if invalid_manifest {
+            metadata.clear();
+            pack_manifest = None;
+        }
+        if mxl && (!metadata.is_empty() || pack_manifest.is_some() || !metadata_failures.is_empty())
+        {
+            return Err(invalid(
+                "Mixed MXL and song-pack schemas are ambiguous; separate these containers",
+            ));
+        }
+        let mut candidates = metadata_failures;
+        if mxl {
+            candidates.push(candidate(
+                filename.into(),
+                filename.into(),
+                None,
+                standard("score.mxl", bytes),
+            ));
+        } else if !metadata.is_empty() || pack_manifest.is_some() || !candidates.is_empty() {
+            if let Some((path, manifest)) = pack_manifest {
+                if manifest["version"] != 1 {
+                    return Err(invalid("Unsupported song-pack version"));
+                }
+                let folders = manifest["songs"]
+                    .as_array()
+                    .ok_or_else(|| invalid("Pack songs must be an array of folder descriptors"))?;
+                let prefix = path.rsplit_once('/').map(|p| p.0).unwrap_or("");
+                let mut wanted = HashSet::new();
+                for folder in folders {
+                    let target = resolve(
+                        prefix,
+                        folder["folder"]
+                            .as_str()
+                            .ok_or_else(|| invalid("Pack song folder missing"))?,
+                    )?;
+                    if !wanted.insert(format!("{target}/metadata.json")) {
+                        return Err(invalid("Pack repeats a song folder"));
+                    }
+                }
+                for target in &wanted {
+                    if !metadata.iter().any(|(p, _)| p == target) {
+                        candidates.push(candidate(
+                            target.clone(),
+                            target.clone(),
+                            None,
+                            Err(
+                                "Declared song metadata missing or unsupported; original retained"
+                                    .into(),
+                            ),
+                        ));
+                    }
+                }
+                metadata.retain(|(p, _)| wanted.contains(p));
+            }
+            for (path, value) in metadata {
+                candidates.push(metadata_candidate(&mut archive, &inventory, &path, &value));
+                check_candidates(&candidates)?;
+            }
+        } else {
+            // Legacy ZIPs can repeat canonical songs in a backup. Keep each
+            // candidate visible; commit reports exact duplicates explicitly.
+            let canonical_stems: HashSet<String> = inventory
+                .files
+                .iter()
+                .filter_map(|f| {
+                    f.path
+                        .to_lowercase()
+                        .strip_suffix(".wmhscore.json")
+                        .map(str::to_owned)
+                })
+                .collect();
+            for f in &inventory.files {
+                let lower = f.path.to_lowercase();
+                let canonical_path = lower.ends_with(".wmhscore.json")
+                    || lower.ends_with("/score.json")
+                    || lower == "score.json";
+                if canonical_path {
+                    let score = read_zip(&mut archive, &f.path, native_library::MAX_SCORE_BYTES)
+                        .map_err(|e| e.error)
+                        .and_then(|b| canonical(&b));
+                    candidates.push(candidate(f.path.clone(), f.path.clone(), None, score));
+                } else if lower.ends_with(".json") && f.bytes <= MAX_BACKUP_BYTES as u64 {
+                    let data = read_zip(&mut archive, &f.path, MAX_BACKUP_BYTES)?;
+                    if let Ok(value) = serde_json::from_slice::<Value>(&data) {
+                        if matches!(
+                            value["format"].as_str(),
+                            Some(
+                                "worldmusichub-library-backup"
+                                    | "worldmusichub-native-score-backup"
+                            )
+                        ) || value.get("parts").is_some()
+                        {
+                            match json_candidates(&f.path, &data) {
+                                Ok(items) => candidates.extend(items),
+                                Err(e) => candidates.push(candidate(
+                                    f.path.clone(),
+                                    f.path.clone(),
+                                    None,
+                                    Err(e.error),
+                                )),
+                            }
+                        }
+                    }
+                } else if [".mid", ".midi", ".musicxml", ".xml", ".mxl", ".jianpu"]
+                    .iter()
+                    .any(|ext| lower.ends_with(ext))
+                {
+                    let score = read_zip(&mut archive, &f.path, native_library::MAX_SCORE_BYTES)
+                        .map_err(|e| e.error)
+                        .and_then(|b| standard(&f.path, &b));
+                    let mut alternate = candidate(f.path.clone(), f.path.clone(), None, score);
+                    alternate.explicit_only = lower
+                        .rsplit_once('.')
+                        .is_some_and(|(stem, _)| canonical_stems.contains(stem));
+                    candidates.push(alternate);
+                }
+                check_candidates(&candidates)?;
+            }
+        }
+        if candidates.is_empty() {
+            candidates.push(candidate(filename.into(),filename.into(),None,Err("No canonical score or supported source was recognized; every file is retained in the original archive".into())));
+        }
+        warnings.push("Original archive files and optional media are preserved as inert data. Nested ZIPs and raw event JSON are not executed or treated as scores.".into());
+        (inventory, candidates)
+    } else {
+        if bytes.len() > MAX_BACKUP_BYTES {
+            return Err(fail(
+                413,
+                "pack_request_limit",
+                "Non-ZIP input exceeds 40 MiB backup limit",
+            ));
+        }
+        let candidates =
+            if filename.to_lowercase().ends_with(".json") || bytes.first() == Some(&b'{') {
+                json_candidates(filename, bytes).unwrap_or_else(|e| {
+                    vec![candidate(
+                        filename.into(),
+                        filename.into(),
+                        None,
+                        Err(e.error),
+                    )]
+                })
+            } else {
+                vec![candidate(
+                    filename.into(),
+                    filename.into(),
+                    None,
+                    standard(filename, bytes),
+                )]
+            };
+        (
+            Inventory {
+                files: vec![FileInventory {
+                    path: filename.into(),
+                    bytes: bytes.len() as u64,
+                    sha256: sha256.clone(),
+                }],
+                expanded_bytes: bytes.len() as u64,
+            },
+            candidates,
+        )
+    };
+    if candidates.len() > MAX_SONGS {
+        return Err(fail(
+            413,
+            "pack_song_limit",
+            "Song pack exceeds 1024 entries",
+        ));
+    }
+    check_candidates(&candidates)?;
+    let source = Source {
+        filename: filename.into(),
+        sha256: sha256.clone(),
+        bytes: bytes.len(),
+        retained: false,
+        archive_key: format!("pack-{sha256}"),
+    };
+    Ok(Plan {
+        report: Report {
+            format: "worldmusichub-import-report".into(),
+            version: 1,
+            mode: "preview".into(),
+            source,
+            items: Vec::new(),
+            summary: BTreeMap::new(),
+            inventory,
+            warnings,
+        },
+        candidates,
+    })
+}
+
+fn clipped(text: &str, limit: usize) -> String {
+    let mut out = String::new();
+    for c in text.chars() {
+        if out.len() + c.len_utf8() > limit {
+            out.push('…');
+            break;
+        }
+        out.push(if c.is_control() { ' ' } else { c });
+    }
+    out
+}
+fn check_report_budget(plan: &Plan) -> Result<()> {
+    let mut budget = serde_json::to_vec(&plan.report.inventory)
+        .map_err(|e| invalid(e.to_string()))?
+        .len()
+        + 65536;
+    for c in &plan.candidates {
+        budget += c.path.len() * 2 + 4096 + 8192;
+        if let Ok(raw) = &c.score {
+            let score: score_core::Score =
+                serde_json::from_str(raw).map_err(|e| invalid(e.to_string()))?;
+            let retained = score
+                .source
+                .as_ref()
+                .map(|source| json!({"format":source.format,"filename":source.filename}));
+            budget+=serde_json::to_vec(&json!({"title":score.title,"composer":score.composer,"score_id":score.id,"provenance":score.provenance,"label":c.label.as_ref().unwrap_or(&score.title),"retained_source":retained})).map_err(|e|invalid(e.to_string()))?.len()+2048;
+        }
+    }
+    if budget > 32 * 1024 * 1024 {
+        return Err(fail(413,"pack_report_limit","The complete import report exceeds its 32 MiB budget; split this pack before importing"));
+    }
+    Ok(())
+}
+
+pub fn import(
+    library: &NativeLibrary,
+    filename: &str,
+    bytes: &[u8],
+    commit: bool,
+    keep_both: bool,
+    selected: Option<usize>,
+) -> Result<Report> {
+    if filename.is_empty() || filename.len() > 1024 || filename.chars().any(char::is_control) {
+        return Err(invalid(
+            "Original filename must be 1–1024 UTF-8 bytes without control characters",
+        ));
+    }
+    let mut plan = plan(filename, bytes)?;
+    check_report_budget(&plan)?;
+    if selected.is_some_and(|i| i >= plan.candidates.len()) {
+        return Err(invalid("Selected song index is outside this pack"));
+    }
+    let mut existing = library.list()?.entries;
+    let mut planned_hashes = HashSet::new();
+    let mut planned_ids = HashSet::new();
+    if commit {
+        storage::retain(library, &plan.report, bytes)?;
+        plan.report.source.retained = true;
+        plan.report.mode = "commit".into();
+    }
+    for (index, candidate) in plan.candidates.into_iter().enumerate() {
+        let mut item = Item {
+            index,
+            path: candidate.path,
+            title: clipped(&candidate.title, 1000),
+            status: "retained_nonplayable".into(),
+            code: "pack_source_only".into(),
+            message: String::new(),
+            playable: false,
+            entry: None,
+        };
+        match candidate.score {
+            Err(message) => item.message = clipped(&message, 4096),
+            Ok(score_json) => {
+                let (score, hash) = checked_score(&score_json)?;
+                item.title = score.title;
+                item.playable = true;
+                item.status = "ready".into();
+                item.code = "pack_valid_score".into();
+                item.message = "Canonical score validated by Rust".into();
+                if let Some(entry) = existing.iter().find(|e| e.content_sha256 == hash) {
+                    item.status = "duplicate".into();
+                    item.code = "library_duplicate".into();
+                    item.message = "This exact canonical score is already saved".into();
+                    item.entry = Some(entry.clone());
+                } else if candidate.explicit_only && !(keep_both && selected == Some(index)) {
+                    item.status = "conflict".into();
+                    item.code = "pack_alternate_source".into();
+                    item.message="Another source shares this base filename with a canonical file. Its equivalence is unverified; explicitly select this row and keep both to save another edition. The complete original remains retained on commit.".into();
+                } else if planned_hashes.contains(&hash) {
+                    item.status = "ready".into();
+                    item.code = "pack_duplicate_in_source".into();
+                    item.message = "Duplicate canonical score within this source".into();
+                } else if !keep_both
+                    && (planned_ids.contains(&score.id)
+                        || existing.iter().any(|e| e.score_id == score.id))
+                {
+                    item.status = "conflict".into();
+                    item.code = "library_id_conflict".into();
+                    item.message="A different edition has this score ID; explicitly keep both to save another edition".into();
+                    item.entry = existing.iter().find(|e| e.score_id == score.id).cloned();
+                } else if commit && selected.is_none_or(|i| i == index) {
+                    match library.save(SaveRequest {
+                        score_json,
+                        label: candidate.label,
+                        allow_conflicting_id: keep_both,
+                    }) {
+                        Ok(entry) => {
+                            existing.push(entry.clone());
+                            item.entry = Some(entry);
+                            item.status = "saved".into();
+                            item.code = "pack_saved".into();
+                            item.message =
+                                "Saved complete canonical score with its independent native backup"
+                                    .into();
+                        }
+                        Err(error) => {
+                            item.status = match error.code {
+                                "library_duplicate" => "duplicate",
+                                "library_id_conflict" => "conflict",
+                                _ => "error",
+                            }
+                            .into();
+                            item.code = error.code.into();
+                            item.message = clipped(&error.error, 4096);
+                            item.entry = error.existing.map(|e| *e);
+                        }
+                    }
+                }
+                if !commit {
+                    planned_hashes.insert(hash);
+                    planned_ids.insert(score.id);
+                }
+            }
+        }
+        plan.report.items.push(item);
+    }
+    for status in [
+        "ready",
+        "saved",
+        "duplicate",
+        "conflict",
+        "retained_nonplayable",
+        "error",
+    ] {
+        plan.report.summary.insert(
+            status.into(),
+            plan.report
+                .items
+                .iter()
+                .filter(|i| i.status == status)
+                .count(),
+        );
+    }
+    plan.report
+        .summary
+        .insert("total".into(), plan.report.items.len());
+    if commit {
+        storage::receipt(library, &plan.report).map_err(|e|fail(500,"library_commit_uncertain",format!("Original source retained and songs may be saved, but the final receipt could not be stored. Refresh before retrying: {}",e.error)))?;
+    }
+    Ok(plan.report)
+}
+
+fn header_filename(request: &http::Request<Vec<u8>>) -> Result<String> {
+    let raw = request
+        .headers()
+        .get("x-wmh-filename")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("import.bin");
+    let mut output = Vec::new();
+    let b = raw.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' {
+            let hex = raw
+                .get(i + 1..i + 3)
+                .ok_or_else(|| invalid("Invalid encoded filename"))?;
+            output.push(
+                u8::from_str_radix(hex, 16).map_err(|_| invalid("Invalid encoded filename"))?,
+            );
+            i += 3;
+        } else {
+            output.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(output).map_err(|_| invalid("Filename must be UTF-8"))
+}
+pub fn dispatch(
+    library: &NativeLibrary,
+    request: &http::Request<Vec<u8>>,
+) -> http::Response<Vec<u8>> {
+    let path = request.uri().path();
+    let result = (|| -> Result<http::Response<Vec<u8>>> {
+        let value = match (request.method().as_str(), path) {
+            ("POST", "/api/library/import/preview" | "/api/library/import/commit") => {
+                let policy = request
+                    .headers()
+                    .get("x-wmh-conflict")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("skip");
+                if !matches!(policy, "skip" | "keep-both") {
+                    return Err(invalid("Conflict policy must be skip or keep-both"));
+                }
+                let selected = request
+                    .headers()
+                    .get("x-wmh-item-index")
+                    .map(|v| {
+                        v.to_str()
+                            .ok()
+                            .and_then(|s| s.parse().ok())
+                            .ok_or_else(|| invalid("Song index must be a nonnegative integer"))
+                    })
+                    .transpose()?;
+                serde_json::to_value(import(
+                    library,
+                    &header_filename(request)?,
+                    request.body(),
+                    path.ends_with("/commit"),
+                    policy == "keep-both",
+                    selected,
+                )?)
+                .map_err(|e| invalid(e.to_string()))?
+            }
+            ("GET", "/api/library/imports") => storage::history(
+                library,
+                request
+                    .uri()
+                    .query()
+                    .and_then(|q| q.strip_prefix("cursor="))
+                    .and_then(|c| c.parse().ok())
+                    .unwrap_or(0),
+            )?,
+            ("POST", "/api/library/import/report") => {
+                let v: Value =
+                    serde_json::from_slice(request.body()).map_err(|e| invalid(e.to_string()))?;
+                storage::report(
+                    library,
+                    v["archive_key"]
+                        .as_str()
+                        .ok_or_else(|| invalid("Archive key missing"))?,
+                )?
+            }
+            ("POST", "/api/library/import/export") => {
+                let v: Value =
+                    serde_json::from_slice(request.body()).map_err(|e| invalid(e.to_string()))?;
+                let bytes = storage::export(
+                    library,
+                    v["archive_key"]
+                        .as_str()
+                        .ok_or_else(|| invalid("Archive key missing"))?,
+                )?;
+                return Ok(crate::response(200, "application/octet-stream", bytes));
+            }
+            ("POST", "/api/library/pack/export") => return export_pack(library, request.body()),
+            _ => {
+                return Err(fail(
+                    405,
+                    "pack_method_not_allowed",
+                    "Unsupported method for song-pack operation",
+                ))
+            }
+        };
+        let bytes = serde_json::to_vec(&value).map_err(|e| invalid(e.to_string()))?;
+        if bytes.len() > 32 * 1024 * 1024 {
+            return Err(fail(
+                413,
+                "pack_response_limit",
+                "Import report exceeds 32 MiB",
+            ));
+        }
+        Ok(crate::response(
+            200,
+            "application/json; charset=utf-8",
+            bytes,
+        ))
+    })();
+    result.unwrap_or_else(native_library::error_response)
+}
+
+fn export_pack(library: &NativeLibrary, bytes: &[u8]) -> Result<http::Response<Vec<u8>>> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Selection {
+        keys: Vec<String>,
+    }
+    let selection: Selection = serde_json::from_slice(bytes).map_err(|e| invalid(e.to_string()))?;
+    if selection.keys.is_empty() || selection.keys.len() > MAX_SONGS {
+        return Err(invalid("Select 1–1024 canonical songs"));
+    }
+    let mut seen = HashSet::new();
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    let mut folders = Vec::new();
+    let mut expanded = 0usize;
+    for key in selection.keys {
+        if !seen.insert(key.clone()) {
+            return Err(invalid("Duplicate song selection"));
+        }
+        let loaded = library.load(&key)?;
+        expanded += loaded.score_json.len();
+        if expanded > MAX_PACK_BYTES {
+            return Err(fail(
+                413,
+                "pack_export_limit",
+                "Export exceeds 128 MiB canonical payload; select fewer songs",
+            ));
+        }
+        let folder = format!("songs/{key}");
+        folders.push(json!({"folder":folder}));
+        archive
+            .start_file(format!("{folder}/score.json"), options)
+            .map_err(|e| invalid(e.to_string()))?;
+        archive
+            .write_all(loaded.score_json.as_bytes())
+            .map_err(native_library::io_error)?;
+        let metadata = json!({"format":"worldmusichub-song","version":1,"title":loaded.entry.title,"score":"score.json","sources":[],"media":{},"label":loaded.entry.label});
+        archive
+            .start_file(format!("{folder}/metadata.json"), options)
+            .map_err(|e| invalid(e.to_string()))?;
+        archive
+            .write_all(&serde_json::to_vec_pretty(&metadata).map_err(|e| invalid(e.to_string()))?)
+            .map_err(native_library::io_error)?;
+    }
+    archive
+        .start_file("manifest.json", options)
+        .map_err(|e| invalid(e.to_string()))?;
+    archive
+        .write_all(
+            &serde_json::to_vec_pretty(
+                &json!({"format":"worldmusichub-song-pack","version":1,"songs":folders}),
+            )
+            .map_err(|e| invalid(e.to_string()))?,
+        )
+        .map_err(native_library::io_error)?;
+    let bytes = archive
+        .finish()
+        .map_err(|e| invalid(e.to_string()))?
+        .into_inner();
+    if bytes.len() > MAX_PACK_BYTES {
+        return Err(fail(
+            413,
+            "pack_export_limit",
+            "Compressed export exceeds 128 MiB",
+        ));
+    }
+    Ok(crate::response(200, "application/zip", bytes))
+}

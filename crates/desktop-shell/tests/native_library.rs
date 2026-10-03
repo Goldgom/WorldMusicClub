@@ -449,16 +449,54 @@ fn count_limit_refuses_new_songs_without_changing_existing_archives() {
     let sandbox = Sandbox::new();
     let library = sandbox.library();
     let original: Value = serde_json::from_str(&score_json()).unwrap();
-    for i in 0..100 {
-        let mut score = original.clone();
-        score["id"] = json!(format!("authored-capacity-{i}"));
-        library.save(save(score.to_string())).unwrap();
+    // Seed valid native folders directly to test the boundary without an
+    // O(n^2) sequence of repeated whole-library scans during setup.
+    let template = library.save(save(original.to_string())).unwrap();
+    let payload = fs::read(
+        sandbox
+            .area("songs")
+            .join(&template.key)
+            .join("source.payload"),
+    )
+    .unwrap();
+    for area in ["songs", "backups"] {
+        fs::remove_dir_all(sandbox.area(area).join(&template.key)).unwrap();
+    }
+    for i in 0..worldmusichub_desktop::native_library::MAX_ENTRIES {
+        use sha2::{Digest, Sha256};
+        let mut value = original.clone();
+        value["id"] = json!(format!("authored-capacity-{i}"));
+        let raw = value.to_string();
+        let score: score_core::Score = serde_json::from_str(&raw).unwrap();
+        let mut entry = template.clone();
+        entry.content_sha256 = format!("{:x}", Sha256::digest(serde_json::to_vec(&score).unwrap()));
+        entry.key = format!("song-{}", entry.content_sha256);
+        entry.score_id = score.id;
+        entry.score_sha256 = format!("{:x}", Sha256::digest(raw.as_bytes()));
+        entry.score_bytes = raw.len();
+        for area in ["songs", "backups"] {
+            let folder = sandbox.area(area).join(&entry.key);
+            fs::create_dir(&folder).unwrap();
+            fs::write(folder.join("score.json"), &raw).unwrap();
+            fs::write(folder.join("source.payload"), &payload).unwrap();
+            fs::write(
+                folder.join("metadata.json"),
+                serde_json::to_vec(&entry).unwrap(),
+            )
+            .unwrap();
+        }
     }
     let error = library.save(save(original.to_string())).unwrap_err();
     assert_eq!(error.code, "library_capacity");
     assert_eq!(error.status, 413);
-    assert_eq!(library.list().unwrap().entries.len(), 100);
-    assert_eq!(fs::read_dir(sandbox.area("backups")).unwrap().count(), 100);
+    assert_eq!(
+        library.list().unwrap().entries.len(),
+        worldmusichub_desktop::native_library::MAX_ENTRIES
+    );
+    assert_eq!(
+        fs::read_dir(sandbox.area("backups")).unwrap().count(),
+        worldmusichub_desktop::native_library::MAX_ENTRIES
+    );
     assert_eq!(fs::read_dir(sandbox.area(".staging")).unwrap().count(), 0);
 }
 

@@ -14,10 +14,10 @@ use std::{
 };
 
 pub const MAX_SCORE_BYTES: usize = 8 * 1024 * 1024;
-pub const MAX_LIBRARY_BYTES: usize = 32 * 1024 * 1024;
-pub const MAX_ENTRIES: usize = 100;
+pub const MAX_LIBRARY_BYTES: usize = 256 * 1024 * 1024;
+pub const MAX_ENTRIES: usize = 1024;
 const MAX_METADATA_BYTES: usize = 64 * 1024;
-const MAX_DIRECTORY_ITEMS: usize = 256;
+const MAX_DIRECTORY_ITEMS: usize = 4096;
 const VERSION: u32 = 1;
 static STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -32,7 +32,7 @@ pub struct LibraryError {
 }
 type Result<T> = std::result::Result<T, LibraryError>;
 
-fn fail(status: u16, code: &'static str, message: impl Into<String>) -> LibraryError {
+pub(crate) fn fail(status: u16, code: &'static str, message: impl Into<String>) -> LibraryError {
     LibraryError {
         code,
         error: message.into(),
@@ -40,7 +40,7 @@ fn fail(status: u16, code: &'static str, message: impl Into<String>) -> LibraryE
         status,
     }
 }
-fn io_error(error: std::io::Error) -> LibraryError {
+pub(crate) fn io_error(error: std::io::Error) -> LibraryError {
     fail(
         500,
         "library_io",
@@ -50,7 +50,7 @@ fn io_error(error: std::io::Error) -> LibraryError {
 fn corrupt(message: impl Into<String>) -> LibraryError {
     fail(422, "library_corrupt_entry", message)
 }
-fn digest(bytes: &[u8]) -> String {
+pub(crate) fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
@@ -119,10 +119,10 @@ pub struct LoadedScore {
 
 #[derive(Debug)]
 pub struct NativeLibrary {
-    root: PathBuf,
+    pub(crate) root: PathBuf,
 }
 
-struct LibraryLock(File);
+pub(crate) struct LibraryLock(File);
 impl Drop for LibraryLock {
     fn drop(&mut self) {
         // Explicit unlock also releases an open-file-description lock when a
@@ -164,7 +164,7 @@ fn is_link(metadata: &fs::Metadata) -> bool {
     metadata.file_type().is_symlink()
 }
 
-fn check_node(path: &Path, directory: bool) -> Result<()> {
+pub(crate) fn check_node(path: &Path, directory: bool) -> Result<()> {
     let metadata = fs::symlink_metadata(path).map_err(io_error)?;
     if is_link(&metadata)
         || (directory && !metadata.is_dir())
@@ -179,7 +179,7 @@ fn check_node(path: &Path, directory: bool) -> Result<()> {
     Ok(())
 }
 
-fn create_directory_tree(path: &Path) -> Result<()> {
+pub(crate) fn create_directory_tree(path: &Path) -> Result<()> {
     if !path.is_absolute() {
         return Err(fail(
             400,
@@ -221,7 +221,7 @@ fn valid_key(key: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>> {
+pub(crate) fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>> {
     check_node(path, false)?;
     let file = File::open(path).map_err(io_error)?;
     let metadata = file.metadata().map_err(io_error)?;
@@ -238,7 +238,7 @@ fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn write_new(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(crate) fn write_new(path: &Path, bytes: &[u8]) -> Result<()> {
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -248,7 +248,7 @@ fn write_new(path: &Path, bytes: &[u8]) -> Result<()> {
     file.sync_all().map_err(io_error)
 }
 
-fn sync_directory(path: &Path) -> Result<()> {
+pub(crate) fn sync_directory(path: &Path) -> Result<()> {
     // std does not expose a portable durable directory flush on Windows. Files
     // are flushed there; recovery covers process interruption, not power loss.
     #[cfg(unix)]
@@ -260,7 +260,7 @@ fn sync_directory(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn checked_score(score_json: &str) -> Result<(score_core::Score, String)> {
+pub(crate) fn checked_score(score_json: &str) -> Result<(score_core::Score, String)> {
     if score_json.len() > MAX_SCORE_BYTES {
         return Err(fail(
             413,
@@ -296,7 +296,7 @@ impl NativeLibrary {
         Ok(Self { root })
     }
 
-    fn lock(&self) -> Result<LibraryLock> {
+    pub(crate) fn lock(&self) -> Result<LibraryLock> {
         check_node(&self.root, true)?;
         for name in ["songs", "backups", ".staging"] {
             check_node(&self.root.join(name), true)?;
@@ -623,7 +623,7 @@ impl NativeLibrary {
                 + request.score_json.len()
                 > MAX_LIBRARY_BYTES
         {
-            return Err(fail(413, "library_capacity", "The library limit is 100 songs and 32 MiB of canonical JSON; no existing song was changed"));
+            return Err(fail(413, "library_capacity", "The library limit is 1024 songs and 256 MiB of canonical JSON; no existing song was changed"));
         }
         for area in ["songs", "backups"] {
             match fs::symlink_metadata(self.root.join(area).join(&key)) {

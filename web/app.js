@@ -13,6 +13,7 @@ import {ScorePreview,filterCatalog} from './score-preview.js';
 import {openScoreStorage} from './native-score-storage.js';
 import {ScoreStorageModel,createImportPersistenceTicket,buildSongList,loadSongListItem} from './score-storage-model.js';
 import {setupScoreStorageView,setupScoreStorageLobbyStatus,describePersistenceResult} from './score-storage-view.js';
+import {setupBulkImportView} from './bulk-import-view.js';
 import {setupPerformanceView,FIELD_COLORS,previewMusicMetadata} from './performance-view.js';
 import {renderPianoKeybed,renderPianoRails,pianoMinimumWidth} from './piano-stage-view.js';
 import {setupGuitarGuidance} from './guitar-guidance.js';
@@ -108,7 +109,7 @@ let transpositionView = null;
 let externalOmrView = null;
 let notationFollowing = null;
 let writtenCursor = null, writtenCursorStatus = null, writtenCursorRetry = null;
-let sourceArchiveView=null,referenceListening=null,lobbyPreview=null,scoreStorage=null,scoreStorageView=null;
+let sourceArchiveView=null,referenceListening=null,lobbyPreview=null,scoreStorage=null,scoreStorageView=null,bulkImportView=null,fileSelectionVersion=0;
 let pendingScoreSaveOwner=null,scoreSaveNavigation=0,noticeRevision=0;
 let midiController=null;
 let freeSession=null,freeView=null,freePreview=null,freeLiveOwner=null,freeLiveStart=0,freeCaptureState='idle',freeRecordInstrument=null,freeClockWall=0,freeWindowFocused=true;
@@ -1070,9 +1071,17 @@ $('sound-button').addEventListener('click',()=>setSoundEnabled(synth.muted));
 $('import-button').addEventListener('click', () => {referenceListening?.close();$('score-file').click();});
 $('mobile-import-button').addEventListener('click', () => {referenceListening?.close();$('score-file').click();});
 $('score-file').addEventListener('change', async event => {
-  const file = event.target.files[0]; event.target.value = ''; if (!file) return;
+  const files=Array.from(event.target.files||[]),file=files[0],selection=++fileSelectionVersion;event.target.value='';if(!file)return;
   referenceListening?.close();
+  // The same visible picker accepts packs and multiple scores. Review owns no
+  // active score or take; saving a batch only updates the storage inventory.
+  if(files.length>1||/\.(zip|wmhpack)$/i.test(file.name)||(/\.json$/i.test(file.name)&&file.size>8*1024*1024)){void bulkImportView.select(files);return}
   const intent = ++state.loadIntent;cancelCatalogSelection();state.compileController?.abort();
+  let initialText;
+  if(/\.json$/i.test(file.name)){
+    try{initialText=await file.text();if(selection!==fileSelectionVersion)return;const value=JSON.parse(initialText);if(value?.version!==1||!Array.isArray(value?.parts)){void bulkImportView.select(files);return}}catch{/* Ordinary malformed JSON keeps the existing explicit source error. */}
+    if(selection!==fileSelectionVersion)return;
+  }
   const persistenceTicket=createImportPersistenceTicket('file-import');
   const guidance=unsupportedImportHint(file.name,i18n);if(guidance){notice(() => unsupportedImportHint(file.name,i18n),true);return}
   if (file.size > 8 * 1024 * 1024) { notice(() => t('app.fileTooLarge'), true); return; }
@@ -1082,7 +1091,7 @@ $('score-file').addEventListener('change', async event => {
     const compressed = /\.mxl$/i.test(file.name);
     const midiFile = /\.(mid|midi)$/i.test(file.name);
     const xmlFile = /\.(musicxml|xml)$/i.test(file.name);
-    const content = compressed || midiFile || jianpuText || xmlFile ? await file.arrayBuffer() : await file.text();
+    const content = compressed || midiFile || jianpuText || xmlFile ? await file.arrayBuffer() : initialText??await file.text();
     if (jianpuText || compressed || midiFile || xmlFile) {
       pausePlayback();
       const response = await fetch(jianpuText ? '/api/import/jianpu' : midiFile ? '/api/import/midi' : compressed ? '/api/import/mxl' : '/api/import/musicxml', {method: 'POST', headers: {'Content-Type': jianpuText ? 'text/plain' : midiFile ? 'audio/midi' : compressed ? 'application/zip' : 'application/xml'}, body: content});
@@ -1158,7 +1167,7 @@ document.addEventListener('focusin',event=>{if(event.target.closest?.('.beginner
 window.addEventListener('blur', () => {freeWindowFocused=false;keyboardComposing=false;keyboardInput.compositionEnd();pausePlayback('app.blurPaused','blur')});
 window.addEventListener('focus', () => {if(!freeWindowFocused)freeLiveStart=performance.now();freeWindowFocused=true;});
 document.addEventListener('visibilitychange', () => { if (document.hidden) pausePlayback('app.hiddenPaused','hidden');else freeLiveStart=performance.now(); });
-window.addEventListener('pagehide', () => { scoreSaveNavigation++;pausePlayback(undefined,'pagehide'); cancelAnimationFrame(state.frame);cancelPendingStart();if(preview.controller){preview.cancel();preview.publish({...preview.value,status:'error',message:t('app.previewStopped')})} });
+window.addEventListener('pagehide', () => { bulkImportView?.queue.cancel();scoreSaveNavigation++;pausePlayback(undefined,'pagehide'); cancelAnimationFrame(state.frame);cancelPendingStart();if(preview.controller){preview.cancel();preview.publish({...preview.value,status:'error',message:t('app.previewStopped')})} });
 let notationResizeFrame = 0;
 window.addEventListener('resize', () => { cancelAnimationFrame(notationResizeFrame); notationResizeFrame = requestAnimationFrame(() => { renderNotationPage(); drawFrame(); }); });
 $('workspace').addEventListener('notationlayoutchange', () => { cancelAnimationFrame(notationResizeFrame); notationResizeFrame = requestAnimationFrame(() => { renderNotationPage(); drawFrame(); }); });
@@ -1274,6 +1283,11 @@ const libraryView = setupScoreLibrary({getScore:()=>state.score,onLoad:importCan
 const legacyLibraryButton=$('library-button');legacyLibraryButton.removeAttribute('data-i18n');
 bindText(legacyLibraryButton,()=>i18n.locale==='en'?(scoreStorage?.snapshot().kind==='native'?'Legacy browser archives':'Browser archives'):(scoreStorage?.snapshot().kind==='native'?'旧版浏览器收藏':'浏览器收藏管理'));
 scoreStorage=new ScoreStorageModel({openStorage:()=>openScoreStorage({origin:location.origin,validateScore:(score,signal)=>api('/api/compile',score,signal)})});
+bulkImportView=setupBulkImportView({document,i18n,getStorageKind:async()=>(await scoreStorage.storage()).info.kind,
+  onOpen:()=>{scoreSaveNavigation++;state.loadIntent++;state.compileController?.abort();referenceListening?.close();cancelPendingStart();},pausePlayback,
+  onCommitted:async()=>{if(!await scoreStorage.rescan())throw new Error('Saved-song inventory refresh failed.');},
+  onBrowse:identity=>{shell.show('library');void selectSongScore(identity);},onDone:()=>shell.show('library'),getSavedEntries:()=>scoreStorage.snapshot().entries});
+$('bulk-import-history-button').addEventListener('click',()=>bulkImportView.open());
 scoreStorageView=setupScoreStorageView({model:scoreStorage,host:document.querySelector('#settings-dialog .shell-dialog-content'),document,i18n,getScore:()=>state.score,onSaveStart:beginExplicitScoreSave,onSaveResult:finishScoreSave});
 $('settings-dialog').addEventListener('close',()=>{scoreSaveNavigation++});
 const storageLobbyHost=document.createElement('div');$('catalog').before(storageLobbyHost);

@@ -80,9 +80,9 @@ fits an import cap may therefore be too large to save through this endpoint;
 failure is explicit and no attachment is discarded.
 
 `Entry.key` is `song-` followed by exactly 64 lowercase hexadecimal digits. A
-library is limited to 100 songs and 32 MiB of canonical JSON; independent backup
+library is limited to 1024 songs and 256 MiB of canonical JSON; independent backup
 and source copies require additional disk space, up to roughly four times the
-canonical budget. Directory scans stop at 256 children per area. Metadata files
+canonical budget. Directory scans stop at 4096 children per area. Metadata files
 are capped at 64 KiB, individual source payloads at 8 MiB, and encoded responses
 at 32 MiB. Labels must contain 1–1024 UTF-8 bytes.
 
@@ -195,3 +195,5 @@ Linux direct-function/temporary-directory tests and Node DOM tests are not
 Windows WebView acceptance. Real Windows folder behavior, visual layout and
 package restart validation remain required before claiming the user's native
 installation is accepted. See [frontend integration and hosted regression](NATIVE_SCORE_STORAGE_FRONTEND.md).
+
+Bulk ZIP/folder containers, legacy delivery compatibility, retained nonplayable sources, larger native-library capacity and pack-only transport limits are specified in [SONG_PACK_FORMAT.md](SONG_PACK_FORMAT.md). The existing single-score endpoints retain their 8 MiB request limit.
