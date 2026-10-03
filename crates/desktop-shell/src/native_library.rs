@@ -3,6 +3,8 @@
 //! Each published song and its independent backup contains the exact submitted
 //! canonical JSON, metadata, and an inert copy of the retained source payload.
 //! The folders are the index; losing a cache cannot lose the library inventory.
+#[path = "clean_package.rs"]
+pub mod clean_package;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -116,6 +118,8 @@ pub struct Entry {
     pub saved_at_unix_ms: u64,
     pub provenance: score_core::Provenance,
     pub retained_source: Option<RetainedSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clean_package: Option<clean_package::Summary>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -151,6 +155,8 @@ pub struct Inventory {
 pub struct LoadedScore {
     pub entry: Entry,
     pub score_json: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clean_package: Option<clean_package::OpenPackage>,
 }
 
 #[derive(Debug)]
@@ -406,7 +412,10 @@ impl NativeLibrary {
         let metadata = read_bounded(&folder.join("metadata.json"), MAX_METADATA_BYTES)?;
         let entry: Entry = serde_json::from_slice(&metadata)
             .map_err(|error| corrupt(format!("Invalid archive metadata: {error}")))?;
-        if entry.library_format_version != VERSION || entry.revision != 1 {
+        if entry.library_format_version != VERSION
+            || entry.revision != 1
+            || entry.clean_package.is_some()
+        {
             return Err(fail(
                 422,
                 "library_unsupported_version",
@@ -458,7 +467,11 @@ impl NativeLibrary {
                 ))
             }
         }
-        Ok(LoadedScore { entry, score_json })
+        Ok(LoadedScore {
+            entry,
+            score_json,
+            clean_package: None,
+        })
     }
 
     fn stage(&self, loaded: &LoadedScore) -> Result<PathBuf> {
@@ -633,6 +646,7 @@ impl NativeLibrary {
                 ),
             });
         }
+        clean_package::scan(self, &mut inventory)?;
         inventory.entries.sort_by(|a, b| a.key.cmp(&b.key));
         Ok(inventory)
     }
@@ -730,10 +744,12 @@ impl NativeLibrary {
                 })?,
             provenance: score.provenance,
             retained_source,
+            clean_package: None,
         };
         let loaded = LoadedScore {
             entry: entry.clone(),
             score_json: request.score_json,
+            clean_package: None,
         };
         // All payloads are synced before either directory becomes visible.
         let primary_stage = self.stage(&loaded)?;
@@ -759,6 +775,9 @@ impl NativeLibrary {
             ));
         }
         let _lock = self.lock()?;
+        if let Some(loaded) = clean_package::load(self, key)? {
+            return Ok(loaded);
+        }
         let folder = self.root.join("songs").join(key);
         match fs::symlink_metadata(&folder) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -809,17 +828,33 @@ pub fn dispatch(
     path: &str,
     bytes: &[u8],
 ) -> http::Response<Vec<u8>> {
+    if method == "POST" && path == "/api/library/asset" {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct AssetRequest {
+            key: String,
+            handle: String,
+        }
+        return match decode::<AssetRequest>(bytes)
+            .and_then(|r| clean_package::asset(library, &r.key, &r.handle))
+        {
+            Ok((mime, bytes)) => crate::response(200, &mime, bytes),
+            Err(error) => error_response(error),
+        };
+    }
     let result = match (method, path) {
         ("GET", "/api/library/list") => library.list().and_then(|inventory| serde_json::to_value(inventory).map_err(|error| corrupt(error.to_string()))),
         ("POST", "/api/library/save") => decode(bytes).and_then(|request| library.save(request)).and_then(|entry| serde_json::to_value(entry).map_err(|error| corrupt(error.to_string()))),
-        ("POST", "/api/library/load" | "/api/library/export") => decode::<KeyRequest>(bytes).and_then(|request| library.load(&request.key)).map(|loaded| {
-            if path.ends_with("/export") {
-                serde_json::json!({"format":"worldmusichub-native-score-backup", "version":1, "entry":loaded.entry, "score_json":loaded.score_json})
+        ("POST", "/api/library/load" | "/api/library/export") => decode::<KeyRequest>(bytes).and_then(|request| library.load(&request.key)).and_then(|loaded| {
+            if path.ends_with("/export") && loaded.clean_package.is_some() {
+                Err(fail(409, "library_clean_export_required", "Use clean song-pack export to preserve the complete semantic score and every runtime asset"))
+            } else if path.ends_with("/export") {
+                Ok(serde_json::json!({"format":"worldmusichub-native-score-backup", "version":1, "entry":loaded.entry, "score_json":loaded.score_json}))
             } else {
-                serde_json::json!({"entry":loaded.entry, "score_json":loaded.score_json})
+                serde_json::to_value(loaded).map_err(|e| corrupt(e.to_string()))
             }
         }),
-        (_, "/api/library/list" | "/api/library/save" | "/api/library/load" | "/api/library/export") => Err(fail(405, "library_method_not_allowed", "Unsupported method for this library operation")),
+        (_, "/api/library/list" | "/api/library/save" | "/api/library/load" | "/api/library/export" | "/api/library/asset") => Err(fail(405, "library_method_not_allowed", "Unsupported method for this library operation")),
         _ => Err(fail(404, "library_unknown_route", "Unknown native library operation")),
     };
     match result {
