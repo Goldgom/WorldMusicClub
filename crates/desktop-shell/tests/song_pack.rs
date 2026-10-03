@@ -149,6 +149,355 @@ fn legacy_normalized_folder_handles_canonical_and_source_only_together() {
     assert!(!report.items[1].playable);
     assert!(report.items[1].entry.is_none());
     assert_eq!(library.list().unwrap().entries.len(), 1);
+    assert!(report.items[1]
+        .message
+        .contains("Current retained MIDI recheck:"));
+    assert!(report.items[1]
+        .message
+        .contains("Unsupported raw-event source retained"));
+}
+
+fn authored_midi() -> Vec<u8> {
+    // An original one-note fixture, 96 ticks per quarter, with explicit note-off.
+    b"MThd\0\0\0\x06\0\0\0\x01\0\x60MTrk\0\0\0\x0c\0\x90\x3c\x40\x60\x80\x3c\0\0\xff\x2f\0".to_vec()
+}
+fn legacy_metadata(source: &[u8]) -> Value {
+    json!({"format":"private-complete-midi-source-folder","version":1,"title":"Original retained MIDI","source_files":[{"path":"source/original.mid","bytes":source.len(),"sha256":format!("{:x}",Sha256::digest(source))}],"imports":{"raw_midi":"source/original.mid","canonical_score":null,"canonical_error":"Earlier importer could not admit this original","complete_events":"complete-events.json"}})
+}
+fn legacy_pack(metadata: &Value, source: &[u8], extra: Vec<(&str, Vec<u8>)>) -> Vec<u8> {
+    let mut files = vec![
+        ("song/metadata.json", serde_json::to_vec(metadata).unwrap()),
+        ("song/source/original.mid", source.to_vec()),
+        (
+            "song/complete-events.json",
+            br#"{"events":[],"never":"canonical"}"#.to_vec(),
+        ),
+    ];
+    files.extend(extra);
+    zip(files)
+}
+#[test]
+fn legacy_retained_midi_recheck_is_explicit_exact_deduplicated_and_append_only() {
+    let sandbox = Sandbox::new();
+    let library = sandbox.library();
+    let source = authored_midi();
+    let bytes = legacy_pack(&legacy_metadata(&source), &source, vec![]);
+    let preview = song_pack::import(&library, "legacy.zip", &bytes, false, false, None).unwrap();
+    assert_eq!(preview.summary["ready"], 1);
+    assert_eq!(preview.items[0].title, "Original retained MIDI");
+    assert!(!preview.source.retained);
+    assert!(!sandbox.0.join("Scores/imports").exists());
+    let provenance = preview.items[0].derivation.as_ref().unwrap();
+    assert_eq!(provenance.code, "pack_retained_midi_recheck");
+    assert_eq!(provenance.path, "song/source/original.mid");
+    assert_eq!(provenance.bytes, source.len() as u64);
+    assert_eq!(provenance.sha256, format!("{:x}", Sha256::digest(&source)));
+    let report = song_pack::import(&library, "legacy.zip", &bytes, true, false, None).unwrap();
+    assert_eq!(report.summary["saved"], 1);
+    let entry = report.items[0].entry.as_ref().unwrap();
+    let loaded = library.load(&entry.key).unwrap();
+    assert_eq!(entry.label, "Original retained MIDI");
+    assert_eq!(report.items[0].title, entry.label);
+    let (expected, _) = score_core::import_midi(&source).unwrap();
+    assert_eq!(loaded.score_json, serde_json::to_string(&expected).unwrap());
+    let mut before = Vec::new();
+    for area in ["imports", "import-backups"] {
+        let folder = sandbox
+            .0
+            .join("Scores")
+            .join(area)
+            .join(&report.source.archive_key);
+        for entry in fs::read_dir(folder).unwrap() {
+            let path = entry.unwrap().path();
+            before.push((path.clone(), fs::read(path).unwrap()));
+        }
+    }
+    let repeat = song_pack::import(&library, "legacy.zip", &bytes, true, false, None).unwrap();
+    assert_eq!(repeat.summary["duplicate"], 1);
+    assert!(repeat.items[0].derivation.is_some());
+    assert_eq!(repeat.items[0].entry.as_ref().unwrap().label, entry.label);
+    assert_eq!(repeat.items[0].title, entry.label);
+    assert_eq!(library.list().unwrap().entries.len(), 1);
+    for (path, original) in before {
+        assert_eq!(fs::read(path).unwrap(), original);
+    }
+    // The direct source and the container-derived canonical use the same ID,
+    // diagnostics, source payload and bytes, with no separate duplicate edition.
+    let standalone =
+        song_pack::import(&library, "original.mid", &source, true, false, None).unwrap();
+    assert_eq!(standalone.summary["duplicate"], 1);
+    assert!(standalone.items[0].derivation.is_none());
+    assert_eq!(
+        standalone.items[0].entry.as_ref().unwrap().label,
+        entry.label
+    );
+    drop(library);
+    let library = sandbox.library();
+    let history: Value =
+        serde_json::from_slice(request(&library, "/api/library/imports", vec![]).body()).unwrap();
+    let receipt = history["imports"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["archive_key"] == report.source.archive_key)
+        .unwrap();
+    assert_eq!(
+        receipt["report"]["items"][0]["derivation"]["code"],
+        "pack_retained_midi_recheck"
+    );
+    assert_eq!(receipt["report"]["items"][0]["title"], entry.label);
+    let exported = request(
+        &library,
+        "/api/library/import/export",
+        serde_json::to_vec(&json!({"archive_key":report.source.archive_key})).unwrap(),
+    );
+    assert_eq!(exported.body(), &bytes);
+    assert_eq!(
+        library.load(&entry.key).unwrap().score_json,
+        loaded.score_json
+    );
+    assert_eq!(library.load(&entry.key).unwrap().entry.label, entry.label);
+}
+#[test]
+fn derived_midi_caption_uses_valid_title_only_without_explicit_label_and_never_relabels_duplicates()
+{
+    let source = authored_midi();
+    let (canonical, _) = score_core::import_midi(&source).unwrap();
+    for (title, label, expected) in [
+        (
+            "Declared song".to_owned(),
+            Value::Null,
+            "Declared song".to_owned(),
+        ),
+        (
+            "Declared song".to_owned(),
+            json!("Explicit edition"),
+            "Explicit edition".to_owned(),
+        ),
+        ("  ".to_owned(), Value::Null, canonical.title.clone()),
+        ("x".repeat(1025), Value::Null, canonical.title.clone()),
+    ] {
+        let sandbox = Sandbox::new();
+        let library = sandbox.library();
+        let mut metadata = legacy_metadata(&source);
+        metadata["title"] = json!(title);
+        metadata["label"] = label;
+        let bytes = legacy_pack(&metadata, &source, vec![]);
+        let preview =
+            song_pack::import(&library, "legacy.zip", &bytes, false, false, None).unwrap();
+        assert_eq!(preview.items[0].title, expected);
+        let report = song_pack::import(&library, "legacy.zip", &bytes, true, false, None).unwrap();
+        assert_eq!(report.summary["saved"], 1);
+        let entry = report.items[0].entry.as_ref().unwrap();
+        assert_eq!(entry.label, expected);
+        assert_eq!(report.items[0].title, entry.label);
+        assert_eq!(entry.title, canonical.title);
+        assert_eq!(
+            library.load(&entry.key).unwrap().score_json,
+            serde_json::to_string(&canonical).unwrap()
+        );
+    }
+    let sandbox = Sandbox::new();
+    let library = sandbox.library();
+    let existing = library
+        .save(SaveRequest {
+            score_json: serde_json::to_string(&canonical).unwrap(),
+            label: Some("Previously chosen caption".into()),
+            allow_conflicting_id: false,
+        })
+        .unwrap();
+    let bytes = legacy_pack(&legacy_metadata(&source), &source, vec![]);
+    let preview = song_pack::import(&library, "legacy.zip", &bytes, false, false, None).unwrap();
+    assert_eq!(preview.items[0].title, existing.label);
+    let report = song_pack::import(&library, "legacy.zip", &bytes, true, false, None).unwrap();
+    assert_eq!(report.items[0].title, existing.label);
+    assert_eq!(report.summary["duplicate"], 1);
+    assert_eq!(
+        report.items[0].entry.as_ref().unwrap().label,
+        existing.label
+    );
+    assert_eq!(
+        library.load(&existing.key).unwrap().entry.label,
+        existing.label
+    );
+}
+#[test]
+fn retained_midi_recheck_never_replaces_supplied_canonical_or_uses_unlisted_sources() {
+    let sandbox = Sandbox::new();
+    let library = sandbox.library();
+    let source = authored_midi();
+    for supplied in [
+        None,
+        Some(b"{corrupt".to_vec()),
+        Some(br#"{"events":[]}"#.to_vec()),
+    ] {
+        let mut metadata = legacy_metadata(&source);
+        metadata["imports"]["canonical_score"] = json!("supplied.json");
+        let extra = supplied
+            .map(|data| vec![("song/supplied.json", data)])
+            .unwrap_or_default();
+        let report = song_pack::import(
+            &library,
+            "legacy.zip",
+            &legacy_pack(&metadata, &source, extra),
+            false,
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(report.summary["retained_nonplayable"], 1);
+        assert!(report.items[0].derivation.is_none());
+    }
+    let canonical = score("authoritative");
+    let mut metadata = legacy_metadata(&source);
+    metadata["imports"]["canonical_score"] = json!("supplied.json");
+    let bytes = legacy_pack(
+        &metadata,
+        &source,
+        vec![("song/supplied.json", canonical.clone().into_bytes())],
+    );
+    let report = song_pack::import(&library, "legacy.zip", &bytes, true, false, None).unwrap();
+    assert_eq!(report.summary["saved"], 1);
+    assert!(report.items[0].derivation.is_none());
+    assert_eq!(
+        report.items[0].entry.as_ref().unwrap().label,
+        "Original authoritative"
+    );
+    assert_eq!(
+        library
+            .load(&report.items[0].entry.as_ref().unwrap().key)
+            .unwrap()
+            .score_json,
+        canonical
+    );
+    for metadata in [
+        json!({"format":"private-complete-midi-source-folder","version":1,"source_files":[],"imports":{"canonical_score":null}}),
+        json!({"format":"worldmusichub-song","version":1,"sources":[],"score":null}),
+    ] {
+        let report = song_pack::import(
+            &library,
+            "legacy.zip",
+            &legacy_pack(&metadata, &source, vec![]),
+            false,
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(report.summary["retained_nonplayable"], 1);
+        assert!(report.items[0].derivation.is_none());
+    }
+}
+#[test]
+fn retained_midi_recheck_rejects_ambiguous_or_malformed_legacy_descriptors() {
+    let sandbox = Sandbox::new();
+    let library = sandbox.library();
+    let source = authored_midi();
+    let original = legacy_metadata(&source);
+    let mutations = [
+        ("/version", json!(2)),
+        ("/format", json!("future-song")),
+        ("/imports/canonical_score", json!(false)),
+        ("/imports/canonical_error", json!([])),
+        ("/imports/raw_midi", json!("source/other.mid")),
+        ("/title", json!(12)),
+        ("/source_files/0/sha256", json!(null)),
+        ("/source_files/0/sha256", json!("wrong")),
+        ("/source_files/0/bytes", json!(source.len() + 1)),
+        ("/source_files/0/bytes", json!(null)),
+        ("/source_files", json!({})),
+        ("/imports", json!({})),
+    ];
+    for (pointer, value) in mutations {
+        let mut metadata = original.clone();
+        *metadata.pointer_mut(pointer).unwrap() = value;
+        let report = song_pack::import(
+            &library,
+            "legacy.zip",
+            &legacy_pack(&metadata, &source, vec![]),
+            false,
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(report.summary["retained_nonplayable"], 1, "{pointer}");
+        assert!(report.items[0].derivation.is_none());
+    }
+    for duplicate_path in ["source/original.mid", "source/other.mid"] {
+        let mut metadata = original.clone();
+        let mut second = metadata["source_files"][0].clone();
+        second["path"] = json!(duplicate_path);
+        metadata["source_files"]
+            .as_array_mut()
+            .unwrap()
+            .push(second);
+        let bytes = legacy_pack(
+            &metadata,
+            &source,
+            vec![("song/source/other.mid", source.clone())],
+        );
+        let report = song_pack::import(&library, "legacy.zip", &bytes, false, false, None).unwrap();
+        assert_eq!(report.summary["retained_nonplayable"], 1);
+    }
+    let bytes = legacy_pack(
+        &original,
+        &source,
+        vec![(
+            "song/unlisted.wmhscore.json",
+            score("unlisted").into_bytes(),
+        )],
+    );
+    let report = song_pack::import(&library, "legacy.zip", &bytes, false, false, None).unwrap();
+    assert_eq!(report.summary["retained_nonplayable"], 1);
+    assert!(library.list().unwrap().entries.is_empty());
+}
+#[test]
+fn old_receipt_without_derivation_remains_readable() {
+    let old = json!({"index":0,"path":"metadata.json","title":"Original","status":"retained_nonplayable","code":"pack_source_only","message":"Earlier diagnostic","playable":false});
+    let item: song_pack::Item = serde_json::from_value(old.clone()).unwrap();
+    assert!(item.derivation.is_none());
+    assert_eq!(serde_json::to_value(item).unwrap(), old);
+}
+#[test]
+fn retained_midi_recheck_rejects_duplicate_json_keys_hidden_paths_and_oversized_sources() {
+    let sandbox = Sandbox::new();
+    let library = sandbox.library();
+    let source = authored_midi();
+    let original = legacy_metadata(&source);
+    for metadata in [
+        serde_json::to_string(&original).unwrap().replace(
+            "\"canonical_score\":null",
+            "\"canonical_score\":\"missing.json\",\"canonical_score\":null",
+        ),
+        serde_json::to_string(&original)
+            .unwrap()
+            .replace("\"bytes\":34", "\"bytes\":1,\"bytes\":34"),
+    ] {
+        let bytes = zip(vec![
+            ("song/metadata.json", metadata.into_bytes()),
+            ("song/source/original.mid", source.clone()),
+        ]);
+        let report = song_pack::import(&library, "legacy.zip", &bytes, false, false, None).unwrap();
+        assert_eq!(report.summary["retained_nonplayable"], 1);
+        assert!(report.items[0]
+            .message
+            .contains("Duplicate metadata object key"));
+    }
+    let mut hidden = original.clone();
+    hidden["source_files"][0]["path"] = json!("source/.original.mid");
+    hidden["imports"]["raw_midi"] = json!("source/.original.mid");
+    let bytes = legacy_pack(
+        &hidden,
+        &source,
+        vec![("song/source/.original.mid", source.clone())],
+    );
+    let report = song_pack::import(&library, "legacy.zip", &bytes, false, false, None).unwrap();
+    assert_eq!(report.summary["retained_nonplayable"], 1);
+    let source = vec![0; 8 * 1024 * 1024 + 1];
+    let bytes = legacy_pack(&legacy_metadata(&source), &source, vec![]);
+    let report = song_pack::import(&library, "legacy.zip", &bytes, false, false, None).unwrap();
+    assert_eq!(report.summary["retained_nonplayable"], 1);
+    assert!(report.items[0].message.contains("8 MiB score/import limit"));
+    assert!(!sandbox.0.join("Scores/imports").exists());
 }
 #[test]
 fn backup_entries_invalid_and_duplicate_and_conflicts_remain_visible() {

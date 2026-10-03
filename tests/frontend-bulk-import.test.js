@@ -175,3 +175,20 @@ for(const action of ['catalog preview','session activation','free navigation','n
   assert.equal(app.$('bulk-import-dialog').open,false);assert.equal(server.requests.filter(row=>row.path==='/api/library/import/preview').length,0);assert.equal(server.originals.size,0);assert.equal(app.document.body.dataset.screen,screen);assert.equal(app.$('song-lobby').dataset.previewId,preview);assert.equal(app.$('score-title').textContent,title);
  }finally{gate.resolve('{}');await app.close()}
 });
+
+test('retained MIDI derivation stays explicit in preview, saved and duplicate outcomes, locale changes and restarted history',async()=>{
+ const server=await bulkNativeFixture(),file=importFile('retained.zip','original authored retained source'),entry={key:`song-${'b'.repeat(64)}`},derivation={code:'pack_retained_midi_recheck',path:'song/source/<literal>.mid',bytes:34,sha256:'c'.repeat(64)};let committed=0,lastReport;
+ server.setImportRoute(({path,body})=>{
+  if(path==='/api/library/imports')return nativeResponse({format:'worldmusichub-import-history',version:1,imports:lastReport?[{archive_key:'pack-original',filename:file.name,report:lastReport}]:[],issues:[]});
+  if(path==='/api/library/import/preview')return nativeResponse(importReport(body,{items:[importItem({derivation})]}));
+  if(path==='/api/library/import/commit'){committed++;lastReport=importReport(body,{mode:'commit',items:[importItem({status:committed===1?'saved':'duplicate',entry,derivation})]});return nativeResponse(lastReport)}
+ });
+ let app=await nativeStorageApp(server);
+ try{
+  await ready(app);selectImportFiles(app,[file]);await app.until(()=>reviewed(app));let row=importRows(app)[0];assert.match(row.querySelector('.bulk-import-derivation').textContent,/Complete score parsed from the retained original MIDI/);assert.ok(row.querySelector('details').textContent.includes(derivation.path));assert.equal(row.querySelector('literal'),null);
+  const calls=server.requests.length;getAppI18n(app.document).setLocale('zh-CN');assert.equal(importRows(app)[0],row);assert.match(row.querySelector('.bulk-import-derivation').textContent,/原始 MIDI 完整解析/);assert.equal(server.requests.length,calls);getAppI18n(app.document).setLocale('en');
+  await app.click('bulk-import-save');await settled(app);assert.equal(importRows(app)[0].dataset.status,'saved');assert.match(importRows(app)[0].textContent,/Complete score parsed/);
+  selectImportFiles(app,[file]);await app.until(()=>reviewed(app)&&importRows(app)[0]?.dataset.status==='ready');await app.click('bulk-import-save');await settled(app);assert.equal(importRows(app)[0].dataset.status,'duplicate');assert.match(importRows(app)[0].textContent,/Complete score parsed/);
+  await app.close();app=await nativeStorageApp(server);await ready(app);await app.click('bulk-import-history-button');await app.until(()=>app.document.querySelector('[data-history-status="duplicate"]'));assert.match(app.$('bulk-import-history-list').textContent,/Complete score parsed from the retained original MIDI/);getAppI18n(app.document).setLocale('zh-CN');assert.match(app.$('bulk-import-history-list').textContent,/原始 MIDI 完整解析/);
+ }finally{await app.close()}
+});

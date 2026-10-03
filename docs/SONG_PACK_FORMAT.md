@@ -60,8 +60,35 @@ retained as inert original data, not executed or automatically played.
 Archives without a pack manifest can contain these song folders directly. The
 importer also recognizes the previously delivered
 `private-complete-midi-source-folder` metadata, canonical `*.wmhscore.json`, and
-compatible JSON backups. Legacy source folders without a canonical score remain
-visible, retained and nonplayable, including their truthful original diagnostic.
+compatible JSON backups. A recognized legacy version 1 source folder with an
+explicit `imports.canonical_score: null` may recheck exactly one declared original
+`.mid`/`.midi` using the current, complete standard MIDI importer. Its declared
+size and SHA-256 are mandatory and must match the streamed ZIP inventory. An
+optional `imports.raw_midi` must name that same file. Missing/contradictory
+metadata (including duplicate JSON keys), duplicate source paths, multiple MIDI
+declarations, hidden paths and supplied canonical files block this fallback. A supplied canonical path remains
+authoritative, including when its file is missing, corrupt or invalid. Unknown
+formats/versions and unified `score: null` folders are never reinterpreted.
+
+A successful recheck adds report `derivation` provenance with code
+`pack_retained_midi_recheck`, original ZIP member `path`, `bytes` and `sha256`.
+Preflight, commit and retained history explicitly identify the derivation. The
+score is exactly the standard MIDI import result, preserving its ID, complete
+source and import diagnostics; the container does not rewrite IDs or musical
+content. For newly saved derived scores only, an absent/null explicit label uses
+the metadata title as a separate library label when it meets the existing
+nonempty/1,024-byte label bounds. Canonical title/ID/source bytes and labels on
+existing duplicates remain unchanged. Derived preflight/result/history captions
+use that label, including the authoritative existing label on duplicates.
+This canonical key-event score is not a claim of equivalence to raw MIDI
+reference audio. A failed recheck stays nonplayable and reports the current parser
+error alongside the historical `canonical_error`; complete metadata stays in the
+unchanged original. Raw event JSON never becomes a score.
+
+Reimporting a previously retained original reruns supported parsing. Exact
+existing scores deduplicate as usual, newly supported scores save once, and each
+commit appends a new receipt. Old receipts, ZIP/source bytes, metadata and backups
+are not rewritten. Original export remains byte-exact.
 Generic ZIPs can contain MIDI, MusicXML, MXL, jianpu and canonical JSON inputs.
 Duplicate canonical content is reported rather than saved twice. A separately
 convertible source with the same base filename as a canonical file is an explicit
@@ -107,6 +134,8 @@ content deduplication and does not overwrite existing editions.
 The version 1 report has `source`, `inventory`, `items`, `summary`, and `warnings`.
 Source fields are `filename`, `bytes`, `sha256`, `archive_key`, and `retained`.
 Each item has `index`, `path`, `title`, `status`, `code`, `message`, and `playable`.
+The optional additive `derivation` field is omitted for supplied canonical scores
+and old receipts; it survives duplicate outcomes and retained-history reloads.
 `entry` is the existing native Entry for saved or already-saved content.
 Statuses are `ready`, `saved`, `duplicate`, `conflict`, `retained_nonplayable`, or
 `error`; all six counts plus `total` appear in the summary. In preview,
@@ -133,6 +162,9 @@ holds the whole expanded archive in memory or extracts user-controlled paths.
 Only selected bounded score/metadata candidates are decoded. At most 1,024 song
 rows and 128 MiB aggregate canonical JSON can be planned per import.
 
+Legacy retained-MIDI rechecks are bounded before decode to 1,024 parser requests
+and 128 MiB aggregate source input per pack; additional rows stay nonplayable with
+a limit reason. The individual source remains bounded to 8 MiB.
 Canonical scores and ordinary score imports remain limited to 8 MiB. Existing
 JSON backup inputs allow 40 MiB; this does not raise the individual score limit.
 Song metadata parsing allows 256 KiB per file and 8 MiB aggregate across at most

@@ -49,6 +49,13 @@ pub struct Source {
     pub archive_key: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Derivation {
+    pub code: String,
+    pub path: String,
+    pub bytes: u64,
+    pub sha256: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {
     pub index: usize,
     pub path: String,
@@ -57,6 +64,8 @@ pub struct Item {
     pub code: String,
     pub message: String,
     pub playable: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub derivation: Option<Derivation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entry: Option<Entry>,
 }
@@ -77,10 +86,102 @@ struct Candidate {
     label: Option<String>,
     score: std::result::Result<String, String>,
     explicit_only: bool,
+    derivation: Option<Derivation>,
+}
+#[derive(Default)]
+struct RecheckBudget {
+    requests: usize,
+    bytes: u64,
+}
+impl RecheckBudget {
+    fn reserve(&mut self, bytes: u64) -> Result<()> {
+        if self.requests >= MAX_SONGS || bytes > MAX_PACK_BYTES as u64 - self.bytes {
+            return Err(fail(413, "pack_source_only", "Retained MIDI recheck exceeds 1024 parser requests or 128 MiB aggregate input; original retained without parsing"));
+        }
+        self.requests += 1;
+        self.bytes += bytes;
+        Ok(())
+    }
 }
 struct Plan {
     report: Report,
     candidates: Vec<Candidate>,
+}
+
+// A repeated canonical_score or source descriptor key is ambiguous. Preserve
+// such metadata as source-only instead of letting JSON's last value enable a
+// recheck that an earlier value would forbid.
+struct UniqueMetadata(Value);
+impl<'de> Deserialize<'de> for UniqueMetadata {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = UniqueMetadata;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("JSON metadata without duplicate object keys")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> std::result::Result<Self::Value, A::Error> {
+                let mut value = serde_json::Map::new();
+                while let Some((key, entry)) = map.next_entry::<String, UniqueMetadata>()? {
+                    if value.insert(key, entry.0).is_some() {
+                        return Err(serde::de::Error::custom("Duplicate metadata object key"));
+                    }
+                }
+                Ok(UniqueMetadata(Value::Object(value)))
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: A,
+            ) -> std::result::Result<Self::Value, A::Error> {
+                let mut value = Vec::new();
+                while let Some(entry) = seq.next_element::<UniqueMetadata>()? {
+                    value.push(entry.0);
+                }
+                Ok(UniqueMetadata(Value::Array(value)))
+            }
+            fn visit_str<E: serde::de::Error>(
+                self,
+                value: &str,
+            ) -> std::result::Result<Self::Value, E> {
+                Ok(UniqueMetadata(Value::String(value.into())))
+            }
+            fn visit_bool<E: serde::de::Error>(
+                self,
+                value: bool,
+            ) -> std::result::Result<Self::Value, E> {
+                Ok(UniqueMetadata(Value::Bool(value)))
+            }
+            fn visit_u64<E: serde::de::Error>(
+                self,
+                value: u64,
+            ) -> std::result::Result<Self::Value, E> {
+                Ok(UniqueMetadata(value.into()))
+            }
+            fn visit_i64<E: serde::de::Error>(
+                self,
+                value: i64,
+            ) -> std::result::Result<Self::Value, E> {
+                Ok(UniqueMetadata(value.into()))
+            }
+            fn visit_f64<E: serde::de::Error>(
+                self,
+                value: f64,
+            ) -> std::result::Result<Self::Value, E> {
+                serde_json::Number::from_f64(value)
+                    .map(|number| UniqueMetadata(Value::Number(number)))
+                    .ok_or_else(|| E::custom("Invalid metadata number"))
+            }
+            fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<Self::Value, E> {
+                Ok(UniqueMetadata(Value::Null))
+            }
+        }
+        deserializer.deserialize_any(Visitor)
+    }
 }
 
 pub fn is_import_route(path: &str) -> bool {
@@ -247,6 +348,7 @@ fn candidate(
         label,
         score,
         explicit_only: false,
+        derivation: None,
     }
 }
 fn json_candidates(path: &str, bytes: &[u8]) -> Result<Vec<Candidate>> {
@@ -317,9 +419,11 @@ fn metadata_candidate(
     inventory: &Inventory,
     path: &str,
     metadata: &Value,
+    rechecks: &mut RecheckBudget,
 ) -> Candidate {
     let folder = path.rsplit_once('/').map(|x| x.0).unwrap_or("");
     let title = metadata["title"].as_str().unwrap_or(folder).to_owned();
+    let mut derivation = None;
     let score = (|| -> Result<String> {
         if metadata["version"] != 1 {
             return Err(invalid("Unsupported song metadata version"));
@@ -397,6 +501,35 @@ fn metadata_candidate(
             )?)
             .map_err(invalid);
         }
+        if metadata["format"] == "private-complete-midi-source-folder"
+            && metadata["imports"].get("canonical_score") == Some(&Value::Null)
+        {
+            let source = retained_midi_source(folder, metadata, inventory)?;
+            if source.bytes > native_library::MAX_SCORE_BYTES as u64 {
+                return Err(invalid(
+                    "Source exceeds the unchanged 8 MiB score/import limit",
+                ));
+            }
+            rechecks.reserve(source.bytes)?;
+            let bytes = read_zip(archive, &source.path, native_library::MAX_SCORE_BYTES)?;
+            // Use the same complete importer and serialization as a standalone
+            // MIDI. Container provenance must not change the score or its ID.
+            let score = standard(&source.path, &bytes).map_err(|current| {
+                invalid(format!(
+                    "Current retained MIDI recheck: {current}. Previous import diagnostic: {}",
+                    metadata["imports"]["canonical_error"]
+                        .as_str()
+                        .unwrap_or("No canonical score was supplied")
+                ))
+            })?;
+            derivation = Some(Derivation {
+                code: "pack_retained_midi_recheck".into(),
+                path: source.path.clone(),
+                bytes: source.bytes,
+                sha256: source.sha256.clone(),
+            });
+            return Ok(score);
+        }
         // Legacy delivered source folders explicitly distinguish source-only
         // songs. Never reinterpret their events JSON as a canonical score.
         Err(fail(
@@ -408,12 +541,92 @@ fn metadata_candidate(
         ))
     })()
     .map_err(|e| e.error);
-    candidate(
+    let mut candidate = candidate(
         path.into(),
         title,
         metadata["label"].as_str().map(str::to_owned),
         score,
-    )
+    );
+    if derivation.is_some() && candidate.label.is_none() {
+        // A container caption is a library label, never canonical music data.
+        candidate.label = metadata["title"]
+            .as_str()
+            .filter(|title| !title.trim().is_empty() && title.len() <= 1024)
+            .map(str::to_owned);
+    }
+    candidate.derivation = derivation;
+    candidate
+}
+
+fn retained_midi_source<'a>(
+    folder: &str,
+    metadata: &Value,
+    inventory: &'a Inventory,
+) -> Result<&'a FileInventory> {
+    let reject = || {
+        invalid("Legacy retained MIDI recheck requires one unambiguous declared MIDI, its verified size and SHA-256, and no supplied canonical score")
+    };
+    if metadata.get("title").is_some_and(|v| !v.is_string())
+        || metadata
+            .get("label")
+            .is_some_and(|v| !v.is_null() && !v.is_string())
+        || metadata.get("score").is_some_and(|v| !v.is_null())
+        || metadata["imports"]
+            .get("canonical_error")
+            .is_some_and(|v| !v.is_null() && !v.is_string())
+    {
+        return Err(reject());
+    }
+    let prefix = if folder.is_empty() {
+        String::new()
+    } else {
+        format!("{folder}/")
+    };
+    if inventory.files.iter().any(|file| {
+        file.path.strip_prefix(&prefix).is_some_and(|relative| {
+            let lower = relative.to_lowercase();
+            lower.ends_with(".wmhscore.json")
+                || lower == "score.json"
+                || lower.ends_with("/score.json")
+        })
+    }) {
+        return Err(reject());
+    }
+    let sources = metadata["source_files"].as_array().ok_or_else(reject)?;
+    let mut paths = HashSet::new();
+    let mut midi = None;
+    for source in sources {
+        let relative = source["path"].as_str().ok_or_else(reject)?;
+        if !paths.insert(relative) {
+            return Err(reject());
+        }
+        let lower = relative.to_lowercase();
+        if !lower.ends_with(".mid") && !lower.ends_with(".midi") {
+            continue;
+        }
+        if midi.is_some() || relative.split('/').any(|part| part.starts_with('.')) {
+            return Err(reject());
+        }
+        let target = resolve(folder, relative)?;
+        if target.split('/').any(|part| part.starts_with('.')) {
+            return Err(reject());
+        }
+        let actual = inventory
+            .files
+            .iter()
+            .find(|f| f.path == target)
+            .ok_or_else(reject)?;
+        if source["bytes"].as_u64() != Some(actual.bytes)
+            || source["sha256"].as_str() != Some(actual.sha256.as_str())
+            || metadata["imports"]
+                .get("raw_midi")
+                .is_some_and(|v| v.as_str() != Some(relative))
+        {
+            return Err(reject());
+        }
+        midi = Some(actual);
+    }
+    midi.ok_or_else(reject)
 }
 
 fn check_candidates(candidates: &[Candidate]) -> Result<()> {
@@ -474,7 +687,9 @@ fn plan(filename: &str, bytes: &[u8]) -> Result<Plan> {
                 ));
             }
             let parsed = read_zip(&mut archive, &f.path, MAX_METADATA_BYTES).and_then(|data| {
-                serde_json::from_slice::<Value>(&data).map_err(|e| invalid(e.to_string()))
+                serde_json::from_slice::<UniqueMetadata>(&data)
+                    .map(|metadata| metadata.0)
+                    .map_err(|e| invalid(e.to_string()))
             });
             match parsed {
                 Ok(value)
@@ -570,8 +785,15 @@ fn plan(filename: &str, bytes: &[u8]) -> Result<Plan> {
                 }
                 metadata.retain(|(p, _)| wanted.contains(p));
             }
+            let mut rechecks = RecheckBudget::default();
             for (path, value) in metadata {
-                candidates.push(metadata_candidate(&mut archive, &inventory, &path, &value));
+                candidates.push(metadata_candidate(
+                    &mut archive,
+                    &inventory,
+                    &path,
+                    &value,
+                    &mut rechecks,
+                ));
                 check_candidates(&candidates)?;
             }
         } else {
@@ -726,6 +948,11 @@ fn check_report_budget(plan: &Plan) -> Result<()> {
         + 65536;
     for c in &plan.candidates {
         budget += c.path.len() * 2 + 4096 + 8192;
+        if let Some(derivation) = &c.derivation {
+            budget += serde_json::to_vec(derivation)
+                .map_err(|e| invalid(e.to_string()))?
+                .len();
+        }
         if let Ok(raw) = &c.score {
             let score: score_core::Score =
                 serde_json::from_str(raw).map_err(|e| invalid(e.to_string()))?;
@@ -777,13 +1004,18 @@ pub fn import(
             code: "pack_source_only".into(),
             message: String::new(),
             playable: false,
+            derivation: candidate.derivation,
             entry: None,
         };
         match candidate.score {
             Err(message) => item.message = clipped(&message, 4096),
             Ok(score_json) => {
                 let (score, hash) = checked_score(&score_json)?;
-                item.title = score.title;
+                item.title = if item.derivation.is_some() {
+                    candidate.label.clone().unwrap_or(score.title)
+                } else {
+                    score.title
+                };
                 item.playable = true;
                 item.status = "ready".into();
                 item.code = "pack_valid_score".into();
@@ -841,6 +1073,11 @@ pub fn import(
                     planned_hashes.insert(hash);
                     planned_ids.insert(score.id);
                 }
+            }
+        }
+        if item.derivation.is_some() && matches!(item.status.as_str(), "saved" | "duplicate") {
+            if let Some(entry) = &item.entry {
+                item.title = entry.label.clone();
             }
         }
         plan.report.items.push(item);
@@ -1056,4 +1293,24 @@ fn export_pack(library: &NativeLibrary, bytes: &[u8]) -> Result<http::Response<V
         ));
     }
     Ok(crate::response(200, "application/zip", bytes))
+}
+
+#[cfg(test)]
+mod recheck_budget_tests {
+    use super::*;
+    #[test]
+    fn retained_midi_rechecks_stop_at_input_and_request_budgets() {
+        let mut bytes = RecheckBudget::default();
+        for _ in 0..16 {
+            bytes
+                .reserve(native_library::MAX_SCORE_BYTES as u64)
+                .unwrap();
+        }
+        assert!(bytes.reserve(1).is_err());
+        let mut requests = RecheckBudget::default();
+        for _ in 0..MAX_SONGS {
+            requests.reserve(1).unwrap();
+        }
+        assert!(requests.reserve(1).is_err());
+    }
 }

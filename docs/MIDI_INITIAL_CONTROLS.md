@@ -35,9 +35,15 @@ unmatched/unclosed-release blockers remain. Tempo, key and meter conflict checks
 are unchanged. The raw MIDI reference receiver is unchanged and can still reject
 an input that the canonical key-event importer admits.
 
-Existing legacy ZIP metadata with `imports.canonical_score: null` continues to
-be source-only: this importer improvement applies when the original MIDI is
-submitted for import, not to a promise of automatic old-pack upgrades.
+On reimport, recognized legacy version 1 ZIP folders with an explicit
+`imports.canonical_score: null` may retry exactly one declared original MIDI,
+with mandatory matching size and SHA-256 and no supplied canonical score.
+Successful complete parsing adds explicit derivation provenance to preflight,
+commit and retained history; failures remain source-only with current and
+historical diagnostics. Exact existing scores deduplicate, new complete scores
+save once, and receipts append without changing original archives, metadata or
+prior records. See [the container contract](SONG_PACK_FORMAT.md) for ambiguity,
+version and parsing bounds. This does not grant new raw reference audio support.
 
 ## Semantic sources
 
