@@ -3,6 +3,7 @@ import {openScoreLibrary,LIBRARY_LIMITS,libraryError} from './local-library.js';
 
 const bytes=value=>new TextEncoder().encode(value).byteLength;
 const nativeKey=/^song-[0-9a-f]{64}$/;
+const assetReadQueueLimit=32;
 function issue(code,message,{status=0,existing,persistence='not-saved',cause}={}){
  const error=libraryError(code,message,{cause});Object.assign(error,{status,existing,persistence});return error;
 }
@@ -45,7 +46,8 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
  if(health?.name!=='WorldMusicHub'||health.engine!=='rust'||health.score_format_version!==1||!['native-protocol-no-listener','loopback-only'].includes(health.network))throw issue('library_environment_unknown','The Rust app health contract did not identify a supported storage environment.');
  const kind=health.network==='native-protocol-no-listener'?'native':'browser';
  const browser=kind==='browser'?await openBrowserLibrary():null;
- const allowedAssets=new Map();
+ const allowedAssets=new Map(),assetReads=[];
+ let assetReadActive=false,closed=false;
  const validate=async(score,signal)=>{
   signal?.throwIfAborted();const result=validateScore?await validateScore(structuredClone(score),signal):await request('/api/compile',{body:score,signal});signal?.throwIfAborted();
   if(result!==true&&(!result?.score||!Array.isArray(result?.timeline?.notes)))throw issue('library_validation_required','Rust validation did not confirm this complete canonical score.');
@@ -87,10 +89,12 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
   }else{
    const value=await request('/api/library/load',{body:{key:storageKey},signal});
    saved={entry:entry(kind,value?.entry),score:parseScore(value?.score_json),score_json:value.score_json};
-   if(value.clean_package){saved.cleanSong=prepareCleanSong(key,value.clean_package,saved.score);allowedAssets.set(key,saved.cleanSong);}
+   if(value.clean_package)saved.cleanSong=prepareCleanSong(key,value.clean_package,saved.score);
    if(saved.entry.storageKey!==storageKey)throw issue('library_invalid_response','The loaded archive does not match the selected library key.');
   }
-  await validate(saved.score,signal);return saved;
+  await validate(saved.score,signal);
+  if(kind==='native'&&!closed){if(saved.cleanSong)allowedAssets.set(key,saved.cleanSong);else allowedAssets.delete(key);}
+  return saved;
  }
  async function exportBackup({libraryKeys,signal}={}){
   if(kind==='browser'&&libraryKeys===undefined){const text=await browser.exportBackup();signal?.throwIfAborted();return{text,filename:'worldmusichub-library-backup.json',storage:info.storage}}
@@ -112,16 +116,46 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
   if(bytes(text)>LIBRARY_LIMITS.backupBytes)throw issue('library_export_limit','Complete backup exceeds 40 MiB; no partial backup was prepared.');
   return{text,filename:'worldmusichub-library-backup.json',storage:info.storage};
  }
- async function loadAsset(key,handle,{signal}={}){
-  const storageKey=rawKey(kind,key),song=allowedAssets.get(key),asset=song?.media.find(item=>item.handle===handle);
-  if(kind!=='native'||!asset)throw issue('clean_asset_identity','Choose an asset belonging to the loaded package.');
-  const response=await fetcher('/api/library/asset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:storageKey,handle}),credentials:'same-origin',redirect:'error',cache:'no-store',signal});
+ function checkAssetRead({key,handle,asset,signal}){
+  signal?.throwIfAborted();
+  if(closed)throw issue('library_storage_closed','The local library is closed.');
+  const current=allowedAssets.get(key)?.media.find(item=>item.handle===handle);
+  if(kind!=='native'||!asset||!current||current.sha256!==asset.sha256||current.bytes!==asset.bytes||current.mime!==asset.mime)throw issue('clean_asset_identity','Choose an asset belonging to the loaded package.');
+ }
+ async function readAsset(job){
+  checkAssetRead(job);const {storageKey,handle,asset}=job;
+  // Windows admits one large native operation. Keep ownership through the full
+  // response, even after caller cancellation: aborting fetch can return before
+  // the native request releases its permit and make the next read fail as busy.
+  const response=await fetcher('/api/library/asset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:storageKey,handle}),credentials:'same-origin',redirect:'error',cache:'no-store'});
+  const buffer=await response.arrayBuffer();checkAssetRead(job);
   if(!response.ok||response.redirected||(response.url&&new URL(response.url,origin).origin!==expectedOrigin))throw issue('clean_asset_read','The validated media could not be read.');
   const mime=response.headers?.get('content-type')?.split(';')[0];if(mime!==asset.mime)throw issue('clean_asset_type','The media type does not match its package.');
-  const buffer=await response.arrayBuffer();signal?.throwIfAborted();if(buffer.byteLength!==asset.bytes)throw issue('clean_asset_size','The media size does not match its package.');
+  if(buffer.byteLength!==asset.bytes)throw issue('clean_asset_size','The media size does not match its package.');
   const digest=await globalThis.crypto.subtle.digest('SHA-256',buffer),actual=[...new Uint8Array(digest)].map(value=>value.toString(16).padStart(2,'0')).join('');
   if(actual!==asset.sha256)throw issue('clean_asset_hash','The media content does not match its package.');
-  signal?.throwIfAborted();return new Blob([buffer],{type:asset.mime});
+  checkAssetRead(job);return new Blob([buffer],{type:asset.mime});
  }
- return{info,list,save,load,loadAsset,exportBackup,close(){allowedAssets.clear();browser?.close()}};
+ async function drainAssetReads(){
+  if(assetReadActive||!assetReads.length)return;
+  assetReadActive=true;const job=assetReads.shift();job.detach();
+  try{job.resolve(await readAsset(job))}catch(error){job.reject(error)}
+  finally{assetReadActive=false;void drainAssetReads()}
+ }
+ async function loadAsset(key,handle,{signal}={}){
+  const job={key,handle,signal,storageKey:rawKey(kind,key),asset:allowedAssets.get(key)?.media.find(item=>item.handle===handle)};
+  checkAssetRead(job);
+  if(assetReads.length>=assetReadQueueLimit)throw issue('clean_asset_queue_limit','Too many media reads are waiting.');
+  return new Promise((resolve,reject)=>{
+   const abort=()=>{const index=assetReads.indexOf(job);if(index<0)return;assetReads.splice(index,1);job.detach();reject(signal.reason);};
+   Object.assign(job,{resolve,reject,detach:()=>signal?.removeEventListener('abort',abort)});
+   signal?.addEventListener('abort',abort,{once:true});assetReads.push(job);void drainAssetReads();
+  });
+ }
+ function close(){
+  closed=true;allowedAssets.clear();
+  for(const job of assetReads.splice(0)){job.detach();job.reject(issue('library_storage_closed','The local library is closed.'));}
+  browser?.close();
+ }
+ return{info,list,save,load,loadAsset,exportBackup,close};
 }

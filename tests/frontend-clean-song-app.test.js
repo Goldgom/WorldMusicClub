@@ -42,6 +42,24 @@ test('complete-song media has gesture lifecycle, localized optional failure and 
  await app.click('play-button');assert.equal(video.paused,true);getAppI18n(app.document).setLocale('zh-CN');app.$('clean-song-background').onerror();assert.match(app.$('clean-song-media-status').textContent,/背景无法显示/);assert.doesNotMatch(app.$('clean-song-preview').textContent,/inferred|Reference|channel /);await app.click('back-to-library');assert.equal(video.hidden,true);assert.equal(video.paused,true);assert.ok(pauses>0);
  }finally{await app.close();}});
 
+test('complete-song start admits a metadata-only PV on the shared clock before its first decoded frame',async()=>{
+ let clock=1000;const {app}=await setup({media:true,now:()=>clock});
+ try{
+  const video=app.$('clean-song-pv');let plays=0;
+  Object.defineProperty(video,'src',{configurable:true,get(){return this.getAttribute('src')||'';},set(value){this.setAttribute('src',value);}});
+  video.readyState=0;video.pause=()=>{video.paused=true;};video.play=()=>{plays++;video.paused=false;return Promise.resolve();};
+  video.load=()=>{if(!video.src)return;video.readyState=1;video.duration=5;video.onloadedmetadata?.();};
+  await activate(app,'listen');await app.until(()=>Boolean(video.src));
+  assert.equal(plays,0,'Admission still waits for the shared song-zero boundary');assert.equal(video.hidden,true);
+  clock+=65;app.frame();await app.tick();
+  assert.equal(plays,1,'The admitted renderer must request playback even when preload has supplied only metadata');
+  assert.ok(runningOscillators(app).length>0);assert.equal(video.hidden,true,'play() alone does not certify a decoded frame');
+  await app.click('play-button');video.readyState=2;video.onloadeddata();app.frame();await app.tick();
+  assert.equal(video.hidden,false);assert.equal(video.paused,true);assert.equal(plays,1,'Late data cannot restart a paused song');
+  await app.click('back-to-library');assert.equal(video.hidden,true);assert.equal(video.src,'');
+ }finally{await app.close();}
+});
+
 test('a late audio unlock cannot activate clean audio after another song selection',async()=>{const {app}=await setup();try{const pending=deferred();app.setUnlock(()=>pending.promise);await app.click('start-listen');await app.click('home-single-player');const bundled=app.document.querySelector('#catalog [data-score-id]');bundled.click();await app.until(()=>app.$('clean-song-preview').hidden);pending.resolve();await app.tick();assert.equal(runningOscillators(app).length,0);}finally{await app.close();}});
 
 test('range summary retains all notes and 88-key action changes device range without transposition',async()=>{const {app,score}=await setup();try{await activate(app,'listen');await app.click('play-button');assert.match(app.$('song-complete-range-text').textContent,/5 notes/);const original=JSON.stringify(score.parts);await app.click('song-use-piano-88');assert.equal(app.$('key-count').value,'88');assert.equal(JSON.stringify(score.parts),original);assert.equal(app.$('song-use-piano-88').hidden,true);app.$('tempo').value='130';app.emit(app.$('tempo'),'change');assert.equal(app.$('tempo').value,'120');assert.equal(app.requests.filter(request=>request.path==='/api/transpose').length,0);}finally{await app.close();}});

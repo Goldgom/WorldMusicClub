@@ -12,8 +12,8 @@ if(!/^[a-f0-9]{40}$/.test(process.env.WMH_SOURCE_SHA||'')||process.env.WMH_SOURC
 if(!process.env.WMH_NATIVE_IMPORT_DRIVER)throw Error('An exact-source native_import_driver is required.');
 const output=path.resolve(process.env.WMH_ARTIFACT_DIR||path.join(root,'test-results/clean-song')),origin='https://wmh.localhost',fixture=authoredCleanPackage(),binary=path.resolve(process.env.WMH_NATIVE_IMPORT_DRIVER),library=path.join(output,'authored-clean-library');
 await mkdir(output,{recursive:true});
-const report={source_sha:head,kind:'hosted-browser-real-native-clean-package',native_filesystem:true,native_window:false,physical_audio:false,cases:[],screenshots:[],page_errors:[],ordinary_clean_navigation_requests:0,ok:false};
-let browser,driver,context,page;
+const report={source_sha:head,kind:'hosted-browser-real-native-clean-package',native_filesystem:true,native_window:false,physical_audio:false,cases:[],screenshots:[],page_errors:[],ordinary_clean_navigation_requests:0,max_concurrent_asset_reads:0,ok:false};
+let browser,driver,context,page,assetReads=0;
 async function screenshot(name){await page.screenshot({path:path.join(output,name),fullPage:true});report.screenshots.push(name);}
 async function imageReady(id){await page.waitForFunction(id=>{const n=document.getElementById(id),b=n?.getBoundingClientRect();return n&&!n.hidden&&n.complete&&n.naturalWidth>0&&b.width>0&&b.height>0&&(id!=='clean-song-cover'||document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)===n)},id);}
 async function parts(open){if((await page.locator('#song-parts-tools').getAttribute('open')!==null)!==open)await page.locator('#song-parts-summary').click();}
@@ -21,7 +21,12 @@ async function launch(){
  driver=startNativeImportDriver({binary,directory:library,cwd:root});context=await browser.newContext({viewport:{width:1280,height:720},acceptDownloads:true});
  await context.route(`${origin}/**`,async route=>{
   const q=route.request(),url=new URL(q.url());
-  if(url.pathname.startsWith('/api/')){if(url.pathname==='/api/notation-navigation'&&q.postDataJSON()?.id===fixture.score.notation.id)report.ordinary_clean_navigation_requests++;const response=await driver.fetcher(url.pathname+url.search,{method:q.method(),headers:q.headers(),body:q.postDataBuffer()||undefined});await route.fulfill({status:response.status,contentType:response.contentType,body:await response.bytes()});return;}
+  if(url.pathname.startsWith('/api/')){
+   if(url.pathname==='/api/notation-navigation'&&q.postDataJSON()?.id===fixture.score.notation.id)report.ordinary_clean_navigation_requests++;
+   const asset=url.pathname==='/api/library/asset';if(asset){assetReads++;report.max_concurrent_asset_reads=Math.max(report.max_concurrent_asset_reads,assetReads);}
+   let response,body;try{response=await driver.fetcher(url.pathname+url.search,{method:q.method(),headers:q.headers(),body:q.postDataBuffer()||undefined});body=await response.bytes();}finally{if(asset)assetReads--;}await route.fulfill({status:response.status,contentType:response.contentType,body});
+   return;
+  }
   const file=path.resolve(root,'web','.'+decodeURIComponent(url.pathname==='/'?'/index.html':url.pathname));if(!file.startsWith(path.join(root,'web')+path.sep)){await route.abort();return;}
   try{await route.fulfill({status:200,contentType:({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'})[path.extname(file)]||'application/octet-stream',body:await readFile(file)});}catch{await route.fulfill({status:404,body:'Not found'});}
  });
@@ -48,7 +53,7 @@ try{
  await page.locator('#import-tools-button').click();await page.locator('#bulk-import-history-button').click();if(await page.locator('#bulk-import-history').getAttribute('open')===null)await page.locator('#bulk-import-history > summary').click();await page.locator('#bulk-import-export-songs input[data-import-export-key]').waitFor();await page.locator('#bulk-import-export-all').click();const download=page.waitForEvent('download');await page.locator('#bulk-import-export-pack').click();const file=await download,exportPath=path.join(output,'authored-clean-export.zip');await file.saveAs(exportPath);const exportBytes=await readFile(exportPath),inventory=inspectAuthoredZip(exportBytes);assertCleanExportInventory(inventory,fixture,key);report.export_inventory=inventory;report.export_sha256=digest(exportBytes);
  await page.locator('#bulk-import-done').click();await choose(exportPath);await page.locator('#bulk-import-save').click();await page.waitForFunction(()=>document.querySelector('#bulk-import-dialog').dataset.phase==='review'&&document.querySelectorAll('[data-status="duplicate"]').length===1);assert.equal(await page.locator('#catalog [data-library-key]').count(),1);report.cases.push({name:'exact-json-and-all-media-export-reimport-idempotence',ok:true});
  await context.close();context=null;await driver.close();driver=null;await launch();await page.waitForFunction(()=>document.querySelectorAll('#catalog [data-library-key]').length===1);assert.equal(await page.locator('#catalog [data-library-key]').getAttribute('data-library-key'),catalogKey);await page.locator(`#catalog [data-library-key="${catalogKey}"]`).click();await imageReady('clean-song-cover');await page.waitForFunction(()=>!document.querySelector('#start-listen').disabled);assert.equal(await page.locator('#clean-song-tracks li').count(),3);await screenshot('clean-package-fresh-process-restart-zh.png');report.cases.push({name:'fresh-process-and-profile-retain-complete-song',ok:true});
- assert.deepEqual(report.page_errors,[]);assert.equal(report.ordinary_clean_navigation_requests,0,'Clean following must retain its admitted native clock');report.ok=true;
+ assert.deepEqual(report.page_errors,[]);assert.equal(report.ordinary_clean_navigation_requests,0,'Clean following must retain its admitted native clock');assert.equal(report.max_concurrent_asset_reads,1,'Actual verified media must load through bounded serial reads');report.ok=true;
 }catch(error){report.error=error.stack||String(error);process.exitCode=1;try{await screenshot('clean-package-failure.png');}catch{}}
 finally{await context?.close();await browser?.close();await driver?.close();await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2)+'\n');}
 if(!report.ok)throw Error(report.error);

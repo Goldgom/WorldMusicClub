@@ -54,14 +54,76 @@ function createCleanNavigationObserver(){
   try{const body=options?.body;if(typeof body!=='string'||body.length>1024*1024)throw Error('Clean navigation request observation bound exceeded');if(JSON.parse(body)?.id===scoreId)requests=Math.min(requests+1,65);}catch(error){failure??=String(error);}
  },ready(status){if(failure)throw Error(failure);if(scoreId===null||status!=='ready'||requests!==0)throw Error('Clean written following is not ready or requested ordinary notation navigation');return{status,ordinaryNavigationRequests:requests};}};
 }
+/* Observe status/error metadata only; successful asset bytes stay unread here. */
+function createCleanAssetRequestObserver({now=()=>performance.now(),maxRows=32}={}) {
+ if(!Number.isSafeInteger(maxRows)||maxRows<1||maxRows>64)throw Error('Invalid clean asset observation bound');
+ const rows=[],started=now(),text=value=>String(value??'').slice(0,512);let sequence=0,omitted=0,stopped=false;
+ return{observe(path,options,promise){
+  if(stopped||path!=='/api/library/asset')return promise;
+  const row={sequence:++sequence,startedMs:Math.max(0,now()-started),finishedMs:null,handle:null,status:null,outcome:'pending',errorCode:null,error:null,errorRead:null};
+  try{if(typeof options?.body!=='string'||options.body.length>4096)throw Error('Unbounded asset request identity');const handle=JSON.parse(options.body)?.handle;if(typeof handle!=='string'||handle.length>128)throw Error('Invalid asset request handle');row.handle=handle;}catch(error){row.observationError=text(error);}
+  if(rows.length===maxRows){rows.shift();omitted++;}rows.push(row);
+  try{Reflect.apply(Promise.prototype.then,promise,[response=>{if(stopped)return;row.finishedMs=Math.max(0,now()-started);row.status=response.status;row.outcome=response.ok?'response-ok':'response-failed';
+   if(!response.ok){row.errorRead='pending';try{Promise.resolve(response.clone().json()).then(value=>{if(!stopped){row.errorCode=typeof value?.code==='string'?value.code.slice(0,128):null;row.error=typeof value?.error==='string'?text(value.error):null;row.errorRead='parsed';}},error=>{if(!stopped){row.errorRead='unreadable';row.observationError=text(error);}});}catch(error){row.errorRead='unreadable';row.observationError=text(error);}}
+  },error=>{if(!stopped){row.finishedMs=Math.max(0,now()-started);row.outcome='fetch-rejected';row.error=text(error?.message??error);row.errorCode=text(error?.name);}}]);}catch(error){row.observationError=text(error);}
+  return promise;
+ },snapshot(){return JSON.parse(JSON.stringify({rows,omitted,requests:sequence}));},stop(){stopped=true;}};
+}
+/* Passive observation of the one application-owned video. Forward every play
+ * call unchanged; neither readiness events nor observation authorize playback. */
+function createCleanPlaybackObserver({video,readAudio,readPosition,readRenderer,readMediaStatus,style=node=>getComputedStyle(node),now=()=>performance.now(),maxRows=48,maxBytes=24*1024}) {
+ if(!Number.isSafeInteger(maxRows)||maxRows<1||maxRows>64||!Number.isSafeInteger(maxBytes)||maxBytes<2||maxBytes>24*1024)throw Error('Invalid clean playback observation bound');
+ const original=video.play,descriptor=Object.getOwnPropertyDescriptor(video,'play'),started=now(),encoder=new TextEncoder(),rows=[],events=['loadstart','loadedmetadata','loadeddata','canplay','canplaythrough','play','playing','waiting','stalled','suspend','seeking','seeked','pause','ended','emptied','abort','error'];
+ let stopped=false,frameStarted=false,frameCount=0,lastFrame=null,callback=null,rowBytes=2,omitted=0,observationError=null;
+ const counts={playAttempts:0,playResolved:0,playRejected:0,playThrew:0},mediaEvents={},text=value=>String(value??'').slice(0,512),number=value=>Number.isFinite(value)?value:value===Infinity?'Infinity':value===-Infinity?'-Infinity':null;
+ const errorDetails=error=>({name:text(error?.name),message:text(error?.message??error)});
+ function videoState(){return{currentSrcPresent:Boolean(video.currentSrc),currentSrcIsBlob:typeof video.currentSrc==='string'&&video.currentSrc.startsWith('blob:'),srcPresent:Boolean(video.getAttribute('src')),srcIsBlob:typeof video.src==='string'&&video.src.startsWith('blob:'),readyState:number(video.readyState),networkState:number(video.networkState),duration:number(video.duration),currentTime:number(video.currentTime),paused:video.paused,ended:video.ended,muted:video.muted,hidden:video.hidden,display:text(style(video).display),width:number(video.videoWidth),height:number(video.videoHeight),error:video.error?{code:number(video.error.code),message:text(video.error.message)}:null};}
+ function append(kind,detail={}){if(stopped)return;try{
+  const row={elapsedMs:Math.max(0,now()-started),kind,...detail,video:videoState()},bytes=encoder.encode(JSON.stringify(row)).length+1;
+  while(rows.length&&(rows.length>=maxRows||rowBytes+bytes>maxBytes)){rowBytes-=encoder.encode(JSON.stringify(rows.shift())).length+1;omitted++;}
+  if(rowBytes+bytes<=maxBytes){rows.push(row);rowBytes+=bytes;}else omitted++;
+ }catch(error){observationError??=text(error);}}
+ function observedPlay(...args){
+  const owned=this===video&&!stopped,attempt=owned?++counts.playAttempts:null;if(owned)append('play-attempt',{attempt});
+  let result;try{result=Reflect.apply(original,this,args);}catch(error){if(owned){counts.playThrew++;try{append('play-threw',{attempt,error:errorDetails(error)});}catch{observationError??='Unreadable play exception';}}throw error;}
+  if(owned){try{Reflect.apply(Promise.prototype.then,result,[()=>{if(!stopped){counts.playResolved++;append('play-resolved',{attempt});}},error=>{if(!stopped){counts.playRejected++;try{append('play-rejected',{attempt,error:errorDetails(error)});}catch{observationError??='Unreadable play rejection';}}}]);}catch{append('play-returned-without-native-promise',{attempt});}}
+  return result;
+ }
+ const onEvent=event=>{if(!stopped&&event.target===video){const elapsedMs=Math.max(0,now()-started),entry=mediaEvents[event.type]??={count:0,firstMs:elapsedMs,lastMs:elapsedMs};entry.count++;entry.lastMs=elapsedMs;append('media-event',{event:text(event.type),trusted:event.isTrusted===true});}};
+ video.play=observedPlay;for(const name of events)video.addEventListener(name,onEvent,true);append('begin');
+ function state(){const audio=readAudio();return{audio:audio?{sourceStarts:audio.sourceStarts,oscillatorStarts:audio.oscillatorStarts,activeSources:audio.activeSources,pendingSources:audio.pendingSources}:null,positionMs:number(readPosition()),rendererState:text(readRenderer()),mediaStatus:text(readMediaStatus()),video:videoState(),videoFrames:{count:frameCount,last:lastFrame?{...lastFrame}:null}};}
+ return{state,startFrames(){
+  if(frameStarted)throw Error('Clean video frame observation already started');if(typeof video.requestVideoFrameCallback!=='function')throw Error('WebView2 video frame callbacks unavailable');frameStarted=true;
+  const onFrame=(_,metadata)=>{if(stopped||frameCount>=16)return;frameCount++;lastFrame={mediaTime:metadata.mediaTime,presentedFrames:metadata.presentedFrames,width:metadata.width,height:metadata.height};if(frameCount<16)callback=video.requestVideoFrameCallback(onFrame);};callback=video.requestVideoFrameCallback(onFrame);
+ },snapshot(){return{current:state(),trace:{rows:rows.slice(),rowBytes,omitted,...counts,mediaEvents:Object.fromEntries(Object.entries(mediaEvents).map(([name,value])=>[name,{...value}])),observationError}};},restore(){
+  stopped=true;if(callback!==null)video.cancelVideoFrameCallback(callback);for(const name of events)video.removeEventListener(name,onEvent,true);
+  if(video.play===observedPlay){if(descriptor)Object.defineProperty(video,'play',descriptor);else delete video.play;}
+ }};
+}
+function cleanPlaybackAdmission(state){return{audio:state.audio?.sourceStarts>0&&state.positionMs>300&&state.rendererState==='playing',video:state.videoFrames.count>=2&&state.videoFrames.last?.mediaTime>0};}
+async function awaitCleanPlaybackAdmission({observer,until,evidence,now=()=>performance.now(),milliseconds=25000}) {
+ const deadline=now()+milliseconds;let audioAdmission,videoPresentation;
+ evidence.stage='audio-admission';await until(()=>{const state=observer.state();if(!cleanPlaybackAdmission(state).audio)return false;audioAdmission=state;return true;},'actual clean audio scheduling and advancing renderer clock',milliseconds);evidence.audioAdmission=audioAdmission;
+ evidence.stage='video-presentation';await until(()=>{const state=observer.state(),admitted=cleanPlaybackAdmission(state);if(!admitted.audio||!admitted.video)return false;videoPresentation=state;return true;},'actual clean decoded PV frame presentation',Math.max(0,deadline-now()));evidence.videoPresentation=videoPresentation;
+}
+/* Capture before restoring either probe, on success and every thrown failure.
+ * A secondary observation/cleanup error must not replace the original failure. */
+async function retainCleanPlaybackEvidence({report,observer,restoreAudio,run}) {
+ const evidence=report.playbackEvidence={version:1,stage:'media-load'};let failed=false,failure,result;
+ try{result=await run(evidence);}catch(error){failed=true;failure=error;evidence.error=String(error).slice(0,512);}
+ const retainError=error=>{evidence.observationError??=String(error).slice(0,512);if(!failed){failed=true;failure=error;}};
+ try{evidence.final=observer.snapshot();}catch(error){retainError(error);}
+ try{observer.restore();}catch(error){retainError(error);}try{restoreAudio();}catch(error){retainError(error);}
+ evidence.status=failed?'failed':'passed';if(failed)throw failure;return result;
+}
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(value,message)=>{if(!value)throw Error(message);};
  const fetcher=globalThis.fetch.bind(globalThis),waits=createAcceptanceWait(),until=waits.until,json=(path,options)=>waits.json(fetcher,path,options);
  const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,stable(value[key])])):value;
  const frame=()=>new Promise(resolve=>requestAnimationFrame(resolve)),hash=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),n=>n.toString(16).padStart(2,'0')).join('');
- const importReports=[],openedScoreDatabases=[],errors=[],trusted=[],chooser=createCleanChooserObserver({target:globalThis}),mediaBlobs=createCleanMediaBlobObserver(),navigation=createCleanNavigationObserver();let sequence=0;
+ const importReports=[],openedScoreDatabases=[],errors=[],trusted=[],chooser=createCleanChooserObserver({target:globalThis}),mediaBlobs=createCleanMediaBlobObserver(),navigation=createCleanNavigationObserver(),assetRequests=createCleanAssetRequestObserver();let sequence=0;
  const open=IDBFactory.prototype.open;IDBFactory.prototype.open=function(name,...args){if(String(name)==='worldmusichub.scores.v1')openedScoreDatabases.push(String(name));return open.call(this,name,...args);};
- globalThis.fetch=(...args)=>{const path=String(args[0]),promise=fetcher(...args);navigation.observe(path,args[1]);if(['/api/library/import/preview','/api/library/import/commit'].includes(path))promise.then(response=>response.clone().json().then(body=>{assert(importReports.length<8,'Clean import report bound exceeded');importReports.push({status:response.status,filename:decodeURIComponent(args[1]?.headers?.['x-wmh-filename']||''),mode:path.endsWith('preview')?'preview':'commit',body});}).catch(error=>errors.push(String(error)))).catch(()=>{});return promise;};
+ globalThis.fetch=(...args)=>{const path=String(args[0]),promise=fetcher(...args);navigation.observe(path,args[1]);assetRequests.observe(path,args[1],promise);if(['/api/library/import/preview','/api/library/import/commit'].includes(path))promise.then(response=>response.clone().json().then(body=>{assert(importReports.length<8,'Clean import report bound exceeded');importReports.push({status:response.status,filename:decodeURIComponent(args[1]?.headers?.['x-wmh-filename']||''),mode:path.endsWith('preview')?'preview':'commit',body});}).catch(error=>errors.push(String(error)))).catch(()=>{});return promise;};
  addEventListener('error',event=>errors.push(String(event.message)));addEventListener('unhandledrejection',event=>errors.push(String(event.reason)));
  for(const type of ['click','change','keydown','keyup'])document.addEventListener(type,event=>{const id=event.target?.id,part=event.target?.dataset?.partId;if(!['play-button','clean-song-target','stage-title','bulk-import-save'].includes(id)&&!part)return;if(trusted.length>=128){errors.push('Native clean event observation bound exceeded');return;}trusted.push({type,trusted:event.isTrusted===true,id:id||null,part:part||null,code:event.code||null,value:event.target?.value||null,checked:typeof event.target?.checked==='boolean'?event.target.checked:null});},true);
  const click=id=>{assert($(id)&&!$(id).disabled,`Unavailable clean control ${id}`);$(id).click();},closeDialogs=()=>{for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();},menu=createAcceptanceNavigation({document,until,click});
@@ -89,6 +151,8 @@ function createCleanNavigationObserver(){
   const load=await json('/api/library/load',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:entry.key})}),p=load.clean_package,score=JSON.parse(p.score_json);
   assert(p.version===2,'Wrong clean package version');const counts=validateCleanFixtureInventory(score,p.runtime);
   report.package={key:entry.key,content_sha256:p.content_sha256,metadata_sha256:await hash(new TextEncoder().encode(p.metadata_json)),score_sha256:await hash(new TextEncoder().encode(p.score_json)),runtime_sha256:await hash(new TextEncoder().encode(JSON.stringify(stable(p.runtime)))),...counts,media:p.media};
+  const video=$('clean-song-pv');let probe=null;const playback=createCleanPlaybackObserver({video,readAudio:()=>probe?.snapshot(),readPosition:()=>Number($('progress').value),readRenderer:()=>$('clean-song-stage').dataset.rendererState,readMediaStatus:()=>$('clean-song-media-status').textContent});
+  await retainCleanPlaybackEvidence({report,observer:playback,restoreAudio:()=>probe?.restore(),run:async evidence=>{
   await native('click',$('start-practice'));await menu.waitScreen('stage','play-button','clean practice active');await until(()=>!$('play-button').disabled,'clean practice instrument ready');assert($('clean-song-stage').dataset.packageId,'Clean stage was not activated');report.media.background=await observeMedia($('clean-song-background'),'background');
   if($('notation-toggle').getAttribute('aria-expanded')!=='true')await native('click',$('notation-toggle'));await until(()=>$('written-cursor-status')?.dataset.status==='ready','clean written following ready');report.following=navigation.ready($('written-cursor-status').dataset.status);
   await native('click',$('song-parts-summary'));await until(()=>$('song-parts-tools').open,'clean parts panel open');const first=$('clean-song-target').value;
@@ -97,14 +161,15 @@ function createCleanNavigationObserver(){
   closeDialogs();click('settings-button');if($('count-in').checked)await native('click',$('count-in'));closeDialogs();assert($('sound-button').getAttribute('aria-pressed')!=='true','Clean native sound starts muted');
   // An actual Reset establishes a fresh song clock before the two-second PV.
   await native('click',$('reset-button'));await until(()=>Number($('progress').value)===0&&!$('play-button').disabled,'clean clock reset before media proof');
-  const probe=observeNativeReferenceAudio(),video=$('clean-song-pv');let frameCount=0,lastFrame=null,callback;assert(typeof video.requestVideoFrameCallback==='function','WebView2 video frame callbacks unavailable');const onFrame=(_,metadata)=>{frameCount++;lastFrame={mediaTime:metadata.mediaTime,presentedFrames:metadata.presentedFrames,width:metadata.width,height:metadata.height};if(frameCount<16)callback=video.requestVideoFrameCallback(onFrame);};callback=video.requestVideoFrameCallback(onFrame);
-  try{
-   report.machineBefore={captured:$('hud-captured').textContent,grades:grades()};await native('click',$('play-button'));await until(()=>probe.snapshot().sourceStarts>0&&Number($('progress').value)>300&&frameCount>=2&&lastFrame?.mediaTime>0&&$('clean-song-stage').dataset.rendererState==='playing','actual clean audio scheduling and video presentation');report.media.pv=await observeMedia(video,'pv');report.videoFrames={count:frameCount,last:lastFrame};report.screenshots.playing=await native('click',$('stage-title'));report.machinePlaying={captured:$('hud-captured').textContent,grades:grades(),positionMs:Number($('progress').value),audio:probe.snapshot()};
-   assert(report.machinePlaying.captured==='0'&&JSON.stringify(report.machinePlaying.grades)===JSON.stringify(report.machineBefore.grades),'Machine accompaniment changed captured inputs or grade');await native('click',$('play-button'));await until(()=>$('stage-cue').dataset.cueState==='paused'&&probe.snapshot().activeSources===0&&probe.snapshot().pendingSources===0&&video.paused,'clean machine pause cleanup');report.audioStopped=probe.snapshot();report.files.machineTake=await take();
+  probe=observeNativeReferenceAudio();playback.startFrames();evidence.stage='native-play';evidence.beforePlay=playback.state();
+   report.machineBefore={captured:$('hud-captured').textContent,grades:grades()};await native('click',$('play-button'));await awaitCleanPlaybackAdmission({observer:playback,until,evidence});evidence.stage='decoded-drawn-pv';report.media.pv=await observeMedia(video,'pv');report.videoFrames=playback.state().videoFrames;report.screenshots.playing=await native('click',$('stage-title'));report.machinePlaying={captured:$('hud-captured').textContent,grades:grades(),positionMs:Number($('progress').value),audio:probe.snapshot()};
+   assert(report.machinePlaying.captured==='0'&&JSON.stringify(report.machinePlaying.grades)===JSON.stringify(report.machineBefore.grades),'Machine accompaniment changed captured inputs or grade');evidence.stage='machine-pause';await native('click',$('play-button'));await until(()=>$('stage-cue').dataset.cueState==='paused'&&probe.snapshot().activeSources===0&&probe.snapshot().pendingSources===0&&video.paused,'clean machine pause cleanup');report.audioStopped=probe.snapshot();report.files.machineTake=await take();
    if(phase==='clean-seed'){
+    evidence.stage='native-human-input';
     const trace=observeNativeReferenceTransport(document);try{trace.changed('ready',{checkpoint:true});const position=Number($('progress').value);await native('click',$('play-button'));await until(()=>trace.counts().trustedPlayClicks===1&&trace.state().phase==='capturing'&&Number($('progress').value)>position,'clean input pass resumed');await native('key-r',$('stage-title'));await until(()=>trace.counts().trustedKeyDowns===1&&trace.counts().trustedKeyUps===1&&$('hud-captured').textContent==='1','one trusted native clean input');await native('click',$('play-button'));await until(()=>trace.counts().trustedPlayClicks===2&&$('stage-cue').dataset.cueState==='paused','clean typed pass paused');report.transportAdmission=trace.snapshot('complete');}finally{trace.stop();}report.files.humanTake=await take();
    }
-  }finally{video.cancelVideoFrameCallback(callback);probe.restore();}
+   evidence.stage='complete';
+  }});
   report.checks.push('ordinary-library-complete-clean-song','decoded-drawn-cover-background-pv','native-target-and-other-part-controls','machine-accompaniment-no-input-or-grade');
  }
  addEventListener('DOMContentLoaded',async()=>{
@@ -119,6 +184,6 @@ function createCleanNavigationObserver(){
    }else report.checks.push('fresh-process-exact-assets-and-music');
    assert(openedScoreDatabases.length===0,'Native clean workflow opened browser song storage');assert(errors.length===0,errors.join('; '));report.actions=sequence;report.downloads=(await json('/__desktop_smoke/state')).downloads;mediaBlobs.assertHealthy();report.following=navigation.ready(report.following.status);report.ok=true;
   }catch(error){report.error=String(error);if(error.nativeReferenceTransport)report.transportAdmission=error.nativeReferenceTransport;}
-  chooser.stop();mediaBlobs.restore();await postCleanAcceptanceReport({report,fetcher,waits});
+  report.assetRequests=assetRequests.snapshot();assetRequests.stop();chooser.stop();mediaBlobs.restore();await postCleanAcceptanceReport({report,fetcher,waits});
  },{once:true});
 })();
