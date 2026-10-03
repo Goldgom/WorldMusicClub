@@ -1,0 +1,16 @@
+{
+  "purpose": "Original deterministic technical media fixture, not a supplied song asset",
+  "rights": "CC0-1.0",
+  "pv": {
+    "file": "clean-pv.webm.base64",
+    "decoded_bytes": 26192,
+    "sha256": "2a72885b46fd107ae7a45e09681ef23cbda325afe5acf9ac9d96eee248404990",
+    "codec": "vp8",
+    "width": 320,
+    "height": 180,
+    "duration_seconds": 2,
+    "audio_streams": 0,
+    "generator": "ffmpeg lavfi testsrc2=size=320x180:rate=12:duration=2; libvpx 100k, one thread, bitexact flags, metadata removed"
+  },
+  "images": "PNG RGB gradients constructed by clean-song-package-fixtures.js with zlib and PNG chunk CRC32"
+}

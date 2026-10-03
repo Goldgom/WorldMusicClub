@@ -1,3 +1,4 @@
+import {prepareCleanSong} from './clean-song-package.js';
 import {openScoreLibrary,LIBRARY_LIMITS,libraryError} from './local-library.js';
 
 const bytes=value=>new TextEncoder().encode(value).byteLength;
@@ -44,6 +45,7 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
  if(health?.name!=='WorldMusicHub'||health.engine!=='rust'||health.score_format_version!==1||!['native-protocol-no-listener','loopback-only'].includes(health.network))throw issue('library_environment_unknown','The Rust app health contract did not identify a supported storage environment.');
  const kind=health.network==='native-protocol-no-listener'?'native':'browser';
  const browser=kind==='browser'?await openBrowserLibrary():null;
+ const allowedAssets=new Map();
  const validate=async(score,signal)=>{
   signal?.throwIfAborted();const result=validateScore?await validateScore(structuredClone(score),signal):await request('/api/compile',{body:score,signal});signal?.throwIfAborted();
   if(result!==true&&(!result?.score||!Array.isArray(result?.timeline?.notes)))throw issue('library_validation_required','Rust validation did not confirm this complete canonical score.');
@@ -85,6 +87,7 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
   }else{
    const value=await request('/api/library/load',{body:{key:storageKey},signal});
    saved={entry:entry(kind,value?.entry),score:parseScore(value?.score_json),score_json:value.score_json};
+   if(value.clean_package){saved.cleanSong=prepareCleanSong(key,value.clean_package,saved.score);allowedAssets.set(key,saved.cleanSong);}
    if(saved.entry.storageKey!==storageKey)throw issue('library_invalid_response','The loaded archive does not match the selected library key.');
   }
   await validate(saved.score,signal);return saved;
@@ -92,6 +95,7 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
  async function exportBackup({libraryKeys,signal}={}){
   if(kind==='browser'&&libraryKeys===undefined){const text=await browser.exportBackup();signal?.throwIfAborted();return{text,filename:'worldmusichub-library-backup.json',storage:info.storage}}
   const inventory=await list({signal});const selected=libraryKeys===undefined?inventory.entries:libraryKeys.map(key=>{const found=inventory.entries.find(row=>row.libraryKey===key);if(!found)throw issue('library_not_found','A selected saved copy is missing.');return found});
+  if(selected.some(row=>row.clean_package))throw issue('clean_pack_export_required','Use complete song-pack export to preserve performance and media.');
   if(selected.length>LIBRARY_LIMITS.scores)throw issue('library_count_limit','A compatible library backup may contain at most 100 scores.');
   if(new Set(selected.map(row=>row.libraryKey)).size!==selected.length)throw issue('library_invalid_key','Backup selection contains duplicate library keys.');
   const entries=[];let total=0;
@@ -108,5 +112,16 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
   if(bytes(text)>LIBRARY_LIMITS.backupBytes)throw issue('library_export_limit','Complete backup exceeds 40 MiB; no partial backup was prepared.');
   return{text,filename:'worldmusichub-library-backup.json',storage:info.storage};
  }
- return{info,list,save,load,exportBackup,close(){browser?.close()}};
+ async function loadAsset(key,handle,{signal}={}){
+  const storageKey=rawKey(kind,key),song=allowedAssets.get(key),asset=song?.media.find(item=>item.handle===handle);
+  if(kind!=='native'||!asset)throw issue('clean_asset_identity','Choose an asset belonging to the loaded package.');
+  const response=await fetcher('/api/library/asset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:storageKey,handle}),credentials:'same-origin',redirect:'error',cache:'no-store',signal});
+  if(!response.ok||response.redirected||(response.url&&new URL(response.url,origin).origin!==expectedOrigin))throw issue('clean_asset_read','The validated media could not be read.');
+  const mime=response.headers?.get('content-type')?.split(';')[0];if(mime!==asset.mime)throw issue('clean_asset_type','The media type does not match its package.');
+  const buffer=await response.arrayBuffer();signal?.throwIfAborted();if(buffer.byteLength!==asset.bytes)throw issue('clean_asset_size','The media size does not match its package.');
+  const digest=await globalThis.crypto.subtle.digest('SHA-256',buffer),actual=[...new Uint8Array(digest)].map(value=>value.toString(16).padStart(2,'0')).join('');
+  if(actual!==asset.sha256)throw issue('clean_asset_hash','The media content does not match its package.');
+  signal?.throwIfAborted();return new Blob([buffer],{type:asset.mime});
+ }
+ return{info,list,save,load,loadAsset,exportBackup,close(){allowedAssets.clear();browser?.close()}};
 }

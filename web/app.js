@@ -1,3 +1,7 @@
+import {CleanSongPlayer,inspectCleanRendition} from './clean-song-player.js';
+import {createCleanSongMedia} from './clean-song-media.js';
+import {setupCleanSongView} from './clean-song-view.js';
+import {cleanErrorText} from './clean-song-text.js';
 import {setupLobbyPreview} from './lobby-preview.js';
 import {setupReferenceListening} from './reference-listening.js';
 import {getAppI18n} from './app-locale.js';
@@ -104,6 +108,9 @@ const renderGuitarGuidance=setupGuitarGuidance(document);
 setupThemes();
 const transport = new Transport();
 const synth = new Synth();
+let cleanView=null,previewMedia=null,activeMedia=null,previewMediaKey=null,activeMediaKey=null;
+const cleanMutedParts=new Set();
+const cleanPlayer=new CleanSongPlayer({getPositionMs:()=>transport.time(performance.now()),onError:error=>{pausePlayback();notice(()=>cleanErrorText(i18n.locale,error),true);}});
 let metronome = null;
 let adaptationView = null;
 let transpositionView = null;
@@ -127,7 +134,7 @@ let shell=null,preview=null,performanceView=null,startingPreview=false,previewRe
 const catalogCache=new CatalogScoreCache();
 const latencyPreference=readLatencyPreference();
 let catalogIndexController=null,catalogIndexRequest=0,catalogIndexFailed=false;
-const state = {catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reasonKey:'app.compatibilityWaiting'}, instrumentOutOfRange: null, instrumentConflict: false, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
+const state = {cleanSong:null,catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reasonKey:'app.compatibilityWaiting'}, instrumentOutOfRange: null, instrumentConflict: false, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
 
 function createRecorder() {
   return new PracticeRecorder({latencyMs:state.latency,onEvidenceLimit:()=>{
@@ -141,6 +148,8 @@ function refreshFreeTone(){bindText($('free-live-tone'),()=>`${i18n.t('ui.instru
 function changeScreen(screen){
   scoreSaveNavigation++;
   referenceListening?.close();
+  cleanPlayer.stop();activeMedia?.clear();activeMediaKey=null;previewMedia?.clear();previewMediaKey=null;
+  if(screen==='stage')syncCleanMedia();else if(screen==='library')renderCleanPreview();
   keyboardInput?.contextChanged('screen_changed');
   if(screen==='free'){
     if(freeRecordInstrument!==state.instrument){try{if(freeSession?.configure('instrument',state.instrument))freeRecordInstrument=state.instrument;}catch{/* Free displays the retained configuration error. */}}
@@ -179,9 +188,12 @@ function updateButtons() {
   $('reset-button').disabled = !ready;
   $('export-takes').disabled = state.recorder.passes.length === 0;
   $('retry-assessments').hidden = !state.recorder.passes.some(pass=>pass.error);
-  $('export-button').disabled = !state.score;
+  $('export-button').disabled = !state.score||Boolean(state.cleanSong);
   $('export-jianpu').disabled = !state.score;
-  $('loop-apply').disabled = !ready;
+  $('loop-apply').disabled = !ready||Boolean(state.cleanSong);
+  for(const id of ['tempo','loop-enabled','loop-from','loop-to','metronome-enabled','metronome-pulse'])$(id).disabled=Boolean(state.cleanSong);
+  if(!transport.running){cleanPlayer.stop();activeMedia?.pause();}
+  renderCleanActive();
   $('assess-button').disabled = !ready || state.mode !== 'practice' || checkingCurrent || !allowed;
   $('practice-gate').hidden = state.mode !== 'practice' || state.compatibility.status === 'ready';
   bindText($('practice-gate-reason'), () => compatibilityText(state.compatibility));
@@ -203,7 +215,7 @@ function silenceHeld(reason = 'application_cleanup', eventWall = performance.now
 function pausePlayback(reason = 'app.paused', evidenceReason = 'pause') {
   lobbyPreview?.stop(['blur','hidden','pagehide'].includes(evidenceReason)?'interrupted':'stopped');
   if(referenceListening?.isOpen()){referenceListening.pause();return;}
-  state.playTicket++;
+  state.playTicket++;cleanPlayer.pause();activeMedia?.pause();
   if(shell?.screen()==='free'){freeView?.interrupt(evidenceReason);cleanupFreeInputs(evidenceReason);return;}
   // Opening a panel or browsing an already-paused session is not a new input
   // boundary. Real lifecycle events still matter even before a late onset arrives.
@@ -216,7 +228,7 @@ function pausePlayback(reason = 'app.paused', evidenceReason = 'pause') {
 }
 function resetPlayback() {
   pausePlayback();
-  transport.reset();
+  transport.reset();activeMedia?.sync({positionMs:0,running:false});
   if (state.loop) transport.seek(state.loop.start_ms);
   state.loopIteration = 1;metronome?.reset();
   if (state.loopPending && !state.loop) bindText($('loop-status'), () => t('app.loopCancelled'));
@@ -234,7 +246,8 @@ function resetPlayback() {
   bindText($('feedback-description'), () => state.mode === 'practice' ? t('app.practiceHelp') : t('app.listenHelp'));
   updateButtons(); drawFrame();
 }
-async function compileScore(score, preserveTempo = false, expectedIntent = null, importDiagnostics = [], requestedPracticePart = undefined, requestedMode = undefined, requestedIdentity = undefined) {
+async function compileScore(score, preserveTempo = false, expectedIntent = null, importDiagnostics = [], requestedPracticePart = undefined, requestedMode = undefined, requestedIdentity = undefined, cleanSong = null) {
+  if(preserveTempo&&state.cleanSong){notice(()=>cleanErrorText(i18n.locale,{code:'clean_derived_runtime_required'}),true);return false;}
   if (preserveTempo) importDiagnostics = state.importDiagnostics;
   if (expectedIntent !== null && expectedIntent !== state.loadIntent) return false;
   if (expectedIntent === null) {state.loadIntent++;cancelCatalogSelection();}
@@ -248,12 +261,13 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
   $('play-button').disabled = true;
   bindText($('transport-status'), () => t('app.preparingScore'));
   try {
-    const compiled = await api('/api/compile', score, controller.signal);
+    const compiled = cleanSong?cleanSong.runtime.compilation:await api('/api/compile', score, controller.signal);
     if (generation !== state.generation || controller.signal.aborted || expectedIntent!==null&&expectedIntent!==state.loadIntent) return;
     // Reset before publishing the new score: resetPlayback() can immediately
     // draw and start the new score's lazy cursor request.
     writtenCursor?.reset();
     const previousPart = requestedPracticePart !== undefined ? requestedPracticePart : preserveTempo ? state.practicePart : null;
+    state.cleanSong=cleanSong;if(!cleanSong){previewMedia?.clear();previewMediaKey=null;}cleanMutedParts.clear();cleanPlayer.select(cleanSong);activeMedia?.clear();activeMediaKey=null;
     state.score = compiled.score;
     if(requestedMode!==undefined){state.mode=requestedMode;$('session-mode').value=requestedMode;}
     state.importDiagnostics = importDiagnostics;
@@ -263,15 +277,15 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     state.timelineIndex = new TimelineIndex(state.compiled.timeline.notes);
     metronome?.cancelForScore();
     state.sourceNotes = new Map(state.score.parts.flatMap(part => part.notes.map(note => [note.id, {note, partId: part.id}])));
-    state.loop = null; state.loopRequest++; state.practicePart = previousPart !== null && state.score.parts.some(part => part.id === previousPart) ? previousPart : null; rebuildPracticeScope(); $('loop-enabled').checked = false; bindText($('loop-status'), () => t('app.loopCleared'));
-    state.notationPage = 0; state.notationPart = state.practicePart || state.score.parts[0].id;
+    state.loop = null; state.loopRequest++; state.practicePart = previousPart !== null && state.score.parts.some(part => part.id === previousPart) ? previousPart : cleanSong?state.score.parts[0]?.id:null; rebuildPracticeScope(); $('loop-enabled').checked = false; bindText($('loop-status'), () => t('app.loopCleared'));
+    state.notationPage = 0; state.notationPart = null;
     if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
     clearNotice();
     notationFollowing?.scoreChanged();
     resetPlayback();
     renderScore(); sourceArchiveView?.scoreChanged(); libraryView.scoreChanged(); scoreStorageView?.render(); adaptationView?.scoreChanged(); transpositionView?.scoreChanged(); renderCatalog(); updateRangeWarning();
     bindText($('catalog-status'), () => t('app.currentSession', {title:state.score.title}));
-    const clockScore=state.score;await checkInstrument();if(state.score===clockScore){metronome?.setScore();preview.adopt(state.compiled,previewCompatibility(state.compatibility),state.practicePart,requestedIdentity);}
+    const clockScore=state.score;await checkInstrument();if(state.score===clockScore){if(!state.cleanSong)metronome?.setScore();preview.adopt(state.compiled,previewCompatibility(state.compatibility),state.practicePart,requestedIdentity,state.cleanSong);syncCleanMedia();}
     return state.score===clockScore&&(expectedIntent===null||expectedIntent===state.loadIntent);
   } catch (error) {
     if (error.name === 'AbortError') return;
@@ -351,7 +365,7 @@ function renderScore() {
   for (const part of score.parts) { const option = document.createElement('option'); option.value = part.id; bindText(option, () => part.name); $('notation-part').append(option); }
   $('notation-part').value = state.notationPart || '';
   $('practice-part').replaceChildren();
-  const all = document.createElement('option'); all.value = ''; bindText(all, () => t('app.allParts')); $('practice-part').append(all);
+  if(!state.cleanSong){const all = document.createElement('option'); all.value = ''; bindText(all, () => t('app.allParts')); $('practice-part').append(all);}
   for (const part of score.parts) { const option = document.createElement('option'); option.value = part.id; bindText(option, () => part.name); $('practice-part').append(option); }
   $('practice-part').value = state.practicePart || '';
   updatePracticeScopeLabel();
@@ -408,6 +422,7 @@ function renderNotationPage() {
   state.lastHighlight = '';
 }
 function updateRangeWarning() {
+  renderCleanActive();
   if (!state.compiled) return;
   const [min, max] = state.instrument === 'guitar' ? [Math.min(...state.guitar.tuning) + state.guitar.capo, Math.max(...state.guitar.tuning) + state.guitar.frets] : [state.geometry[0].midi, state.geometry.at(-1).midi];
   const outside = state.instrumentOutOfRange ?? (state.sourceTargetTimeline?.notes || state.compiled.timeline.notes).filter(n => n.midi < min || n.midi > max).length;
@@ -774,6 +789,7 @@ async function togglePlayback() {
   if(referenceListening?.isOpen())return;
   if (shell.screen()!=='stage' || !state.compiled) return;
   if (transport.running) { pausePlayback(); return; }
+  if(state.cleanSong&&!inspectCleanRendition(state.cleanSong).supported){notice(()=>cleanErrorText(i18n.locale,{code:'clean_renderer_unsupported'}),true);return;}
   if (state.mode === 'practice' && state.compatibility.status !== 'ready') { notice(compatibilityNotice(state.compatibility), true); return; }
   const waiting=state.recorder.active;
   if(waiting&&(waiting.manualDeadline!==null||waiting.inFlight||(transport.completed&&state.recorder.pending))){notice(() => t('app.assessmentWaiting'));return}
@@ -783,9 +799,10 @@ async function togglePlayback() {
   if (generation !== state.generation || ticket !== state.playTicket || transport.running || !state.compiled || (state.mode === 'practice' && state.compatibility.status !== 'ready')) return;
   if (transport.completed) { if(state.mode==='practice') { transport.reset(); if(state.loop)transport.seek(state.loop.start_ms); state.lastHighlight=''; } else resetPlayback(); }
   const beatMs = 60000 / (Number($('tempo').value) || 100);
-  const now = performance.now();
+  const now = performance.now()+(state.cleanSong?50:0);
   transport.start(now, state.loop?.notes || state.practiceTimeline?.notes || state.compiled.timeline.notes, $('count-in').checked ? beatMs * 4 : 0);
   if(state.mode==='practice')beginPracticePass(now);
+  if(state.cleanSong){try{if(!synth.muted)cleanPlayer.start({context:synth.context,output:synth.output,mode:state.mode,targetPart:state.practicePart,mutedParts:cleanMutedParts,resumePositionMs:transport.position});activeMedia?.sync({positionMs:transport.time(performance.now()),running:true,userGesture:true});}catch(error){pausePlayback();notice(()=>cleanErrorText(i18n.locale,error),true);return;}}
   updateButtons();
 }
 function beginPracticePass(now, captureEnabled = true) {
@@ -929,11 +946,11 @@ function drawFrame(displayOnly = false) {
   const timeline = state.compiled?.timeline;
   const duration = timeline?.duration_ms || 0;
   const segmentStart = state.loop?.start_ms || 0;
-  const playbackNotes = state.loop?.notes || state.practiceTimeline?.notes || timeline?.notes || [];
-  const playbackIndex = state.mode==='practice'&&state.physicalIndex ? state.physicalIndex : state.loop?.index || state.practiceIndex || state.timelineIndex;
+  const playbackNotes = state.cleanSong?timeline?.notes||[]:state.loop?.notes || state.practiceTimeline?.notes || timeline?.notes || [];
+  const playbackIndex = state.mode==='practice'&&state.physicalIndex ? state.physicalIndex : state.cleanSong?state.timelineIndex:state.loop?.index || state.practiceIndex || state.timelineIndex;
   if (displayOnly!==true && transport.running && timeline) {
-    metronome?.advance({running:true,position,segment:transport.startedAt,startPosition:transport.position});
-    for (const note of transport.due(now, playbackNotes)) if (state.mode === 'listen') synth.play(`score:${note.id}:${note.part_id}:${note.start_ms}`, note.midi, note.remaining_ms, note.delay_ms, state.instrument, note.velocity ?? 90);
+    if(!state.cleanSong)metronome?.advance({running:true,position,segment:transport.startedAt,startPosition:transport.position});
+    for (const note of transport.due(now, playbackNotes)) if (state.mode === 'listen'&&!state.cleanSong) synth.play(`score:${note.id}:${note.part_id}:${note.start_ms}`, note.midi, note.remaining_ms, note.delay_ms, state.instrument, note.velocity ?? 90);
     if (!state.loop && state.mode==='practice' && position>=duration) {
       const previouslyClosed=state.recorder.active?.closedWall!==null;
       const pass=state.recorder.closeAtEnd(now);
@@ -948,6 +965,7 @@ function drawFrame(displayOnly = false) {
     if(!transport.running&&!state.loop&&pass&&pass.closedWall!==null&&pass.deadline!==null&&now>=pass.deadline&&!transport.completed){transport.finish(duration);bindText($('transport-status'), () => t('app.complete'));updateButtons()}
     if(state.recorder.ready(now).length)drainAssessments();
   }
+  if(displayOnly!==true&&state.cleanSong)activeMedia?.sync({positionMs:position,running:transport.running});
   $('progress').max = Math.max(1, duration); $('progress').value = Math.min(duration, Math.max(0, position));
   bindText($('time-label'), () => `${formatTime(position)} / ${formatTime(duration)}`);
   performanceView?.update();
@@ -982,7 +1000,7 @@ function drawFrame(displayOnly = false) {
   bindText($('time-label'), () => `${formatTime(position)} / ${formatTime(duration)}`);
   if (state.instrument === 'guitar') {
     if(displayOnly!==true)guitarFingering?.prepare();
-    const guidance=renderGuitarGuidance({profile:currentProfile(),plan:guitarFingering?.state().plan,...guitarFingeringView?.options(),timeline:state.mode==='practice'?state.targetTimeline:state.practiceTimeline||timeline,groups:state.mode==='practice'?state.targetGroups:new Map(),parts:state.score?.parts||[],position,segmentStart,segmentEnd:state.loop?.end_ms||duration,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,mode:state.mode,loopIteration:state.loop?state.loopIteration:null});
+    const guidance=renderGuitarGuidance({profile:currentProfile(),plan:guitarFingering?.state().plan,...guitarFingeringView?.options(),timeline:state.mode==='practice'?state.targetTimeline:state.cleanSong?timeline:state.practiceTimeline||timeline,groups:state.mode==='practice'?state.targetGroups:new Map(),parts:state.score?.parts||[],position,segmentStart,segmentEnd:state.loop?.end_ms||duration,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,mode:state.mode,loopIteration:state.loop?state.loopIteration:null});
     highlightGuitarRoute(document,{notes:guidance.currentNotes,nextNotes:guidance.nextNotes,nextOnsetMs:guidance.nextOnsetMs,position,groups:state.mode==='practice'?state.targetGroups:new Map(),plan:guitarFingering?.state().plan,...guitarFingeringView?.options()});
     return;
   }
@@ -1011,6 +1029,7 @@ let lastIdleDraw = 0;
 function animate(now) { if (transport.running || now - lastIdleDraw > 100) { drawFrame(); lastIdleDraw = now; } state.frame = requestAnimationFrame(animate); }
 
 async function applyLoop() {
+  if(state.cleanSong){$('loop-enabled').checked=false;notice(()=>cleanErrorText(i18n.locale,{code:'clean_derived_runtime_required'}),true);return;}
   if (!state.score) return;
   pausePlayback();
   const request = ++state.loopRequest; state.loopPending = true;
@@ -1043,7 +1062,7 @@ $('latency-offset').addEventListener('change', () => {
   if (!validLatency(value)) { $('latency-offset').value = String(state.latency); notice(() => t('app.latencyInvalid'), true); return; }
   state.latency = Number(value);const result=writeLatencyPreference(state.latency);bindText($('latency-storage-status'), () => result.saved?t('app.latencySaved'):errorDetail(result));$('latency-storage-status').hidden=false;resetPlayback();
 });
-$('practice-part').addEventListener('change', () => { state.practicePart = $('practice-part').value || null; rebuildPracticeScope(); resetPlayback(); if (state.practicePart !== null) { state.notationPart = state.practicePart; $('notation-part').value = state.practicePart; renderNotationPage(); } engravedView.selectPart(state.practicePart); updateRangeWarning(); checkInstrument(); });
+$('practice-part').addEventListener('change', () => { state.practicePart = $('practice-part').value || (state.cleanSong?state.score.parts[0].id:null); rebuildPracticeScope(); resetPlayback(); updateRangeWarning(); checkInstrument(); });
 function setNumberedMode(mode) { state.numberedMode = mode; $('jianpu-reference').value = mode; renderNotationPage(); beginnerView?.refresh(true); }
 $('jianpu-reference').addEventListener('change', () => setNumberedMode($('jianpu-reference').value));
 $('notation-part').addEventListener('change', () => { notationFollowing?.suspend();state.notationPart = $('notation-part').value || null; renderNotationPage(); });
@@ -1056,6 +1075,7 @@ $('session-mode').addEventListener('change', () => { state.mode = $('session-mod
 $('instrument').addEventListener('change', () => { resetPlayback(); state.instrument = $('instrument').value; state.profileDirty = false; syncProfileFields(); profileControls(); if (state.instrument === 'guitar') $('instrument-settings').open = true; checkInstrument(); $('piano-stage').hidden = state.instrument !== 'piano'; $('guitar-stage').hidden = state.instrument !== 'guitar'; $('key-count').disabled = state.instrument !== 'piano'; updateRangeWarning(); keyboardInputView?.refreshRange(); drawFrame(); });
 $('key-count').addEventListener('change', () => { resetPlayback(); state.customKeys = $('key-count').value === 'custom'; profileControls(); if (state.customKeys) { markProfileDirty(); $('instrument-settings').open = true; $('custom-key-count').value = String(state.keys); $('custom-lowest').value = midiName(state.geometry[0].midi).replace('♯','#'); return; } state.keys = Number($('key-count').value); state.lowestMidi = null; state.profileDirty = false; renderKeyboard(); updateRangeWarning(); checkInstrument(); });
 $('tempo').addEventListener('change', () => {
+  if(state.cleanSong){$('tempo').value=String(state.score.tempo[0]?.bpm||100);notice(()=>cleanErrorText(i18n.locale,{code:'clean_derived_runtime_required'}),true);return;}
   const bpm = Number($('tempo').value);
   if (!Number.isFinite(bpm) || bpm < 10 || bpm > 600) { notice(() => t('app.tempoInvalid'), true); $('tempo').value = String(state.score?.tempo[0]?.bpm || 100); return; }
   if (state.score) compileScore(transposeTempo(state.score, bpm), true);
@@ -1064,6 +1084,7 @@ function selectBasicNotation(mode,{remember=true}={}) { engravedView.hide({remem
 for (const mode of ['staff', 'jianpu']) $(mode + '-button').addEventListener('click', () => selectBasicNotation(mode));
 $('engraved-button').addEventListener('click', () => {engravedView.show();drawFrame()});
 function setSoundEnabled(enabled){
+  if(state.cleanSong&&transport.running)pausePlayback();
   synth.muted=!enabled;if(enabled&&transport.running)synth.unlock().catch(error=>notice(()=>errorDetail(error),true));if(synth.muted){synth.silence();heldAudioTokens.clear();freePreview?.stop('muted');}
   bindText($('sound-button'),()=>synth.muted?t('app.soundOff'):t('app.soundOn'));$('sound-button').setAttribute('aria-pressed',String(synth.muted));metronome?.updateMute();referenceListening?.soundChanged();
   try{freeSession?.configure('sound',enabled);}catch{/* Session reports configuration failures without losing retained input. */}freeView?.render();
@@ -1194,7 +1215,8 @@ async function checkPreview(compiled,part,signal){
   return previewCompatibility(result,profile);
 }
 function renderPreview(){
-  lobbyPreview?.select(preview.value);
+  lobbyPreview?.select(preview.value.cleanSong?{status:'empty'}:preview.value);
+  renderCleanPreview();
   const value=preview.value,changedIdentity=$('song-lobby').dataset.previewId!==(value.identity||'');$('song-lobby').dataset.previewStatus=value.status;$('song-lobby').dataset.previewId=value.identity||'';
   const item=value.score||rowScore(songRows().find(item=>item.selectionKey===value.identity));
   bindText($('preview-title'), () => item?.title||t('app.chooseScore'));
@@ -1202,12 +1224,12 @@ function renderPreview(){
   bindText($('preview-meta'), () => item?t('app.previewMeta', {composer:item.composer||t('app.composerUnknown'),origin:originLabel(item)}):t('app.browseScores'));
   bindAttribute($('preview-meta'),'title',()=>item?t('app.previewMeta',{composer:item.composer||t('app.composerUnknown'),origin:originLabel(item)}):t('app.browseScores'));
   if($('preview-music-meta'))bindText($('preview-music-meta'), () => previewMusicMetadata(value.compiled?.score,i18n));
-  bindText($('preview-status'), () => startingPreview?t('app.preparingSession'):value.status==='loading'?t('app.preparingPreview'):value.status==='error'?t('app.previewError', {detail:originalDetail(value.message)}):value.status==='ready'?t('app.previewReady'):t('app.previewBrowsing'));
+  bindText($('preview-status'), () => startingPreview?t('app.preparingSession'):value.status==='loading'?t('app.preparingPreview'):value.status==='error'?(value.errorCode?.startsWith('clean_')?cleanErrorText(i18n.locale,{code:value.errorCode}):t('app.previewError', {detail:originalDetail(value.message)})):value.status==='ready'?t('app.previewReady'):t('app.previewBrowsing'));
   bindText($('preview-gate'), () => compatibilityText(value.compatibility));$('preview-gate').classList.toggle('preview-blocked',['blocked','error','dirty'].includes(value.compatibility.status));
   $('start-listen').disabled=startingPreview||!preview.canStart('listen');$('start-practice').disabled=startingPreview||!preview.canStart('practice');
   const diagnostics=value.compiled?.diagnostics||[];$('preview-notices').hidden=!diagnostics.length;bindText($('preview-notices-title'), () => t('app.previewNotices', {count:diagnostics.length}));$('preview-notice-list').replaceChildren();for(const diagnostic of diagnostics.slice(0,20)){const row=document.createElement('li');bindText(row, () => diagnostic.message);$('preview-notice-list').append(row)}if(diagnostics.length>20){const row=document.createElement('li');bindText(row, () => t('app.moreNotices', {count:diagnostics.length-20}));$('preview-notice-list').append(row)}
-  const select=$('preview-part'),signature=JSON.stringify([i18n.revision,item?.parts?.map(part=>[part.id,part.name])||[]]);
-  if(select.dataset.parts!==signature){select.replaceChildren();const all=document.createElement('option');all.value='';bindText(all, () => t('app.allParts'));select.append(all);for(const part of item?.parts||[]){const option=document.createElement('option');option.value=part.id;bindText(option, () => part.name);select.append(option)}select.dataset.parts=signature;}
+  const select=$('preview-part'),signature=JSON.stringify([i18n.revision,Boolean(value.cleanSong),item?.parts?.map(part=>[part.id,part.name])||[]]);
+  if(select.dataset.parts!==signature){select.replaceChildren();if(!value.cleanSong){const all=document.createElement('option');all.value='';bindText(all, () => t('app.allParts'));select.append(all);}for(const part of item?.parts||[]){const option=document.createElement('option');option.value=part.id;bindText(option, () => part.name);select.append(option)}select.dataset.parts=signature;}
   select.value=value.part||'';$('preview-part-label').hidden=!value.compiled;
   if(changedIdentity){$('preview-notices').open=false;document.querySelector('.preview-copy').scrollTop=0;}
 }
@@ -1215,14 +1237,14 @@ async function selectSongScore(identity){
   const row=songRows().find(entry=>entry.selectionKey===identity);if(!row)return;
   cancelPendingStart();
   bindText($('catalog-status'), () => t('app.previewing', {title:row.title}));
-  await preview.select(identity,signal=>loadSongListItem(row,{model:scoreStorage,signal,loadCatalog:(item,signal)=>fetchCatalogScore(item,api,catalogCache,signal)}));
+  await preview.select(identity,async signal=>{if(row.source==='saved'){const loaded=await scoreStorage.load(row.libraryKey,{signal});return loaded.cleanSong?loaded:loaded.score;}return loadSongListItem(row,{model:scoreStorage,signal,loadCatalog:(item,signal)=>fetchCatalogScore(item,api,catalogCache,signal)});});
 }
 async function selectCatalogScore(id){return selectSongScore(id)}
 function refreshPreview(){
   const candidate=preview.value;
   if(candidate.score){preview.cancel();preview.publish({...candidate,compatibility:{status:state.profileDirty?'dirty':'pending',reasonKey:state.profileDirty?'app.previewDirty':'app.previewRechecking'}});}
   if(previewRefreshQueued)return;previewRefreshQueued=true;
-  queueMicrotask(()=>{previewRefreshQueued=false;const value=preview.value;if(value.score)preview.select(value.identity,async()=>value.score,{part:value.part});});
+  queueMicrotask(()=>{previewRefreshQueued=false;const value=preview.value;if(value.score)preview.select(value.identity,async()=>value.cleanSong?{score:value.score,cleanSong:value.cleanSong}:value.score,{part:value.part});});
 }
 async function startPreview(mode){
   if(startingPreview||!preview.canStart(mode))return;
@@ -1231,7 +1253,7 @@ async function startPreview(mode){
   try{
     if(!synth.muted)await synth.unlock();if(request!==startRequest||version!==preview.version||candidate.score!==preview.value.score)return;
     const intent=++state.loadIntent;
-    const loaded=await compileScore(candidate.score,false,intent,candidate.compiled.diagnostics||[],candidate.part,mode,candidate.identity);
+    const loaded=await compileScore(candidate.score,false,intent,candidate.compiled.diagnostics||[],candidate.part,mode,candidate.identity,candidate.cleanSong);
     if(!loaded||request!==startRequest||intent!==state.loadIntent)return;
     enteringPreview=true;try{shell.show('stage')}finally{enteringPreview=false;}
     if(mode==='practice'&&state.compatibility.status!=='ready'){notice(compatibilityNotice(state.compatibility),true);return;}
@@ -1242,7 +1264,7 @@ async function startPreview(mode){
 i18n.subscribe(()=>{redrawAppText();if(state.score&&!state.engravingActive)renderNotationPage();state.lastHighlight='';drawFrame(true);});
 $('start-listen').addEventListener('click',()=>startPreview('listen'));
 $('start-practice').addEventListener('click',()=>startPreview('practice'));
-$('preview-part').addEventListener('change',()=>{const value=preview.value;if(value.score)preview.select(value.identity,async()=>value.score,{part:$('preview-part').value||null});});
+$('preview-part').addEventListener('change',()=>{const value=preview.value;if(value.score)preview.select(value.identity,async()=>value.cleanSong?{score:value.score,cleanSong:value.cleanSong}:value.score,{part:$('preview-part').value||null});});
 for(const id of ['catalog-search','catalog-origin'])$(id).addEventListener(id==='catalog-search'?'input':'change',renderCatalog);
 for(const id of ['instrument','key-count','custom-key-count','custom-lowest','guitar-tuning','guitar-frets','guitar-capo'])$(id).addEventListener(['instrument','key-count'].includes(id)?'change':'input',refreshPreview);
 async function loadCatalog() {
@@ -1281,7 +1303,7 @@ async function importReviewedScore(kind,score,signal,options) {
   const loading=importCanonicalScore(score,signal,options),intent=state.loadIntent;
   const loaded=await loading;if(loaded)persistAcceptedImport(ticket,score,{intent,signal});return loaded;
 }
-const libraryView = setupScoreLibrary({getScore:()=>state.score,onLoad:importCanonicalScore,validate:(score,signal)=>api('/api/compile',score,signal),pausePlayback,notice});
+const libraryView = setupScoreLibrary({getScore:()=>state.cleanSong?null:state.score,onLoad:importCanonicalScore,validate:(score,signal)=>api('/api/compile',score,signal),pausePlayback,notice});
 // Retain access to older browser-profile copies without implying migration.
 const legacyLibraryButton=$('library-button');legacyLibraryButton.removeAttribute('data-i18n');
 bindText(legacyLibraryButton,()=>i18n.locale==='en'?(scoreStorage?.snapshot().kind==='native'?'Legacy browser archives':'Browser archives'):(scoreStorage?.snapshot().kind==='native'?'旧版浏览器收藏':'浏览器收藏管理'));
@@ -1291,13 +1313,13 @@ bulkImportView=setupBulkImportView({document,i18n,getStorageKind:async()=>(await
   onCommitted:async()=>{if(!await scoreStorage.rescan())throw new Error('Saved-song inventory refresh failed.');},
   onBrowse:identity=>{shell.show('library');void selectSongScore(identity);},onDone:()=>shell.show('library'),getSavedEntries:()=>scoreStorage.snapshot().entries});
 $('bulk-import-history-button').addEventListener('click',()=>bulkImportView.open());
-scoreStorageView=setupScoreStorageView({model:scoreStorage,host:document.querySelector('#settings-dialog .shell-dialog-content'),document,i18n,getScore:()=>state.score,onSaveStart:beginExplicitScoreSave,onSaveResult:finishScoreSave});
+scoreStorageView=setupScoreStorageView({model:scoreStorage,host:document.querySelector('#settings-dialog .shell-dialog-content'),document,i18n,getScore:()=>state.cleanSong?null:state.score,onSaveStart:beginExplicitScoreSave,onSaveResult:finishScoreSave});
 $('settings-dialog').addEventListener('close',()=>{scoreSaveNavigation++});
 const storageLobbyHost=document.createElement('div');$('catalog').before(storageLobbyHost);
 setupScoreStorageLobbyStatus({model:scoreStorage,host:storageLobbyHost,document,i18n,onConfigure:()=>shell.open('settings')});
 scoreStorage.subscribe(()=>{renderCatalog();const binding=displayBindings.get(legacyLibraryButton);if(binding?.text)legacyLibraryButton.textContent=binding.text()});
 $('score-library').addEventListener('close',()=>{if(scoreStorage.snapshot().kind==='browser')void scoreStorage.rescan()});
-const engravedView = setupEngravedView({i18n,getScore:()=>state.score,getPracticePart:()=>state.practicePart,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),notice,onVisibility:active=>{
+const engravedView = setupEngravedView({i18n,getScore:()=>state.score,getPracticePart:()=>null,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),notice,onVisibility:active=>{
   state.engravingActive=active;
   document.querySelector('.engraving-pages').hidden=!active;
   const displayOptions=document.querySelector('.notation-display-options');if(displayOptions)displayOptions.hidden=!active;
@@ -1332,13 +1354,13 @@ setupImageReview({onImport:(score,signal)=>importReviewedScore('confirmed-image-
 referenceListening=setupReferenceListening({document,i18n,synth,pausePlayback,onActiveChange:()=>syncInputRoute(),getSoundEnabled:()=>!synth.muted,onSoundChange:setSoundEnabled});
 sourceArchiveView=setupSourceArchiveView({getContext:()=>({score:state.score,version:state.loadIntent}),pausePlayback});
 externalOmrView = setupExternalOmrReview({api,onActivate:(score,signal,options)=>importReviewedScore('confirmed-omr-import',score,signal,options),pausePlayback,notice,getSourceVersion:()=>state.loadIntent});
-adaptationView = setupAdaptationView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.score,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
-transpositionView = setupTranspositionView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.score,timeline:state.compiled?.timeline,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
+adaptationView = setupAdaptationView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.cleanSong?null:state.score,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
+transpositionView = setupTranspositionView({api,pausePlayback,notice,onActivate:importCanonicalScore,getContext:()=>({score:state.cleanSong?null:state.score,timeline:state.compiled?.timeline,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
 const guitarContext=()=>({score:state.score,timeline:state.compiled?.timeline,part_id:state.practicePart,profile:currentProfile(),dirty:state.profileDirty});
 guitarFingering=setupGuitarFingering({api,getContext:guitarContext,onChange:()=>guitarFingeringView?.render()});
 guitarFingeringView=setupGuitarFingeringView({document,controller:guitarFingering,getContext:guitarContext,onRefresh:drawFrame});
 guitarFingeringView.render();
-metronome = setupMetronome({api,getScore:()=>state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:transport.time(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
+metronome = setupMetronome({api,getScore:()=>state.cleanSong?null:state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:transport.time(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
 performanceView=setupPerformanceView({i18n,getContext:()=>({geometry:state.geometry,rangeLabel:`${midiName(state.geometry[0].midi)}–${midiName(state.geometry.at(-1).midi)}`,mode:state.mode,instrument:state.instrument,position:transport.time(performance.now()),segmentStart:state.loop?.start_ms||0,countInBeatMs:60000/(Number($('tempo').value)||100),running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,now:performance.now(),recorder:state.recorder})});
 pianoFingering=setupPianoFingeringView({document,api,getContext:()=>({score:state.score,timeline:state.compiled?.timeline,part_id:state.practicePart,profile:currentProfile(),dirty:state.profileDirty}),onChange:()=>drawFrame(),openSettings:()=>shell.open('settings')});
 performanceView.setPianoGuidance($('piano-fingering-guidance'));
@@ -1353,4 +1375,26 @@ midiController=setupMidi({pressNote, releaseNote, releaseMatching, notice, pause
   getConfiguredRange:()=>state.instrument==='guitar'?{low:Math.min(...state.guitar.tuning)+state.guitar.capo,high:Math.max(...state.guitar.tuning)+state.guitar.frets}:state.geometry.length?{low:state.geometry[0].midi,high:state.geometry.at(-1).midi}:null});
 // End blocked intervals without changing native focus or recording ownership.
 for(const dialog of document.querySelectorAll('dialog'))dialog.addEventListener('close',()=>{freeLiveStart=performance.now();});
+
+function renderCleanActive(){
+  if(!cleanView)return;
+  const range=state.instrument==='piano'?[state.geometry[0].midi,state.geometry.at(-1).midi]:[Math.min(...state.guitar.tuning)+state.guitar.capo,Math.max(...state.guitar.tuning)+state.guitar.frets];
+  cleanView.renderActive({song:state.cleanSong,score:state.score,timeline:state.compiled?.timeline,targetPart:state.practicePart,mode:state.mode,mutedParts:cleanMutedParts,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,range,instrument:state.instrument});
+}
+function renderCleanPreview(){
+  if(!cleanView)return;const song=preview?.value.cleanSong||null;cleanView.renderPreview(song);
+  if(previewMediaKey!==song?.identity){previewMediaKey=song?.identity||null;void previewMedia.select(song?.libraryKey,song);}
+  const lobby=document.querySelector('.lobby-audition');if(lobby)lobby.hidden=Boolean(song);
+}
+function syncCleanMedia(){
+  if(!activeMedia)return;const song=state.cleanSong;
+  if(activeMediaKey!==song?.identity){activeMediaKey=song?.identity||null;void activeMedia.select(song?.libraryKey,song);}
+  renderCleanActive();
+}
+cleanView=setupCleanSongView({document,i18n,onOpen:()=>pausePlayback(),onTarget:part=>{if(!state.cleanSong||transport.running)return;state.practicePart=part;$('practice-part').value=part;rebuildPracticeScope();resetPlayback();void checkInstrument();},onMute:(part,muted)=>{if(transport.running)return;if(muted)cleanMutedParts.add(part);else cleanMutedParts.delete(part);resetPlayback();},onRange:()=>{$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}});
+const loadCleanAsset=async(key,handle,options)=>(await scoreStorage.storage()).loadAsset(key,handle,options);
+previewMedia=createCleanSongMedia({loadAsset:loadCleanAsset,cover:cleanView.cover,onStatus:value=>cleanView.renderPreviewMedia(value)});
+activeMedia=createCleanSongMedia({loadAsset:loadCleanAsset,background:cleanView.background,video:cleanView.video,onStatus:value=>cleanView.renderMedia(value)});
+window.addEventListener('pagehide',()=>{cleanPlayer.destroy();previewMedia.destroy();activeMedia.destroy();});
+
 renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); void scoreStorage.start(); loadCatalog();

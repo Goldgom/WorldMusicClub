@@ -51,9 +51,9 @@ export function setupScoreStorageView({model,host,document=globalThis.document,i
   for(const [name,button]of Object.entries(buttons)){button.textContent=t[name];button.disabled=busy;button.title=''}
   buttons.saveCurrent.hidden=typeof getScore!=='function';buttons.saveCurrent.disabled=busy||!getScore?.();
   buttons.choose.disabled=true;buttons.open.disabled=true;buttons.choose.title=t.planned;buttons.open.title=t.planned;
-  buttons.backup.disabled=busy||state.phase!=='ready'||!state.entries.length||!state.capabilities.backup;
+  buttons.backup.disabled=state.entries.some(entry=>entry.clean_package)||busy||state.phase!=='ready'||!state.entries.length||!state.capabilities.backup;
   const result=state.saveResult;buttons.retry.hidden=!['failed','uncertain'].includes(result?.status);buttons.keepBoth.hidden=result?.status!=='conflict';
-  planned.textContent=t.planned;warning.textContent=t.backupWarning;summary.textContent=t.details;
+  planned.textContent=t.planned;warning.textContent=state.entries.some(entry=>entry.clean_package)?(i18n.locale==='en'?'Complete songs need the complete song-pack export in imported packs.':'完整曲目请在已导入曲包中使用完整曲包导出。'):t.backupWarning;summary.textContent=t.details;
   let message=t.ready;
   if(state.phase==='idle'||state.phase==='loading')message=t.checking;
   if(state.reading)message=t.reading;

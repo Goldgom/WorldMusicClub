@@ -53,8 +53,8 @@ export async function nativeScoreServer({scores=[],directory='C:\\Test-only\\Wor
 /** Real app import, mocked DOM/audio/native transport and isolated browser storage. */
 export async function nativeStorageApp(server) {
   const {document,window}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8'));
-  const downloads=[],plays=[],values=new Map(),factory=new IDBFactory(),openedDatabases=[];
-  let unlockImpl=null,audioContexts=0,unlockCalls=0;
+  const audioNodes=[];const downloads=[],plays=[],values=new Map(),factory=new IDBFactory(),openedDatabases=[];
+  let unlockImpl=null,audioContexts=0,unlockCalls=0,frameId=0;const frames=new Map();
   const originalOpen=factory.open.bind(factory);
   factory.open=(name,...args)=>{openedDatabases.push(name);return originalOpen(name,...args);};
   Object.defineProperty(window.HTMLSelectElement.prototype,'value',{configurable:true,get(){return this.querySelector('option[selected]')?.value||this.querySelector('option')?.value||'';},set(value){for(const option of this.querySelectorAll('option'))option.toggleAttribute('selected',option.value===String(value));}});
@@ -64,17 +64,21 @@ export async function nativeStorageApp(server) {
   window.HTMLElement.prototype.setPointerCapture=function(){};
   const paint=new Proxy({createLinearGradient:()=>({addColorStop(){}})},{get:(target,key)=>target[key]||(()=>{})});
   window.HTMLCanvasElement.prototype.getContext=()=>paint;
-  const param={setValueAtTime(){},setTargetAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){},cancelScheduledValues(){}};
+  const parameter=()=>({value:0,events:[],setValueAtTime(value,at){this.value=value;this.events.push({value,at});},setTargetAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){},cancelScheduledValues(){}});
+  const audioNode=(kind,props={})=>{const node={kind,disconnected:false,connect(){},disconnect(){this.disconnected=true;},...props};audioNodes.push(node);return node;};
   class Audio {
-    constructor(){audioContexts++;this.state='running';this.currentTime=0;this.destination={};}
-    createGain(){return{gain:{...param},connect(){},disconnect(){}};}
-    createOscillator(){return{frequency:{},connect(){},disconnect(){},start(){},stop(){}};}
+    constructor(){audioContexts++;this.state='running';this.currentTime=0;this.sampleRate=8000;this.destination={};}
+    createGain(){return audioNode('gain',{gain:parameter()});}
+    createStereoPanner(){return audioNode('panner',{pan:parameter()});}
+    createConvolver(){return audioNode('convolver');}
+    createBuffer(channels,length){return{length,getChannelData:()=>new Float32Array(length)};}
+    createOscillator(){return audioNode('oscillator',{frequency:parameter(),starts:[],start(at){this.starts.push(at);},stop(){}});}
   }
   const originalUnlock=Synth.prototype.unlock,originalPlay=Synth.prototype.play,originalURL=URL.createObjectURL;
   Synth.prototype.unlock=function(...args){unlockCalls++;return unlockImpl?unlockImpl():originalUnlock.apply(this,args);};
   Synth.prototype.play=function(...args){plays.push(args);return originalPlay.apply(this,args);};
   URL.createObjectURL=blob=>{downloads.push(blob);return 'blob:node-native-storage';};
-  const installed={window,document,indexedDB:factory,navigator:{},location:{origin},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},matchMedia:()=>({matches:false,addEventListener(){}}),MutationObserver:class{observe(){}disconnect(){}},requestAnimationFrame:()=>0,cancelAnimationFrame:()=>{},AudioContext:Audio,fetch:server.fetcher};
+  const installed={window,document,indexedDB:factory,navigator:{},location:{origin},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},matchMedia:()=>({matches:false,addEventListener(){}}),MutationObserver:class{observe(){}disconnect(){}},requestAnimationFrame:callback=>{frames.set(++frameId,callback);return frameId;},cancelAnimationFrame:id=>frames.delete(id),AudioContext:Audio,fetch:server.fetcher};
   const originals=new Map(Object.keys(installed).map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
   for(const [key,value]of Object.entries(installed))Object.defineProperty(globalThis,key,{configurable:true,value});
   const $=id=>document.getElementById(id),tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -95,6 +99,6 @@ export async function nativeStorageApp(server) {
   }
   try{await import(`../web/app.js?native-storage-integration-${++sequence}`);getAppI18n(document).setLocale('en');await tick();}
   catch(error){await close();throw error;}
-  return{document,window,$,downloads,plays,openedDatabases,factory,requests:server.requests,tick,until,emit,click,exported,storageAction,savedButton,storageStatus,importFile,close,
-    audio:()=>({contexts:audioContexts,unlocks:unlockCalls}),setUnlock:fn=>{unlockImpl=fn;}};
+  return{document,window,$,audioNodes,downloads,plays,openedDatabases,factory,requests:server.requests,tick,until,emit,click,exported,storageAction,savedButton,storageStatus,importFile,close,
+    frame(){const work=[...frames.values()];frames.clear();for(const callback of work)callback(performance.now());},audio:()=>({contexts:audioContexts,unlocks:unlockCalls}),setUnlock:fn=>{unlockImpl=fn;}};
 }

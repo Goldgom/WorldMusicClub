@@ -1,0 +1,7 @@
+const families=['击弦键盘','明亮槌击','持续风琴','拨弦','低音弦乐','弓弦','合奏','铜管','簧管','管笛','主奏','铺底','效果','民族弦乐','敲击效果','声音效果'];
+export const cleanText=(locale,en,zh)=>locale==='en'?en:zh;
+export function cleanFamily(locale,program){const en=['struck keys','bright mallets','sustained organ','plucked strings','low strings','bowed strings','ensemble','brass','reed','pipe','lead','pad','effects','world strings','struck effects','sound effects'];return cleanText(locale,`reference ${en[program>>3]}`,`参考${families[program>>3]}`);}
+export function cleanErrorText(locale,error){return cleanText(locale,`Complete-song playback stopped (${error?.code||'clean_error'}). Retry after checking the song and audio settings.`, `完整曲目播放已停止（${error?.code||'clean_error'}）。请检查曲包和声音设置后重试。`);}
+export function cleanMediaError(locale,role){const labels={cover:['Cover','封面'],background:['Background','背景'],pv:['Video','视频']};return cleanText(locale,`${labels[role]?.[0]||'Media'} could not be displayed. Music remains available; reimport a supported, readable asset or retry.`,`${labels[role]?.[1]||'媒体'}无法显示。乐谱与音乐仍可使用；请重新导入可读取的受支持媒体，或重试。`);}
+
+export function cleanCommand(locale,kind){const names={bank_select:['bank selection','音色库选择'],chorus_send:['chorus send','合唱发送'],key_pressure:['key pressure','单键压力'],channel_pressure:['channel pressure','通道压力'],part_budget_exceeded:['part capacity exceeded','声部数量超限']};return names[kind]?.[locale==='en'?0:1]||kind;}

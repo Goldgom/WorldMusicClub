@@ -11,6 +11,8 @@ use std::{
 pub const PHASES: [&str; 4] = ["seed", "restart", "close-active", "reopen"];
 pub const FOLDER_PHASES: [&str; 3] = ["folder-seed", "folder-restart", "folder-failure"];
 pub const BULK_PHASES: [&str; 3] = ["bulk-seed", "bulk-restart", "bulk-failure"];
+pub const CLEAN_PHASES: [&str; 2] = ["clean-seed", "clean-restart"];
+pub const MAX_CLEAN_REPORT_BYTES: usize = 1024 * 1024;
 pub const MAX_SMOKE_REPORT_BYTES: usize = 64 * 1024;
 pub const MAX_BULK_REPORT_BYTES: usize = 4 * 1024 * 1024;
 pub struct Acceptance {
@@ -26,6 +28,7 @@ impl Acceptance {
             .into_iter()
             .chain(FOLDER_PHASES)
             .chain(BULK_PHASES)
+            .chain(CLEAN_PHASES)
             .find(|candidate| *candidate == phase)
             .ok_or("Unknown acceptance phase")?;
         std::fs::create_dir_all(directory.join("downloads"))
@@ -44,7 +47,9 @@ impl Acceptance {
             serde_json::to_string(self.phase).unwrap(),
             include_str!("../acceptance-wait.js"),
             include_str!("../reference-acceptance.js"),
-            if BULK_PHASES.contains(&self.phase) {
+            if CLEAN_PHASES.contains(&self.phase) {
+                include_str!("../clean-song-acceptance.js")
+            } else if BULK_PHASES.contains(&self.phase) {
                 include_str!("../bulk-import-acceptance.js")
             } else if FOLDER_PHASES.contains(&self.phase) {
                 include_str!("../song-folder-acceptance.js")
@@ -56,6 +61,15 @@ impl Acceptance {
     pub fn report_name(&self) -> String {
         format!("renderer-{}.json", self.phase)
     }
+    fn report_limit(&self) -> usize {
+        if CLEAN_PHASES.contains(&self.phase) {
+            MAX_CLEAN_REPORT_BYTES
+        } else if BULK_PHASES.contains(&self.phase) {
+            MAX_BULK_REPORT_BYTES
+        } else {
+            MAX_SMOKE_REPORT_BYTES
+        }
+    }
     fn reject_bulk_report(
         &self,
         status: u16,
@@ -63,7 +77,7 @@ impl Acceptance {
         message: &'static str,
         received_bytes: usize,
     ) {
-        if !BULK_PHASES.contains(&self.phase) {
+        if !BULK_PHASES.contains(&self.phase) && !CLEAN_PHASES.contains(&self.phase) {
             return;
         }
         // Never include rejected body content or parser/OS diagnostics. Both the
@@ -72,7 +86,7 @@ impl Acceptance {
             "code": code,
             "status": status,
             "received_bytes": received_bytes,
-            "limit_bytes": MAX_BULK_REPORT_BYTES,
+            "limit_bytes": self.report_limit(),
         });
         let bytes = serde_json::to_vec(&json!({
             "version": 1,
@@ -90,7 +104,7 @@ impl Acceptance {
             "code": code,
             "status": status,
             "received_bytes": received_bytes,
-            "limit_bytes": MAX_BULK_REPORT_BYTES,
+            "limit_bytes": self.report_limit(),
             "report_saved": saved,
         }));
         if !saved {
@@ -142,12 +156,13 @@ impl Acceptance {
         if rows.len() >= 16 {
             return None;
         }
-        let extension =
-            if BULK_PHASES.contains(&self.phase) && name.to_lowercase().ends_with(".zip") {
-                "zip"
-            } else {
-                "json"
-            };
+        let extension = if (BULK_PHASES.contains(&self.phase) || CLEAN_PHASES.contains(&self.phase))
+            && name.to_lowercase().ends_with(".zip")
+        {
+            "zip"
+        } else {
+            "json"
+        };
         let file = format!("{}-{}.{extension}", self.phase, rows.len() + 1);
         rows.push(json!({"file":file,"suggested_name":name.chars().take(160).collect::<String>(),"complete":false,"success":false}));
         Some(self.directory.join("downloads").join(file))
@@ -232,7 +247,7 @@ impl Acceptance {
     }
 }
 /// Process-owned evidence route, shared by smoke and native acceptance. Ordinary
-/// reports retain their original size/schema contract; only exact bulk phases
+/// reports retain their original size/schema contract; only exact bulk/clean phases
 /// admit larger evidence and persist an explicit terminal result on rejection.
 pub fn receive_report(
     directory: Option<&Path>,
@@ -242,12 +257,9 @@ pub fn receive_report(
     let Some(directory) = directory else {
         return error(404, "Not found");
     };
-    let bulk = acceptance.filter(|run| BULK_PHASES.contains(&run.phase));
-    let limit = if bulk.is_some() {
-        MAX_BULK_REPORT_BYTES
-    } else {
-        MAX_SMOKE_REPORT_BYTES
-    };
+    let bulk = acceptance
+        .filter(|run| BULK_PHASES.contains(&run.phase) || CLEAN_PHASES.contains(&run.phase));
+    let limit = bulk.map_or(MAX_SMOKE_REPORT_BYTES, Acceptance::report_limit);
     let reject = |status, code, message| {
         if let Some(run) = bulk {
             run.reject_bulk_report(status, code, message, request.body().len());
@@ -368,6 +380,7 @@ fn valid_action(value: &Value) -> bool {
         "picker",
         "cancel-picker",
         "key-r",
+        "select-last",
         "minimize-restore",
         "escape",
         "click",
@@ -403,6 +416,7 @@ fn valid_action(value: &Value) -> bool {
             "bulk-multiple",
             "bulk-standard-a.json",
             "bulk-standard-b.json",
+            "clean-authored-song.zip",
         ]
         .contains(&file);
         let download = PHASES.iter().any(|phase| {
@@ -411,7 +425,7 @@ fn valid_action(value: &Value) -> bool {
                 .and_then(|n| n.parse::<u8>().ok())
                 .is_some_and(|n| (1..=16).contains(&n))
         });
-        let bulk_download = BULK_PHASES.iter().any(|phase| {
+        let bulk_download = BULK_PHASES.iter().chain(CLEAN_PHASES.iter()).any(|phase| {
             file.strip_prefix(&format!("{phase}-"))
                 .and_then(|n| n.strip_suffix(".json").or_else(|| n.strip_suffix(".zip")))
                 .and_then(|n| n.parse::<u8>().ok())
@@ -428,6 +442,79 @@ fn valid_action(value: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clean_reports_have_exact_inclusive_budget_and_finite_native_actions() {
+        for phase in CLEAN_PHASES {
+            let evidence = Evidence::new();
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert!(run.script().contains("Native clean control unavailable"));
+            assert!(run
+                .download("complete.zip")
+                .unwrap()
+                .ends_with(format!("{phase}-1.zip")));
+            for size in [MAX_SMOKE_REPORT_BYTES + 1, MAX_CLEAN_REPORT_BYTES] {
+                let bytes = sized_report(Some(phase), size);
+                let request = report_request("POST", bytes.clone());
+                assert!(crate::admission(&request).is_none());
+                assert_eq!(
+                    receive_report(Some(&evidence.0), Some(&run), &request).status(),
+                    200
+                );
+                assert_eq!(
+                    std::fs::read(evidence.0.join(run.report_name())).unwrap(),
+                    bytes
+                );
+            }
+            let request = report_request(
+                "POST",
+                sized_report(Some(phase), MAX_CLEAN_REPORT_BYTES + 1),
+            );
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &request).status(),
+                400
+            );
+            let failure: Value =
+                serde_json::from_slice(&std::fs::read(evidence.0.join(run.report_name())).unwrap())
+                    .unwrap();
+            assert_eq!(failure["ok"], false);
+            assert_eq!(
+                failure["report_failure"]["limit_bytes"],
+                MAX_CLEAN_REPORT_BYTES
+            );
+            assert_eq!(failure["report_failure"]["code"], "report_size");
+            let request = report_request("POST", sized_report(Some("bulk-seed"), 512));
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &request).status(),
+                400
+            );
+        }
+        for file in [
+            "clean-authored-song.zip",
+            "clean-seed-1.zip",
+            "clean-restart-16.json",
+        ] {
+            assert!(valid_action(
+                &json!({"version":1,"sequence":1,"kind":"picker","x":1,"y":1,"width":900,"height":640,"file":file})
+            ));
+        }
+        for file in [
+            "clean-any-1.zip",
+            "clean-seed-17.zip",
+            "../clean-authored-song.zip",
+        ] {
+            assert!(!valid_action(
+                &json!({"version":1,"sequence":1,"kind":"picker","x":1,"y":1,"width":900,"height":640,"file":file})
+            ));
+        }
+        assert!(valid_action(
+            &json!({"version":1,"sequence":1,"kind":"select-last","x":1,"y":1,"width":900,"height":640})
+        ));
+        assert!(!valid_action(
+            &json!({"version":1,"sequence":1,"kind":"select-last","x":1,"y":1,"width":900,"height":640,"file":"clean-authored-song.zip"})
+        ));
+        assert!(Acceptance::new(Evidence::new().0.clone(), "clean-any").is_err());
+    }
 
     #[test]
     fn bulk_phases_keep_zip_downloads_and_finite_picker_actions() {
