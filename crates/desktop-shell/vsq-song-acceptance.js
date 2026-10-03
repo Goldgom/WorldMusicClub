@@ -29,9 +29,9 @@ function observeVsqFollowingSurface(document) {
 function createVsqJsonObserver({onValue,onError,maxRows=16}) {
  const rows=[],restores=new Set();let stopped=false;
  const fail=(row,phase,error)=>{if(stopped)return;row.state=phase;row.error=String(error).slice(0,512);onError(`${row.path} ${phase}: ${row.error}`);};
- function observe(path,promise){
+ function observe(path,promise,requestIndex){
   if(stopped)return promise;if(rows.length>=maxRows){onError('VSQ JSON observation exceeds its finite response bound');return promise;}
-  const row={path,status:null,state:'fetching'};rows.push(row);
+  const row={path,status:null,state:'fetching',...(requestIndex===undefined?{}:{requestIndex})};rows.push(row);
   Reflect.apply(Promise.prototype.then,promise,[response=>{
    if(stopped)return;row.status=response.status;row.state='awaiting-consumption';
    try {
@@ -39,7 +39,7 @@ function createVsqJsonObserver({onValue,onError,maxRows=16}) {
     const restore=()=>{if(response.json===observedJson){if(descriptor)Object.defineProperty(response,'json',descriptor);else delete response.json;}restores.delete(restore);};
     function observedJson(...args){
      let result;try{result=Reflect.apply(json,this,args);}catch(error){if(this===response)fail(row,'body-threw',error);throw error;}
-     if(this===response){row.state='consuming';try{Reflect.apply(Promise.prototype.then,result,[value=>{if(!stopped){try{onValue({path,status:response.status,body:structuredClone(value)});row.state='consumed';}catch(error){fail(row,'observation-failed',error);}}restore();},error=>{fail(row,'body-rejected',error);restore();}]);}catch(error){fail(row,'observation-failed',error);restore();}}
+     if(this===response){row.state='consuming';try{Reflect.apply(Promise.prototype.then,result,[value=>{if(!stopped){try{onValue({path,status:response.status,body:structuredClone(value),...(requestIndex===undefined?{}:{requestIndex})});row.state='consumed';}catch(error){fail(row,'observation-failed',error);}}restore();},error=>{fail(row,'body-rejected',error);restore();}]);}catch(error){fail(row,'observation-failed',error);restore();}}
      return result;
     }
     response.json=observedJson;restores.add(restore);
@@ -48,6 +48,13 @@ function createVsqJsonObserver({onValue,onError,maxRows=16}) {
   return promise;
  }
  return{observe,snapshot:()=>rows.map(row=>({...row})),restore(){stopped=true;for(const restore of [...restores])restore();}};
+}
+/* Actual rendered identities only; no controller access, UI writes or solved
+ * assignments. Rich guitar cards may be collapsed; the live route is separate. */
+function readVsqFingeringState(document,instrument) {
+ const $=id=>document.getElementById(id),parse=(node,key)=>JSON.parse(node.dataset[key]||'[]');
+ if(instrument==='piano')return{hidden:$('piano-fingering-guidance').hidden,phase:$('piano-fingering-guidance').dataset.phase,cards:[...document.querySelectorAll('#piano-guidance-items .piano-finger-target')].map(node=>({targetId:node.dataset.targetId,sourceIds:parse(node,'sourceIds'),occurrenceIds:parse(node,'occurrenceIds'),hand:node.dataset.hand,label:node.querySelector('.piano-finger-finger').textContent,time:node.querySelector('.piano-finger-time').textContent,title:node.title}))};
+ return{hidden:$('guitar-stage').hidden,status:$('guitar-planning').dataset.status,statusText:$('guitar-plan-status').textContent,choices:[...document.querySelectorAll('#guitar-live-route .guitar-live-choice')].flatMap(node=>parse(node,'assignments')),cards:[...document.querySelectorAll('#guitar-guidance-items .guitar-target')].map(node=>({targetId:node.dataset.targetId,startMs:Number(node.dataset.startMs),durationMs:Number(node.dataset.durationMs),sourceIds:parse(node,'sourceIds'),occurrenceIds:parse(node,'occurrenceIds'),route:parse(node,'route')})),recommended:document.querySelectorAll('#fretboard [data-recommended="true"]').length};
 }
 /* The app deliberately calls hiddenInput.click() from the real Import control.
  * That one untrusted delegation is admitted only inside the owned picker action,
@@ -61,10 +68,10 @@ function readVsqPickerGesture(document,event=null) {
 function createVsqControlObserver(document) {
  const trusted=[],pickers=[],listeners=[];let active=null;
  function observe(event){
-  const trigger=event.target?.closest?.('#import-button'),id=trigger?'import-button':event.target?.id,part=event.target?.dataset?.partId;
+  const trigger=event.target?.closest?.('#import-button'),fingering=event.target?.closest?.('#piano-fingering-replan,#piano-source-hand,#piano-source-finger,#instrument,#guitar-lock-finger,#guitar-lock-fret,#guitar-apply-lock,#guitar-clear-locks'),id=trigger?'import-button':fingering?.id||event.target?.id,part=event.target?.dataset?.partId;
   if(active&&((id==='import-button'&&['pointerdown','pointerup','click'].includes(event.type))||(id==='score-file'&&['click','change'].includes(event.type)))){if(active.gestures.length>=8)throw Error('VSQ picker gesture bound exceeded');active.gestures.push(readVsqPickerGesture(document,event));}
   if(['pointerdown','pointerup'].includes(event.type))return;
-  if(!['vsq-choose-base-notes','play-button','clean-song-target','stage-title','bulk-import-save','score-file','import-button'].includes(id)&&!part)return;
+  if(!['vsq-choose-base-notes','play-button','clean-song-target','stage-title','bulk-import-save','score-file','import-button'].includes(id)&&!fingering&&!part)return;
   const row={type:event.type,trusted:event.isTrusted===true,id:id||null,part:part||null,code:event.code||null,value:event.target?.value||null,checked:typeof event.target?.checked==='boolean'?event.target.checked:null};
   if(id==='score-file'&&active){
    if(event.type==='click'&&event.isTrusted===false){if(active.delegatedClicks.length>=1)throw Error('VSQ picker has repeated hidden-input delegation');active.delegatedClicks.push({type:'click',trusted:false,id,sequence:active.sequence});return;}
@@ -79,8 +86,8 @@ function createVsqControlObserver(document) {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(v,m)=>{if(!v)throw Error(m);};
  const originalFetch=globalThis.fetch,fetcher=originalFetch.bind(globalThis),waits=createAcceptanceWait(),json=(path,body)=>waits.json(fetcher,path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},10000);
  const controls=createVsqControlObserver(document);
- const report={version:1,phase,origin:location.origin,ok:false,stage:'initialization',checks:[],errors:[],requests:[],imports:[],runtimeResponses:[],trusted:controls.trusted,pickerObservations:controls.pickers,files:{},screenshots:{},diagnostics:[]};
- let sequence=0,probe,follow,requestObservationActive=true;
+ const report={version:1,phase,origin:location.origin,ok:false,stage:'initialization',checks:[],errors:[],requests:[],imports:[],runtimeResponses:[],trusted:controls.trusted,pickerObservations:controls.pickers,files:{},screenshots:{},diagnostics:[],fingering:{version:1,responses:[],observations:[],samples:[],actions:[],stale:null}};
+ let sequence=0,probe,follow,requestObservationActive=true,fingeringObservationActive=false;
  const checkpoint=stage=>{report.stage=stage;assert(report.diagnostics.length<48,'VSQ diagnostic stage bound exceeded');report.diagnostics.push({stage,elapsedMs:performance.now()});};
  const until=(condition,label,ms=10000)=>waits.until(condition,`VSQ ${report.stage}: ${label}`,ms);
  const closeDialogs=()=>{for(const d of document.querySelectorAll('dialog[open]'))d.close();};
@@ -88,9 +95,11 @@ function createVsqControlObserver(document) {
  const menu=createAcceptanceNavigation({document,until,click});
  const frame=()=>new Promise(requestAnimationFrame);
  const responses=createVsqJsonObserver({onValue:row=>{const list=row.path==='/api/library/runtime'?report.runtimeResponses:report.imports;assert(list.length<8,'VSQ response observation bound exceeded');list.push(row);},onError:message=>report.errors.push(message)});
+ const fingeringResponses=createVsqJsonObserver({maxRows:12,onValue:row=>report.fingering.responses.push(row),onError:message=>report.errors.push(message)});
  const observedFetch=function(...args){const promise=Reflect.apply(originalFetch,this,args);if(!requestObservationActive)return promise;try{const route=String(args[0]);if(route.startsWith('/api/')){
-  assert(report.requests.length<128,'VSQ API observation exceeded 128 requests');let body=null;if(typeof args[1]?.body==='string')body=JSON.parse(args[1].body);report.requests.push({path:route,body});
+  assert(report.requests.length<128,'VSQ API observation exceeded 128 requests');let body=null;if(typeof args[1]?.body==='string')body=JSON.parse(args[1].body);const requestIndex=report.requests.length;report.requests.push({path:route,body});
   if(['/api/library/import/preview','/api/library/import/commit','/api/library/runtime'].includes(route))responses.observe(route,promise);
+  if(fingeringObservationActive&&['/api/library/fingering/piano','/api/library/fingering/guitar'].includes(route))fingeringResponses.observe(route,promise,requestIndex);
  }}catch(error){report.errors.push(`VSQ request observation: ${String(error).slice(0,512)}`);}return promise;};globalThis.fetch=observedFetch;
  const onError=event=>report.errors.push(String(event.message)),onRejection=event=>report.errors.push(String(event.reason));addEventListener('error',onError);addEventListener('unhandledrejection',onRejection);
  async function native(kind,node,file){assert(node&&!node.disabled,'VSQ native control unavailable');node.scrollIntoView({block:'center',inline:'center'});node.focus();await frame();await frame();const b=node.getBoundingClientRect();assert(b.width>0&&b.height>0,'VSQ target is not visible');const x=b.x+b.width/2,y=b.y+b.height/2,hit=document.elementFromPoint(x,y);assert(x>0&&x<innerWidth&&y>0&&y<innerHeight,`VSQ control ${node.id||node.tagName} remains outside viewport after scrolling`);assert(hit===node||node.contains(hit),`VSQ control ${node.id||node.tagName} is obscured after scrolling`);assert(sequence<64,'VSQ action count exceeded');const action={version:1,sequence:++sequence,kind,x:b.x+b.width/2,y:b.y+b.height/2,width:innerWidth,height:innerHeight,...(file?{file}:{})};const picker=kind==='picker';let completed=false;if(picker)controls.beginPicker(sequence,file);try{await json('/__desktop_smoke/action',action);let result;await until(async signal=>{const response=await fetcher(`/__desktop_smoke/result/${sequence}`,{signal});if(response.status===404)return false;result=await response.json();assert(response.ok,result.error||'VSQ action result failed');return true;},`native ${kind} #${sequence}`,15000);assert(result.ok,result.error||'VSQ native action failed');completed=true;return sequence;}finally{if(picker&&!completed)controls.endPicker(sequence,false);}}
@@ -127,10 +136,28 @@ function createVsqControlObserver(document) {
     checkpoint('trusted-human-input');await reset();const trace=observeNativeReferenceTransport(document);try{trace.changed('ready',{checkpoint:true});await native('click',$('play-button'));await until(()=>trace.counts().trustedPlayClicks===1&&trace.state().phase==='capturing'&&Number($('progress').value)>0,'trusted practice start',5000);await native('key-r',$('stage-title'));await until(()=>trace.counts().trustedKeyDowns===1&&trace.counts().trustedKeyUps===1&&$('hud-captured').textContent==='1','trusted input capture',5000);await native('click',$('play-button'));await until(()=>trace.counts().trustedPlayClicks===2&&$('stage-cue').dataset.cueState==='paused','trusted practice pause',5000);report.transportAdmission=trace.snapshot('complete');}finally{trace.stop();}report.files.humanTake=await take();report.checks.push('trusted-human-input');
     checkpoint('exact-package-export');await menu.returnToLibrary();closeDialogs();click('import-tools-button');click('bulk-import-history-button');if(!$('bulk-import-history').open)await native('click',$('bulk-import-history').querySelector('summary'));await until(()=>document.querySelector('#bulk-import-export-songs input'),'VSQ export selection');await native('click',$('bulk-import-export-all'));report.files.package=await download($('bulk-import-export-pack'));await native('click',$('bulk-import-done'));report.checks.push('complete-package-export');
    }else await menu.returnToLibrary();
+   checkpoint('native-fingering-setup');assert($('preview-part').value==='vsq-track-1','VSQ retained preview target changed');await start('practice');await reset();await until(()=>$('piano-fingering-guidance').dataset.phase==='ready','initial native piano guidance');assert($('clean-song-target').value==='vsq-track-1','Fingering fixture needs its original first part');
+   if(!$('piano-fingering-guidance').open)await native('click',$('piano-fingering-guidance').querySelector('summary'));
+   await native('click',$('piano-guidance-settings'));await until(()=>$('settings-dialog').open,'piano settings visible');const editor=document.querySelector('#piano-fingering-settings .piano-lock-editor');if(!editor.open)await native('click',editor.querySelector('summary'));
+   const [{prepareCleanSong,prepareVsqPractice},{fingeringSource,fingeringResponse},{validatePianoFingering},{validateGuitarFingering}]=await Promise.all([import('/clean-song-package.js'),import('/fingering-source.js'),import('/piano-fingering.js'),import('/guitar-fingering.js')]);
+   const admitted=prepareVsqPractice(prepareCleanSong(`native:${entry.key}`,report.opened.clean_package,JSON.parse(report.opened.score_json)),runtime);
+   const context=settings=>({score:admitted.compilation.score,timeline:admitted.compilation.timeline,cleanSong:admitted,part_id:settings.part_id,profile:settings.profile});
+   async function guidanceAction(kind,id){const control=$(id),before=report.requests.length,n=await native(kind,control);report.fingering.actions.push({sequence:n,kind,id,value:control.value||null});return before;}
+   async function guidanceResponse(from,instrument,status){let row;await until(()=>{assert(report.errors.length===0,report.errors.join('; '));row=report.fingering.responses.filter(row=>row.requestIndex>=from&&row.path===`/api/library/fingering/${instrument}`).at(-1);return row&&$(instrument==='piano'?'piano-fingering-guidance':'guitar-planning').dataset[instrument==='piano'?'phase':'status']===(status==='ready'?'ready':status);},`${instrument} ${status} consumed response and rendered state`);assert(row.status===200,'Native fingering route failed');const request=report.requests[row.requestIndex],ctx=context(request.body.settings),plan=fingeringResponse(row.body,fingeringSource(ctx));assert(request.body.settings.part_id==='vsq-track-1','Native fingering part changed');(instrument==='piano'?validatePianoFingering:validateGuitarFingering)(plan,ctx,request.body.settings);assert(plan.status===status,`Original fixture ${instrument} expected ${status}; received ${plan.status}`);await frame();await frame();return row;}
+   function guidanceSample(label,instrument,row){report.fingering.samples.push({label,requestIndex:row.requestIndex,instrument,positionMs:Number($('progress').value),partId:$('clean-song-target').value,dom:readVsqFingeringState(document,instrument)});}
+   fingeringObservationActive=true;
+   let from=await guidanceAction('click','piano-fingering-replan'),row=await guidanceResponse(from,'piano','ready');guidanceSample('piano-base','piano',row);
+   checkpoint('native-piano-lock');from=await guidanceAction('select-last','piano-source-hand');await guidanceResponse(from,'piano','ready');from=await guidanceAction('select-last','piano-source-finger');row=await guidanceResponse(from,'piano','ready');assert($('piano-source-hand').value==='right'&&$('piano-source-finger').value==='5','Native piano lock controls changed');
+   await native('click',document.querySelector('#settings-dialog [data-close-panel="settings"]'));report.screenshots.pianoFingering=await native('click',$('piano-guidance-items'));guidanceSample('piano-lock','piano',row);
+   checkpoint('native-guitar-lock');await native('click',$('settings-button'));from=await guidanceAction('select-last','instrument');row=await guidanceResponse(from,'guitar','ready');await native('click',document.querySelector('#settings-dialog [data-close-panel="settings"]'));guidanceSample('guitar-base','guitar',row);
+   report.fingering.stale={instrument:$('instrument').value,pianoHidden:$('piano-fingering-guidance').hidden,pianoPhase:$('piano-fingering-guidance').dataset.phase,pianoCards:$('piano-guidance-items').children.length,pianoBadges:document.querySelectorAll('#keyboard .piano-finger-label,#keyboard [data-finger-guidance]').length};assert(report.fingering.stale.pianoHidden&&report.fingering.stale.pianoPhase!=='ready'&&report.fingering.stale.pianoCards===0&&report.fingering.stale.pianoBadges===0,'Changed instrument retained stale piano guidance');
+   if(!$('guitar-plan-controls').open)await native('click',$('guitar-plan-controls').querySelector('summary'));await guidanceAction('select-last','guitar-lock-finger');from=await guidanceAction('click','guitar-apply-lock');row=await guidanceResponse(from,'guitar','ready');report.screenshots.guitarFingering=await native('click',$('guitar-live-route'));guidanceSample('guitar-lock','guitar',row);
+   checkpoint('native-guitar-infeasible');await guidanceAction('select-last','guitar-lock-fret');from=await guidanceAction('click','guitar-apply-lock');row=await guidanceResponse(from,'guitar','infeasible_under_model');report.screenshots.guitarInfeasible=await native('click',$('guitar-plan-status'));guidanceSample('guitar-infeasible','guitar',row);
+   from=await guidanceAction('click','guitar-clear-locks');row=await guidanceResponse(from,'guitar','ready');guidanceSample('guitar-restored','guitar',row);fingeringObservationActive=false;report.checks.push('native-fingering-clock-locks-infeasible-stale');await menu.returnToLibrary();
    checkpoint('reload-choice-reset');const beforeReload=report.runtimeResponses.length;report.reloadChoice=await select(entry);assert(report.reloadChoice.runtimeRequests===beforeReload&&report.reloadChoice.audio.activeSources===0&&report.reloadChoice.audio.pendingSources===0,'Reload retained or auto-compiled interpretation');const reopened=await json('/api/library/load',{key:entry.key});assert(reopened.clean_package.runtime===null,'Reload runtime choice persisted');report.checks.push('reload-requires-choice');
    assert(report.requests.filter(r=>r.path==='/api/notation-navigation'&&r.body?.id===entry.score_id).length===0,'VSQ used generic BPM navigation');assert(report.runtimeResponses.length===1,'VSQ choice count changed');assert(report.errors.length===0,report.errors.join('; '));report.actions=sequence;report.downloads=(await json('/__desktop_smoke/state')).downloads;checkpoint('complete');report.ok=true;
   } catch(error){report.error=String(error);report.failureStage=report.stage;}
-  finally{follow?.stop();if(probe){report.finalAudio=audio();probe.restore();}report.responseObservations=responses.snapshot();responses.restore();controls.restore();requestObservationActive=false;removeEventListener('error',onError);removeEventListener('unhandledrejection',onRejection);if(globalThis.fetch===observedFetch)globalThis.fetch=originalFetch;}
+  finally{report.fingering.observations=fingeringResponses.snapshot();fingeringResponses.restore();fingeringObservationActive=false;follow?.stop();if(probe){report.finalAudio=audio();probe.restore();}report.responseObservations=responses.snapshot();responses.restore();controls.restore();requestObservationActive=false;removeEventListener('error',onError);removeEventListener('unhandledrejection',onRejection);if(globalThis.fetch===observedFetch)globalThis.fetch=originalFetch;}
   try{assert(new TextEncoder().encode(JSON.stringify(report)).length<=1024*1024,'VSQ report exceeds 1 MiB');await json('/__desktop_smoke/report',report);}catch(error){await json('/__desktop_smoke/report',{version:1,phase,ok:false,error:'VSQ report delivery failed',failureStage:report.stage,detail:String(error).slice(0,512)});}
  },{once:true});
 })();
