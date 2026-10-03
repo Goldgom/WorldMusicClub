@@ -27,7 +27,7 @@ jobs:
           toolchain: '1.99.0'
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
-      - run: node --test tests/reference-native-acceptance.test.js tests/performance-song-fixtures.test.js tests/native-performance-song-evidence.test.js
+      - run: node --test tests/performance-import-baseline.test.js tests/reference-native-acceptance.test.js tests/performance-song-fixtures.test.js tests/native-performance-song-evidence.test.js
       - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
       - name: Exact original complete-event fixtures through native protocol
         env:

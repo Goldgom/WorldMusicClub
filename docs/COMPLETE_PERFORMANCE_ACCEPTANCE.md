@@ -34,8 +34,13 @@ acceptance action route.
 - `performance-restart`: another fresh process/profile reloads both unchanged
   packages and requires a fresh explicit policy for each
 
-Each phase first captures one real keyboard input in an original canonical
-exercise. Exact before/after take exports must match throughout reference
+The seed phase first completes its owned native picker, preflight and save,
+checking that import leaves the original catalog preview unchanged and starts
+no audio, score, input capture or grading. It then captures one real keyboard
+input in the original canonical exercise, as do the two later phases. The
+report records the completed import action scope before the trusted human
+transport proof. Real picker focus boundaries remain intact; they precede
+the baseline. Exact before/after take exports must match throughout reference
 listening, including inputs, captures and grading. The typed packages retain
 JSON-null canonical notation, disabled ordinary Listen/Practice entry points,
 and no scoring/fingering/runtime derivation requests. Independent native API

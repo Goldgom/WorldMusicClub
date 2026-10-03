@@ -41,6 +41,16 @@ async function activatePerformanceOriginalScore({document,click,menu}) {
  await menu.waitScreen('stage','play-button','original score admitted to stage');
  setup.title=$('stage-title').textContent;return setup;
 }
+function readPerformanceImportState(document) {
+ const $=id=>document.getElementById(id),status=document.querySelector('.performance-status');
+ return{screen:document.body.dataset.screen,previewId:$('song-lobby').dataset.previewId,previewStatus:$('song-lobby').dataset.previewStatus,previewTitle:$('preview-title').textContent,stageTitle:$('stage-title').textContent,resumeHidden:$('resume-session').hidden,playDisabled:$('play-button').disabled,resultsDisabled:$('results-button').disabled,captured:$('hud-captured').textContent,pass:status?.dataset.passId??null,revision:status?.dataset.revision??null};
+}
+async function preparePerformanceBaseline({phase,importSeed,prepareHumanTake}) {
+ // The owned OS chooser has a real blur lifecycle. Finish that import scope
+ // before creating the human baseline whose complete evidence stays unchanged.
+ if(phase==='performance-seed')await importSeed();
+ return await prepareHumanTake();
+}
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(v,m)=>{if(!v)throw Error(m);};
  const originalFetch=globalThis.fetch,fetcher=originalFetch.bind(globalThis),waits=createAcceptanceWait(),json=(path,body)=>waits.json(fetcher,path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},10000);
@@ -74,11 +84,15 @@ async function activatePerformanceOriginalScore({document,click,menu}) {
   try{
    assert(['performance-seed','performance-controls','performance-restart'].includes(phase),'Unknown performance phase');assert(localStorage.getItem('wmh.performance.acceptance.marker')===null,'Performance needs a fresh browser profile');report.profileMarkerAbsent=true;localStorage.setItem('wmh.performance.acceptance.marker',phase);
    await menu.enterLibrary();const {getAppI18n}=await import('/app-locale.js');getAppI18n(document).setLocale('en');assert((await json('/api/health')).network==='native-protocol-no-listener','Performance requires actual Rust native protocol');
-   checkpoint('prepare-real-human-take');report.originalScoreSetup=await activatePerformanceOriginalScore({document,click,menu});report.transportAdmission=await prepareNativeReferenceScoredTake({document,native,click,closeDialogs,until});await menu.returnToLibrary();report.files.beforeTake=await take();report.beforeTakeState=takeState();
-   if(phase==='performance-seed'){
+   await preparePerformanceBaseline({phase,importSeed:async()=>{
+    report.importSetup={before:readPerformanceImportState(document),actionStart:sequence,requestStart:report.requests.length};observe();
     checkpoint('chooser-preflight');assert((await inventory()).entries.length===0,'Performance seed requires empty library');await choose();const preflight=report.imports[0].body;assert(preflight.summary.ready===2&&preflight.items.every(i=>i.playable===false&&i.clean_package.notation_available===false),'Performance preflight omitted a song or enabled notation');assert((await inventory()).entries.length===0,'Preflight saved files');report.preflight=preflight.items.map(i=>({status:i.status,playable:i.playable,coverage:i.clean_package.coverage}));report.screenshots.preflight=await native('click',$('bulk-import-title'));
     await native('click',$('bulk-import-save'));await until(()=>ready()&&report.imports.length===2,'both native commits consumed');assert(report.imports[1].body.summary.saved===2,'Performance save missing songs');await native('click',$('bulk-import-done'));report.checks.push('chooser-preflight-both-songs-all-tracks-save');
-   }
+    Object.assign(report.importSetup,{after:readPerformanceImportState(document),actionEnd:sequence,requestEnd:report.requests.length,audio:finish()});
+    assert(JSON.stringify(report.importSetup.after)===JSON.stringify(report.importSetup.before),'Import changed the original preview or active score/take');assert(report.importSetup.audio.sourceStarts===0,'Import started audio');assert(!report.requests.slice(report.importSetup.requestStart,report.importSetup.requestEnd).some(r=>/assess|fingering|\/api\/compile|practice-targets|\/api\/library\/runtime/.test(r.path)),'Import created targets, scoring or a canonical score');
+   },prepareHumanTake:async()=>{
+    checkpoint('prepare-real-human-take');report.baselineScope={humanActionStart:sequence};report.originalScoreSetup=await activatePerformanceOriginalScore({document,click,menu});report.transportAdmission=await prepareNativeReferenceScoredTake({document,native,click,closeDialogs,until});report.baselineScope.humanActionEnd=sequence;await menu.returnToLibrary();report.files.beforeTake=await take();report.beforeTakeState=takeState();report.baselineScope.readyAfterAction=sequence;
+   }});
    const list=await inventory();assert(list.entries.length===2,'Performance pair must coexist');report.inventory=list.entries;report.directory=list.directory;
    for(const entry of list.entries){const opened=await json('/api/library/load',{key:entry.key});assert(opened.score_json===null&&JSON.parse(opened.clean_package.score_json).notation===null,'Performance fabricated canonical notation');report.opened.push({key:entry.key,score_json:opened.score_json,clean_package:opened.clean_package});}
    const selected=phase==='performance-restart'?list.entries:list.entries.filter(e=>e.score_id.includes(phase==='performance-controls'?'controls':'overlap'));assert(selected.length===(phase==='performance-restart'?2:1),'Performance fixture identities changed');
