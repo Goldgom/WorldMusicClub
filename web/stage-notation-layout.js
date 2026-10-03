@@ -11,8 +11,9 @@ export function setupStageNotationLayout({document,i18n=getAppI18n(document),onC
   const overlay=document.createElement('div');overlay.id='notation-lane-overlay';overlay.className='notation-lane-overlay';overlay.setAttribute('data-i18n-aria-label','performance.scoreBackground');overlay.setAttribute('aria-label',i18n.t('performance.scoreBackground'));overlay.dataset.keyboardInput='off';overlay.hidden=true;lane.append(overlay);
   const options=document.createElement('div');options.className='notation-overlay-options';options.dataset.keyboardInput='off';
   options.innerHTML='<label><input id="notation-overlay-visible" type="checkbox" checked><span data-i18n="performance.scoreBackground"></span></label><label><span data-i18n="performance.scoreOpacity"></span><input id="notation-overlay-opacity" type="range" min="15" max="100" step="5" value="60"><output id="notation-overlay-opacity-value" for="notation-overlay-opacity">60%</output></label>';
+  for(const node of options.querySelectorAll('[data-i18n]'))node.textContent=i18n.t(node.getAttribute('data-i18n'));
   const tools=document.createElement('details');tools.className='notation-tools';tools.id='notation-tools';tools.dataset.keyboardInput='off';
-  const summary=document.createElement('summary');summary.className='button secondary';summary.setAttribute('data-i18n','performance.scoreOptions');tools.append(summary);
+  const summary=document.createElement('summary');summary.className='button secondary';summary.setAttribute('data-i18n','performance.scoreOptions');summary.textContent=i18n.t('performance.scoreOptions');tools.append(summary);
   const pan=document.createElement('div');pan.className='notation-pan-controls';pan.dataset.keyboardInput='off';pan.setAttribute('role','group');pan.setAttribute('data-i18n-aria-label','performance.scoreScroll');
   for(const [direction,glyph]of [['left','←'],['up','↑'],['down','↓'],['right','→']]){
     const button=document.createElement('button');button.type='button';button.id=`notation-pan-${direction}`;button.className='button secondary compact';button.textContent=glyph;button.setAttribute('data-i18n-aria-label',`performance.scoreScroll.${direction}`);

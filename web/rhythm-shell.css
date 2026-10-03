@@ -99,7 +99,7 @@ html[data-theme=dark]:not([data-theme-mode=custom]) .rhythm-shell {
 .rhythm-shell .free-practice-screen[data-state=recording] #free-state::before {background:var(--rhythm-mint);box-shadow:0 0 0 4px #80e0cb18}
 .rhythm-shell #free-start,.rhythm-shell #free-resume {background:var(--green);color:var(--accent-ink);border-color:var(--green)}
 .rhythm-shell #free-practice-screen section {border-radius:15px}
-.rhythm-shell #free-practice-screen h2 {font-size:17px;font-weight:650;margin:0 0 14px}
+.rhythm-shell .free-recordings h2 {font-size:17px;font-weight:650;margin:0 0 14px}
 .rhythm-shell #free-practice-screen p {font-size:12px;line-height:1.8;overflow-wrap:anywhere}
 .rhythm-shell #free-performance-library,.rhythm-shell #free-save-panel,.rhythm-shell #free-performance-detail,.rhythm-shell #free-comparison {min-width:0}
 .rhythm-shell .free-practice-actions .button {white-space:normal;min-height:38px;font-size:12px}

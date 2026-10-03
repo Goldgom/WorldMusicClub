@@ -117,11 +117,16 @@ test('language redraw preserves recording, focusable controls, authored labels a
     const input = app.$('free-record-label'), mapping = app.$('free-practice-keys').firstElementChild;
     input.value = 'Keep my original title 原题';
     const audio = app.audio(), requests = app.requests.length;
-    i18n.setLocale('en');
+    const toolbarLabels=locale=>{
+      const [title,midi,keyboard,background,opacity,options]=locale==='en'?['Piano','Connect MIDI','Edit key mapping','Score background','Opacity','Score options']:['钢琴','连接 MIDI','编辑按键映射','轨道背景乐谱','不透明度','读谱设置'];
+      for(const [selector,expected]of [['#piano-stage .piano-stage-title',title],['#free-piano-stage .piano-stage-title',title],['#piano-connect-midi',midi],['#free-connect-midi',midi],['#piano-keyboard-settings',keyboard],['#free-keyboard-settings',keyboard],['[data-i18n="performance.scoreBackground"]',background],['[data-i18n="performance.scoreOpacity"]',opacity],['#notation-tools>summary',options]])assert.equal(app.document.querySelector(selector).textContent.trim(),expected,`${locale}: ${selector} has its actual translated label`);
+    };
+    toolbarLabels('zh-CN');
+    i18n.setLocale('en');toolbarLabels('en');
     assert.equal(app.$('rhythm-location').textContent, 'Free practice');
     assert.equal(app.$('start-free-practice').textContent, 'Enter free practice →');
     assert.equal(console.getAttribute('aria-label'), 'Free performance recording and status');
-    i18n.setLocale('zh-CN');
+    i18n.setLocale('zh-CN');toolbarLabels('zh-CN');
     assert.equal(app.$('start-free-practice').textContent, '进入自由练习 →');
     assert.equal(app.document.querySelector('.rhythm-free-console'), console);
     assert.equal(app.$('free-practice-keys').firstElementChild, mapping);

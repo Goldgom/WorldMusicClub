@@ -22,8 +22,10 @@ export function registerFreePianoBrowserRegressions({test,getPage,closeShellPane
       const layout=await page.evaluate(()=>{
         const rect=id=>{const r=document.querySelector(id).getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};};
         const scroller=document.querySelector('#free-keyboard-scroll');
-        return{stage:rect('#free-piano-stage'),keys:rect('#free-practice-keys'),white:rect('#free-practice-keys [data-midi="60"]'),black:rect('#free-practice-keys [data-midi="61"]'),next:rect('#free-practice-keys [data-midi="62"]'),controls:rect('.rhythm-free-console'),live:rect('#free-live-notes'),viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,keyScrollWidth:scroller.scrollWidth,keyClientWidth:scroller.clientWidth,stageColumns:getComputedStyle(document.querySelector('#free-practice-screen')).display};
+        return{liveDiagnostics:{copy:rect('.free-live-copy'),lane:rect('#free-live-field'),scroll:rect('#free-keyboard-scroll'),scrollLeft:scroller.scrollLeft,copyStyle:Object.fromEntries(['position','display','width','minWidth','maxWidth','left','right','fontSize','overflowWrap','transform'].map(name=>[name,getComputedStyle(document.querySelector('.free-live-copy'))[name]])),noteStyle:Object.fromEntries(['fontSize','lineHeight','letterSpacing','overflowWrap','whiteSpace','width','maxWidth'].map(name=>[name,getComputedStyle(document.querySelector('#free-live-notes'))[name]]))},stage:rect('#free-piano-stage'),keys:rect('#free-practice-keys'),white:rect('#free-practice-keys [data-midi="60"]'),black:rect('#free-practice-keys [data-midi="61"]'),next:rect('#free-practice-keys [data-midi="62"]'),controls:rect('.rhythm-free-console'),live:rect('#free-live-notes'),viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,keyScrollWidth:scroller.scrollWidth,keyClientWidth:scroller.clientWidth,stageColumns:getComputedStyle(document.querySelector('#free-practice-screen')).display};
       });
+      await writeFile(join(artifactDirectory,'worldmusichub-free-piano-layout-checkpoint.json'),JSON.stringify({complete:false,completed_layouts:evidence,current:{size,layout}},null,2));
+      await page.screenshot({path:join(artifactDirectory,`worldmusichub-free-piano-${size.width}x${size.height}-zh-CN.png`),fullPage:true,animations:'disabled'});
       assert.ok(layout.stage.width>size.width*.88,'The piano takes the stage width instead of a dashboard column');
       assert.ok(layout.white.x<layout.black.x&&layout.black.x<layout.next.x,'The black key lies between its white neighbours');
       assert.ok(layout.black.height<layout.white.height*.7&&layout.black.width<layout.white.width*.7,'A black key has actual piano geometry');
@@ -32,7 +34,6 @@ export function registerFreePianoBrowserRegressions({test,getPage,closeShellPane
       assert.ok(layout.live.x>=0&&layout.live.right<=size.width,'The idle/live note display remains readable on compact screens');
       if(size.width>=1280){assert.ok(layout.keys.bottom<size.height,'The full keybed is visible at desktop sizes');assert.ok(layout.keyScrollWidth<=layout.keyClientWidth+1,'Full 88-key piano fits the desktop stage');}
       else assert.ok(layout.keyScrollWidth>layout.keyClientWidth,'Compact mode has an explicit horizontal keybed scroller');
-      await page.screenshot({path:join(artifactDirectory,`worldmusichub-free-piano-${size.width}x${size.height}-zh-CN.png`),fullPage:true,animations:'disabled'});
       evidence.push({size,layout});
     }
     await page.setViewportSize({width:1280,height:720});

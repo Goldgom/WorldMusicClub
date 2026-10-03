@@ -51,7 +51,9 @@ export function registerAboveKeyboardBrowserRegressions({test,getPage,ui,readyFo
     const paintEvidence=[];
     for(const viewport of [{width:1920,height:1080},{width:1280,height:720},{width:1033,height:403},{width:844,height:390},{width:390,height:844},{width:1280,height:720}]){
       await page.setViewportSize(viewport);await settle();
-      const geometry=await simultaneousStageGeometry();await verifyPlacement(geometry);
+      const geometry=await simultaneousStageGeometry();
+      await writeFile(join(artifactDirectory,'worldmusichub-lane-overlay-layout-checkpoint.json'),JSON.stringify({original_fixtures_only:true,complete:false,completed_layouts:evidence,current:{viewport,geometry}},null,2));
+      await verifyPlacement(geometry);
       assert.equal(geometry.above,false,'A detached above-keyboard music band is not the overlay');
       assert.equal(await page.locator('#engraving-follow').isChecked(),true,'Resizing does not become manual navigation');
       const currentNotes=[];

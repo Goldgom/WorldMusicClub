@@ -3,6 +3,7 @@ import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {originalAboveKeyboardScore} from './above-keyboard-browser-regression.js';
 import {compareScreenshotPixels} from './browser-png-evidence.js';
+import {contrastRatio} from '../web/themes.js';
 
 export const settlePianoPaint=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))));
 
@@ -16,12 +17,22 @@ export async function readSharedPianoGeometry(page,mode='normal') {
     const keys=[...keyboard.querySelectorAll('.piano-key')].map(node=>{const r=rect(node);return {midi:Number(node.dataset.midi),black:node.classList.contains('black'),pressed:node.getAttribute('aria-pressed'),rect:{x:r.x-keyRect.x,y:r.y-keyRect.y,width:r.width,height:r.height},style:style(node)};});
     const lane=root.querySelector('.piano-lanes-shared'),strike=root.querySelector('.strike-line'),toolbar=root.querySelector('.piano-stage-toolbar');
     const controls=[...toolbar.querySelectorAll('.piano-stage-actions > button')].map(node=>({id:node.id,rect:rect(node),style:style(node),hit:(()=>{const r=node.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return hit===node||node.contains(hit);})()}));
-    return {mode,viewport:{width:innerWidth,height:innerHeight},documentWidth:document.documentElement.scrollWidth,stage:rect(root),surface:rect(surface),keyboard:rect(keyboard),lane:rect(lane),strike:rect(strike),toolbar:rect(toolbar),style:{stage:style(root),lane:style(lane),strike:style(strike),toolbar:style(toolbar)},keys,controls,scroll:{width:scroll.clientWidth,content:scroll.scrollWidth,left:scroll.scrollLeft}};
+    const layoutMetrics=node=>{const css=getComputedStyle(node);return {id:node.id,className:node.className,rect:rect(node),css:Object.fromEntries(['display','height','minHeight','maxHeight','lineHeight','fontSize','paddingTop','paddingBottom','marginTop','marginBottom','borderTopWidth','borderBottomWidth','boxSizing','alignItems','alignSelf','rowGap'].map(name=>[name,css[name]]))};};
+    const layoutDiagnostics={stage:layoutMetrics(root),toolbar:layoutMetrics(toolbar),toolbarChildren:[...toolbar.children].map(layoutMetrics),actionChildren:[...toolbar.querySelectorAll('.piano-stage-actions > *')].map(layoutMetrics),surface:layoutMetrics(surface),lane:layoutMetrics(lane),keyboard:layoutMetrics(keyboard)};
+    const label=selector=>root.querySelector(selector)?.textContent.trim()??null;const labels={title:label('.piano-stage-title'),midi:label(mode==='free'?'#free-connect-midi':'#piano-connect-midi'),keyboard:label(mode==='free'?'#free-keyboard-settings':'#piano-keyboard-settings'),...(mode==='normal'?{background:label('[data-i18n="performance.scoreBackground"]'),opacity:label('[data-i18n="performance.scoreOpacity"]'),options:label('#notation-tools>summary')}: {})};
+    return {labels,locale:document.documentElement.lang,layoutDiagnostics,mode,viewport:{width:innerWidth,height:innerHeight},documentWidth:document.documentElement.scrollWidth,stage:rect(root),surface:rect(surface),keyboard:rect(keyboard),lane:rect(lane),strike:rect(strike),toolbar:rect(toolbar),style:{stage:style(root),lane:style(lane),strike:style(strike),toolbar:style(toolbar)},keys,controls,scroll:{width:scroll.clientWidth,content:scroll.scrollWidth,left:scroll.scrollLeft}};
   },mode);
+}
+
+function assertPianoToolbarLabels(geometry){
+  const values=geometry.locale==='zh-CN'?['钢琴','连接 MIDI','编辑按键映射','轨道背景乐谱','不透明度','读谱设置']:['Piano','Connect MIDI','Edit key mapping','Score background','Opacity','Score options'];
+  const names=['title','midi','keyboard',...(geometry.mode==='normal'?['background','opacity','options']:[])];
+  for(const [index,name]of names.entries())assert.equal(geometry.labels[name],values[index],`${geometry.locale} ${geometry.mode} toolbar ${name} must have its rendered label`);
 }
 
 function nearly(a,b,message){assert.ok(Math.abs(a-b)<=1,`${message}: ${a} vs ${b}`);}
 export function assertSamePianoStage(normal,free) {
+  assertPianoToolbarLabels(normal);assertPianoToolbarLabels(free);
   assert.deepEqual(normal.viewport,free.viewport);assert.equal(normal.keys.length,free.keys.length);
   for(const surface of ['stage','surface','keyboard','lane','strike','toolbar'])for(const axis of ['width','height'])nearly(normal[surface][axis],free[surface][axis],`Shared ${surface} ${axis}`);
   for(const mode of [normal,free]){
@@ -51,11 +62,21 @@ export async function readLaneOverlayGeometry(page) {
     const hit=document.elementFromPoint(x,y);
     const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;let opaque=0,transparent=0;
     for(let offset=3;offset<pixels.length;offset+=4){if(pixels[offset]===255)opaque++;if(pixels[offset]===0)transparent++;}
-    return {overlay:o,lane:l,canvas:rect(canvas),inside:lane.contains(overlay),opacity:Number(getComputedStyle(overlay).opacity),hidden:overlay.hidden,paints,hitInsideOverlay:Boolean(hit&&overlay.contains(hit)),z:{overlay:Number(getComputedStyle(overlay).zIndex),canvas:Number(getComputedStyle(canvas).zIndex),rails:rails?Number(getComputedStyle(rails).zIndex):0},canvasAlpha:{opaque,transparent,total:pixels.length/4},controlsInside:overlay.querySelectorAll('button,input,select,textarea,details').length,rootInside:Boolean(root&&overlay.contains(root)),intersection:{width:Math.max(0,Math.min(o.right,l.right)-Math.max(o.x,l.x)),height:Math.max(0,Math.min(o.bottom,l.bottom)-Math.max(o.y,l.y))}};
+    const notationInk=document.querySelector('#notation').hidden?[]:[...overlay.querySelectorAll('.jianpu-note')].map(node=>{
+      const style=getComputedStyle(node);let alpha=Number(style.fillOpacity);for(let ancestor=node;ancestor;ancestor=ancestor.parentElement){alpha*=Number(getComputedStyle(ancestor).opacity);if(ancestor===overlay)break;}
+      return {fill:style.fill,alpha,fontSize:parseFloat(style.fontSize),active:Boolean(node.closest('.score-note.active'))};
+    });
+    const laneColors=['--piano-field','--piano-field-end'].map(name=>getComputedStyle(lane).getPropertyValue(name).trim());
+    return {notationInk,laneColors,overlay:o,lane:l,canvas:rect(canvas),inside:lane.contains(overlay),opacity:Number(getComputedStyle(overlay).opacity),hidden:overlay.hidden,paints,hitInsideOverlay:Boolean(hit&&overlay.contains(hit)),z:{overlay:Number(getComputedStyle(overlay).zIndex),canvas:Number(getComputedStyle(canvas).zIndex),rails:rails?Number(getComputedStyle(rails).zIndex):0},canvasAlpha:{opaque,transparent,total:pixels.length/4},controlsInside:overlay.querySelectorAll('button,input,select,textarea,details').length,rootInside:Boolean(root&&overlay.contains(root)),intersection:{width:Math.max(0,Math.min(o.right,l.right)-Math.max(o.x,l.x)),height:Math.max(0,Math.min(o.bottom,l.bottom)-Math.max(o.y,l.y))}};
   });
 }
 
 export function assertLaneOverlay(geometry) {
+  for(const ink of geometry.notationInk){
+    assert.ok(ink.fontSize>=25,'Jianpu digits remain full-size large text');
+    const rgb=ink.fill.match(/^rgba?\(([^)]+)\)$/)?.[1].split(',').slice(0,3).map(Number);assert.ok(rgb?.length===3&&rgb.every(Number.isFinite),`Actual computed Jianpu fill: ${ink.fill}`);
+    for(const background of geometry.laneColors){const back=[1,3,5].map(index=>parseInt(background.slice(index,index+2),16));const effective='#'+rgb.map((color,index)=>Math.round(color*ink.alpha+back[index]*(1-ink.alpha)).toString(16).padStart(2,'0')).join('');const ratio=contrastRatio(effective,background);assert.ok(ratio>=3,`Jianpu ${ink.active?'current':'ordinary'} digit contrast at actual ${ink.alpha} opacity: ${ratio.toFixed(2)} against ${background}`);}
+  }
   assert.equal(geometry.inside,true,'The real notation paint root is a descendant of the falling-lane viewport');assert.equal(geometry.rootInside,true);
   assert.ok(geometry.intersection.width>=250&&geometry.intersection.height>=100,'The notation physically intersects a readable area of the falling-lane background');
   assert.ok(geometry.z.rails<geometry.z.overlay&&geometry.z.overlay<geometry.z.canvas,'Notation paints above lane rails and below actual falling blocks');
@@ -116,8 +137,10 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,read
       await page.screenshot({path:join(artifactDirectory,`worldmusichub-shared-piano-${suffix}-normal.png`),fullPage:true,animations:'disabled'});
       await page.locator('#rhythm-stage-free').click();
       await page.locator('#free-keyboard-scroll').evaluate(node=>{node.scrollLeft=0;});await settlePianoPaint(page);
-      const free=await readSharedPianoGeometry(page,'free');assertSamePianoStage(normal,free);
+      const free=await readSharedPianoGeometry(page,'free');
       await page.screenshot({path:join(artifactDirectory,`worldmusichub-shared-piano-${suffix}-free.png`),fullPage:true,animations:'disabled'});
+      await writeFile(join(artifactDirectory,'worldmusichub-shared-piano-layout-checkpoint.json'),JSON.stringify({original_fixtures_only:true,complete:false,completed_pairs:evidence,current:{viewport,theme,normal,free}},null,2));
+      assertSamePianoStage(normal,free);
       evidence.push({viewport,theme,reduced_motion:theme==='dark',normal,free});await page.locator('#rhythm-free-resume').click();
     }
     await page.setViewportSize({width:1280,height:720});await ui('#theme-mode').selectOption('light');await closeShellPanels();
@@ -138,11 +161,12 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,read
       await page.setViewportSize(viewport);await ui(button).click();await ui('#engraving-follow').check();await closeShellPanels();if(view==='staff')await waitForEngraving();
       if(await page.locator('#notice-dismiss').isVisible())await page.locator('#notice-dismiss').click();await page.locator('#reset-button').click();await page.locator('#play-button').click();
       await page.waitForFunction(()=>Number(document.querySelector('#progress').value)>300&&document.querySelector('#stage-cue').hidden);
+      const toolbar=await readSharedPianoGeometry(page);assertPianoToolbarLabels(toolbar);
       const geometry=await readLaneOverlayGeometry(page);assertLaneOverlay(geometry);assert.ok(geometry.canvasAlpha.opaque>20,'The real canvas contains painted falling blocks');
       const current=await page.locator(view==='staff'?'.engraving-expected-cue:not([hidden])':'#notation .score-note.active').count();assert.equal(current,2,'Both original staff voices are visibly followed while playing');
       assert.equal(await page.locator('#notation-tools').evaluate(node=>node.open),false,'Music keeps rendering while its controls are closed');
       await page.screenshot({path:join(artifactDirectory,`worldmusichub-lane-overlay-live-${viewport.width}x${viewport.height}-${view}.png`),fullPage:true,animations:'disabled'});
-      evidence.push({viewport,view,geometry,current_markers:current,playing:true,controls_closed:true});await page.locator('#play-button').click();
+      evidence.push({viewport,view,geometry,toolbar_labels:toolbar.labels,locale:toolbar.locale,current_markers:current,playing:true,controls_closed:true});await page.locator('#play-button').click();
     }
     assert.deepEqual(await exportScore(),score);await writeFile(join(artifactDirectory,'worldmusichub-lane-overlay-live.json'),JSON.stringify({original_fixtures_only:true,actual_playback:true,evidence},null,2));
   });

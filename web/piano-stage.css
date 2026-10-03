@@ -1,6 +1,6 @@
 /* One piano presentation for score practice and free playing. Fixed stage ink
    is intentionally independent of the surrounding light/dark/custom theme. */
-.piano-workspace{--piano-lane-height:clamp(180px,calc(100dvh - 450px),580px);--piano-key-height:clamp(110px,17dvh,170px);--piano-field:#142333;--piano-field-end:#1d3b4b;--piano-ink:#e0effc;--piano-pressed:#7bced7;--piano-pressed-black:#64598e}
+.piano-workspace{--piano-toolbar-height:56px;--piano-lane-height:clamp(180px,calc(100dvh - 450px),580px);--piano-key-height:clamp(110px,17dvh,170px);--piano-field:#142333;--piano-field-end:#1d3b4b;--piano-ink:#e0effc;--piano-pressed:#7bced7;--piano-pressed-black:#64598e}
 .game-shell #workspace.piano-workspace,.game-shell #free-practice-screen.piano-workspace{display:flex;flex-direction:column;align-items:stretch;gap:10px;max-width:none;width:100%;margin:0;padding:12px 18px 16px;overflow:auto;min-height:0;flex:1}
 .game-shell .piano-workspace>*{flex:none;min-width:0}
 .game-shell .piano-workspace .piano-workspace-heading{display:flex;align-items:center;gap:12px;min-height:46px;margin:0;padding:0;flex-wrap:nowrap}
@@ -9,7 +9,7 @@
 .game-shell .piano-workspace-heading nav{display:flex;align-items:center;gap:5px;min-width:0}
 .game-shell .piano-workspace-heading .button{font-size:12px;padding:9px 10px;min-height:40px}
 .game-shell .piano-workspace .play-panel{display:flex!important;position:relative;flex-direction:column;overflow:visible;min-height:0;border:0;border-radius:15px;background:var(--piano-field);--keybed-height:var(--piano-key-height)}
-.game-shell .piano-workspace .performance-field{display:flex!important;flex:none;min-height:0;flex-direction:column}
+.game-shell #workspace.notation-on-lanes .performance-field,.game-shell .piano-workspace .performance-field{display:flex!important;flex:none;min-height:0;flex-direction:column}
 .game-shell :is(#piano-stage,#free-piano-stage).piano-stage-shared{display:flex;flex-direction:column;position:relative;flex:none;width:100%;min-width:0;min-height:0;margin:0;padding:0;border:1px solid #52657b;border-radius:15px;background:var(--piano-field);color:var(--piano-ink);overflow:visible;box-shadow:none}
 .game-shell #workspace.notation-on-lanes .piano-stage-shared:not([hidden]){display:flex!important}
 .game-shell .piano-stage-shared[hidden]{display:none!important}
@@ -48,9 +48,9 @@
 .game-shell .piano-workspace .piano-transport .button{min-height:36px;padding:7px 12px;font-size:12px}
 .game-shell .piano-workspace .performance-status{top:66px;z-index:4}
 .game-shell .piano-workspace .performance-overlay{z-index:3;top:56px;bottom:var(--piano-key-height)}
-.game-shell .piano-stage-shared .free-live-copy{position:absolute;inset:20% 15%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;pointer-events:none;color:#ddfff8;z-index:3}
-.game-shell .piano-stage-shared #free-live-notes{font-size:clamp(34px,5vw,74px);line-height:1.1;letter-spacing:5px;font-weight:770}
-.game-shell .piano-stage-shared .free-live-copy>span{font-size:13px;background:#142333c9;padding:6px 11px;border-radius:20px}
+.game-shell .piano-stage-shared .free-live-copy{position:absolute;top:var(--piano-toolbar-height);left:12px;right:12px;height:var(--piano-lane-height);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;pointer-events:none;color:#ddfff8;z-index:3;overflow:hidden}
+.game-shell .piano-stage-shared #free-live-notes{max-width:100%;font-size:clamp(24px,4.5vw,64px);line-height:1.1;letter-spacing:2px;font-weight:770;overflow-wrap:anywhere}
+.game-shell .piano-stage-shared .free-live-copy>span{max-width:100%;font-size:13px;background:#142333c9;padding:6px 11px;border-radius:20px}
 /* Score paint occupies the same lane as the note canvas, with no opaque card. */
 .notation-lane-overlay{position:absolute;inset:0;z-index:1;overflow:hidden;pointer-events:none;opacity:var(--notation-opacity,.6);scrollbar-width:none;color:#e9f3fa;--ink:#e9f3fa;--muted:#c8d9e6;--paper:transparent;--surface:transparent;--green:#f4ce78}
 .notation-lane-overlay::before{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(#0c172426,#0c172408)}
@@ -78,15 +78,15 @@
 @media(forced-colors:active){.piano-stage-shared .piano-key{forced-color-adjust:none}.piano-stage-toolbar,.notation-lane-overlay{forced-color-adjust:none}}
 
 .game-shell .piano-stage-actions>*{flex:none}
-@media(max-width:1200px){.game-shell .piano-stage-shared .piano-stage-toolbar{grid-template-columns:auto 1fr;grid-template-rows:36px 28px;min-height:92px;column-gap:8px;row-gap:8px}.game-shell .piano-stage-toolbar .notation-overlay-options{grid-column:1;grid-row:2;order:initial;white-space:nowrap;flex-wrap:nowrap}.game-shell .piano-stage-toolbar .notation-tools{grid-column:2;grid-row:2;justify-self:end;order:initial}.game-shell .piano-stage-toolbar .notation-tools>summary{min-height:28px;padding:4px 8px}.game-shell .piano-workspace .performance-status{top:102px}.game-shell .piano-workspace .performance-overlay{top:92px}}
-@media(max-width:650px){.game-shell .piano-stage-shared .piano-stage-toolbar{grid-template-columns:auto 1fr;grid-template-rows:32px 30px;min-height:90px;column-gap:4px;row-gap:8px}.game-shell .piano-stage-shared .piano-stage-title{font-size:12px;letter-spacing:0}.game-shell .piano-stage-toolbar .notation-overlay-options{font-size:10px;gap:4px}.game-shell .piano-stage-toolbar .notation-overlay-options label{font-size:10px;gap:3px}.notation-overlay-options input[type=range]{width:52px}.game-shell .piano-stage-toolbar :is(#sound-button,#free-sound){min-width:0}.game-shell .piano-stage-shared .piano-stage-actions{flex-wrap:nowrap}.game-shell .piano-stage-toolbar .button{font-size:10px;min-height:32px;padding:5px}.game-shell .piano-workspace .performance-overlay{top:90px}}
+@media(max-width:1200px){.piano-workspace{--piano-toolbar-height:92px}.game-shell .piano-stage-shared .piano-stage-toolbar{grid-template-columns:auto 1fr;grid-template-rows:36px 28px;min-height:92px;column-gap:8px;row-gap:8px}.game-shell .piano-stage-toolbar .notation-overlay-options{grid-column:1;grid-row:2;order:initial;white-space:nowrap;flex-wrap:nowrap}.game-shell .piano-stage-toolbar .notation-tools{grid-column:2;grid-row:2;justify-self:end;order:initial}.game-shell .piano-stage-toolbar .notation-tools>summary{min-height:28px;padding:4px 8px}.game-shell .piano-workspace .performance-status{top:102px}.game-shell .piano-workspace .performance-overlay{top:92px}}
+@media(max-width:650px){.piano-workspace{--piano-toolbar-height:90px}.game-shell .piano-stage-shared .piano-stage-toolbar{grid-template-columns:auto 1fr;grid-template-rows:32px 30px;min-height:90px;column-gap:4px;row-gap:8px}.game-shell .piano-stage-shared .piano-stage-title{font-size:12px;letter-spacing:0}.game-shell .piano-stage-toolbar .notation-overlay-options{font-size:10px;gap:4px}.game-shell .piano-stage-toolbar .notation-overlay-options label{font-size:10px;gap:3px}.notation-overlay-options input[type=range]{width:52px}.game-shell .piano-stage-toolbar :is(#sound-button,#free-sound){min-width:0}.game-shell .piano-stage-shared .piano-stage-actions{flex-wrap:nowrap}.game-shell .piano-stage-toolbar .button{font-size:10px;min-height:32px;padding:5px}.game-shell .piano-workspace .performance-overlay{top:90px}}
 
 .game-shell .free-performance-panel{position:relative;display:flex;flex-direction:column;min-width:0;padding:0;border:0;margin:0;background:var(--piano-field);border-radius:15px}
 .game-shell .free-performance-panel>.free-stage-footer{flex:none}.game-shell .free-stage-footer #free-beginner-controls{width:100%;margin:0;border:0}
 .game-shell .piano-workspace #piano-fingering-guidance{flex:none;width:100%}
 
 @media(max-height:600px) and (min-width:651px){
- .piano-workspace{--piano-lane-height:100px;--piano-key-height:78px}
+ .piano-workspace{--piano-toolbar-height:46px;--piano-lane-height:100px;--piano-key-height:78px}
  .game-shell .piano-stage-shared .piano-stage-toolbar{grid-template-columns:1fr auto auto;grid-template-rows:32px;gap:6px 10px;min-height:46px;padding:6px 10px}
  .game-shell .piano-stage-shared .piano-stage-title{display:none}
  .game-shell .piano-stage-shared .piano-stage-actions{grid-column:1;grid-row:1;margin:0;gap:6px;flex-wrap:nowrap}
@@ -104,3 +104,15 @@
  .game-shell .piano-workspace #free-beginner-controls{margin:0}
  .game-shell .piano-workspace .stage-heading:has(>.beginner-controls-compact){display:grid;grid-template-columns:minmax(64px,1fr) max-content;column-gap:6px;align-items:center}
 }
+
+/* Score ink belongs to the fixed dark lane palette, across all shell themes.
+   Keep stems/ledger lines and exact-current-note highlights distinct. */
+#notation-lane-overlay :is(.note-head,.accidental,.jianpu-note,.octave-dots,.duration-dash,.rest,.clef){fill:#eef7ff}
+#notation-lane-overlay .note-head{stroke:#eef7ff}
+#notation-lane-overlay :is(.note-line,.note-flag){stroke:#eef7ff}
+#notation-lane-overlay :is(.staff-line,.bar-line){stroke:#abc4d7}
+#notation-lane-overlay :is(.part-name,.measure-number,.tonic-reference){fill:#d5e6f3}
+#notation-lane-overlay .score-note.active :is(.note-head,text){fill:#ffd78c}
+#notation-lane-overlay .score-note.active :is(.note-head,.note-line,.note-flag){stroke:#ffd78c}
+#notation-lane-overlay .note-head.open-head,#notation-lane-overlay .score-note.active .note-head.open-head{fill:none}
+@media(max-height:600px){.game-shell .piano-stage-shared .free-live-copy{gap:4px}.game-shell .piano-stage-shared #free-live-notes{font-size:26px}.game-shell .piano-stage-shared .free-live-copy>span{padding:3px 8px;font-size:11px}}
