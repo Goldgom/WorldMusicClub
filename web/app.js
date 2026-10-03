@@ -140,6 +140,7 @@ function changeScreen(screen){
     freeView?.enter();refreshFreeTone();
   }else if(freeSession?.snapshot().entered)freeView?.leave();
   syncInputRoute();if(!enteringPreview)cancelPendingStart();
+  keyboardInputView?.setScreen(screen);
   performanceView?.screenChanged(screen);engravedView.surfaceChanged();drawFrame();
 }
 shell=setupGameShell({i18n,pausePlayback,onPanel:name=>{referenceListening?.close();cancelPendingStart();if(name==='results')updateResultsSummary()},onScreen:changeScreen,
@@ -1065,7 +1066,7 @@ keyboardInput=createKeyboardInput({pressNote,releaseNote,releaseMatching:(...arg
   onChange:snapshot=>{keyboardInputView?.render(snapshot);freeView?.setKeyboard(snapshot);beginnerView?.refreshMapping(snapshot.configurationId);},
   onConfiguration:()=>{if(!keyboardInput||!freeSession)return;try{freeSession.configure('keyboard_configuration',keyboardInput.exportConfigurationData().current_configuration);}catch{/* The session retains the failure and blocks PC input until corrected. */}}});
 keyboardInputView=setupKeyboardInputView({document,controller:keyboardInput,i18n,onConfigure:()=>shell.open('settings'),
-  getVisualRange:()=>state.instrument==='guitar'?{low:Math.min(...state.guitar.tuning)+state.guitar.capo,high:Math.max(...state.guitar.tuning)+state.guitar.frets}:state.geometry.length?{low:state.geometry[0].midi,high:state.geometry.at(-1).midi}:null});
+  getVisualRange:()=>state.instrument==='guitar'&&shell.screen()!=='free'?{low:Math.min(...state.guitar.tuning)+state.guitar.capo,high:Math.max(...state.guitar.tuning)+state.guitar.frets}:state.geometry.length?{low:state.geometry[0].midi,high:state.geometry.at(-1).midi}:null});
 freeSession=createFreePracticeSession({now:()=>{freeClockWall=performance.now();return freeClockWall;},onBoundary:cleanupFreeInputs,onChange:snapshot=>{
   const starting=snapshot.state==='recording'&&['idle','stopped'].includes(freeCaptureState);
   const stopping=snapshot.state==='stopped'&&freeCaptureState!=='stopped';

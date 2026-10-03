@@ -7,7 +7,7 @@ import {setupKeyboardInputView} from '../web/keyboard-input-view.js';
 import {createI18n} from '../web/i18n.js';
 
 function fixture(options={},viewOptions={},short=false) {
-  const {document,window}=parseHTML('<html><body><div class="stage-heading"><h1 id="stage-title">Score</h1><p id="stage-subtitle">Practice</p></div><dialog id="settings-dialog"><div class="shell-dialog-content"></div></dialog><section class="play-panel"><div class="piano-stage"><canvas id="falling-notes"></canvas><div id="keyboard"><button data-midi="60"><span class="key-shortcut"></span></button><button data-midi="36"><span class="key-shortcut"></span></button></div></div><div class="keyboard-footer"></div><div class="transport"><button id="play-button">Play</button><button id="stop-button">Stop</button></div></section></body></html>');
+  const {document,window}=parseHTML('<html><body><div class="stage-heading"><h1 id="stage-title">Score</h1><p id="stage-subtitle">Practice</p></div><dialog id="settings-dialog"><div class="shell-dialog-content"></div></dialog><section class="play-panel"><div class="piano-stage"><canvas id="falling-notes"></canvas><div id="keyboard"><button data-midi="60"><span class="key-shortcut"></span></button><button data-midi="36"><span class="key-shortcut"></span></button></div></div><div class="keyboard-footer"></div><div class="transport"><button id="play-button">Play</button><button id="stop-button">Stop</button></div></section><section id="free-practice-screen"><div class="free-practice-heading"><h1 id="free-practice-title">Free</h1></div><section id="free-piano-stage"></section><div class="free-stage-footer"></div></section></body></html>');
   const mediaListeners=new Set(),media={matches:short,addEventListener(type,listener){assert.equal(type,'change');mediaListeners.add(listener);},removeEventListener(type,listener){assert.equal(type,'change');mediaListeners.delete(listener);}};
   window.matchMedia=query=>{assert.equal(query,'(max-height:600px) and (min-width:651px)');return media;};
   const setShortLandscape=matches=>{media.matches=matches;for(const listener of mediaListeners)listener({matches});};
@@ -104,6 +104,23 @@ test('short landscape uses Settings for the same keyboard controls and keeps liv
   assert.equal($('keyboard-current-offset').textContent,'+11');
   assert.equal($('keyboard-active-range').textContent,'B2–A6');
   assert.ok(indicator.getAttribute('aria-label').includes(i18n.t('keyboard.offset',{semitones:11})));
+});
+
+test('one existing keyboard footer and mapping disclosure move between modes and retain the compact Settings home',()=>{
+  const {document,$,view,controller,i18n,emit,setShortLandscape}=fixture();
+  const footer=document.querySelector('.keyboard-input-footer'),details=$('keyboard-performance-details'),mapKey=document.querySelector('#keyboard-map [data-code="KeyR"]'),indicator=$('keyboard-compact-status');
+  const ids=['keyboard-active-range','keyboard-current-offset','keyboard-octave-down','keyboard-semitone-down','keyboard-semitone-up','keyboard-octave-up','keyboard-performance-details','keyboard-map','keyboard-offset-reset','keyboard-open-settings'];
+  const nodes=new Map(ids.map(id=>[id,$(id)]));details.setAttribute('open','');$('keyboard-map').scrollLeft=41;$('keyboard-mapping-editor').value='[unfinished';emit($('keyboard-mapping-editor'),'input');const before=controller.exportConfigurationData();
+  const unique=()=>{assert.equal(document.querySelectorAll('.keyboard-input-footer').length,1);for(const [id,node]of nodes){assert.equal(document.querySelectorAll(`#${id}`).length,1);assert.ok($(id)===node,`${id} keeps the original control/listener`);}};
+  for(const locale of ['zh-CN','en']){
+    view.setScreen('free');unique();assert.equal(footer.previousElementSibling.id,'free-piano-stage');i18n.setLocale(locale);assert.equal($('keyboard-map-label').textContent,i18n.t('keyboard.map'));assert.ok(document.querySelector('#keyboard-map [data-code="KeyR"]')===mapKey);assert.equal(details.hasAttribute('open'),true);assert.equal($('keyboard-map').scrollLeft,41);assert.equal($('keyboard-mapping-editor').value,'[unfinished');
+    setShortLandscape(true);unique();assert.equal(footer.parentElement.id,'keyboard-input-settings');assert.ok(indicator.closest('.free-practice-heading'));assert.equal(indicator.hidden,false);
+    view.setScreen('stage');unique();assert.equal(footer.parentElement.id,'keyboard-input-settings');assert.ok(indicator.closest('.keyboard-stage-meta'));
+    setShortLandscape(false);unique();assert.equal(footer.nextElementSibling.className,'transport');assert.equal(indicator.hidden,true);
+  }
+  assert.deepEqual(controller.exportConfigurationData(),before,'Moving and localizing controls does not configure input or create recordings');
+  view.setScreen('free');for(const [id,expected]of [['keyboard-octave-up',12],['keyboard-semitone-down',11],['keyboard-semitone-up',12],['keyboard-octave-down',0]]){$(id).click();assert.equal(controller.snapshot().transpose,expected,`The original ${id} handler works in free mode`);}
+  view.destroy();assert.equal(footer.closest('.play-panel')!==null,true);assert.equal(footer.nextElementSibling.className,'transport');
 });
 
 test('an initially short viewport restores the original stage footer and subtitle when the view is destroyed',()=>{

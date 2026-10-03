@@ -156,6 +156,26 @@ test('exact recording-start MIDI evidence is retained and old note-off cannot re
 });
 
 
+test('shared footer moves only after mode cleanup and records its real transpose controls in free input history',async()=>{
+  const app=await freePracticeApp({fetchResult:await fixtureScoreServer()});let restoreMove;
+  try{
+    await app.until(()=>!app.$('start-practice').disabled);await enter(app);await app.click('free-sound');await app.click('free-exit');app.$('count-in').checked=false;await app.click('start-practice');await app.until(()=>app.document.body.dataset.screen==='stage');
+    const score=await app.exported('export-button'),footer=app.document.querySelector('.keyboard-input-footer'),up=app.$('keyboard-semitone-up'),map=app.$('keyboard-map'),details=app.$('keyboard-performance-details');
+    const freeStage=app.$('free-piano-stage'),originalAfter=freeStage.after,moves=[];
+    freeStage.after=function(...nodes){if(nodes.includes(footer))moves.push({pressed:app.document.querySelectorAll('#keyboard .pressed,#free-practice-keys .pressed').length,heldMap:app.document.querySelectorAll('#keyboard-map .held').length});return originalAfter.apply(this,nodes);};restoreMove=()=>{freeStage.after=originalAfter;};
+    app.emit(app.$('stage-title'),'keydown',musical);assert.equal(app.document.querySelectorAll('#keyboard .pressed').length,1);await app.click('rhythm-stage-free');
+    assert.deepEqual(moves,[{pressed:0,heldMap:0}],'Owned notes are released before the existing footer is moved');assert.ok(footer.previousElementSibling===freeStage);assert.ok(app.$('keyboard-semitone-up')===up);assert.ok(app.$('keyboard-map')===map);assert.equal(app.document.querySelectorAll('.keyboard-input-footer').length,1);
+    app.emit(app.$('free-practice-title'),'keydown',{...musical,repeat:true});assert.equal(app.document.querySelectorAll('#free-practice-keys .pressed').length,0,'Held physical repeat cannot restart a note after navigation');app.emit(app.$('free-practice-title'),'keyup',musical);
+    const preserved=await app.exported('export-takes'); // The physical release still belongs to the original normal contact.
+    await app.click('free-start');app.emit(app.$('free-practice-title'),'keydown',musical);assert.equal(app.document.querySelectorAll('#free-practice-keys .pressed').length,1);await app.click('keyboard-semitone-up');assert.equal(app.$('keyboard-current-offset').textContent,'+1');assert.equal(app.document.querySelectorAll('#free-practice-keys .pressed').length,0,'The shared transpose control releases its old musical contact');
+    app.emit(app.$('free-practice-title'),'keydown',{...musical,repeat:true});assert.equal(app.document.querySelectorAll('#free-practice-keys .pressed').length,0);app.emit(app.$('free-practice-title'),'keyup',musical);key(app);
+    const currentMap=app.document.querySelector('#keyboard-map [data-code="KeyR"]');details.open=true;for(const locale of ['en','zh-CN']){getAppI18n(app.document).setLocale(locale);assert.ok(app.document.querySelector('#keyboard-map [data-code="KeyR"]')===currentMap);assert.ok(app.$('keyboard-semitone-up')===up);assert.equal(details.open,true);}
+    const record=await stopDraft(app);assert.deepEqual(onsets(record).map(event=>event.midi),[60,61]);assert.deepEqual(record.configuration.filter(row=>row.key==='keyboard_configuration').map(row=>row.value.transpose_semitones),[0,1]);assert.ok(record.observations.events.some(event=>event.kind==='synthetic_release'),'Transpose retains cleanup evidence');
+    await app.click('rhythm-free-resume');assert.equal(footer.closest('.play-panel')!==null,true);assert.ok(app.$('keyboard-semitone-up')===up);assert.equal(app.document.querySelectorAll('.keyboard-input-footer').length,1);assert.equal(app.document.querySelectorAll('#keyboard .pressed').length,0);
+    const {keyboard_input_configuration:beforeMap,...beforeTake}=preserved,{keyboard_input_configuration:afterMap,...afterTake}=await app.exported('export-takes');assert.deepEqual(afterTake,beforeTake,'Shared input configuration never rewrites score passes, timing or assessments');assert.deepEqual(afterMap.events.slice(0,beforeMap.events.length),beforeMap.events);assert.equal(afterMap.current_configuration.transpose_semitones,1);assert.deepEqual(await app.exported('export-button'),score);assert.deepEqual(app.audio(),{contexts:0,unlocks:0});
+  }finally{restoreMove?.();await app.close();}
+});
+
 test('free mapping cleanup cannot append boundaries to a score contact already cancelled on navigation',async()=>{
   const app=await freePracticeApp({fetchResult:await fixtureScoreServer()});try{
     await app.until(()=>!app.$('start-practice').disabled);await enter(app);await app.click('free-sound');await app.click('free-exit');app.$('count-in').checked=false;app.$('start-practice').click();await app.until(()=>app.document.body.dataset.screen==='stage');

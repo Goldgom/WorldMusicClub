@@ -41,8 +41,8 @@ export function setupFreePracticeView({document,session,preview=null,i18n=getApp
   const keybed=el('div',null,'free-keybed-wrap');keybed.append(keys);pianoSurface.append(liveField,keybed);keyboardScroll.append(pianoSurface);
   mountPianoStage({document,stage:inputSection,scroll:keyboardScroll,surface:pianoSurface,keyboard:keys,lane:liveField});
   const stageFooter=el('div',null,'free-stage-footer');const inputHelp=el('details','free-input-help','free-input-help');inputHelp.dataset.keyboardInput='off';
-  inputHelp.append(text('summary',null,'free.inputGuide'),text('p',null,'free.inputHelp'),text('p',null,'free.defaultVelocity'),text('p',null,'keyboard.rollover'),text('p',null,'free.noAudioCapture'));
-  stageFooter.append(mappingStatus,text('span',null,'free.scrollHint','free-scroll-hint'),inputHelp);inputSection.append(stageHeader,keyboardScroll,liveCopy);
+  inputHelp.append(text('summary',null,'free.inputGuide'),mappingStatus,text('p',null,'free.inputHelp'),text('p',null,'free.defaultVelocity'),text('p',null,'keyboard.rollover'),text('p',null,'free.noAudioCapture'));
+  stageFooter.append(text('span',null,'free.scrollHint','free-scroll-hint'),inputHelp);inputSection.append(stageHeader,keyboardScroll,liveCopy);
   modePanel.append(inputSection,stageFooter);screen.append(modePanel);
   const recordings=el('details','free-recordings','free-recordings');recordings.dataset.keyboardInput='off';recordings.append(text('summary','free-recordings-toggle','free.recordings'));
   const savePanel=el('section','free-save-panel','free-save-panel');savePanel.dataset.keyboardInput='off';

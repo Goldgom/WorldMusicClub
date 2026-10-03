@@ -128,6 +128,19 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,read
     if(await page.locator('#sound-button').getAttribute('aria-pressed')==='true')await ui('#sound-button').click();
     await page.locator('#play-button').click();await page.waitForFunction(()=>Number(document.querySelector('#progress').value)>150);await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
     const take=await exportTakeData();assert.equal(take.passes.length,1);await closeShellPanels();if(await page.locator('#notice-dismiss').isVisible())await page.locator('#notice-dismiss').click();
+    const footerNode=await page.locator('.keyboard-input-footer').elementHandle();
+    const footerProof=async mode=>{
+      const proof=await footerNode.evaluate((node,mode)=>{
+        const ids=['keyboard-active-range','keyboard-current-offset','keyboard-octave-down','keyboard-semitone-down','keyboard-semitone-up','keyboard-octave-up','keyboard-performance-details','keyboard-map','keyboard-offset-reset','keyboard-open-settings'];
+        const compact=matchMedia('(max-height:600px) and (min-width:651px)').matches;
+        const buttons=['keyboard-octave-down','keyboard-semitone-down','keyboard-semitone-up','keyboard-octave-up'].map(id=>{const button=document.getElementById(id),r=button.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return{id,text:button.textContent,label:button.getAttribute('aria-label'),reachable:hit===button||button.contains(hit)};});
+        return {mode,compact,same:node===document.querySelector('.keyboard-input-footer'),count:document.querySelectorAll('.keyboard-input-footer').length,ids:ids.map(id=>({id,count:document.querySelectorAll(`#${id}`).length,inside:node.contains(document.getElementById(id))})),host:node.closest('#keyboard-input-settings,.free-performance-panel,.play-panel')?.id||node.closest('.free-performance-panel,.play-panel')?.className,after:node.previousElementSibling?.id,indicatorInFree:Boolean(document.querySelector('#keyboard-compact-status').closest('.free-practice-heading')),buttons};
+      },mode);
+      assert.equal(proof.same,true);assert.equal(proof.count,1);assert.ok(proof.ids.every(row=>row.count===1&&row.inside),'Every physical input control retains one shared footer owner');
+      assert.deepEqual(proof.buttons.map(button=>button.text),['−12','−1','+1','+12']);assert.ok(proof.buttons.every(button=>button.label),'Every shared transpose control retains its accessible name');
+      if(proof.compact){assert.equal(proof.host,'keyboard-input-settings');assert.equal(proof.indicatorInFree,mode==='free');}else{assert.ok(proof.buttons.every(button=>button.reachable),'Shared physical input controls are reachable in both modes');if(mode==='free')assert.equal(proof.after,'free-piano-stage');else assert.ok(proof.host.includes('play-panel'));}
+      return proof;
+    };
     const localeProof=[];await page.setViewportSize({width:1280,height:720});
     for(const locale of ['en','zh-CN']){
       await ui('#interface-language').selectOption(locale);await closeShellPanels();await settlePianoPaint(page);
@@ -141,26 +154,38 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,read
     for(const viewport of layouts)for(const theme of viewport.width>=1280?['light','dark']:['light']){
       await page.setViewportSize(viewport);await page.emulateMedia({reducedMotion:theme==='dark'?'reduce':'no-preference'});await ui('#theme-mode').selectOption(theme);await closeShellPanels();
       await page.locator('#piano-scroll').evaluate(node=>{node.scrollLeft=0;});await settlePianoPaint(page);
-      const normal=await readSharedPianoGeometry(page);assert.equal(normal.keys.length,61);assert.deepEqual([normal.keys[0].midi,normal.keys.at(-1).midi],[36,96]);
+      const normal=await readSharedPianoGeometry(page),normalFooter=await footerProof('normal');assert.equal(normal.keys.length,61);assert.deepEqual([normal.keys[0].midi,normal.keys.at(-1).midi],[36,96]);
       const suffix=`${viewport.width}x${viewport.height}-${theme}`;
       await page.screenshot({path:join(artifactDirectory,`worldmusichub-shared-piano-${suffix}-normal.png`),fullPage:true,animations:'disabled'});
       await page.locator('#rhythm-stage-free').click();
       await page.locator('#free-keyboard-scroll').evaluate(node=>{node.scrollLeft=0;});await settlePianoPaint(page);
-      const free=await readSharedPianoGeometry(page,'free');
+      const free=await readSharedPianoGeometry(page,'free'),freeFooter=await footerProof('free');
       await page.screenshot({path:join(artifactDirectory,`worldmusichub-shared-piano-${suffix}-free.png`),fullPage:true,animations:'disabled'});
-      await writeFile(join(artifactDirectory,'worldmusichub-shared-piano-layout-checkpoint.json'),JSON.stringify({original_fixtures_only:true,complete:false,localeProof,completed_pairs:evidence,current:{viewport,theme,normal,free}},null,2));
+      await writeFile(join(artifactDirectory,'worldmusichub-shared-piano-layout-checkpoint.json'),JSON.stringify({original_fixtures_only:true,complete:false,localeProof,completed_pairs:evidence,current:{viewport,theme,normal,free,normalFooter,freeFooter}},null,2));
       assertSamePianoStage(normal,free);
-      evidence.push({viewport,theme,reduced_motion:theme==='dark',normal,free});await page.locator('#rhythm-free-resume').click();
+      evidence.push({viewport,theme,reduced_motion:theme==='dark',normal,free,normalFooter,freeFooter});await page.locator('#rhythm-free-resume').click();
     }
     await page.setViewportSize({width:1280,height:720});await ui('#theme-mode').selectOption('light');await closeShellPanels();
     const held=async mode=>{const root=mode==='normal'?'#keyboard':'#free-practice-keys';await page.locator(mode==='normal'?'#stage-title':'#free-practice-title').focus();await page.keyboard.down('r');await page.waitForFunction(root=>document.querySelector(`${root} [data-midi="60"]`).getAttribute('aria-pressed')==='true',root);const geometry=await readSharedPianoGeometry(page,mode);await page.screenshot({path:join(artifactDirectory,`worldmusichub-shared-piano-1280x720-${mode}-held.png`),fullPage:true,animations:'disabled'});await page.keyboard.up('r');await page.waitForFunction(root=>!document.querySelector(`${root} .pressed`),root);return geometry.keys.find(key=>key.midi===60);};
-    const normalHeld=await held('normal');await page.locator('#rhythm-stage-free').click();await page.locator('#free-start').click();const freeHeld=await held('free');assert.deepEqual(normalHeld.style,freeHeld.style,'An actual held C4 has identical visible feedback in both modes');
+    const normalHeld=await held('normal');await page.locator('#rhythm-stage-free').click();
+    const freeIsolationTake=await exportTakeData();await closeShellPanels();
+    const {input_evidence:beforeNormalEvidence,...beforeNormal}=take,{input_evidence:afterNormalEvidence,...afterNormal}=freeIsolationTake;
+    assert.deepEqual(afterNormal,beforeNormal,'The deliberate paused normal key probe never changes a score pass or assessment');assert.deepEqual(afterNormalEvidence.events.slice(0,beforeNormalEvidence.events.length),beforeNormalEvidence.events);
+    const normalProbe=afterNormalEvidence.events.slice(beforeNormalEvidence.events.length);assert.deepEqual(normalProbe.map(event=>[event.kind,event.midi,event.encoding,event.onset_capture]),[['note_on',60,'key_down',null],['note_off',null,'key_up',null]],'Retain exactly the intentional normal keydown/keyup as raw, ungraded evidence');assert.deepEqual({...afterNormalEvidence,events:beforeNormalEvidence.events},beforeNormalEvidence);
+    await page.locator('#free-start').click();const freeHeld=await held('free');assert.deepEqual(normalHeld.style,freeHeld.style,'An actual held C4 has identical visible feedback in both modes');
     const unpressed=(await readSharedPianoGeometry(page,'free')).keys.find(key=>key.midi===60);assert.notDeepEqual(freeHeld.style,unpressed.style,'Pressed feedback is visibly different from idle');
     await page.locator('#free-practice-title').focus();await page.evaluate(()=>document.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true})));await page.keyboard.press('r');assert.equal(await page.locator('#free-practice-keys .pressed').count(),0);await page.evaluate(()=>document.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true})));
     await page.keyboard.down('r');await page.waitForFunction(()=>document.querySelector('#free-practice-keys .pressed'));await page.locator('#free-keyboard-settings').click();await page.waitForFunction(()=>!document.querySelector('#free-practice-keys .pressed'));await page.keyboard.up('r');await closeShellPanels();
     assert.equal(await page.locator('#free-practice-screen').getAttribute('data-state'),'paused');await page.locator('#rhythm-free-resume').click();assert.equal(await page.locator('#keyboard .pressed').count(),0);
-    assert.deepEqual(await exportTakeData(),take,'Free input, IME and navigation cannot mutate the retained normal take');assert.deepEqual(await exportScore(),score);
-    await writeFile(join(artifactDirectory,'worldmusichub-shared-piano-stage.json'),JSON.stringify({original_fixtures_only:true,configured_range:{key_count:61,lowest_midi:36,highest_midi:96},localeProof,evidence,held:{normal:normalHeld,free:freeHeld},actual_paired_screenshots:true,normal_take_preserved:true,score_preserved:true,ime_suppressed:true,protected_control_released_input:true,navigation_released_input:true},null,2));
+    assert.deepEqual(await exportTakeData(),freeIsolationTake,'Free input, IME and navigation cannot mutate the retained normal take');assert.deepEqual(await exportScore(),score);
+    await closeShellPanels();await page.locator('#rhythm-stage-free').click();await footerProof('free');await page.locator('#free-resume').click();await page.locator('#free-practice-title').focus();await page.keyboard.down('r');await page.waitForFunction(()=>document.querySelector('#free-practice-keys [data-midi="60"].pressed'));
+    await page.locator('#keyboard-semitone-up').click();assert.equal(await page.locator('#keyboard-current-offset').textContent(),'+1');await page.waitForFunction(()=>!document.querySelector('#free-practice-keys .pressed'));await page.keyboard.down('r');assert.equal(await page.locator('#free-practice-keys .pressed').count(),0,'Repeated held typing cannot restart input after footer transposition');await page.keyboard.up('r');await page.locator('#free-practice-title').focus();await page.keyboard.press('r');await page.locator('#free-stop').click();
+    if(!await page.locator('#free-recordings').evaluate(node=>node.open))await page.locator('#free-recordings-toggle').click();
+    const [freeDownload]=await Promise.all([page.waitForEvent('download'),page.locator('#free-export-draft').click()]);const freeStream=await freeDownload.createReadStream();let freeJson='';for await(const chunk of freeStream)freeJson+=chunk;const footerRecord=JSON.parse(freeJson);
+    assert.deepEqual(footerRecord.observations.events.filter(event=>event.kind==='note_on').map(event=>event.midi),[60,60,60,61]);assert.deepEqual(footerRecord.configuration.filter(row=>row.key==='keyboard_configuration').map(row=>row.value.transpose_semitones),[0,1]);
+    await page.locator('#rhythm-free-resume').click();await footerProof('normal');assert.equal(await page.locator('#keyboard .pressed').count(),0);const {keyboard_input_configuration:oldConfiguration,...oldTake}=freeIsolationTake,{keyboard_input_configuration:newConfiguration,...newTake}=await exportTakeData();assert.deepEqual(newTake,oldTake,'Using shared free transpose leaves every retained score pass, clock and assessment unchanged');assert.deepEqual(newConfiguration.events.slice(0,oldConfiguration.events.length),oldConfiguration.events);assert.equal(newConfiguration.current_configuration.transpose_semitones,1);assert.deepEqual(await exportScore(),score);await footerNode.dispose();
+    const sharedFooter={one_original_node:true,mode_cleanup_preserved:true,transpose_configuration:footerRecord.configuration.filter(row=>row.key==='keyboard_configuration'),actual_free_onsets:footerRecord.observations.events.filter(event=>event.kind==='note_on').map(event=>event.midi),score_passes_preserved:true};
+    await writeFile(join(artifactDirectory,'worldmusichub-shared-piano-stage.json'),JSON.stringify({original_fixtures_only:true,configured_range:{key_count:61,lowest_midi:36,highest_midi:96},localeProof,evidence,normalProbe,sharedFooter,held:{normal:normalHeld,free:freeHeld},actual_paired_screenshots:true,normal_take_preserved:true,score_preserved:true,ime_suppressed:true,protected_control_released_input:true,navigation_released_input:true},null,2));
   });
   test('original falling bars visibly cross staff and Jianpu lane background during actual playback',{timeout:90_000},async()=>{
     const page=getPage(),score=originalAboveKeyboardScore(),evidence=[];score.id='original-live-overlay';score.title='Original live falling-lane overlay';score.tempo[0].bpm=60;

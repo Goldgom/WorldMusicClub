@@ -333,7 +333,9 @@ async function captureFailureState(stage,error=null) {
   await page.screenshot({path:join(artifactDirectory,`${name}.png`),fullPage:true,timeout:3000}).catch(()=>{});
 }
 async function waitForEngraving(timeout=25_000) {
-  await revealControl(page.locator('#engraved-button'));
+  // A visible lane renders independently of its control disclosure. Readiness
+  // checks during held input must not focus a protected notation control.
+  if(!await page.locator('#notation-lane-overlay').isVisible())await revealControl(page.locator('#engraved-button'));
   // Require the completed preview message in either shipped locale. Chinese
   // screenshots must not wait for the English-only text after a language switch.
   await page.waitForFunction(()=>Boolean(document.querySelector('#engraved-staff svg')&&/^(?:Generated staff preview · Measures \d+–\d+ · display only\.|生成的五线谱预览 · 第 \d+–\d+ 小节 · 仅供显示。)$/.test(document.querySelector('#engraving-status').textContent))||!document.querySelector('#engraving-fallback').hidden,null,{timeout});

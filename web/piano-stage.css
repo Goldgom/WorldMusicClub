@@ -134,3 +134,8 @@
 #notation-lane-overlay .score-note.active :is(.note-head,.note-line,.note-flag){stroke:#ffd78c}
 #notation-lane-overlay .note-head.open-head,#notation-lane-overlay .score-note.active .note-head.open-head{fill:none}
 @media(max-height:600px){.game-shell .piano-stage-shared .free-live-copy{gap:4px}.game-shell .piano-stage-shared #free-live-notes{font-size:26px}.game-shell .piano-stage-shared .free-live-copy>span{padding:3px 8px;font-size:11px}}
+
+/* The physical-key footer is one existing view, moved between mode hosts. */
+.game-shell :is(#workspace,#free-practice-screen).piano-workspace .keyboard-footer.keyboard-input-footer{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:.35rem .65rem;padding:5px 12px;background:var(--paper);color:var(--ink);border-bottom:1px solid var(--border)}
+.game-shell .piano-workspace .stage-heading>.keyboard-compact-status{grid-column:1/-1;justify-self:start}
+@media(max-width:650px){.game-shell :is(#workspace,#free-practice-screen).piano-workspace .keyboard-footer.keyboard-input-footer{grid-template-columns:minmax(0,1fr) auto}}

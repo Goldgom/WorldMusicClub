@@ -64,13 +64,22 @@ export function setupKeyboardInputView({document, controller, i18n, getVisualRan
   compactStatus.addEventListener('click',openKeyboardSettings);
   if (stageMeta) { subtitle.replaceWith(stageMeta); stageMeta.append(subtitle,compactStatus); }
   const shortLandscape = document.defaultView?.matchMedia?.('(max-height:600px) and (min-width:651px)');
+  let activeScreen=document.body?.dataset.screen||'stage';
   function arrangeFooter() {
     const compact = Boolean(shortLandscape?.matches && host && stageMeta);
+    const freeStage=activeScreen==='free'?$('free-piano-stage'):null;
+    const badgeHost=compact&&freeStage?$('free-practice-title')?.parentElement:stageMeta;
     compactStatus.hidden = !compact;
+    if(badgeHost&&compactStatus.parentElement!==badgeHost)badgeHost.append(compactStatus);
     if (compact) {
       if (footer.parentElement !== panel) panel.insertBefore(footer,fields);
+    } else if(freeStage?.parentNode){
+      if(footer.previousSibling!==freeStage)freeStage.after(footer);
     } else if (footerHome.parentNode && footer.previousSibling !== footerHome) footerHome.after(footer);
   }
+  // Screen ownership and release boundaries stay in the app. Reparenting this
+  // one view preserves all IDs, mapping nodes, handlers and disclosure state.
+  function setScreen(screen){activeScreen=screen;arrangeFooter();refreshRange();}
   shortLandscape?.addEventListener('change',arrangeFooter); arrangeFooter();
   let snapshot = controller.snapshot(), lastConfiguration = null, issue = null, editorDirty = false;
   const signature = mapping => JSON.stringify(mapping.map(({code,offset,label,row})=>({code,offset,label,row})));
@@ -136,5 +145,5 @@ export function setupKeyboardInputView({document, controller, i18n, getVisualRan
     showError(issue); refreshRange();
   }
   const unsubscribe = i18n.subscribe?.(()=>render()); render(snapshot);
-  return {render,refreshRange,destroy(){unsubscribe?.();shortLandscape?.removeEventListener('change',arrangeFooter);if(footerHome.parentNode)footerHome.replaceWith(footer);if(stageMeta?.parentNode)stageMeta.replaceWith(subtitle);panel.remove();footer.replaceChildren();}};
+  return {render,refreshRange,setScreen,destroy(){unsubscribe?.();shortLandscape?.removeEventListener('change',arrangeFooter);if(footerHome.parentNode)footerHome.replaceWith(footer);compactStatus.remove();if(stageMeta?.parentNode)stageMeta.replaceWith(subtitle);panel.remove();footer.replaceChildren();}};
 }
