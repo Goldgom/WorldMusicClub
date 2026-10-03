@@ -172,7 +172,7 @@ $temporary=Join-Path ([System.IO.Path]::GetTempPath()) ('wmh picker 拼谱 '+[gu
 try {
   $fixtures=Join-Path $temporary 'fixtures';$downloads=Join-Path $temporary 'downloads'
   New-Item -ItemType Directory $fixtures,$downloads | Out-Null
-  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu','malformed.json','folder-original.json','folder-conflict.json','原创曲包_日本語.zip','bulk-conflict.zip','bulk-backup.json','bulk-failure.zip','bulk-malformed.zip','bulk-standard-a.json','bulk-standard-b.json','clean-authored-song.zip','vsq-authored-song.zip')
+  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu','malformed.json','folder-original.json','folder-conflict.json','原创曲包_日本語.zip','bulk-conflict.zip','bulk-backup.json','bulk-failure.zip','bulk-malformed.zip','bulk-standard-a.json','bulk-standard-b.json','clean-authored-song.zip','vsq-authored-song.zip','performance-authored-songs.zip')
   foreach($name in $fixed) {
     $expected=Join-Path $fixtures $name;[System.IO.File]::WriteAllText($expected,'fixture')
     Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) -ceq $expected) "fixed path $name"
@@ -195,6 +195,18 @@ try {
   foreach($name in @('vsq-seed-17.zip','vsq-restart-0.zip','../vsq-authored-song.zip','clean-seed-17.zip','clean-restart-0.zip','clean-any-1.zip','../clean-authored-song.zip','bulk-seed-17.zip','bulk-restart-0.zip','bulk-any-1.zip','../bulk-conflict.zip','bulk-multiple.extra','bulk-standard-a.json.extra','../folder-original.json','folder-original.json.extra','folder-restart-1.json','../original-duet.mxl','../original-reference-overlap.mid','original-reference-overlap.mid.extra','fixtures/original-duet.mxl','C:\Windows\win.ini','seed-0.json','seed-17.json','seed-01.json','Seed-1.json','other-1.json','seed-1.json.extra',"seed-1.json`n",'',"original-duet.mxl`0")) {
     Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) } "unapproved name $name"
   }
+  # Reproduce the real performance-seed action 5 filename through the exact C#
+  # resolver compiled above. Only that original fixture name is admitted.
+  foreach($name in @('../performance-authored-songs.zip','..\performance-authored-songs.zip','fixtures/performance-authored-songs.zip','Performance-authored-songs.zip','performance-authored-song.zip','performance-authored-songs.json','performance-authored-songs.zip.extra',"performance-authored-songs.zip`n",(Join-Path $fixtures 'performance-authored-songs.zip'))) {
+    Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) } "unapproved performance path $name"
+  }
+  $performancePath=Join-Path $fixtures 'performance-authored-songs.zip'
+  [System.IO.File]::WriteAllText((Join-Path $downloads 'performance-authored-songs.zip'),'outside the fixture root')
+  Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,'performance-authored-songs.zip') -ceq $performancePath) 'performance fixture resolves only in its fixture root'
+  [System.IO.File]::Delete($performancePath)
+  Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,'performance-authored-songs.zip') } 'missing performance fixture cannot fall back to downloads'
+  New-Item -ItemType Directory $performancePath | Out-Null
+  Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,'performance-authored-songs.zip') } 'directory cannot replace the performance fixture'
   [System.IO.File]::Delete((Join-Path $fixtures 'malformed.json'))
   Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,'malformed.json') } 'missing approved fixture'
   New-Item -ItemType Directory (Join-Path $fixtures 'malformed.json') | Out-Null

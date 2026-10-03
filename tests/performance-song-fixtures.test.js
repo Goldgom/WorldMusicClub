@@ -8,6 +8,27 @@ import {digest,inspectAuthoredZip} from './clean-song-package-fixtures.js';
 import {preparePerformanceSong} from '../web/clean-song-package.js';
 import {performanceSeconds} from '../web/clean-performance-player.js';
 
+test('fixed picker fixture registries agree with Rust and the compiled Windows resolver contract',async()=>{
+  // Supplemental static parity check. The PowerShell contract compiles and
+  // calls the actual C# resolver on Windows; this does not substitute for it.
+  const [rust,native,contract,workflow]=await Promise.all([
+    '../crates/desktop-shell/src/acceptance.rs','../scripts/windows-desktop-native.cs',
+    './windows-desktop-contract.ps1','../.github/workflows/windows-desktop-acceptance.yml',
+  ].map(path=>readFile(new URL(path,import.meta.url),'utf8')));
+  const quoted=(text,pattern)=>[...text.matchAll(pattern)].map(match=>match[1]);
+  const fixtures=quoted(rust.match(/let fixture = \[([\s\S]*?)\]\s*\.contains\(&file\)/)[1],/"([^"]+)"/g).filter(name=>name!=='bulk-multiple').sort();
+  const nativeNames=quoted(native.match(/Array\.IndexOf\(new\[\]\{([^}]+)\},name\)/)[1],/"([^"]+)"/g).sort();
+  const checkedNames=quoted(contract.match(/\$fixed=@\(([^\r\n]+)\)/)[1],/'([^']+)'/g).sort();
+  assert.equal(new Set(fixtures).size,fixtures.length);assert.ok(fixtures.includes(PERFORMANCE_FIXTURE_FILENAME));
+  assert.deepEqual(nativeNames,fixtures);assert.deepEqual(checkedNames,fixtures);
+  assert.match(contract,/Add-Type -Path \(Join-Path \$PSScriptRoot '\.\.\/scripts\/windows-desktop-native\.cs'\)/);
+  assert.match(contract,/\[NativeAcceptance\]::ResolveFixturePath\(\$fixtures,\$temporary,\$name\)/);
+  const nativeJob=workflow.slice(workflow.indexOf('      - name: Test native filename ownership'));
+  assert.ok(nativeJob.indexOf('run: ./tests/windows-desktop-contract.ps1')>=0);
+  assert.ok(nativeJob.indexOf('run: ./tests/windows-desktop-contract.ps1')<nativeJob.indexOf('run: cargo test'));
+  assert.ok(nativeJob.indexOf('run: ./tests/windows-desktop-contract.ps1')<nativeJob.indexOf('run: cargo build'));
+});
+
 test('one deterministic original pack contains both complete native fixtures and no source/media payload',async()=>{
   const pack=performanceAcceptanceFixtures(),second=performanceAcceptanceFixtures();
   assert.equal(pack.filename,PERFORMANCE_FIXTURE_FILENAME);assert.deepEqual(pack.bytes,second.bytes);

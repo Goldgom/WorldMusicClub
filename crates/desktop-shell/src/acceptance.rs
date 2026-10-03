@@ -85,6 +85,19 @@ impl Acceptance {
     pub fn report_name(&self) -> String {
         format!("renderer-{}.json", self.phase)
     }
+    /// Process-owned acceptance storage, shared by all fresh-profile scenarios.
+    pub fn library_directory(&self) -> PathBuf {
+        let song_folder = FOLDER_PHASES.contains(&self.phase)
+            || BULK_PHASES.contains(&self.phase)
+            || CLEAN_PHASES.contains(&self.phase)
+            || VSQ_PHASES.contains(&self.phase)
+            || PERFORMANCE_PHASES.contains(&self.phase);
+        self.directory.join(if song_folder {
+            "Scores"
+        } else {
+            "score-library"
+        })
+    }
     fn report_limit(&self) -> usize {
         if CLEAN_PHASES.contains(&self.phase)
             || VSQ_PHASES.contains(&self.phase)
@@ -487,6 +500,32 @@ fn valid_action(value: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_acceptance_phase_uses_the_same_library_root_as_its_snapshot_owner() {
+        let evidence = Evidence::new();
+        for phase in PHASES {
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert_eq!(run.library_directory(), evidence.0.join("score-library"));
+        }
+        for phase in FOLDER_PHASES
+            .into_iter()
+            .chain(BULK_PHASES)
+            .chain(CLEAN_PHASES)
+            .chain(VSQ_PHASES)
+            .chain(PERFORMANCE_PHASES)
+        {
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert_eq!(
+                run.library_directory(),
+                evidence.0.join("Scores"),
+                "{phase}"
+            );
+        }
+        for phase in ["performance-any", "performance-seed-extra", "unknown", ""] {
+            assert!(Acceptance::new(evidence.0.clone(), phase).is_err());
+        }
+    }
 
     #[test]
     fn clean_reports_have_exact_inclusive_budget_and_finite_native_actions() {

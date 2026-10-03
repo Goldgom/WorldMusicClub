@@ -32,18 +32,9 @@ pub fn run() {
     let protocol_acceptance = acceptance.clone();
     let report_directory = evidence.clone();
     let protocol_library_directory = evidence.as_ref().map(|root| {
-        root.join(
-            if acceptance.as_ref().is_some_and(|run| {
-                worldmusichub_desktop::acceptance::FOLDER_PHASES.contains(&run.phase)
-                    || worldmusichub_desktop::acceptance::BULK_PHASES.contains(&run.phase)
-                    || worldmusichub_desktop::acceptance::CLEAN_PHASES.contains(&run.phase)
-                    || worldmusichub_desktop::acceptance::VSQ_PHASES.contains(&run.phase)
-            }) {
-                "Scores"
-            } else {
-                "score-library"
-            },
-        )
+        acceptance
+            .as_ref()
+            .map_or_else(|| root.join("score-library"), |run| run.library_directory())
     });
     let admitted = Arc::new(Semaphore::new(16));
     let computations = Arc::new(Semaphore::new(2));

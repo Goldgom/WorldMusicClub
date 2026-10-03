@@ -1,0 +1,26 @@
+name: Windows fixture contract preview
+on:
+  push:
+    branches: ['preview/windows-fixture-contract']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fixture-contract:
+    name: Actual Windows helper contracts (not application acceptance)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+      - name: Compile and exercise exact bounded native helper
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -cne '${{ github.sha }}') { throw 'Fixture contract checkout differs from requested source' }
+          ./tests/windows-desktop-contract.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Native fixture contract failed' }
+          if (git status --porcelain --untracked-files=all) { throw 'Fixture contract changed the checked source tree' }
