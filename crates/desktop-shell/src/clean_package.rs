@@ -805,6 +805,8 @@ fn load_folder(folder: &Path, key: &str) -> Result<(Entry, Package)> {
     load_folder_mode(folder, key, false)
 }
 fn load_folder_mode(folder: &Path, key: &str, asset_only: bool) -> Result<(Entry, Package)> {
+    #[cfg(test)]
+    tests::record_validation(folder);
     check_node(folder, true)?;
     let entry: Entry = serde_json::from_slice(&read_bounded(
         &folder.join("entry.json"),
@@ -1152,67 +1154,117 @@ fn save_checked(
 
 pub(super) fn scan(library: &NativeLibrary, inventory: &mut Inventory) -> Result<()> {
     areas(library)?;
-    for area in ["clean-songs", "clean-backups"] {
-        for folder in children(&library.root.join(area), 4096)? {
-            let key = folder.file_name().and_then(|s| s.to_str()).unwrap_or("");
-            if !super::valid_key(key) {
-                inventory.issues.push(Issue {
-                    key: None,
-                    code: "library_unrecognized_clean_entry".into(),
-                    message: "Unrecognized clean package folder preserved and excluded".into(),
-                });
-                continue;
+    // Keep only verified catalog entries for this locked scan. Full packages,
+    // runtime values and media bytes are dropped after validating each primary.
+    let mut primaries = BTreeMap::new();
+    for folder in children(&library.root.join("clean-songs"), 4096)? {
+        let key = folder.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        if !super::valid_key(key) {
+            inventory.issues.push(Issue {
+                key: None,
+                code: "library_unrecognized_clean_entry".into(),
+                message: "Unrecognized clean package folder preserved and excluded".into(),
+            });
+            continue;
+        }
+        match load_folder(&folder, key) {
+            Ok((entry, _)) => {
+                primaries.insert(key.to_owned(), entry);
             }
+            Err(error) => inventory.issues.push(Issue {
+                key: Some(key.into()),
+                code: error.code.into(),
+                message: error.error,
+            }),
+        }
+    }
+    let mut unpaired_backups = Vec::new();
+    for folder in children(&library.root.join("clean-backups"), 4096)? {
+        let key = folder.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        if !super::valid_key(key) {
+            inventory.issues.push(Issue {
+                key: None,
+                code: "library_unrecognized_clean_entry".into(),
+                message: "Unrecognized clean package folder preserved and excluded".into(),
+            });
+            continue;
+        }
+        if let Some(primary) = primaries.get(key) {
+            // One complete backup validation supplies both the primary-pair
+            // check and backup diagnostics. Every independent scan rereads and
+            // hashes every file; no path/mtime or cross-operation cache is used.
             match load_folder(&folder, key) {
+                Ok((backup, _))
+                    if serde_json::to_value(primary).ok() == serde_json::to_value(&backup).ok() =>
+                {
+                    inventory.entries.push(primaries.remove(key).unwrap());
+                }
                 Err(error) => inventory.issues.push(Issue {
                     key: Some(key.into()),
-                    code: if area == "clean-backups" {
-                        "library_backup_invalid".into()
-                    } else {
-                        error.code.into()
-                    },
+                    code: "library_backup_invalid".into(),
                     message: error.error,
                 }),
-                Ok((entry, package)) => {
-                    if area == "clean-songs" {
-                        // A primary without a verified complete independent backup
-                        // stays visible as an issue, never a completed song.
-                        match load_folder(&library.root.join("clean-backups").join(key),key) { Ok((backup,_)) if serde_json::to_value(&entry).ok()==serde_json::to_value(&backup).ok()=>inventory.entries.push(entry), _=>inventory.issues.push(Issue{key:Some(key.into()),code:"library_clean_backup_missing".into(),message:"Complete clean backup is missing or invalid; primary was preserved and excluded".into()}) }
-                    } else if matches!(fs::symlink_metadata(library.root.join("clean-songs").join(key)),Err(e) if e.kind()==std::io::ErrorKind::NotFound)
-                    {
-                        let recovery = (|| {
-                            if inventory.entries.len() >= super::MAX_ENTRIES
-                                || inventory
-                                    .entries
-                                    .iter()
-                                    .map(|e| e.score_bytes)
-                                    .sum::<usize>()
-                                    + entry.score_bytes
-                                    > super::MAX_LIBRARY_BYTES
-                            {
-                                return Err(fail(
-                                    413,
-                                    "library_capacity",
-                                    "Recovery would exceed native library capacity",
-                                ));
-                            }
-                            room_for(library, package.bytes + MAX_METADATA_BYTES as u64)?;
-                            let staged = stage(library, &entry, &package, &mut |media| {
-                                read_media(&folder.join("package"), media)
-                            })?;
-                            publish(library, &staged, "clean-songs", key)
-                        })();
-                        match recovery {
-                            Ok(()) => {
-                                inventory.entries.push(entry);
-                                inventory.issues.push(Issue{key:Some(key.into()),code:"library_recovered_backup".into(),message:"Recovered the complete clean package and all runtime assets from verified backup".into()});
-                            }
-                            Err(e) => inventory.issues.push(Issue {
-                                key: Some(key.into()),
-                                code: "library_recovery_failed".into(),
-                                message: e.error,
-                            }),
+                _ => (),
+            }
+        } else {
+            unpaired_backups.push(folder);
+        }
+    }
+    for key in primaries.into_keys() {
+        inventory.issues.push(Issue {
+            key: Some(key),
+            code: "library_clean_backup_missing".into(),
+            message:
+                "Complete clean backup is missing or invalid; primary was preserved and excluded"
+                    .into(),
+        });
+    }
+    // Admit all verified existing pairs before recovery, just as before, so
+    // orphan backups cannot consume space reserved for existing primary songs.
+    // Retain only paths here; recovery validates each package when it is used.
+    for folder in unpaired_backups {
+        let key = folder.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        match load_folder(&folder, key) {
+            Err(error) => inventory.issues.push(Issue {
+                key: Some(key.into()),
+                code: "library_backup_invalid".into(),
+                message: error.error,
+            }),
+            Ok((entry, package)) => {
+                if matches!(fs::symlink_metadata(library.root.join("clean-songs").join(key)),Err(e) if e.kind()==std::io::ErrorKind::NotFound)
+                {
+                    let recovery = (|| {
+                        if inventory.entries.len() >= super::MAX_ENTRIES
+                            || inventory
+                                .entries
+                                .iter()
+                                .map(|e| e.score_bytes)
+                                .sum::<usize>()
+                                + entry.score_bytes
+                                > super::MAX_LIBRARY_BYTES
+                        {
+                            return Err(fail(
+                                413,
+                                "library_capacity",
+                                "Recovery would exceed native library capacity",
+                            ));
                         }
+                        room_for(library, package.bytes + MAX_METADATA_BYTES as u64)?;
+                        let staged = stage(library, &entry, &package, &mut |media| {
+                            read_media(&folder.join("package"), media)
+                        })?;
+                        publish(library, &staged, "clean-songs", key)
+                    })();
+                    match recovery {
+                        Ok(()) => {
+                            inventory.entries.push(entry);
+                            inventory.issues.push(Issue{key:Some(key.into()),code:"library_recovered_backup".into(),message:"Recovered the complete clean package and all runtime assets from verified backup".into()});
+                        }
+                        Err(e) => inventory.issues.push(Issue {
+                            key: Some(key.into()),
+                            code: "library_recovery_failed".into(),
+                            message: e.error,
+                        }),
                     }
                 }
             }
@@ -1299,6 +1351,343 @@ pub fn asset(library: &NativeLibrary, key: &str, handle: &str) -> Result<(String
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+
+    thread_local! {
+        static VALIDATIONS: RefCell<Option<Vec<PathBuf>>> = const { RefCell::new(None) };
+    }
+    pub(super) fn record_validation(folder: &Path) {
+        VALIDATIONS.with_borrow_mut(|trace| {
+            if let Some(paths) = trace {
+                paths.push(folder.to_path_buf());
+            }
+        });
+    }
+    struct ValidationTrace;
+    impl ValidationTrace {
+        fn start() -> Self {
+            VALIDATIONS.with_borrow_mut(|trace| {
+                assert!(trace.replace(Vec::new()).is_none());
+            });
+            Self
+        }
+        fn finish(self) -> Vec<PathBuf> {
+            VALIDATIONS.with_borrow_mut(|trace| trace.take().unwrap())
+        }
+    }
+    impl Drop for ValidationTrace {
+        fn drop(&mut self) {
+            VALIDATIONS.with_borrow_mut(|trace| *trace = None);
+        }
+    }
+    struct SyntheticLibrary {
+        root: PathBuf,
+        library: NativeLibrary,
+        entries: Vec<Entry>,
+        files: Vec<BTreeMap<String, Vec<u8>>>,
+    }
+    impl SyntheticLibrary {
+        fn new(count: usize) -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "wmh-clean-scan-{}-{}",
+                std::process::id(),
+                SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&root).unwrap();
+            let library = NativeLibrary::open(root.join("Scores")).unwrap();
+            let mut entries = Vec::new();
+            let mut all_files = Vec::new();
+            {
+                let mut batch = Batch::begin(&library).unwrap();
+                for index in 0..count {
+                    // The existing score fixture is an original authored exercise.
+                    // Its editions and this silent PCM sample are synthetic only.
+                    let mut metadata: Value = serde_json::from_slice(include_bytes!(
+                        "../../../tests/fixtures/clean-song-v2/metadata.json"
+                    ))
+                    .unwrap();
+                    let mut score: Value = serde_json::from_slice(include_bytes!(
+                        "../../../tests/fixtures/clean-song-v2/score.json"
+                    ))
+                    .unwrap();
+                    let id = format!("original-scan-exercise-{index}");
+                    metadata["id"] = id.clone().into();
+                    score["notation"]["id"] = id.into();
+                    let score = serde_json::to_vec_pretty(&score).unwrap();
+                    metadata["score"]["bytes"] = score.len().into();
+                    metadata["score"]["sha256"] = digest(&score).into();
+                    let mut wav = b"RIFF".to_vec();
+                    wav.extend(38u32.to_le_bytes());
+                    wav.extend(b"WAVEfmt ");
+                    wav.extend(16u32.to_le_bytes());
+                    wav.extend(1u16.to_le_bytes());
+                    wav.extend(1u16.to_le_bytes());
+                    wav.extend(8000u32.to_le_bytes());
+                    wav.extend(16000u32.to_le_bytes());
+                    wav.extend(2u16.to_le_bytes());
+                    wav.extend(16u16.to_le_bytes());
+                    wav.extend(b"data");
+                    wav.extend(2u32.to_le_bytes());
+                    wav.extend(0i16.to_le_bytes());
+                    metadata["media"] = serde_json::json!([{
+                        "id": "silence", "role": "full_mix", "path": "media/silence.wav",
+                        "mime": "audio/wav", "bytes": wav.len(), "sha256": digest(&wav), "offset_ms": 0,
+                        "rights": {"status": "original_authored", "attribution": "Original test silence", "license": "CC0-1.0"}
+                    }]);
+                    let files: BTreeMap<String, Vec<u8>> = BTreeMap::from([
+                        (
+                            "metadata.json".into(),
+                            serde_json::to_vec_pretty(&metadata).unwrap(),
+                        ),
+                        ("score.json".into(), score),
+                        ("media/silence.wav".into(), wav),
+                    ]);
+                    let hashes = files
+                        .iter()
+                        .map(|(name, bytes)| (name.clone(), (bytes.len() as u64, digest(bytes))))
+                        .collect();
+                    let package =
+                        parse(&files["metadata.json"], &files["score.json"], &hashes).unwrap();
+                    entries.push(
+                        batch
+                            .save(
+                                &package,
+                                None,
+                                false,
+                                |media| Ok(files[&media.path].clone()),
+                            )
+                            .unwrap(),
+                    );
+                    all_files.push(files);
+                }
+            }
+            Self {
+                root,
+                library,
+                entries,
+                files: all_files,
+            }
+        }
+        fn folder(&self, area: &str, index: usize) -> PathBuf {
+            self.library.root.join(area).join(&self.entries[index].key)
+        }
+        fn assert_exact_files(&self, index: usize) {
+            for area in ["clean-songs", "clean-backups"] {
+                for (path, original) in &self.files[index] {
+                    let actual =
+                        fs::read(self.folder(area, index).join("package").join(path)).unwrap();
+                    assert_eq!(&actual, original);
+                    assert_eq!(digest(&actual), digest(original));
+                }
+            }
+        }
+    }
+    impl Drop for SyntheticLibrary {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.root).unwrap();
+        }
+    }
+
+    #[test]
+    fn scan_validates_each_complete_folder_once_per_independent_operation() {
+        let fixture = SyntheticLibrary::new(6);
+        let expected: BTreeSet<_> = (0..fixture.entries.len())
+            .flat_map(|index| {
+                [
+                    fixture.folder("clean-songs", index),
+                    fixture.folder("clean-backups", index),
+                ]
+            })
+            .collect();
+        for _ in 0..2 {
+            let trace = ValidationTrace::start();
+            let inventory = fixture.library.list().unwrap();
+            let paths = trace.finish();
+            assert_eq!(inventory.entries.len(), 6);
+            assert!(inventory.issues.is_empty());
+            assert_eq!(paths.iter().cloned().collect::<BTreeSet<_>>(), expected);
+            assert_eq!(
+                paths.len(),
+                12,
+                "6 songs must require exactly 12 full folder validations per scan"
+            );
+        }
+        let trace = ValidationTrace::start();
+        let batch = Batch::begin(&fixture.library).unwrap();
+        assert_eq!(batch.entries().len(), 6);
+        let paths = trace.finish();
+        assert_eq!(paths.iter().cloned().collect::<BTreeSet<_>>(), expected);
+        assert_eq!(
+            paths.len(),
+            12,
+            "a new transaction must independently revalidate both copies"
+        );
+        drop(batch);
+        for index in 0..6 {
+            fixture.assert_exact_files(index);
+            let opened = fixture
+                .library
+                .load(&fixture.entries[index].key)
+                .unwrap()
+                .clean_package
+                .unwrap();
+            assert_eq!(
+                opened.score_json.as_bytes(),
+                fixture.files[index]["score.json"]
+            );
+            assert_eq!(
+                opened.metadata_json.as_bytes(),
+                fixture.files[index]["metadata.json"]
+            );
+        }
+    }
+
+    #[test]
+    fn scan_rechecks_changed_missing_and_invalid_backups_without_hiding_other_songs() {
+        let fixture = SyntheticLibrary::new(6);
+        let folder = fixture.folder("clean-backups", 0);
+        let key = &fixture.entries[0].key;
+        let entry_bytes = fs::read(folder.join("entry.json")).unwrap();
+        for change in ["media", "score", "entry", "missing", "undeclared"] {
+            match change {
+                "media" => {
+                    let mut bytes = fixture.files[0]["media/silence.wav"].clone();
+                    *bytes.last_mut().unwrap() ^= 1; // Same size, different hash.
+                    fs::write(folder.join("package/media/silence.wav"), bytes).unwrap();
+                }
+                "score" => {
+                    let mut bytes = fixture.files[0]["score.json"].clone();
+                    let at = bytes.iter().position(|byte| *byte == b' ').unwrap();
+                    bytes[at] = b'\t'; // Still valid JSON, same size, different hash.
+                    fs::write(folder.join("package/score.json"), bytes).unwrap();
+                }
+                "entry" => {
+                    let mut entry: Entry = serde_json::from_slice(&entry_bytes).unwrap();
+                    entry.label = "Different valid backup label".into();
+                    fs::write(
+                        folder.join("entry.json"),
+                        serde_json::to_vec(&entry).unwrap(),
+                    )
+                    .unwrap();
+                }
+                "missing" => fs::rename(&folder, fixture.root.join("held-backup")).unwrap(),
+                "undeclared" => fs::write(folder.join("package/extra.json"), b"{}").unwrap(),
+                _ => unreachable!(),
+            }
+            let trace = ValidationTrace::start();
+            let inventory = fixture.library.list().unwrap();
+            let paths = trace.finish();
+            assert_eq!(inventory.entries.len(), 5, "{change}");
+            assert!(
+                !inventory.entries.iter().any(|entry| &entry.key == key),
+                "{change}"
+            );
+            assert!(
+                inventory
+                    .issues
+                    .iter()
+                    .any(|issue| issue.key.as_ref() == Some(key)
+                        && issue.code == "library_clean_backup_missing"),
+                "{change}"
+            );
+            assert_eq!(
+                inventory
+                    .issues
+                    .iter()
+                    .any(|issue| issue.key.as_ref() == Some(key)
+                        && issue.code == "library_backup_invalid"),
+                matches!(change, "media" | "score" | "undeclared"),
+                "{change}"
+            );
+            assert_eq!(
+                paths.iter().filter(|path| **path == folder).count(),
+                usize::from(change != "missing")
+            );
+            let batch = Batch::begin(&fixture.library).unwrap();
+            assert_eq!(batch.entries().len(), 5, "{change}");
+            assert!(
+                !batch.entries().iter().any(|entry| &entry.key == key),
+                "{change}"
+            );
+            drop(batch);
+            assert!(fixture.library.load(key).is_err(), "{change}");
+            match change {
+                "missing" => fs::rename(fixture.root.join("held-backup"), &folder).unwrap(),
+                "entry" => fs::write(folder.join("entry.json"), &entry_bytes).unwrap(),
+                "undeclared" => fs::remove_file(folder.join("package/extra.json")).unwrap(),
+                _ => {
+                    for (path, bytes) in &fixture.files[0] {
+                        fs::write(folder.join("package").join(path), bytes).unwrap();
+                    }
+                }
+            }
+            let healthy = fixture.library.list().unwrap();
+            assert_eq!(healthy.entries.len(), 6, "{change}");
+            assert!(healthy.issues.is_empty(), "{change}");
+            fixture.assert_exact_files(0);
+        }
+        let primary_asset = fixture
+            .folder("clean-songs", 0)
+            .join("package/media/silence.wav");
+        let mut damaged = fixture.files[0]["media/silence.wav"].clone();
+        *damaged.last_mut().unwrap() ^= 1;
+        fs::write(&primary_asset, &damaged).unwrap();
+        let inventory = fixture.library.list().unwrap();
+        assert_eq!(inventory.entries.len(), 5);
+        assert!(inventory
+            .issues
+            .iter()
+            .any(|issue| issue.key.as_ref() == Some(key) && issue.code == "clean_package_invalid"));
+        assert!(!inventory
+            .issues
+            .iter()
+            .any(|issue| issue.code == "library_recovered_backup"
+                || issue.code == "library_backup_invalid"));
+        assert_eq!(
+            fs::read(primary_asset).unwrap(),
+            damaged,
+            "a valid backup must not overwrite a damaged existing primary"
+        );
+    }
+
+    #[test]
+    fn scan_admits_existing_pairs_before_bounded_orphan_recovery() {
+        let fixture = SyntheticLibrary::new(2);
+        let orphan = usize::from(fixture.entries[1].key < fixture.entries[0].key);
+        let paired = 1 - orphan;
+        fs::rename(
+            fixture.folder("clean-songs", orphan),
+            fixture.root.join("held-primary"),
+        )
+        .unwrap();
+        let mut inventory = Inventory {
+            storage: "native-filesystem",
+            library_format_version: 1,
+            directory: fixture.library.root.to_string_lossy().into_owned(),
+            entries: vec![fixture.entries[paired].clone(); super::super::MAX_ENTRIES - 1],
+            issues: Vec::new(),
+        };
+        let lock = fixture.library.lock().unwrap();
+        let trace = ValidationTrace::start();
+        scan(&fixture.library, &mut inventory).unwrap();
+        assert_eq!(trace.finish().len(), 3);
+        drop(lock);
+        assert_eq!(inventory.entries.len(), super::super::MAX_ENTRIES);
+        assert!(inventory.issues.iter().any(|issue| issue.key.as_ref()
+            == Some(&fixture.entries[orphan].key)
+            && issue.code == "library_recovery_failed"
+            && issue.message == "Recovery would exceed native library capacity"));
+        assert!(!fixture.folder("clean-songs", orphan).exists());
+        let recovered = fixture.library.list().unwrap();
+        assert_eq!(recovered.entries.len(), 2);
+        assert!(recovered
+            .issues
+            .iter()
+            .any(|issue| issue.code == "library_recovered_backup"));
+        fixture.assert_exact_files(orphan);
+        fixture.assert_exact_files(paired);
+    }
+
     #[test]
     fn interrupted_publication_is_uncertain_and_retry_recovers_complete_package() {
         let root = std::env::temp_dir().join(format!(
