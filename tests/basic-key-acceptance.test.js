@@ -316,3 +316,18 @@ test('focused and full gates require the real twelve-part hosted app and retain 
  const path=fileURLToPath(new URL('../scripts/hosted-notation-scope-check.mjs',import.meta.url)),denied=spawnSync(process.execPath,[path],{encoding:'utf8',env:{...process.env,GITHUB_ACTIONS:'false',WMH_HOSTED_BROWSER:'0'}});assert.equal(denied.status,1);assert.match(denied.stderr,/require the authorized hosted Actions runner/);
  const source=await readFile(path,'utf8');assert.match(source,/source_tree/);assert.match(source,/server_sha256/);assert.match(source,/sha256:digest\(bytes\)/);assert.match(source,/source_measure_index===1/);assert.match(source,/continuing_note_ids.includes\('original-held-12'\)/);assert.doesNotMatch(source,/progress[^\n]*>=\.05/);assert.match(source,/new Set\(batches.flatMap\(batch=>batch.renderedIds\)\).size,12/);
 });
+
+test('hosted one-bar setup opens the page-size disclosure through its summary and preserves Follow access',async()=>{
+ const source=await readFile(new URL('../scripts/hosted-notation-scope-check.mjs',import.meta.url),'utf8'),begin=source.indexOf('async function selectVisibleNotationPageSize('),end=source.indexOf('const settle=',begin);
+ assert.ok(begin>=0&&end>begin);
+ for(const initiallyOpen of [false,true]){
+  let open=initiallyOpen;const calls=[];
+  const summary={first(){return this;},async click(){calls.push(open?'close':'open');open=!open;}},details={async count(){return 1;},async evaluate(read){return read({open});},locator(selector){assert.equal(selector,'summary');return summary;}};
+  const control={locator(selector){assert.equal(selector,'xpath=ancestor::details[1]');return details;},async waitFor(options){assert.deepEqual({...options},{state:'visible'});assert.equal(open,true);calls.push('visible');},async selectOption(value){assert.equal(open,true);assert.equal(value,'1');calls.push('select');}};
+  const page={locator(selector){assert.equal(selector,'#engraving-page-size');return control;}};
+  const context=vm.createContext({assert,page});vm.runInContext(source.slice(begin,end)+';globalThis.select=selectVisibleNotationPageSize;',context);await context.select('1');
+  assert.equal(open,initiallyOpen);assert.deepEqual(calls,initiallyOpen?['visible','select']:['open','visible','select','close']);
+ }
+ assert.match(source,/await selectVisibleNotationPageSize\('1'\);await waitPaint\(\[score\.parts\[11\]\.id\],'staff'\);await page\.locator\('#engraving-follow'\)\.check\(\)/);
+ assert.doesNotMatch(source.slice(begin,end),/force\s*:|\.open\s*=|\.hidden\s*=/);
+});

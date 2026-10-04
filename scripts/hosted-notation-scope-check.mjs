@@ -22,6 +22,14 @@ const report={version:1,source_sha:sha,source_tree:execFileSync('git',['rev-pars
 let browser,server,serverLog='',page;const navigationReads=[];
 const screenshot=async name=>{const filename=`${name}.png`;await page.screenshot({path:path.join(output,filename),fullPage:true});const bytes=await readFile(path.join(output,filename));validateCleanScreenshot(bytes);report.screenshots.push(filename);report.artifacts.push({path:filename,bytes:bytes.length,sha256:digest(bytes)});};
 const controls=async open=>{if(await page.locator('#notation-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#notation-toggle').click();const tools=page.locator('#notation-tools');if(await tools.evaluate(node=>node.open)!==open)await tools.locator('summary').first().click();};
+async function selectVisibleNotationPageSize(value){
+  const control=page.locator('#engraving-page-size'),details=control.locator('xpath=ancestor::details[1]');
+  assert.equal(await details.count(),1,'Page-size control must have its real disclosure');
+  const wasOpen=await details.evaluate(node=>node.open);
+  if(!wasOpen)await details.locator('summary').first().click();
+  await control.waitFor({state:'visible'});await control.selectOption(value);
+  if(!wasOpen)await details.locator('summary').first().click();
+}
 const settle=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 const waitPaint=(ids,mode)=>page.waitForFunction(({ids,mode})=>{const stage=document.getElementById('workspace'),root=document.getElementById(mode==='staff'?'engraved-staff':'notation');return stage.dataset.notationRenderStatus==='ready'&&stage.dataset.renderedNotationParts===JSON.stringify(ids)&&Boolean(root.querySelector(mode==='staff'?'.vf-notehead':'.jianpu-note'));},{ids,mode});
 const performanceState=()=>page.evaluate(()=>({practicePart:document.getElementById('practice-part').value,humanTarget:document.getElementById('clean-song-target')?.value||null,
@@ -93,7 +101,7 @@ try {
     const changed=await geometry('jianpu');assert.ok(changed.status.includes(score.parts[11].name));checkParts(changed,[score.parts[11].id]);await screenshot('current-part-changed-to-12');
     // Follow a held original note into the next one-bar staff page. The clock
     // advances normally; changing score layout does not seek or rewrite it.
-    await controls(true);await page.locator('#engraved-button').click();await page.locator('#engraving-page-size').selectOption('1');await page.locator('#engraving-follow').check();await controls(false);await page.locator('#reset-button').click();await page.locator('#play-button').click();
+    await controls(true);await page.locator('#engraved-button').click();await selectVisibleNotationPageSize('1');await waitPaint([score.parts[11].id],'staff');await page.locator('#engraving-follow').check();await controls(false);await page.locator('#reset-button').click();await page.locator('#play-button').click();
     await page.waitForFunction(()=>{const ids=JSON.parse(document.getElementById('written-cursor-status').dataset.sourceNoteIds||'[]');return document.getElementById('workspace').dataset.notationRenderStatus==='ready'&&Number(document.getElementById('written-cursor-status').dataset.sourceMeasureIndex)===1&&ids.includes('original-held-12')&&Number(document.getElementById('engraving-range').textContent.match(/\d+/)?.[0])===2;},{},{timeout:15000});
     await page.locator('#play-button').click();await settle();const crossed=await geometry('staff');checkGeometry(crossed,'staff');checkParts(crossed,[score.parts[11].id]);await Promise.all(navigationReads);const occurrence=report.navigation.at(-1)?.occurrences.find(row=>row.source_measure_index===1);assert.ok(occurrence&&occurrence.continuing_note_ids.includes('original-held-12'));assert.ok(crossed.progress>=occurrence.start_ms&&crossed.progress<occurrence.end_ms,'Real playback must cross the native first measure boundary');assert.equal(crossed.sourceMeasure,'1');assert.ok(crossed.focusedIds.includes('original-held-12'));assert.match(crossed.range,/Measures 2–2 /);await screenshot('held-note-follow-page-boundary');
     report.cases.push({name:'selected-current-zoom-and-held-page',selected,current,changed,crossed});
