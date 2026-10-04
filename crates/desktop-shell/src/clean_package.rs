@@ -9,6 +9,7 @@ use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
+    io::Write,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
@@ -137,6 +138,7 @@ pub struct Package {
     pub bytes: u64,
     pub runtime: Value,
     pub coverage: Value,
+    catalog_fields: (String, score_core::Provenance),
 }
 impl Package {
     /// Index the actual authoritative payload when no notation exists. Never
@@ -154,28 +156,9 @@ impl Package {
         }
     }
     pub(crate) fn catalog_fields(&self) -> Result<(String, score_core::Provenance)> {
-        if let Some(raw) = &self.notation_json {
-            // Profile validation has already checked every retained source event.
-            // Basic-key notation intentionally permits an unknown source meter
-            // or clock, so catalog reads must not invoke the playback compiler.
-            let score = if self.profile.as_deref() == Some(score_core::basic_keys::PROFILE) {
-                serde_json::from_str(raw)
-                    .map_err(|e| invalid(format!("Invalid basic-key notation: {e}")))?
-            } else {
-                checked_score(raw)?.0
-            };
-            Ok((score.composer, score.provenance))
-        } else {
-            Ok((
-                String::new(),
-                score_core::Provenance {
-                    kind: "user_supplied".into(),
-                    attribution: self.metadata.rights.attribution.clone(),
-                    source_url: None,
-                    license: self.metadata.rights.license.clone(),
-                },
-            ))
-        }
+        // These fields came from this operation's validated typed profile, not
+        // another decode/compile of its serialized notation or a disk cache.
+        Ok(self.catalog_fields.clone())
     }
     pub fn summary(&self) -> Summary {
         Summary {
@@ -270,6 +253,137 @@ pub fn safe_path(path: &str) -> Result<()> {
     }
     Ok(())
 }
+const MAX_OPEN_RESPONSE_BYTES: usize = 31 * 1024 * 1024;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReadMode {
+    Full,
+    // Basic-key metadata uses a proved response-size bound. Other profiles keep
+    // their existing runtime admission checks (including semantic MIDI's 24h
+    // limit) until those checks have a separate validation-only core API.
+    Catalog,
+    // This alone may defer unrelated media hashes. Never use it for a catalog.
+    Asset,
+}
+
+#[derive(Default)]
+struct JsonByteCount(usize);
+impl Write for JsonByteCount {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 = self.0.saturating_add(bytes.len());
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+fn json_bytes(value: &impl Serialize) -> Result<usize> {
+    let mut count = JsonByteCount::default();
+    serde_json::to_writer(&mut count, value).map_err(|e| invalid(e.to_string()))?;
+    Ok(count.0)
+}
+fn basic_runtime(score: &score_core::basic_keys::CompleteBasicKeys) -> Result<Value> {
+    #[cfg(test)]
+    tests::record_runtime_compilation();
+    serde_json::to_value(practice_server::basic_keys_api::compile(score).map_err(invalid)?)
+        .map_err(|e| invalid(e.to_string()))
+}
+
+/// A one-sided proof for the current basic-key runtime wire. It includes every
+/// decoded attack (even those excluded from practice), exact escaped identifier
+/// sizes and full part inventory. Each JSON f64 uses fewer than 64 bytes; all
+/// other TimedNote numbers are u8. 4096 covers the fixed compilation/timeline
+/// envelope, duration and the one fixed diagnostic (under 512 bytes). Tests
+/// compare the bound with the actual compiler, including extreme numbers and
+/// escaped identifiers. Failure to prove room always invokes the real compiler;
+/// this is never an estimated size used to reject or admit a borderline song.
+fn basic_runtime_upper_bound(score: &score_core::basic_keys::CompleteBasicKeys) -> Result<usize> {
+    let base = json_bytes(&practice_server::basic_keys_api::Runtime {
+        profile: practice_server::basic_keys_api::RUNTIME_PROFILE,
+        source_sha256: score.source.sha256.clone(),
+        compilation: None,
+        parts: score_core::basic_keys::part_inventory(score),
+        reference_audio: "unavailable",
+        source_rendition: "unresolved",
+    })?;
+    if !score.performance.timing.relative_clock_available {
+        return Ok(base);
+    }
+    let envelope = basic_note_envelope_bytes()?;
+    let mut bytes = base.saturating_add(4096);
+    for note in &score.performance.notes {
+        bytes = bytes.saturating_add(basic_note_upper_bound(
+            envelope,
+            &note.note_id,
+            &note.part_id,
+        )?);
+    }
+    Ok(bytes)
+}
+fn basic_note_envelope_bytes() -> Result<usize> {
+    json_bytes(&score_core::TimedNote {
+        velocity: u8::MAX,
+        id: String::new(),
+        source_note_id: String::new(),
+        source_note_ids: vec![String::new()],
+        part_id: String::new(),
+        midi: u8::MAX,
+        start_ms: 0.0,
+        duration_ms: 0.0,
+        voice: "1".into(),
+        staff: 1,
+    })
+}
+fn basic_note_upper_bound(envelope: usize, note_id: &str, part_id: &str) -> Result<usize> {
+    Ok(envelope
+        .saturating_add(2 * 64 + 1)
+        .saturating_add(json_bytes(&note_id)?.saturating_sub(2).saturating_mul(3))
+        .saturating_add(json_bytes(&part_id)?.saturating_sub(2)))
+}
+
+/// Count the existing native wire directly from references. Serializing an
+/// owned OpenPackage/Value duplicates large score strings and runtime arrays.
+fn open_response_bytes(package: &Package) -> Result<usize> {
+    #[derive(Serialize)]
+    struct Open<'a> {
+        version: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        profile: &'a Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        capabilities: &'a Option<Value>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        interpretation_limits: &'a Vec<score_core::vsq_clean::CleanInterpretationLimit>,
+        content_sha256: &'a str,
+        metadata_json: &'a str,
+        score_json: &'a str,
+        media: Vec<Asset>,
+        runtime: &'a Value,
+        coverage: &'a Value,
+        notation_available: bool,
+    }
+    #[derive(Serialize)]
+    struct Response<'a> {
+        score_json: Option<&'a str>,
+        clean_package: Open<'a>,
+    }
+    json_bytes(&Response {
+        score_json: package.legacy_notation_json(),
+        clean_package: Open {
+            version: 2,
+            profile: &package.profile,
+            capabilities: &package.capabilities,
+            interpretation_limits: &package.interpretation_limits,
+            content_sha256: &package.identity,
+            metadata_json: &package.metadata_json,
+            score_json: &package.score_json,
+            media: package.summary().media,
+            runtime: &package.runtime,
+            coverage: &package.coverage,
+            notation_available: package.notation_json.is_some(),
+        },
+    })
+}
+
 /// Validate JSON and inventory first; assets are independently checked while
 /// streaming from the ZIP or complete native folder, never retained in a plan.
 pub fn parse(
@@ -277,13 +391,13 @@ pub fn parse(
     score_bytes: &[u8],
     files: &BTreeMap<String, (u64, String)>,
 ) -> Result<Package> {
-    parse_inner(metadata_bytes, score_bytes, files, true)
+    parse_inner(metadata_bytes, score_bytes, files, ReadMode::Full)
 }
 fn parse_inner(
     metadata_bytes: &[u8],
     score_bytes: &[u8],
     files: &BTreeMap<String, (u64, String)>,
-    with_runtime: bool,
+    mode: ReadMode,
 ) -> Result<Package> {
     if metadata_bytes.len() > MAX_METADATA_BYTES || score_bytes.len() > MAX_JSON_BYTES {
         return Err(invalid("Clean package JSON exceeds its bounded limit"));
@@ -308,6 +422,10 @@ fn parse_inner(
     if header.format != "worldmusichub-complete-score" {
         return Err(invalid("Unsupported complete-score format"));
     }
+    #[cfg(test)]
+    tests::record_profile_validation();
+    let mut deferred_basic = None;
+    let mut runtime_upper_bound = None;
     let (
         id,
         title,
@@ -350,15 +468,15 @@ fn parse_inner(
         }
         (1, None, Some(score_core::basic_keys::PROFILE)) => {
             let score = score_core::basic_keys::decode_json(score_bytes).map_err(invalid)?;
-            let runtime = if with_runtime {
-                serde_json::to_value(
-                    practice_server::basic_keys_api::compile(&score).map_err(invalid)?,
-                )
-                .map_err(|e| invalid(e.to_string()))?
+            let runtime = if mode == ReadMode::Full {
+                basic_runtime(&score)?
             } else {
+                if mode == ReadMode::Catalog {
+                    runtime_upper_bound = Some(basic_runtime_upper_bound(&score)?);
+                }
                 Value::Null
             };
-            (
+            let fields = (
                 score.notation.id.clone(),
                 score.notation.title.clone(),
                 Some(score.notation.clone()),
@@ -369,20 +487,29 @@ fn parse_inner(
                     .map(|p| p.id.clone())
                     .collect::<BTreeSet<_>>(),
                 SourceEvidence {
-                    format: score.source.format,
+                    format: score.source.format.clone(),
                     bytes: score.source.bytes,
-                    sha256: score.source.sha256,
+                    sha256: score.source.sha256.clone(),
                 },
-                serde_json::to_value(score.coverage).map_err(|e| invalid(e.to_string()))?,
+                serde_json::to_value(&score.coverage).map_err(|e| invalid(e.to_string()))?,
                 runtime,
                 Some(score_core::basic_keys::PROFILE.to_owned()),
-                Some(serde_json::to_value(score.capabilities).map_err(|e| invalid(e.to_string()))?),
+                Some(
+                    serde_json::to_value(&score.capabilities)
+                        .map_err(|e| invalid(e.to_string()))?,
+                ),
                 vec![],
-            )
+            );
+            if mode == ReadMode::Catalog {
+                deferred_basic = Some(score);
+            }
+            fields
         }
         (1, None, Some("wmh-semantic-midi1-v1")) => {
             let score = score_core::clean_song::decode_json(score_bytes).map_err(invalid)?;
-            let runtime = if with_runtime {
+            let runtime = if mode != ReadMode::Asset {
+                #[cfg(test)]
+                tests::record_runtime_compilation();
                 serde_json::to_value(
                     score_core::clean_song::compile_complete(&score).map_err(invalid)?,
                 )
@@ -414,7 +541,9 @@ fn parse_inner(
         }
         (2, None, Some(score_core::clean_performance::PROFILE)) => {
             let score = score_core::clean_performance::decode_json(score_bytes).map_err(invalid)?;
-            let runtime = if with_runtime {
+            let runtime = if mode != ReadMode::Asset {
+                #[cfg(test)]
+                tests::record_runtime_compilation();
                 serde_json::to_value(
                     score_core::clean_performance::compile_performance(score_bytes)
                         .map_err(invalid)?,
@@ -585,9 +714,23 @@ fn parse_inner(
             checked_score(raw)?;
         }
     }
+    let catalog_fields = notation.as_ref().map_or_else(
+        || {
+            (
+                String::new(),
+                score_core::Provenance {
+                    kind: "user_supplied".into(),
+                    attribution: metadata.rights.attribution.clone(),
+                    source_url: None,
+                    license: metadata.rights.license.clone(),
+                },
+            )
+        },
+        |score| (score.composer.clone(), score.provenance.clone()),
+    );
     // Metadata whitespace is not identity; exact score and every asset digest are.
     let identity = digest(&serde_json::to_vec(&metadata).map_err(|e| invalid(e.to_string()))?);
-    let package = Package {
+    let mut package = Package {
         profile,
         capabilities,
         interpretation_limits,
@@ -601,14 +744,19 @@ fn parse_inner(
         bytes,
         runtime,
         coverage,
+        catalog_fields,
     };
-    if serde_json::to_vec(
-        &serde_json::json!({"score_json":package.legacy_notation_json(),"clean_package":package.opened()}),
-    )
-    .map_err(|e| invalid(e.to_string()))?
-    .len()
-        > 31 * 1024 * 1024
-    {
+    let mut response_bytes = open_response_bytes(&package)?;
+    if let Some(upper_bound) = runtime_upper_bound {
+        // Replacing the four-byte null runtime with this proved upper bound
+        // cannot admit an oversized response. Near the boundary, use the exact
+        // existing compiler and size check, preserving its acceptance/errors.
+        if response_bytes.saturating_sub(4).saturating_add(upper_bound) > MAX_OPEN_RESPONSE_BYTES {
+            package.runtime = basic_runtime(deferred_basic.as_ref().unwrap())?;
+            response_bytes = open_response_bytes(&package)?;
+        }
+    }
+    if response_bytes > MAX_OPEN_RESPONSE_BYTES {
         return Err(invalid(
             "Clean song exceeds the bounded native open response",
         ));
@@ -754,7 +902,7 @@ fn folder_inventory(
             {
                 // Asset requests validate the two JSONs, full inventory, ordinary
                 // file types and all sizes, then hash only the asset being used.
-                // List/open/export always hash every declared asset independently.
+                // Catalog/source/open/export hash every declared asset independently.
                 check_node(&path, false)?;
                 out.insert(relative, (meta.len(), media.sha256.clone()));
             } else {
@@ -771,20 +919,20 @@ fn folder_inventory(
     }
     Ok(out)
 }
-fn read_package(folder: &Path, asset_only: bool) -> Result<Package> {
+fn read_package(folder: &Path, mode: ReadMode) -> Result<Package> {
     check_node(folder, true)?;
     let metadata = read_bounded(&folder.join("metadata.json"), MAX_METADATA_BYTES)?;
     let score = read_bounded(&folder.join("score.json"), MAX_JSON_BYTES)?;
     let descriptor: Metadata =
         serde_json::from_slice(&metadata).map_err(|e| invalid(e.to_string()))?;
-    let deferred = asset_only.then_some(descriptor.media.as_slice());
+    let deferred = (mode == ReadMode::Asset).then_some(descriptor.media.as_slice());
     let package = parse_inner(
         &metadata,
         &score,
         &folder_inventory(folder, deferred)?,
-        !asset_only,
+        mode,
     )?;
-    if !asset_only {
+    if mode != ReadMode::Asset {
         for media in &package.metadata.media {
             verify_media(media, &read_media(folder, media)?)?;
         }
@@ -802,9 +950,9 @@ fn read_media(folder: &Path, media: &Media) -> Result<Vec<u8>> {
     read_bounded(&folder.join(&media.path), 64 * 1024 * 1024)
 }
 fn load_folder(folder: &Path, key: &str) -> Result<(Entry, Package)> {
-    load_folder_mode(folder, key, false)
+    load_folder_mode(folder, key, ReadMode::Full)
 }
-fn load_folder_mode(folder: &Path, key: &str, asset_only: bool) -> Result<(Entry, Package)> {
+fn load_folder_mode(folder: &Path, key: &str, mode: ReadMode) -> Result<(Entry, Package)> {
     #[cfg(test)]
     tests::record_validation(folder);
     check_node(folder, true)?;
@@ -813,7 +961,7 @@ fn load_folder_mode(folder: &Path, key: &str, asset_only: bool) -> Result<(Entry
         MAX_METADATA_BYTES,
     )?)
     .map_err(|e| invalid(e.to_string()))?;
-    let package = read_package(&folder.join("package"), asset_only)?;
+    let package = read_package(&folder.join("package"), mode)?;
     let (composer, provenance) = package.catalog_fields()?;
     if entry.library_format_version != 2
         || entry.revision != 1
@@ -1167,7 +1315,7 @@ pub(super) fn scan(library: &NativeLibrary, inventory: &mut Inventory) -> Result
             });
             continue;
         }
-        match load_folder(&folder, key) {
+        match load_folder_mode(&folder, key, ReadMode::Catalog) {
             Ok((entry, _)) => {
                 primaries.insert(key.to_owned(), entry);
             }
@@ -1193,7 +1341,7 @@ pub(super) fn scan(library: &NativeLibrary, inventory: &mut Inventory) -> Result
             // One complete backup validation supplies both the primary-pair
             // check and backup diagnostics. Every independent scan rereads and
             // hashes every file; no path/mtime or cross-operation cache is used.
-            match load_folder(&folder, key) {
+            match load_folder_mode(&folder, key, ReadMode::Catalog) {
                 Ok((backup, _))
                     if serde_json::to_value(primary).ok() == serde_json::to_value(&backup).ok() =>
                 {
@@ -1224,7 +1372,7 @@ pub(super) fn scan(library: &NativeLibrary, inventory: &mut Inventory) -> Result
     // Retain only paths here; recovery validates each package when it is used.
     for folder in unpaired_backups {
         let key = folder.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        match load_folder(&folder, key) {
+        match load_folder_mode(&folder, key, ReadMode::Catalog) {
             Err(error) => inventory.issues.push(Issue {
                 key: Some(key.into()),
                 code: "library_backup_invalid".into(),
@@ -1283,7 +1431,35 @@ pub(super) fn scan(library: &NativeLibrary, inventory: &mut Inventory) -> Result
     }
     Ok(())
 }
-pub(super) fn load(library: &NativeLibrary, key: &str) -> Result<Option<LoadedScore>> {
+/// Validated operation-local source for key-bound inspection APIs. No runtime
+/// or caller-selected path crosses this boundary; every call rereads both copies.
+pub(crate) struct SourcePackage {
+    pub profile: Option<String>,
+    pub content_sha256: String,
+    pub score_json: String,
+}
+pub(crate) fn load_source(library: &NativeLibrary, key: &str) -> Result<Option<SourcePackage>> {
+    if !super::valid_key(key) {
+        return Err(fail(
+            400,
+            "library_invalid_key",
+            "A library key must be song- followed by 64 lowercase hexadecimal digits",
+        ));
+    }
+    let _lock = library.lock()?;
+    Ok(
+        load_pair(library, key, ReadMode::Catalog)?.map(|(_, package)| SourcePackage {
+            profile: package.profile,
+            content_sha256: package.identity,
+            score_json: package.score_json,
+        }),
+    )
+}
+fn load_pair(
+    library: &NativeLibrary,
+    key: &str,
+    mode: ReadMode,
+) -> Result<Option<(Entry, Package)>> {
     areas(library)?;
     let folder = library.root.join("clean-songs").join(key);
     match fs::symlink_metadata(&folder) {
@@ -1291,18 +1467,23 @@ pub(super) fn load(library: &NativeLibrary, key: &str) -> Result<Option<LoadedSc
         Err(e) => return Err(io_error(e)),
         Ok(_) => (),
     }
-    let (entry, package) = load_folder(&folder, key)?;
-    let (backup, _) = load_folder(&library.root.join("clean-backups").join(key), key)?;
+    let (entry, package) = load_folder_mode(&folder, key, mode)?;
+    let (backup, _) = load_folder_mode(&library.root.join("clean-backups").join(key), key, mode)?;
     if serde_json::to_value(&entry).ok() != serde_json::to_value(&backup).ok() {
         return Err(invalid(
             "Clean primary and independent backup metadata disagree",
         ));
     }
-    Ok(Some(LoadedScore {
-        entry,
-        score_json: package.legacy_notation_json().map(str::to_owned),
-        clean_package: Some(package.opened()),
-    }))
+    Ok(Some((entry, package)))
+}
+pub(super) fn load(library: &NativeLibrary, key: &str) -> Result<Option<LoadedScore>> {
+    Ok(
+        load_pair(library, key, ReadMode::Full)?.map(|(entry, package)| LoadedScore {
+            entry,
+            score_json: package.legacy_notation_json().map(str::to_owned),
+            clean_package: Some(package.opened()),
+        }),
+    )
 }
 pub fn export_files(library: &NativeLibrary, key: &str) -> Result<BTreeMap<String, Vec<u8>>> {
     if !super::valid_key(key) {
@@ -1330,7 +1511,7 @@ pub fn asset(library: &NativeLibrary, key: &str, handle: &str) -> Result<(String
     let _lock = library.lock()?;
     areas(library)?;
     let folder = library.root.join("clean-songs").join(key);
-    let (_, package) = load_folder_mode(&folder, key, true)?;
+    let (_, package) = load_folder_mode(&folder, key, ReadMode::Asset)?;
     let assets = package.summary().media;
     let index = assets
         .iter()
@@ -1355,6 +1536,24 @@ mod tests {
 
     thread_local! {
         static VALIDATIONS: RefCell<Option<Vec<PathBuf>>> = const { RefCell::new(None) };
+        static PROFILE_VALIDATIONS: RefCell<usize> = const { RefCell::new(0) };
+        static RUNTIME_COMPILATIONS: RefCell<usize> = const { RefCell::new(0) };
+    }
+    pub(super) fn record_profile_validation() {
+        PROFILE_VALIDATIONS.with_borrow_mut(|count| *count += 1);
+    }
+    pub(super) fn record_runtime_compilation() {
+        RUNTIME_COMPILATIONS.with_borrow_mut(|count| *count += 1);
+    }
+    fn reset_work_counts() {
+        PROFILE_VALIDATIONS.with_borrow_mut(|count| *count = 0);
+        RUNTIME_COMPILATIONS.with_borrow_mut(|count| *count = 0);
+    }
+    fn work_counts() -> (usize, usize) {
+        (
+            PROFILE_VALIDATIONS.with_borrow(|count| *count),
+            RUNTIME_COMPILATIONS.with_borrow(|count| *count),
+        )
     }
     pub(super) fn record_validation(folder: &Path) {
         VALIDATIONS.with_borrow_mut(|trace| {
@@ -1388,6 +1587,12 @@ mod tests {
     }
     impl SyntheticLibrary {
         fn new(count: usize) -> Self {
+            Self::with_profile(count, false)
+        }
+        fn basic(count: usize) -> Self {
+            Self::with_profile(count, true)
+        }
+        fn with_profile(count: usize, basic: bool) -> Self {
             let root = std::env::temp_dir().join(format!(
                 "wmh-clean-scan-{}-{}",
                 std::process::id(),
@@ -1402,17 +1607,31 @@ mod tests {
                 for index in 0..count {
                     // The existing score fixture is an original authored exercise.
                     // Its editions and this silent PCM sample are synthetic only.
-                    let mut metadata: Value = serde_json::from_slice(include_bytes!(
-                        "../../../tests/fixtures/clean-song-v2/metadata.json"
-                    ))
-                    .unwrap();
-                    let mut score: Value = serde_json::from_slice(include_bytes!(
-                        "../../../tests/fixtures/clean-song-v2/score.json"
-                    ))
-                    .unwrap();
+                    let (metadata_bytes, score_bytes): (&[u8], &[u8]) = if basic {
+                        (
+                            include_bytes!(
+                                "../../../tests/fixtures/basic-key-acceptance/metadata.json"
+                            ),
+                            include_bytes!(
+                                "../../../tests/fixtures/basic-key-acceptance/score.json"
+                            ),
+                        )
+                    } else {
+                        (
+                            include_bytes!("../../../tests/fixtures/clean-song-v2/metadata.json"),
+                            include_bytes!("../../../tests/fixtures/clean-song-v2/score.json"),
+                        )
+                    };
+                    let mut metadata: Value = serde_json::from_slice(metadata_bytes).unwrap();
+                    let mut score: Value = serde_json::from_slice(score_bytes).unwrap();
                     let id = format!("original-scan-exercise-{index}");
-                    metadata["id"] = id.clone().into();
-                    score["notation"]["id"] = id.into();
+                    if basic {
+                        metadata["title"] = id.clone().into();
+                        score["notation"]["title"] = id.into();
+                    } else {
+                        metadata["id"] = id.clone().into();
+                        score["notation"]["id"] = id.into();
+                    }
                     let score = serde_json::to_vec_pretty(&score).unwrap();
                     metadata["score"]["bytes"] = score.len().into();
                     metadata["score"]["sha256"] = digest(&score).into();
@@ -1453,7 +1672,7 @@ mod tests {
                             .save(
                                 &package,
                                 None,
-                                false,
+                                basic,
                                 |media| Ok(files[&media.path].clone()),
                             )
                             .unwrap(),
@@ -1486,6 +1705,331 @@ mod tests {
         fn drop(&mut self) {
             fs::remove_dir_all(&self.root).unwrap();
         }
+    }
+
+    #[test]
+    fn basic_catalog_preserves_exact_response_admission_near_and_over_limit() {
+        // Original mechanical one-key events, not a song or third-party source.
+        let mut track = Vec::new();
+        for _ in 0..60_000 {
+            track.extend([0, 0x90, 60, 90, 1, 0x80, 60, 0]);
+        }
+        track.extend([0, 255, 47, 0]);
+        let mut midi = b"MThd\0\0\0\x06\0\0\0\x01\0\x60MTrk".to_vec();
+        midi.extend((track.len() as u32).to_be_bytes());
+        midi.extend(track);
+        let score = score_core::basic_keys::convert_midi(&midi, "Original response-bound exercise")
+            .unwrap();
+        let mut score = score_core::basic_keys::encode_json(&score).unwrap();
+        assert!(score.len() < MAX_JSON_BYTES);
+        let mut metadata: Metadata = serde_json::from_slice(include_bytes!(
+            "../../../tests/fixtures/basic-key-acceptance/metadata.json"
+        ))
+        .unwrap();
+        let decoded: Value = serde_json::from_slice(&score).unwrap();
+        metadata.id = decoded["notation"]["id"].as_str().unwrap().into();
+        metadata.title = decoded["notation"]["title"].as_str().unwrap().into();
+        metadata.sources = vec![SourceEvidence {
+            format: "midi".into(),
+            bytes: midi.len(),
+            sha256: digest(&midi),
+        }];
+        let mut outcomes = Vec::new();
+        for padded in [false, true] {
+            if padded {
+                score.resize(MAX_JSON_BYTES, b' ');
+            }
+            metadata.score.bytes = score.len() as u64;
+            metadata.score.sha256 = digest(&score);
+            let metadata = serde_json::to_vec(&metadata).unwrap();
+            let files = BTreeMap::from([
+                (
+                    "metadata.json".into(),
+                    (metadata.len() as u64, digest(&metadata)),
+                ),
+                ("score.json".into(), (score.len() as u64, digest(&score))),
+            ]);
+            reset_work_counts();
+            let full = parse_inner(&metadata, &score, &files, ReadMode::Full);
+            let catalog = parse_inner(&metadata, &score, &files, ReadMode::Catalog);
+            assert_eq!(
+                work_counts(),
+                (2, 2),
+                "borderline catalog must fall back to exact compiler"
+            );
+            match (full, catalog) {
+                (Ok(full), Ok(catalog)) => {
+                    assert_eq!(full.summary(), catalog.summary());
+                    assert_eq!(
+                        open_response_bytes(&full).unwrap(),
+                        open_response_bytes(&catalog).unwrap()
+                    );
+                    outcomes.push(true);
+                }
+                (Err(full), Err(catalog)) => {
+                    assert_eq!(full.code, catalog.code);
+                    assert_eq!(
+                        full.error,
+                        "Clean song exceeds the bounded native open response"
+                    );
+                    assert_eq!(catalog.error, full.error);
+                    outcomes.push(false);
+                }
+                _ => panic!("catalog and full response admission diverged"),
+            }
+        }
+        assert_eq!(outcomes, [true, false]);
+    }
+
+    #[test]
+    fn runtime_size_proof_covers_escaped_identifiers_and_extreme_json_numbers() {
+        for id in ["", "midi-t128-e250000", "\"\\\n\u{0000}中文"] {
+            for number in [0.0, -0.0, f64::MAX, f64::MIN, f64::MIN_POSITIVE, 5e-324] {
+                let note = score_core::TimedNote {
+                    velocity: u8::MAX,
+                    id: id.into(),
+                    source_note_id: id.into(),
+                    source_note_ids: vec![id.into()],
+                    part_id: id.into(),
+                    midi: u8::MAX,
+                    start_ms: number,
+                    duration_ms: number,
+                    voice: "1".into(),
+                    staff: 1,
+                };
+                assert!(
+                    json_bytes(&note).unwrap()
+                        < basic_note_upper_bound(basic_note_envelope_bytes().unwrap(), id, id)
+                            .unwrap()
+                );
+            }
+        }
+        let fixture = SyntheticLibrary::basic(1);
+        let (_, package) =
+            load_folder(&fixture.folder("clean-songs", 0), &fixture.entries[0].key).unwrap();
+        let runtime = &package.runtime;
+        let mut envelope = runtime.clone();
+        envelope["compilation"]["timeline"]["notes"] = serde_json::json!([]);
+        assert!(json_bytes(&runtime["compilation"]["diagnostics"]).unwrap() < 512);
+        assert!(json_bytes(&envelope).unwrap() < 4096);
+    }
+
+    #[test]
+    fn basic_catalog_validates_both_copies_without_compiling_runtime() {
+        let fixture = SyntheticLibrary::basic(6);
+        for _ in 0..2 {
+            reset_work_counts();
+            let trace = ValidationTrace::start();
+            let inventory = fixture.library.list().unwrap();
+            assert_eq!(trace.finish().len(), 12);
+            assert_eq!(work_counts(), (12, 0));
+            assert!(inventory.issues.is_empty());
+            let mut expected = fixture.entries.clone();
+            expected.sort_by(|a, b| a.key.cmp(&b.key));
+            assert_eq!(
+                serde_json::to_value(&inventory.entries).unwrap(),
+                serde_json::to_value(expected).unwrap()
+            );
+        }
+        reset_work_counts();
+        let batch = Batch::begin(&fixture.library).unwrap();
+        assert_eq!(batch.entries().len(), 6);
+        assert_eq!(work_counts(), (12, 0));
+        drop(batch);
+        for entry in &fixture.entries {
+            reset_work_counts();
+            let source = load_source(&fixture.library, &entry.key).unwrap().unwrap();
+            assert_eq!(work_counts(), (2, 0));
+            assert_eq!(
+                source.profile.as_deref(),
+                Some(score_core::basic_keys::PROFILE)
+            );
+            assert_eq!(source.content_sha256, entry.content_sha256);
+            let loaded = fixture
+                .library
+                .load(&entry.key)
+                .unwrap()
+                .clean_package
+                .unwrap();
+            assert_eq!(source.score_json, loaded.score_json);
+        }
+        for index in 0..6 {
+            let folder = fixture.folder("clean-songs", index);
+            let (_, catalog) =
+                load_folder_mode(&folder, &fixture.entries[index].key, ReadMode::Catalog).unwrap();
+            let (_, full) = load_folder(&folder, &fixture.entries[index].key).unwrap();
+            assert!(catalog.runtime.is_null());
+            assert!(!full.runtime.is_null());
+            assert_eq!(catalog.summary(), full.summary());
+            assert_eq!(catalog.index_json(), full.index_json());
+            assert_eq!(
+                serde_json::to_value(catalog.catalog_fields().unwrap()).unwrap(),
+                serde_json::to_value(full.catalog_fields().unwrap()).unwrap()
+            );
+            let existing_response = serde_json::json!({"score_json":full.legacy_notation_json(),"clean_package":full.opened()});
+            assert_eq!(
+                open_response_bytes(&full).unwrap(),
+                serde_json::to_vec(&existing_response).unwrap().len()
+            );
+            let decoded = score_core::basic_keys::decode_json(full.score_json.as_bytes()).unwrap();
+            assert!(
+                basic_runtime_upper_bound(&decoded).unwrap() >= json_bytes(&full.runtime).unwrap()
+            );
+            fixture.assert_exact_files(index);
+        }
+    }
+
+    #[test]
+    fn basic_catalog_rechecks_semantics_hashes_and_orphan_recovery() {
+        let fixture = SyntheticLibrary::basic(2);
+        let key = &fixture.entries[0].key;
+        let backup = fixture.folder("clean-backups", 0);
+        let original = fixture.files[0]["media/silence.wav"].clone();
+        let mut changed = original.clone();
+        *changed.last_mut().unwrap() ^= 1;
+        fs::write(backup.join("package/media/silence.wav"), changed).unwrap();
+        assert!(load_source(&fixture.library, key).is_err());
+        let inventory = fixture.library.list().unwrap();
+        assert_eq!(inventory.entries.len(), 1);
+        for code in ["library_backup_invalid", "library_clean_backup_missing"] {
+            assert!(inventory
+                .issues
+                .iter()
+                .any(|issue| issue.key.as_ref() == Some(key) && issue.code == code));
+        }
+        fs::write(backup.join("package/media/silence.wav"), original).unwrap();
+        assert!(fixture.library.list().unwrap().issues.is_empty());
+        assert!(load_source(&fixture.library, key).unwrap().is_some());
+        // Rehash a false semantic claim; integrity alone must never admit it.
+        let mut score: Value = serde_json::from_slice(&fixture.files[0]["score.json"]).unwrap();
+        score["coverage"]["key_attacks"] = 9000.into();
+        let score = serde_json::to_vec(&score).unwrap();
+        let mut metadata: Value =
+            serde_json::from_slice(&fixture.files[0]["metadata.json"]).unwrap();
+        metadata["score"]["sha256"] = digest(&score).into();
+        metadata["score"]["bytes"] = score.len().into();
+        fs::write(backup.join("package/score.json"), score).unwrap();
+        fs::write(
+            backup.join("package/metadata.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+        assert!(load_source(&fixture.library, key).is_err());
+        let inventory = fixture.library.list().unwrap();
+        assert_eq!(inventory.entries.len(), 1);
+        assert!(inventory
+            .issues
+            .iter()
+            .any(|issue| issue.code == "library_backup_invalid"
+                && issue.message.contains("coverage")));
+        for (path, bytes) in &fixture.files[0] {
+            fs::write(backup.join("package").join(path), bytes).unwrap();
+        }
+        fs::rename(
+            fixture.folder("clean-songs", 0),
+            fixture.root.join("held-primary"),
+        )
+        .unwrap();
+        reset_work_counts();
+        let recovered = fixture.library.list().unwrap();
+        assert_eq!(recovered.entries.len(), 2);
+        assert_eq!(work_counts(), (3, 0));
+        assert!(recovered
+            .issues
+            .iter()
+            .any(|issue| issue.code == "library_recovered_backup"));
+        fixture.assert_exact_files(0);
+        assert!(fixture.library.list().unwrap().issues.is_empty());
+    }
+
+    #[test]
+    fn catalog_preserves_invalid_orphans_unrecognized_folders_and_interrupted_stages() {
+        let fixture = SyntheticLibrary::basic(2);
+        fs::rename(
+            fixture.folder("clean-songs", 0),
+            fixture.root.join("held-primary"),
+        )
+        .unwrap();
+        let bad_asset = fixture
+            .folder("clean-backups", 0)
+            .join("package/media/silence.wav");
+        let mut damaged = fixture.files[0]["media/silence.wav"].clone();
+        *damaged.last_mut().unwrap() ^= 1;
+        fs::write(&bad_asset, &damaged).unwrap();
+        fs::rename(
+            fixture.folder("clean-backups", 1),
+            fixture.root.join("held-backup"),
+        )
+        .unwrap();
+        for area in ["clean-songs", "clean-backups", ".clean-staging"] {
+            fs::create_dir(
+                fixture
+                    .library
+                    .root
+                    .join(area)
+                    .join("unfinished-original-fixture"),
+            )
+            .unwrap();
+        }
+        reset_work_counts();
+        let inventory = fixture.library.list().unwrap();
+        assert!(inventory.entries.is_empty());
+        assert_eq!(work_counts(), (2, 0));
+        let codes: Vec<_> = inventory
+            .issues
+            .iter()
+            .map(|issue| issue.code.as_str())
+            .collect();
+        assert_eq!(
+            codes
+                .iter()
+                .filter(|code| **code == "library_unrecognized_clean_entry")
+                .count(),
+            2
+        );
+        for code in [
+            "library_backup_invalid",
+            "library_clean_backup_missing",
+            "library_incomplete_clean_stages",
+        ] {
+            assert!(codes.contains(&code));
+        }
+        assert!(!codes.contains(&"library_recovered_backup"));
+        assert!(!fixture.folder("clean-songs", 0).exists());
+        assert_eq!(fs::read(bad_asset).unwrap(), damaged);
+        assert!(load_source(&fixture.library, &fixture.entries[0].key)
+            .unwrap()
+            .is_none());
+        assert!(load_source(&fixture.library, &fixture.entries[1].key).is_err());
+    }
+
+    #[test]
+    fn catalog_recovery_preserves_canonical_byte_quota() {
+        let fixture = SyntheticLibrary::basic(2);
+        fs::rename(
+            fixture.folder("clean-songs", 0),
+            fixture.root.join("held-primary"),
+        )
+        .unwrap();
+        let mut previous = fixture.entries[1].clone();
+        previous.score_bytes = super::super::MAX_LIBRARY_BYTES;
+        let mut inventory = Inventory {
+            storage: "native-filesystem",
+            library_format_version: 1,
+            directory: fixture.library.root.to_string_lossy().into_owned(),
+            entries: vec![previous],
+            issues: Vec::new(),
+        };
+        let lock = fixture.library.lock().unwrap();
+        scan(&fixture.library, &mut inventory).unwrap();
+        drop(lock);
+        assert_eq!(inventory.entries.len(), 2);
+        assert!(inventory
+            .issues
+            .iter()
+            .any(|issue| issue.code == "library_recovery_failed"
+                && issue.message == "Recovery would exceed native library capacity"));
+        assert!(!fixture.folder("clean-songs", 0).exists());
     }
 
     #[test]
@@ -1611,6 +2155,7 @@ mod tests {
             );
             drop(batch);
             assert!(fixture.library.load(key).is_err(), "{change}");
+            assert!(load_source(&fixture.library, key).is_err(), "{change}");
             match change {
                 "missing" => fs::rename(fixture.root.join("held-backup"), &folder).unwrap(),
                 "entry" => fs::write(folder.join("entry.json"), &entry_bytes).unwrap(),
@@ -1632,6 +2177,7 @@ mod tests {
         let mut damaged = fixture.files[0]["media/silence.wav"].clone();
         *damaged.last_mut().unwrap() ^= 1;
         fs::write(&primary_asset, &damaged).unwrap();
+        assert!(load_source(&fixture.library, key).is_err());
         let inventory = fixture.library.list().unwrap();
         assert_eq!(inventory.entries.len(), 5);
         assert!(inventory
