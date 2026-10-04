@@ -6,7 +6,7 @@ no private or third-party music. SHA-256:
 `7e5fea609420469fc4178cb8f1d740c80a3f07d0833632794aa0cd68375e5315`.
 
 The five tracks retain 18 events: bank select 7, program 42, controller 74,
-a long C4 key (a reliable native input observation window), a zero-duration E4,
+a long C4 key (an exact page-crossing and continuation window), a zero-duration E4,
 an unresolved G4, channel-10 key 35, a separate C5 on the same channel as C4,
 a metadata-only track and an empty end-of-track record. No tempo or meter was
 authored. The default SMF relative clock is disclosed; no source meter is invented.
@@ -21,3 +21,21 @@ byte for byte before testing the real Rust receiver over stdin.
 Public acceptance packages contain only metadata and complete score JSON. The
 malformed-profile and forged-coverage variants have recomputed envelope hashes,
 so refusals must come from semantic validation rather than a hash mismatch.
+
+`rendition-native.json` is the current v2 native-open projection plus 17 actual
+source-bound part/page/meter/position responses for this same 130-byte source.
+`rendition-provenance.json` binds the immutable Rust driver source/tree/hash,
+original MIDI/package hashes and exact captured JSON hash. The driver source is
+recorded separately from the later web/harness integration. No response was made
+by rescaling or relabeling the separate 117-byte consumer fixture.
+
+The v2 interpretation retains all five attacks as practice targets and schedules
+all parts during Listen. The zero-time E4 and source-end G4 cleanup each receive
+an explicitly identified 20 ms gate, making the rendition end at 12020 ms while the
+source ends at 12000 ms. The C5 at 500 ms is used for the real human keyboard hit;
+the long C4 supplies exact page-continuation and tie evidence.
+
+Regenerate the response oracle into a fresh directory with
+`scripts/capture-basic-key-rendition-fixture.mjs <driver-receipt.json> <directory>`.
+Its immutable-driver hash check and original-package byte checks precede every
+request. Review source semantics before replacing a committed oracle.

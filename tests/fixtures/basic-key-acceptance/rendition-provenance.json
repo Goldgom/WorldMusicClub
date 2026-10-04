@@ -1,0 +1,11 @@
+{
+  "generator": "scripts/capture-basic-key-rendition-fixture.mjs",
+  "source": "fcd89f747d5a64e847c01738eec3aa973e292b93",
+  "source_tree": "65f48ee0014f1704b0f9af5a7308d3360fccb596",
+  "binary_sha256": "42556f9dcbe0874cd09118de823b1354940a99735e15c65607cb9bed483a0a84",
+  "source_midi_sha256": "7e5fea609420469fc4178cb8f1d740c80a3f07d0833632794aa0cd68375e5315",
+  "source_midi_bytes": 130,
+  "package_sha256": "9b0ac43742403988fc6309c26d33808c164696df113c25608ebc67f67d8130b8",
+  "output_sha256": "e52f25e50e1efaa85dcc29d300706dbf66972333dd9d0ba440940f043de7fdd2",
+  "method": "actual original 130-byte clean ZIP import, native load projection (score_json + clean_package), and 17 source-bound part/page/meter/position POST responses; no browser/listener"
+}

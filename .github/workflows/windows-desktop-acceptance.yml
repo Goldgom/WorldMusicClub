@@ -44,6 +44,7 @@ jobs:
       - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js tests/authoring-final-gate.test.js
       - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
       - run: cargo build -p score-core --bin clean-song-batch --locked
+      - run: cargo build -p practice-server --locked
       - name: Original basic-key CLI bytes and native receiver protocol
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
@@ -139,6 +140,22 @@ jobs:
           WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-vsq-authoring-check.mjs
           WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-vsq-authoring-check.mjs
           WMH_VIEWPORT_WIDTH=1920 WMH_VIEWPORT_HEIGHT=1080 node scripts/hosted-vsq-authoring-check.mjs
+      - name: Original twelve-part Current and All notation, scrolling and real page following
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
+        run: node scripts/hosted-notation-scope-check.mjs
+      - name: Retain original notation scope and fit evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notation-scope-browser-${{ github.sha }}
+          path: |
+            test-results/notation-scope/report.json
+            test-results/notation-scope/*.png
+            test-results/notation-scope/server.log
+          if-no-files-found: warn
       - name: Retain small basic-key browser diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

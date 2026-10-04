@@ -265,6 +265,7 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
   if($Action.kind -eq 'select-second'){[NativeAcceptance]::Key(0x24);[NativeAcceptance]::Key(0x28);[NativeAcceptance]::Key(0x0D);return}
   if($Action.kind -eq 'select-last'){[NativeAcceptance]::Key(0x23);[NativeAcceptance]::Key(0x0D);return}
   if($Action.kind -eq 'key-r'){[NativeAcceptance]::Key(0x52);return}
+  if($Action.kind -eq 'key-c5'){[NativeAcceptance]::Key(0x32);return}
   if($Action.kind -eq 'click'){return}
   if($Action.kind -notin @('picker','cancel-picker')){throw 'Unknown acceptance action'}
   $deadline=[DateTime]::UtcNow.AddSeconds(10);$dialog=[IntPtr]::Zero

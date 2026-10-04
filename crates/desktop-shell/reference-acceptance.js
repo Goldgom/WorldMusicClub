@@ -28,7 +28,7 @@ function observeNativeReferenceAudio(root=globalThis) {
 
 // Observe only the finite scored-take preparation. Native dispatch success does
 // not establish DOM event receipt or a running transport. No input is synthesized.
-function observeNativeReferenceTransport(document, {now=()=>performance.now(),defer=queueMicrotask}={}) {
+function observeNativeReferenceTransport(document, {now=()=>performance.now(),defer=queueMicrotask,keyCode='KeyR'}={}) {
   const $=id=>document.getElementById(id),window=document.defaultView,rows=[],remove=[];
   const started=now(),encoder=new TextEncoder();let omitted=0,rowBytes=2,active=true,lastState='',trustedPlayClicks=0,trustedKeyDowns=0,trustedKeyUps=0;
   const text=value=>String(value ?? '').slice(0,64);
@@ -50,7 +50,7 @@ function observeNativeReferenceTransport(document, {now=()=>performance.now(),de
     const element=event.target?.closest?.('[id]'),target=text(element?.id||event.target?.localName||'window');
     const control=text(event.target?.closest?.('button')?.id),surface=text(event.target?.closest?.('[data-keyboard-performance]')?.id);
     if(event.isTrusted===true&&event.type==='click'&&control==='play-button')trustedPlayClicks++;
-    if(event.isTrusted===true&&event.code==='KeyR'&&surface==='stage-title'){
+    if(event.isTrusted===true&&event.code===keyCode&&surface==='stage-title'){
       if(event.type==='keydown'&&!event.repeat)trustedKeyDowns++;
       if(event.type==='keyup')trustedKeyUps++;
     }

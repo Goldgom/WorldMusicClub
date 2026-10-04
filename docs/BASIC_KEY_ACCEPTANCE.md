@@ -1,67 +1,74 @@
-# Original basic-key receiver acceptance
+# Original basic-key rendition acceptance
 
-The focused `basic-key-preview.yml` workflow and full native acceptance workflow
-run the original CLI/native protocol check, hosted Chromium at 1280×720 and
-1280×900, and Windows WebView through the existing owned picker/input driver.
-Each seed/restart phase uses a fresh browser profile and the same disk library.
-The original five-track fixture is described in `tests/fixtures/basic-key-acceptance/README.md`.
+The focused basic-key workflow and full native workflow require the original
+CLI/native protocol check, hosted Chromium at 1280×720 and 1280×900, and Windows
+WebView through the owned picker and input driver. Both phases use fresh browser
+profiles and the same native song library. No private music is used.
 
-Required UI evidence covers all tracks and parts, retained attack coverage and
-key ranges, English and Chinese disclosure, unavailable reference audio, absent
-source meter and the explicit SMF default clock. Actual native/Chromium controls
-select a melodic part; a real KeyR onset is captured and assessed through the
-production Rust endpoint against that part's eligible target only. The paused
-machine-free take must have no inputs, captures or assessment. Reference/source
-audio must never start, including while sound is enabled before user input.
+The original 130-byte, five-track source retains 18 events and five attacks,
+including channel 10 percussion, an instantaneous attack, an unresolved ending,
+a shared channel, a metadata-only track and an empty track. Package files remain
+byte-identical to the original conversion. The v2 receiver supplies five target
+gates: 12000 ms C4, 250 ms percussion 35, 500 ms C5 at 500 ms, and two 20 ms gates at 12000 ms.
+These gates are named receiver choices; they are not invented original durations,
+timbres, drum-kit assignments or held-note grading claims.
 
-The meter proof opens the existing score settings through its visible summary.
-It captures the source-meter choice, generated-view provenance and missing-meter
-status with nonzero viewport bounds and hit-test visibility. This happens before
-the restart phase chooses its display meter; hidden legacy labels are not source
-disclosure evidence. The settings and part inventory close through their visible
-summaries before the stage controls are used.
+The seed phase imports the clean ZIP through the actual file chooser, rejects
+malformed profile and forged coverage variants, and captures English/Chinese
+inventory and interpretation disclosures. Listen must schedule every original
+attack, pause with a frozen clock and no active/pending sources, resume, and end
+at 12020 ms with complete audio cleanup. A transparent observer forwards the real
+receiver calls and records their source IDs and returned voice boundaries.
+This proves scheduled audio, not physical audibility.
 
-The malformed profile and forged coverage must be refused as playable clean
-songs with visible diagnostics. The ordinary importer's separate Save action
-may still retain the original archive privately; this is not clean admission.
-Complete clean export must match both CLI output files byte for byte. A fresh
-process must reopen the exact inventory and runtime. Native proof independently
-reads screenshots, host/profile/action records, downloads and primary/backup
-files, then binds source commit/tree and executable hash/size.
+Listen creates no practice pass. Its actual Results panel must show an empty
+pass selector, disabled assessment/export, and no recorded inputs. The All view
+must paint all three parts, retain the percussion/onset rail, and make every
+part reachable through the real scroll controls. View changes cannot change the
+human target or audio mix. A replay from the mounted All view records only real
+source-ID/measure changes and active rail markers, including both 20 ms gates.
 
-The restart phase also opens the paused score in Chinese, requires an explicit
-4/4 **display** meter for the source with no meter, and selects two-bar pages.
-An observer forwards the pinned offline renderer's real load/render methods and
-reads its actual model, exact note fractions, retained XML tie flags, mounted
-heads and the SVG curve joining the two visible C4 tie members. Source-bound
-responses retain the full 24-beat continuation interval across page edges.
-Follow must cross the real four-second page boundary, pause, reach the natural
-end, and return to the first page on Reset. Both staff and numbered pitch views
-must paint actual source identities in the piano background at the required
-1280×720 viewport; each checkpoint retains a screenshot.
+The restart phase reopens the exact package and inventory. It opens the paused
+score without sound, input or grading, exposes the absent source meter through
+visible controls, and explicitly chooses a 4/4 display grid and two-bar pages.
+The Current view must preserve exact source IDs, page clocks and C4 ties while
+real playback crosses a page boundary, pauses, reaches natural End, and resets.
+Each capture binds the visible measure range to its matching admitted native part/page response; a later prefetch response cannot substitute for the painted page.
+The empty-input assessment must contain the selected part's three interpreted
+targets. Staff and All-part numbered views require actual mounted paint and
+source identities; pointer-inert notation is observed, not clicked as input.
 
-Paused inspection must start no sound, capture or grade. Play starts a normal
-practice pass; natural End therefore produces the application's ordinary
-empty-input assessment, containing only the selected eligible target. The proof
-checks that distinction and resets the pass before the separate trusted KeyR
-test. No reference audio or generated onset is allowed in either flow.
+The human proof then selects the second melodic part, C5 at 500 ms. A finite
+actual Digit2 key action is admitted only while the real capture clock runs;
+its visible keyboard mapping, receipt, pass routing and assessment must agree.
+Exactly one hit is required at the original scoring tolerance. Other parts
+remain audible. Separate machine-only and human Practice JSON exports prove
+that accompaniment never entered inputs or captures and that scoring targets
+contain only the selected source part. No input timestamp or transport clock is
+modified to obtain a hit.
 
-The protocol-only check separately exercises `position_ms` at 4.1 seconds,
-6 seconds, exact End and Reset, and compares a page after process restart.
-The existing progress element is not an interactive seek control, so this gate
-makes no user-facing seek claim. No-clock inspection remains covered by bounded
-native/model tests; this original GUI fixture has the declared SMF clock.
+Every phase keeps the 64 native-action limit, bounded reports, strict input
+hit-testing and observer restoration. Screenshots, host/profile/action records,
+JSON exports, primary/backup package files and their hashes are independently
+read before proof creation. Source commit/tree and executable hash/size bind the
+proof to the candidate. The final package gate also requires the existing VSQ
+authoring proof; neither feature can replace the other.
 
-`node --test tests/basic-key-acceptance.test.js` uses explicitly synthetic verifier
-records and does not establish browser or Windows acceptance. Local protocol and
-unit tests also do not establish physical audibility, original timbre, hardware
-latency, fingering, graphical engraving, text export or full release acceptance. Real hosted
-browser/native evidence for the exact integrated source is required before
-promotion; no GUI acceptance is claimed by merely adding this workflow.
+`rendition-native.json` contains real responses captured from the original source
+through the immutable Rust driver identified in `rendition-provenance.json`.
+The native protocol check compares every committed response against fresh native
+results, alongside the retained source-inspection page checks and exact export /
+restart checks. Synthetic verifier tests are explicitly labeled and cannot
+establish browser or Windows acceptance. The existing progress element is not
+an interactive seek control. Position lookup remains native/model-only proof.
 
-The overall native candidate now requires both this basic-key proof and the
-original VSQ authoring proof. `native-new-music-evidence.py` composes their
-independent Node verification, exact report hashes, fresh profile bindings, source
-commit/tree and executable bytes before any new evidence is copied. Package
-creation and archive verification require the exact evidence inventories and
-BUILD-INFO bindings; recomputing ordinary ZIP hashes cannot bypass these gates.
+Both workflows additionally require the real hosted 12-part canonical exercise.
+At 1280×720, 1440×900 and 1920×1080 it checks all three four-part batches,
+readable staff/numbered paint, real scrolling, Current and selected-part changes,
+125% zoom, keyboard access and the native-clock first measure boundary. Its
+separate notation-scope artifact retains the exact source/tree, server hash,
+original fixture hash, native navigation, report and hashed screenshots.
+
+No browser, server or native GUI has been launched locally for this work. Real
+hosted evidence and inspected screenshots for the exact integrated source remain
+mandatory before delivery or promotion.
