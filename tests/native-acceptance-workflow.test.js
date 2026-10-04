@@ -44,6 +44,93 @@ function check(needs, extraEnv = {}) {
   }
 }
 
+// Model the runner's default success() guard and the small conjunction grammar
+// used by these gates. Read the actual step conditions; never launch acceptance.
+function gateRuns(step, { failed = false, cancelled = false, outcomes = {} } = {}) {
+  const raw = step.match(/^        if: (.+)$/m)?.[1] || 'success()';
+  const condition = raw.replace(/^\$\{\{\s*|\s*\}\}$/g, '');
+  if (!/\b(?:success|failure|always|cancelled)\(\)/.test(condition) && (failed || cancelled)) return false;
+  const clauses = condition.split(/\s*&&\s*/).map(clause => {
+    if (clause === 'success()') return !failed && !cancelled;
+    if (clause === '!cancelled()') return !cancelled;
+    if (clause === 'always()') return true;
+    const prerequisite = clause.match(/^steps\.([a-z_]+)\.outcome == 'success'$/)?.[1];
+    assert.ok(prerequisite, `Unsupported acceptance condition: ${clause}`);
+    return outcomes[prerequisite] === 'success';
+  });
+  return clauses.every(Boolean);
+}
+
+const independentGates = [
+  { job: jobIds[0], basic: 'node scripts/hosted-basic-key-check.mjs',
+    target: 'node scripts/hosted-vsq-authoring-check.mjs',
+    prerequisites: { dense_native_driver: 'cargo build -p worldmusichub-desktop --example native_import_driver --locked',
+      dense_browser_setup: 'npx playwright install --with-deps chromium' } },
+  { job: jobIds[0], basic: 'node scripts/hosted-basic-key-check.mjs',
+    target: 'node scripts/hosted-notation-scope-check.mjs',
+    prerequisites: { notation_server: 'cargo build -p practice-server --locked',
+      dense_browser_setup: 'npx playwright install --with-deps chromium' } },
+  { job: jobIds[1], basic: '-Scenario basic-key', target: '-Scenario vsq-authoring',
+    prerequisites: { native_build: 'cargo build -p worldmusichub-desktop --release --locked' } },
+];
+
+test('a failed basic-key gate cannot suppress independent VSQ authoring and twelve-part checks', () => {
+  for (const { job, basic, target, prerequisites } of independentGates) {
+    const jobSteps = steps(jobBlock(job)), basicIndex = jobSteps.findIndex(step => step.includes(basic));
+    const targetIndex = jobSteps.findIndex(step => step.includes(target)), gate = jobSteps[targetIndex];
+    assert.ok(basicIndex >= 0 && targetIndex > basicIndex, target);
+    assert.doesNotMatch(jobSteps[basicIndex], /^        (?:if|continue-on-error):/m);
+    assert.doesNotMatch(gate, /^        continue-on-error:/m);
+    const outcomes = Object.fromEntries(Object.keys(prerequisites).map(id => [id, 'success']));
+    const actual = [...gate.matchAll(/steps\.([a-z_]+)\.outcome/g)].map(match => match[1]);
+    assert.deepEqual(actual.sort(), Object.keys(prerequisites).sort(), `${target}: only real inputs`);
+    for (const [id, command] of Object.entries(prerequisites)) {
+      const index = jobSteps.findIndex(step => step.includes(`id: ${id}\n`));
+      assert.ok(index >= 0 && index < basicIndex, `${id} is prepared before the failed basic-key gate`);
+      assert.ok(jobSteps[index].includes(`run: ${command}`));
+      assert.doesNotMatch(jobSteps[index], /^        (?:if|continue-on-error):/m);
+    }
+    assert.equal(gateRuns(gate, { outcomes }), true, target);
+    assert.equal(gateRuns(gate, { failed: true, outcomes }), true, `${target}: keep collecting after failure`);
+    assert.equal(gateRuns(gate, { cancelled: true, outcomes }), false, `${target}: respect cancellation`);
+    for (const id of Object.keys(prerequisites)) {
+      for (const outcome of ['failure', 'skipped', 'cancelled', undefined]) {
+        assert.equal(gateRuns(gate, { failed: true, outcomes: { ...outcomes, [id]: outcome } }), false,
+          `${target}: ${id}=${outcome} cannot run`);
+      }
+    }
+    // These regressions would restore GitHub's implicit/explicit success guard.
+    const withoutIf = gate.replace(/^        if: .+\n/m, '');
+    const implicitSuccess = gate.replace('!cancelled() && ', '');
+    const explicitSuccess = gate.replace('!cancelled()', 'success()');
+    for (const mutant of [withoutIf, implicitSuccess, explicitSuccess]) {
+      assert.equal(gateRuns(mutant, { failed: true, outcomes }), false);
+    }
+  }
+});
+
+test('later independent success cannot erase a failed basic gate or admit its native ZIP', () => {
+  const nativeSteps = steps(jobBlock(jobIds[1]));
+  const pack = nativeSteps.find(step => step.includes('id: native_package'));
+  const extracted = nativeSteps.find(step => step.includes('Expand-Archive -Path'));
+  const candidate = nativeSteps.find(step => step.includes('name: WorldMusicClub-Native-Candidate-'));
+  for (const gate of [pack, extracted, candidate]) {
+    assert.ok(gate);
+    assert.doesNotMatch(gate, /^        (?:if|continue-on-error):/m);
+    assert.equal(gateRuns(gate, { failed: true }), false, 'A later success does not reset job failure');
+  }
+  for (const scenario of ['basic-key', 'vsq-authoring']) {
+    assert.ok(pack.includes(`--${scenario} desktop-${scenario}`), `${scenario}: exact-source manifest still required`);
+  }
+  for (const id of jobIds) {
+    const needs = passingNeeds();
+    needs[id].result = 'failure';
+    const result = check(needs);
+    assert.equal(result.status, 1);
+    assert.ok(result.summary.includes(`${id}: failure (success required)`));
+  }
+});
+
 test('browser and Windows jobs run independently and export their checked source identity', () => {
   for (const id of jobIds) {
     const block = jobBlock(id);

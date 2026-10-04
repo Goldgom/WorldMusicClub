@@ -45,7 +45,8 @@ jobs:
       - id: dense_native_driver
         run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
       - run: cargo build -p score-core --bin clean-song-batch --locked
-      - run: cargo build -p practice-server --locked
+      - id: notation_server
+        run: cargo build -p practice-server --locked
       - name: Original basic-key CLI bytes and native receiver protocol
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
@@ -134,6 +135,8 @@ jobs:
           WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-basic-key-check.mjs
           WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-basic-key-check.mjs
       - name: Original VSQ authoring, whole inventory, explicit practice and restart
+        # Own fixtures, Scores and fresh processes; no basic-key evidence input.
+        if: ${{ !cancelled() && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
@@ -143,6 +146,8 @@ jobs:
           WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-vsq-authoring-check.mjs
           WMH_VIEWPORT_WIDTH=1920 WMH_VIEWPORT_HEIGHT=1080 node scripts/hosted-vsq-authoring-check.mjs
       - name: Original twelve-part Current and All notation, scrolling and real page following
+        # Own original fixture/server; a failed earlier scenario must stay visible.
+        if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
@@ -356,6 +361,8 @@ jobs:
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-basic-key -Scenario basic-key
       - name: Native original VSQ authoring and exact fresh-process restart
+        # Generates its own fixtures and profile from the same checked build.
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-vsq-authoring -Scenario vsq-authoring
       # Default success() keeps candidate packaging behind every native gate.
