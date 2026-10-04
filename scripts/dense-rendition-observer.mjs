@@ -20,7 +20,7 @@ export function observeDenseRenditionAudio(root=globalThis){
   }
   prototype[method]=observe;restores.push(()=>{if(prototype[method]===observe)prototype[method]=original;return prototype[method]===original;});
  }
- return{snapshot:()=>({sourceStarts,oscillatorStarts,created,overflow,activeSources:[...live].filter(row=>row.start!==null&&row.start<=row.context.currentTime&&row.stop>row.context.currentTime).length,pendingSources:[...live].filter(row=>row.start!==null&&row.start>row.context.currentTime&&row.stop>row.start).length}),restore(){for(const row of live)row.restore();live.clear();return restores.map(restore=>restore()).every(Boolean);}};
+ return{snapshot:()=>({sourceStarts,oscillatorStarts,created,overflow,activeSources:[...live].filter(row=>row.start!==null&&row.start<=row.context.currentTime&&row.stop>row.context.currentTime).length,pendingSources:[...live].filter(row=>row.start!==null&&row.start>row.context.currentTime&&row.stop>row.start).length}),restore(){let restored=true;for(const row of live)try{row.restore();}catch{restored=false;}live.clear();for(const restore of restores)try{if(!restore())restored=false;}catch{restored=false;}return restored;}};
 }
 export async function installDenseRenditionObserver({library,audioProbe}={}){
  const {BasicKeyAudioReceiver,Renderer}=library||{...(await import('/basic-key-audio-receiver.js')),Renderer:globalThis.opensheetmusicdisplay?.OpenSheetMusicDisplay};
@@ -57,5 +57,13 @@ export async function installDenseRenditionObserver({library,audioProbe}={}){
  get('workspace').addEventListener('notationscopecontext',scope);
  const receiverState=()=>receiver.status();
  const snapshot=()=>({...structuredClone(data),current:screen(),audio:audioProbe?.snapshot(),audioThread:receiver.snapshot(),receiver:receiverState()});
- return{markEnded(){const end=screen();if(end.renderer!=='ended'||!receiverState().completed)throw Error('Natural processor End is not observable yet');data.listeningEnded=end;return structuredClone(end);},status:()=>({errors:[...structuredClone(data.errors),...receiverState().errors],overflow:[...data.overflow,...(receiverState().overflow?['audioThread']:[])],schedules:receiver.count(),completed:receiverState().completed,current:screen()}),snapshot,stop(){const final=snapshot();active=false;longTaskObserver?.disconnect();get('workspace').removeEventListener('notationscopecontext',scope);const restored=restores.map(restore=>restore());const receiverCleanup=receiver.restore();for(const[value,observe]of contexts)value.removeEventListener?.('statechange',observe);const audioRestored=audioProbe?.restore()===true;return{...final,cleanup:{restored:restored.every(Boolean)&&audioRestored&&receiverCleanup.restored,contexts:contexts.size,players:receiverCleanup.restored?receiverState().receivers:0,stopped:true,receiver:receiverCleanup}};}};
+ return{markEnded(){const end=screen();if(end.renderer!=='ended'||!receiverState().completed||!receiver.quiet())throw Error('Natural processor End and disposal are not observable yet');data.listeningEnded=end;return structuredClone(end);},status:()=>({errors:[...structuredClone(data.errors),...receiverState().errors],overflow:[...data.overflow,...(receiverState().overflow?['audioThread']:[])],schedules:receiver.count(),completed:receiverState().completed,quiet:receiver.quiet(),current:screen()}),snapshot,stop(){
+  const cleanupErrors=[];let restored=true,final,receiverCleanup;
+  const attempt=(name,run)=>{try{const result=run();if(result===false||result?.restored===false||result?.cleanupErrors?.length)throw Error(result?.cleanupErrors?.map(error=>error.message).join('; ')||'Observer restoration was incomplete');return result;}catch(error){restored=false;cleanupErrors.push({name,message:String(error?.message||error).slice(0,512)});}};
+  final=attempt('snapshot',snapshot)||{...structuredClone(data)};active=false;
+  attempt('long-task-observer',()=>longTaskObserver?.disconnect());attempt('notation-scope-listener',()=>get('workspace').removeEventListener('notationscopecontext',scope));
+  for(const[index,restore]of restores.entries())attempt(`method-${index}`,restore);
+  attempt('audio-receiver',()=>receiverCleanup=receiver.restore());for(const[value,observe]of contexts)attempt('context-state-listener',()=>value.removeEventListener?.('statechange',observe));attempt('legacy-audio-probe',()=>audioProbe?.restore()===true);
+  return{...final,cleanup:{restored,contexts:contexts.size,players:final.receiver?.receivers??0,stopped:true,receiver:receiverCleanup,errors:cleanupErrors}};
+ }};
 }
