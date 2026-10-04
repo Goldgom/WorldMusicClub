@@ -1,0 +1,193 @@
+name: Original song authoring focused acceptance
+on:
+  push:
+    branches: ['preview/authoring-conversion']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: authoring-conversion-preview-${{ github.ref }}
+  cancel-in-progress: true
+# Isolated original-fixture proof only. This does not publish a package, change
+# the accepted release, or replace full accepted-source/package promotion gates.
+jobs:
+  authoring-browser:
+    name: Actual authoring UI and Rust conversion (hosted)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      source_sha: ${{ steps.authoring_source.outputs.source_sha }}
+      source_tree: ${{ steps.authoring_source.outputs.source_tree }}
+      run_id: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyYAML==6.0.3
+      - name: Parse complete workflow and reject malformed run scalars
+        run: python scripts/check-authoring-workflow.py
+      - name: Bind focused proof to the exact checked-out source
+        id: authoring_source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "source_tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: '1.99.0'
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js
+      - run: cargo test -p score-core clean_conversion --locked
+      - run: cargo test -p practice-server clean_draft --locked
+      - run: "cargo test -p worldmusichub-desktop --lib acceptance:: --locked"
+      - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - name: Real Rust conversion and clean library persistence
+        env:
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_AUTHORING_REPORT: ${{ github.workspace }}/test-results/song-authoring/native-protocol/report.json
+        run: node scripts/check-song-authoring-native.mjs
+      - run: npx playwright install --with-deps chromium
+      - name: Actual picker, review, save, export and restart at all target sizes
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: |
+          WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-song-authoring-check.mjs
+          WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-song-authoring-check.mjs
+          WMH_VIEWPORT_WIDTH=1920 WMH_VIEWPORT_HEIGHT=1080 node scripts/hosted-song-authoring-check.mjs
+      - name: Retain bounded authoring browser evidence and clean outputs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: song-authoring-browser-${{ github.sha }}
+          path: |
+            test-results/song-authoring/*/*.json
+            test-results/song-authoring/*/*.png
+            test-results/song-authoring/*/*.log
+            test-results/song-authoring/*/downloads/*.json
+            test-results/song-authoring/*/downloads/*.zip
+            test-results/song-authoring/*/fixtures/*
+            test-results/song-authoring/*/Scores/clean-songs/**
+            test-results/song-authoring/*/Scores/clean-backups/**
+            test-results/song-authoring/*/Scores/imports/**
+            test-results/song-authoring/*/Scores/import-backups/**
+          if-no-files-found: warn
+  authoring-windows:
+    name: Owned Windows authoring picker and clean library restart
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      RUSTFLAGS: '-C target-feature=+crt-static'
+      CARGO_INCREMENTAL: '0'
+    outputs:
+      source_sha: ${{ steps.authoring_source.outputs.source_sha }}
+      source_tree: ${{ steps.authoring_source.outputs.source_tree }}
+      run_id: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyYAML==6.0.3
+      - name: Parse complete workflow and reject malformed run scalars
+        run: python scripts/check-authoring-workflow.py
+      - name: Bind focused proof to the exact checked-out source
+        id: authoring_source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "source_tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: '1.99.0'
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js
+      - name: Parse Windows script and check the bounded owned picker contract
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'scripts/windows-desktop-acceptance.ps1'),[ref]$tokens,[ref]$errors)
+          if ($errors.Count) { $errors | Format-List; throw 'PowerShell syntax errors' }
+          ./tests/windows-desktop-contract.ps1
+      - run: cargo test -p score-core clean_conversion --locked
+      - run: cargo test -p practice-server clean_draft --locked
+      - run: "cargo test -p worldmusichub-desktop --lib acceptance:: --locked"
+      - run: cargo build -p worldmusichub-desktop --release --locked
+      - name: Actual Windows authoring and restart in separate native processes
+        shell: pwsh
+        run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-authoring -Scenario authoring
+      - name: Independently verify exact source, executable and strict authoring evidence
+        shell: pwsh
+        run: |
+          node scripts/verify-native-song-authoring-evidence.mjs --check desktop-authoring
+          if ($LASTEXITCODE -ne 0) { throw 'Song authoring proof check failed' }
+          python scripts/native-song-authoring-manifest.py desktop-authoring --executable target/release/worldmusichub-desktop.exe --commit '${{ github.sha }}' --tree (git rev-parse 'HEAD^{tree}')
+          if ($LASTEXITCODE -ne 0) { throw 'Song authoring source/EXE manifest failed' }
+      - name: Retain bounded native authoring evidence and clean outputs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: song-authoring-windows-${{ github.sha }}
+          path: |
+            desktop-authoring/*.json
+            desktop-authoring/*.png
+            desktop-authoring/*.log
+            desktop-authoring/downloads/*.json
+            desktop-authoring/downloads/*.zip
+            desktop-authoring/fixtures/*
+            desktop-authoring/Scores/clean-songs/**
+            desktop-authoring/Scores/clean-backups/**
+            desktop-authoring/Scores/imports/**
+            desktop-authoring/Scores/import-backups/**
+          if-no-files-found: warn
+  authoring-focused-summary:
+    name: Focused original authoring proof only
+    needs: [authoring-browser, authoring-windows]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require both exact-source environments without claiming release acceptance
+        env:
+          AUTHORING_NEEDS: ${{ toJSON(needs) }}
+          AUTHORING_SHA: ${{ github.sha }}
+          AUTHORING_RUN_ID: ${{ github.run_id }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const needs = JSON.parse(process.env.AUTHORING_NEEDS);
+          const ids = ['authoring-browser', 'authoring-windows'];
+          const sha = process.env.AUTHORING_SHA, run = process.env.AUTHORING_RUN_ID;
+          const jobs = ids.map(id => needs[id]);
+          const passed = /^[a-f0-9]{40}$/.test(sha || '') && /^\d+$/.test(run || '') && jobs.every(job =>
+            job?.result === 'success' && job.outputs?.source_sha === sha && job.outputs?.run_id === run &&
+            /^[a-f0-9]{40}$/.test(job.outputs?.source_tree || '')) &&
+            jobs[0].outputs.source_tree === jobs[1].outputs.source_tree;
+          const summary = [`Focused original authoring proof: ${passed ? 'PASS' : 'FAIL'}`,
+            ...ids.map((id, i) => `${id}: ${jobs[i]?.result || 'missing'}`),
+            'This is focused browser/native evidence only; full accepted-source/package gates remain separate.',
+            'No package is published or accepted by this workflow.'].join('\n') + '\n';
+          if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+          console.log(summary);
+          process.exitCode = passed ? 0 : 1;
+          NODE

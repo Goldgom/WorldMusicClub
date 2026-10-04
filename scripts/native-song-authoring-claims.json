@@ -1,0 +1,16 @@
+{
+  "native_two_file_picker": true,
+  "complete_original_source_inventory": true,
+  "title_fingerprint_reprepare": true,
+  "explicit_atomic_native_save": true,
+  "duplicate_and_explicit_keep_both": true,
+  "unsupported_controller_no_partial_save": true,
+  "exact_metadata_and_score_export": true,
+  "fresh_process_restart": true,
+  "paused_human_take_unchanged": true,
+  "authoring_settings_keys_no_audio": true,
+  "conversion_implies_playability": false,
+  "actual_audibility": false,
+  "full_checkpoint_acceptance": false,
+  "release_ready": false
+}

@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "generator": "scripts/prepare-song-authoring-fixtures.mjs",
+  "capture": "Real native_import_driver stdio POST /api/clean-song/draft; response body bytes unchanged",
+  "driver_sha256": "7e141cced17a08e185470f4272c604fcfd1deccea2c027326a88fbf11fa450a3",
+  "rights": {
+    "status": "original_authored",
+    "license": "CC0-1.0",
+    "attribution": "WorldMusicHub original C/E/G acceptance exercise"
+  },
+  "limits": {
+    "browser": false,
+    "native_window": false,
+    "physical_audio": false
+  },
+  "files": [
+    {
+      "filename": "acceptance-strict-response.json",
+      "bytes": 16152,
+      "sha256": "996850fa9763cd8958d8635cb84e9b6f854f0cff49ec504344212532c3423471",
+      "source": {
+        "id": "strict",
+        "filename": "authoring-original-strict.mid",
+        "title": "Original C/E/G strict · 原创",
+        "sha256": "dc4cc5702ba3d82c7b43f9b727721479e28dbfc29b5389badfbfaa4704eeac99",
+        "bytes": 191,
+        "expected_state": "strict_notation_candidate",
+        "expected_profile": "wmh-semantic-midi1-v1",
+        "source_tracks": 3,
+        "source_events": 23,
+        "key_attacks": 6,
+        "key_releases": 6,
+        "pitches": [
+          24,
+          60,
+          64,
+          67,
+          100
+        ],
+        "end_tick": 1920,
+        "ppq": 480
+      }
+    },
+    {
+      "filename": "acceptance-events-response.json",
+      "bytes": 11069,
+      "sha256": "ed99cbdf02134d4195c470133981872db170509ad7413a21e958f34b47dfd16f",
+      "source": {
+        "id": "events",
+        "filename": "authoring-original-events.mid",
+        "title": "Original C/E/G events · 原创",
+        "sha256": "444b550fc5647a46f8715f7bc0376b7daaf6999330049241a113c76a33549cc9",
+        "bytes": 189,
+        "expected_state": "event_only_reference_candidate",
+        "expected_profile": "wmh-performance-midi1-v1",
+        "source_tracks": 3,
+        "source_events": 22,
+        "key_attacks": 6,
+        "key_releases": 6,
+        "pitches": [
+          24,
+          60,
+          64,
+          67,
+          100
+        ],
+        "end_tick": 1920,
+        "ppq": 480
+      }
+    },
+    {
+      "filename": "acceptance-blocked-response.json",
+      "bytes": 3961,
+      "sha256": "a772e7b2d287e7c87c040cdd239e911cd4c8dc26b139a1b9679b813157ab1afb",
+      "source": {
+        "id": "blocked",
+        "filename": "authoring-original-blocked.mid",
+        "title": "Original C/E/G blocked · 原创",
+        "sha256": "b9929313dd67c00b175e709593d451aaa8dbcc183259135ef93f6af74d66571f",
+        "bytes": 243,
+        "expected_state": "rejected",
+        "expected_profile": null,
+        "source_tracks": 4,
+        "source_events": 26,
+        "key_attacks": 6,
+        "key_releases": 6,
+        "pitches": [
+          24,
+          60,
+          64,
+          67,
+          100
+        ],
+        "end_tick": 1920,
+        "ppq": 480
+      }
+    }
+  ],
+  "source_basis_commit": "83c4ca1dbe4ca9db1cb9fb49d215dc5744c42ede",
+  "source_basis_tree": "356e972d21a42ed4ce53fdeaf533265976120dc9",
+  "source_dirty": true,
+  "source_scope": "Built from this base plus uncommitted acceptance-only harness changes. Production conversion files were unchanged. This is not an exact clean-base executable or final clean-commit claim."
+}

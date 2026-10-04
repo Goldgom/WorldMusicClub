@@ -19,6 +19,7 @@ pub const PERFORMANCE_PHASES: [&str; 3] = [
     "performance-restart",
 ];
 pub const PITCH_BEND_PHASES: [&str; 2] = ["pitch-bend-seed", "pitch-bend-restart"];
+pub const AUTHORING_PHASES: [&str; 2] = ["authoring-seed", "authoring-restart"];
 pub const MAX_CLEAN_REPORT_BYTES: usize = 1024 * 1024;
 pub const MAX_SMOKE_REPORT_BYTES: usize = 64 * 1024;
 pub const MAX_BULK_REPORT_BYTES: usize = 4 * 1024 * 1024;
@@ -39,6 +40,7 @@ impl Acceptance {
             .chain(VSQ_PHASES)
             .chain(PERFORMANCE_PHASES)
             .chain(PITCH_BEND_PHASES)
+            .chain(AUTHORING_PHASES)
             .find(|candidate| *candidate == phase)
             .ok_or("Unknown acceptance phase")?;
         std::fs::create_dir_all(directory.join("downloads"))
@@ -54,18 +56,23 @@ impl Acceptance {
     pub fn script(&self) -> String {
         let performance = if PERFORMANCE_PHASES.contains(&self.phase)
             || PITCH_BEND_PHASES.contains(&self.phase)
+            || AUTHORING_PHASES.contains(&self.phase)
         {
             // Reuse the existing bounded observers, without starting the VSQ run.
             let (observers, _) = include_str!("../vsq-song-acceptance.js")
                 .split_once("(() => {")
                 .expect("VSQ observer prefix must precede its runner");
-            if PITCH_BEND_PHASES.contains(&self.phase) {
+            if PITCH_BEND_PHASES.contains(&self.phase) || AUTHORING_PHASES.contains(&self.phase) {
                 let (performance_helpers, _) = include_str!("../performance-song-acceptance.js")
                     .split_once("(() => {")
                     .expect("Performance observer prefix must precede its runner");
                 format!(
                     "{observers}\n{performance_helpers}\n{}",
-                    include_str!("../pitch-bend-acceptance.js")
+                    if AUTHORING_PHASES.contains(&self.phase) {
+                        include_str!("../song-authoring-acceptance.js")
+                    } else {
+                        include_str!("../pitch-bend-acceptance.js")
+                    }
                 )
             } else {
                 format!(
@@ -81,7 +88,10 @@ impl Acceptance {
             serde_json::to_string(self.phase).unwrap(),
             include_str!("../acceptance-wait.js"),
             include_str!("../reference-acceptance.js"),
-            if PERFORMANCE_PHASES.contains(&self.phase) || PITCH_BEND_PHASES.contains(&self.phase) {
+            if PERFORMANCE_PHASES.contains(&self.phase)
+                || PITCH_BEND_PHASES.contains(&self.phase)
+                || AUTHORING_PHASES.contains(&self.phase)
+            {
                 &performance
             } else if VSQ_PHASES.contains(&self.phase) {
                 include_str!("../vsq-song-acceptance.js")
@@ -106,7 +116,8 @@ impl Acceptance {
             || CLEAN_PHASES.contains(&self.phase)
             || VSQ_PHASES.contains(&self.phase)
             || PERFORMANCE_PHASES.contains(&self.phase)
-            || PITCH_BEND_PHASES.contains(&self.phase);
+            || PITCH_BEND_PHASES.contains(&self.phase)
+            || AUTHORING_PHASES.contains(&self.phase);
         self.directory.join(if song_folder {
             "Scores"
         } else {
@@ -118,6 +129,7 @@ impl Acceptance {
             || VSQ_PHASES.contains(&self.phase)
             || PERFORMANCE_PHASES.contains(&self.phase)
             || PITCH_BEND_PHASES.contains(&self.phase)
+            || AUTHORING_PHASES.contains(&self.phase)
         {
             MAX_CLEAN_REPORT_BYTES
         } else if BULK_PHASES.contains(&self.phase) {
@@ -138,6 +150,7 @@ impl Acceptance {
             && !VSQ_PHASES.contains(&self.phase)
             && !PERFORMANCE_PHASES.contains(&self.phase)
             && !PITCH_BEND_PHASES.contains(&self.phase)
+            && !AUTHORING_PHASES.contains(&self.phase)
         {
             return;
         }
@@ -221,8 +234,11 @@ impl Acceptance {
             || CLEAN_PHASES.contains(&self.phase)
             || VSQ_PHASES.contains(&self.phase)
             || PERFORMANCE_PHASES.contains(&self.phase)
-            || PITCH_BEND_PHASES.contains(&self.phase))
-            && name.to_lowercase().ends_with(".zip")
+            || PITCH_BEND_PHASES.contains(&self.phase)
+            || AUTHORING_PHASES.contains(&self.phase))
+            && (name.to_lowercase().ends_with(".zip")
+                || (AUTHORING_PHASES.contains(&self.phase)
+                    && name.to_lowercase().ends_with(".wmhpack")))
         {
             "zip"
         } else {
@@ -328,6 +344,7 @@ pub fn receive_report(
             || VSQ_PHASES.contains(&run.phase)
             || PERFORMANCE_PHASES.contains(&run.phase)
             || PITCH_BEND_PHASES.contains(&run.phase)
+            || AUTHORING_PHASES.contains(&run.phase)
     });
     let limit = bulk.map_or(MAX_SMOKE_REPORT_BYTES, Acceptance::report_limit);
     let reject = |status, code, message| {
@@ -490,6 +507,10 @@ fn valid_action(value: &Value) -> bool {
             "vsq-authored-song.zip",
             "performance-authored-songs.zip",
             "pitch-bend-authored-songs.zip",
+            "authoring-original-pair",
+            "authoring-original-strict.mid",
+            "authoring-original-events.mid",
+            "authoring-original-blocked.mid",
         ]
         .contains(&file);
         let download = PHASES.iter().any(|phase| {
@@ -510,7 +531,13 @@ fn valid_action(value: &Value) -> bool {
                     .and_then(|n| n.parse::<u8>().ok())
                     .is_some_and(|n| (1..=16).contains(&n))
             });
-        if !fixture && !download && !bulk_download {
+        let authoring_download = AUTHORING_PHASES.iter().any(|phase| {
+            (1..=16).any(|sequence| {
+                file == format!("{phase}-{sequence}.json")
+                    || file == format!("{phase}-{sequence}.zip")
+            })
+        });
+        if !fixture && !download && !bulk_download && !authoring_download {
             return false;
         }
     } else if object.contains_key("file") {
@@ -536,6 +563,7 @@ mod tests {
             .chain(VSQ_PHASES)
             .chain(PERFORMANCE_PHASES)
             .chain(PITCH_BEND_PHASES)
+            .chain(AUTHORING_PHASES)
         {
             let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
             assert_eq!(
@@ -563,20 +591,21 @@ mod tests {
             .chain(VSQ_PHASES)
             .chain(PERFORMANCE_PHASES)
             .chain(PITCH_BEND_PHASES)
+            .chain(AUTHORING_PHASES)
         {
             let evidence = Evidence::new();
             let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
-            assert!(run
-                .script()
-                .contains(if PITCH_BEND_PHASES.contains(&phase) {
-                    include_str!("../pitch-bend-acceptance.js")
-                } else if PERFORMANCE_PHASES.contains(&phase) {
-                    include_str!("../performance-song-acceptance.js")
-                } else if VSQ_PHASES.contains(&phase) {
-                    "VSQ native control unavailable"
-                } else {
-                    "Native clean control unavailable"
-                }));
+            assert!(run.script().contains(if AUTHORING_PHASES.contains(&phase) {
+                include_str!("../song-authoring-acceptance.js")
+            } else if PITCH_BEND_PHASES.contains(&phase) {
+                include_str!("../pitch-bend-acceptance.js")
+            } else if PERFORMANCE_PHASES.contains(&phase) {
+                include_str!("../performance-song-acceptance.js")
+            } else if VSQ_PHASES.contains(&phase) {
+                "VSQ native control unavailable"
+            } else {
+                "Native clean control unavailable"
+            }));
             assert!(run
                 .download("complete.zip")
                 .unwrap()
@@ -675,6 +704,306 @@ mod tests {
         assert!(!script.contains(runner));
         assert!(script.contains("createVsqJsonObserver"));
         assert!(script.contains("readVsqPickerGesture"));
+    }
+
+    #[test]
+    fn authoring_phases_include_only_the_owned_runner_and_finite_downloads() {
+        assert_eq!(AUTHORING_PHASES, ["authoring-seed", "authoring-restart"]);
+        let vsq = include_str!("../vsq-song-acceptance.js");
+        let performance = include_str!("../performance-song-acceptance.js");
+        let (vsq_prefix, vsq_runner) = vsq.split_once("(() => {").unwrap();
+        let (performance_prefix, performance_runner) = performance.split_once("(() => {").unwrap();
+        for phase in AUTHORING_PHASES {
+            let evidence = Evidence::new();
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            let script = run.script();
+            assert!(
+                script.starts_with(&format!("globalThis.__WMH_ACCEPTANCE_PHASE__=\"{phase}\";"))
+            );
+            for helper in [
+                include_str!("../acceptance-wait.js"),
+                include_str!("../reference-acceptance.js"),
+                vsq_prefix,
+                performance_prefix,
+                include_str!("../song-authoring-acceptance.js"),
+            ] {
+                assert!(script.contains(helper));
+            }
+            assert!(!script.contains(vsq_runner));
+            assert!(!script.contains(performance_runner));
+            assert_eq!(run.report_limit(), MAX_CLEAN_REPORT_BYTES);
+            assert_eq!(run.report_name(), format!("renderer-{phase}.json"));
+            for sequence in 1..=16 {
+                let extension = if sequence % 2 == 0 { "json" } else { "zip" };
+                assert_eq!(
+                    run.download(&format!("original.{extension}")).unwrap(),
+                    evidence
+                        .0
+                        .join("downloads")
+                        .join(format!("{phase}-{sequence}.{extension}"))
+                );
+                for extension in ["json", "zip"] {
+                    assert!(valid_action(
+                        &json!({"version":1,"sequence":64,"kind":"picker","x":1,"y":1,"width":900,"height":640,"file":format!("{phase}-{sequence}.{extension}")})
+                    ));
+                }
+            }
+            assert!(run.download("original.zip").is_none());
+            assert!(run.download("original.json").is_none());
+            for suffix in [
+                "0.zip",
+                "17.zip",
+                "01.zip",
+                "001.json",
+                "+1.zip",
+                "-1.zip",
+                "1.ZIP",
+                "1.mid",
+                "1.zip.extra",
+                "1.zip\n",
+                "1.json/",
+            ] {
+                assert!(
+                    !valid_action(
+                        &json!({"version":1,"sequence":1,"kind":"picker","x":1,"y":1,"width":900,"height":640,"file":format!("{phase}-{suffix}")})
+                    ),
+                    "{phase}-{suffix}"
+                );
+            }
+            for sequence in [0, 65] {
+                let request = Request::builder()
+                    .uri(format!(
+                        "https://wmh.localhost/__desktop_smoke/result/{sequence}"
+                    ))
+                    .body(vec![])
+                    .unwrap();
+                assert_eq!(run.handle(&request).unwrap().status(), 400);
+            }
+        }
+        for phase in [
+            "authoring",
+            "authoring-any",
+            "authoring-seed-extra",
+            "authoring-restart-extra",
+            "Authoring-seed",
+            "authoring-SEED",
+            "authoring-seed\n",
+            "authoring-seed\0",
+            "../authoring-seed",
+            "authoring-seed/",
+            "authoring-restart/../seed",
+        ] {
+            let evidence = Evidence::new();
+            assert!(
+                Acceptance::new(evidence.0.clone(), phase).is_err(),
+                "{phase}"
+            );
+            assert!(
+                !evidence.0.exists(),
+                "Rejected phase created storage: {phase}"
+            );
+        }
+    }
+
+    #[test]
+    fn authoring_picker_registry_accepts_only_exact_original_files_and_pair() {
+        let mut action = json!({"version":1,"sequence":1,"kind":"picker","x":1,"y":1,"width":900,"height":640,"file":""});
+        for filename in [
+            "authoring-original-pair",
+            "authoring-original-strict.mid",
+            "authoring-original-events.mid",
+            "authoring-original-blocked.mid",
+        ] {
+            action["file"] = json!(filename);
+            assert!(valid_action(&action), "{filename}");
+            for invalid in [
+                format!("../{filename}"),
+                format!("..\\{filename}"),
+                format!("fixtures/{filename}"),
+                format!("fixtures\\{filename}"),
+                format!("/tmp/{filename}"),
+                format!("C:\\fixtures\\{filename}"),
+                format!("{filename}.extra"),
+                format!("{filename}\n"),
+                format!("{filename}\0"),
+                filename.to_uppercase(),
+                format!("\"{filename}\""),
+            ] {
+                action["file"] = json!(invalid);
+                assert!(!valid_action(&action), "{invalid}");
+            }
+        }
+        for invalid in [
+            "authoring",
+            "authoring-pair",
+            "authoring-multiple",
+            "authoring-original",
+            "authoring-original-pair.mid",
+            "authoring-original-blocked-pair",
+            "authoring-original-strict.zip",
+            "authoring-any-1.zip",
+            "authoring-seed-extra-1.zip",
+            "authoring-restart-extra-1.json",
+            "authoring-original-strict.mid authoring-original-events.mid",
+            "\"authoring-original-strict.mid\" \"authoring-original-events.mid\"",
+        ] {
+            action["file"] = json!(invalid);
+            assert!(!valid_action(&action), "{invalid}");
+        }
+        action["file"] = json!("authoring-original-pair");
+        for sequence in [0, 65] {
+            action["sequence"] = json!(sequence);
+            assert!(!valid_action(&action));
+        }
+        action["sequence"] = json!(64);
+        assert!(valid_action(&action));
+        action.as_object_mut().unwrap().remove("file");
+        action["kind"] = json!("key-r");
+        assert!(valid_action(&action));
+        for (field, value) in [
+            ("text", json!("arbitrary")),
+            ("key", json!("a")),
+            ("duration", json!(100)),
+        ] {
+            action[field] = value;
+            assert!(!valid_action(&action));
+            action.as_object_mut().unwrap().remove(field);
+        }
+        for kind in ["type", "type-text", "key-a", "key-hold", "authoring-pair"] {
+            action["kind"] = json!(kind);
+            assert!(!valid_action(&action));
+        }
+    }
+
+    #[test]
+    fn authoring_pack_downloads_use_zip_while_other_phases_keep_their_contract() {
+        for phase in AUTHORING_PHASES {
+            let evidence = Evidence::new();
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            for (sequence, suggested) in ["song-0123456789abcdef.wmhpack", "SONG.WMHPACK"]
+                .into_iter()
+                .enumerate()
+            {
+                assert_eq!(
+                    run.download(suggested).unwrap(),
+                    evidence
+                        .0
+                        .join("downloads")
+                        .join(format!("{phase}-{}.zip", sequence + 1))
+                );
+            }
+            assert!(run
+                .download("original.mid")
+                .unwrap()
+                .ends_with(format!("{phase}-3.json")));
+            assert!(run
+                .download("song.wmhpack.extra")
+                .unwrap()
+                .ends_with(format!("{phase}-4.json")));
+        }
+        for phase in PHASES
+            .into_iter()
+            .chain(FOLDER_PHASES)
+            .chain(BULK_PHASES)
+            .chain(CLEAN_PHASES)
+            .chain(VSQ_PHASES)
+            .chain(PERFORMANCE_PHASES)
+            .chain(PITCH_BEND_PHASES)
+        {
+            let evidence = Evidence::new();
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert!(run
+                .download("original.wmhpack")
+                .unwrap()
+                .ends_with(format!("{phase}-1.json")));
+        }
+    }
+
+    #[test]
+    fn authoring_reports_reject_invalid_envelopes_and_trace_without_rejected_content() {
+        for phase in AUTHORING_PHASES {
+            for (method, body, code) in [
+                (
+                    "GET",
+                    json!({"version":1,"phase":phase,"ok":true}).to_string(),
+                    "report_method",
+                ),
+                ("POST", "{secret malformed report".into(), "report_json"),
+                (
+                    "POST",
+                    json!({"version":2,"phase":phase,"ok":true,"secret":"rejected"}).to_string(),
+                    "report_envelope",
+                ),
+                (
+                    "POST",
+                    json!({"version":1,"phase":phase,"ok":"true","secret":"rejected"}).to_string(),
+                    "report_envelope",
+                ),
+                (
+                    "POST",
+                    json!({"version":1,"phase":phase,"secret":"rejected"}).to_string(),
+                    "report_envelope",
+                ),
+                (
+                    "POST",
+                    json!({"version":1,"ok":true,"secret":"rejected"}).to_string(),
+                    "report_phase",
+                ),
+                (
+                    "POST",
+                    json!({"version":1,"phase":"authoring-any","ok":true,"secret":"rejected"})
+                        .to_string(),
+                    "report_phase",
+                ),
+                (
+                    "POST",
+                    json!({"version":1,"phase":1,"ok":true,"secret":"rejected"}).to_string(),
+                    "report_phase",
+                ),
+            ] {
+                let evidence = Evidence::new();
+                let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+                let request = report_request(method, body.into_bytes());
+                assert_eq!(
+                    receive_report(Some(&evidence.0), Some(&run), &request).status(),
+                    400
+                );
+                for file in [run.report_name(), format!("trace-{phase}.json")] {
+                    let bytes = std::fs::read(evidence.0.join(file)).unwrap();
+                    assert!(!String::from_utf8_lossy(&bytes).contains("secret"));
+                }
+                let report: Value = serde_json::from_slice(
+                    &std::fs::read(evidence.0.join(run.report_name())).unwrap(),
+                )
+                .unwrap();
+                assert_eq!(report["phase"], phase);
+                assert_eq!(report["ok"], false);
+                assert_eq!(report["report_failure"]["code"], code);
+                assert_eq!(
+                    report["report_failure"]["received_bytes"],
+                    request.body().len()
+                );
+                assert_eq!(
+                    report["report_failure"]["limit_bytes"],
+                    MAX_CLEAN_REPORT_BYTES
+                );
+            }
+            let evidence = Evidence::new();
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            let bytes = serde_json::to_vec(
+                &json!({"version":1,"phase":phase,"ok":false,"error":"original authoring failure"}),
+            )
+            .unwrap();
+            let request = report_request("POST", bytes.clone());
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &request).status(),
+                200
+            );
+            assert_eq!(
+                std::fs::read(evidence.0.join(run.report_name())).unwrap(),
+                bytes
+            );
+        }
     }
 
     #[test]

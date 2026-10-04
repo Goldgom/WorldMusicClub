@@ -12,3 +12,33 @@ Every request carries the complete original MIDI as Base64 and every response
 preserves the exact Rust metadata/score strings. These fixtures test the actual
 API envelope and localized UI interpretation, not native persistence or browser
 acceptance. Rust's own tests independently cover reprepare/ZIP/native roundtrip.
+
+## Finite original authoring acceptance sources
+
+`scripts/prepare-song-authoring-fixtures.mjs` generates exactly three new original
+MIDI files and a manifest. `authoring-original-pair` selects strict and event-only
+files; the blocked source is separate. These exercises are CC0-1.0, with no
+third-party music or private inputs. All have a complete conductor and two note
+tracks, C/E/G pitch classes, and pitches 24 and 100 outside a 61-key device range.
+The strict fixture includes a nonzero bank on a used channel. Rust can preserve
+its complete notation while the actual reference receiver rejects the bank.
+The event-only fixture has overlapping same-key attacks and independent releases.
+The rejected fixture adds a complete controller-only track with controller 2.
+
+`acceptance-*-response.json` contains the unchanged response body bytes captured
+from the real socket-free native driver for these generated MIDI files. Hashes,
+the source basis commit/tree and driver identity are in
+`acceptance-provenance.json`. The capture build included uncommitted acceptance
+harness changes over that basis; production conversion files were unchanged.
+It is not an exact clean-base executable or final clean-commit acceptance claim.
+The API correctly continues to mark input rights as user-supplied and unverified;
+fixture provenance does not alter or manufacture package metadata.
+
+Run `node --test tests/song-authoring-acceptance-fixtures.test.js` for source and
+adversarial verifier checks. With an exact-source driver, run
+`WMH_NATIVE_IMPORT_DRIVER=<driver> node scripts/check-song-authoring-native.mjs`
+for actual draft/pack, read-only preview, commit, duplicate, retitle conflict,
+explicit keep-both, fresh-process restart, exact export and fresh-library import.
+This is native stdio evidence, not browser, native-window or physical-audio
+acceptance. Neither conversion state nor import's `playable` flag establishes
+receiver sound or instrument-range acceptance.
