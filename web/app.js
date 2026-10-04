@@ -862,7 +862,7 @@ async function togglePlayback() {
       // Use the renderer's quantized sample anchor for both transport and inputs.
       now=performance.now()+(anchor.anchorTime-synth.context.currentTime)*1000;
       transport.position=anchor.positionMs;
-    }else now=performance.now()+(song?50:0);
+    }else now=performance.now()+(state.cleanSong?50:0);
     if(!current())return;
     state.playPending=false;state.inspection=false;
     const beatMs=60000/(Number($('tempo').value)||100);
