@@ -31,3 +31,5 @@ __pycache__/
 /crates/desktop-shell/gen/schemas/capabilities.json
 /crates/desktop-shell/gen/schemas/desktop-schema.json
 /crates/desktop-shell/gen/schemas/windows-schema.json
+
+/desktop-authoring/

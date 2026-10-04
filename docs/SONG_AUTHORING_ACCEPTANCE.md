@@ -55,21 +55,49 @@ requires the exact source SHA, tree and executable SHA/length plus the strict
 closed boolean claim set. Focused proof explicitly sets full acceptance,
 release readiness, physical audibility and candidate-implies-playability false.
 
+## Mandatory final gate wiring
+
+The full `package.json` Node suite includes the authoring model/UI, original
+fixture, native evidence, focused-workflow and final-gate contracts exactly once.
+PyYAML 6.0.3 is an explicit QA-only dependency. Jobs that run this suite or can
+select a parser-dependent test through quick development provision Python 3.12
+and the pinned parser first, including frontend, native acceptance and legacy
+Windows jobs. The parser is not a runtime dependency or bundled app asset.
+
+`.github/workflows/windows-desktop-acceptance.yml` requires the real authoring
+stdio check and all three hosted sizes before its browser job succeeds. Its
+independent Windows job requires `-Scenario authoring`, then rechecks the source
+SHA, tree, executable SHA/length, strict proof and focused manifest before
+packaging. The existing pitch, VSQ, performance, other native and final summary
+gates remain required. Failed or skipped jobs cannot establish acceptance.
+
+Native package creation requires `--song-authoring desktop-authoring`.
+`scripts/native-release-manifest.py` validates and copies exactly five authoring
+evidence files into the package:
+
+- `native-song-authoring.json`
+- `renderer-authoring-seed.json`
+- `renderer-authoring-restart.json`
+- `native-song-authoring-files.json`
+- `song-authoring-manifest.json`
+
+Directory and ZIP verification require that same allowlist, the closed exact
+boolean claim set, and agreement between the package executable, source identity,
+report hashes, proof hash, focused manifest and BUILD-INFO acceptance fields.
+Changing evidence while merely recomputing archive/file checksums is insufficient.
+The larger original-fixture screenshots and storage archives remain separately
+retained workflow evidence, not extra package evidence files.
+
 ## Still required before an accepted checkpoint
 
-- Run both focused jobs on one clean, published exact source and inspect all
-  actual screenshots; locally prepared scripts and synthetic verifier tests do
-  not prove browser or Windows behavior
-- Add the authoring unit/protocol suites to the aggregate full checkpoint and
-  install the pinned YAML parser on each runner that executes workflow tests
-- Wire both focused authoring jobs and their exact source proof into the full
-  frozen-validation summary, retaining the existing browser/native/take/clock
-  and package assertions
-- Add the strict authoring manifest to release-manifest validation and package
-  evidence assembly, requiring the same SHA/tree/EXE as every other accepted
-  proof; reject missing, extra or changed claims and any unbound report bytes
-- Run the full Rust workspace, Node, formatting/clippy, real-browser and Windows
-  package gates for that final exact source before promotion or acceptance
+- Run both focused jobs on one clean, published exact source and inspect actual
+  screenshots; local contract tests do not establish browser or Windows behavior
+- Integrate any independently required native/profile repair without weakening
+  existing assertions, then run the final combined source through full validation
+- Run the full Rust workspace, Node, formatting/clippy, real-browser, every native
+  scenario and extracted-package gates for that same final SHA/tree/EXE
+- Require both the native/browser summary and separate full Verify workflow to
+  pass for the exact packaged source before delivery or main promotion
 
-No full-gate wiring, release, package publication or change to current acceptance
-is performed by this focused harness preparation.
+This wiring does not itself run those gates, publish a package, change frozen
+batch 239, or make a new source or executable accepted.

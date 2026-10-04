@@ -27,6 +27,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           toolchain: '1.99.0'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      # QA-only parser dependency; it is never included in the app package.
+      - run: python -m pip install PyYAML==6.0.3
+      - run: python scripts/check-authoring-workflow.py .github/workflows/windows-desktop-acceptance.yml
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
@@ -35,6 +41,7 @@ jobs:
       - run: npm run prepare:engraving
       - run: npm run test:bulk-import
       - run: node --test tests/pitch-bend-import-baseline.test.js tests/native-pitch-bend-evidence.test.js tests/pitch-bend-acceptance-workflow.test.js
+      - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js tests/authoring-final-gate.test.js
       - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
       - name: Complete clean media package through actual Rust protocol
         env:
@@ -52,6 +59,11 @@ jobs:
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
         run: node scripts/check-pitch-bend-native.mjs
+      - name: Whole original MIDI authoring through exact Rust protocol
+        env:
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_AUTHORING_REPORT: ${{ github.workspace }}/test-results/song-authoring/native-protocol/report.json
+        run: node scripts/check-song-authoring-native.mjs
       - name: Real DOM and native Rust disk route without a listener
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
@@ -88,6 +100,15 @@ jobs:
         run: |
           WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-pitch-bend-check.mjs
           WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-pitch-bend-check.mjs
+      - name: Original authoring picker, complete review, save and restart at all sizes
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: |
+          WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-song-authoring-check.mjs
+          WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-song-authoring-check.mjs
+          WMH_VIEWPORT_WIDTH=1920 WMH_VIEWPORT_HEIGHT=1080 node scripts/hosted-song-authoring-check.mjs
       - name: Preserve authored bulk-import evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -113,6 +134,16 @@ jobs:
             test-results/pitch-bend/*/Scores/clean-backups/**
             test-results/pitch-bend/*/Scores/imports/**
             test-results/pitch-bend/*/Scores/import-backups/**
+            test-results/song-authoring/*/*.json
+            test-results/song-authoring/*/*.png
+            test-results/song-authoring/*/*.log
+            test-results/song-authoring/*/downloads/*.json
+            test-results/song-authoring/*/downloads/*.zip
+            test-results/song-authoring/*/fixtures/*
+            test-results/song-authoring/*/Scores/clean-songs/**
+            test-results/song-authoring/*/Scores/clean-backups/**
+            test-results/song-authoring/*/Scores/imports/**
+            test-results/song-authoring/*/Scores/import-backups/**
           if-no-files-found: warn
   native-feature-acceptance:
     # Independent runners retain Windows diagnostics when browser checks fail.
@@ -148,10 +179,14 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
+      # QA-only parser dependency; it is never included in the app package.
+      - run: python -m pip install PyYAML==6.0.3
+      - run: python scripts/check-authoring-workflow.py .github/workflows/windows-desktop-acceptance.yml
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
       - run: npm test
       - run: node --test tests/desktop-evidence.test.js tests/desktop-acceptance-wait.test.js tests/native-song-folder-evidence.test.js tests/native-bulk-import-evidence.test.js tests/native-clean-song-evidence.test.js tests/native-vsq-song-evidence.test.js tests/vsq-fingering-evidence.test.js tests/performance-song-fixtures.test.js tests/native-performance-song-evidence.test.js tests/pitch-bend-import-baseline.test.js tests/native-pitch-bend-evidence.test.js tests/pitch-bend-acceptance-workflow.test.js
+      - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js tests/authoring-final-gate.test.js
       - name: Parse the exact native acceptance script
         shell: pwsh
         run: |
@@ -234,6 +269,9 @@ jobs:
       - name: Native original pitch policy, source-clock bends and held-state reconstruction
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-pitch-bend -Scenario pitch-bend
+      - name: Native original authoring pair, explicit saves, exact export and fresh-process restart
+        shell: pwsh
+        run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-authoring -Scenario authoring
       # Default success() keeps candidate packaging behind every native gate.
       # This job cannot establish browser or whole-checkpoint acceptance.
       - name: Package native candidate with exact provenance and notices
@@ -265,6 +303,12 @@ jobs:
           if ($pitchProof.source_sha -cne '${{ github.sha }}' -or $pitchProof.source_tree -cne $currentTree -or $pitchProof.executable_sha256 -cne $currentExe -or $pitchProof.executable_bytes -ne $currentExeBytes) { throw 'Pitch-bend evidence does not match the exact packaged source and executable' }
           python scripts/native-pitch-bend-manifest.py desktop-pitch-bend --executable target/release/worldmusichub-desktop.exe --commit '${{ github.sha }}' --tree $currentTree
           if ($LASTEXITCODE -ne 0) { throw 'Native pitch-bend focused manifest failed' }
+          node scripts/verify-native-song-authoring-evidence.mjs --check desktop-authoring
+          if ($LASTEXITCODE -ne 0) { throw 'Native song authoring exact-source proof failed' }
+          $authoringProof=Get-Content -Raw desktop-authoring/native-song-authoring-files.json | ConvertFrom-Json
+          if ($authoringProof.source_sha -cne '${{ github.sha }}' -or $authoringProof.source_tree -cne $currentTree -or $authoringProof.executable_sha256 -cne $currentExe -or $authoringProof.executable_bytes -ne $currentExeBytes) { throw 'Song authoring evidence does not match the exact packaged source and executable' }
+          python scripts/native-song-authoring-manifest.py desktop-authoring --executable target/release/worldmusichub-desktop.exe --commit '${{ github.sha }}' --tree $currentTree
+          if ($LASTEXITCODE -ne 0) { throw 'Native song authoring focused manifest failed' }
           $count=(git rev-list --count HEAD).Trim()
           $folder='dist/WorldMusicHub-Native'
           New-Item -ItemType Directory "$folder/licenses/engraving","$folder/evidence" -Force | Out-Null
@@ -280,7 +324,7 @@ jobs:
           Copy-Item desktop-bulk-import/native-bulk-import.json,desktop-bulk-import/native-bulk-import-files.json,desktop-bulk-import/renderer-bulk-*.json "$folder/evidence/"
           Copy-Item desktop-clean-song/native-clean-song.json,desktop-clean-song/native-clean-song-files.json,desktop-clean-song/renderer-clean-*.json "$folder/evidence/"
           Copy-Item desktop-vsq-song/native-vsq-song.json,desktop-vsq-song/native-vsq-song-files.json,desktop-vsq-song/renderer-vsq-*.json "$folder/evidence/"
-          python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder --performance-song desktop-performance-song --pitch-bend desktop-pitch-bend
+          python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder --performance-song desktop-performance-song --pitch-bend desktop-pitch-bend --song-authoring desktop-authoring
           if ($LASTEXITCODE -ne 0) { throw 'Native provenance/acceptance inventory failed' }
           $zip="dist/WorldMusicHub-Native-Windows-x64-commit-$count.zip"
           python scripts/native-release-manifest.py archive $folder $zip
@@ -356,6 +400,16 @@ jobs:
             desktop-pitch-bend/Scores/clean-backups/**
             desktop-pitch-bend/Scores/imports/**
             desktop-pitch-bend/Scores/import-backups/**
+            desktop-authoring/*.json
+            desktop-authoring/*.png
+            desktop-authoring/*.log
+            desktop-authoring/downloads/*.json
+            desktop-authoring/downloads/*.zip
+            desktop-authoring/fixtures/*
+            desktop-authoring/Scores/clean-songs/**
+            desktop-authoring/Scores/clean-backups/**
+            desktop-authoring/Scores/imports/**
+            desktop-authoring/Scores/import-backups/**
             desktop-portable/*.json
             desktop-portable/*.png
             desktop-portable/*.log
