@@ -1,6 +1,6 @@
 /** Optional, offline OSMD presentation adapter. Rust remains the score/timing authority. */
 import {validateEngravingNoteMap,createEngravingNoteBindings,validateEngravingModelTies,restoreSourceBoundPageTies} from './engraving-note-map.js';
-import {createEngravingProjection, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from './engraving-projection.js';
+import {createEngravingProjection, restoreSourceBoundProjectionFractions, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from './engraving-projection.js';
 import {getAppI18n} from './app-locale.js';
 export const ENGRAVING_VERSION = '2.1.3';
 export const ENGRAVING_BUNDLE_SHA256 = '099b2125aef055ca4faae75957037404973f9451544b52d9b3a0b1f788b33581';
@@ -248,6 +248,8 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     await Promise.race([loaded, cancellation]);
     if (!isCurrent()) return result('cancelled', 'cancelled', i18n);
     if (projection) {
+      const fractions = restoreSourceBoundProjectionFractions(renderer.Sheet, projection, identity.score, ENGRAVING_LIMITS);
+      if (!fractions.ok) { state.dispose(); return result('unsupported', fractions.key, i18n); }
       const model = validateEngravingProjectionModel(renderer.Sheet, projection, identity.score, ENGRAVING_LIMITS);
       if (!model.ok) { state.dispose(); return result('unsupported', model.key, i18n); }
       const pageTies=restoreSourceBoundPageTies(renderer,boundIdentity,view.opensheetmusicdisplay?.Tie,view.opensheetmusicdisplay?.TieTypes);

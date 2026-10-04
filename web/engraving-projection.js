@@ -13,6 +13,46 @@ const ticks = (fraction, divisions) => {
 };
 const stateKey = node => `${node.localName}:${node.getAttribute('number') || ''}`;
 const attributeOrder = ['divisions', 'key', 'time', 'staves', 'clef', 'staff-details', 'transpose', 'measure-style'];
+const projectionProofs = new WeakMap();
+const gcd = (a, b) => { while (b) [a, b] = [b, a % b]; return a; };
+const rational = value => [BigInt(value.numerator), BigInt(value.denominator)];
+const equal = (left, right) => left[0] * right[1] === right[0] * left[1];
+const add = (left, right) => [left[0] * right[1] + right[0] * left[1], left[1] * right[1]];
+const fractionKey = value => { const divisor = gcd(value[0], value[1]); return `${value[0] / divisor}/${value[1] / divisor}`; };
+const modelFraction = value => {
+  if (!value || ![value.WholeValue, value.Numerator, value.Denominator].every(Number.isSafeInteger) || value.WholeValue < 0 || value.Numerator < 0 || value.Denominator < 1) fail();
+  return [4n * (BigInt(value.WholeValue) * BigInt(value.Denominator) + BigInt(value.Numerator)), BigInt(value.Denominator)];
+};
+const noteKey = (part, measure, staff, voice, at, length, pitch, printed) => JSON.stringify([part, measure, staff, voice, fractionKey(at), fractionKey(length), pitch, printed]);
+const countKey = (map, key) => map.set(key, (map.get(key) || 0) + 1);
+
+// Snapshot exact original + generated-rest tuples before third-party parsing.
+// A public projection or mutable DOM alone cannot authorize a model repair.
+function rememberProjection(projection, score) {
+  const notes = new Map(), meters = [];
+  for (const part of children(projection.document.documentElement, 'part')) {
+    let divisions, meter;
+    for (const [index, measure] of children(part, 'measure').entries()) {
+      let cursor = 0, at = 0;
+      for (const node of Array.from(measure.children)) {
+        if (node.localName === 'attributes' && one(node, 'divisions')) divisions = integer(text(node, 'divisions'));
+        if (node.localName === 'attributes' && one(node, 'time')) {
+          const time = one(node, 'time');
+          meter = one(time, 'beats') && one(time, 'beat-type') ? [integer(text(time, 'beats')), integer(text(time, 'beat-type'))] : null;
+        }
+        if (node.localName === 'backup') cursor -= integer(text(node, 'duration'));
+        if (node.localName !== 'note') continue;
+        const duration = integer(text(node, 'duration')), pitch = one(node, 'pitch');
+        if (!one(node, 'chord')) { at = cursor; cursor += duration; }
+        countKey(notes, noteKey(part.getAttribute('id'), index, integer(text(node, 'staff', '1')), text(node, 'voice', '1'), [BigInt(at), BigInt(divisions)], [BigInt(duration), BigInt(divisions)], pitch ? [text(pitch, 'step'), Number(text(pitch, 'alter', '0')), Number(text(pitch, 'octave'))] : null, node.getAttribute('print-object') !== 'no'));
+      }
+      // The pinned reader chooses the first largest active instrument meter,
+      // retaining its unreduced source numerator and denominator.
+      if (meter && (!meters[index] || meter[0] * meters[index][1] > meters[index][0] * meter[1])) meters[index] = [...meter];
+    }
+  }
+  projectionProofs.set(projection, {score, notes, meters, measures: projection.sourceMeasureIndices.map(index => ({at: rational(score.measures[index].at), length: rational(score.measures[index].length)}))});
+}
 
 /** The complete original XML and manifest MUST be validated before calling this. */
 export function createEngravingProjection(source, validated, options, limits) {
@@ -116,7 +156,78 @@ export function createEngravingProjection(source, validated, options, limits) {
     const xml = Serializer ? new Serializer().serializeToString(document) : document.toString();
     if (typeof xml !== 'string' || !xml.trimStart().startsWith('<')) fail();
     if (new TextEncoder().encode(xml).byteLength > limits.xmlBytes) fail('xmlLimit');
-    return {ok: true, document, sourceMeasureIndices, displayedSourceMeasureIndices, drawFromIndex: options.fromMeasure - context.fromMeasure, drawToIndex: options.toMeasure - context.fromMeasure, tieChains: context.tieChains, partIds: [...options.partIds], noteCount, paddingNoteCount};
+    const projection = {ok: true, document, sourceMeasureIndices, displayedSourceMeasureIndices, drawFromIndex: options.fromMeasure - context.fromMeasure, drawToIndex: options.toMeasure - context.fromMeasure, tieChains: context.tieChains, partIds: [...options.partIds], noteCount, paddingNoteCount};
+    rememberProjection(projection, validated.score);
+    return projection;
+  } catch (error) { return {ok: false, key: error.projectionKey || 'projection'}; }
+}
+
+/**
+ * OSMD 2.1.3 checkFractionsForEquivalence expands a short 1/3 whole-note
+ * duration by 4/3 to match a 4/4 denominator, yielding 1.3333333333333333/4.
+ * Recover only that documented reader operation, after every model note/rest
+ * agrees exactly with the private projection snapshot. Never infer a rational
+ * from a float, alter a note, or permit a tolerance in the strict model guard.
+ */
+export function restoreSourceBoundProjectionFractions(sheet, projection, score, limits) {
+  try {
+    if (validateEngravingProjectionModel(sheet, projection, score, limits).ok) return {ok: true};
+    const proof = projectionProofs.get(projection), measures = sheet?.SourceMeasures, instruments = sheet?.Instruments;
+    if (!proof || proof.score !== score || !Array.isArray(measures) || measures.length !== proof.measures.length ||
+        !Array.isArray(instruments) || instruments.length !== projection.partIds.length ||
+        instruments.some(instrument => !projection.partIds.includes(instrument.IdString))) fail();
+    const notes = new Set(), actual = new Map(), ends = measures.map(() => new Map());
+    for (const [index, measure] of measures.entries()) for (const container of measure.VerticalSourceStaffEntryContainers || []) for (const entry of container.StaffEntries || []) for (const voice of entry?.VoiceEntries || []) for (const note of voice.Notes || []) {
+      if (notes.has(note)) continue;
+      notes.add(note); if (notes.size > limits.notes) fail('notes');
+      const staff = note.ParentStaff, instrument = staff?.ParentInstrument, staffIndex = instrument?.Staves?.indexOf(staff), pitch = note.isRest() ? null : note.Pitch;
+      if (note.SourceMeasure !== measure || note.ParentVoiceEntry !== voice || !instruments.includes(instrument) || !Number.isSafeInteger(staffIndex) || staffIndex < 0 ||
+          (pitch && (pitch.constructor.OctaveXmlDifference !== 3 || ![0, 2, 4, 5, 7, 9, 11].includes(pitch.FundamentalNote)))) fail();
+      const at = modelFraction(voice.Timestamp), length = modelFraction(note.Length), end = add(at, length), last = ends[index].get(instrument.IdString);
+      if (!last || end[0] * last[1] > last[0] * end[1]) ends[index].set(instrument.IdString, end);
+      countKey(actual, noteKey(instrument.IdString, index, staffIndex + 1, String(voice.ParentVoice.VoiceId), at, length,
+        pitch ? [['C', 'D', 'E', 'F', 'G', 'A', 'B'][[0, 2, 4, 5, 7, 9, 11].indexOf(pitch.FundamentalNote)], pitch.AccidentalHalfTones, pitch.Octave + 3] : null, note.PrintObject === true));
+    }
+    if (notes.size !== projection.noteCount || actual.size !== proof.notes.size || [...actual].some(([key, count]) => proof.notes.get(key) !== count)) fail();
+    const Fraction = measures[0]?.Duration?.constructor;
+    if (typeof Fraction !== 'function' || Fraction.maximumAllowedNumber !== 46340) fail();
+    const exact = quarter => {
+      let numerator = quarter[0], denominator = quarter[1] * 4n;
+      const divisor = gcd(numerator, denominator); numerator /= divisor; denominator /= divisor;
+      const whole = numerator / denominator; numerator %= denominator;
+      if (numerator < 0n || numerator > 46340n || denominator > 46340n || whole > BigInt(Number.MAX_SAFE_INTEGER)) fail();
+      return new Fraction(Number(numerator), Number(denominator), Number(whole), false);
+    };
+    const sameRaw = (left, right) => ['WholeValue', 'Numerator', 'Denominator', 'RealValue'].every(key => Object.is(left[key], right[key]));
+    const pending = [], base = proof.measures[0].at;
+    let readerClock = new Fraction(0, 1), clockRepair = false;
+    for (const [index, measure] of measures.entries()) {
+      const source = proof.measures[index], current = score.measures[projection.sourceMeasureIndices[index]], duration = measure.Duration, timestamp = measure.AbsoluteTimestamp;
+      if (!current || !equal(source.at, rational(current.at)) || !equal(source.length, rational(current.length)) ||
+          instruments.some(instrument => !equal(ends[index].get(instrument.IdString) || [0n, 1n], source.length)) ||
+          duration.constructor !== Fraction || timestamp.constructor !== Fraction) fail();
+      const expected = exact(source.length), expectedAt = exact([source.at[0] * base[1] - base[0] * source.at[1], source.at[1] * base[1]]);
+      let durationExact = false, timestampExact = false;
+      try { durationExact = equal(modelFraction(duration), source.length); } catch { /* Only the pinned expansion below can recover this. */ }
+      try { timestampExact = equal(modelFraction(timestamp), modelFraction(expectedAt)); } catch { /* Verify the complete original reader clock below. */ }
+      if (!timestampExact) {
+        if (!clockRepair || !sameRaw(timestamp, readerClock)) fail();
+        pending.push([measure, 'AbsoluteTimestamp', expectedAt]);
+      }
+      if (!durationExact) {
+        const meter = measure.ActiveTimeSignature, expanded = expected.clone();
+        modelFraction(meter); // No floating or malformed meter can authorize repair.
+        if (!proof.meters[index] || meter.WholeValue !== 0 || meter.Numerator !== proof.meters[index][0] || meter.Denominator !== proof.meters[index][1]) fail();
+        if (!expected.lt(meter) || meter.Denominator <= expected.Denominator) fail();
+        expanded.expand(meter.Denominator / expected.Denominator);
+        if (Number.isSafeInteger(expanded.Numerator) || !sameRaw(duration, expanded)) fail();
+        pending.push([measure, 'Duration', expected]); clockRepair = true;
+      }
+      readerClock.Add(duration);
+    }
+    // All checks precede writes; a mismatched later bar cannot leave a partial repair.
+    for (const [measure, field, value] of pending) measure[field] = value;
+    return {ok: true};
   } catch (error) { return {ok: false, key: error.projectionKey || 'projection'}; }
 }
 
@@ -127,16 +238,10 @@ export function validateEngravingProjectionModel(sheet, projection, score, limit
     if (!Array.isArray(measures) || measures.length !== projection.sourceMeasureIndices.length ||
         !Array.isArray(instruments) || instruments.length !== projection.partIds.length ||
         instruments.some(instrument => !projection.partIds.includes(instrument.IdString))) fail();
-    const fraction = value => {
-      if (!value || ![value.WholeValue, value.Numerator, value.Denominator].every(Number.isSafeInteger) || value.WholeValue < 0 || value.Numerator < 0 || value.Denominator < 1) fail();
-      return [4n * (BigInt(value.WholeValue) * BigInt(value.Denominator) + BigInt(value.Numerator)), BigInt(value.Denominator)];
-    };
-    const equal = (left, right) => left[0] * right[1] === right[0] * left[1];
-    const rational = value => [BigInt(value.numerator), BigInt(value.denominator)];
     const base = rational(score.measures[projection.sourceMeasureIndices[0]].at), notes = new Set();
     for (const [index, measure] of measures.entries()) {
       const source = score.measures[projection.sourceMeasureIndices[index]], at = rational(source.at);
-      if (!equal(fraction(measure.Duration), rational(source.length)) || !equal(fraction(measure.AbsoluteTimestamp), [at[0] * base[1] - base[0] * at[1], at[1] * base[1]])) fail();
+      if (!equal(modelFraction(measure.Duration), rational(source.length)) || !equal(modelFraction(measure.AbsoluteTimestamp), [at[0] * base[1] - base[0] * at[1], at[1] * base[1]])) fail();
       for (const container of measure.VerticalSourceStaffEntryContainers || []) for (const entry of container.StaffEntries || []) for (const voice of entry?.VoiceEntries || []) for (const note of voice.Notes || []) {
         notes.add(note); if (notes.size > limits.notes) fail('notes');
       }

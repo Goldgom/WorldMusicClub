@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {DOMParser,parseHTML} from 'linkedom';
 import {validateEngravingInput, renderEngravedStaff, ENGRAVING_LIMITS} from '../web/engraving.js';
-import {createEngravingProjection, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from '../web/engraving-projection.js';
+import {createEngravingProjection, restoreSourceBoundProjectionFractions, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from '../web/engraving-projection.js';
 import {matchEngravingModel,validateEngravingModelTies,restoreSourceBoundPageTies} from '../web/engraving-note-map.js';
 import {resolveEngravingTieContext} from '../web/engraving-tie-context.js';
 import {createI18n} from '../web/i18n.js';
@@ -214,6 +214,93 @@ test('intra-measure attributes fall back explicitly rather than being hoisted to
   const before=JSON.stringify(spec),{checked,projection}=project(spec,{fromMeasure:1,toMeasure:2});
   assert.equal(checked.identity.ok,true,'The source remains valid and fully accounted');
   assert.deepEqual(projection,{ok:false,key:'projection'});assert.equal(JSON.stringify(spec),before);
+  const model=read({document:checked.document});
+  assert.equal(model.SourceMeasures[0].FirstInstructionsStaffEntries[0].Instructions.find(instruction=>typeof instruction.Key==='number').Key,3,
+    'Pinned OSMD actually moves the interior key to the first instruction entry');
+  assert.ok(model.SourceMeasures[0].VerticalSourceStaffEntryContainers.every(container=>container.StaffEntries.every(entry=>!entry?.Instructions.some(instruction=>typeof instruction.Key==='number'))),
+    'There is no correctly timed key entry to bind or render');
+});
+
+// Original arithmetic pulses on two staves/parts, not an imported composition.
+function shortMeasureFixture({lengthTicks=[12,4,12,4],parts=2}={}) {
+  const score={parts:[],measures:[]},segments=[],partIdMap={},voiceIdMap=[],xmlParts=[];
+  let position=0;for(const ticks of lengthTicks){score.measures.push({number:7,at:beat(position,3),length:beat(ticks,3)});position+=ticks;}
+  for(let p=0;p<parts;p++) {
+    const part={id:`original-short-part-${p}`,notes:[]},xmlPart=`P${p+1}`,bars=[];score.parts.push(part);partIdMap[part.id]=xmlPart;
+    for(let voice=1;voice<=2;voice++)voiceIdMap.push({part_id:part.id,staff:voice,voice:String(voice),lane:1,xml_voice:String(voice)});
+    for(const [index,measure]of score.measures.entries()) {
+      const nodes=[];
+      for(let voice=1;voice<=2;voice++) {
+        const id=`short-${p}-${index}-${voice}`,pitch={step:voice===1?'C':'G',alter:0,octave:voice===1?4:3},duration=beat(2,3),at=beat(measure.at.numerator+1,3);
+        part.notes.push({id,staff:voice,voice:String(voice),at,duration,pitch,tie_start:false,tie_stop:false});
+        segments.push({xml_note_id:id,source_note_id:id,part_id:part.id,xml_part_id:xmlPart,source_measure_index:index,measure_number:7,staff:voice,voice:String(voice),lane:1,xml_voice:String(voice),at,measure_at:beat(1,3),duration,pitch,tie_start:false,tie_stop:false,chord:false});
+        nodes.push(`<forward><duration>1</duration><voice>${voice}</voice><staff>${voice}</staff></forward><note id="${id}"><pitch><step>${pitch.step}</step><octave>${pitch.octave}</octave></pitch><duration>2</duration><voice>${voice}</voice><type>quarter</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes><normal-type>quarter</normal-type></time-modification><staff>${voice}</staff></note>`);
+        nodes.push(voice===1?'<backup><duration>3</duration></backup>':`<forward><duration>${lengthTicks[index]-3}</duration><voice>2</voice><staff>2</staff></forward>`);
+      }
+      bars.push(`<measure number="7">${index?'':'<attributes><divisions>3</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>'}${nodes.join('')}</measure>`);
+    }
+    xmlParts.push(`<part id="${xmlPart}">${bars.join('')}</part>`);
+  }
+  return{xml:`<score-partwise><part-list>${score.parts.map((_,p)=>`<score-part id="P${p+1}"><part-name>Original exact short measure ${p+1}</part-name></score-part>`).join('')}</part-list>${xmlParts.join('')}</score-partwise>`,identity:{score,noteMap:{version:1,segments},partIdMap,voiceIdMap}};
+}
+
+test('source-bound repair reverses only the pinned nonintegral duration expansion and its derived clocks',()=>{
+  const spec=shortMeasureFixture(),before=JSON.stringify(spec);
+  for(const options of [{},{fromMeasure:2,toMeasure:4,partIds:['P2']},{fromMeasure:4,toMeasure:4}]) {
+    const {checked,projection}=project(spec,options);assert.equal(projection.ok,true);
+    const sourceXml=checked.document.toString(),projectedXml=projection.document.toString(),sheet=read(projection),notes=[...new Set(sheet.SourceMeasures.flatMap(m=>m.VerticalSourceStaffEntryContainers.flatMap(c=>c.StaffEntries.flatMap(e=>e?.VoiceEntries.flatMap(v=>v.Notes)||[]))))];
+    const originalNotes=notes.map(note=>[note,note.Length,note.ParentVoiceEntry.Timestamp,note.Pitch]);
+    assert.deepEqual(validateEngravingProjectionModel(sheet,projection,spec.identity.score,ENGRAVING_LIMITS),{ok:false,key:'projection'});
+    assert.ok(sheet.SourceMeasures.some(measure=>measure.Duration.Numerator===4/3&&measure.Duration.Denominator===4),'Reproduce the actual pinned reader defect');
+    assert.deepEqual(restoreSourceBoundProjectionFractions(sheet,projection,spec.identity.score,ENGRAVING_LIMITS),{ok:true});
+    assert.deepEqual(validateEngravingProjectionModel(sheet,projection,spec.identity.score,ENGRAVING_LIMITS),{ok:true},'The unchanged integer-only guard must now pass');
+    const matched=matchEngravingModel({Sheet:sheet},{...checked.identity,projection});assert.equal(matched.ok,true);assert.deepEqual(matched.diagnostics,[]);
+    for(const [note,length,timestamp,pitch]of originalNotes){assert.equal(note.Length,length);assert.equal(note.ParentVoiceEntry.Timestamp,timestamp);assert.equal(note.Pitch,pitch);}
+    const repaired=sheet.SourceMeasures.map(measure=>[measure.Duration,measure.AbsoluteTimestamp]);
+    assert.deepEqual(restoreSourceBoundProjectionFractions(sheet,projection,spec.identity.score,ENGRAVING_LIMITS),{ok:true});
+    for(const [index,measure]of sheet.SourceMeasures.entries()){assert.equal(measure.Duration,repaired[index][0]);assert.equal(measure.AbsoluteTimestamp,repaired[index][1]);}
+    assert.equal(checked.document.toString(),sourceXml);assert.equal(projection.document.toString(),projectedXml);assert.equal(JSON.stringify(spec),before);
+  }
+});
+
+test('fraction recovery refuses approximation, wrong or missing notes, wrong clocks and forged projections atomically',()=>{
+  const cases=[
+    ['nearby float',({sheet})=>{sheet.SourceMeasures[1].Duration.numerator+=1e-12;}],
+    ['wrong exact duration',({sheet})=>{sheet.SourceMeasures[1].Duration.Numerator=2;}],
+    ['wrong meter',({sheet})=>{sheet.SourceMeasures[1].ActiveTimeSignature.Denominator=8;}],
+    ['forged matching meter and expansion',({sheet})=>{const measure=sheet.SourceMeasures[1],Fraction=measure.Duration.constructor;measure.ActiveTimeSignature=new Fraction(8,8,0,false);measure.Duration=new Fraction(1,3);measure.Duration.expand(8/3);}],
+    ['changed pitch',({sheet})=>{const note=sheet.SourceMeasures[0].VerticalSourceStaffEntryContainers.flatMap(c=>c.StaffEntries.flatMap(e=>e?.VoiceEntries.flatMap(v=>v.Notes)||[])).find(n=>n.PrintObject);note.Pitch.fundamentalNote=2;}],
+    ['changed hidden rest',({sheet})=>{const note=sheet.SourceMeasures[0].VerticalSourceStaffEntryContainers.flatMap(c=>c.StaffEntries.flatMap(e=>e?.VoiceEntries.flatMap(v=>v.Notes)||[])).find(n=>!n.PrintObject);note.Length.Numerator=2;}],
+    ['missing later note',({sheet})=>{sheet.SourceMeasures.at(-1).VerticalSourceStaffEntryContainers.at(-1).StaffEntries[0].VoiceEntries[0].Notes.pop();}],
+    ['wrong later timestamp',({sheet})=>{sheet.SourceMeasures.at(-1).AbsoluteTimestamp.Numerator=2;}],
+    ['changed source',({spec})=>{spec.identity.score.measures[1].length.numerator++;}],
+    ['forged projection',state=>{state.projection={...state.projection};}],
+  ];
+  for(const [name,mutate]of cases){
+    const spec=shortMeasureFixture(),state={spec,...project(spec)};state.sheet=read(state.projection);mutate(state);
+    const raw=state.sheet.SourceMeasures.map(measure=>[measure.Duration,measure.AbsoluteTimestamp]);
+    assert.deepEqual(restoreSourceBoundProjectionFractions(state.sheet,state.projection,spec.identity.score,ENGRAVING_LIMITS),{ok:false,key:'projection'},name);
+    for(const [index,measure]of state.sheet.SourceMeasures.entries()){assert.equal(measure.Duration,raw[index][0],name);assert.equal(measure.AbsoluteTimestamp,raw[index][1],name);}
+  }
+});
+
+test('production adapter restores source-proved short clocks before layout and refuses near-miss floats',async()=>{
+  const spec=shortMeasureFixture({parts:1});
+  for(const corrupt of [false,true]){
+    const {document}=parseHTML('<html><body><div id="staff"></div></body></html>'),container=document.getElementById('staff'),instances=[],view={DOMParser:XmlParser};
+    Object.defineProperty(document,'defaultView',{configurable:true,value:view});
+    class ReaderRenderer {
+      constructor(mount){this.mount=mount;this.Version='2.1.3-release';this.EngravingRules={};this.layouts=0;instances.push(this);}
+      async load(document){this.Sheet=read({document});assert.equal(this.Sheet.SourceMeasures[1].Duration.Numerator,4/3);if(corrupt)this.Sheet.SourceMeasures[1].Duration.numerator+=1e-12;}
+      updateGraphic(){this.layouts++;for(const [index,measure]of this.Sheet.SourceMeasures.entries()){wholeEquals(measure.Duration,spec.identity.score.measures[index].length.numerator,12);wholeEquals(measure.AbsoluteTimestamp,spec.identity.score.measures[index].at.numerator,12);}}
+      render(){this.mount.appendChild(document.createElementNS('http://www.w3.org/2000/svg','svg'));}
+      clear(){this.mount.replaceChildren();}
+    }
+    view.opensheetmusicdisplay={OpenSheetMusicDisplay:ReaderRenderer};
+    const result=await renderEngravedStaff(container,spec.xml,{identity:spec.identity,fromMeasure:1,toMeasure:4,responsive:false});
+    if(corrupt){assert.equal(result.code,'engraving_projection');assert.equal(instances[0].layouts,0);assert.equal(container.querySelector('svg'),null);}
+    else{assert.equal(result.ok,true,result.message);assert.equal(instances[0].layouts,1);result.dispose();}
+  }
 });
 
 function sustainedFixture({measures=3,parts=1,voices=1,tiedParts=Array.from({length:parts},(_,index)=>index)}={}) {

@@ -1331,3 +1331,28 @@ test('native incoming continuation and bounded exact-rhythm pieces own real SVG 
  }
  await bindingEvidence('native-exact-page-ties',{evidence});
 });
+
+test('original short fractional bar retains exact clocks and source-owned SVG glyphs through resize',options,async()=>{
+  const score=bindingScore();score.id='original-short-fractional-bar';score.title='Original exact short-bar exercise';
+  score.measures=[{number:7,at:bindingBeat(0),length:bindingBeat(4)},{number:7,at:bindingBeat(4),length:bindingBeat(4,3)},{number:7,at:bindingBeat(16,3),length:bindingBeat(4)}];
+  score.parts[0].notes=[bindingNote('short-before-C4',0,4,bindingPitch('C',4)),bindingNote('short-middle-D4',4,1,bindingPitch('D',4),'melody',{duration:bindingBeat(4,3)}),bindingNote('short-after-E4',0,4,bindingPitch('E',4),'melody',{at:bindingBeat(16,3)})];
+  const exported=await exportScore(score),before=JSON.stringify({score,exported}),shown=await renderBinding(score,exported,{fromMeasure:1,toMeasure:3});
+  assert.equal(shown.result.mapping.verifiedGlyphCount,3);
+  const inspect=()=>page.evaluate(()=>{
+    const watch=window.__wmhBinding,osmd=window.opensheetmusicdisplay,raw=new osmd.MusicSheetReader([],new osmd.EngravingRules()).createMusicSheet(new osmd.IXmlElement(watch.loadedDocument.documentElement),'original-short-bar-reader-proof');
+    watch.assert(raw.SourceMeasures[1].Duration.Numerator===4/3&&raw.SourceMeasures[1].Duration.Denominator===4,'Actual pinned reader reproduces the nonintegral denominator expansion');
+    const rows=[];
+    for(const [index,measure]of watch.renderer.Sheet.SourceMeasures.entries()){
+      watch.assert(watch.sameBeat(measure.Duration,watch.score.measures[index].length),'Published measure duration remains an exact integer fraction');
+      watch.assert(watch.sameBeat(measure.AbsoluteTimestamp,watch.score.measures[index].at),'Published later bar retains its exact source timestamp');
+      rows.push({at:{whole:measure.AbsoluteTimestamp.WholeValue,numerator:measure.AbsoluteTimestamp.Numerator,denominator:measure.AbsoluteTimestamp.Denominator},duration:{whole:measure.Duration.WholeValue,numerator:measure.Duration.Numerator,denominator:measure.Duration.Denominator}});
+    }
+    return {rows,heads:watch.reindex(),mapping:window.lastEngraving.mappingStatus()};
+  });
+  const first=await inspect();await expectBinding(['short-middle-D4'],1);await expectBinding(['short-after-E4'],2);await clearBinding();
+  const renders=await page.evaluate(()=>window.__wmhBinding.renderCalls);
+  await page.setViewportSize({width:900,height:900});await page.waitForFunction(count=>window.__wmhBinding.renderCalls>count,renders);
+  const resized=await inspect();assert.equal(resized.mapping.verifiedGlyphCount,3);await expectBinding(['short-after-E4'],2);await clearBinding();
+  assert.equal(JSON.stringify({score,exported}),before,'Canonical durations, note IDs and downloadable MusicXML remain unchanged');
+  await bindingEvidence('exact-short-fractional-bar',{first,resized});
+});
