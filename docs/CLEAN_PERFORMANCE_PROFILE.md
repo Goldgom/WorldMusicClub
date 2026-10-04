@@ -34,7 +34,9 @@ The closed vocabulary includes named program/bank components, volume, pan,
 expression, sustain, constrained initial controller reset, reverb/chorus send,
 key/channel pressure, exact tempo, meter including
 metronome grouping, key signature, sequence number, plain textual cues and final
-track end. Unknown controllers, bend, routing, device/system messages, encoded
+track end. It also retains original14-bit `pitch_bend` commands on track-local
+channels under the separate [bounded reference policy](REFERENCE_PITCH_BENDS.md).
+Unknown controllers, unresolved routing, device/system messages, encoded
 project blocks and undecodable text hold the entire conversion. No arbitrary
 bytes, source ranges or hidden payload case is allowed. Simultaneous cross-track
 channel commands remain held pending a reviewed commutativity rule.
@@ -118,6 +120,8 @@ The controlled policy uses channel-shared state, including across source tracks:
 - A valid initial reset restores expression 127 and sustain off. Program, bank,
   volume, pan and reverb remain. The required explicit sustain-zero event is
   still independently represented and acknowledged.
+  The pitch state is centered and RPN selection becomes null, without changing
+  stored parameter values; reset plus sensitivity setup remains unsupported.
 - Both bank components must remain zero for this receiver. Program selects the
   existing procedural family only for new melodic voices. Any nonzero bank or
   chorus send, pressure, or unmapped percussion key blocks the entire renderer.

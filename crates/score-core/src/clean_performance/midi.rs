@@ -88,7 +88,7 @@ pub fn convert_midi(bytes: &[u8], id: &str, title: &str) -> Result<CompletePerfo
                         },
                         _ => return Err(format!("Controller {controller} at t{}:e{} has no reviewed semantic conversion", origin.track, origin.event)),
                     },
-                    ChannelMessage::PitchBend { .. } => return Err("Pitch bend requires a reviewed tuning profile".into()),
+                    ChannelMessage::PitchBend { value } => Command::PitchBend { channel: *channel, value: *value },
                 }
             }
             EventKind::Tempo {

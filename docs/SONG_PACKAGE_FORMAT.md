@@ -286,7 +286,12 @@ meter、key signature、sequence number、text、track end 和第 3.5 节的 `sm
 `sustain { channel, value }` 保留全部 0–127 值；它与严格 profile 的
 `initial_sustain_off` 不是同一命令。严格 profile 的原有24半音六步 RPN **尚不属于 typed
 converter 的词汇**，不能把“更完整”理解为它包含所有严格 profile 的初始化能力。
-未知 CC、pitch bend、未解析路由、SysEx/系统设备消息和不支持的文本仍阻止整曲转换。
+另有 `pitch_bend { channel, value }` 保留原始 0–16383 值，中心为 8192；弯音通道必须
+由单条源轨拥有。其独立参考规则默认 2 半音，允许已验证的起音前12设置，不接受24设置
+或任意 RPN。每个值在原始时刻调整按键及踏板保持声部，不移动原始键值，不生成记谱、
+指法或评分目标。打击乐弯音和不受支持的声学范围仍阻止播放；详见
+[弯音参考边界](REFERENCE_PITCH_BENDS.md)。严格记谱 profile 仍拒绝所有弯音。
+未知 CC、未解析路由、SysEx/系统设备消息和不支持的文本仍阻止整曲转换。
 同通道同刻跨轨事件的歧义仍不接受。
 
 typed 的 `initial_controller_reset` 只表示 CC121=0：必须在 beat 0、该通道尚无

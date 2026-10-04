@@ -3,7 +3,8 @@ import { isZeroSmpteOffset } from './clean-song-timecode.js';
 import { ReferenceAudioReceiver, REFERENCE_PERCUSSION, PROGRAM_FAMILIES } from './midi-reference-synth.js';
 import { REFERENCE_RECEIVER_POLICY } from './midi-reference-player.js';
 import { COMPLETE_CONTROLS_POLICY, CompletePerformanceMixer, EXTENDED_CONTROL_KINDS } from './clean-performance-controls.js';
-import { INITIAL_SENSITIVITY12_KIND, validInitialSensitivity12Events, applyInitialSensitivity12, centeredPitchState, unbentReferenceKey12 } from './clean-song-initial-sensitivity12.js';
+import { INITIAL_SENSITIVITY12_KIND, validInitialSensitivity12Events } from './clean-song-initial-sensitivity12.js';
+import { COMPLETE_PITCH_POLICY, ReferencePitchChannels, referencePitchFits } from './clean-performance-pitch.js';
 import { inspectLogicalDeviceRoute, isDeviceName, isUnsupportedRouteCommand, withLogicalDevicePolicy } from './clean-song-device-routing.js';
 const handles = new WeakSet();
 const PROFILE = 'wmh-performance-midi1-v1';
@@ -50,7 +51,7 @@ function prepare(runtime, scoreHash, score) {
         parts.has(part.id) || part.sound_identity !== 'unspecified_midi_route') fail('invalid_part', 'Invalid route identity.');
     channels[track].add(part.channel); parts.set(part.id, part);
   }
-  if (!validInitialSensitivity12Events(runtime.events)) fail('invalid_initial_sensitivity12', 'Expected one reviewed source-contiguous twelve-semitone group per channel before all keys.');
+  if (!validInitialSensitivity12Events(runtime.events, { allowPitchBend: true })) fail('invalid_initial_sensitivity12', 'Expected one reviewed source-contiguous twelve-semitone group per channel before all keys.');
   const blockers = [], addBlocker = (code, message, event) => {
     if (!blockers.some(b => b.code === code)) blockers.push({ code, message, eventId: event?.event_id ?? null });
   };
@@ -61,8 +62,10 @@ function prepare(runtime, scoreHash, score) {
   const voices = [], acknowledgements = [], queues = new Map(), programs = Array(16).fill(0), programUse = new Map();
   const sustain = Array(16).fill(false), deferred = Array.from({ length: 16 }, () => []);
   const keyActivity = Array(16).fill(false), pendingReset = Array(16).fill(false), reverbChannels = new Set();
-  const pitchStates = Array.from({ length: 16 }, centeredPitchState);
-  let extendedControls = false;
+  const pitch = new ReferencePitchChannels();
+  const bendChannels = new Set(runtime.events.filter(e => e.command?.kind === 'pitch_bend').map(e => e.command.channel));
+  const pitchBends = bendChannels.size > 0;
+  let extendedControls = pitchBends;
   const counts = Array(runtime.tracks.length).fill(0), ended = new Set();
   let prior = null, attacks = 0, releases = 0, offsetSeen = false, firstTrackChannel = false;
   for (const event of runtime.events) {
@@ -101,7 +104,8 @@ function prepare(runtime, scoreHash, score) {
         if (c.channel === 9 && !REFERENCE_PERCUSSION[c.key]) addBlocker('percussion_key_unmapped', `No declared reference percussion sound for key ${c.key}.`, event);
         const program = programs[c.channel];
         programUse.set(`${c.channel}:${program}`, { channel: c.channel, program, reference: c.channel === 9 ? 'WMH Reference Percussion v1 (kit unknown)' : PROGRAM_FAMILIES[program >> 3].name });
-        const voice = { eventId: event.event_id, partId: c.part_id, trackIndex: origin.track, channel: c.channel, key: unbentReferenceKey12(pitchStates[c.channel], c.key),
+        if (pitchBends && c.channel !== 9 && !referencePitchFits(c.key, program, bendChannels.has(c.channel) ? pitch.range(c.channel) : 0)) addBlocker('unsupported_pitch_range', 'The complete declared reference bend range must fit every melodic oscillator within 20–18000 Hz; frequencies are never clamped.', event);
+        const voice = { eventId: event.event_id, partId: c.part_id, trackIndex: origin.track, channel: c.channel, key: c.key,
           velocity: c.velocity, program, start: event.exact_microseconds, end: null, releaseEventId: null, releaseVelocity: null, endReason: null };
         voices.push(voice); queue.items.push(voice);
         ack.disposition = queue.items.length - queue.released > 1 ? 'layered_onset' : 'onset'; ack.voiceId = voice.eventId;
@@ -116,8 +120,13 @@ function prepare(runtime, scoreHash, score) {
         ack.disposition = voice ? (sustain[c.channel] ? 'release_fifo_sustained' : 'release_fifo') : 'unmatched_release';
       }
     } else if (c.kind === INITIAL_SENSITIVITY12_KIND) {
-      applyInitialSensitivity12(pitchStates[c.channel], c.step);
+      pitch.command(c);
       ack.disposition = INITIAL_SENSITIVITY12_KIND;
+    } else if (c.kind === 'pitch_bend') {
+      if (!integer(c.value, 0, 16383) || Object.keys(c).sort().join(',') !== 'channel,kind,value') fail('invalid_pitch_bend', 'Expected one original unsigned 14-bit pitch-bend value.');
+      if (channels.filter(set => set.has(c.channel)).length !== 1) fail('invalid_pitch_bend_route', 'Pitch bend requires one owning source track for its channel.');
+      pitch.command(c); ack.disposition = 'pitch_bend';
+      if (c.channel === 9) { ack.disposition = 'blocked'; addBlocker('unsupported_percussion_bend', 'Percussion bend has no declared reference interpretation.', event); }
     } else if (c.kind === 'instrument_program') {
       if (!integer(c.channel, 0, 15) || !integer(c.program, 0, 127)) fail('invalid_program', 'Invalid source program number.');
       programs[c.channel] = c.program;
@@ -130,6 +139,7 @@ function prepare(runtime, scoreHash, score) {
       if (c.kind === 'initial_controller_reset') {
         if (event.exact_microseconds.numerator !== '0' || keyActivity[c.channel] || channels.filter(set => set.has(c.channel)).length !== 1) fail('invalid_initial_reset', 'Initial reset requires one owning track at zero before every key event.');
         pendingReset[c.channel] = true; sustain[c.channel] = false;
+        pitch.command(c);
       } else if (c.kind === 'sustain') {
         sustain[c.channel] = c.value >= 64;
         if (!sustain[c.channel]) {
@@ -158,10 +168,10 @@ function prepare(runtime, scoreHash, score) {
   if (durationSeconds > 86400) fail('duration_limit', 'Reference playback is bounded to 24 hours.');
   const tracks = runtime.tracks.map((track, index) => ({ ...track, channels: [...channels[index]],
     independent: !channels.some((other, i) => i !== index && [...channels[index]].some(c => other.has(c))) }));
-  return freeze({ scoreSha256: scoreHash, sourceSha256: runtime.source_sha256, policy: withLogicalDevicePolicy(extendedControls ? COMPLETE_CONTROLS_POLICY : REFERENCE_RECEIVER_POLICY, routing.logical_device_mapping),
+  return freeze({ scoreSha256: scoreHash, sourceSha256: runtime.source_sha256, policy: withLogicalDevicePolicy(pitchBends ? COMPLETE_PITCH_POLICY : extendedControls ? COMPLETE_CONTROLS_POLICY : REFERENCE_RECEIVER_POLICY, routing.logical_device_mapping),
     logical_device_mapping: routing.logical_device_mapping, logical_device_route_reason: routing.reason,
     playable: blockers.length === 0, blockers, trackCount: tracks.length, eventCount: runtime.events.length,
-    tracks, voices, acknowledgements, programs: [...programUse.values()], durationSeconds, runtime, extendedControls, reverbChannels: [...reverbChannels], pitchStates });
+    tracks, voices, acknowledgements, programs: [...programUse.values()], durationSeconds, runtime, extendedControls, reverbChannels: [...reverbChannels], pitchStates: pitch.channels, pitchBends });
 }
 /** compile is a trusted Rust/native adapter: clean bytes in, validated runtime out.
  * The native clean-package load compiles exact saved bytes. Derived runtime
@@ -193,25 +203,25 @@ export function createCleanPerformancePlayer(prepared, {
   const voices = prepared.voices.map(v => ({ ...v, startSeconds: performanceSeconds(v.start), endSeconds: performanceSeconds(v.end) }));
   const voiceById = new Map(voices.map(v => [v.eventId, v]));
   let state = 'stopped', generation = 0, position = 0, anchor = 0, cursor = 0, timer = null, context = null, receiver = null, mixer = null, error = null;
-  let pitchStates = Array.from({ length: 16 }, centeredPitchState);
+  let pitch = new ReferencePitchChannels();
   const muted = new Set();
   const snapshot = () => Object.freeze({ state, generation, currentAudioTimeSeconds: context?.currentTime ?? null,
     audioAnchorSeconds: state === 'playing' ? anchor : null,
     positionSeconds: state === 'playing' ? Math.max(position, Math.min(prepared.durationSeconds, context.currentTime - anchor)) : position,
     error, mutedTracks: Object.freeze([...muted]) });
   const notify = () => onState(snapshot());
-  const cancel = () => { generation++; if (timer !== null) timers.clearTimeout(timer); timer = null; receiver?.silence(); mixer?.close(); mixer = null; };
+  const cancel = () => { generation++; if (timer !== null) timers.clearTimeout(timer); timer = null; receiver?.silence(); mixer?.close(); mixer = null; pitch = new ReferencePitchChannels(); };
   const abort = reason => {
     position = snapshot().positionSeconds; cancel(); error = reason instanceof CleanPerformanceError ? reason : new CleanPerformanceError('audio_failure', String(reason?.message || reason));
     state = 'error'; notify();
   };
   const sound = (voice, start, resumed = false) => {
     if (muted.has(voice.trackIndex) || voice.endSeconds <= voice.startSeconds) return;
-    const key = unbentReferenceKey12(pitchStates[voice.channel], voice.key);
-    receiver.schedule({ ...voice, key }, start, anchor + voice.endSeconds, { resumed, output: mixer?.outputFor(voice.channel, start) || receiver.output });
+    receiver.schedule(voice, start, anchor + voice.endSeconds, { resumed, pitchSemitones: pitch.offset(voice.channel),
+      strictPitchRange: prepared.pitchBends, output: mixer?.outputFor(voice.channel, start) || receiver.output });
   };
   const command = (value, at) => {
-    if (value.kind === INITIAL_SENSITIVITY12_KIND) applyInitialSensitivity12(pitchStates[value.channel], value.step);
+    if (pitch.command(value) && prepared.pitchBends) receiver?.retune(value.channel, pitch.offset(value.channel), at);
     mixer?.command(value, at);
   };
   const pump = token => {
@@ -253,7 +263,7 @@ export function createCleanPerformancePlayer(prepared, {
         if (token !== generation) return snapshot();
         if (context.state !== 'running') fail('audio_context_interrupted', 'Audio context could not start.');
         receiver = new ReferenceAudioReceiver(context, audio.output, { maxVoices, ErrorType: CleanPerformanceError });
-        pitchStates = Array.from({ length: 16 }, centeredPitchState);
+        pitch = new ReferencePitchChannels();
         anchor = context.currentTime + startLeadSeconds - position;
         mixer = prepared.extendedControls ? new CompletePerformanceMixer(context, audio.output, { reverbChannels: prepared.reverbChannels, end: anchor + prepared.durationSeconds }) : null;
         cursor = events.findIndex(e => e.seconds >= position); if (cursor < 0) cursor = events.length;

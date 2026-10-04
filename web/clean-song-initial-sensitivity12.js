@@ -58,10 +58,10 @@ function validOrderedEvents(events) {
   return events.every((event, index) => validEvent(event) && (index === 0 || order(events[index - 1], event) < 0));
 }
 /** Complete source events, including key activity and metadata. No reordering repairs input. */
-export function validInitialSensitivity12Events(events) {
+export function validInitialSensitivity12Events(events, { allowPitchBend = false } = {}) {
   const setup = events.filter(event => event.command?.kind === INITIAL_SENSITIVITY12_KIND);
   if (!setup.length) return true;
-  if (!validOrderedEvents(events) || events.some(event => event.command?.kind === 'pitch_bend')) return false;
+  if (!validOrderedEvents(events) || (!allowPitchBend && events.some(event => event.command?.kind === 'pitch_bend'))) return false;
   const coordinates = new Set(), priorOrigins = new Map();
   for (const event of events) {
     if (coordinates.has(coordinate(event.origin)) || (priorOrigins.get(event.origin.track) ?? -1) >= event.origin.event) return false;

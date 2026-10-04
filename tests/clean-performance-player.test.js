@@ -6,6 +6,7 @@ import {
 } from '../web/clean-performance-player.js';
 import { REFERENCE_RECEIVER_POLICY } from '../web/midi-reference-player.js';
 import { PROGRAM_FAMILIES, REFERENCE_PERCUSSION, ReferenceAudioReceiver } from '../web/midi-reference-synth.js';
+import { ReferencePitchChannels, COMPLETE_PITCH_POLICY } from '../web/clean-performance-pitch.js';
 
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 const exact = (numerator, denominator = 1) => ({ numerator: String(numerator), denominator });
@@ -432,7 +433,7 @@ test('every unsupported typed command blocks playback with original event identi
   const drum = await load(fixture([[on(0, 20, 90, 9), off(500000, 20, 0, 9)]]));
   assert.equal(drum.playable, false); assert.equal(drum.blockers[0].code, 'percussion_key_unmapped');
   assert.throws(() => harness(drum), { code: 'playback_blocked' });
-  for (const kind of ['pitch_bend', 'raw_midi', 'mystery']) {
+  for (const kind of ['raw_midi', 'mystery']) {
     await assert.rejects(load(fixture([[row(0, kind), on(0), off(500000)]])), { code: 'unknown_semantics' });
   }
 });
@@ -734,8 +735,6 @@ test('twelve-semitone initialization rejects every unreviewed ordering, repeat, 
     ['attack midway', () => { const rows = group(); rows.splice(2, 0, on(70000)); return [rows]; }],
     ['shared channel later', () => [group(), [program(300000, 0), row(500000, 'track_end')]]],
     ['bend before group', () => [[row(0, 'pitch_bend', { channel: 0, value: 0 }), ...group()]]],
-    ['bend after group', () => [[...group(), row(300000, 'pitch_bend', { channel: 0, value: 0 })]]],
-    ['bend on another channel', () => [group(), [row(300000, 'pitch_bend', { channel: 1, value: 0 })]]],
   ];
   for (const [name, build] of edits) await t.test(name, async () => {
     const tracks = build(); tracks[0].push(...ending());
@@ -879,4 +878,110 @@ test('named route labels apply identical UTF-8 bounds and reject controls withou
     const prepared=await load(fixture([[deviceName(name),on(0),off(500000)]]));
     assert.equal(prepared.playable,true);assert.equal(prepared.logical_device_mapping.device_name,name);
   }
+});
+
+const bend = (time, value, channel = 0) => row(time, 'pitch_bend', { channel, value });
+const frequency = (key, offset = 0) => 440 * 2 ** ((key + offset - 69) / 12);
+function pitchCalls(source, expected) {
+  assert.equal(source.frequency.calls.length, expected.length);
+  source.frequency.calls.forEach(([kind, value, time], index) => {
+    assert.equal(kind, 'set'); near(value, expected[index][0]); near(time, expected[index][1]);
+  });
+}
+
+test('retained bend changes retune active and pedal-held C/E layers at native times without moving source keys', async () => {
+  const f = fixture([[on(0), bend(100000, 12288), on(200000, 64), control(250000, 'sustain', 127),
+    off(300000), bend(400000, 0), off(450000, 64), bend(500000, 8192), control(600000, 'sustain', 0),
+    bend(700000, 16383), row(800000, 'track_end')]]);
+  const before = JSON.stringify(f.runtime), p = await load(f), h = harness(p);
+  assert.equal(p.policy.id, COMPLETE_PITCH_POLICY.id); assert.equal(p.playable, true);
+  assert.deepEqual(p.voices.map(v => v.key), [60, 64]);
+  await assert.rejects(h.player.play({ userGesture: true, acceptedPolicyId: REFERENCE_RECEIVER_POLICY.id }), { code: 'reference_policy_required' });
+  assert.equal(h.factoryCalls(), 0);
+  await h.play(); h.advance(0.9);
+  pitchCalls(h.sources()[0], [[frequency(60), .05], [frequency(60, 1), .15], [frequency(60, -2), .45], [frequency(60), .55]]);
+  pitchCalls(h.sources()[2], [[frequency(64, 1), .25], [frequency(64, -2), .45], [frequency(64), .55]]);
+  pitchCalls(h.sources()[1], h.sources()[0].frequency.calls.map(([, value, time]) => [value * 2, time]));
+  assert.ok(h.sources().every(source => source.stops[0] === .65));
+  assert.deepEqual(h.acknowledgements.map(a => a.eventId), p.runtime.events.map(e => e.event_id));
+  assert.deepEqual(h.acknowledgements.map(a => a.exactMicroseconds), p.runtime.events.map(e => e.exact_microseconds));
+  assert.equal(JSON.stringify(f.runtime), before); assert.equal(f.score.notation, null); h.silent();
+});
+
+test('full 14-bit precision and asymmetric positive endpoint use uniform range normalization, including repeated commands', async () => {
+  const values = [0, 1, 8191, 8192, 8193, 16383, 16383];
+  const f = fixture([[on(0, 67), ...values.map((value, index) => bend(exact(500001 + index * 300000, 3), value)), off(1000000, 67)]]);
+  const p = await load(f), h = harness(p); await h.play(); h.advance(1.1);
+  pitchCalls(h.sources()[0], [[frequency(67), .05], ...values.map((value, index) =>
+    [frequency(67, (value - 8192) / 8192 * 2), .05 + (500001 + index * 300000) / 3000000])]);
+  assert.equal(h.acknowledgements.filter(a => a.disposition === 'pitch_bend').length, values.length);
+  assert.ok(frequency(67, (16383 - 8192) / 8192 * 2) < frequency(67, 2)); h.silent();
+});
+
+test('all proved twelve-semitone groups scale bends and resume pedal-held voices from past state, excluding scheduled future bends', async () => {
+  for (const sequence of sensitivity12Sequences) {
+    const p = await load(fixture([[...sensitivity12Rows(sequence), on(300000), bend(350000, 12288),
+      control(360000, 'sustain', 127), off(370000), bend(500000, 0), control(700000, 'sustain', 0), row(800000, 'track_end')]]));
+    const h = harness(p); await h.play(); h.advance(.46);
+    near(h.sources()[0].frequency.calls.at(-1)[1], frequency(60, -12)); // Future lookahead.
+    const before = h.player.snapshot(); assert.throws(() => h.player.seek(.2), { code: 'seek_unsupported' });
+    assert.deepEqual(h.player.snapshot(), before);
+    h.player.pause(); near(h.player.snapshot().positionSeconds, .41); h.silent();
+    const count = h.sources().length; await h.play();
+    near(h.sources()[count].frequency.calls[0][1], frequency(60, 6));
+    near(h.sources()[count].starts[0], .51);
+    h.advance(.95); assert.equal(h.player.snapshot().state, 'ended'); h.silent();
+    pitchCalls(h.sources()[count], [[frequency(60, 6), .51], [frequency(60, -12), .60]]);
+    h.player.stop(); const prior = h.sources().length; await h.play(); h.advance(1.4);
+    near(h.sources()[prior].frequency.calls[0][1], frequency(60)); h.player.stop(); h.silent();
+  }
+});
+
+test('initial reset centers bend and nulls selectors while stored sensitivity is a separate state value', async () => {
+  const states = new ReferencePitchChannels();
+  for (const step of sensitivity12Sequences[0]) states.command({ kind: sensitivity12Kind, channel: 0, step });
+  states.command({ kind: 'pitch_bend', channel: 0, value: 16383 });
+  states.command({ kind: 'initial_controller_reset', channel: 0 });
+  assert.equal(states.offset(0), 0); assert.equal(states.range(0), 12);
+  assert.equal(states.channels[0].rpn_most_significant, 127); assert.equal(states.channels[0].rpn_least_significant, 127);
+  // Public validation still holds reset + RPN setup, and every active/late reset.
+  const p = await load(fixture([[bend(0, 16383), row(0, 'initial_controller_reset', { channel: 0 }),
+    control(0, 'sustain', 0), on(0), bend(100000, 0), off(200000)]])), h = harness(p);
+  await h.play(); h.advance(.3);
+  pitchCalls(h.sources()[0], [[frequency(60), .05], [frequency(60, -2), .15]]); h.silent();
+  await assert.rejects(load(fixture([[on(0), bend(0, 8192), row(0, 'initial_controller_reset', { channel: 0 }), control(0, 'sustain', 0), off(200000)]])), { code: 'invalid_initial_reset' });
+});
+
+test('track mute retains every bend and setup acknowledgement under the named-route policy', async () => {
+  const p = await load(fixture([[deviceName(), on(0), bend(100000, 16383), off(500000)],
+    [deviceName(), ...sensitivity12Rows(sensitivity12Sequences[1], 1).map((event, index) => ({ ...event, time: exact((index + 1) * 10000) })),
+      on(300000, 64, 90, 1), bend(350000, 0, 1), off(500000, 64, 0, 1)]]));
+  assert.equal(p.playable, true); assert.ok(p.logical_device_mapping);
+  for (let track = 0; track < 2; track++) {
+    const h = harness(p); h.player.setTrackMuted(track, true); await h.play(); h.advance(.6);
+    assert.equal(h.sources().length, 2);
+    assert.deepEqual(h.acknowledgements.map(a => a.eventId), p.runtime.events.map(e => e.event_id));
+    h.silent();
+  }
+});
+
+test('malformed bend, unsupported range, percussion, RPN24 and shared ownership never silently select a fallback', async () => {
+  for (const value of [-1, 16384, .5, '8192', null, undefined]) {
+    await assert.rejects(load(fixture([[bend(0, value), on(0), off(500000)]])), { code: 'invalid_pitch_bend' });
+  }
+  const extra = fixture([[bend(0, 8192), on(0), off(500000)]]); extra.runtime.events[0].command.raw = [0, 64];
+  await assert.rejects(load(extra), { code: 'invalid_pitch_bend' });
+  await assert.rejects(load(fixture([[bend(0, 8192), row(500000, 'track_end')], [on(100000), off(500000)]])), { code: 'invalid_pitch_bend_route' });
+  for (const [input, code] of [
+    [[bend(0, 8192, 9), on(0, 60, 90, 9), off(500000, 60, 0, 9)], 'unsupported_percussion_bend'],
+    [[bend(0, 8192), on(0, 0), off(500000, 0)], 'unsupported_pitch_range'],
+    [[bend(0, 8192), on(0, 127), off(500000, 127)], 'unsupported_pitch_range'],
+    [[row(0, 'bank_select', { channel: 0, component: 'most_significant', value: 1 }), bend(0, 8192), on(0), off(500000)], 'unsupported_bank_select'],
+  ]) {
+    const p = await load(fixture([input])); assert.equal(p.playable, false); assert.ok(p.blockers.some(b => b.code === code));
+    assert.equal(p.acknowledgements.length, p.eventCount); assert.throws(() => harness(p), { code: 'playback_blocked' });
+  }
+  await assert.rejects(load(fixture([[row(0, 'initial_pitch_bend_sensitivity', { channel: 0, step: 'set_semitones24' }), bend(0, 8192), on(0), off(500000)]])), { code: 'unknown_semantics' });
+  const p = await load(fixture([[bend(0, 16383), on(0, 67), off(500000, 67)]])), h = harness(p);
+  h.context.sampleRate = 1000; await h.play(); assert.equal(h.player.snapshot().error.code, 'unsupported_pitch_range'); h.silent();
 });

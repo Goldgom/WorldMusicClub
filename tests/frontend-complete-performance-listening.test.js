@@ -29,6 +29,31 @@ test('complete saved events never enter the notation compiler, VSQ choice or can
   const old=deferred();const loading=preview.select('old',()=>old.promise);await preview.select('new',async()=>({score:null,cleanSong:song}));old.resolve({score:null,cleanSong:song});assert.equal(await loading,false);assert.equal(preview.value.identity,'new');
 });
 
+test('pitch-bend policy discloses declared range, exact events and unavailable notation in English and Chinese before playback',async()=>{
+  const f=viewFixture(),song=await completePerformanceSong({pitchBend:true});
+  try{
+    f.view.select(song);assert.equal(f.$('policy-pitch').hidden,false);
+    assert.match(f.$('policy-pitch').textContent,/two semitones.*twelve-semitone/);
+    assert.match(f.$('policy-pitch').textContent,/Original keys stay unchanged/);
+    assert.match(f.$('policy-pitch').textContent,/not proof of original tuning, timbre, voice fidelity or complete playability/);
+    assert.match(f.$('policy-pitch').textContent,/frequencies are never clamped/);
+    assert.equal(f.$('play').disabled,true);assert.equal(f.unlocks(),0);
+    assert.match(f.$('policy').dataset.policyId,/fifo-pitch-v3/);
+    const controls=[...f.document.querySelectorAll('input,button')];f.i18n.setLocale('zh-CN');
+    assert.deepEqual([...f.document.querySelectorAll('input,button')],controls);
+    assert.match(f.$('policy-pitch').textContent,/默认 2 半音.*12 半音/);
+    assert.match(f.$('policy-pitch').textContent,/原始按键音高不变/);
+    assert.match(f.$('policy-pitch').textContent,/不证明原始调音、音色、声部还原或完整可演奏性/);
+    assert.match(f.$('coverage').textContent,/记谱不可用.*评分不可用/);
+    f.accept();await f.play();f.timers.advance(180,f.synth.context);
+    const first=sounding(f.synth.context)[0];
+    assert.ok(first.frequency.events.some(([kind,hz,time])=>kind==='set'&&Math.abs(time-.2)<1e-10&&Math.abs(hz-440*2**((61-69)/12))<1e-10));
+    f.view.stop();assert.equal(sounding(f.synth.context).length,0);
+    assert.equal(song.notation,null);assert.equal(song.compilation,null);
+    f.view.select(await completePerformanceSong());assert.equal(f.$('policy-pitch').hidden,true);
+  }finally{f.view.destroy();}
+});
+
 test('saved reference panel retains every track and attack, requires policy, uses shared production audio and keeps FIFO gates out of notation',async()=>{
   const f=viewFixture(),song=await completePerformanceSong(),before=song.score_json;
   try{

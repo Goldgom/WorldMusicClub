@@ -1,4 +1,5 @@
 use super::*;
+mod pitch_bends;
 // All inputs in this module are newly authored synthetic events, never supplied music.
 fn vlq(mut n: u32) -> Vec<u8> {
     let mut bytes = vec![(n & 127) as u8];
@@ -548,12 +549,11 @@ fn new_control_json_remains_closed_and_seven_bit_bounded() {
     }
 }
 #[test]
-fn unknown_controller_bend_routing_system_and_project_data_hold_the_entire_source() {
+fn unknown_controller_routing_system_and_project_data_hold_the_entire_source() {
     for event in [
         vec![0xb0, 1, 42],
         vec![0xb0, 121, 0],
         vec![0xb0, 121, 1],
-        vec![0xe0, 0, 64],
         vec![255, 33, 1, 0],
         vec![255, 32, 1, 0],
         vec![240, 2, 1, 247],
@@ -1041,12 +1041,7 @@ fn sensitivity12_rejects_unreviewed_incomplete_interleaved_and_late_source_group
             wrong.insert(2, (0, message));
             assert_sensitivity12_held(wrong);
         }
-        for message in [
-            vec![0xe0, 0, 64],
-            vec![0xe0, 1, 64],
-            vec![0xb0, 99, 0],
-            vec![0xb0, 98, 0],
-        ] {
+        for message in [vec![0xb0, 99, 0], vec![0xb0, 98, 0]] {
             let mut wrong = correct.clone();
             wrong.push((0, message));
             assert_sensitivity12_held(wrong);

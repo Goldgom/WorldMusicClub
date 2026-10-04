@@ -171,6 +171,12 @@ pub enum Command {
         channel: u8,
         pressure: u8,
     },
+    /// Original unsigned 14-bit displacement; 8192 is center. This does not
+    /// identify a source instrument's range or derive a notated/key pitch.
+    PitchBend {
+        channel: u8,
+        value: u16,
+    },
     /// Reviewed pre-key-activity RPN 0 setup, retaining each authored named step.
     InitialPitchBendSensitivity12 {
         channel: u8,
@@ -217,6 +223,7 @@ impl Command {
             | Self::ChorusSend { channel, .. }
             | Self::KeyPressure { channel, .. }
             | Self::ChannelPressure { channel, .. }
+            | Self::PitchBend { channel, .. }
             | Self::InitialPitchBendSensitivity12 { channel, .. } => Some(*channel),
             _ => None,
         }
@@ -238,6 +245,7 @@ impl Command {
             | Self::ChorusSend { value, .. } => *value <= 127,
             Self::KeyPressure { key, pressure, .. } => *key <= 127 && *pressure <= 127,
             Self::ChannelPressure { pressure, .. } => *pressure <= 127,
+            Self::PitchBend { value, .. } => *value <= 16383,
             Self::Tempo {
                 microseconds_per_quarter,
             } => (1..=0xff_ffff).contains(microseconds_per_quarter),
@@ -438,6 +446,11 @@ pub fn validate(score: &CompletePerformance) -> Result<(), String> {
             offset_placement.channel(event.origin.track);
         }
         if let Some(channel) = event.command.channel() {
+            if matches!(event.command, Command::PitchBend { .. })
+                && channel_track_counts[channel as usize] != 1
+            {
+                return Err("Pitch bend requires one owning source track for its channel".into());
+            }
             if !parts.contains(&(event.origin.track, channel)) {
                 return Err("Missing channel part".into());
             }

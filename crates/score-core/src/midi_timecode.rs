@@ -260,7 +260,6 @@ mod tests {
             vec![255, 32, 1, 0],
             vec![255, 33, 1, 0],
             vec![0xb0, 1, 20],
-            vec![0xe0, 0, 64],
             vec![0xf0, 1, 0xf7],
         ] {
             let mut first = vec![(0, offset(96)), (0, command)];
@@ -269,6 +268,13 @@ mod tests {
             assert!(strict::convert_midi(&bytes).is_err());
             assert!(convert(&bytes).is_err());
         }
+        // Retained pitch bend is now separately admitted by the event-only
+        // profile; a zero timecode origin still cannot license strict notation.
+        let mut first = vec![(0, offset(96)), (0, vec![0xe0, 0, 64])];
+        first.extend(notes());
+        let bytes = smf(&[first], 3);
+        assert!(strict::convert_midi(&bytes).is_err());
+        assert!(convert(&bytes).unwrap().notation.is_none());
         let bytes = smf(
             &[vec![
                 (0, offset(96)),

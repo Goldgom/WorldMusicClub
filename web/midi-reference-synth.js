@@ -57,12 +57,12 @@ export class ReferenceAudioReceiver {
     for (let i = 0; i < data.length; i++) { state ^= state << 13; state ^= state >>> 17; state ^= state << 5; data[i] = (state >>> 0) / 2147483648 - 1; }
     this.noise = buffer; return buffer;
   }
-  schedule(note, start, end, { output = this.output } = {}) {
+  schedule(note, start, end, { output = this.output, pitchSemitones = 0, strictPitchRange = false } = {}) {
     if (end <= start) return;
     this.prune(this.context.currentTime);
     if (this.voices.size >= this.maxVoices) throw new this.ErrorType('voice_budget_exceeded', 'Reference audio allocation budget exceeded; playback stops instead of stealing a voice.', { eventId: note.eventId, maxVoices: this.maxVoices });
-    const nodes = [], sources = [], envelope = this.context.createGain(); nodes.push(envelope);
-    const voice = { end, dispose: () => {
+    const nodes = [], sources = [], pitches = [], envelope = this.context.createGain(); nodes.push(envelope);
+    const voice = { start, end, channel: note.channel, pitches, strictPitchRange, dispose: () => {
       this.voices.delete(voice);
       for (const source of sources) { source.onended = null; try { source.stop(this.context.currentTime); } catch { /* already ended */ } }
       for (const node of nodes) node.disconnect();
@@ -74,7 +74,11 @@ export class ReferenceAudioReceiver {
         const oscillator = this.context.createOscillator();
         nodes.push(oscillator); sources.push(oscillator);
         const gain = this.context.createGain(); nodes.push(gain);
-        oscillator.type = type; oscillator.frequency.setValueAtTime(Math.min(frequency, this.context.sampleRate * 0.45), start);
+        oscillator.type = type;
+        const bent = frequency * 2 ** (pitchSemitones / 12);
+        if (strictPitchRange) this.checkPitch(bent);
+        oscillator.frequency.setValueAtTime(strictPitchRange ? bent : Math.min(frequency, this.context.sampleRate * 0.45), start);
+        if (strictPitchRange) pitches.push({ parameter: oscillator.frequency, frequency });
         gain.gain.value = level; oscillator.connect(gain); gain.connect(envelope);
       };
       const drum = note.channel === 9 ? REFERENCE_PERCUSSION[note.key] : null;
@@ -89,7 +93,8 @@ export class ReferenceAudioReceiver {
           nodes.push(source); sources.push(source);
           const filter = this.context.createBiquadFilter(); nodes.push(filter);
           source.buffer = this.noiseBuffer(); source.loop = true;
-          filter.type = 'bandpass'; filter.frequency.setValueAtTime(Math.min(drum.frequency, this.context.sampleRate * 0.4), start); filter.Q.value = 0.7;
+          if (strictPitchRange) this.checkPitch(drum.frequency);
+          filter.type = 'bandpass'; filter.frequency.setValueAtTime(strictPitchRange ? drum.frequency : Math.min(drum.frequency, this.context.sampleRate * 0.4), start); filter.Q.value = 0.7;
           source.connect(filter); filter.connect(envelope);
         }
       } else {
@@ -117,5 +122,21 @@ export class ReferenceAudioReceiver {
   }
   silence() {
     for (const voice of [...this.voices]) voice.dispose();
+  }
+  checkPitch(frequency) {
+    if (!Number.isFinite(frequency) || frequency < 20 || frequency > 18000 || frequency > this.context.sampleRate * 0.45) {
+      throw new this.ErrorType('unsupported_pitch_range', 'The reference pitch exceeds its declared acoustic or device range; no frequency was clamped.');
+    }
+  }
+  retune(channel, semitones, at) {
+    const changes = [];
+    for (const voice of this.voices) {
+      if (!voice.strictPitchRange || voice.channel !== channel || voice.start > at || voice.end <= at) continue;
+      for (const pitch of voice.pitches) {
+        const frequency = pitch.frequency * 2 ** (semitones / 12);
+        this.checkPitch(frequency); changes.push([pitch.parameter, frequency]);
+      }
+    }
+    for (const [parameter, frequency] of changes) parameter.setValueAtTime(frequency, at);
   }
 }

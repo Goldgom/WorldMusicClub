@@ -4,15 +4,16 @@ import {preparePerformanceSong,PERFORMANCE_PROFILE} from '../web/clean-song-pack
 const hash=value=>createHash('sha256').update(value).digest('hex');
 /** Entirely authored, three-track UI protocol fixture. This is not a MIDI
  * decoder or a timing compiler: Rust compilation is verified in its own suite. */
-export function completePerformanceDescriptor({shared=false,blocked=false,controls=false,deviceName=null,title='Authored complete performance'}={}){
+export function completePerformanceDescriptor({shared=false,blocked=false,controls=false,pitchBend=false,deviceName=null,title='Authored complete performance'}={}){
   const source={format:'midi',sha256:hash('original complete event UI fixture'),bytes:1};
   const channel=shared?0:1;
   const keyCommand=(kind,key,velocity,channel=0)=>({kind,key,velocity,channel});
   const rows=[
     [[0,{kind:'tempo',microseconds_per_quarter:500000}],[600000,{kind:'track_end'}]],
     [[0,{kind:'instrument_program',channel:0,program:80}],...(blocked?[[0,{kind:'channel_pressure',channel:0,pressure:100}]]:[]),...(controls?[[0,{kind:'volume',channel:0,value:100}],[0,{kind:'sustain',channel:0,value:127}]]:[]),[0,keyCommand('key_attack',60,90)],[100000,keyCommand('key_attack',60,70)],[200000,keyCommand('key_release',60,20)],[400000,keyCommand('key_release',60,45)],...(controls?[[500000,{kind:'sustain',channel:0,value:0}]]:[]),[600000,{kind:'track_end'}]],
-    [[0,keyCommand('key_attack',65,85,channel)],[300000,keyCommand('key_release',65,31,channel)],[600000,{kind:'track_end'}]],
+    [[0,keyCommand('key_attack',pitchBend?64:65,85,channel)],[300000,keyCommand('key_release',pitchBend?64:65,31,channel)],[600000,{kind:'track_end'}]],
   ];
+  if(pitchBend)rows[1].splice(rows[1].findIndex(([time])=>time===200000),0,[150000,{kind:'pitch_bend',channel:0,value:12288}]);
   if(deviceName!==null)for(const row of rows.slice(1))row.unshift([0,{kind:'text',role:'device_name',text:deviceName}]);
   const tracks=rows.map((events,index)=>({id:`track-${index+1}`,source_index:index,name:['Authored conductor','Authored repeated attacks','Authored lower line'][index],source_event_count:events.length,end:{numerator:6,denominator:5}}));
   const parts=[{id:'midi-t2-c1',track_id:'track-2',channel:0,sound_identity:'unspecified_midi_route'},{id:`midi-t3-c${channel+1}`,track_id:'track-3',channel,sound_identity:'unspecified_midi_route'}];

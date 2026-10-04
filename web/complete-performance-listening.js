@@ -23,7 +23,7 @@ export function setupCompletePerformanceListening({document,i18n,synth,host,
       <p id="complete-performance-policy-tone"></p><p id="complete-performance-policy-percussion"></p>
       <p id="complete-performance-policy-events"></p><p id="complete-performance-policy-gates"></p>
       <p id="complete-performance-policy-resume"></p><p id="complete-performance-policy-limits"></p>
-      <p id="complete-performance-policy-controls"></p><p id="complete-performance-policy-routing" hidden></p>
+      <p id="complete-performance-policy-controls"></p><p id="complete-performance-policy-pitch" hidden></p><p id="complete-performance-policy-routing" hidden></p>
       <ul id="complete-performance-programs"></ul>
     </details>
     <label class="reference-choice"><input id="complete-performance-policy-accept" type="checkbox"><span id="complete-performance-policy-label"></span></label>
@@ -63,6 +63,8 @@ export function setupCompletePerformanceListening({document,i18n,synth,host,
     $('policy-routing').textContent=cleanLogicalDeviceMapping(i18n.locale,prepared?.logical_device_mapping);
     if(prepared?.logical_device_mapping)$('policy-label').textContent=text('I select this reference sound, event playback and logical device mapping policy','我选择此参考声音、事件播放与逻辑设备映射策略');
     $('policy-controls').hidden=!prepared?.extendedControls;
+    $('policy-pitch').hidden=!prepared?.pitchBends;
+    $('policy-pitch').textContent=text('Pitch-bend reference: every retained 14-bit value sets pitch at its original time for all sounding channel layers, including pedal-held layers. The declared default range is two semitones; only the reviewed initial twelve-semitone setup changes it. Values use (value − 8192) / 8192, with no invented curve between events. Original keys stay unchanged. This is a procedural interpretation, not proof of original tuning, timbre, voice fidelity or complete playability. Percussion bends and melodic oscillator ranges outside 20–18000 Hz remain unavailable; frequencies are never clamped. Pause and resume restore channel state; arbitrary seek is unavailable.','弯音参考：每个保留的 14 位数值都在原始时刻调整该通道所有发声层，包括踏板保持的声音。明确采用默认 2 半音范围；只有已验证的起音前 12 半音设置可改变它。数值按 (值 − 8192) / 8192 换算，不虚构事件之间的曲线，原始按键音高不变。这是程序化参考解释，不证明原始调音、音色、声部还原或完整可演奏性。打击乐弯音以及超出 20–18000 Hz 的旋律振荡器范围仍不可播放，不会截断频率。暂停与继续重建通道状态；不支持任意跳转。');
     $('policy-controls').textContent=text('Controller reference: volume × expression set channel level (defaults 100/127); pan is stereo. Sustain defers FIFO sound release until pedal-up, including repeated keys. Reverb uses WMH Reference Room v1. Pause, Stop and song end cut sound and effect tails. Resume restores channel state and restarts remaining gates. Only bank zero and chorus zero are supported; original timbre is unverified.','控制器参考演奏：通道音量乘以表情值设置音量（默认 100/127），声像为立体声。延音踏板把先进先出释放推迟到抬踏板，包括重复按键。混响使用 WMH 参考房间 v1。暂停、停止和歌曲结束会切断声音及效果尾音；恢复时还原通道状态并重新触发剩余发声。仅支持音色库零和合唱零；未验证原始音色。');
     if(prepared?.extendedControls)$('policy-events').textContent=text('Every attack creates a layer. Key releases select the oldest still-key-held layer (FIFO); sustain values 64–127 hold its sound until the next value 0–63. These are receiver choices, not recovered note durations.','每次起音创建一层声音；按键释放选择最早仍按住的层（先进先出）。延音值 64–127 保持声音至下一个 0–63 值。此为合成器策略，不是恢复出的记谱音长。');
     $('counts').textContent=prepared?t('counts',{tracks:prepared.trackCount,events:prepared.eventCount,onsets:song.runtime.coverage.performance.key_attacks}):'';

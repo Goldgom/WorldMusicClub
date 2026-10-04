@@ -4,7 +4,9 @@ The existing `wmh-semantic-midi1-v1` complete-score profile retains its narrowly
 reviewed six-step initialization: RPN 0, pitch-bend sensitivity, 24 semitones and zero cents,
 followed by RPN deselection. A separate pre-key-activity twelve-semitone grammar
 is now admitted by both strict and typed performance profiles, as specified below.
-No active bend or tuning support is implied.
+These setup commands alone imply no active bend or tuning support. The separate
+[event-only reference bend policy](REFERENCE_PITCH_BENDS.md) now permits retained
+bends after the proved12 setup; strict notation still rejects every bend.
 
 ## Musical meaning and source evidence
 
@@ -96,7 +98,9 @@ bank, volume, pan, expression and reverb/chorus setup may precede the group.
 Metadata and other-channel commands may occur outside it, but no event may
 interrupt its consecutive source coordinates. Incomplete groups, changed values,
 unsupported duplicates/order, later data entry, repeated groups, split owners,
-interleaved commands and all pitch-bend messages (including centered ones) fail.
+interleaved commands fail. All pitch-bend messages (including centered ones)
+still fail strict notation. The event-only profile admits them after completed
+setup through its separate reference-only bend policy, never before/inside setup.
 Reset/sustain initialization cannot be mixed with this group on the same channel;
 reset-after-key-activity remains rejected by its existing contract.
 
