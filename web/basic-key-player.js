@@ -38,6 +38,7 @@ export class BasicKeyPlayer {
       const anchor=await receiver.start({anchorTime});
       if(epoch!==this.epoch||receiver!==this.receiver)return null;
       if(this.context.state!=='running'){throw new CleanSongError('clean_clock_unavailable','Playback clock or audio context stopped.');}
+      if(this.context.currentTime>=anchor.anchorTime)throw new CleanSongError('clean_late_start','The audio anchor elapsed before shared transport admission.');
       this.anchor=anchor;this.running=true;return anchor;
     }catch(error){if(epoch!==this.epoch)return null;this.stop();throw error;}
   }

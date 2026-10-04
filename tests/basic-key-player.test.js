@@ -5,6 +5,7 @@ import {fakeAudio} from './clean-song-fixtures.js';
 import {prepareCleanSong,basicKeysParts} from '../web/clean-song-package.js';
 import {CleanSongPlayer,inspectCleanRendition} from '../web/clean-song-player.js';
 import {BASIC_KEY_RENDITION,BASIC_KEY_TIMBRE,BASIC_KEY_PERCUSSION} from '../web/basic-key-player.js';
+import {BasicKeyAudioReceiver} from '../web/basic-key-audio-receiver.js';
 import {ReferenceAudioReceiver} from '../web/midi-reference-synth.js';
 import {ScorePreview} from '../web/score-preview.js';
 import {basicKeyAudioHarness} from './basic-key-audio-harness.js';
@@ -86,4 +87,11 @@ test('resource preflight counts complete lookahead allocation intervals and exac
 
 test('lack of AudioWorklet support explicitly rejects and creates no timer fallback',async()=>{
  const h=harness();try{delete h.context.audioWorklet;await assert.rejects(h.start(),{code:'audio_worklet_unavailable'});assert.equal(h.nodes.length,0);assert.equal(h.player.basicKeys.running,false);}finally{h.close();}
+});
+
+
+test('an accepted audio ACK delayed before the player continuation cannot backdate transport admission',async()=>{
+ const h=harness(),original=BasicKeyAudioReceiver.prototype.start;
+ BasicKeyAudioReceiver.prototype.start=function(options){return original.call(this,options).then(anchor=>{h.renderTo(anchor.anchorTime+.01);return anchor;});};
+ try{await assert.rejects(h.start(),{code:'clean_late_start'});assert.equal(h.player.basicKeys.running,false);assert.equal(h.nodes.at(-1).connected,false);}finally{BasicKeyAudioReceiver.prototype.start=original;h.close();}
 });

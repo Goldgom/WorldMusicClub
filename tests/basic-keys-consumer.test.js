@@ -24,11 +24,11 @@ async function nativeFixture(openValue){
   server.records.set(storageKey,{...value,entry});return{server,storageKey,key,summary,entry,descriptor,score};
 }
 
-test('basic-key admission preserves exact complete source bytes and separates target and source coverage',()=>{
+test('basic-key admission preserves exact complete source bytes and separates target and source coverage',async()=>{
   const song=admitted();assert.ok(isBasicKeysSong(song));assert.equal(song.score_json,source().descriptor.score_json);assert.equal(song.coverage.key_attacks,5);assert.equal(song.coverage.notation_notes,3);assert.equal(song.compilation.timeline.notes.length,2);assert.deepEqual(song.compilation.timeline.notes.map(note=>note.midi),[60,72]);assert.deepEqual(song.notation.meters,[]);assert.deepEqual(song.notation.tempo,[]);
   const inventory=basicKeysParts(song);assert.equal(inventory.reduce((sum,part)=>sum+part.attacks,0),5);assert.equal(inventory.reduce((sum,part)=>sum+part.unresolved,0),1);assert.equal(inventory.reduce((sum,part)=>sum+part.instantaneous,0),1);assert.equal(inventory.filter(part=>part.percussion).reduce((sum,part)=>sum+part.attacks,0),1);assert.ok(inventory.filter(part=>part.percussion).every(part=>!part.practice_available));
   for(const note of song.compilation.timeline.notes){assert.equal(note.id,note.source_note_id);assert.deepEqual(note.source_note_ids,[note.id]);assert.ok(/^midi-t[0-9]+-e[0-9]+$/.test(note.id));}
-  assert.equal(inspectCleanRendition(song).supported,false);const player=new CleanSongPlayer({getPositionMs:()=>0});player.select(song);assert.throws(()=>player.start(fakeAudio()),{code:'clean_renderer_unsupported'});player.destroy();
+  assert.equal(inspectCleanRendition(song).supported,false);const player=new CleanSongPlayer({getPositionMs:()=>0});player.select(song);await assert.rejects(player.start(fakeAudio()),{code:'clean_renderer_unsupported'});player.destroy();
 });
 
 test('native basic-key runtime rejects missing parts, forged targets, percussion targets and inconsistent coverage',()=>{

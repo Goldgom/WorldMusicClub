@@ -858,6 +858,7 @@ async function togglePlayback() {
       // All plan building, transfer and renderer preparation precede this lead.
       const anchor=await cleanPlayer.startPrepared({anchorTime:synth.context.currentTime+.05});
       if(!anchor||!current())return;
+      if(synth.context.state!=='running'||synth.context.currentTime>=anchor.anchorTime)throw Object.assign(new Error('The shared audio start anchor elapsed before transport admission.'),{code:'clean_late_start'});
       // Use the renderer's quantized sample anchor for both transport and inputs.
       now=performance.now()+(anchor.anchorTime-synth.context.currentTime)*1000;
       transport.position=anchor.positionMs;
