@@ -25,10 +25,17 @@ const modelFraction = value => {
 };
 const noteKey = (part, measure, staff, voice, at, length, pitch, printed) => JSON.stringify([part, measure, staff, voice, fractionKey(at), fractionKey(length), pitch, printed]);
 const countKey = (map, key) => map.set(key, (map.get(key) || 0) + 1);
+const serializeDocument = document => {
+  const Serializer = document.defaultView?.XMLSerializer || globalThis.XMLSerializer;
+  return Serializer ? new Serializer().serializeToString(document) : document.toString();
+};
+const projectionMetadata = projection => JSON.stringify([projection.ok, projection.sourceMeasureIndices, projection.displayedSourceMeasureIndices,
+  projection.drawFromIndex, projection.drawToIndex, projection.tieChains, projection.partIds, projection.noteCount, projection.paddingNoteCount]);
+const projectionReferenceKeys = ['document', 'sourceMeasureIndices', 'displayedSourceMeasureIndices', 'tieChains', 'partIds'];
 
 // Snapshot exact original + generated-rest tuples before third-party parsing.
 // A public projection or mutable DOM alone cannot authorize a model repair.
-function rememberProjection(projection, score) {
+function rememberProjection(projection, score, sourceDocument) {
   const notes = new Map(), meters = [];
   for (const part of children(projection.document.documentElement, 'part')) {
     let divisions, meter;
@@ -51,7 +58,105 @@ function rememberProjection(projection, score) {
       if (meter && (!meters[index] || meter[0] * meters[index][1] > meters[index][0] * meter[1])) meters[index] = [...meter];
     }
   }
-  projectionProofs.set(projection, {score, notes, meters, measures: projection.sourceMeasureIndices.map(index => ({at: rational(score.measures[index].at), length: rational(score.measures[index].length)}))});
+  projectionProofs.set(projection, {score, scoreSnapshot: JSON.stringify(score), sourceDocument, sourceSnapshot: serializeDocument(sourceDocument),
+    documentSnapshot: serializeDocument(projection.document), metadataSnapshot: projectionMetadata(projection),
+    references: projectionReferenceKeys.map(key => projection[key]), chainReferences: [...projection.tieChains], notes, meters,
+    measures: projection.sourceMeasureIndices.map(index => ({at: rational(score.measures[index].at), length: rational(score.measures[index].length)}))});
+}
+
+function projectionProof(projection, score) {
+  const proof = projectionProofs.get(projection);
+  if (!proof || proof.score !== score || proof.scoreSnapshot !== JSON.stringify(score) ||
+      projectionReferenceKeys.some((key, index) => projection[key] !== proof.references[index]) ||
+      projectionMetadata(projection) !== proof.metadataSnapshot || projection.tieChains.some((chain, index) => chain !== proof.chainReferences[index]) ||
+      serializeDocument(proof.sourceDocument) !== proof.sourceSnapshot || serializeDocument(projection.document) !== proof.documentSnapshot) fail();
+  return proof;
+}
+
+// Shared structural/relative-time proof. Measure-clock repair must run before
+// the public absolute-time proof, but never skips this exact note inventory.
+function modelInventory(sheet, projection, proof, limits, absoluteTimes) {
+  const measures = sheet?.SourceMeasures, instruments = sheet?.Instruments;
+  if (!Array.isArray(measures) || measures.length !== proof.measures.length || new Set(measures).size !== measures.length ||
+      !Array.isArray(instruments) || instruments.length !== projection.partIds.length || new Set(instruments).size !== instruments.length ||
+      new Set(instruments.map(instrument => instrument.IdString)).size !== instruments.length || instruments.some(instrument => !projection.partIds.includes(instrument.IdString))) fail();
+  const staves = [], parentVoices = new Set();
+  for (const instrument of instruments) {
+    if (!Array.isArray(instrument.Staves) || !instrument.Staves.length || !Array.isArray(instrument.Voices) ||
+        new Set(instrument.Voices).size !== instrument.Voices.length || new Set(instrument.Voices.map(voice => voice.VoiceId)).size !== instrument.Voices.length) fail();
+    for (const voice of instrument.Voices) {
+      if (parentVoices.has(voice) || voice.Parent !== instrument || !Number.isSafeInteger(voice.VoiceId) || voice.VoiceId < 1 || voice.VoiceId > 2000 || !Array.isArray(voice.VoiceEntries)) fail();
+      parentVoices.add(voice);
+    }
+    for (const staff of instrument.Staves) {
+      // The pinned reader can list the same parent Voice twice on a staff.
+      // These are redundant membership references, never duplicate VoiceEntry
+      // or Note ownership; the reverse entry inventory below stays one-to-one.
+      if (staves.includes(staff) || staff.ParentInstrument !== instrument || !Array.isArray(staff.Voices) ||
+          staff.Voices.some(voice => !instrument.Voices.includes(voice))) fail();
+      staves.push(staff);
+    }
+  }
+  if (!Array.isArray(sheet.Staves) || sheet.Staves.length !== staves.length || sheet.Staves.some((staff, index) => staff !== staves[index] || staff.idInMusicSheet !== index)) fail();
+  const notes = new Set(), actual = new Map(), ends = measures.map(() => new Map()), containers = new Set(), entries = new Set(), voices = new Set();
+  for (const [index, measure] of measures.entries()) {
+    if (measure.measureListIndex !== index || measure.CompleteNumberOfStaves !== staves.length || !Array.isArray(measure.VerticalSourceStaffEntryContainers)) fail();
+    for (const instruction of [...(measure.FirstInstructionsStaffEntries || []), ...(measure.LastInstructionsStaffEntries || [])]) if (instruction?.VoiceEntries?.length) fail();
+    const measureAt = absoluteTimes ? modelFraction(measure.AbsoluteTimestamp) : null;
+    let previousAt;
+    for (const container of measure.VerticalSourceStaffEntryContainers) {
+      if (!container || containers.has(container) || container.ParentMeasure !== measure || !Array.isArray(container.StaffEntries) || container.StaffEntries.length !== staves.length) fail();
+      containers.add(container);
+      const at = modelFraction(container.Timestamp), absolute = absoluteTimes ? add(measureAt, at) : null;
+      if (previousAt && at[0] * previousAt[1] <= previousAt[0] * at[1] || at[0] * proof.measures[index].length[1] > proof.measures[index].length[0] * at[1] || absoluteTimes && !equal(modelFraction(container.getAbsoluteTimestamp()), absolute)) fail();
+      previousAt = at;
+      for (const [staffOrdinal, entry] of container.StaffEntries.entries()) {
+        if (entry == null) continue;
+        if (entries.has(entry) || entry.VerticalContainerParent !== container || entry.ParentStaff !== staves[staffOrdinal] || !Array.isArray(entry.VoiceEntries) ||
+            new Set(entry.VoiceEntries.map(voice => voice.ParentVoice)).size !== entry.VoiceEntries.length || !equal(modelFraction(entry.Timestamp), at) || absoluteTimes && !equal(modelFraction(entry.AbsoluteTimestamp), absolute)) fail();
+        entries.add(entry);
+        const staff = entry.ParentStaff, instrument = staff.ParentInstrument, staffIndex = instrument.Staves.indexOf(staff);
+        for (const voice of entry.VoiceEntries) {
+          if (!voice || voices.has(voice) || voice.ParentSourceStaffEntry !== entry || !parentVoices.has(voice.ParentVoice) || voice.ParentVoice.Parent !== instrument ||
+              !staff.Voices.includes(voice.ParentVoice) || !Array.isArray(voice.Notes) || !voice.Notes.length || !equal(modelFraction(voice.Timestamp), at) || voice.IsGrace || voice.GraceAfterMainNote) fail();
+          voices.add(voice);
+          for (const note of voice.Notes) {
+            if (!note || notes.has(note)) fail();
+            notes.add(note); if (notes.size > limits.notes) fail('notes');
+            const pitch = note.isRest() ? null : note.Pitch;
+            if (note.SourceMeasure !== measure || note.ParentVoiceEntry !== voice || note.ParentStaffEntry !== entry || note.ParentStaff !== staff || typeof note.PrintObject !== 'boolean' ||
+                absoluteTimes && !equal(modelFraction(note.getAbsoluteTimestamp()), absolute) ||
+                pitch && (pitch.constructor.OctaveXmlDifference !== 3 || ![0, 2, 4, 5, 7, 9, 11].includes(pitch.FundamentalNote))) fail();
+            const length = modelFraction(note.Length), end = add(at, length), last = ends[index].get(instrument.IdString);
+            if (!last || end[0] * last[1] > last[0] * end[1]) ends[index].set(instrument.IdString, end);
+            countKey(actual, noteKey(instrument.IdString, index, staffIndex + 1, String(voice.ParentVoice.VoiceId), at, length,
+              pitch ? [['C', 'D', 'E', 'F', 'G', 'A', 'B'][[0, 2, 4, 5, 7, 9, 11].indexOf(pitch.FundamentalNote)], pitch.AccidentalHalfTones, pitch.Octave + 3] : null, note.PrintObject));
+          }
+        }
+      }
+    }
+  }
+  const listedVoices = new Set();
+  for (const parent of parentVoices) for (const voice of parent.VoiceEntries) {
+    if (listedVoices.has(voice) || !voices.has(voice) || voice.ParentVoice !== parent) fail();
+    listedVoices.add(voice);
+  }
+  if (listedVoices.size !== voices.size || notes.size !== projection.noteCount || actual.size !== proof.notes.size || [...actual].some(([key, count]) => proof.notes.get(key) !== count)) fail();
+  return {notes: [...notes], ends};
+}
+
+/**
+ * Read-only, per-call proof of the entire exact pre-parser Note/rest inventory.
+ * No NoteTie field is read. Native-only consumers must additionally prove their
+ * own original admission and visible segment bijection before rebuilding ties.
+ */
+export function proveEngravingProjectionModelNotes(sheet, projection, score, limits) {
+  try {
+    const proof = projectionProof(projection, score), clocks = validateEngravingProjectionModel(sheet, projection, score, limits);
+    if (!clocks.ok) fail(clocks.key);
+    const inventory = modelInventory(sheet, projection, proof, limits, true);
+    return {ok: true, sourceDocument: proof.sourceDocument, notes: inventory.notes};
+  } catch (error) { return {ok: false, key: error.projectionKey || 'projection'}; }
 }
 
 /** The complete original XML and manifest MUST be validated before calling this. */
@@ -157,7 +262,7 @@ export function createEngravingProjection(source, validated, options, limits) {
     if (typeof xml !== 'string' || !xml.trimStart().startsWith('<')) fail();
     if (new TextEncoder().encode(xml).byteLength > limits.xmlBytes) fail('xmlLimit');
     const projection = {ok: true, document, sourceMeasureIndices, displayedSourceMeasureIndices, drawFromIndex: options.fromMeasure - context.fromMeasure, drawToIndex: options.toMeasure - context.fromMeasure, tieChains: context.tieChains, partIds: [...options.partIds], noteCount, paddingNoteCount};
-    rememberProjection(projection, validated.score);
+    rememberProjection(projection, validated.score, source);
     return projection;
   } catch (error) { return {ok: false, key: error.projectionKey || 'projection'}; }
 }
@@ -172,23 +277,8 @@ export function createEngravingProjection(source, validated, options, limits) {
 export function restoreSourceBoundProjectionFractions(sheet, projection, score, limits) {
   try {
     if (validateEngravingProjectionModel(sheet, projection, score, limits).ok) return {ok: true};
-    const proof = projectionProofs.get(projection), measures = sheet?.SourceMeasures, instruments = sheet?.Instruments;
-    if (!proof || proof.score !== score || !Array.isArray(measures) || measures.length !== proof.measures.length ||
-        !Array.isArray(instruments) || instruments.length !== projection.partIds.length ||
-        instruments.some(instrument => !projection.partIds.includes(instrument.IdString))) fail();
-    const notes = new Set(), actual = new Map(), ends = measures.map(() => new Map());
-    for (const [index, measure] of measures.entries()) for (const container of measure.VerticalSourceStaffEntryContainers || []) for (const entry of container.StaffEntries || []) for (const voice of entry?.VoiceEntries || []) for (const note of voice.Notes || []) {
-      if (notes.has(note)) continue;
-      notes.add(note); if (notes.size > limits.notes) fail('notes');
-      const staff = note.ParentStaff, instrument = staff?.ParentInstrument, staffIndex = instrument?.Staves?.indexOf(staff), pitch = note.isRest() ? null : note.Pitch;
-      if (note.SourceMeasure !== measure || note.ParentVoiceEntry !== voice || !instruments.includes(instrument) || !Number.isSafeInteger(staffIndex) || staffIndex < 0 ||
-          (pitch && (pitch.constructor.OctaveXmlDifference !== 3 || ![0, 2, 4, 5, 7, 9, 11].includes(pitch.FundamentalNote)))) fail();
-      const at = modelFraction(voice.Timestamp), length = modelFraction(note.Length), end = add(at, length), last = ends[index].get(instrument.IdString);
-      if (!last || end[0] * last[1] > last[0] * end[1]) ends[index].set(instrument.IdString, end);
-      countKey(actual, noteKey(instrument.IdString, index, staffIndex + 1, String(voice.ParentVoice.VoiceId), at, length,
-        pitch ? [['C', 'D', 'E', 'F', 'G', 'A', 'B'][[0, 2, 4, 5, 7, 9, 11].indexOf(pitch.FundamentalNote)], pitch.AccidentalHalfTones, pitch.Octave + 3] : null, note.PrintObject === true));
-    }
-    if (notes.size !== projection.noteCount || actual.size !== proof.notes.size || [...actual].some(([key, count]) => proof.notes.get(key) !== count)) fail();
+    const proof = projectionProof(projection, score), measures = sheet.SourceMeasures, instruments = sheet.Instruments;
+    const {ends} = modelInventory(sheet, projection, proof, limits, false);
     const Fraction = measures[0]?.Duration?.constructor;
     if (typeof Fraction !== 'function' || Fraction.maximumAllowedNumber !== 46340) fail();
     const exact = quarter => {

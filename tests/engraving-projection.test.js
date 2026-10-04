@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {DOMParser,parseHTML} from 'linkedom';
 import {validateEngravingInput, renderEngravedStaff, ENGRAVING_LIMITS} from '../web/engraving.js';
-import {createEngravingProjection, restoreSourceBoundProjectionFractions, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from '../web/engraving-projection.js';
+import {createEngravingProjection, proveEngravingProjectionModelNotes, restoreSourceBoundProjectionFractions, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from '../web/engraving-projection.js';
 import {matchEngravingModel,validateEngravingModelTies,restoreSourceBoundPageTies} from '../web/engraving-note-map.js';
 import {resolveEngravingTieContext} from '../web/engraving-tie-context.js';
 import {createI18n} from '../web/i18n.js';
@@ -98,6 +98,8 @@ test('pinned reader keeps pickup, all lanes, gaps, empty bars and later-page clo
     const sheet = read(projection), base = spec.identity.score.measures[projection.sourceMeasureIndices[0]].at.numerator;
     assert.equal(sheet.SourceMeasures.length, projection.sourceMeasureIndices.length);
     assert.deepEqual(validateEngravingProjectionModel(sheet, projection, spec.identity.score, ENGRAVING_LIMITS), {ok:true});
+    const inventory=proveEngravingProjectionModelNotes(sheet,projection,spec.identity.score,ENGRAVING_LIMITS);
+    assert.equal(inventory.ok,true);assert.equal(inventory.sourceDocument,checked.document);assert.equal(inventory.notes.length,projection.noteCount);
     for (let local = 0; local < sheet.SourceMeasures.length; local++) {
       const model = sheet.SourceMeasures[local], source = spec.identity.score.measures[projection.sourceMeasureIndices[local]];
       wholeEquals(model.Duration, source.length.numerator, 1920); wholeEquals(model.AbsoluteTimestamp, source.at.numerator-base, 1920);
@@ -301,6 +303,93 @@ test('production adapter restores source-proved short clocks before layout and r
     if(corrupt){assert.equal(result.code,'engraving_projection');assert.equal(instances[0].layouts,0);assert.equal(container.querySelector('svg'),null);}
     else{assert.equal(result.ok,true,result.message);assert.equal(instances[0].layouts,1);result.dispose();}
   }
+});
+
+test('read-only inventory proves every original note and hidden rest on every call without reading NoteTie',()=>{
+  for(const spec of [synthetic({measures:3,parts:2,highRatio:true,emptyIndex:2}),shortMeasureFixture()]){
+    const {checked,projection}=project(spec),sheet=read(projection);
+    assert.deepEqual(restoreSourceBoundProjectionFractions(sheet,projection,spec.identity.score,ENGRAVING_LIMITS),{ok:true});
+    const before=JSON.stringify(spec),sourceXml=checked.document.toString(),projectedXml=projection.document.toString();
+    const first=proveEngravingProjectionModelNotes(sheet,projection,spec.identity.score,ENGRAVING_LIMITS);assert.equal(first.ok,true);assert.equal(first.sourceDocument,checked.document);
+    assert.equal(first.notes.length,projection.noteCount);assert.equal(new Set(first.notes).size,first.notes.length);assert.equal(first.notes.filter(note=>note.PrintObject===false).length,projection.paddingNoteCount);
+    const references=first.notes.map(note=>[note,note.ParentVoiceEntry,note.ParentStaffEntry,note.Length,note.Pitch]);
+    for(const note of first.notes)Object.defineProperty(note,'NoteTie',{configurable:true,get(){throw Error('Inventory proof must not inspect any current tie');}});
+    const next=proveEngravingProjectionModelNotes(sheet,projection,spec.identity.score,ENGRAVING_LIMITS);assert.equal(next.ok,true);assert.notEqual(next.notes,first.notes);
+    for(const [note,voice,staff,length,pitch]of references){assert.equal(note.ParentVoiceEntry,voice);assert.equal(note.ParentStaffEntry,staff);assert.equal(note.Length,length);assert.equal(note.Pitch,pitch);assert.ok(next.notes.includes(note));}
+    first.notes.length=0;assert.equal(proveEngravingProjectionModelNotes(sheet,projection,spec.identity.score,ENGRAVING_LIMITS).notes.length,projection.noteCount,'The returned inventory cannot alter private credentials');
+    assert.equal(JSON.stringify(spec),before);assert.equal(checked.document.toString(),sourceXml);assert.equal(projection.document.toString(),projectedXml);
+  }
+});
+
+test('inventory rejects duplicate ownership, detached reverse entries, hidden sources and corrupt exact graph links',()=>{
+  const cases=[
+    ['duplicate Note object',state=>state.note.ParentVoiceEntry.Notes.push(state.note)],
+    ['missing original Note',state=>state.voice.Notes.splice(state.voice.Notes.indexOf(state.note),1)],
+    ['missing padding Note',state=>state.padding.ParentVoiceEntry.Notes.splice(state.padding.ParentVoiceEntry.Notes.indexOf(state.padding),1)],
+    ['extra distinct Note',state=>state.voice.Notes.push(new state.note.constructor(state.voice,state.entry,state.note.Length,state.note.Pitch,state.measure,false))],
+    ['duplicate VoiceEntry',state=>state.entry.VoiceEntries.push(state.voice)],
+    ['duplicate container',state=>state.measure.VerticalSourceStaffEntryContainers.push(state.container)],
+    ['wrong container parent',state=>{state.container.ParentMeasure=state.sheet.SourceMeasures[1];}],
+    ['wrong local measure ordinal',state=>{state.measure.measureListIndex++;}],
+    ['unordered containers',state=>{state.measure.VerticalSourceStaffEntryContainers.reverse();}],
+    ['wrong global staff table',state=>{state.sheet.Staves.reverse();}],
+    ['wrong global staff ordinal',state=>{state.entry.ParentStaff.idInMusicSheet++;}],
+    ['wrong entry container',state=>{state.entry.verticalContainerParent=state.measure.VerticalSourceStaffEntryContainers[1];}],
+    ['swapped staff slot',state=>{const entries=state.container.StaffEntries;[entries[0],entries[1]]=[entries[1],entries[0]];}],
+    ['wrong VoiceEntry parent',state=>{state.voice.ParentSourceStaffEntry=state.otherEntry;}],
+    ['wrong Note staff parent',state=>{state.note.ParentStaffEntry=state.otherEntry;}],
+    ['wrong Note voice parent',state=>{state.note.ParentVoiceEntry=state.otherEntry.VoiceEntries[0];}],
+    ['changed voice timestamp',state=>{state.voice.Timestamp=new state.note.Length.constructor(1,2);}],
+    ['changed container timestamp',state=>{state.container.Timestamp=new state.note.Length.constructor(1,2);}],
+    ['changed derived entry timestamp',state=>{Object.defineProperty(state.entry,'Timestamp',{value:new state.note.Length.constructor(1,2)});}],
+    ['changed derived entry absolute time',state=>{Object.defineProperty(state.entry,'AbsoluteTimestamp',{value:new state.note.Length.constructor(1,2)});}],
+    ['changed derived container absolute time',state=>{state.container.getAbsoluteTimestamp=()=>new state.note.Length.constructor(1,2);}],
+    ['changed derived Note absolute time',state=>{state.note.getAbsoluteTimestamp=()=>new state.note.Length.constructor(1,2);}],
+    ['changed note duration',state=>{state.note.Length.Numerator+=1;}],
+    ['changed source pitch',state=>{Object.defineProperty(state.note.Pitch,'Octave',{value:state.note.Pitch.Octave+1});}],
+    ['hidden source note',state=>{state.note.PrintObject=false;}],
+    ['visible timing padding',state=>{state.padding.PrintObject=true;}],
+    ['ambiguous print flag',state=>{state.padding.PrintObject=undefined;}],
+    ['missing reverse VoiceEntry',state=>{const entries=state.voice.ParentVoice.VoiceEntries;entries.splice(entries.indexOf(state.voice),1);}],
+    ['duplicate reverse VoiceEntry',state=>state.voice.ParentVoice.VoiceEntries.push(state.voice)],
+    ['detached reverse VoiceEntry',state=>state.voice.ParentVoice.VoiceEntries.push(new state.voice.constructor(state.voice.Timestamp,state.voice.ParentVoice,undefined))],
+    ['invented empty VoiceEntry',state=>state.voice.ParentVoice.VoiceEntries.push(new state.voice.constructor(state.voice.Timestamp,state.voice.ParentVoice,state.entry))],
+    ['foreign staff voice registry',state=>state.entry.ParentStaff.Voices.push(state.sheet.Instruments[1].Voices[0])],
+    ['note in instruction entry',state=>state.measure.FirstInstructionsStaffEntries[0].VoiceEntries.push(state.voice)],
+    ['changed XML voice',state=>{state.voice.ParentVoice.voiceId=999;}],
+  ];
+  for(const [name,mutate]of cases){
+    const spec=synthetic({measures:3,parts:2}),{projection}=project(spec),sheet=read(projection),verified=proveEngravingProjectionModelNotes(sheet,projection,spec.identity.score,ENGRAVING_LIMITS);assert.equal(verified.ok,true,name);
+    const note=verified.notes.find(note=>note.PrintObject),entry=note.ParentStaffEntry,measure=note.SourceMeasure,container=entry.VerticalContainerParent;
+    mutate({sheet,note,entry,measure,container,voice:note.ParentVoiceEntry,padding:verified.notes.find(note=>!note.PrintObject),otherEntry:measure.VerticalSourceStaffEntryContainers.flatMap(container=>container.StaffEntries).find(candidate=>candidate&&candidate!==entry&&candidate.VoiceEntries.length)});
+    assert.deepEqual(proveEngravingProjectionModelNotes(sheet,projection,spec.identity.score,ENGRAVING_LIMITS),{ok:false,key:'projection'},name);
+  }
+});
+
+test('inventory binds original source, score, projection document and every public projection identity parameter',()=>{
+  const cases=[
+    ['projection clone',state=>{state.projection={...state.projection};}],
+    ...['sourceMeasureIndices','displayedSourceMeasureIndices','partIds','tieChains'].map(field=>[`${field} replacement`,state=>{state.projection[field]=[...state.projection[field]];}]),
+    ['draw range',state=>{state.projection.drawToIndex--;}],
+    ['note count',state=>{state.projection.noteCount++;}],
+    ['padding count',state=>{state.projection.paddingNoteCount++;}],
+    ['selected part mutation',state=>{state.projection.partIds[0]='other';}],
+    ['source indices mutation',state=>{state.projection.sourceMeasureIndices[0]=1;}],
+    ['displayed indices mutation',state=>{state.projection.displayedSourceMeasureIndices[0]=1;}],
+    ['tie chain mutation',state=>{state.projection.tieChains.push(['invented']);}],
+    ['projected document substitution',state=>{state.projection.document=state.projection.document.cloneNode(true);}],
+    ['projected document mutation',state=>{state.projection.document.querySelector('note').setAttribute('id','changed');}],
+    ['source document mutation',state=>{state.checked.document.querySelector('note').setAttribute('id','changed');}],
+    ['score substitution',state=>{state.score=structuredClone(state.score);}],
+    ['score note mutation',state=>{state.score.parts[0].notes[0].pitch.octave++;}],
+  ];
+  for(const [name,mutate]of cases){
+    const spec=synthetic({measures:3,parts:1}),state={...project(spec),score:spec.identity.score};state.sheet=read(state.projection);
+    assert.equal(proveEngravingProjectionModelNotes(state.sheet,state.projection,state.score,ENGRAVING_LIMITS).ok,true,name);mutate(state);
+    assert.deepEqual(proveEngravingProjectionModelNotes(state.sheet,state.projection,state.score,ENGRAVING_LIMITS),{ok:false,key:'projection'},name);
+  }
+  const spec=sustainedFixture(),{projection}=project(spec),sheet=read(projection);projection.tieChains[0]=[...projection.tieChains[0]];
+  assert.deepEqual(proveEngravingProjectionModelNotes(sheet,projection,spec.identity.score,ENGRAVING_LIMITS),{ok:false,key:'projection'},'Replacing an identical nested chain cannot preserve admission by a valid outer WeakMap key');
 });
 
 function sustainedFixture({measures=3,parts=1,voices=1,tiedParts=Array.from({length:parts},(_,index)=>index)}={}) {
