@@ -415,3 +415,10 @@ test('acceptance cleanup attempts every restoration and preserves the original p
  assert.deepEqual(calls,['first','second','third']);assert.equal(report.error,'original audio processor failure');assert.equal(report.cleanupErrors.length,2);assert.equal(report.ok,false);
  const successful={ok:true};realm.cleanup(successful,[['failed',()=>false],['still-runs',()=>calls.push('last')]]);assert.equal(successful.ok,false);assert.match(successful.error,/Acceptance cleanup failed/);assert.equal(calls.at(-1),'last');
 });
+
+test('hosted origin is explicit while Windows/native verification remains exact HTTPS',()=>{
+ const original=renderer('basic-key-seed'),hosted=structuredClone(original),origin='http://127.0.0.1:43210';hosted.origin=origin;
+ validateBasicKeyRenderer(original);assert.throws(()=>validateBasicKeyRenderer(hosted));validateBasicKeyRenderer(hosted,undefined,{expectedOrigin:origin});
+ for(const unexpected of ['https://foreign.example','http://localhost:43210','http://127.0.0.1:43211'])assert.throws(()=>validateBasicKeyRenderer(hosted,undefined,{expectedOrigin:unexpected}));
+ assert.throws(()=>validateBasicKeyRenderer(original,undefined,{expectedOrigin:origin}));
+});

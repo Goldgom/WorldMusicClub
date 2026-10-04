@@ -131,6 +131,7 @@ jobs:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
         run: |
           WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-basic-key-check.mjs
           WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-basic-key-check.mjs
@@ -154,12 +155,13 @@ jobs:
           WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
         run: node scripts/hosted-notation-scope-check.mjs
       - name: Continuous original dense audio across real native page rendering
-        if: ${{ !cancelled() && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         timeout-minutes: 4
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
         run: node scripts/hosted-dense-rendition-check.mjs
       - name: Retain original dense rendition timing and source evidence
         if: always()

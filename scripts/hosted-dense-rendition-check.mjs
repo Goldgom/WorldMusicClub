@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
-import {resolve,join,extname,sep} from 'node:path';
+import {resolve,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {startVsqNativeDriver} from '../tests/vsq-native-driver-fixtures.js';
 import {prepareDenseRenditionFixture,denseDigest,denseDiskGuard,DENSE_STREAM} from './prepare-dense-rendition-fixture.mjs';
@@ -10,11 +10,12 @@ import {denseTimingMetrics,validateDenseRenditionEvidence} from './verify-dense-
 import {validateCleanScreenshot} from './verify-native-clean-song-evidence.mjs';
 import {denseRenditionBootstrap} from './dense-rendition-observer.mjs';
 import {finishDenseReport} from './dense-report-cleanup.mjs';
+import {startHostedAssetServer,createHostedNativeBridge} from './hosted-worklet-assets.mjs';
 if(process.env.GITHUB_ACTIONS!=='true'||process.env.WMH_HOSTED_BROWSER!=='1')throw Error('Dense rendition checks require the authorized hosted Actions runner.');
 const root=fileURLToPath(new URL('../',import.meta.url)),sourceSha=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();assert.equal(process.env.WMH_SOURCE_SHA,sourceSha);assert.equal(execFileSync('git',['status','--porcelain','--untracked-files=normal'],{cwd:root,encoding:'utf8'}).trim(),'','Dense hosted source must be clean');assert.ok(process.env.WMH_NATIVE_IMPORT_DRIVER,'An exact-source native driver is required');
-const output=resolve(process.env.WMH_ARTIFACT_DIR||join(root,'test-results/dense-rendition')),binary=resolve(process.env.WMH_NATIVE_IMPORT_DRIVER),origin='https://wmh.localhost';await denseDiskGuard(root);await mkdir(output,{recursive:true});await mkdir(join(output,'fixture'),{recursive:true});await mkdir(join(output,'ui-pages'),{recursive:true});
+const output=resolve(process.env.WMH_ARTIFACT_DIR||join(root,'test-results/dense-rendition')),binary=resolve(process.env.WMH_NATIVE_IMPORT_DRIVER);await denseDiskGuard(root);await mkdir(output,{recursive:true});await mkdir(join(output,'fixture'),{recursive:true});await mkdir(join(output,'ui-pages'),{recursive:true});
 const report={version:1,kind:'original-dense-native-rendition-hosted',source_sha:sourceSha,source_tree:execFileSync('git',['rev-parse','HEAD^{tree}'],{cwd:root,encoding:'utf8'}).trim(),driver_sha256:denseDigest(await readFile(binary)),viewport:{width:1280,height:720},locale:'zh-CN',fixture:null,actions:[],screenshots:[],api:[],assessmentRequests:0,pageErrors:[],ok:false,claims:{physical_audio:false,synthetic_clock:false,production_behavior_changed:false,private_music:false}};
-let driver,browser,context,page,traceInstalled=false,uiPageNumber=0;
+let driver,browser,context,page,assetServer,origin,nativeBridge,traceInstalled=false,uiPageNumber=0;
 const action=async(label,run)=>{assert.ok(report.actions.length<64,'Dense UI action bound');const row={sequence:report.actions.length+1,label};report.actions.push(row);await run();row.completed=true;};
 async function screenshot(name){await denseDiskGuard(output);const filename=`${name}.png`;await page.screenshot({path:join(output,filename),fullPage:true});const bytes=await readFile(join(output,filename));validateCleanScreenshot(bytes);report.screenshots.push({path:filename,bytes:bytes.length,sha256:denseDigest(bytes)});}
 async function controls(open){
@@ -27,21 +28,22 @@ async function controls(open){
  if(await tools.evaluate(node=>node.open)!==open)await action(open?'Open notation controls':'Close notation controls',()=>tools.locator('summary').first().click());
 }
 try{
+ report.asset_server={};assetServer=await startHostedAssetServer({root,sourceSha,binary:resolve(root,process.env.WMH_SERVER_BINARY||'target/debug/practice-server'),evidence:report.asset_server});origin=assetServer.origin;report.origin=origin;nativeBridge=createHostedNativeBridge({origin,requestTimeoutMs:30000,maxRequests:128});report.native_bridge=nativeBridge.evidence;
  driver=startVsqNativeDriver({binary,directory:join(output,'Scores'),cwd:root,requestTimeoutMs:30000});report.process_id=driver.pid;
  const prepared=await prepareDenseRenditionFixture(driver,join(output,'fixture'),{retainPages:true});report.fixture=prepared.manifest;
  const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});context=await browser.newContext({viewport:report.viewport,locale:'zh-CN'});
  await context.addInitScript(denseRenditionBootstrap());
- await context.route(`${origin}/**`,async route=>{
+ await context.route(`${origin}/api/**`,async route=>{
   const request=route.request(),url=new URL(request.url()),path=url.pathname;
   if(path.startsWith('/api/')){
    assert.ok(report.api.length<128,'Dense native API request bound');const row={path,method:request.method(),status:null};report.api.push(row);if(path==='/api/assess')report.assessmentRequests++;
-   try{const body=request.postDataBuffer(),response=await driver.fetcher(path+url.search,{method:request.method(),headers:request.headers(),body:body||undefined}),bytes=await response.bytes();row.status=response.status;row.bytes=bytes.length;row.sha256=denseDigest(bytes);
+   try{await nativeBridge.run(request,async headers=>{const body=request.postDataBuffer(),response=await driver.fetcher(path+url.search,{method:request.method(),headers,body:body||undefined}),bytes=await response.bytes();row.status=response.status;row.bytes=bytes.length;row.sha256=denseDigest(bytes);
     if(path==='/api/library/load'&&response.ok){const loaded=JSON.parse(bytes);assert.equal(denseDigest(JSON.stringify({score_json:loaded.score_json,clean_package:loaded.clean_package})),prepared.manifest.open_sha256,'Actual app loaded a different native source/runtime');}
     if(path==='/api/library/basic-keys/notation'){row.request=request.postDataJSON();assert.equal(row.request.source.key,prepared.manifest.key);assert.equal(row.request.source.content_sha256,prepared.manifest.content_sha256);assert.equal(response.status,200);const admitted=JSON.parse(bytes);assert.deepEqual(admitted.source,row.request.source);assert.equal(admitted.page.source_sha256,prepared.manifest.source_sha256);assert.equal(admitted.page.rendition_policy_id,'wmh-basic-key-rendition-fifo-v1');assert.equal(admitted.page.part_id,row.request.settings.part_id);assert.equal(admitted.page.measure_count,8);assert.ok([0,8,16].includes(admitted.page.first_measure));const expectedPage=prepared.expected.filter(note=>note.part===admitted.page.part_id&&note.startMs>=admitted.page.source_start_ms&&note.startMs<admitted.page.follow_end_ms);assert.equal(admitted.page.interpreted_notes.length,512);for(const[index,note]of expectedPage.entries())assert.equal(admitted.page.interpreted_notes[index].note_id,note.id,`Actual UI native page target ${index}`);await denseDiskGuard(output);row.file=`ui-pages/page-${++uiPageNumber}.json`;await writeFile(join(output,row.file),bytes);}
-    await route.fulfill({status:response.status,contentType:response.contentType,body:bytes});
-   }catch(error){report.pageErrors.push(String(error.stack||error));await route.abort();}return;
+    try{await route.fulfill({status:response.status,contentType:response.contentType,body:bytes});}catch(error){if(!nativeBridge.closing)throw error;row.delivery='context-closed-during-cleanup';}
+   });}catch(error){report.pageErrors.push(String(error.stack||error));try{await route.abort();}catch{}}return;
   }
-  const file=resolve(root,'web','.'+decodeURIComponent(path==='/'?'/index.html':path));assert.ok(file.startsWith(join(root,'web')+sep));try{await route.fulfill({status:200,contentType:({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'})[extname(file)]||'application/octet-stream',body:await readFile(file)});}catch{await route.fulfill({status:404,body:'Not found'});}
+  throw Error('Hosted route must not intercept a shipped asset');
  });
  page=await context.newPage();page.setDefaultTimeout(30000);page.on('pageerror',error=>report.pageErrors.push(String(error.stack||error)));await page.goto(origin);report.locale=await page.evaluate(()=>document.documentElement.lang);assert.equal(report.locale,'zh-CN');
  await action('Enter library',()=>page.locator('#home-single-player').click());await action('Choose original dense source',()=>page.locator(`#catalog [data-library-key="native:${prepared.manifest.key}"]`).click());await page.waitForFunction(()=>!document.getElementById('open-score').disabled);
@@ -67,6 +69,7 @@ try{
 }catch(error){report.ok=false;report.error=String(error.stack||error);process.exitCode=1;if(page)try{report.production=await page.evaluate(()=>({notice:document.getElementById('notice')?.textContent,notation:document.getElementById('engraving-status')?.textContent,range:document.getElementById('engraving-range')?.textContent,renderer:document.getElementById('clean-song-stage')?.dataset.rendererState,position:document.getElementById('progress')?.value}));await screenshot('dense-failure');}catch{}}
 finally{
  if(traceInstalled)try{report.trace=await page.evaluate(()=>{const trace=__denseRendition.stop();delete globalThis.__denseRendition;return trace;});report.metrics=denseTimingMetrics(report.trace);}catch(error){report.traceError=String(error);}
- await finishDenseReport(report,{resources:[['context',context],['browser',browser],['driver',driver]].map(([name,resource])=>({name,present:Boolean(resource),close:()=>resource.close()})),validate:validateDenseRenditionEvidence,persist:async value=>{assert.ok(Buffer.byteLength(JSON.stringify(value))<=8*1024*1024,'Dense report exceeds its eight-MiB bound');await denseDiskGuard(output);await writeFile(join(output,'report.json'),JSON.stringify(value,null,2)+'\n');}});console.log(JSON.stringify({ok:report.ok,metrics:report.metrics,error:report.error,cleanup:report.cleanup}));
+ nativeBridge?.stopAdmission();
+ await finishDenseReport(report,{resources:[['context',context],['browser',browser],['native-requests',nativeBridge&&{close:()=>nativeBridge.drain()}],['driver',driver],['asset-server',assetServer]].map(([name,resource])=>({name,present:Boolean(resource),close:()=>resource.close()})),validate:value=>validateDenseRenditionEvidence(value,{expectedOrigin:origin}),persist:async value=>{assert.ok(Buffer.byteLength(JSON.stringify(value))<=8*1024*1024,'Dense report exceeds its eight-MiB bound');await denseDiskGuard(output);await writeFile(join(output,'report.json'),JSON.stringify(value,null,2)+'\n');}});console.log(JSON.stringify({ok:report.ok,metrics:report.metrics,error:report.error,cleanup:report.cleanup}));
 }
 if(!report.ok)throw Error(report.error);
