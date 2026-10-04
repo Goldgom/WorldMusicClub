@@ -10,6 +10,21 @@ const [workflow,hosted,native,rust,picker,renderer,performance,vsq,wait,referenc
  'crates/desktop-shell/acceptance-wait.js','crates/desktop-shell/reference-acceptance.js',
 ].map(read));
 
+// YAML plain scalars cannot contain a colon followed by whitespace. In
+// particular, Rust module filters such as acceptance:: require quoting in
+// an inline run value; source-text command checks alone cannot catch this.
+function assertPlainRunScalars(text) {
+ for(const line of text.split('\n')) {
+  const value=line.match(/^\s*(?:-\s+)?run:\s+(.+)$/)?.[1];
+  if(value&&!/^[|'"\[>{]/.test(value)) assert.doesNotMatch(value,/:\s/,`Quote the inline YAML run value: ${line.trim()}`);
+ }
+}
+test('inline workflow run values reject YAML mapping delimiters in unquoted commands',()=>{
+ for(const source of ['- run: cargo test --lib acceptance:: --locked','- run: echo status: ready']) assert.throws(()=>assertPlainRunScalars(source));
+ for(const source of ['- run: "cargo test --lib acceptance:: --locked"',"- run: 'echo status: ready'",'- run: |\n    echo status: ready','- run: node tests/check.mjs']) assert.doesNotThrow(()=>assertPlainRunScalars(source));
+ assertPlainRunScalars(workflow);
+});
+
 test('focused pitch workflow isolates preview source and requires both actual environments without publishing a candidate',()=>{
  assert.match(workflow,/branches: \['preview\/original-pitch-bend-acceptance'\]/);assert.match(workflow,/workflow_dispatch:/);
  assert.match(workflow,/needs: \[pitch-browser, pitch-windows\]/);assert.match(workflow,/BROWSER.*success/s);assert.match(workflow,/WINDOWS.*success/s);
