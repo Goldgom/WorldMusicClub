@@ -1,10 +1,12 @@
-# WorldMusicHub Native for Windows
+# WorldMusicClub Native for Windows
 
 This is an unsigned, portable native-window preview for Windows x64. Extract
-the entire `WorldMusicHub-Native-Windows-x64-commit-*.zip` and double-click
-`WorldMusicHub-Native.exe`. It opens its own application window using embedded
+the entire `WorldMusicClub-Native-Windows-x64-commit-*.zip` and double-click
+`WorldMusicClub-Native.exe`. It opens its own application window using embedded
 UI, scores, notation assets and the Rust engine. There is no separate HTTP
 server process or browser tab to keep open. Close the application window to exit.
+
+Earlier WorldMusicHub-Native packages retain their original names. The rename preserves existing native libraries and settings; see [name and data compatibility](BRAND_COMPATIBILITY.md).
 
 ## Requirements and current limits
 
@@ -79,7 +81,7 @@ therefore exist even when browser checks fail. The manifest explicitly records
 do not claim full checkpoint acceptance. Before package delivery or main
 promotion, require the successful `acceptance-summary` job in that exact
 **Native Windows feature acceptance** run, the separate full **Verify
-WorldMusicHub** workflow for the same source SHA, and the artifact checks above.
+WorldMusicClub** workflow for the same source SHA, and the artifact checks above.
 The summary requires both native and browser jobs to succeed with matching
 source SHA/tree and run identity; failed, cancelled, skipped or missing jobs
 cannot pass.
@@ -91,7 +93,7 @@ WebView2 Runtime has separate terms and is not included. Imported third-party
 music retains its own rights; this package contains only the catalog's reviewed
 sources and original exercise content.
 
-The separate `WorldMusicHub-Windows-x64-*` browser package and its
-`WorldMusicHub.exe` still use the local HTTP server described in `docs/WINDOWS.md`.
+The separate `WorldMusicClub-Windows-x64-*` browser package and its
+`WorldMusicClub.exe` still use the local HTTP server described in `docs/WINDOWS.md`.
 This Native package is a distinct preview. No installer, updater, signing or
 GitHub Release publication is implied.

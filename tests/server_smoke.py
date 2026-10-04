@@ -5,7 +5,7 @@ port=17878
 binary=Path(os.environ.get('WMH_SERVER_BINARY', 'target/debug/practice-server' + ('.exe' if os.name=='nt' else '')))
 version=subprocess.run([str(binary),'--version'],capture_output=True,text=True,timeout=5)
 expected_version=tomllib.loads((Path(__file__).resolve().parents[1]/'Cargo.toml').read_text(encoding='utf-8'))['workspace']['package']['version']
-assert version.returncode==0 and version.stdout.strip()=='WorldMusicHub '+expected_version
+assert version.returncode==0 and version.stdout.strip()=='WorldMusicClub '+expected_version
 help_result=subprocess.run([str(binary),'--help'],capture_output=True,text=True,timeout=5)
 assert help_result.returncode==0 and '--version' in help_result.stdout
 bad_options=subprocess.run([str(binary),'--unknown'],capture_output=True,text=True,timeout=5)
@@ -23,7 +23,9 @@ try:
             status,body,headers=request('/api/health');break
         except (urllib.error.URLError,ConnectionError):time.sleep(.05)
     else:raise AssertionError('Server never became healthy')
-    assert status==200 and json.loads(body)['engine']=='rust'
+    health=json.loads(body)
+    assert status==200 and health['engine']=='rust'
+    assert health['name']=='WorldMusicHub' and health['display_name']=='WorldMusicClub'
     assert headers['X-Content-Type-Options']=='nosniff'
     status,body,headers=request('/score-download.js')
     assert status==200 and body==Path('web/score-download.js').read_bytes()

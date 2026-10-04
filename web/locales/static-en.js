@@ -1,9 +1,9 @@
 /** Explicit static HTML copy; source text is excluded. */
 export default Object.freeze({
-  "ui.worldmusichub-music-practice": "WorldMusicHub · Music practice",
+  "ui.worldmusichub-music-practice": "WorldMusicClub · Music practice",
   "ui.skip-to-practice": "Skip to practice",
   "ui.practice-score-library.aria-label": "Practice score library",
-  "ui.worldmusichub-home.aria-label": "WorldMusicHub home",
+  "ui.worldmusichub-home.aria-label": "WorldMusicClub home",
   "ui.your-daily-practice": "YOUR DAILY PRACTICE",
   "ui.your-library": "YOUR LIBRARY",
   "ui.catalog-status": "Loading lightweight catalog metadata…",

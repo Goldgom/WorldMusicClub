@@ -71,7 +71,7 @@ jobs:
             $manifest = Invoke-RestMethod http://127.0.0.1:17879/vendor/engraving-manifest.json
             if ($manifest.version -ne '2.1.3') { throw 'Pinned offline engraving assets missing' }
             $page = Invoke-WebRequest http://127.0.0.1:17879/
-            if ($page.StatusCode -ne 200 -or $page.Content -notmatch 'WorldMusicHub') { throw 'Embedded UI missing' }
+            if ($page.StatusCode -ne 200 -or $page.Content -notmatch 'WorldMusicClub') { throw 'Embedded UI missing' }
           } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id } }
       - run: npx playwright install chromium
       - name: Test Windows release through real browser UI
@@ -111,32 +111,32 @@ jobs:
       - name: Create portable Windows package
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path dist/WorldMusicHub -Force | Out-Null
-          Copy-Item target/x86_64-pc-windows-msvc/release/practice-server.exe dist/WorldMusicHub/WorldMusicHub.exe
-          Copy-Item README.md,LICENSE dist/WorldMusicHub/
-          Copy-Item docs/WINDOWS.md dist/WorldMusicHub/START-HERE.md
-          New-Item -ItemType Directory -Path dist/WorldMusicHub/licenses/engraving -Force | Out-Null
-          Copy-Item web/vendor/*.txt,web/vendor/engraving-manifest.json dist/WorldMusicHub/licenses/engraving/
-          Copy-Item -Recurse docs dist/WorldMusicHub/
-          Copy-Item -Recurse schema,schemas dist/WorldMusicHub/
-          Copy-Item -Recurse catalog dist/WorldMusicHub/
-          Copy-Item -Recurse dist/licenses/rust dist/WorldMusicHub/licenses/
-          python scripts/release-manifest.py create dist/WorldMusicHub --commit '${{ needs.milestone.outputs.sha }}' --count '${{ needs.milestone.outputs.count }}' --recovery-for '${{ needs.milestone.outputs.recovery }}'
+          New-Item -ItemType Directory -Path dist/WorldMusicClub -Force | Out-Null
+          Copy-Item target/x86_64-pc-windows-msvc/release/practice-server.exe dist/WorldMusicClub/WorldMusicClub.exe
+          Copy-Item README.md,LICENSE dist/WorldMusicClub/
+          Copy-Item docs/WINDOWS.md dist/WorldMusicClub/START-HERE.md
+          New-Item -ItemType Directory -Path dist/WorldMusicClub/licenses/engraving -Force | Out-Null
+          Copy-Item web/vendor/*.txt,web/vendor/engraving-manifest.json dist/WorldMusicClub/licenses/engraving/
+          Copy-Item -Recurse docs dist/WorldMusicClub/
+          Copy-Item -Recurse schema,schemas dist/WorldMusicClub/
+          Copy-Item -Recurse catalog dist/WorldMusicClub/
+          Copy-Item -Recurse dist/licenses/rust dist/WorldMusicClub/licenses/
+          python scripts/release-manifest.py create dist/WorldMusicClub --commit '${{ needs.milestone.outputs.sha }}' --count '${{ needs.milestone.outputs.count }}' --recovery-for '${{ needs.milestone.outputs.recovery }}'
           if ($LASTEXITCODE -ne 0) { throw 'Release inventory failed' }
-          python scripts/release-manifest.py archive dist/WorldMusicHub dist/WorldMusicHub-Windows-x64-${{ needs.milestone.outputs.label }}.zip
+          python scripts/release-manifest.py archive dist/WorldMusicClub dist/WorldMusicClub-Windows-x64-${{ needs.milestone.outputs.label }}.zip
           if ($LASTEXITCODE -ne 0) { throw 'Portable archive verification failed' }
       - name: Smoke-test the extracted portable package and offline renderer bytes
         shell: pwsh
         run: |
           $destination = Join-Path $env:RUNNER_TEMP 'wmh-portable-smoke'
-          Expand-Archive -Path dist/WorldMusicHub-Windows-x64-${{ needs.milestone.outputs.label }}.zip -DestinationPath $destination
-          $directory = Join-Path $destination 'WorldMusicHub'
-          $executable = Join-Path $directory 'WorldMusicHub.exe'
+          Expand-Archive -Path dist/WorldMusicClub-Windows-x64-${{ needs.milestone.outputs.label }}.zip -DestinationPath $destination
+          $directory = Join-Path $destination 'WorldMusicClub'
+          $executable = Join-Path $directory 'WorldMusicClub.exe'
           $info = Get-Content (Join-Path $directory 'BUILD-INFO.json') -Raw | ConvertFrom-Json
           if ($info.git_commit -ne '${{ needs.milestone.outputs.sha }}' -or $info.commit_count -ne ${{ needs.milestone.outputs.count }}) { throw 'Wrong milestone provenance' }
           if ([int]$info.recovery_for -ne ${{ needs.milestone.outputs.recovery }} -or $info.release_label -ne '${{ needs.milestone.outputs.label }}') { throw 'Wrong recovery provenance' }
           $reportedVersion = & $executable --version
-          if ($LASTEXITCODE -ne 0 -or $reportedVersion -cne ('WorldMusicHub ' + $info.app_version)) { throw 'Extracted executable reports a different version' }
+          if ($LASTEXITCODE -ne 0 -or $reportedVersion -cne ('WorldMusicClub ' + $info.app_version)) { throw 'Extracted executable reports a different version' }
           $app = Start-Process $executable -WorkingDirectory $directory -ArgumentList '--no-open','--port','17880' -PassThru
           try {
             $ready = $false
@@ -158,7 +158,7 @@ jobs:
           } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id } }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: WorldMusicHub-Windows-x64-${{ needs.milestone.outputs.label }}
+          name: WorldMusicClub-Windows-x64-${{ needs.milestone.outputs.label }}
           path: |
             dist/*.zip
             dist/*.zip.sha256

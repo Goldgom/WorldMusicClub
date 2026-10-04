@@ -1,14 +1,16 @@
-# WorldMusicHub 首次使用
+# WorldMusicClub 首次使用
 
 这是早期测试版：Rust 负责乐谱、时间与评分，界面在本机浏览器中打开。程序只监听 `127.0.0.1`，无需注册账号；乐谱不会上传到云端识谱服务。
 
+项目现名为 WorldMusicClub，官方仓库是 [Goldgom/WorldMusicClub](https://github.com/Goldgom/WorldMusicClub)。旧版 WorldMusicHub 安装包仍保留原文件名，请运行压缩包内实际提供的 EXE。已有收藏、设置、备份和曲包格式保持兼容，不需要改名或迁移。详见[名称兼容说明](BRAND_COMPATIBILITY.md)。
+
 ## Windows 启动
 
-1. 完整解压 Windows ZIP，双击 `WorldMusicHub.exe`，保留控制台窗口
+1. 完整解压 Windows ZIP，双击 `WorldMusicClub.exe`，保留控制台窗口
 2. 浏览器会打开本机练习室；关闭控制台即可停止服务
-3. 默认端口为 7878。端口被占用时可用 `WorldMusicHub.exe --port 7879`，但不同端口的浏览器曲库彼此独立
+3. 默认端口为 7878。端口被占用时可用 `WorldMusicClub.exe --port 7879`，但不同端口的浏览器曲库彼此独立
 4. 如不希望自动打开浏览器，使用 `--no-open`，再打开程序打印的本机地址
-5. 用 `WorldMusicHub.exe --version` 可直接查看版本，不会启动服务器；`--help` 查看启动选项。未知选项和错误端口会明确退出
+5. 用 `WorldMusicClub.exe --version` 可直接查看版本，不会启动服务器；`--help` 查看启动选项。未知选项和错误端口会明确退出
 6. 初版未签名。如果系统或浏览器显示安全警告，请核对官方仓库、构建记录和校验和，不要盲目绕过警告
 
 ## 曲库与横屏演奏

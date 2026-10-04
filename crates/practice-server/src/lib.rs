@@ -57,7 +57,7 @@ struct AssessRequest {
 fn json_input_error(context: &str, error: serde_json::Error) -> String {
     let detail = error.to_string();
     if error.is_data() && detail.contains("unknown field") {
-        format!("Unsupported field or metadata in {context}. This file may require a newer WorldMusicHub app; it was not changed or stripped. Keep the original. Details: {detail}")
+        format!("Unsupported field or metadata in {context}. This file may require a newer WorldMusicClub app; it was not changed or stripped. Keep the original. Details: {detail}")
     } else {
         format!("Invalid {context}: {detail}")
     }

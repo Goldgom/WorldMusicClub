@@ -110,7 +110,7 @@ Run separate evidence directories for 1280×720 and 1280×900 with
 assets are routed in the isolated context without a listening server.
 
 Windows uses the shared `windows-desktop-acceptance.ps1 -Scenario performance-song`
-with the actual built `WorldMusicHub.exe`, fresh evidence directory and ordinary
+with the actual built `WorldMusicClub.exe`, fresh evidence directory and ordinary
 Windows input helpers. It never substitutes the stdio driver for the EXE.
 The standalone verifier is `verify-native-performance-song-evidence.mjs`, with
 `--check` to re-derive and compare its existing file manifest. It verifies native

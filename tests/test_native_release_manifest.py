@@ -1387,10 +1387,11 @@ class NativeReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary) / native.FOLDER
             metadata = self.package(directory)
-            (directory / 'WorldMusicHub.exe').write_bytes(executable())
-            with self.assertRaisesRegex(ValueError, 'Browser EXE'):
-                native.create_manifest(directory, metadata)
-            (directory / 'WorldMusicHub.exe').unlink()
+            for name in ['WorldMusicClub.exe', 'WorldMusicHub.exe']:
+                (directory / name).write_bytes(executable())
+                with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'Browser EXE'):
+                    native.create_manifest(directory, metadata)
+                (directory / name).unlink()
             (directory / 'licenses/rust/sources/example.crate').write_bytes(b'wrong')
             with self.assertRaisesRegex(ValueError, 'MPL source archive differs'):
                 native.create_manifest(directory, metadata)
@@ -1580,7 +1581,7 @@ class NativeReleaseTests(unittest.TestCase):
                     'acceptance_scope': 'native-windows-only', 'acceptance_workflow_run_id': '123456',
                     'checkpoint_requirements': [
                         'Native Windows feature acceptance / acceptance-summary for this source and workflow run',
-                        'Verify WorldMusicHub for this source'],
+                        'Verify WorldMusicClub for this source'],
                     'runtime_bundled': False, 'installer': False, 'http_server_process': False})
                 for arguments in [
                     ['create', str(directory), '--commit', 'b' * 40, '--count', '169',

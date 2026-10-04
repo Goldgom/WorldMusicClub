@@ -105,7 +105,7 @@ def verify_inventory(paths):
         actual = {name for name in paths if any(part.startswith(spec['names']) for part in PurePosixPath(name).parts)}
         require(actual == expected, f'Exact {scope} package evidence inventory is required')
 
-def verify_packaged(read, metadata, executable='WorldMusicHub-Native.exe'):
+def verify_packaged(read, metadata, executable='WorldMusicClub-Native.exe'):
     for scope, spec in SCOPES.items():
         fields = validate(scope, lambda name: read('evidence/' + name), read(executable), metadata.get('git_commit'), metadata.get('git_tree'))
         acceptance = metadata.get('acceptance')

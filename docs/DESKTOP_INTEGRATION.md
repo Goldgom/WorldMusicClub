@@ -24,7 +24,7 @@ bytes, exact rational time, Rust scoring, JS transport and audio behavior have
 not been redesigned by this shell. The combined native/UI snapshot must pass
 the full suite again at its own source SHA.
 
-The visible product/window name is WorldMusicHub. The persisted identifier is
+The current visible product/window name is WorldMusicClub. The persisted identifier is
 still `org.worldmusichub.desktop-proof`, and the intercepted origin is still
 `https://wmh.localhost`. Despite the historical identifier spelling, do not
 rename it casually: it identifies an existing local profile. Normal launch
@@ -101,7 +101,7 @@ click, DOM assertion or download-finished event alone cannot satisfy that gate.
 The workflow first runs the inherited startup smoke with its 60-second startup
 and ten-second close bounds, using a separate fresh profile. Failure artifacts
 contain only bounded JSON/PNG/log evidence. Only after the full feature gate
-passes can it create a distinct `WorldMusicHub-Native` portable preview, verify
+passes can it create a distinct `WorldMusicClub-Native` portable preview, verify
 its inventory and run the extracted executable with no test hooks. Package
 upload also requires that normal-startup check to pass. No WebView profile,
 private source files, installer or GitHub Release is uploaded. Inspect the

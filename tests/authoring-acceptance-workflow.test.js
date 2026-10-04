@@ -126,7 +126,7 @@ test('artifact paths retain evidence, original fixtures and clean outputs withou
   ].map(suffix=>`${prefix}/${suffix}`));
   assert.ok(upload.with.name.endsWith('-${{ github.sha }}'));
  }
- assert.doesNotMatch(source,/native-release-manifest|gh release|contents: write|dist\/WorldMusicHub|current239|webview-profile|workflow_run|pull_request/);
+ assert.doesNotMatch(source,/native-release-manifest|gh release|contents: write|dist\/WorldMusic(?:Hub|Club)|current239|webview-profile|workflow_run|pull_request/);
 });
 
 const summary=workflow.jobs['authoring-focused-summary'];

@@ -1,4 +1,4 @@
-# WorldMusicHub numbered-notation text v1
+# WorldMusicClub numbered-notation text v1
 
 `worldmusichub-jianpu-text-v1` is an **app-specific, monophonic plaintext input format**. It is not a standard interchange format and does not claim to read arbitrary Jianpu text, printed numbered scores, lyrics, or image/PDF notation. Import is entirely local and uses no network service.
 

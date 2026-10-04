@@ -1,9 +1,9 @@
 /** Explicit static HTML copy; source text is excluded. */
 export default Object.freeze({
-  "ui.worldmusichub-music-practice": "WorldMusicHub · 乐练",
+  "ui.worldmusichub-music-practice": "WorldMusicClub · 乐练",
   "ui.skip-to-practice": "跳转到练习区",
   "ui.practice-score-library.aria-label": "练习曲库",
-  "ui.worldmusichub-home.aria-label": "WorldMusicHub 首页",
+  "ui.worldmusichub-home.aria-label": "WorldMusicClub 首页",
   "ui.your-daily-practice": "每日练习",
   "ui.your-library": "曲库",
   "ui.catalog-status": "正在加载曲目简介…",

@@ -26,7 +26,7 @@ def require_windows_x64(data):
 
 def create_manifest(directory,metadata):
     directory=pathlib.Path(directory)
-    required=['WorldMusicHub.exe','README.md','LICENSE','START-HERE.md',*SCORE_SCHEMAS,'licenses/engraving/engraving-manifest.json','licenses/engraving/opensheetmusicdisplay.min.js.LICENSE.txt','licenses/rust/manifest.json','licenses/rust/CARGO-THIRD-PARTY-NOTICES.txt','licenses/rust/RUST-STANDARD-LIBRARY-COPYRIGHT.html']
+    required=['WorldMusicClub.exe','README.md','LICENSE','START-HERE.md',*SCORE_SCHEMAS,'licenses/engraving/engraving-manifest.json','licenses/engraving/opensheetmusicdisplay.min.js.LICENSE.txt','licenses/rust/manifest.json','licenses/rust/CARGO-THIRD-PARTY-NOTICES.txt','licenses/rust/RUST-STANDARD-LIBRARY-COPYRIGHT.html']
     for name in required:
         if not (directory/name).is_file(): raise ValueError(f'Package is missing {name}')
     index_path=directory/'catalog/index.json'
@@ -47,7 +47,7 @@ def create_manifest(directory,metadata):
         if score['provenance']['license']!=edition['license'] or provenance['edition_license']!=edition['license']:raise ValueError('Packaged edition license mismatch')
         if retained['provenance']!=provenance or retained['license_text'].encode('utf-8')!=license_bytes or sha(license_bytes)!=provenance['license_text_sha256']:raise ValueError('Packaged edition archive/provenance/license differs')
         editions.append({'id':edition['id'],'directory':edition['directory'],'license':edition['license'],'score_sha256':sha(score_bytes),'retained_source_sha256':sha(score['source']['content'].encode('utf-8')),'license_sha256':sha(license_bytes),'expressive_performance_equivalent':False})
-    require_windows_x64((directory/'WorldMusicHub.exe').read_bytes())
+    require_windows_x64((directory/'WorldMusicClub.exe').read_bytes())
     files={}
     for path in sorted(directory.rglob('*')):
         if path.is_symlink(): raise ValueError('Portable packages cannot contain symbolic links')
@@ -66,7 +66,7 @@ def verify_archive(archive):
     with zipfile.ZipFile(archive) as package:
         names=[entry.filename for entry in package.infolist() if not entry.is_dir()]
         if len(names)!=len(set(names)):raise ValueError('Archive contains duplicate paths')
-        prefix='WorldMusicHub/'
+        prefix='WorldMusicClub/'
         info=json.loads(package.read(prefix+INFO))
         for name in SCORE_SCHEMAS:
             if name not in info['files']:raise ValueError(f'Package is missing {name}')
@@ -76,7 +76,7 @@ def verify_archive(archive):
             if name.startswith('/') or '..' in pathlib.PurePosixPath(name).parts:raise ValueError('Invalid archive path')
             data=package.read(prefix+name)
             if len(data)!=item['bytes'] or sha(data)!=item['sha256']:raise ValueError(f'Checksum mismatch: {name}')
-        require_windows_x64(package.read(prefix+'WorldMusicHub.exe'))
+        require_windows_x64(package.read(prefix+'WorldMusicClub.exe'))
         checksum_entries={name:item['sha256'] for name,item in info['files'].items()}
         checksum_entries[INFO]=sha(package.read(prefix+INFO))
         expected=''.join(f'{checksum_entries[name]}  {name}\n' for name in sorted(checksum_entries))
@@ -86,10 +86,10 @@ def verify_archive(archive):
 
 def create_archive(directory,archive):
     directory,archive=pathlib.Path(directory),pathlib.Path(archive)
-    if directory.name!='WorldMusicHub':raise ValueError('Portable folder must be named WorldMusicHub')
+    if directory.name!='WorldMusicClub':raise ValueError('Portable folder must be named WorldMusicClub')
     with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as package:
         for path in sorted(directory.rglob('*')):
-            if path.is_file():package.write(path,'WorldMusicHub/'+path.relative_to(directory).as_posix())
+            if path.is_file():package.write(path,'WorldMusicClub/'+path.relative_to(directory).as_posix())
     return verify_archive(archive)
 
 def main():
@@ -110,7 +110,7 @@ def main():
     if platform.system()!='Windows':raise ValueError('Release manifests must be created on Windows after native build and smoke tests')
     host=next((line.split(': ',1)[1] for line in subprocess.check_output(['rustc','-vV'],text=True).splitlines() if line.startswith('host: ')),None)
     if host!='x86_64-pc-windows-msvc':raise ValueError('Expected the native Windows x64 MSVC toolchain')
-    metadata={'name':'WorldMusicHub','git_commit':commit,'git_tree':git('rev-parse','HEAD^{tree}'),'commit_count':count,'recovery_for':args.recovery_for or None,'release_label':f'commit-{count}'+(f'-recovery-for-{args.recovery_for}' if args.recovery_for else ''),'target':host,'rustflags':os.environ.get('RUSTFLAGS',''),'build_platform':platform.platform(),'rustc':subprocess.check_output(['rustc','--version'],text=True).strip(),'rustc_verbose':subprocess.check_output(['rustc','-vV'],text=True).strip(),'cargo':subprocess.check_output(['cargo','--version'],text=True).strip(),'node':subprocess.check_output(['node','--version'],text=True).strip(),'python':platform.python_version(),'cargo_lock_sha256':sha((ROOT/'Cargo.lock').read_bytes()),'npm_lock_sha256':sha((ROOT/'package-lock.json').read_bytes()),'offline_engraving_version':'2.1.3','distribution':'unsigned portable alpha; browser UI; physical MIDI/audio latency not verified'}
+    metadata={'name':'WorldMusicClub','git_commit':commit,'git_tree':git('rev-parse','HEAD^{tree}'),'commit_count':count,'recovery_for':args.recovery_for or None,'release_label':f'commit-{count}'+(f'-recovery-for-{args.recovery_for}' if args.recovery_for else ''),'target':host,'rustflags':os.environ.get('RUSTFLAGS',''),'build_platform':platform.platform(),'rustc':subprocess.check_output(['rustc','--version'],text=True).strip(),'rustc_verbose':subprocess.check_output(['rustc','-vV'],text=True).strip(),'cargo':subprocess.check_output(['cargo','--version'],text=True).strip(),'node':subprocess.check_output(['node','--version'],text=True).strip(),'python':platform.python_version(),'cargo_lock_sha256':sha((ROOT/'Cargo.lock').read_bytes()),'npm_lock_sha256':sha((ROOT/'package-lock.json').read_bytes()),'offline_engraving_version':'2.1.3','distribution':'unsigned portable alpha; browser UI; physical MIDI/audio latency not verified'}
     metadata['app_version']=tomllib.loads((ROOT/'Cargo.toml').read_text(encoding='utf-8'))['workspace']['package']['version']
     metadata['score_schema_revision']=int(re.search(r'pub const SCORE_SCHEMA_REVISION: u32 = (\d+);',(ROOT/'crates/score-core/src/lib.rs').read_text(encoding='utf-8')).group(1))
     create_manifest(args.directory,metadata);print(f'Created release inventory for commit {count}: {commit}')

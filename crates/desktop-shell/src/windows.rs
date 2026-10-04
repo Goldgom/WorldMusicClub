@@ -166,7 +166,7 @@ pub fn run() {
                 "main",
                 WebviewUrl::CustomProtocol("wmh://localhost/".parse()?),
             )
-            .title("WorldMusicHub")
+            .title("WorldMusicClub")
             .inner_size(1280.0, 900.0)
             .min_inner_size(900.0, 640.0)
             // Keep bottom transport controls inside the actual monitor work
@@ -220,5 +220,5 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("WorldMusicHub native shell failed to start");
+        .expect("WorldMusicClub native shell failed to start");
 }

@@ -1,4 +1,4 @@
-//! WorldMusicHub's canonical musical model and deterministic performance engine.
+//! WorldMusicClub's canonical musical model and deterministic performance engine.
 //! Musical time is rational quarter-note time; wall-clock time is derived only at playback boundaries.
 pub mod adaptation;
 pub mod assistance;
@@ -303,7 +303,7 @@ pub fn validate(score: &Score) -> Result<(), String> {
     };
     if let Some(metadata) = &score.format_metadata {
         if metadata.schema_revision > SCORE_SCHEMA_REVISION {
-            return Err(format!("This score uses newer schema metadata revision {}. Update WorldMusicHub; this build reads revisions 1–{}. Keep the original file unchanged.", metadata.schema_revision, SCORE_SCHEMA_REVISION));
+            return Err(format!("This score uses newer schema metadata revision {}. Update WorldMusicClub; this build reads revisions 1–{}. Keep the original file unchanged.", metadata.schema_revision, SCORE_SCHEMA_REVISION));
         }
         if metadata.schema_revision == 0
             || metadata.producer.trim().is_empty()
@@ -358,7 +358,7 @@ pub fn validate(score: &Score) -> Result<(), String> {
         return Err("Score metadata exceeds event-count limits".into());
     }
     if score.version != 1 {
-        return Err(format!("Unsupported canonical score format version {}. This build reads version 1; a newer format needs a newer compatible WorldMusicHub app. Keep the original file unchanged.", score.version));
+        return Err(format!("Unsupported canonical score format version {}. This build reads version 1; a newer format needs a newer compatible WorldMusicClub app. Keep the original file unchanged.", score.version));
     }
     if score.title.trim().is_empty() || score.title.len() > 1000 || score.id.trim().is_empty() {
         return Err("Score requires a short title and stable id".into());
@@ -1132,7 +1132,7 @@ mod tests {
         score.version = 2;
         assert!(validate(&score)
             .unwrap_err()
-            .contains("newer compatible WorldMusicHub"));
+            .contains("newer compatible WorldMusicClub"));
     }
     #[test]
     fn rational_addition_is_exact() {

@@ -92,7 +92,8 @@ fn collect_assets(root: &Path, limits: Limits) -> io::Result<Vec<(String, PathBu
 fn main() {
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../web");
     println!("cargo:rerun-if-changed={}", root.display());
-    let entries = collect_assets(&root, LIMITS).expect("WorldMusicHub web asset validation failed");
+    let entries =
+        collect_assets(&root, LIMITS).expect("WorldMusicClub web asset validation failed");
     let mut code =
         String::from("fn web_asset(path: &str) -> Option<&'static [u8]> { match path {\n");
     for (url, path) in entries {

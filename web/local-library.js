@@ -44,7 +44,7 @@ export function openScoreLibrary({factory=globalThis.indexedDB,name='worldmusich
    if(!db.objectStoreNames.contains('scores'))db.createObjectStore('scores',{keyPath:'key'});
   };
   request.onerror=()=>{settled=true;reject(storageError(request.error));};
-  request.onblocked=()=>{settled=true;reject(libraryError('library_storage_blocked','Another WorldMusicHub tab is holding an older library open. Close it and try again.'));};
+  request.onblocked=()=>{settled=true;reject(libraryError('library_storage_blocked','Another WorldMusicClub tab is holding an older library open. Close it and try again.'));};
   request.onsuccess=()=>{
    if(settled){request.result.close();return;}
    settled=true;resolve(new ScoreLibrary(request.result));

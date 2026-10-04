@@ -90,7 +90,7 @@ test('only success/success passes; every failed, cancelled and skipped combinati
       assert.ok(summary.includes(`Native/browser acceptance: ${passed ? 'PASS' : 'FAIL'}`));
       assert.ok(summary.includes(`${jobIds[0]}: ${browser};`));
       assert.ok(summary.includes(`${jobIds[1]}: ${native};`));
-      assert.ok(summary.includes('Verify WorldMusicHub'));
+      assert.ok(summary.includes('Verify WorldMusicClub'));
       assert.ok(summary.includes('before package delivery or main promotion'));
     }
   }
@@ -122,7 +122,7 @@ test('all real checks fail closed and failure evidence survives independently', 
       if (step.includes('continue-on-error:')) {
         assert.match(step, /uses: actions\/cache\/(?:restore|save)@/);
       }
-      if (step.includes('uses: actions/upload-artifact@') && !step.includes('name: WorldMusicHub-Native-Candidate-')) {
+      if (step.includes('uses: actions/upload-artifact@') && !step.includes('name: WorldMusicClub-Native-Candidate-')) {
         assert.match(step, /^        if: always\(\)$/m);
       }
     }
@@ -130,7 +130,7 @@ test('all real checks fail closed and failure evidence survives independently', 
   const nativeSteps = steps(jobBlock(jobIds[1]));
   const packageIndex = nativeSteps.findIndex(step => step.includes('id: native_package'));
   const extractedIndex = nativeSteps.findIndex(step => step.includes('Expand-Archive -Path'));
-  const candidateIndex = nativeSteps.findIndex(step => step.includes('name: WorldMusicHub-Native-Candidate-'));
+  const candidateIndex = nativeSteps.findIndex(step => step.includes('name: WorldMusicClub-Native-Candidate-'));
   assert.ok(packageIndex > 0 && extractedIndex > packageIndex && candidateIndex > extractedIndex);
   for (const index of [packageIndex, extractedIndex, candidateIndex]) {
     assert.doesNotMatch(nativeSteps[index], /^        (?:if|continue-on-error):/m);

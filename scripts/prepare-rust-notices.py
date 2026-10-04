@@ -144,9 +144,9 @@ def collect(metadata, root=ROOT, target=None):
             archive = component['source_archive']
             sections.append(f'Unmodified MPL-2.0 source is included in sources/{archive["name"]} and available at {archive["url"]}. SHA-256: {archive["sha256"]}.\n')
         sections.extend(f'\n--- {filename} ---\n{data.decode("utf-8")}\n' for filename, data in materials)
-    text = ('WorldMusicHub Rust dependency notices\n\n'
+    text = ('WorldMusicClub Rust dependency notices\n\n'
             f'This conservative inventory includes locked build and runtime dependencies for {target or "all targets"}; it is not a claim that every package is linked into the executable. '
-            'WorldMusicHub code is MIT licensed. Original score and third-party engraving licenses are documented separately. '
+            'WorldMusicClub code is MIT licensed. Original score and third-party engraving licenses are documented separately. '
             'License texts and copyright notices below are copied without alteration.\n' + ''.join(sections))
     if len(text.encode()) > 8 * 1024 * 1024:
         raise ValueError('Combined Cargo notices exceed build limit')

@@ -1,4 +1,4 @@
-# WorldMusicHub architecture
+# WorldMusicClub architecture
 
 ## Trust and data flow
 

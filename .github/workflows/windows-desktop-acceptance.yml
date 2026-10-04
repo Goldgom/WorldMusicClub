@@ -367,9 +367,9 @@ jobs:
           node scripts/verify-basic-key-evidence.mjs --check desktop-basic-key
           if ($LASTEXITCODE -ne 0) { throw 'Basic-key evidence does not match exact packaged source and executable' }
           $count=(git rev-list --count HEAD).Trim()
-          $folder='dist/WorldMusicHub-Native'
+          $folder='dist/WorldMusicClub-Native'
           New-Item -ItemType Directory "$folder/licenses/engraving","$folder/evidence" -Force | Out-Null
-          Copy-Item target/release/worldmusichub-desktop.exe "$folder/WorldMusicHub-Native.exe"
+          Copy-Item target/release/worldmusichub-desktop.exe "$folder/WorldMusicClub-Native.exe"
           Copy-Item LICENSE $folder
           Copy-Item desktop-basic-key/native-basic-key.json,desktop-basic-key/basic-key-proof.json,desktop-basic-key/renderer-basic-key-*.json,desktop-basic-key/profile-basic-key-*.json "$folder/evidence/"
           Copy-Item docs/WINDOWS_NATIVE.md "$folder/README.md"
@@ -384,7 +384,7 @@ jobs:
           Copy-Item desktop-vsq-song/native-vsq-song.json,desktop-vsq-song/native-vsq-song-files.json,desktop-vsq-song/renderer-vsq-*.json,desktop-vsq-song/profile-vsq-*.json "$folder/evidence/"
           python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder --performance-song desktop-performance-song --pitch-bend desktop-pitch-bend --song-authoring desktop-authoring --vsq-authoring desktop-vsq-authoring --basic-key desktop-basic-key
           if ($LASTEXITCODE -ne 0) { throw 'Native provenance/acceptance inventory failed' }
-          $zip="dist/WorldMusicHub-Native-Windows-x64-commit-$count.zip"
+          $zip="dist/WorldMusicClub-Native-Windows-x64-commit-$count.zip"
           python scripts/native-release-manifest.py archive $folder $zip
           if ($LASTEXITCODE -ne 0) { throw 'Native archive verification failed' }
           "archive=$zip" >> $env:GITHUB_OUTPUT
@@ -394,7 +394,7 @@ jobs:
         run: |
           $destination=Join-Path $env:RUNNER_TEMP 'wmh-native-portable-extracted'
           Expand-Archive -Path '${{ steps.native_package.outputs.archive }}' -DestinationPath $destination
-          ./scripts/windows-native-portable-smoke.ps1 -Directory (Join-Path $destination 'WorldMusicHub-Native') -OutputDirectory desktop-portable
+          ./scripts/windows-native-portable-smoke.ps1 -Directory (Join-Path $destination 'WorldMusicClub-Native') -OutputDirectory desktop-portable
       - name: Preserve bounded evidence on success and failure
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -493,10 +493,10 @@ jobs:
       - name: Upload native-only candidate pending final acceptance
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: WorldMusicHub-Native-Candidate-Windows-x64-commit-${{ steps.native_package.outputs.count }}-${{ github.sha }}
+          name: WorldMusicClub-Native-Candidate-Windows-x64-commit-${{ steps.native_package.outputs.count }}-${{ github.sha }}
           path: |
-            dist/WorldMusicHub-Native-Windows-x64-*.zip
-            dist/WorldMusicHub-Native-Windows-x64-*.zip.sha256
+            dist/WorldMusicClub-Native-Windows-x64-*.zip
+            dist/WorldMusicClub-Native-Windows-x64-*.zip.sha256
           if-no-files-found: error
       # No WebView profile, private fixtures, installer or GitHub Release upload.
   acceptance-summary:
@@ -541,7 +541,7 @@ jobs:
             `Native/browser acceptance: ${errors.length ? 'FAIL' : 'PASS'}`,
             ...lines, ...errors,
             'A native candidate artifact alone is not checkpoint acceptance.',
-            'The separate full Verify WorldMusicHub workflow must also succeed for this exact source before package delivery or main promotion.',
+            'The separate full Verify WorldMusicClub workflow must also succeed for this exact source before package delivery or main promotion.',
           ].join('\n') + '\n';
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
           console.log(summary);

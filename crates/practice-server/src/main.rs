@@ -113,7 +113,7 @@ async fn route(
     if request.method() == Method::GET {
         return match path.as_str() {
             "/api/health" => json_reply(Ok(
-                json!({"name":"WorldMusicHub","version":env!("CARGO_PKG_VERSION"),"engine":"rust","network":"loopback-only","score_format_version":1,"score_schema_revision":score_core::SCORE_SCHEMA_REVISION}),
+                json!({"name":"WorldMusicHub","display_name":"WorldMusicClub","version":env!("CARGO_PKG_VERSION"),"engine":"rust","network":"loopback-only","score_format_version":1,"score_schema_revision":score_core::SCORE_SCHEMA_REVISION}),
             )),
             "/api/catalog" => {
                 json_reply(serde_json::to_value(score_core::catalog()).map_err(|e| e.to_string()))
@@ -338,11 +338,11 @@ fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let (port, no_open) = match startup_args(&args) {
         Ok(Startup::Help) => {
-            println!("WorldMusicHub [--port 7878] [--no-open]\nWorldMusicHub --version\nLocal-only Rust music practice app. Close this terminal to stop.\n--help / -h: show this help without starting a server.");
+            println!("WorldMusicClub [--port 7878] [--no-open]\nWorldMusicClub --version\nLocal-only Rust music practice app. Close this terminal to stop.\n--help / -h: show this help without starting a server.");
             return;
         }
         Ok(Startup::Version) => {
-            println!("WorldMusicHub {}", env!("CARGO_PKG_VERSION"));
+            println!("WorldMusicClub {}", env!("CARGO_PKG_VERSION"));
             return;
         }
         Ok(Startup::Serve { port, no_open }) => (port, no_open),
@@ -361,11 +361,11 @@ fn main() {
         .expect("local app runtime");
     runtime.block_on(async {
         let listener = TcpListener::bind(&authority).await.unwrap_or_else(|e| {
-            eprintln!("Cannot start WorldMusicHub at {authority}: {e}. Try --port 7879.");
+            eprintln!("Cannot start WorldMusicClub at {authority}: {e}. Try --port 7879.");
             std::process::exit(1)
         });
         let url = format!("http://{authority}");
-        println!("WorldMusicHub {}\nOpen {url}\nRust engine · local files stay on this computer · Ctrl+C to stop",env!("CARGO_PKG_VERSION"));
+        println!("WorldMusicClub {}\nOpen {url}\nRust engine · local files stay on this computer · Ctrl+C to stop",env!("CARGO_PKG_VERSION"));
         if !no_open { open_browser(&url); }
         let connections = Arc::new(Semaphore::new(16));
         let computations = Arc::new(Semaphore::new(2));
@@ -606,7 +606,7 @@ mod tests {
         let bytes = serde_json::to_vec(&value).unwrap();
         let original = bytes.clone();
         let error = api("/api/compile", bytes.clone()).unwrap_err();
-        assert!(error.contains("may require a newer WorldMusicHub"));
+        assert!(error.contains("may require a newer WorldMusicClub"));
         assert!(error.contains("not changed or stripped"));
         assert_eq!(bytes, original);
         let syntax = api("/api/compile", b"{".to_vec()).unwrap_err();

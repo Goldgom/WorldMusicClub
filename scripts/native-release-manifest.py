@@ -29,8 +29,8 @@ _new_music_spec = importlib.util.spec_from_file_location('native_new_music_evide
 _new_music = importlib.util.module_from_spec(_new_music_spec)
 _new_music_spec.loader.exec_module(_new_music)
 NEW_MUSIC_EVIDENCE = _new_music.EVIDENCE
-FOLDER = 'WorldMusicHub-Native'
-EXE = 'WorldMusicHub-Native.exe'
+FOLDER = 'WorldMusicClub-Native'
+EXE = 'WorldMusicClub-Native.exe'
 INFO, SUMS = 'BUILD-INFO.json', 'SHA256.txt'
 SCORE_SCHEMAS = ('schema/worldmusichub-score-v1.schema.json', 'schemas/vsq-complete-score-v1.schema.json')
 PHASES = ['seed', 'restart', 'close-active', 'reopen']
@@ -507,7 +507,8 @@ def create_manifest(directory, metadata):
     _new_music.verify_packaged(lambda name: (directory / name).read_bytes(), metadata)
     verify_packaged_profiles(lambda name: _pitch.read_evidence(directory / name, 2 * 1024 * 1024)
                              if name != EXE else (directory / name).read_bytes(), metadata)
-    require(not (directory / 'WorldMusicHub.exe').exists(), 'Browser EXE must not be in the native package')
+    require(not any((directory / name).exists() for name in ['WorldMusicClub.exe', 'WorldMusicHub.exe']),
+            'Browser EXE must not be in the native package')
     notices = read_json(directory / 'licenses/rust/manifest.json')
     require(notices.get('format_version') == 2 and notices.get('target') == 'x86_64-pc-windows-msvc'
             and notices.get('cargo_lock_sha256') == metadata.get('cargo_lock_sha256'), 'Native notices must match the locked Windows graph')
@@ -628,7 +629,7 @@ def source_metadata(commit, count):
             'acceptance_workflow_run_id': os.environ.get('GITHUB_RUN_ID'),
             'checkpoint_requirements': [
                 'Native Windows feature acceptance / acceptance-summary for this source and workflow run',
-                'Verify WorldMusicHub for this source'],
+                'Verify WorldMusicClub for this source'],
             'runtime_bundled': False, 'installer': False, 'http_server_process': False}
 
 

@@ -23,7 +23,7 @@ native artifact can be delivered.
 ## Authored package gate
 
 The existing native acceptance workflow now prepares a distinct
-`WorldMusicHub-Native-Windows-x64-commit-N.zip` only after all ordinary checks,
+`WorldMusicClub-Native-Windows-x64-commit-N.zip` only after all ordinary checks,
 actual startup and four-process feature acceptance. It checks out complete
 history at the exact workflow SHA, requests static C-runtime linkage, collects
 Windows-target notices, then validates source SHA/tree/count and the exact EXE

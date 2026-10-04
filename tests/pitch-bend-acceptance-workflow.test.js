@@ -34,7 +34,7 @@ test('focused pitch workflow isolates preview source and requires both actual en
  assert.match(workflow,/-Executable target\/release\/worldmusichub-desktop\.exe -OutputDirectory desktop-pitch-bend -Scenario pitch-bend/);
  assert.match(workflow,/verify-native-pitch-bend-evidence\.mjs --check desktop-pitch-bend/);
  assert.match(workflow,/native-pitch-bend-manifest\.py desktop-pitch-bend --executable target\/release\/worldmusichub-desktop\.exe --commit '\$\{\{ github.sha \}\}' --tree/);
- assert.doesNotMatch(workflow,/native-release-manifest|gh release|contents: write|dist\/WorldMusicHub|current233|webview-profile/);
+ assert.doesNotMatch(workflow,/native-release-manifest|gh release|contents: write|dist\/WorldMusic(?:Hub|Club)|current233|webview-profile/);
  const artifactPaths=workflow.split('path: |').slice(1).map(s=>s.split('if-no-files-found')[0]);assert.equal(artifactPaths.length,2);
  for(const artifact of artifactPaths){assert.doesNotMatch(artifact,/\.\.\/|webview-profile/);for(const line of artifact.trim().split('\n'))assert.match(line.trim(),/^(?:test-results\/pitch-bend\/\*|desktop-pitch-bend)\/(?:\*\.(?:json|png|log)|(?:downloads|fixtures)\/\*|Scores\/(?:clean-songs|clean-backups|imports|import-backups)\/\*\*)$/);assert.match(artifact,/\/fixtures\/\*/);assert.match(artifact,/\/Scores\/clean-songs\/\*\*/);}
 });

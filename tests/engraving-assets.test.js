@@ -20,7 +20,7 @@ test('asset preparation copies a hash-pinned bundle with all license and authors
       assert.equal(createHash('sha256').update(bytes).digest('hex'), metadata.sha256);
     }
     const notices = await readFile(path.join(outputDirectory, 'opensheetmusicdisplay.min.js.LICENSE.txt'), 'utf8');
-    for (const expected of ['Copyright 2019 PhonicScore', 'Mohit Muthanna Cheppudira', 'Tomasz Ciborski', 'Jean-loup Gailly and Mark Adler', 'This notice may not be removed', 'Julian Gruber', 'WorldMusicHub elects the MIT option', 'No copyright is claimed on this font file.']) assert.ok(notices.includes(expected), expected);
+    for (const expected of ['Copyright 2019 PhonicScore', 'Mohit Muthanna Cheppudira', 'Tomasz Ciborski', 'Jean-loup Gailly and Mark Adler', 'This notice may not be removed', 'Julian Gruber', 'WorldMusicClub elects the MIT option', 'No copyright is claimed on this font file.']) assert.ok(notices.includes(expected), expected);
     assert.ok(!manifest.noticeComponents.some(component => ['gl', 'canvas', 'node-gyp'].includes(component.name)));
     assert.ok(!notices.includes('GNU GENERAL PUBLIC LICENSE'));
     const rerun = await prepareEngraving({outputDirectory});

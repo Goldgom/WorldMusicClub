@@ -1,17 +1,19 @@
-# WorldMusicHub on Windows
+# WorldMusicClub on Windows
+
+New browser packages use `WorldMusicClub-Windows-x64-*.zip` and `WorldMusicClub.exe`. Older WorldMusicHub packages retain their original filenames; use the executable actually included in that ZIP. See [name and data compatibility](BRAND_COMPATIBILITY.md).
 
 中文用户可阅读安装包内的 `docs/QUICKSTART.zh-CN.md`。
 
 The initial distribution targets Windows 10/11 x64 and is a portable Rust executable with its UI embedded inside it. The Windows build requests static C-runtime linkage to reduce separate runtime-installation requirements.
 
 1. Extract the entire ZIP to a normal folder.
-2. Double-click `WorldMusicHub.exe`.
+2. Double-click `WorldMusicClub.exe`.
 3. It opens your default browser at `http://127.0.0.1:7878`.
 4. Keep the console window open while practicing. Close it to stop the app.
 
-Use `WorldMusicHub.exe --version` to report the application version without opening a browser or starting a server; `--help`/`-h` shows startup options. Unknown options, missing/invalid ports and duplicate `--port` values exit with code 2 instead of silently starting an unexpected instance.
+Use `WorldMusicClub.exe --version` to report the application version without opening a browser or starting a server; `--help`/`-h` shows startup options. Unknown options, missing/invalid ports and duplicate `--port` values exit with code 2 instead of silently starting an unexpected instance.
 
-If port 7878 is in use, run `WorldMusicHub.exe --port 7879`. `--no-open` disables automatically opening a browser. The app only listens on loopback; no account or network service is required for exercises and score imports. The interface is browser-rendered, rather than a fully native Windows widget interface.
+If port 7878 is in use, run `WorldMusicClub.exe --port 7879`. `--no-open` disables automatically opening a browser. The app only listens on loopback; no account or network service is required for exercises and score imports. The interface is browser-rendered, rather than a fully native Windows widget interface.
 
 ## Trust and verification
 

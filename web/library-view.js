@@ -125,7 +125,7 @@ export function setupScoreLibrary({getScore,onLoad,validate,pausePlayback,notice
   $('library-backup-file').addEventListener('change',()=>{
     const file=$('library-backup-file').files[0];$('library-backup-file').value='';if(!file||busy)return;
     run('library.status.restoring',async signal=>{
-      if(file.size>LIBRARY_LIMITS.backupBytes)throw libraryError('library_import_limit','Backup exceeds 40 MiB. Choose a smaller WorldMusicHub library-backup JSON file.');
+      if(file.size>LIBRARY_LIMITS.backupBytes)throw libraryError('library_import_limit','Backup exceeds 40 MiB. Choose a smaller WorldMusicClub library-backup JSON file.');
       const text=await file.text();signal.throwIfAborted();let checked=0;
       const library=await getLibrary();signal.throwIfAborted();
       const restored=await library.restoreBackup(text,{validate:async score=>{signal.throwIfAborted();status('library.status.validating',{count:++checked});await validate(score,signal);signal.throwIfAborted();return true}}),params={count:restored.length};

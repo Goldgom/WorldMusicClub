@@ -28,7 +28,7 @@ async function licenseMaterials(directory, metadata) {
     for (const item of materials) if (item.name === 'LICENSE.markdown') {
       const end = item.text.indexOf('\nGPL version 3');
       if (end < 0 || !item.text.includes('The MIT License')) throw new Error('Unexpected JSZip license layout');
-      item.text = `${item.text.slice(0, end).trim()}\n\nWorldMusicHub elects the MIT option for this component.\n`;
+      item.text = `${item.text.slice(0, end).trim()}\n\nWorldMusicClub elects the MIT option for this component.\n`;
     }
   }
   if (metadata.name === 'pako') {
@@ -77,9 +77,9 @@ export async function prepareEngraving({packageRoot, outputDirectory = path.join
   await visit(packageFile);
   components.sort((a, b) => a.name.localeCompare(b.name, 'en'));
   const notices = [
-    `WorldMusicHub optional staff engraving: OpenSheetMusicDisplay ${ENGRAVING_VERSION}`,
+    `WorldMusicClub optional staff engraving: OpenSheetMusicDisplay ${ENGRAVING_VERSION}`,
     'The browser bundle is copied unmodified from the official npm opensheetmusicdisplay package.',
-    'OpenSheetMusicDisplay is BSD-3-Clause. WorldMusicHub source remains MIT licensed.',
+    'OpenSheetMusicDisplay is BSD-3-Clause. WorldMusicClub source remains MIT licensed.',
     'The following conservative collection includes the installed runtime dependency closure, package authors, and embedded zlib/font notices. Installed dependency versions are provenance for these notice texts, not a reconstruction of upstream webpack internals.',
     'JSZip is used under its MIT option. OSMD paid audio/transpose plugins, native GL, CDN scripts, remote fonts and third-party scores are not included.',
     `Bundle SHA-256: ${ENGRAVING_BUNDLE_SHA256}`,

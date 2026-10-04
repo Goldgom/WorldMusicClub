@@ -1,4 +1,4 @@
-# WorldMusicHub score format v1 / 单曲乐谱格式 v1
+# WorldMusicClub score format v1 / 单曲乐谱格式 v1
 
 ## Contract and file naming / 契约与文件名
 

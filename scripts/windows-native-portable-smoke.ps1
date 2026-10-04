@@ -4,10 +4,10 @@ param(
 )
 $ErrorActionPreference='Stop'
 $Directory=(Resolve-Path $Directory).Path
-$Executable=Join-Path $Directory 'WorldMusicHub-Native.exe'
+$Executable=Join-Path $Directory 'WorldMusicClub-Native.exe'
 $info=Get-Content (Join-Path $Directory 'BUILD-INFO.json') -Raw | ConvertFrom-Json
-if($info.name -cne 'WorldMusicHub-Native' -or $info.executable -cne 'WorldMusicHub-Native.exe'){throw 'Wrong native package identity'}
-if((Get-FileHash $Executable -Algorithm SHA256).Hash.ToLowerInvariant() -cne $info.files.'WorldMusicHub-Native.exe'.sha256){throw 'Extracted EXE differs from accepted inventory'}
+if($info.name -cne 'WorldMusicClub-Native' -or $info.executable -cne 'WorldMusicClub-Native.exe'){throw 'Wrong native package identity'}
+if((Get-FileHash $Executable -Algorithm SHA256).Hash.ToLowerInvariant() -cne $info.files.'WorldMusicClub-Native.exe'.sha256){throw 'Extracted EXE differs from accepted inventory'}
 if($info.git_commit -cne (git rev-parse HEAD) -or $info.git_tree -cne (git rev-parse 'HEAD^{tree}') -or $info.commit_count -ne [int](git rev-list --count HEAD)){throw 'Extracted source provenance differs'}
 if(Test-Path $OutputDirectory){throw 'Use fresh portable evidence directory'}
 New-Item -ItemType Directory $OutputDirectory | Out-Null
@@ -27,7 +27,7 @@ public static class NativePortableSmoke {
 $previousDirectory=$env:WMH_DESKTOP_SMOKE_DIR;$previousPhase=$env:WMH_DESKTOP_ACCEPTANCE_PHASE
 $env:WMH_DESKTOP_SMOKE_DIR=$null;$env:WMH_DESKTOP_ACCEPTANCE_PHASE=$null
 $app=$null
-$report=[ordered]@{version=1;source_sha=$info.git_commit;source_tree=$info.git_tree;commit_count=$info.commit_count;executable_sha256=$info.files.'WorldMusicHub-Native.exe'.sha256;normal_startup=$true;test_hooks_enabled=$false;ok=$false;normal_close=$false;clean_machine_installation=$false}
+$report=[ordered]@{version=1;source_sha=$info.git_commit;source_tree=$info.git_tree;commit_count=$info.commit_count;executable_sha256=$info.files.'WorldMusicClub-Native.exe'.sha256;normal_startup=$true;test_hooks_enabled=$false;ok=$false;normal_close=$false;clean_machine_installation=$false}
 try {
   $app=Start-Process -FilePath $Executable -WorkingDirectory $Directory -PassThru -RedirectStandardError (Join-Path $OutputDirectory 'normal-stderr.log')
   $deadline=[DateTime]::UtcNow.AddSeconds(60)
@@ -57,7 +57,7 @@ try {
     if(-not $ready){Start-Sleep -Milliseconds 200}
   }
   $report.window_title=$app.MainWindowTitle
-  if($app.MainWindowTitle -cne 'WorldMusicHub'){throw 'Unexpected normal native window title'}
+  if($app.MainWindowTitle -cne 'WorldMusicClub'){throw 'Unexpected normal native window title'}
   $rectangle=New-Object NativePortableSmoke+RECT
   if(-not [NativePortableSmoke]::GetWindowRect($app.MainWindowHandle,[ref]$rectangle)){throw 'Cannot measure normal window'}
   $width=$rectangle.Right-$rectangle.Left;$height=$rectangle.Bottom-$rectangle.Top

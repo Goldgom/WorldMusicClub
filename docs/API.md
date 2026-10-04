@@ -62,7 +62,7 @@ Both fields are optional when reading older assessment exports; absence means un
 
 ## Numbered-notation text
 
-`POST /api/import/jianpu` accepts UTF-8 `text/plain` in the explicit WorldMusicHub v1 dialect, up to1MiB. It returns the compiled score and source/default diagnostics. This is not a claim to parse every jianpu typography convention. See [Jianpu text grammar](JIANPU_TEXT.md) for tonic/mode/tempo/meter headers, exact fractional durations, octave marks, rests, sustains and checked barlines. Unsupported lyrics/chords/polyphony and invalid notation are rejected explicitly. Original text is retained verbatim.
+`POST /api/import/jianpu` accepts UTF-8 `text/plain` in the explicit WorldMusicClub v1 dialect, up to1MiB. It returns the compiled score and source/default diagnostics. This is not a claim to parse every jianpu typography convention. See [Jianpu text grammar](JIANPU_TEXT.md) for tonic/mode/tempo/meter headers, exact fractional durations, octave marks, rests, sustains and checked barlines. Unsupported lyrics/chords/polyphony and invalid notation are rejected explicitly. Original text is retained verbatim.
 
 ## Generated MusicXML export
 

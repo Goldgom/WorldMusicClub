@@ -26,7 +26,7 @@ launches a shell, changes the active score, or acquires MIDI permissions.
 
 ## Adapter contract
 
-Only a successful Rust health response with `name:"WorldMusicHub"`,
+Only a successful Rust health response with the stable protocol identity `name:"WorldMusicHub"` (the current display name is WorldMusicClub),
 `engine:"rust"`, `score_format_version:1` and an exact known `network` value
 selects storage:
 

@@ -1,4 +1,4 @@
-name: Verify WorldMusicHub
+name: Verify WorldMusicClub
 on:
   push:
     branches: ['main', 'validation/**']

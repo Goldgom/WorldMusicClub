@@ -1,5 +1,9 @@
 # Source development and accepted snapshots
 
+## Project rename
+
+Current source is branded WorldMusicClub and hosted at [Goldgom/WorldMusicClub](https://github.com/Goldgom/WorldMusicClub). New browser/native portable packages, window titles and usage instructions use the new name. Existing storage, musical format identifiers, canonical producer metadata and historical release evidence retain their original identities; see [name compatibility](../BRAND_COMPATIBILITY.md). This rename does not accept or republish any historical Windows binary.
+
 ## After accepted 155
 
 The [155 recovery](0.2.0-alpha.1-commit-155.md) passed exact-source acceptance.

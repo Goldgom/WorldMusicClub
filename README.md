@@ -1,6 +1,8 @@
-# WorldMusicHub
+# WorldMusicClub
 
 A local-first music practice and rhythm-game project with a Rust score engine.
+
+Repository: [Goldgom/WorldMusicClub](https://github.com/Goldgom/WorldMusicClub). The project was renamed from WorldMusicHub; existing libraries, score formats and historical release files keep their original identities. See [name and data compatibility](docs/BRAND_COMPATIBILITY.md).
 
 [中文上手指南](docs/QUICKSTART.zh-CN.md) · [完整曲包格式](docs/SONG_PACKAGE_FORMAT.md) · [Accepted Windows recovery 155](docs/releases/0.2.0-alpha.1-commit-155.md) · [Newer source changes](docs/releases/unreleased.md)
 
@@ -31,7 +33,7 @@ the exact remaining surfaces are listed in [locale coverage](docs/I18N.md).
 
 ## Distribution and rights
 
-WorldMusicHub code is MIT-licensed. Score, audio and other assets retain their individually recorded rights; the code license does not relicense third-party music. Bundled music includes newly authored exercises, two documented public-domain opening excerpts and one complete CC0 Schubert written-note practice edition with explicit expressive limitations, with provenance recorded in score metadata and [catalog rights](docs/CATALOG_RIGHTS.md). Do not add unlicensed commercial arrangements. A composition, score engraving, arrangement and recording can have different rights.
+WorldMusicClub code is MIT-licensed. Score, audio and other assets retain their individually recorded rights; the code license does not relicense third-party music. Bundled music includes newly authored exercises, two documented public-domain opening excerpts and one complete CC0 Schubert written-note practice edition with explicit expressive limitations, with provenance recorded in score metadata and [catalog rights](docs/CATALOG_RIGHTS.md). Do not add unlicensed commercial arrangements. A composition, score engraving, arrangement and recording can have different rights.
 
 ## Release policy
 
@@ -43,6 +45,6 @@ A limited local recognizer suggests note positions from one clean horizontal pri
 
 ## Windows builds
 
-The [accepted 155 recovery](docs/releases/0.2.0-alpha.1-commit-155.md) includes notation-following and compact guitar display repairs, with exact source, ZIP checksum and native Windows evidence. The [published 119 preview](https://github.com/Goldgom/WorldMusicHub/releases/tag/v0.2.0-alpha.1-commit-119) remains a separate earlier build. Check `BUILD-INFO.json` to distinguish package contents from newer source features.
+The [accepted 155 recovery](docs/releases/0.2.0-alpha.1-commit-155.md) includes notation-following and compact guitar display repairs, with exact source, ZIP checksum and native Windows evidence. The [published 119 preview](https://github.com/Goldgom/WorldMusicClub/releases/tag/v0.2.0-alpha.1-commit-119) remains a separate earlier build. Check `BUILD-INFO.json` to distinguish package contents from newer source features.
 
 CI checks Rust on Linux and Windows. The Windows milestone workflow packages a portable executable at each 50-commit milestone, or when manually dispatched. See [Windows usage and verification boundaries](docs/WINDOWS.md). No Windows artifact has been verified merely because these workflow files exist.

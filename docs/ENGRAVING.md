@@ -1,6 +1,6 @@
 # Optional offline staff engraving
 
-WorldMusicHub uses the open-source **OpenSheetMusicDisplay (OSMD) 2.1.3** renderer for its supported-score default staff view, with an explicit simplified pitch-guide fallback. OSMD uses VexFlow for professional staff layout. This is a presentation adapter: Rust remains authoritative for score validation, exact rational durations, repeat/tie timing, playback, input assessment and export. Jianpu remains the separate WorldMusicHub view. No OSMD paid player, transpose plugin, Jianpu plugin, audio service, remote score loader or hosted font is included.
+WorldMusicClub uses the open-source **OpenSheetMusicDisplay (OSMD) 2.1.3** renderer for its supported-score default staff view, with an explicit simplified pitch-guide fallback. OSMD uses VexFlow for professional staff layout. This is a presentation adapter: Rust remains authoritative for score validation, exact rational durations, repeat/tie timing, playback, input assessment and export. Jianpu remains the separate WorldMusicClub view. No OSMD paid player, transpose plugin, Jianpu plugin, audio service, remote score loader or hosted font is included.
 
 An unbuilt checkout does **not** have the professional renderer available. Keep the clearly labelled basic pitch view usable when assets are absent, the score exceeds limits, or engraving fails. An OSMD preview is not a claim of lossless recovery of the uploaded notation: canonical exports infer rhythmic spelling/clefs and surface their own diagnostics.
 
