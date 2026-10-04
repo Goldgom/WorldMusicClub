@@ -178,9 +178,9 @@ test('a late audio unlock cannot activate clean audio after another song selecti
 test('range summary retains all notes and 88-key action changes device range without transposition',async()=>{const {app,score}=await setup();try{await activate(app,'listen');await app.click('play-button');assert.match(app.$('song-complete-range-text').textContent,/5 notes/);const original=JSON.stringify(score.parts);await app.click('song-use-piano-88');assert.equal(app.$('key-count').value,'88');assert.equal(JSON.stringify(score.parts),original);assert.equal(app.$('song-use-piano-88').hidden,true);app.$('tempo').value='130';app.emit(app.$('tempo'),'change');assert.equal(app.$('tempo').value,'120');assert.equal(app.requests.filter(request=>request.path==='/api/transpose').length,0);}finally{await app.close();}});
 
 
-test('ordinary source part selection keeps written focus and does not add complete-song stage controls',async()=>{const {app,score}=await setup();try{
+test('ordinary All display stays independent of the human part, while explicit Current follows it',async()=>{const {app,score}=await setup();try{
  await app.click('home-single-player');const standard=structuredClone(score);standard.id='ordinary-two-part';app.importFile(standard);await app.until(()=>app.$('score-title')?.textContent===standard.title&&!app.$('play-button').disabled);
- assert.equal(app.$('song-parts-tools').hidden,true);const second=standard.parts[1].id;app.$('practice-part').value=second;app.emit(app.$('practice-part'),'change');await app.until(()=>!app.$('play-button').disabled);assert.equal(app.$('notation-part').value,second);assert.equal(app.$('engraving-part').value,second);
+ assert.equal(app.$('song-parts-tools').hidden,true);const second=standard.parts[1].id;app.$('practice-part').value=second;app.emit(app.$('practice-part'),'change');await app.until(()=>!app.$('play-button').disabled);assert.equal(app.$('notation-part').value,'');assert.equal(app.$('engraving-part').value,'');app.$('notation-scope').value='current';app.emit(app.$('notation-scope'),'change');await app.tick();assert.equal(app.$('notation-part').value,second);assert.equal(app.$('engraving-part').value,second);assert.equal(app.$('practice-part').value,second);
  }finally{await app.close();}});
 
 test('native current-note and page following use the admitted all-part runtime through part changes',async()=>{

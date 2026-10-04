@@ -85,8 +85,12 @@ export function basicKeyEngravingBoundaries(identity){return boundaryIdentities.
 /** All times below were returned by Rust. Index them without deriving a tempo
  * clock or converting beats to milliseconds in the browser. */
 export function basicKeyWrittenAt(song,page,position,timedNotes){
+  if(Array.isArray(page)){
+    const views=page.map(item=>{const value=basicKeyWrittenAt(song,item,position,timedNotes);return value?{...value,entries:value.entries.filter(entry=>entry.partId===item.part_id)}:null;}).filter(Boolean);
+    if(!views.length)return null;const entries=views.flatMap(view=>view.entries),occurrence={...views[0].occurrence};occurrence.written_note_ids=entries.filter(entry=>entry.startMs>=occurrence.start_ms).map(entry=>entry.sourceNoteId);occurrence.continuing_note_ids=entries.filter(entry=>entry.startMs<occurrence.start_ms).map(entry=>entry.sourceNoteId);return{occurrence,entries};
+  }
   if(hasBasicKeyRendition(song)&&page?.view_version===2){
-    if(!['ready','rendering_unavailable','percussion_selectors','onset_page'].includes(page.status))return null;
+    if(!['ready','rendering_unavailable','percussion_selectors','onset_page','empty_page'].includes(page.status))return null;
     const measure=page.measures.find(item=>position>=item.start_ms&&position<item.follow_end_ms);if(!measure)return null;
     const index=renditionNotationIndex(song),display=new Map((page.interpreted_notes||[]).map(item=>[item.note_id,item])),written=new Map((page.score?.parts[0]?.notes||[]).map(note=>[note.id,note]));
     const entries=timedNotes.flatMap(timed=>{const source=index.get(timed.id),item=display.get(timed.id);return source&&item?[{...source,note:{...source.note,...written.get(timed.id),at:item.source_at,duration:written.get(timed.id)?.duration||{numerator:0,denominator:1}},role:item.role,key:item.key,sourceNoteId:timed.id,sourceMeasureIndex:measure.source_measure_index,startMs:source.startMs,endMs:source.endMs}]:[];});

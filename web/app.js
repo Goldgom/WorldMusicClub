@@ -384,7 +384,7 @@ function displayOpeningTempo(score,song=state.cleanSong) {
 }
 function renderScore() {
   if (!state.score) return;
-  const score = state.score;
+  const score = state.score;engravedView.updateScore();const viewScope=engravedView.scopeInfo();state.notationPart=viewScope.scope==='all'?null:viewScope.partId;
   const summary = scoreSummary(score,state.compiled?.timeline),diagnostics=state.compiled?.diagnostics||state.importDiagnostics;
   bindText($('score-title'), () => score.title);
   bindText($('score-meta'), () => state.compiled?t('app.scoreMeta', {composer:score.composer||t('app.composerUnknown'),written:summary.writtenCount,playback:summary.playbackCount,measures:summary.measures,parts:summary.parts}):(i18n.locale==='en'?`${summary.writtenCount} determined written keys · ${summary.parts} parts · timed practice unavailable`:`${summary.writtenCount} 个已确定谱面按键 · ${summary.parts} 个声部 · 定时练习不可用`));
@@ -393,7 +393,7 @@ function renderScore() {
   bindText($('score-retention-note'), () => t('app.retention', {notes:summary.count,rests:summary.rests,edition:score.provenance.kind==='curated_cc0_edition'?t('app.retentionSourceEdition'):t('app.retentionCounts')}));
   bindText($('score-key'), () => basicMeterLabel()||t('app.scoreMeter', {numerator:score.meters[0]?.numerator||4,denominator:score.meters[0]?.denominator||4}));
   $('notation-part').replaceChildren();
-  const shownAll=document.createElement('option');shownAll.value='';bindText(shownAll, () => t('app.allParts'));if(!hasBasicKeyRendition(state.cleanSong))$('notation-part').append(shownAll);
+  const shownAll=document.createElement('option');shownAll.value='';bindText(shownAll, () => t('app.allParts'));$('notation-part').append(shownAll);
   for (const part of score.parts) { const option = document.createElement('option'); option.value = part.id; bindText(option, () => part.name); $('notation-part').append(option); }
   $('notation-part').value = state.notationPart || '';
   $('practice-part').replaceChildren();
@@ -441,10 +441,12 @@ function updateLoopStatus() {
 function renderNotationPage() {
   if (!state.score) return;
   if(hasBasicKeyRendition(state.cleanSong)&&!engravedView.sourceInspection()){
-    const page=engravedView.basicPage(),host=$('notation');host.replaceChildren();$('basic-notation-note').removeAttribute('data-i18n');bindText($('basic-notation-note'),()=>i18n.locale==='en'?'Basic interpretation v1: all interpreted targets share playback IDs and timing. Positive gates use this pitch/numbered view; synthetic onsets and percussion selectors stay explicitly labeled above. Original source notation is unchanged.':'基础解释 v1：全部解释目标与播放共用标识和时间。正时长门限显示在此音高／简谱视图，合成起音与打击乐选择键在上方明确标记。原始源记谱保持不变。');
+    const pages=engravedView.basicPages(),page=pages[0],host=$('notation');host.replaceChildren();$('basic-notation-note').removeAttribute('data-i18n');bindText($('basic-notation-note'),()=>i18n.locale==='en'?'Basic interpretation v1: all interpreted targets share playback IDs and timing. Positive gates use this pitch/numbered view; synthetic onsets and percussion selectors stay explicitly labeled above. Original source notation is unchanged.':'基础解释 v1：全部解释目标与播放共用标识和时间。正时长门限显示在此音高／简谱视图，合成起音与打击乐选择键在上方明确标记。原始源记谱保持不变。');
     if(page?.view_version===2&&page.source_sha256===state.cleanSong.score.source.sha256){
-      const rendered=renderBasicKeyPage(page,state.notation,{width:Math.max(240,host.clientWidth-36),numberedMode:state.numberedMode,i18n});host.innerHTML=rendered.html;
-      if(rendered.fallback.length){const list=document.createElement('ul');for(const item of rendered.fallback){const row=document.createElement('li');row.className='score-note';row.dataset.noteId=item.note_id;row.textContent=i18n.locale==='en'?`MIDI key ${item.key} · interpreted gate · ${item.note_id}`:`MIDI 键 ${item.key} · 解释门限 · ${item.note_id}`;list.append(row);}host.append(list);}
+      for(const displayed of pages){const mount=document.createElement('section');mount.dataset.notationPartId=displayed.part_id;const heading=document.createElement('p');heading.className='notation-part-title';heading.textContent=state.score.parts.find(part=>part.id===displayed.part_id)?.name||displayed.part_id;mount.append(heading);const body=document.createElement('div'),rendered=renderBasicKeyPage(displayed,state.notation,{width:Math.max(240,host.clientWidth-36),numberedMode:state.numberedMode,i18n});body.innerHTML=rendered.html;if(!rendered.html&&!rendered.fallback.length)body.textContent=(displayed.interpreted_notes||[]).length?t(displayed.status==='percussion_selectors'?'notationRuntime.basicSelectorPage':'notationRuntime.basicOnsetPage'):t('notation.empty');mount.append(body);
+        if(rendered.fallback.length){const list=document.createElement('ul');for(const item of rendered.fallback){const row=document.createElement('li');row.className='score-note';row.dataset.noteId=item.note_id;row.textContent=i18n.locale==='en'?`MIDI key ${item.key} · interpreted gate · ${item.note_id}`:`MIDI 键 ${item.key} · 解释门限 · ${item.note_id}`;list.append(row);}mount.append(list);}host.append(mount);
+      }
+      if(!state.engravingActive)engravedView.reportPaint(pages.filter(item=>(['ready','rendering_unavailable','onset_page','percussion_selectors'].includes(item.status)||item.status==='empty_page'&&item.measures?.length>0&&item.follow_end_ms>item.source_start_ms)).map(item=>item.part_id),engravedView.basicBatch()?.status||'ready');
       bindText($('notation-page'),()=>i18n.locale==='en'?`Rendition measures ${page.first_measure+1}–${page.first_measure+page.measure_count} / ${page.total_measures}`:`解释小节 ${page.first_measure+1}～${page.first_measure+page.measure_count} / ${page.total_measures}`);$('notation-prev').disabled=page.first_measure===0;$('notation-next').disabled=page.next_measure===null;
     }else{const status=shell.notationVisible()?engravedView.followPosition(Math.max(0,transport.time(performance.now()))):null;bindText($('notation-page'),()=>status?.status==='unavailable'?(i18n.locale==='en'?'The native rendition page is unavailable. Reopen Staff to retry.':'本机解释页面不可用。请重新打开五线谱重试。'):(i18n.locale==='en'?'Preparing the shared rendition page…':'正在准备共用解释页面…'));$('notation-prev').disabled=$('notation-next').disabled=true;}
     bindText($('score-key'),()=>i18n.locale==='en'?'Basic interpretation v1':'基础解释 v1');state.lastHighlight='';return;
@@ -455,7 +457,9 @@ function renderNotationPage() {
   $('basic-notation-note').removeAttribute('data-i18n');bindText($('basic-notation-note'),()=>hasBasicKeyRendition(state.cleanSong)?(i18n.locale==='en'?'Source-only pitch/numbered projection: this view preserves the original proved-note subset. Choose Staff for the complete interpreted gates, onset markers and percussion selectors used by playback and scoring.':'仅源数据的音高／简谱投影：此视图保留原始已确定音符子集。请选择五线谱，查看与播放、评分一致的完整解释门限、起音标记及打击乐选择键。'):t('ui.basic-notation-note'));
   const count = notationPageCount(state.score, state.notationSpan);
   state.notationPage = Math.max(0, Math.min(count - 1, state.notationPage));
-  $('notation').innerHTML = renderNotation(state.score, state.notation, {startBeat: state.notationPage * state.notationSpan, spanBeats: state.notationSpan, width: layout.width, partId: state.notationPart, allParts: state.notationPart===null, numberedMode: state.numberedMode,i18n});
+  const visibleParts=new Set(engravedView.displayedPartIds()),displayScore={...state.score,parts:state.score.parts.filter(part=>visibleParts.has(part.id))};
+  $('notation').innerHTML = renderNotation(displayScore, state.notation, {startBeat: state.notationPage * state.notationSpan, spanBeats: state.notationSpan, width: layout.width, partId: state.notationPart, allParts: state.notationPart===null, numberedMode: state.numberedMode,i18n});
+  if(!state.engravingActive)engravedView.reportPaint(displayScore.parts.map(part=>part.id));
   const tonic = keyTonic(keyAt(state.score, state.notationPage * state.notationSpan));
   if (!state.engravingActive) bindText($('score-key'), () => basicMeterLabel()||(state.notation === 'jianpu' && state.numberedMode === 'movable' ? (tonic ? t('app.tonicNumbering', {tonic:`${tonic.name}${tonic.octave}`}) : t('app.unknownKey')) : t('app.notationMeter', {numerator:state.score.meters[0]?.numerator||4,denominator:state.score.meters[0]?.denominator||4})));
   bindText($('notation-page'), () => t('app.notationPage', {page:state.notationPage+1,count}));
@@ -981,8 +985,8 @@ function advanceLoopClock(now) {
 // Displayed parts are independent of playback keys and assessed practice targets.
 function displayedPartId(){return state.engravingActive?$('engraving-part').value||null:state.notationPart}
 function displayedWrittenEntries(written) {
-  const part=displayedPartId();
-  return (written?.entries||[]).filter(entry=>part===null||entry.partId===part);
+  const part=displayedPartId(),visible=new Set(engravedView.displayedPartIds());
+  return (written?.entries||[]).filter(entry=>(part===null||entry.partId===part)&&visible.has(entry.partId));
 }
 function drawFrame(displayOnly = false) {
   const now = performance.now();
@@ -1021,17 +1025,17 @@ function drawFrame(displayOnly = false) {
   if(shell.screen()!=='stage')return;
   const active = position < segmentStart ? [] : playbackIndex?.range(position) || [];
   if(displayOnly!==true&&!isBasicKeysSong(state.cleanSong)&&(shell.notationVisible()||beginnerView?.enabled()&&state.numberedMode==='movable'))writtenCursor?.prepare();
-  const written = position < segmentStart ? null : isBasicKeysSong(state.cleanSong)?basicKeyWrittenAt(state.cleanSong,engravedView.basicPage(),position,state.timelineIndex?.range(position)||[]):writtenCursor?.at(position);
+  const written = position < segmentStart ? null : isBasicKeysSong(state.cleanSong)?basicKeyWrittenAt(state.cleanSong,engravedView.basicPages(),position,state.timelineIndex?.range(position)||[]):writtenCursor?.at(position);
   const soundingSources = new Set(active.flatMap(note=>mappedSourceIds(note,state.mode==='practice'?state.targetGroups.get(note.id):null)));
-  const currentWritten = (written?.entries || []).filter(entry=>entry.note.pitch?soundingSources.has(entry.sourceNoteId):state.practicePart===null||entry.partId===state.practicePart);
+  const currentWritten = (written?.entries || []).filter(entry=>entry.note.pitch||entry.role==='percussion_selector'?soundingSources.has(entry.sourceNoteId):state.practicePart===null||entry.partId===state.practicePart);
   const displayedWritten=displayedWrittenEntries(written);
   if(shell.notationVisible()&&state.engravingActive&&written?.occurrence)engravedView.setExpectedWrittenNotes?.({sourceNoteIds:displayedWritten.map(entry=>entry.sourceNoteId),sourceMeasureIndex:written.occurrence.source_measure_index});
-  else engravedView.clearExpectedWrittenNotes?.();
+  else engravedView.clearExpectedWrittenNotes?.({preserveRenditionRows:hasBasicKeyRendition(state.cleanSong)&&shell.notationVisible()});
   if(displayOnly!==true&&shell.notationVisible())notationFollowing?.tick(position < segmentStart ? -1 : position,transport.running,{...written,entries:displayedWritten,pageAnchor:writtenCursor?.pageAnchor(position,displayedPartId())});
   const signature = JSON.stringify([i18n.revision,written?.occurrence?.id || null,currentWritten.map(entry=>entry.sourceNoteId),displayedWritten.map(entry=>entry.sourceNoteId)]);
   if (signature !== state.lastHighlight) {
     const activeSources=new Set(displayedWritten.map(entry=>entry.sourceNoteId));
-    document.querySelectorAll('.score-note').forEach(note => note.classList.toggle('active', activeSources.has(note.dataset.noteId)));
+    document.querySelectorAll('.score-note').forEach(note => {const active=activeSources.has(note.dataset.noteId);note.classList.toggle('active',active);note.setAttribute('aria-current',String(active));});
     state.lastHighlight = signature;
     if((writtenCursor?.state().status==='ready'||isBasicKeysSong(state.cleanSong)&&written?.occurrence)&&writtenCursorStatus){
       if(isBasicKeysSong(state.cleanSong)){writtenCursorStatus.dataset.status='ready';writtenCursorRetry.hidden=true;}
@@ -1040,7 +1044,7 @@ function drawFrame(displayOnly = false) {
       bindText(writtenCursorStatus, () => selectors.length?(i18n.locale==='en'?`Percussion selectors: ${selectors.map(entry=>entry.key).join(', ')}`:`打击乐选择键：${selectors.map(entry=>entry.key).join('、')}`):t('app.writtenNotes', {notes:labels.join(', ')||'—',more:pitches.length>8?t('app.moreNotes',{count:pitches.length-8}):'',rests:rests?t('app.writtenRests',{count:rests}):''}));
       writtenCursorStatus.dataset.sourceNoteIds=JSON.stringify(currentWritten.map(entry=>entry.sourceNoteId));
       writtenCursorStatus.dataset.sourceMeasureIndex=written?.occurrence?String(written.occurrence.source_measure_index):'';
-    }
+    }else if(isBasicKeysSong(state.cleanSong)&&writtenCursorStatus){writtenCursorStatus.dataset.sourceNoteIds='[]';writtenCursorStatus.dataset.sourceMeasureIndex='';writtenCursorStatus.dataset.status=position>=duration?'ended':'pending';bindText(writtenCursorStatus,()=>position>=duration?(i18n.locale==='en'?'End of the interpreted timeline':'解释时间线已结束'):(i18n.locale==='en'?'Following is waiting for a matching native page. Playback targets keep their original timeline.':'跟随正在等待匹配的本机页面。播放目标仍使用原时间线。'));}
   }
   highlightKeys(active);
   $('progress').max = Math.max(1, duration); $('progress').value = Math.min(duration, Math.max(0, position));
@@ -1109,16 +1113,16 @@ $('latency-offset').addEventListener('change', () => {
   if (!validLatency(value)) { $('latency-offset').value = String(state.latency); notice(() => t('app.latencyInvalid'), true); return; }
   state.latency = Number(value);const result=writeLatencyPreference(state.latency);bindText($('latency-storage-status'), () => result.saved?t('app.latencySaved'):errorDetail(result));$('latency-storage-status').hidden=false;resetPlayback();
 });
-$('practice-part').addEventListener('change', () => { state.practicePart = $('practice-part').value || (state.cleanSong?state.score.parts[0].id:null); rebuildPracticeScope(); resetPlayback(); if(hasBasicKeyRendition(state.cleanSong)){state.notationPart=state.practicePart;$('notation-part').value=state.practicePart;engravedView.selectPart(state.practicePart);renderNotationPage();} if(!state.cleanSong){if(state.practicePart!==null){state.notationPart=state.practicePart;$('notation-part').value=state.practicePart;renderNotationPage();}engravedView.selectPart(state.practicePart);} updateRangeWarning(); checkInstrument(); });
+$('practice-part').addEventListener('change', () => { state.practicePart = $('practice-part').value || (state.cleanSong?state.score.parts[0].id:null); rebuildPracticeScope(); resetPlayback(); engravedView.practicePartChanged();if(engravedView.scopeInfo().scope==='current'){state.notationPart=state.practicePart;$('notation-part').value=state.practicePart||'';renderNotationPage();} updateRangeWarning(); checkInstrument(); });
 function setNumberedMode(mode) { state.numberedMode = mode; $('jianpu-reference').value = mode; renderNotationPage(); beginnerView?.refresh(true); }
 $('jianpu-reference').addEventListener('change', () => setNumberedMode($('jianpu-reference').value));
-$('notation-part').addEventListener('change', () => { notationFollowing?.suspend();state.notationPart = $('notation-part').value || null;if(hasBasicKeyRendition(state.cleanSong))engravedView.selectPart(state.notationPart||state.practicePart);renderNotationPage(); });
+$('notation-part').addEventListener('change', () => { notationFollowing?.suspend();state.notationPart = $('notation-part').value || null;engravedView.selectPart(state.notationPart);renderNotationPage(); });
 $('notation-prev').addEventListener('click', () => { notationFollowing?.suspend();if(hasBasicKeyRendition(state.cleanSong)){engravedView.turnBasicPage(-1);return;}state.notationPage--; renderNotationPage(); });
 $('notation-next').addEventListener('click', () => { notationFollowing?.suspend();if(hasBasicKeyRendition(state.cleanSong)){engravedView.turnBasicPage(1);return;}state.notationPage++; renderNotationPage(); });
 $('play-button').addEventListener('click', togglePlayback);
 $('reset-button').addEventListener('click', resetPlayback);
 $('assess-button').addEventListener('click', () => assess());
-$('session-mode').addEventListener('change', () => { state.mode = $('session-mode').value; resetPlayback(); updateRangeWarning(); });
+$('session-mode').addEventListener('change', () => { state.mode = $('session-mode').value; resetPlayback();engravedView.modeChanged();const scope=engravedView.scopeInfo();state.notationPart=scope.scope==='all'?null:scope.partId;$('notation-part').value=state.notationPart||'';renderNotationPage(); updateRangeWarning(); });
 $('instrument').addEventListener('change', () => { resetPlayback(); state.instrument = $('instrument').value; state.profileDirty = false; syncProfileFields(); profileControls(); if (state.instrument === 'guitar') $('instrument-settings').open = true; checkInstrument(); $('piano-stage').hidden = state.instrument !== 'piano'; $('guitar-stage').hidden = state.instrument !== 'guitar'; $('key-count').disabled = state.instrument !== 'piano'; updateRangeWarning(); keyboardInputView?.refreshRange(); drawFrame(); });
 $('key-count').addEventListener('change', () => { resetPlayback(); state.customKeys = $('key-count').value === 'custom'; profileControls(); if (state.customKeys) { markProfileDirty(); $('instrument-settings').open = true; $('custom-key-count').value = String(state.keys); $('custom-lowest').value = midiName(state.geometry[0].midi).replace('♯','#'); return; } state.keys = Number($('key-count').value); state.lowestMidi = null; state.profileDirty = false; renderKeyboard(); updateRangeWarning(); checkInstrument(); });
 $('tempo').addEventListener('change', () => {
@@ -1394,7 +1398,7 @@ const storageLobbyHost=document.createElement('div');$('catalog').before(storage
 setupScoreStorageLobbyStatus({model:scoreStorage,host:storageLobbyHost,document,i18n,onConfigure:()=>shell.open('settings')});
 scoreStorage.subscribe(()=>{renderCatalog();const binding=displayBindings.get(legacyLibraryButton);if(binding?.text)legacyLibraryButton.textContent=binding.text()});
 $('score-library').addEventListener('close',()=>{if(scoreStorage.snapshot().kind==='browser')void scoreStorage.rescan()});
-const engravedView = setupEngravedView({i18n,onBasicPage:page=>{if(hasBasicKeyRendition(state.cleanSong)){if(page){state.notationPart=page.part_id;$('notation-part').value=page.part_id;}if(!state.engravingActive)renderNotationPage();}},getScore:()=>state.score,getCleanSong:()=>state.cleanSong,getPracticePart:()=>isBasicKeysSong(state.cleanSong)?state.practicePart:null,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),notice,onVisibility:active=>{
+const engravedView = setupEngravedView({i18n,onBasicPage:(page,batch)=>{if(hasBasicKeyRendition(state.cleanSong)){if(page){state.notationPart=batch?.scope==='all'?null:page.part_id;$('notation-part').value=state.notationPart||'';}if(!state.engravingActive)renderNotationPage();}},getScore:()=>state.score,getCleanSong:()=>state.cleanSong,getPracticePart:()=>state.practicePart,getMode:()=>state.mode,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),notice,onVisibility:active=>{
   state.engravingActive=active;
   document.querySelector('.engraving-pages').hidden=!active;
   const displayOptions=document.querySelector('.notation-display-options');if(displayOptions)displayOptions.hidden=!active;
@@ -1403,6 +1407,7 @@ const engravedView = setupEngravedView({i18n,onBasicPage:page=>{if(hasBasicKeyRe
   if($('dock-warning-count'))$('dock-warning-count').hidden=!active&&$('engraving-fallback').hidden;
   if(active){bindText($('score-key'), () => t('app.generatedStaff'));for(const id of ['staff-button','jianpu-button']){$(id).classList.remove('selected');$(id).setAttribute('aria-pressed','false')}$('engraved-button').classList.add('selected');$('engraved-button').setAttribute('aria-pressed','true')}
 },onFallback:()=>selectBasicNotation('staff',{remember:false}),onManualNavigation:()=>notationFollowing?.suspend()});
+$('workspace').addEventListener('notationscopechange',event=>{engravedView.setScope(event.detail);const scope=engravedView.scopeInfo();state.notationPart=scope.scope==='all'?null:scope.partId;$('notation-part').value=state.notationPart||'';renderNotationPage();});
 const basicNotationReveal=createBasicNotationReveal({container:$('notation'),dock:$('notation-dock')});
 $('notation-dock').addEventListener('toggle',()=>basicNotationReveal.reset(),true);
 $('workspace').addEventListener('notationviewportchange',()=>{basicNotationReveal.reset();engravedView.resetReveal();});
@@ -1411,7 +1416,7 @@ const followingView={
   followPosition(position,running,written){
     if(!isBasicKeysSong(state.cleanSong))return null;
     const page=engravedView.followPosition(position);if(page?.status!=='ready')return page;
-    const current=written?.occurrence?written:basicKeyWrittenAt(state.cleanSong,engravedView.basicPage(),position,state.timelineIndex?.range(position)||[]);
+    const current=written?.occurrence?written:basicKeyWrittenAt(state.cleanSong,engravedView.basicPages(),position,state.timelineIndex?.range(position)||[]);
     if(!current)return{status:'pending'};
     if(!state.engravingActive)this.followMeasure(current.occurrence.source_measure_index,current.occurrence,current);
     return{...page,occurrence:current.occurrence};
@@ -1478,7 +1483,7 @@ function syncCleanMedia(){
   if(activeMediaKey!==song?.identity){activeMediaKey=song?.identity||null;void activeMedia.select(song?.libraryKey,song);}
   renderCleanActive();
 }
-cleanView=setupCleanSongView({document,i18n,onVsqStart:chooseVsqAndStart,onVsqChoice:()=>preview.chooseVsqPractice(async(song,signal)=>(await scoreStorage.storage()).chooseVsqPractice(song,{signal})),onOpen:()=>pausePlayback(),onTarget:part=>{if(!state.cleanSong||transport.running)return;state.practicePart=part;$('practice-part').value=part;rebuildPracticeScope();resetPlayback();if(hasBasicKeyRendition(state.cleanSong)){state.notationPart=part;$('notation-part').value=part;engravedView.selectPart(part);renderNotationPage();}void checkInstrument();},onMute:(part,muted)=>{if(transport.running)return;if(muted)cleanMutedParts.add(part);else cleanMutedParts.delete(part);resetPlayback();},onSolo:(part,solo)=>{if(transport.running)return;if(solo)cleanSoloParts.add(part);else cleanSoloParts.delete(part);resetPlayback();},onResetMix:()=>{if(transport.running)return;cleanMutedParts.clear();cleanSoloParts.clear();resetPlayback();},onRange:()=>{$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}});
+cleanView=setupCleanSongView({document,i18n,onVsqStart:chooseVsqAndStart,onVsqChoice:()=>preview.chooseVsqPractice(async(song,signal)=>(await scoreStorage.storage()).chooseVsqPractice(song,{signal})),onOpen:()=>pausePlayback(),onTarget:part=>{if(!state.cleanSong||transport.running)return;state.practicePart=part;$('practice-part').value=part;rebuildPracticeScope();resetPlayback();engravedView.practicePartChanged();if(engravedView.scopeInfo().scope==='current'){state.notationPart=part;$('notation-part').value=part;renderNotationPage();}void checkInstrument();},onMute:(part,muted)=>{if(transport.running)return;if(muted)cleanMutedParts.add(part);else cleanMutedParts.delete(part);resetPlayback();},onSolo:(part,solo)=>{if(transport.running)return;if(solo)cleanSoloParts.add(part);else cleanSoloParts.delete(part);resetPlayback();},onResetMix:()=>{if(transport.running)return;cleanMutedParts.clear();cleanSoloParts.clear();resetPlayback();},onRange:()=>{$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}});
 performanceListening=setupCompletePerformanceListening({document,i18n,synth,host:$('clean-song-preview'),isVisible:()=>shell.screen()==='library',allowed:()=>!document.hidden&&!document.querySelector('dialog[open]'),onBeforePlay:()=>pausePlayback(),onActiveChange:()=>syncInputRoute(),getSoundEnabled:()=>!synth.muted,onSoundChange:setSoundEnabled});
 const loadCleanAsset=async(key,handle,options)=>(await scoreStorage.storage()).loadAsset(key,handle,options);
 previewMedia=createCleanSongMedia({loadAsset:loadCleanAsset,cover:cleanView.cover,onStatus:value=>cleanView.renderPreviewMedia(value)});
