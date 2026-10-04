@@ -223,10 +223,7 @@ pub fn source_event_id(source_sha256: &str, origin: Coordinate) -> String {
     format!("midi:{source_sha256}:t{}:e{}", origin.track, origin.event)
 }
 
-/// This profile deliberately does not call the canonical playback compiler:
-/// missing/ambiguous tempo, zero-length keys and unknown timbre are represented
-/// facts, not reasons to discard determined key notation.
-pub fn validate(score: &CompleteBasicKeys) -> Result<(), String> {
+fn validate_envelope(score: &CompleteBasicKeys) -> Result<(), String> {
     if score.format != FORMAT || score.version != 1 || score.performance.profile != PROFILE {
         return Err("Unsupported basic-key complete-score envelope/profile".into());
     }
@@ -242,6 +239,13 @@ pub fn validate(score: &CompleteBasicKeys) -> Result<(), String> {
     {
         return Err("Invalid original-source evidence".into());
     }
+    Ok(())
+}
+/// This profile deliberately does not call the canonical playback compiler:
+/// missing/ambiguous tempo, zero-length keys and unknown timbre are represented
+/// facts, not reasons to discard determined key notation.
+pub fn validate(score: &CompleteBasicKeys) -> Result<(), String> {
+    validate_envelope(score)?;
     // Re-derive all claims from the complete compact event sequence. Source
     // hashes remain provenance claims until compared to private originals.
     let timeline = conversion::timeline_from_records(&score.performance)?;
@@ -269,6 +273,7 @@ pub fn decode_json(bytes: &[u8]) -> Result<CompleteBasicKeys, String> {
         return Err("Complete basic-key score exceeds 16 MiB".into());
     }
     let score: CompleteBasicKeys = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+    validate_envelope(&score)?;
     if !score.performance.notes.is_empty() {
         return Err(
             "Compact basic-key package must derive notes from its complete event records".into(),
@@ -281,7 +286,10 @@ pub fn decode_json(bytes: &[u8]) -> Result<CompleteBasicKeys, String> {
             "Basic-key package projection or coverage differs from complete event records".into(),
         );
     }
-    validate(&expected)?;
+    // `expected` was just built from all validated source records, and the
+    // exact wire comparison proved every submitted projection/coverage claim.
+    // Its source/envelope checks are performed above. Re-validating expected
+    // would repeat that identical full parse/derivation without a new input.
     Ok(expected)
 }
 

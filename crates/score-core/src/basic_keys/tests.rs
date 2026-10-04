@@ -242,6 +242,48 @@ fn derived_claims_and_compact_event_corruption_are_rejected() {
     assert!(decode_json(&serde_json::to_vec(&wire).unwrap()).is_err());
 }
 
+#[test]
+fn decoding_checks_all_envelope_source_and_semantic_claims_before_returning_derived_notes() {
+    let score = convert(&[track(&[(0, &[0x90, 60, 90]), (1, &[0x80, 60, 0])])]);
+    let wire = encode_json(&score).unwrap();
+    for (pointer, value) in [
+        ("/format", serde_json::json!("other")),
+        ("/version", serde_json::json!(2)),
+        ("/performance/profile", serde_json::json!("other-profile")),
+        ("/source/format", serde_json::json!("vsq")),
+        ("/source/bytes", serde_json::json!(0)),
+        (
+            "/source/bytes",
+            serde_json::json!(midi_events::MAX_SOURCE_BYTES + 1),
+        ),
+        ("/source/sha256", serde_json::json!("A".repeat(64))),
+        ("/source/sha256", serde_json::json!("0".repeat(63))),
+        ("/source/sha256", serde_json::json!("g".repeat(64))),
+        ("/performance/end_tick", serde_json::json!(2)),
+        ("/performance/tracks/0/events/0/1/1", serde_json::json!(61)),
+        (
+            "/notation/parts/0/notes/0/duration/numerator",
+            serde_json::json!(2),
+        ),
+        (
+            "/capabilities/basic_keys",
+            serde_json::json!("complete_source_sound"),
+        ),
+    ] {
+        let mut changed: serde_json::Value = serde_json::from_slice(&wire).unwrap();
+        *changed.pointer_mut(pointer).unwrap() = value;
+        assert!(
+            decode_json(&serde_json::to_vec(&changed).unwrap()).is_err(),
+            "accepted altered{pointer}"
+        );
+    }
+    let decoded = decode_json(&wire).unwrap();
+    assert_eq!(decoded.performance.notes.len(), 1);
+    assert_eq!(decoded.performance.notes[0].key, 60);
+    assert_eq!(decoded.performance.notes[0].end.as_ref().unwrap().tick, 1);
+    assert_eq!(encode_json(&decoded).unwrap(), wire);
+}
+
 fn exhaustive(attack_word: &[bool]) -> Vec<BTreeSet<Option<usize>>> {
     // Each state is a complete partial ownership assignment. The oracle makes
     // every available release choice; it never uses the production component
