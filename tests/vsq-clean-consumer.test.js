@@ -158,3 +158,10 @@ test('late VSQ direct-start derivation cannot start after another selection',asy
   await app.click('vsq-listen-basic');await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choosing');const bundled=app.document.querySelector('#catalog [data-score-id]');bundled.click();await app.until(()=>app.$('clean-song-preview').hidden);pending.resolve();await app.tick();assert.equal(oscillators(app).length,0);assert.notEqual(app.document.body.dataset.screen,'stage');
  }finally{pending.resolve();await app.close();}
 });
+
+test('VSQ direct-start derivation is cancelled by Home navigation',async()=>{
+ const {app,server}=await appFixture(),pending=deferred();try{
+  server.setRoute(async({path})=>path==='/api/library/runtime'?(await pending.promise,nativeResponse(response())):undefined);
+  await app.click('vsq-listen-basic');await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choosing');await app.click('lobby-home');assert.equal(app.document.body.dataset.screen,'home');pending.resolve();await app.tick();await app.tick();assert.equal(app.document.body.dataset.screen,'home');assert.equal(oscillators(app).length,0);
+ }finally{pending.resolve();await app.close();}
+});

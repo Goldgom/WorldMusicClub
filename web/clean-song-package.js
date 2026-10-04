@@ -1,6 +1,6 @@
 import {pitchMidi} from './music.js';
 import {loadCleanPerformance} from './clean-performance-player.js';
-import {BASIC_KEY_RUNTIME_PROFILE,validateBasicKeyRendition} from './basic-key-rendition.js';
+import {BASIC_KEY_RUNTIME_PROFILE,decodeBasicKeyRuntime,validateBasicKeyRendition} from './basic-key-rendition.js';
 /** Admission of a native-validated package. Portable paths never become browser URLs. */
 const prepared = new WeakSet();
 const hash = /^[0-9a-f]{64}$/;
@@ -51,7 +51,7 @@ export function prepareCleanSong(libraryKey, descriptor, normalizedScore) {
   if (!descriptor || descriptor.version!==2 || !hash.test(descriptor.content_sha256) || libraryKey!==`native:song-${descriptor.content_sha256}`) fail('The clean song does not match the selected saved package.');
   let metadata, score;
   try { metadata=JSON.parse(descriptor.metadata_json);score=JSON.parse(descriptor.score_json); } catch { fail('The package metadata or complete score is unreadable.'); }
-  const runtime=descriptor.runtime;
+  let runtime=descriptor.runtime;
   if(descriptor.profile===BASIC_KEYS_PROFILE||score?.performance?.profile===BASIC_KEYS_PROFILE){
     normalizedScore??=score.notation;
     if(!isBasicKeysSummary(descriptor)||score.performance?.profile!==BASIC_KEYS_PROFILE||score.profile!==undefined||metadata?.format!=='worldmusichub-song'||metadata.version!==2||score.format!=='worldmusichub-complete-score'||score.version!==1||!normalizedScore||normalizedScore.source!=null||normalizedScore.id!==metadata.id||normalizedScore.title!==metadata.title||stable(score.notation)!==stable(normalizedScore)||stable(score.coverage)!==stable(descriptor.coverage)||stable(score.capabilities)!==stable(descriptor.capabilities)||!hash.test(score.source?.sha256)||metadata.sources?.length!==1||stable(metadata.sources[0])!==stable(score.source)||!Array.isArray(score.performance.tracks)||!Array.isArray(score.performance.parts)||!Array.isArray(descriptor.media)||descriptor.media.length||metadata.media?.length)fail('The native basic-key package identity, coverage or projection is inconsistent.');
@@ -62,6 +62,7 @@ export function prepareCleanSong(libraryKey, descriptor, normalizedScore) {
     const seenParts=new Set();
     for(const item of runtime.parts){const part=score.performance.parts.find(part=>part.id===item.id),written=normalizedScore.parts.find(part=>part.id===item.id);if(!part||seenParts.has(item.id)||['attacks','positive','instantaneous','unresolved'].some(key=>!Number.isSafeInteger(item[key])||item[key]<0)||item.attacks!==item.positive+item.instantaneous+item.unresolved||written.notes.length!==item.positive||item.percussion!==(part.key_semantics==='channel10_key_number_percussion_unresolved')||(item.attacks>0?(!Array.isArray(item.range)||item.range.length!==2||item.range.some(key=>!Number.isInteger(key)||key<0||key>127)||item.range[0]>item.range[1]):item.range!==null))fail('The native basic-key part coverage is inconsistent.');seenParts.add(item.id);}
     for(const [total,field] of [['key_attacks','attacks'],['notation_notes','positive'],['zero_length_attacks','instantaneous'],['unresolved_ends','unresolved']])if(runtime.parts.reduce((sum,part)=>sum+part[field],0)!==score.coverage[total])fail('The native part inventory disagrees with source coverage.');
+    if(renditionV2)runtime=decodeBasicKeyRuntime(runtime,fail);
     const compilation=runtime.compilation;
     if(renditionV2){
       if(!Array.isArray(compilation?.diagnostics))fail('The complete basic-key runtime omits its interpretation diagnostics.');

@@ -1,5 +1,6 @@
-import {isBasicKeysSong} from './clean-song-package.js';
+import {isBasicKeysSong,hasBasicKeyRendition} from './clean-song-package.js';
 import {equivalentJson} from './adaptation-view.js';
+import {validateRenditionNotationPage,renditionNotationIndex} from './basic-key-rendition-notation.js';
 
 const freeze=value=>{if(value&&typeof value==='object'&&!Object.isFrozen(value)){Object.freeze(value);for(const item of Object.values(value))freeze(item);}return value;};
 const sourceIndexes=new WeakMap(),admittedPages=new WeakMap(),boundaryIdentities=new WeakMap();
@@ -7,7 +8,7 @@ const invalid=()=>{throw Object.assign(Error('The basic-key notation page does n
 
 /** Bind a small view request to immutable native bytes. The Rust view owns all
  * musical-time projection; this adapter checks identities and display bounds. */
-export function basicKeyNotationRequest(song,{partId,from,count,displayMeter=null,positionMs=null}){
+export function basicKeyNotationRequest(song,{partId,from,count,displayMeter=null,positionMs=null,sourceOnly=false}){
   if(!isBasicKeysSong(song)||!/^[0-9a-f]{64}$/.test(song.identity)||song.libraryKey!==`native:song-${song.identity}`
     ||!song.notation.parts.some(part=>part.id===partId)||!Number.isSafeInteger(from)||from<1||from>4294967296
     ||!Number.isInteger(count)||count<1||count>32)invalid();
@@ -15,12 +16,13 @@ export function basicKeyNotationRequest(song,{partId,from,count,displayMeter=nul
     ||!Number.isInteger(displayMeter.denominator)||displayMeter.denominator<1))invalid();
   if(positionMs!==null&&(!Number.isFinite(positionMs)||positionMs<0))invalid();
   return{source:{key:song.libraryKey.slice(7),content_sha256:song.identity,profile:song.profile},
-    settings:{part_id:partId,first_measure:from-1,measure_count:count,display_meter:displayMeter,...(positionMs===null?{}:{position_ms:positionMs})}};
+    settings:{part_id:partId,first_measure:from-1,measure_count:count,display_meter:displayMeter,...(positionMs===null?{}:{position_ms:positionMs}),...(hasBasicKeyRendition(song)&&!sourceOnly?{rendition_policy_id:song.runtime.rendition.policy_id}:{})}};
 }
 
 export function basicKeyNotationPage(response,request,song){
   if(!response||!equivalentJson(response.source,request.source)||!response.page)invalid();
   const page=response.page;
+  if(request.settings.rendition_policy_id){validateRenditionNotationPage(page,request,song,invalid);freeze(page);admittedPages.set(page,song);return page;}
   if(page.profile!==song.profile||page.view_version!==1||page.source_sha256!==song.score.source.sha256
     ||page.part_id!==request.settings.part_id||!Number.isSafeInteger(page.first_measure)||page.first_measure<0
     ||request.settings.position_ms===undefined&&page.first_measure!==request.settings.first_measure)invalid();
@@ -83,6 +85,13 @@ export function basicKeyEngravingBoundaries(identity){return boundaryIdentities.
 /** All times below were returned by Rust. Index them without deriving a tempo
  * clock or converting beats to milliseconds in the browser. */
 export function basicKeyWrittenAt(song,page,position,timedNotes){
+  if(hasBasicKeyRendition(song)&&page?.view_version===2){
+    if(!['ready','rendering_unavailable','percussion_selectors','onset_page'].includes(page.status))return null;
+    const measure=page.measures.find(item=>position>=item.start_ms&&position<item.follow_end_ms);if(!measure)return null;
+    const index=renditionNotationIndex(song),display=new Map((page.interpreted_notes||[]).map(item=>[item.note_id,item])),written=new Map((page.score?.parts[0]?.notes||[]).map(note=>[note.id,note]));
+    const entries=timedNotes.flatMap(timed=>{const source=index.get(timed.id),item=display.get(timed.id);return source&&item?[{...source,note:{...source.note,...written.get(timed.id),at:item.source_at,duration:written.get(timed.id)?.duration||{numerator:0,denominator:1}},role:item.role,key:item.key,sourceNoteId:timed.id,sourceMeasureIndex:measure.source_measure_index,startMs:source.startMs,endMs:source.endMs}]:[];});
+    return{occurrence:{id:`basic-rendition-measure-${measure.source_measure_index}`,source_measure_index:measure.source_measure_index,measure_number:measure.source_measure_index+1,source_from:measure.source_at,source_to:measure.source_end,start_ms:measure.start_ms,end_ms:measure.follow_end_ms,written_note_ids:entries.filter(entry=>entry.startMs>=measure.start_ms).map(entry=>entry.sourceNoteId),continuing_note_ids:entries.filter(entry=>entry.startMs<measure.start_ms).map(entry=>entry.sourceNoteId),repeat_region_index:null,repeat_pass:null,repeat_times:null},entries};
+  }
   if(!isBasicKeysSong(song)||!song.compilation||page?.status!=='ready')return null;
   const measure=page.measures.find(item=>position>=item.start_ms&&position<item.end_ms);
   if(!measure)return null;

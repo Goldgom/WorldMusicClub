@@ -1,6 +1,13 @@
 export const BASIC_KEY_RUNTIME_PROFILE='wmh-basic-key-practice-v2';
 export const BASIC_KEY_RENDITION='wmh-basic-key-rendition-fifo-v1';
 export const BASIC_KEY_MAX_VOICES=128;
+export const BASIC_KEY_TIMELINE_COLUMNS=Object.freeze(['id','part_id','midi','velocity','start_ms','duration_ms']);
+export function decodeBasicKeyRuntime(runtime,fail){
+  const timeline=runtime.compilation?.timeline;
+  if(!timeline||JSON.stringify(timeline.note_columns)!==JSON.stringify(BASIC_KEY_TIMELINE_COLUMNS)||!Array.isArray(timeline.notes)||timeline.notes.some(row=>!Array.isArray(row)||row.length!==6))fail('The compact basic-key target timeline has unknown or incomplete columns.');
+  const notes=timeline.notes.map(([id,part_id,midi,velocity,start_ms,duration_ms])=>({id,part_id,midi,velocity,start_ms,duration_ms,source_note_id:id,source_note_ids:[id],voice:'1',staff:1}));
+  return{...runtime,compilation:{...runtime.compilation,timeline:{duration_ms:timeline.duration_ms,notes}}};
+}
 /** Receiver envelopes end at the derived gate (no release tail beyond it).
  * Scheduling may allocate each voice lookAheadMs before onset. Count that
  * entire allocation interval, releasing ended voices before equal-time starts. */
@@ -42,6 +49,7 @@ export function validateBasicKeyRendition(score,runtime,fail){
   if(!rendition||rendition.policy_id!==BASIC_KEY_RENDITION||rendition.source_sha256!==score.source.sha256||!compilation||!Array.isArray(rendition.notes)||!Array.isArray(compilation.timeline?.notes)||rendition.notes.length!==score.coverage.key_attacks||compilation.timeline.notes.length!==rendition.notes.length||!Number.isFinite(rendition.source_duration_ms)||rendition.source_duration_ms<0||!Number.isFinite(rendition.duration_ms)||rendition.duration_ms<rendition.source_duration_ms||!close(rendition.duration_ms,compilation.timeline.duration_ms))fail('The complete basic-key rendition has inconsistent coverage or timing.');
   const coverage=rendition.coverage;
   if(rendition.source_clock_available!==score.performance.timing.relative_clock_available||!coverage||Object.values(coverage).some(value=>!integer(value,0,Number.MAX_SAFE_INTEGER))||coverage.source_events!==score.coverage.source_events||coverage.source_attacks!==score.coverage.key_attacks||coverage.derived_voices!==rendition.notes.length||coverage.practice_targets!==rendition.notes.length||coverage.melodic_targets+coverage.percussion_selectors!==rendition.notes.length||!integer(coverage.maximum_simultaneous_voices,0,rendition.notes.length)||!rendition.policy||rendition.policy.event_order!=='tick_track_index_event_index'||['routes','tempo','repeated_keys','missing_release','instantaneous','melodic_sound','percussion_sound','controls','mixing','transport','scoring'].some(key=>typeof rendition.policy[key]!=='string'||!rendition.policy[key]))fail('The complete basic-key interpretation omits its policy or event coverage.');
+  if(['synthetic_gates','source_end_cleanups','source_silence_controller_events','maximum_allocated_voices','paired_releases','unmatched_releases','source_releases','control_ended_voices'].some(key=>!integer(coverage[key],0,Number.MAX_SAFE_INTEGER))||coverage.source_releases!==score.coverage.key_releases||coverage.paired_releases+coverage.unmatched_releases!==coverage.source_releases)fail('The basic-key release and interpretation coverage is incomplete.');
   const coordinate=value=>Array.isArray(value)&&value.length===2&&value.every(item=>integer(item,0,Number.MAX_SAFE_INTEGER));
   if(JSON.stringify(rendition.note_columns)!==JSON.stringify(BASIC_KEY_NOTE_COLUMNS)||rendition.notes.some(row=>!Array.isArray(row)||row.length!==BASIC_KEY_NOTE_COLUMNS.length||!coordinate(row[1])||row[2]!==null&&!coordinate(row[2])||![row[6],row[7]].every(value=>Array.isArray(value)&&value.length===2)))fail('The compact basic-key rendition has unknown or incomplete columns.');
   if(rendition.policy.allocation_lookahead_ms!==100||rendition.policy.voice_limit!==BASIC_KEY_MAX_VOICES||rendition.policy.receiver_gate_tail_ms!==0)fail('The basic-key runtime requires another receiver allocation policy.');
@@ -68,4 +76,5 @@ export function validateBasicKeyRendition(score,runtime,fail){
     prior=target.start_ms;seen.add(target.id);
   }
   if(coverage.maximum_allocated_voices!==exactBasicKeyAllocationBudget(rendition))fail('The basic-key allocation capacity disagrees with the exact interpreted gates.');
+  for(const[field,select]of [['synthetic_gates',row=>row[12]],['source_end_cleanups',row=>row[11]==='source_end_cleanup'],['paired_releases',row=>row[11]==='fifo_release'],['control_ended_voices',row=>['all_sound_off','all_notes_off'].includes(row[11])],['percussion_selectors',row=>row[5]==='percussion_selector']])if(coverage[field]!==rendition.notes.filter(select).length)fail('The basic-key note evidence disagrees with its interpretation counts.');
 }

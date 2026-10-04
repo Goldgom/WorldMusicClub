@@ -32,8 +32,9 @@ export class VsqPracticePlayer {
       if(context.state!=='running'||!Number.isFinite(position))throw new CleanSongError('clean_clock_unavailable','Playback clock or audio context stopped.');
       while(this.noteCursor<notes.length&&notes[this.noteCursor].start_ms<=position+this.lookAheadMs){
         const note=notes[this.noteCursor++];
-        if(note.end_ms<=position||this.mutedParts.has(note.part_id)||this.soloParts.size&&!this.soloParts.has(note.part_id)||(this.mode==='practice'&&note.part_id===this.targetPart))continue;
-        if(!initial&&note.start_ms<position-30)throw new CleanSongError('clean_late_scheduler','A note missed its audio deadline.',{eventId:note.note_id});
+        if(this.mutedParts.has(note.part_id)||this.soloParts.size&&!this.soloParts.has(note.part_id)||(this.mode==='practice'&&note.part_id===this.targetPart))continue;
+        if(!initial&&note.start_ms<position)throw new CleanSongError('clean_late_scheduler','A note missed its audio deadline.',{eventId:note.note_id});
+        if(note.end_ms<=position)continue;
         let count=0;for(const lane of this.lanes.values()){lane.receiver.prune(now);count+=lane.receiver.voices.size;}
         if(count>=128)throw new CleanSongError('voice_budget_exceeded','The reference exceeds its 128 voice limit.');
         const start=Math.max(note.start_ms,initial&&Number.isFinite(this.resumePositionMs)?this.resumePositionMs:note.start_ms);

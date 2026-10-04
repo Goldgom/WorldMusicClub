@@ -14,7 +14,7 @@ const active=h=>h.nodes.filter(node=>['oscillator','buffer-source'].includes(nod
 
 test('complete basic-key admission joins every attack, percussion and chosen gate without changing source bytes',()=>{
  const opened=basicKeyRenditionFixture(),song=basicKeySong();assert.equal(song.score_json,opened.clean_package.score_json);assert.equal(song.metadata_json,opened.clean_package.metadata_json);assert.equal(song.compilation.timeline.notes.length,5);assert.equal(basicKeysParts(song).reduce((sum,part)=>sum+part.practice_targets,0),5);assert.ok(basicKeysParts(song).every(part=>part.practice_available));assert.equal(inspectCleanRendition(song).supported,true);assert.equal(song.compilation.timeline.notes.find(note=>note.midi===64).duration_ms,20);assert.equal(song.notation.parts[0].notes.length,1);assert.ok(Object.isFrozen(song.runtime.rendition.notes[0]));
- for(const change of [r=>r.rendition.notes.pop(),r=>r.rendition.notes[0][1][1]++,r=>r.rendition.notes[0][2][1]++,r=>r.rendition.notes[1][5]='melodic_key',r=>r.rendition.notes[2][7][0]='999999',r=>r.rendition.note_columns.reverse(),r=>r.rendition.policy_id='guess',r=>r.compilation.timeline.notes[0].source_note_ids=['wrong'],r=>r.compilation.timeline.notes[0].midi++,r=>r.compilation.timeline.notes.reverse(),r=>r.rendition.coverage.derived_voices--]){
+ for(const change of [r=>r.rendition.notes.pop(),r=>r.rendition.notes[0][1][1]++,r=>r.rendition.notes[0][2][1]++,r=>r.rendition.notes[1][5]='melodic_key',r=>r.rendition.notes[2][7][0]='999999',r=>r.rendition.note_columns.reverse(),r=>r.rendition.policy_id='guess',r=>r.compilation.timeline.notes[0][0]='wrong',r=>r.compilation.timeline.notes[0][2]++,r=>r.compilation.timeline.notes.reverse(),r=>r.rendition.coverage.derived_voices--]){
   const data=basicKeyRenditionFixture().clean_package;change(data.runtime);assert.throws(()=>prepareCleanSong(`native:song-${data.content_sha256}`,data,JSON.parse(data.score_json).notation),{code:'clean_package_invalid'});
  }
 });
@@ -48,4 +48,8 @@ test('resource preflight counts complete lookahead allocation intervals and exac
  assert.equal(basicKeyAllocationBudget(notes),129,'Only one gate overlaps, but all future nodes are allocated within lookahead');
  assert.equal(basicKeyAllocationBudget(notes,{include:note=>note.part_id==='a'}),64);
  assert.equal(basicKeyAllocationBudget([{start_ms:0,duration_ms:100},{start_ms:200,duration_ms:1}]),1,'Pruning gate ends at the next allocation boundary frees the voice');
+});
+
+test('a stalled scheduler reports even fully expired notes instead of silently skipping to End',()=>{
+ const h=harness();try{h.start();h.at(1200);h.context.currentTime=1.25;h.pump();assert.equal(h.errors.length,1);assert.equal(h.errors[0].code,'clean_late_scheduler');assert.equal(active(h).length,0);assert.equal(h.timers.size,0);}finally{h.player.stop();}
 });

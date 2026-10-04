@@ -1,22 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {basicKeyRenditionFixture} from './basic-key-rendition-fixtures.js';
 import {nativeScoreServer,nativeStorageApp,nativeResponse} from './native-storage-app-fixtures.js';
 import {getAppI18n} from '../web/app-locale.js';
 import {keyboardGeometry} from '../web/music.js';
 
-async function setup(){
+async function setup({notation=false}={}){
  const opened=basicKeyRenditionFixture(),descriptor=opened.clean_package,score=JSON.parse(descriptor.score_json).notation,server=await nativeScoreServer(),key=`song-${descriptor.content_sha256}`;
  const summary={version:2,content_sha256:descriptor.content_sha256,profile:descriptor.profile,capabilities:descriptor.capabilities,coverage:descriptor.coverage,notation_available:true,media:[]};
  const entry={key,revision:1,title:score.title,composer:score.composer,score_id:score.id,label:score.title,score_bytes:Buffer.byteLength(JSON.stringify(score)),saved_at_unix_ms:1700000000000,clean_package:summary};server.records.set(key,{...opened,entry});
- server.setRoute(({path,body})=>{if(path==='/api/instrument-check'){const keys=keyboardGeometry(body.profile.key_count,body.profile.lowest_midi),low=keys[0].midi,high=keys.at(-1).midi;return nativeResponse({lowest_midi:low,highest_midi:high,note_options:body.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:note.midi>=low&&note.midi<=high,positions:[]})),diagnostics:[],changed_source_notes:false});}});
+ const pages=notation?JSON.parse(readFileSync(new URL('./fixtures/basic-key-rendition-notation-page.json',import.meta.url),'utf8')):null;
+ server.setRoute(({path,body})=>{if(path==='/api/library/basic-keys/notation'&&pages){assert.equal(body.source.content_sha256,descriptor.content_sha256);if(!body.settings.rendition_policy_id)return nativeResponse(pages.legacy);assert.equal(body.settings.rendition_policy_id,'wmh-basic-key-rendition-fifo-v1');return nativeResponse(body.settings.part_id===score.parts[1].id?pages.percussion.response:pages.melodic.response);}if(path==='/api/instrument-check'){const keys=keyboardGeometry(body.profile.key_count,body.profile.lowest_midi),low=keys[0].midi,high=keys.at(-1).midi;return nativeResponse({lowest_midi:low,highest_midi:high,note_options:body.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:note.midi>=low&&note.midi<=high,positions:[]})),diagnostics:[],changed_source_notes:false});}});
  let clock=1000;const app=await nativeStorageApp(server,{now:()=>clock});await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready'&&!app.$('start-practice').disabled);return{app,server,key,descriptor,score,time:value=>{clock=value;}};
 }
 const sounds=app=>app.audioNodes.filter(node=>['oscillator','buffer-source'].includes(node.kind)&&!node.disconnected);
 
 test('complete basic Listen, pause, reset and natural end run on the native full timeline',async()=>{
  const {app,descriptor,time}=await setup();try{
-  assert.equal(app.$('start-listen').disabled,false);assert.match(app.$('clean-song-rendition').textContent,/Every one of 5 attacks.*default synthesized/);assert.match(app.$('basic-key-policy-text').textContent,/FIFO.*20 ms.*CC120\/123/);
+  assert.equal(app.$('start-listen').disabled,false);assert.match(app.$('clean-song-rendition').textContent,/retains all 5 note onsets.*selected human part.*default synthesized/);assert.match(app.$('basic-key-policy-text').textContent,/FIFO.*20 ms.*CC120\/123/);
   const compiles=app.requests.filter(request=>request.path==='/api/compile').length;await app.click('start-listen');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(sounds(app).length,2);assert.equal(app.requests.filter(request=>request.path==='/api/compile').length,compiles);assert.equal(app.plays.filter(args=>String(args[0]).startsWith('score:')).length,0);assert.match(app.$('song-complete-range-text').textContent,/5 eligible targets/);
   await app.click('play-button');assert.equal(sounds(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');await app.click('play-button');assert.equal(sounds(app).length,2);await app.click('reset-button');assert.equal(sounds(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'ready');await app.click('play-button');time(2151);app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'ended');assert.equal(sounds(app).length,0);assert.equal(app.$('progress').value,1000);assert.equal(descriptor.score_json,basicKeyRenditionFixture().clean_package.score_json);
  }finally{await app.close();}
@@ -43,5 +45,15 @@ test('song selection exposes percussion-selector range repair before entering th
   const select=app.$('preview-part');select.value=score.parts[1].id;app.emit(select,'change');await app.until(()=>app.$('preview-gate').classList.contains('preview-blocked'));
   assert.equal(app.$('start-practice').disabled,true);assert.equal(app.$('start-listen').disabled,false);assert.match(app.$('basic-key-preview-range-text').textContent,/percussion selector practice.*1 outside/);assert.equal(app.$('basic-key-preview-piano-88').hidden,false);
   await app.click('basic-key-preview-piano-88');await app.until(()=>!app.$('start-practice').disabled);assert.equal(app.$('key-count').value,'88');assert.match(app.$('basic-key-preview-range-text').textContent,/0 outside/);await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(sounds(app).filter(node=>node.kind==='buffer-source').length,0);assert.equal(sounds(app).filter(node=>node.kind==='oscillator').length,1);await app.click('play-button');const take=await app.exported('export-takes');assert.equal(take.practice_part,score.parts[1].id);assert.deepEqual(take.passes[0].timeline.notes.map(note=>note.midi),[35]);assert.deepEqual(take.passes[0].inputs,[]);
+ }finally{await app.close();}
+});
+
+
+test('ordinary Jianpu uses the complete native rendition page, highlights synthetic gates, and offers explicit source inspection',async()=>{
+ const {app,time,score}=await setup({notation:true});try{
+  await app.click('sound-button');await app.click('open-score');await app.until(()=>app.$('basic-rendition-events-list').children.length===1,'Native interpreted page admitted');await app.click('jianpu-button');await app.until(()=>app.$('notation').querySelector('[data-note-id="midi-t1-e8"]'),'Jianpu expected interpreted note');app.$('session-mode').value='listen';app.emit(app.$('session-mode'),'change');await app.click('play-button');
+  assert.equal(app.$('engraving-basic-meter').value,'4/4');assert.equal(app.$('notation').querySelectorAll('.score-note').length,2);assert.equal(app.$('basic-rendition-events-list').children.length,1);assert.equal(app.$('basic-rendition-events-list').children[0].dataset.noteId,'midi-t1-e6');assert.match(app.$('basic-rendition-events-list').textContent,/20 ms onset marker/);time(1560);app.frame();assert.equal(app.$('basic-rendition-events-list').children[0].classList.contains('active'),true);assert.equal(app.$('notation').querySelector('[data-note-id="midi-t1-e8"]').classList.contains('active'),true);
+  app.$('engraving-basic-view-mode').value='source';app.emit(app.$('engraving-basic-view-mode'),'change');await app.until(()=>app.$('basic-rendition-events').hidden&&app.$('notation').querySelectorAll('.score-note').length===1);assert.match(app.$('basic-notation-note').textContent,/Source-only/);assert.ok(app.requests.some(request=>request.path==='/api/library/basic-keys/notation'&&!request.body.settings.rendition_policy_id));
+  app.$('engraving-basic-view-mode').value='rendition';app.emit(app.$('engraving-basic-view-mode'),'change');await app.until(()=>app.$('notation').querySelectorAll('.score-note').length===2);app.$('notation-part').value=score.parts[1].id;app.emit(app.$('notation-part'),'change');await app.until(()=>app.$('basic-rendition-events-list').textContent.includes('Percussion selector 35'));assert.equal(app.$('notation').querySelectorAll('.jianpu-note').length,0);assert.equal(app.$('basic-rendition-events-list').children[0].dataset.role,'percussion_selector');
  }finally{await app.close();}
 });

@@ -41,8 +41,9 @@ export class BasicKeyPlayer {
       while(this.noteCursor<notes.length&&notes[this.noteCursor].start_ms<=position+this.lookAheadMs){
         const note=notes[this.noteCursor++];
         const evidence=this.evidence.get(note.id),end=evidence.endMs;
-        if(end<=position||!this.audible(note))continue;
-        if(!initial&&note.start_ms<position-30)throw new CleanSongError('clean_late_scheduler','A basic-key note missed its audio deadline.',{eventId:`midi:${this.song.score.source.sha256}:t${evidence.attack.track}:e${evidence.attack.event}`});
+        if(!this.audible(note))continue;
+        if(!initial&&note.start_ms<position)throw new CleanSongError('clean_late_scheduler','A basic-key note missed its audio deadline.',{eventId:`midi:${this.song.score.source.sha256}:t${evidence.attack.track}:e${evidence.attack.event}`});
+        if(end<=position)continue; // Already-ended gates are skipped only on explicit resume.
         const start=Math.max(note.start_ms,initial&&Number.isFinite(this.resumePositionMs)?this.resumePositionMs:note.start_ms);
         this.receiver.schedule({eventId:`midi:${this.song.score.source.sha256}:t${evidence.attack.track}:e${evidence.attack.event}`,key:note.midi,velocity:note.velocity,referenceTimbre:BASIC_KEY_TIMBRE,...(evidence.role==='percussion_selector'?{referencePercussion:BASIC_KEY_PERCUSSION}:{})},now+Math.max(0,start-position)/1000,now+(end-position)/1000,{preserveFrequency:true});
       }
