@@ -1,4 +1,4 @@
-import {isCleanSong,isPerformanceSong} from './clean-song-package.js';
+import {isCleanSong,isPerformanceSong,isBasicKeysSong,basicKeysParts} from './clean-song-package.js';
 /** A browsing candidate never owns, pauses, or replaces the active performance. */
 export class ScorePreview {
   constructor({compile,check,onChange=()=>{}}) { this.compile=compile;this.check=check;this.onChange=onChange;this.version=0;this.controller=null;this.value={status:'empty',score:null,compiled:null,identity:null,part:null,compatibility:{status:'pending',reason:'Choose a score.'}}; }
@@ -15,10 +15,12 @@ export class ScorePreview {
         this.publish({status:'performance',identity,part:null,cleanSong,score:null,compiled:null,compatibility:{status:'blocked',reason:'Notation and practice targets are unavailable for independent performance events.'}});
         return valid();
       }
-      if(cleanSong&&part===null)part=cleanSong.notation.parts[0]?.id||null;
+      if(cleanSong&&part===null)part=(isBasicKeysSong(cleanSong)?basicKeysParts(cleanSong).find(part=>part.practice_available)?.id:cleanSong.notation.parts[0]?.id)||cleanSong.notation.parts[0]?.id||null;
+      if(isBasicKeysSong(cleanSong)&&!cleanSong.compilation){this.publish({status:'inspection',identity,part,cleanSong,score,compiled:null,compatibility:{status:'blocked',reason:'The complete source is retained, but an unambiguous practice clock is unavailable.'}});return valid();}
       if(cleanSong&&!cleanSong.compilation){this.publish({status:'choice',identity,part,cleanSong,score,compiled:null,compatibility:{status:'pending',reason:'Choose base-note instrumental practice.'}});return valid();}
       const compiled=cleanSong?cleanSong.compilation:await this.compile(score,controller.signal);if(!valid())return false;
       const candidate={status:'ready',identity,part,cleanSong,score:compiled.score,compiled,compatibility:{status:'pending',reason:'Checking selected pitches with your instrument…'}};
+      if(isBasicKeysSong(cleanSong)&&!basicKeysParts(cleanSong).some(item=>item.id===part&&item.practice_available)){this.publish({...candidate,compatibility:{status:'blocked',reason:'This retained part has no supported positive-duration melodic MIDI-key targets.'}});return valid();}
       this.publish(candidate);
       try {const compatibility=await this.check(compiled,part,controller.signal);if(valid())this.publish({...candidate,compatibility});}
       catch(error){if(valid())this.publish({...candidate,compatibility:{status:'error',reason:`Practice compatibility could not be verified: ${error.message}`}});}
@@ -44,7 +46,7 @@ export class ScorePreview {
   adopt(compiled,compatibility,part=null,identity=compiled.score.id,cleanSong=null) {
     this.cancel();this.publish({status:'ready',identity,part,score:compiled.score,compiled,compatibility,cleanSong});
   }
-  canStart(mode) {return this.value.status==='ready'&&(mode==='listen'||this.value.compatibility.status==='ready');}
+  canStart(mode) {return this.value.status==='ready'&&(!isBasicKeysSong(this.value.cleanSong)||mode==='practice'&&basicKeysParts(this.value.cleanSong).some(part=>part.id===this.value.part&&part.practice_available))&&(mode==='listen'||this.value.compatibility.status==='ready');}
 }
 
 export function filterCatalog(items,query='',origin='all') {

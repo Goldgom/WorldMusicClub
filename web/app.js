@@ -1,4 +1,4 @@
-import {isVsqSong,isPerformanceSong} from './clean-song-package.js';
+import {isVsqSong,isPerformanceSong,isBasicKeysSong,basicKeysParts} from './clean-song-package.js';
 import {CleanSongPlayer,inspectCleanRendition} from './clean-song-player.js';
 import {createCleanSongMedia} from './clean-song-media.js';
 import {setupCleanSongView} from './clean-song-view.js';
@@ -199,7 +199,7 @@ function updateButtons() {
   state.finishing = state.recorder.pending || state.assessmentBusy;
   const activePass = state.recorder.active;
   const checkingCurrent = Boolean(activePass && (activePass.manualDeadline !== null || activePass.inFlight || (activePass.closedWall !== null && activePass.assessedRevision < activePass.revision && !activePass.error)));
-  const allowed = state.mode !== 'practice' || state.compatibility.status === 'ready';
+  const allowed = (!isBasicKeysSong(state.cleanSong)||state.mode==='practice')&&(state.mode !== 'practice' || state.compatibility.status === 'ready');
   $('play-button').disabled = !ready || (!transport.running && (!allowed || checkingCurrent));
   $('reset-button').disabled = !ready;
   $('export-takes').disabled = state.recorder.passes.length === 0;
@@ -208,6 +208,7 @@ function updateButtons() {
   $('export-jianpu').disabled = !state.score;
   $('loop-apply').disabled = !ready||Boolean(state.cleanSong);
   for(const id of ['tempo','loop-enabled','loop-from','loop-to','metronome-enabled','metronome-pulse'])$(id).disabled=Boolean(state.cleanSong);
+  $('count-in').disabled=isBasicKeysSong(state.cleanSong);
   if(!transport.running){cleanPlayer.stop();activeMedia?.pause();}
   renderCleanActive();
   $('assess-button').disabled = !ready || state.mode !== 'practice' || checkingCurrent || !allowed;
@@ -268,7 +269,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
   if (preserveTempo) importDiagnostics = state.importDiagnostics;
   if (expectedIntent !== null && expectedIntent !== state.loadIntent) return false;
   if (expectedIntent === null) {state.loadIntent++;cancelCatalogSelection();}
-  if (new TextEncoder().encode(JSON.stringify(score)).byteLength > 8 * 1024 * 1024) { notice(() => t('app.scoreTooLarge'), true); return false; }
+  if (new TextEncoder().encode(JSON.stringify(score)).byteLength > (isBasicKeysSong(cleanSong)?16:8) * 1024 * 1024) { notice(() => t('app.scoreTooLarge'), true); return false; }
   pausePlayback();
   state.compileController?.abort();
   const controller = new AbortController();
@@ -384,7 +385,7 @@ function renderScore() {
   $('notation-part').value = state.notationPart || '';
   $('practice-part').replaceChildren();
   if(!state.cleanSong){const all = document.createElement('option'); all.value = ''; bindText(all, () => t('app.allParts')); $('practice-part').append(all);}
-  for (const part of score.parts) { const option = document.createElement('option'); option.value = part.id; bindText(option, () => part.name); $('practice-part').append(option); }
+  for (const part of score.parts) { const option = document.createElement('option'); option.value = part.id; option.disabled=isBasicKeysSong(state.cleanSong)&&!basicKeysParts(state.cleanSong).some(item=>item.id===part.id&&item.practice_available); bindText(option, () => part.name); $('practice-part').append(option); }
   $('practice-part').value = state.practicePart || '';
   updatePracticeScopeLabel();
   renderNotationPage();
@@ -497,6 +498,7 @@ async function checkInstrument(profile = currentProfile(), apply = false) {
   }
   if (state.profileDirty && !apply) { state.compatibility = {status:'dirty',reasonKey:'app.compatibilityDirty'}; updateButtons(); return; }
   if (state.mode === 'practice' && transport.running) pausePlayback();
+  if(isBasicKeysSong(state.cleanSong)&&!basicKeysParts(state.cleanSong).some(part=>part.id===state.practicePart&&part.practice_available)){state.compatibility={status:'blocked',reasonKey:'app.compatibilityPlanBlocked'};state.targetTimeline=null;state.practicePlan=null;updateButtons();return;}
   state.practicePlan=null;state.targetGroups=new Map();state.targetTimeline=null;state.physicalIndex=null;updatePracticeScopeLabel();renderTargetMappings();
   state.compatibility = {status:'pending',reasonKey:'app.compatibilityPreparing'}; updateButtons();
   const request = ++state.instrumentRequest; const compiled = state.compiled; const selection = state.practiceVersion; const sourceTargets=state.sourceTargetTimeline||compiled.timeline;
@@ -807,7 +809,7 @@ async function togglePlayback() {
   if(referenceInputActive())return;
   if (shell.screen()!=='stage' || !state.compiled) return;
   if (transport.running) { pausePlayback(); return; }
-  if(state.cleanSong&&!inspectCleanRendition(state.cleanSong).supported){notice(()=>cleanErrorText(i18n.locale,{code:'clean_renderer_unsupported'}),true);return;}
+  if(state.cleanSong&&!inspectCleanRendition(state.cleanSong).supported&&!(isBasicKeysSong(state.cleanSong)&&state.mode==='practice'&&state.targetTimeline?.notes.length)){notice(()=>cleanErrorText(i18n.locale,{code:'clean_renderer_unsupported'}),true);return;}
   if (state.mode === 'practice' && state.compatibility.status !== 'ready') { notice(compatibilityNotice(state.compatibility), true); return; }
   const waiting=state.recorder.active;
   if(waiting&&(waiting.manualDeadline!==null||waiting.inFlight||(transport.completed&&state.recorder.pending))){notice(() => t('app.assessmentWaiting'));return}
@@ -818,9 +820,9 @@ async function togglePlayback() {
   if (transport.completed) { if(state.mode==='practice') { transport.reset(); if(state.loop)transport.seek(state.loop.start_ms); state.lastHighlight=''; } else resetPlayback(); }
   const beatMs = 60000 / (Number($('tempo').value) || 100);
   const now = performance.now()+(state.cleanSong?50:0);
-  transport.start(now, state.loop?.notes || state.practiceTimeline?.notes || state.compiled.timeline.notes, $('count-in').checked ? beatMs * 4 : 0);
+  transport.start(now, state.loop?.notes || state.practiceTimeline?.notes || state.compiled.timeline.notes, $('count-in').checked&&!isBasicKeysSong(state.cleanSong) ? beatMs * 4 : 0);
   if(state.mode==='practice')beginPracticePass(now);
-  if(state.cleanSong){try{if(!synth.muted)cleanPlayer.start({context:synth.context,output:synth.output,mode:state.mode,targetPart:state.practicePart,mutedParts:cleanMutedParts,instrument:state.instrument,resumePositionMs:transport.position,acceptedPolicyId:inspectCleanRendition(state.cleanSong).rendition});activeMedia?.sync({positionMs:transport.time(performance.now()),running:true,userGesture:true});}catch(error){pausePlayback();notice(()=>cleanErrorText(i18n.locale,error),true);return;}}
+  if(state.cleanSong){try{if(!synth.muted&&!isBasicKeysSong(state.cleanSong))cleanPlayer.start({context:synth.context,output:synth.output,mode:state.mode,targetPart:state.practicePart,mutedParts:cleanMutedParts,instrument:state.instrument,resumePositionMs:transport.position,acceptedPolicyId:inspectCleanRendition(state.cleanSong).rendition});activeMedia?.sync({positionMs:transport.time(performance.now()),running:true,userGesture:true});}catch(error){pausePlayback();notice(()=>cleanErrorText(i18n.locale,error),true);return;}}
   updateButtons();
 }
 function beginPracticePass(now, captureEnabled = true) {
@@ -1238,19 +1240,19 @@ function renderPreview(){
   lobbyPreview?.select(preview.value.cleanSong?{status:'empty'}:preview.value);
   renderCleanPreview();
   const value=preview.value,changedIdentity=$('song-lobby').dataset.previewId!==(value.identity||'');$('song-lobby').dataset.previewStatus=value.status;$('song-lobby').dataset.previewId=value.identity||'';
-  const performance=isPerformanceSong(value.cleanSong);
+  const performance=isPerformanceSong(value.cleanSong),basicKeys=isBasicKeysSong(value.cleanSong);
   const item=value.score||rowScore(songRows().find(item=>item.selectionKey===value.identity));
   bindText($('preview-title'), () => item?.title||t('app.chooseScore'));
   bindAttribute($('preview-title'),'title',()=>item?.title||t('app.chooseScore'));
   bindText($('preview-meta'), () => item?t('app.previewMeta', {composer:item.composer||t('app.composerUnknown'),origin:originLabel(item)}):t('app.browseScores'));
   bindAttribute($('preview-meta'),'title',()=>item?t('app.previewMeta',{composer:item.composer||t('app.composerUnknown'),origin:originLabel(item)}):t('app.browseScores'));
   if($('preview-music-meta'))bindText($('preview-music-meta'), () => performance?(i18n.locale==='en'?'Notation unavailable':'记谱不可用'):previewMusicMetadata(value.compiled?.score||value.score,i18n));
-  bindText($('preview-status'), () => performance?(i18n.locale==='en'?'Complete performance saved · Choose reference listening below':'完整演奏已保存 · 请在下方选择参考聆听'):startingPreview?t('app.preparingSession'):['loading','choosing'].includes(value.status)?t('app.preparingPreview'):value.status==='choice'?(i18n.locale==='en'?'Choose base-note instrumental practice to continue':'请选择基础音符器乐练习以继续'):value.status==='error'?(value.errorCode?.startsWith('clean_')?cleanErrorText(i18n.locale,{code:value.errorCode}):t('app.previewError', {detail:originalDetail(value.message)})):value.status==='ready'?t('app.previewReady'):t('app.previewBrowsing'));
-  bindText($('preview-gate'), () => performance?(i18n.locale==='en'?'Notation, practice targets and grades unavailable':'记谱、练习目标与评分不可用'):['choice','choosing'].includes(value.status)?(i18n.locale==='en'?'Full vocal rendering unavailable':'完整歌声渲染不可用'):compatibilityText(value.compatibility));$('preview-gate').classList.toggle('preview-blocked',['blocked','error','dirty'].includes(value.compatibility.status));
+  bindText($('preview-status'), () => basicKeys?(i18n.locale==='en'?'Choose a determined MIDI-key part to practice · reference audio unavailable':'请选择已确定的 MIDI 按键声部练习 · 参考音频不可用'):performance?(i18n.locale==='en'?'Complete performance saved · Choose reference listening below':'完整演奏已保存 · 请在下方选择参考聆听'):startingPreview?t('app.preparingSession'):['loading','choosing'].includes(value.status)?t('app.preparingPreview'):value.status==='choice'?(i18n.locale==='en'?'Choose base-note instrumental practice to continue':'请选择基础音符器乐练习以继续'):value.status==='error'?(value.errorCode?.startsWith('clean_')?cleanErrorText(i18n.locale,{code:value.errorCode}):t('app.previewError', {detail:originalDetail(value.message)})):value.status==='ready'?t('app.previewReady'):t('app.previewBrowsing'));
+  bindText($('preview-gate'), () => basicKeys&&value.status==='inspection'?(i18n.locale==='en'?'Practice clock unavailable; all parts and attacks retained':'练习时钟不可用；完整保留所有声部与按键'):performance?(i18n.locale==='en'?'Notation, practice targets and grades unavailable':'记谱、练习目标与评分不可用'):['choice','choosing'].includes(value.status)?(i18n.locale==='en'?'Full vocal rendering unavailable':'完整歌声渲染不可用'):compatibilityText(value.compatibility));$('preview-gate').classList.toggle('preview-blocked',['blocked','error','dirty'].includes(value.compatibility.status));
   $('start-listen').disabled=startingPreview||!preview.canStart('listen');$('start-practice').disabled=startingPreview||!preview.canStart('practice');
   const diagnostics=value.compiled?.diagnostics||[];$('preview-notices').hidden=!diagnostics.length;bindText($('preview-notices-title'), () => t('app.previewNotices', {count:diagnostics.length}));$('preview-notice-list').replaceChildren();for(const diagnostic of diagnostics.slice(0,20)){const row=document.createElement('li');bindText(row, () => diagnosticText(diagnostic));$('preview-notice-list').append(row)}if(diagnostics.length>20){const row=document.createElement('li');bindText(row, () => t('app.moreNotices', {count:diagnostics.length-20}));$('preview-notice-list').append(row)}
   const select=$('preview-part'),signature=JSON.stringify([i18n.revision,Boolean(value.cleanSong),item?.parts?.map(part=>[part.id,part.name])||[]]);
-  if(select.dataset.parts!==signature){select.replaceChildren();if(!value.cleanSong){const all=document.createElement('option');all.value='';bindText(all, () => t('app.allParts'));select.append(all);}for(const part of item?.parts||[]){const option=document.createElement('option');option.value=part.id;bindText(option, () => part.name);select.append(option)}select.dataset.parts=signature;}
+  if(select.dataset.parts!==signature){select.replaceChildren();if(!value.cleanSong){const all=document.createElement('option');all.value='';bindText(all, () => t('app.allParts'));select.append(all);}for(const part of item?.parts||[]){const option=document.createElement('option');option.value=part.id;option.disabled=basicKeys&&!basicKeysParts(value.cleanSong).some(item=>item.id===part.id&&item.practice_available);bindText(option, () => part.name);select.append(option)}select.dataset.parts=signature;}
   select.value=value.part||'';$('preview-part-label').hidden=!value.compiled;
   if(changedIdentity){$('preview-notices').open=false;document.querySelector('.preview-copy').scrollTop=0;}
 }

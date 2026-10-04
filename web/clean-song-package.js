@@ -1,3 +1,4 @@
+import {pitchMidi} from './music.js';
 import {loadCleanPerformance} from './clean-performance-player.js';
 /** Admission of a native-validated package. Portable paths never become browser URLs. */
 const prepared = new WeakSet();
@@ -15,6 +16,23 @@ export function isPerformanceSummary(value) {
   return value?.version===2&&value.profile===PERFORMANCE_PROFILE&&hash.test(value.content_sha256)&&value.notation_available===false&&coverage?.performance?.status==='complete'&&Number.isSafeInteger(coverage.performance.source_tracks)&&coverage.performance.source_tracks>0&&coverage.notation?.status==='unavailable'&&coverage.notation.represented_attacks===0&&coverage.targets?.status==='unavailable'&&coverage.targets.represented_attacks===0;
 }
 export function isPerformanceSong(value) { return isCleanSong(value)&&value.profile===PERFORMANCE_PROFILE; }
+export const BASIC_KEYS_PROFILE='wmh-basic-keys-midi1-v1';
+export const BASIC_KEYS_RUNTIME_PROFILE='wmh-basic-key-practice-v1';
+const basicCoverageKeys=['source_tracks','source_events','represented_events','key_attacks','key_releases','determined_ends','zero_length_attacks','unresolved_ends','unmatched_releases','notation_notes','projected_melodic_targets','unresolved_route_ends'];
+export function isBasicKeysSummary(value) {
+  const c=value?.coverage;
+  return value?.version===2&&value.profile===BASIC_KEYS_PROFILE&&hash.test(value.content_sha256)&&value.notation_available===true&&c&&basicCoverageKeys.every(key=>Number.isSafeInteger(c[key])&&c[key]>=0)&&c.source_events===c.represented_events&&c.determined_ends+c.unresolved_ends===c.key_attacks&&c.notation_notes+c.zero_length_attacks===c.determined_ends;
+}
+export function isBasicKeysSong(value) { return isCleanSong(value)&&value.profile===BASIC_KEYS_PROFILE; }
+/** Display coverage includes every retained attack, even when timed practice is unavailable. */
+export function basicKeysParts(song) {
+  if(!isBasicKeysSong(song))return [];
+  const tracks=new Map(song.score.performance.tracks.map(track=>[track.id,track]));
+  return song.score.performance.parts.map(part=>{
+    const inventory=song.runtime.parts.find(item=>item.id===part.id);
+    return {...part,...inventory,name:song.notation.parts.find(item=>item.id===part.id)?.name||part.id,track_name:tracks.get(part.track_id)?.name||part.track_id,practice_available:Boolean(song.compilation)&&!inventory.percussion&&inventory.positive>0};
+  });
+}
 export const VSQ_PROFILE='wmh-vsq-clean-v1';
 export const VSQ_PRACTICE_PROFILE='wmh-vsq-base-note-practice-v1';
 export const VSQ_LIMITS=Object.freeze(['whole_vocal_rendering_unavailable','practice_uses_authored_base_notes_only','pitch_bend_and_sensitivity_not_rendered','vibrato_and_expression_not_rendered','lyrics_and_phonetics_not_synthesized','source_voice_program_is_descriptor_not_general_midi','mixer_gain_pan_and_output_mode_not_interpreted','engine_dispatch_timing_and_acoustic_tails_not_rendered']);
@@ -28,6 +46,27 @@ export function prepareCleanSong(libraryKey, descriptor, normalizedScore) {
   let metadata, score;
   try { metadata=JSON.parse(descriptor.metadata_json);score=JSON.parse(descriptor.score_json); } catch { fail('The package metadata or complete score is unreadable.'); }
   const runtime=descriptor.runtime;
+  if(descriptor.profile===BASIC_KEYS_PROFILE||score?.performance?.profile===BASIC_KEYS_PROFILE){
+    normalizedScore??=score.notation;
+    if(!isBasicKeysSummary(descriptor)||score.performance?.profile!==BASIC_KEYS_PROFILE||score.profile!==undefined||metadata?.format!=='worldmusichub-song'||metadata.version!==2||score.format!=='worldmusichub-complete-score'||score.version!==1||!normalizedScore||normalizedScore.source!=null||normalizedScore.id!==metadata.id||normalizedScore.title!==metadata.title||stable(score.notation)!==stable(normalizedScore)||stable(score.coverage)!==stable(descriptor.coverage)||stable(score.capabilities)!==stable(descriptor.capabilities)||!hash.test(score.source?.sha256)||metadata.sources?.length!==1||stable(metadata.sources[0])!==stable(score.source)||!Array.isArray(score.performance.tracks)||!Array.isArray(score.performance.parts)||!Array.isArray(descriptor.media)||descriptor.media.length||metadata.media?.length)fail('The native basic-key package identity, coverage or projection is inconsistent.');
+    const parts=new Set(normalizedScore.parts.map(part=>part.id));
+    if(parts.size!==normalizedScore.parts.length||score.performance.parts.length!==parts.size||score.performance.parts.some(part=>!parts.has(part.id))||score.performance.tracks.reduce((sum,track)=>sum+track.events.length,0)!==score.coverage.source_events)fail('The basic-key package does not retain every part, event or attack.');
+    if(runtime?.profile!==BASIC_KEYS_RUNTIME_PROFILE||runtime.source_sha256!==score.source.sha256||runtime.reference_audio!=='unavailable'||runtime.source_rendition!=='unresolved'||!Object.hasOwn(runtime,'compilation')||!Array.isArray(runtime.parts)||runtime.parts.length!==parts.size)fail('The native basic-key runtime is missing or belongs to another source.');
+    const seenParts=new Set();
+    for(const item of runtime.parts){const part=score.performance.parts.find(part=>part.id===item.id),written=normalizedScore.parts.find(part=>part.id===item.id);if(!part||seenParts.has(item.id)||['attacks','positive','instantaneous','unresolved'].some(key=>!Number.isSafeInteger(item[key])||item[key]<0)||item.attacks!==item.positive+item.instantaneous+item.unresolved||written.notes.length!==item.positive||item.percussion!==(part.key_semantics==='channel10_key_number_percussion_unresolved')||(item.attacks>0?(!Array.isArray(item.range)||item.range.length!==2||item.range.some(key=>!Number.isInteger(key)||key<0||key>127)||item.range[0]>item.range[1]):item.range!==null))fail('The native basic-key part coverage is inconsistent.');seenParts.add(item.id);}
+    for(const [total,field] of [['key_attacks','attacks'],['notation_notes','positive'],['zero_length_attacks','instantaneous'],['unresolved_ends','unresolved']])if(runtime.parts.reduce((sum,part)=>sum+part[field],0)!==score.coverage[total])fail('The native part inventory disagrees with source coverage.');
+    const compilation=runtime.compilation;
+    if(compilation!==null){
+      if(!score.performance.timing.relative_clock_available||!Array.isArray(compilation.timeline?.notes)||!Array.isArray(compilation.diagnostics)||!Number.isFinite(compilation.timeline.duration_ms)||compilation.timeline.duration_ms<0)fail('The basic-key practice clock is inconsistent.');
+      const melodic=new Set(score.performance.parts.filter(part=>part.key_semantics==='midi_key_number').map(part=>part.id)),expected=new Map(normalizedScore.parts.filter(part=>melodic.has(part.id)).flatMap(part=>part.notes.filter(note=>note.pitch).map(note=>[note.id,{...note,part_id:part.id}]))),seen=new Set();
+      if(compilation.timeline.notes.length!==expected.size)fail('The native basic-key targets omit or add determined melodic keys.');
+      for(const target of compilation.timeline.notes){const note=expected.get(target.id);if(!note||seen.has(target.id)||target.source_note_id!==note.id||stable(target.source_note_ids)!==stable([note.id])||target.part_id!==note.part_id||target.midi!==pitchMidi(note.pitch)||target.velocity!==note.velocity||!Number.isFinite(target.start_ms)||target.start_ms<0||!Number.isFinite(target.duration_ms)||target.duration_ms<=0||target.start_ms+target.duration_ms>compilation.timeline.duration_ms+0.001)fail('A basic-key target has unsupported identity, pitch or timing.');seen.add(target.id);}
+    }else if(score.performance.timing.relative_clock_available)fail('The native basic-key runtime omits an available practice clock.');
+    const admittedRuntime=structuredClone(runtime),notation=structuredClone(normalizedScore);
+    if(admittedRuntime.compilation)admittedRuntime.compilation.score=notation;
+    score.notation=notation;
+    return admitted({libraryKey,identity:descriptor.content_sha256,profile:BASIC_KEYS_PROFILE,metadata,score,notation,metadata_json:descriptor.metadata_json,score_json:descriptor.score_json,capabilities:structuredClone(descriptor.capabilities),coverage:structuredClone(score.coverage),media:[],runtime:admittedRuntime,compilation:admittedRuntime.compilation});
+  }
   if(descriptor.profile===VSQ_PROFILE||score?.profile===VSQ_PROFILE){
     if(!isVsqSummary(descriptor)||score.profile!==VSQ_PROFILE||metadata?.format!=='worldmusichub-song'||metadata.version!==2||score.format!=='worldmusichub-complete-score'||score.version!==1||runtime!==null||!normalizedScore||normalizedScore.source!=null||score.notation?.source!=null||normalizedScore.id!==metadata.id||normalizedScore.title!==metadata.title||score.notation.id!==normalizedScore.id||score.notation.title!==normalizedScore.title||stable(score.notation.keys)!==stable(normalizedScore.keys)||!Array.isArray(score.authoring?.tracks)||!Array.isArray(normalizedScore.parts)||!normalizedScore.parts.length||!hash.test(score.source?.sha256)||stable(score.capabilities)!==stable(descriptor.capabilities)||stable(score.interpretation_limits)!==stable(VSQ_LIMITS)||!Array.isArray(descriptor.media)||descriptor.media.length||metadata.media?.length)fail('The native VSQ package contract is missing or inconsistent.');
     const parts=new Set(normalizedScore.parts.map(part=>part.id));

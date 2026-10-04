@@ -1,4 +1,4 @@
-import {isVsqSummary,isPerformanceSummary} from './clean-song-package.js';
+import {isVsqSummary,isPerformanceSummary,isBasicKeysSummary} from './clean-song-package.js';
 /** Import jobs retain File objects; canonical scores stay in the existing Rust/storage path. */
 export const BULK_IMPORT_LIMITS=Object.freeze({files:100,fileBytes:8*1024*1024,backupBytes:40*1024*1024,zipBytes:128*1024*1024,totalBytes:512*1024*1024,items:10000});
 const statuses=new Set(['ready','saved','duplicate','conflict','retained_nonplayable','error']);
@@ -20,7 +20,7 @@ function checkedReport(value,{mode,filename,sha256}={}){
  if(sha256&&value.source.sha256!==sha256)throw issue('pack_source_changed','The saved report does not match the source that was reviewed.','unknown');
  const indices=new Set();
  for(const item of value.items){
-  if(!Number.isSafeInteger(item.index)||item.index<0||indices.has(item.index)||typeof item.path!=='string'||typeof item.title!=='string'||!statuses.has(item.status)||typeof item.playable!=='boolean'||typeof item.code!=='string'||typeof item.message!=='string'||(['saved','duplicate'].includes(item.status)&&((!item.playable&&!isVsqSummary(item.clean_package||item.entry?.clean_package)&&!isPerformanceSummary(item.clean_package||item.entry?.clean_package))||!nativeKey.test(item.entry?.key))))throw issue('pack_invalid_response','The importer returned an invalid song result.',mode==='commit'?'unknown':'not-saved');
+  if(!Number.isSafeInteger(item.index)||item.index<0||indices.has(item.index)||typeof item.path!=='string'||typeof item.title!=='string'||!statuses.has(item.status)||typeof item.playable!=='boolean'||typeof item.code!=='string'||typeof item.message!=='string'||(['saved','duplicate'].includes(item.status)&&((!item.playable&&!isVsqSummary(item.clean_package||item.entry?.clean_package)&&!isPerformanceSummary(item.clean_package||item.entry?.clean_package)&&!isBasicKeysSummary(item.clean_package||item.entry?.clean_package))||!nativeKey.test(item.entry?.key))))throw issue('pack_invalid_response','The importer returned an invalid song result.',mode==='commit'?'unknown':'not-saved');
   indices.add(item.index);
  }
  return value;

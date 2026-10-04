@@ -1,4 +1,4 @@
-import {isVsqSong} from './clean-song-package.js';
+import {isVsqSong,isBasicKeysSong} from './clean-song-package.js';
 import {VsqNavigationIndex} from './vsq-navigation.js';
 import {NotationNavigationIndex} from './notation-follow.js';
 
@@ -110,6 +110,7 @@ export function setupWrittenCursor({api, getContext, onStatus = () => {}}) {
     const isCurrent = () => current === generation && !signal.aborted && sameContext(getContext());
     pending = (async () => {
       try {
+        if (isBasicKeysSong(sourceSong)) throw Error('Written navigation is unavailable for this retained MIDI-key projection; practice uses the exact native target clock.');
         if (!boundRuntime()) throw Error('The native navigation is not bound to this admitted score and performance timeline. Reload the complete song.');
         if (nativeRuntime && !nativeNavigation) throw Error(nativeRuntime.compilation.diagnostics?.find(item => item.code === 'clean_song_navigation_unavailable')?.message || 'This native complete song has no exact navigation map. Reload it with a current native build.');
         const response = nativeRuntime || isVsqSong(sourceSong) ? await nativeNavigation : await api('/api/notation-navigation', score, signal);

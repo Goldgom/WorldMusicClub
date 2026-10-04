@@ -1,4 +1,4 @@
-import {prepareCleanSong,prepareVsqPractice,preparePerformanceSong,isVsqSong,isPerformanceSong,isPerformanceSummary,VSQ_PROFILE,PERFORMANCE_PROFILE} from './clean-song-package.js';
+import {isBasicKeysSong,isBasicKeysSummary,BASIC_KEYS_PROFILE,prepareCleanSong,prepareVsqPractice,preparePerformanceSong,isVsqSong,isPerformanceSong,isPerformanceSummary,VSQ_PROFILE,PERFORMANCE_PROFILE} from './clean-song-package.js';
 import {openScoreLibrary,LIBRARY_LIMITS,libraryError} from './local-library.js';
 
 const bytes=value=>new TextEncoder().encode(value).byteLength;
@@ -19,7 +19,7 @@ function parseScore(raw){
 }
 function entry(kind,row){
  if(!row||typeof row.key!=='string'||!row.key||typeof row.title!=='string'||typeof row.score_id!=='string'||(kind==='native'&&!nativeKey.test(row.key)))throw issue('library_invalid_response','The library returned an invalid saved-score identity.');
- if(kind==='native'&&(!Number.isSafeInteger(row.saved_at_unix_ms)||row.saved_at_unix_ms<0||!Number.isFinite(new Date(row.saved_at_unix_ms).getTime())||!Number.isSafeInteger(row.score_bytes)||row.score_bytes<0||row.score_bytes>(isPerformanceSummary(row.clean_package)?16*1024*1024:LIBRARY_LIMITS.scoreBytes)))throw issue('library_invalid_response','The native archive returned invalid size or timestamp metadata.');
+ if(kind==='native'&&(!Number.isSafeInteger(row.saved_at_unix_ms)||row.saved_at_unix_ms<0||!Number.isFinite(new Date(row.saved_at_unix_ms).getTime())||!Number.isSafeInteger(row.score_bytes)||row.score_bytes<0||row.score_bytes>((isPerformanceSummary(row.clean_package)||isBasicKeysSummary(row.clean_package))?16*1024*1024:LIBRARY_LIMITS.scoreBytes)))throw issue('library_invalid_response','The native archive returned invalid size or timestamp metadata.');
  const metadata={...row};delete metadata.score;
  return{...metadata,libraryKey:`${kind}:${row.key}`,storageKey:row.key,storageKind:kind,bytes:kind==='native'?row.score_bytes:row.bytes,updated_at:kind==='native'?new Date(row.saved_at_unix_ms).toISOString():row.updated_at};
 }
@@ -88,13 +88,15 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
    saved={entry:entry(kind,row),score:snapshot(row.score).score};
   }else{
    const value=await request('/api/library/load',{body:{key:storageKey},signal});
-   const performance=value?.clean_package?.profile===PERFORMANCE_PROFILE;
+   const performance=value?.clean_package?.profile===PERFORMANCE_PROFILE,basicKeys=value?.clean_package?.profile===BASIC_KEYS_PROFILE;
+   if(basicKeys&&(value.score_json!==null||!isBasicKeysSummary(value.entry?.clean_package)))throw issue('library_invalid_response','A basic-key package must use its complete embedded notation projection.');
    if(performance&&(value.score_json!==null||!isPerformanceSummary(value.entry?.clean_package)))throw issue('library_invalid_response','A complete performance must explicitly declare unavailable notation.');
-   saved={entry:entry(kind,value?.entry),score:performance?null:parseScore(value?.score_json),score_json:value.score_json};
+   saved={entry:entry(kind,value?.entry),score:performance||basicKeys?null:parseScore(value?.score_json),score_json:value.score_json};
    if(value.clean_package)saved.cleanSong=performance?await preparePerformanceSong(key,value.clean_package,saved.score):prepareCleanSong(key,value.clean_package,saved.score);
+   if(basicKeys)saved.score=saved.cleanSong.notation;
    if(saved.entry.storageKey!==storageKey)throw issue('library_invalid_response','The loaded archive does not match the selected library key.');
   }
-  if(!isVsqSong(saved.cleanSong)&&!isPerformanceSong(saved.cleanSong))await validate(saved.score,signal);
+  if(!isBasicKeysSong(saved.cleanSong)&&!isVsqSong(saved.cleanSong)&&!isPerformanceSong(saved.cleanSong))await validate(saved.score,signal);
   signal?.throwIfAborted();
   if(kind==='native'&&!closed){if(saved.cleanSong)allowedAssets.set(key,saved.cleanSong);else allowedAssets.delete(key);}
   return saved;

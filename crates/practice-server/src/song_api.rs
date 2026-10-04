@@ -21,6 +21,7 @@ pub fn is_song_api_route(path: &str) -> bool {
         "/api/assistance/create"
             | "/api/assistance/validate"
             | "/api/midi/events"
+            | "/api/clean-song/basic-keys"
             | "/api/clean-song/draft"
             | "/api/clean-song/draft/pack"
     )
@@ -158,6 +159,7 @@ pub fn api_response(path: &str, bytes: Vec<u8>) -> ApiResponse {
         return request_limit_response();
     }
     match path {
+        "/api/clean-song/basic-keys" => crate::basic_keys_api::response(&bytes),
         "/api/clean-song/draft" => crate::clean_draft_api::response(&bytes, false),
         "/api/clean-song/draft/pack" => crate::clean_draft_api::response(&bytes, true),
         "/api/assistance/create" => match decode::<CreateRequest>(&bytes) {

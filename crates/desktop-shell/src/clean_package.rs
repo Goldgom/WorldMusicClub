@@ -98,7 +98,7 @@ pub struct Summary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub capabilities: Option<score_core::vsq_clean::Capabilities>,
+    pub capabilities: Option<Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub interpretation_limits: Vec<score_core::vsq_clean::CleanInterpretationLimit>,
     pub content_sha256: String,
@@ -113,7 +113,7 @@ pub struct OpenPackage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub capabilities: Option<score_core::vsq_clean::Capabilities>,
+    pub capabilities: Option<Value>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub interpretation_limits: Vec<score_core::vsq_clean::CleanInterpretationLimit>,
     pub content_sha256: String,
@@ -121,11 +121,13 @@ pub struct OpenPackage {
     pub score_json: String,
     pub media: Vec<Asset>,
     pub runtime: Value,
+    pub coverage: Value,
+    pub notation_available: bool,
 }
 #[derive(Clone, Debug)]
 pub struct Package {
     pub profile: Option<String>,
-    pub capabilities: Option<score_core::vsq_clean::Capabilities>,
+    pub capabilities: Option<Value>,
     pub interpretation_limits: Vec<score_core::vsq_clean::CleanInterpretationLimit>,
     pub metadata_json: String,
     pub score_json: String,
@@ -142,9 +144,26 @@ impl Package {
     pub(crate) fn index_json(&self) -> &str {
         self.notation_json.as_deref().unwrap_or(&self.score_json)
     }
+    /// The basic-key wire already contains the complete canonical projection.
+    /// Avoid sending it a second time, so large sources fit the existing bound.
+    fn legacy_notation_json(&self) -> Option<&str> {
+        if self.profile.as_deref() == Some(score_core::basic_keys::PROFILE) {
+            None
+        } else {
+            self.notation_json.as_deref()
+        }
+    }
     pub(crate) fn catalog_fields(&self) -> Result<(String, score_core::Provenance)> {
         if let Some(raw) = &self.notation_json {
-            let (score, _) = checked_score(raw)?;
+            // Profile validation has already checked every retained source event.
+            // Basic-key notation intentionally permits an unknown source meter
+            // or clock, so catalog reads must not invoke the playback compiler.
+            let score = if self.profile.as_deref() == Some(score_core::basic_keys::PROFILE) {
+                serde_json::from_str(raw)
+                    .map_err(|e| invalid(format!("Invalid basic-key notation: {e}")))?
+            } else {
+                checked_score(raw)?.0
+            };
             Ok((score.composer, score.provenance))
         } else {
             Ok((
@@ -199,6 +218,8 @@ impl Package {
             score_json: self.score_json.clone(),
             media: self.summary().media,
             runtime: self.runtime.clone(),
+            coverage: self.coverage.clone(),
+            notation_available: self.notation_json.is_some(),
         }
     }
 }
@@ -323,8 +344,40 @@ fn parse_inner(
                 serde_json::to_value(score.coverage).map_err(|e| invalid(e.to_string()))?,
                 Value::Null,
                 Some(score.profile),
-                Some(score.capabilities),
+                Some(serde_json::to_value(score.capabilities).map_err(|e| invalid(e.to_string()))?),
                 score.interpretation_limits,
+            )
+        }
+        (1, None, Some(score_core::basic_keys::PROFILE)) => {
+            let score = score_core::basic_keys::decode_json(score_bytes).map_err(invalid)?;
+            let runtime = if with_runtime {
+                serde_json::to_value(
+                    practice_server::basic_keys_api::compile(&score).map_err(invalid)?,
+                )
+                .map_err(|e| invalid(e.to_string()))?
+            } else {
+                Value::Null
+            };
+            (
+                score.notation.id.clone(),
+                score.notation.title.clone(),
+                Some(score.notation.clone()),
+                score
+                    .notation
+                    .parts
+                    .iter()
+                    .map(|p| p.id.clone())
+                    .collect::<BTreeSet<_>>(),
+                SourceEvidence {
+                    format: score.source.format,
+                    bytes: score.source.bytes,
+                    sha256: score.source.sha256,
+                },
+                serde_json::to_value(score.coverage).map_err(|e| invalid(e.to_string()))?,
+                runtime,
+                Some(score_core::basic_keys::PROFILE.to_owned()),
+                Some(serde_json::to_value(score.capabilities).map_err(|e| invalid(e.to_string()))?),
+                vec![],
             )
         }
         (1, None, Some("wmh-semantic-midi1-v1")) => {
@@ -527,8 +580,10 @@ fn parse_inner(
         .map(serde_json::to_string)
         .transpose()
         .map_err(|e| invalid(e.to_string()))?;
-    if let Some(raw) = &notation_json {
-        checked_score(raw)?;
+    if profile.as_deref() != Some(score_core::basic_keys::PROFILE) {
+        if let Some(raw) = &notation_json {
+            checked_score(raw)?;
+        }
     }
     // Metadata whitespace is not identity; exact score and every asset digest are.
     let identity = digest(&serde_json::to_vec(&metadata).map_err(|e| invalid(e.to_string()))?);
@@ -548,7 +603,7 @@ fn parse_inner(
         coverage,
     };
     if serde_json::to_vec(
-        &serde_json::json!({"score_json":package.notation_json,"clean_package":package.opened()}),
+        &serde_json::json!({"score_json":package.legacy_notation_json(),"clean_package":package.opened()}),
     )
     .map_err(|e| invalid(e.to_string()))?
     .len()
@@ -1193,7 +1248,7 @@ pub(super) fn load(library: &NativeLibrary, key: &str) -> Result<Option<LoadedSc
     }
     Ok(Some(LoadedScore {
         entry,
-        score_json: package.notation_json.clone(),
+        score_json: package.legacy_notation_json().map(str::to_owned),
         clean_package: Some(package.opened()),
     }))
 }

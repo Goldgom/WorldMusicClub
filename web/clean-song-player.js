@@ -2,7 +2,7 @@ import {hasValidZeroSmpteOffsets} from './clean-song-timecode.js';
 import {ReferenceAudioReceiver} from './midi-reference-synth.js';
 import {createReferenceRoom} from './clean-song-reverb.js';
 import {VsqPracticePlayer} from './vsq-practice-player.js';
-import {CleanSongError,isCleanSong,isVsqSong} from './clean-song-package.js';
+import {CleanSongError,isCleanSong,isVsqSong,isBasicKeysSong} from './clean-song-package.js';
 import {INITIAL_SENSITIVITY_KIND,validInitialSensitivity,applyInitialSensitivity,unbentReferenceKey} from './clean-song-initial-sensitivity.js';
 import {INITIAL_SENSITIVITY12_KIND,validInitialSensitivity12Song,applyInitialSensitivity12,centeredPitchState,unbentReferenceKey12} from './clean-song-initial-sensitivity12.js';
 import {inspectLogicalDeviceRoute,isDeviceName,isUnsupportedRouteCommand,LOGICAL_DEVICE_POLICY_SUFFIX} from './clean-song-device-routing.js';
@@ -12,6 +12,7 @@ export const CLEAN_RENDITION = 'wmh-procedural-reference-v1';
 export function inspectCleanRendition(song) {
   const blockers=[];
   if(!isCleanSong(song))return{supported:false,blockers:['clean_package_invalid'],rendition:CLEAN_RENDITION};
+  if(isBasicKeysSong(song))return{supported:false,blockers:['basic_keys_reference_unavailable'],rendition:null};
   if(isVsqSong(song))return{supported:Boolean(song.runtime)&&song.runtime.parts.length<=128,blockers:!song.runtime?['vsq_choice_required']:song.runtime.parts.length>128?['part_budget_exceeded']:[],rendition:'wmh-vsq-base-note-reference-v1'};
   if(!hasValidZeroSmpteOffsets(song.runtime))blockers.push('invalid_smpte_offset');
   if(song.score.performance.parts.length>128)blockers.push('part_budget_exceeded');
