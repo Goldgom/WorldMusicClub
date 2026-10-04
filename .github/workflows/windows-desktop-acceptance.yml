@@ -77,6 +77,11 @@ jobs:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
           WMH_IMPORT_REPORT: ${{ github.workspace }}/test-results/bulk-import-dom.json
         run: npm run test:bulk-import-native
+      - name: Original VSQ authoring through exact Rust protocol
+        env:
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_VSQ_AUTHORING_REPORT: ${{ github.workspace }}/test-results/vsq-authoring/native-protocol/report.json
+        run: node scripts/check-vsq-authoring-native.mjs
       - run: npx playwright install --with-deps chromium
       - name: Real picker, original bytes, unified pack and fresh-profile screenshot proof
         env:
@@ -125,12 +130,22 @@ jobs:
         run: |
           WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-basic-key-check.mjs
           WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-basic-key-check.mjs
+      - name: Original VSQ authoring, whole inventory, explicit practice and restart
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: |
+          WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-vsq-authoring-check.mjs
+          WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-vsq-authoring-check.mjs
+          WMH_VIEWPORT_WIDTH=1920 WMH_VIEWPORT_HEIGHT=1080 node scripts/hosted-vsq-authoring-check.mjs
       - name: Preserve authored bulk-import evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: bulk-import-browser-${{ github.sha }}
           path: |
+            test-results/vsq-authoring/**
             test-results/basic-key/**
             test-results/bulk-import-dom.json
             test-results/bulk-import/**
@@ -292,6 +307,9 @@ jobs:
       - name: Native original basic-key inventory, keyboard and restart
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-basic-key -Scenario basic-key
+      - name: Native original VSQ authoring and exact fresh-process restart
+        shell: pwsh
+        run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-vsq-authoring -Scenario vsq-authoring
       # Default success() keeps candidate packaging behind every native gate.
       # This job cannot establish browser or whole-checkpoint acceptance.
       - name: Package native candidate with exact provenance and notices
@@ -329,6 +347,10 @@ jobs:
           if ($authoringProof.source_sha -cne '${{ github.sha }}' -or $authoringProof.source_tree -cne $currentTree -or $authoringProof.executable_sha256 -cne $currentExe -or $authoringProof.executable_bytes -ne $currentExeBytes) { throw 'Song authoring evidence does not match the exact packaged source and executable' }
           python scripts/native-song-authoring-manifest.py desktop-authoring --executable target/release/worldmusichub-desktop.exe --commit '${{ github.sha }}' --tree $currentTree
           if ($LASTEXITCODE -ne 0) { throw 'Native song authoring focused manifest failed' }
+          node scripts/verify-native-vsq-authoring-evidence.mjs --check desktop-vsq-authoring
+          if ($LASTEXITCODE -ne 0) { throw 'Native VSQ authoring proof failed' }
+          python scripts/native-vsq-authoring-manifest.py desktop-vsq-authoring --executable target/release/worldmusichub-desktop.exe --commit '${{ github.sha }}' --tree $currentTree
+          if ($LASTEXITCODE -ne 0) { throw 'Native VSQ authoring source/EXE manifest failed' }
           $env:WMH_SOURCE_SHA='${{ github.sha }}'
           $env:WMH_SOURCE_TREE=$currentTree
           $env:WMH_BASIC_KEY_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
@@ -350,7 +372,7 @@ jobs:
           Copy-Item desktop-bulk-import/native-bulk-import.json,desktop-bulk-import/native-bulk-import-files.json,desktop-bulk-import/renderer-bulk-*.json,desktop-bulk-import/profile-bulk-*.json "$folder/evidence/"
           Copy-Item desktop-clean-song/native-clean-song.json,desktop-clean-song/native-clean-song-files.json,desktop-clean-song/renderer-clean-*.json,desktop-clean-song/profile-clean-*.json "$folder/evidence/"
           Copy-Item desktop-vsq-song/native-vsq-song.json,desktop-vsq-song/native-vsq-song-files.json,desktop-vsq-song/renderer-vsq-*.json,desktop-vsq-song/profile-vsq-*.json "$folder/evidence/"
-          python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder --performance-song desktop-performance-song --pitch-bend desktop-pitch-bend --song-authoring desktop-authoring
+          python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder --performance-song desktop-performance-song --pitch-bend desktop-pitch-bend --song-authoring desktop-authoring --vsq-authoring desktop-vsq-authoring --basic-key desktop-basic-key
           if ($LASTEXITCODE -ne 0) { throw 'Native provenance/acceptance inventory failed' }
           $zip="dist/WorldMusicHub-Native-Windows-x64-commit-$count.zip"
           python scripts/native-release-manifest.py archive $folder $zip
@@ -426,6 +448,15 @@ jobs:
             desktop-pitch-bend/Scores/clean-backups/**
             desktop-pitch-bend/Scores/imports/**
             desktop-pitch-bend/Scores/import-backups/**
+            desktop-vsq-authoring/*.json
+            desktop-vsq-authoring/*.png
+            desktop-vsq-authoring/*.log
+            desktop-vsq-authoring/downloads/*
+            desktop-vsq-authoring/fixtures/*
+            desktop-vsq-authoring/Scores/clean-songs/**
+            desktop-vsq-authoring/Scores/clean-backups/**
+            desktop-vsq-authoring/Scores/imports/**
+            desktop-vsq-authoring/Scores/import-backups/**
             desktop-basic-key/*.json
             desktop-basic-key/*.png
             desktop-basic-key/*.log

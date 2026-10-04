@@ -25,6 +25,10 @@ _authoring_spec.loader.exec_module(_authoring)
 SONG_AUTHORING_CLAIMS = _authoring.SONG_AUTHORING_CLAIMS
 SONG_AUTHORING_REPORTS = _authoring.SONG_AUTHORING_REPORTS
 SONG_AUTHORING_EVIDENCE = [*SONG_AUTHORING_REPORTS, 'native-song-authoring-files.json', 'song-authoring-manifest.json']
+_new_music_spec = importlib.util.spec_from_file_location('native_new_music_evidence', ROOT / 'scripts/native-new-music-evidence.py')
+_new_music = importlib.util.module_from_spec(_new_music_spec)
+_new_music_spec.loader.exec_module(_new_music)
+NEW_MUSIC_EVIDENCE = _new_music.EVIDENCE
 FOLDER = 'WorldMusicHub-Native'
 EXE = 'WorldMusicHub-Native.exe'
 INFO, SUMS = 'BUILD-INFO.json', 'SHA256.txt'
@@ -490,14 +494,17 @@ def create_manifest(directory, metadata):
                 *[f'evidence/{name}' for name in PERFORMANCE_SONG_EVIDENCE],
                 *[f'evidence/{name}' for name in PITCH_BEND_EVIDENCE],
                 *[f'evidence/{name}' for name in SONG_AUTHORING_EVIDENCE],
+                *[f'evidence/{name}' for name in NEW_MUSIC_EVIDENCE],
                 *[f'evidence/renderer-{phase}.json' for phase in PHASES]]
     for name in required:
         require((directory / name).is_file(), f'Native package is missing {name}')
     verify_pitch_bend_inventory(path.relative_to(directory).as_posix() for path in directory.rglob('*') if path.is_file())
     verify_song_authoring_inventory(path.relative_to(directory).as_posix() for path in directory.rglob('*') if path.is_file())
+    _new_music.verify_inventory(path.relative_to(directory).as_posix() for path in directory.rglob('*') if path.is_file())
     windows_executable((directory / EXE).read_bytes())
     verify_packaged_pitch_bend_evidence(lambda name: (directory / name).read_bytes(), metadata)
     verify_packaged_song_authoring_evidence(lambda name: (directory / name).read_bytes(), metadata)
+    _new_music.verify_packaged(lambda name: (directory / name).read_bytes(), metadata)
     verify_packaged_profiles(lambda name: _pitch.read_evidence(directory / name, 2 * 1024 * 1024)
                              if name != EXE else (directory / name).read_bytes(), metadata)
     require(not (directory / 'WorldMusicHub.exe').exists(), 'Browser EXE must not be in the native package')
@@ -562,10 +569,11 @@ def verify_archive(archive):
         require(info.get('name') == FOLDER and info.get('executable') == EXE, 'Wrong native product identity')
         for name in SCORE_SCHEMAS:
             require(name in info['files'], f'Native package is missing {name}')
-        for name in [*SONG_FOLDER_EVIDENCE, *PERFORMANCE_SONG_EVIDENCE, *PITCH_BEND_EVIDENCE, *SONG_AUTHORING_EVIDENCE]:
+        for name in [*SONG_FOLDER_EVIDENCE, *PERFORMANCE_SONG_EVIDENCE, *PITCH_BEND_EVIDENCE, *SONG_AUTHORING_EVIDENCE, *NEW_MUSIC_EVIDENCE]:
             require(f'evidence/{name}' in info['files'], f'Native package is missing evidence/{name}')
         verify_pitch_bend_inventory(info['files'])
         verify_song_authoring_inventory(info['files'])
+        _new_music.verify_inventory(info['files'])
         require(set(names) == {prefix + name for name in set(info['files']) | {INFO, SUMS}}, 'Native ZIP inventory differs')
         sums = {}
         for name, item in info['files'].items():
@@ -576,6 +584,7 @@ def verify_archive(archive):
         windows_executable(package.read(prefix + EXE))
         verify_packaged_pitch_bend_evidence(lambda name: package.read(prefix + name), info)
         verify_packaged_song_authoring_evidence(lambda name: package.read(prefix + name), info)
+        _new_music.verify_packaged(lambda name: package.read(prefix + name), info)
         verify_packaged_profiles(lambda name: package.read(prefix + name), info)
         sums[INFO] = sha(package.read(prefix + INFO))
         require(package.read(prefix + SUMS).decode() == ''.join(f'{sums[name]}  {name}\n' for name in sorted(sums)), 'Native checksum file differs')
@@ -636,6 +645,8 @@ def main():
     create.add_argument('--performance-song', required=True, type=Path)
     create.add_argument('--pitch-bend', required=True, type=Path)
     create.add_argument('--song-authoring', required=True, type=Path)
+    create.add_argument('--vsq-authoring', required=True, type=Path)
+    create.add_argument('--basic-key', required=True, type=Path)
     archive = commands.add_parser('archive')
     archive.add_argument('directory', type=Path)
     archive.add_argument('archive', type=Path)
@@ -649,6 +660,8 @@ def main():
         metadata['acceptance'].update(accepted_performance_song_evidence(args.performance_song, args.directory / EXE, args.commit, metadata['git_tree']))
         metadata['acceptance'].update(accepted_pitch_bend_evidence(args.pitch_bend, args.directory / EXE, args.commit, metadata['git_tree']))
         metadata['acceptance'].update(accepted_song_authoring_evidence(args.song_authoring, args.directory / EXE, args.commit, metadata['git_tree']))
+        for scope, directory in [('vsq-authoring', args.vsq_authoring), ('basic-key', args.basic_key)]:
+            metadata['acceptance'].update(_new_music.accepted(scope, directory, args.directory / EXE, args.commit, metadata['git_tree']))
         # The source-bound gate above verified this separate proof. Keep it in
         # the package inventory without changing the dependency-cache workflow.
         (args.directory / 'evidence/native-reference-files.json').write_bytes((args.acceptance / 'native-reference-files.json').read_bytes())
@@ -660,6 +673,9 @@ def main():
             (args.directory / 'evidence' / name).write_bytes((args.pitch_bend / name).read_bytes())
         for name in SONG_AUTHORING_EVIDENCE:
             (args.directory / 'evidence' / name).write_bytes((args.song_authoring / name).read_bytes())
+        for scope, directory in [('vsq-authoring', args.vsq_authoring), ('basic-key', args.basic_key)]:
+            for name in _new_music.names(scope):
+                (args.directory / 'evidence' / name).write_bytes((directory / name).read_bytes())
         info = create_manifest(args.directory, metadata)
     elif args.command == 'archive':
         info = create_archive(args.directory, args.archive)

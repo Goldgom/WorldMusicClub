@@ -14,6 +14,8 @@ class NativeOutputHygieneTests(unittest.TestCase):
         outputs = set(re.findall(r'-OutputDirectory\s+(desktop-[a-z-]+)', workflow))
         self.assertIn('desktop-clean-song', outputs)
         self.assertIn('desktop-performance-song', outputs)
+        self.assertIn('desktop-basic-key', outputs)
+        self.assertIn('desktop-vsq-authoring', outputs)
         self.assertGreaterEqual(len(outputs), 6)
         with tempfile.TemporaryDirectory(prefix='wmh-source-guard-') as temporary:
             directory = Path(temporary)

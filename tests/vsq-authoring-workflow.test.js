@@ -206,8 +206,8 @@ test('new phases agree across Rust, native orchestration and every fresh-profile
  for(const check of ['Assert-AcceptanceProfileLaunch $OutputDirectory $phase','Assert-AcceptanceProfileEvidence $OutputDirectory $profileSelection $app.Id','Save-SongFolderSnapshot $phase','$app.CloseMainWindow()','$app.WaitForExit(10000)','$sequence -gt 64'])assert.ok(native.includes(check));
  assert.match(rust,/MAX_CLEAN_REPORT_BYTES: usize = 1024 \* 1024/);
  assert.match(rust,/\(1\.\.=64\)\.contains\(&sequence\)/);
- assert.doesNotMatch(read('.github/workflows/windows-desktop-acceptance.yml'),/vsq-authoring/);
- assert.doesNotMatch(read('scripts/native-release-manifest.py'),/vsq.authoring/);
+ const final=read('.github/workflows/windows-desktop-acceptance.yml');assert.match(final,/hosted-vsq-authoring-check\.mjs/);assert.match(final,/-Scenario vsq-authoring/);assert.match(final,/--vsq-authoring desktop-vsq-authoring --basic-key desktop-basic-key/);
+ assert.match(read('scripts/native-release-manifest.py'),/create.add_argument\('--vsq-authoring', required=True/);assert.match(read('scripts/native-release-manifest.py'),/_new_music.verify_packaged/);
 });
 
 test('new VSQ picker is one exact regular file with closed phase downloads and no new alias',()=>{

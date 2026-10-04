@@ -91,5 +91,7 @@ included in this repository or uploaded by its CI.
 This focused workflow neither publishes nor accepts a package. Before promotion,
 the same final combined SHA/tree/EXE must still pass the full Rust workspace,
 Node, formatting/clippy, real-browser, existing Windows/native and extracted
-package gates, plus both new focused jobs. Any future final-gate integration is
-separate work; existing checks are not removed or relaxed here.
+package gates. The full native workflow now also runs these original VSQ authoring
+checks and requires their exact source/EXE/report/profile proof and focused manifest
+in the candidate ZIP. This requirement preserves the focused evidence scope; it
+does not turn a standalone focused run into release acceptance.

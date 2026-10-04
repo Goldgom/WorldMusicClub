@@ -28,3 +28,10 @@ unit tests also do not establish physical audibility, original timbre, hardware
 latency, fingering, engraving, text export or full release acceptance. Real hosted
 browser/native evidence for the exact integrated source is required before
 promotion; no GUI acceptance is claimed by merely adding this workflow.
+
+The overall native candidate now requires both this basic-key proof and the
+original VSQ authoring proof. `native-new-music-evidence.py` composes their
+independent Node verification, exact report hashes, fresh profile bindings, source
+commit/tree and executable bytes before any new evidence is copied. Package
+creation and archive verification require the exact evidence inventories and
+BUILD-INFO bindings; recomputing ordinary ZIP hashes cannot bypass these gates.
