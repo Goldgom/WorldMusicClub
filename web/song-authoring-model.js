@@ -6,13 +6,17 @@ const failure=error=>({code:error?.code||'authoring_failed',message:error?.messa
 const validCount=value=>Number.isSafeInteger(value)&&value>=0;
 const utf8=value=>new TextEncoder().encode(value).byteLength;
 const safeTitle=value=>typeof value==='string'&&Boolean(value.trim())&&!/[\u0000-\u001f\u007f-\u009f]/u.test(value)&&utf8(value.trim())<=1000;
-const supported=new Set(['strict_notation_candidate','event_only_reference_candidate','vsq_authoring_candidate','rejected']);
+const supported=new Set(['strict_notation_candidate','event_only_reference_candidate','vsq_authoring_candidate','basic_key_candidate','rejected']);
 const stale=(signal)=>signal?.throwIfAborted();
 
 /** Only the Rust envelope is interpreted. Raw metadata and score strings are opaque. */
-export function checkAuthoringDraft(value,{sourceName,title}={}){
+export function checkAuthoringDraft(value,{sourceName,title,intent='source_rendition'}={}){
+ if(!['source_rendition','basic_keys'].includes(intent))throw issue('authoring_invalid_response','The conversion intent is unsupported.');
  const vsq=value?.source?.format==='vsq';
  if(!supported.has(value?.state)||value.source_name!==sourceName||value.title!==title||!['midi','vsq'].includes(value.source?.format)||(value.state!=='rejected'&&(value.state==='vsq_authoring_candidate')!==vsq)||!validCount(value.source.bytes)||!/^[a-f0-9]{64}$/.test(value.source.sha256)||!Array.isArray(value.diagnostics)||value.diagnostics.some(row=>!row||typeof row.code!=='string'||typeof row.message!=='string'||typeof row.action!=='string'))throw issue('authoring_invalid_response','The conversion report is incomplete.');
+ const basic=value.state==='basic_key_candidate';
+ if(!vsq&&value.state!=='rejected'&&basic!==(intent==='basic_keys'))throw issue('authoring_invalid_response','The draft does not match the selected conversion intent.');
+ if(basic){const c=value.basic_key_coverage;if(!c||['source_tracks','source_events','represented_events','key_attacks','key_releases','determined_ends','zero_length_attacks','unresolved_ends','unmatched_releases','notation_notes','projected_melodic_targets','unresolved_route_ends'].some(key=>!validCount(c[key]))||c.source_events!==c.represented_events||c.determined_ends+c.unresolved_ends!==c.key_attacks||c.notation_notes+c.zero_length_attacks!==c.determined_ends||c.projected_melodic_targets>c.notation_notes)throw issue('authoring_invalid_response','The basic-key conversion coverage is incomplete.');}
  const inventory=value.inventory;
  if(inventory!==null){
   if(!inventory||!validCount(inventory.source_tracks)||!validCount(inventory.source_events)||!Array.isArray(inventory.tracks)||inventory.tracks.length!==inventory.source_tracks||!validCount(inventory.key_attacks)||!validCount(inventory.key_releases)||!Array.isArray(inventory.parts))throw issue('authoring_invalid_response','The complete source inventory is missing.');
@@ -29,10 +33,11 @@ export function checkAuthoringDraft(value,{sourceName,title}={}){
     const vocal=part.vsq,track=tracks.get(vocal?.source_track_index);
     if(part.channel!==null||part.notation_available!==true||!vocal||typeof vocal.name!=='string'||!validCount(vocal.source_track_index)||vocalTracks.has(vocal.source_track_index)||!track||part.track_id!==track.track_id||part.id!==`vsq-track-${vocal.source_track_index}`||['notes','singers','lyrics','curves','curve_points'].some(key=>!validCount(vocal[key]))||['mute','solo','master_mute'].some(key=>typeof vocal[key]!=='boolean'))throw issue('authoring_invalid_response','A logical VSQ part is incomplete or does not match its source track.');
     vocalTracks.add(vocal.source_track_index);
-   }else if(!validCount(part.channel)||part.channel>15||part.vsq!=null)throw issue('authoring_invalid_response','A converted MIDI part is malformed.');
+   }else if(!validCount(part.channel)||part.channel>15||part.vsq!=null||basic&&!trackIds.has(part.track_id))throw issue('authoring_invalid_response','A converted MIDI part is malformed.');
   }
   if(inventory.tracks.reduce((sum,row)=>sum+row.source_event_count,0)!==inventory.source_events||inventory.tracks.reduce((sum,row)=>sum+row.key_attacks,0)!==inventory.key_attacks||inventory.tracks.reduce((sum,row)=>sum+row.key_releases,0)!==inventory.key_releases)throw issue('authoring_invalid_response','The source totals do not match the complete track inventory.');
  }
+ if(basic&&(!inventory||inventory.key_attacks!==value.basic_key_coverage.key_attacks||inventory.key_releases!==value.basic_key_coverage.key_releases||inventory.source_events!==value.basic_key_coverage.source_events||inventory.source_tracks!==value.basic_key_coverage.source_tracks))throw issue('authoring_invalid_response','The basic-key coverage disagrees with source inventory.');
  if(value.state==='rejected'){if(value.draft_sha256!==null||value.package!==null)throw issue('authoring_invalid_response','A held conversion cannot expose a save package.');}
  else if(!/^[a-f0-9]{64}$/.test(value.draft_sha256)||!inventory||(vsq&&!inventory.parts.length)||typeof value.package?.metadata_json!=='string'||!value.package.metadata_json.length||typeof value.package?.score_json!=='string'||!value.package.score_json.length)throw issue('authoring_invalid_response','The complete clean package is missing.');
  return value;
@@ -53,12 +58,13 @@ export function createAuthoringTransport({fetcher=globalThis.fetch,origin=global
   return value;
  }
  return{
-  async draft(file,{title,signal}={}){
+  async draft(file,{title,intent='source_rendition',signal}={}){
+   if(!['source_rendition','basic_keys'].includes(intent))throw issue('authoring_invalid_intent','Choose a supported MIDI conversion.');
    const bytes=new Uint8Array(await file.arrayBuffer());stale(signal);
    if(bytes.length!==file.size)throw issue('authoring_source_changed','The file changed while reading. Select the complete original again.');
    let binary='';for(let offset=0;offset<bytes.length;offset+=32768)binary+=String.fromCharCode(...bytes.subarray(offset,offset+32768));
-   const input={source_base64:btoa(binary),source_name:file.name,title};
-   const value=checkAuthoringDraft(await request('/api/clean-song/draft',input,{signal}),{sourceName:file.name,title});
+   const input={source_base64:btoa(binary),source_name:file.name,title,...(intent==='basic_keys'?{intent}:{})};
+   const value=checkAuthoringDraft(await request('/api/clean-song/draft',input,{signal}),{sourceName:file.name,title,intent});
    requests.set(value,input);return value;
   },
   async pack(draft,{signal}={}){
@@ -84,12 +90,13 @@ export class SongAuthoringModel{
  publish(patch={}){if(this.destroyed)return;Object.assign(this.state,patch);for(const listener of this.listeners)try{listener(this.snapshot());}catch(error){this.onObserverError(error);}}
  current(generation,signal){return !this.destroyed&&generation===this.generation&&!signal?.aborted;}
  get busy(){return this.pendingWrites>0||['converting','saving'].includes(this.state.phase);}
- async select(input){
+ async select(input,{intent='source_rendition'}={}){
   if(this.pendingWrites){this.publish({error:failure(issue('authoring_busy','A native save is still completing.'))});return false;}
+  if(!['source_rendition','basic_keys'].includes(intent)){this.publish({error:failure(issue('authoring_invalid_intent','Choose a supported MIDI conversion.'))});return false;}
   const files=Array.from(input||[]);if(!files.length)return false;
   this.cancel();this.sources.clear();this.artifacts.clear();this.state.rows=[];
   if(files.length>AUTHORING_LIMITS.files||files.some(file=>!validCount(file.size))||files.reduce((sum,file)=>sum+file.size,0)>AUTHORING_LIMITS.totalBytes){this.publish({phase:'review',error:failure(issue('authoring_selection_limit','Select at most 10 files totaling 20 MiB. The entire selection was refused.'))});return false;}
-  this.state.rows=files.map(file=>{const id=String(++this.sequence);this.sources.set(id,file);return{id,name:file.name,bytes:file.size,title:String(file.name).replace(/\.(mid|midi|vsq)$/i,'')||(/\.vsq$/i.test(file.name)?'VSQ':'MIDI'),phase:'queued',draft:null,result:null,error:null,downloaded:false};});
+  this.state.rows=files.map(file=>{const id=String(++this.sequence);this.sources.set(id,file);return{id,intent,name:file.name,bytes:file.size,title:String(file.name).replace(/\.(mid|midi|vsq)$/i,'')||(/\.vsq$/i.test(file.name)?'VSQ':'MIDI'),phase:'queued',draft:null,result:null,error:null,downloaded:false};});
   return this.convert(this.state.rows.map(row=>row.id));
  }
  async convert(ids){
@@ -108,7 +115,7 @@ export class SongAuthoringModel{
      if(!/\.(mid|midi|vsq)$/i.test(file.name))throw issue('authoring_format','Choose a standard .mid, .midi or .vsq file.');
      if(!file.size||file.size>AUTHORING_LIMITS.fileBytes)throw issue('authoring_file_limit','Each complete MIDI or VSQ file must be nonempty and at most 5 MiB.');
      if(!safeTitle(row.title)||utf8(file.name)>255||/[\u0000-\u001f\u007f-\u009f]/u.test(file.name))throw issue('authoring_title','Use a nonempty title and filename without control characters.');
-     const title=row.title.trim(),draft=await this.transport.draft(file,{title,signal});if(!this.current(generation,signal))return false;
+     const title=row.title.trim(),draft=await this.transport.draft(file,{title,signal,...(row.intent==='basic_keys'?{intent:row.intent}:{})});if(!this.current(generation,signal))return false;
      row.title=title;row.draft=draft;
      if(draft.state==='rejected'){row.phase='held';this.publish();continue;}
      const blob=await this.transport.pack(draft,{signal});if(!this.current(generation,signal))return false;

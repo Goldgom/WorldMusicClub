@@ -11,6 +11,8 @@ struct PackRequest {
     source_base64: String,
     source_name: String,
     title: String,
+    #[serde(default)]
+    intent: clean_conversion::Intent,
     expected_draft_sha256: String,
 }
 pub(super) fn response(bytes: &[u8], pack: bool) -> ApiResponse {
@@ -21,6 +23,7 @@ pub(super) fn response(bytes: &[u8], pack: bool) -> ApiResponse {
                     source_base64: request.source_base64,
                     source_name: request.source_name,
                     title: request.title,
+                    intent: request.intent,
                 },
                 Some(request.expected_draft_sha256),
             )

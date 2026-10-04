@@ -29,6 +29,12 @@ export function authoredVsqDraft({sourceName='original.vsq',title='Original VSQ'
  if(state==='rejected'){draft.package=null;draft.draft_sha256=null;draft.diagnostics=[{code:'complete_package_limit',message:'Original synthetic VSQ package exceeds the native size limit',action:'Keep the complete project; no tracks, notes or authoring fields were trimmed',source_event_id:null,track_index:1}];}
  return draft;
 }
+export function authoredBasicDraft({sourceName='original-ceg.mid',title='Original C/E/G'}={}){
+ const draft=JSON.parse(readFileSync(new URL('./fixtures/song-authoring/basic-key-response.json',import.meta.url),'utf8'));
+ if(title!==draft.title){for(const key of ['metadata_json','score_json'])draft.package[key]=draft.package[key].replaceAll(JSON.stringify(draft.title),JSON.stringify(title));draft.draft_sha256=digest(draft.package.metadata_json+draft.package.score_json);}
+ draft.source_name=sourceName;draft.title=title;return draft;
+}
+export const basicKeyFile=(name='original-ceg.mid')=>{const request=JSON.parse(readFileSync(new URL('./fixtures/song-authoring/strict-request.json',import.meta.url),'utf8'));return importFile(name,Buffer.from(request.source_base64,'base64'));};
 export const packageBlob=()=>new Blob([Buffer.from('PK\x03\x04original authored transport fixture')],{type:'application/zip'});
 export async function authoringServer(){
  const server=await nativeScoreServer(),drafts=new Map(),packs=new Map();let override;
@@ -36,7 +42,7 @@ export async function authoringServer(){
   const custom=await override?.(request);if(custom!==undefined)return custom;
   const {path,body,options}=request;
   if(path==='/api/clean-song/draft'){
-   const vsq=body.source_base64===vsqRequest.source_base64,state=body.source_name.startsWith('held')?'rejected':vsq?'vsq_authoring_candidate':body.source_name.startsWith('events')?'event_only_reference_candidate':'strict_notation_candidate',draft=(vsq?authoredVsqDraft:authoredDraft)({sourceName:body.source_name,title:body.title,state});drafts.set(body.source_name,draft);return nativeResponse(draft,state==='rejected'?422:200);
+   const vsq=body.source_base64===vsqRequest.source_base64,state=body.source_name.startsWith('held')?'rejected':vsq?'vsq_authoring_candidate':body.source_name.startsWith('events')?'event_only_reference_candidate':'strict_notation_candidate',draft=(vsq?authoredVsqDraft:body.intent==='basic_keys'&&state!=='rejected'?authoredBasicDraft:authoredDraft)({sourceName:body.source_name,title:body.title,state});drafts.set(body.source_name,draft);return nativeResponse(draft,state==='rejected'?422:200);
   }
   if(path==='/api/clean-song/draft/pack'){
    const draft=drafts.get(body.source_name);if(!draft||draft.draft_sha256!==body.expected_draft_sha256)return nativeResponse({code:'clean_draft_changed',error:'Conversion changed'},409);
@@ -45,6 +51,12 @@ export async function authoringServer(){
   if(path==='/api/library/import/preview'||path==='/api/library/import/commit'){
    const bytes=Buffer.from(await body.arrayBuffer()),sha256=digest(bytes),pack=packs.get(sha256),mode=path.endsWith('/commit')?'commit':'preview';
    if(!pack)return nativeResponse({code:'pack_invalid',error:'Unknown test package'},422);
+   if(pack.draft.state==='basic_key_candidate'){
+    const score=JSON.parse(pack.draft.package.score_json),runtime=JSON.parse(readFileSync(new URL('./fixtures/song-authoring/basic-key-runtime.json',import.meta.url),'utf8')),descriptor={version:2,content_sha256:sha256,...pack.draft.package,profile:score.performance.profile,capabilities:score.capabilities,coverage:score.coverage,notation_available:true,media:[],runtime};
+    const summary={version:2,content_sha256:sha256,profile:descriptor.profile,capabilities:descriptor.capabilities,coverage:descriptor.coverage,notation_available:true,media:[]},key=`song-${sha256}`,existing=server.records.get(key),entry={key,revision:1,title:pack.draft.title,composer:'',score_id:score.notation.id,label:pack.draft.title,score_bytes:JSON.stringify(score.notation).length,saved_at_unix_ms:1700000000000,clean_package:summary},item=importItem({title:pack.draft.title,playable:false,clean_package:summary,status:existing?'duplicate':'ready',...(existing?{entry:existing.entry}:{})});
+    if(mode==='commit'&&!existing){server.records.set(key,{entry,score_json:null,clean_package:descriptor});item.status='saved';item.entry=entry;}
+    return nativeResponse(importReport(body,{mode,sha256,items:[item]}));
+   }
    const vsq=pack.draft.state==='vsq_authoring_candidate',project=vsq?JSON.parse(pack.draft.package.score_json):null;
    const descriptor=vsq?{version:2,content_sha256:sha256,...pack.draft.package,profile:project.profile,capabilities:project.capabilities,interpretation_limits:project.interpretation_limits,media:[],runtime:null}:cleanDescriptor(({score,metadata,runtime})=>{score.notation.title=pack.draft.title;metadata.title=pack.draft.title;runtime.compilation.score.title=pack.draft.title;});descriptor.content_sha256=sha256;const score=vsq?project.notation:descriptor.runtime.compilation.score,key=`song-${sha256}`,existing=server.records.get(key),sameId=[...server.records.values()].find(row=>row.entry.score_id===score.id),summary={version:2,content_sha256:descriptor.content_sha256,media:[],...(vsq?{profile:descriptor.profile,capabilities:descriptor.capabilities,interpretation_limits:descriptor.interpretation_limits}:{})};
    const entry={key,revision:1,title:pack.draft.title,composer:'',score_id:score.id,label:pack.draft.title,score_bytes:descriptor.score_json.length,saved_at_unix_ms:1700000000000,clean_package:summary};

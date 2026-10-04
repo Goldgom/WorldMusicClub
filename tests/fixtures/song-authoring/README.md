@@ -52,7 +52,23 @@ Only the outer JSON was reserialized; the embedded metadata and score strings
 are unchanged. This is unit-test input from a run whose post-renderer verifier
 failed, not a replacement acceptance report or evidence of restart/Windows.
 
-Rust `Summary` carries `notation_available: false`; Rust `OpenPackage` carries
-the complete score and runtime and has no such boolean. Tests require the actual
+For this historical capture, Rust `Summary` carries `notation_available: false`
+and the recorded `OpenPackage` does not carry that boolean. Current native opens
+also expose notation availability and coverage. Tests require the actual
 summary false, explicit null normalized/canonical notation, unavailable notation
 and target coverage, and the matching native receiver identity.
+
+## Explicit basic-key authoring intent
+
+`basic-key-response.json` and `basic-key-runtime.json` are exact socket-free Rust
+API captures for `strict-request.json` with `intent: "basic_keys"`. They reuse the
+same original C/E/G source rather than introducing another music fixture. The
+response preserves every source event in the compact basic-key profile; the
+runtime admits only positive determined melodic MIDI keys and declares source
+rendition unresolved and reference audio unavailable.
+
+The Rust API regression in `crates/practice-server/tests/clean_draft_api.rs`
+verifies both captures and proves that changing the conversion intent invalidates
+an earlier package fingerprint. Set `WMH_UPDATE_BASIC_KEYS_FIXTURE=1` only when
+regenerating these original fixtures. This is API/consumer test input, not a claim
+of browser, native-window or physical-instrument acceptance.

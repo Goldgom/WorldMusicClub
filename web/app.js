@@ -298,7 +298,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     state.sourceNotes = new Map(state.score.parts.flatMap(part => part.notes.map(note => [note.id, {note, partId: part.id}])));
     state.loop = null; state.loopRequest++; state.practicePart = previousPart !== null && state.score.parts.some(part => part.id === previousPart) ? previousPart : cleanSong?state.score.parts[0]?.id:null; rebuildPracticeScope(); $('loop-enabled').checked = false; bindText($('loop-status'), () => t('app.loopCleared'));
     state.notationPage = 0; state.notationPart = cleanSong ? null : state.practicePart || state.score.parts[0].id;
-    if (!preserveTempo) $('tempo').value = String(compiled.score.tempo[0]?.bpm || 100);
+    if (!preserveTempo) $('tempo').value = String(displayOpeningTempo(compiled.score,cleanSong));
     clearNotice();
     notationFollowing?.scoreChanged();
     resetPlayback();
@@ -310,7 +310,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     if (error.name === 'AbortError') return;
     if (generation !== state.generation) return;
     notice(() => t('app.loadError', {detail:errorDetail(error)}), true);
-    $('tempo').value = String(state.score?.tempo[0]?.bpm || 100);
+    $('tempo').value = String(displayOpeningTempo(state.score));
     bindText($('transport-status'), () => state.compiled ? t('app.previousScoreAvailable') : t('app.scoreUnavailable'));
     updateButtons();
   }
@@ -369,6 +369,13 @@ function persistAcceptedImport(ticket,score,{intent,signal,scoreJson}={}) {
   const context=scoreSaveContext(pendingScoreSaveOwner);
   void scoreStorage.persistImported(ticket,score,{activated:true,signal,scoreJson}).then(result=>finishScoreSave(result,context));
 }
+function basicMeterLabel() {
+  return isBasicKeysSong(state.cleanSong)&&state.cleanSong.score.performance.timing.meter!=='source_declared'?(i18n.locale==='en'?'Source meter unavailable · MIDI key projection':'源拍号未确定 · MIDI 按键投影'):null;
+}
+function displayOpeningTempo(score,song=state.cleanSong) {
+  if(isBasicKeysSong(song))return score?.tempo.find(change=>change.at.numerator===0)?.bpm??(song.score.performance.timing.smf_default_tempo_used?120:'');
+  return score?.tempo[0]?.bpm||100;
+}
 function renderScore() {
   if (!state.score) return;
   const score = state.score;
@@ -378,7 +385,7 @@ function renderScore() {
   bindText($('score-origin-label'), () => originLabel(score));
   bindText($('score-details-button'), () => t('app.sourceDetails', {count:state.compiled.diagnostics.length}));
   bindText($('score-retention-note'), () => t('app.retention', {notes:summary.count,rests:summary.rests,edition:score.provenance.kind==='curated_cc0_edition'?t('app.retentionSourceEdition'):t('app.retentionCounts')}));
-  bindText($('score-key'), () => t('app.scoreMeter', {numerator:score.meters[0]?.numerator||4,denominator:score.meters[0]?.denominator||4}));
+  bindText($('score-key'), () => basicMeterLabel()||t('app.scoreMeter', {numerator:score.meters[0]?.numerator||4,denominator:score.meters[0]?.denominator||4}));
   $('notation-part').replaceChildren();
   const shownAll=document.createElement('option');shownAll.value='';bindText(shownAll, () => t('app.allParts'));$('notation-part').append(shownAll);
   for (const part of score.parts) { const option = document.createElement('option'); option.value = part.id; bindText(option, () => part.name); $('notation-part').append(option); }
@@ -434,7 +441,7 @@ function renderNotationPage() {
   state.notationPage = Math.max(0, Math.min(count - 1, state.notationPage));
   $('notation').innerHTML = renderNotation(state.score, state.notation, {startBeat: state.notationPage * state.notationSpan, spanBeats: state.notationSpan, width: layout.width, partId: state.notationPart, allParts: state.notationPart===null, numberedMode: state.numberedMode,i18n});
   const tonic = keyTonic(keyAt(state.score, state.notationPage * state.notationSpan));
-  if (!state.engravingActive) bindText($('score-key'), () => state.notation === 'jianpu' && state.numberedMode === 'movable' ? (tonic ? t('app.tonicNumbering', {tonic:`${tonic.name}${tonic.octave}`}) : t('app.unknownKey')) : t('app.notationMeter', {numerator:state.score.meters[0]?.numerator||4,denominator:state.score.meters[0]?.denominator||4}));
+  if (!state.engravingActive) bindText($('score-key'), () => basicMeterLabel()||(state.notation === 'jianpu' && state.numberedMode === 'movable' ? (tonic ? t('app.tonicNumbering', {tonic:`${tonic.name}${tonic.octave}`}) : t('app.unknownKey')) : t('app.notationMeter', {numerator:state.score.meters[0]?.numerator||4,denominator:state.score.meters[0]?.denominator||4})));
   bindText($('notation-page'), () => t('app.notationPage', {page:state.notationPage+1,count}));
   $('notation-prev').disabled = state.notationPage <= 0;
   $('notation-next').disabled = state.notationPage >= count - 1;
@@ -1096,9 +1103,9 @@ $('session-mode').addEventListener('change', () => { state.mode = $('session-mod
 $('instrument').addEventListener('change', () => { resetPlayback(); state.instrument = $('instrument').value; state.profileDirty = false; syncProfileFields(); profileControls(); if (state.instrument === 'guitar') $('instrument-settings').open = true; checkInstrument(); $('piano-stage').hidden = state.instrument !== 'piano'; $('guitar-stage').hidden = state.instrument !== 'guitar'; $('key-count').disabled = state.instrument !== 'piano'; updateRangeWarning(); keyboardInputView?.refreshRange(); drawFrame(); });
 $('key-count').addEventListener('change', () => { resetPlayback(); state.customKeys = $('key-count').value === 'custom'; profileControls(); if (state.customKeys) { markProfileDirty(); $('instrument-settings').open = true; $('custom-key-count').value = String(state.keys); $('custom-lowest').value = midiName(state.geometry[0].midi).replace('♯','#'); return; } state.keys = Number($('key-count').value); state.lowestMidi = null; state.profileDirty = false; renderKeyboard(); updateRangeWarning(); checkInstrument(); });
 $('tempo').addEventListener('change', () => {
-  if(state.cleanSong){$('tempo').value=String(state.score.tempo[0]?.bpm||100);notice(()=>cleanErrorText(i18n.locale,{code:'clean_derived_runtime_required'}),true);return;}
+  if(state.cleanSong){$('tempo').value=String(displayOpeningTempo(state.score));notice(()=>cleanErrorText(i18n.locale,{code:'clean_derived_runtime_required'}),true);return;}
   const bpm = Number($('tempo').value);
-  if (!Number.isFinite(bpm) || bpm < 10 || bpm > 600) { notice(() => t('app.tempoInvalid'), true); $('tempo').value = String(state.score?.tempo[0]?.bpm || 100); return; }
+  if (!Number.isFinite(bpm) || bpm < 10 || bpm > 600) { notice(() => t('app.tempoInvalid'), true); $('tempo').value = String(displayOpeningTempo(state.score)); return; }
   if (state.score) compileScore(transposeTempo(state.score, bpm), true);
 });
 function selectBasicNotation(mode,{remember=true}={}) { engravedView.hide({remember}); state.notation = mode; $('engraved-button').setAttribute('aria-pressed','false'); $('engraved-button').classList.remove('selected'); $('jianpu-reference-label').hidden = mode !== 'jianpu'; ['staff', 'jianpu'].forEach(m => { $(m + '-button').classList.toggle('selected', m === mode); $(m + '-button').setAttribute('aria-pressed', String(m === mode)); }); renderScore(); }

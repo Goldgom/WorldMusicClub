@@ -140,3 +140,72 @@ fn oversized_vsq_response_cannot_be_bypassed_by_compressed_pack_route() {
         assert!(body.get("zip_base64").is_none());
     }
 }
+
+#[test]
+fn explicit_basic_key_drafts_preserve_default_and_vsq_routes_and_bind_pack_intent() {
+    let mut input: Value = serde_json::from_slice(include_bytes!(
+        "../../../tests/fixtures/song-authoring/strict-request.json"
+    ))
+    .unwrap();
+    input["intent"] = json!("basic_keys");
+    let response = api_response("/api/clean-song/draft", serde_json::to_vec(&input).unwrap());
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    let draft: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(draft["state"], "basic_key_candidate");
+    assert_eq!(draft["basic_key_coverage"]["key_attacks"], 3);
+    assert_eq!(draft["basic_key_coverage"]["projected_melodic_targets"], 3);
+    let score_json = draft["package"]["score_json"].as_str().unwrap();
+    let score = score_core::basic_keys::decode_json(score_json.as_bytes()).unwrap();
+    assert_eq!(score.performance.tracks.len(), 1);
+    let runtime = api_response("/api/clean-song/basic-keys", score_json.as_bytes().to_vec());
+    assert_eq!(runtime.status, 200);
+    let fixtures = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/song-authoring");
+    if std::env::var_os("WMH_UPDATE_BASIC_KEYS_FIXTURE").is_some() {
+        std::fs::write(fixtures.join("basic-key-response.json"), &response.body).unwrap();
+        std::fs::write(fixtures.join("basic-key-runtime.json"), &runtime.body).unwrap();
+    }
+    for (name, actual) in [
+        ("basic-key-response.json", &response.body),
+        ("basic-key-runtime.json", &runtime.body),
+    ] {
+        let stored: Value =
+            serde_json::from_slice(&std::fs::read(fixtures.join(name)).unwrap()).unwrap();
+        assert_eq!(stored, serde_json::from_slice::<Value>(actual).unwrap());
+    }
+    input["expected_draft_sha256"] = draft["draft_sha256"].clone();
+    let packed = api_response(
+        "/api/clean-song/draft/pack",
+        serde_json::to_vec(&input).unwrap(),
+    );
+    assert_eq!(packed.status, 200);
+    let packed: Value = serde_json::from_slice(&packed.body).unwrap();
+    assert_eq!(packed["draft_sha256"], draft["draft_sha256"]);
+    input["intent"] = json!("source_rendition");
+    let changed = api_response(
+        "/api/clean-song/draft/pack",
+        serde_json::to_vec(&input).unwrap(),
+    );
+    assert_eq!(changed.status, 409);
+    input
+        .as_object_mut()
+        .unwrap()
+        .remove("expected_draft_sha256");
+    input["intent"] = json!("unknown");
+    assert_eq!(
+        api_response("/api/clean-song/draft", serde_json::to_vec(&input).unwrap()).status,
+        400
+    );
+    input = json!({"source_base64":base64::engine::general_purpose::STANDARD.encode(vsq_fixture::source()),"source_name":"original.mid","title":"Original VSQ","intent":"basic_keys"});
+    let vsq = api_response("/api/clean-song/draft", serde_json::to_vec(&input).unwrap());
+    assert_eq!(vsq.status, 200);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&vsq.body).unwrap()["state"],
+        "vsq_authoring_candidate"
+    );
+}

@@ -102,3 +102,17 @@ test('VSQ title edits regenerate the exact package and stale VSQ completion cann
  await queue.select([vsqFile()]);const id=queue.snapshot().rows[0].id,first=queue.snapshot().rows[0].draft;queue.editTitle(id,'Original <safe> $& 改题');assert.equal(queue.snapshot().rows[0].draft,null);assert.equal(await queue.export(id),null);await queue.retry(id);const edited=queue.snapshot().rows[0].draft;assert.equal(edited.title,'Original <safe> $& 改题');assert.notEqual(edited.draft_sha256,first.draft_sha256);assert.equal(edited.source.sha256,first.source.sha256);assert.match(edited.package.score_json,/9007199254740993/);
  const pending=queue.select([vsqFile('late.vsq')]);await until(()=>waiting);await queue.select([midiFile('new.mid')]);gate.resolve();await pending;assert.equal(queue.snapshot().rows[0].name,'new.mid');assert.equal(queue.snapshot().rows[0].draft.state,'strict_notation_candidate');assert.equal(queue.artifacts.size,1);
 });
+
+test('explicit basic-key draft transport binds intent and complete coverage through pack and title edits',async()=>{
+ const {authoredBasicDraft,basicKeyFile}=await import('./song-authoring-fixtures.js'),calls=[],file=basicKeyFile(),draft=authoredBasicDraft();
+ const transport=createAuthoringTransport({origin:'https://wmh.localhost',fetcher:async(path,options)=>{calls.push({path,body:JSON.parse(options.body)});return nativeResponse(path.endsWith('/pack')?{draft_sha256:draft.draft_sha256,zip_base64:Buffer.from(await packageBlob().arrayBuffer()).toString('base64')}:draft);}});
+ const result=await transport.draft(file,{title:draft.title,intent:'basic_keys'});await transport.pack(result);assert.equal(calls[0].body.intent,'basic_keys');assert.equal(calls[1].body.intent,'basic_keys');assert.equal(result.basic_key_coverage.key_attacks,3);assert.deepEqual(Buffer.from(calls[0].body.source_base64,'base64'),Buffer.from(await file.arrayBuffer()));
+ assert.throws(()=>checkAuthoringDraft(draft,{sourceName:file.name,title:draft.title}),{code:'authoring_invalid_response'});
+ for(const mutate of [value=>value.basic_key_coverage.unresolved_ends++,value=>delete value.basic_key_coverage,value=>value.basic_key_coverage.projected_melodic_targets=4,value=>value.inventory.key_attacks++]){const changed=structuredClone(draft);mutate(changed);assert.throws(()=>checkAuthoringDraft(changed,{sourceName:file.name,title:draft.title,intent:'basic_keys'}),{code:'authoring_invalid_response'});}
+ const intents=[],queue=setup({kind:'browser',transport:{draft:async(file,{title,intent})=>{intents.push(intent);return authoredBasicDraft({sourceName:file.name,title});}}});await queue.select([file],{intent:'basic_keys'});const id=queue.snapshot().rows[0].id;queue.editTitle(id,'Retitled original keys');await queue.retry(id);assert.deepEqual(intents,['basic_keys','basic_keys']);assert.equal(queue.snapshot().rows[0].intent,'basic_keys');assert.equal(queue.snapshot().rows[0].draft.state,'basic_key_candidate');queue.destroy();
+});
+
+test('a selected basic-key intent still accepts complete VSQ authoring without routing it through generic MIDI',async()=>{
+ const draft=authoredVsqDraft(),file=vsqFile(),transport=createAuthoringTransport({origin:'https://wmh.localhost',fetcher:async()=>nativeResponse(draft)});
+ const result=await transport.draft(file,{title:draft.title,intent:'basic_keys'});assert.equal(result.state,'vsq_authoring_candidate');assert.equal(result.source.format,'vsq');assert.equal(result.basic_key_coverage,undefined);
+});
