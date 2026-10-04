@@ -23,6 +23,8 @@ The first shell is a portable Rust local server with a browser UI. It binds only
 
 The current source tree opens in a searchable song lobby and uses a landscape performance stage with falling notes, keyboard and optional notation. Settings, import, sources and results use secondary panels. Browsing previews preserves a paused take; starting another score is explicit. See [interface behavior](docs/GAME_UI.md). This redesign follows the accepted 108 snapshot and is not included in that older Windows ZIP.
 
+For offline whole-corpus MIDI/VSQ conversion, run `cargo run -p score-core --bin clean-song-batch --locked -- INPUT_ROOT OUTPUT_RUN`. It creates clean two-file song folders plus separate per-song and batch reports, deduplicates exact sources, and continues through individual failures. See [batch conversion and independent reruns](docs/BATCH_CLEAN_CONVERSION.md).
+
 Free practice and the expanded keyboard/language integration are newer source
 features than the accepted 155 package. Runtime localization is still incremental;
 the exact remaining surfaces are listed in [locale coverage](docs/I18N.md).
