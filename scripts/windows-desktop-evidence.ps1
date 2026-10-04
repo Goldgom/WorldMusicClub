@@ -31,8 +31,11 @@ function Read-AcceptanceJsonSnapshot {
     $text=[Text.UTF8Encoding]::new($false,$true).GetString($bytes)
     # Accept a UTF-8 BOM from PowerShell-generated contract fixtures too.
     if($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF){$text=$text.Substring(1)}
+    if(-not $text.TrimStart().StartsWith('{',[StringComparison]::Ordinal)) { throw "Published acceptance JSON snapshot must start with an object: $Path" }
     $value=ConvertFrom-Json -InputObject $text -NoEnumerate -ErrorAction Stop
-    if($value -isnot [pscustomobject]){throw "Published acceptance JSON snapshot must be an object: $Path"}
+    # The [pscustomobject] alias in -is also accepts PSObject-wrapped arrays and
+    # scalars. Check the parsed base object's actual type instead.
+    if($null -eq $value -or $value.GetType().FullName -cne 'System.Management.Automation.PSCustomObject'){throw "Published acceptance JSON snapshot must be an object: $Path"}
     return $value
   } finally {
     if($null -ne $stream){$stream.Dispose()}

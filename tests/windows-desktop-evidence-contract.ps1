@@ -65,8 +65,11 @@ try {
   $snapshot=Join-Path $snapshotRoot 'invalid.json'
   foreach($text in @('','{','null','[]','[{}]','[{"x":1},{"x":2}]','false','"string"')) {
     [IO.File]::WriteAllText($snapshot,$text)
-    Assert-Rejected { Read-AcceptanceJsonSnapshot -Path $snapshot -MaximumBytes 512KB -AllowPending } 'published malformed/non-object snapshot cannot be classified as pending'
+    Assert-Rejected { Read-AcceptanceJsonSnapshot -Path $snapshot -MaximumBytes 512KB -AllowPending } "published malformed/non-object snapshot cannot be classified as pending: <$text>"
   }
+  [IO.File]::WriteAllText($snapshot,' {"values":[{},null,1],"enabled":false} ')
+  $nested=Read-AcceptanceJsonSnapshot -Path $snapshot -MaximumBytes 512KB
+  Assert-True ($nested.values.Count -eq 3 -and $nested.enabled -eq $false) 'valid root object keeps nested arrays, null and scalar properties'
   [IO.File]::WriteAllBytes($snapshot,[byte[]]@(123,34,120,34,58,34,255,34,125))
   Assert-Rejected { Read-AcceptanceJsonSnapshot -Path $snapshot -MaximumBytes 512KB -AllowPending } 'invalid UTF-8 is a hard failure'
   [IO.File]::WriteAllText($snapshot,'{"value":"bounded"}')

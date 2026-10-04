@@ -18,6 +18,9 @@ test('all live PowerShell evidence readers use the shared bounded snapshot proto
   }
   assert.match(profile, /Read-AcceptanceJsonSnapshot -Path \$path -MaximumBytes 8KB/);
   assert.match(smoke, /Read-AcceptanceJsonSnapshot -Path \$reportFile -MaximumBytes 64KB -AllowPending/);
+  const reader = read('scripts/windows-desktop-evidence.ps1');
+  assert.doesNotMatch(reader, /\$value -isnot \[pscustomobject\]/);
+  assert.match(reader, /\$value\.GetType\(\)\.FullName -cne 'System\.Management\.Automation\.PSCustomObject'/);
 });
 
 test('the existing mandatory Windows helper gate executes real simultaneous file-handle contracts', () => {
