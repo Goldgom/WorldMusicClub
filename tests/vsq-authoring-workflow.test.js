@@ -298,3 +298,14 @@ test('authoring audio cleanup waits for receiver disposal and retains its causal
  await assert.rejects(failed.result,/actual receiver startup failed/);
  assert.match(source,/if\(receiver\)\{try\{report\.finalAudio=await silence/,'Startup failure must not dereference an absent receiver');
 });
+
+
+test('hosted VSQ authoring builds the exact-source real asset server before Worklet module loading',()=>{
+ for(const name of ['vsq-authoring-preview.yml','windows-desktop-acceptance.yml']){
+  const checked=parse(readFileSync(path.join(root,'.github/workflows',name),'utf8'));assert.equal(checked.status,0,checked.stderr);
+  const jobs=Object.values(checked.document.jobs).filter(job=>job.steps?.some(step=>step.run?.includes('node scripts/hosted-vsq-authoring-check.mjs')));assert.equal(jobs.length,1);
+  const steps=jobs[0].steps,build=steps.findIndex(step=>step.run==='cargo build -p practice-server --locked'),host=steps.findIndex(step=>step.run?.includes('node scripts/hosted-vsq-authoring-check.mjs'));
+  assert.ok(build>=0&&build<host,'Actual module loading requires the exact checked-out server build first');assert.notEqual(steps[build]['continue-on-error'],true);assert.notEqual(steps[host]['continue-on-error'],true);
+  const checkout=steps.find(step=>step.uses?.startsWith('actions/checkout@'));assert.equal(checkout.with.ref,'${{ github.sha }}');
+ }
+});

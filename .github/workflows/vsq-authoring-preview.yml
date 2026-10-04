@@ -53,6 +53,7 @@ jobs:
       - run: cargo test -p worldmusichub-desktop --test clean_conversion_draft --locked
       - run: "cargo test -p worldmusichub-desktop --lib acceptance:: --locked"
       - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - run: cargo build -p practice-server --locked
       - name: Real Rust VSQ conversion and exact clean library persistence
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
