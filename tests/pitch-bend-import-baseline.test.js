@@ -100,7 +100,10 @@ test('seed imports exact typed songs before the original take; reference input/n
   await f.app.until(()=>f.starts()>0,'Production reference scheduler did not create modeled audio sources');
   const key=f.app.document.querySelector('#keyboard [data-midi="60"]');
   f.app.emit(key,'pointerdown',{pointerId:91,button:0});f.app.emit(key,'pointerup',{pointerId:91});
-  f.app.emit(f.app.$('complete-performance-title'),'keydown',{code:'KeyR',key:'r'});f.app.emit(f.app.$('complete-performance-title'),'keyup',{code:'KeyR',key:'r'});
+  const inputSurface=f.app.$('complete-performance-policy-title');
+  assert.equal(inputSurface.tagName,'SUMMARY');assert.equal(inputSurface.parentElement.tagName,'DETAILS');
+  assert.equal(inputSurface.closest('[data-keyboard-input]').dataset.keyboardInput,'off');
+  f.app.emit(inputSurface,'keydown',{code:'KeyR',key:'r'});f.app.emit(inputSurface,'keyup',{code:'KeyR',key:'r'});
   await f.app.click('assess-button');assert.deepEqual(await f.app.exported('export-takes'),before);
   await f.app.click('lobby-home');assert.equal(f.app.$('complete-performance-status').dataset.state,'stopped');
   assert.ok(f.contexts.flatMap(context=>context.nodes).filter(node=>['oscillator','noise'].includes(node.kind)).every(node=>node.disconnected));

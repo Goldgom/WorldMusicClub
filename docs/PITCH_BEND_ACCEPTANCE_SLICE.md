@@ -39,7 +39,7 @@ exercises the two-semitone song. `pitch-bend-restart` reopens the same native
 library in a distinct process and fresh browser profile, then exercises the
 proved twelve-semitone song. Both phases also select the range-negative song.
 Each phase has a 64-action ceiling and 1 MiB report ceiling. The expected path is
-at most 33 native actions for seed and 26 for restart, leaving explicit headroom.
+at most 34 native actions for seed and 27 for restart, leaving explicit headroom.
 
 The application is loaded without replacing its APIs, player, clocks, input or
 source files. Existing navigation and trusted-control helpers are reused only
@@ -55,6 +55,20 @@ assessment. The original canonical human take never uses the event-only song as
 its scoring target. Native KeyR during reference listening must add no recorded
 input. Reference operations must invoke no notation, fingering, runtime-target or
 assessment endpoints.
+
+The human key pair targets the focusable stage title; the reference key pair
+targets the existing policy disclosure summary inside the input-disabled panel.
+The renderer checks actual focus before requesting either OS key action, and the
+verifier requires one trusted down/up pair on each exact surface. Clicking the
+summary closes its disclosure; a subsequent real click reopens it. The report
+binds both action sequences and retains the open/closed/restored states. Later
+choice, reload and unsupported-bound evidence must show the expanded policy.
+This is a harness targeting correction:
+the first real 720-pixel preview clicked the nonfocusable reference heading, so
+its trusted pair correctly reached the body and left the human take unchanged,
+but failed the asserted target identity. Those failed artifacts remain failed;
+the correction adds no production focus behavior and accepts no body-targeted
+pair. Only a new exact-source browser and Windows run can establish acceptance.
 
 The renderer observes the application's actual English/Chinese policy panels,
 track controls, transport and saved runtime. Transparent bounded wrappers forward

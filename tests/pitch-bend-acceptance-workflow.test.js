@@ -66,3 +66,24 @@ test('pitch injection reuses helper prefixes with exactly one runner and preserv
  assert.match(renderer,/preparePerformanceBaseline\(\{phase:phase==='pitch-bend-seed'\?'performance-seed':'performance-restart'/);
  assert.match(renderer,/humanActionStart:sequence/);assert.doesNotMatch(renderer,/delete .*input_evidence|filter.*blur|\.passes\s*=/);
 });
+
+test('pitch native key action requires focus on the existing disclosure summary before queuing OS input',async()=>{
+ // Execute the actual renderer action helper with a modeled focus owner. This
+ // checks fail-closed admission, not trusted input or browser focus behavior.
+ const start=renderer.indexOf(' async function native('),end=renderer.indexOf('\n const inventory=',start);
+ assert.ok(start>=0&&end>start);const actionSource=renderer.slice(start,end);
+ assert.match(renderer,/await native\('key-r',\$\('complete-performance-policy-title'\)\)/);
+ assert.doesNotMatch(renderer,/native\('key-r',\$\('complete-performance-title'\)\)/);
+ function harness(id,{focusable=true,loseFocus=false}={}){
+  const actions=[],body={tagName:'BODY'},document={activeElement:body};let frames=0;
+  const node={id,tagName:id==='stage-title'?'H1':'SUMMARY',disabled:false,scrollIntoView(){},focus(){if(focusable)document.activeElement=node;},getBoundingClientRect:()=>({x:20,y:30,width:100,height:40}),contains:()=>false};
+  document.elementFromPoint=()=>node;
+  const context={document,sequence:0,innerWidth:1280,innerHeight:720,assert:(ok,message)=>assert.ok(ok,message),frame:async()=>{if(++frames===2&&loseFocus)document.activeElement=body;},controls:{},json:async(path,action)=>{assert.equal(path,'/__desktop_smoke/action');actions.push(action);},fetcher:async()=>({status:200,ok:true,json:async()=>({ok:true})}),until:async predicate=>assert.equal(await predicate(),true)};
+  return{node,actions,run:vm.runInNewContext(`${actionSource}\n native`,context)};
+ }
+ for(const id of ['stage-title','complete-performance-policy-title']){
+  const good=harness(id);assert.equal(await good.run('key-r',good.node),1);assert.equal(good.actions.length,1);assert.equal(good.actions[0].kind,'key-r');
+  for(const options of [{focusable:false},{loseFocus:true}]){const bad=harness(id,options);await assert.rejects(bad.run('key-r',bad.node),/did not receive focus \(active: BODY\)/);assert.deepEqual(bad.actions,[],'Focus failure must not dispatch an OS keyboard action');}
+ }
+ const screenshot=harness('complete-performance-title',{focusable:false});assert.equal(await screenshot.run('click',screenshot.node),1,'A heading remains a valid coordinate screenshot target');
+});
