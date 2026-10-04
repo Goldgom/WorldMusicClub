@@ -283,3 +283,18 @@ test('hosted authoring serves shipped Worklet assets from the exact-source serve
  assert.match(hosted,/\['asset-server',\(\)=>assetServer\?\.close\(\)\]/);
  assert.doesNotMatch(hosted,/path\.resolve\(root,'web'|route\.fulfill\([^\n]*readFile|request\.headers\(\)|addModule|blob:|data:text\/javascript/);
 });
+
+
+test('authoring audio cleanup waits for receiver disposal and retains its causal diagnostic records',async()=>{
+ const source=read('crates/desktop-shell/vsq-authoring-acceptance.js'),fragment=source.slice(source.indexOf(' const audio='),source.indexOf(' const runtimes='));
+ const trace=[],report={ok:true,errors:[]},probe={snapshot:()=>({sourceStarts:0,oscillatorStarts:0,activeSources:0,pendingSources:0})};let pending=2;
+ const evidence={restored:false,overflow:false,errors:[{code:'audio_worklet_start_timeout',message:'Actual ACK timed out',details:{command:'start',timeoutMs:2000}}],cleanupErrors:[{name:'receiver-1.port',message:'Native listener could not be restored'}]};
+ const receiver={status:()=>({activeReceivers:pending?1:0,pendingReceivers:pending?1:0}),assertHealthy(){trace.push('health');},quiet(){trace.push('quiet');return --pending<=0;},restore(){trace.push('restore');assert.equal(pending,0);return evidence;}};
+ const context=vm.createContext({probe,receiver,report,assert:(ok,message)=>assert.ok(ok,message),until:async(fn,label,ms)=>{assert.equal(ms,5000);assert.equal(label,'test disposal');for(let attempt=0;attempt<3;attempt++)if(fn())return;throw Error('disposal never completed');}});
+ new vm.Script(`${fragment}\nglobalThis.result=(async()=>{const finalAudio=await silence('test disposal');const receiverCleanup=restoreReceiver();return {finalAudio,receiverCleanup};})();`).runInContext(context);
+ const result=await context.result;assert.equal(result.finalAudio.worklet.activeReceivers,0);assert.equal(result.receiverCleanup,evidence);assert.equal(report.ok,false);assert.deepEqual(report.errors,['VSQ receiver observation cleanup failed']);assert.deepEqual(trace,['health','quiet','health','quiet','restore']);assert.equal(context.receiver,null);
+ const failed=vm.createContext({probe,receiver:{assertHealthy(){throw Error('actual receiver startup failed');}},report:{ok:false,errors:[]},until:async fn=>fn()});
+ new vm.Script(`${fragment}\nglobalThis.result=silence('startup failure');`).runInContext(failed);
+ await assert.rejects(failed.result,/actual receiver startup failed/);
+ assert.match(source,/if\(receiver\)\{try\{report\.finalAudio=await silence/,'Startup failure must not dereference an absent receiver');
+});
