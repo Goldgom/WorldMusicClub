@@ -100,3 +100,26 @@ test('VSQ receiver independently rejects malformed transferred IDs and unsafe wa
     assert.equal(core.state,'error');assert.equal(core.startedCount,0);
   }
 });
+
+
+test('VSQ preparation rejects native millisecond/rational disagreement even when a part is excluded', () => {
+  const opened=fixture('vsq-clean-v1-native-open'),descriptor=opened.clean_package;
+  for(const mutate of [r=>r.runtime.notes[0].start_microseconds.numerator='1',r=>r.runtime.notes[0].end_microseconds.numerator='227000188',r=>r.runtime.end_microseconds.numerator='24500024']) {
+    const response=fixture('vsq-clean-v1-runtime');mutate(response);
+    const song=prepareVsqPractice(prepareCleanSong(`native:song-${descriptor.content_sha256}`,descriptor,JSON.parse(opened.score_json)),response);
+    assert.throws(()=>buildVsqAudioPlan(song,{sampleRate,mutedParts:['vsq-track-1']}),{code:'invalid_audio_plan'});
+  }
+  const song=vsqSong();for(const rate of [44100,48000,96000]) {
+    const plan=buildVsqAudioPlan(song,{sampleRate:rate});
+    for(const [index,note]of song.runtime.notes.entries())assert.deepEqual(plan.notes[index].slice(2,4),basicKeyGateFrames(note.start_microseconds,note.end_microseconds,rate));
+    assert.ok(Math.abs(plan.durationFrames-song.runtime.end_ms*rate/1000)<1);
+  }
+});
+
+test('canceling during bounded VSQ waveform validation cannot emit ready, attacks or resume', () => {
+  const messages=[],core=new BasicKeyAudioCore(sampleRate,{emit:message=>messages.push(message)}),wire=createBasicKeyAudioTransfer(syntheticPlan([row('0001',0,1000)])).wire;
+  core.handleMessage({type:'prepare',generation:1,positionFrame:0,wire},0);
+  const block=new Float32Array(128);core.process([block],0);assert.equal(core.state,'preparing');assert.equal(core.preparePhase,-1);assert.ok(block.every(value=>value===0));
+  core.handleMessage({type:'cancel',generation:2,reason:'pause'},128);core.process([block],128);assert.equal(core.state,'canceled');assert.equal(core.startedCount,0);assert.equal(messages.some(message=>message.type==='ready'),false);assert.equal(messages.at(-1).ledger,null);assert.ok(block.every(value=>value===0));
+  core.handleMessage({type:'start',generation:1,anchorFrame:512},256);assert.equal(messages.at(-1).type,'stale');assert.equal(core.state,'canceled');
+});

@@ -13,7 +13,7 @@ export class BasicKeyAudioCore {
     this.sampleRate = basicKeySampleRate(sampleRate); this.emit = emit; this.trace = trace;
     this.generation = 0; this.state = 'idle'; this.plan = null; this.planGeneration = 0;
     this.activeCount = 0; this.startedCount = 0; this.endedCount = 0; this.skippedCount = 0; this.cursor = 0;
-    this.voiceSlots = Array.from({length: LIMITS.maxVoices}, () => ({note: -1, start: 0, end: 0, phase: 0, step: 0, peak: 0, drum: false, noiseIndex: 0, noiseState: 0x574d4801, x1: 0, x2: 0, y1: 0, y2: 0}));
+    this.voiceSlots = Array.from({length: LIMITS.maxVoices}, () => ({note: -1, start: 0, end: 0, phase: 0, step: 0, peak: 0, drum: false, vsqRatio: 0, harmonicPhase: 0, triangleOffset: 0, noiseIndex: 0, noiseState: 0x574d4801, x1: 0, x2: 0, y1: 0, y2: 0}));
     this.activeSlots = new Uint8Array(LIMITS.maxVoices); this.freeSlots = new Uint8Array(LIMITS.maxVoices);
     this.endHeap = new Float64Array(LIMITS.maxVoices); this.heapLength = 0; this.eligibleCount = 0; this.validated = false;
     this.resetSlots();
@@ -110,7 +110,8 @@ export class BasicKeyAudioCore {
       if (this.preparePhase === 0) { p.seen[index] = 0; this.actualStarts[index] = -1; this.actualEnds[index] = -1; continue; }
       const start = p.starts[index], end = p.ends[index], key = p.keys[index], velocity = p.velocities[index], role = p.roles[index];
       const vsq = p.identityKind === VSQ_AUDIO_IDENTITY;
-      const validIdentity = vsq ? p.sourceTracks[index] > 0 && [4, 8].includes(p.authoredIdDigits[index]) && p.authoredIds[index] < 10 ** p.authoredIdDigits[index] : integer(p.tracks[index], 0, Number.MAX_SAFE_INTEGER - 1) && integer(p.events[index], 0, Number.MAX_SAFE_INTEGER - 1);
+      const digits = p.authoredIdDigits?.[index];
+      const validIdentity = vsq ? p.sourceTracks[index] > 0 && (digits === 4 || digits === 8) && p.authoredIds[index] < 10 ** digits : integer(p.tracks[index], 0, Number.MAX_SAFE_INTEGER - 1) && integer(p.events[index], 0, Number.MAX_SAFE_INTEGER - 1);
       if (!integer(start, 0, p.durationFrames) || !integer(end, start + 1, p.durationFrames) || index > 0 && start < p.starts[index - 1] || !validIdentity || key > 127 || velocity < 1 || velocity > 127 || (vsq ? velocity !== 90 || role < 2 || role > 3 : role > 1)) reject('invalid_audio_plan', 'A transferred audio gate is invalid or out of order.');
       const frequency = 440 * 2 ** ((key - 69) / 12);
       if (role !== 1 && frequency * (vsq ? role : 1) > this.sampleRate * .45) reject('unsupported_audio_sample_rate', 'The audio device cannot represent every retained key and declared harmonic without clamping.');
