@@ -3,7 +3,9 @@ use base64::Engine;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
+    collections::BTreeMap,
     fs,
+    io::{Cursor, Read},
     path::{Path, PathBuf},
     process::{Command, Output},
     sync::atomic::{AtomicUsize, Ordering},
@@ -91,6 +93,10 @@ fn mixed_batch_continues_deduplicates_and_publishes_only_clean_songs() {
     assert_eq!(report["summary"]["duplicate_files"], 1);
     assert_eq!(report["summary"]["complete"], 1);
     assert_eq!(report["summary"]["failed"], 1);
+    assert_eq!(
+        json(&out.join("songs/manifest.json")),
+        serde_json::json!({"format":"worldmusichub-song-pack","version":2,"songs":[{"folder":sha(&original)}]})
+    );
     let song = &report["results"][0];
     assert_eq!(
         song["source_paths"],
@@ -116,6 +122,13 @@ fn mixed_batch_continues_deduplicates_and_publishes_only_clean_songs() {
     assert_eq!(metadata["media"], serde_json::json!([]));
     assert!(json(&package.join("score.json"))["notation"]["source"].is_null());
     score_core::basic_keys::decode_json(&score).unwrap();
+    assert_eq!(
+        score,
+        score_core::basic_keys::encode_json(
+            &score_core::basic_keys::convert_midi(&original, "a").unwrap()
+        )
+        .unwrap()
+    );
     assert!(out
         .join(format!("reports/{}/result.json", sha(&original)))
         .is_file());
@@ -173,6 +186,59 @@ fn reruns_compare_identity_and_refuse_existing_output_without_changes() {
             .len(),
         1
     );
+}
+#[test]
+fn transport_manifest_matches_official_writer_and_includes_review_packages() {
+    let temp = Temp::new();
+    let input = temp.path("input");
+    fs::create_dir(&input).unwrap();
+    fs::write(input.join("complete.mid"), source()).unwrap();
+    fs::write(
+        input.join("review.mid"),
+        smf(&[vec![0, 0x90, 64, 100, 0x83, 0x60, 255, 47, 0]]),
+    )
+    .unwrap();
+    let out = temp.path("run");
+    assert_eq!(run(&input, &out, None).status.code(), Some(3));
+    let report = json(&out.join("batch-report.json"));
+    let manifest_bytes = fs::read(out.join("songs/manifest.json")).unwrap();
+    let manifest: Value = serde_json::from_slice(&manifest_bytes).unwrap();
+    assert_eq!(manifest["songs"].as_array().unwrap().len(), 2);
+    let mut official = score_core::clean_pack::Writer::new();
+    let mut expected_files = BTreeMap::new();
+    for result in report["results"].as_array().unwrap() {
+        let folder = result["source_sha256"].as_str().unwrap();
+        let files: BTreeMap<_, _> = ["metadata.json", "score.json"]
+            .iter()
+            .map(|name| {
+                let bytes = fs::read(out.join("songs").join(folder).join(name)).unwrap();
+                expected_files.insert(format!("{folder}/{name}"), bytes.clone());
+                ((*name).to_owned(), bytes)
+            })
+            .collect();
+        official.add_song(folder, files).unwrap();
+    }
+    let archive = official.finish().unwrap();
+    let mut archive = zip::ZipArchive::new(Cursor::new(archive)).unwrap();
+    assert_eq!(archive.len(), 5);
+    let mut official_manifest = vec![];
+    archive
+        .by_name("manifest.json")
+        .unwrap()
+        .read_to_end(&mut official_manifest)
+        .unwrap();
+    assert_eq!(manifest_bytes, official_manifest);
+    for (name, expected) in expected_files {
+        let mut actual = vec![];
+        archive
+            .by_name(&name)
+            .unwrap()
+            .read_to_end(&mut actual)
+            .unwrap();
+        assert_eq!(actual, expected);
+    }
+    assert!(!out.join("songs/batch-report.json").exists());
+    assert!(!out.join("songs/reports").exists());
 }
 #[test]
 fn zero_length_is_preserved_without_claiming_positive_duration_practice() {
@@ -298,6 +364,7 @@ fn oversized_sources_keep_exact_hashes_and_deduplicate_failed_aliases() {
     assert_eq!(song["issues"][0]["code"], "source_limit");
     assert!(song["package"].is_null());
     assert!(song["coverage"].is_null());
+    assert!(!out.join("songs/manifest.json").exists());
     assert_eq!(fs::read_dir(out.join("songs")).unwrap().count(), 0);
 }
 #[test]

@@ -226,7 +226,12 @@ pub fn song_markdown(result: &ResultRecord) -> String {
 }
 pub fn markdown(report: &BatchReport) -> String {
     let s = &report.summary;
-    let mut output = format!("# Batch conversion results\n\n{} source files, {} unique results, {} exact duplicate files\n\n{} complete; {} review; {} failed; {} discovery errors\n\n{} packages retain complete source data. Elapsed: {} ms\n\nComplete source-data coverage, notation coverage and sound capability are independent. Review packages preserve source data while identifying unresolved timing. Zero-length attacks remain in the complete score and are counted separately from positive-duration practice notes.\n\nOnly folders inside songs/ are portable song packages. This report, reports/ and comparisons contain private source names and must stay outside exported songs. A final batch-report.json marks a completed run.\n\n", s.source_files, s.unique_results, s.duplicate_files, s.complete, s.review, s.failed, s.discovery_errors, s.data_complete, report.elapsed_ms);
+    let pack_advice = if report.results.iter().any(|result| result.package.is_some()) {
+        "Zip only songs/ for a clean pack: manifest.json lists its successfully published hash folders. Each hash folder is also an individual portable song package."
+    } else {
+        "No song package succeeded, so songs/ has no v2 manifest and cannot be imported as a pack."
+    };
+    let mut output = format!("# Batch conversion results\n\n{} source files, {} unique results, {} exact duplicate files\n\n{} complete; {} review; {} failed; {} discovery errors\n\n{} packages retain complete source data. Elapsed: {} ms\n\nComplete source-data coverage, notation coverage and sound capability are independent. Review packages preserve source data while identifying unresolved timing. Zero-length attacks remain in the complete score and are counted separately from positive-duration practice notes.\n\n{} This report, reports/ and comparisons contain private source names and must stay outside exported songs. A final batch-report.json marks a completed run.\n\n", s.source_files, s.unique_results, s.duplicate_files, s.complete, s.review, s.failed, s.discovery_errors, s.data_complete, report.elapsed_ms, pack_advice);
     for issue in &report.discovery_issues {
         output.push_str(&format!(
             "- Discovery {}: {}. {}\n",

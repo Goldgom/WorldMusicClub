@@ -246,6 +246,24 @@ fn run(args: Args) -> Result<u8, String> {
         eprintln!("{:?}: {}", converted.record.status, source_path);
         results.push(converted.record);
     }
+    let pack_songs: Vec<_> = results
+        .iter()
+        .filter(|result| result.package.is_some())
+        .filter_map(|result| result.source_sha256.as_ref())
+        .map(|sha| serde_json::json!({"folder": sha}))
+        .collect();
+    if !pack_songs.is_empty() {
+        // Relative to songs/manifest.json, each SHA folder is one complete
+        // package. Zipping only songs/ needs no manual transport reconstruction.
+        publish(
+            &output,
+            "songs/manifest.json",
+            &report::json(&serde_json::json!({
+                "format": "worldmusichub-song-pack", "version": 2,
+                "songs": pack_songs
+            }))?,
+        )?;
+    }
     let summary = Summary::from_results(files.len(), &results, discovery_issues.len());
     let exit_code = if summary.failed > 0 || !discovery_issues.is_empty() {
         1

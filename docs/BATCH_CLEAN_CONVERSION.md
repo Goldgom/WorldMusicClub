@@ -38,6 +38,7 @@ sorted source name supplies the display title. Every alias remains in reports.
 ```text
 run-002/
   songs/
+    manifest.json        # v2 transport manifest; absent if no song succeeded
     <source-sha256>/
       metadata.json
       score.json
@@ -60,14 +61,31 @@ an embedded original file. Source evidence contains format, length and hash.
 Originals remain privately retained at their input paths; no source is changed
 or deleted. Rights remain explicitly user-supplied and unverified.
 
-Reports contain source filenames, aliases, track names and conversion evidence.
-Keep the run directory private and export only the individual folders under
-`songs/`. Zipping the entire run would include private reports and is not a
-valid clean song pack. This command intentionally does not do that.
+`songs/manifest.json` is the standard `worldmusichub-song-pack` version 2
+transport manifest. Its `songs` array lists each successful hash directory
+relative to that manifest, including valid packages with review findings.
+Failed sources and duplicate aliases do not add entries. If no song succeeded,
+there is no manifest, because a v2 pack requires at least one complete song.
+
+Zip the `songs/` directory to produce an importable clean pack. The ZIP may
+contain that enclosing `songs/` folder or place its contents at the ZIP root;
+the importer resolves song paths relative to the manifest. For example:
+
+```sh
+cd /private/run-002
+zip -r ../clean-songs.zip songs
+```
+
+Individual hash directories are also portable two-file song packages.
+Reports contain source filenames, aliases, track names and conversion evidence;
+keep them private at the run root. Zipping the entire run would include private
+reports and is not a valid clean song pack. No song bytes are changed when the
+transport manifest is added.
 
 The output directory is claimed exclusively. Each song is written and synced in
 staging, then renamed into `songs/` only when both JSON files are complete.
-Individual failed writes do not publish a partial song. The final
+Individual failed writes do not publish a partial song. The pack manifest is
+published after all song writes and references only successful packages. The final
 `batch-report.json` is written last and marks a finished run. If it is absent,
 the run was interrupted; complete songs already present remain independently
 valid, but the corpus run is unfinished. Staging leftovers are private and must
