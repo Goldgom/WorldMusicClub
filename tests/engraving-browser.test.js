@@ -18,6 +18,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {createHash} from 'node:crypto';
 import {chromium} from 'playwright';
 import {ENGRAVING_BUNDLE_SHA256} from '../web/engraving.js';
+import {registerNativeTieGraphBrowserTests} from './native-tie-graph-browser-cases.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const binary = resolve(root, process.env.WMH_SERVER_BINARY || join('target', 'debug', `practice-server${process.platform === 'win32' ? '.exe' : ''}`));
@@ -623,6 +624,7 @@ async function renderBinding(score, exported, renderOptions = {}, sourceBoundFix
       const {prepareCleanSong}=await import('/clean-song-package.js'),{basicKeyNotationPage,basicKeyEngravingIdentity}=await import('/basic-key-notation.js');
       const song=prepareCleanSong(`native:song-${sourceBoundFixture.open.clean_package.content_sha256}`,sourceBoundFixture.open.clean_package,null);
       const nativePage=basicKeyNotationPage(sourceBoundFixture.response,sourceBoundFixture.request,song);
+      watch.nativeSong=song;watch.nativePage=nativePage;watch.nativeSourceBefore=JSON.stringify({song,nativePage});
       watch.assert(JSON.stringify(nativePage.score)===JSON.stringify(score)&&nativePage.musicxml.xml===exported.xml,'The observed page is the complete native-admitted fixture');
       identity=basicKeyEngravingIdentity(song,nativePage);
     }
@@ -1358,3 +1360,5 @@ test('original short fractional bar retains exact clocks and source-owned SVG gl
   assert.equal(JSON.stringify({score,exported}),before,'Canonical durations, note IDs and downloadable MusicXML remain unchanged');
   await bindingEvidence('exact-short-fractional-bar',{first,resized});
 });
+
+registerNativeTieGraphBrowserTests({test,options,getPage:()=>page,renderBinding,expectBinding,clearBinding,bindingEvidence});
