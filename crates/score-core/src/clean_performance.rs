@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 mod midi;
 mod runtime;
-pub use midi::convert_midi;
+pub use midi::{convert_midi, convert_midi_detailed, ConversionError};
 pub use runtime::{compile_performance, ExactMicroseconds, Runtime, RuntimeEvent};
 #[cfg(test)]
 mod tests;

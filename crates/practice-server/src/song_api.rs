@@ -18,7 +18,11 @@ pub struct ApiResponse {
 pub fn is_song_api_route(path: &str) -> bool {
     matches!(
         path,
-        "/api/assistance/create" | "/api/assistance/validate" | "/api/midi/events"
+        "/api/assistance/create"
+            | "/api/assistance/validate"
+            | "/api/midi/events"
+            | "/api/clean-song/draft"
+            | "/api/clean-song/draft/pack"
     )
 }
 
@@ -66,7 +70,7 @@ impl Write for BoundedBytes {
     }
 }
 
-fn bounded_response<T: Serialize>(status: u16, value: &T) -> ApiResponse {
+pub(super) fn bounded_response<T: Serialize>(status: u16, value: &T) -> ApiResponse {
     bounded_response_with_limit(status, value, MAX_SONG_RESPONSE_BYTES)
 }
 fn bounded_response_with_limit<T: Serialize>(status: u16, value: &T, limit: usize) -> ApiResponse {
@@ -154,6 +158,8 @@ pub fn api_response(path: &str, bytes: Vec<u8>) -> ApiResponse {
         return request_limit_response();
     }
     match path {
+        "/api/clean-song/draft" => crate::clean_draft_api::response(&bytes, false),
+        "/api/clean-song/draft/pack" => crate::clean_draft_api::response(&bytes, true),
         "/api/assistance/create" => match decode::<CreateRequest>(&bytes) {
             Ok(request) => assistance_response(assistance::create_assistance_plan(
                 &request.score,

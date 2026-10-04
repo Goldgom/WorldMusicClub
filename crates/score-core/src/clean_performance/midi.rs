@@ -1,5 +1,26 @@
 use super::*;
 use crate::midi_events::{ChannelMessage, DiagnosticCode, EventKind};
+
+/// An unsupported event has its exact source coordinate; global semantic holds
+/// deliberately have no guessed event or track attribution.
+#[derive(Clone, Debug)]
+pub struct ConversionError {
+    pub message: String,
+    pub origin: Option<Coordinate>,
+}
+impl From<String> for ConversionError {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            origin: None,
+        }
+    }
+}
+impl From<&str> for ConversionError {
+    fn from(message: &str) -> Self {
+        message.to_owned().into()
+    }
+}
 fn text_command(kind: u8, data: &[u8]) -> Result<Command, String> {
     let role = match kind {
         1 => TextRole::Text,
@@ -23,6 +44,13 @@ fn text_command(kind: u8, data: &[u8]) -> Result<Command, String> {
 /// All source tracks or a hold. Does not invoke the canonical note importer,
 /// pair notes, retain source bytes, or choose a renderer/sound set.
 pub fn convert_midi(bytes: &[u8], id: &str, title: &str) -> Result<CompletePerformance, String> {
+    convert_midi_detailed(bytes, id, title).map_err(|error| error.message)
+}
+pub fn convert_midi_detailed(
+    bytes: &[u8],
+    id: &str,
+    title: &str,
+) -> Result<CompletePerformance, ConversionError> {
     let timeline = crate::midi_events::parse_midi_events(bytes, None).map_err(|e| e.to_string())?;
     if !timeline.relative_clock_available() {
         return Err("A unique relative clock is unavailable".into());
@@ -37,7 +65,8 @@ pub fn convert_midi(bytes: &[u8], id: &str, title: &str) -> Result<CompletePerfo
             return Err(format!(
                 "Performance conversion requires resolved semantics: {}",
                 diagnostic.message()
-            ));
+            )
+            .into());
         }
     }
     let hash = timeline.source_sha256().hex();
@@ -60,7 +89,7 @@ pub fn convert_midi(bytes: &[u8], id: &str, title: &str) -> Result<CompletePerfo
         let track = &mut tracks[origin.track as usize];
         track.source_event_count += 1;
         track.end = event.beat();
-        let command = match event.kind() {
+        let command = (|| -> Result<Command, String> { Ok(match event.kind() {
             EventKind::Channel { channel, message } => {
                 routes.insert((origin.track, *channel));
                 match message {
@@ -139,8 +168,8 @@ pub fn convert_midi(bytes: &[u8], id: &str, title: &str) -> Result<CompletePerfo
             EventKind::SysEx { .. } | EventKind::Escape { .. } => {
                 return Err("Device/system messages cannot be hidden in a clean performance".into())
             }
-        };
-        command.validate()?;
+        }) })().and_then(|command| { command.validate()?; Ok(command) })
+            .map_err(|message| ConversionError { message, origin: Some(origin) })?;
         if let Command::Text {
             role: TextRole::TrackName,
             text,

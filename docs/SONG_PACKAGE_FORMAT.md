@@ -594,6 +594,16 @@ JavaScript 安全整数范围。原始 metadata/score 字符串与原生导出�
 
 ## 8. 实际转换和导入入口
 
+### 内置完整 MIDI 草稿 API
+
+当前源码新增无状态 `POST /api/clean-song/draft`，从完整原始 MIDI 与用户标题生成
+绑定精确字节的 metadata/score，以及包含全部源轨、通道和事件计数的检查清单。
+结果明确区分严格记谱候选、独立事件参考候选和整曲拒绝；转换成功不代表播放器或
+评分能力通过。`POST /api/clean-song/draft/pack` 按已检查草稿的指纹重新校验并生成
+同一格式 ZIP，复用原生 clean 导出的写入器，不自动保存或切换当前曲目。
+具体请求、上限、失败和原生保存边界见[内置转换 API](CLEAN_CONVERSION_API.md)。
+这些源码接口不表示已经完成 Windows/浏览器发行验收。
+
 ### 严格 MIDI 离线 CLI
 
 生产转换 API 为 `score_core::clean_song::{convert_midi, validate, encode_json,

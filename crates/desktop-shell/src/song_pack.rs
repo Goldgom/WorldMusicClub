@@ -1591,62 +1591,17 @@ fn clean_candidates(
 
 fn export_clean_pack(library: &NativeLibrary, keys: &[String]) -> Result<http::Response<Vec<u8>>> {
     let mut seen = HashSet::new();
-    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
-    let mut songs = Vec::new();
-    let mut expanded = 0u64;
-    let mut entries = 1usize;
+    let mut archive = score_core::clean_pack::Writer::new();
     for key in keys {
         if !seen.insert(key) {
             return Err(invalid("Duplicate clean song selection"));
         }
         let files = clean_package::export_files(library, key)?;
-        entries += files.len();
-        if entries > MAX_ZIP_ENTRIES {
-            return Err(invalid(
-                "Clean export exceeds 4096 files; select fewer songs",
-            ));
-        }
-        let folder = format!("songs/{key}");
-        songs.push(json!({"folder":folder}));
-        for (path, bytes) in files {
-            expanded += bytes.len() as u64;
-            if expanded > MAX_EXPANDED_BYTES {
-                return Err(invalid("Clean export exceeds 2 GiB expanded limit"));
-            }
-            archive
-                .start_file(format!("{folder}/{path}"), options)
-                .map_err(|e| invalid(e.to_string()))?;
-            archive
-                .write_all(&bytes)
-                .map_err(native_library::io_error)?;
-            if archive
-                .get_ref()
-                .is_some_and(|writer| writer.get_ref().len() > MAX_PACK_BYTES)
-            {
-                return Err(invalid("Clean export exceeds 128 MiB compressed limit"));
-            }
-        }
+        archive
+            .add_song(&format!("songs/{key}"), files)
+            .map_err(invalid)?;
     }
-    archive
-        .start_file("manifest.json", options)
-        .map_err(|e| invalid(e.to_string()))?;
-    archive
-        .write_all(
-            &serde_json::to_vec_pretty(
-                &json!({"format":"worldmusichub-song-pack","version":2,"songs":songs}),
-            )
-            .map_err(|e| invalid(e.to_string()))?,
-        )
-        .map_err(native_library::io_error)?;
-    let bytes = archive
-        .finish()
-        .map_err(|e| invalid(e.to_string()))?
-        .into_inner();
-    if bytes.len() > MAX_PACK_BYTES {
-        return Err(invalid("Clean export exceeds 128 MiB compressed limit"));
-    }
+    let bytes = archive.finish().map_err(invalid)?;
     zip_guard::preflight(&bytes).map_err(invalid)?;
     Ok(crate::response(200, "application/zip", bytes))
 }
