@@ -511,6 +511,27 @@
           "source_index": 1
         }
       ]
-    }
+    },
+    "coverage": {
+      "notation": {
+        "reason": "not_derived_from_independent_events",
+        "represented_attacks": 0,
+        "status": "unavailable"
+      },
+      "performance": {
+        "key_attacks": 3,
+        "key_releases": 3,
+        "represented_events": 24,
+        "source_events": 24,
+        "source_tracks": 2,
+        "status": "complete"
+      },
+      "targets": {
+        "reason": "not_derived_from_independent_events",
+        "represented_attacks": 0,
+        "status": "unavailable"
+      }
+    },
+    "notation_available": false
   }
 }

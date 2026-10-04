@@ -3,7 +3,7 @@
   "generator": "real native_import_driver stdio; no browser, server, GUI or audio",
   "request_source": "tests/fixtures/song-authoring/vsq-request.json",
   "request_sha256": "f8f1e84e76649aee16ce7ca10929226d860db52b0f096a4b73529e435de4e00d",
-  "driver_sha256": "c3624a06572ac00c696424dfb60afa4ca85889f620d99aeba7f76fd108488bc7",
+  "driver_sha256": "689807526460419b433aaf7232bacd63ee3098d73980fc41859092d533a1da9f",
   "request": {
     "source_name": "authoring-original.vsq",
     "title": "authoring-original"
@@ -18,8 +18,8 @@
     },
     {
       "path": "acceptance-vsq-opened.json",
-      "bytes": 25970,
-      "sha256": "779f1c9986c9d496bae004d3b3b9329f5ece5557b9a3d4934e72218e24dcf6f7"
+      "bytes": 26572,
+      "sha256": "236fc3822a306e6f0fa186d0d97d9f288b8a6000c1ef545e9cc7a092bde43cf9"
     },
     {
       "path": "acceptance-vsq-runtime.json",
@@ -27,7 +27,17 @@
       "sha256": "9d0f3e2156db0fee85f495c4c8c047e4c85e8c6493f5ece37e98f2156e66b364"
     }
   ],
-  "basis_sha": "7758c78a04d3aedf4f436e8f480ea7ab80ec7e02",
-  "basis_tree": "4d5acaf69dcead7f78015af08cb90dfde79dfb92",
-  "capture_scope": "Real Rust canonical producer at the source basis; acceptance harness was uncommitted. This is a fixture oracle, not clean-source GUI or release acceptance."
+  "basis_sha": "26f7776ed158458f444dd1b25fb59194a4820d58",
+  "basis_tree": "eaefc4d23d688aefc1f2eff3d95b6927157c44bb",
+  "capture_scope": "Real Rust native draft/pack/import/load/runtime at the source basis. Only validated coverage and notation availability were added to the opened descriptor; source, package strings, draft, runtime and ZIP bytes are unchanged. This fixture refresh is not browser, Windows or release acceptance.",
+  "previous_capture": {
+    "basis_sha": "7758c78a04d3aedf4f436e8f480ea7ab80ec7e02",
+    "basis_tree": "4d5acaf69dcead7f78015af08cb90dfde79dfb92",
+    "driver_sha256": "c3624a06572ac00c696424dfb60afa4ca85889f620d99aeba7f76fd108488bc7",
+    "opened": {
+      "path": "acceptance-vsq-opened.json",
+      "bytes": 25970,
+      "sha256": "779f1c9986c9d496bae004d3b3b9329f5ece5557b9a3d4934e72218e24dcf6f7"
+    }
+  }
 }
