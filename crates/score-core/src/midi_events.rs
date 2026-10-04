@@ -9,6 +9,9 @@ use serde::{Serialize, Serializer};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::ops::Range;
+mod compatible;
+pub use compatible::parse_midi_events_compatible;
+pub(crate) use compatible::parse_normalized_midi_events;
 
 pub const MAX_SOURCE_BYTES: usize = 5 * 1024 * 1024;
 pub const MAX_TRACKS: usize = 128;
@@ -190,6 +193,8 @@ impl RawEvent {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DiagnosticCode {
+    LegacyRunningStatusAcrossMeta,
+    InvalidProgramData,
     RawEventsOnly,
     DefaultTempo,
     CrossTrackChannelOrder,
@@ -209,6 +214,8 @@ pub enum DiagnosticCode {
 impl DiagnosticCode {
     pub fn message(self) -> &'static str {
         match self {
+            Self::LegacyRunningStatusAcrossMeta => "A data-only channel event reuses the preceding channel status across metadata. This explicitly recorded legacy dialect changes no event, key, value or tick; strict SMF import remains unchanged.",
+            Self::InvalidProgramData => "A program-change data slot contains a high-bit byte. Fixed-arity framing and the complete remaining track were decoded without resynchronization; the exact invalid byte is retained and is not a valid program or inferred sound.",
             Self::RawEventsOnly => "All events and original bytes are retained. This is not playable notation, a synthesizer schedule, or a gradeable target set; no notes are paired and no instrument sounds are inferred.",
             Self::DefaultTempo => "The relative PPQ clock uses the SMF default 500000 microseconds per quarter until the first tempo event. No tempo event was inserted into the source records.",
             Self::CrossTrackChannelOrder => "Same-channel events at the same tick occur in different tracks. Tick/track/event sorting is deterministic source order, not a claim about original hardware dispatch order; routing metadata remains uninterpreted.",
