@@ -1,4 +1,4 @@
-import {BASIC_KEY_AUDIO_LIMITS as LIMITS, BasicKeyAudioError, basicKeySampleRate, decodeBasicKeyAudioPlan} from './basic-key-audio-plan.js';
+import {BASIC_KEY_AUDIO_LIMITS as LIMITS, BasicKeyAudioError, basicKeySampleRate, openBasicKeyAudioTransfer} from './basic-key-audio-plan.js';
 
 const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
 const reject = (code, message) => { throw new BasicKeyAudioError(code, message); };
@@ -13,22 +13,24 @@ export class BasicKeyAudioCore {
     this.sampleRate = basicKeySampleRate(sampleRate); this.emit = emit; this.trace = trace;
     this.generation = 0; this.state = 'idle'; this.plan = null; this.planGeneration = 0;
     this.activeCount = 0; this.startedCount = 0; this.endedCount = 0; this.skippedCount = 0; this.cursor = 0;
-    this.voiceSlots = Array.from({length: LIMITS.maxVoices}, () => ({note: -1, start: 0, end: 0, phase: 0, step: 0, peak: 0, drum: false, noiseIndex: 0, x1: 0, x2: 0, y1: 0, y2: 0}));
+    this.voiceSlots = Array.from({length: LIMITS.maxVoices}, () => ({note: -1, start: 0, end: 0, phase: 0, step: 0, peak: 0, drum: false, noiseIndex: 0, noiseState: 0x574d4801, x1: 0, x2: 0, y1: 0, y2: 0}));
     this.activeSlots = new Uint8Array(LIMITS.maxVoices); this.freeSlots = new Uint8Array(LIMITS.maxVoices);
+    this.endHeap = new Float64Array(LIMITS.maxVoices); this.heapLength = 0; this.eligibleCount = 0; this.validated = false;
     this.resetSlots();
-    this.noise = new Float32Array(Math.floor(sampleRate / 2));
-    let random = 0x574d4801;
-    for (let index = 0; index < this.noise.length; index++) { random ^= random << 13; random ^= random >>> 17; random ^= random << 5; this.noise[index] = (random >>> 0) / 2147483648 - 1; }
+    this.noiseLength = Math.floor(sampleRate / 2);
     // Web Audio bandpass, constant peak gain, at the disclosed 1500 Hz / Q=.7.
     const omega = TAU * 1500 / sampleRate, alpha = Math.sin(omega) / (2 * .7), divisor = 1 + alpha;
     this.b0 = alpha / divisor; this.a1 = -2 * Math.cos(omega) / divisor; this.a2 = (1 - alpha) / divisor;
   }
   resetSlots() { this.activeCount = 0; this.freeCount = LIMITS.maxVoices; for (let i = 0; i < LIMITS.maxVoices; i++) this.freeSlots[i] = LIMITS.maxVoices - 1 - i; }
   snapshot(frame) {
-    return {generation: this.generation, planGeneration: this.planGeneration, state: this.state, sourceSha256: this.plan?.sourceSha256 ?? null, sampleRate: this.sampleRate, frame, anchorFrame: this.anchorFrame ?? null, positionFrame: this.positionFrame ?? null, durationFrames: this.plan?.durationFrames ?? 0, sourceNotes: this.plan?.sourceNotes ?? 0, notes: this.plan?.notes.length ?? 0, eligibleNotes: this.order?.length ?? 0, started: this.startedCount, ended: this.endedCount, skipped: this.skippedCount, active: this.activeCount};
+    return {generation: this.generation, planGeneration: this.planGeneration, state: this.state, sourceSha256: this.plan?.sourceSha256 ?? null, sampleRate: this.sampleRate, frame, anchorFrame: this.anchorFrame ?? null, positionFrame: this.positionFrame ?? null, durationFrames: this.plan?.durationFrames ?? 0, sourceNotes: this.plan?.sourceNotes ?? 0, notes: this.plan?.count ?? 0, eligibleNotes: this.eligibleCount, started: this.startedCount, ended: this.endedCount, skipped: this.skippedCount, active: this.activeCount};
   }
-  completion(frame) {
-    return {...this.snapshot(frame), ledger: this.plan && this.actualStarts ? {actualStarts: this.actualStarts.slice(), actualEnds: this.actualEnds.slice()} : null};
+  emitCompletion(type, frame, extra = {}) {
+    const ledger = this.validated && this.actualStarts ? {actualStarts: this.actualStarts, actualEnds: this.actualEnds} : null;
+    const transfer = ledger ? [this.actualStarts.buffer, this.actualEnds.buffer] : [];
+    this.actualStarts = null; this.actualEnds = null;
+    this.emit({type, ...extra, ...this.snapshot(frame), ledger}, transfer);
   }
   finishVoice(activeIndex, frame, reason) {
     const slot = this.activeSlots[activeIndex], voice = this.voiceSlots[slot];
@@ -50,23 +52,17 @@ export class BasicKeyAudioCore {
       if (message.type === 'prepare' || message.type === 'cancel') {
         if (message.generation <= this.generation) { this.emit({type: 'stale', generation: message.generation, requestId}); return; }
         this.silence(frame, 'cancel'); this.state = 'canceled';
-        if (message.type === 'prepare' && this.plan) this.emit({type: 'canceled', reason: 'prepare_replaced', ...this.completion(frame)});
+        if (message.type === 'prepare' && this.plan) this.emitCompletion('canceled', frame, {reason: 'prepare_replaced'});
         this.generation = message.generation;
-        if (message.type === 'cancel') { this.emit({type: 'canceled', requestId, reason: message.reason, ...this.completion(frame)}); return; }
+        if (message.type === 'cancel') { this.emitCompletion('canceled', frame, {requestId, reason: message.reason}); return; }
         this.plan = null; this.planGeneration = this.generation; this.order = null;
-        this.startedCount = 0; this.endedCount = 0; this.skippedCount = 0; this.cursor = 0;
-        const plan = decodeBasicKeyAudioPlan(message.wire);
-        if (plan.sampleRate !== this.sampleRate) reject('unsupported_audio_sample_rate', 'The prepared plan does not match this audio device sample rate.');
+        this.startedCount = 0; this.endedCount = 0; this.skippedCount = 0; this.cursor = 0; this.eligibleCount = 0; this.validated = false;
+        const plan = openBasicKeyAudioTransfer(message.wire, this.sampleRate);
         if (!integer(message.positionFrame, -600 * this.sampleRate, plan.durationFrames)) reject('invalid_audio_command', 'The prepared source position exceeds the rendition or ten-minute count-in bound.');
         this.plan = plan; this.positionFrame = message.positionFrame; this.anchorFrame = null;
-        const order = [];
-        for (let index = 0; index < plan.notes.length; index++) if (plan.notes[index][3] > this.positionFrame) order.push(index); else this.skippedCount++;
-        this.order = Uint32Array.from(order);
-        this.actualStarts = new Float64Array(plan.notes.length); this.actualStarts.fill(-1);
-        this.actualEnds = new Float64Array(plan.notes.length); this.actualEnds.fill(-1);
-        this.steps = new Float64Array(plan.notes.length);
-        for (let index = 0; index < plan.notes.length; index++) this.steps[index] = TAU * 440 * 2 ** ((plan.notes[index][4] - 69) / 12) / this.sampleRate;
-        this.state = 'ready'; this.emit({type: 'ready', requestId, ...this.snapshot(frame)}); return;
+        this.order = plan.playOrder; this.actualStarts = plan.actualStarts; this.actualEnds = plan.actualEnds; this.steps = plan.steps;
+        this.preparePhase = 0; this.prepareCursor = 0; this.prepareRequestId = requestId; this.heapLength = 0;
+        this.state = 'preparing'; return;
       }
       if (message.generation !== this.generation) reject('invalid_audio_command', 'The audio generation was not prepared.');
       if (message.type === 'start') {
@@ -78,23 +74,61 @@ export class BasicKeyAudioCore {
       }
       if (message.type === 'snapshot') { this.emit({type: 'snapshot', requestId, ...this.snapshot(frame)}); return; }
       if (message.type === 'audit') {
-        if (!this.plan || !integer(message.offset, 0, this.plan.notes.length) || !integer(message.count, 1, LIMITS.maxAuditRows)) reject('invalid_audio_command', 'The audit request exceeds its bounded page size.');
-        const end = Math.min(this.plan.notes.length, message.offset + message.count), rows = [];
+        if (!this.validated || !this.plan || !integer(message.offset, 0, this.plan.count) || !integer(message.count, 1, LIMITS.maxAuditRows)) reject('invalid_audio_command', 'The audit request exceeds its bounded page size.');
+        if (!this.actualStarts) { this.emit({type: 'audit_transferred', requestId, ...this.snapshot(frame), offset: message.offset, count: message.count}); return; }
+        const end = Math.min(this.plan.count, message.offset + message.count), rows = [];
         for (let index = message.offset; index < end; index++) {
-          const note = this.plan.notes[index];
-          rows.push({index, noteId: note[0], eventId: note[1], startFrame: note[2], endFrame: note[3], actualStartFrame: this.actualStarts[index], actualEndFrame: this.actualEnds[index]});
+          const p = this.plan;
+          rows.push({index, noteId: `midi-t${p.tracks[index] + 1}-e${p.events[index] + 1}`, eventId: `midi:${p.sourceSha256}:t${p.tracks[index]}:e${p.events[index]}`, startFrame: p.starts[index], endFrame: p.ends[index], actualStartFrame: this.actualStarts[index], actualEndFrame: this.actualEnds[index]});
         }
         this.emit({type: 'audit', requestId, ...this.snapshot(frame), offset: message.offset, nextOffset: end, rows}); return;
       }
       reject('invalid_audio_command', 'Unknown basic audio receiver command.');
     } catch (error) { this.fail(error, frame, requestId); }
   }
+  prepareChunk(frame, blockLength) {
+    const p = this.plan;
+    // At most 1024 rows per quantum; scale with rate/block size so the full
+    // two-pass maximum plan completes in about one second at normal rates
+    // (about 2.05 s at 8 kHz/128-frame quanta because this cap binds). Heap
+    // removals per chunk are bounded by its pushes plus the initial 128 ends.
+    const bound = Math.min(1024, Math.max(1, Math.ceil(2 * LIMITS.maxNotes * blockLength / this.sampleRate)));
+    let worked = 0;
+    while (worked < bound && this.state === 'preparing') {
+      if (this.prepareCursor === p.count) {
+        if (this.preparePhase === 0) { this.preparePhase = 1; this.prepareCursor = 0; continue; }
+        this.validated = true; this.state = 'ready'; this.emit({type: 'ready', requestId: this.prepareRequestId, ...this.snapshot(frame + blockLength)}); break;
+      }
+      const index = this.prepareCursor++; worked++;
+      if (this.preparePhase === 0) { p.seen[index] = 0; this.actualStarts[index] = -1; this.actualEnds[index] = -1; continue; }
+      const start = p.starts[index], end = p.ends[index], key = p.keys[index], velocity = p.velocities[index], role = p.roles[index];
+      if (!integer(start, 0, p.durationFrames) || !integer(end, start + 1, p.durationFrames) || index > 0 && start < p.starts[index - 1] || !integer(p.tracks[index], 0, Number.MAX_SAFE_INTEGER - 1) || !integer(p.events[index], 0, Number.MAX_SAFE_INTEGER - 1) || key > 127 || velocity < 1 || velocity > 127 || role > 1) reject('invalid_audio_plan', 'A transferred audio gate is invalid or out of order.');
+      const frequency = 440 * 2 ** ((key - 69) / 12);
+      if (role === 0 && frequency > this.sampleRate * .45) reject('unsupported_audio_sample_rate', 'The audio device cannot represent every retained key without clamping.');
+      this.steps[index] = TAU * frequency / this.sampleRate;
+      const ordered = p.idOrder[index];
+      if (ordered >= p.count || p.seen[ordered]) reject('invalid_audio_plan', 'The source-coordinate permutation is not complete and unique.');
+      p.seen[ordered] = 1;
+      if (index > 0) { const before = p.idOrder[index - 1]; if (!(p.tracks[before] < p.tracks[ordered] || p.tracks[before] === p.tracks[ordered] && p.events[before] < p.events[ordered])) reject('invalid_audio_plan', 'Stable source coordinates are duplicated or out of order.'); }
+      while (this.heapLength && this.endHeap[0] <= start) {
+        const tail = this.endHeap[--this.heapLength]; let at = 0;
+        while (at * 2 + 1 < this.heapLength) { let child = at * 2 + 1; if (child + 1 < this.heapLength && this.endHeap[child + 1] < this.endHeap[child]) child++; if (this.endHeap[child] >= tail) break; this.endHeap[at] = this.endHeap[child]; at = child; }
+        this.endHeap[at] = tail;
+      }
+      if (this.heapLength >= LIMITS.maxVoices) reject('voice_budget_exceeded', 'The sample-frame gates exceed 128 simultaneous voices; no voice is stolen.');
+      let at = this.heapLength++;
+      while (at > 0) { const parent = (at - 1) >> 1; if (this.endHeap[parent] <= end) break; this.endHeap[at] = this.endHeap[parent]; at = parent; }
+      this.endHeap[at] = end;
+      if (end > this.positionFrame) this.order[this.eligibleCount++] = index; else this.skippedCount++;
+    }
+    this.lastPrepareWork = worked;
+  }
   attack(index, frame) {
     if (!this.freeCount) reject('voice_budget_exceeded', 'The audio renderer exhausted its 128 voice slots; no voice was stolen.');
-    const slot = this.freeSlots[--this.freeCount], voice = this.voiceSlots[slot], note = this.plan.notes[index];
-    voice.note = index; voice.start = frame; voice.end = this.anchorFrame + note[3] - this.positionFrame;
-    voice.step = this.steps[index]; voice.phase = voice.step / 2; voice.peak = .08 * note[5] / 127; voice.drum = note[6] === 1;
-    voice.noiseIndex = 0; voice.x1 = 0; voice.x2 = 0; voice.y1 = 0; voice.y2 = 0;
+    const slot = this.freeSlots[--this.freeCount], voice = this.voiceSlots[slot], plan = this.plan;
+    voice.note = index; voice.start = frame; voice.end = this.anchorFrame + plan.ends[index] - this.positionFrame;
+    voice.step = this.steps[index]; voice.phase = voice.step / 2; voice.peak = .08 * plan.velocities[index] / 127; voice.drum = plan.roles[index] === 1;
+    voice.noiseIndex = 0; voice.noiseState = 0x574d4801; voice.x1 = 0; voice.x2 = 0; voice.y1 = 0; voice.y2 = 0;
     this.activeSlots[this.activeCount++] = slot; this.actualStarts[index] = frame; this.startedCount++;
     if (this.trace) this.trace({type: 'start', index, frame, generation: this.planGeneration});
   }
@@ -111,7 +145,9 @@ export class BasicKeyAudioCore {
     else level = sustain * (length - age) / release;
     let value;
     if (voice.drum) {
-      const x = this.noise[voice.noiseIndex++]; if (voice.noiseIndex === this.noise.length) voice.noiseIndex = 0;
+      let random = voice.noiseState; random ^= random << 13; random ^= random >>> 17; random ^= random << 5;
+      const x = Math.fround((random >>> 0) / 2147483648 - 1); voice.noiseState = random;
+      if (++voice.noiseIndex === this.noiseLength) { voice.noiseIndex = 0; voice.noiseState = 0x574d4801; }
       value = this.b0 * (x - voice.x2) - this.a1 * voice.y1 - this.a2 * voice.y2;
       voice.x2 = voice.x1; voice.x1 = x; voice.y2 = voice.y1; voice.y1 = value;
     } else { value = Math.sin(voice.phase); voice.phase += voice.step; if (voice.phase >= TAU) voice.phase -= TAU; }
@@ -119,10 +155,11 @@ export class BasicKeyAudioCore {
   }
   process(channels, firstFrame) {
     for (const channel of channels) channel.fill(0);
-    if (this.state !== 'running') return true;
+    if (this.state !== 'running' && this.state !== 'preparing') return true;
     const length = channels[0]?.length ?? 0;
     try {
       if (!integer(firstFrame, 0, LIMITS.maxFrame) || !length || channels.some(channel => channel.length !== length)) reject('audio_processor_error', 'The audio render block is invalid.');
+      if (this.state === 'preparing') { this.prepareChunk(firstFrame, length); return true; }
       if (this.expectedFrame !== null && firstFrame !== this.expectedFrame) reject('audio_render_discontinuity', 'The audio render sample clock was discontinuous.');
       this.expectedFrame = firstFrame + length;
       const sourceEnd = this.anchorFrame + this.plan.durationFrames - this.positionFrame;
@@ -130,21 +167,21 @@ export class BasicKeyAudioCore {
         const frame = firstFrame + offset;
         for (let index = this.activeCount - 1; index >= 0; index--) if (this.voiceSlots[this.activeSlots[index]].end <= frame) this.finishVoice(index, frame, 'gate');
         if (frame < this.anchorFrame) continue;
-        while (this.cursor < this.order.length) {
-          const index = this.order[this.cursor], onset = this.anchorFrame + Math.max(this.plan.notes[index][2], this.positionFrame) - this.positionFrame;
+        while (this.cursor < this.eligibleCount) {
+          const index = this.order[this.cursor], onset = this.anchorFrame + Math.max(this.plan.starts[index], this.positionFrame) - this.positionFrame;
           if (onset > frame) break;
           if (onset < frame) reject('audio_render_discontinuity', 'The audio thread missed a prepared attack; playback stops without catch-up.');
           this.attack(index, frame); this.cursor++;
         }
         if (frame >= sourceEnd) {
-          if (this.activeCount || this.cursor !== this.order.length) reject('audio_processor_error', 'Natural end disagrees with the complete gate plan.');
-          this.state = 'ended'; this.emit({type: 'ended', ...this.completion(frame)}); break;
+          if (this.activeCount || this.cursor !== this.eligibleCount) reject('audio_processor_error', 'Natural end disagrees with the complete gate plan.');
+          this.state = 'ended'; this.emitCompletion('ended', frame); break;
         }
         let sum = 0;
         for (let index = 0; index < this.activeCount; index++) sum += this.sample(this.voiceSlots[this.activeSlots[index]], frame);
         for (const channel of channels) channel[offset] = sum;
       }
-    } catch (error) { for (const channel of channels) channel.fill(0); this.fail(error, firstFrame); }
+    } catch (error) { for (const channel of channels) channel.fill(0); this.fail(error, firstFrame, this.state === 'preparing' ? this.prepareRequestId : undefined); }
     return true; // Keep an idle node available for explicit fresh generations.
   }
 }

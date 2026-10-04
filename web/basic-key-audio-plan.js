@@ -94,3 +94,38 @@ export function decodeBasicKeyAudioPlan(wire) {
   try { input = JSON.parse(wire); } catch { audioFail('invalid_audio_plan', 'The audio plan wire data is not JSON.'); }
   return validateBasicKeyAudioPlan(input);
 }
+
+const TRANSFER_FIELDS = Object.freeze({starts: Float64Array, ends: Float64Array, tracks: Float64Array, events: Float64Array, keys: Uint8Array, velocities: Uint8Array, roles: Uint8Array, idOrder: Uint32Array, playOrder: Uint32Array, seen: Uint8Array, steps: Float64Array, actualStarts: Float64Array, actualEnds: Float64Array});
+
+/** Allocate and sort only on the host. Transfer ownership of every buffer so
+ * the render thread attaches fixed-size views without copying or allocating
+ * a note-sized array. Scratch buffers are reinitialized incrementally there.
+ */
+export function createBasicKeyAudioTransfer(input) {
+  const plan = validateBasicKeyAudioPlan(input), count = plan.notes.length, arrays = {}, buffers = {};
+  for (const [name, Type] of Object.entries(TRANSFER_FIELDS)) { arrays[name] = new Type(count); buffers[name] = arrays[name].buffer; }
+  for (let index = 0; index < count; index++) {
+    const note = plan.notes[index], coordinates = /:t([0-9]+):e([0-9]+)$/.exec(note[1]);
+    arrays.starts[index] = note[2]; arrays.ends[index] = note[3]; arrays.tracks[index] = Number(coordinates[1]); arrays.events[index] = Number(coordinates[2]); arrays.keys[index] = note[4]; arrays.velocities[index] = note[5]; arrays.roles[index] = note[6];
+  }
+  const order = Array.from({length: count}, (_, index) => index).sort((a, b) => arrays.tracks[a] - arrays.tracks[b] || arrays.events[a] - arrays.events[b]);
+  arrays.idOrder.set(order);
+  const wire = {protocol: plan.protocol, policyId: plan.policyId, sourceSha256: plan.sourceSha256, sampleRate: plan.sampleRate, durationFrames: plan.durationFrames, sourceNotes: plan.sourceNotes, count, buffers};
+  return {wire, transfer: Object.values(buffers)};
+}
+
+/** Constant-size envelope check only. No JSON parsing, sorting, buffer
+ * allocation, or iteration over notes on the audio-thread message handler.
+ */
+export function openBasicKeyAudioTransfer(wire, sampleRate) {
+  if (!wire || wire.protocol !== BASIC_KEY_AUDIO_PROTOCOL || wire.policyId !== BASIC_KEY_RENDITION || !/^[a-f0-9]{64}$/.test(wire.sourceSha256) || wire.sampleRate !== sampleRate || !integer(wire.count, 0, BASIC_KEY_AUDIO_LIMITS.maxNotes) || !integer(wire.sourceNotes, wire.count, BASIC_KEY_AUDIO_LIMITS.maxNotes) || !integer(wire.durationFrames, 0, BASIC_KEY_AUDIO_LIMITS.maxFrame) || !wire.buffers) audioFail('invalid_audio_plan', 'The transferable audio plan envelope is invalid.');
+  const arrays = {}; let bytes = 0;
+  const unique = new Set();
+  for (const [name, Type] of Object.entries(TRANSFER_FIELDS)) {
+    const buffer = wire.buffers[name];
+    if (!(buffer instanceof ArrayBuffer) || buffer.byteLength !== wire.count * Type.BYTES_PER_ELEMENT || unique.has(buffer)) audioFail('invalid_audio_plan', 'The transferable audio plan has an invalid or aliased buffer.');
+    unique.add(buffer); bytes += buffer.byteLength; arrays[name] = new Type(buffer);
+  }
+  if (bytes > BASIC_KEY_AUDIO_LIMITS.maxBytes) audioFail('audio_plan_limit', 'The transferable audio plan exceeds its byte bound.');
+  return {protocol: wire.protocol, policyId: wire.policyId, sourceSha256: wire.sourceSha256, sampleRate, durationFrames: wire.durationFrames, sourceNotes: wire.sourceNotes, count: wire.count, ...arrays};
+}

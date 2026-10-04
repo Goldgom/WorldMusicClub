@@ -8,7 +8,7 @@ policy. The integration chooses when this capability becomes available.
 ## Files and start handshake
 
 - `web/basic-key-audio-plan.js`: exact rational gate-to-sample conversion,
-  immutable plan construction/validation and bounded wire encoding
+  immutable plan construction/validation and bounded transferable buffers
 - `web/basic-key-audio-core.js`: the production renderer and message protocol
 - `web/basic-key-audio-processor.js`: the actual AudioWorklet wrapper; it passes
   the AudioWorkletGlobalScope sample rate and `currentFrame` to that core
@@ -25,9 +25,21 @@ await receiver.prepare(plan, {positionMs});
 const started = await receiver.start({anchorTime: context.currentTime + .05});
 ```
 
-Preparation installs and validates the complete bounded plan on the worklet,
-selects the remaining gates for a resume/seek, and returns `ready`. No audio is
-emitted by a ready plan. `start` is a small generation/anchor command. Its anchor
+The host builds and sorts a complete bounded plan, then transfers ownership of
+typed buffers to the worklet. The message handler attaches constant-size views;
+it does not parse JSON, sort notes, or allocate note-sized buffers. `process()`
+initializes and validates fixed chunks, with at most 1024 rows per render
+quantum. A fixed 128-entry end heap verifies overlap; a host-sorted coordinate
+permutation is checked incrementally for complete, unique source identities.
+The chunk size scales with sample rate and block size. With 128-frame blocks,
+the maximum 65,536-note plan takes about one second of rendered time at normal
+rates and about 2.05 seconds at 8 kHz, within the five-second lifecycle bound.
+
+Preparation selects the remaining gates for a resume/seek and returns `ready`
+only after all rows pass. The connected node runs behind one output gain held
+at zero throughout preparation; its process output is also zero. Cancellation
+discards partial validation and cannot produce a stale ready or attack.
+`start` is a small generation/anchor command. Its anchor
 is `ceil(anchorTime * sampleRate)`, must be in the future, and may be no more
 than the existing 100 ms policy lead away when received. No note is scheduled
 by main-thread timers after this command.
@@ -54,15 +66,19 @@ processor, or timeout error. Late success replies cannot resume playback.
 
 ## Bounds and sound
 
-The plan contains at most 65,536 notes and at most 16 MiB of ASCII JSON wire
-data. These are explicit admission limits, not a bound claimed for JavaScript
-heap overhead. The processor owns exactly 128 reusable voice slots. It
+The plan contains at most 65,536 notes. Host canonical JSON validation retains
+its 16 MiB bound; production transfer buffers independently fit within 16 MiB
+(68 bytes per note, including scratch and ledger storage). These are explicit
+admission limits, not a bound claimed for JavaScript heap overhead. The
+processor owns exactly 128 reusable voice slots. It
 preflights simultaneous sample-frame gates, releasing ends before attacks at
 the same frame. A 129th overlapping gate fails before playback. Repeated MIDI
 keys use independent slots; no voice stealing or silent dropping occurs.
 
-Compact rows contain `noteId, eventId, startFrame, endFrame, key, velocity,
-role`. The plan also retains the exact source SHA-256 and rendition policy ID.
+The public immutable plan rows contain `noteId, eventId, startFrame, endFrame,
+key, velocity, role`. Production transfers store source track/event coordinates
+and numeric columns in typed buffers; stable IDs are reconstructed exactly for
+bounded audit pages. The plan also retains the exact source SHA-256 and rendition policy ID.
 Original source events, rational gates and provenance stay in the caller's
 admitted song. The builder joins native gates by stable ID and applies
 mute/solo/practice selection only after the native FIFO interpretation.
@@ -76,7 +92,8 @@ budget and the prior 100 ms allocation budget remain unchanged evidence.
 
 Melodic output is one sine at the nominal key frequency, with the existing
 velocity gain and bounded attack/release envelope. Percussion is the existing
-deterministic xorshift noise sequence, looped at half a second and filtered by
+deterministic xorshift noise sequence, generated per voice with a half-second
+state reset and filtered by
 a 1500 Hz, Q=.7 bandpass with its dry-pulse envelope. The sample is evaluated at
 the midpoint of each gate sample so one-sample attacks are represented.
 This is the disclosed basic sound, not a bit-for-bit Web Audio oscillator or
@@ -100,9 +117,15 @@ with original note/event IDs, planned frame bounds, and actual start/end frames.
 Skipped already-ended resume gates have actual frames `-1`. These methods do
 not drive rendering.
 
-`ended` and `canceled` replies contain one bounded `ledger` with
+The first terminal `ended` or `canceled` reply for a validated generation
+transfers ownership of its existing bounded `ledger` buffers with
 `Float64Array actualStarts` and `actualEnds`, indexed by the immutable plan rows.
-The adapter retains one `lastCompletion`. Records carry `sourceSha256`,
+There is no terminal note-sized allocation or copy. The adapter retains one
+`lastCompletion` and serves bounded post-completion audit pages from that
+authentic transferred ledger. A later cancel after ended has `ledger:null`;
+the prior record is retained, not synthesized again. Cancellation before
+validation completes also has no ledger and cannot have played an attack.
+Records carry `sourceSha256`,
 `planGeneration`, `anchorFrame`, `positionFrame`, `sampleRate`, `started`,
 `ended`, `skipped`, and `active`. A canceled record's `generation` is the newer
 cancellation token; `planGeneration` identifies the playback being canceled.

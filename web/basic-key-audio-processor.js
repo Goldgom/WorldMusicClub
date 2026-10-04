@@ -5,7 +5,7 @@ import {BasicKeyAudioCore} from './basic-key-audio-core.js';
 export class BasicKeyAudioProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.core = new BasicKeyAudioCore(sampleRate, {emit: message => this.port.postMessage(message)});
+    this.core = new BasicKeyAudioCore(sampleRate, {emit: (message, transfer = []) => this.port.postMessage(message, transfer)});
     this.port.onmessage = event => this.core.handleMessage(event.data, currentFrame);
   }
   process(inputs, outputs) { return this.core.process(outputs[0] || [], currentFrame); }

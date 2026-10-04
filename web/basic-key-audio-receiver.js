@@ -1,4 +1,4 @@
-import {BASIC_KEY_AUDIO_PROTOCOL, BASIC_KEY_AUDIO_LIMITS as LIMITS, BasicKeyAudioError, encodeBasicKeyAudioPlan, validateBasicKeyAudioPlan} from './basic-key-audio-plan.js';
+import {BASIC_KEY_AUDIO_PROTOCOL, BASIC_KEY_AUDIO_LIMITS as LIMITS, BasicKeyAudioError, createBasicKeyAudioTransfer, validateBasicKeyAudioPlan} from './basic-key-audio-plan.js';
 
 export {BasicKeyAudioError, BASIC_KEY_AUDIO_LIMITS, buildBasicKeyAudioPlan} from './basic-key-audio-plan.js';
 const modules = new WeakMap();
@@ -25,8 +25,11 @@ export class BasicKeyAudioReceiver {
     if (!modules.has(context)) modules.set(context, new Map());
     const cache = modules.get(context);
     if (!cache.has(moduleUrl)) cache.set(moduleUrl, loadModule(context, moduleUrl, options).catch(reason => { cache.delete(moduleUrl); throw reason; }));
-    await cache.get(moduleUrl);
-    if (context.state !== 'running') throw error('clean_audio_unavailable', 'The audio device stopped during processor preparation.');
+    let interrupted = false;
+    const loadingStateListener = () => { if (context.state !== 'running') interrupted = true; };
+    context.addEventListener?.('statechange', loadingStateListener);
+    try { await cache.get(moduleUrl); } finally { context.removeEventListener?.('statechange', loadingStateListener); }
+    if (interrupted || context.state !== 'running') throw error('clean_audio_unavailable', 'The audio device stopped during processor preparation; explicitly retry after unlocking it.');
     let node;
     try { node = nodeFactory(context, BASIC_KEY_AUDIO_PROTOCOL, {numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1], channelCount: 1}); }
     catch (reason) { throw error('audio_worklet_unavailable', 'The basic-key audio processor could not be created.', {cause: String(reason)}); }
@@ -34,6 +37,7 @@ export class BasicKeyAudioReceiver {
   }
   constructor(context, output, node, {onError = () => {}, onEnded = () => {}, onStarted = () => {}, onStopped = () => {}, setTimer = (...args) => globalThis.setTimeout(...args), clearTimer = (...args) => globalThis.clearTimeout(...args)} = {}) {
     Object.assign(this, {context, output, node, onError, onEnded, onStarted, onStopped, setTimer, clearTimer});
+    this.outputGate = context.createGain(); this.outputGate.gain.value = 0; this.outputGate.connect(output);
     this.generation = 0; this.requestId = 0; this.pending = new Map(); this.state = 'idle'; this.connected = false; this.disposed = false; this.broken = false; this.plan = null; this.lastCompletion = null;
     this.node.port.onmessage = event => this.receive(event.data);
     this.node.port.onmessageerror = () => this.fail(error('audio_processor_error', 'The audio receiver received an unreadable processor message.'));
@@ -51,8 +55,8 @@ export class BasicKeyAudioReceiver {
   requireOpen() { if (this.disposed || this.disposing || this.broken) throw error('audio_receiver_closed', 'The audio receiver is closed or failed.'); }
   rejectPending(reason) { for (const pending of this.pending.values()) { this.clearTimer(pending.timer); pending.reject(reason); } this.pending.clear(); }
   takePending(requestId) { const pending = this.pending.get(requestId); if (pending) { this.clearTimer(pending.timer); this.pending.delete(requestId); } return pending; }
-  detach() { if (this.connected) { try { this.node.disconnect(); } finally { this.connected = false; } } }
-  request(type, payload = {}) {
+  detach() { this.outputGate.gain.cancelScheduledValues(this.context.currentTime); this.outputGate.gain.setValueAtTime(0, this.context.currentTime); if (this.connected) { try { this.node.disconnect(); } finally { this.connected = false; } } }
+  request(type, payload = {}, transfer = []) {
     if (this.pending.size >= 32 || this.requestId >= LIMITS.maxGeneration) return Promise.reject(error('audio_command_limit', 'The audio command bound was reached.'));
     const requestId = ++this.requestId, generation = this.generation;
     return new Promise((resolve, reject) => {
@@ -64,7 +68,7 @@ export class BasicKeyAudioReceiver {
         if (this.pending.get(requestId) !== pending) return;
         this.fail(error('audio_command_timeout', `The audio processor did not acknowledge ${type} before its deadline.`, {command: type, generation, timeoutMs}));
       }, timeoutMs);
-      try { this.node.port.postMessage({type, generation, requestId, ...payload}); }
+      try { this.node.port.postMessage({type, generation, requestId, ...payload}, transfer); }
       catch (reason) { this.fail(error('audio_processor_error', 'The audio command could not be delivered.', {command: type, cause: String(reason)})); }
     });
   }
@@ -74,17 +78,19 @@ export class BasicKeyAudioReceiver {
     if (this.prepareInFlight) throw error('audio_prepare_pending', 'The previous audio preparation has not been acknowledged yet.');
     const plan = validateBasicKeyAudioPlan(input), positionFrame = Math.round(positionMs * plan.sampleRate / 1000);
     if (plan.sampleRate !== this.context.sampleRate || !Number.isFinite(positionMs) || !Number.isSafeInteger(positionFrame) || positionFrame < -600 * plan.sampleRate || positionFrame > plan.durationFrames) throw error('invalid_audio_plan', 'The audio plan sample rate or source position does not match this device.');
-    const wire = encodeBasicKeyAudioPlan(plan);
+    const packed = createBasicKeyAudioTransfer(plan);
     this.detach(); this.rejectPending(error('audio_canceled', 'A new audio preparation canceled the previous generation.'));
-    this.nextGeneration(); this.plan = plan; this.positionFrame = positionFrame; this.state = 'preparing'; this.prepareInFlight = this.generation;
-    return this.request('prepare', {wire, positionFrame});
+    this.nextGeneration(); this.planGeneration = this.generation; this.plan = plan; this.positionFrame = positionFrame; this.state = 'preparing'; this.prepareInFlight = this.generation;
+    this.node.connect(this.outputGate); this.connected = true;
+    return this.request('prepare', {wire: packed.wire, positionFrame}, packed.transfer);
   }
   start({anchorTime = this.context.currentTime + .05} = {}) {
     this.requireOpen();
     if (this.state !== 'ready' || this.context.state !== 'running') return Promise.reject(error('clean_audio_unavailable', 'Only a ready plan and running audio device can start.'));
     const anchorFrame = Math.ceil(anchorTime * this.context.sampleRate), now = Math.floor(this.context.currentTime * this.context.sampleRate);
     if (!Number.isSafeInteger(anchorFrame) || anchorFrame <= now || anchorFrame - now > Math.ceil(this.context.sampleRate * .1)) return Promise.reject(error('clean_late_start', 'The audio start anchor must be in the future and within the declared 100 ms lead.'));
-    if (!this.connected) { this.node.connect(this.output); this.connected = true; }
+    if (!this.connected) { this.node.connect(this.outputGate); this.connected = true; }
+    this.outputGate.gain.setValueAtTime(1, anchorFrame / this.context.sampleRate);
     this.state = 'starting';
     return this.request('start', {anchorFrame});
   }
@@ -104,7 +110,14 @@ export class BasicKeyAudioReceiver {
   reset() { this.cancel('reset'); }
   seek(positionMs) { if (!Number.isFinite(positionMs)) throw error('invalid_audio_command', 'A finite seek position is required.'); this.cancel('seek'); this.seekPositionMs = positionMs; }
   snapshot() { this.requireOpen(); return this.request('snapshot'); }
-  audit({offset = 0, count = LIMITS.maxAuditRows} = {}) { this.requireOpen(); return this.request('audit', {offset, count}); }
+  completionAudit(offset, count) {
+    const completion = this.lastCompletion;
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > this.plan.notes.length || !Number.isSafeInteger(count) || count < 1 || count > LIMITS.maxAuditRows || !completion?.ledger || completion.planGeneration !== this.planGeneration) throw error('invalid_audio_command', 'The completion audit request is invalid.');
+    const end = Math.min(this.plan.notes.length, offset + count), rows = [];
+    for (let index = offset; index < end; index++) { const note = this.plan.notes[index]; rows.push({index, noteId: note[0], eventId: note[1], startFrame: note[2], endFrame: note[3], actualStartFrame: completion.ledger.actualStarts[index], actualEndFrame: completion.ledger.actualEnds[index]}); }
+    return {...completion, type: 'audit', ledger: undefined, offset, nextOffset: end, rows};
+  }
+  audit({offset = 0, count = LIMITS.maxAuditRows} = {}) { this.requireOpen(); if (this.lastCompletion?.ledger && this.lastCompletion.planGeneration === this.planGeneration) return Promise.resolve(this.completionAudit(offset, count)); return this.request('audit', {offset, count}); }
   fail(reason) { this.rejectPending(reason); this.cancel('error', {reportFailure: false}); this.state = 'error'; this.onError(reason); }
   receive(message) {
     if (this.disposed || !message || !Number.isSafeInteger(message.generation)) return;
@@ -119,6 +132,11 @@ export class BasicKeyAudioReceiver {
     if (this.disposing && message.type === 'canceled' && message.generation === this.generation) { this.closePort(); return; }
     if (message.generation !== this.generation) return;
     const pending = this.pending.get(message.requestId);
+    if (message.type === 'audit_transferred' && pending) {
+      try { const result = this.completionAudit(message.offset, message.count); this.takePending(message.requestId); pending.resolve(result); }
+      catch (reason) { this.takePending(message.requestId); pending.reject(reason); }
+      return;
+    }
     if (message.type === 'error') { const reason = error(message.code, message.message); this.fail(reason); return; }
     if (message.type === 'ready') this.state = 'ready';
     if (message.type === 'started') {
@@ -134,6 +152,7 @@ export class BasicKeyAudioReceiver {
     if (this.disposed || this.disposing) return;
     this.cancel('dispose'); if (this.disposed) return; this.disposing = true; this.state = 'disposed';
     this.context.removeEventListener?.('statechange', this.stateListener);
+    this.outputGate.disconnect();
     if (this.broken || this.context.state === 'closed') this.closePort();
     // Lifecycle cleanup only, never note scheduling. A stopped/suspended audio
     // thread may never acknowledge; retain no dead port beyond this grace time.
@@ -144,6 +163,7 @@ export class BasicKeyAudioReceiver {
     this.disposed = true; this.disposing = false;
     this.rejectPending(error('audio_receiver_closed', 'The audio receiver is closed.'));
     this.context.removeEventListener?.('statechange', this.stateListener);
+    this.outputGate.disconnect();
     if (this.disposeTimer !== undefined) this.clearTimer(this.disposeTimer);
     this.node.port.onmessage = null; this.node.port.onmessageerror = null; this.node.onprocessorerror = null; this.node.port.close?.();
   }
