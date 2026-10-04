@@ -12,9 +12,15 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod conversion;
 mod notation;
+mod rendition;
 pub use notation::{
     notation_page, DisplayMeter, NotationCoverage, NotationMeasure, NotationPage, NotationRequest,
     PageAttack, PageContinuation,
+};
+pub use rendition::{
+    compile_rendition, RenditionCompilation, RenditionCoverage, RenditionEndReason,
+    RenditionEvidence, RenditionNote, RenditionPolicy, RenditionRole, RENDITION_LOOKAHEAD_MS,
+    RENDITION_NOTE_COLUMNS, RENDITION_POLICY, RENDITION_VOICE_LIMIT,
 };
 #[cfg(test)]
 mod notation_tests;
@@ -384,77 +390,15 @@ pub fn part_inventory(score: &CompleteBasicKeys) -> Vec<PartInventory> {
     inventory
 }
 
-/// Explicit nominal MIDI-key practice, not source-sound rendition. The complete
-/// projection remains inspectable in `Compilation.score`; only positive,
-/// determined non-channel-10 keys become timed targets. Zero-length attacks,
-/// ambiguous ends and percussion key numbers remain in the complete profile.
-/// An unavailable source clock disables timed practice without rejecting data.
+/// The same complete derived interpretation used for basic synthesized audition.
+/// Source notation and its uncertainty remain unchanged. Every attack, including
+/// percussion selectors and synthetic zero gates, remains an onset target; the
+/// UI selects an appropriate part and discloses the named receiver policy.
 pub fn compile_practice(score: &CompleteBasicKeys) -> Result<Option<crate::Compilation>, String> {
-    validate(score)?;
-    if !score.performance.timing.relative_clock_available {
-        return Ok(None);
-    }
-    let milliseconds = |time: &ExactMicroseconds| -> Result<f64, String> {
-        let numerator: u64 = time
-            .numerator
-            .parse()
-            .map_err(|_| "Invalid exact microsecond numerator")?;
-        Ok(numerator as f64 / f64::from(time.denominator) / 1000.0)
-    };
-    let channels: BTreeMap<_, _> = score
-        .performance
-        .parts
-        .iter()
-        .map(|part| (part.id.as_str(), part.channel))
-        .collect();
-    let mut notes = Vec::new();
-    for note in &score.performance.notes {
-        if channels[note.part_id.as_str()] == 9 {
-            continue;
-        }
-        let Some(end) = &note.end else {
-            continue;
-        };
-        if end.tick == note.start.tick {
-            continue;
-        }
-        let start_ms = milliseconds(
-            note.start
-                .relative_microseconds
-                .as_ref()
-                .ok_or("Missing available start clock")?,
-        )?;
-        let end_ms = milliseconds(
-            end.relative_microseconds
-                .as_ref()
-                .ok_or("Missing available end clock")?,
-        )?;
-        notes.push(crate::TimedNote {
-            velocity: note.velocity,
-            id: note.note_id.clone(),
-            source_note_id: note.note_id.clone(),
-            source_note_ids: vec![note.note_id.clone()],
-            part_id: note.part_id.clone(),
-            midi: note.key,
-            start_ms,
-            duration_ms: end_ms - start_ms,
-            voice: "1".into(),
-            staff: 1,
-        });
-    }
-    let duration_ms = score
-        .performance
-        .timing
-        .end_relative_microseconds
-        .as_ref()
-        .map(milliseconds)
-        .transpose()?
-        .unwrap_or(0.0);
+    let compiled = compile_rendition(score)?;
     Ok(Some(crate::Compilation {
-        score: score.notation.clone(), timeline: crate::Timeline { notes, duration_ms },
-        diagnostics: vec![crate::Diagnostic {
-            severity: "warning".into(), code: "basic_midi_key_practice".into(),
-            message: "Nominal MIDI-key targets use exact source-clock times. This does not identify acoustic pitches, source instruments or sustained sound durations. Zero-length, unresolved and channel-10 attacks remain inspection data.".into(), note_id: None,
-        }],
+        score: score.notation.clone(),
+        timeline: compiled.timeline,
+        diagnostics: compiled.diagnostics,
     }))
 }

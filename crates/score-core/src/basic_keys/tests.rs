@@ -183,7 +183,7 @@ fn clock_meter_and_percussion_are_independent_capabilities() {
     assert_eq!(score.coverage.notation_notes, 2);
     assert_eq!(score.coverage.projected_melodic_targets, 1);
     let compiled = compile_practice(&score).unwrap().unwrap();
-    assert_eq!(compiled.timeline.notes.len(), 1);
+    assert_eq!(compiled.timeline.notes.len(), 2);
     assert_eq!(compiled.score.parts.len(), 2);
     let conflicting = convert(&[
         track(&[
@@ -195,7 +195,15 @@ fn clock_meter_and_percussion_are_independent_capabilities() {
     ]);
     assert_eq!(conflicting.coverage.determined_ends, 1);
     assert!(!conflicting.performance.timing.relative_clock_available);
-    assert!(compile_practice(&conflicting).unwrap().is_none());
+    assert_eq!(
+        compile_practice(&conflicting)
+            .unwrap()
+            .unwrap()
+            .timeline
+            .notes[0]
+            .duration_ms,
+        400.0
+    );
 }
 
 #[test]
