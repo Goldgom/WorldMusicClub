@@ -27,8 +27,9 @@ export function setupNotationFit({viewport,getSurface,getReservedHeight=()=>0,on
     if(next!==surface){restore();surface=next;last='';}
     if(!surface)return;
     const paint=[...surface.querySelectorAll('svg')].filter(node=>!node.closest('[hidden]')&&!node.parentElement?.closest('svg'));
-    const activePaint=new Set(paint);for(const [node,style]of owned)if(!activePaint.has(node)){restoreNode(node,style);owned.delete(node);}
-    for(const node of paint)if(!owned.has(node)){owned.set(node,{zoom:node.style.zoom||'',maxWidth:node.style.maxWidth||''});node.dataset.notationFitPaint='';node.style.maxWidth='none';}
+    let paintChanged=false;
+    const activePaint=new Set(paint);for(const [node,style]of owned)if(!activePaint.has(node)){restoreNode(node,style);owned.delete(node);paintChanged=true;}
+    for(const node of paint)if(!owned.has(node)){owned.set(node,{zoom:node.style.zoom||'',maxWidth:node.style.maxWidth||''});node.dataset.notationFitPaint='';node.style.maxWidth='none';paintChanged=true;}
     if(!paint.length){const plan={status:'unavailable',scale:1},signature=JSON.stringify(plan);viewport.dataset.notationFit=plan.status;viewport.dataset.notationScale='1';if(signature!==last){last=signature;onChange(plan);}return plan;}
     const rect=viewport.getBoundingClientRect(),surfaceRect=surface.getBoundingClientRect(),style=window.getComputedStyle?.(surface);
     const paddingX=(parseFloat(style?.paddingLeft)||0)+(parseFloat(style?.paddingRight)||0),paddingY=(parseFloat(style?.paddingTop)||0)+(parseFloat(style?.paddingBottom)||0);
@@ -45,9 +46,11 @@ export function setupNotationFit({viewport,getSurface,getReservedHeight=()=>0,on
     const unscaledHeight=Math.max(0,surfaceRect.height-paddingY-paintedHeight),reservedHeight=Math.max(0,getReservedHeight())+unscaledHeight;
     const plan=planNotationFit({width:Math.max(0,Math.min(rect.width,surfaceRect.width)-paddingX),height:Math.max(1,rect.height-paddingY-reservedHeight),
       contentWidth:Math.max(...widths),contentHeight:heights.reduce((sum,height)=>sum+height,0),glyphSize:glyphs.length?Math.min(...glyphs):mode==='jianpu'?25:10,mode});
-    for(const node of paint){const scale=String(plan.scale);if(node.style.zoom!==scale)node.style.zoom=scale;}
+    for(const node of paint){const scale=String(plan.scale);if(node.style.zoom!==scale){node.style.zoom=scale;paintChanged=true;}}
     viewport.dataset.notationFit=plan.status;viewport.dataset.notationScale=String(plan.scale);
-    const signature=JSON.stringify(plan);if(signature!==last){last=signature;onChange(plan);}
+    // A new page can have the same dimensions as its predecessor. Its separate
+    // cue layer still needs the newly fitted paint coordinates exactly once.
+    const signature=JSON.stringify(plan);if(signature!==last||paintChanged){last=signature;onChange(plan);}
     return plan;
   }
   const mutation=window.MutationObserver?new window.MutationObserver(schedule):null;

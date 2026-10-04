@@ -1410,11 +1410,10 @@ mod tests {
                     .parse::<i64>()
                     .unwrap()
             };
-            if node.has_tag_name("note")
-                && !node.children().any(|child| child.has_tag_name("chord"))
+            if node.has_tag_name("forward")
+                || (node.has_tag_name("note")
+                    && !node.children().any(|child| child.has_tag_name("chord")))
             {
-                cursor += duration();
-            } else if node.has_tag_name("forward") {
                 cursor += duration();
             } else if node.has_tag_name("backup") {
                 assert_eq!(

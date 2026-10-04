@@ -395,7 +395,8 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
   for(const start of shared.keys()){if(visited.has(start))continue;const group=[],queue=[start];while(queue.length){const entry=queue.pop();if(visited.has(entry))continue;visited.add(entry);group.push(entry);queue.push(...shared.get(entry)||[])}for(const entry of group){entry.status='unavailable';entry.reason='engraving_shared_glyph'}diagnostics.push(diagnostic('engraving_shared_glyph','These written segments share an indistinguishable notehead. Their complete source set is retained; no individual head is guessed.',group.map(entry=>entry.segment)))}
   for(const entry of entries)if(entry.status==='bound')for(const path of entry.glyph.paths)if(!snapshots.has(path))snapshots.set(path,{present:path.hasAttribute('fill'),fill:path.getAttribute('fill')});
   // Separate presentation markers never change a musical glyph's shape, style,
-  // bounding box or identity. Geometry is sampled once for this render only.
+  // bounding box or identity. Fit/resize can change SVG paint without rebinding
+  // its model, so owned presentation markers have an explicit geometry refresh.
   if(cueColor&&entries.some(entry=>entry.status==='bound')){
     const origin=mount.getBoundingClientRect();cueLayer=mount.ownerDocument.createElement('div');cueLayer.className='engraving-expected-cues';cueLayer.setAttribute('aria-hidden','true');cueLayer.style.cssText='position:absolute;inset:0;pointer-events:none;overflow:visible';
     for(const entry of entries)if(entry.status==='bound'){
@@ -412,25 +413,43 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
   };
   const notify=()=>{try{onChange(summary())}catch{/* Presentation listeners cannot acquire glyph ownership. */}};
   const restore=path=>{const original=snapshots.get(path);if(original?.present)path.setAttribute('fill',original.fill);else path.removeAttribute('fill')};
+  function ownedBox(entry){
+    const {group,parent,paths}=entry.glyph;
+    const intact=group.parentElement===parent&&group.children.length===paths.length&&visibleGlyph(group,mount)&&paths.every(path=>path.parentElement===group&&paintedPath(path,mount));
+    const box=intact?group.getBoundingClientRect():null;
+    return box&&['x','y','width','height'].every(key=>Number.isFinite(box[key]))&&box.width>0&&box.height>0?box:null;
+  }
+  function placeCue(entry,box,origin){
+    if(!entry.cue)return;
+    if(!box){entry.cue.hidden=true;return;}
+    const values={left:box.x-origin.x-(mount.clientLeft||0)+(mount.scrollLeft||0)-3,top:box.y-origin.y-(mount.clientTop||0)+(mount.scrollTop||0)-3,width:box.width+6,height:box.height+6};
+    for(const [key,value]of Object.entries(values)){const text=`${value}px`;if(entry.cue.style[key]!==text)entry.cue.style[key]=text;}
+    entry.cue.hidden=!current.has(entry);
+  }
+  function refreshExpectedCueGeometry(){
+    if(disposed||invalidated||!cueLayer)return false;
+    const origin=mount.getBoundingClientRect();
+    for(const entry of entries)if(entry.status==='bound'&&entry.cue)placeCue(entry,ownedBox(entry),origin);
+    return true;
+  }
   function clear(announce=true){for(const entry of current){for(const path of entry.glyph.paths)restore(path);if(entry.cue)entry.cue.hidden=true}current.clear();currentRequest=null;const changed=Boolean(inputDiagnostic);inputDiagnostic=null;if(changed&&!disposed&&announce)notify()}
   function reject(){const alreadyRejected=Boolean(inputDiagnostic);clear(false);inputDiagnostic=diagnostic('engraving_expected_notes_invalid','Current written-note identities do not match this score and measure. Highlighting is cleared; playback is unchanged.');if(!alreadyRejected)notify();return false}
   return {
     mappingStatus:summary,
+    refreshExpectedCueGeometry,
     expectedNoteBounds(){
       if(disposed||invalidated||!currentRequest)return {status:'unavailable',rects:[],unavailableSourceNoteIds:[]};
-      const rects=[],found=new Set();
+      const rects=[],found=new Set(),origin=cueLayer?mount.getBoundingClientRect():null;
       for(const entry of current){
-        const {group,parent,paths}=entry.glyph;
         // Reuse the exact owned nodes, never search for a replacement glyph.
         // A detached/reparented head or replaced/hidden path is not evidence for
         // scrolling, even when the old group itself still has a nonempty box.
-        const intact=group.parentElement===parent&&group.children.length===paths.length&&visibleGlyph(group,mount)&&paths.every(path=>path.parentElement===group&&paintedPath(path,mount));
-        const box=intact?group.getBoundingClientRect():null;
-        const visible=box&&['x','y','width','height'].every(key=>Number.isFinite(box[key]))&&box.width>0&&box.height>0;
-        if(entry.cue)entry.cue.hidden=!visible;
-        if(!visible)continue;
+        const box=ownedBox(entry);
+        if(entry.cue)placeCue(entry,box,origin);
+        if(!box)continue;
         found.add(entry.segment.xml_note_id);
-        rects.push({sourceNoteId:entry.segment.source_note_id,xmlNoteId:entry.segment.xml_note_id,sourceMeasureIndex:entry.segment.source_measure_index,left:box.x,top:box.y,right:box.x+box.width,bottom:box.y+box.height,width:box.width,height:box.height});
+        const margin=entry.cue?3:0;
+        rects.push({sourceNoteId:entry.segment.source_note_id,xmlNoteId:entry.segment.xml_note_id,sourceMeasureIndex:entry.segment.source_measure_index,left:box.x-margin,top:box.y-margin,right:box.x+box.width+margin,bottom:box.y+box.height+margin,width:box.width+2*margin,height:box.height+2*margin});
       }
       const unavailableSourceNoteIds=currentRequest.sourceNoteIds.filter(id=>entries.some(entry=>entry.segment.source_note_id===id&&entry.segment.source_measure_index===currentRequest.sourceMeasureIndex&&!found.has(entry.segment.xml_note_id)));
       return {status:!rects.length?'unavailable':unavailableSourceNoteIds.length?'partial':'ready',rects,unavailableSourceNoteIds};

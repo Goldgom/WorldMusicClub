@@ -83,6 +83,22 @@ test('expected bounds are fresh, exact to the written segment and omit stale or 
   head.remove();bounds=env.output.expectedNoteBounds();assert.equal(bounds.status,'unavailable');assert.deepEqual(bounds.rects,[]);assert.deepEqual(bounds.unavailableSourceNoteIds,['split']);env.output.dispose();assert.deepEqual(env.output.expectedNoteBounds().rects,[]);
   const page=bound(example(),{fromMeasure:2,toMeasure:2});page.output.setExpectedWrittenNotes({sourceNoteIds:['long'],sourceMeasureIndex:0});assert.deepEqual(page.output.expectedNoteBounds().unavailableSourceNoteIds,['long']);
 });
+test('fit refresh keeps active and future cues on their exact owned glyphs without per-frame reads',()=>{
+  const env=bound(example(),{cueColor:'#17251d'}),glyph=env.paths.get('N1_2_1').parentElement;
+  const cue=[...env.mount.querySelectorAll('.engraving-expected-cue')].find(node=>node.dataset.xmlNoteId==='N1_2_1');
+  env.output.setExpectedWrittenNotes({sourceNoteIds:['long'],sourceMeasureIndex:0});
+  const painted=env.svg.innerHTML;let reads=0;
+  env.mount.getBoundingClientRect=()=>({x:30,y:40,width:600,height:400});
+  glyph.getBoundingClientRect=()=>{reads++;return{x:70,y:85,width:6,height:5.25};};
+  assert.equal(env.output.refreshExpectedCueGeometry(),true);
+  assert.equal(cue.style.left,'37px');assert.equal(cue.style.top,'42px');assert.equal(cue.style.width,'12px');assert.equal(cue.style.height,'11.25px');assert.equal(cue.hidden,false);
+  const bounds=env.output.expectedNoteBounds();assert.deepEqual(bounds.rects.map(({left,top,right,bottom})=>({left,top,right,bottom})),[{left:67,top:82,right:79,bottom:93.25}]);
+  assert.equal(env.svg.innerHTML,painted,'Fit refresh changes only the separate cue, never musical SVG');
+  env.output.clearExpectedWrittenNotes();glyph.getBoundingClientRect=()=>{reads++;return{x:90,y:100,width:8,height:7};};env.output.refreshExpectedCueGeometry();assert.equal(cue.hidden,true);
+  reads=0;env.output.setExpectedWrittenNotes({sourceNoteIds:['long'],sourceMeasureIndex:0});assert.equal(reads,0);assert.equal(cue.style.left,'57px');assert.equal(cue.style.top,'57px');assert.equal(cue.hidden,false);
+  glyph.remove();env.output.refreshExpectedCueGeometry();assert.equal(cue.hidden,true);env.output.dispose();assert.equal(env.output.refreshExpectedCueGeometry(),false);
+});
+
 test('fresh bounds refuse replaced, reparented and hidden owned paths and hide their non-color cues',()=>{
   for(const mutate of [
     ({path})=>{path.style.display='none'},

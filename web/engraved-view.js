@@ -330,7 +330,7 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
       if(ended)return{status:'end'};
       const measure=sourcePage.measures.find(measure=>position>=measure.start_ms&&position<(measure.follow_end_ms??measure.end_ms));
       return measure?{status:'ready',measure,total:sourcePage.total_measures,ready:!active||Boolean(rendered)||isRenditionPage()&&!needsEngraving(sourcePage)}:{status:'unavailable'};
-    },setExpectedWrittenNotes,clearExpectedWrittenNotes,revealExpectedWrittenNotes,resetReveal(){lastReveal='';followFailure=null;},mappingStatus,isActive:()=>active,surfaceChanged(){
+    },setExpectedWrittenNotes,clearExpectedWrittenNotes,revealExpectedWrittenNotes,resetReveal(){lastReveal='';followFailure=null;try{rendered?.refreshExpectedCueGeometry?.();}catch{/* Optional cue geometry cannot alter transport. */}},mappingStatus,isActive:()=>active,surfaceChanged(){
       lastReveal='';
       // Entering the desktop stage can expose notation and then notify the
       // screen change. Both notifications own the same in-flight render.

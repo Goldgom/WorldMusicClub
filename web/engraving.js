@@ -304,6 +304,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
       mappingStatus:()=>bindings?.mappingStatus()||unavailableMapping(),
       renderGeneration:()=>renderGeneration,
       expectedNoteBounds:()=>bindings?.expectedNoteBounds()||{status:'unavailable',rects:[],unavailableSourceNoteIds:[]},
+      refreshExpectedCueGeometry:()=>bindings?.refreshExpectedCueGeometry()||false,
       setExpectedWrittenNotes(value){if(!isCurrent()||!bindings)return false;const accepted=bindings.setExpectedWrittenNotes(value);expected=accepted?{sourceNoteIds:[...value.sourceNoteIds],sourceMeasureIndex:value.sourceMeasureIndex}:null;return accepted},
       clearExpectedWrittenNotes(){expected=null;return bindings?.clearExpectedWrittenNotes()||false},
     });

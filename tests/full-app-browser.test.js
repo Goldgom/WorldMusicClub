@@ -1286,6 +1286,7 @@ test('real written-note cursor separates tied continuations, short unisons, rest
     expectedKeys:[...document.querySelectorAll('#keyboard .piano-key.playing')].map(n=>Number(n.dataset.midi)).sort((a,b)=>a-b),
     heldKeys:document.querySelectorAll('#keyboard .piano-key.pressed').length,position:document.querySelector('#progress').value,
   }));
+  await ui('#notation-scope').selectOption('part');await ui('#notation-scope-part').selectOption('piano');await closeShellPanels();
   await waitIds(['short-D','short-unison','tie-start']);
   const initial=await snapshot();assert.deepEqual(initial.activeWritten,['short-D','tie-start']);assert.deepEqual(initial.expectedKeys,[60,62]);assert.equal(initial.heldKeys,0);
   await ui('#notation-part').selectOption('');await page.waitForFunction(()=>document.querySelectorAll('#notation .score-note.active').length===3);const allParts=await snapshot();assert.deepEqual(allParts.activeWritten,['short-D','short-unison','tie-start']);assert.deepEqual(allParts.expectedKeys,initial.expectedKeys);assert.equal(await ui('#practice-part').inputValue(),'','Shown parts do not edit the practice target');await ui('#notation-part').selectOption('piano');
@@ -1295,7 +1296,7 @@ test('real written-note cursor separates tied continuations, short unisons, rest
   const continuation=await snapshot();assert.deepEqual(continuation.activeWritten,['tie-stop','written-rest']);assert.deepEqual(continuation.expectedKeys,[60]);assert.equal(continuation.heldKeys,0);
   assert.equal(await ui('#engraving-follow').isChecked(),false,'Current-note display does not enable page following');
   await screenshot('written-cursor-tie-jianpu');
-  await ui('#practice-part').selectOption('counter');await ui('#play-button:not([disabled])').waitFor();await ui('#reset-button').click();await closeShellPanels();
+  await ui('#practice-part').selectOption('counter');await ui('#notation-scope').selectOption('current');await ui('#play-button:not([disabled])').waitFor();await ui('#reset-button').click();await closeShellPanels();
   await waitIds(['short-unison']);const selected=await snapshot();assert.deepEqual(selected.activeWritten,['short-unison']);assert.deepEqual(selected.expectedKeys,[60]);
   await ui('#notation-part').selectOption('');await page.waitForFunction(()=>document.querySelectorAll('#notation .score-note.active').length===3);assert.deepEqual((await snapshot()).expectedKeys,[60]);assert.equal(await ui('#practice-part').inputValue(),'counter');await ui('#notation-part').selectOption('counter');
   await ui('#play-button').click();await waitIds(['repeated-C']);await ui('#play-button').click();const repeat=await snapshot();assert.deepEqual(repeat.activeWritten,['repeated-C']);assert.deepEqual(repeat.expectedKeys,[60]);
@@ -1785,11 +1786,13 @@ test('complete Beethoven edition renders all 18 measures and keeps every source 
     selectedPages.push({part:part||'all',range:await ui('#engraving-range').textContent(),svg_count:svgCount,fallback_hidden:true});
     await screenshot(`cc0-beethoven-final-page-${part||'all'}`);
   }
+  await ui('#notation-scope').selectOption('current');
   await ui('#practice-part').selectOption(voice.id);await ui('#play-button:not([disabled])').waitFor();await readySelectedPart(voice.id);
   await ui('#practice-part').selectOption(piano.id);await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));await readySelectedPart(piano.id);
   assert.equal(await ui('#play-button').isDisabled(),true);
   const [blockedResponse]=await Promise.all([nextTargetResponse({kind:'piano',key_count:61,lowest_midi:null},compiled.timeline),ui('#practice-part').selectOption('')]);
   const blockedPlan=await responseJson(blockedResponse);assert.equal(blockedPlan.playable,false);
+  await ui('#notation-scope').selectOption('all');
   await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));await readySelectedPart('');
   // A blocked setup cannot create a checked take. Inspect its available gate and
   // source mappings instead of waiting for an intentionally unavailable export.

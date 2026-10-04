@@ -1306,6 +1306,25 @@ test('verified expected bounds follow pane scrolling without rebinding or moving
   await bindingEvidence('fresh-bounds-after-scroll',{before,after,movement});
 });
 
+test('automatic SVG fit keeps current and later non-color cues aligned without rebuilding notes',options,async()=>{
+  const score=bindingScore(),exported=await exportScore(score);await renderBinding(score,exported,{width:520});
+  await expectBinding(['tie-stop-D5'],2);
+  const before=await page.evaluate(()=>({generation:window.lastEngraving.renderGeneration(),renders:window.__wmhBinding.renderCalls}));
+  for(const zoom of [.75,1,.6]){
+    const evidence=await page.evaluate(zoom=>{
+      for(const svg of document.querySelectorAll('#staff svg'))svg.style.zoom=String(zoom);
+      window.lastEngraving.refreshExpectedCueGeometry();
+      window.__wmhBinding.checkExpected(['tie-stop-D5'],2);
+      return{zoom,bounds:window.lastEngraving.expectedNoteBounds(),generation:window.lastEngraving.renderGeneration(),renders:window.__wmhBinding.renderCalls};
+    },zoom);
+    assert.equal(evidence.bounds.status,'ready');assert.equal(evidence.generation,before.generation);assert.equal(evidence.renders,before.renders);
+  }
+  await clearBinding();
+  await page.evaluate(()=>{for(const svg of document.querySelectorAll('#staff svg'))svg.style.zoom='.8';window.lastEngraving.refreshExpectedCueGeometry();});
+  await expectBinding(['up-long-C4'],0);await clearBinding();
+  await bindingEvidence('fit-refresh-owned-cues',{...before,scales:[.75,1,.6,.8]});
+});
+
 test('native incoming continuation and bounded exact-rhythm pieces own real SVG tie curves',options,async()=>{
  const incoming=JSON.parse(await readFile(new URL('./fixtures/basic-key-open-tie-page.json',import.meta.url),'utf8'));
  const exact=JSON.parse(await readFile(new URL('./fixtures/exact-rhythm-excerpt.json',import.meta.url),'utf8'));
