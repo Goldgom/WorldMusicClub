@@ -1308,19 +1308,26 @@ test('verified expected bounds follow pane scrolling without rebinding or moving
 
 test('automatic SVG fit keeps current and later non-color cues aligned without rebuilding notes',options,async()=>{
   const score=bindingScore(),exported=await exportScore(score);await renderBinding(score,exported,{width:520});
-  await expectBinding(['tie-stop-D5'],2);
   const before=await page.evaluate(()=>({generation:window.lastEngraving.renderGeneration(),renders:window.__wmhBinding.renderCalls}));
+  const fit=zoom=>page.evaluate(zoom=>{
+    const watch=window.__wmhBinding,svgs=[...document.querySelectorAll('#staff svg')];
+    watch.assert(watch.changed().length===0,'Fit starts from restored neutral source paint');
+    for(const svg of svgs)svg.style.zoom=String(zoom);
+    // Zoom is an intentional setup mutation, independently limited to the SVG
+    // roots. Keep the stricter per-note paint observer intact for the next mark.
+    watch.assert(watch.changed().every(node=>svgs.includes(node)),'Only explicitly resized SVG roots change during fit setup');
+    watch.snapshot();window.lastEngraving.refreshExpectedCueGeometry();
+    watch.assert(watch.changed().length===0,'Cue refresh cannot modify fitted musical SVG');
+  },zoom);
   for(const zoom of [.75,1,.6]){
+    await fit(zoom);await expectBinding(['tie-stop-D5'],2);
     const evidence=await page.evaluate(zoom=>{
-      for(const svg of document.querySelectorAll('#staff svg'))svg.style.zoom=String(zoom);
-      window.lastEngraving.refreshExpectedCueGeometry();
-      window.__wmhBinding.checkExpected(['tie-stop-D5'],2);
       return{zoom,bounds:window.lastEngraving.expectedNoteBounds(),generation:window.lastEngraving.renderGeneration(),renders:window.__wmhBinding.renderCalls};
     },zoom);
     assert.equal(evidence.bounds.status,'ready');assert.equal(evidence.generation,before.generation);assert.equal(evidence.renders,before.renders);
+    await clearBinding();
   }
-  await clearBinding();
-  await page.evaluate(()=>{for(const svg of document.querySelectorAll('#staff svg'))svg.style.zoom='.8';window.lastEngraving.refreshExpectedCueGeometry();});
+  await fit(.8);
   await expectBinding(['up-long-C4'],0);await clearBinding();
   await bindingEvidence('fit-refresh-owned-cues',{...before,scales:[.75,1,.6,.8]});
 });
