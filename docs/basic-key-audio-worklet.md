@@ -43,6 +43,15 @@ transport and recorder. The shared origin is the returned `anchorFrame` /
 position converted back to milliseconds. Count-in positions down to negative
 ten minutes are supported. Human MIDI/audio input remains outside this receiver.
 
+Module loading and prepare, snapshot and audit acknowledgments have a
+five-second lifecycle deadline. A start acknowledgment has a deadline at its existing audio anchor,
+with no extended lookahead. A missing acknowledgment rejects with
+`audio_command_timeout`, disconnects output, cancels the generation and clears
+all pending deadlines. Receipt, cancellation and disposal clear the applicable
+timers. These timers never trigger or schedule notes. A failed cancellation
+post closes the disconnected receiver without masking the original device,
+processor, or timeout error. Late success replies cannot resume playback.
+
 ## Bounds and sound
 
 The plan contains at most 65,536 notes and at most 16 MiB of ASCII JSON wire

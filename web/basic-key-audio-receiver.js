@@ -3,6 +3,15 @@ import {BASIC_KEY_AUDIO_PROTOCOL, BASIC_KEY_AUDIO_LIMITS as LIMITS, BasicKeyAudi
 export {BasicKeyAudioError, BASIC_KEY_AUDIO_LIMITS, buildBasicKeyAudioPlan} from './basic-key-audio-plan.js';
 const modules = new WeakMap();
 const error = (code, message, details = {}) => new BasicKeyAudioError(code, message, details);
+const ACK_TIMEOUT_MS = 5000;
+function loadModule(context, moduleUrl, {setTimer = (...args) => globalThis.setTimeout(...args), clearTimer = (...args) => globalThis.clearTimeout(...args)} = {}) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (reason) => { if (settled) return; settled = true; clearTimer(timer); if (reason) reject(reason); else resolve(); };
+    const timer = setTimer(() => finish(error('audio_worklet_unavailable', 'The basic-key audio processor module did not load before its deadline.', {command: 'addModule', timeoutMs: ACK_TIMEOUT_MS})), ACK_TIMEOUT_MS);
+    Promise.resolve().then(() => context.audioWorklet.addModule(moduleUrl)).then(() => finish(), reason => finish(error('audio_worklet_unavailable', 'The basic-key audio processor could not be loaded from this origin.', {cause: String(reason)})));
+  });
+}
 
 /** Main-thread protocol adapter. The only timed command is the initial start;
  * after acceptance, the render sample clock owns the complete immutable plan.
@@ -15,7 +24,7 @@ export class BasicKeyAudioReceiver {
     const moduleUrl = String(options.moduleUrl || new URL('./basic-key-audio-processor.js', import.meta.url));
     if (!modules.has(context)) modules.set(context, new Map());
     const cache = modules.get(context);
-    if (!cache.has(moduleUrl)) cache.set(moduleUrl, Promise.resolve().then(() => context.audioWorklet.addModule(moduleUrl)).catch(reason => { cache.delete(moduleUrl); throw error('audio_worklet_unavailable', 'The basic-key audio processor could not be loaded from this origin.', {cause: String(reason)}); }));
+    if (!cache.has(moduleUrl)) cache.set(moduleUrl, loadModule(context, moduleUrl, options).catch(reason => { cache.delete(moduleUrl); throw reason; }));
     await cache.get(moduleUrl);
     if (context.state !== 'running') throw error('clean_audio_unavailable', 'The audio device stopped during processor preparation.');
     let node;
@@ -23,8 +32,8 @@ export class BasicKeyAudioReceiver {
     catch (reason) { throw error('audio_worklet_unavailable', 'The basic-key audio processor could not be created.', {cause: String(reason)}); }
     return new BasicKeyAudioReceiver(context, output, node, options);
   }
-  constructor(context, output, node, {onError = () => {}, onEnded = () => {}, onStarted = () => {}, onStopped = () => {}} = {}) {
-    Object.assign(this, {context, output, node, onError, onEnded, onStarted, onStopped});
+  constructor(context, output, node, {onError = () => {}, onEnded = () => {}, onStarted = () => {}, onStopped = () => {}, setTimer = (...args) => globalThis.setTimeout(...args), clearTimer = (...args) => globalThis.clearTimeout(...args)} = {}) {
+    Object.assign(this, {context, output, node, onError, onEnded, onStarted, onStopped, setTimer, clearTimer});
     this.generation = 0; this.requestId = 0; this.pending = new Map(); this.state = 'idle'; this.connected = false; this.disposed = false; this.broken = false; this.plan = null; this.lastCompletion = null;
     this.node.port.onmessage = event => this.receive(event.data);
     this.node.port.onmessageerror = () => this.fail(error('audio_processor_error', 'The audio receiver received an unreadable processor message.'));
@@ -40,15 +49,23 @@ export class BasicKeyAudioReceiver {
     return ++this.generation;
   }
   requireOpen() { if (this.disposed || this.disposing || this.broken) throw error('audio_receiver_closed', 'The audio receiver is closed or failed.'); }
-  rejectPending(reason) { for (const pending of this.pending.values()) pending.reject(reason); this.pending.clear(); }
-  detach() { if (this.connected) { this.node.disconnect(); this.connected = false; } }
+  rejectPending(reason) { for (const pending of this.pending.values()) { this.clearTimer(pending.timer); pending.reject(reason); } this.pending.clear(); }
+  takePending(requestId) { const pending = this.pending.get(requestId); if (pending) { this.clearTimer(pending.timer); this.pending.delete(requestId); } return pending; }
+  detach() { if (this.connected) { try { this.node.disconnect(); } finally { this.connected = false; } } }
   request(type, payload = {}) {
     if (this.pending.size >= 32 || this.requestId >= LIMITS.maxGeneration) return Promise.reject(error('audio_command_limit', 'The audio command bound was reached.'));
     const requestId = ++this.requestId, generation = this.generation;
     return new Promise((resolve, reject) => {
-      this.pending.set(requestId, {resolve, reject, generation, type});
+      const pending = {resolve, reject, generation, type, timer: null}; this.pending.set(requestId, pending);
+      // These are acknowledgment/lifecycle deadlines, never audio scheduling.
+      // A start cannot await an acknowledgment past its existing audio anchor.
+      const timeoutMs = type === 'start' ? Math.max(1, Math.ceil((payload.anchorFrame / this.context.sampleRate - this.context.currentTime) * 1000)) : ACK_TIMEOUT_MS;
+      pending.timer = this.setTimer(() => {
+        if (this.pending.get(requestId) !== pending) return;
+        this.fail(error('audio_command_timeout', `The audio processor did not acknowledge ${type} before its deadline.`, {command: type, generation, timeoutMs}));
+      }, timeoutMs);
       try { this.node.port.postMessage({type, generation, requestId, ...payload}); }
-      catch (reason) { this.pending.delete(requestId); reject(error('audio_processor_error', 'The audio command could not be delivered.', {cause: String(reason)})); }
+      catch (reason) { this.fail(error('audio_processor_error', 'The audio command could not be delivered.', {command: type, cause: String(reason)})); }
     });
   }
   async prepare(input, {positionMs = 0} = {}) {
@@ -71,12 +88,16 @@ export class BasicKeyAudioReceiver {
     this.state = 'starting';
     return this.request('start', {anchorFrame});
   }
-  cancel(reason = 'stop') {
+  cancel(reason = 'stop', {reportFailure = true} = {}) {
     if (this.disposed) return;
-    this.detach(); this.rejectPending(error('audio_canceled', 'Playback was canceled; a fresh explicit preparation is required.'));
+    let failure;
+    try { this.detach(); } catch (cause) { failure = error('audio_processor_error', 'The audio output could not be detached.', {cause: String(cause)}); }
+    this.rejectPending(error('audio_canceled', 'Playback was canceled; a fresh explicit preparation is required.'));
     this.state = 'canceled';
-    this.nextGeneration();
-    this.node.port.postMessage({type: 'cancel', generation: this.generation, reason});
+    try { this.nextGeneration(); this.node.port.postMessage({type: 'cancel', generation: this.generation, reason}); }
+    catch (cause) { failure ||= error('audio_processor_error', 'Audio cancellation could not be delivered; the disconnected receiver is closed.', {cause: String(cause)}); }
+    if (failure) { this.broken = true; this.state = 'error'; this.closePort(); if (reportFailure) this.onError(failure); }
+    return failure;
   }
   stop() { this.cancel('stop'); }
   pause() { this.cancel('pause'); }
@@ -84,10 +105,11 @@ export class BasicKeyAudioReceiver {
   seek(positionMs) { if (!Number.isFinite(positionMs)) throw error('invalid_audio_command', 'A finite seek position is required.'); this.cancel('seek'); this.seekPositionMs = positionMs; }
   snapshot() { this.requireOpen(); return this.request('snapshot'); }
   audit({offset = 0, count = LIMITS.maxAuditRows} = {}) { this.requireOpen(); return this.request('audit', {offset, count}); }
-  fail(reason) { this.rejectPending(reason); this.cancel('error'); this.state = 'error'; this.onError(reason); }
+  fail(reason) { this.rejectPending(reason); this.cancel('error', {reportFailure: false}); this.state = 'error'; this.onError(reason); }
   receive(message) {
     if (this.disposed || !message || !Number.isSafeInteger(message.generation)) return;
     if (['ready', 'error', 'stale'].includes(message.type) && message.generation === this.prepareInFlight) this.prepareInFlight = null;
+    if (message.type === 'canceled' && message.generation > this.prepareInFlight) this.prepareInFlight = null;
     if (['ended', 'canceled'].includes(message.type) && message.ledger && message.planGeneration >= (this.lastCompletion?.planGeneration ?? 0)) {
       // One bounded terminal ledger is retained even if a later cancellation
       // has already fenced transport callbacks. Its generation is explicit.
@@ -97,30 +119,32 @@ export class BasicKeyAudioReceiver {
     if (this.disposing && message.type === 'canceled' && message.generation === this.generation) { this.closePort(); return; }
     if (message.generation !== this.generation) return;
     const pending = this.pending.get(message.requestId);
-    if (message.type === 'error') { const reason = error(message.code, message.message); if (pending) { this.pending.delete(message.requestId); pending.reject(reason); } this.fail(reason); return; }
+    if (message.type === 'error') { const reason = error(message.code, message.message); this.fail(reason); return; }
     if (message.type === 'ready') this.state = 'ready';
     if (message.type === 'started') {
       if (this.context.state !== 'running' || this.context.currentTime * this.context.sampleRate >= message.anchorFrame) { this.fail(error('clean_late_start', 'The start acknowledgement arrived after its audio anchor; playback was canceled without catching up.')); return; }
       this.state = 'running';
       message = {...message, anchorTime: message.anchorFrame / message.sampleRate, positionMs: message.positionFrame * 1000 / message.sampleRate};
     }
-    if (pending) { this.pending.delete(message.requestId); pending.resolve(message); }
+    if (pending) { this.takePending(message.requestId); pending.resolve(message); }
     if (message.type === 'started') this.onStarted(message);
     if (message.type === 'ended') { this.state = 'ended'; this.onEnded(this.lastCompletion); }
   }
   dispose() {
     if (this.disposed || this.disposing) return;
-    this.cancel('dispose'); this.disposing = true; this.state = 'disposed';
+    this.cancel('dispose'); if (this.disposed) return; this.disposing = true; this.state = 'disposed';
     this.context.removeEventListener?.('statechange', this.stateListener);
     if (this.broken || this.context.state === 'closed') this.closePort();
     // Lifecycle cleanup only, never note scheduling. A stopped/suspended audio
     // thread may never acknowledge; retain no dead port beyond this grace time.
-    else this.disposeTimer = globalThis.setTimeout(() => this.closePort(), 1000);
+    else this.disposeTimer = this.setTimer(() => this.closePort(), 1000);
   }
   closePort() {
     if (this.disposed) return;
     this.disposed = true; this.disposing = false;
-    if (this.disposeTimer !== undefined) globalThis.clearTimeout(this.disposeTimer);
+    this.rejectPending(error('audio_receiver_closed', 'The audio receiver is closed.'));
+    this.context.removeEventListener?.('statechange', this.stateListener);
+    if (this.disposeTimer !== undefined) this.clearTimer(this.disposeTimer);
     this.node.port.onmessage = null; this.node.port.onmessageerror = null; this.node.onprocessorerror = null; this.node.port.close?.();
   }
 }

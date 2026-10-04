@@ -10,6 +10,11 @@ import {basicKeyAudioHarness} from './basic-key-audio-harness.js';
 import {DENSE_STREAM, denseDigest, originalDenseRenditionMidi, expectedDenseAttacks} from '../scripts/prepare-dense-rendition-fixture.mjs';
 
 const hash = 'a'.repeat(64), sampleRate = 48000;
+function lifecycleTimers() {
+  let serial = 0;
+  const pending = new Map();
+  return {pending, setTimer(callback, delay) { const id = ++serial; pending.set(id, {callback, delay}); return id; }, clearTimer(id) { pending.delete(id); }, fire() { const [id, value] = pending.entries().next().value; pending.delete(id); value.callback(); }};
+}
 function plan(rows, {rate = sampleRate, duration = Math.max(0, ...rows.map(row => row[1]))} = {}) {
   return validateBasicKeyAudioPlan({protocol: BASIC_KEY_AUDIO_PROTOCOL, policyId: 'wmh-basic-key-rendition-fifo-v1', sourceSha256: hash, sampleRate: rate, durationFrames: duration, sourceNotes: rows.length, notes: rows.map((row, index) => [`midi-t1-e${index + 1}`, `midi:${hash}:t0:e${index}`, ...row])});
 }
@@ -188,4 +193,65 @@ test('the same percussion recipe is deterministic across selectors and block sha
     return samples;
   }
   assert.deepEqual(audio(0, 128), audio(127, 37));
+});
+
+test('lost prepare acknowledgment times out, clears deadlines and fences a later ready reply', async () => {
+  const h = basicKeyAudioHarness({autoMessages: false}), timers = lifecycleTimers(), errors = [], receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, ...timers, onError: value => errors.push(value)});
+  const preparing = receiver.prepare(plan([[0, 500, 60, 80, 0]])), rejected = assert.rejects(preparing, {code: 'audio_command_timeout'});
+  h.deliverCore(); assert.equal([...timers.pending.values()][0].delay, 5000); timers.fire(); await rejected;
+  assert.equal(timers.pending.size, 0); assert.equal(receiver.pending.size, 0); assert.equal(receiver.state, 'error'); assert.equal(errors[0].details.command, 'prepare');
+  h.deliverMain(); assert.equal(receiver.state, 'error'); h.deliverCore(); h.deliverMain(); assert.equal(h.nodes[0].core.state, 'canceled');
+  receiver.dispose(); h.deliverCore(); h.deliverMain(); assert.equal(timers.pending.size, 0);
+});
+
+test('lost start acknowledgment expires at its unchanged anchor and never restarts after a stale reply', async () => {
+  const h = basicKeyAudioHarness({autoMessages: false}), timers = lifecycleTimers(), started = [], receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, ...timers, onStarted: value => started.push(value)});
+  const preparing = receiver.prepare(plan([[0, 10000, 60, 80, 0]])); h.deliverCore(); h.deliverMain(); await preparing; assert.equal(timers.pending.size, 0);
+  const starting = receiver.start({anchorTime: .05}), rejected = assert.rejects(starting, {code: 'audio_command_timeout'}); assert.equal([...timers.pending.values()][0].delay, 50);
+  h.deliverCore(); timers.fire(); await rejected; assert.equal(receiver.connected, false); assert.equal(timers.pending.size, 0);
+  h.deliverMain(); assert.equal(started.length, 0); assert.equal(receiver.state, 'error'); h.deliverCore(); h.deliverMain();
+  h.renderBlock(6000); assert.equal(h.nodes[0].core.startedCount, 0); receiver.dispose(); h.deliverCore(); h.deliverMain();
+});
+
+for (const command of ['audit', 'snapshot']) test(`lost ${command} acknowledgment explicitly cancels active output and clears pending timers`, async () => {
+  const h = basicKeyAudioHarness({autoMessages: false}), timers = lifecycleTimers(), errors = [], receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, ...timers, onError: value => errors.push(value)});
+  const preparing = receiver.prepare(plan([[0, 10000, 60, 80, 0]])); h.deliverCore(); h.deliverMain(); await preparing;
+  const starting = receiver.start({anchorTime: .001}); h.deliverCore(); h.deliverMain(); await starting; assert.equal(timers.pending.size, 0);
+  h.renderBlock(); assert.equal(h.nodes[0].core.activeCount, 1);
+  const request = receiver[command](), rejected = assert.rejects(request, {code: 'audio_command_timeout'}); h.deliverCore(); timers.fire(); await rejected;
+  assert.equal(receiver.connected, false); assert.equal(receiver.pending.size, 0); assert.equal(timers.pending.size, 0); assert.equal(errors[0].details.command, command);
+  h.deliverMain(); assert.equal(receiver.state, 'error'); h.deliverCore(); h.deliverMain(); assert.equal(h.nodes[0].core.activeCount, 0);
+  receiver.dispose(); h.deliverCore(); h.deliverMain();
+});
+
+test('cancellation delivery failure cannot mask the original device error or leave pending promises', async () => {
+  const h = basicKeyAudioHarness({autoMessages: false}), timers = lifecycleTimers(), errors = [], receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, ...timers, onError: value => errors.push(value)});
+  const preparing = receiver.prepare(plan([[0, 500, 60, 80, 0]])), rejected = assert.rejects(preparing, {code: 'clean_clock_unavailable'});
+  h.nodes[0].port.postMessage = () => { throw new Error('Closed port'); };
+  assert.doesNotThrow(() => h.setState('suspended')); await rejected;
+  assert.equal(errors.length, 1); assert.equal(errors[0].code, 'clean_clock_unavailable'); assert.equal(receiver.pending.size, 0); assert.equal(timers.pending.size, 0); assert.equal(receiver.disposed, true);
+  h.setState('running'); assert.equal(receiver.state, 'error'); h.deliverCore(); h.deliverMain(); assert.equal(receiver.state, 'error');
+});
+
+test('failed command and failed cancellation delivery report once and clear every deadline', async () => {
+  const h = basicKeyAudioHarness({autoMessages: false}), timers = lifecycleTimers(), errors = [], receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, ...timers, onError: value => errors.push(value)});
+  h.nodes[0].port.postMessage = () => { throw new Error('Broken port'); };
+  await assert.rejects(receiver.prepare(plan([[0, 500, 60, 80, 0]])), {code: 'audio_processor_error'});
+  assert.equal(errors.length, 1); assert.equal(errors[0].details.command, 'prepare'); assert.equal(timers.pending.size, 0); assert.equal(receiver.pending.size, 0); assert.equal(receiver.disposed, true);
+});
+
+test('manual stop rejects a pending request even when its cancellation post throws', async () => {
+  const h = basicKeyAudioHarness({autoMessages: false}), timers = lifecycleTimers(), errors = [], receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, ...timers, onError: value => errors.push(value)});
+  const preparing = receiver.prepare(plan([[0, 500, 60, 80, 0]])), rejected = assert.rejects(preparing, {code: 'audio_canceled'});
+  h.nodes[0].port.postMessage = () => { throw new Error('Closed port'); };
+  assert.doesNotThrow(() => receiver.stop()); await rejected;
+  assert.equal(errors.length, 1); assert.equal(errors[0].code, 'audio_processor_error'); assert.equal(timers.pending.size, 0); assert.equal(receiver.pending.size, 0); assert.equal(receiver.connected, false);
+});
+
+test('a module load that never resolves has a bounded lifecycle deadline before any audio node exists', async () => {
+  const h = basicKeyAudioHarness(), timers = lifecycleTimers(); let lateResolve;
+  h.context.audioWorklet.addModule = () => new Promise(resolve => { lateResolve = resolve; });
+  const creating = BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, ...timers}), rejected = assert.rejects(creating, {code: 'audio_worklet_unavailable'});
+  await Promise.resolve(); assert.equal([...timers.pending.values()][0].delay, 5000); timers.fire(); await rejected;
+  assert.equal(timers.pending.size, 0); assert.equal(h.nodes.length, 0); lateResolve(); await Promise.resolve(); await Promise.resolve(); assert.equal(h.nodes.length, 0);
 });
