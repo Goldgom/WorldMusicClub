@@ -13,32 +13,36 @@ export function planNotationFit({width,height,contentWidth,contentHeight,glyphSi
     horizontalPages:Math.max(1,Math.ceil(paintedWidth/width)),verticalPages:Math.max(1,Math.ceil(paintedHeight/height))};
 }
 
-/** CSS zoom is confined to renderer-owned paint children. The unscaled surface
+/** CSS zoom is confined to actual SVG paint, including nested part renderers. The unscaled surface
  * width stays stable for responsive engraving, exact SVG identities stay in
  * place, and native scrolling/reveal geometry uses the scaled painted bounds. */
 export function setupNotationFit({viewport,getSurface,getReservedHeight=()=>0,onChange=()=>{},window=viewport.ownerDocument.defaultView}) {
   let frame=null,disposed=false,last='',surface=null,owned=new Map();
-  const restore=()=>{for(const [node,style]of owned){node.style.zoom=style.zoom;node.style.maxWidth=style.maxWidth;delete node.dataset.notationFitPaint;}owned.clear();};
+  const restoreNode=(node,style)=>{node.style.zoom=style.zoom;node.style.maxWidth=style.maxWidth;delete node.dataset.notationFitPaint;};
+  const restore=()=>{for(const [node,style]of owned)restoreNode(node,style);owned.clear();};
   const schedule=()=>{if(disposed||frame!==null)return;frame=window.requestAnimationFrame?window.requestAnimationFrame(()=>{frame=null;refresh();}):setTimeout(()=>{frame=null;refresh();},0);};
   function refresh() {
     if(disposed)return;
     const next=viewport.hidden?null:getSurface();
     if(next!==surface){restore();surface=next;last='';}
     if(!surface)return;
-    const paint=[...surface.children].filter(node=>!node.hidden&&(node.tagName?.toLowerCase()==='svg'||node.querySelector('svg')));
+    const paint=[...surface.querySelectorAll('svg')].filter(node=>!node.closest('[hidden]')&&!node.parentElement?.closest('svg'));
+    const activePaint=new Set(paint);for(const [node,style]of owned)if(!activePaint.has(node)){restoreNode(node,style);owned.delete(node);}
     for(const node of paint)if(!owned.has(node)){owned.set(node,{zoom:node.style.zoom||'',maxWidth:node.style.maxWidth||''});node.dataset.notationFitPaint='';node.style.maxWidth='none';}
-    if(!paint.length)return;
+    if(!paint.length){const plan={status:'unavailable',scale:1},signature=JSON.stringify(plan);viewport.dataset.notationFit=plan.status;viewport.dataset.notationScale='1';if(signature!==last){last=signature;onChange(plan);}return plan;}
     const rect=viewport.getBoundingClientRect(),surfaceRect=surface.getBoundingClientRect(),style=window.getComputedStyle?.(surface);
     const paddingX=(parseFloat(style?.paddingLeft)||0)+(parseFloat(style?.paddingRight)||0),paddingY=(parseFloat(style?.paddingTop)||0)+(parseFloat(style?.paddingBottom)||0);
-    const widths=[],heights=[],glyphs=[];let mode='staff';
+    const widths=[],heights=[],glyphs=[];let mode='staff',paintedHeight=0;
     for(const node of paint){
       const zoom=Number(node.style.zoom)||1,bounds=node.getBoundingClientRect();
-      widths.push(bounds.width/zoom);heights.push(bounds.height/zoom);
+      widths.push(bounds.width/zoom);heights.push(bounds.height/zoom);paintedHeight+=bounds.height;
       const numbered=node.querySelector('.jianpu-note');if(numbered)mode='jianpu';
       const marks=numbered?[...node.querySelectorAll('.jianpu-note')]:[...node.querySelectorAll('.vf-notehead,.note-head')];
       for(const mark of marks){const box=mark.getBoundingClientRect();const size=numbered?parseFloat(window.getComputedStyle?.(mark)?.fontSize)||25:box.height/zoom;if(positive(size))glyphs.push(size);}
     }
-    const reservedHeight=Math.max(0,getReservedHeight());
+    // Part headings, wrapper margins and quiet-part text stay at normal size.
+    // Deduct their measured height instead of pretending it scales with SVGs.
+    const unscaledHeight=Math.max(0,surfaceRect.height-paddingY-paintedHeight),reservedHeight=Math.max(0,getReservedHeight())+unscaledHeight;
     const plan=planNotationFit({width:Math.max(0,Math.min(rect.width,surfaceRect.width)-paddingX),height:Math.max(1,rect.height-paddingY-reservedHeight),
       contentWidth:Math.max(...widths),contentHeight:heights.reduce((sum,height)=>sum+height,0),glyphSize:glyphs.length?Math.min(...glyphs):mode==='jianpu'?25:10,mode});
     for(const node of paint){const scale=String(plan.scale);if(node.style.zoom!==scale)node.style.zoom=scale;}

@@ -49,8 +49,9 @@ export async function loadNotationPartBatch({partIds,firstPart=0,maxParts=4,meas
       if(measureCount>1){measureCount=Math.max(1,Math.floor(measureCount/2));continue;}
       return {...batch,pages:[],measureCount,requestedMeasureCount,targetCount,status:'page_limit'};
     }
-    const ready=pages.filter(page=>['ready','percussion_selectors','onset_page'].includes(page.status));
-    const paintable=pages.filter(page=>['ready','percussion_selectors','onset_page','rendering_unavailable'].includes(page.status));
+    const quietClock=page=>page.status==='empty_page'&&Array.isArray(page.measures)&&page.measures.length>0&&Number.isFinite(page.source_start_ms)&&Number.isFinite(page.follow_end_ms)&&page.follow_end_ms>page.source_start_ms;
+    const ready=pages.filter(page=>['ready','percussion_selectors','onset_page'].includes(page.status)||quietClock(page));
+    const paintable=pages.filter(page=>['ready','percussion_selectors','onset_page','rendering_unavailable'].includes(page.status)||quietClock(page));
     return {...batch,pages,measureCount,requestedMeasureCount,targetCount,status:ready.length===pages.length?'ready':paintable.length?'partial':'unavailable'};
   }
 }
