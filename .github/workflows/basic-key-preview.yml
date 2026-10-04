@@ -46,13 +46,14 @@ jobs:
           toolchain: '1.99.0'
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
-      - run: node --test tests/basic-key-acceptance.test.js tests/basic-keys-consumer.test.js tests/basic-key-schema.test.js tests/dense-rendition-acceptance.test.js
+      - run: node --test tests/basic-key-audio-worklet.test.js tests/basic-key-acceptance.test.js tests/basic-keys-consumer.test.js tests/basic-key-schema.test.js tests/dense-rendition-acceptance.test.js
       - run: cargo test -p score-core basic_keys --locked
       - run: "cargo test -p worldmusichub-desktop --lib acceptance:: --locked"
       - id: dense_native_driver
         run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
       - run: cargo build -p score-core --bin clean-song-batch --locked
-      - run: cargo build -p practice-server --locked
+      - id: notation_server
+        run: cargo build -p practice-server --locked
       - name: Real Rust conversion and clean library persistence
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
@@ -71,6 +72,7 @@ jobs:
           WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-basic-key-check.mjs
           WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-basic-key-check.mjs
       - name: Original twelve-part Current and All notation, scrolling and real page following
+        if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
@@ -170,7 +172,7 @@ jobs:
           toolchain: '1.99.0'
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
-      - run: node --test tests/basic-key-acceptance.test.js tests/basic-keys-consumer.test.js tests/basic-key-schema.test.js tests/dense-rendition-acceptance.test.js
+      - run: node --test tests/basic-key-audio-worklet.test.js tests/basic-key-acceptance.test.js tests/basic-keys-consumer.test.js tests/basic-key-schema.test.js tests/dense-rendition-acceptance.test.js
       - name: Parse Windows script and check the bounded owned picker contract
         shell: pwsh
         run: |

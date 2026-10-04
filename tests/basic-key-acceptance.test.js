@@ -303,7 +303,7 @@ test('focused and full gates require the real twelve-part hosted app and retain 
  for(const[name,job]of [['basic-key-preview.yml','basic-key-browser'],['windows-desktop-acceptance.yml','bulk-import-browser']]){
   const parsed=spawnSync('python3',['scripts/check-authoring-workflow.py','--json',fileURLToPath(new URL(`../.github/workflows/${name}`,import.meta.url))],{encoding:'utf8'});assert.equal(parsed.status,0,parsed.stderr);const steps=JSON.parse(parsed.stdout).jobs[job].steps;
   const run=steps.filter(step=>step.run==='node scripts/hosted-notation-scope-check.mjs');assert.equal(run.length,1);
-  assert.equal(run[0].if,name==='windows-desktop-acceptance.yml'?"${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}":undefined);
+  assert.equal(run[0].if,"${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}");
   assert.notEqual(run[0]['continue-on-error'],true);assert.deepEqual(run[0].env,{WMH_HOSTED_BROWSER:'1',WMH_SOURCE_SHA:'${{ github.sha }}',WMH_SERVER_BINARY:'${{ github.workspace }}/target/debug/practice-server'});
   assert.ok(steps.findIndex(step=>step.run==='cargo build -p practice-server --locked')<steps.indexOf(run[0]));
   const upload=steps.find(step=>step.with?.name==='notation-scope-browser-${{ github.sha }}');assert.equal(upload.if,'always()');assert.deepEqual(upload.with.path.trim().split('\n'),['test-results/notation-scope/report.json','test-results/notation-scope/*.png','test-results/notation-scope/server.log']);
