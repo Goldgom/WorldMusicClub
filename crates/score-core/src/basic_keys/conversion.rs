@@ -166,7 +166,8 @@ pub(super) fn derive(
     }
     // The complete VSQ profile is authoritative for project text; never turn a
     // VSQ MIDI carrier with few/no channel notes into an apparently empty song.
-    if timeline.events().iter().any(|event| matches!(event.kind(), EventKind::Meta { meta_type: 1, data } if data.starts_with(b"DM:"))) {
+    if timeline.events().iter().any(|event| matches!(event.kind(), EventKind::Meta { meta_type: 1, data } if data.starts_with(b"DM:")))
+        && crate::clean_conversion::contains_vsq_project(timeline.original_bytes(),&source.sha256) {
         return Err("VSQ project text requires the existing exact VSQ complete-score converter".into());
     }
     let mut tracks: Vec<_> = (0..timeline.track_count())

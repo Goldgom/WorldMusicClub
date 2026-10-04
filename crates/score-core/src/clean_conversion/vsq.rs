@@ -4,6 +4,12 @@
 use super::*;
 use crate::vsq_clean;
 
+pub(super) fn contains_project(bytes: &[u8], source_sha256: &str) -> bool {
+    let mut project_text = Vec::new();
+    let _ = scan(bytes, source_sha256, &mut project_text);
+    project_text.iter().any(|text| common_version(text))
+}
+
 pub(super) fn prepare(bytes: &[u8], draft: &mut Draft) -> Result<bool, String> {
     let mut project_text = Vec::new();
     let raw = scan(bytes, &draft.source.sha256, &mut project_text);

@@ -57,6 +57,24 @@ fn full_events_survive_unsupported_sound_and_byte_text() {
 }
 
 #[test]
+fn dm_prefixed_comment_is_not_misclassified_as_a_vsq_project() {
+    let source = track(&[
+        (
+            0,
+            &[
+                255, 1, 10, b'D', b'M', b':', b'c', b'o', b'm', b'm', b'e', b'n', b't',
+            ],
+        ),
+        (0, &[0x90, 60, 90]),
+        (1, &[0x80, 60, 0]),
+    ]);
+    let score = convert(&[source]);
+    assert_eq!(score.coverage.key_attacks, 1);
+    assert_eq!(score.coverage.determined_ends, 1);
+    decode_json(&encode_json(&score).unwrap()).unwrap();
+}
+
+#[test]
 fn overlap_proves_only_equal_time_ends_including_later_attacks() {
     let score = convert(&[track(&[
         (0, &[0x90, 60, 90]),

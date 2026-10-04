@@ -13,6 +13,9 @@ use std::collections::BTreeMap;
 #[cfg(test)]
 mod tests;
 mod vsq;
+pub(crate) fn contains_vsq_project(bytes: &[u8], source_sha256: &str) -> bool {
+    vsq::contains_project(bytes, source_sha256)
+}
 #[cfg(test)]
 mod vsq_tests;
 
