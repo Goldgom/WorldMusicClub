@@ -246,7 +246,12 @@ function pausePlayback(reason = 'app.paused', evidenceReason = 'pause') {
   // boundary. Real lifecycle events still matter even before a late onset arrives.
   const recordEvidence = evidenceReason !== 'pause' || transport.running || state.held.size > 0 || state.recorder.evidence.active.size > 0;
   const pauseTime = performance.now(); advanceLoopClock(pauseTime); state.recorder.pause(pauseTime);
-  if (transport.running) { transport.pause(pauseTime); bindText($('transport-status'), () => typeof reason==='function'?reason():reason.startsWith('app.')?t(reason):reason); }
+  if (transport.running) {
+    if(hasBasicKeyRendition(state.cleanSong)&&transport.time(pauseTime)>=state.compiled.timeline.duration_ms){
+      if(state.mode==='practice')state.recorder.closeAtEnd(pauseTime);
+      transport.finish(state.compiled.timeline.duration_ms);bindText($('transport-status'),()=>t('app.complete'));
+    }else{transport.pause(pauseTime);bindText($('transport-status'),()=>typeof reason==='function'?reason():reason.startsWith('app.')?t(reason):reason);}
+  }
   silenceHeld(evidenceReason,pauseTime,pauseTime,recordEvidence);metronome?.pause();
   updateButtons();
   drawFrame();
@@ -1032,9 +1037,9 @@ function drawFrame(displayOnly = false) {
       const previouslyClosed=state.recorder.active?.closedWall!==null;
       const pass=state.recorder.closeAtEnd(now);
       if(!previouslyClosed){updateButtons();refreshPassHistory()}
-      if(pass&&now<pass.deadline)bindText($('transport-status'), () => t('app.receivingInput'));
+      if((pass&&now<pass.deadline)||cleanPlayer.basicKeys.running)bindText($('transport-status'), () => t('app.receivingInput'));
       else{transport.finish(duration);silenceHeld('completion',now,pass?.closedWall);updateButtons();bindText($('transport-status'), () => t('app.complete'))}
-    } else if (state.mode==='listen' && position>=duration+80) {transport.finish(duration);silenceHeld('completion',now);updateButtons();bindText($('transport-status'), () => t('app.complete'))}
+    } else if (state.mode==='listen' && position>=duration+80 && !cleanPlayer.basicKeys.running) {transport.finish(duration);silenceHeld('completion',now);updateButtons();bindText($('transport-status'), () => t('app.complete'))}
     else bindText($('transport-status'), () => position < segmentStart ? t('app.countIn', {count:Math.ceil((segmentStart-position)/(60000/(Number($('tempo').value)||100)))}) : state.mode === 'practice' ? t('app.yourTurn', {loop:state.loop?t('app.loopSuffix',{count:state.loopIteration}):''}) : t('app.listening', {loop:state.loop?t('app.loopSuffix',{count:state.loopIteration}):''}));
   }
   if(displayOnly!==true&&state.mode==='practice'&&!referenceInputActive()){

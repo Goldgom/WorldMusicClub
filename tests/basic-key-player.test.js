@@ -19,7 +19,7 @@ function harness(){
  return{song,...audio,player,errors,start:options=>player.start({context:audio.context,output:audio.output,acceptedPolicyId:BASIC_KEY_RENDITION,...options}),at:ms=>{position=ms;},renderTo(seconds){while(audio.frame<Math.ceil(seconds*audio.context.sampleRate))audio.renderBlock(Math.min(128,Math.ceil(seconds*audio.context.sampleRate)-audio.frame));},close(){player.stop();if(original)Object.defineProperty(globalThis,'AudioWorkletNode',original);else delete globalThis.AudioWorkletNode;}};
 }
 const core=h=>h.nodes.at(-1).core;
-const selected=h=>core(h).plan.notes;
+const selected=h=>h.player.basicKeys.receiver.plan.notes;
 
 test('complete basic-key admission joins every attack, percussion and chosen gate without changing source bytes',()=>{
  const opened=basicKeyRenditionFixture(),song=basicKeySong();assert.equal(song.score_json,opened.clean_package.score_json);assert.equal(song.metadata_json,opened.clean_package.metadata_json);assert.equal(song.compilation.timeline.notes.length,5);assert.equal(basicKeysParts(song).reduce((sum,part)=>sum+part.practice_targets,0),5);assert.ok(basicKeysParts(song).every(part=>part.practice_available));assert.equal(inspectCleanRendition(song).supported,true);assert.equal(song.compilation.timeline.notes.find(note=>note.midi===64).duration_ms,20);assert.equal(song.notation.parts[0].notes.length,1);assert.ok(Object.isFrozen(song.runtime.rendition.notes[0]));
@@ -31,7 +31,7 @@ test('complete basic-key admission joins every attack, percussion and chosen gat
 test('Listen renders all native IDs through the audio core while the UI clock does not pump',async()=>{
  const h=harness(),before=JSON.stringify(h.song);
  try{
-  const anchor=await h.start();assert.equal(anchor.anchorTime,.05);assert.equal(core(h).startedCount,0,'Admission precedes the first audible sample');
+  const anchor=await h.start();assert.ok(Math.abs(anchor.anchorTime-h.context.currentTime-.05)<=1/h.context.sampleRate);assert.equal(core(h).startedCount,0,'Admission precedes the first audible sample');
   assert.equal(selected(h).length,5);assert.equal(selected(h).filter(note=>note[6]===1).length,1);
   h.renderTo(1.1);await Promise.resolve();
   assert.equal(core(h).startedCount,5);assert.equal(core(h).endedCount,5);assert.equal(core(h).activeCount,0);assert.equal(core(h).state,'ended');

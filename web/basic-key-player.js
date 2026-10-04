@@ -19,12 +19,16 @@ export class BasicKeyPlayer {
     if(!context||context.state!=='running'||!output)throw new CleanSongError('clean_audio_unavailable','Audio must be unlocked by a user gesture.');
     if(this.lookAheadMs!==rendition.policy.allocation_lookahead_ms)throw new CleanSongError('reference_policy_required','The renderer allocation budget must match the declared native policy.');
     this.preparing=true;this.context=context;
+    // A suspended then resumed device during module loading is still an interruption.
+    this.contextListener=()=>{if(epoch===this.epoch&&context.state!=='running'){this.stop();this.onError(new CleanSongError('clean_clock_unavailable','The audio device stopped during playback preparation.'));}};
+    context.addEventListener?.('statechange',this.contextListener);
     let receiver;
     try{
       // This full-source work completes before requesting the 50 ms start lead.
       const plan=buildBasicKeyAudioPlan(song,{sampleRate:context.sampleRate,mode,targetPart,mutedParts:mutedParts||[],soloParts:soloParts||[]});
       receiver=await BasicKeyAudioReceiver.create(context,output,{onError:error=>{if(epoch!==this.epoch)return;this.stop();this.onError(error);},onEnded:()=>{if(epoch===this.epoch)this.running=false;}});
       if(epoch!==this.epoch){receiver.dispose();return null;}
+      context.removeEventListener?.('statechange',this.contextListener);this.contextListener=null;
       this.receiver=receiver;
       const prepared=await receiver.prepare(plan,{positionMs:resumePositionMs??0});
       if(epoch!==this.epoch){receiver.dispose();return null;}
@@ -47,5 +51,5 @@ export class BasicKeyPlayer {
     const prepared=await preparing;if(!prepared||epoch!==this.epoch)return null;
     return this.startPrepared({anchorTime:options.anchorTime??this.context.currentTime+.05});
   }
-  stop(){this.epoch++;this.running=false;this.preparing=false;this.receiver?.dispose();this.receiver=null;this.plan=null;this.anchor=null;}
+  stop(){this.epoch++;this.running=false;this.preparing=false;this.context?.removeEventListener?.('statechange',this.contextListener);this.contextListener=null;this.receiver?.dispose();this.receiver=null;this.plan=null;this.anchor=null;}
 }

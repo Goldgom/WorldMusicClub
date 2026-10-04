@@ -6,7 +6,7 @@ import {nativeScoreServer,nativeStorageApp,nativeResponse,authoredScore} from '.
 import {getAppI18n} from '../web/app-locale.js';
 import {keyboardGeometry} from '../web/music.js';
 
-async function setup({notation=false,originalAcceptance=false,audioWorklet=true,audioMessages=true}={}){
+async function setup({notation=false,originalAcceptance=false,audioWorklet=true,audioMessages=true,advanceAudio=true}={}){
  const oracle=originalAcceptance?JSON.parse(readFileSync(new URL('./fixtures/basic-key-acceptance/rendition-native.json',import.meta.url),'utf8')):null;
  const opened=oracle?.open||basicKeyRenditionFixture(),descriptor=opened.clean_package,score=JSON.parse(descriptor.score_json).notation,server=await nativeScoreServer(),key=`song-${descriptor.content_sha256}`;
  const summary={version:2,content_sha256:descriptor.content_sha256,profile:descriptor.profile,capabilities:descriptor.capabilities,coverage:descriptor.coverage,notation_available:true,media:[]};
@@ -14,23 +14,23 @@ async function setup({notation=false,originalAcceptance=false,audioWorklet=true,
  const third=notation?JSON.parse(readFileSync(new URL('./fixtures/basic-key-rendition-third-part.json',import.meta.url),'utf8')):null;
  const pages=notation?JSON.parse(readFileSync(new URL('./fixtures/basic-key-rendition-notation-page.json',import.meta.url),'utf8')):null;
  server.setRoute(({path,body})=>{if(path==='/api/library/basic-keys/notation'&&oracle){const row=oracle.pages.find(row=>['part_id','first_measure','measure_count','position_ms','rendition_policy_id'].every(key=>row.request.settings[key]===body.settings[key])&&JSON.stringify(row.request.settings.display_meter)===JSON.stringify(body.settings.display_meter));assert.ok(row,`Missing original native page: ${JSON.stringify(body)}`);assert.deepEqual(body,row.request);return nativeResponse(row.response);}if(path==='/api/library/basic-keys/notation'&&pages){assert.equal(body.source.content_sha256,descriptor.content_sha256);if(!body.settings.rendition_policy_id)return nativeResponse(pages.legacy);assert.equal(body.settings.rendition_policy_id,'wmh-basic-key-rendition-fifo-v1');return nativeResponse(body.settings.part_id===score.parts[1].id?pages.percussion.response:body.settings.part_id===score.parts[2].id?third.response:pages.melodic.response);}if(path==='/api/instrument-check'){const keys=keyboardGeometry(body.profile.key_count,body.profile.lowest_midi),low=keys[0].midi,high=keys.at(-1).midi;return nativeResponse({lowest_midi:low,highest_midi:high,note_options:body.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:note.midi>=low&&note.midi<=high,positions:[]})),diagnostics:[],changed_source_notes:false});}});
- let clock=1000;const app=await nativeStorageApp(server,{now:()=>clock,audioWorklet,audioMessages});await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready'&&!app.$('start-practice').disabled);return{app,server,key,descriptor,score,time:value=>{clock=value;app.renderAudioTo((value-1000)/1000);}};
+ let clock=1000;const app=await nativeStorageApp(server,{now:()=>clock,audioWorklet,audioMessages});await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready'&&!app.$('start-practice').disabled);return{app,server,key,descriptor,score,time:value=>{clock=value;if(advanceAudio)app.renderAudioTo((value-1000)/1000);}};
 }
 // These are retained plan gates, not OscillatorNode counts or actual rendered voices.
-const admittedGates=app=>app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected).flatMap(node=>node.core.plan.notes.filter(note=>note[3]>node.core.positionFrame).map(note=>({kind:note[6]?'percussion_selector':'melodic_key'})));
+const admittedGates=app=>app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected).flatMap(node=>[...node.core.plan.ends].flatMap((end,index)=>end>node.core.positionFrame?[{kind:node.core.plan.roles[index]?'percussion_selector':'melodic_key'}]:[]));
 const connectedReceivers=app=>app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected);
 
 test('complete basic Listen, pause, reset and natural end run on the native full timeline',async()=>{
  const {app,descriptor,time}=await setup();try{
   assert.equal(app.$('start-listen').disabled,false);assert.match(app.$('clean-song-rendition').textContent,/retains all 5 note onsets.*selected human part.*default synthesized/);assert.match(app.$('basic-key-policy-text').textContent,/FIFO.*20 ms.*CC120\/123/);
   const compiles=app.requests.filter(request=>request.path==='/api/compile').length;await app.click('start-listen');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(admittedGates(app).length,5);assert.equal(app.requests.filter(request=>request.path==='/api/compile').length,compiles);assert.equal(app.plays.filter(args=>String(args[0]).startsWith('score:')).length,0);assert.match(app.$('song-complete-range-text').textContent,/5 eligible targets/);
-  await app.click('play-button');assert.equal(admittedGates(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');await app.click('play-button');assert.equal(admittedGates(app).length,5);await app.click('reset-button');assert.equal(admittedGates(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'ready');await app.click('play-button');time(2151);assert.equal(connectedReceivers(app)[0].core.startedCount,5);assert.equal(connectedReceivers(app)[0].core.endedCount,5);app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'ended');assert.equal(admittedGates(app).length,0);assert.equal(app.$('progress').value,1000);assert.equal(descriptor.score_json,basicKeyRenditionFixture().clean_package.score_json);
+  await app.click('play-button');assert.equal(admittedGates(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');await app.click('play-button');assert.equal(admittedGates(app).length,5);await app.click('reset-button');assert.equal(admittedGates(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'ready');await app.click('play-button');time(2151);assert.equal(connectedReceivers(app)[0].core.startedCount,5);assert.equal(connectedReceivers(app)[0].core.endedCount,5);await app.tick();app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'ended');assert.equal(admittedGates(app).length,0);assert.equal(app.$('progress').value,1000);assert.equal(descriptor.score_json,basicKeyRenditionFixture().clean_package.score_json);
  }finally{await app.close();}
 });
 
 test('complete basic accompaniment never enters captures, while real human input enters the selected-part take',async()=>{
  const {app,time,score}=await setup();try{
-  await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.deepEqual(admittedGates(app).map(node=>node.kind),['percussion_selector','melodic_key']);time(1100);await app.click('play-button');let take=await app.exported('export-takes');assert.equal(take.passes[0].timeline.notes.length,3);assert.equal(take.passes[0].interpretation.policy_id,'wmh-basic-key-rendition-fifo-v1');assert.equal(take.passes[0].interpretation.runtime_profile,'wmh-basic-key-practice-v2');assert.deepEqual(take.passes[0].interpretation.source_target_ids,take.passes[0].timeline.notes.map(note=>note.id));assert.deepEqual(take.passes[0].inputs,[]);assert.deepEqual(take.passes[0].captures,[]);assert.ok(take.passes[0].timeline.notes.every(note=>note.part_id===score.parts[0].id));
+  await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.deepEqual(admittedGates(app).map(node=>node.kind),['percussion_selector','melodic_key']);const firstCore=connectedReceivers(app)[0].core,expectedWall=1000+(firstCore.anchorFrame/app.audioHarnesses[0].context.sampleRate-app.audioHarnesses[0].context.currentTime)*1000,expectedPosition=firstCore.positionFrame*1000/app.audioHarnesses[0].context.sampleRate;time(1100);await app.click('play-button');let take=await app.exported('export-takes');assert.equal(take.passes[0].timeline.notes.length,3);assert.equal(take.passes[0].clock_segments[0].wallStart,expectedWall);assert.equal(take.passes[0].clock_segments[0].positionStart,expectedPosition);assert.equal(take.passes[0].interpretation.policy_id,'wmh-basic-key-rendition-fifo-v1');assert.equal(take.passes[0].interpretation.runtime_profile,'wmh-basic-key-practice-v2');assert.deepEqual(take.passes[0].interpretation.source_target_ids,take.passes[0].timeline.notes.map(note=>note.id));assert.deepEqual(take.passes[0].inputs,[]);assert.deepEqual(take.passes[0].captures,[]);assert.ok(take.passes[0].timeline.notes.every(note=>note.part_id===score.parts[0].id));
   await app.click('play-button');time(1200);const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:7,button:0});await app.tick();time(1250);app.emit(key,'pointerup',{pointerId:7});await app.click('play-button');take=await app.exported('export-takes');assert.equal(take.passes[0].inputs.length,1);assert.equal(take.passes[0].inputs[0].midi,60);assert.equal(take.passes[0].captures.length,1);
  }finally{await app.close();}
 });
@@ -130,9 +130,49 @@ for(const interruption of ['pause','reset','mute','blur','hidden','settings','na
 test('a late start acknowledgement cancels audio without backdating transport or a scored pass',async()=>{
  const {app}=await setup({audioMessages:false});try{
   await app.click('start-practice');await app.until(()=>app.audioHarnesses.some(h=>h.toCore.length));
-  const audio=app.audioHarnesses[0];audio.deliverCore();audio.deliverMain();await app.tick();
+  const audio=app.audioHarnesses[0];audio.deliverCore();audio.finishPreparation();audio.deliverMain();await app.tick();
   assert.equal(audio.toCore[0][1].type,'start');audio.deliverCore();assert.equal(audio.toMain[0][1].type,'started');
   app.renderAudioTo(.06);audio.deliverMain();await app.tick();audio.deliverCore();
   assert.equal(connectedReceivers(app).length,0);assert.notEqual(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(app.$('export-takes').disabled,true);assert.match(app.$('notice-message').textContent,/clean_late_start/);
+ }finally{await app.close();}
+});
+
+
+for(const state of ['suspended','closed'])test(`an audio context becoming ${state} stops playback and never resumes on a state notification`,async()=>{
+ const {app}=await setup();try{
+  await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');app.setAudioState(state);await app.tick();
+  assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');assert.match(app.$('notice-message').textContent,/clean_clock_unavailable/);
+  app.setAudioState('running');await app.tick();assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');
+ }finally{await app.close();}
+});
+
+
+test('context interruption during module loading fences preparation even if the device returns to running',async()=>{
+ const {app}=await setup();let release;
+ try{app.setAudioModule(()=>new Promise(resolve=>{release=resolve;}));await app.click('start-practice');await app.until(()=>Boolean(release));app.setAudioState('suspended');app.setAudioState('running');release();await app.tick();await app.tick();assert.equal(connectedReceivers(app).length,0);assert.notEqual(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(app.$('export-takes').disabled,true);}finally{release?.();await app.close();}
+});
+
+test('pausing after the final gate but inside the Listen grace exposes replay instead of preparing beyond the source',async()=>{
+ const {app,time}=await setup();try{
+  await app.click('start-listen');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');time(2070);await app.tick();app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'playing');await app.click('play-button');assert.equal(app.$('clean-song-stage').dataset.rendererState,'ended');await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(connectedReceivers(app)[0].core.positionFrame,0);assert.doesNotMatch(app.$('notice-message').textContent,/invalid_audio_plan/);
+ }finally{await app.close();}
+});
+
+test('natural completion waits for exact audio gate ends when the wall clock leads the audio clock',async()=>{
+ const {app,time}=await setup({advanceAudio:false});try{
+  await app.click('start-listen');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');const audio=app.audioHarnesses[0],node=connectedReceivers(app)[0],core=node.core;
+  app.renderAudioTo(1.03);time(2131);app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(node.connected,true);assert.equal(core.activeCount,2);
+  app.renderAudioTo(1.06);await app.tick();app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'ended');assert.equal(node.connected,false);for(const [index,end] of core.plan.ends.entries())assert.equal(node.lastCompletion.ledger.actualEnds[index],core.anchorFrame+end);
+ }finally{await app.close();}
+});
+
+for(const interruption of ['pause','blur','mute'])test(`Practice ${interruption} inside final input grace preserves the prior take until assessment and explicit replay`,async()=>{
+ const {app,time}=await setup();try{
+  await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');time(2070);await app.tick();app.frame();
+  const before=await app.exported('export-takes');assert.equal(before.passes.length,1);assert.equal(before.passes[0].clock_segments[0].wallEnd,2050);assert.equal(before.passes[0].grace_deadline_wall_ms,2230);
+  if(interruption==='pause')await app.click('play-button');else if(interruption==='blur')app.emit(app.window,'blur');else await app.click('sound-button');
+  assert.equal(app.$('play-button').disabled,true);assert.equal(connectedReceivers(app).length,0);time(2130);const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:701,button:0});await app.tick();app.emit(key,'pointerup',{pointerId:701});
+  const grace=await app.exported('export-takes');assert.equal(grace.passes.length,1);assert.equal(grace.passes[0].clock_segments[0].wallEnd,2050);assert.equal(grace.passes[0].grace_deadline_wall_ms,2230);assert.equal(grace.passes[0].inputs.length,1);assert.equal(grace.passes[0].captures.length,1);assert.equal(grace.passes[0].inputs[0].at_ms,1080);
+  time(2240);app.frame();await app.until(()=>!app.$('play-button').disabled);assert.equal((await app.exported('export-takes')).passes.length,1,'Assessment completion must not create another take');await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');await app.click('play-button');const replay=await app.exported('export-takes');assert.equal(replay.passes.length,2);assert.equal(replay.passes[0].inputs.length,1);assert.deepEqual(replay.passes[1].inputs,[]);assert.equal(replay.passes[1].clock_segments[0].positionStart,0);
  }finally{await app.close();}
 });
