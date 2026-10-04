@@ -1,4 +1,4 @@
-import {BASIC_KEY_AUDIO_LIMITS as LIMITS, BasicKeyAudioError, basicKeySampleRate, openBasicKeyAudioTransfer} from './basic-key-audio-plan.js';
+import {BASIC_KEY_AUDIO_LIMITS as LIMITS, BasicKeyAudioError, basicKeySampleRate, openBasicKeyAudioTransfer, VSQ_AUDIO_IDENTITY, VSQ_TRIANGLE_SIZE, audioTransferIdentity, compareAudioTransferIdentity} from './basic-key-audio-plan.js';
 
 const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
 const reject = (code, message) => { throw new BasicKeyAudioError(code, message); };
@@ -24,7 +24,7 @@ export class BasicKeyAudioCore {
   }
   resetSlots() { this.activeCount = 0; this.freeCount = LIMITS.maxVoices; for (let i = 0; i < LIMITS.maxVoices; i++) this.freeSlots[i] = LIMITS.maxVoices - 1 - i; }
   snapshot(frame) {
-    return {generation: this.generation, planGeneration: this.planGeneration, state: this.state, sourceSha256: this.plan?.sourceSha256 ?? null, sampleRate: this.sampleRate, frame, anchorFrame: this.anchorFrame ?? null, positionFrame: this.positionFrame ?? null, durationFrames: this.plan?.durationFrames ?? 0, sourceNotes: this.plan?.sourceNotes ?? 0, notes: this.plan?.count ?? 0, eligibleNotes: this.eligibleCount, started: this.startedCount, ended: this.endedCount, skipped: this.skippedCount, active: this.activeCount};
+    return {generation: this.generation, planGeneration: this.planGeneration, state: this.state, sourceSha256: this.plan?.sourceSha256 ?? null, policyId: this.plan?.policyId ?? null, identityKind: this.plan?.identityKind ?? 'midi-source-coordinate', sampleRate: this.sampleRate, frame, anchorFrame: this.anchorFrame ?? null, positionFrame: this.positionFrame ?? null, durationFrames: this.plan?.durationFrames ?? 0, sourceNotes: this.plan?.sourceNotes ?? 0, notes: this.plan?.count ?? 0, eligibleNotes: this.eligibleCount, started: this.startedCount, ended: this.endedCount, skipped: this.skippedCount, active: this.activeCount};
   }
   emitCompletion(type, frame, extra = {}) {
     const ledger = this.validated && this.actualStarts ? {actualStarts: this.actualStarts, actualEnds: this.actualEnds} : null;
@@ -61,7 +61,7 @@ export class BasicKeyAudioCore {
         if (!integer(message.positionFrame, -600 * this.sampleRate, plan.durationFrames)) reject('invalid_audio_command', 'The prepared source position exceeds the rendition or ten-minute count-in bound.');
         this.plan = plan; this.positionFrame = message.positionFrame; this.anchorFrame = null;
         this.order = plan.playOrder; this.actualStarts = plan.actualStarts; this.actualEnds = plan.actualEnds; this.steps = plan.steps;
-        this.preparePhase = 0; this.prepareCursor = 0; this.prepareRequestId = requestId; this.heapLength = 0;
+        this.preparePhase = plan.triangles ? -1 : 0; this.prepareCursor = 0; this.prepareRequestId = requestId; this.heapLength = 0;
         this.state = 'preparing'; return;
       }
       if (message.generation !== this.generation) reject('invalid_audio_command', 'The audio generation was not prepared.');
@@ -79,7 +79,7 @@ export class BasicKeyAudioCore {
         const end = Math.min(this.plan.count, message.offset + message.count), rows = [];
         for (let index = message.offset; index < end; index++) {
           const p = this.plan;
-          rows.push({index, noteId: `midi-t${p.tracks[index] + 1}-e${p.events[index] + 1}`, eventId: `midi:${p.sourceSha256}:t${p.tracks[index]}:e${p.events[index]}`, startFrame: p.starts[index], endFrame: p.ends[index], actualStartFrame: this.actualStarts[index], actualEndFrame: this.actualEnds[index]});
+          rows.push({index, ...audioTransferIdentity(p, index), startFrame: p.starts[index], endFrame: p.ends[index], actualStartFrame: this.actualStarts[index], actualEndFrame: this.actualEnds[index]});
         }
         this.emit({type: 'audit', requestId, ...this.snapshot(frame), offset: message.offset, nextOffset: end, rows}); return;
       }
@@ -89,12 +89,19 @@ export class BasicKeyAudioCore {
   prepareChunk(frame, blockLength) {
     const p = this.plan;
     // At most 1024 rows per quantum; scale with rate/block size so the full
-    // two-pass maximum plan completes in about one second at normal rates
-    // (about 2.05 s at 8 kHz/128-frame quanta because this cap binds). Heap
+    // two-pass maximum MIDI plan completes in about one second at normal rates
+    // (about 2.05 s at 8 kHz/128-frame quanta because this cap binds). VSQ's
+    // bounded waveform validation adds at most the same amount of work. Heap
     // removals per chunk are bounded by its pushes plus the initial 128 ends.
     const bound = Math.min(1024, Math.max(1, Math.ceil(2 * LIMITS.maxNotes * blockLength / this.sampleRate)));
     let worked = 0;
     while (worked < bound && this.state === 'preparing') {
+      if (this.preparePhase === -1) {
+        if (this.prepareCursor === p.triangles.length) { this.preparePhase = 0; this.prepareCursor = 0; continue; }
+        const value = p.triangles[this.prepareCursor++]; worked++;
+        if (!Number.isFinite(value) || Math.abs(value) > 1.001) reject('invalid_audio_plan', 'A procedural triangle table exceeds its finite unit-amplitude bound.');
+        continue;
+      }
       if (this.prepareCursor === p.count) {
         if (this.preparePhase === 0) { this.preparePhase = 1; this.prepareCursor = 0; continue; }
         this.validated = true; this.state = 'ready'; this.emit({type: 'ready', requestId: this.prepareRequestId, ...this.snapshot(frame + blockLength)}); break;
@@ -102,14 +109,16 @@ export class BasicKeyAudioCore {
       const index = this.prepareCursor++; worked++;
       if (this.preparePhase === 0) { p.seen[index] = 0; this.actualStarts[index] = -1; this.actualEnds[index] = -1; continue; }
       const start = p.starts[index], end = p.ends[index], key = p.keys[index], velocity = p.velocities[index], role = p.roles[index];
-      if (!integer(start, 0, p.durationFrames) || !integer(end, start + 1, p.durationFrames) || index > 0 && start < p.starts[index - 1] || !integer(p.tracks[index], 0, Number.MAX_SAFE_INTEGER - 1) || !integer(p.events[index], 0, Number.MAX_SAFE_INTEGER - 1) || key > 127 || velocity < 1 || velocity > 127 || role > 1) reject('invalid_audio_plan', 'A transferred audio gate is invalid or out of order.');
+      const vsq = p.identityKind === VSQ_AUDIO_IDENTITY;
+      const validIdentity = vsq ? p.sourceTracks[index] > 0 && [4, 8].includes(p.authoredIdDigits[index]) && p.authoredIds[index] < 10 ** p.authoredIdDigits[index] : integer(p.tracks[index], 0, Number.MAX_SAFE_INTEGER - 1) && integer(p.events[index], 0, Number.MAX_SAFE_INTEGER - 1);
+      if (!integer(start, 0, p.durationFrames) || !integer(end, start + 1, p.durationFrames) || index > 0 && start < p.starts[index - 1] || !validIdentity || key > 127 || velocity < 1 || velocity > 127 || (vsq ? velocity !== 90 || role < 2 || role > 3 : role > 1)) reject('invalid_audio_plan', 'A transferred audio gate is invalid or out of order.');
       const frequency = 440 * 2 ** ((key - 69) / 12);
-      if (role === 0 && frequency > this.sampleRate * .45) reject('unsupported_audio_sample_rate', 'The audio device cannot represent every retained key without clamping.');
+      if (role !== 1 && frequency * (vsq ? role : 1) > this.sampleRate * .45) reject('unsupported_audio_sample_rate', 'The audio device cannot represent every retained key and declared harmonic without clamping.');
       this.steps[index] = TAU * frequency / this.sampleRate;
       const ordered = p.idOrder[index];
       if (ordered >= p.count || p.seen[ordered]) reject('invalid_audio_plan', 'The source-coordinate permutation is not complete and unique.');
       p.seen[ordered] = 1;
-      if (index > 0) { const before = p.idOrder[index - 1]; if (!(p.tracks[before] < p.tracks[ordered] || p.tracks[before] === p.tracks[ordered] && p.events[before] < p.events[ordered])) reject('invalid_audio_plan', 'Stable source coordinates are duplicated or out of order.'); }
+      if (index > 0 && compareAudioTransferIdentity(p, p.idOrder[index - 1], ordered) >= 0) reject('invalid_audio_plan', 'Stable source coordinates are duplicated or out of order.');
       while (this.heapLength && this.endHeap[0] <= start) {
         const tail = this.endHeap[--this.heapLength]; let at = 0;
         while (at * 2 + 1 < this.heapLength) { let child = at * 2 + 1; if (child + 1 < this.heapLength && this.endHeap[child + 1] < this.endHeap[child]) child++; if (this.endHeap[child] >= tail) break; this.endHeap[at] = this.endHeap[child]; at = child; }
@@ -128,6 +137,7 @@ export class BasicKeyAudioCore {
     const slot = this.freeSlots[--this.freeCount], voice = this.voiceSlots[slot], plan = this.plan;
     voice.note = index; voice.start = frame; voice.end = this.anchorFrame + plan.ends[index] - this.positionFrame;
     voice.step = this.steps[index]; voice.phase = voice.step / 2; voice.peak = .08 * plan.velocities[index] / 127; voice.drum = plan.roles[index] === 1;
+    voice.vsqRatio = plan.roles[index] >= 2 ? plan.roles[index] : 0; voice.harmonicPhase = voice.phase * voice.vsqRatio; voice.triangleOffset = plan.keys[index] * VSQ_TRIANGLE_SIZE;
     voice.noiseIndex = 0; voice.noiseState = 0x574d4801; voice.x1 = 0; voice.x2 = 0; voice.y1 = 0; voice.y2 = 0;
     this.activeSlots[this.activeCount++] = slot; this.actualStarts[index] = frame; this.startedCount++;
     if (this.trace) this.trace({type: 'start', index, frame, generation: this.planGeneration});
@@ -150,7 +160,15 @@ export class BasicKeyAudioCore {
       if (++voice.noiseIndex === this.noiseLength) { voice.noiseIndex = 0; voice.noiseState = 0x574d4801; }
       value = this.b0 * (x - voice.x2) - this.a1 * voice.y1 - this.a2 * voice.y2;
       voice.x2 = voice.x1; voice.x1 = x; voice.y2 = voice.y1; voice.y1 = value;
-    } else { value = Math.sin(voice.phase); voice.phase += voice.step; if (voice.phase >= TAU) voice.phase -= TAU; }
+    } else {
+      if (voice.vsqRatio) {
+        const at = voice.phase / TAU * VSQ_TRIANGLE_SIZE, index = Math.floor(at), fraction = at - index, table = this.plan.triangles, base = voice.triangleOffset;
+        const triangle = table[base + index] + (table[base + (index + 1) % VSQ_TRIANGLE_SIZE] - table[base + index]) * fraction;
+        value = .8 * triangle + .2 * Math.sin(voice.harmonicPhase);
+        voice.harmonicPhase += voice.step * voice.vsqRatio; if (voice.harmonicPhase >= TAU) voice.harmonicPhase -= TAU;
+      } else value = Math.sin(voice.phase);
+      voice.phase += voice.step; if (voice.phase >= TAU) voice.phase -= TAU;
+    }
     return value * level;
   }
   process(channels, firstFrame) {

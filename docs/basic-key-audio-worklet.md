@@ -157,3 +157,59 @@ fall back to the main-thread timer scheduler.
 The implementation follows the render-thread and sample-clock model described
 by the [Web Audio specification](https://www.w3.org/TR/webaudio/) and
 [MDN AudioWorklet guide](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API/Using_AudioWorklet).
+
+## VSQ instrumental plan extension
+
+`buildVsqAudioPlan` in `web/vsq-audio-plan.js` admits the already-selected
+`wmh-vsq-base-note-practice-v1` native runtime. The same processor, receiver,
+gate scheduler, generation fences, anchor handshake, terminal ledger and audit
+methods handle it. Its policy is `wmh-vsq-base-note-reference-v1` and its explicit
+`identityKind` is `vsq-authored-note`. Basic MIDI plans retain strict MIDI
+source-coordinate validation; a VSQ identity never passes that branch.
+
+VSQ rows retain `vsq-t{source_track_index}-ID#{digits}` and source-bound
+`vsq:{sha256}:t{source_track_index}:ID#{digits}`. The transfer uses separate
+`sourceTracks` (Uint16), `authoredIds` (Uint32) and `authoredIdDigits` (Uint8)
+columns. Four- and eight-digit authored IDs remain distinct and reconstruct
+exactly, including leading zeroes. Equal-onset playback order remains native
+EventList order; the separate sorted identity permutation only detects duplicates.
+Audits and completion records expose the policy and identity kind.
+
+Native `start_microseconds`, `end_microseconds`, and the native project
+`end_microseconds` alone determine sample boundaries, with the existing exact
+floor/ceil conversion. The builder verifies native millisecond projections by
+the same quotient/remainder conversion as Rust. No notation recompilation,
+source-byte rewrite, inferred tempo, or substitute scoring target is involved.
+Mix filters exclude only explicit muted/unsoloed parts and the selected human
+part in practice. Full Listen retains the source-muted authored notes, as before.
+`sourceNotes` and the full project end survive mix filtering, including a fully
+silent selected mix. Source vocal Dynamics remain descriptors; velocity stays 90.
+
+Roles 2 and 3 retain the existing VSQ piano/guitar instrumental recipes:
+0.8 triangle fundamental plus 0.2 sine at twice/three times the key frequency,
+with the existing 0.08 × velocity/127 level and gate attack/release envelope.
+The host builds 128 band-limited triangle tables of 1,024 float samples each,
+using only odd harmonics below Nyquist and below the table's 512-bin limit.
+The audio core linearly interpolates that fixed table and evaluates one sine;
+there are no per-sample harmonic loops, new timbre choices, samples, or vocals.
+High partials above these limits are omitted. This bounded procedural waveform
+is not a bit-for-bit reproduction of browser OscillatorNode implementations.
+The selected fundamental and explicit sine harmonic must fit below 0.45 times
+the device sample rate. Unlike the old receiver's silent frequency clamp, an
+unsupported device/recipe returns `unsupported_audio_sample_rate` before start.
+
+VSQ has the same 65,536-note, 16 MiB JSON/wire and 128 simultaneous sample-gate
+bounds. Transfer columns use 59 bytes per note plus a fixed 512 KiB waveform
+buffer (under 4.2 MiB at the note bound). These are serialized/buffer limits,
+not a JavaScript heap-overhead promise. Waveform validation shares the existing
+1,024-item maximum per quantum; worst-case preparation is about two seconds
+at normal rates, or 4.2 seconds at 8 kHz, within the five-second lifecycle bound.
+There is no additional main-thread note lookahead or second scheduler. The old
+100 ms window's future-node allocation count is replaced by actual simultaneous
+sample-gate admission, since future notes no longer allocate AudioNodes.
+
+`tests/vsq-audio-worklet.test.js` uses only the existing original synthetic VSQ
+fixture and generated gates. It proves native rational/sample traceability,
+identity width, mix/source/end counts, held/expired resume gates, negative
+count-in, recipes, corrupt transfer rejection and the complete bounds. Actual
+VSQ browser/native package and private-corpus acceptance remain separate gates.
