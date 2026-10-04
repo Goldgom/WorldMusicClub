@@ -78,6 +78,20 @@ test('fit leaves notation nodes and note identities intact, restores owned style
   const results=[],fit=setupNotationFit({viewport,getSurface:()=>surface,onChange:value=>results.push(value),window});fit.measure();fit.measure();assert.equal(results.length,1);assert.equal(svg.style.zoom,'0.75');assert.equal(surface.firstElementChild,svg);assert.equal(svg.querySelector('[data-note-id="held"]'),note);fit.destroy();assert.equal(svg.style.zoom,'');
 });
 
+test('current-note cue visibility does not remeasure the whole score but structural and viewport changes do',()=>{
+ const {document}=parseHTML('<html><body><div id="viewport"><div id="surface"><svg width="1000" height="800">'+Array.from({length:12},()=>'<ellipse class="note-head"/>').join('')+'</svg><div class="engraving-expected-cues"><span class="engraving-expected-cue" hidden></span></div><p id="part">Part</p></div></div></body></html>');
+ const viewport=document.getElementById('viewport'),surface=document.getElementById('surface'),svg=surface.querySelector('svg'),cue=surface.querySelector('.engraving-expected-cue'),part=document.getElementById('part');
+ let notify,resize,reads=0,serial=0;const frames=new Map(),listeners=new Map();
+ const window={MutationObserver:class{constructor(callback){notify=callback}observe(){}disconnect(){}},ResizeObserver:class{constructor(callback){resize=callback}observe(){}disconnect(){}},requestAnimationFrame:fn=>{frames.set(++serial,fn);return serial},cancelAnimationFrame:id=>frames.delete(id),addEventListener:(type,fn)=>listeners.set(type,fn),removeEventListener:type=>listeners.delete(type),getComputedStyle:()=>({})};
+ const flush=()=>{const batch=[...frames.values()];frames.clear();for(const fn of batch)fn();};
+ viewport.getBoundingClientRect=()=>({width:1000,height:300});surface.getBoundingClientRect=()=>({width:1000,height:800*(Number(svg.style.zoom)||1)});svg.getBoundingClientRect=()=>({width:1000*(Number(svg.style.zoom)||1),height:800*(Number(svg.style.zoom)||1)});
+ for(const head of svg.querySelectorAll('.note-head'))head.getBoundingClientRect=()=>{reads++;return{height:10*(Number(svg.style.zoom)||1)}};
+ const fit=setupNotationFit({viewport,getSurface:()=>surface,window});flush();reads=0;
+ for(let i=0;i<10;i++){cue.hidden=!cue.hidden;notify([{type:'attributes',attributeName:'hidden',target:cue}]);flush();}assert.equal(reads,0,'Ten current-note changes must not read 120 unchanged glyph boxes');
+ for(const record of [{type:'attributes',attributeName:'hidden',target:part},{type:'attributes',attributeName:'width',target:svg},{type:'attributes',attributeName:'viewBox',target:svg},{type:'childList',target:surface}]){reads=0;notify([{type:'attributes',attributeName:'hidden',target:cue},record]);flush();assert.equal(reads,12);}
+ reads=0;resize();flush();assert.equal(reads,12);reads=0;listeners.get('resize')();flush();assert.equal(reads,12);fit.destroy();
+});
+
 test('clock-bearing quiet pages remain usable alone and beside sounding parts, while unclocked emptiness stays explicit',async()=>{
  const quiet={part_id:'quiet',status:'empty_page',measures:[{start_ms:0,end_ms:16000,follow_end_ms:16000}],source_start_ms:0,follow_end_ms:16000,next_measure:8,interpreted_notes:[]};
  const alone=await loadNotationPartBatch({partIds:['quiet'],requestPage:async()=>quiet});assert.equal(alone.status,'ready');assert.equal(alone.pages[0],quiet);assert.equal(alone.pages[0].next_measure,8);

@@ -53,7 +53,13 @@ export function setupNotationFit({viewport,getSurface,getReservedHeight=()=>0,on
     const signature=JSON.stringify(plan);if(signature!==last||paintChanged){last=signature;onChange(plan);}
     return plan;
   }
-  const mutation=window.MutationObserver?new window.MutationObserver(schedule):null;
+  // Current-note outlines are an absolute, pointer-inert layer outside SVG.
+  // Their visibility never changes music dimensions and must not refit every
+  // notehead on each attack. Structural paint and real surface changes still fit.
+  const onlyCueVisibility=record=>record.type==='attributes'&&record.attributeName==='hidden'
+    &&record.target?.classList?.contains('engraving-expected-cue')
+    &&record.target.parentElement?.classList?.contains('engraving-expected-cues');
+  const mutation=window.MutationObserver?new window.MutationObserver(records=>{if(records.some(record=>!onlyCueVisibility(record)))schedule();}):null;
   mutation?.observe(viewport,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','width','height','viewBox']});
   const resize=window.ResizeObserver?new window.ResizeObserver(schedule):null;resize?.observe(viewport);
   window.addEventListener('resize',schedule);window.visualViewport?.addEventListener('resize',schedule);
