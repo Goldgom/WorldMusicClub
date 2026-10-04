@@ -94,6 +94,17 @@ function assertVsqInputFocus(document,node) {
 async function prepareVsqInputFocus(document,node,frame) {
  node.scrollIntoView({block:'center',inline:'center'});node.focus();await frame();await frame();assertVsqInputFocus(document,node);
 }
+function waitVsqSourceOnset({read,bounded,request=requestAnimationFrame,cancel=cancelAnimationFrame}){
+ // Read the real UI on its next frame. A second 100 ms polling interval here
+ // would consume the existing source-zero scoring window before OS dispatch.
+ return bounded(signal=>new Promise((resolve,reject)=>{
+  let pending=null,settled=false;
+  const finish=(error,value)=>{if(settled)return;settled=true;if(pending!==null)cancel(pending);signal.removeEventListener('abort',aborted);error?reject(error):resolve(value);};
+  const aborted=()=>finish(Error('VSQ source-zero wait was canceled'));
+  const tick=()=>{pending=null;if(signal.aborted){aborted();return;}try{const state=read();if(state.phase==='capturing'&&state.position>0&&state.cue!=='countdown'){if(state.position>=120)throw Error('VSQ source onset window missed before the physical key');finish(null,state);return;}pending=request(tick);}catch(error){finish(error);}};
+  signal.addEventListener('abort',aborted,{once:true});tick();
+ }),'VSQ source-zero capture opens',5000);
+}
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(v,m)=>{if(!v)throw Error(m);};
  const originalFetch=globalThis.fetch,fetcher=originalFetch.bind(globalThis),waits=createAcceptanceWait(),json=(path,body)=>waits.json(fetcher,path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},10000);
@@ -158,7 +169,7 @@ async function prepareVsqInputFocus(document,node,frame) {
      trace.changed('ready',{checkpoint:true});const playAction=await native('click',$('play-button'));await until(()=>trace.counts().trustedPlayClicks===1&&receiver.status().started>beforeHuman&&$('stage-cue').dataset.cueState==='countdown','accepted VSQ count-in',5000);
      await prepareVsqInputFocus(document,$('stage-title'),frame);assert($('stage-cue').dataset.cueState==='countdown','VSQ count-in ended before input focus was prepared');trace.changed('key-focus-ready',{checkpoint:true});
      report.keyPreparation={playAction,timeOrigin:performance.timeOrigin,readyWallMs:performance.now(),readyPositionMs:Number($('progress').value),readyCue:$('stage-cue').dataset.cueState,focused:document.hasFocus(),activeElement:document.activeElement.id,countInMs:4*60000/Number($('tempo').value)};
-     await until(()=>trace.state().phase==='capturing'&&Number($('progress').value)>0&&$('stage-cue').dataset.cueState!=='countdown','VSQ source-zero capture opens',5000);assert(Number($('progress').value)<120,'VSQ source onset window missed before the physical key');
+     await waitVsqSourceOnset({bounded:waits.bounded,read:()=>{receiver.assertHealthy();assertVsqInputFocus(document,$('stage-title'));return{phase:trace.state().phase,position:Number($('progress').value),cue:$('stage-cue').dataset.cueState};}});assert(Number($('progress').value)<120,'VSQ source onset window missed before the physical key');
      const mapping=document.querySelector('#keyboard [data-midi="63"] .key-shortcut')?.textContent;assert(mapping==='U','Visible VSQ D#4 mapping must be KeyU');report.keyPreparation.mapping=mapping;report.keyPreparation.dispatchWallMs=performance.now();report.keyPreparation.dispatchPositionMs=Number($('progress').value);report.keyPreparation.keyAction=await native('key-ds4',$('stage-title'));
      await until(()=>trace.counts().trustedKeyDowns===1&&trace.counts().trustedKeyUps===1&&$('hud-captured').textContent==='1','one trusted VSQ onset',5000);await native('click',$('play-button'));await until(()=>trace.counts().trustedPlayClicks===2&&$('stage-cue').dataset.cueState==='paused','trusted practice pause',5000);report.transportAdmission=trace.snapshot('complete');
     }finally{trace.stop();}

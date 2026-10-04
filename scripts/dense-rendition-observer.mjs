@@ -1,6 +1,8 @@
 import {readFileSync} from 'node:fs';
-const nativeObserver=readFileSync(new URL('../crates/desktop-shell/basic-key-acceptance.js',import.meta.url),'utf8');
-export const audioThreadObserverSource=nativeObserver.slice(nativeObserver.indexOf('async function observeBasicKeyReceiver('),nativeObserver.indexOf('async function observeBasicKeyEngraving('));
+const nativeObserver=readFileSync(new URL('../crates/desktop-shell/reference-acceptance.js',import.meta.url),'utf8');
+const observerStart=nativeObserver.indexOf('async function observeBasicKeyReceiver('),observerEnd=nativeObserver.indexOf('// End shared audio-thread observer.');
+if(observerStart<0||observerEnd<=observerStart)throw Error('Shared audio-thread observer boundary is missing');
+export const audioThreadObserverSource=nativeObserver.slice(observerStart,observerEnd);
 // Acceptance-only observers. Every production call keeps its receiver, arguments,
 // return value and errors. No clock, note, timer, lookahead or input is modified.
 export function denseRenditionBootstrap(){

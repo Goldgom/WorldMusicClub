@@ -59,7 +59,7 @@ test('VSQ real-key score requires prepared count-in focus, exact source target a
 });
 test('VSQ physical key has a closed action and prepares focus before the original onset window',async()=>{
  const [source,windows,native,hosted]=await Promise.all(['../crates/desktop-shell/vsq-song-acceptance.js','../scripts/windows-desktop-acceptance.ps1','../crates/desktop-shell/src/acceptance.rs','../scripts/hosted-vsq-song-check.mjs'].map(name=>readFile(new URL(name,import.meta.url),'utf8')));
- assert.match(source,/if\(kind==='key-ds4'\)assertVsqInputFocus\(document,node\);else/);assert.ok(source.indexOf('await prepareVsqInputFocus')<source.indexOf("'VSQ source-zero capture opens'"));assert.match(source,/\[data-midi="63"\] \.key-shortcut/);assert.match(source,/keyCode:'KeyU'/);assert.match(source,/dispatchPositionMs=Number\(\$\('progress'\)\.value\)/);
+ assert.match(source,/if\(kind==='key-ds4'\)assertVsqInputFocus\(document,node\);else/);const human=source.slice(source.indexOf("checkpoint('trusted-human-input')"));assert.ok(human.indexOf('await prepareVsqInputFocus')<human.indexOf('await waitVsqSourceOnset'));assert.match(source,/\[data-midi="63"\] \.key-shortcut/);assert.match(source,/keyCode:'KeyU'/);assert.match(source,/dispatchPositionMs=Number\(\$\('progress'\)\.value\)/);
  const branch=windows.slice(windows.indexOf("if($Action.kind -eq 'key-ds4')"),windows.indexOf('  [NativeAcceptance]::SetForegroundWindow($window) | Out-Null',windows.indexOf("if($Action.kind -eq 'key-ds4')")));assert.match(branch,/\[NativeAcceptance\]::Key\(0x55\);return/);assert.doesNotMatch(branch,/SetForegroundWindow|Start-Sleep|Click\(/);assert.match(native,/"key-ds4"/);assert.match(hosted,/page\.keyboard\.press\('KeyU'\)/);
 });
 test('VSQ audio cleanup preserves a startup failure and restores every initialized observer',async()=>{
@@ -217,4 +217,18 @@ test('vsq-song requires distinct phase profiles and matching fresh host records 
 test('VSQ acceptance requires actual source-bound Worklet evidence and keeps Windows origin strict',()=>{
  for(const mutate of [r=>delete r.listenThread,r=>r.listenThread[0].messages[0].isTrusted=false,r=>r.listenThread[0].plan.notes.pop(),r=>r.machineThread[0].plan.notes.push(r.listenThread[0].plan.notes[1]),r=>r.pauseThread[0].terminals[0].record.type='ended',r=>r.receiverCleanup.restored=false,r=>r.beforeChoice.audio.worklet.receivers=1,r=>r.finalAudio.worklet.pendingReceivers=1]){const report=structuredClone(originalReport());mutate(report);assert.throws(()=>validateVsqRenderer(report));}
  const report=structuredClone(originalReport());report.origin='http://127.0.0.1:43127';assert.throws(()=>validateVsqRenderer(report));validateVsqRenderer(report,fixture,{expectedOrigin:report.origin});assert.throws(()=>validateVsqRenderer(report,fixture,{expectedOrigin:'http://0.0.0.0:43127'}));
+});
+
+
+test('source-zero admission observes the first eligible frame and cancels pending observation on timeout or failure',async()=>{
+ const source=await readFile(new URL('../crates/desktop-shell/vsq-song-acceptance.js',import.meta.url),'utf8'),prefix=source.slice(0,source.indexOf('(() => {')),helper=runInNewContext(prefix+';waitVsqSourceOnset;',{});
+ for(const mode of ['ready','late','aborted','fault']){
+  const controller=new AbortController(),callbacks=new Map();let id=0,reads=0;
+  const bounded=(operation,label,timeout)=>{assert.equal(label,'VSQ source-zero capture opens');assert.equal(timeout,5000);return operation(controller.signal);};
+  const result=helper({bounded,request:callback=>(callbacks.set(++id,callback),id),cancel:key=>callbacks.delete(key),read(){reads++;if(reads===1)return{phase:'countdown',position:0,cue:'countdown'};if(mode==='fault')throw Error('Original receiver failure');return{phase:'capturing',position:mode==='late'?121:16,cue:'ready'};}});
+  const observed=result.then(value=>({value}),error=>({error}));assert.equal(callbacks.size,1);
+  if(mode==='aborted')controller.abort();else{const [key,callback]=callbacks.entries().next().value;callbacks.delete(key);callback();}
+  const outcome=await observed;assert.equal(callbacks.size,0);if(mode==='ready')assert.equal(outcome.value.position,16);else assert.ok(outcome.error);
+  assert.equal(reads,mode==='aborted'?1:2);
+ }
 });
