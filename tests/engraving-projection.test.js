@@ -392,6 +392,46 @@ test('inventory binds original source, score, projection document and every publ
   assert.deepEqual(proveEngravingProjectionModelNotes(sheet,projection,spec.identity.score,ENGRAVING_LIMITS),{ok:false,key:'projection'},'Replacing an identical nested chain cannot preserve admission by a valid outer WeakMap key');
 });
 
+test('inventory rejects stale and nonfinite Fraction caches even when all integer components remain exact',()=>{
+  const fractions=[
+    ['note length',state=>state.note.Length],
+    ['measure duration',state=>state.measure.Duration],
+    ['measure timestamp',state=>state.measure.AbsoluteTimestamp],
+    ['container timestamp',state=>state.container.Timestamp],
+    ['voice timestamp',state=>{state.voice.Timestamp=state.voice.Timestamp.clone();return state.voice.Timestamp;}],
+    ['entry timestamp',state=>{const value=state.entry.Timestamp.clone();Object.defineProperty(state.entry,'Timestamp',{value});return value;}],
+    ['entry absolute timestamp',state=>{const value=state.entry.AbsoluteTimestamp;Object.defineProperty(state.entry,'AbsoluteTimestamp',{value});return value;}],
+    ['container absolute timestamp',state=>{const value=state.container.getAbsoluteTimestamp();state.container.getAbsoluteTimestamp=()=>value;return value;}],
+    ['note absolute timestamp',state=>{const value=state.note.getAbsoluteTimestamp();state.note.getAbsoluteTimestamp=()=>value;return value;}],
+  ];
+  for(const [name,select]of fractions)for(const invalid of ['stale','nan','infinite']){
+    const spec=synthetic({measures:2,parts:1}),{projection}=project(spec),sheet=read(projection),verified=proveEngravingProjectionModelNotes(sheet,projection,spec.identity.score,ENGRAVING_LIMITS);assert.equal(verified.ok,true);
+    const note=verified.notes.find(note=>note.PrintObject),entry=note.ParentStaffEntry,value=select({note,entry,voice:note.ParentVoiceEntry,container:entry.VerticalContainerParent,measure:note.SourceMeasure});
+    value.realValue=invalid==='stale'?value.RealValue+1:invalid==='nan'?NaN:Infinity;
+    assert.deepEqual(validateEngravingProjectionModel(sheet,projection,spec.identity.score,ENGRAVING_LIMITS),{ok:true},'Existing integer clock checks alone cannot detect this independent cache corruption');
+    assert.deepEqual(proveEngravingProjectionModelNotes(sheet,projection,spec.identity.score,ENGRAVING_LIMITS),{ok:false,key:'projection'},`${name}/${invalid}`);
+  }
+});
+
+test('inventory admits exact official mixed, expanded and cloned cache forms without a tolerance',()=>{
+  const spec=sustainedFixture({measures:1,parts:1,voices:1});
+  spec.identity.score.measures[0].length=beat(20,3);spec.identity.score.parts[0].notes[0].duration=beat(20,3);spec.identity.noteMap.segments[0].duration=beat(20,3);
+  spec.xml=spec.xml.replace('<divisions>1</divisions>','<divisions>3</divisions>').replace('<duration>4</duration>','<duration>20</duration>').replace('<type>whole</type>','<type>breve</type><time-modification><actual-notes>6</actual-notes><normal-notes>5</normal-notes><normal-type>breve</normal-type></time-modification>');
+  const before=JSON.stringify(spec),{projection}=project(spec),sheet=read(projection),first=proveEngravingProjectionModelNotes(sheet,projection,spec.identity.score,ENGRAVING_LIMITS);assert.equal(first.ok,true);
+  const note=first.notes.find(note=>note.PrintObject),measure=sheet.SourceMeasures[0];
+  assert.equal(note.Length.RealValue,1+2/3);
+  note.Length.expand(4);measure.Duration.expand(4);
+  assert.deepEqual([note.Length.WholeValue,note.Length.Numerator,note.Length.Denominator],[0,20,12]);
+  assert.notEqual(note.Length.RealValue,note.Length.WholeValue+note.Length.Numerator/note.Length.Denominator,'The actual pinned expand operation retains the different mixed-number cache');
+  assert.equal(proveEngravingProjectionModelNotes(sheet,projection,spec.identity.score,ENGRAVING_LIMITS).ok,true);
+  note.Length=note.Length.clone();measure.Duration=measure.Duration.clone();
+  assert.equal(note.Length.RealValue,20/12,'The actual pinned clone recomputes the raw improper cache');
+  assert.equal(proveEngravingProjectionModelNotes(sheet,projection,spec.identity.score,ENGRAVING_LIMITS).ok,true);
+  note.Length.realValue=note.Length.RealValue+Number.EPSILON;
+  assert.equal(proveEngravingProjectionModelNotes(sheet,projection,spec.identity.score,ENGRAVING_LIMITS).ok,false,'A nearby value outside either official exact formula is refused');
+  assert.equal(JSON.stringify(spec),before);
+});
+
 function sustainedFixture({measures=3,parts=1,voices=1,tiedParts=Array.from({length:parts},(_,index)=>index)}={}) {
   const score={parts:[],measures:Array.from({length:measures},(_,index)=>({number:index+1,at:beat(index*4),length:beat(4)}))},segments=[],partIdMap={},voiceIdMap=[],xmlParts=[];
   for(let p=0;p<parts;p++) {

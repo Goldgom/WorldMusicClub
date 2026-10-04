@@ -23,6 +23,19 @@ const modelFraction = value => {
   if (!value || ![value.WholeValue, value.Numerator, value.Denominator].every(Number.isSafeInteger) || value.WholeValue < 0 || value.Numerator < 0 || value.Denominator < 1) fail();
   return [4n * (BigInt(value.WholeValue) * BigInt(value.Denominator) + BigInt(value.Numerator)), BigInt(value.Denominator)];
 };
+const cachedModelFraction = value => {
+  const exact = modelFraction(value), denominator = BigInt(value.Denominator), numerator = BigInt(value.Numerator);
+  const divisor = gcd(numerator % denominator, denominator), whole = BigInt(value.WholeValue) + numerator / denominator;
+  if (whole > BigInt(Number.MAX_SAFE_INTEGER)) fail();
+  // The pinned constructor/clone sets the raw formula. simplify() normalizes
+  // first; expand() can later retain that normalized cache on improper fields.
+  // Those two exact evaluations can differ by one ULP. Recognize only these
+  // deterministic forms, never a tolerance or a rational inferred from a float.
+  const raw = value.WholeValue + value.Numerator / value.Denominator;
+  const normalized = Number(whole) + Number((numerator % denominator) / divisor) / Number(denominator / divisor);
+  if (!Number.isFinite(value.RealValue) || !Object.is(value.RealValue, raw) && !Object.is(value.RealValue, normalized)) fail();
+  return exact;
+};
 const noteKey = (part, measure, staff, voice, at, length, pitch, printed) => JSON.stringify([part, measure, staff, voice, fractionKey(at), fractionKey(length), pitch, printed]);
 const countKey = (map, key) => map.set(key, (map.get(key) || 0) + 1);
 const serializeDocument = document => {
@@ -102,32 +115,33 @@ function modelInventory(sheet, projection, proof, limits, absoluteTimes) {
   for (const [index, measure] of measures.entries()) {
     if (measure.measureListIndex !== index || measure.CompleteNumberOfStaves !== staves.length || !Array.isArray(measure.VerticalSourceStaffEntryContainers)) fail();
     for (const instruction of [...(measure.FirstInstructionsStaffEntries || []), ...(measure.LastInstructionsStaffEntries || [])]) if (instruction?.VoiceEntries?.length) fail();
-    const measureAt = absoluteTimes ? modelFraction(measure.AbsoluteTimestamp) : null;
+    if (absoluteTimes) cachedModelFraction(measure.Duration);
+    const measureAt = absoluteTimes ? cachedModelFraction(measure.AbsoluteTimestamp) : null;
     let previousAt;
     for (const container of measure.VerticalSourceStaffEntryContainers) {
       if (!container || containers.has(container) || container.ParentMeasure !== measure || !Array.isArray(container.StaffEntries) || container.StaffEntries.length !== staves.length) fail();
       containers.add(container);
-      const at = modelFraction(container.Timestamp), absolute = absoluteTimes ? add(measureAt, at) : null;
-      if (previousAt && at[0] * previousAt[1] <= previousAt[0] * at[1] || at[0] * proof.measures[index].length[1] > proof.measures[index].length[0] * at[1] || absoluteTimes && !equal(modelFraction(container.getAbsoluteTimestamp()), absolute)) fail();
+      const at = cachedModelFraction(container.Timestamp), absolute = absoluteTimes ? add(measureAt, at) : null;
+      if (previousAt && at[0] * previousAt[1] <= previousAt[0] * at[1] || at[0] * proof.measures[index].length[1] > proof.measures[index].length[0] * at[1] || absoluteTimes && !equal(cachedModelFraction(container.getAbsoluteTimestamp()), absolute)) fail();
       previousAt = at;
       for (const [staffOrdinal, entry] of container.StaffEntries.entries()) {
         if (entry == null) continue;
         if (entries.has(entry) || entry.VerticalContainerParent !== container || entry.ParentStaff !== staves[staffOrdinal] || !Array.isArray(entry.VoiceEntries) ||
-            new Set(entry.VoiceEntries.map(voice => voice.ParentVoice)).size !== entry.VoiceEntries.length || !equal(modelFraction(entry.Timestamp), at) || absoluteTimes && !equal(modelFraction(entry.AbsoluteTimestamp), absolute)) fail();
+            new Set(entry.VoiceEntries.map(voice => voice.ParentVoice)).size !== entry.VoiceEntries.length || !equal(cachedModelFraction(entry.Timestamp), at) || absoluteTimes && !equal(cachedModelFraction(entry.AbsoluteTimestamp), absolute)) fail();
         entries.add(entry);
         const staff = entry.ParentStaff, instrument = staff.ParentInstrument, staffIndex = instrument.Staves.indexOf(staff);
         for (const voice of entry.VoiceEntries) {
           if (!voice || voices.has(voice) || voice.ParentSourceStaffEntry !== entry || !parentVoices.has(voice.ParentVoice) || voice.ParentVoice.Parent !== instrument ||
-              !staff.Voices.includes(voice.ParentVoice) || !Array.isArray(voice.Notes) || !voice.Notes.length || !equal(modelFraction(voice.Timestamp), at) || voice.IsGrace || voice.GraceAfterMainNote) fail();
+              !staff.Voices.includes(voice.ParentVoice) || !Array.isArray(voice.Notes) || !voice.Notes.length || !equal(cachedModelFraction(voice.Timestamp), at) || voice.IsGrace || voice.GraceAfterMainNote) fail();
           voices.add(voice);
           for (const note of voice.Notes) {
             if (!note || notes.has(note)) fail();
             notes.add(note); if (notes.size > limits.notes) fail('notes');
             const pitch = note.isRest() ? null : note.Pitch;
             if (note.SourceMeasure !== measure || note.ParentVoiceEntry !== voice || note.ParentStaffEntry !== entry || note.ParentStaff !== staff || typeof note.PrintObject !== 'boolean' ||
-                absoluteTimes && !equal(modelFraction(note.getAbsoluteTimestamp()), absolute) ||
+                absoluteTimes && !equal(cachedModelFraction(note.getAbsoluteTimestamp()), absolute) ||
                 pitch && (pitch.constructor.OctaveXmlDifference !== 3 || ![0, 2, 4, 5, 7, 9, 11].includes(pitch.FundamentalNote))) fail();
-            const length = modelFraction(note.Length), end = add(at, length), last = ends[index].get(instrument.IdString);
+            const length = cachedModelFraction(note.Length), end = add(at, length), last = ends[index].get(instrument.IdString);
             if (!last || end[0] * last[1] > last[0] * end[1]) ends[index].set(instrument.IdString, end);
             countKey(actual, noteKey(instrument.IdString, index, staffIndex + 1, String(voice.ParentVoice.VoiceId), at, length,
               pitch ? [['C', 'D', 'E', 'F', 'G', 'A', 'B'][[0, 2, 4, 5, 7, 9, 11].indexOf(pitch.FundamentalNote)], pitch.AccidentalHalfTones, pitch.Octave + 3] : null, note.PrintObject));
