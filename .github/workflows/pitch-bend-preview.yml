@@ -1,0 +1,139 @@
+name: Original pitch-bend focused acceptance
+on:
+  push:
+    branches: ['preview/original-pitch-bend-acceptance']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: original-pitch-bend-preview-${{ github.ref }}
+  cancel-in-progress: true
+# Independent future-feature proof. This neither replaces current acceptance
+# nor publishes a package. Promotion must wire this exact proof into the final
+# accepted-source/package gate before any pitch-enabled release is accepted.
+jobs:
+  pitch-browser:
+    name: Actual app pitch policy and source-clock receiver (hosted)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: '1.99.0'
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: node --test tests/pitch-bend-import-baseline.test.js tests/native-pitch-bend-evidence.test.js tests/pitch-bend-acceptance-workflow.test.js
+      - run: cargo test -p worldmusichub-desktop --test pitch_acceptance_fixtures --locked
+      - run: cargo test -p worldmusichub-desktop --lib acceptance:: --locked
+      - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - name: Real Rust import, exact original source/runtime, blocked practice and export
+        env:
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: node scripts/check-pitch-bend-native.mjs
+      - run: npx playwright install --with-deps chromium
+      - name: Actual picker, policy, pitch frequencies, pause/resume, mute and unchanged take
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: |
+          WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-pitch-bend-check.mjs
+          WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-pitch-bend-check.mjs
+      - name: Retain only original pitch browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: original-pitch-bend-browser-${{ github.sha }}
+          path: |
+            test-results/pitch-bend/*/*.json
+            test-results/pitch-bend/*/*.png
+            test-results/pitch-bend/*/downloads/*
+            test-results/pitch-bend/*/fixtures/*
+            test-results/pitch-bend/*/Scores/clean-songs/**
+            test-results/pitch-bend/*/Scores/clean-backups/**
+            test-results/pitch-bend/*/Scores/imports/**
+            test-results/pitch-bend/*/Scores/import-backups/**
+          if-no-files-found: warn
+  pitch-windows:
+    name: Owned Windows picker and actual pitch receiver
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      RUSTFLAGS: '-C target-feature=+crt-static'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: '1.99.0'
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: node --test tests/pitch-bend-import-baseline.test.js tests/native-pitch-bend-evidence.test.js tests/pitch-bend-acceptance-workflow.test.js
+      - name: Parse script and verify finite owned picker contract without GUI
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'scripts/windows-desktop-acceptance.ps1'),[ref]$tokens,[ref]$errors)
+          if ($errors.Count) { $errors | Format-List; throw 'PowerShell syntax errors' }
+          ./tests/windows-desktop-contract.ps1
+      - run: cargo test -p worldmusichub-desktop --test pitch_acceptance_fixtures --locked
+      - run: cargo test -p worldmusichub-desktop --lib acceptance:: --locked
+      - run: cargo build -p worldmusichub-desktop --release --locked
+      - name: Two bounded original pitch phases in distinct actual native processes
+        shell: pwsh
+        run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-pitch-bend -Scenario pitch-bend
+      - name: Reverify source, tree, executable and exact strict claims
+        shell: pwsh
+        run: |
+          node scripts/verify-native-pitch-bend-evidence.mjs --check desktop-pitch-bend
+          if ($LASTEXITCODE -ne 0) { throw 'Pitch-bend proof check failed' }
+          python scripts/native-pitch-bend-manifest.py desktop-pitch-bend --executable target/release/worldmusichub-desktop.exe --commit '${{ github.sha }}' --tree (git rev-parse 'HEAD^{tree}')
+          if ($LASTEXITCODE -ne 0) { throw 'Pitch-bend source/EXE manifest failed' }
+      - name: Retain only original pitch native evidence, no package publication
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: original-pitch-bend-windows-${{ github.sha }}
+          path: |
+            desktop-pitch-bend/*.json
+            desktop-pitch-bend/*.png
+            desktop-pitch-bend/*.log
+            desktop-pitch-bend/downloads/*
+            desktop-pitch-bend/fixtures/*
+            desktop-pitch-bend/Scores/clean-songs/**
+            desktop-pitch-bend/Scores/clean-backups/**
+            desktop-pitch-bend/Scores/imports/**
+            desktop-pitch-bend/Scores/import-backups/**
+          if-no-files-found: warn
+  pitch-focused-summary:
+    name: Focused original pitch proof only
+    needs: [pitch-browser, pitch-windows]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both exact-source focused jobs without claiming full acceptance
+        env:
+          BROWSER: ${{ needs.pitch-browser.result }}
+          WINDOWS: ${{ needs.pitch-windows.result }}
+        run: |
+          test "$BROWSER" = success
+          test "$WINDOWS" = success
+          echo 'Focused original pitch browser/native proof passed; full accepted-source/package gates remain separate.'

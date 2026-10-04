@@ -172,7 +172,7 @@ $temporary=Join-Path ([System.IO.Path]::GetTempPath()) ('wmh picker 拼谱 '+[gu
 try {
   $fixtures=Join-Path $temporary 'fixtures';$downloads=Join-Path $temporary 'downloads'
   New-Item -ItemType Directory $fixtures,$downloads | Out-Null
-  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu','malformed.json','folder-original.json','folder-conflict.json','原创曲包_日本語.zip','bulk-conflict.zip','bulk-backup.json','bulk-failure.zip','bulk-malformed.zip','bulk-standard-a.json','bulk-standard-b.json','clean-authored-song.zip','vsq-authored-song.zip','performance-authored-songs.zip')
+  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu','malformed.json','folder-original.json','folder-conflict.json','原创曲包_日本語.zip','bulk-conflict.zip','bulk-backup.json','bulk-failure.zip','bulk-malformed.zip','bulk-standard-a.json','bulk-standard-b.json','clean-authored-song.zip','vsq-authored-song.zip','performance-authored-songs.zip','pitch-bend-authored-songs.zip')
   foreach($name in $fixed) {
     $expected=Join-Path $fixtures $name;[System.IO.File]::WriteAllText($expected,'fixture')
     Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) -ceq $expected) "fixed path $name"
@@ -194,6 +194,9 @@ try {
   }
   foreach($name in @('vsq-seed-17.zip','vsq-restart-0.zip','../vsq-authored-song.zip','clean-seed-17.zip','clean-restart-0.zip','clean-any-1.zip','../clean-authored-song.zip','bulk-seed-17.zip','bulk-restart-0.zip','bulk-any-1.zip','../bulk-conflict.zip','bulk-multiple.extra','bulk-standard-a.json.extra','../folder-original.json','folder-original.json.extra','folder-restart-1.json','../original-duet.mxl','../original-reference-overlap.mid','original-reference-overlap.mid.extra','fixtures/original-duet.mxl','C:\Windows\win.ini','seed-0.json','seed-17.json','seed-01.json','Seed-1.json','other-1.json','seed-1.json.extra',"seed-1.json`n",'',"original-duet.mxl`0")) {
     Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) } "unapproved name $name"
+  }
+  foreach($name in @('../pitch-bend-authored-songs.zip','..\pitch-bend-authored-songs.zip','fixtures/pitch-bend-authored-songs.zip','Pitch-bend-authored-songs.zip','pitch-bend-authored-songs.zip.extra',"pitch-bend-authored-songs.zip`n")) {
+    Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) } "unapproved pitch-bend path $name"
   }
   # Reproduce the real performance-seed action 5 filename through the exact C#
   # resolver compiled above. Only that original fixture name is admitted.

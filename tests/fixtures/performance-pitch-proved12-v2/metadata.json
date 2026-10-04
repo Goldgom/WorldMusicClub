@@ -1,0 +1,24 @@
+{
+  "format": "worldmusichub-song",
+  "id": "performance-pitch-proved12-v2",
+  "media": [],
+  "rights": {
+    "attribution": "WorldMusicHub original C/E/G pitch acceptance commands, authored under CC0-1.0; source generator: crates/desktop-shell/tests/support/pitch_acceptance_fixture.rs::authored_source; native-output generator: crates/desktop-shell/examples/generate_pitch_acceptance_fixtures.rs; SMF format 1, PPQ 6, tempo 500001 microseconds per quarter, end tick 60; no supplied or third-party music",
+    "license": "CC0-1.0",
+    "status": "original_authored"
+  },
+  "score": {
+    "bytes": 7523,
+    "path": "score.json",
+    "sha256": "98b5b04df9bee30085f05f148830b10b30932923e6b07f3ed0c5bbb264737a47"
+  },
+  "sources": [
+    {
+      "bytes": 150,
+      "format": "midi",
+      "sha256": "831de832de109bd366eaa3815ce577bc9ef4a5b48f9aac13b691419cdc1b7ff2"
+    }
+  ],
+  "title": "Original C E G reference pitch with proved range twelve",
+  "version": 2
+}

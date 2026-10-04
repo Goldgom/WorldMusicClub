@@ -18,6 +18,7 @@ pub const PERFORMANCE_PHASES: [&str; 3] = [
     "performance-controls",
     "performance-restart",
 ];
+pub const PITCH_BEND_PHASES: [&str; 2] = ["pitch-bend-seed", "pitch-bend-restart"];
 pub const MAX_CLEAN_REPORT_BYTES: usize = 1024 * 1024;
 pub const MAX_SMOKE_REPORT_BYTES: usize = 64 * 1024;
 pub const MAX_BULK_REPORT_BYTES: usize = 4 * 1024 * 1024;
@@ -37,6 +38,7 @@ impl Acceptance {
             .chain(CLEAN_PHASES)
             .chain(VSQ_PHASES)
             .chain(PERFORMANCE_PHASES)
+            .chain(PITCH_BEND_PHASES)
             .find(|candidate| *candidate == phase)
             .ok_or("Unknown acceptance phase")?;
         std::fs::create_dir_all(directory.join("downloads"))
@@ -50,15 +52,27 @@ impl Acceptance {
         })
     }
     pub fn script(&self) -> String {
-        let performance = if PERFORMANCE_PHASES.contains(&self.phase) {
+        let performance = if PERFORMANCE_PHASES.contains(&self.phase)
+            || PITCH_BEND_PHASES.contains(&self.phase)
+        {
             // Reuse the existing bounded observers, without starting the VSQ run.
             let (observers, _) = include_str!("../vsq-song-acceptance.js")
                 .split_once("(() => {")
                 .expect("VSQ observer prefix must precede its runner");
-            format!(
-                "{observers}\n{}",
-                include_str!("../performance-song-acceptance.js")
-            )
+            if PITCH_BEND_PHASES.contains(&self.phase) {
+                let (performance_helpers, _) = include_str!("../performance-song-acceptance.js")
+                    .split_once("(() => {")
+                    .expect("Performance observer prefix must precede its runner");
+                format!(
+                    "{observers}\n{performance_helpers}\n{}",
+                    include_str!("../pitch-bend-acceptance.js")
+                )
+            } else {
+                format!(
+                    "{observers}\n{}",
+                    include_str!("../performance-song-acceptance.js")
+                )
+            }
         } else {
             String::new()
         };
@@ -67,7 +81,7 @@ impl Acceptance {
             serde_json::to_string(self.phase).unwrap(),
             include_str!("../acceptance-wait.js"),
             include_str!("../reference-acceptance.js"),
-            if PERFORMANCE_PHASES.contains(&self.phase) {
+            if PERFORMANCE_PHASES.contains(&self.phase) || PITCH_BEND_PHASES.contains(&self.phase) {
                 &performance
             } else if VSQ_PHASES.contains(&self.phase) {
                 include_str!("../vsq-song-acceptance.js")
@@ -91,7 +105,8 @@ impl Acceptance {
             || BULK_PHASES.contains(&self.phase)
             || CLEAN_PHASES.contains(&self.phase)
             || VSQ_PHASES.contains(&self.phase)
-            || PERFORMANCE_PHASES.contains(&self.phase);
+            || PERFORMANCE_PHASES.contains(&self.phase)
+            || PITCH_BEND_PHASES.contains(&self.phase);
         self.directory.join(if song_folder {
             "Scores"
         } else {
@@ -102,6 +117,7 @@ impl Acceptance {
         if CLEAN_PHASES.contains(&self.phase)
             || VSQ_PHASES.contains(&self.phase)
             || PERFORMANCE_PHASES.contains(&self.phase)
+            || PITCH_BEND_PHASES.contains(&self.phase)
         {
             MAX_CLEAN_REPORT_BYTES
         } else if BULK_PHASES.contains(&self.phase) {
@@ -121,6 +137,7 @@ impl Acceptance {
             && !CLEAN_PHASES.contains(&self.phase)
             && !VSQ_PHASES.contains(&self.phase)
             && !PERFORMANCE_PHASES.contains(&self.phase)
+            && !PITCH_BEND_PHASES.contains(&self.phase)
         {
             return;
         }
@@ -203,7 +220,8 @@ impl Acceptance {
         let extension = if (BULK_PHASES.contains(&self.phase)
             || CLEAN_PHASES.contains(&self.phase)
             || VSQ_PHASES.contains(&self.phase)
-            || PERFORMANCE_PHASES.contains(&self.phase))
+            || PERFORMANCE_PHASES.contains(&self.phase)
+            || PITCH_BEND_PHASES.contains(&self.phase))
             && name.to_lowercase().ends_with(".zip")
         {
             "zip"
@@ -309,6 +327,7 @@ pub fn receive_report(
             || CLEAN_PHASES.contains(&run.phase)
             || VSQ_PHASES.contains(&run.phase)
             || PERFORMANCE_PHASES.contains(&run.phase)
+            || PITCH_BEND_PHASES.contains(&run.phase)
     });
     let limit = bulk.map_or(MAX_SMOKE_REPORT_BYTES, Acceptance::report_limit);
     let reject = |status, code, message| {
@@ -470,6 +489,7 @@ fn valid_action(value: &Value) -> bool {
             "clean-authored-song.zip",
             "vsq-authored-song.zip",
             "performance-authored-songs.zip",
+            "pitch-bend-authored-songs.zip",
         ]
         .contains(&file);
         let download = PHASES.iter().any(|phase| {
@@ -483,6 +503,7 @@ fn valid_action(value: &Value) -> bool {
             .chain(CLEAN_PHASES.iter())
             .chain(VSQ_PHASES.iter())
             .chain(PERFORMANCE_PHASES.iter())
+            .chain(PITCH_BEND_PHASES.iter())
             .any(|phase| {
                 file.strip_prefix(&format!("{phase}-"))
                     .and_then(|n| n.strip_suffix(".json").or_else(|| n.strip_suffix(".zip")))
@@ -514,6 +535,7 @@ mod tests {
             .chain(CLEAN_PHASES)
             .chain(VSQ_PHASES)
             .chain(PERFORMANCE_PHASES)
+            .chain(PITCH_BEND_PHASES)
         {
             let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
             assert_eq!(
@@ -522,7 +544,14 @@ mod tests {
                 "{phase}"
             );
         }
-        for phase in ["performance-any", "performance-seed-extra", "unknown", ""] {
+        for phase in [
+            "performance-any",
+            "performance-seed-extra",
+            "pitch-bend-any",
+            "pitch-bend-seed-extra",
+            "unknown",
+            "",
+        ] {
             assert!(Acceptance::new(evidence.0.clone(), phase).is_err());
         }
     }
@@ -533,12 +562,15 @@ mod tests {
             .into_iter()
             .chain(VSQ_PHASES)
             .chain(PERFORMANCE_PHASES)
+            .chain(PITCH_BEND_PHASES)
         {
             let evidence = Evidence::new();
             let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
             assert!(run
                 .script()
-                .contains(if PERFORMANCE_PHASES.contains(&phase) {
+                .contains(if PITCH_BEND_PHASES.contains(&phase) {
+                    include_str!("../pitch-bend-acceptance.js")
+                } else if PERFORMANCE_PHASES.contains(&phase) {
                     include_str!("../performance-song-acceptance.js")
                 } else if VSQ_PHASES.contains(&phase) {
                     "VSQ native control unavailable"
@@ -589,9 +621,12 @@ mod tests {
             "clean-authored-song.zip",
             "vsq-authored-song.zip",
             "performance-authored-songs.zip",
+            "pitch-bend-authored-songs.zip",
             "performance-seed-1.zip",
             "performance-controls-16.zip",
             "performance-restart-16.json",
+            "pitch-bend-seed-1.zip",
+            "pitch-bend-restart-16.json",
             "clean-seed-1.zip",
             "vsq-seed-1.zip",
             "vsq-restart-16.json",
@@ -610,6 +645,9 @@ mod tests {
             "performance-seed-17.zip",
             "performance-any-1.zip",
             "../performance-authored-songs.zip",
+            "../pitch-bend-authored-songs.zip",
+            "pitch-bend-seed-17.zip",
+            "pitch-bend-any-1.zip",
         ] {
             assert!(!valid_action(
                 &json!({"version":1,"sequence":1,"kind":"picker","x":1,"y":1,"width":900,"height":640,"file":file})

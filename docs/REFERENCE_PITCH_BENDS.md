@@ -99,3 +99,9 @@ These are source, unit, mocked-WebAudio and DOM checks. They do not establish
 physical audibility, browser/native package acceptance or archive coverage gains.
 Private source audits and any subsequent acceptance remain separate; private
 music, titles and source bytes are never public fixtures.
+
+The independent [original pitch acceptance route](PITCH_BEND_ACCEPTANCE_SLICE.md)
+adds source-bound hosted/Windows plumbing for this receiver. Its authored
+fixtures and local contract checks alone do not establish browser/native
+acceptance; the exact-source focused workflow and eventual mandatory final
+package gate remain separate.

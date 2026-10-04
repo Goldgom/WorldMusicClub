@@ -1,0 +1,19 @@
+{
+  "native_file_picker": true,
+  "fresh_process_restart": true,
+  "explicit_pitch_policy_both_locales": true,
+  "raw_14bit_source_clock_pitch_events": true,
+  "default2_and_proved12_ranges": true,
+  "active_and_pedal_held_layers_retuned": true,
+  "melody_track_mute_preserves_source_keys": true,
+  "pause_resume_restores_held_pitch": true,
+  "unsupported_pitch_range_blocked_before_audio": true,
+  "exact_clean_package_and_source_storage": true,
+  "prior_human_take_unchanged": true,
+  "validated_notation": false,
+  "practice_targets": false,
+  "actual_audibility": false,
+  "original_timbre": false,
+  "full_checkpoint_acceptance": false,
+  "release_ready": false
+}

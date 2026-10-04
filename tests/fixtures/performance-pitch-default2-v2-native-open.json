@@ -1,0 +1,514 @@
+{
+  "entry": {
+    "library_format_version": 2,
+    "revision": 1,
+    "key": "song-ce48402a4310da8d723c813e198507641f362f867c455f43f23c9840f348c441",
+    "content_sha256": "ce48402a4310da8d723c813e198507641f362f867c455f43f23c9840f348c441",
+    "score_sha256": "6a946ca53e2075d0ae58db7a8787a0b1363617ae97a16555295d6db5a1967c97",
+    "score_bytes": 6487,
+    "score_id": "performance-pitch-default2-v2",
+    "title": "Original C E G reference pitch with default range two",
+    "composer": "",
+    "label": "Original C E G reference pitch with default range two",
+    "saved_at_unix_ms": 1700000000000,
+    "provenance": {
+      "kind": "user_supplied",
+      "attribution": "WorldMusicHub original C/E/G pitch acceptance commands, authored under CC0-1.0; source generator: crates/desktop-shell/tests/support/pitch_acceptance_fixture.rs::authored_source; native-output generator: crates/desktop-shell/examples/generate_pitch_acceptance_fixtures.rs; SMF format 1, PPQ 6, tempo 500001 microseconds per quarter, end tick 60; no supplied or third-party music",
+      "source_url": null,
+      "license": "CC0-1.0"
+    },
+    "retained_source": null,
+    "clean_package": {
+      "version": 2,
+      "profile": "wmh-performance-midi1-v1",
+      "content_sha256": "ce48402a4310da8d723c813e198507641f362f867c455f43f23c9840f348c441",
+      "bytes": 7446,
+      "media": [],
+      "coverage": {
+        "notation": {
+          "reason": "not_derived_from_independent_events",
+          "represented_attacks": 0,
+          "status": "unavailable"
+        },
+        "performance": {
+          "key_attacks": 3,
+          "key_releases": 3,
+          "represented_events": 24,
+          "source_events": 24,
+          "source_tracks": 2,
+          "status": "complete"
+        },
+        "targets": {
+          "reason": "not_derived_from_independent_events",
+          "represented_attacks": 0,
+          "status": "unavailable"
+        }
+      },
+      "notation_available": false
+    }
+  },
+  "score_json": null,
+  "clean_package": {
+    "version": 2,
+    "profile": "wmh-performance-midi1-v1",
+    "content_sha256": "ce48402a4310da8d723c813e198507641f362f867c455f43f23c9840f348c441",
+    "metadata_json": "{\n  \"format\": \"worldmusichub-song\",\n  \"id\": \"performance-pitch-default2-v2\",\n  \"media\": [],\n  \"rights\": {\n    \"attribution\": \"WorldMusicHub original C/E/G pitch acceptance commands, authored under CC0-1.0; source generator: crates/desktop-shell/tests/support/pitch_acceptance_fixture.rs::authored_source; native-output generator: crates/desktop-shell/examples/generate_pitch_acceptance_fixtures.rs; SMF format 1, PPQ 6, tempo 500001 microseconds per quarter, end tick 60; no supplied or third-party music\",\n    \"license\": \"CC0-1.0\",\n    \"status\": \"original_authored\"\n  },\n  \"score\": {\n    \"bytes\": 6487,\n    \"path\": \"score.json\",\n    \"sha256\": \"6a946ca53e2075d0ae58db7a8787a0b1363617ae97a16555295d6db5a1967c97\"\n  },\n  \"sources\": [\n    {\n      \"bytes\": 134,\n      \"format\": \"midi\",\n      \"sha256\": \"8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07\"\n    }\n  ],\n  \"title\": \"Original C E G reference pitch with default range two\",\n  \"version\": 2\n}",
+    "score_json": "{\"format\":\"worldmusichub-complete-score\",\"version\":2,\"id\":\"performance-pitch-default2-v2\",\"title\":\"Original C E G reference pitch with default range two\",\"source\":{\"format\":\"midi\",\"bytes\":134,\"sha256\":\"8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07\"},\"notation\":null,\"performance\":{\"profile\":\"wmh-performance-midi1-v1\",\"end\":{\"numerator\":10,\"denominator\":1},\"tracks\":[{\"id\":\"track-1\",\"name\":\"C\",\"source_index\":0,\"source_event_count\":4,\"end\":{\"numerator\":10,\"denominator\":1}},{\"id\":\"track-2\",\"name\":\"M\",\"source_index\":1,\"source_event_count\":20,\"end\":{\"numerator\":10,\"denominator\":1}}],\"parts\":[{\"id\":\"midi-t2-c1\",\"track_id\":\"track-2\",\"channel\":0,\"sound_identity\":\"unspecified_midi_route\"}],\"events\":[{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t0:e0\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":0,\"event\":0},\"command\":{\"kind\":\"text\",\"role\":\"track_name\",\"text\":\"C\"}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t0:e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":0,\"event\":1},\"command\":{\"kind\":\"tempo\",\"microseconds_per_quarter\":500001}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t0:e2\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":0,\"event\":2},\"command\":{\"kind\":\"meter\",\"numerator\":4,\"denominator\":4,\"clocks_per_click\":24,\"thirty_seconds_per_quarter\":8}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e0\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":1,\"event\":0},\"command\":{\"kind\":\"text\",\"role\":\"track_name\",\"text\":\"M\"}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"origin\":{\"track\":1,\"event\":1},\"command\":{\"kind\":\"instrument_program\",\"channel\":0,\"program\":8}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e2\",\"at\":{\"numerator\":3,\"denominator\":2},\"origin\":{\"track\":1,\"event\":2},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":60,\"velocity\":90}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e3\",\"at\":{\"numerator\":2,\"denominator\":1},\"origin\":{\"track\":1,\"event\":3},\"command\":{\"kind\":\"pitch_bend\",\"channel\":0,\"value\":0}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e4\",\"at\":{\"numerator\":13,\"denominator\":6},\"origin\":{\"track\":1,\"event\":4},\"command\":{\"kind\":\"pitch_bend\",\"channel\":0,\"value\":1}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e5\",\"at\":{\"numerator\":5,\"denominator\":2},\"origin\":{\"track\":1,\"event\":5},\"command\":{\"kind\":\"pitch_bend\",\"channel\":0,\"value\":8191}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e6\",\"at\":{\"numerator\":8,\"denominator\":3},\"origin\":{\"track\":1,\"event\":6},\"command\":{\"kind\":\"pitch_bend\",\"channel\":0,\"value\":8192}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e7\",\"at\":{\"numerator\":3,\"denominator\":1},\"origin\":{\"track\":1,\"event\":7},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":64,\"velocity\":80}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e8\",\"at\":{\"numerator\":10,\"denominator\":3},\"origin\":{\"track\":1,\"event\":8},\"command\":{\"kind\":\"sustain\",\"channel\":0,\"value\":127}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e9\",\"at\":{\"numerator\":7,\"denominator\":2},\"origin\":{\"track\":1,\"event\":9},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":60,\"velocity\":19}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e10\",\"at\":{\"numerator\":11,\"denominator\":3},\"origin\":{\"track\":1,\"event\":10},\"command\":{\"kind\":\"pitch_bend\",\"channel\":0,\"value\":8193}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e11\",\"at\":{\"numerator\":4,\"denominator\":1},\"origin\":{\"track\":1,\"event\":11},\"command\":{\"kind\":\"pitch_bend\",\"channel\":0,\"value\":16383}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e12\",\"at\":{\"numerator\":25,\"denominator\":6},\"origin\":{\"track\":1,\"event\":12},\"command\":{\"kind\":\"pitch_bend\",\"channel\":0,\"value\":16383}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e13\",\"at\":{\"numerator\":9,\"denominator\":2},\"origin\":{\"track\":1,\"event\":13},\"command\":{\"kind\":\"key_attack\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":67,\"velocity\":70}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e14\",\"at\":{\"numerator\":5,\"denominator\":1},\"origin\":{\"track\":1,\"event\":14},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":64,\"velocity\":20}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e15\",\"at\":{\"numerator\":31,\"denominator\":6},\"origin\":{\"track\":1,\"event\":15},\"command\":{\"kind\":\"pitch_bend\",\"channel\":0,\"value\":4096}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e16\",\"at\":{\"numerator\":11,\"denominator\":2},\"origin\":{\"track\":1,\"event\":16},\"command\":{\"kind\":\"key_release\",\"part_id\":\"midi-t2-c1\",\"channel\":0,\"key\":67,\"velocity\":21}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e17\",\"at\":{\"numerator\":8,\"denominator\":1},\"origin\":{\"track\":1,\"event\":17},\"command\":{\"kind\":\"pitch_bend\",\"channel\":0,\"value\":8192}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e18\",\"at\":{\"numerator\":9,\"denominator\":1},\"origin\":{\"track\":1,\"event\":18},\"command\":{\"kind\":\"sustain\",\"channel\":0,\"value\":0}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t0:e3\",\"at\":{\"numerator\":10,\"denominator\":1},\"origin\":{\"track\":0,\"event\":3},\"command\":{\"kind\":\"track_end\"}},{\"event_id\":\"midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e19\",\"at\":{\"numerator\":10,\"denominator\":1},\"origin\":{\"track\":1,\"event\":19},\"command\":{\"kind\":\"track_end\"}}]},\"coverage\":{\"performance\":{\"status\":\"complete\",\"source_tracks\":2,\"source_events\":24,\"represented_events\":24,\"key_attacks\":3,\"key_releases\":3},\"notation\":{\"status\":\"unavailable\",\"represented_attacks\":0,\"reason\":\"not_derived_from_independent_events\"},\"targets\":{\"status\":\"unavailable\",\"represented_attacks\":0,\"reason\":\"not_derived_from_independent_events\"}}}\n",
+    "media": [],
+    "runtime": {
+      "coverage": {
+        "notation": {
+          "reason": "not_derived_from_independent_events",
+          "represented_attacks": 0,
+          "status": "unavailable"
+        },
+        "performance": {
+          "key_attacks": 3,
+          "key_releases": 3,
+          "represented_events": 24,
+          "source_events": 24,
+          "source_tracks": 2,
+          "status": "complete"
+        },
+        "targets": {
+          "reason": "not_derived_from_independent_events",
+          "represented_attacks": 0,
+          "status": "unavailable"
+        }
+      },
+      "duration_microseconds": {
+        "denominator": 1,
+        "numerator": "5000010"
+      },
+      "events": [
+        {
+          "command": {
+            "kind": "text",
+            "role": "track_name",
+            "text": "C"
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t0:e0",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 0,
+            "track": 0
+          }
+        },
+        {
+          "command": {
+            "kind": "tempo",
+            "microseconds_per_quarter": 500001
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t0:e1",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 1,
+            "track": 0
+          }
+        },
+        {
+          "command": {
+            "clocks_per_click": 24,
+            "denominator": 4,
+            "kind": "meter",
+            "numerator": 4,
+            "thirty_seconds_per_quarter": 8
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t0:e2",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 2,
+            "track": 0
+          }
+        },
+        {
+          "command": {
+            "kind": "text",
+            "role": "track_name",
+            "text": "M"
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e0",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 0,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "instrument_program",
+            "program": 8
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e1",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "origin": {
+            "event": 1,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 60,
+            "kind": "key_attack",
+            "part_id": "midi-t2-c1",
+            "velocity": 90
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e2",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "1500003"
+          },
+          "origin": {
+            "event": 2,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "pitch_bend",
+            "value": 0
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e3",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "1000002"
+          },
+          "origin": {
+            "event": 3,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "pitch_bend",
+            "value": 1
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e4",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "2166671"
+          },
+          "origin": {
+            "event": 4,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "pitch_bend",
+            "value": 8191
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e5",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "2500005"
+          },
+          "origin": {
+            "event": 5,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "pitch_bend",
+            "value": 8192
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e6",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "1333336"
+          },
+          "origin": {
+            "event": 6,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 64,
+            "kind": "key_attack",
+            "part_id": "midi-t2-c1",
+            "velocity": 80
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e7",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "1500003"
+          },
+          "origin": {
+            "event": 7,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "sustain",
+            "value": 127
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e8",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "1666670"
+          },
+          "origin": {
+            "event": 8,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 60,
+            "kind": "key_release",
+            "part_id": "midi-t2-c1",
+            "velocity": 19
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e9",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "3500007"
+          },
+          "origin": {
+            "event": 9,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "pitch_bend",
+            "value": 8193
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e10",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "1833337"
+          },
+          "origin": {
+            "event": 10,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "pitch_bend",
+            "value": 16383
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e11",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "2000004"
+          },
+          "origin": {
+            "event": 11,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "pitch_bend",
+            "value": 16383
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e12",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "4166675"
+          },
+          "origin": {
+            "event": 12,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 67,
+            "kind": "key_attack",
+            "part_id": "midi-t2-c1",
+            "velocity": 70
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e13",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "4500009"
+          },
+          "origin": {
+            "event": 13,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 64,
+            "kind": "key_release",
+            "part_id": "midi-t2-c1",
+            "velocity": 20
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e14",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "2500005"
+          },
+          "origin": {
+            "event": 14,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "pitch_bend",
+            "value": 4096
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e15",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "5166677"
+          },
+          "origin": {
+            "event": 15,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "key": 67,
+            "kind": "key_release",
+            "part_id": "midi-t2-c1",
+            "velocity": 21
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e16",
+          "exact_microseconds": {
+            "denominator": 2,
+            "numerator": "5500011"
+          },
+          "origin": {
+            "event": 16,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "pitch_bend",
+            "value": 8192
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e17",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "4000008"
+          },
+          "origin": {
+            "event": 17,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "channel": 0,
+            "kind": "sustain",
+            "value": 0
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e18",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "4500009"
+          },
+          "origin": {
+            "event": 18,
+            "track": 1
+          }
+        },
+        {
+          "command": {
+            "kind": "track_end"
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t0:e3",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "5000010"
+          },
+          "origin": {
+            "event": 3,
+            "track": 0
+          }
+        },
+        {
+          "command": {
+            "kind": "track_end"
+          },
+          "event_id": "midi:8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07:t1:e19",
+          "exact_microseconds": {
+            "denominator": 1,
+            "numerator": "5000010"
+          },
+          "origin": {
+            "event": 19,
+            "track": 1
+          }
+        }
+      ],
+      "parts": [
+        {
+          "channel": 0,
+          "id": "midi-t2-c1",
+          "sound_identity": "unspecified_midi_route",
+          "track_id": "track-2"
+        }
+      ],
+      "profile": "wmh-performance-midi1-v1",
+      "score_id": "performance-pitch-default2-v2",
+      "score_sha256": "6a946ca53e2075d0ae58db7a8787a0b1363617ae97a16555295d6db5a1967c97",
+      "source_sha256": "8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07",
+      "tracks": [
+        {
+          "end": {
+            "denominator": 1,
+            "numerator": 10
+          },
+          "id": "track-1",
+          "name": "C",
+          "source_event_count": 4,
+          "source_index": 0
+        },
+        {
+          "end": {
+            "denominator": 1,
+            "numerator": 10
+          },
+          "id": "track-2",
+          "name": "M",
+          "source_event_count": 20,
+          "source_index": 1
+        }
+      ]
+    }
+  }
+}

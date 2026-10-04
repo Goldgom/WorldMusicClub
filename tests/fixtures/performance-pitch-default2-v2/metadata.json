@@ -1,0 +1,24 @@
+{
+  "format": "worldmusichub-song",
+  "id": "performance-pitch-default2-v2",
+  "media": [],
+  "rights": {
+    "attribution": "WorldMusicHub original C/E/G pitch acceptance commands, authored under CC0-1.0; source generator: crates/desktop-shell/tests/support/pitch_acceptance_fixture.rs::authored_source; native-output generator: crates/desktop-shell/examples/generate_pitch_acceptance_fixtures.rs; SMF format 1, PPQ 6, tempo 500001 microseconds per quarter, end tick 60; no supplied or third-party music",
+    "license": "CC0-1.0",
+    "status": "original_authored"
+  },
+  "score": {
+    "bytes": 6487,
+    "path": "score.json",
+    "sha256": "6a946ca53e2075d0ae58db7a8787a0b1363617ae97a16555295d6db5a1967c97"
+  },
+  "sources": [
+    {
+      "bytes": 134,
+      "format": "midi",
+      "sha256": "8bf14973e917b0a5eb404fe8ed6b94374d2dd1ab3ffbbdc9fbb761070aad7c07"
+    }
+  ],
+  "title": "Original C E G reference pitch with default range two",
+  "version": 2
+}
