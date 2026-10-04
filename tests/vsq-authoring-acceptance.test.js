@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {deflateSync} from 'node:zlib';
 import {readFile,mkdtemp,readdir,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -11,7 +12,7 @@ import {VSQ_AUTHORING_FIXTURE_FILENAME,vsqAuthoringFixture,validateVsqAuthoringD
 import {assertVsqAuthoringZip,validateVsqAuthoringOpened,validateVsqAuthoringRuntime} from '../scripts/check-vsq-authoring-native.mjs';
 import {authoringDraftFingerprint} from '../scripts/song-authoring-fixture-contract.mjs';
 import {storedZip} from './native-import-driver-fixtures.js';
-import {validateVsqAuthoringPicker,validateVsqAuthoringIsolation} from '../scripts/verify-native-vsq-authoring-evidence.mjs';
+import {validateVsqAuthoringPicker,validateVsqAuthoringIsolation,validateVsqAuthoringViewport,validateVsqAuthoringNativeScreenshot} from '../scripts/verify-native-vsq-authoring-evidence.mjs';
 
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const read=name=>readFile(new URL(`./fixtures/song-authoring/${name}`,import.meta.url));
@@ -215,4 +216,56 @@ test('VSQ isolation verifier binds native key and sound/settings clicks to the c
   }
   const extraCommit=isolationFragment('vsq-authoring-restart');extraCommit.requests=[{path:'/api/library/import/commit',actionSequence:16}];extraCommit.isolation.requestEnd=1;assert.throws(()=>validateVsqAuthoringIsolation(extraCommit));
   const staleCommit=isolationFragment();staleCommit.requests[0].actionSequence=15;assert.throws(()=>validateVsqAuthoringIsolation(staleCommit));
+});
+
+// Geometry fragments verify admission rules only, never real Windows pixels.
+function nativeViewportFragment({width=1024,height=689,scale=1,left=0}={}){
+ const report={phase:'vsq-authoring-seed',origin:'https://wmh.localhost',actions:2,layout:{width,height,documentWidth:width},reviewLayout:{width,height},followingSurface:{viewport:{width,height}}};
+ const host={phase:report.phase,process_id:3556,renderer_origin:report.origin,renderer_ok:true,actions:report.actions},actions=[1,2].map(sequence=>({version:1,sequence,kind:'click',x:21.25+sequence,y:60.5+sequence,width,height}));
+ const client=[0,0,Math.round(width*scale),Math.round(height*scale)],origin=[left,31],work_area=[left,0,left+client[2],31+client[3]];
+ const results=actions.map(action=>{const requested=[left+Math.floor(action.x*client[2]/width),31+Math.floor(action.y*client[3]/height)];return{ok:true,client_click:{client:[...client],origin:[...origin],work_area:[...work_area],viewport:[width,height],requested:[...requested],actual:[...requested],app_hwnd:123,hit_hwnd:456,hit_root:123,foreground:123}};});
+ return{report,native:{host,actions,results}};
+}
+test('native VSQ viewport comes from every measured Win32 action while hosted sizes stay strict',()=>{
+ for(const options of [{},{width:1100,height:800},{width:900,height:640},{width:1280,height:900},{scale:1.5,left:-1536}]){
+  const {report,native}=nativeViewportFragment(options),viewport=validateVsqAuthoringViewport(report,native);assert.equal(viewport.width,report.layout.width);assert.deepEqual(viewport.clientSize,{width:native.results[0].client_click.client[2],height:native.results[0].client_click.client[3]});
+  report.phase='vsq-authoring-restart';native.host.phase=report.phase;delete report.reviewLayout;validateVsqAuthoringViewport(report,native);
+ }
+ for(const mutate of [
+  r=>r.report.layout.width++,r=>r.report.layout.height++,r=>r.report.layout.documentWidth+=2,r=>r.report.reviewLayout.height++,r=>r.report.followingSurface.viewport.width++,
+  r=>r.native.host.phase='vsq-authoring-restart',r=>r.native.host.process_id=0,r=>r.native.host.renderer_origin='https://other.invalid',r=>r.native.host.renderer_ok=false,r=>r.native.host.actions++,
+  r=>r.native.actions.pop(),r=>r.native.results.pop(),r=>r.native.actions[0].sequence=2,r=>r.native.actions[0].width++,r=>r.native.actions[0].x=-1,
+  r=>r.native.results[0].ok=false,r=>r.native.results[0].client_click.client[2]--,r=>r.native.results[0].client_click.client[0]=1,
+  r=>r.native.results[0].client_click.origin[0]++,r=>r.native.results[0].client_click.work_area[2]--,r=>r.native.results[0].client_click.work_area[0]=NaN,
+  r=>r.native.results[0].client_click.requested[0]++,r=>r.native.results[0].client_click.actual[1]++,r=>r.native.results[0].client_click.viewport[0]++,
+  r=>r.native.results[0].client_click.foreground=999,r=>r.native.results[0].client_click.hit_root=999,
+  r=>{const c=r.native.results[1].client_click;c.app_hwnd=c.hit_root=c.foreground=999;},
+  r=>{r.native.actions[0].kind='picker';r.native.results[0].owned_dialog={app_hwnd:123,process_id:999,app_process_id:999};},
+ ]){const fragment=nativeViewportFragment();mutate(fragment);assert.throws(()=>validateVsqAuthoringViewport(fragment.report,fragment.native));}
+ for(const dimensions of [{width:899,height:689},{width:1024,height:639},{width:1281,height:900},{width:1280,height:901}]){const {report,native}=nativeViewportFragment(dimensions);assert.throws(()=>validateVsqAuthoringViewport(report,native),/shell bounds/);}
+ for(const [width,height]of [[1280,720],[1280,900],[1920,1080]])validateVsqAuthoringViewport({layout:{width,height,documentWidth:width}});
+ assert.throws(()=>validateVsqAuthoringViewport(nativeViewportFragment().report),/Hosted viewport/);
+});
+function syntheticNativeWindow(width,height){
+ const crc=bytes=>{let value=0xffffffff;for(const byte of bytes){value^=byte;for(let bit=0;bit<8;bit++)value=value>>>1^((value&1)?0xedb88320:0);}return(value^0xffffffff)>>>0;};
+ const chunk=(name,data)=>{const bytes=Buffer.alloc(data.length+12);bytes.writeUInt32BE(data.length);bytes.write(name,4);data.copy(bytes,8);bytes.writeUInt32BE(crc(bytes.subarray(4,-4)),bytes.length-4);return bytes;};
+ const header=Buffer.alloc(13);header.writeUInt32BE(width);header.writeUInt32BE(height,4);header[8]=8;header[9]=2;
+ const pixels=Buffer.alloc((width*3+1)*height);let value=17;for(let i=0;i<pixels.length;i++){value=(Math.imul(value,1664525)+1013904223)>>>0;pixels[i]=i%(width*3+1)?value>>>24:0;}
+ return Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),chunk('IHDR',header),chunk('IDAT',deflateSync(pixels)),chunk('IEND',Buffer.alloc(0))]);
+}
+test('native VSQ screenshots must contain the real client and share the phase window dimensions',()=>{
+ const {report,native}=nativeViewportFragment(),viewport=validateVsqAuthoringViewport(report,native),image=syntheticNativeWindow(1024,720),pixels=validateVsqAuthoringNativeScreenshot(image,viewport);
+ assert.deepEqual(pixels,{width:1024,height:720});validateVsqAuthoringNativeScreenshot(image,viewport,pixels);
+ assert.throws(()=>validateVsqAuthoringNativeScreenshot(syntheticNativeWindow(1023,720),viewport),/measured native client/);
+ assert.throws(()=>validateVsqAuthoringNativeScreenshot(syntheticNativeWindow(1024,688),viewport),/measured native client/);
+ assert.throws(()=>validateVsqAuthoringNativeScreenshot(syntheticNativeWindow(1280,900),viewport,pixels),/same native window/);
+ const altered=Buffer.from(image);altered[20]^=1;assert.throws(()=>validateVsqAuthoringNativeScreenshot(altered,viewport));
+});
+test('native and hosted VSQ callers retain source, exact requested viewport and mandatory screenshot gates',async()=>{
+ const native=await readFile(new URL('../scripts/verify-native-vsq-authoring-evidence.mjs',import.meta.url),'utf8'),hosted=await readFile(new URL('../scripts/hosted-vsq-authoring-check.mjs',import.meta.url),'utf8'),windows=await readFile(new URL('../crates/desktop-shell/src/windows.rs',import.meta.url),'utf8');
+ assert.match(native,/assert\.equal\(native\.ok,true\)/);assert.match(native,/\['source_sha','source_tree'\]/);assert.match(native,/verifyNativeProfileEvidence\(native,VSQ_AUTHORING_PHASES,json\)/);
+ assert.ok(native.indexOf('results.push(result)')<native.indexOf('validateVsqAuthoringRenderer(report,fixture,nativeEvidence)'));
+ assert.match(native,/validateVsqAuthoringNativeScreenshot\(await read\(`native-action-/);assert.match(native,/validateVsqAuthoringNativeScreenshot\(await read\(`native-\$\{host\.phase\}\.png/);
+ assert.match(hosted,/validateVsqAuthoringRenderer\(renderer\);assert\.deepEqual\(\{width:renderer\.layout\.width,height:renderer\.layout\.height\},\{width,height\}\)/);
+ assert.match(windows,/\.inner_size\(1280\.0, 900\.0\)/);assert.match(windows,/\.min_inner_size\(900\.0, 640\.0\)/);assert.match(windows,/\.prevent_overflow\(\)/);
 });
