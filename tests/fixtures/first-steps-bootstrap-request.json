@@ -1,0 +1,222 @@
+{
+  "timeline": {
+    "duration_ms": 10666.666666666666,
+    "notes": [
+      {
+        "duration_ms": 666.6666666666666,
+        "id": "scale-0",
+        "midi": 60,
+        "part_id": "piano",
+        "source_note_id": "scale-0",
+        "source_note_ids": [
+          "scale-0"
+        ],
+        "staff": 1,
+        "start_ms": 0,
+        "velocity": 90,
+        "voice": "1"
+      },
+      {
+        "duration_ms": 666.6666666666666,
+        "id": "scale-1",
+        "midi": 62,
+        "part_id": "piano",
+        "source_note_id": "scale-1",
+        "source_note_ids": [
+          "scale-1"
+        ],
+        "staff": 1,
+        "start_ms": 666.6666666666666,
+        "velocity": 90,
+        "voice": "1"
+      },
+      {
+        "duration_ms": 666.6666666666667,
+        "id": "scale-2",
+        "midi": 64,
+        "part_id": "piano",
+        "source_note_id": "scale-2",
+        "source_note_ids": [
+          "scale-2"
+        ],
+        "staff": 1,
+        "start_ms": 1333.3333333333333,
+        "velocity": 90,
+        "voice": "1"
+      },
+      {
+        "duration_ms": 666.6666666666665,
+        "id": "scale-3",
+        "midi": 65,
+        "part_id": "piano",
+        "source_note_id": "scale-3",
+        "source_note_ids": [
+          "scale-3"
+        ],
+        "staff": 1,
+        "start_ms": 2000,
+        "velocity": 90,
+        "voice": "1"
+      },
+      {
+        "duration_ms": 666.666666666667,
+        "id": "scale-4",
+        "midi": 67,
+        "part_id": "piano",
+        "source_note_id": "scale-4",
+        "source_note_ids": [
+          "scale-4"
+        ],
+        "staff": 1,
+        "start_ms": 2666.6666666666665,
+        "velocity": 90,
+        "voice": "1"
+      },
+      {
+        "duration_ms": 666.6666666666665,
+        "id": "scale-5",
+        "midi": 69,
+        "part_id": "piano",
+        "source_note_id": "scale-5",
+        "source_note_ids": [
+          "scale-5"
+        ],
+        "staff": 1,
+        "start_ms": 3333.3333333333335,
+        "velocity": 90,
+        "voice": "1"
+      },
+      {
+        "duration_ms": 666.666666666667,
+        "id": "scale-6",
+        "midi": 71,
+        "part_id": "piano",
+        "source_note_id": "scale-6",
+        "source_note_ids": [
+          "scale-6"
+        ],
+        "staff": 1,
+        "start_ms": 4000,
+        "velocity": 90,
+        "voice": "1"
+      },
+      {
+        "duration_ms": 666.6666666666661,
+        "id": "scale-7",
+        "midi": 72,
+        "part_id": "piano",
+        "source_note_id": "scale-7",
+        "source_note_ids": [
+          "scale-7"
+        ],
+        "staff": 1,
+        "start_ms": 4666.666666666667,
+        "velocity": 90,
+        "voice": "1"
+      },
+      {
+        "duration_ms": 666.666666666667,
+        "id": "scale-8",
+        "midi": 71,
+        "part_id": "piano",
+        "source_note_id": "scale-8",
+        "source_note_ids": [
+          "scale-8"
+        ],
+        "staff": 1,
+        "start_ms": 5333.333333333333,
+        "velocity": 90,
+        "voice": "1"
+      },
+      {
+        "duration_ms": 666.666666666667,
+        "id": "scale-9",
+        "midi": 69,
+        "part_id": "piano",
+        "source_note_id": "scale-9",
+        "source_note_ids": [
+          "scale-9"
+        ],
+        "staff": 1,
+        "start_ms": 6000,
+        "velocity": 90,
+        "voice": "1"
+      },
+      {
+        "duration_ms": 666.6666666666661,
+        "id": "scale-10",
+        "midi": 67,
+        "part_id": "piano",
+        "source_note_id": "scale-10",
+        "source_note_ids": [
+          "scale-10"
+        ],
+        "staff": 1,
+        "start_ms": 6666.666666666667,
+        "velocity": 90,
+        "voice": "1"
+      },
+      {
+        "duration_ms": 666.666666666667,
+        "id": "scale-11",
+        "midi": 65,
+        "part_id": "piano",
+        "source_note_id": "scale-11",
+        "source_note_ids": [
+          "scale-11"
+        ],
+        "staff": 1,
+        "start_ms": 7333.333333333333,
+        "velocity": 90,
+        "voice": "1"
+      },
+      {
+        "duration_ms": 666.6666666666661,
+        "id": "scale-12",
+        "midi": 64,
+        "part_id": "piano",
+        "source_note_id": "scale-12",
+        "source_note_ids": [
+          "scale-12"
+        ],
+        "staff": 1,
+        "start_ms": 8000,
+        "velocity": 90,
+        "voice": "1"
+      },
+      {
+        "duration_ms": 666.6666666666679,
+        "id": "scale-13",
+        "midi": 62,
+        "part_id": "piano",
+        "source_note_id": "scale-13",
+        "source_note_ids": [
+          "scale-13"
+        ],
+        "staff": 1,
+        "start_ms": 8666.666666666666,
+        "velocity": 90,
+        "voice": "1"
+      },
+      {
+        "duration_ms": 666.6666666666661,
+        "id": "scale-14",
+        "midi": 60,
+        "part_id": "piano",
+        "source_note_id": "scale-14",
+        "source_note_ids": [
+          "scale-14"
+        ],
+        "staff": 1,
+        "start_ms": 9333.333333333334,
+        "velocity": 90,
+        "voice": "1"
+      }
+    ]
+  },
+  "profile": {
+    "kind": "piano",
+    "key_count": 61,
+    "lowest_midi": null
+  }
+}

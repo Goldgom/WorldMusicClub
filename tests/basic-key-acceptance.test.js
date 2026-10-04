@@ -36,11 +36,12 @@ function sourceMeterDisclosure(){
  return{locale:'zh-CN',viewport:{width:1280,height:720},choice:{label:surface('engraving-basic-meter-label','来源拍号未确定时使用的显示拍号'),control:{...surface('engraving-basic-meter','使用来源拍号'),value:'source',disabled:false},provenance:surface('engraving-basic-provenance','基础解释 v1；原始源记谱保持不变。')},status:surface('engraving-status','来源没有明确的起始拍号。此选择不会添加来源拍号事件，也不会改变练习时序。')};
 }
 function originalFirstSteps(){const score=JSON.parse(JSON.parse(readFileSync(new URL('fixtures/first-steps-transposed-v1.json',import.meta.url),'utf8')).source.content).original;score.source=null;return score;}
+function firstStepsBootstrapRequest(){return JSON.parse(readFileSync(new URL('fixtures/first-steps-bootstrap-request.json',import.meta.url),'utf8'));}
 function addRequestEvidence(r){
  const e={version:1,rows:[],events:0,bootstrap:null,selection:null,restored:true},tick=()=>++e.events;
  const add=(path,body,response)=>{const row={index:e.rows.length,path,method:body===undefined?'GET':'POST',started:tick(),settled:tick(),status:200,scope:e.selection?'selected':'bootstrap',previewId:e.selection?`native:${r.key}`:'first-steps',requestBody:body===undefined?null:JSON.stringify(body)};if(response!==undefined){row.consumed=tick();row.response=response;}e.rows.push(row);return row;};
  add('/api/catalog/index');add('/api/health');add('/api/catalog/score/first-steps',undefined,originalFirstSteps());add('/api/library/list');add('/api/compile',originalFirstSteps(),{score:originalFirstSteps()});
- for(const path of ['/api/practice-targets','/api/instrument-check'])add(path,{timeline:{score_id:'first-steps'}});
+ for(const path of ['/api/practice-targets','/api/instrument-check'])add(path,firstStepsBootstrapRequest());
  const before={previewId:'first-steps',previewStatus:'ready',practiceDisabled:false};e.bootstrap={event:tick(),requestCount:e.rows.length,...before};e.selection={event:tick(),requestCount:e.rows.length,key:r.key,trusted:true,before,ready:null};
  add('/api/library/load',{key:r.key});e.selection.ready={event:tick(),requestCount:e.rows.length,previewId:`native:${r.key}`,previewStatus:'ready',practiceDisabled:false,contentSha256:r.opened.clean_package.content_sha256,sourceSha256:r.opened.clean_package.runtime.source_sha256};
  for(const request of r.assessmentRequests)add('/api/assess',request);
@@ -101,6 +102,26 @@ test('request proof retains startup compile and forbids late, wrong-source and i
  validateBasicKeyRenderer(restart);validateBasicKeyTakes(machine,human,restart);assert.deepEqual({machine,human,requests:restart.assessmentRequests,notation:restart.notation},before);
  restart.requestEvidence.rows.at(-1).requestBody=JSON.stringify({inputs:[]});assert.throws(()=>validateBasicKeyRequests(restart),/Every assessment/);
 });
+test('bootstrap checks bind the actual Rust Timeline shape to every original source note',()=>{
+ const request=firstStepsBootstrapRequest();assert.deepEqual(Object.keys(request.timeline).sort(),['duration_ms','notes']);assert.equal(request.timeline.notes.length,15);assert.ok(!Object.hasOwn(request.timeline,'score_id'));
+ for(const phase of BASIC_KEY_PHASES){
+  const original=renderer(phase);validateBasicKeyRenderer(original);
+  for(const mutate of [
+   v=>v.timeline={score_id:'first-steps'},v=>v.timeline.score_id='first-steps',v=>delete v.timeline.duration_ms,
+   v=>v.timeline.notes.pop(),v=>v.timeline.notes.push({...v.timeline.notes[0]}),v=>v.timeline.notes.reverse(),
+   v=>v.timeline.notes[0].id='other-source',v=>v.timeline.notes[0].part_id='other-part',v=>v.timeline.notes[0].source_note_id='other-source',v=>v.timeline.notes[0].source_note_ids=[],
+   v=>v.timeline.notes[0].midi++,v=>v.timeline.notes[0].velocity--,v=>v.timeline.notes[0].staff++,v=>v.timeline.notes[0].voice='2',
+   v=>v.timeline.notes[0].start_ms++,v=>v.timeline.notes[0].duration_ms++,v=>v.timeline.duration_ms++,v=>v.timeline.notes[0].start_ms=null,
+   v=>v.profile.key_count=88,v=>delete v.profile,
+  ]){
+   const changed=structuredClone(original),body=firstStepsBootstrapRequest();mutate(body);
+   for(const row of changed.requestEvidence.rows.filter(row=>['/api/practice-targets','/api/instrument-check'].includes(row.path)))row.requestBody=JSON.stringify(body);
+   assert.throws(()=>validateBasicKeyRequests(changed));
+  }
+  const mismatched=structuredClone(original),row=mismatched.requestEvidence.rows[6],body=JSON.parse(row.requestBody);body.timeline.notes[0].duration_ms+=1e-9;row.requestBody=JSON.stringify(body);
+  assert.throws(()=>validateBasicKeyRequests(mismatched),/Both bootstrap checks/);
+ }
+});
 test('request observer forwards real promises, waits for consumed bootstrap and records the trusted source boundary',async()=>{
  const source=await readFile(new URL('../crates/desktop-shell/basic-key-acceptance.js',import.meta.url),'utf8'),shared=await readFile(new URL('../crates/desktop-shell/vsq-song-acceptance.js',import.meta.url),'utf8');
  const lobby={dataset:{previewId:'first-steps',previewStatus:'ready'}},practice={disabled:true},handlers=new Map(),errors=[];
@@ -119,7 +140,7 @@ test('request observer forwards real promises, waits for consumed bootstrap and 
  await request('/api/library/list');const compile=await request('/api/compile',body,{score:body},{consume:false});
  practice.disabled=false;assert.equal(Boolean(observer.bootstrapReady()),false);assert.throws(()=>observer.markBootstrap(),/incomplete/);
  await compile.json();await Promise.resolve();practice.disabled=true;assert.equal(Boolean(observer.bootstrapReady()),false);
- await request('/api/practice-targets',{timeline:{score_id:'first-steps'}});await request('/api/instrument-check',{timeline:{score_id:'first-steps'}});practice.disabled=false;
+ await request('/api/practice-targets',firstStepsBootstrapRequest());await request('/api/instrument-check',firstStepsBootstrapRequest());practice.disabled=false;
  assert.equal(Boolean(observer.bootstrapReady()),true);observer.markBootstrap();assert.throws(()=>observer.markBootstrap(),/Duplicate/);
  const r=renderer('basic-key-seed');observer.expectSelection(r.key);
  const event=trusted=>({isTrusted:trusted,target:{closest:()=>({dataset:{libraryKey:`native:${r.key}`}})}});

@@ -29,6 +29,20 @@ export function validateBasicKeySourceMeterDisclosure(e){
 // Its generated export archive is not part of the bundled catalog score.
 const originalFirstSteps=JSON.parse(JSON.parse(readFileSync(new URL('../tests/fixtures/first-steps-transposed-v1.json',import.meta.url),'utf8')).source.content).original;
 originalFirstSteps.source=null;
+function validateFirstStepsTimeline(timeline){
+ // Rust Timeline has notes and duration_ms; the score identity belongs to the
+ // consumed Compilation.score. Bind every target to that retained original.
+ assert.deepEqual(Object.keys(timeline).sort(),['duration_ms','notes']);
+ const beatMs=60000/originalFirstSteps.tempo[0].bpm,beat=value=>value.numerator/value.denominator;
+ const time=(actual,expected)=>assert.ok(Number.isFinite(actual)&&Math.abs(actual-expected)<=1e-8,'First Steps timeline timing differs from its original rational source');
+ const source=originalFirstSteps.parts.flatMap(part=>part.notes.map(note=>({part,note}))),pitched=source.filter(({note})=>note.pitch);
+ time(timeline.duration_ms,Math.max(...source.map(({note})=>beat(note.at)+beat(note.duration)))*beatMs);assert.equal(timeline.notes.length,pitched.length);
+ for(const [index,{part,note}]of pitched.entries()){
+  const {start_ms,duration_ms,...identity}=timeline.notes[index];
+  assert.deepEqual(identity,{id:note.id,source_note_id:note.id,source_note_ids:[note.id],part_id:part.id,midi:12*(note.pitch.octave+1)+{C:0,D:2,E:4,F:5,G:7,A:9,B:11}[note.pitch.step]+note.pitch.alter,voice:note.voice,staff:note.staff,velocity:note.velocity},'Bootstrap target differs from the original First Steps note');
+  time(start_ms,beat(note.at)*beatMs);time(duration_ms,beat(note.duration)*beatMs);
+ }
+}
 export function validateBasicKeyRequests(r){
  const e=r.requestEvidence;assert.equal(e?.version,1,'Complete request evidence required');assert.equal(e.restored,true);
  assert.ok(Array.isArray(r.requests)&&r.requests.length>0&&r.requests.length<=160);assert.equal(e.rows.length,r.requests.length,'Every request path must retain its detail row');
@@ -59,7 +73,12 @@ export function validateBasicKeyRequests(r){
  assert.equal(source.method,'GET');assert.equal(source.requestBody,null);assert.equal(source.status,200);assert.deepEqual(source.response,originalFirstSteps,'Bootstrap source must be the complete original First Steps exercise');
  assert.equal(compile.method,'POST');assert.equal(compile.status,200);assert.equal(compile.previewId,'first-steps');assert.deepEqual(bodies.get(compile.index),originalFirstSteps,'Only the exact original First Steps compile is allowed');assert.deepEqual(compile.response,{score:originalFirstSteps});
  assert.ok(source.consumed<compile.started&&compile.consumed<b.event,'Bootstrap source and compile must be consumed before selection');
- for(const path of ['/api/practice-targets','/api/instrument-check']){const rows=e.rows.filter(row=>row.path===path&&row.started<b.event);assert.equal(rows.length,1);assert.equal(rows[0].status,200);assert.ok(rows[0].started>compile.consumed&&rows[0].settled<b.event);assert.equal(bodies.get(rows[0].index)?.timeline?.score_id,'first-steps');}
+ const bootstrapChecks=[];
+ for(const path of ['/api/practice-targets','/api/instrument-check']){
+  const rows=e.rows.filter(row=>row.path===path&&row.started<b.event);assert.equal(rows.length,1);const row=rows[0];assert.equal(row.method,'POST');assert.equal(row.status,200);assert.equal(row.previewId,'first-steps');assert.ok(row.started>compile.consumed&&row.settled<b.event);
+  const body=bodies.get(row.index);assert.deepEqual(Object.keys(body).sort(),['profile','timeline']);assert.deepEqual(body.profile,{kind:'piano',key_count:61,lowest_midi:null});validateFirstStepsTimeline(body.timeline);bootstrapChecks.push(body);
+ }
+ assert.deepEqual(bootstrapChecks[0],bootstrapChecks[1],'Both bootstrap checks must consume the same source timeline and device profile');
  assert.ok(e.rows.slice(0,b.requestCount).every(row=>row.settled<b.event),'Bootstrap must be quiescent before source work');
  const load=e.rows[s.requestCount];assert.equal(load.path,'/api/library/load');assert.equal(load.method,'POST');assert.equal(load.status,200);assert.deepEqual(bodies.get(load.index),{key:r.key});assert.ok(load.settled<s.ready.event,'Selected source must load before ready');
  assert.deepEqual(e.rows.filter(row=>row.path==='/api/assess').map(row=>bodies.get(row.index)),r.assessmentRequests,'Every assessment request must survive the scope boundary');
