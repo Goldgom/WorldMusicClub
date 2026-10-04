@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {cleanDescriptor} from './clean-song-fixtures.js';
 import {nativeScoreServer,nativeResponse} from './native-storage-app-fixtures.js';
@@ -18,6 +19,16 @@ export function authoredDraft({sourceName='original-ceg.mid',title='original-ceg
  if(state==='rejected'){result.package=null;result.draft_sha256=null;result.diagnostics=[{code:'original_unsupported',message:'Original event semantics are unsupported',action:'Keep the original and inspect the source',source_event_id:null,track_index:1}];}
  return result;
 }
+const vsqRequest=JSON.parse(readFileSync(new URL('./fixtures/song-authoring/vsq-request.json',import.meta.url),'utf8'));
+export const vsqFile=(name='original.vsq')=>importFile(name,Buffer.from(vsqRequest.source_base64,'base64'));
+export function authoredVsqDraft({sourceName='original.vsq',title='Original VSQ',state='vsq_authoring_candidate'}={}){
+ const draft=JSON.parse(readFileSync(new URL('./fixtures/song-authoring/vsq-response.json',import.meta.url),'utf8'));
+ // Test server title editing changes only string tokens, never parsed authoring numbers.
+ if(title!==draft.title){for(const key of ['metadata_json','score_json'])draft.package[key]=draft.package[key].replaceAll(JSON.stringify(draft.title),JSON.stringify(title));draft.draft_sha256=digest(draft.package.metadata_json+draft.package.score_json);}
+ draft.source_name=sourceName;draft.title=title;draft.state=state;
+ if(state==='rejected'){draft.package=null;draft.draft_sha256=null;draft.diagnostics=[{code:'complete_package_limit',message:'Original synthetic VSQ package exceeds the native size limit',action:'Keep the complete project; no tracks, notes or authoring fields were trimmed',source_event_id:null,track_index:1}];}
+ return draft;
+}
 export const packageBlob=()=>new Blob([Buffer.from('PK\x03\x04original authored transport fixture')],{type:'application/zip'});
 export async function authoringServer(){
  const server=await nativeScoreServer(),drafts=new Map(),packs=new Map();let override;
@@ -25,18 +36,19 @@ export async function authoringServer(){
   const custom=await override?.(request);if(custom!==undefined)return custom;
   const {path,body,options}=request;
   if(path==='/api/clean-song/draft'){
-   const state=body.source_name.startsWith('held')?'rejected':body.source_name.startsWith('events')?'event_only_reference_candidate':'strict_notation_candidate',draft=authoredDraft({sourceName:body.source_name,title:body.title,state});drafts.set(body.source_name,draft);return nativeResponse(draft,state==='rejected'?422:200);
+   const vsq=body.source_base64===vsqRequest.source_base64,state=body.source_name.startsWith('held')?'rejected':vsq?'vsq_authoring_candidate':body.source_name.startsWith('events')?'event_only_reference_candidate':'strict_notation_candidate',draft=(vsq?authoredVsqDraft:authoredDraft)({sourceName:body.source_name,title:body.title,state});drafts.set(body.source_name,draft);return nativeResponse(draft,state==='rejected'?422:200);
   }
   if(path==='/api/clean-song/draft/pack'){
    const draft=drafts.get(body.source_name);if(!draft||draft.draft_sha256!==body.expected_draft_sha256)return nativeResponse({code:'clean_draft_changed',error:'Conversion changed'},409);
-   const zip=Buffer.concat([Buffer.from('PK\x03\x04'),Buffer.from(body.title)]);packs.set(digest(zip),{draft,zip});return nativeResponse({draft_sha256:draft.draft_sha256,zip_base64:zip.toString('base64'),filename:'complete-song.wmhpack'});
+   const zip=Buffer.concat([Buffer.from('PK\x03\x04'),Buffer.from(JSON.stringify(draft.package))]);packs.set(digest(zip),{draft,zip});return nativeResponse({draft_sha256:draft.draft_sha256,zip_base64:zip.toString('base64'),filename:'complete-song.wmhpack'});
   }
   if(path==='/api/library/import/preview'||path==='/api/library/import/commit'){
    const bytes=Buffer.from(await body.arrayBuffer()),sha256=digest(bytes),pack=packs.get(sha256),mode=path.endsWith('/commit')?'commit':'preview';
    if(!pack)return nativeResponse({code:'pack_invalid',error:'Unknown test package'},422);
-   const descriptor=cleanDescriptor(({score,metadata,runtime})=>{score.notation.title=pack.draft.title;metadata.title=pack.draft.title;runtime.compilation.score.title=pack.draft.title;});descriptor.content_sha256=sha256;const score=descriptor.runtime.compilation.score,key=`song-${sha256}`,existing=server.records.get(key),sameId=[...server.records.values()].find(row=>row.entry.score_id===score.id),summary={version:2,content_sha256:descriptor.content_sha256,media:[]};
+   const vsq=pack.draft.state==='vsq_authoring_candidate',project=vsq?JSON.parse(pack.draft.package.score_json):null;
+   const descriptor=vsq?{version:2,content_sha256:sha256,...pack.draft.package,profile:project.profile,capabilities:project.capabilities,interpretation_limits:project.interpretation_limits,media:[],runtime:null}:cleanDescriptor(({score,metadata,runtime})=>{score.notation.title=pack.draft.title;metadata.title=pack.draft.title;runtime.compilation.score.title=pack.draft.title;});descriptor.content_sha256=sha256;const score=vsq?project.notation:descriptor.runtime.compilation.score,key=`song-${sha256}`,existing=server.records.get(key),sameId=[...server.records.values()].find(row=>row.entry.score_id===score.id),summary={version:2,content_sha256:descriptor.content_sha256,media:[],...(vsq?{profile:descriptor.profile,capabilities:descriptor.capabilities,interpretation_limits:descriptor.interpretation_limits}:{})};
    const entry={key,revision:1,title:pack.draft.title,composer:'',score_id:score.id,label:pack.draft.title,score_bytes:descriptor.score_json.length,saved_at_unix_ms:1700000000000,clean_package:summary};
-   const item=importItem({title:pack.draft.title,clean_package:summary,status:existing?'duplicate':sameId?'conflict':'ready',...(existing?{entry:existing.entry}:{})});
+   const item=importItem({title:pack.draft.title,playable:!vsq,clean_package:summary,status:existing?'duplicate':sameId?'conflict':'ready',...(existing?{entry:existing.entry}:{})});
    if(mode==='commit'&&!existing&&(!sameId||options.headers['x-wmh-conflict']==='keep-both')){server.records.set(key,{entry,score_json:JSON.stringify(score),clean_package:descriptor});item.status='saved';item.entry=entry;}
    return nativeResponse(importReport(body,{mode,sha256,items:[item]}));
   }

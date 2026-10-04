@@ -1,6 +1,6 @@
 export default Object.freeze({
   'rhythm.authoring': '谱面制作',
-  'rhythm.authoringDescription': '转换完整 MIDI，检查每首歌曲后保存',
+  'rhythm.authoringDescription': '转换完整 MIDI 或 VSQ，检查每首草稿后保存',
   'rhythm.home': "主菜单",
   'rhythm.backHome': "← 主菜单",
   'rhythm.chooseMode': "选择模式",

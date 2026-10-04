@@ -6,25 +6,35 @@ const failure=error=>({code:error?.code||'authoring_failed',message:error?.messa
 const validCount=value=>Number.isSafeInteger(value)&&value>=0;
 const utf8=value=>new TextEncoder().encode(value).byteLength;
 const safeTitle=value=>typeof value==='string'&&Boolean(value.trim())&&!/[\u0000-\u001f\u007f-\u009f]/u.test(value)&&utf8(value.trim())<=1000;
-const supported=new Set(['strict_notation_candidate','event_only_reference_candidate','rejected']);
+const supported=new Set(['strict_notation_candidate','event_only_reference_candidate','vsq_authoring_candidate','rejected']);
 const stale=(signal)=>signal?.throwIfAborted();
 
 /** Only the Rust envelope is interpreted. Raw metadata and score strings are opaque. */
 export function checkAuthoringDraft(value,{sourceName,title}={}){
- if(!supported.has(value?.state)||value.source_name!==sourceName||value.title!==title||value.source?.format!=='midi'||!validCount(value.source.bytes)||!/^[a-f0-9]{64}$/.test(value.source.sha256)||!Array.isArray(value.diagnostics)||value.diagnostics.some(row=>typeof row.code!=='string'||typeof row.message!=='string'||typeof row.action!=='string'))throw issue('authoring_invalid_response','The conversion report is incomplete.');
+ const vsq=value?.source?.format==='vsq';
+ if(!supported.has(value?.state)||value.source_name!==sourceName||value.title!==title||!['midi','vsq'].includes(value.source?.format)||(value.state!=='rejected'&&(value.state==='vsq_authoring_candidate')!==vsq)||!validCount(value.source.bytes)||!/^[a-f0-9]{64}$/.test(value.source.sha256)||!Array.isArray(value.diagnostics)||value.diagnostics.some(row=>!row||typeof row.code!=='string'||typeof row.message!=='string'||typeof row.action!=='string'))throw issue('authoring_invalid_response','The conversion report is incomplete.');
  const inventory=value.inventory;
  if(inventory!==null){
   if(!inventory||!validCount(inventory.source_tracks)||!validCount(inventory.source_events)||!Array.isArray(inventory.tracks)||inventory.tracks.length!==inventory.source_tracks||!validCount(inventory.key_attacks)||!validCount(inventory.key_releases)||!Array.isArray(inventory.parts))throw issue('authoring_invalid_response','The complete source inventory is missing.');
-  const tracks=new Set();
+  const tracks=new Map(),trackIds=new Set();
   for(const row of inventory.tracks){
-   if(!validCount(row.source_index)||tracks.has(row.source_index)||typeof row.track_id!=='string'||typeof row.name!=='string'||!validCount(row.source_event_count)||!validCount(row.key_attacks)||!validCount(row.key_releases)||!Array.isArray(row.channels)||row.channels.some(channel=>!validCount(channel.channel)||channel.channel>15||!validCount(channel.source_event_count)||!validCount(channel.key_attacks)||!validCount(channel.key_releases)))throw issue('authoring_invalid_response','A source track is missing or malformed.');
-   tracks.add(row.source_index);
+   if(!row||!validCount(row.source_index)||tracks.has(row.source_index)||typeof row.track_id!=='string'||trackIds.has(row.track_id)||typeof row.name!=='string'||!validCount(row.source_event_count)||!validCount(row.key_attacks)||!validCount(row.key_releases)||!Array.isArray(row.channels)||row.channels.some(channel=>!channel||!validCount(channel.channel)||channel.channel>15||!validCount(channel.source_event_count)||!validCount(channel.key_attacks)||!validCount(channel.key_releases)))throw issue('authoring_invalid_response','A source track is missing or malformed.');
+   tracks.set(row.source_index,row);trackIds.add(row.track_id);
   }
-  for(const part of inventory.parts)if(typeof part.id!=='string'||typeof part.track_id!=='string'||!validCount(part.channel)||part.channel>15||typeof part.notation_available!=='boolean')throw issue('authoring_invalid_response','A converted part is malformed.');
+  const partIds=new Set(),vocalTracks=new Set();
+  for(const part of inventory.parts){
+   if(!part||typeof part.id!=='string'||!part.id||partIds.has(part.id)||typeof part.track_id!=='string'||typeof part.notation_available!=='boolean')throw issue('authoring_invalid_response','A converted part is malformed.');
+   partIds.add(part.id);
+   if(vsq){
+    const vocal=part.vsq,track=tracks.get(vocal?.source_track_index);
+    if(part.channel!==null||part.notation_available!==true||!vocal||typeof vocal.name!=='string'||!validCount(vocal.source_track_index)||vocalTracks.has(vocal.source_track_index)||!track||part.track_id!==track.track_id||part.id!==`vsq-track-${vocal.source_track_index}`||['notes','singers','lyrics','curves','curve_points'].some(key=>!validCount(vocal[key]))||['mute','solo','master_mute'].some(key=>typeof vocal[key]!=='boolean'))throw issue('authoring_invalid_response','A logical VSQ part is incomplete or does not match its source track.');
+    vocalTracks.add(vocal.source_track_index);
+   }else if(!validCount(part.channel)||part.channel>15||part.vsq!=null)throw issue('authoring_invalid_response','A converted MIDI part is malformed.');
+  }
   if(inventory.tracks.reduce((sum,row)=>sum+row.source_event_count,0)!==inventory.source_events||inventory.tracks.reduce((sum,row)=>sum+row.key_attacks,0)!==inventory.key_attacks||inventory.tracks.reduce((sum,row)=>sum+row.key_releases,0)!==inventory.key_releases)throw issue('authoring_invalid_response','The source totals do not match the complete track inventory.');
  }
  if(value.state==='rejected'){if(value.draft_sha256!==null||value.package!==null)throw issue('authoring_invalid_response','A held conversion cannot expose a save package.');}
- else if(!/^[a-f0-9]{64}$/.test(value.draft_sha256)||!inventory||typeof value.package?.metadata_json!=='string'||!value.package.metadata_json.length||typeof value.package?.score_json!=='string'||!value.package.score_json.length)throw issue('authoring_invalid_response','The complete clean package is missing.');
+ else if(!/^[a-f0-9]{64}$/.test(value.draft_sha256)||!inventory||(vsq&&!inventory.parts.length)||typeof value.package?.metadata_json!=='string'||!value.package.metadata_json.length||typeof value.package?.score_json!=='string'||!value.package.score_json.length)throw issue('authoring_invalid_response','The complete clean package is missing.');
  return value;
 }
 
@@ -52,7 +62,7 @@ export function createAuthoringTransport({fetcher=globalThis.fetch,origin=global
    requests.set(value,input);return value;
   },
   async pack(draft,{signal}={}){
-   const input=requests.get(draft);if(!input||!draft.package)throw issue('authoring_invalid_response','Select the complete MIDI again to prepare a package.');
+   const input=requests.get(draft);if(!input||!draft.package)throw issue('authoring_invalid_response','Select the complete MIDI or VSQ source again to prepare a package.');
    const value=await request('/api/clean-song/draft/pack',{...input,expected_draft_sha256:draft.draft_sha256},{signal});
    if(value?.draft_sha256!==draft.draft_sha256||typeof value.zip_base64!=='string'||!value.zip_base64.length||value.zip_base64.length>16*1024*1024||!/^[A-Za-z0-9+/]*={0,2}$/.test(value.zip_base64))throw issue('authoring_invalid_response','The generated package does not match the reviewed conversion.');
    let data;try{data=Uint8Array.from(atob(value.zip_base64),character=>character.charCodeAt(0));}catch{throw issue('authoring_invalid_response','The complete package bytes are invalid.');}
@@ -79,7 +89,7 @@ export class SongAuthoringModel{
   const files=Array.from(input||[]);if(!files.length)return false;
   this.cancel();this.sources.clear();this.artifacts.clear();this.state.rows=[];
   if(files.length>AUTHORING_LIMITS.files||files.some(file=>!validCount(file.size))||files.reduce((sum,file)=>sum+file.size,0)>AUTHORING_LIMITS.totalBytes){this.publish({phase:'review',error:failure(issue('authoring_selection_limit','Select at most 10 files totaling 20 MiB. The entire selection was refused.'))});return false;}
-  this.state.rows=files.map(file=>{const id=String(++this.sequence);this.sources.set(id,file);return{id,name:file.name,bytes:file.size,title:String(file.name).replace(/\.(mid|midi)$/i,'')||'MIDI',phase:'queued',draft:null,result:null,error:null,downloaded:false};});
+  this.state.rows=files.map(file=>{const id=String(++this.sequence);this.sources.set(id,file);return{id,name:file.name,bytes:file.size,title:String(file.name).replace(/\.(mid|midi|vsq)$/i,'')||(/\.vsq$/i.test(file.name)?'VSQ':'MIDI'),phase:'queued',draft:null,result:null,error:null,downloaded:false};});
   return this.convert(this.state.rows.map(row=>row.id));
  }
  async convert(ids){
@@ -95,8 +105,8 @@ export class SongAuthoringModel{
     const row=this.state.rows.find(item=>item.id===id),file=this.sources.get(id);if(!row||!file)continue;
     row.phase='converting';row.error=null;row.draft=null;row.result=null;row.reportSource=null;row.downloaded=false;this.artifacts.delete(id);this.publish();
     try{
-     if(!/\.(mid|midi)$/i.test(file.name))throw issue('authoring_format','Choose a standard .mid or .midi file.');
-     if(!file.size||file.size>AUTHORING_LIMITS.fileBytes)throw issue('authoring_file_limit','Each complete MIDI file must be nonempty and at most 5 MiB.');
+     if(!/\.(mid|midi|vsq)$/i.test(file.name))throw issue('authoring_format','Choose a standard .mid, .midi or .vsq file.');
+     if(!file.size||file.size>AUTHORING_LIMITS.fileBytes)throw issue('authoring_file_limit','Each complete MIDI or VSQ file must be nonempty and at most 5 MiB.');
      if(!safeTitle(row.title)||utf8(file.name)>255||/[\u0000-\u001f\u007f-\u009f]/u.test(file.name))throw issue('authoring_title','Use a nonempty title and filename without control characters.');
      const title=row.title.trim(),draft=await this.transport.draft(file,{title,signal});if(!this.current(generation,signal))return false;
      row.title=title;row.draft=draft;
