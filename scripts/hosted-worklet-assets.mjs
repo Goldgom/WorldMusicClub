@@ -15,28 +15,39 @@ export function validateHostedOrigin(origin){
 export function validateRendererOrigin(expectedOrigin=NATIVE_PROTOCOL_ORIGIN){
  if(expectedOrigin!==NATIVE_PROTOCOL_ORIGIN)validateHostedOrigin(expectedOrigin);return expectedOrigin;
 }
-export function mapHostedNativeHeaders({url,method,headers},origin){
- validateHostedOrigin(origin);const target=new URL(url),authority=new URL(origin).host;
- assert.equal(target.origin,origin,'Hosted request left its exact loopback origin');assert.equal(target.username+target.password+target.hash,'');
- assert.ok(target.pathname.startsWith('/api/'),'Only application API requests may enter native stdio');
- assert.ok(['GET','POST'].includes(method),'Unsupported hosted native method');
- assert.equal(headers.host,authority,'Hosted request Host must match the actual listener');
- if(headers.origin!==undefined)assert.equal(headers.origin,origin,'Foreign hosted Origin');
- if(method==='POST')assert.equal(headers.origin,origin,'Hosted mutation requires its exact Origin');
- assert.equal(headers['sec-fetch-site'],'same-origin','Native requests require browser same-origin admission');
- const mapped={...headers,host:new URL(NATIVE_PROTOCOL_ORIGIN).host};
- if(headers.origin!==undefined)mapped.origin=NATIVE_PROTOCOL_ORIGIN;
- // Hop-by-hop browser transport headers have no meaning on socket-free stdio.
- for(const key of ['connection','content-length','transfer-encoding','accept-encoding'])delete mapped[key];
- return {headers:mapped,mapping:{hosted_origin:origin,native_protocol_origin:NATIVE_PROTOCOL_ORIGIN,incoming_host:headers.host,incoming_origin:headers.origin??null,method,path:target.pathname+target.search,sec_fetch_site:headers['sec-fetch-site']}};
+// Chromium may add Host/Origin/Sec-Fetch-* after Fetch.requestPaused. Do not
+// fabricate absent wire headers: admission is rooted in the owned live page.
+// https://playwright.dev/docs/next/network#headers-owned-by-the-network-stack
+export function validateHostedRequestOwner(request,origin,ownedPage){
+ validateHostedOrigin(origin);assert.ok(ownedPage,'An explicit owned page is required');assert.equal(ownedPage.isClosed(),false,'Owned page is closed');
+ assert.equal(request.serviceWorker(),null,'Service-worker requests cannot enter native stdio');assert.equal(request.isNavigationRequest(),false,'Navigations cannot enter native stdio');
+ assert.ok(['fetch','xhr'].includes(request.resourceType()),'Only owned application fetch/XHR may enter native stdio');
+ assert.equal(ownedPage.workers().length,0,'Dedicated-worker requests are outside this hosted bridge');
+ const frame=request.frame();assert.ok(frame,'Frameless requests cannot enter native stdio');assert.equal(frame,ownedPage.mainFrame(),'Request did not originate in the owned main frame');assert.equal(frame.page(),ownedPage,'Request page is not owned');assert.equal(frame.isDetached(),false,'Owned request frame is detached');
+ const frameUrl=frame.url();assert.equal(new URL(frameUrl).origin,origin,'Owned frame left the exact hosted origin');assert.equal(ownedPage.url(),frameUrl,'Owned page/frame URL differs');
+ const target=new URL(request.url());assert.equal(target.origin,origin,'Hosted request left its exact loopback origin');assert.equal(target.username+target.password+target.hash,'');assert.ok(target.pathname.startsWith('/api/'),'Only application API requests may enter native stdio');assert.ok(['GET','POST'].includes(request.method()),'Unsupported hosted native method');
+ return {frame,frameUrl};
 }
-export function createHostedNativeBridge({origin,requestTimeoutMs=10000,maxRequests=256}){
- validateHostedOrigin(origin);assert.ok([10000,30000].includes(requestTimeoutMs));
+export function mapHostedNativeHeaders(request,origin,ownedPage,headers){
+ const {frameUrl}=validateHostedRequestOwner(request,origin,ownedPage),target=new URL(request.url()),method=request.method(),authority=new URL(origin).host;
+ if(headers.host!==undefined)assert.equal(headers.host,authority,'Explicit hosted Host differs from the listener');
+ if(headers.origin!==undefined)assert.equal(headers.origin,origin,'Foreign hosted Origin');
+ if(headers['sec-fetch-site']!==undefined)assert.equal(headers['sec-fetch-site'],'same-origin','Explicit foreign fetch site');
+ const mapped={...headers,host:new URL(NATIVE_PROTOCOL_ORIGIN).host,origin:NATIVE_PROTOCOL_ORIGIN};
+ // These are logical stdio request metadata, never claims about absent incoming
+ // browser headers. Hop-by-hop transport fields have no meaning on native stdio.
+ for(const key of ['connection','content-length','transfer-encoding','accept-encoding'])delete mapped[key];
+ return {headers:mapped,mapping:{admission:'owned-live-main-frame',hosted_origin:origin,native_protocol_origin:NATIVE_PROTOCOL_ORIGIN,native_origin_basis:'verified-owned-frame-origin',request_url:request.url(),frame_url:frameUrl,owned_main_frame:true,frame_detached:false,page_closed:false,dedicated_workers:0,service_worker:false,navigation:false,incoming_host:headers.host??null,incoming_origin:headers.origin??null,method,path:target.pathname+target.search,sec_fetch_site:headers['sec-fetch-site']??null}};
+}
+export function createHostedNativeBridge({origin,getOwnedPage,requestTimeoutMs=10000,maxRequests=256}){
+ validateHostedOrigin(origin);assert.equal(typeof getOwnedPage,'function','Hosted native bridge requires its owned page');assert.ok([10000,30000].includes(requestTimeoutMs));
  const pending=new Set(),evidence={origin,native_protocol_origin:NATIVE_PROTOCOL_ORIGIN,requests:[],drain:null};let closing=false,drainPromise;
  return {evidence,get closing(){return closing;},stopAdmission(){closing=true;},
   async run(request,operation){
    assert.equal(closing,false,'Hosted native admission is closed');assert.ok(evidence.requests.length<maxRequests,'Hosted native request evidence bound');assert.ok(pending.size<16,'Hosted native pending request bound');
-   const mapped=mapHostedNativeHeaders({url:request.url(),method:request.method(),headers:await request.allHeaders()},origin);
+   const ownedPage=getOwnedPage(),before=validateHostedRequestOwner(request,origin,ownedPage),headers=await request.allHeaders();
+   assert.equal(getOwnedPage(),ownedPage,'Owned page changed during header read');
+   const mapped=mapHostedNativeHeaders(request,origin,ownedPage,headers);assert.equal(request.frame(),before.frame,'Request frame changed during header read');assert.equal(mapped.mapping.frame_url,before.frameUrl,'Owned frame navigated during header read');
    assert.equal(closing,false,'Hosted native admission closed during header read');
    const row={...mapped.mapping,status:'pending',request_timeout_ms:requestTimeoutMs};evidence.requests.push(row);let timer;
    const operationPromise=Promise.resolve().then(()=>operation(mapped.headers,row));
