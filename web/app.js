@@ -150,7 +150,7 @@ let shell=null,preview=null,performanceView=null,startingPreview=false,previewRe
 const catalogCache=new CatalogScoreCache();
 const latencyPreference=readLatencyPreference();
 let catalogIndexController=null,catalogIndexRequest=0,catalogIndexFailed=false;
-const state = {inspection:false,cleanSong:null,catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reasonKey:'app.compatibilityWaiting'}, instrumentOutOfRange: null, instrumentConflict: false, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, noticeTimer: null, audioLimitWarned: false};
+const state = {inspection:false,cleanSong:null,catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reasonKey:'app.compatibilityWaiting'}, instrumentOutOfRange: null, instrumentConflict: false, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, playPending: false, noticeTimer: null, audioLimitWarned: false};
 
 function createRecorder() {
   return new PracticeRecorder({latencyMs:state.latency,onEvidenceLimit:()=>{
@@ -162,6 +162,7 @@ state.recorder = createRecorder();routedScoreRecorder=state.recorder;
 inputRoutes.push({kind:'score',recorder:state.recorder,start:0,end:null});
 function refreshFreeTone(){bindText($('free-live-tone'),()=>`${i18n.t('ui.instrument')}: ${i18n.t(`free.timbre.${state.instrument}`)}`);}
 function changeScreen(screen){
+  state.playTicket++;state.playPending=false;
   songAuthoringView?.screenChanged(screen);
   scoreSaveNavigation++;
   referenceListening?.close();
@@ -202,7 +203,9 @@ function updateButtons() {
   const activePass = state.recorder.active;
   const checkingCurrent = Boolean(activePass && (activePass.manualDeadline !== null || activePass.inFlight || (activePass.closedWall !== null && activePass.assessedRevision < activePass.revision && !activePass.error)));
   const allowed = (!isBasicKeysSong(state.cleanSong)||hasBasicKeyRendition(state.cleanSong)||state.mode==='practice')&&(state.mode !== 'practice' || state.compatibility.status === 'ready');
-  $('play-button').disabled = !ready || (!transport.running && (!allowed || checkingCurrent));
+  const audioUnavailable=hasBasicKeyRendition(state.cleanSong)&&!synth.muted&&(typeof globalThis.AudioWorkletNode!=='function'||Boolean(synth.context&&!synth.context.audioWorklet));
+  $('play-button').disabled = !ready || (!transport.running && (!allowed || checkingCurrent || audioUnavailable));
+  bindAttribute($('play-button'),'title',()=>audioUnavailable?cleanErrorText(i18n.locale,{code:'clean_audio_worklet_unavailable'}):'');
   $('reset-button').disabled = !ready;
   $('export-takes').disabled = state.recorder.passes.length === 0;
   $('retry-assessments').hidden = !state.recorder.passes.some(pass=>pass.error);
@@ -212,7 +215,7 @@ function updateButtons() {
   $('loop-apply').disabled = !ready||Boolean(state.cleanSong);
   for(const id of ['tempo','loop-enabled','loop-from','loop-to','metronome-enabled','metronome-pulse'])$(id).disabled=Boolean(state.cleanSong);
   $('count-in').disabled=isBasicKeysSong(state.cleanSong);
-  if(!transport.running){cleanPlayer.stop();activeMedia?.pause();}
+  if(!transport.running&&!state.playPending){cleanPlayer.stop();activeMedia?.pause();}
   renderCleanActive();
   $('assess-button').disabled = !ready || state.mode !== 'practice' || checkingCurrent || !allowed;
   $('practice-gate').hidden = state.mode !== 'practice' || state.compatibility.status === 'ready';
@@ -237,7 +240,7 @@ function pausePlayback(reason = 'app.paused', evidenceReason = 'pause') {
   lobbyPreview?.stop(['blur','hidden','pagehide'].includes(evidenceReason)?'interrupted':'stopped');
   if(referenceListening?.isOpen()){referenceListening.pause();return;}
   if(performanceListening?.isActive()){if(['blur','hidden','pagehide'].includes(evidenceReason))performanceListening.stop();else performanceListening.pause();return;}
-  state.playTicket++;cleanPlayer.pause();activeMedia?.pause();
+  state.playTicket++;state.playPending=false;cleanPlayer.pause();activeMedia?.pause();
   if(shell?.screen()==='free'){freeView?.interrupt(evidenceReason);cleanupFreeInputs(evidenceReason);return;}
   // Opening a panel or browsing an already-paused session is not a new input
   // boundary. Real lifecycle events still matter even before a late onset arrives.
@@ -835,23 +838,46 @@ function connectPlayable(container) {
 async function togglePlayback() {
   if(referenceInputActive())return;
   if (shell.screen()!=='stage' || !state.compiled) return;
-  if (transport.running) { pausePlayback(); return; }
+  if (transport.running || state.playPending) { pausePlayback(); return; }
   if(state.cleanSong&&!inspectCleanRendition(state.cleanSong).supported&&!(isBasicKeysSong(state.cleanSong)&&state.mode==='practice'&&state.targetTimeline?.notes.length)){notice(()=>cleanErrorText(i18n.locale,{code:'clean_renderer_unsupported'}),true);return;}
   if (state.mode === 'practice' && state.compatibility.status !== 'ready') { notice(compatibilityNotice(state.compatibility), true); return; }
   const waiting=state.recorder.active;
   if(waiting&&(waiting.manualDeadline!==null||waiting.inFlight||(transport.completed&&state.recorder.pending))){notice(() => t('app.assessmentWaiting'));return}
-  const generation = state.generation;
-  const ticket = ++state.playTicket;
-  try { if(!synth.muted)await synth.unlock(); } catch (error) { notice(() => errorDetail(error), true); return; }
-  if (generation !== state.generation || ticket !== state.playTicket || transport.running || !state.compiled || (state.mode === 'practice' && state.compatibility.status !== 'ready')) return;
   if (transport.completed) { if(state.mode==='practice') { transport.reset(); if(state.loop)transport.seek(state.loop.start_ms); state.lastHighlight=''; } else resetPlayback(); }
-  const beatMs = 60000 / (Number($('tempo').value) || 100);
-  const now = performance.now()+(state.cleanSong?50:0);
-  state.inspection=false;
-  transport.start(now, state.loop?.notes || state.practiceTimeline?.notes || state.compiled.timeline.notes, $('count-in').checked&&!isBasicKeysSong(state.cleanSong) ? beatMs * 4 : 0);
-  if(state.mode==='practice')beginPracticePass(now);
-  if(state.cleanSong){try{if(!synth.muted&&(!isBasicKeysSong(state.cleanSong)||hasBasicKeyRendition(state.cleanSong)))cleanPlayer.start({context:synth.context,output:synth.output,mode:state.mode,targetPart:state.practicePart,mutedParts:cleanMutedParts,soloParts:cleanSoloParts,instrument:state.instrument,resumePositionMs:transport.position,acceptedPolicyId:inspectCleanRendition(state.cleanSong).rendition});activeMedia?.sync({positionMs:transport.time(performance.now()),running:true,userGesture:true});}catch(error){pausePlayback();notice(()=>cleanErrorText(i18n.locale,error),true);return;}}
-  updateButtons();
+  const generation=state.generation,ticket=++state.playTicket,song=state.cleanSong,score=state.score,mode=state.mode,targetPart=state.practicePart,instrument=state.instrument,muted=synth.muted;
+  const current=()=>generation===state.generation&&ticket===state.playTicket&&song===state.cleanSong&&score===state.score&&mode===state.mode&&targetPart===state.practicePart&&instrument===state.instrument&&muted===synth.muted&&!transport.running&&Boolean(state.compiled)&&shell.screen()==='stage'&&!document.hidden&&!document.querySelector('dialog[open]')&&(mode!=='practice'||state.compatibility.status==='ready');
+  state.playPending=true;
+  try {
+    if(!muted)await synth.unlock();
+    if(!current())return;
+    const options={context:synth.context,output:synth.output,mode,targetPart,mutedParts:[...cleanMutedParts],soloParts:[...cleanSoloParts],instrument,resumePositionMs:transport.position,acceptedPolicyId:song?inspectCleanRendition(song).rendition:null};
+    let now;
+    if(!muted&&hasBasicKeyRendition(song)){
+      const prepared=await cleanPlayer.prepare(options);
+      if(!prepared||!current())return;
+      // All plan building, transfer and renderer preparation precede this lead.
+      const anchor=await cleanPlayer.startPrepared({anchorTime:synth.context.currentTime+.05});
+      if(!anchor||!current())return;
+      // Use the renderer's quantized sample anchor for both transport and inputs.
+      now=performance.now()+(anchor.anchorTime-synth.context.currentTime)*1000;
+      transport.position=anchor.positionMs;
+    }else now=performance.now()+(song?50:0);
+    if(!current())return;
+    state.playPending=false;state.inspection=false;
+    const beatMs=60000/(Number($('tempo').value)||100);
+    transport.start(now,state.loop?.notes||state.practiceTimeline?.notes||state.compiled.timeline.notes,$('count-in').checked&&!isBasicKeysSong(song)?beatMs*4:0);
+    if(mode==='practice')beginPracticePass(now);
+    if(song){
+      if(!muted&&!isBasicKeysSong(song))cleanPlayer.start(options);
+      activeMedia?.sync({positionMs:transport.time(performance.now()),running:true,userGesture:true});
+    }
+    updateButtons();
+  }catch(error){
+    if(ticket!==state.playTicket)return;
+    pausePlayback();notice(()=>song?cleanErrorText(i18n.locale,error):errorDetail(error),true);
+  }finally{
+    if(ticket===state.playTicket&&state.playPending){state.playPending=false;cleanPlayer.stop();updateButtons();}
+  }
 }
 function beginPracticePass(now, captureEnabled = true) {
   const recorder=state.recorder;let pass=recorder.active;
@@ -1135,9 +1161,10 @@ function selectBasicNotation(mode,{remember=true}={}) { engravedView.hide({remem
 for (const mode of ['staff', 'jianpu']) $(mode + '-button').addEventListener('click', () => selectBasicNotation(mode));
 $('engraved-button').addEventListener('click', () => {engravedView.show();drawFrame()});
 function setSoundEnabled(enabled){
-  if(state.cleanSong&&transport.running)pausePlayback();
+  if(state.cleanSong&&(transport.running||state.playPending))pausePlayback();
   synth.muted=!enabled;if(enabled&&transport.running)synth.unlock().catch(error=>notice(()=>errorDetail(error),true));if(synth.muted){synth.silence();heldAudioTokens.clear();freePreview?.stop('muted');}
   bindText($('sound-button'),()=>synth.muted?t('app.soundOff'):t('app.soundOn'));$('sound-button').setAttribute('aria-pressed',String(synth.muted));metronome?.updateMute();referenceListening?.soundChanged();performanceListening?.soundChanged();
+  updateButtons();
   try{freeSession?.configure('sound',enabled);}catch{/* Session reports configuration failures without losing retained input. */}freeView?.render();
 }
 $('sound-button').addEventListener('click',()=>setSoundEnabled(synth.muted));

@@ -47,9 +47,10 @@ async function setup(){
   await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();
   await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready'&&!app.$('start-practice').disabled);
   const close=app.close;app.close=async()=>{try{await close();}finally{app.window.HTMLElement.prototype.focus=originalFocus;}};
-  return {app,server,descriptor,score,key,focused:()=>focused,time:value=>{clock=value;}};
+  return {app,server,descriptor,score,key,focused:()=>focused,time:value=>{clock=value;app.renderAudioTo((value-1000)/1000);}};
 }
-const sounds=app=>app.audioNodes.filter(node=>['oscillator','buffer-source'].includes(node.kind)&&!node.disconnected);
+const sounds=app=>app.audioNodes.filter(node=>node.kind==='audio-worklet'?node.connected:['oscillator','buffer-source'].includes(node.kind)&&!node.disconnected);
+const audioCore=app=>app.audioNodes.findLast(node=>node.kind==='audio-worklet'&&node.connected)?.core;
 const actualRange=app=>{const keys=[...app.$('keyboard').querySelectorAll('[data-midi]')].map(key=>Number(key.dataset.midi));return [Math.min(...keys),Math.max(...keys)];};
 function assertVisibleInSettings(app,id){
   const control=app.$(id),dialog=app.$('settings-dialog');
@@ -105,14 +106,14 @@ test('invalid custom bounds keep the applied range and every target blocked unti
 test('stage setup releases playing audio and held typing input, keeps all-pitch listening independent, and never resumes on close',async()=>{
   const {app,score,focused,time}=await setup();try{
     await choosePart(app,score.parts[2].id);await app.click('start-listen');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
-    assert.equal(app.$('clean-song-target').value,score.parts[2].id);assert.equal(sounds(app).length,2,'The low percussion selector plays outside the configured range');
-    time(1450);app.frame();await app.until(()=>sounds(app).some(node=>node.kind==='oscillator'&&Math.abs(node.frequency.value-440*2**((109-69)/12))<1e-7),'The high original MIDI key is heard without transposition or clipping');assert.equal(sounds(app).length,5,'All five original attacks are scheduled, including both keys outside the 61-key range');
+    assert.equal(app.$('clean-song-target').value,score.parts[2].id);time(1060);assert.equal(audioCore(app).startedCount,2,'The production core renders the low percussion selector outside the configured range');
+    time(1560);app.frame();const core=audioCore(app),high=core.plan.notes.findIndex(note=>note[4]===109);assert.ok(high>=0&&core.actualStarts[high]>=0,'The production core starts the retained high original MIDI key');assert.equal(core.steps[high],2*Math.PI*440*2**((109-69)/12)/44100);assert.equal(core.startedCount,5,'All five original attacks rendered, including both keys outside the 61-key range');
     app.emit(app.$('stage-title'),'keydown',{code:'KeyZ',key:'z'});await app.tick();assert.ok(app.$('keyboard').querySelector('.pressed'),'Typing input really holds a key before setup');
     app.$('song-parts-tools').open=true;await app.click('song-range-setup');
     assert.equal(app.document.body.dataset.screen,'stage');assert.equal(focused(),app.$('custom-key-count'));for(const id of ['custom-key-count','custom-lowest','instrument-apply'])assertVisibleInSettings(app,id);
     assert.equal(app.$('keyboard').querySelector('.pressed'),null);assert.equal(sounds(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'ready');assert.deepEqual(actualRange(app),[36,96]);
     draft(app,94,'E0');await app.click('instrument-apply');await app.until(()=>actualRange(app)[0]===16);assert.equal(app.$('clean-song-target').value,score.parts[2].id);assert.match(app.$('song-range-help').textContent,/MIDI 16–109/);
-    app.$('settings-dialog').close();time(1500);app.frame();assert.equal(sounds(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'ready');
+    app.$('settings-dialog').close();time(1600);app.frame();assert.equal(sounds(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'ready');
     const before=app.plays.length;app.emit(app.$('stage-title'),'keydown',{code:'KeyZ',key:'z',repeat:true});assert.equal(app.plays.length,before,'A still-held physical key cannot restart after setup');app.emit(app.$('stage-title'),'keyup',{code:'KeyZ',key:'z'});
     app.emit(app.$('stage-title'),'keydown',{code:'KeyZ',key:'z'});await app.tick();assert.ok(app.$('keyboard').querySelector('.pressed'),'A fresh key press works after explicit release');app.emit(app.$('stage-title'),'keyup',{code:'KeyZ',key:'z'});
     assert.match(app.$('song-complete-range-text').textContent,/5 eligible targets.*0 targets outside/);assert.equal(app.requests.some(request=>request.path==='/api/assess'),false);

@@ -7,10 +7,18 @@ import {CleanSongPlayer,inspectCleanRendition} from '../web/clean-song-player.js
 import {BASIC_KEY_RENDITION,BASIC_KEY_TIMBRE,BASIC_KEY_PERCUSSION} from '../web/basic-key-player.js';
 import {ReferenceAudioReceiver} from '../web/midi-reference-synth.js';
 import {ScorePreview} from '../web/score-preview.js';
+import {basicKeyAudioHarness} from './basic-key-audio-harness.js';
 import {basicKeyAllocationBudget} from '../web/basic-key-rendition.js';
 
-function harness(){const song=basicKeySong(),audio=fakeAudio(),timers=new Map(),errors=[];let position=-50,next=0;const player=new CleanSongPlayer({getPositionMs:()=>position,setTimer:fn=>{timers.set(++next,fn);return next;},clearTimer:id=>timers.delete(id),onError:error=>errors.push(error)});player.select(song);return{song,...audio,player,timers,errors,start:options=>player.start({...audio,acceptedPolicyId:BASIC_KEY_RENDITION,...options}),at:ms=>{position=ms;},pump:()=>{const callback=[...timers.values()][0];timers.clear();callback?.();}};}
-const active=h=>h.nodes.filter(node=>['oscillator','buffer-source'].includes(node.kind)&&!node.disconnected);
+function harness(){
+ const song=basicKeySong(),audio=basicKeyAudioHarness(),errors=[];let position=0;
+ const original=Object.getOwnPropertyDescriptor(globalThis,'AudioWorkletNode');
+ globalThis.AudioWorkletNode=class{constructor(){return audio.nodeFactory();}};
+ const player=new CleanSongPlayer({getPositionMs:()=>position,onError:error=>errors.push(error)});player.select(song);
+ return{song,...audio,player,errors,start:options=>player.start({context:audio.context,output:audio.output,acceptedPolicyId:BASIC_KEY_RENDITION,...options}),at:ms=>{position=ms;},renderTo(seconds){while(audio.frame<Math.ceil(seconds*audio.context.sampleRate))audio.renderBlock(Math.min(128,Math.ceil(seconds*audio.context.sampleRate)-audio.frame));},close(){player.stop();if(original)Object.defineProperty(globalThis,'AudioWorkletNode',original);else delete globalThis.AudioWorkletNode;}};
+}
+const core=h=>h.nodes.at(-1).core;
+const selected=h=>core(h).plan.notes;
 
 test('complete basic-key admission joins every attack, percussion and chosen gate without changing source bytes',()=>{
  const opened=basicKeyRenditionFixture(),song=basicKeySong();assert.equal(song.score_json,opened.clean_package.score_json);assert.equal(song.metadata_json,opened.clean_package.metadata_json);assert.equal(song.compilation.timeline.notes.length,5);assert.equal(basicKeysParts(song).reduce((sum,part)=>sum+part.practice_targets,0),5);assert.ok(basicKeysParts(song).every(part=>part.practice_available));assert.equal(inspectCleanRendition(song).supported,true);assert.equal(song.compilation.timeline.notes.find(note=>note.midi===64).duration_ms,20);assert.equal(song.notation.parts[0].notes.length,1);assert.ok(Object.isFrozen(song.runtime.rendition.notes[0]));
@@ -19,19 +27,45 @@ test('complete basic-key admission joins every attack, percussion and chosen gat
  }
 });
 
-test('Listen schedules all native IDs, with percussion fallback and no input/scoring dependencies',()=>{
- const h=harness(),before=JSON.stringify(h.song),scheduled=[],original=ReferenceAudioReceiver.prototype.schedule;
- ReferenceAudioReceiver.prototype.schedule=function(note,start,end,options){scheduled.push({note,start,end});return original.call(this,note,start,end,options);};
- try{h.start();assert.equal(active(h).length,2);assert.equal(scheduled[1].note.referencePercussion.name,'WMH basic percussion pulse');h.at(450);h.context.currentTime=.5;h.pump();assert.equal(scheduled.length,5);assert.equal(new Set(scheduled.map(item=>item.note.eventId)).size,5);assert.equal(scheduled.find(item=>item.note.key===64).end-scheduled.find(item=>item.note.key===64).start,.020000000000000018);assert.equal(JSON.stringify(h.song),before);h.at(1000);h.context.currentTime=1.05;h.pump();assert.equal(active(h).length,0);assert.equal(h.timers.size,0);assert.deepEqual(h.errors,[]);}finally{ReferenceAudioReceiver.prototype.schedule=original;h.player.stop();}
+test('Listen renders all native IDs through the audio core while the UI clock does not pump',async()=>{
+ const h=harness(),before=JSON.stringify(h.song);
+ try{
+  const anchor=await h.start();assert.equal(anchor.anchorTime,.05);assert.equal(core(h).startedCount,0,'Admission precedes the first audible sample');
+  assert.equal(selected(h).length,5);assert.equal(selected(h).filter(note=>note[6]===1).length,1);
+  h.renderTo(1.1);await Promise.resolve();
+  assert.equal(core(h).startedCount,5);assert.equal(core(h).endedCount,5);assert.equal(core(h).activeCount,0);assert.equal(core(h).state,'ended');
+  const ledger=h.player.basicKeys.receiver.lastCompletion;assert.equal(ledger.sourceSha256,h.song.score.source.sha256);
+  for(const [index,note] of selected(h).entries()){assert.equal(ledger.ledger.actualStarts[index],anchor.anchorFrame+note[2]);assert.equal(ledger.ledger.actualEnds[index],anchor.anchorFrame+note[3]);}
+  assert.equal(JSON.stringify(h.song),before);assert.deepEqual(h.errors,[]);
+ }finally{h.close();}
 });
 
-test('part practice, user mute and solo filter output after the whole-source interpretation',()=>{
+test('part practice, mute and solo filter output after whole-source interpretation',async()=>{
  const h=harness(),[first,drums,last]=h.song.notation.parts;
- try{h.start({mode:'practice',targetPart:first.id});assert.deepEqual(active(h).map(node=>node.kind),['buffer-source']);h.player.stop();h.start({mutedParts:[drums.id],soloParts:[first.id]});assert.equal(active(h).length,1);h.player.stop();h.start({mode:'practice',targetPart:drums.id,soloParts:[first.id,last.id]});assert.equal(active(h).length,1);h.player.stop();h.start({mutedParts:[first.id,drums.id,last.id]});assert.equal(active(h).length,0);assert.equal(h.song.compilation.timeline.notes.length,5);}finally{h.player.stop();}
+ try{
+  await h.start({mode:'practice',targetPart:first.id});assert.equal(selected(h).length,2);assert.equal(selected(h).filter(note=>note[6]===1).length,1);
+  await h.start({mutedParts:[drums.id],soloParts:[first.id]});assert.equal(selected(h).length,3);
+  await h.start({mode:'practice',targetPart:drums.id,soloParts:[first.id,last.id]});assert.equal(selected(h).length,4);
+  await h.start({mutedParts:[first.id,drums.id,last.id]});assert.equal(selected(h).length,0);assert.equal(h.song.compilation.timeline.notes.length,5);
+ }finally{h.close();}
 });
 
-test('pause/reset/resume and stale callbacks cancel every active and scheduled sound',()=>{
- const h=harness();try{assert.throws(()=>h.start({acceptedPolicyId:'other'}),{code:'reference_policy_required'});assert.equal(active(h).length,0);h.start();const stale=[...h.timers.values()][0];h.player.pause();assert.equal(active(h).length,0);stale();assert.equal(h.timers.size,0);h.at(550);h.context.currentTime=1;h.start({resumePositionMs:600});assert.equal(active(h).length,2);assert.ok(active(h).every(node=>node.starts[0]===1.05));h.player.stop();assert.equal(active(h).length,0);h.at(-50);h.start();assert.equal(active(h).length,2);h.at(700);h.pump();assert.equal(h.errors[0].code,'clean_late_scheduler');assert.equal(active(h).length,0);assert.equal(h.timers.size,0);}finally{h.player.stop();}
+test('pause/reset/resume cancel all active and future gates with fresh explicit anchors',async()=>{
+ const h=harness();try{
+  await assert.rejects(h.start({acceptedPolicyId:'other'}),{code:'reference_policy_required'});assert.equal(h.nodes.length,0);
+  await h.start();const old=core(h);h.renderTo(.06);assert.equal(old.activeCount,2);h.player.pause();assert.equal(h.nodes.at(-1).connected,false);await Promise.resolve();assert.equal(old.activeCount,0);h.renderTo(1.2);assert.equal(old.startedCount,2);
+  const anchor=await h.start({resumePositionMs:600});assert.equal(anchor.positionMs,600);h.renderTo(anchor.anchorTime+.01);assert.equal(core(h).startedCount,2);assert.equal(core(h).skippedCount,3);
+  h.player.stop();await Promise.resolve();assert.equal(core(h).activeCount,0);assert.deepEqual(h.errors,[]);
+ }finally{h.close();}
+});
+
+test('canceling a pending module preparation cannot connect or restart a newer song',async()=>{
+ const h=harness();let release;h.context.audioWorklet.addModule=()=>new Promise(resolve=>{release=resolve;});
+ try{const start=h.start();await Promise.resolve();h.player.select(null);release();assert.equal(await start,null);assert.equal(h.nodes.length,1);assert.equal(h.nodes[0].connected,false);assert.equal(h.player.basicKeys.running,false);}finally{h.close();}
+});
+
+test('a stopped audio context cancels the generation and does not resume automatically',async()=>{
+ const h=harness();try{await h.start();h.renderTo(.06);h.setState('suspended');assert.equal(h.errors[0].code,'clean_clock_unavailable');assert.equal(h.player.basicKeys.running,false);assert.equal(h.nodes.at(-1).connected,false);await Promise.resolve();h.setState('running');h.renderTo(.8);await Promise.resolve();assert.equal(core(h).startedCount,2);}finally{h.close();}
 });
 
 test('basic synth preserves every nominal key frequency and all percussion selectors without clamping or original-kit claims',()=>{
@@ -50,6 +84,6 @@ test('resource preflight counts complete lookahead allocation intervals and exac
  assert.equal(basicKeyAllocationBudget([{start_ms:0,duration_ms:100},{start_ms:200,duration_ms:1}]),1,'Pruning gate ends at the next allocation boundary frees the voice');
 });
 
-test('a stalled scheduler reports even fully expired notes instead of silently skipping to End',()=>{
- const h=harness();try{h.start();h.at(1200);h.context.currentTime=1.25;h.pump();assert.equal(h.errors.length,1);assert.equal(h.errors[0].code,'clean_late_scheduler');assert.equal(active(h).length,0);assert.equal(h.timers.size,0);}finally{h.player.stop();}
+test('lack of AudioWorklet support explicitly rejects and creates no timer fallback',async()=>{
+ const h=harness();try{delete h.context.audioWorklet;await assert.rejects(h.start(),{code:'audio_worklet_unavailable'});assert.equal(h.nodes.length,0);assert.equal(h.player.basicKeys.running,false);}finally{h.close();}
 });

@@ -1,3 +1,4 @@
+import {ReferenceAudioReceiver} from '../web/midi-reference-synth.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -164,4 +165,13 @@ test('VSQ direct-start derivation is cancelled by Home navigation',async()=>{
   server.setRoute(async({path})=>path==='/api/library/runtime'?(await pending.promise,nativeResponse(response())):undefined);
   await app.click('vsq-listen-basic');await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choosing');await app.click('lobby-home');assert.equal(app.document.body.dataset.screen,'home');pending.resolve();await app.tick();await app.tick();assert.equal(app.document.body.dataset.screen,'home');assert.equal(oscillators(app).length,0);
  }finally{pending.resolve();await app.close();}
+});
+
+
+test('VSQ explicit resume excludes a gate ended inside the 50 ms admission lead',()=>{
+ const song=practiced(),audio=fakeAudio(),scheduled=[],original=ReferenceAudioReceiver.prototype.schedule;
+ const ended=song.runtime.notes[0],resume=ended.end_ms+34.6;
+ const player=new VsqPracticePlayer({getPositionMs:()=>resume-50,setTimer:()=>1,clearTimer(){}});player.select(song);
+ ReferenceAudioReceiver.prototype.schedule=function(note,start,end,...options){scheduled.push({note,start,end});return original.call(this,note,start,end,...options);};
+ try{player.start({...audio,resumePositionMs:resume});assert.equal(scheduled.some(row=>row.note.eventId===ended.note_id),false);assert.ok(scheduled.every(row=>row.end>row.start));assert.ok(scheduled.every(row=>song.runtime.notes.find(note=>note.note_id===row.note.eventId).end_ms>resume));}finally{player.stop();ReferenceAudioReceiver.prototype.schedule=original;}
 });

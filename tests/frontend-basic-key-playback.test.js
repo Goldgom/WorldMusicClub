@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {basicKeyRenditionFixture} from './basic-key-rendition-fixtures.js';
-import {nativeScoreServer,nativeStorageApp,nativeResponse} from './native-storage-app-fixtures.js';
+import {nativeScoreServer,nativeStorageApp,nativeResponse,authoredScore} from './native-storage-app-fixtures.js';
 import {getAppI18n} from '../web/app-locale.js';
 import {keyboardGeometry} from '../web/music.js';
 
-async function setup({notation=false,originalAcceptance=false}={}){
+async function setup({notation=false,originalAcceptance=false,audioWorklet=true,audioMessages=true}={}){
  const oracle=originalAcceptance?JSON.parse(readFileSync(new URL('./fixtures/basic-key-acceptance/rendition-native.json',import.meta.url),'utf8')):null;
  const opened=oracle?.open||basicKeyRenditionFixture(),descriptor=opened.clean_package,score=JSON.parse(descriptor.score_json).notation,server=await nativeScoreServer(),key=`song-${descriptor.content_sha256}`;
  const summary={version:2,content_sha256:descriptor.content_sha256,profile:descriptor.profile,capabilities:descriptor.capabilities,coverage:descriptor.coverage,notation_available:true,media:[]};
@@ -14,21 +14,23 @@ async function setup({notation=false,originalAcceptance=false}={}){
  const third=notation?JSON.parse(readFileSync(new URL('./fixtures/basic-key-rendition-third-part.json',import.meta.url),'utf8')):null;
  const pages=notation?JSON.parse(readFileSync(new URL('./fixtures/basic-key-rendition-notation-page.json',import.meta.url),'utf8')):null;
  server.setRoute(({path,body})=>{if(path==='/api/library/basic-keys/notation'&&oracle){const row=oracle.pages.find(row=>['part_id','first_measure','measure_count','position_ms','rendition_policy_id'].every(key=>row.request.settings[key]===body.settings[key])&&JSON.stringify(row.request.settings.display_meter)===JSON.stringify(body.settings.display_meter));assert.ok(row,`Missing original native page: ${JSON.stringify(body)}`);assert.deepEqual(body,row.request);return nativeResponse(row.response);}if(path==='/api/library/basic-keys/notation'&&pages){assert.equal(body.source.content_sha256,descriptor.content_sha256);if(!body.settings.rendition_policy_id)return nativeResponse(pages.legacy);assert.equal(body.settings.rendition_policy_id,'wmh-basic-key-rendition-fifo-v1');return nativeResponse(body.settings.part_id===score.parts[1].id?pages.percussion.response:body.settings.part_id===score.parts[2].id?third.response:pages.melodic.response);}if(path==='/api/instrument-check'){const keys=keyboardGeometry(body.profile.key_count,body.profile.lowest_midi),low=keys[0].midi,high=keys.at(-1).midi;return nativeResponse({lowest_midi:low,highest_midi:high,note_options:body.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:note.midi>=low&&note.midi<=high,positions:[]})),diagnostics:[],changed_source_notes:false});}});
- let clock=1000;const app=await nativeStorageApp(server,{now:()=>clock});await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready'&&!app.$('start-practice').disabled);return{app,server,key,descriptor,score,time:value=>{clock=value;}};
+ let clock=1000;const app=await nativeStorageApp(server,{now:()=>clock,audioWorklet,audioMessages});await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready'&&!app.$('start-practice').disabled);return{app,server,key,descriptor,score,time:value=>{clock=value;app.renderAudioTo((value-1000)/1000);}};
 }
-const sounds=app=>app.audioNodes.filter(node=>['oscillator','buffer-source'].includes(node.kind)&&!node.disconnected);
+// These are retained plan gates, not OscillatorNode counts or actual rendered voices.
+const admittedGates=app=>app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected).flatMap(node=>node.core.plan.notes.filter(note=>note[3]>node.core.positionFrame).map(note=>({kind:note[6]?'percussion_selector':'melodic_key'})));
+const connectedReceivers=app=>app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected);
 
 test('complete basic Listen, pause, reset and natural end run on the native full timeline',async()=>{
  const {app,descriptor,time}=await setup();try{
   assert.equal(app.$('start-listen').disabled,false);assert.match(app.$('clean-song-rendition').textContent,/retains all 5 note onsets.*selected human part.*default synthesized/);assert.match(app.$('basic-key-policy-text').textContent,/FIFO.*20 ms.*CC120\/123/);
-  const compiles=app.requests.filter(request=>request.path==='/api/compile').length;await app.click('start-listen');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(sounds(app).length,2);assert.equal(app.requests.filter(request=>request.path==='/api/compile').length,compiles);assert.equal(app.plays.filter(args=>String(args[0]).startsWith('score:')).length,0);assert.match(app.$('song-complete-range-text').textContent,/5 eligible targets/);
-  await app.click('play-button');assert.equal(sounds(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');await app.click('play-button');assert.equal(sounds(app).length,2);await app.click('reset-button');assert.equal(sounds(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'ready');await app.click('play-button');time(2151);app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'ended');assert.equal(sounds(app).length,0);assert.equal(app.$('progress').value,1000);assert.equal(descriptor.score_json,basicKeyRenditionFixture().clean_package.score_json);
+  const compiles=app.requests.filter(request=>request.path==='/api/compile').length;await app.click('start-listen');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(admittedGates(app).length,5);assert.equal(app.requests.filter(request=>request.path==='/api/compile').length,compiles);assert.equal(app.plays.filter(args=>String(args[0]).startsWith('score:')).length,0);assert.match(app.$('song-complete-range-text').textContent,/5 eligible targets/);
+  await app.click('play-button');assert.equal(admittedGates(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');await app.click('play-button');assert.equal(admittedGates(app).length,5);await app.click('reset-button');assert.equal(admittedGates(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'ready');await app.click('play-button');time(2151);assert.equal(connectedReceivers(app)[0].core.startedCount,5);assert.equal(connectedReceivers(app)[0].core.endedCount,5);app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'ended');assert.equal(admittedGates(app).length,0);assert.equal(app.$('progress').value,1000);assert.equal(descriptor.score_json,basicKeyRenditionFixture().clean_package.score_json);
  }finally{await app.close();}
 });
 
 test('complete basic accompaniment never enters captures, while real human input enters the selected-part take',async()=>{
  const {app,time,score}=await setup();try{
-  await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.deepEqual(sounds(app).map(node=>node.kind),['buffer-source']);time(1100);await app.click('play-button');let take=await app.exported('export-takes');assert.equal(take.passes[0].timeline.notes.length,3);assert.equal(take.passes[0].interpretation.policy_id,'wmh-basic-key-rendition-fifo-v1');assert.equal(take.passes[0].interpretation.runtime_profile,'wmh-basic-key-practice-v2');assert.deepEqual(take.passes[0].interpretation.source_target_ids,take.passes[0].timeline.notes.map(note=>note.id));assert.deepEqual(take.passes[0].inputs,[]);assert.deepEqual(take.passes[0].captures,[]);assert.ok(take.passes[0].timeline.notes.every(note=>note.part_id===score.parts[0].id));
+  await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.deepEqual(admittedGates(app).map(node=>node.kind),['percussion_selector','melodic_key']);time(1100);await app.click('play-button');let take=await app.exported('export-takes');assert.equal(take.passes[0].timeline.notes.length,3);assert.equal(take.passes[0].interpretation.policy_id,'wmh-basic-key-rendition-fifo-v1');assert.equal(take.passes[0].interpretation.runtime_profile,'wmh-basic-key-practice-v2');assert.deepEqual(take.passes[0].interpretation.source_target_ids,take.passes[0].timeline.notes.map(note=>note.id));assert.deepEqual(take.passes[0].inputs,[]);assert.deepEqual(take.passes[0].captures,[]);assert.ok(take.passes[0].timeline.notes.every(note=>note.part_id===score.parts[0].id));
   await app.click('play-button');time(1200);const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:7,button:0});await app.tick();time(1250);app.emit(key,'pointerup',{pointerId:7});await app.click('play-button');take=await app.exported('export-takes');assert.equal(take.passes[0].inputs.length,1);assert.equal(take.passes[0].inputs[0].midi,60);assert.equal(take.passes[0].captures.length,1);
  }finally{await app.close();}
 });
@@ -36,8 +38,8 @@ test('complete basic accompaniment never enters captures, while real human input
 test('mute, solo and reset are explicit output choices; source facts and human targets stay intact',async()=>{
  const {app,score}=await setup();try{
   await app.click('start-listen');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');await app.click('play-button');
-  const solo=app.document.querySelector(`[data-solo-part-id="${score.parts[0].id}"]`);solo.click();await app.tick();assert.equal(solo.getAttribute('aria-pressed'),'true');await app.click('play-button');assert.equal(sounds(app).length,1);await app.click('play-button');
-  const mute=app.document.querySelector(`#clean-song-parts input[data-part-id="${score.parts[0].id}"]`);mute.checked=false;app.emit(mute,'change');await app.click('play-button');assert.equal(sounds(app).length,0);assert.match(app.$('clean-song-stage-status').textContent,/All parts are muted or excluded/);await app.click('play-button');await app.click('clean-song-reset-mix');await app.click('play-button');assert.equal(sounds(app).length,2);
+  const solo=app.document.querySelector(`[data-solo-part-id="${score.parts[0].id}"]`);solo.click();await app.tick();assert.equal(solo.getAttribute('aria-pressed'),'true');await app.click('play-button');assert.equal(admittedGates(app).length,3);await app.click('play-button');
+  const mute=app.document.querySelector(`#clean-song-parts input[data-part-id="${score.parts[0].id}"]`);mute.checked=false;app.emit(mute,'change');await app.click('play-button');assert.equal(admittedGates(app).length,0);assert.match(app.$('clean-song-stage-status').textContent,/All parts are muted or excluded/);await app.click('play-button');await app.click('clean-song-reset-mix');await app.click('play-button');assert.equal(admittedGates(app).length,5);
   await app.click('play-button');getAppI18n(app.document).setLocale('zh-CN');assert.match(app.$('clean-song-stage-status').textContent,/默认正弦音与打击脉冲/);assert.doesNotMatch(app.$('clean-song-stage-status').textContent,/Only human|Basic interpretation|Audible parts/);assert.match(app.$('clean-song-reset-mix').textContent,/重置静音与独奏/);
  }finally{await app.close();}
 });
@@ -46,7 +48,7 @@ test('song selection exposes percussion-selector range repair before entering th
  const {app,score}=await setup();try{
   const select=app.$('preview-part');select.value=score.parts[1].id;app.emit(select,'change');await app.until(()=>app.$('preview-gate').classList.contains('preview-blocked'));
   assert.equal(app.$('start-practice').disabled,true);assert.equal(app.$('start-listen').disabled,false);assert.match(app.$('basic-key-preview-range-text').textContent,/percussion selector practice.*1 outside/);assert.equal(app.$('basic-key-preview-piano-88').hidden,false);
-  await app.click('basic-key-preview-piano-88');await app.until(()=>!app.$('start-practice').disabled);assert.equal(app.$('key-count').value,'88');assert.match(app.$('basic-key-preview-range-text').textContent,/0 outside/);await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(sounds(app).filter(node=>node.kind==='buffer-source').length,0);assert.equal(sounds(app).filter(node=>node.kind==='oscillator').length,1);await app.click('play-button');const take=await app.exported('export-takes');assert.equal(take.practice_part,score.parts[1].id);assert.deepEqual(take.passes[0].timeline.notes.map(note=>note.midi),[35]);assert.deepEqual(take.passes[0].inputs,[]);
+  await app.click('basic-key-preview-piano-88');await app.until(()=>!app.$('start-practice').disabled);assert.equal(app.$('key-count').value,'88');assert.match(app.$('basic-key-preview-range-text').textContent,/0 outside/);await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(admittedGates(app).filter(node=>node.kind==='percussion_selector').length,0);assert.equal(admittedGates(app).filter(node=>node.kind==='melodic_key').length,4);await app.click('play-button');const take=await app.exported('export-takes');assert.equal(take.practice_part,score.parts[1].id);assert.deepEqual(take.passes[0].timeline.notes.map(note=>note.midi),[35]);assert.deepEqual(take.passes[0].inputs,[]);
  }finally{await app.close();}
 });
 
@@ -76,8 +78,8 @@ test('All uses every independently validated part page and unions simultaneous n
 test('loaded All notation stops at free practice and returns without restarting or contaminating the free take',async()=>{
  const {app,time,score}=await setup({notation:true});try{
   await app.click('sound-button');await app.click('start-listen');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');await app.click('play-button');if(app.$('notation-toggle').getAttribute('aria-expanded')!=='true')await app.click('notation-toggle');await app.click('jianpu-button');await app.until(()=>JSON.parse(app.$('workspace').dataset.renderedNotationParts||'[]').length===3);const target=app.$('practice-part').value;await app.click('back-to-library');await app.click('start-free-practice');assert.equal(app.document.body.dataset.screen,'free');assert.equal(app.$('workspace').dataset.notationRenderStatus,'hidden');assert.deepEqual(JSON.parse(app.$('workspace').dataset.renderedNotationParts),[]);const notationRequests=app.requests.filter(request=>request.path==='/api/library/basic-keys/notation').length;
-  if(app.$('free-sound').getAttribute('aria-pressed')==='true')await app.click('free-sound');await app.click('free-start');time(1300);app.emit(app.$('free-practice-title'),'keydown',{code:'KeyZ',key:'z'});time(1350);app.emit(app.$('free-practice-title'),'keyup',{code:'KeyZ',key:'z'});app.frame();await app.click('free-stop');const take=await app.exported('free-export-draft');assert.equal(take.score_context,null);assert.equal(take.mode,'free');assert.deepEqual(take.observations.events.filter(event=>event.kind==='note_on').map(event=>event.midi),[36]);assert.equal(app.requests.filter(request=>request.path==='/api/library/basic-keys/notation').length,notationRequests);assert.equal(sounds(app).length,0);
-  await app.click('free-exit');await app.click('resume-session');await app.until(()=>JSON.parse(app.$('workspace').dataset.renderedNotationParts||'[]').length===3);assert.equal(app.$('notation-scope').value,'all');assert.equal(app.$('practice-part').value,target);assert.notEqual(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(sounds(app).length,0);assert.deepEqual(JSON.parse(app.$('workspace').dataset.renderedNotationParts),score.parts.map(part=>part.id));
+  if(app.$('free-sound').getAttribute('aria-pressed')==='true')await app.click('free-sound');await app.click('free-start');time(1300);app.emit(app.$('free-practice-title'),'keydown',{code:'KeyZ',key:'z'});time(1350);app.emit(app.$('free-practice-title'),'keyup',{code:'KeyZ',key:'z'});app.frame();await app.click('free-stop');const take=await app.exported('free-export-draft');assert.equal(take.score_context,null);assert.equal(take.mode,'free');assert.deepEqual(take.observations.events.filter(event=>event.kind==='note_on').map(event=>event.midi),[36]);assert.equal(app.requests.filter(request=>request.path==='/api/library/basic-keys/notation').length,notationRequests);assert.equal(admittedGates(app).length,0);
+  await app.click('free-exit');await app.click('resume-session');await app.until(()=>JSON.parse(app.$('workspace').dataset.renderedNotationParts||'[]').length===3);assert.equal(app.$('notation-scope').value,'all');assert.equal(app.$('practice-part').value,target);assert.notEqual(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(admittedGates(app).length,0);assert.deepEqual(JSON.parse(app.$('workspace').dataset.renderedNotationParts),score.parts.map(part=>part.id));
  }finally{await app.close();}
 });
 
@@ -92,5 +94,45 @@ for(const reload of [true,false])test(`restarting basic-key practice after Jianp
   await app.until(()=>app.$('workspace').dataset.notationRenderStatus==='ready'&&JSON.parse(app.$('workspace').dataset.renderedNotationParts||'[]').join()===score.parts[2].id,'Current human part painted after returning from inspection');
   assert.equal(app.$('notation-scope').value,'current');assert.equal(app.$('practice-part').value,score.parts[2].id);assert.equal(app.$('engraving-follow').checked,false);assert.equal(app.$('jianpu-button').getAttribute('aria-pressed'),'true');assert.ok(app.$('notation').querySelector('[data-note-id="midi-t3-e1"]'));assert.equal(app.$('notation').querySelector('[data-note-id="midi-t1-e4"]'),null);
   assert.ok(app.requests.slice(before).some(request=>request.path==='/api/library/basic-keys/notation'&&request.body.settings.part_id===score.parts[2].id));const take=await app.exported('export-takes');assert.equal(take.practice_part,score.parts[2].id);assert.deepEqual(take.passes[0].inputs,[]);assert.deepEqual(take.passes[0].captures,[]);assert.deepEqual(take.passes[0].timeline.notes.map(note=>[note.id,note.start_ms,note.duration_ms]),[['midi-t3-e1',500,500]]);assert.equal(descriptor.score_json,sourceBefore);
+ }finally{await app.close();}
+});
+
+
+test('missing AudioWorklet shows a localized blocker and disables audible playback',async()=>{
+ const {app}=await setup({audioWorklet:false});try{
+  await app.click('start-listen');await app.until(()=>app.document.body.dataset.screen==='stage');
+  assert.equal(app.$('play-button').disabled,true);assert.match(app.$('notice-message').textContent,/requires AudioWorklet/);assert.equal(connectedReceivers(app).length,0);
+  getAppI18n(app.document).setLocale('zh-CN');assert.match(app.$('play-button').title,/AudioWorklet/);
+  await app.click('sound-button');assert.equal(app.$('play-button').disabled,false);await app.click('play-button');assert.equal(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(connectedReceivers(app).length,0);
+ }finally{await app.close();}
+});
+
+
+for(const interruption of ['pause','reset','mute','blur','hidden','settings','navigation','part','source'])test(`pending audio preparation cannot restart after ${interruption}`,async()=>{
+ const {app}=await setup();let release;
+ try{
+  app.setAudioModule(()=>new Promise(resolve=>{release=resolve;}));await app.click('start-practice');await app.until(()=>Boolean(release)&&app.document.body.dataset.screen==='stage');
+  assert.equal(connectedReceivers(app).length,0);assert.notEqual(app.$('clean-song-stage').dataset.rendererState,'playing');
+  if(interruption==='pause')await app.click('play-button');
+  else if(interruption==='reset')await app.click('reset-button');
+  else if(interruption==='mute')await app.click('sound-button');
+  else if(interruption==='blur')app.emit(app.window,'blur');
+  else if(interruption==='hidden'){Object.defineProperty(app.document,'hidden',{configurable:true,value:true});app.emit(app.document,'visibilitychange');}
+  else if(interruption==='settings'){await app.click('settings-button');}
+  else if(interruption==='part'){app.$('practice-part').value=app.$('practice-part').children[1].value;app.emit(app.$('practice-part'),'change');}
+  else if(interruption==='source'){app.importFile(authoredScore({id:'new-audio-source',title:'New source'}));await app.until(()=>app.$('score-title').textContent==='New source');}
+  else await app.click('back-to-library');
+  release();await app.tick();await app.tick();assert.equal(connectedReceivers(app).length,0);assert.notEqual(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(app.$('export-takes').disabled,true,'A canceled preparation must not begin a scored pass');
+ }finally{release?.();await app.close();}
+});
+
+
+test('a late start acknowledgement cancels audio without backdating transport or a scored pass',async()=>{
+ const {app}=await setup({audioMessages:false});try{
+  await app.click('start-practice');await app.until(()=>app.audioHarnesses.some(h=>h.toCore.length));
+  const audio=app.audioHarnesses[0];audio.deliverCore();audio.deliverMain();await app.tick();
+  assert.equal(audio.toCore[0][1].type,'start');audio.deliverCore();assert.equal(audio.toMain[0][1].type,'started');
+  app.renderAudioTo(.06);audio.deliverMain();await app.tick();audio.deliverCore();
+  assert.equal(connectedReceivers(app).length,0);assert.notEqual(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(app.$('export-takes').disabled,true);assert.match(app.$('notice-message').textContent,/clean_late_start/);
  }finally{await app.close();}
 });

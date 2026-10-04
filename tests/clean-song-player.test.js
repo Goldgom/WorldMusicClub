@@ -283,3 +283,10 @@ test('strict named route labels match source UTF-8/control bounds and preserve e
   const result=inspectCleanRendition(named(name));assert.equal(result.supported,true);assert.equal(result.logical_device_mapping.device_name,name);
  }
 });
+
+
+test('explicit resume excludes a gate ended inside the 50 ms admission lead',()=>{
+ const h=harness(),scheduled=[],original=ReferenceAudioReceiver.prototype.schedule;
+ ReferenceAudioReceiver.prototype.schedule=function(note,start,end,...options){scheduled.push({note,start,end});return original.call(this,note,start,end,...options);};
+ try{h.position(984.6);h.start({resumePositionMs:1034.6});assert.ok(scheduled.length);assert.ok(scheduled.every(row=>row.end>row.start));assert.ok(scheduled.every(row=>h.player.song.runtime.notes.find(note=>note.event_id===row.note.eventId).end_ms>1034.6));}finally{h.player.stop();ReferenceAudioReceiver.prototype.schedule=original;}
+});

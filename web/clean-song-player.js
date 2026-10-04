@@ -48,6 +48,11 @@ export class CleanSongPlayer {
     const merged=[...song.runtime.events.map(event=>({...event,type:'command'})),...song.runtime.notes.map(note=>({at_ms:note.start_ms,origin:note.attack,note,type:'note'}))].sort((a,b)=>a.at_ms-b.at_ms||a.origin.track-b.origin.track||a.origin.event-b.origin.event);
     const channels=new Map();for(const item of merged){const channel=item.command?.channel??item.note?.channel;const state=channels.get(channel)||defaults();channels.set(channel,state);if(item.type==='command')apply(state,item.command);else this.programs.set(item.note.event_id,state.program);}
   }
+  prepare(options={}) {
+    if(isBasicKeysSong(this.song))return this.basicKeys.prepare(options);
+    return null;
+  }
+  startPrepared(options={}) {return this.basicKeys.startPrepared(options);}
   start({context,output,mode='listen',targetPart=null,mutedParts=null,soloParts=null,resumePositionMs=null,instrument='piano',acceptedPolicyId}={}) {
     if(isBasicKeysSong(this.song))return this.basicKeys.start({context,output,mode,targetPart,mutedParts,soloParts,resumePositionMs,acceptedPolicyId});
     if(isVsqSong(this.song))return this.vsq.start({context,output,mode,targetPart,mutedParts,soloParts,resumePositionMs,instrument});
@@ -74,7 +79,7 @@ export class CleanSongPlayer {
       if(context.state!=='running'||!Number.isFinite(position))throw new CleanSongError('clean_clock_unavailable','Playback clock or audio context stopped.');
       const events=this.song.runtime.events,notes=this.song.runtime.notes,limit=position+this.lookAheadMs;
       while(this.eventCursor<events.length&&events[this.eventCursor].at_ms<=limit){const event=events[this.eventCursor++];if(!initial&&event.at_ms<position-30)throw new CleanSongError('clean_late_scheduler','A performance event missed its audio deadline.',{eventId:event.event_id});this.command(event,now+Math.max(0,event.at_ms-position)/1000);}
-      while(this.noteCursor<notes.length&&notes[this.noteCursor].start_ms<=limit){const note=notes[this.noteCursor++];if(note.end_ms<=position)continue;if(this.mutedParts.has(note.part_id)||(this.mode==='practice'&&note.part_id===this.targetPart))continue;
+      while(this.noteCursor<notes.length&&notes[this.noteCursor].start_ms<=limit){const note=notes[this.noteCursor++];if(note.end_ms<=Math.max(position,initial&&Number.isFinite(this.resumePositionMs)?this.resumePositionMs:position))continue;if(this.mutedParts.has(note.part_id)||(this.mode==='practice'&&note.part_id===this.targetPart))continue;
         if(!initial&&note.start_ms<position-30)throw new CleanSongError('clean_late_scheduler','A note missed its audio deadline.',{eventId:note.event_id});
         let count=0;for(const lane of this.lanes.values()){lane.receiver.prune(now);count+=lane.receiver.voices.size;}if(count>=128)throw new CleanSongError('voice_budget_exceeded','The full reference exceeds its 128 voice limit.');
         const state=this.channels.get(note.channel)||defaults();

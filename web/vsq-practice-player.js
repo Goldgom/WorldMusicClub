@@ -34,7 +34,7 @@ export class VsqPracticePlayer {
         const note=notes[this.noteCursor++];
         if(this.mutedParts.has(note.part_id)||this.soloParts.size&&!this.soloParts.has(note.part_id)||(this.mode==='practice'&&note.part_id===this.targetPart))continue;
         if(!initial&&note.start_ms<position)throw new CleanSongError('clean_late_scheduler','A note missed its audio deadline.',{eventId:note.note_id});
-        if(note.end_ms<=position)continue;
+        if(note.end_ms<=Math.max(position,initial&&Number.isFinite(this.resumePositionMs)?this.resumePositionMs:position))continue;
         let count=0;for(const lane of this.lanes.values()){lane.receiver.prune(now);count+=lane.receiver.voices.size;}
         if(count>=128)throw new CleanSongError('voice_budget_exceeded','The reference exceeds its 128 voice limit.');
         const start=Math.max(note.start_ms,initial&&Number.isFinite(this.resumePositionMs)?this.resumePositionMs:note.start_ms);
