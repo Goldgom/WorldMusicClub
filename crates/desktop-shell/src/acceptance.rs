@@ -522,6 +522,9 @@ fn valid_progress(value: &Value) -> bool {
                 .is_some_and(|status| (100..=599).contains(&status)))
 }
 pub fn atomic_json(directory: &Path, name: &str, bytes: &[u8]) -> std::io::Result<()> {
+    // Finish and close the sibling before publishing it. Readers must open the
+    // immutable snapshot with delete-sharing on Windows so replacement can
+    // overlap a read without exposing partial JSON or a sharing violation.
     let temporary = directory.join(format!("{name}.tmp"));
     std::fs::write(&temporary, bytes)?;
     std::fs::rename(temporary, directory.join(name))
@@ -630,6 +633,79 @@ fn valid_action(value: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn atomic_json_preserves_open_snapshot_while_publishing_complete_replacement() {
+        use std::io::Read;
+        let evidence = Evidence::new();
+        std::fs::create_dir_all(&evidence.0).unwrap();
+        for name in [
+            "trace-performance-seed.json",
+            "action-performance-seed-1.json",
+            "renderer-performance-seed.json",
+            "profile-performance-seed.json",
+            "renderer-report.json",
+        ] {
+            let previous = br#"{"version":1,"marker":"complete old"}"#;
+            let next = br#"{"version":2,"marker":"complete new"}"#;
+            atomic_json(&evidence.0, name, previous).unwrap();
+            let mut options = std::fs::OpenOptions::new();
+            options.read(true);
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::OpenOptionsExt;
+                // FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE.
+                options.share_mode(7);
+            }
+            let mut held_reader = options.open(evidence.0.join(name)).unwrap();
+            // Publication completes with the earlier snapshot handle still open.
+            atomic_json(&evidence.0, name, next).unwrap();
+            let mut held_bytes = Vec::new();
+            held_reader.read_to_end(&mut held_bytes).unwrap();
+            assert_eq!(held_bytes, previous);
+            assert_eq!(std::fs::read(evidence.0.join(name)).unwrap(), next);
+            assert!(!evidence.0.join(format!("{name}.tmp")).exists());
+        }
+    }
+
+    #[test]
+    fn atomic_json_staging_failure_preserves_published_evidence() {
+        let evidence = Evidence::new();
+        std::fs::create_dir_all(&evidence.0).unwrap();
+        let name = "trace-performance-seed.json";
+        let previous = br#"{"version":1,"events":[]}"#;
+        atomic_json(&evidence.0, name, previous).unwrap();
+        // A process-owned directory blocks staging without mutating the final.
+        std::fs::create_dir(evidence.0.join(format!("{name}.tmp"))).unwrap();
+        assert!(atomic_json(&evidence.0, name, br#"{"version":2}"#).is_err());
+        assert_eq!(std::fs::read(evidence.0.join(name)).unwrap(), previous);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn atomic_json_rejects_unshared_replacement_without_rewriting_old_evidence() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let evidence = Evidence::new();
+        std::fs::create_dir_all(&evidence.0).unwrap();
+        let name = "trace-performance-seed.json";
+        let previous = br#"{"version":1,"events":[]}"#;
+        let next = br#"{"version":2,"events":[]}"#;
+        atomic_json(&evidence.0, name, previous).unwrap();
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(3) // Deliberately omit FILE_SHARE_DELETE.
+            .open(evidence.0.join(name))
+            .unwrap();
+        assert!(atomic_json(&evidence.0, name, next).is_err());
+        assert_eq!(std::fs::read(evidence.0.join(name)).unwrap(), previous);
+        assert_eq!(
+            std::fs::read(evidence.0.join(format!("{name}.tmp"))).unwrap(),
+            next
+        );
+        drop(held);
+        atomic_json(&evidence.0, name, next).unwrap();
+        assert_eq!(std::fs::read(evidence.0.join(name)).unwrap(), next);
+    }
 
     #[test]
     fn fresh_profiles_are_phase_bound_while_native_scores_and_old_profiles_persist() {
@@ -1561,9 +1637,11 @@ mod tests {
             .body(vec![])
             .unwrap();
         assert_eq!(acceptance.handle(&request).unwrap().status(), 404);
+        std::fs::write(evidence.0.join("result-seed-2.json.tmp"), b"{").unwrap();
+        assert_eq!(acceptance.handle(&request).unwrap().status(), 404);
         let mut bytes = br#"{"ok":true,"filename_native_edit":{"exact_readback":true}}"#.to_vec();
         bytes.resize(2309, b' ');
-        std::fs::write(evidence.0.join("result-seed-2.json"), &bytes).unwrap();
+        atomic_json(&evidence.0, "result-seed-2.json", &bytes).unwrap();
         let result = acceptance.handle(&request).unwrap();
         assert_eq!(result.status(), 200);
         assert_eq!(
@@ -1571,7 +1649,9 @@ mod tests {
             true
         );
         bytes.resize(4097, b' ');
-        std::fs::write(evidence.0.join("result-seed-2.json"), &bytes).unwrap();
+        atomic_json(&evidence.0, "result-seed-2.json", &bytes).unwrap();
+        assert_eq!(acceptance.handle(&request).unwrap().status(), 500);
+        atomic_json(&evidence.0, "result-seed-2.json", b"{").unwrap();
         assert_eq!(acceptance.handle(&request).unwrap().status(), 500);
     }
     #[test]

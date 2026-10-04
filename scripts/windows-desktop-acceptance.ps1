@@ -362,14 +362,14 @@ try {
     $app=Start-Process -FilePath $Executable -PassThru -RedirectStandardError (Join-Path $OutputDirectory "stderr-$phase.log")
     $phaseStart=[DateTime]::UtcNow;$deadline=$phaseStart.AddSeconds(240);$sequence=1;$reportDeliveryWatch=$null
     $reportFile=Join-Path $OutputDirectory "renderer-$phase.json"
-    while(-not (Test-Path $reportFile)) {
+    $reportLimit=if($Scenario -eq 'bulk-import'){4MB}elseif($Scenario -in @('clean-song','vsq-song','performance-song','pitch-bend','authoring')){1MB}else{64KB}
+    while($null -eq ($report=Read-AcceptanceJsonSnapshot -Path $reportFile -MaximumBytes $reportLimit -AllowPending)) {
       $app.Refresh();if($app.HasExited){throw "Process exited before $phase evidence: $($app.ExitCode); profile=$($profileSelection.profile_directory); see stderr-$phase.log"}
       if([DateTime]::UtcNow -ge $deadline){throw "Native $phase exceeded 240 seconds"}
       if($Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring')) {
         $traceFile=Join-Path $OutputDirectory "trace-$phase.json"
-        if(Test-Path $traceFile) {
-          if((Get-Item -LiteralPath $traceFile).Length -gt 512KB){throw "Native $phase trace exceeds its bounded diagnostic size"}
-          $trace=Get-Content -Raw $traceFile | ConvertFrom-Json
+        $trace=Read-AcceptanceJsonSnapshot -Path $traceFile -MaximumBytes 512KB -AllowPending
+        if($null -ne $trace) {
           $rejected=@($trace.events | Where-Object { $_.event.stage -eq 'renderer-report-rejected' -or $_.event.checkpoint.stage -eq 'renderer-report-failed' -or ($_.event.path -eq '/__desktop_smoke/report' -and $_.event.stage -eq 'reply-submitted' -and $_.event.status -ge 400) })
           if($rejected.Count -gt 0){$last=$rejected[-1].event;throw "Native $phase report delivery failed; see trace-$phase.json (status=$($last.status), code=$($last.code))"}
           $posting=@($trace.events | Where-Object { $_.event.path -eq '/__desktop_smoke/report' -and $_.event.stage -eq 'received' })
@@ -378,8 +378,8 @@ try {
         }
       }
       $actionFile=Join-Path $OutputDirectory "action-$phase-$sequence.json"
-      if(Test-Path $actionFile) {
-        $action=Get-Content -Raw $actionFile | ConvertFrom-Json
+      $action=Read-AcceptanceJsonSnapshot -Path $actionFile -MaximumBytes 64KB -AllowPending
+      if($null -ne $action) {
         if($action.sequence -ne $sequence -or $sequence -gt 64){throw 'Out-of-order or over-limit native action'}
         $result=@{ok=$false}
         try{Native-Action $app $action $result;if($Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring')){Capture-Window $app "native-action-$phase-$sequence"};$result.ok=$true}catch{$result.error=$_.Exception.Message}
@@ -392,7 +392,7 @@ try {
       }
       Start-Sleep -Milliseconds 100
     }
-    $report=Get-Content -Raw $reportFile | ConvertFrom-Json;$app.Refresh()
+    $app.Refresh()
     Assert-AcceptanceProfileEvidence $OutputDirectory $profileSelection $app.Id
     Capture-Window $app "native-$phase"
     # One existing EXE-owned listener sample, not a network/security audit.

@@ -3,6 +3,7 @@ param(
   [string]$OutputDirectory = 'desktop-evidence'
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'windows-desktop-evidence.ps1')
 $Executable = (Resolve-Path $Executable).Path
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 $OutputDirectory = (Resolve-Path $OutputDirectory).Path
@@ -25,14 +26,13 @@ try {
   $app = Start-Process -FilePath $Executable -PassThru -RedirectStandardError (Join-Path $OutputDirectory 'native-stderr.log')
   $reportFile = Join-Path $OutputDirectory 'renderer-report.json'
   $deadline = [DateTime]::UtcNow.AddSeconds(60)
-  while (-not (Test-Path $reportFile)) {
+  while ($null -eq ($report=Read-AcceptanceJsonSnapshot -Path $reportFile -MaximumBytes 64KB -AllowPending)) {
     $app.Refresh()
     if ($app.HasExited) { throw "Native process exited before renderer evidence: $($app.ExitCode)" }
     if ([DateTime]::UtcNow -ge $deadline) { throw 'Native WebView did not report within 60 seconds' }
     Start-Sleep -Milliseconds 200
   }
   # The report write and protocol response finish before screenshot capture.
-  $report = Get-Content -Raw $reportFile | ConvertFrom-Json
   $app.Refresh()
   if ($app.MainWindowHandle -eq [IntPtr]::Zero) { throw 'No native top-level application window' }
   $rectangle = New-Object NativeDesktopSmoke+RECT

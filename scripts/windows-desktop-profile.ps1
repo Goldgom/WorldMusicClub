@@ -1,5 +1,6 @@
 # Process-owner-only path/evidence checks. Sourcing this file starts no app and
 # performs no native calls, so the same helpers run in ordinary contract tests.
+. (Join-Path $PSScriptRoot 'windows-desktop-evidence.ps1')
 function Get-AcceptanceProfile([string]$Directory,[string]$Phase) {
   $shared=@('seed','restart','close-active','reopen')
   $fresh=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','authoring-seed','authoring-restart')
@@ -33,7 +34,7 @@ function Assert-AcceptanceProfileEvidence([string]$Directory,$Selection,[int]$Pr
   $path=Join-Path $Directory "profile-$($Selection.phase).json"
   $file=Get-Item -LiteralPath $path -Force -ErrorAction Stop
   if($file.PSIsContainer -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $file.Length -le 0 -or $file.Length -gt 8KB){throw "Invalid bounded host profile evidence: $path"}
-  $proof=Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+  $proof=Read-AcceptanceJsonSnapshot -Path $path -MaximumBytes 8KB
   $library=Join-Path $Directory $(if($Selection.fresh_required){'Scores'}else{'score-library'})
   if($proof.version -ne 1 -or $proof.phase -cne $Selection.phase -or $proof.process_id -ne $ProcessId -or $proof.profile_directory -cne $Selection.profile_directory -or $proof.library_directory -cne $library -or $proof.fresh_required -cne $Selection.fresh_required -or $proof.created_new -cne $Selection.profile_absent_before_launch){throw "Host profile selection/creation does not match phase, process, fresh precondition or Scores root: $path"}
   $profile=Get-Item -LiteralPath $Selection.profile_directory -Force -ErrorAction Stop

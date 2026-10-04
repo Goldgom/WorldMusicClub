@@ -12,6 +12,7 @@ function Assert-Rejected([scriptblock]$Operation,[string]$Label) {
   try { & $Operation } catch { $script:checks++;return }
   throw "Contract unexpectedly accepted: $Label"
 }
+. (Join-Path $PSScriptRoot 'windows-desktop-evidence-contract.ps1')
 # Exercise the actual lifecycle helper using owned temporary paths, including
 # a retained earlier cache with an open handle. No WebView or GUI is launched.
 $profileRoot=Join-Path ([IO.Path]::GetTempPath()) ('wmh profile 拼谱 '+[guid]::NewGuid().ToString('N'))
