@@ -58,13 +58,13 @@ export function basicKeyNotationPage(response,request,song){
     else if(item)invalid();
   }
   if(!Array.isArray(page.measures)||page.measures.length!==page.score.measures.length)invalid();
-  let end=page.source_start_ms;
+  let end=page.source_start_ms;const sourceClock=song.score.performance.timing.relative_clock_available,sourceDuration=song.runtime.rendition?.source_duration_ms??song.compilation?.timeline.duration_ms;
   for(const[index,measure]of page.measures.entries()){
     if(measure.source_measure_index!==page.first_measure+index||!rational(measure.source_at)||!rational(measure.source_end))invalid();
-    if(song.compilation){if(!Number.isFinite(measure.start_ms)||!Number.isFinite(measure.end_ms)||measure.start_ms!==end||measure.end_ms<=end)invalid();end=measure.end_ms;}
+    if(sourceClock){if(!Number.isFinite(measure.start_ms)||!Number.isFinite(measure.end_ms)||measure.start_ms!==end||measure.end_ms<=end)invalid();end=measure.end_ms;}
     else if(measure.start_ms!==null||measure.end_ms!==null)invalid();
   }
-  if(song.compilation&&(end!==page.source_end_ms||page.source_duration_ms!==song.compilation.timeline.duration_ms
+  if(sourceClock&&(end!==page.source_end_ms||page.source_duration_ms!==sourceDuration
     ||request.settings.position_ms!==undefined&&(page.resolved_position_ms!==Math.min(request.settings.position_ms,page.source_duration_ms)||page.resolved_position_ms<page.source_start_ms||page.resolved_position_ms>page.source_end_ms||page.resolved_position_ms===page.source_end_ms&&page.source_end_ms!==page.source_duration_ms)))invalid();
   freeze(page);admittedPages.set(page,song);
   return page;

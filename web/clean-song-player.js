@@ -2,6 +2,7 @@ import {hasValidZeroSmpteOffsets} from './clean-song-timecode.js';
 import {ReferenceAudioReceiver} from './midi-reference-synth.js';
 import {createReferenceRoom} from './clean-song-reverb.js';
 import {VsqPracticePlayer} from './vsq-practice-player.js';
+import {BasicKeyPlayer,BASIC_KEY_RENDITION} from './basic-key-player.js';
 import {CleanSongError,isCleanSong,isVsqSong,isBasicKeysSong} from './clean-song-package.js';
 import {INITIAL_SENSITIVITY_KIND,validInitialSensitivity,applyInitialSensitivity,unbentReferenceKey} from './clean-song-initial-sensitivity.js';
 import {INITIAL_SENSITIVITY12_KIND,validInitialSensitivity12Song,applyInitialSensitivity12,centeredPitchState,unbentReferenceKey12} from './clean-song-initial-sensitivity12.js';
@@ -12,7 +13,7 @@ export const CLEAN_RENDITION = 'wmh-procedural-reference-v1';
 export function inspectCleanRendition(song) {
   const blockers=[];
   if(!isCleanSong(song))return{supported:false,blockers:['clean_package_invalid'],rendition:CLEAN_RENDITION};
-  if(isBasicKeysSong(song))return{supported:false,blockers:['basic_keys_reference_unavailable'],rendition:null};
+  if(isBasicKeysSong(song)){const ready=song.runtime.rendition?.policy_id===BASIC_KEY_RENDITION;return{supported:ready,blockers:ready?[]:['basic_keys_reference_unavailable'],rendition:ready?BASIC_KEY_RENDITION:null};}
   if(isVsqSong(song))return{supported:Boolean(song.runtime)&&song.runtime.parts.length<=128,blockers:!song.runtime?['vsq_choice_required']:song.runtime.parts.length>128?['part_budget_exceeded']:[],rendition:'wmh-vsq-base-note-reference-v1'};
   if(!hasValidZeroSmpteOffsets(song.runtime))blockers.push('invalid_smpte_offset');
   if(song.score.performance.parts.length>128)blockers.push('part_budget_exceeded');
@@ -39,15 +40,17 @@ export class CleanSongPlayer {
   constructor({getPositionMs,onError=()=>{},setTimer=(...args)=>globalThis.setTimeout(...args),clearTimer=(...args)=>globalThis.clearTimeout(...args),lookAheadMs=100}={}) {
     if(typeof getPositionMs!=='function')throw new TypeError('The shared transport clock is required.');
     this.vsq=new VsqPracticePlayer({getPositionMs,onError,setTimer,clearTimer,lookAheadMs});
+    this.basicKeys=new BasicKeyPlayer({getPositionMs,onError,setTimer,clearTimer,lookAheadMs});
     Object.assign(this,{getPositionMs,onError,setTimer,clearTimer,lookAheadMs});this.epoch=0;this.timer=null;this.lanes=new Map();this.song=null;this.running=false;
   }
-  select(song){this.stop();this.song=song;this.profile=inspectCleanRendition(song);this.programs=new Map();this.vsq.select(isVsqSong(song)?song:null);if(!song||isVsqSong(song))return;
+  select(song){this.stop();this.song=song;this.profile=inspectCleanRendition(song);this.programs=new Map();this.vsq.select(isVsqSong(song)?song:null);this.basicKeys.select(isBasicKeysSong(song)?song:null);if(!song||isVsqSong(song)||isBasicKeysSong(song))return;
     if(!this.profile.supported)return;
     const merged=[...song.runtime.events.map(event=>({...event,type:'command'})),...song.runtime.notes.map(note=>({at_ms:note.start_ms,origin:note.attack,note,type:'note'}))].sort((a,b)=>a.at_ms-b.at_ms||a.origin.track-b.origin.track||a.origin.event-b.origin.event);
     const channels=new Map();for(const item of merged){const channel=item.command?.channel??item.note?.channel;const state=channels.get(channel)||defaults();channels.set(channel,state);if(item.type==='command')apply(state,item.command);else this.programs.set(item.note.event_id,state.program);}
   }
-  start({context,output,mode='listen',targetPart=null,mutedParts=null,resumePositionMs=null,instrument='piano',acceptedPolicyId}={}) {
-    if(isVsqSong(this.song))return this.vsq.start({context,output,mode,targetPart,mutedParts,resumePositionMs,instrument});
+  start({context,output,mode='listen',targetPart=null,mutedParts=null,soloParts=null,resumePositionMs=null,instrument='piano',acceptedPolicyId}={}) {
+    if(isBasicKeysSong(this.song))return this.basicKeys.start({context,output,mode,targetPart,mutedParts,soloParts,resumePositionMs,acceptedPolicyId});
+    if(isVsqSong(this.song))return this.vsq.start({context,output,mode,targetPart,mutedParts,soloParts,resumePositionMs,instrument});
     this.stop();if(!this.song||!this.profile.supported)throw new CleanSongError('clean_renderer_unsupported','The reference renderer cannot represent these retained commands.',{blockers:this.profile?.blockers});
     if(this.profile.logical_device_mapping&&acceptedPolicyId!==this.profile.rendition)throw new CleanSongError('reference_policy_required','Select the disclosed logical device mapping to this procedural receiver.');
     if(!context||context.state!=='running'||!output)throw new CleanSongError('clean_audio_unavailable','Audio must be unlocked by a user gesture.');
@@ -82,6 +85,6 @@ export class CleanSongPlayer {
     }catch(error){this.stop();if(initial)throw error;this.onError(error);}
   }
   pause(){this.stop();}
-  stop(){this.vsq.stop();this.epoch++;this.running=false;if(this.timer!==null)this.clearTimer(this.timer);this.timer=null;for(const lane of this.lanes.values()){lane.receiver.silence();lane.gain.disconnect();lane.pan.disconnect();lane.room.close();}this.lanes.clear();}
+  stop(){this.vsq.stop();this.basicKeys.stop();this.epoch++;this.running=false;if(this.timer!==null)this.clearTimer(this.timer);this.timer=null;for(const lane of this.lanes.values()){lane.receiver.silence();lane.gain.disconnect();lane.pan.disconnect();lane.room.close();}this.lanes.clear();}
   destroy(){this.stop();this.song=null;}
 }

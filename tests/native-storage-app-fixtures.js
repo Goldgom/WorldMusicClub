@@ -73,6 +73,8 @@ export async function nativeStorageApp(server,{now}={}) {
     createStereoPanner(){return audioNode('panner',{pan:parameter()});}
     createConvolver(){return audioNode('convolver');}
     createBuffer(channels,length){return{length,getChannelData:()=>new Float32Array(length)};}
+    createBufferSource(){return audioNode('buffer-source',{starts:[],start(at){this.starts.push(at);},stop(){}});}
+    createBiquadFilter(){return audioNode('filter',{frequency:parameter(),Q:parameter()});}
     createOscillator(){return audioNode('oscillator',{frequency:parameter(),starts:[],start(at){this.starts.push(at);},stop(){}});}
   }
   const originalUnlock=Synth.prototype.unlock,originalPlay=Synth.prototype.play,originalURL=URL.createObjectURL;

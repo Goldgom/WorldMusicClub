@@ -57,7 +57,7 @@ export class ReferenceAudioReceiver {
     for (let i = 0; i < data.length; i++) { state ^= state << 13; state ^= state >>> 17; state ^= state << 5; data[i] = (state >>> 0) / 2147483648 - 1; }
     this.noise = buffer; return buffer;
   }
-  schedule(note, start, end, { output = this.output, pitchSemitones = 0, strictPitchRange = false } = {}) {
+  schedule(note, start, end, { output = this.output, pitchSemitones = 0, strictPitchRange = false, preserveFrequency = false } = {}) {
     if (end <= start) return;
     this.prune(this.context.currentTime);
     if (this.voices.size >= this.maxVoices) throw new this.ErrorType('voice_budget_exceeded', 'Reference audio allocation budget exceeded; playback stops instead of stealing a voice.', { eventId: note.eventId, maxVoices: this.maxVoices });
@@ -77,11 +77,12 @@ export class ReferenceAudioReceiver {
         oscillator.type = type;
         const bent = frequency * 2 ** (pitchSemitones / 12);
         if (strictPitchRange) this.checkPitch(bent);
-        oscillator.frequency.setValueAtTime(strictPitchRange ? bent : Math.min(frequency, this.context.sampleRate * 0.45), start);
+        if (preserveFrequency && (!Number.isFinite(frequency) || frequency <= 0 || frequency > this.context.sampleRate * 0.45)) throw new this.ErrorType('unsupported_audio_sample_rate', 'The audio device cannot represent this reference frequency without clamping.');
+        oscillator.frequency.setValueAtTime(strictPitchRange ? bent : preserveFrequency ? frequency : Math.min(frequency, this.context.sampleRate * 0.45), start);
         if (strictPitchRange) pitches.push({ parameter: oscillator.frequency, frequency });
         gain.gain.value = level; oscillator.connect(gain); gain.connect(envelope);
       };
-      const drum = note.channel === 9 ? REFERENCE_PERCUSSION[note.key] : null;
+      const drum = note.referencePercussion || (note.channel === 9 ? REFERENCE_PERCUSSION[note.key] : null);
       if (note.channel === 9 && !drum) throw new this.ErrorType('percussion_key_unmapped', 'No reference percussion recipe for this key.');
       if (drum) {
         if (drum.type !== 'noise') {
@@ -99,7 +100,7 @@ export class ReferenceAudioReceiver {
         }
       } else {
         const timbre = note.referenceTimbre || PROGRAM_FAMILIES[note.program >> 3], hz = 440 * 2 ** ((note.key - 69) / 12);
-        addTone(timbre.wave, hz, 0.8); addTone(timbre.harmonic, hz * timbre.ratio, 0.2);
+        if(timbre.singleTone)addTone(timbre.wave,hz,1);else{addTone(timbre.wave, hz, 0.8); addTone(timbre.harmonic, hz * timbre.ratio, 0.2);}
       }
       // A conservative reference level, not a loudness-normalization promise.
       const peak = 0.08 * note.velocity / 127;

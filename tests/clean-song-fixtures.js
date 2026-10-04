@@ -14,7 +14,7 @@ export function mediaFixture({id='cover',role='cover',mime='image/png',content='
 export function fakeAudio(){
   const nodes=[],parameter=()=>({value:0,events:[],setValueAtTime(value,at){this.value=value;this.events.push({value,at});},linearRampToValueAtTime(value,at){this.events.push({value,at});},exponentialRampToValueAtTime(value,at){this.events.push({value,at});},cancelScheduledValues(){}});
   const node=(type,extra={})=>{const item={kind:type,type,connections:[],disconnected:false,connect(to){this.connections.push(to);},disconnect(){this.disconnected=true;},...extra};nodes.push(item);return item;};
-  const context={currentTime:0,state:'running',sampleRate:8000,destination:{},createGain:()=>node('gain',{gain:parameter()}),createStereoPanner:()=>node('pan',{pan:parameter()}),createConvolver:()=>node('convolver'),createBuffer:(channels,length)=>({length,getChannelData:()=>new Float32Array(length)}),createOscillator:()=>node('oscillator',{frequency:parameter(),starts:[],stops:[],start(at){this.starts.push(at);},stop(at){this.stops.push(at);}})};
+  const context={currentTime:0,state:'running',sampleRate:8000,destination:{},createGain:()=>node('gain',{gain:parameter()}),createStereoPanner:()=>node('pan',{pan:parameter()}),createConvolver:()=>node('convolver'),createBuffer:(channels,length)=>({length,getChannelData:()=>new Float32Array(length)}),createBufferSource:()=>node('buffer-source',{starts:[],stops:[],start(at){this.starts.push(at);},stop(at){this.stops.push(at);}}),createBiquadFilter:()=>node('filter',{frequency:parameter(),Q:parameter()}),createOscillator:()=>node('oscillator',{frequency:parameter(),starts:[],stops:[],start(at){this.starts.push(at);},stop(at){this.stops.push(at);}})};
   return{context,nodes,output:node('output')};
 }
 
