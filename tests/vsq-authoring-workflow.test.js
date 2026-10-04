@@ -246,7 +246,7 @@ test('hosted VSQ route binds the actual phase and native action inventory before
  const hosted=read('scripts/hosted-vsq-authoring-check.mjs');
  const checks=["renderer.phase,phase","renderer.actions,host.actions.length","renderer.pickerObservations.map(row=>({sequence:row.sequence,file:row.file}))","host.actions.filter(row=>row.kind==='picker').map(row=>({sequence:row.sequence,file:row.file}))"];
  for(const check of checks)assert.ok(hosted.includes(check),check);
- assert.ok(hosted.indexOf('assert.equal(renderer.phase,phase)')<hosted.indexOf('validateVsqAuthoringRenderer(renderer)'));
+ assert.ok(hosted.indexOf('assert.equal(renderer.phase,phase)')<hosted.indexOf('validateVsqAuthoringRenderer(renderer,undefined,undefined,origin)'));
  assert.ok(hosted.indexOf("process.env.GITHUB_ACTIONS!=='true'")<hosted.indexOf("await import('playwright')"));
  assert.match(hosted,/assert\.equal\(alias,VSQ_AUTHORING_FIXTURE_FILENAME/);
  assert.match(hosted,/for\(const index of \[2,3,4\]\)/);
@@ -254,4 +254,32 @@ test('hosted VSQ route binds the actual phase and native action inventory before
  assert.match(hosted,/context=await browser\.newContext/);
  assert.match(hosted,/await bounded\(driver\.close\(\),`\$\{phase\} close`\)/);
  assert.doesNotMatch(hosted,/setInputFiles|dispatchEvent|createServer|listen\(/);
+});
+
+
+test('authoring observes the shared real audio thread and awaits its exact ledger before restoring observers',()=>{
+ const renderer=read('crates/desktop-shell/vsq-authoring-acceptance.js'),verifier=read('scripts/verify-native-vsq-authoring-evidence.mjs');
+ assert.equal((renderer.match(/await observeBasicKeyReceiver\(document\)/g)||[]).length,2);
+ assert.ok(renderer.indexOf('receiver=await observeBasicKeyReceiver(document)')<renderer.indexOf("checkpoint('original-vsq-file-review')"));
+ assert.match(renderer,/worklet:receiver\.status\(\)/);assert.match(renderer,/receiver\.quiet\(\)/);
+ assert.match(renderer,/report\.listenThread=receiver\.snapshot\(\)\.slice\(beforeListen\)/);
+ assert.ok(renderer.indexOf("await silence('reference receiver disposal')")<renderer.indexOf('report.listenThread=receiver.snapshot()'));
+ assert.match(renderer,/report\.reviewReceiverCleanup=restoreReceiver\(\)/);assert.match(renderer,/report\.receiverCleanup=restoreReceiver\(\)/);
+ assert.doesNotMatch(renderer,/audio\(\)\.sourceStarts>report\.audioBeforePlay|createOscillator|new AudioWorkletNode|postMessage\(|setTimeout\(/);
+ assert.match(verifier,/validateVsqAudioThreadRuns\(report\.listenThread,fixture\.runtime,\{mode:'listen',instrument:'piano'\}\)/);
+ assert.match(verifier,/validateVsqAuthoringAudio\(report,fixture\)/);assert.match(verifier,/validateRendererOrigin\(expectedOrigin\)/);
+});
+
+test('hosted authoring serves shipped Worklet assets from the exact-source server and admits only owned native API calls',()=>{
+ const hosted=read('scripts/hosted-vsq-authoring-check.mjs');
+ assert.match(hosted,/startHostedAssetServer\(\{root,sourceSha:head,binary:/);
+ assert.match(hosted,/origin=assetServer\.origin;report\.origin=origin/);
+ assert.match(hosted,/createHostedNativeBridge\(\{origin,getOwnedPage:\(\)=>page\}\)/);
+ assert.match(hosted,/context\.route\(url=>url\.origin===origin&&\(url\.pathname\.startsWith\('\/api\/'\)\|\|url\.pathname\.startsWith\('\/__desktop_smoke\/'\)\)/);
+ assert.match(hosted,/nativeBridge\.run\(request,async headers=>/);
+ assert.match(hosted,/method:request\.method\(\),headers,body:request\.postDataBuffer/);
+ assert.ok(hosted.indexOf('nativeBridge.stopAdmission();await context.close();context=null;await nativeBridge.drain()')<hosted.indexOf('host.ok=true'));
+ assert.match(hosted,/validateHostedAssetEvidence\(report\.asset_server,\{origin,sourceSha:head\}\)/);
+ assert.match(hosted,/\['asset-server',\(\)=>assetServer\?\.close\(\)\]/);
+ assert.doesNotMatch(hosted,/path\.resolve\(root,'web'|route\.fulfill\([^\n]*readFile|request\.headers\(\)|addModule|blob:|data:text\/javascript/);
 });

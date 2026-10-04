@@ -12,7 +12,9 @@ import {VSQ_AUTHORING_FIXTURE_FILENAME,vsqAuthoringFixture,validateVsqAuthoringD
 import {assertVsqAuthoringZip,validateVsqAuthoringOpened,validateVsqAuthoringRuntime} from '../scripts/check-vsq-authoring-native.mjs';
 import {authoringDraftFingerprint} from '../scripts/song-authoring-fixture-contract.mjs';
 import {storedZip} from './native-import-driver-fixtures.js';
-import {validateVsqAuthoringPicker,validateVsqAuthoringIsolation,validateVsqAuthoringViewport,validateVsqAuthoringNativeScreenshot} from '../scripts/verify-native-vsq-authoring-evidence.mjs';
+import {validateVsqAuthoringPicker,validateVsqAuthoringIsolation,validateVsqAuthoringAudio,validateVsqAuthoringViewport,validateVsqAuthoringNativeScreenshot} from '../scripts/verify-native-vsq-authoring-evidence.mjs';
+
+import {syntheticVsqAuthoringQuietAudio,syntheticVsqAuthoringAudio} from './vsq-authoring-audio-thread-fixtures.js';
 
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const read=name=>readFile(new URL(`./fixtures/song-authoring/${name}`,import.meta.url));
@@ -169,7 +171,7 @@ function isolationFragment(phase='vsq-authoring-seed'){
   const report=pickerFragment();report.phase=phase;if(phase==='vsq-authoring-restart'){report.pickerObservations=[];report.trusted=[];}
   report.actions=30;report.baselineScope={humanActionStart:8,humanActionEnd:11,lastPickerAction:phase==='vsq-authoring-seed'?5:0,readyAfterAction:15,readyAt:30,requestStart:0};
   report.soundEnabledAction=12;report.beforeTakeState={title:'Original exercise',stage:'Original exercise',mode:'practice',clock:'130',captured:'1',pass:'2',revision:'1',cue:'paused',soundMuted:false,pressed:0};report.afterTakeState=structuredClone(report.beforeTakeState);
-  const quiet=()=>({sourceStarts:0,oscillatorStarts:0,activeSources:0,pendingSources:0});
+  const quiet=syntheticVsqAuthoringQuietAudio;
   report.isolation={authoringKey:18,settingsOpen:19,settingsKey:20,audio:quiet(),afterExportAudio:quiet(),requestEnd:phase==='vsq-authoring-seed'?1:0};
   report.requests=phase==='vsq-authoring-seed'?[{path:'/api/library/import/commit',actionSequence:16}]:[];
   if(phase==='vsq-authoring-seed')report.saveAction=16;
@@ -203,6 +205,10 @@ test('VSQ isolation verifier binds native key and sound/settings clicks to the c
     for(const edit of [
       r=>r.afterTakeState.pass='3',r=>r.afterTakeState.clock='131',r=>r.beforeTakeState.soundMuted=true,
       r=>r.isolation.audio.oscillatorStarts=1,r=>r.isolation.afterExportAudio.pendingSources=1,
+      r=>delete r.isolation.audio.worklet,r=>r.isolation.audio.worklet.receivers=1,
+      r=>r.isolation.afterExportAudio.worklet.initializations.push({settled:false}),
+      r=>r.isolation.audio.worklet.activeReceivers=1,r=>r.isolation.afterExportAudio.worklet.pendingReceivers=1,
+      r=>r.isolation.audio.worklet.errors.push({message:'receiver failed'}),r=>r.isolation.audio.worklet.overflow=true,
       r=>r.baselineScope.humanActionEnd++,r=>r.baselineScope.lastPickerAction=9,
       r=>{r.requests.push({path:'/api/library/runtime',actionSequence:19});r.isolation.requestEnd=r.requests.length;},
       r=>{r.requests.push({path:'/api/assess',actionSequence:19});r.isolation.requestEnd=r.requests.length;},
@@ -266,6 +272,47 @@ test('native and hosted VSQ callers retain source, exact requested viewport and 
  assert.match(native,/assert\.equal\(native\.ok,true\)/);assert.match(native,/\['source_sha','source_tree'\]/);assert.match(native,/verifyNativeProfileEvidence\(native,VSQ_AUTHORING_PHASES,json\)/);
  assert.ok(native.indexOf('results.push(result)')<native.indexOf('validateVsqAuthoringRenderer(report,fixture,nativeEvidence)'));
  assert.match(native,/validateVsqAuthoringNativeScreenshot\(await read\(`native-action-/);assert.match(native,/validateVsqAuthoringNativeScreenshot\(await read\(`native-\$\{host\.phase\}\.png/);
- assert.match(hosted,/validateVsqAuthoringRenderer\(renderer\);assert\.deepEqual\(\{width:renderer\.layout\.width,height:renderer\.layout\.height\},\{width,height\}\)/);
+ assert.match(hosted,/validateVsqAuthoringRenderer\(renderer,undefined,undefined,origin\);assert\.deepEqual\(\{width:renderer\.layout\.width,height:renderer\.layout\.height\},\{width,height\}\)/);
  assert.match(windows,/\.inner_size\(1280\.0, 900\.0\)/);assert.match(windows,/\.min_inner_size\(900\.0, 640\.0\)/);assert.match(windows,/\.prevent_overflow\(\)/);
+});
+
+
+test('authored VSQ audio evidence keeps full native source identities and rational gates at device rates',()=>{
+ for(const phase of ['vsq-authoring-seed','vsq-authoring-restart'])for(const sampleRate of [44100,48000]){
+  const report=syntheticVsqAuthoringAudio(fixture.runtime,{phase,sampleRate});validateVsqAuthoringAudio(report,fixture);
+  const run=report.listenThread[0];assert.equal(run.plan.sourceNotes,2);assert.equal(run.plan.notes.length,2);
+  const authored=fixture.runtime.runtime.notes;
+  assert.deepEqual(run.plan.notes.map(note=>note.slice(0,2)),authored.map(note=>[note.note_id,`vsq:${sourceSha256}:t${note.source_track_index}:${note.authored_note_id}`]));
+  // The preserved 801-tick gate crosses a fractional microsecond. Derive the
+  // sample end directly from the captured integer rational, never rounded ms.
+  const n=133500267n*BigInt(sampleRate),d=160n*1000000n,end=Number((n+d-1n)/d);
+  assert.deepEqual(run.plan.notes.map(note=>note[3]),[end,end]);
+  assert.deepEqual(run.terminals[0].record.ledger.actualEnds,[run.started.anchorFrame+end,run.started.anchorFrame+end]);
+  assert.equal(run.timbre.bytes,128*1024*4);assert.match(run.timbre.sha256,/^[a-f0-9]{64}$/);assert.equal(Object.hasOwn(run.timbre,'tables'),false);
+ }
+});
+
+test('authored VSQ rejects legacy schedules, changed native ledgers, silent or disconnected output and incomplete disposal',()=>{
+ const mutations=[
+  r=>delete r.listenThread,r=>r.listenThread=[],r=>r.listenThread.push(structuredClone(r.listenThread[0])),
+  r=>r.listenAudio.sourceStarts=2,r=>r.listenAudio.oscillatorStarts=2,r=>r.listenAudio.worklet.activeReceivers=0,
+  r=>r.audioBeforePlay.worklet.receivers=1,r=>r.beforeChoice.audio.worklet.pendingReceivers=1,
+  r=>r.afterChoice.audio.worklet.initializations.push({settled:false}),
+  r=>r.listenThread[0].plan.notes.pop(),r=>r.listenThread[0].plan.sourceNotes--,
+  r=>r.listenThread[0].plan.notes[0][0]='vsq-t9-ID#0000',r=>r.listenThread[0].plan.notes[0][1]='invented-source-event',
+  r=>r.listenThread[0].plan.notes[0][3]--,r=>r.listenThread[0].plan.durationFrames--,
+  r=>r.listenThread[0].messages[0].isTrusted=false,r=>r.listenThread[0].messages[1].portMatches=false,
+  r=>r.listenThread[0].rawTerminals=[],r=>r.listenThread[0].rawTerminals[0].isTrusted=false,
+  r=>r.listenThread[0].terminals[0].record.ledger.actualStarts[0]++,r=>r.listenThread[0].rawTerminals[0].record.ledger.actualEnds[0]--,
+  r=>r.listenThread[0].terminals[0].record.type='canceled',
+  r=>r.listenThread[0].node.actualAudioWorkletNode=false,r=>r.listenThread[0].started.graphToDestination.pop(),
+  r=>r.listenThread[0].pcm.blocks.forEach(row=>{row.peak=0;row.rms=0;}),r=>delete r.listenThread[0].pcm.graphToDestination,
+  r=>r.listenThread[0].pcm.graphToDestination[1].gain=0,
+  r=>r.listenThread[0].timbre.sha256='0'.repeat(64),r=>r.listenThread[0].timbre.bytes++,r=>r.listenThread[0].timbre.detached=false,
+  r=>r.listenThread[0].lifecycle.disposed=false,r=>r.listenStopped.worklet.ownedNodes[0].connected=true,
+  r=>r.reloadChoice.audio.worklet.started++,r=>r.finalAudio.worklet.completed=0,r=>r.finalAudio.worklet.pendingReceivers=1,
+  r=>r.receiverCleanup.restored=false,r=>r.receiverCleanup.cleanupErrors.push({message:'not restored'}),
+  r=>r.reviewReceiverCleanup.overflow=true,r=>r.reviewAudio.worklet.initializations.push({settled:false}),
+ ];
+ for(const mutate of mutations){const report=syntheticVsqAuthoringAudio(fixture.runtime);mutate(report);assert.throws(()=>validateVsqAuthoringAudio(report,fixture),mutate.toString());}
 });
