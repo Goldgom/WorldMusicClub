@@ -34,6 +34,7 @@ fn smf(ppq: u16, tracks: &[Vec<(u32, Vec<u8>)>]) -> Vec<u8> {
 fn request(score: &CompleteBasicKeys, first_measure: u32, measure_count: u16) -> NotationRequest {
     NotationRequest {
         part_id: score.performance.parts[0].id.clone(),
+        rendition_policy_id: None,
         first_measure,
         measure_count,
         display_meter: None,
@@ -400,4 +401,255 @@ fn leading_silence_late_tempo_and_part_selection_keep_source_positions() {
     assert!(part.notes[0].at.equivalent(Beat::new(2, 1)));
     assert_eq!(sounding.coverage.source_attacks, 2);
     assert_eq!(sounding.coverage.part_attacks, 1);
+}
+
+fn rendition_request(source: &CompleteBasicKeys, first: u32, count: u16) -> NotationRequest {
+    let mut settings = request(source, first, count);
+    settings.rendition_policy_id = Some(super::rendition::RENDITION_POLICY.into());
+    settings
+}
+
+#[test]
+fn rendition_page_keeps_fifo_cleanup_channel_stop_and_synthetic_targets_source_bound() {
+    let source = convert_midi(
+        &smf(
+            96,
+            &[vec![
+                (0, meter(4, 2)),
+                (0, vec![0x90, 60, 90]),
+                (24, vec![0x90, 60, 70]),
+                (96, vec![0x80, 60, 0]),
+                (144, vec![0x80, 60, 0]),
+                (144, vec![0x90, 62, 80]),
+                (160, vec![0xb0, 123, 0]),
+                (160, vec![0x90, 64, 80]),
+                (192, vec![0x90, 65, 80]),
+                (192, vec![0x80, 65, 0]),
+            ]],
+        ),
+        "Original rendition coverage fixture",
+    )
+    .unwrap();
+    let before = encode_json(&source).unwrap();
+    let settings = rendition_request(&source, 0, 1);
+    let page = notation_page(&source, &settings).unwrap();
+    let compiled = super::rendition::compile_rendition(&source).unwrap();
+    assert_eq!(page.view_version, 2);
+    assert_eq!(page.status, "ready");
+    assert_eq!(page.rendition_policy_id, settings.rendition_policy_id);
+    assert_eq!(page.source_sha256, source.source.sha256);
+    assert_eq!(page.interpreted_notes.len(), compiled.timeline.notes.len());
+    assert_eq!(page.score.as_ref().unwrap().parts[0].notes.len(), 4);
+    assert_eq!(page.onsets.len(), 1);
+    assert!(page.unresolved.is_empty() && page.instantaneous.is_empty());
+    for ((shown, evidence), timed) in page
+        .interpreted_notes
+        .iter()
+        .zip(&compiled.rendition.notes)
+        .zip(&compiled.timeline.notes)
+    {
+        assert_eq!(shown.note_id, timed.id);
+        assert_eq!(shown.start_ms, timed.start_ms);
+        assert_eq!(shown.end_ms, timed.start_ms + timed.duration_ms);
+        assert_eq!(shown.start_exact, evidence.start);
+        assert_eq!(shown.end_exact, evidence.end);
+        assert_eq!(shown.source_end_tick, evidence.source_end_tick);
+        assert_eq!(shown.receiver_end_tick, evidence.receiver_end_tick);
+        assert_eq!(shown.source_release_status, evidence.source_release_status);
+    }
+    assert_eq!(
+        page.interpreted_notes[2].end_reason,
+        super::rendition::RenditionEndReason::AllNotesOff
+    );
+    assert_eq!(
+        page.interpreted_notes[3].end_reason,
+        super::rendition::RenditionEndReason::SourceEndCleanup
+    );
+    assert_eq!(page.interpreted_notes[4].display_kind, "synthetic_onset");
+    assert_eq!(page.source_duration_ms, Some(1000.));
+    assert_eq!(page.rendition_duration_ms, Some(1020.));
+    assert_eq!(page.follow_end_ms, Some(1020.));
+    assert_eq!(page.measures[0].end_ms, Some(1000.));
+    assert_eq!(page.measures[0].follow_end_ms, Some(1020.));
+    assert_eq!(before, encode_json(&source).unwrap());
+    let legacy = notation_page(&source, &request(&source, 0, 1)).unwrap();
+    assert_eq!(legacy.view_version, 1);
+    assert!(legacy.interpreted_notes.is_empty());
+    assert!(serde_json::to_value(legacy)
+        .unwrap()
+        .get("rendition_policy_id")
+        .is_none());
+}
+
+#[test]
+fn rendition_follow_uses_last_positive_tempo_and_holds_zero_without_source_clock_claim() {
+    let source = convert_midi(
+        &smf(
+            96,
+            &[
+                vec![
+                    (0, meter(1, 2)),
+                    (0, tempo(500000)),
+                    (96, tempo(1000000)),
+                    (288, vec![255, 1, 0]),
+                ],
+                vec![
+                    (0, tempo(600000)),
+                    (0, vec![0x90, 60, 90]),
+                    (96, tempo(0)),
+                    (288, vec![0x80, 60, 0]),
+                ],
+            ],
+        ),
+        "Original chosen clock fixture",
+    )
+    .unwrap();
+    assert!(!source.performance.timing.relative_clock_available);
+    let mut settings = rendition_request(&source, 0, 1);
+    for (ms, index, from, to) in [
+        (0., 0, 0., 600.),
+        (600., 1, 600., 1600.),
+        (1600., 2, 1600., 2600.),
+    ] {
+        settings.position_ms = Some(ms);
+        let page = notation_page(&source, &settings).unwrap();
+        assert_eq!(page.status, "ready");
+        assert_eq!(page.first_measure, index);
+        assert_eq!(page.source_clock_available, Some(false));
+        assert_eq!(page.tempo_origin, "chosen_rendition_clock");
+        assert_eq!(page.source_start_ms, Some(from));
+        assert_eq!(page.source_end_ms, Some(to));
+        assert_eq!(page.interpreted_notes.len(), 1);
+        assert_eq!(page.interpreted_notes[0].start_exact.numerator, "0");
+        assert_eq!(page.interpreted_notes[0].end_exact.numerator, "2600000");
+        assert_eq!(
+            page.score.as_ref().unwrap().parts[0].notes[0].id,
+            source.performance.notes[0].note_id
+        );
+    }
+}
+
+#[test]
+fn rendition_zero_span_and_fractional_zero_gates_have_onsets_without_fabricated_duration() {
+    // 20ms / 16,777,213us requires a denominator above the canonical limit.
+    let source = convert_midi(
+        &smf(
+            7,
+            &[vec![
+                (0, tempo(16_777_213)),
+                (0, vec![0x90, 60, 90]),
+                (0, vec![0x80, 60, 0]),
+            ]],
+        ),
+        "Original zero-span fixture",
+    )
+    .unwrap();
+    let mut settings = rendition_request(&source, 0, 1);
+    assert_eq!(
+        notation_page(&source, &settings).unwrap().status,
+        "display_meter_required"
+    );
+    settings.display_meter = Some(DisplayMeter {
+        numerator: 4,
+        denominator: 4,
+    });
+    settings.position_ms = Some(15.);
+    let page = notation_page(&source, &settings).unwrap();
+    assert_eq!(page.status, "onset_page");
+    assert!(page.score.is_none() && page.musicxml.is_none());
+    assert_eq!(page.onsets.len(), 1);
+    assert_eq!(page.interpreted_notes.len(), 1);
+    assert_eq!(
+        page.interpreted_notes[0].note_id,
+        source.performance.notes[0].note_id
+    );
+    assert_eq!(page.interpreted_notes[0].receiver_end_tick, 0);
+    assert_eq!(page.interpreted_notes[0].end_exact.numerator, "20000");
+    assert_eq!(page.source_end_ms, Some(0.));
+    assert_eq!(page.follow_end_ms, Some(20.));
+    assert_eq!(page.resolved_position_ms, Some(15.));
+    assert_eq!(page.measures.len(), 1);
+}
+
+#[test]
+fn rendition_synthetic_gate_continues_across_fast_bars_with_stable_onset_id() {
+    let source = convert_midi(
+        &smf(
+            96,
+            &[vec![
+                (0, meter(1, 2)),
+                (0, tempo(1000)),
+                (0, vec![0x90, 60, 90]),
+                (0, vec![0x80, 60, 0]),
+                (384, vec![255, 1, 0]),
+            ]],
+        ),
+        "Original synthetic continuation fixture",
+    )
+    .unwrap();
+    let mut settings = rendition_request(&source, 0, 1);
+    settings.position_ms = Some(2.5);
+    let page = notation_page(&source, &settings).unwrap();
+    assert_eq!(page.first_measure, 2);
+    assert_eq!(page.coverage.window_attacks, 0);
+    assert_eq!(page.onsets.len(), 1);
+    assert_eq!(page.interpreted_notes[0].start_ms, 0.);
+    assert_eq!(page.interpreted_notes[0].end_ms, 20.);
+    settings.position_ms = Some(19.);
+    let tail = notation_page(&source, &settings).unwrap();
+    assert_eq!(tail.first_measure, 3);
+    assert_eq!(tail.source_end_ms, Some(4.));
+    assert_eq!(tail.follow_end_ms, Some(20.));
+    assert_eq!(tail.onsets[0].note_id, page.onsets[0].note_id);
+}
+
+#[test]
+fn rendition_percussion_pages_are_selector_targets_without_pitched_staff() {
+    let source = convert_midi(
+        &smf(
+            96,
+            &[vec![
+                (0, meter(4, 2)),
+                (0, vec![0x99, 0, 90]),
+                (96, vec![0x89, 0, 0]),
+                (96, vec![0x99, 127, 90]),
+            ]],
+        ),
+        "Original percussion selector fixture",
+    )
+    .unwrap();
+    let page = notation_page(&source, &rendition_request(&source, 0, 1)).unwrap();
+    assert_eq!(page.status, "percussion_selectors");
+    assert!(page.score.is_none() && page.musicxml.is_none());
+    assert_eq!(
+        page.selectors
+            .iter()
+            .map(|item| item.key)
+            .collect::<Vec<_>>(),
+        vec![0, 127]
+    );
+    assert!(page.interpreted_notes.iter().all(|note| note.role
+        == super::rendition::RenditionRole::PercussionSelector
+        && note.display_kind == "percussion_selector"));
+    assert!(page.onsets.is_empty());
+    assert_eq!(page.coverage.rendered_positive_keys, 0);
+}
+
+#[test]
+fn rendition_notation_rejects_unknown_policy_and_never_trims_dense_targets() {
+    let mut events = vec![(0, meter(4, 2))];
+    for _ in 0..2049 {
+        events.push((0, vec![0x90, 60, 90]));
+    }
+    let source = convert_midi(&smf(96, &[events]), "Original dense onset fixture").unwrap();
+    let mut settings = rendition_request(&source, 0, 1);
+    let page = notation_page(&source, &settings).unwrap();
+    assert_eq!(page.status, "page_limit");
+    assert_eq!(page.coverage.window_attacks, 2049);
+    assert!(page.interpreted_notes.is_empty() && page.onsets.is_empty());
+    assert!(page.score.is_none() && page.musicxml.is_none());
+    settings.rendition_policy_id = Some("unknown-policy".into());
+    assert!(notation_page(&source, &settings)
+        .unwrap_err()
+        .contains("Unknown"));
 }

@@ -120,6 +120,18 @@ fn targets(runtime: &Value) -> Vec<Value> {
             "source_note_id":row[0],"source_note_ids":[row[0]],"voice":"1","staff":1})
     }).collect()
 }
+fn rendition_fixture(name: &str, body: &Value) {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures")
+        .join(name);
+    if std::env::var_os("WMH_UPDATE_BASIC_KEYS_FIXTURE").is_some() {
+        fs::write(&path, serde_json::to_vec_pretty(body).unwrap()).unwrap();
+    }
+    assert_eq!(
+        serde_json::from_slice::<Value>(&fs::read(path).unwrap()).unwrap(),
+        *body
+    );
+}
 
 #[test]
 fn basic_keys_preserve_every_source_event_part_and_attack_across_export_and_restart() {
@@ -711,4 +723,207 @@ fn conflicting_source_clock_keeps_notation_paused_and_labels_the_chosen_renditio
             .as_bytes(),
         original["score.json"]
     );
+}
+
+#[test]
+fn rendition_notation_is_opt_in_and_bound_to_saved_source_with_all_selected_targets() {
+    let sandbox = Sandbox::new();
+    let library = sandbox.library();
+    let original = files();
+    let saved = imported(&library, original.clone());
+    let entry = &saved["items"][0]["entry"];
+    let key = entry["key"].as_str().unwrap();
+    let loaded = library.load(key).unwrap();
+    let package = loaded.clean_package.as_ref().unwrap();
+    let source = score_core::basic_keys::decode_json(package.score_json.as_bytes()).unwrap();
+    let part = &source.performance.parts[0].id;
+    let mut body = json!({"source":{"key":key,"content_sha256":entry["content_sha256"],"profile":score_core::basic_keys::PROFILE},
+        "settings":{"part_id":part,"first_measure":0,"measure_count":1,"display_meter":{"numerator":4,"denominator":4}}});
+    let legacy_response = request(
+        &library,
+        "/api/library/basic-keys/notation",
+        serde_json::to_vec(&body).unwrap(),
+    );
+    assert_eq!(legacy_response.status(), 200);
+    let legacy: Value = serde_json::from_slice(legacy_response.body()).unwrap();
+    assert_eq!(legacy["page"]["view_version"], 1);
+    assert!(legacy["page"].get("rendition_policy_id").is_none());
+    body["settings"]["rendition_policy_id"] = json!("wmh-basic-key-rendition-fifo-v1");
+    let response = request(
+        &library,
+        "/api/library/basic-keys/notation",
+        serde_json::to_vec(&body).unwrap(),
+    );
+    assert_eq!(
+        response.status(),
+        200,
+        "{}",
+        String::from_utf8_lossy(response.body())
+    );
+    let shown: Value = serde_json::from_slice(response.body()).unwrap();
+    let page = &shown["page"];
+    assert_eq!(shown["source"], body["source"]);
+    assert_eq!(page["view_version"], 2);
+    assert_eq!(
+        page["rendition_policy_id"],
+        body["settings"]["rendition_policy_id"]
+    );
+    assert_eq!(page["source_sha256"], source.source.sha256);
+    assert_eq!(page["status"], "ready");
+    assert_eq!(page["interpreted_notes"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        page["score"]["parts"][0]["notes"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(page["onsets"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        page["interpreted_notes"][2]["end_reason"],
+        "source_end_cleanup"
+    );
+    let melodic_request = body.clone();
+    let melodic = shown.clone();
+    let mut forged = body.clone();
+    forged["settings"]["rendition_policy_id"] = json!("unknown-policy");
+    assert_eq!(
+        request(
+            &library,
+            "/api/library/basic-keys/notation",
+            serde_json::to_vec(&forged).unwrap()
+        )
+        .status(),
+        422
+    );
+    forged = body.clone();
+    forged["source"]["content_sha256"] = json!("0".repeat(64));
+    assert_eq!(
+        request(
+            &library,
+            "/api/library/basic-keys/notation",
+            serde_json::to_vec(&forged).unwrap()
+        )
+        .status(),
+        422
+    );
+    forged = body.clone();
+    forged["settings"]["interpreted_notes"] = json!([]);
+    assert_eq!(
+        request(
+            &library,
+            "/api/library/basic-keys/notation",
+            serde_json::to_vec(&forged).unwrap()
+        )
+        .status(),
+        400
+    );
+    let drum = source
+        .performance
+        .parts
+        .iter()
+        .find(|part| part.channel == 9)
+        .unwrap();
+    body["settings"]["part_id"] = json!(drum.id);
+    let response = request(
+        &library,
+        "/api/library/basic-keys/notation",
+        serde_json::to_vec(&body).unwrap(),
+    );
+    assert_eq!(response.status(), 200);
+    let shown: Value = serde_json::from_slice(response.body()).unwrap();
+    assert_eq!(shown["page"]["status"], "percussion_selectors");
+    assert_eq!(shown["page"]["selectors"].as_array().unwrap().len(), 1);
+    assert!(shown["page"]["score"].is_null() && shown["page"]["musicxml"].is_null());
+    rendition_fixture(
+        "basic-key-rendition-notation-page.json",
+        &json!({
+            "open":{"score_json":loaded.score_json,"clean_package":package},
+            "legacy":legacy,
+            "melodic":{"request":melodic_request,"response":melodic},
+            "percussion":{"request":body,"response":shown}
+        }),
+    );
+    assert_eq!(
+        library
+            .load(key)
+            .unwrap()
+            .clean_package
+            .unwrap()
+            .score_json
+            .as_bytes(),
+        original["score.json"]
+    );
+}
+
+#[test]
+fn rendition_native_pages_follow_synthetic_gates_across_fast_bars_and_terminal_tail() {
+    // Authored mechanical gates: tempo1000us/quarter, PPQ1000, four4ms bars.
+    // Key60 is instantaneous at0; key62 spans1..2ms; key64 attacks at14ms EOF.
+    let track = [
+        0, 255, 81, 3, 0, 3, 232, 0, 255, 88, 4, 4, 2, 24, 8, 0, 0x90, 60, 90, 0, 0x80, 60, 0,
+        0x87, 0x68, 0x90, 62, 90, 0x87, 0x68, 0x80, 62, 0, 0xdd, 0x60, 0x90, 64, 90, 0, 255, 47, 0,
+    ];
+    let mut midi = b"MThd\0\0\0\x06\0\0\0\x01\x03\xe8MTrk".to_vec();
+    midi.extend((track.len() as u32).to_be_bytes());
+    midi.extend(track);
+    let sandbox = Sandbox::new();
+    let library = sandbox.library();
+    let original = files_for_source(&midi, "Authored fast-bar and terminal-gate fixture");
+    let saved = imported(&library, original.clone());
+    let entry = &saved["items"][0]["entry"];
+    let loaded = library.load(entry["key"].as_str().unwrap()).unwrap();
+    let package = loaded.clean_package.as_ref().unwrap();
+    assert_eq!(package.runtime["rendition"]["source_duration_ms"], 14.0);
+    assert_eq!(package.runtime["rendition"]["duration_ms"], 34.0);
+    let mut body = json!({"source":{"key":entry["key"],"content_sha256":entry["content_sha256"],"profile":score_core::basic_keys::PROFILE},
+        "settings":{"part_id":package.runtime["parts"][0]["id"],"first_measure":0,"measure_count":1,"display_meter":null,
+            "rendition_policy_id":score_core::basic_keys::RENDITION_POLICY}});
+    let mut pages = vec![];
+    for first in 0..4 {
+        body["settings"]["first_measure"] = json!(first);
+        let response = request(
+            &library,
+            "/api/library/basic-keys/notation",
+            serde_json::to_vec(&body).unwrap(),
+        );
+        assert_eq!(
+            response.status(),
+            200,
+            "{}",
+            String::from_utf8_lossy(response.body())
+        );
+        let page: Value = serde_json::from_slice(response.body()).unwrap();
+        assert_eq!(page["page"]["total_measures"], 4);
+        assert_eq!(page["page"]["first_measure"], first);
+        assert_eq!(page["page"]["onsets"][0]["note_id"], "midi-t1-e3");
+        pages.push(json!({"request":body,"response":page}));
+    }
+    body["settings"]["position_ms"] = json!(33.0);
+    let response = request(
+        &library,
+        "/api/library/basic-keys/notation",
+        serde_json::to_vec(&body).unwrap(),
+    );
+    assert_eq!(
+        response.status(),
+        200,
+        "{}",
+        String::from_utf8_lossy(response.body())
+    );
+    let tail: Value = serde_json::from_slice(response.body()).unwrap();
+    assert_eq!(tail["page"]["first_measure"], 3);
+    assert_eq!(tail["page"]["source_end_ms"], 14.0);
+    assert_eq!(tail["page"]["follow_end_ms"], 34.0);
+    assert_eq!(tail["page"]["resolved_position_ms"], 33.0);
+    assert!(tail["page"]["interpreted_notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note["note_id"] == "midi-t1-e7" && note["end_ms"] == 34.0));
+    rendition_fixture(
+        "basic-key-rendition-notation-tail.json",
+        &json!({
+            "open":{"score_json":loaded.score_json,"clean_package":package},"pages":pages,
+            "tail":{"request":body,"response":tail}
+        }),
+    );
+    assert_eq!(package.score_json.as_bytes(), original["score.json"]);
 }

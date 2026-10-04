@@ -1,5 +1,6 @@
 //! Bounded source-bound engraving views. These are disposable canonical Score
 //! projections, never mutations of the persisted complete event package.
+use super::rendition::{RenditionCompilation, RenditionEndReason, RenditionRole, RENDITION_POLICY};
 use super::*;
 use crate::midi_events::EventKind;
 use crate::{Diagnostic, ExportedMusicXml, Key, Measure, Meter, Tempo};
@@ -17,6 +18,9 @@ pub struct DisplayMeter {
 #[serde(deny_unknown_fields)]
 pub struct NotationRequest {
     pub part_id: String,
+    /// Absent requests the legacy, source-proved interval view.
+    #[serde(default)]
+    pub rendition_policy_id: Option<String>,
     #[serde(default)]
     pub first_measure: u32,
     #[serde(default = "default_measure_count")]
@@ -51,6 +55,7 @@ pub struct PageAttack {
 pub struct PageContinuation {
     pub note_id: String,
     pub source_start: Beat,
+    /// Source-proved end in v1; chosen receiver tick in policy-bound v2.
     pub source_end: Beat,
     pub enters_page: bool,
     pub leaves_page: bool,
@@ -62,11 +67,50 @@ pub struct NotationMeasure {
     pub source_end: Beat,
     pub start_ms: Option<f64>,
     pub end_ms: Option<f64>,
+    /// Receiver follow boundary; only the terminal bar can include a synthetic tail.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub follow_end_ms: Option<f64>,
+}
+/// Bounded evidence for every selected receiver target displayed on this page.
+/// `receiver_end` is the chosen event tick, before any explicit synthetic gate.
+#[derive(Clone, Debug, Serialize)]
+pub struct InterpretedPageNote {
+    pub note_id: String,
+    pub key: u8,
+    pub role: RenditionRole,
+    pub attack: Coordinate,
+    pub release: Option<Coordinate>,
+    pub source_at: Beat,
+    pub receiver_end: Beat,
+    pub source_end_tick: Option<u64>,
+    pub receiver_end_tick: u64,
+    pub start_ms: f64,
+    pub end_ms: f64,
+    pub start_exact: ExactMicroseconds,
+    pub end_exact: ExactMicroseconds,
+    pub source_release_status: ReleaseStatus,
+    pub end_reason: RenditionEndReason,
+    pub synthetic_gate: bool,
+    pub display_kind: String,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct NotationPage {
     pub profile: String,
     pub view_version: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rendition_policy_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rendition_duration_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_clock_available: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub follow_end_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub interpreted_notes: Vec<InterpretedPageNote>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub onsets: Vec<PageAttack>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub selectors: Vec<PageAttack>,
     pub status: String,
     pub source_sha256: String,
     pub part_id: String,
@@ -159,8 +203,56 @@ struct ClockSegment {
 }
 struct PageClock {
     segments: Vec<ClockSegment>,
+    chosen_ppq: Option<u16>,
 }
 impl PageClock {
+    fn chosen(timeline: &midi_events::RawMidiTimeline) -> Result<Self, String> {
+        let mut segments = vec![ClockSegment {
+            at: Beat::ZERO,
+            numerator: 0,
+            denominator: 1,
+            tempo: 500000,
+        }];
+        let (mut tick, mut elapsed, mut tempo) = (0, 0u64, 500000u32);
+        for event in timeline.events() {
+            elapsed = elapsed
+                .checked_add(
+                    (event.tick() - tick)
+                        .checked_mul(u64::from(tempo))
+                        .ok_or("Notation chosen clock overflow")?,
+                )
+                .ok_or("Notation chosen clock overflow")?;
+            tick = event.tick();
+            if let EventKind::Tempo {
+                microseconds_per_quarter,
+            } = event.kind()
+            {
+                if *microseconds_per_quarter == 0 {
+                    continue;
+                }
+                tempo = *microseconds_per_quarter;
+                let divisor = crate::gcd(elapsed.into(), timeline.ppq().into()) as u64;
+                let segment = ClockSegment {
+                    at: event.beat(),
+                    numerator: elapsed / divisor,
+                    denominator: (u64::from(timeline.ppq()) / divisor) as u16,
+                    tempo,
+                };
+                if segments
+                    .last()
+                    .is_some_and(|last| last.at.equivalent(segment.at))
+                {
+                    *segments.last_mut().expect("initial clock segment") = segment;
+                } else {
+                    segments.push(segment);
+                }
+            }
+        }
+        Ok(Self {
+            segments,
+            chosen_ppq: Some(timeline.ppq()),
+        })
+    }
     fn new(timeline: &midi_events::RawMidiTimeline) -> Option<Self> {
         if !timeline.relative_clock_available() {
             return None;
@@ -187,7 +279,10 @@ impl PageClock {
                 });
             }
         }
-        Some(Self { segments })
+        Some(Self {
+            segments,
+            chosen_ppq: None,
+        })
     }
     fn at(&self, at: Beat) -> Result<f64, String> {
         let index = self
@@ -201,6 +296,14 @@ impl PageClock {
                 * i128::from(segment.tempo)
                 * i128::from(segment.denominator);
         let d = i128::from(segment.denominator) * i128::from(delta.denominator);
+        // Match the rendition's single conversion to f64 at source event ticks,
+        // including large numerators. Exact evidence remains authoritative.
+        if let Some(ppq) = self.chosen_ppq {
+            let common = n * i128::from(ppq);
+            if common % d == 0 {
+                return Ok((common / d) as f64 / f64::from(ppq) / 1000.);
+            }
+        }
         let gcd = crate::gcd(n.unsigned_abs(), d as u128) as i128;
         Ok((n / gcd) as f64 / (d / gcd) as f64 / 1000.)
     }
@@ -302,11 +405,128 @@ fn measures(
     Ok((total, page))
 }
 
+fn fill_rendition_records(
+    source: &CompleteBasicKeys,
+    attacks: &[&KeyNote],
+    compilation: &RenditionCompilation,
+    start: Beat,
+    stop: Beat,
+    page: &mut NotationPage,
+) -> Result<(), String> {
+    let indexes: BTreeMap<_, _> = compilation
+        .rendition
+        .notes
+        .iter()
+        .zip(&compilation.timeline.notes)
+        .map(|(evidence, timed)| (evidence.note_id.as_str(), (evidence, timed)))
+        .collect();
+    let end = source_end(source)?;
+    let mut selected = vec![];
+    for source_note in attacks {
+        let (note, timed) = indexes
+            .get(source_note.note_id.as_str())
+            .ok_or("Missing rendition target for a source attack")?;
+        let in_window = onset_in_window(source_note.start.beat, start, stop, end);
+        if in_window {
+            page.coverage.window_attacks += 1;
+        }
+        let receiver_end = rat(
+            i128::from(note.receiver_end_tick),
+            i128::from(source.performance.ppq),
+        )?;
+        let end_ms = timed.start_ms + timed.duration_ms;
+        let overlaps = if note.synthetic_gate {
+            in_window
+                || (timed.start_ms < page.source_end_ms.expect("chosen page clock")
+                    && end_ms > page.source_start_ms.expect("chosen page clock"))
+        } else {
+            source_note.start.beat.compare(stop).is_lt() && receiver_end.compare(start).is_gt()
+        };
+        if overlaps {
+            selected.push((*source_note, *note, *timed, receiver_end, end_ms));
+        }
+    }
+    if selected.len() > MAX_PAGE_ATTACKS {
+        page.status = "page_limit".into();
+        page.diagnostics.push(warning("notation_page_limit", &format!(
+            "This page contains {} receiver targets, above the2048-record display limit. Request fewer measures or a different part; no partial page or trimmed source was returned.", selected.len())));
+        return Ok(());
+    }
+    for (source_note, note, timed, receiver_end, end_ms) in selected {
+        let percussion = note.role == RenditionRole::PercussionSelector;
+        let display_kind = if percussion {
+            "percussion_selector"
+        } else if note.synthetic_gate {
+            "synthetic_onset"
+        } else {
+            "interval"
+        };
+        if percussion || note.synthetic_gate {
+            let marker = PageAttack {
+                note_id: note.note_id.clone(),
+                key: source_note.key,
+                source_at: source_note.start.beat,
+                release_status: note.source_release_status.clone(),
+            };
+            if percussion {
+                page.selectors.push(marker);
+            } else {
+                page.onsets.push(marker);
+            }
+        }
+        page.interpreted_notes.push(InterpretedPageNote {
+            note_id: note.note_id.clone(),
+            key: source_note.key,
+            role: note.role.clone(),
+            attack: note.attack,
+            release: note.release,
+            source_at: source_note.start.beat,
+            receiver_end,
+            source_end_tick: note.source_end_tick,
+            receiver_end_tick: note.receiver_end_tick,
+            start_ms: timed.start_ms,
+            end_ms,
+            start_exact: note.start.clone(),
+            end_exact: note.end.clone(),
+            source_release_status: note.source_release_status.clone(),
+            end_reason: note.end_reason.clone(),
+            synthetic_gate: note.synthetic_gate,
+            display_kind: display_kind.into(),
+        });
+    }
+    Ok(())
+}
+
+fn nominal_rendition_note(note: &InterpretedPageNote, source: &KeyNote) -> crate::Note {
+    let steps = ["C", "C", "D", "D", "E", "F", "F", "G", "G", "A", "A", "B"];
+    let alters = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
+    crate::Note {
+        id: note.note_id.clone(),
+        at: note.source_at,
+        duration: Beat::ZERO,
+        pitch: Some(crate::Pitch {
+            step: steps[usize::from(note.key % 12)].into(),
+            alter: alters[usize::from(note.key % 12)],
+            octave: (note.key / 12) as i8 - 1,
+        }),
+        voice: "1".into(),
+        staff: 1,
+        velocity: source.velocity,
+        tie_start: false,
+        tie_stop: false,
+    }
+}
+
 pub fn notation_page(
     source: &CompleteBasicKeys,
     request: &NotationRequest,
 ) -> Result<NotationPage, String> {
     validate(source)?;
+    let rendition = match request.rendition_policy_id.as_deref() {
+        None => None,
+        Some(RENDITION_POLICY) => Some(super::rendition::compile_rendition(source)?),
+        Some(_) => return Err("Unknown basic-key notation rendition policy".into()),
+    };
     if request
         .position_ms
         .is_some_and(|ms| !ms.is_finite() || ms < 0.)
@@ -335,7 +555,8 @@ pub fn notation_page(
         .filter(|note| note.part_id == request.part_id)
         .collect();
     let mut result=NotationPage {
-        profile:PROFILE.into(),view_version:1,status:"ready".into(),source_sha256:source.source.sha256.clone(),part_id:request.part_id.clone(),
+        profile:PROFILE.into(),view_version:if rendition.is_some() {2} else {1},status:"ready".into(),source_sha256:source.source.sha256.clone(),part_id:request.part_id.clone(),
+        rendition_policy_id:request.rendition_policy_id.clone(),rendition_duration_ms:rendition.as_ref().map(|r|r.rendition.duration_ms),source_clock_available:rendition.as_ref().map(|r|r.rendition.source_clock_available),follow_end_ms:None,interpreted_notes:vec![],onsets:vec![],selectors:vec![],
         first_measure:request.first_measure,measure_count:0,total_measures:0,next_measure:None,source_start:None,source_end:None,source_start_ms:None,source_end_ms:None,source_duration_ms:None,resolved_position_ms:None,measures:vec![],
         meter_origin:"unavailable".into(),tempo_origin:"unavailable".into(),key_origin:"unspecified".into(),score:None,musicxml:None,
         coverage:NotationCoverage {source_attacks:source.coverage.key_attacks,part_attacks:attacks.len(),
@@ -344,13 +565,16 @@ pub fn notation_page(
             window_attacks:0,rendered_positive_keys:0,unresolved_attacks:0,instantaneous_attacks:0},
         unresolved:vec![],instantaneous:vec![],continuations:vec![],diagnostics:vec![warning("basic_nominal_key_notation","This view engraves determined nominal MIDI key intervals; it does not establish original engraving, acoustic pitch or source sound. All unresolved and zero-time attacks remain in the complete source package.")],
     };
-    if part.channel == 9 {
+    if rendition.is_some() {
+        result.diagnostics = vec![warning("basic_rendition_notation", "This page displays the named basic receiver rendition: FIFO, channel-stop and source-end cleanup gates are chosen intervals, not original written durations. Synthetic 20ms gates appear as labeled onset markers with exact receiver timing; nominal MIDI keys do not establish acoustic pitch or original instruments.")];
+    }
+    if part.channel == 9 && rendition.is_none() {
         result.status = "percussion_mapping_required".into();
         result.diagnostics.push(warning("percussion_key_numbers","Channel-10 key numbers require an explicit percussion notation mapping; they were not converted to pitched piano notation."));
         return Ok(result);
     }
     let end = source_end(source)?;
-    if end.numerator == 0 {
+    if end.numerator == 0 && rendition.is_none() {
         result.status = "empty_page".into();
         result.diagnostics.push(warning("no_positive_source_span","The source has no positive beat span to lay out. Its instantaneous and unresolved attacks remain explicitly counted; no positive duration or grace notation was invented."));
         return Ok(result);
@@ -387,20 +611,65 @@ pub fn notation_page(
         result.meter_origin = "source".into();
     }
     let timeline = conversion::timeline_from_records(&source.performance)?;
-    let clock = PageClock::new(&timeline);
+    let clock = if rendition.is_some() {
+        Some(PageClock::chosen(&timeline)?)
+    } else {
+        PageClock::new(&timeline)
+    };
     result.source_duration_ms = clock.as_ref().map(|clock| clock.at(end)).transpose()?;
     let mut resolved_request = request.clone();
     if let Some(ms) = request.position_ms {
         let clock = clock.as_ref().ok_or(
             "Source clock is unavailable; omit position_ms for paused beat-based notation",
         )?;
-        let resolved = ms.min(clock.at(end)?);
+        let resolved = ms.min(result.rendition_duration_ms.unwrap_or(clock.at(end)?));
         result.resolved_position_ms = Some(resolved);
         let selected = measure_at_ms(&meter_map, end, clock, resolved)?;
         let count = u64::from(request.measure_count);
         resolved_request.first_measure = u32::try_from(selected / count * count)
             .map_err(|_| "Follow position exceeds notation measure index bounds")?;
         result.first_measure = resolved_request.first_measure;
+    }
+    // A zero-tick source can still have explicit 20ms receiver targets. It has
+    // no positive written duration, so return a bounded onset/selector page.
+    if let (0, Some(compilation)) = (end.numerator, rendition.as_ref()) {
+        result.total_measures = 1;
+        if resolved_request.first_measure != 0 {
+            result.status = "empty_page".into();
+            return Ok(result);
+        }
+        result.measure_count = 1;
+        result.source_start = Some(Beat::ZERO);
+        result.source_end = Some(Beat::ZERO);
+        result.source_start_ms = Some(0.);
+        result.source_end_ms = Some(0.);
+        result.follow_end_ms = result.rendition_duration_ms;
+        result.tempo_origin = "chosen_rendition_clock".into();
+        result.measures.push(NotationMeasure {
+            source_measure_index: 0,
+            source_at: Beat::ZERO,
+            source_end: Beat::ZERO,
+            start_ms: Some(0.),
+            end_ms: Some(0.),
+            follow_end_ms: result.follow_end_ms,
+        });
+        fill_rendition_records(
+            source,
+            &attacks,
+            compilation,
+            Beat::ZERO,
+            Beat::ZERO,
+            &mut result,
+        )?;
+        if result.status != "page_limit" {
+            result.status = if part.channel == 9 {
+                "percussion_selectors"
+            } else {
+                "onset_page"
+            }
+            .into();
+        }
+        return Ok(result);
     }
     let (total, source_bars) = measures(&meter_map, end, &resolved_request)?;
     result.total_measures = total;
@@ -419,19 +688,34 @@ pub fn notation_page(
     result.source_end = Some(stop);
     result.source_start_ms = clock.as_ref().map(|clock| clock.at(start)).transpose()?;
     result.source_end_ms = clock.as_ref().map(|clock| clock.at(stop)).transpose()?;
+    result.follow_end_ms = rendition.as_ref().map(|r| {
+        if stop.equivalent(end) {
+            r.rendition.duration_ms
+        } else {
+            result.source_end_ms.expect("chosen clock")
+        }
+    });
     result.measures = source_bars
         .iter()
         .map(|bar| {
-            let end = bar
+            let bar_end = bar
                 .at
                 .checked_add(bar.length)
                 .ok_or("Measure end exceeds rational bounds")?;
+            let end_ms = clock.as_ref().map(|clock| clock.at(bar_end)).transpose()?;
             Ok(NotationMeasure {
                 source_measure_index: bar.number - 1,
                 source_at: bar.at,
-                source_end: end,
+                source_end: bar_end,
                 start_ms: clock.as_ref().map(|clock| clock.at(bar.at)).transpose()?,
-                end_ms: clock.as_ref().map(|clock| clock.at(end)).transpose()?,
+                end_ms,
+                follow_end_ms: rendition.as_ref().map(|r| {
+                    if bar_end.equivalent(end) {
+                        r.rendition.duration_ms
+                    } else {
+                        end_ms.expect("chosen clock")
+                    }
+                }),
             })
         })
         .collect::<Result<_, String>>()?;
@@ -493,7 +777,27 @@ pub fn notation_page(
         }
     }
     view.tempo = vec![];
-    if source.performance.timing.relative_clock_available {
+    if rendition.is_some() {
+        let clock = clock.as_ref().expect("chosen rendition clock");
+        let active = clock
+            .segments
+            .iter()
+            .rfind(|segment| segment.at.compare(start).is_le())
+            .expect("initial chosen tempo");
+        view.tempo.push(Tempo {
+            at: Beat::ZERO,
+            bpm: 60_000_000. / f64::from(active.tempo),
+        });
+        for segment in &clock.segments {
+            if segment.at.compare(start).is_gt() && segment.at.compare(stop).is_lt() {
+                view.tempo.push(Tempo {
+                    at: sub(segment.at, start)?,
+                    bpm: 60_000_000. / f64::from(segment.tempo),
+                });
+            }
+        }
+        result.tempo_origin = "chosen_rendition_clock".into();
+    } else if source.performance.timing.relative_clock_available {
         let active = source
             .notation
             .tempo
@@ -574,96 +878,144 @@ pub fn notation_page(
             result.diagnostics.push(warning("source_key_unspecified","No key signature is specified for this page; nominal MIDI-key spellings are retained without inventing a source key."));
         }
     }
-    let mut page_records = 0;
-    for note in &attacks {
-        let in_window = onset_in_window(note.start.beat, start, stop, end);
-        if in_window {
-            result.coverage.window_attacks += 1;
-        }
-        match &note.end {
-            None if in_window => {
-                page_records += 1;
-                result.coverage.unresolved_attacks += 1;
-            }
-            Some(end) if end.tick == note.start.tick && in_window => {
-                page_records += 1;
-                result.coverage.instantaneous_attacks += 1;
-            }
-            Some(end)
-                if end.tick > note.start.tick
-                    && note.start.beat.compare(stop).is_lt()
-                    && end.beat.compare(start).is_gt() =>
-            {
-                page_records += 1;
-            }
-            _ => {}
-        }
-    }
-    if page_records > MAX_PAGE_ATTACKS {
-        result.status = "page_limit".into();
-        result.diagnostics.push(warning("notation_page_limit",&format!("This page contains {page_records} key records, above the2048-record display limit. Request fewer measures or a different part; no partial page or trimmed source was returned.")));
-        return Ok(result);
-    }
     let mut incoming = BTreeSet::new();
     let mut outgoing = BTreeSet::new();
-    let canonical_notes: BTreeMap<_, _> = original
-        .notes
-        .iter()
-        .map(|note| (note.id.as_str(), note))
-        .collect();
-    for note in attacks {
-        let in_window = onset_in_window(note.start.beat, start, stop, end);
-        match &note.end {
-            None if in_window => {
-                result.unresolved.push(PageAttack {
+    if let Some(compilation) = rendition.as_ref() {
+        fill_rendition_records(source, &attacks, compilation, start, stop, &mut result)?;
+        if result.status == "page_limit" {
+            return Ok(result);
+        }
+        if part.channel == 9 {
+            result.status = "percussion_selectors".into();
+            result.diagnostics.push(warning("rendition_percussion_selectors", "Channel-10 targets are displayed as nonpitched MIDI key selectors with exact chosen receiver gates; no staff pitch or drum-kit mapping is inferred."));
+            return Ok(result);
+        }
+        let source_notes: BTreeMap<_, _> = attacks
+            .iter()
+            .map(|note| (note.note_id.as_str(), *note))
+            .collect();
+        for note in &result.interpreted_notes {
+            if note.synthetic_gate {
+                continue;
+            }
+            let enter = note.source_at.compare(start).is_lt();
+            let leave = note.receiver_end.compare(stop).is_gt();
+            if enter {
+                incoming.insert(note.note_id.clone());
+            }
+            if leave {
+                outgoing.insert(note.note_id.clone());
+            }
+            if enter || leave {
+                result.continuations.push(PageContinuation {
                     note_id: note.note_id.clone(),
-                    key: note.key,
-                    source_at: note.start.beat,
-                    release_status: note.release.status.clone(),
+                    source_start: note.source_at,
+                    source_end: note.receiver_end,
+                    enters_page: enter,
+                    leaves_page: leave,
                 });
             }
-            Some(end) if end.tick == note.start.tick && in_window => {
-                result.instantaneous.push(PageAttack {
-                    note_id: note.note_id.clone(),
-                    key: note.key,
-                    source_at: note.start.beat,
-                    release_status: note.release.status.clone(),
-                });
+            let from = max(note.source_at, start);
+            let to = min(note.receiver_end, stop);
+            view.parts[0].notes.push(crate::Note {
+                at: sub(from, start)?,
+                duration: sub(to, from)?,
+                ..nominal_rendition_note(note, source_notes[note.note_id.as_str()])
+            });
+        }
+        if !result.onsets.is_empty() {
+            result.diagnostics.push(warning("rendition_synthetic_onsets", "Labeled onset markers retain every 20ms synthetic receiver gate and its source ID. They have no invented original written duration; exact start/end receiver times remain authoritative."));
+        }
+    } else {
+        let mut page_records = 0;
+        for note in &attacks {
+            let in_window = onset_in_window(note.start.beat, start, stop, end);
+            if in_window {
+                result.coverage.window_attacks += 1;
             }
-            Some(end)
-                if end.tick > note.start.tick
-                    && note.start.beat.compare(stop).is_lt()
-                    && end.beat.compare(start).is_gt() =>
-            {
-                let enter = note.start.beat.compare(start).is_lt();
-                let leave = end.beat.compare(stop).is_gt();
-                if enter {
-                    incoming.insert(note.note_id.clone());
+            match &note.end {
+                None if in_window => {
+                    page_records += 1;
+                    result.coverage.unresolved_attacks += 1;
                 }
-                if leave {
-                    outgoing.insert(note.note_id.clone());
+                Some(end) if end.tick == note.start.tick && in_window => {
+                    page_records += 1;
+                    result.coverage.instantaneous_attacks += 1;
                 }
-                if enter || leave {
-                    result.continuations.push(PageContinuation {
+                Some(end)
+                    if end.tick > note.start.tick
+                        && note.start.beat.compare(stop).is_lt()
+                        && end.beat.compare(start).is_gt() =>
+                {
+                    page_records += 1;
+                }
+                _ => {}
+            }
+        }
+        if page_records > MAX_PAGE_ATTACKS {
+            result.status = "page_limit".into();
+            result.diagnostics.push(warning("notation_page_limit",&format!("This page contains {page_records} key records, above the2048-record display limit. Request fewer measures or a different part; no partial page or trimmed source was returned.")));
+            return Ok(result);
+        }
+        let canonical_notes: BTreeMap<_, _> = original
+            .notes
+            .iter()
+            .map(|note| (note.id.as_str(), note))
+            .collect();
+        for note in attacks {
+            let in_window = onset_in_window(note.start.beat, start, stop, end);
+            match &note.end {
+                None if in_window => {
+                    result.unresolved.push(PageAttack {
                         note_id: note.note_id.clone(),
-                        source_start: note.start.beat,
-                        source_end: end.beat,
-                        enters_page: enter,
-                        leaves_page: leave,
+                        key: note.key,
+                        source_at: note.start.beat,
+                        release_status: note.release.status.clone(),
                     });
                 }
-                let canonical = canonical_notes
-                    .get(note.note_id.as_str())
-                    .ok_or("Missing determined canonical key")?;
-                let from = max(note.start.beat, start);
-                let to = min(end.beat, stop);
-                view.parts[0].notes.push(crate::Note {
-                    at: sub(from, start)?,
-                    duration: sub(to, from)?,
-                    ..(*canonical).clone()
-                });
+                Some(end) if end.tick == note.start.tick && in_window => {
+                    result.instantaneous.push(PageAttack {
+                        note_id: note.note_id.clone(),
+                        key: note.key,
+                        source_at: note.start.beat,
+                        release_status: note.release.status.clone(),
+                    });
+                }
+                Some(end)
+                    if end.tick > note.start.tick
+                        && note.start.beat.compare(stop).is_lt()
+                        && end.beat.compare(start).is_gt() =>
+                {
+                    let enter = note.start.beat.compare(start).is_lt();
+                    let leave = end.beat.compare(stop).is_gt();
+                    if enter {
+                        incoming.insert(note.note_id.clone());
+                    }
+                    if leave {
+                        outgoing.insert(note.note_id.clone());
+                    }
+                    if enter || leave {
+                        result.continuations.push(PageContinuation {
+                            note_id: note.note_id.clone(),
+                            source_start: note.start.beat,
+                            source_end: end.beat,
+                            enters_page: enter,
+                            leaves_page: leave,
+                        });
+                    }
+                    let canonical = canonical_notes
+                        .get(note.note_id.as_str())
+                        .ok_or("Missing determined canonical key")?;
+                    let from = max(note.start.beat, start);
+                    let to = min(end.beat, stop);
+                    view.parts[0].notes.push(crate::Note {
+                        at: sub(from, start)?,
+                        duration: sub(to, from)?,
+                        ..(*canonical).clone()
+                    });
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
     result.coverage.rendered_positive_keys = view.parts[0].notes.len();
