@@ -114,6 +114,7 @@ pub fn convert_midi(bytes: &[u8], title: &str) -> Result<CompleteBasicKeys, Conv
 #[derive(Default)]
 struct Component {
     held: usize,
+    orphan_releases: usize,
     attacks: Vec<(usize, usize)>,
     releases: Vec<(Coordinate, Position)>,
 }
@@ -301,6 +302,7 @@ pub(super) fn derive(
                         let component = streams.entry((route_index, *channel, *key)).or_default();
                         if component.held == 0 {
                             unmatched_releases += 1;
+                            component.orphan_releases += 1;
                         } else {
                             component.releases.push((origin, position(event)));
                             component.held -= 1;
@@ -360,14 +362,83 @@ pub(super) fn derive(
             }
         }
     }
+    // If each declared route/key stream is balanced and has no orphan release,
+    // every route partition's ownership assignment is also a valid assignment
+    // in the fully merged channel/key stream. Thus a singleton merged end tick
+    // proves route-invariant time without choosing a route or release identity.
+    // Without these sufficient conditions the subset argument is invalid.
+    let mut unbalanced_keys = BTreeSet::new();
+    for (&(_, channel, key), component) in &streams {
+        if component.held > 0 || component.orphan_releases > 0 {
+            unbalanced_keys.insert((channel, key));
+        }
+    }
+    let mut invariant_ends = vec![None; notes.len()];
+    if !uncertain.is_empty() {
+        let mut merged: BTreeMap<(u8, u8), Component> = BTreeMap::new();
+        let mut attack_index = 0;
+        for event in timeline.events() {
+            if let EventKind::Channel { channel, message } = event.kind() {
+                match message {
+                    ChannelMessage::NoteOn { key, velocity } if *velocity > 0 => {
+                        if !unbalanced_keys.contains(&(*channel, *key)) {
+                            let component = merged.entry((*channel, *key)).or_default();
+                            component
+                                .attacks
+                                .push((attack_index, component.releases.len()));
+                            component.held += 1;
+                        }
+                        attack_index += 1;
+                    }
+                    ChannelMessage::NoteOn { key, .. } | ChannelMessage::NoteOff { key, .. }
+                        if !unbalanced_keys.contains(&(*channel, *key)) =>
+                    {
+                        let component = merged.entry((*channel, *key)).or_default();
+                        // Balanced per-route streams imply no orphan here.
+                        if component.held == 0 {
+                            continue;
+                        }
+                        component
+                            .releases
+                            .push((coordinate(event), position(event)));
+                        component.held -= 1;
+                        if component.held == 0 {
+                            let last_tick =
+                                component.releases.last().expect("closing release").1.tick;
+                            for &(index, first) in &component.attacks {
+                                if component.releases[first].1.tick == last_tick {
+                                    invariant_ends[index] = Some(last_tick);
+                                }
+                            }
+                            component.attacks.clear();
+                            component.releases.clear();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
     let part_routes: BTreeMap<_, _> = parts
         .iter()
         .map(|part| (part.id.as_str(), (part.route, part.channel)))
         .collect();
     let mut unresolved_route_ends = 0;
-    for note in &mut notes {
+    for (index, note) in notes.iter_mut().enumerate() {
         let (route, channel) = part_routes[note.part_id.as_str()];
         if uncertain.contains(&(route, channel, note.key)) {
+            if invariant_ends[index].is_some()
+                && note.end.as_ref().map(|end| end.tick) == invariant_ends[index]
+            {
+                note.release = ReleaseEvidence {
+                    status: ReleaseStatus::RouteInvariantReleaseTime,
+                    first: None,
+                    last: None,
+                    candidate_count: 0,
+                    may_be_unreleased: false,
+                };
+                continue;
+            }
             unresolved_route_ends += 1;
             note.end = None;
             note.release = ReleaseEvidence {
@@ -375,7 +446,7 @@ pub(super) fn derive(
                 first: None,
                 last: None,
                 candidate_count: 0,
-                may_be_unreleased: true,
+                may_be_unreleased: unbalanced_keys.contains(&(channel, note.key)),
             };
         }
     }

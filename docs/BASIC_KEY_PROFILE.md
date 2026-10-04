@@ -11,6 +11,13 @@ The core API is `basic_keys::convert_midi(bytes, title)`, `encode_json`,
 all derived attacks. Consumers must use the core decoder rather than treating
 deserialized projections as trusted or reimplementing note ownership.
 
+Authoring can explicitly request `intent: "basic_keys"` through the existing
+conversion request, producing `basic_key_candidate` plus `basic_key_coverage`.
+Omitting intent, or choosing `source_rendition`, preserves the established
+strict-notation/reference conversion path. `prepare_basic_keys` is the core
+entry point for the explicit choice. It uses the same VSQ-first recognition and
+retains the existing VSQ profile rather than converting its carrier MIDI again.
+
 ## What the package retains
 
 All source tracks and all MIDI channel, metadata, tempo, meter, SysEx and escape
@@ -81,11 +88,24 @@ exhaustive ownership enumeration over all attack/release words through length 10
 An independent proof check covered all 32,767 words through length 14.
 
 An unspecified destination can alias an explicitly declared one. A channel/key
-active on different potentially aliasing route declarations is conservatively
-marked `unresolved_route_ownership`, even when its per-declaration pairing looked
-unique. Explicit distinct declarations remain distinct logical routes. Resolving
-physical device aliases or complex receiver routing requires a separate mapping;
-the basic conversion never fabricates that mapping.
+active on different potentially aliasing route declarations needs an additional
+proof even when its per-declaration pairing looked unique. If every involved
+declared route/key stream closes and has no orphan releases, every possible
+route-partition assignment is also valid in the fully merged channel/key stream:
+each release still consumes a preceding attack, no attack is reused, and all
+attacks close. The fully merged assignments can be a strict superset, which is
+safe for this proof. When this superset has one end tick, that endpoint is marked
+`route_invariant_release_time`; release identity remains unspecified. The
+first/last/count candidate fields are absent/zero for this proof, because an
+overapproximating merged set must not be mislabeled as exact release identities.
+
+Otherwise these attacks remain `unresolved_route_ownership`. Orphan releases or
+open declared-route streams disable the sufficient-condition proof entirely;
+merging such streams can change which releases are consumed and would invalidate
+the subset argument. Original tests exhaustively enumerate both partitions and
+all ownership choices for balanced two-route words through length six, plus
+explicit orphan/open counterexamples. Explicit distinct declarations remain
+distinct logical routes. No physical-device alias or sound mapping is invented.
 
 Intervals describe explicit key messages. Sustain, AllNotesOff, AllSoundOff,
 retrigger effects, envelopes and reverb remain rendition semantics. An inferred

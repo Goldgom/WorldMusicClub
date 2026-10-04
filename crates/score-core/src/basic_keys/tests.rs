@@ -218,6 +218,10 @@ fn derived_claims_and_compact_event_corruption_are_rejected() {
         serde_json::from_slice(&encode_json(&score).unwrap()).unwrap();
     wire["coverage"]["key_attacks"] = serde_json::json!(0);
     assert!(decode_json(&serde_json::to_vec(&wire).unwrap()).is_err());
+    let mut wire: serde_json::Value =
+        serde_json::from_slice(&encode_json(&score).unwrap()).unwrap();
+    wire["performance"]["notes"] = serde_json::json!([]);
+    assert!(decode_json(&serde_json::to_vec(&wire).unwrap()).is_err());
 }
 
 fn exhaustive(attack_word: &[bool]) -> Vec<BTreeSet<Option<usize>>> {
@@ -311,4 +315,126 @@ fn large_original_projection_fits_receiver_without_dropping_notes() {
     assert_eq!(score.coverage.notation_notes, 41_900);
     assert!(encoded.len() < MAX_JSON_BYTES);
     eprintln!("41900 original attacks encode to {} bytes", encoded.len());
+}
+
+#[test]
+fn route_invariant_end_requires_balanced_orphan_free_streams() {
+    // Sequential uses of an unspecified and explicit default destination can
+    // have a single end under both split and merged route assignments.
+    let score = convert(&[
+        track(&[(0, &[0x90, 60, 90]), (2, &[0x80, 60, 0])]),
+        track(&[
+            (0, &[255, 33, 1, 0]),
+            (3, &[0x90, 60, 90]),
+            (2, &[0x80, 60, 0]),
+        ]),
+    ]);
+    assert_eq!(score.coverage.determined_ends, 2);
+    assert_eq!(score.coverage.unresolved_route_ends, 0);
+    assert!(score
+        .performance
+        .notes
+        .iter()
+        .all(|note| note.release.status == ReleaseStatus::RouteInvariantReleaseTime));
+    // An orphan on one declaration may consume another declaration's attack
+    // when routes alias. The split stream is not a subset of the merged rule.
+    let orphan = convert(&[
+        track(&[(0, &[0x90, 60, 90]), (3, &[0x80, 60, 0])]),
+        track(&[(0, &[255, 33, 1, 0]), (1, &[0x80, 60, 0])]),
+    ]);
+    assert_eq!(orphan.coverage.unresolved_route_ends, 1);
+    assert!(orphan.performance.notes[0].end.is_none());
+    // An open declaration also breaks the balanced sufficient condition.
+    let open = convert(&[
+        track(&[(0, &[0x90, 60, 90]), (3, &[0x80, 60, 0])]),
+        track(&[(0, &[255, 33, 1, 0]), (1, &[0x90, 60, 90])]),
+    ]);
+    assert_eq!(open.coverage.unresolved_route_ends, 2);
+}
+
+#[test]
+fn route_invariance_matches_exhaustive_partitions_and_owners() {
+    let mut cases = 0;
+    // Four symbols A0/R0/A1/R1. The two legal route partitions (separate or
+    // aliased default/port0) and all ownership choices are independently
+    // enumerated for every balanced, orphan-free word through length six.
+    for len in 2..=6 {
+        for mask in 0..4usize.pow(len) {
+            let symbols: Vec<_> = (0..len).map(|i| (mask >> (2 * i)) & 3).collect();
+            let mut held = [0usize; 2];
+            let mut valid = true;
+            let mut seen = [false; 2];
+            for &symbol in &symbols {
+                let route = symbol / 2;
+                seen[route] = true;
+                if symbol % 2 == 0 {
+                    held[route] += 1;
+                } else if held[route] == 0 {
+                    valid = false;
+                    break;
+                } else {
+                    held[route] -= 1;
+                }
+            }
+            if !valid || held != [0, 0] || seen != [true, true] {
+                continue;
+            }
+            cases += 1;
+            let word: Vec<_> = symbols.iter().map(|symbol| symbol % 2 == 0).collect();
+            let merged = exhaustive(&word);
+            let mut split = vec![BTreeSet::new(); merged.len()];
+            let attack_ordinals: Vec<_> = word
+                .iter()
+                .enumerate()
+                .filter_map(|(i, a)| a.then_some(i))
+                .collect();
+            for route in 0..2 {
+                let ordinals: Vec<_> = symbols
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, s)| (*s / 2 == route).then_some(i))
+                    .collect();
+                let local: Vec<_> = ordinals.iter().map(|&i| word[i]).collect();
+                let assignments = exhaustive(&local);
+                let local_attacks: Vec<_> = ordinals.iter().copied().filter(|&i| word[i]).collect();
+                for (attack, owners) in local_attacks.into_iter().zip(assignments) {
+                    let index = attack_ordinals.iter().position(|i| *i == attack).unwrap();
+                    split[index] = owners
+                        .into_iter()
+                        .map(|owner| owner.map(|i| ordinals[i]))
+                        .collect();
+                }
+            }
+            let mut tracks = vec![vec![], vec![0, 255, 33, 1, 0]];
+            let mut last = [0; 2];
+            for (tick, &symbol) in symbols.iter().enumerate() {
+                let route = symbol / 2;
+                tracks[route].extend([
+                    (tick - last[route]) as u8,
+                    if symbol % 2 == 0 { 0x90 } else { 0x80 },
+                    60,
+                    if symbol % 2 == 0 { 90 } else { 0 },
+                ]);
+                last[route] = tick;
+            }
+            for track in &mut tracks {
+                track.extend([0, 255, 47, 0]);
+            }
+            let score = convert(&tracks);
+            for (index, note) in score.performance.notes.iter().enumerate() {
+                let possible: BTreeSet<_> = split[index].union(&merged[index]).copied().collect();
+                let expected = if possible.len() == 1 {
+                    possible.iter().next().unwrap().map(|i| i as u64)
+                } else {
+                    None
+                };
+                assert_eq!(
+                    note.end.as_ref().map(|end| end.tick),
+                    expected,
+                    "symbols {symbols:?} attack {index}"
+                );
+            }
+        }
+    }
+    assert!(cases > 50);
 }

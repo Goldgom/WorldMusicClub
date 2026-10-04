@@ -44,7 +44,7 @@ pub struct Performance {
     /// Derived in memory by the core decoder. The compact package omits these
     /// duplicated facts; source event records and the canonical projection are
     /// validated together before reconstructing every attack here.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_deserializing, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<KeyNote>,
     pub timing: Timing,
 }
@@ -145,6 +145,7 @@ pub enum ReleaseStatus {
     MissingRelease,
     PossiblyUnreleased,
     UnresolvedRouteOwnership,
+    RouteInvariantReleaseTime,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -224,6 +225,7 @@ pub fn validate(score: &CompleteBasicKeys) -> Result<(), String> {
     }
     if score.source.format != "midi"
         || score.source.bytes == 0
+        || score.source.bytes > midi_events::MAX_SOURCE_BYTES
         || score.source.sha256.len() != 64
         || !score
             .source
