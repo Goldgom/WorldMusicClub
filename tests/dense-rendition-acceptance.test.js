@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
+import vm from 'node:vm';
 import {DENSE_STREAM,originalDenseRenditionMidi,expectedDenseAttacks,denseDigest} from '../scripts/prepare-dense-rendition-fixture.mjs';
-import {observeDenseRenditionAudio,installDenseRenditionObserver} from '../scripts/dense-rendition-observer.mjs';
+import {observeDenseRenditionAudio,denseRenditionBootstrap} from '../scripts/dense-rendition-observer.mjs';
 import {denseTimingMetrics,validateDenseRenditionEvidence} from '../scripts/verify-dense-rendition-evidence.mjs';
 const sourceSha='1732e837773757a00212a03374e9111a4e0f4662d920f45461ffb64f46247ba7';
 test('original dense MIDI has an independent complete one-based source inventory and bounded allocation',()=>{
@@ -22,13 +23,21 @@ test('dense audio observation forwards every real method and does not inherit th
  for(let i=0;i<6144;i++){const node=context.createOscillator(i);assert.equal(node.start(1),'started');assert.equal(node.stop(2),'stopped');assert.equal(node.disconnect(),'disconnected');}
  assert.equal(probe.snapshot().created,6144);assert.equal(probe.snapshot().sourceStarts,6144);assert.equal(probe.snapshot().oscillatorStarts,6144);assert.equal(probe.snapshot().overflow,false);assert.equal(probe.snapshot().activeSources,0);assert.equal(calls[0][1],context);assert.deepEqual(calls[0][2],[0]);assert.equal(probe.restore(),true);assert.equal(Audio.prototype.createOscillator,original);
 });
+test('dense init namespace survives the real init-script closure boundary',()=>{
+ const writes=[],realm=vm.createContext({localStorage:{setItem:(...args)=>writes.push(args)}});
+ vm.runInContext(`(()=>{${denseRenditionBootstrap()}})();`,realm);
+ assert.equal(vm.runInContext('typeof installDenseRenditionObserver',realm),'undefined','Local init names are intentionally not page globals');
+ assert.equal(typeof realm.__wmhDenseObserverTools.install,'function');assert.equal(typeof realm.__wmhDenseObserverTools.observeAudio,'function');assert.equal(Object.isFrozen(realm.__wmhDenseObserverTools),true);
+ assert.deepEqual(writes,[['worldmusichub.locale.v1','zh-CN']]);delete realm.__wmhDenseObserverTools;assert.equal(realm.__wmhDenseObserverTools,undefined);
+});
 test('dense trace preserves pump, renderer promises, allocation errors and original cleanup',async t=>{
  const oldDocument=globalThis.document,nodes={progress:{value:10},'clean-song-stage':{dataset:{rendererState:'playing'}},workspace:{dataset:{scoreState:'active'},addEventListener(){},removeEventListener(){}},'engraving-range':{textContent:'Measures 9–16 / 24'},'hud-captured':{textContent:'0'},notice:{textContent:''}};globalThis.document={getElementById:id=>nodes[id]};t.after(()=>{globalThis.document=oldDocument;});
  const calls=[],error=Object.assign(new Error('real late sentinel'),{code:'clean_late_scheduler',detail:{eventId:'exact-source-event',lateSeconds:.25}}),context={currentTime:1,state:'running',addEventListener(){},removeEventListener(){}};
  class Player{constructor(){this.context=context;this.running=true;this.noteCursor=0;this.onError=e=>{calls.push(['error',e]);};}pump(...args){calls.push(['pump',this,args]);this.noteCursor++;this.onError(error);return 'pumped';}}
  class Receiver{constructor(){this.context=context;}schedule(...args){calls.push(['schedule',this,args]);throw error;}}
  const promise=Promise.resolve('loaded');class Renderer{load(...args){calls.push(['load',this,args]);return promise;}updateGraphic(){return 'graphic';}render(...args){calls.push(['render',this,args]);return 'rendered';}}
- const originals=[Player.prototype.pump,Receiver.prototype.schedule,Renderer.prototype.load,Renderer.prototype.render],trace=await installDenseRenditionObserver({library:{BasicKeyPlayer:Player,ReferenceAudioReceiver:Receiver,Renderer},audioProbe:{snapshot:()=>({}),restore:()=>true}}),player=new Player(),handler=player.onError,receiver=new Receiver(),renderer=new Renderer();
+ const realm=vm.createContext({document:globalThis.document,performance,structuredClone,localStorage:{setItem(){}}});vm.runInContext(`(()=>{${denseRenditionBootstrap()}})();`,realm);
+ const originals=[Player.prototype.pump,Receiver.prototype.schedule,Renderer.prototype.load,Renderer.prototype.render],trace=await realm.__wmhDenseObserverTools.install({library:{BasicKeyPlayer:Player,ReferenceAudioReceiver:Receiver,Renderer},audioProbe:{snapshot:()=>({}),restore:()=>true}}),player=new Player(),handler=player.onError,receiver=new Receiver(),renderer=new Renderer();
  assert.equal(player.pump(4,true),'pumped');assert.equal(renderer.load('exact-doc'),promise);assert.equal(renderer.render('real-options'),'rendered');assert.throws(()=>receiver.schedule({eventId:'exact-source-event',key:60,velocity:90},.5,.6,{}),e=>e===error);await promise;const value=trace.stop();assert.equal(value.errors[0].code,error.code);assert.equal(value.errors[0].eventId,'exact-source-event');assert.equal(value.errors[0].lateSeconds,.25);assert.equal(value.schedules[0].error.code,error.code);assert.equal(value.cleanup.restored,true);assert.equal(player.onError,handler);assert.deepEqual([Player.prototype.pump,Receiver.prototype.schedule,Renderer.prototype.load,Renderer.prototype.render],originals);assert.equal(calls.find(c=>c[0]==='pump')[1],player);assert.deepEqual(calls.find(c=>c[0]==='pump')[2],[4,true]);assert.equal(calls.find(c=>c[0]==='error')[1],error);
 });
 function syntheticProof(){

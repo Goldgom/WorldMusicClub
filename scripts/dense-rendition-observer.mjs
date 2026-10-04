@@ -1,5 +1,10 @@
 // Acceptance-only observers. Every production call keeps its receiver, arguments,
 // return value and errors. No clock, note, timer, lookahead or input is modified.
+export function denseRenditionBootstrap(){
+ // Playwright wraps init scripts in an IIFE. Explicitly export only this
+ // acceptance namespace; page.evaluate cannot see local function declarations.
+ return `globalThis.__wmhDenseObserverTools=Object.freeze({observeAudio:${observeDenseRenditionAudio.toString()},install:${installDenseRenditionObserver.toString()}});\nlocalStorage.setItem('worldmusichub.locale.v1','zh-CN');`;
+}
 export function observeDenseRenditionAudio(root=globalThis){
  const prototypes=new Set([root.AudioContext?.prototype,root.webkitAudioContext?.prototype].filter(Boolean));if(!prototypes.size)throw Error('Real Web Audio is required');const live=new Set(),restores=[];let sourceStarts=0,oscillatorStarts=0,created=0,overflow=false;
  for(const prototype of prototypes)for(const method of ['createOscillator','createBufferSource']){const original=prototype[method];if(typeof original!=='function')throw Error(`Missing real ${method}`);

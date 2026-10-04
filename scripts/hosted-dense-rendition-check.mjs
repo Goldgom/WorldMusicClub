@@ -8,6 +8,7 @@ import {startVsqNativeDriver} from '../tests/vsq-native-driver-fixtures.js';
 import {prepareDenseRenditionFixture,denseDigest,denseDiskGuard,DENSE_STREAM} from './prepare-dense-rendition-fixture.mjs';
 import {denseTimingMetrics,validateDenseRenditionEvidence} from './verify-dense-rendition-evidence.mjs';
 import {validateCleanScreenshot} from './verify-native-clean-song-evidence.mjs';
+import {denseRenditionBootstrap} from './dense-rendition-observer.mjs';
 if(process.env.GITHUB_ACTIONS!=='true'||process.env.WMH_HOSTED_BROWSER!=='1')throw Error('Dense rendition checks require the authorized hosted Actions runner.');
 const root=fileURLToPath(new URL('../',import.meta.url)),sourceSha=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();assert.equal(process.env.WMH_SOURCE_SHA,sourceSha);assert.equal(execFileSync('git',['status','--porcelain','--untracked-files=normal'],{cwd:root,encoding:'utf8'}).trim(),'','Dense hosted source must be clean');assert.ok(process.env.WMH_NATIVE_IMPORT_DRIVER,'An exact-source native driver is required');
 const output=resolve(process.env.WMH_ARTIFACT_DIR||join(root,'test-results/dense-rendition')),binary=resolve(process.env.WMH_NATIVE_IMPORT_DRIVER),origin='https://wmh.localhost';await denseDiskGuard(root);await mkdir(output,{recursive:true});await mkdir(join(output,'fixture'),{recursive:true});await mkdir(join(output,'ui-pages'),{recursive:true});
@@ -28,8 +29,7 @@ try{
  driver=startVsqNativeDriver({binary,directory:join(output,'Scores'),cwd:root,requestTimeoutMs:30000});report.process_id=driver.pid;
  const prepared=await prepareDenseRenditionFixture(driver,join(output,'fixture'),{retainPages:true});report.fixture=prepared.manifest;
  const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});context=await browser.newContext({viewport:report.viewport,locale:'zh-CN'});
- const observer=(await readFile(join(root,'scripts/dense-rendition-observer.mjs'),'utf8')).replace(/^export /gm,'');
- await context.addInitScript(`localStorage.setItem('worldmusichub.locale.v1','zh-CN');\n${observer}`);
+ await context.addInitScript(denseRenditionBootstrap());
  await context.route(`${origin}/**`,async route=>{
   const request=route.request(),url=new URL(request.url()),path=url.pathname;
   if(path.startsWith('/api/')){
@@ -46,7 +46,10 @@ try{
  await action('Enter library',()=>page.locator('#home-single-player').click());await action('Choose original dense source',()=>page.locator(`#catalog [data-library-key="native:${prepared.manifest.key}"]`).click());await page.waitForFunction(()=>!document.getElementById('open-score').disabled);
  await action('Open paused native score',()=>page.locator('#open-score').click());await controls(true);if(await page.locator('#engraved-button').getAttribute('aria-pressed')!=='true')await action('Choose actual staff',()=>page.locator('#engraved-button').click());await controls(false);
  await page.waitForFunction(()=>document.getElementById('workspace').dataset.notationRenderStatus==='ready'&&document.querySelector('#engraved-staff .vf-notehead'));
- await page.evaluate(async()=>{globalThis.__denseRendition=await installDenseRenditionObserver({audioProbe:observeDenseRenditionAudio()});});traceInstalled=true;
+ await page.evaluate(async()=>{
+  const tools=globalThis.__wmhDenseObserverTools;if(typeof tools?.install!=='function'||typeof tools?.observeAudio!=='function')throw Error('Dense observer bootstrap namespace is unavailable');
+  const audio=tools.observeAudio();try{globalThis.__denseRendition=await tools.install({audioProbe:audio});}catch(error){audio.restore();throw error;}finally{delete globalThis.__wmhDenseObserverTools;}
+ });traceInstalled=true;
  await action('Open settings',()=>page.locator('#settings-button').click());await action('Choose Listen',()=>page.locator('#session-mode').selectOption('listen'));await action('Close settings',()=>page.locator('[data-close-panel="settings"]').click());
  await controls(true);await action('Choose All four parts',()=>page.locator('#notation-scope').selectOption('all'));if(await page.locator('#engraving-page-size').inputValue()!=='8')await action('Choose native eight-bar page',()=>page.locator('#engraving-page-size').selectOption('8'));if(!await page.locator('#engraving-follow').isChecked())await action('Enable native page following',()=>page.locator('#engraving-follow').check());await controls(false);
  await page.waitForFunction(()=>document.getElementById('workspace').dataset.notationRenderStatus==='ready'&&JSON.parse(document.getElementById('workspace').dataset.renderedNotationParts||'[]').length===4&&document.querySelectorAll('#engraved-staff .vf-notehead').length>=2048);

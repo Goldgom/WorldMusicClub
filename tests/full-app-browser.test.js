@@ -1280,6 +1280,7 @@ test('real written-note cursor separates tied continuations, short unisons, rest
   await ui('#session-mode').selectOption('practice');await ui('#play-button:not([disabled])').waitFor();
   await ui('#count-in').uncheck();await ui('#reset-button').click();await closeShellPanels();
   const waitIds=expected=>page.waitForFunction(ids=>JSON.stringify(JSON.parse(document.querySelector('#written-cursor-status').dataset.sourceNoteIds||'[]').sort())===JSON.stringify(ids),[...expected].sort());
+  const waitPainted=expected=>page.waitForFunction(ids=>JSON.stringify([...document.querySelectorAll('.score-note.active')].map(node=>node.dataset.noteId).sort())===JSON.stringify(ids),[...expected].sort());
   const snapshot=()=>page.evaluate(()=>({
     ids:JSON.parse(document.querySelector('#written-cursor-status').dataset.sourceNoteIds),
     activeWritten:[...document.querySelectorAll('.score-note.active')].map(n=>n.dataset.noteId).sort(),
@@ -1288,6 +1289,7 @@ test('real written-note cursor separates tied continuations, short unisons, rest
   }));
   await ui('#notation-scope').selectOption('part');await ui('#notation-scope-part').selectOption('piano');await closeShellPanels();
   await waitIds(['short-D','short-unison','tie-start']);
+  await waitPainted(['short-D','tie-start']);
   const initial=await snapshot();assert.deepEqual(initial.activeWritten,['short-D','tie-start']);assert.deepEqual(initial.expectedKeys,[60,62]);assert.equal(initial.heldKeys,0);
   await ui('#notation-part').selectOption('');await page.waitForFunction(()=>document.querySelectorAll('#notation .score-note.active').length===3);const allParts=await snapshot();assert.deepEqual(allParts.activeWritten,['short-D','short-unison','tie-start']);assert.deepEqual(allParts.expectedKeys,initial.expectedKeys);assert.equal(await ui('#practice-part').inputValue(),'','Shown parts do not edit the practice target');await ui('#notation-part').selectOption('piano');
   await ui('#play-button').click();await waitIds(['tie-start','written-rest']);await ui('#play-button').click();
@@ -1297,7 +1299,7 @@ test('real written-note cursor separates tied continuations, short unisons, rest
   assert.equal(await ui('#engraving-follow').isChecked(),false,'Current-note display does not enable page following');
   await screenshot('written-cursor-tie-jianpu');
   await ui('#practice-part').selectOption('counter');await ui('#notation-scope').selectOption('current');await ui('#play-button:not([disabled])').waitFor();await ui('#reset-button').click();await closeShellPanels();
-  await waitIds(['short-unison']);const selected=await snapshot();assert.deepEqual(selected.activeWritten,['short-unison']);assert.deepEqual(selected.expectedKeys,[60]);
+  await waitIds(['short-unison']);await waitPainted(['short-unison']);const selected=await snapshot();assert.deepEqual(selected.activeWritten,['short-unison']);assert.deepEqual(selected.expectedKeys,[60]);
   await ui('#notation-part').selectOption('');await page.waitForFunction(()=>document.querySelectorAll('#notation .score-note.active').length===3);assert.deepEqual((await snapshot()).expectedKeys,[60]);assert.equal(await ui('#practice-part').inputValue(),'counter');await ui('#notation-part').selectOption('counter');
   await ui('#play-button').click();await waitIds(['repeated-C']);await ui('#play-button').click();const repeat=await snapshot();assert.deepEqual(repeat.activeWritten,['repeated-C']);assert.deepEqual(repeat.expectedKeys,[60]);
   assert.deepEqual(await exportScore(),score,'Display tracking never rewrites canonical music');
