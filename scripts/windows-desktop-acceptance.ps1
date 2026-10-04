@@ -262,6 +262,7 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
   [NativeAcceptance]::ValidateClientClick($work,$point,$actual,$window,$foreground,($hit -eq $window -or $hitRoot -eq $window -or [NativeAcceptance]::IsChild($window,$hit)))
   [NativeAcceptance]::ClickPositioned()
   if($Action.kind -eq 'select-first'){[NativeAcceptance]::Key(0x24);[NativeAcceptance]::Key(0x0D);return}
+  if($Action.kind -eq 'select-second'){[NativeAcceptance]::Key(0x24);[NativeAcceptance]::Key(0x28);[NativeAcceptance]::Key(0x0D);return}
   if($Action.kind -eq 'select-last'){[NativeAcceptance]::Key(0x23);[NativeAcceptance]::Key(0x0D);return}
   if($Action.kind -eq 'key-r'){[NativeAcceptance]::Key(0x52);return}
   if($Action.kind -eq 'click'){return}

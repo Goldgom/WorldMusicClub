@@ -22,10 +22,33 @@ process must reopen the exact inventory and runtime. Native proof independently
 reads screenshots, host/profile/action records, downloads and primary/backup
 files, then binds source commit/tree and executable hash/size.
 
+The restart phase also opens the paused score in Chinese, requires an explicit
+4/4 **display** meter for the source with no meter, and selects two-bar pages.
+An observer forwards the pinned offline renderer's real load/render methods and
+reads its actual model, exact note fractions, retained XML tie flags, mounted
+heads and the SVG curve joining the two visible C4 tie members. Source-bound
+responses retain the full 24-beat continuation interval across page edges.
+Follow must cross the real four-second page boundary, pause, reach the natural
+end, and return to the first page on Reset. Both staff and numbered pitch views
+must paint actual source identities in the piano background at the required
+1280×720 viewport; each checkpoint retains a screenshot.
+
+Paused inspection must start no sound, capture or grade. Play starts a normal
+practice pass; natural End therefore produces the application's ordinary
+empty-input assessment, containing only the selected eligible target. The proof
+checks that distinction and resets the pass before the separate trusted KeyR
+test. No reference audio or generated onset is allowed in either flow.
+
+The protocol-only check separately exercises `position_ms` at 4.1 seconds,
+6 seconds, exact End and Reset, and compares a page after process restart.
+The existing progress element is not an interactive seek control, so this gate
+makes no user-facing seek claim. No-clock inspection remains covered by bounded
+native/model tests; this original GUI fixture has the declared SMF clock.
+
 `node --test tests/basic-key-acceptance.test.js` uses explicitly synthetic verifier
 records and does not establish browser or Windows acceptance. Local protocol and
 unit tests also do not establish physical audibility, original timbre, hardware
-latency, fingering, engraving, text export or full release acceptance. Real hosted
+latency, fingering, graphical engraving, text export or full release acceptance. Real hosted
 browser/native evidence for the exact integrated source is required before
 promotion; no GUI acceptance is claimed by merely adding this workflow.
 

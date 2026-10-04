@@ -581,6 +581,7 @@ fn valid_action(value: &Value) -> bool {
         "key-r",
         "select-last",
         "select-first",
+        "select-second",
         "minimize-restore",
         "escape",
         "click",
@@ -1277,12 +1278,14 @@ mod tests {
                 &json!({"version":1,"sequence":1,"kind":"picker","x":1,"y":1,"width":1280,"height":720,"file":file})
             ));
         }
-        assert!(valid_action(
-            &json!({"version":1,"sequence":1,"kind":"select-first","x":1,"y":1,"width":1280,"height":720})
-        ));
-        assert!(!valid_action(
-            &json!({"version":1,"sequence":1,"kind":"select-first","x":1,"y":1,"width":1280,"height":720,"file":"basic-key-original.zip"})
-        ));
+        for kind in ["select-first", "select-second"] {
+            assert!(valid_action(
+                &json!({"version":1,"sequence":1,"kind":kind,"x":1,"y":1,"width":1280,"height":720})
+            ));
+            assert!(!valid_action(
+                &json!({"version":1,"sequence":1,"kind":kind,"x":1,"y":1,"width":1280,"height":720,"file":"basic-key-original.zip"})
+            ));
+        }
         for phase in ["basic-key-any", "basic-key-seed-extra", "../basic-key-seed"] {
             assert!(Acceptance::new(Evidence::new().0.clone(), phase).is_err());
         }
