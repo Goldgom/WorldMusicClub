@@ -1,3 +1,4 @@
+@import url('./notation-fit.css');
 /* One piano presentation for score practice and free playing. Fixed stage ink
    is intentionally independent of the surrounding light/dark/custom theme. */
 .piano-workspace{--piano-toolbar-height:56px;--piano-lane-height:max(100px,calc(clamp(300px,50dvh,580px) - var(--piano-notice-space,0px)));--piano-key-height:clamp(110px,17dvh,170px);--piano-field:#142333;--piano-field-end:#1d3b4b;--piano-ink:#e0effc;--piano-pressed:#7bced7;--piano-pressed-black:#64598e}

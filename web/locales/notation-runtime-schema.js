@@ -1,6 +1,22 @@
 const plain=Object.freeze({params:Object.freeze({})});
 const params=value=>Object.freeze({params:Object.freeze(value)});
 export default Object.freeze({
+  "notationRuntime.scopeLabel":plain,
+  "notationRuntime.scopeCurrent":plain,
+  "notationRuntime.scopeSelected":plain,
+  "notationRuntime.scopePreviousParts":plain,
+  "notationRuntime.scopeNextParts":plain,
+  "notationRuntime.scopePartPage":params({"page": "count", "count": "count"}),
+  "notationRuntime.scopeChooseCurrent":plain,
+  "notationRuntime.scopeChoosePart":plain,
+  "notationRuntime.scopeEmpty":plain,
+  "notationRuntime.scopeCoverage":params({"scope": "text", "shown": "count", "total": "count", "page": "count", "count": "count"}),
+  "notationRuntime.scopeCompact":params({"shown": "count", "total": "count", "page": "count", "count": "count"}),
+  "notationRuntime.scopeNeedsChoice":plain,
+  "notationRuntime.fitScroll":params({"percent": "count"}),
+  "notationRuntime.fitReady":params({"percent": "count"}),
+  "notationRuntime.scopePageLimit":plain,
+  "notationRuntime.scopePartial":plain,
   "notationRuntime.basicContinuation":params({id:"text",from:"text",to:"text"}),
   "notationRuntime.basicFollowChoice":plain,
   "notationRuntime.basicFollowUnavailable":plain,
