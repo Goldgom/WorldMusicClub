@@ -4,13 +4,34 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
 import {setupGameShell} from '../web/game-shell.js';
-import {setupPerformanceView,performanceCue,previewMusicMetadata,FIELD_COLORS} from '../web/performance-view.js';
+import {setupPerformanceView,performanceCue,previewMusicMetadata,FIELD_COLORS,updateWrittenNoteHighlights,fallingNoteShadow} from '../web/performance-view.js';
 import {keyboardGeometry} from '../web/music.js';
 import {Transport} from '../web/transport.js';
 import {contrastRatio} from '../web/themes.js';
 import {fixture} from './frontend-fixtures.js';
 import './frontend-midi-settings.test.js';
 const english=createI18n({locale:'en',onReport(){}});
+
+test('dense written highlighting mutates only changed identities and initializes replaced pages',()=>{
+ const {document}=parseHTML('<section id="score"></section>'),root=document.getElementById('score');
+ for(let i=0;i<2048;i++){const node=document.createElement('span');node.className='score-note';node.dataset.noteId=`original-${i}`;root.append(node);}
+ const nodes=[...root.children],source=nodes.map(n=>n.dataset.noteId);let attributes=0,classes=0;
+ for(const node of nodes){const set=node.setAttribute,toggle=node.classList.toggle;node.setAttribute=function(...args){attributes++;return Reflect.apply(set,this,args);};node.classList.toggle=function(...args){classes++;return Reflect.apply(toggle,this,args);};}
+ updateWrittenNoteHighlights(root,['original-0','original-1']);attributes=classes=0;
+ for(let frame=0;frame<20;frame++)updateWrittenNoteHighlights(root,['original-0','original-1']);
+ assert.equal(attributes,0);assert.equal(classes,0);
+ updateWrittenNoteHighlights(root,['original-1','original-2']);assert.equal(attributes,2);assert.equal(classes,2);
+ assert.deepEqual([...root.querySelectorAll('[aria-current="true"]')].map(n=>n.dataset.noteId),['original-1','original-2']);
+ const replacement=document.createElement('span');replacement.className='score-note';replacement.dataset.noteId='original-1';root.replaceChildren(replacement);updateWrittenNoteHighlights(root,['original-1']);assert.equal(replacement.getAttribute('aria-current'),'true');assert.equal(replacement.classList.contains('active'),true);
+ assert.deepEqual(nodes.map(n=>n.dataset.noteId),source);
+});
+
+test('dense falling decoration preserves every target and reserves shadows for sounding notes',()=>{
+ const notes=Array.from({length:512},(_,i)=>({id:`original-${i}`,start_ms:i*8,duration_ms:40})),before=structuredClone(notes),position=800;
+ const shadows=notes.map(note=>fallingNoteShadow(note,position,notes.length,false));
+ assert.equal(shadows.length,notes.length);assert.equal(shadows.filter(n=>n===6).length,5);assert.ok(notes.every((note,i)=>shadows[i]===(note.start_ms<=position&&note.start_ms+note.duration_ms>position?6:0)));
+ assert.equal(fallingNoteShadow(notes[511],position,128,false),6);assert.ok(notes.every(note=>fallingNoteShadow(note,position,notes.length,true)===0));assert.deepEqual(notes,before);
+});
 
 test('lobby musical metadata preserves unknown modes and labels only verified opening values',()=>{
  const score=structuredClone(fixture),before=structuredClone(score);

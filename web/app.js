@@ -24,7 +24,7 @@ import {setupScoreStorageView,setupScoreStorageLobbyStatus,describePersistenceRe
 import {setupSongAuthoringView} from './song-authoring-view.js';
 import {setupBulkImportView} from './bulk-import-view.js';
 import {isImportEnvelope} from './bulk-import.js';
-import {setupPerformanceView,FIELD_COLORS,previewMusicMetadata} from './performance-view.js';
+import {setupPerformanceView,FIELD_COLORS,previewMusicMetadata,updateWrittenNoteHighlights,fallingNoteShadow} from './performance-view.js';
 import {renderPianoKeybed,renderPianoRails,pianoMinimumWidth} from './piano-stage-view.js';
 import {setupGuitarGuidance} from './guitar-guidance.js';
 import {setupPianoFingeringView} from './piano-fingering-view.js';
@@ -86,7 +86,7 @@ function attributionText(score) {
 function bindText(node, render) {
   if (!node) return;
   let binding=displayBindings.get(node);if(!binding)binding=newDisplayBinding(node);
-  binding.text=render;node.textContent=render();
+  binding.text=render;const value=render(),text=value==null?'':String(value);if(node.textContent!==text)node.textContent=text;
 }
 function bindAttribute(node, name, render) {
   if (!node) return;
@@ -1034,8 +1034,7 @@ function drawFrame(displayOnly = false) {
   if(displayOnly!==true&&shell.notationVisible())notationFollowing?.tick(position < segmentStart ? -1 : position,transport.running,{...written,entries:displayedWritten,pageAnchor:writtenCursor?.pageAnchor(position,displayedPartId())});
   const signature = JSON.stringify([i18n.revision,written?.occurrence?.id || null,currentWritten.map(entry=>entry.sourceNoteId),displayedWritten.map(entry=>entry.sourceNoteId)]);
   if (signature !== state.lastHighlight) {
-    const activeSources=new Set(displayedWritten.map(entry=>entry.sourceNoteId));
-    document.querySelectorAll('.score-note').forEach(note => {const active=activeSources.has(note.dataset.noteId);note.classList.toggle('active',active);note.setAttribute('aria-current',String(active));});
+    updateWrittenNoteHighlights(document,displayedWritten.map(entry=>entry.sourceNoteId));
     state.lastHighlight = signature;
     if((writtenCursor?.state().status==='ready'||isBasicKeysSong(state.cleanSong)&&written?.occurrence)&&writtenCursorStatus){
       if(isBasicKeysSong(state.cleanSong)){writtenCursorStatus.dataset.status='ready';writtenCursorRetry.hidden=true;}
@@ -1062,14 +1061,15 @@ function drawFrame(displayOnly = false) {
   // Shared DOM rails and notation remain behind this transparent note layer.
   const windowMs = 4000;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  for (const note of reducedMotion ? active : playbackIndex?.range(position, position + windowMs) || []) {
+  const fallingNotes=reducedMotion?active:playbackIndex?.range(position,position+windowMs)||[];
+  for (const note of fallingNotes) {
     if (note.start_ms + note.duration_ms < position || note.start_ms > position + windowMs) continue;
     const key = state.geometry.find(k => k.midi === note.midi); if (!key) continue;
     const bottom = reducedMotion ? height : height - (note.start_ms - position) / windowMs * height;
     const noteHeight = reducedMotion ? 40 : Math.max(8, note.duration_ms / windowMs * height - 4);
     const x = key.x * width + 2; const y = bottom - noteHeight;
     const color=note.start_ms<=position?FIELD_COLORS.scheduled:key.black?FIELD_COLORS.accidental:FIELD_COLORS.natural;
-    ctx.fillStyle=color;ctx.shadowColor=color+'66';ctx.shadowBlur=reducedMotion?0:6;
+    ctx.fillStyle=color;ctx.shadowColor=color+'66';ctx.shadowBlur=fallingNoteShadow(note,position,fallingNotes.length,reducedMotion);
     ctx.beginPath(); ctx.roundRect(x, y, Math.max(2, key.width * width - 4), noteHeight, 5); ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#eaffff55';ctx.lineWidth=1;ctx.stroke();
     if (noteHeight > 23 && key.width * width > 27) { ctx.fillStyle = FIELD_COLORS.noteText; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(midiName(note.midi), x + (key.width * width - 4) / 2, Math.min(height-13,Math.max(y+17,85))); }
   }

@@ -6,6 +6,23 @@ import {setupStageNotationLayout} from './stage-notation-layout.js';
 import {mountPianoStage,createPianoToolbar,renderPianoRails,observePianoNoticeBudget} from './piano-stage-view.js';
 export const FIELD_COLORS=Object.freeze({background:'#142333',backgroundEnd:'#1d3b4b',natural:'#7be4ce',accidental:'#acb0f5',scheduled:'#f4ce78',noteText:'#112538'});
 
+/** Presentation changes only. Unchanged attributes can still invalidate style
+ * on a dense SVG page, so never rewrite them for another playback frame. */
+export function updateWrittenNoteHighlights(root,sourceNoteIds){
+  const activeIds=new Set(sourceNoteIds);
+  for(const node of root.querySelectorAll('.score-note')){
+    const active=activeIds.has(node.dataset.noteId),text=String(active);
+    if(node.classList.contains('active')!==active)node.classList.toggle('active',active);
+    if(node.getAttribute('aria-current')!==text)node.setAttribute('aria-current',text);
+  }
+}
+
+/** Keep every falling note. Dense scenes spend decoration only on currently
+ * sounding notes; future notes retain their shape, outline, color and labels. */
+export function fallingNoteShadow(note,position,count,reducedMotion){
+  return !reducedMotion&&(count<=128||(note.start_ms<=position&&note.start_ms+note.duration_ms>position))?6:0;
+}
+
 export function previewMusicMetadata(score,i18n=getAppI18n()){
   const t=(key,params)=>i18n.t(key,params);
   if(!score)return t('performance.metadataUnavailable');

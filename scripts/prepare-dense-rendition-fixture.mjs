@@ -20,8 +20,8 @@ export function originalDenseRenditionMidi(){
 }
 // Track 1 contains tempo/meter/key/EOT. Music tracks 2–5 begin with
 // track-name event 1 and program event 2; on/off pairs start at events 3/4.
-// Stable IDs use the established one-based source track/event coordinates.
-export function expectedDenseAttacks(sourceSha){return Array.from({length:1536},(_,index)=>Array.from({length:4},(_,part)=>({id:`midi-t${part+2}-e${index*2+3}`,eventId:`midi:${sourceSha}:t${part+2}:e${index*2+3}`,part:`midi-t${part+2}-c${part+1}-r0`,key:48+part*7+[0,2,4,5,7,9,11,12][index%8],velocity:72+part*4,startMs:index*31.25,durationMs:15.625}))).flat();}
+// Notation IDs use one-based coordinates; raw event IDs retain zero-based SMF coordinates.
+export function expectedDenseAttacks(sourceSha){return Array.from({length:1536},(_,index)=>Array.from({length:4},(_,part)=>({id:`midi-t${part+2}-e${index*2+3}`,eventId:`midi:${sourceSha}:t${part+1}:e${index*2+2}`,part:`midi-t${part+2}-c${part+1}-r0`,key:48+part*7+[0,2,4,5,7,9,11,12][index%8],velocity:72+part*4,startMs:index*31.25,durationMs:15.625}))).flat();}
 export async function prepareDenseRenditionFixture(driver,directory,{retainPages=false}={}){
  await denseDiskGuard(directory);await mkdir(directory,{recursive:true});const source=originalDenseRenditionMidi(),sourceSha=denseDigest(source),expected=expectedDenseAttacks(sourceSha),pages=[];
  const request=async(path,body,raw=false)=>{const response=await driver.fetcher(path,{method:'POST',headers:raw?{'Content-Type':'application/zip','X-WMH-Filename':'original-dense-rendition.zip'}:{'Content-Type':'application/json'},body:raw?body:JSON.stringify(body)}),bytes=await response.bytes();assert.equal(response.status,200,bytes.toString().slice(0,2000));return{body:JSON.parse(bytes),bytes};};
