@@ -1,7 +1,22 @@
 const families=['击弦键盘','明亮槌击','持续风琴','拨弦','低音弦乐','弓弦','合奏','铜管','簧管','管笛','主奏','铺底','效果','民族弦乐','敲击效果','声音效果'];
 export const cleanText=(locale,en,zh)=>locale==='en'?en:zh;
 export function cleanFamily(locale,program){const en=['struck keys','bright mallets','sustained organ','plucked strings','low strings','bowed strings','ensemble','brass','reed','pipe','lead','pad','effects','world strings','struck effects','sound effects'];return cleanText(locale,`reference ${en[program>>3]}`,`参考${families[program>>3]}`);}
-export function cleanErrorText(locale,error){if(['clean_audio_worklet_unavailable','audio_worklet_unavailable'].includes(error?.code))return cleanText(locale,'Complete-song sound requires AudioWorklet in this browser. Use a current browser with audio worklet support, or turn sound off for silent practice.','完整曲目声音需要浏览器支持 AudioWorklet。请使用支持音频工作线程的新版浏览器，或关闭声音进行静音练习。');return cleanText(locale,`Complete-song playback stopped (${error?.code||'clean_error'}). Retry after checking the song and audio settings.`, `完整曲目播放已停止（${error?.code||'clean_error'}）。请检查曲包和声音设置后重试。`);}
+export function cleanErrorText(locale,error){
+ const unavailable=['clean_audio_worklet_unavailable','audio_worklet_unavailable'].includes(error?.code),phase=error?.details?.phase;
+ const missing=error?.code==='clean_audio_worklet_unavailable'||phase==='capability';
+ const base=unavailable?(missing?cleanText(locale,'Complete-song sound requires AudioWorklet in this browser. Use a current browser with audio worklet support, or turn sound off for silent practice.','完整曲目声音需要浏览器支持 AudioWorklet。请使用支持音频工作线程的新版浏览器，或关闭声音进行静音练习。'):cleanText(locale,'Complete-song audio could not initialize. Check the details below and retry.','完整曲目音频初始化失败。请检查以下详细信息后重试。')):cleanText(locale,`Complete-song playback stopped (${error?.code||'clean_error'}). Retry after checking the song and audio settings.`,`完整曲目播放已停止（${error?.code||'clean_error'}）。请检查曲包和声音设置后重试。`);
+ if(!unavailable||!error?.message)return base;
+ const names={'capability':['browser capability','浏览器能力'],'module-load':['audio module loading','音频模块加载'],'node-construction':['audio processor construction','音频处理器创建'],'receiver-initialization':['audio output initialization','音频输出初始化']},details=error.details||{},parts=[];
+ if(phase)parts.push(cleanText(locale,`Stage: ${names[phase]?.[0]||phase}`,`阶段：${names[phase]?.[1]||phase}`));
+ // The wrapper phase is ours and already localized. Keep the original browser
+ // cause below, while avoiding a second English wrapper in the Chinese UI.
+ if(locale==='en'||!names[phase])parts.push(String(error.message).slice(0,1024));
+ if(details.causeMessage||details.cause)parts.push(`${details.causeName?String(details.causeName).slice(0,128)+': ':''}${String(details.causeMessage||details.cause).slice(0,1024)}`);
+ if(details.outcome==='timeout')parts.push(cleanText(locale,`Deadline: ${details.timeoutMs} ms`,`等待期限：${details.timeoutMs} 毫秒`));
+ if(details.moduleUrl)parts.push(cleanText(locale,`Module: ${String(details.moduleUrl).slice(0,1024)}`,`模块：${String(details.moduleUrl).slice(0,1024)}`));
+ return `${base} ${parts.join(' · ')}`;
+}
+
 export function cleanMediaError(locale,role){const labels={cover:['Cover','封面'],background:['Background','背景'],pv:['Video','视频']};return cleanText(locale,`${labels[role]?.[0]||'Media'} could not be displayed. Music remains available; reimport a supported, readable asset or retry.`,`${labels[role]?.[1]||'媒体'}无法显示。乐谱与音乐仍可使用；请重新导入可读取的受支持媒体，或重试。`);}
 
 export function cleanLogicalDeviceMapping(locale,mapping){return mapping?cleanText(locale,`Logical destination “${mapping.device_name}” is mapped to the selected procedural reference receiver. The source device and timbre are unverified.`,`逻辑目标“${mapping.device_name}”映射到所选程序合成参考接收器。未验证源设备与原始音色。`):'';}

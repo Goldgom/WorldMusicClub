@@ -176,3 +176,13 @@ for(const interruption of ['pause','blur','mute'])test(`Practice ${interruption}
   time(2240);app.frame();await app.until(()=>!app.$('play-button').disabled);assert.equal((await app.exported('export-takes')).passes.length,1,'Assessment completion must not create another take');await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');await app.click('play-button');const replay=await app.exported('export-takes');assert.equal(replay.passes.length,2);assert.equal(replay.passes[0].inputs.length,1);assert.deepEqual(replay.passes[1].inputs,[]);assert.equal(replay.passes[1].clock_segments[0].positionStart,0);
  }finally{await app.close();}
 });
+
+
+test('a real startup rejection remains visible in both locales without misreporting browser support',async()=>{
+ const {app}=await setup();try{
+  app.setAudioModule(()=>Promise.reject(Object.assign(new Error('Original loader failure for startup diagnosis'),{name:'AbortError'})));await app.click('start-listen');await app.until(()=>app.$('notice-message').textContent.includes('Original loader failure'));
+  for(const locale of ['en','zh-CN']){getAppI18n(app.document).setLocale(locale);const message=app.$('notice-message').textContent;assert.match(message,/AbortError.*Original loader failure/);assert.match(message,/basic-key-audio-processor\.js/);assert.doesNotMatch(message,/requires AudioWorklet|需要浏览器支持 AudioWorklet/);}
+  assert.match(app.$('notice-message').textContent,/阶段：音频模块加载/);assert.doesNotMatch(app.$('notice-message').textContent,/The basic-key audio processor could not be loaded/);
+  assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('progress').value,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'ready');assert.equal(app.$('export-takes').disabled,true);
+ }finally{await app.close();}
+});

@@ -328,6 +328,29 @@ test('hosted one-bar setup opens the page-size disclosure through its summary an
  assert.doesNotMatch(source.slice(begin,end),/force\s*:|\.open\s*=|\.hidden\s*=/);
 });
 
+for(const outcome of ['resolve','reject','throw'])test(`static receiver create ${outcome} is observed before prepare without changing arguments, this, result or error`,async()=>{
+ const source=await readFile(new URL('../crates/desktop-shell/basic-key-acceptance.js',import.meta.url),'utf8'),begin=source.indexOf('async function observeBasicKeyReceiver('),end=source.indexOf('async function observeBasicKeyEngraving(',begin),realm=vm.createContext({structuredClone,Float32Array});vm.runInContext(source.slice(begin,end)+';globalThis.observe=observeBasicKeyReceiver;',realm);
+ const failure=Object.assign(new Error('Original module failure'),{name:'BasicKeyAudioError',code:'audio_worklet_unavailable',details:{phase:'module-load',causeName:'AbortError',causeMessage:'Original import rejection',moduleUrl:'https://wmh.localhost/basic-key-audio-processor.js',isSecureContext:true,hasAudioWorklet:true,addModuleType:'function',contextState:'running'}}),value={originalReceiver:true},calls=[],context={state:'running',currentTime:0,audioWorklet:{addModule(){}}},output={},options={moduleUrl:'exact-module'},promise=outcome==='reject'?Promise.reject(failure):Promise.resolve(value);
+ class Receiver{static create(...args){calls.push({owner:this,args});if(outcome==='throw')throw failure;return promise;}prepare(){}start(){}}
+ const original=Receiver.create,root={isSecureContext:true,AudioWorkletNode:class{},performance},document={getElementById:()=>({textContent:'Visible product startup details'})},observer=await realm.observe(document,{Receiver,root}),owner={staticReceiver:true};
+ if(outcome==='throw')assert.throws(()=>Receiver.create.call(owner,context,output,options),error=>error===failure);else{const result=Receiver.create.call(owner,context,output,options);assert.equal(result,promise);if(outcome==='reject')await assert.rejects(result,error=>error===failure);else assert.equal(await result,value);}
+ assert.equal(calls.length,1);assert.equal(calls[0].owner,owner);assert.deepEqual(calls[0].args,[context,output,options]);const status=observer.status();assert.equal(status.receivers,0);assert.equal(status.initializations.length,1);assert.equal(status.initializations[0].isSecureContext,true);assert.equal(status.initializations[0].settled,true);assert.equal(status.initializations[0].ok,outcome==='resolve');
+ if(outcome==='resolve'){assert.deepEqual([...status.errors],[]);assert.doesNotThrow(()=>observer.assertHealthy());}else{assert.equal(status.errors[0].details.phase,'module-load');assert.equal(status.errors[0].details.causeMessage,'Original import rejection');assert.throws(()=>observer.assertHealthy(),error=>/Original import rejection/.test(error.message)&&/Visible product startup details/.test(error.message));}
+ const cleanup=observer.restore();assert.equal(cleanup.restored,true);assert.equal(Receiver.create,original);
+});
+
+test('restoring the startup observer fences late diagnostics without canceling the original create promise',async()=>{
+ const source=await readFile(new URL('../crates/desktop-shell/basic-key-acceptance.js',import.meta.url),'utf8'),begin=source.indexOf('async function observeBasicKeyReceiver('),end=source.indexOf('async function observeBasicKeyEngraving(',begin),realm=vm.createContext({structuredClone,Float32Array});vm.runInContext(source.slice(begin,end)+';globalThis.observe=observeBasicKeyReceiver;',realm);
+ let reject;const promise=new Promise((_,no)=>{reject=no;});class Receiver{static create(){return promise;}prepare(){}start(){}}const original=Receiver.create,observer=await realm.observe({},{Receiver,root:{performance}});
+ assert.equal(Receiver.create({state:'running'},{}),promise);assert.equal(observer.status().initializations[0].settled,false);assert.equal(observer.restore().restored,true);assert.equal(Receiver.create,original);const failure=new Error('Original delayed rejection');reject(failure);await assert.rejects(promise,error=>error===failure);assert.equal(observer.status().initializations[0].settled,false);assert.deepEqual([...observer.status().errors],[]);
+});
+
+test('startup observation failure cannot suppress the original static create operation',async()=>{
+ const source=await readFile(new URL('../crates/desktop-shell/basic-key-acceptance.js',import.meta.url),'utf8'),begin=source.indexOf('async function observeBasicKeyReceiver('),end=source.indexOf('async function observeBasicKeyEngraving(',begin),realm=vm.createContext({structuredClone,Float32Array});vm.runInContext(source.slice(begin,end)+';globalThis.observe=observeBasicKeyReceiver;',realm);
+ let calls=0;const result=Promise.resolve('unchanged');class Receiver{static create(){calls++;return result;}prepare(){}start(){}}const original=Receiver.create,observer=await realm.observe({},{Receiver,root:{performance:{now(){throw Error('Diagnostic clock failed');}}}});
+ assert.equal(Receiver.create(),result);assert.equal(await result,'unchanged');assert.equal(calls,1);assert.match(observer.status().errors[0].message,/Diagnostic clock failed/);assert.equal(observer.restore().restored,true);assert.equal(Receiver.create,original);
+});
+
 test('actual-adapter observer preserves promises and callbacks, restores graph methods, and labels mock messages untrusted',async()=>{
  const source=await readFile(new URL('../crates/desktop-shell/basic-key-acceptance.js',import.meta.url),'utf8'),begin=source.indexOf('async function observeBasicKeyReceiver('),end=source.indexOf('async function observeBasicKeyEngraving(',begin),realm=vm.createContext({structuredClone,Float32Array});vm.runInContext(source.slice(begin,end)+';globalThis.observe=observeBasicKeyReceiver;',realm);
  const original=schedules()[0],calls=[],frames=new Map();let handle=0;

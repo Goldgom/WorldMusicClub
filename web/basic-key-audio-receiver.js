@@ -4,12 +4,21 @@ export {BasicKeyAudioError, BASIC_KEY_AUDIO_LIMITS, buildBasicKeyAudioPlan} from
 const modules = new WeakMap();
 const error = (code, message, details = {}) => new BasicKeyAudioError(code, message, details);
 const ACK_TIMEOUT_MS = 5000;
-function loadModule(context, moduleUrl, {setTimer = (...args) => globalThis.setTimeout(...args), clearTimer = (...args) => globalThis.clearTimeout(...args)} = {}) {
+const diagnosticText = value => String(value ?? '').slice(0, 1024);
+function startupError(context, moduleUrl, phase, message, reason, options = {}, extra = {}) {
+  const details = {phase, moduleUrl, isSecureContext: typeof globalThis.isSecureContext === 'boolean' ? globalThis.isSecureContext : null, hasAudioWorklet: Boolean(context?.audioWorklet), addModuleType: typeof context?.audioWorklet?.addModule, audioWorkletNodeType: typeof globalThis.AudioWorkletNode, usesNodeFactory: typeof options.nodeFactory === 'function', contextState: context?.state ?? null, sampleRate: context?.sampleRate ?? null, ...extra};
+  if (reason !== undefined) Object.assign(details, {causeName: diagnosticText(reason?.name || typeof reason), causeMessage: diagnosticText(reason?.message ?? reason), cause: diagnosticText(reason)});
+  const failure = error('audio_worklet_unavailable', message, details);
+  if (reason !== undefined) failure.cause = reason;
+  return failure;
+}
+function loadModule(context, moduleUrl, options = {}) {
+  const {setTimer = (...args) => globalThis.setTimeout(...args), clearTimer = (...args) => globalThis.clearTimeout(...args)} = options;
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (reason) => { if (settled) return; settled = true; clearTimer(timer); if (reason) reject(reason); else resolve(); };
-    const timer = setTimer(() => finish(error('audio_worklet_unavailable', 'The basic-key audio processor module did not load before its deadline.', {command: 'addModule', timeoutMs: ACK_TIMEOUT_MS})), ACK_TIMEOUT_MS);
-    Promise.resolve().then(() => context.audioWorklet.addModule(moduleUrl)).then(() => finish(), reason => finish(error('audio_worklet_unavailable', 'The basic-key audio processor could not be loaded from this origin.', {cause: String(reason)})));
+    const timer = setTimer(() => finish(startupError(context, moduleUrl, 'module-load', 'The basic-key audio processor module did not load before its deadline.', undefined, options, {command: 'addModule', timeoutMs: ACK_TIMEOUT_MS, outcome: 'timeout'})), ACK_TIMEOUT_MS);
+    Promise.resolve().then(() => context.audioWorklet.addModule(moduleUrl)).then(() => finish(), reason => finish(startupError(context, moduleUrl, 'module-load', 'The basic-key audio processor could not be loaded from this origin.', reason, options, {command: 'addModule', outcome: 'rejected'})));
   });
 }
 
@@ -19,9 +28,9 @@ function loadModule(context, moduleUrl, {setTimer = (...args) => globalThis.setT
 export class BasicKeyAudioReceiver {
   static async create(context, output, options = {}) {
     const nodeFactory = options.nodeFactory || ((...args) => new globalThis.AudioWorkletNode(...args));
-    if (!context?.audioWorklet?.addModule || (!options.nodeFactory && typeof globalThis.AudioWorkletNode !== 'function')) throw error('audio_worklet_unavailable', 'Complete basic-key playback requires AudioWorklet support on this origin.');
-    if (context.state !== 'running' || !output) throw error('clean_audio_unavailable', 'Unlock the audio device with a user gesture before preparing playback.');
     const moduleUrl = String(options.moduleUrl || new URL('./basic-key-audio-processor.js', import.meta.url));
+    if (typeof context?.audioWorklet?.addModule !== 'function' || (!options.nodeFactory && typeof globalThis.AudioWorkletNode !== 'function')) throw startupError(context, moduleUrl, 'capability', 'Complete basic-key playback requires AudioWorklet support on this origin.', undefined, options);
+    if (context.state !== 'running' || !output) throw error('clean_audio_unavailable', 'Unlock the audio device with a user gesture before preparing playback.');
     if (!modules.has(context)) modules.set(context, new Map());
     const cache = modules.get(context);
     if (!cache.has(moduleUrl)) cache.set(moduleUrl, loadModule(context, moduleUrl, options).catch(reason => { cache.delete(moduleUrl); throw reason; }));
@@ -32,21 +41,33 @@ export class BasicKeyAudioReceiver {
     if (interrupted || context.state !== 'running') throw error('clean_audio_unavailable', 'The audio device stopped during processor preparation; explicitly retry after unlocking it.');
     let node;
     try { node = nodeFactory(context, BASIC_KEY_AUDIO_PROTOCOL, {numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1], channelCount: 1}); }
-    catch (reason) { throw error('audio_worklet_unavailable', 'The basic-key audio processor could not be created.', {cause: String(reason)}); }
-    return new BasicKeyAudioReceiver(context, output, node, options);
+    catch (reason) { throw startupError(context, moduleUrl, 'node-construction', 'The basic-key audio processor could not be created.', reason, options); }
+    try { return new BasicKeyAudioReceiver(context, output, node, options); }
+    catch (reason) {
+      try { node.disconnect(); } catch { /* Preserve the initialization failure. */ }
+      try { node.port.close?.(); } catch { /* Preserve the initialization failure. */ }
+      throw startupError(context, moduleUrl, 'receiver-initialization', 'The basic-key audio receiver could not initialize its output.', reason, options);
+    }
   }
   constructor(context, output, node, {onError = () => {}, onEnded = () => {}, onStarted = () => {}, onStopped = () => {}, setTimer = (...args) => globalThis.setTimeout(...args), clearTimer = (...args) => globalThis.clearTimeout(...args)} = {}) {
     Object.assign(this, {context, output, node, onError, onEnded, onStarted, onStopped, setTimer, clearTimer});
-    this.outputGate = context.createGain(); this.outputGate.gain.value = 0; this.outputGate.connect(output);
-    this.generation = 0; this.requestId = 0; this.pending = new Map(); this.state = 'idle'; this.connected = false; this.disposed = false; this.broken = false; this.plan = null; this.lastCompletion = null;
-    this.node.port.onmessage = event => this.receive(event.data);
-    this.node.port.onmessageerror = () => this.fail(error('audio_processor_error', 'The audio receiver received an unreadable processor message.'));
-    this.node.onprocessorerror = () => { this.broken = true; this.fail(error('audio_processor_error', 'The audio processor failed; create a new receiver before retrying.')); };
-    this.stateListener = () => {
-      if (this.context.state !== 'running' && ['preparing', 'ready', 'starting', 'running'].includes(this.state)) this.fail(error('clean_clock_unavailable', 'The audio device stopped; playback was canceled and will not automatically resume.'));
-    };
-    this.context.addEventListener?.('statechange', this.stateListener);
-    this.node.port.start?.();
+    this.outputGate = context.createGain();
+    try {
+      this.outputGate.gain.value = 0; this.outputGate.connect(output);
+      this.generation = 0; this.requestId = 0; this.pending = new Map(); this.state = 'idle'; this.connected = false; this.disposed = false; this.broken = false; this.plan = null; this.lastCompletion = null;
+      this.node.port.onmessage = event => this.receive(event.data);
+      this.node.port.onmessageerror = () => this.fail(error('audio_processor_error', 'The audio receiver received an unreadable processor message.'));
+      this.node.onprocessorerror = () => { this.broken = true; this.fail(error('audio_processor_error', 'The audio processor failed; create a new receiver before retrying.')); };
+      this.stateListener = () => {
+        if (this.context.state !== 'running' && ['preparing', 'ready', 'starting', 'running'].includes(this.state)) this.fail(error('clean_clock_unavailable', 'The audio device stopped; playback was canceled and will not automatically resume.'));
+      };
+      this.context.addEventListener?.('statechange', this.stateListener);
+      this.node.port.start?.();
+    } catch (reason) {
+      try { this.outputGate.disconnect(); } catch { /* Preserve the original initialization failure. */ }
+      try { context.removeEventListener?.('statechange', this.stateListener); } catch { /* Preserve the original initialization failure. */ }
+      throw reason;
+    }
   }
   nextGeneration() {
     if (this.generation >= LIMITS.maxGeneration) throw error('audio_generation_limit', 'The audio receiver generation limit was reached; create a new receiver.');

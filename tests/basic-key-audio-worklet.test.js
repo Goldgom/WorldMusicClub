@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 import {BasicKeyAudioCore} from '../web/basic-key-audio-core.js';
 import {BASIC_KEY_AUDIO_PROTOCOL, BASIC_KEY_AUDIO_LIMITS, basicKeyGateFrames, buildBasicKeyAudioPlan, validateBasicKeyAudioPlan, encodeBasicKeyAudioPlan, decodeBasicKeyAudioPlan, createBasicKeyAudioTransfer} from '../web/basic-key-audio-plan.js';
+import {cleanErrorText} from '../web/clean-song-text.js';
 import {BasicKeyAudioReceiver} from '../web/basic-key-audio-receiver.js';
 import {basicKeySong} from './basic-key-rendition-fixtures.js';
 import {basicKeyAudioHarness} from './basic-key-audio-harness.js';
@@ -326,4 +327,33 @@ test('a context that suspends and resumes during module loading does not automat
   const creating = BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory}), rejected = assert.rejects(creating, {code: 'clean_audio_unavailable'});
   await Promise.resolve(); h.setState('suspended'); h.setState('running'); resolveModule(); await rejected;
   assert.equal(h.nodes.length, 0);
+});
+
+
+test('startup capability diagnostics retain the real secure-context state before creating a node',async()=>{
+ const h=basicKeyAudioHarness(),descriptor=Object.getOwnPropertyDescriptor(globalThis,'isSecureContext');delete h.context.audioWorklet;Object.defineProperty(globalThis,'isSecureContext',{configurable:true,value:false});
+ try{await assert.rejects(BasicKeyAudioReceiver.create(h.context,h.output,{nodeFactory:h.nodeFactory}),failure=>{assert.equal(failure.code,'audio_worklet_unavailable');assert.equal(failure.details.phase,'capability');assert.equal(failure.details.isSecureContext,false);assert.equal(failure.details.hasAudioWorklet,false);assert.equal(failure.details.addModuleType,'undefined');assert.equal(failure.details.contextState,'running');assert.match(failure.details.moduleUrl,/basic-key-audio-processor\.js$/);assert.match(cleanErrorText('en',failure),/requires AudioWorklet/);return true;});assert.equal(h.nodes.length,0);assert.equal(h.context.loaded.length,0);}finally{if(descriptor)Object.defineProperty(globalThis,'isSecureContext',descriptor);else delete globalThis.isSecureContext;}
+});
+
+for(const synchronous of [false,true])test(`module loading preserves the original ${synchronous?'thrown':'rejected'} error and accurate localized phase`,async()=>{
+ const h=basicKeyAudioHarness(),timers=lifecycleTimers(),original=Object.assign(new Error('Original module loader detail <retained>'),{name:'AbortError'}),moduleUrl='https://wmh.localhost/basic-key-audio-processor.js';let owner,args;
+ h.context.audioWorklet.addModule=function(...values){owner=this;args=values;if(synchronous)throw original;return Promise.reject(original);};
+ await assert.rejects(BasicKeyAudioReceiver.create(h.context,h.output,{nodeFactory:h.nodeFactory,moduleUrl,...timers}),failure=>{assert.equal(failure.cause,original);assert.equal(failure.details.phase,'module-load');assert.equal(failure.details.outcome,'rejected');assert.equal(failure.details.causeName,'AbortError');assert.equal(failure.details.causeMessage,original.message);assert.equal(failure.details.moduleUrl,moduleUrl);assert.equal(failure.details.hasAudioWorklet,true);assert.equal(failure.details.addModuleType,'function');for(const locale of ['en','zh-CN']){const text=cleanErrorText(locale,failure);assert.ok(text.includes(original.message));assert.ok(text.includes(moduleUrl));assert.doesNotMatch(text,/requires AudioWorklet|需要浏览器支持 AudioWorklet/);}return true;});
+ assert.equal(owner,h.context.audioWorklet);assert.deepEqual(args,[moduleUrl]);assert.equal(h.nodes.length,0);assert.equal(timers.pending.size,0);
+});
+
+test('module timeout is distinguished from missing browser capabilities without extending its deadline',async()=>{
+ const h=basicKeyAudioHarness(),timers=lifecycleTimers();h.context.audioWorklet.addModule=()=>new Promise(()=>{});
+ const creating=BasicKeyAudioReceiver.create(h.context,h.output,{nodeFactory:h.nodeFactory,...timers}),rejected=assert.rejects(creating,failure=>{assert.equal(failure.details.phase,'module-load');assert.equal(failure.details.outcome,'timeout');assert.equal(failure.details.timeoutMs,5000);assert.equal(failure.details.hasAudioWorklet,true);assert.match(cleanErrorText('en',failure),/5000 ms/);assert.doesNotMatch(cleanErrorText('zh-CN',failure),/需要浏览器支持/);return true;});await Promise.resolve();assert.equal([...timers.pending.values()][0].delay,5000);timers.fire();await rejected;assert.equal(timers.pending.size,0);assert.equal(h.nodes.length,0);
+});
+
+test('processor construction failure preserves its exact cause and original constructor arguments',async()=>{
+ const h=basicKeyAudioHarness(),timers=lifecycleTimers(),original=Object.assign(new Error('Processor registration was missing'),{name:'NotSupportedError'});let values;
+ await assert.rejects(BasicKeyAudioReceiver.create(h.context,h.output,{...timers,nodeFactory(...args){values=args;throw original;}}),failure=>{assert.equal(failure.details.phase,'node-construction');assert.equal(failure.cause,original);assert.equal(failure.details.causeName,'NotSupportedError');assert.ok(cleanErrorText('zh-CN',failure).includes(original.message));return true;});assert.equal(values[0],h.context);assert.equal(values[1],BASIC_KEY_AUDIO_PROTOCOL);assert.deepEqual(values[2],{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[1],channelCount:1});assert.equal(timers.pending.size,0);assert.equal(h.nodes.length,0);
+});
+
+test('receiver initialization failure releases the partial graph and port while retaining the original cause',async()=>{
+ const h=basicKeyAudioHarness(),original=new Error('Output connection failed');let disconnected=0;
+ h.context.createGain=()=>({gain:{value:0},connect(){throw original;},disconnect(){disconnected++;}});
+ await assert.rejects(BasicKeyAudioReceiver.create(h.context,h.output,{nodeFactory:h.nodeFactory}),failure=>{assert.equal(failure.details.phase,'receiver-initialization');assert.equal(failure.cause,original);return true;});assert.equal(disconnected,1);assert.equal(h.nodes[0].connected,false);assert.equal(h.nodes[0].closed,true);
 });

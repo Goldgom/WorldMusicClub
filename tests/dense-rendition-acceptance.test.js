@@ -90,3 +90,14 @@ test('dense observer attempts all cleanup after listener and receiver failures w
  assert.equal(trace.cleanup.restored,false);assert.equal(trace.cleanup.errors.length,4);assert.deepEqual(calls,['scope','receiver','context','legacy']);assert.deepEqual([Renderer.prototype.load,Renderer.prototype.updateGraphic,Renderer.prototype.render],originalMethods);assert.equal(realm.requestAnimationFrame,requestAnimationFrame);assert.equal(trace.receiver.errors[0].message,'original product failure');
  const report={ok:false,error:'original product failure',trace};await finishDenseReport(report,{resources:['context','browser','driver'].map(name=>({name,present:true,close:async()=>calls.push(name)})),persist:async()=>{},validate(){throw Error('Failed audio cannot pass');}});assert.equal(report.error,'original product failure');assert.equal(report.trace.cleanup.errors.length,4);assert.deepEqual(calls.slice(-3),['context','browser','driver']);
 });
+
+
+test('dense startup failure exposes initialization phase and product notice before any prepared audio row exists',async()=>{
+ const nodes={progress:{value:0},'clean-song-stage':{dataset:{rendererState:'ready'}},workspace:{dataset:{scoreState:'inspection'},addEventListener(){},removeEventListener(){}},'engraving-range':{textContent:'Measures 1–8'},'hud-captured':{textContent:'0'},notice:{textContent:'Actual startup module failure'}};
+ class Receiver{static create(){return Promise.reject(Object.assign(new Error('Module import failed'),{code:'audio_worklet_unavailable',details:{phase:'module-load',causeName:'AbortError',causeMessage:'Underlying loader rejection'}}));}prepare(){}start(){}}
+ class Renderer{load(){}updateGraphic(){}render(){}}
+ const realm=vm.createContext({document:{getElementById:id=>nodes[id]},performance,structuredClone,Float32Array,localStorage:{setItem(){}}});vm.runInContext(`(()=>{${denseRenditionBootstrap()}})();`,realm);
+ const original=Receiver.create,observer=await realm.__wmhDenseObserverTools.install({library:{BasicKeyAudioReceiver:Receiver,Renderer},audioProbe:{snapshot:()=>({}),restore:()=>true}});await assert.rejects(Receiver.create({state:'running'},{}),/Module import failed/);
+ const status=observer.status();assert.equal(status.schedules,0);assert.equal(status.current.position,0);assert.equal(status.errors[0].details.phase,'module-load');assert.equal(status.errors[0].details.causeMessage,'Underlying loader rejection');assert.equal(status.current.notice,'Actual startup module failure');assert.equal(observer.snapshot().receiver.initializations[0].ok,false);assert.equal(observer.stop().cleanup.restored,true);assert.equal(Receiver.create,original);
+ const host=await readFile(new URL('../scripts/hosted-dense-rendition-check.mjs',import.meta.url),'utf8');assert.match(host,/Actual audio failure:/);assert.match(host,/Production UI: '\+status.current.notice/);
+});

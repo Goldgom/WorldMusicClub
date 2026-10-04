@@ -27,8 +27,12 @@ async function observeBasicKeyReceiver(document,{Receiver,root=globalThis,onCont
  // Observe the shipped adapter and native MessagePort without replacing a
  // processor, audio clock, command, callback result, or application promise.
  Receiver ||= (await import('/basic-key-audio-receiver.js')).BasicKeyAudioReceiver;
- const proto=Receiver.prototype,rows=[],owners=new Map(),contexts=new Map(),errors=[];let active=true,overflow=false;
- const pushError=error=>{if(errors.length<32)errors.push({code:String(error?.code||error?.name||'error'),message:String(error?.message||error).slice(0,512)});else overflow=true;};
+ const proto=Receiver.prototype,rows=[],initializations=[],owners=new Map(),contexts=new Map(),errors=[];let active=true,overflow=false;
+ const errorRecord=error=>{
+  const details={};for(const key of ['phase','moduleUrl','isSecureContext','hasAudioWorklet','addModuleType','audioWorkletNodeType','usesNodeFactory','contextState','sampleRate','causeName','causeMessage','cause','command','timeoutMs','outcome']){const value=error?.details?.[key];if(['string','number','boolean'].includes(typeof value)||value===null)details[key]=typeof value==='string'?value.slice(0,1024):value;}
+  return{code:String(error?.code||error?.name||'error').slice(0,96),name:String(error?.name||'Error').slice(0,96),message:String(error?.message||error).slice(0,1024),details};
+ };
+ const pushError=error=>{if(errors.length<32)errors.push(errorRecord(error));else overflow=true;};
  const clock=()=>({wallMs:root.performance.now(),audioTime:null}),copy=value=>structuredClone(value);
  const audioProto=root.AudioNode?.prototype,connect=audioProto?.connect,disconnect=audioProto?.disconnect,edges=new Map();
  function connected(target,...args){const result=Reflect.apply(connect,this,[target,...args]);if(active){if(edges.size>=4096&&!edges.has(this))overflow=true;else{if(!edges.has(this))edges.set(this,new Set());edges.get(this).add(target);}}return result;}
@@ -68,6 +72,16 @@ async function observeBasicKeyReceiver(document,{Receiver,root=globalThis,onCont
   }
   if(row.pcm.blocks.length<64&&!owner.disposed&&!owner.disposing&&owner.state!=='ended')entry.pending=root.requestAnimationFrame(()=>sample(entry,row));else entry.pending=null;
  }
+ const create=Receiver.create;
+ function created(...args){
+  let row;try{if(active){if(initializations.length>=32)overflow=true;else{const context=args[0];row={index:initializations.length+1,settled:false,...clock(),contextState:context?.state??null,audioTime:context?.currentTime??null,isSecureContext:typeof root.isSecureContext==='boolean'?root.isSecureContext:null,hasAudioWorklet:Boolean(context?.audioWorklet),addModuleType:typeof context?.audioWorklet?.addModule,audioWorkletNodeType:typeof root.AudioWorkletNode};initializations.push(row);}}}catch(observationError){pushError(observationError);}
+  const failed=error=>{if(!active)return;try{if(row){row.settled=true;row.ok=false;row.error=errorRecord(error);}pushError(error);}catch(observationError){pushError(observationError);}};
+  let result;try{result=Reflect.apply(create,this,args);}catch(error){failed(error);throw error;}
+  if(result&&typeof result.then==='function')result.then(()=>{if(active&&row){row.settled=true;row.ok=true;}},failed);
+  else if(active&&row){row.settled=true;row.ok=true;}
+  return result;
+ }
+ if(typeof create==='function')Receiver.create=created;
  const prepare=proto.prepare,start=proto.start;
  function prepared(...args){
   const entry=observe(this),result=Reflect.apply(prepare,this,args),plan=this.plan;
@@ -88,9 +102,10 @@ async function observeBasicKeyReceiver(document,{Receiver,root=globalThis,onCont
  proto.prepare=prepared;proto.start=started;
  const lifecycle=entry=>({receiverId:entry.id,state:entry.owner.state,connected:entry.owner.connected===true,nodeConnections:edges.get(entry.node)?.size||0,gateConnections:entry.owner.outputGate?(edges.get(entry.owner.outputGate)?.size||0):null,disposed:entry.owner.disposed===true,disposing:entry.owner.disposing===true,pendingCommands:entry.owner.pending?.size??null,pendingStarts:entry.owner.pending?[...entry.owner.pending.values()].filter(command=>command.type==='start').length:null});
  const ownedNodes=()=>[...owners.values()].map(lifecycle),quiet=()=>ownedNodes().every(row=>!row.connected&&row.nodeConnections===0&&row.gateConnections===0&&row.disposed&&!row.disposing&&row.pendingCommands===0&&row.pendingStarts===0);
- const status=()=>({errors:copy(errors),overflow,contexts:contexts.size,states:[...contexts.values()].flatMap(value=>copy(value.states)),receivers:owners.size,ownedNodes:ownedNodes(),started:rows.filter(row=>row.started).length,activeReceivers:[...owners.values()].filter(({owner})=>owner.connected).length,pendingReceivers:[...owners.values()].filter(({owner})=>['preparing','ready','starting'].includes(owner.state)||[...(owner.pending?.values()||[])].some(command=>command.type==='start')).length,completed:rows.filter(row=>row.terminals.some(t=>t.record.type==='ended')).length});
- return{snapshot:()=>copy(rows.map(row=>({...row,lifecycle:lifecycle([...owners.values()].find(entry=>entry.id===row.receiverId))}))),count:()=>rows.length,status,quiet,settledSince:index=>rows.slice(index).length>0&&rows.slice(index).every(row=>row.terminals.length>0),restore(){active=false;const cleanupErrors=[];let restored=true;
+ const status=()=>({errors:copy(errors),initializations:copy(initializations),overflow,contexts:contexts.size,states:[...contexts.values()].flatMap(value=>copy(value.states)),receivers:owners.size,ownedNodes:ownedNodes(),started:rows.filter(row=>row.started).length,activeReceivers:[...owners.values()].filter(({owner})=>owner.connected).length,pendingReceivers:[...owners.values()].filter(({owner})=>['preparing','ready','starting'].includes(owner.state)||[...(owner.pending?.values()||[])].some(command=>command.type==='start')).length,completed:rows.filter(row=>row.terminals.some(t=>t.record.type==='ended')).length});
+ return{snapshot:()=>copy(rows.map(row=>({...row,lifecycle:lifecycle([...owners.values()].find(entry=>entry.id===row.receiverId))}))),count:()=>rows.length,status,assertHealthy(){if(errors.length)throw Error('Basic-key audio failed: '+JSON.stringify(errors[0])+'\nProduction UI: '+String(document.getElementById?.('notice')?.textContent||'').slice(0,4096));},quiet,settledSince:index=>rows.slice(index).length>0&&rows.slice(index).every(row=>row.terminals.length>0),restore(){active=false;const cleanupErrors=[];let restored=true;
   const attempt=(name,run)=>{try{if(run()===false)throw Error('Original method was not restored');}catch(error){restored=false;if(cleanupErrors.length<128)cleanupErrors.push({name,message:String(error?.message||error).slice(0,512)});else overflow=true;}};
+  if(typeof create==='function')attempt('receiver.create',()=>{if(Receiver.create===created)Receiver.create=create;return Receiver.create===create;});
   attempt('receiver.prepare',()=>{if(proto.prepare===prepared)proto.prepare=prepare;return proto.prepare===prepare;});attempt('receiver.start',()=>{if(proto.start===started)proto.start=start;return proto.start===start;});
   for(const entry of owners.values()){
    attempt(`receiver-${entry.id}.frame`,()=>root.cancelAnimationFrame(entry.pending));attempt(`receiver-${entry.id}.port`,()=>entry.node.port.removeEventListener('message',entry.message,true));attempt(`receiver-${entry.id}.port-after`,()=>entry.node.port.removeEventListener('message',entry.afterMessage));attempt(`receiver-${entry.id}.processorerror`,()=>entry.node.removeEventListener('processorerror',entry.processorError));
@@ -157,7 +172,7 @@ function createBasicKeyRequestObserver(document,{onError}) {
 }
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(v,m)=>{if(!v)throw Error(m);},fetchOriginal=globalThis.fetch,fetcher=fetchOriginal.bind(globalThis),waits=createAcceptanceWait();
- const json=(path,body)=>waits.json(fetcher,path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},10000),until=(fn,label,ms=10000)=>waits.until(fn,`Basic-key ${report.stage}: ${label}`,ms),frame=()=>new Promise(requestAnimationFrame);
+ const json=(path,body)=>waits.json(fetcher,path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},10000),until=(fn,label,ms=10000)=>waits.until(signal=>{receiver?.assertHealthy();return fn(signal);},`Basic-key ${report.stage}: ${label}`,ms),frame=()=>new Promise(requestAnimationFrame);
  const report={version:1,phase,origin:location.origin,ok:false,stage:'initializing',errors:[],requests:[],imports:[],assessmentRequests:[],assessmentResponses:[],negative:[],trusted:[],previews:{},files:{},screenshots:{}};let sequence=0,probe,engravingObserver,receiver;
  const notationRequests=[],notationResponses=[],notationObservers=[];report.notationCancellations=[];
  function observeNotation(promise,request,signal){assert(notationRequests.length<48,'Notation request bound');const requestIndex=notationRequests.length;notationRequests.push(request);const observer=createVsqJsonObserver({maxRows:1,onValue:row=>notationResponses.push({request,response:row.body,status:row.status}),onError:error=>{if(signal?.aborted&&/AbortError/.test(error))report.notationCancellations.push({requestIndex,signalAborted:true,error});else report.errors.push(error);}});notationObservers.push(observer);observer.observe('/api/library/basic-keys/notation',promise,requestIndex);}
