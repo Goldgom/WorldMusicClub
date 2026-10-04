@@ -6,15 +6,23 @@ actual-audibility claim. Node re-derives the observations, bytes and GUI contrac
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
+_profile_spec = importlib.util.spec_from_file_location('native_pitch_bend_manifest', ROOT / 'scripts/native-pitch-bend-manifest.py')
+_profile = importlib.util.module_from_spec(_profile_spec)
+_profile_spec.loader.exec_module(_profile)
+read_evidence = _profile.read_evidence
+verify_profile_evidence = _profile.verify_profile_evidence
+verify_report_binding = _profile.verify_report_binding
 SONG_AUTHORING_PHASES = ['authoring-seed', 'authoring-restart']
 SONG_AUTHORING_CLAIMS = json.loads((ROOT / 'scripts/native-song-authoring-claims.json').read_text())
-SONG_AUTHORING_REPORTS = ['native-song-authoring.json', *[f'renderer-{phase}.json' for phase in SONG_AUTHORING_PHASES]]
+SONG_AUTHORING_REPORTS = ['native-song-authoring.json', *[f'renderer-{phase}.json' for phase in SONG_AUTHORING_PHASES],
+                        *[f'profile-{phase}.json' for phase in SONG_AUTHORING_PHASES]]
 
 
 def require(condition, message):
@@ -27,9 +35,7 @@ def sha(data):
 
 
 def read_json(path):
-    require(path.is_file() and not path.is_symlink() and 0 < path.stat().st_size <= 1024 * 1024,
-            'Expected a bounded ordinary evidence file')
-    return json.loads(path.read_text(encoding='utf-8-sig'))
+    return json.loads(read_evidence(path).decode('utf-8-sig'))
 
 
 def accepted_song_authoring_evidence(directory, executable, commit, tree):
@@ -55,6 +61,8 @@ def accepted_song_authoring_evidence(directory, executable, commit, tree):
     require(set(claims) == set(SONG_AUTHORING_CLAIMS)
             and all(claims[key] is value for key, value in SONG_AUTHORING_CLAIMS.items()),
             'Authoring evidence claim set or exact boolean scope changed')
+    verify_profile_evidence(native, SONG_AUTHORING_PHASES,
+                            lambda name: read_evidence(directory / name, 16 * 1024))
     checked = subprocess.run(['node', str(ROOT / 'scripts/verify-native-song-authoring-evidence.mjs'),
                               '--check', str(directory)], cwd=ROOT, capture_output=True,
                              text=True, encoding='utf-8', timeout=30, check=False)
@@ -62,11 +70,8 @@ def accepted_song_authoring_evidence(directory, executable, commit, tree):
             'Independent song-authoring verification failed: ' + checked.stderr.strip())
     report_hashes = {}
     for name in SONG_AUTHORING_REPORTS:
-        data = (directory / name).read_bytes()
-        matching = [row for row in proof.get('files', []) if row.get('path') == name]
-        require(len(matching) == 1 and matching[0].get('sha256') == sha(data)
-                and type(matching[0].get('bytes')) is int and matching[0]['bytes'] == len(data),
-                'Proof must bind every exact original song-authoring report')
+        data = read_evidence(directory / name)
+        verify_report_binding(proof, name, data, 'original song-authoring report')
         report_hashes[name] = sha(data)
     return {'version': 1, 'scope': 'original-song-authoring-focused-evidence-only',
             'source_sha': commit, 'source_tree': tree,

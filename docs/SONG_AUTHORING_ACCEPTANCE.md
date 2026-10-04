@@ -77,18 +77,23 @@ packaging. The existing pitch, VSQ, performance, other native and final summary
 gates remain required. Failed or skipped jobs cannot establish acceptance.
 
 Native package creation requires `--song-authoring desktop-authoring`.
-`scripts/native-release-manifest.py` validates and copies exactly five authoring
+`scripts/native-release-manifest.py` validates and copies exactly seven authoring
 evidence files into the package:
 
 - `native-song-authoring.json`
 - `renderer-authoring-seed.json`
 - `renderer-authoring-restart.json`
+- `profile-authoring-seed.json`
+- `profile-authoring-restart.json`
 - `native-song-authoring-files.json`
 - `song-authoring-manifest.json`
 
 Directory and ZIP verification require that same allowlist, the closed exact
 boolean claim set, and agreement between the package executable, source identity,
 report hashes, proof hash, focused manifest and BUILD-INFO acceptance fields.
+Each host profile record must prove atomic creation at its exact phase-specific
+path, with a distinct process and the same `Scores` library root. Both records
+are bound into the proof and focused manifest and rechecked inside the package.
 Changing evidence while merely recomputing archive/file checksums is insufficient.
 The larger original-fixture screenshots and storage archives remain separately
 retained workflow evidence, not extra package evidence files.

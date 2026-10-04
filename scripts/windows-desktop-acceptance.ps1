@@ -42,6 +42,7 @@ if($Scenario -eq 'clean-song') {
 Set-Content -NoNewline -Encoding utf8 (Join-Path $Fixtures 'malformed.json') '{invalid canonical score'
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing
 Add-Type -Path (Join-Path $PSScriptRoot 'windows-desktop-native.cs')
+. (Join-Path $PSScriptRoot 'windows-desktop-profile.ps1')
 function Save-Json($Value,[string]$Path) {
   $temporary="$Path.tmp"
   $Value | ConvertTo-Json -Depth 16 | Set-Content -Encoding utf8 $temporary
@@ -332,29 +333,22 @@ function Save-SongFolderSnapshot([string]$Phase) {
   }
   Save-Json @{version=1;files=$rows} (Join-Path $OutputDirectory "snapshot-$Phase.json")
 }
-function Rotate-SongFolderProfile([string]$Phase) {
-  $profile=Join-Path $OutputDirectory 'webview-profile'
-  if(Test-Path -LiteralPath $profile) {
-    $preserved=Join-Path $OutputDirectory "prior-profile-$Phase"
-    $deadline=[DateTime]::UtcNow.AddSeconds(10)
-    while($true) {
-      try { Move-Item -LiteralPath $profile -Destination $preserved -ErrorAction Stop;break }
-      catch { if([DateTime]::UtcNow -ge $deadline){throw 'Previous WebView profile could not be isolated after normal EXE close'};Start-Sleep -Milliseconds 200 }
-    }
-  }
-  if(Test-Path -LiteralPath $profile){throw 'Fresh profile precondition failed'}
-}
 $previousDirectory=$env:WMH_DESKTOP_SMOKE_DIR;$previousPhase=$env:WMH_DESKTOP_ACCEPTANCE_PHASE
 $env:WMH_DESKTOP_SMOKE_DIR=$OutputDirectory
 $native=[ordered]@{version=1;source_sha=(git rev-parse HEAD);source_tree=(git rev-parse 'HEAD^{tree}');executable_sha256=(Get-FileHash $Executable -Algorithm SHA256).Hash.ToLower();executable_bytes=(Get-Item $Executable).Length;os=[System.Environment]::OSVersion.VersionString;profile_reused=$true;phases=@();ok=$false}
-$app=$null;$blockedStage=$false;$blockedStagePath=$null;$preservedStagePath=$null
+$app=$null;$blockedStage=$false;$blockedStagePath=$null;$preservedStagePath=$null;$profileSelection=$null
 $nativeReportName=if($Scenario -eq 'authoring'){'native-song-authoring.json'}elseif($Scenario -eq 'pitch-bend'){'native-pitch-bend.json'}elseif($Scenario -eq 'performance-song'){'native-performance-song.json'}elseif($Scenario -eq 'vsq-song'){'native-vsq-song.json'}elseif($Scenario -eq 'clean-song'){'native-clean-song.json'}elseif($Scenario -eq 'bulk-import'){'native-bulk-import.json'}elseif($Scenario -eq 'song-folder'){'native-song-folder.json'}else{'native-acceptance.json'}
 $phases=if($Scenario -eq 'authoring'){@('authoring-seed','authoring-restart')}elseif($Scenario -eq 'pitch-bend'){@('pitch-bend-seed','pitch-bend-restart')}elseif($Scenario -eq 'performance-song'){@('performance-seed','performance-controls','performance-restart')}elseif($Scenario -eq 'vsq-song'){@('vsq-seed','vsq-restart')}elseif($Scenario -eq 'clean-song'){@('clean-seed','clean-restart')}elseif($Scenario -eq 'bulk-import'){@('bulk-seed','bulk-restart','bulk-failure')}elseif($Scenario -eq 'song-folder'){@('folder-seed','folder-restart','folder-failure')}else{@('seed','restart','close-active','reopen')}
 if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring')){$native.profile_reused=$false;$native.scenario=$Scenario;$native.directory=Join-Path $OutputDirectory 'Scores'}
 try {
   foreach($phase in $phases) {
+    $profileSelection=Get-AcceptanceProfile $OutputDirectory $phase
+    $native.profile_launch=$profileSelection
+    Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
+    $profileSelection=Assert-AcceptanceProfileLaunch $OutputDirectory $phase
+    $native.profile_launch=$profileSelection
+    Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
     if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring')) {
-      Rotate-SongFolderProfile $phase
       if($phase -in @('folder-failure','bulk-failure')) {
         $stageName=if($phase -eq 'bulk-failure'){'.import-staging'}else{'.staging'}
         $stage=Join-Path $OutputDirectory "Scores/$stageName"
@@ -369,7 +363,7 @@ try {
     $phaseStart=[DateTime]::UtcNow;$deadline=$phaseStart.AddSeconds(240);$sequence=1;$reportDeliveryWatch=$null
     $reportFile=Join-Path $OutputDirectory "renderer-$phase.json"
     while(-not (Test-Path $reportFile)) {
-      $app.Refresh();if($app.HasExited){throw "Process exited before $phase evidence: $($app.ExitCode)"}
+      $app.Refresh();if($app.HasExited){throw "Process exited before $phase evidence: $($app.ExitCode); profile=$($profileSelection.profile_directory); see stderr-$phase.log"}
       if([DateTime]::UtcNow -ge $deadline){throw "Native $phase exceeded 240 seconds"}
       if($Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring')) {
         $traceFile=Join-Path $OutputDirectory "trace-$phase.json"
@@ -399,10 +393,12 @@ try {
       Start-Sleep -Milliseconds 100
     }
     $report=Get-Content -Raw $reportFile | ConvertFrom-Json;$app.Refresh()
+    Assert-AcceptanceProfileEvidence $OutputDirectory $profileSelection $app.Id
     Capture-Window $app "native-$phase"
     # One existing EXE-owned listener sample, not a network/security audit.
     $listeners=@(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object OwningProcess -eq $app.Id)
     $item=[ordered]@{phase=$phase;process_id=$app.Id;renderer_ok=$report.ok;renderer_origin=$report.origin;actions=$sequence-1;elapsed_seconds=([DateTime]::UtcNow-$phaseStart).TotalSeconds;executable_tcp_listeners=$listeners.Count;normal_close=$false}
+    $item.profile_directory=$profileSelection.profile_directory;$item.profile_absent_before_launch=$profileSelection.profile_absent_before_launch
     if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring')){$item.launched_new_process=$true;$item.profile_fresh=$true;$item.profile_reused=$false}
     $native.phases+=,$item;Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
     if(-not $report.ok){throw "Native $phase failed: $($report.error)"}
@@ -438,6 +434,7 @@ try {
   }
 } catch {
   $failure=$_.Exception.Message
+  $native.failure_details=[ordered]@{phase=$phase;profile_directory=$profileSelection.profile_directory;exception_type=$_.Exception.GetType().FullName;hresult=$_.Exception.HResult;error_id=$_.FullyQualifiedErrorId;category=[string]$_.CategoryInfo;position=$_.InvocationInfo.PositionMessage}
   if($null -ne $app -and -not $app.HasExited){try{Capture-Window $app "native-failure-$phase"}catch{}}
   $native.ok=$false;$native.error=$failure;Save-Json $native (Join-Path $OutputDirectory $nativeReportName);throw
 } finally {

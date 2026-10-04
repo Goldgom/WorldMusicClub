@@ -190,7 +190,7 @@ jobs:
       - name: Parse the exact native acceptance script
         shell: pwsh
         run: |
-          foreach ($script in @('scripts/windows-desktop-acceptance.ps1','scripts/windows-native-portable-smoke.ps1')) {
+          foreach ($script in @('scripts/windows-desktop-acceptance.ps1','scripts/windows-desktop-profile.ps1','scripts/windows-native-portable-smoke.ps1')) {
             $tokens=$null; $errors=$null
             [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$tokens,[ref]$errors)
             if ($errors.Count) { $errors | Format-List; throw "PowerShell syntax errors in $script" }
@@ -321,9 +321,9 @@ jobs:
           Copy-Item -Recurse dist/licenses/native-rust "$folder/licenses/rust"
           Copy-Item desktop-startup/native-report.json,desktop-startup/renderer-report.json "$folder/evidence/"
           Copy-Item desktop-acceptance/native-acceptance.json,desktop-acceptance/downloaded-files.json,desktop-acceptance/renderer-*.json "$folder/evidence/"
-          Copy-Item desktop-bulk-import/native-bulk-import.json,desktop-bulk-import/native-bulk-import-files.json,desktop-bulk-import/renderer-bulk-*.json "$folder/evidence/"
-          Copy-Item desktop-clean-song/native-clean-song.json,desktop-clean-song/native-clean-song-files.json,desktop-clean-song/renderer-clean-*.json "$folder/evidence/"
-          Copy-Item desktop-vsq-song/native-vsq-song.json,desktop-vsq-song/native-vsq-song-files.json,desktop-vsq-song/renderer-vsq-*.json "$folder/evidence/"
+          Copy-Item desktop-bulk-import/native-bulk-import.json,desktop-bulk-import/native-bulk-import-files.json,desktop-bulk-import/renderer-bulk-*.json,desktop-bulk-import/profile-bulk-*.json "$folder/evidence/"
+          Copy-Item desktop-clean-song/native-clean-song.json,desktop-clean-song/native-clean-song-files.json,desktop-clean-song/renderer-clean-*.json,desktop-clean-song/profile-clean-*.json "$folder/evidence/"
+          Copy-Item desktop-vsq-song/native-vsq-song.json,desktop-vsq-song/native-vsq-song-files.json,desktop-vsq-song/renderer-vsq-*.json,desktop-vsq-song/profile-vsq-*.json "$folder/evidence/"
           python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder --performance-song desktop-performance-song --pitch-bend desktop-pitch-bend --song-authoring desktop-authoring
           if ($LASTEXITCODE -ne 0) { throw 'Native provenance/acceptance inventory failed' }
           $zip="dist/WorldMusicHub-Native-Windows-x64-commit-$count.zip"

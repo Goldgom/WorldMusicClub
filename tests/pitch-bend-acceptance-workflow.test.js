@@ -52,7 +52,9 @@ test('both process-owned pitch phases keep existing phases and report/action bud
  assert.match(rust,/PITCH_BEND_PHASES: \[&str; 2\] = \["pitch-bend-seed", "pitch-bend-restart"\]/);
  assert.match(rust,/MAX_CLEAN_REPORT_BYTES: usize = 1024 \* 1024/);assert.match(rust,/1\.\.=64/);
  assert.match(native,/\$Scenario -eq 'pitch-bend'\)\{@\('pitch-bend-seed','pitch-bend-restart'\)\}/);
- assert.match(native,/\$sequence -gt 64/);assert.match(native,/Rotate-SongFolderProfile \$phase/);
+ assert.match(native,/\$sequence -gt 64/);assert.match(native,/Assert-AcceptanceProfileLaunch \$OutputDirectory \$phase/);
+ assert.match(native,/Assert-AcceptanceProfileEvidence \$OutputDirectory \$profileSelection \$app.Id/);
+ assert.doesNotMatch(native,/Rotate-SongFolderProfile|prior-profile/);
  assert.ok(picker.includes('"pitch-bend-authored-songs.zip"'));assert.ok(native.includes("'prepare-pitch-bend-fixtures.mjs'"));
 });
 

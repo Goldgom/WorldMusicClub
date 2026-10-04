@@ -32,10 +32,12 @@ SCORE_SCHEMAS = ('schema/worldmusichub-score-v1.schema.json', 'schemas/vsq-compl
 PHASES = ['seed', 'restart', 'close-active', 'reopen']
 SONG_FOLDER_PHASES = ['folder-seed', 'folder-restart', 'folder-failure']
 SONG_FOLDER_EVIDENCE = ['native-song-folder.json', 'native-song-folder-files.json',
-                        *[f'renderer-{phase}.json' for phase in SONG_FOLDER_PHASES]]
+                        *[f'renderer-{phase}.json' for phase in SONG_FOLDER_PHASES],
+                        *[f'profile-{phase}.json' for phase in SONG_FOLDER_PHASES]]
 PERFORMANCE_SONG_PHASES = ['performance-seed', 'performance-controls', 'performance-restart']
 PERFORMANCE_SONG_EVIDENCE = ['native-performance-song.json', 'native-performance-song-files.json',
-                             *[f'renderer-{phase}.json' for phase in PERFORMANCE_SONG_PHASES]]
+                             *[f'renderer-{phase}.json' for phase in PERFORMANCE_SONG_PHASES],
+                             *[f'profile-{phase}.json' for phase in PERFORMANCE_SONG_PHASES]]
 PERFORMANCE_SONG_CLAIMS = {
     'native_file_picker': True, 'fresh_process_restart': True, 'explicit_reference_policy': True,
     'audio_source_schedule_and_track_mute': True, 'sustain_gate_preserves_source_release': True,
@@ -194,9 +196,8 @@ def accepted_song_folder_evidence(directory, executable, commit, tree):
         require(row.get('launched_new_process') is True
                 and type(row.get('process_id')) is int and row['process_id'] > 0,
                 'Every native song-folder phase must launch a new process')
-        if row['phase'] in ['folder-restart', 'folder-failure']:
-            require(row.get('profile_fresh') is True and row.get('profile_reused') is False,
-                    'Native song-folder restart/failure must use a fresh renderer profile')
+    _pitch.verify_profile_evidence(native, SONG_FOLDER_PHASES,
+                                   lambda name: _pitch.read_evidence(directory / name, 16 * 1024))
     proof_path = directory / 'native-song-folder-files.json'
     proof = read_json(proof_path)
     require(type(proof.get('version')) is int and proof['version'] == 1 and proof.get('ok') is True
@@ -212,13 +213,21 @@ def accepted_song_folder_evidence(directory, executable, commit, tree):
                 and report.get('origin') == 'https://wmh.localhost'
                 and renderer_hashes[phase] == sha(path.read_bytes()),
                 'Native song-folder proof must match each exact renderer report')
+    report_hashes = {report_path.name: sha(report_path.read_bytes()), **{
+        f'renderer-{phase}.json': renderer_hashes[phase] for phase in SONG_FOLDER_PHASES}}
+    for phase in SONG_FOLDER_PHASES:
+        name = f'profile-{phase}.json'
+        data = _pitch.read_evidence(directory / name, 16 * 1024)
+        _pitch.verify_report_binding(proof, name, data)
+        report_hashes[name] = sha(data)
     # Re-derive folder identity, exact retained bytes, unchanged restart files,
     # and non-destructive failure evidence from disk before trusting the proof.
     checked = subprocess.run(['node', str(ROOT / 'scripts/verify-native-song-folder-evidence.mjs'), str(directory), '--check'],
                              cwd=ROOT, capture_output=True, text=True, encoding='utf-8', timeout=15, check=False)
     require(checked.returncode == 0,
             'Native song-folder proof failed independent disk verification: ' + checked.stderr.strip())
-    return {'native_song_folder_validated': True, 'native_song_folder_proof_sha256': sha(proof_path.read_bytes())}
+    return {'native_song_folder_validated': True, 'native_song_folder_proof_sha256': sha(proof_path.read_bytes()),
+            'native_song_folder_reports_sha256': report_hashes}
 
 
 def accepted_performance_song_evidence(directory, executable, commit, tree):
@@ -240,6 +249,8 @@ def accepted_performance_song_evidence(directory, executable, commit, tree):
     require(set(claims) == set(PERFORMANCE_SONG_CLAIMS)
             and all(claims[key] is value for key, value in PERFORMANCE_SONG_CLAIMS.items()),
             'Native performance acceptance scope cannot imply notation, targets, audibility or original timbre')
+    _pitch.verify_profile_evidence(native, PERFORMANCE_SONG_PHASES,
+                                   lambda name: _pitch.read_evidence(directory / name, 16 * 1024))
     # Re-derive all original fixture bytes, three processes, owned picker actions,
     # audio/control observations, screenshots, exports and unchanged snapshots.
     checked = subprocess.run(['node', str(ROOT / 'scripts/verify-native-performance-song-evidence.mjs'),
@@ -251,10 +262,10 @@ def accepted_performance_song_evidence(directory, executable, commit, tree):
     for name in PERFORMANCE_SONG_EVIDENCE:
         if name == proof_path.name:
             continue
-        data = (directory / name).read_bytes()
+        data = _pitch.read_evidence(directory / name)
         matching = [row for row in proof.get('files', []) if row.get('path') == name]
         require(len(matching) == 1 and matching[0].get('sha256') == sha(data)
-                and matching[0].get('bytes') == len(data),
+                and type(matching[0].get('bytes')) is int and matching[0]['bytes'] == len(data),
                 'Native performance proof must bind every exact packaged report')
         report_hashes[name] = sha(data)
     return {'native_performance_song_validated': True,
@@ -292,12 +303,12 @@ def accepted_pitch_bend_evidence(directory, executable, commit, tree):
 def verify_pitch_bend_inventory(names):
     expected = {'evidence/' + name for name in PITCH_BEND_EVIDENCE}
     actual = {name for name in names if any(part.startswith(
-        ('native-pitch-bend', 'renderer-pitch-bend', 'pitch-bend-manifest')) for part in PurePosixPath(name).parts)}
-    require(actual == expected, 'Native pitch-bend package must contain exactly the five required evidence files')
+        ('native-pitch-bend', 'renderer-pitch-bend', 'profile-pitch-bend', 'pitch-bend-manifest')) for part in PurePosixPath(name).parts)}
+    require(actual == expected, 'Native pitch-bend package must contain exactly the required evidence files')
 
 
 def verify_packaged_pitch_bend_evidence(read, metadata):
-    """Bind the five shipped pitch files to BUILD-INFO, beyond ZIP checksums.
+    """Bind the shipped pitch files to BUILD-INFO, beyond ZIP checksums.
 
     Original disk/audio/GUI evidence is independently re-derived before copy.
     The portable package carries its exact report/proof/manifest bindings, so
@@ -322,6 +333,8 @@ def verify_packaged_pitch_bend_evidence(read, metadata):
     claims = proof.get('claims')
     require(isinstance(claims, dict) and exact_json(claims, PITCH_BEND_CLAIMS),
             'Packaged pitch evidence claim set or exact boolean scope changed')
+    _pitch.verify_profile_evidence(evidence['native-pitch-bend.json'], _pitch.PITCH_BEND_PHASES,
+                                   lambda name: evidence_bytes[name])
     files = proof.get('files')
     require(isinstance(files, list) and all(isinstance(row, dict) for row in files),
             'Packaged pitch evidence requires its original file inventory')
@@ -373,8 +386,8 @@ def accepted_song_authoring_evidence(directory, executable, commit, tree):
 def verify_song_authoring_inventory(names):
     expected = {'evidence/' + name for name in SONG_AUTHORING_EVIDENCE}
     actual = {name for name in names if any(part.startswith(
-        ('native-song-authoring', 'renderer-authoring', 'song-authoring-manifest')) for part in PurePosixPath(name).parts)}
-    require(actual == expected, 'Native song-authoring package must contain exactly the five required evidence files')
+        ('native-song-authoring', 'renderer-authoring', 'profile-authoring', 'song-authoring-manifest')) for part in PurePosixPath(name).parts)}
+    require(actual == expected, 'Native song-authoring package must contain exactly the seven required evidence files')
 
 
 def verify_packaged_song_authoring_evidence(read, metadata):
@@ -403,6 +416,8 @@ def verify_packaged_song_authoring_evidence(read, metadata):
     claims = proof.get('claims')
     require(isinstance(claims, dict) and exact_json(claims, SONG_AUTHORING_CLAIMS),
             'Packaged song-authoring evidence claim set or exact boolean scope changed')
+    _pitch.verify_profile_evidence(evidence['native-song-authoring.json'], _authoring.SONG_AUTHORING_PHASES,
+                                   lambda name: evidence_bytes[name])
     files = proof.get('files')
     require(isinstance(files, list) and all(isinstance(row, dict) for row in files),
             'Packaged song-authoring evidence requires its original file inventory')
@@ -431,6 +446,36 @@ def verify_packaged_song_authoring_evidence(read, metadata):
             'BUILD-INFO acceptance must bind the exact song-authoring proof, reports, manifest and scope')
 
 
+def verify_packaged_profiles(read, metadata):
+    """Retain the accepted host/profile/proof bindings after generic ZIP rehashing."""
+    acceptance = metadata.get('acceptance', {})
+    executable_bytes = read(EXE)
+    for scenario, phases, names in [('song-folder', SONG_FOLDER_PHASES, SONG_FOLDER_EVIDENCE),
+                                    ('performance-song', PERFORMANCE_SONG_PHASES, PERFORMANCE_SONG_EVIDENCE)]:
+        evidence_bytes = {name: read('evidence/' + name) for name in names}
+        require(all(0 < len(data) <= 2 * 1024 * 1024 for data in evidence_bytes.values()),
+                'Packaged native profile evidence must be bounded')
+        native_name, proof_name = f'native-{scenario}.json', f'native-{scenario}-files.json'
+        native, proof = [json.loads(evidence_bytes[name].decode('utf-8-sig')) for name in [native_name, proof_name]]
+        require(isinstance(native, dict) and native.get('ok') is True
+                and native.get('source_sha') == metadata.get('git_commit')
+                and native.get('source_tree') == metadata.get('git_tree')
+                and native.get('executable_sha256') == sha(executable_bytes),
+                'Packaged native profiles must match the exact source/tree/executable')
+        _pitch.verify_profile_evidence(native, phases, lambda name: evidence_bytes[name])
+        require(isinstance(proof, dict) and proof.get('ok') is True,
+                'Packaged native profile proof must pass')
+        for phase in phases:
+            name = f'profile-{phase}.json'
+            _pitch.verify_report_binding(proof, name, evidence_bytes[name])
+        hashes = {name: sha(data) for name, data in evidence_bytes.items() if name != proof_name}
+        prefix = 'native_' + scenario.replace('-', '_')
+        require(acceptance.get(prefix + '_validated') is True
+                and acceptance.get(prefix + '_proof_sha256') == sha(evidence_bytes[proof_name])
+                and exact_json(acceptance.get(prefix + '_reports_sha256'), hashes),
+                'BUILD-INFO acceptance must bind the exact native profile reports and proof')
+
+
 def create_manifest(directory, metadata):
     directory = Path(directory)
     required = [EXE, 'README.md', 'LICENSE', 'START-HERE.md',
@@ -453,6 +498,8 @@ def create_manifest(directory, metadata):
     windows_executable((directory / EXE).read_bytes())
     verify_packaged_pitch_bend_evidence(lambda name: (directory / name).read_bytes(), metadata)
     verify_packaged_song_authoring_evidence(lambda name: (directory / name).read_bytes(), metadata)
+    verify_packaged_profiles(lambda name: _pitch.read_evidence(directory / name, 2 * 1024 * 1024)
+                             if name != EXE else (directory / name).read_bytes(), metadata)
     require(not (directory / 'WorldMusicHub.exe').exists(), 'Browser EXE must not be in the native package')
     notices = read_json(directory / 'licenses/rust/manifest.json')
     require(notices.get('format_version') == 2 and notices.get('target') == 'x86_64-pc-windows-msvc'
@@ -515,7 +562,7 @@ def verify_archive(archive):
         require(info.get('name') == FOLDER and info.get('executable') == EXE, 'Wrong native product identity')
         for name in SCORE_SCHEMAS:
             require(name in info['files'], f'Native package is missing {name}')
-        for name in [*PERFORMANCE_SONG_EVIDENCE, *PITCH_BEND_EVIDENCE, *SONG_AUTHORING_EVIDENCE]:
+        for name in [*SONG_FOLDER_EVIDENCE, *PERFORMANCE_SONG_EVIDENCE, *PITCH_BEND_EVIDENCE, *SONG_AUTHORING_EVIDENCE]:
             require(f'evidence/{name}' in info['files'], f'Native package is missing evidence/{name}')
         verify_pitch_bend_inventory(info['files'])
         verify_song_authoring_inventory(info['files'])
@@ -529,6 +576,7 @@ def verify_archive(archive):
         windows_executable(package.read(prefix + EXE))
         verify_packaged_pitch_bend_evidence(lambda name: package.read(prefix + name), info)
         verify_packaged_song_authoring_evidence(lambda name: package.read(prefix + name), info)
+        verify_packaged_profiles(lambda name: package.read(prefix + name), info)
         sums[INFO] = sha(package.read(prefix + INFO))
         require(package.read(prefix + SUMS).decode() == ''.join(f'{sums[name]}  {name}\n' for name in sorted(sums)), 'Native checksum file differs')
     archive.with_suffix(archive.suffix + '.sha256').write_text(f'{sha(archive.read_bytes())}  {archive.name}\n', encoding='utf-8', newline='\n')

@@ -14,7 +14,8 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 PITCH_BEND_PHASES = ['pitch-bend-seed', 'pitch-bend-restart']
 PITCH_BEND_CLAIMS = json.loads((ROOT / 'scripts/native-pitch-bend-claims.json').read_text())
-PITCH_BEND_REPORTS = ['native-pitch-bend.json', *[f'renderer-{phase}.json' for phase in PITCH_BEND_PHASES]]
+PITCH_BEND_REPORTS = ['native-pitch-bend.json', *[f'renderer-{phase}.json' for phase in PITCH_BEND_PHASES],
+                      *[f'profile-{phase}.json' for phase in PITCH_BEND_PHASES]]
 
 
 def require(condition, message):
@@ -26,10 +27,67 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def read_json(path):
-    require(path.is_file() and not path.is_symlink() and 0 < path.stat().st_size <= 1024 * 1024,
+def read_evidence(path, limit=1024 * 1024):
+    path = Path(path)
+    require(path.is_file() and not path.is_symlink() and 0 < path.stat().st_size <= limit,
             'Expected a bounded ordinary evidence file')
-    return json.loads(path.read_text(encoding='utf-8-sig'))
+    data = path.read_bytes()
+    require(0 < len(data) <= limit, 'Expected a bounded ordinary evidence file')
+    return data
+
+
+def read_json(path):
+    return json.loads(read_evidence(path).decode('utf-8-sig'))
+
+
+def verify_profile_evidence(native, phases, read):
+    """Validate host-created profiles identically before and after packaging."""
+    def absolute_directory(value):
+        require(isinstance(value, str) and 0 < len(value) <= 32768
+                and not any(char in value for char in '\r\n\0'), 'Native profile directory is invalid')
+        path = value.replace('\\', '/')
+        require((path.startswith('/') and not path.startswith('//') or re.match(r'^[A-Za-z]:/', path))
+                and all(part and part not in ['.', '..'] for part in path.split('/')[1:]),
+                'Native profile directory must be absolute without aliases')
+        return path
+
+    rows = native.get('phases')
+    require(isinstance(rows, list) and all(isinstance(row, dict) for row in rows)
+            and [row.get('phase') for row in rows] == phases, 'Native profile phases must be exact and ordered')
+    library = absolute_directory(native.get('directory'))
+    require(library.endswith('/Scores'), 'Native profile library must identify the absolute Scores root')
+    processes, profiles = set(), set()
+    for row in rows:
+        phase, process = row['phase'], row.get('process_id')
+        require(type(process) is int and 0 < process <= 9007199254740991 and process not in processes,
+                'Native profile phases must use distinct valid processes')
+        processes.add(process)
+        profile = absolute_directory(row.get('profile_directory'))
+        require(profile == library[:-len('/Scores')] + '/webview-profiles/' + phase and profile not in profiles,
+                'Native profile directory must use its exact phase under the evidence root')
+        profiles.add(profile)
+        require(row.get('profile_fresh') is True and row.get('profile_reused') is False
+                and row.get('profile_absent_before_launch') is True,
+                'Native profile requires an absent fresh profile before launch')
+        data = read(f'profile-{phase}.json')
+        require(0 < len(data) <= 16 * 1024, 'Native profile host evidence must be bounded')
+        host = json.loads(data.decode('utf-8-sig'))
+        require(isinstance(host, dict) and type(host.get('version')) is int and host['version'] == 1
+                and host.get('phase') == phase and type(host.get('process_id')) is int
+                and host['process_id'] == process and host.get('profile_directory') == row['profile_directory']
+                and host.get('library_directory') == native['directory']
+                and host.get('fresh_required') is True and host.get('created_new') is True,
+                'Native profile host must match the phase, process and directories and prove fresh atomic creation')
+
+
+def verify_report_binding(proof, name, data, label='original report'):
+    files = proof.get('files')
+    require(isinstance(files, list) and all(isinstance(row, dict) for row in files),
+            'Proof requires its original file inventory')
+    matching = [row for row in files if row.get('path') == name]
+    require(len(matching) == 1 and matching[0].get('sha256') == sha(data)
+            and type(matching[0].get('bytes')) is int and matching[0]['bytes'] == len(data),
+            'Proof must bind every exact ' + label + ': ' + name)
 
 
 def accepted_pitch_bend_evidence(directory, executable, commit, tree):
@@ -55,6 +113,8 @@ def accepted_pitch_bend_evidence(directory, executable, commit, tree):
     require(set(claims) == set(PITCH_BEND_CLAIMS)
             and all(claims[key] is value for key, value in PITCH_BEND_CLAIMS.items()),
             'Pitch evidence claim set or exact boolean scope changed')
+    verify_profile_evidence(native, PITCH_BEND_PHASES,
+                            lambda name: read_evidence(directory / name, 16 * 1024))
     checked = subprocess.run(['node', str(ROOT / 'scripts/verify-native-pitch-bend-evidence.mjs'),
                               '--check', str(directory)], cwd=ROOT, capture_output=True,
                              text=True, encoding='utf-8', timeout=30, check=False)
@@ -62,11 +122,8 @@ def accepted_pitch_bend_evidence(directory, executable, commit, tree):
             'Independent pitch-bend verification failed: ' + checked.stderr.strip())
     report_hashes = {}
     for name in PITCH_BEND_REPORTS:
-        data = (directory / name).read_bytes()
-        matching = [row for row in proof.get('files', []) if row.get('path') == name]
-        require(len(matching) == 1 and matching[0].get('sha256') == sha(data)
-                and type(matching[0].get('bytes')) is int and matching[0]['bytes'] == len(data),
-                'Proof must bind every exact original pitch-bend report')
+        data = read_evidence(directory / name)
+        verify_report_binding(proof, name, data, 'original pitch-bend report')
         report_hashes[name] = sha(data)
     return {'version': 1, 'scope': 'original-pitch-bend-focused-evidence-only',
             'source_sha': commit, 'source_tree': tree,

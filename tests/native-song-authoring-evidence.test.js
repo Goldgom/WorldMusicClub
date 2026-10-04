@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {mkdir,mkdtemp,readFile,writeFile,rm,symlink} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
 import {webcrypto,createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import path from 'node:path';
 import vm from 'node:vm';
 import {authoringAcceptanceFixtures,AUTHORING_PAIR_ALIAS,AUTHORING_FIXTURE_FILENAMES} from '../scripts/prepare-song-authoring-fixtures.mjs';
-import {validateAuthoringPicker,validateAuthoringExport,validateAuthoringTakes,validateAuthoringNavigation,validateAuthoringEventOnlyOpened,AUTHORING_CLAIMS} from '../scripts/verify-native-song-authoring-evidence.mjs';
+import {validateAuthoringPicker,validateAuthoringExport,validateAuthoringTakes,validateAuthoringNavigation,validateAuthoringEventOnlyOpened,verifyNativeSongAuthoringEvidence,AUTHORING_PHASES,AUTHORING_CLAIMS} from '../scripts/verify-native-song-authoring-evidence.mjs';
+import {addNativeProfileEvidence} from './native-profile-evidence-fixtures.js';
 import {authoringPickerFiles,createAuthoringHostedChooser} from '../scripts/song-authoring-hosted-chooser.mjs';
 import {createAuthoringHostedConsole} from '../scripts/song-authoring-hosted-console.mjs';
 import {storedZip} from './native-import-driver-fixtures.js';
@@ -120,7 +122,29 @@ test('authoring report serialization keeps the same strict 1 MiB native and host
  assert.equal((await post({report:{version:1,phase:'authoring-seed',ok:true},waits})).delivered,true);assert.equal(sent[0].ok,true);
  assert.equal((await post({report:{version:1,phase:'authoring-seed',ok:true,padding:'x'.repeat(1024*1024)},waits})).delivered,false);assert.equal(sent.length,2);assert.equal(sent[1].ok,false);assert.equal(sent[1].report_failure.limit_bytes,1024*1024);assert.equal(sent[1].report_failure.code,'authoring_report_delivery_failed');
 });
-test('independent manifest rejects wrong source, EXE, report hashes, missing/extra claims and numeric booleans',()=>{
+test('authoring reads both fresh host profiles before sources and rejects missing, reused or mismatched host records',async t=>{
+ // This deliberately incomplete synthetic bundle exercises the real reader's
+ // profile admission boundary; it cannot yield a native acceptance proof.
+ const directory=await mkdtemp(path.join(tmpdir(),'authoring-profile-contract-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+ const save=async(name,value)=>writeFile(path.join(directory,name),JSON.stringify(value)),native={version:1,ok:true,scenario:'authoring',profile_reused:false,os:'Windows',source_sha:'a'.repeat(40),source_tree:'b'.repeat(40),executable_sha256:'c'.repeat(64),executable_bytes:1,directory:path.join(directory,'Scores'),phases:AUTHORING_PHASES.map((phase,index)=>({phase,process_id:100+index,profile_fresh:true,profile_reused:false}))};
+ await addNativeProfileEvidence(native,save);await save('native-song-authoring.json',native);await mkdir(path.join(directory,'fixtures'));
+ const reachedSources=()=>assert.rejects(verifyNativeSongAuthoringEvidence(directory),error=>error.code==='ENOENT'&&error.path===path.join(directory,'fixtures','authoring-fixtures.json'));
+ await reachedSources();
+ for(const change of [v=>delete v.phases[0].profile_directory,v=>v.phases[1].profile_directory=v.phases[0].profile_directory,v=>v.phases[1].process_id=v.phases[0].process_id,v=>v.phases[1].profile_reused=true,v=>v.phases[1].profile_fresh=false,v=>v.phases[1].profile_absent_before_launch=false,v=>delete v.phases[1].profile_absent_before_launch]){
+  const bad=structuredClone(native);change(bad);await save('native-song-authoring.json',bad);await assert.rejects(verifyNativeSongAuthoringEvidence(directory),/Native .*profile/);await save('native-song-authoring.json',native);
+ }
+ for(const phase of AUTHORING_PHASES){
+  const name=`profile-${phase}.json`,filename=path.join(directory,name),original=JSON.parse(await readFile(filename));await rm(filename);
+  await assert.rejects(verifyNativeSongAuthoringEvidence(directory),error=>error.code==='ENOENT'&&error.path===filename);await save(name,original);
+  for(const change of [v=>v.phase='other-phase',v=>v.process_id++,v=>v.profile_directory=native.phases.find(row=>row.phase!==phase).profile_directory,v=>v.library_directory+='-other',v=>v.created_new=false,v=>v.fresh_required=false,v=>delete v.created_new]){
+   const bad=structuredClone(original);change(bad);await save(name,bad);await assert.rejects(verifyNativeSongAuthoringEvidence(directory),/Native .*profile/);await save(name,original);
+  }
+  await writeFile(filename,' '.repeat(16*1024+1));await assert.rejects(verifyNativeSongAuthoringEvidence(directory),/bounded ordinary file/);await save(name,original);
+  if(process.platform!=='win32'){await rm(filename);await symlink(path.join(directory,`profile-${AUTHORING_PHASES.find(other=>other!==phase)}.json`),filename);await assert.rejects(verifyNativeSongAuthoringEvidence(directory),/bounded ordinary file/);await rm(filename);await save(name,original);}
+ }
+ await reachedSources();
+});
+test('independent manifest binds both fresh authoring profiles and rejects wrong source, EXE, hashes, claims and numeric booleans',()=>{
  // Unit-test the Python source/EXE boundary separately from the full Node
  // verifier. The subprocess stub is confined to this test; it is not evidence
  // of a native run and no generated manifest is promoted or delivered.
@@ -134,8 +158,11 @@ with tempfile.TemporaryDirectory(prefix='wmh-manifest-contract-') as temp:
  directory=pathlib.Path(temp);executable=directory/'original-fixture.exe';executable.write_bytes(b'original fixture executable bytes')
  commit='a'*40;tree='b'*40
  base={'version':1,'ok':True,'source_sha':commit,'source_tree':tree,'executable_sha256':module.sha(executable.read_bytes()),'executable_bytes':executable.stat().st_size}
- native_path=directory/'native-song-authoring.json';native_path.write_text(json.dumps(base))
+ native={**base,'directory':str(directory/'Scores'),'phases':[{'phase':phase,'process_id':100+index,'profile_directory':str(directory/'webview-profiles'/phase),'profile_fresh':True,'profile_reused':False,'profile_absent_before_launch':True} for index,phase in enumerate(module.SONG_AUTHORING_PHASES)]}
+ native_path=directory/'native-song-authoring.json';native_path.write_text(json.dumps(native))
  for phase in module.SONG_AUTHORING_PHASES:(directory/f'renderer-{phase}.json').write_text(json.dumps({'version':1,'phase':phase,'fixture_only':True}))
+ for row in native['phases']:(directory/f'profile-{row["phase"]}.json').write_text(json.dumps({'version':1,'phase':row['phase'],'process_id':row['process_id'],'profile_directory':row['profile_directory'],'library_directory':native['directory'],'fresh_required':True,'created_new':True}))
+ assert module.SONG_AUTHORING_REPORTS==['native-song-authoring.json','renderer-authoring-seed.json','renderer-authoring-restart.json','profile-authoring-seed.json','profile-authoring-restart.json']
  proof={**base,'claims':dict(module.SONG_AUTHORING_CLAIMS),'files':[{'path':name,'bytes':(directory/name).stat().st_size,'sha256':module.sha((directory/name).read_bytes())} for name in module.SONG_AUTHORING_REPORTS]}
  proof_path=directory/'native-song-authoring-files.json'
  def save(value):proof_path.write_text(json.dumps(value))
@@ -147,6 +174,7 @@ with tempfile.TemporaryDirectory(prefix='wmh-manifest-contract-') as temp:
  with patch.object(module.subprocess,'run',return_value=types.SimpleNamespace(returncode=0,stderr='')) as invoked:
   save(proof);result=module.accepted_song_authoring_evidence(directory,executable,commit,tree)
   assert result['full_checkpoint_acceptance'] is False and result['release_ready'] is False
+  assert result['native_song_authoring_reports_sha256']=={name:module.sha((directory/name).read_bytes()) for name in module.SONG_AUTHORING_REPORTS}
   assert invoked.call_count==1 and invoked.call_args.args[0][-2]=='--check'
   for name,value in [('source_sha','c'*40),('source_tree','c'*40),('executable_sha256','c'*64),('executable_bytes',1),('version',True),('ok',1)]:
    bad=copy.deepcopy(proof);bad[name]=value;rejects(bad)
@@ -156,6 +184,32 @@ with tempfile.TemporaryDirectory(prefix='wmh-manifest-contract-') as temp:
   bad=copy.deepcopy(proof);bad['claims']['extra_acceptance']=True;rejects(bad)
   for name in module.SONG_AUTHORING_REPORTS:
    bad=copy.deepcopy(proof);next(row for row in bad['files'] if row['path']==name)['sha256']='d'*64;rejects(bad)
+   bad=copy.deepcopy(proof);next(row for row in bad['files'] if row['path']==name)['bytes']+=1;rejects(bad)
+   bad=copy.deepcopy(proof);bad['files']=[row for row in bad['files'] if row['path']!=name];rejects(bad)
+   bad=copy.deepcopy(proof);bad['files'].append(copy.deepcopy(next(row for row in bad['files'] if row['path']==name)));rejects(bad)
+  def bind_current_reports():
+   value=copy.deepcopy(proof)
+   for row in value['files']:
+    data=(directory/row['path']).read_bytes();row['bytes']=len(data);row['sha256']=module.sha(data)
+   return value
+  for key,value in [('profile_directory',native['phases'][0]['profile_directory']),('process_id',100),('profile_fresh',False),('profile_reused',True),('profile_absent_before_launch',False),('profile_absent_before_launch',1)]:
+   bad=copy.deepcopy(native);bad['phases'][1][key]=value;native_path.write_text(json.dumps(bad));rejects(bind_current_reports());native_path.write_text(json.dumps(native))
+  for phase in module.SONG_AUTHORING_PHASES:
+   host_path=directory/f'profile-{phase}.json';original=host_path.read_bytes();host=json.loads(original)
+   host_path.unlink();rejects(proof);host_path.write_bytes(original)
+   for key,value in [('version',True),('phase','other-phase'),('process_id',999),('process_id',True),('profile_directory','C:/other-root/webview-profiles/'+phase),('library_directory','C:/other-root/Scores'),('fresh_required',False),('created_new',False),('created_new',1)]:
+    bad=copy.deepcopy(host);bad[key]=value;host_path.write_text(json.dumps(bad));rejects(bind_current_reports());host_path.write_bytes(original)
+   for key in ['fresh_required','created_new','profile_directory','library_directory']:
+    bad=copy.deepcopy(host);del bad[key];host_path.write_text(json.dumps(bad));rejects(bind_current_reports());host_path.write_bytes(original)
+   host_path.write_bytes(b' '*(16*1024+1));rejects(bind_current_reports());host_path.write_bytes(original)
+   target=directory/f'profile-{next(other for other in module.SONG_AUTHORING_PHASES if other!=phase)}.json'
+   try:
+    host_path.unlink();host_path.symlink_to(target)
+   except OSError:pass
+   else:rejects(bind_current_reports())
+   finally:
+    if host_path.is_symlink():host_path.unlink()
+    host_path.write_bytes(original)
   save(proof)
   with patch.object(module.subprocess,'run',return_value=types.SimpleNamespace(returncode=1,stderr='fixture verifier rejected')):
    rejects(proof)

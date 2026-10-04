@@ -1,3 +1,4 @@
+import {verifyNativeProfileEvidence} from './native-profile-evidence.mjs';
 import {readFile,writeFile,readdir,lstat,rm} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -134,6 +135,7 @@ export async function verifyNativeSongFolderEvidence(directory){
   assert(digest(native.executable_sha256),'Invalid native executable SHA-256');
   assert(Array.isArray(native.phases)&&native.phases.length===3,'Three ordered native folder processes are required');
   equal(native.phases.map(row=>row?.phase),SONG_FOLDER_PHASES,'Native folder phase order differs');
+  await verifyNativeProfileEvidence(native,SONG_FOLDER_PHASES,json);
   const reports={},rendererHashes={},allNames=await readdir(directory),actionsByPhase={};
   for(const phase of SONG_FOLDER_PHASES){
     const host=native.phases.find(row=>row.phase===phase);

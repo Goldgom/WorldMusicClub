@@ -1,3 +1,4 @@
+import {verifyNativeProfileEvidence} from './native-profile-evidence.mjs';
 import {readFile,writeFile,readdir,lstat,rm} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -187,6 +188,7 @@ export async function verifyNativeBulkImportEvidence(directory){
   for(const field of ['source_sha','source_tree'])assert(typeof native[field]==='string'&&/^[a-f0-9]{40}$/.test(native[field])&&native[field].length===40,`Invalid native ${field}`);
   assert(digest(native.executable_sha256)&&positive(native.executable_bytes),'Invalid native executable identity');
   assert(Array.isArray(native.phases)&&native.phases.length===3,'Three ordered native bulk processes required');equal(native.phases.map(value=>value?.phase),BULK_IMPORT_PHASES,'Native bulk phase order differs');
+  await verifyNativeProfileEvidence(native,BULK_IMPORT_PHASES,json);
   const reports={},actionsByPhase={},screenshots={},archiveDirectory=recordedDirectory(native.directory);
   for(const phase of BULK_IMPORT_PHASES){
     const host=native.phases.find(value=>value.phase===phase);assert(host.renderer_ok===true&&host.normal_close===true&&host.renderer_origin==='https://wmh.localhost'&&host.executable_tcp_listeners===0&&positive(host.process_id)&&host.launched_new_process===true&&positive(host.actions)&&host.actions<=64&&host.profile_fresh===true&&host.profile_reused===false,`Native ${phase} process evidence incomplete`);

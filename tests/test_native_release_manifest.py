@@ -56,12 +56,16 @@ class NativeReleaseTests(unittest.TestCase):
                      *[f'renderer-{phase}.json' for phase in native.PHASES]]:
             write_json(directory / 'evidence' / name, {})
         pitch_bend = self.pitch_bend_evidence(directory, directory / native.EXE, directory / 'evidence')
+        song_folder = self.song_folder_evidence(directory, directory / native.EXE, directory / 'evidence')
+        performance_song = self.performance_song_evidence(directory, directory / native.EXE, directory / 'evidence')
         song_authoring = self.song_authoring_evidence(directory, directory / native.EXE, directory / 'evidence')
         # The portable-package unit fixture has synthetic GUI observations.
         # Only Node's GUI/disk re-derivation is mocked; source/EXE/claims, exact
         # focused manifest and all packaged hash bindings remain enforced.
         with patch.object(native.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')):
             acceptance = native.accepted_pitch_bend_evidence(pitch_bend, directory / native.EXE, 'b' * 40, 'c' * 40)
+            acceptance.update(native.accepted_song_folder_evidence(song_folder, directory / native.EXE, 'b' * 40, 'c' * 40))
+            acceptance.update(native.accepted_performance_song_evidence(performance_song, directory / native.EXE, 'b' * 40, 'c' * 40))
             acceptance.update(native.accepted_song_authoring_evidence(song_authoring, directory / native.EXE, 'b' * 40, 'c' * 40))
         return {'name': native.FOLDER, 'executable': native.EXE, 'cargo_lock_sha256': 'a' * 64,
                 'git_commit': 'b' * 40, 'git_tree': 'c' * 40, 'commit_count': 164, 'acceptance': acceptance}
@@ -115,10 +119,22 @@ class NativeReleaseTests(unittest.TestCase):
                               cwd=ROOT, capture_output=True, check=True)
         return startup, acceptance, exe
 
-    def song_folder_evidence(self, root, exe):
+    def profile_evidence(self, directory, report, phases):
+        report['directory'] = str(directory / 'Scores')
+        report.setdefault('phases', [{'phase': phase, 'process_id': 100 + index}
+                                      for index, phase in enumerate(phases)])
+        for row in report['phases']:
+            row.update({'profile_directory': str(directory / 'webview-profiles' / row['phase']),
+                        'profile_fresh': True, 'profile_reused': False, 'profile_absent_before_launch': True})
+            write_json(directory / f"profile-{row['phase']}.json", {
+                'version': 1, 'phase': row['phase'], 'process_id': row['process_id'],
+                'profile_directory': row['profile_directory'], 'library_directory': report['directory'],
+                'fresh_required': True, 'created_new': True})
+
+    def song_folder_evidence(self, root, exe, directory=None):
         # Synthetic envelope for the Python packaging boundary. The independent
         # verifier's own fixtures test folder contents and derived file proofs.
-        directory = root / 'song folder 拼谱'
+        directory = directory or root / 'song folder 拼谱'
         report = {'version': 1, 'ok': True, 'source_sha': 'b' * 40, 'source_tree': 'c' * 40,
                   'executable_sha256': native.sha(exe.read_bytes()), 'phases': [
                       {'phase': phase, 'renderer_ok': True, 'normal_close': True,
@@ -127,6 +143,7 @@ class NativeReleaseTests(unittest.TestCase):
                        'profile_fresh': True, 'profile_reused': False}
                       for index, phase in enumerate(native.SONG_FOLDER_PHASES)]}
         report_path = directory / 'native-song-folder.json'
+        self.profile_evidence(directory, report, native.SONG_FOLDER_PHASES)
         write_json(report_path, report)
         renderer_hashes = {}
         for phase in native.SONG_FOLDER_PHASES:
@@ -135,7 +152,10 @@ class NativeReleaseTests(unittest.TestCase):
             renderer_hashes[phase] = native.sha(path.read_bytes())
         write_json(directory / 'native-song-folder-files.json', {
             'version': 1, 'ok': True, 'native_report_sha256': native.sha(report_path.read_bytes()),
-            'renderer_sha256': renderer_hashes, 'files': []})
+            'renderer_sha256': renderer_hashes, 'files': [
+                {'path': f'profile-{phase}.json', 'sha256': native.sha((directory / f'profile-{phase}.json').read_bytes()),
+                 'bytes': (directory / f'profile-{phase}.json').stat().st_size}
+                for phase in native.SONG_FOLDER_PHASES]})
         return directory
 
     def test_song_folder_proof_is_source_bound_and_independently_rederived(self):
@@ -148,7 +168,10 @@ class NativeReleaseTests(unittest.TestCase):
             with patch.object(native.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')) as verifier:
                 outcome = native.accepted_song_folder_evidence(directory, exe, 'b' * 40, 'c' * 40)
                 self.assertEqual(outcome, {'native_song_folder_validated': True,
-                                          'native_song_folder_proof_sha256': native.sha(proof_path.read_bytes())})
+                                          'native_song_folder_proof_sha256': native.sha(proof_path.read_bytes()),
+                                          'native_song_folder_reports_sha256': {
+                                              name: native.sha((directory / name).read_bytes())
+                                              for name in native.SONG_FOLDER_EVIDENCE if name != proof_path.name}})
                 verifier.assert_called_once_with(
                     ['node', str(ROOT / 'scripts/verify-native-song-folder-evidence.mjs'), str(directory), '--check'],
                     cwd=ROOT, capture_output=True, text=True, encoding='utf-8', timeout=15, check=False)
@@ -229,17 +252,18 @@ class NativeReleaseTests(unittest.TestCase):
                 path = directory / name
                 data = path.read_bytes()
                 path.unlink()
-                with self.subTest(missing=name), self.assertRaises(FileNotFoundError):
+                with self.subTest(missing=name), self.assertRaises((FileNotFoundError, ValueError)):
                     native.accepted_song_folder_evidence(directory, exe, 'b' * 40, 'c' * 40)
                 path.write_bytes(data)
 
-    def performance_song_evidence(self, root, exe):
+    def performance_song_evidence(self, root, exe, directory=None):
         # Only the packaging envelope is synthetic here. The real Node verifier
         # has its own full fixture/ownership/audio/bytes regression suite.
-        directory = root / 'performance-song'
+        directory = directory or root / 'performance-song'
         report = {'version': 1, 'ok': True, 'scenario': 'performance-song',
                   'source_sha': 'b' * 40, 'source_tree': 'c' * 40,
                   'executable_sha256': native.sha(exe.read_bytes()), 'executable_bytes': exe.stat().st_size}
+        self.profile_evidence(directory, report, native.PERFORMANCE_SONG_PHASES)
         write_json(directory / 'native-performance-song.json', report)
         for phase in native.PERFORMANCE_SONG_PHASES:
             write_json(directory / f'renderer-{phase}.json', {'ok': True, 'phase': phase})
@@ -259,6 +283,7 @@ class NativeReleaseTests(unittest.TestCase):
         report = {'version': 1, 'ok': True, 'scenario': 'pitch-bend',
                   'source_sha': 'b' * 40, 'source_tree': 'c' * 40,
                   'executable_sha256': native.sha(exe.read_bytes()), 'executable_bytes': exe.stat().st_size}
+        self.profile_evidence(directory, report, native._pitch.PITCH_BEND_PHASES)
         write_json(directory / 'native-pitch-bend.json', report)
         for phase in native._pitch.PITCH_BEND_PHASES:
             write_json(directory / f'renderer-{phase}.json', {'ok': True, 'phase': phase})
@@ -280,6 +305,7 @@ class NativeReleaseTests(unittest.TestCase):
         report = {'version': 1, 'ok': True, 'scenario': 'authoring',
                   'source_sha': 'b' * 40, 'source_tree': 'c' * 40,
                   'executable_sha256': native.sha(exe.read_bytes()), 'executable_bytes': exe.stat().st_size}
+        self.profile_evidence(directory, report, native._authoring.SONG_AUTHORING_PHASES)
         write_json(directory / 'native-song-authoring.json', report)
         for phase in native._authoring.SONG_AUTHORING_PHASES:
             write_json(directory / f'renderer-{phase}.json', {'ok': True, 'phase': phase})
@@ -306,6 +332,166 @@ class NativeReleaseTests(unittest.TestCase):
         sums[native.INFO] = native.sha((directory / native.INFO).read_bytes())
         (directory / native.SUMS).write_text(''.join(f'{sums[name]}  {name}\n' for name in sorted(sums)),
                                              encoding='utf-8', newline='\n')
+
+    def test_all_profile_phases_require_matching_host_creation_and_freshness(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            exe = root / native.EXE
+            exe.write_bytes(executable())
+            for scenario, factory, accept in [
+                    ('song-folder', self.song_folder_evidence, native.accepted_song_folder_evidence),
+                    ('performance-song', self.performance_song_evidence, native.accepted_performance_song_evidence),
+                    ('pitch-bend', self.pitch_bend_evidence, native.accepted_pitch_bend_evidence),
+                    ('song-authoring', self.song_authoring_evidence, native.accepted_song_authoring_evidence)]:
+                directory = factory(root, exe)
+                native_path = directory / f'native-{scenario}.json'
+                original = native.read_json(native_path)
+                for phases in [None, original['phases'][:1], list(reversed(original['phases'])),
+                               [original['phases'][0], original['phases'][0]], [None, None]]:
+                    write_json(native_path, {**original, 'phases': phases})
+                    with self.subTest(scenario=scenario, phases=phases), \
+                            patch.object(native.subprocess, 'run') as verifier, self.assertRaises(ValueError):
+                        accept(directory, exe, 'b' * 40, 'c' * 40)
+                    verifier.assert_not_called()
+                write_json(native_path, original)
+                for index, row in enumerate(original['phases']):
+                    for field, bad in [('profile_fresh', False), ('profile_fresh', 1),
+                                       ('profile_reused', True), ('profile_reused', 0),
+                                       ('profile_absent_before_launch', False), ('profile_absent_before_launch', 1),
+                                       ('profile_directory', row['profile_directory'] + '/child'),
+                                       ('profile_directory', '../shared-profile'), ('process_id', True),
+                                       ('process_id', 0), ('process_id', 9007199254740992)]:
+                        changed = json.loads(json.dumps(original))
+                        changed['phases'][index][field] = bad
+                        write_json(native_path, changed)
+                        with self.subTest(scenario=scenario, phase=row['phase'], field=field, bad=bad), \
+                                patch.object(native.subprocess, 'run') as verifier, self.assertRaises(ValueError):
+                            accept(directory, exe, 'b' * 40, 'c' * 40)
+                        verifier.assert_not_called()
+                    for field in ['profile_directory', 'profile_fresh', 'profile_reused', 'profile_absent_before_launch']:
+                        changed = json.loads(json.dumps(original))
+                        del changed['phases'][index][field]
+                        write_json(native_path, changed)
+                        with self.subTest(scenario=scenario, phase=row['phase'], missing=field), self.assertRaises(ValueError):
+                            accept(directory, exe, 'b' * 40, 'c' * 40)
+                    write_json(native_path, original)
+                    host_path = directory / f"profile-{row['phase']}.json"
+                    host_bytes = host_path.read_bytes()
+                    host = native.read_json(host_path)
+                    for field, bad in [('version', True), ('phase', 'other'), ('process_id', True),
+                                       ('process_id', row['process_id'] + 1),
+                                       ('profile_directory', row['profile_directory'] + '/other'),
+                                       ('library_directory', original['directory'] + '/other'),
+                                       ('fresh_required', False), ('fresh_required', 1),
+                                       ('created_new', False), ('created_new', 1)]:
+                        write_json(host_path, {**host, field: bad})
+                        with self.subTest(scenario=scenario, host=row['phase'], field=field, bad=bad), \
+                                patch.object(native.subprocess, 'run') as verifier, self.assertRaisesRegex(ValueError, 'profile host'):
+                            accept(directory, exe, 'b' * 40, 'c' * 40)
+                        verifier.assert_not_called()
+                    for payload in [None, b' ' * (16 * 1024 + 1)]:
+                        host_path.unlink()
+                        if payload is not None:
+                            host_path.write_bytes(payload)
+                        with self.subTest(scenario=scenario, host=row['phase'], payload=payload is not None), self.assertRaises(ValueError):
+                            accept(directory, exe, 'b' * 40, 'c' * 40)
+                        host_path.write_bytes(host_bytes)
+
+    def test_profile_paths_accept_windows_spelling_and_reject_aliases_or_symlinks(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            phases = native._pitch.PITCH_BEND_PHASES
+            report = {}
+            self.profile_evidence(root, report, phases)
+            report['directory'] = r'C:\acceptance\Scores'
+            for row in report['phases']:
+                row['profile_directory'] = rf'C:\acceptance\webview-profiles\{row["phase"]}'
+                path = root / f"profile-{row['phase']}.json"
+                write_json(path, {**native.read_json(path), 'profile_directory': row['profile_directory'],
+                                  'library_directory': report['directory']})
+            read = lambda name: native._pitch.read_evidence(root / name, 16 * 1024)
+            native._pitch.verify_profile_evidence(report, phases, read)
+            for bad in [r'C:\acceptance\..\acceptance\Scores', '//server/share/Scores',
+                        '/acceptance//Scores', 'relative/Scores', '/acceptance/Scores/']:
+                with self.subTest(directory=bad), self.assertRaises(ValueError):
+                    native._pitch.verify_profile_evidence({**report, 'directory': bad}, phases, read)
+            reused = json.loads(json.dumps(report))
+            reused['phases'][1]['process_id'] = reused['phases'][0]['process_id']
+            with self.assertRaisesRegex(ValueError, 'distinct valid processes'):
+                native._pitch.verify_profile_evidence(reused, phases, read)
+            path = root / f'profile-{phases[0]}.json'
+            host = native.read_json(path)
+            write_json(path, {**host, 'profile_directory': host['profile_directory'].replace('\\', '/')})
+            with self.assertRaisesRegex(ValueError, 'profile host'):
+                native._pitch.verify_profile_evidence(report, phases, read)
+            path.rename(root / 'profile-real.json')
+            try:
+                path.symlink_to(root / 'profile-real.json')
+            except OSError:
+                return  # Windows may require additional rights to create a test symlink.
+            with self.assertRaisesRegex(ValueError, 'bounded ordinary'):
+                native._pitch.verify_profile_evidence(report, phases, read)
+
+    def test_profile_files_must_be_bound_once_by_the_independent_proof(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            exe = root / native.EXE
+            exe.write_bytes(executable())
+            for scenario, factory, accept in [
+                    ('song-folder', self.song_folder_evidence, native.accepted_song_folder_evidence),
+                    ('performance-song', self.performance_song_evidence, native.accepted_performance_song_evidence),
+                    ('pitch-bend', self.pitch_bend_evidence, native.accepted_pitch_bend_evidence),
+                    ('song-authoring', self.song_authoring_evidence, native.accepted_song_authoring_evidence)]:
+                directory = factory(root, exe)
+                path = directory / f'native-{scenario}-files.json'
+                original = native.read_json(path)
+                for profile in [row for row in original['files'] if row['path'].startswith('profile-')]:
+                    remaining = [row for row in original['files'] if row != profile]
+                    for files in [remaining, [*original['files'], profile],
+                                  [*remaining, {**profile, 'sha256': '0' * 64}],
+                                  [*remaining, {**profile, 'bytes': True}],
+                                  [*remaining, {**profile, 'bytes': profile['bytes'] + 1}]]:
+                        write_json(path, {**original, 'files': files})
+                        with self.subTest(scenario=scenario, files=files), \
+                                patch.object(native.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')), \
+                                self.assertRaises(ValueError):
+                            accept(directory, exe, 'b' * 40, 'c' * 40)
+
+    def test_packaged_profiles_cannot_be_replaced_by_rehashing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / native.FOLDER
+            metadata = self.package(directory)
+            original = native.create_manifest(directory, metadata)
+            names = [name for name in [*native.SONG_FOLDER_EVIDENCE, *native.PERFORMANCE_SONG_EVIDENCE,
+                                      *native.PITCH_BEND_EVIDENCE, *native.SONG_AUTHORING_EVIDENCE]
+                     if name.startswith('profile-')]
+            for name in names:
+                path = directory / 'evidence' / name
+                before = path.read_bytes()
+                path.write_bytes(before + b' ')
+                self.rewrite_package_inventory(directory, original)
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    native.create_archive(directory, root / 'mutated-profile.zip')
+                with self.subTest(create_name=name), self.assertRaises(ValueError):
+                    native.create_manifest(directory, metadata)
+                path.write_bytes(before)
+            # Even updating the profile's proof hash and acceptance metadata
+            # cannot make a host report claiming profile reuse acceptable.
+            path = directory / 'evidence/profile-folder-seed.json'
+            write_json(path, {**native.read_json(path), 'created_new': False})
+            proof_path = directory / 'evidence/native-song-folder-files.json'
+            proof = native.read_json(proof_path)
+            for row in proof['files']:
+                if row['path'] == path.name:
+                    row.update(sha256=native.sha(path.read_bytes()), bytes=path.stat().st_size)
+            write_json(proof_path, proof)
+            acceptance = json.loads(json.dumps(original['acceptance']))
+            acceptance['native_song_folder_reports_sha256'][path.name] = native.sha(path.read_bytes())
+            acceptance['native_song_folder_proof_sha256'] = native.sha(proof_path.read_bytes())
+            self.rewrite_package_inventory(directory, {**original, 'acceptance': acceptance})
+            with self.assertRaisesRegex(ValueError, 'profile host'):
+                native.create_archive(directory, root / 'rehashed-reused-profile.zip')
 
     def test_pitch_gate_rederives_original_inventory_and_isolates_focused_scope(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -465,14 +651,14 @@ class NativeReleaseTests(unittest.TestCase):
             for name in ['native-pitch-bend-extra.json', 'renderer-pitch-bend-third.json', 'pitch-bend-manifest-old.json']:
                 path = directory / 'evidence' / name
                 write_json(path, {})
-                with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'exactly the five required'):
+                with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'exactly the required'):
                     native.create_manifest(directory, metadata)
                 self.rewrite_package_inventory(directory, original)
-                with self.subTest(archive_name=name), self.assertRaisesRegex(ValueError, 'exactly the five required'):
+                with self.subTest(archive_name=name), self.assertRaisesRegex(ValueError, 'exactly the required'):
                     native.create_archive(directory, root / 'extra-pitch.zip')
                 path.unlink()
             for name in ['evidence/renderer-pitch-bend-seed.json/extra.txt', 'native-pitch-bend-copy/ordinary.json']:
-                with self.subTest(nested=name), self.assertRaisesRegex(ValueError, 'exactly the five required'):
+                with self.subTest(nested=name), self.assertRaisesRegex(ValueError, 'exactly the required'):
                     native.verify_pitch_bend_inventory([*original['files'], name])
             for key in [name for name in metadata['acceptance'] if name.startswith('native_pitch_bend_')]:
                 changed = {name: value for name, value in metadata['acceptance'].items() if name != key}
@@ -522,6 +708,21 @@ class NativeReleaseTests(unittest.TestCase):
             self.assertTrue(all(key.startswith('native_song_authoring_') for key in result))
             self.assertEqual(result['native_song_authoring_manifest_sha256'],
                              native.sha((directory / 'song-authoring-manifest.json').read_bytes()))
+            reports = ['native-song-authoring.json', 'renderer-authoring-seed.json',
+                       'renderer-authoring-restart.json', 'profile-authoring-seed.json',
+                       'profile-authoring-restart.json']
+            self.assertEqual(native.SONG_AUTHORING_REPORTS, reports)
+            self.assertEqual(native.SONG_AUTHORING_EVIDENCE,
+                             [*reports, 'native-song-authoring-files.json', 'song-authoring-manifest.json'])
+            self.assertEqual(result['native_song_authoring_reports_sha256'],
+                             {name: native.sha((directory / name).read_bytes()) for name in reports})
+            self.assertEqual(result['native_song_authoring_proof_sha256'],
+                             native.sha((directory / 'native-song-authoring-files.json').read_bytes()))
+            manifest = native.read_json(directory / 'song-authoring-manifest.json')
+            for key, value in [('source_sha', 'b' * 40), ('source_tree', 'c' * 40),
+                               ('executable_sha256', native.sha(exe.read_bytes())),
+                               ('executable_bytes', exe.stat().st_size)]:
+                self.assertEqual(manifest[key], value)
             checkpoint = {'full_checkpoint_acceptance': True, 'release_ready': True}
             checkpoint.update(result)
             self.assertTrue(checkpoint['full_checkpoint_acceptance'])
@@ -608,21 +809,26 @@ class NativeReleaseTests(unittest.TestCase):
             authoring = self.song_authoring_evidence(root, directory / native.EXE)
             manifest_path = authoring / 'song-authoring-manifest.json'
             original = native.read_json(manifest_path)
+            profile_path = authoring / 'profile-authoring-seed.json'
+            profile = native.read_json(profile_path)
             before = {path.name: path.read_bytes() for path in (directory / 'evidence').iterdir()}
             arguments = ['native-release-manifest', 'create', str(directory), '--commit', 'b' * 40,
                          '--count', '164', '--startup', 'unused-startup', '--acceptance', 'unused-acceptance',
                          '--song-folder', 'unused-folder', '--performance-song', 'unused-performance', '--pitch-bend', 'unused-pitch', '--song-authoring', str(authoring)]
-            for failure in ['independent original inventory failure', 'focused manifest differs']:
+            for failure in ['independent original inventory failure', 'focused manifest differs', 'profile host']:
                 write_json(manifest_path, {**original, 'release_ready': True} if failure == 'focused manifest differs' else original)
-                result = subprocess.CompletedProcess([], 0 if failure == 'focused manifest differs' else 1, '', failure)
+                write_json(profile_path, {**profile, 'created_new': False} if failure == 'profile host' else profile)
+                result = subprocess.CompletedProcess([], 1 if failure == 'independent original inventory failure' else 0, '', failure)
                 with self.subTest(failure=failure), patch('sys.argv', arguments), \
                         patch.object(native, 'source_metadata', return_value=dict(metadata)), \
                         patch.object(native, 'accepted_evidence', return_value={}), \
                         patch.object(native, 'accepted_song_folder_evidence', return_value={}), \
                         patch.object(native, 'accepted_performance_song_evidence', return_value={}), \
                         patch.object(native, 'accepted_pitch_bend_evidence', return_value={}), \
-                        patch.object(native.subprocess, 'run', return_value=result), self.assertRaisesRegex(ValueError, failure):
+                        patch.object(native.subprocess, 'run', return_value=result) as verifier, self.assertRaisesRegex(ValueError, failure):
                     native.main()
+                if failure == 'profile host':
+                    verifier.assert_not_called()
                 self.assertFalse((directory / native.INFO).exists())
                 self.assertFalse((directory / native.SUMS).exists())
                 self.assertEqual(before, {path.name: path.read_bytes() for path in (directory / 'evidence').iterdir()})
@@ -659,18 +865,25 @@ class NativeReleaseTests(unittest.TestCase):
             directory = root / native.FOLDER
             metadata = self.package(directory)
             original = native.create_manifest(directory, metadata)
-            for name in ['native-song-authoring-extra.json', 'renderer-authoring-third.json', 'song-authoring-manifest-old.json']:
+            for name in ['native-song-authoring-extra.json', 'renderer-authoring-third.json',
+                         'profile-authoring-third.json', 'profile-authoring-seed-copy.json',
+                         'song-authoring-manifest-old.json']:
                 path = directory / 'evidence' / name
                 write_json(path, {})
-                with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'exactly the five required'):
+                with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'exactly the seven required'):
                     native.create_manifest(directory, metadata)
                 self.rewrite_package_inventory(directory, original)
-                with self.subTest(archive_name=name), self.assertRaisesRegex(ValueError, 'exactly the five required'):
+                with self.subTest(archive_name=name), self.assertRaisesRegex(ValueError, 'exactly the seven required'):
                     native.create_archive(directory, root / 'extra-authoring.zip')
                 path.unlink()
-            for name in ['evidence/renderer-authoring-seed.json/extra.txt', 'native-song-authoring-copy/ordinary.json']:
-                with self.subTest(nested=name), self.assertRaisesRegex(ValueError, 'exactly the five required'):
+            for name in ['evidence/renderer-authoring-seed.json/extra.txt', 'native-song-authoring-copy/ordinary.json',
+                         'evidence/profile-authoring-seed.json/extra.txt', 'profile-authoring-copy/ordinary.json']:
+                with self.subTest(nested=name), self.assertRaisesRegex(ValueError, 'exactly the seven required'):
                     native.verify_song_authoring_inventory([*original['files'], name])
+            for name in native.SONG_AUTHORING_EVIDENCE:
+                with self.subTest(missing=name), self.assertRaisesRegex(ValueError, 'exactly the seven required'):
+                    native.verify_song_authoring_inventory(
+                        path for path in original['files'] if path != 'evidence/' + name)
             for key in [name for name in metadata['acceptance'] if name.startswith('native_song_authoring_')]:
                 changed = {name: value for name, value in metadata['acceptance'].items() if name != key}
                 self.rewrite_package_inventory(directory, {**original, 'acceptance': changed})
@@ -732,24 +945,90 @@ class NativeReleaseTests(unittest.TestCase):
             metadata = self.package(directory)
             original = native.create_manifest(directory, metadata)
             evidence = directory / 'evidence'
-            renderer = evidence / 'renderer-authoring-restart.json'
-            renderer.write_bytes(renderer.read_bytes() + b' ')
-            proof_path = evidence / 'native-song-authoring-files.json'
-            proof = native.read_json(proof_path)
-            for row in proof['files']:
-                if row['path'] == renderer.name:
-                    row.update(sha256=native.sha(renderer.read_bytes()), bytes=renderer.stat().st_size)
-            write_json(proof_path, proof)
-            # Even a self-consistent replacement of the focused evidence and
-            # generic inventory is not the evidence accepted into BUILD-INFO.
-            with patch.object(native.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')):
-                manifest = native._authoring.accepted_song_authoring_evidence(evidence, directory / native.EXE, 'b' * 40, 'c' * 40)
-            write_json(evidence / 'song-authoring-manifest.json', manifest)
-            self.rewrite_package_inventory(directory, original)
-            with self.assertRaisesRegex(ValueError, 'BUILD-INFO acceptance must bind the exact song-authoring'):
-                native.create_archive(directory, root / 'rebound-authoring.zip')
-            with self.assertRaisesRegex(ValueError, 'BUILD-INFO acceptance must bind the exact song-authoring'):
-                native.create_manifest(directory, metadata)
+            originals = {name: (evidence / name).read_bytes() for name in native.SONG_AUTHORING_EVIDENCE}
+            for name in native.SONG_AUTHORING_REPORTS:
+                for filename, data in originals.items():
+                    (evidence / filename).write_bytes(data)
+                report_path = evidence / name
+                report_path.write_bytes(report_path.read_bytes() + b' ')
+                proof_path = evidence / 'native-song-authoring-files.json'
+                proof = native.read_json(proof_path)
+                for row in proof['files']:
+                    if row['path'] == name:
+                        row.update(sha256=native.sha(report_path.read_bytes()), bytes=report_path.stat().st_size)
+                write_json(proof_path, proof)
+                # Even a self-consistent replacement of the focused evidence and
+                # generic inventory is not the evidence accepted into BUILD-INFO.
+                with patch.object(native.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')):
+                    manifest = native._authoring.accepted_song_authoring_evidence(evidence, directory / native.EXE, 'b' * 40, 'c' * 40)
+                write_json(evidence / 'song-authoring-manifest.json', manifest)
+                self.rewrite_package_inventory(directory, original)
+                with self.subTest(archive=name), self.assertRaisesRegex(ValueError, 'BUILD-INFO acceptance must bind the exact song-authoring'):
+                    native.create_archive(directory, root / 'rebound-authoring.zip')
+                with self.subTest(create=name), self.assertRaisesRegex(ValueError, 'BUILD-INFO acceptance must bind the exact song-authoring'):
+                    native.create_manifest(directory, metadata)
+
+    def test_authoring_package_rechecks_profiles_after_all_hash_bindings_are_regenerated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / native.FOLDER
+            metadata = self.package(directory)
+            original = native.create_manifest(directory, metadata)
+            evidence = directory / 'evidence'
+            originals = {name: (evidence / name).read_bytes() for name in native.SONG_AUTHORING_EVIDENCE}
+            native_name = 'native-song-authoring.json'
+            report = json.loads(originals[native_name])
+            mutations = [(native_name, 'missing phases', lambda value: value.pop('phases')),
+                         (native_name, 'reordered phases', lambda value: value['phases'].reverse()),
+                         (native_name, 'reused process', lambda value: value['phases'][1].update(
+                             process_id=value['phases'][0]['process_id']))]
+            for index, row in enumerate(report['phases']):
+                for field, bad in [('profile_fresh', False), ('profile_reused', True),
+                                   ('profile_absent_before_launch', False),
+                                   ('profile_directory', row['profile_directory'] + '/child'),
+                                   ('process_id', True)]:
+                    mutations.append((native_name, f"{row['phase']} {field}",
+                                      lambda value, index=index, field=field, bad=bad:
+                                      value['phases'][index].update({field: bad})))
+                for field, bad in [('version', True), ('phase', 'other'), ('process_id', True),
+                                   ('process_id', row['process_id'] + 1),
+                                   ('profile_directory', row['profile_directory'] + '/other'),
+                                   ('library_directory', report['directory'] + '/other'),
+                                   ('fresh_required', False), ('fresh_required', 1),
+                                   ('created_new', False), ('created_new', 1), ('padding', 'x' * (16 * 1024))]:
+                    mutations.append((f"profile-{row['phase']}.json", field,
+                                      lambda value, field=field, bad=bad: value.update({field: bad})))
+            for name, label, mutate in mutations:
+                for filename, data in originals.items():
+                    (evidence / filename).write_bytes(data)
+                changed = json.loads(originals[name])
+                mutate(changed)
+                write_json(evidence / name, changed)
+                proof_path = evidence / 'native-song-authoring-files.json'
+                proof = native.read_json(proof_path)
+                reports = {}
+                for filename in native.SONG_AUTHORING_REPORTS:
+                    data = (evidence / filename).read_bytes()
+                    reports[filename] = native.sha(data)
+                    for row in proof['files']:
+                        if row['path'] == filename:
+                            row.update(sha256=native.sha(data), bytes=len(data))
+                write_json(proof_path, proof)
+                manifest_path = evidence / 'song-authoring-manifest.json'
+                manifest = {**native.read_json(manifest_path),
+                            'native_song_authoring_reports_sha256': reports,
+                            'native_song_authoring_proof_sha256': native.sha(proof_path.read_bytes())}
+                write_json(manifest_path, manifest)
+                acceptance = {**metadata['acceptance'],
+                              **native.song_authoring_acceptance_fields(manifest, manifest_path.read_bytes())}
+                rebound = {**metadata, 'acceptance': acceptance}
+                # Rehash reports, proof, focused manifest and BUILD-INFO together:
+                # semantic host/profile validation must still reject the package.
+                self.rewrite_package_inventory(directory, {**original, 'acceptance': acceptance})
+                with self.subTest(archive=name, mutation=label), self.assertRaisesRegex(ValueError, 'Native profile'):
+                    native.create_archive(directory, root / 'rehashed-invalid-authoring-profile.zip')
+                with self.subTest(create=name, mutation=label), self.assertRaisesRegex(ValueError, 'Native profile'):
+                    native.create_manifest(directory, rebound)
 
     def test_performance_proof_binds_source_tree_executable_size_and_all_packaged_reports(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -969,7 +1248,9 @@ class NativeReleaseTests(unittest.TestCase):
             directory = root / native.FOLDER
             metadata = self.package(directory)
             original = native.create_manifest(directory, metadata)
-            for name in [*SCHEMAS, *[f'evidence/{item}' for item in [*native.PERFORMANCE_SONG_EVIDENCE, *native.PITCH_BEND_EVIDENCE, *native.SONG_AUTHORING_EVIDENCE]]]:
+            for name in [*SCHEMAS, *[f'evidence/{item}' for item in [
+                    *native.SONG_FOLDER_EVIDENCE, *native.PERFORMANCE_SONG_EVIDENCE,
+                    *native.PITCH_BEND_EVIDENCE, *native.SONG_AUTHORING_EVIDENCE]]]:
                 path = directory / name
                 data = path.read_bytes()
                 path.unlink()

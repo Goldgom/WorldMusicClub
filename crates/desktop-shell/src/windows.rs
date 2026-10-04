@@ -181,7 +181,12 @@ pub fn run() {
             .on_navigation(|url| url.as_str().parse().is_ok_and(|uri| allowed_uri(&uri)));
             if let Some(directory) = &evidence {
                 std::fs::create_dir_all(directory)?;
-                builder = builder.data_directory(directory.join("webview-profile"));
+                let profile = if let Some(acceptance) = &acceptance {
+                    acceptance.prepare_webview_profile()?
+                } else {
+                    directory.join("webview-profile")
+                };
+                builder = builder.data_directory(profile);
                 if let Some(acceptance) = &acceptance {
                     builder = builder.initialization_script(acceptance.script());
                     let acceptance = acceptance.clone();
