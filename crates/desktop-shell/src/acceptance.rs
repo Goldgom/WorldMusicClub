@@ -643,7 +643,6 @@ fn valid_action(value: &Value) -> bool {
             .chain(VSQ_PHASES.iter())
             .chain(PERFORMANCE_PHASES.iter())
             .chain(PITCH_BEND_PHASES.iter())
-            .chain(BASIC_KEY_PHASES.iter())
             .any(|phase| {
                 file.strip_prefix(&format!("{phase}-"))
                     .and_then(|n| n.strip_suffix(".json").or_else(|| n.strip_suffix(".zip")))
@@ -653,6 +652,7 @@ fn valid_action(value: &Value) -> bool {
         let authoring_download = AUTHORING_PHASES
             .iter()
             .chain(VSQ_AUTHORING_PHASES.iter())
+            .chain(BASIC_KEY_PHASES.iter())
             .any(|phase| {
                 (1..=16).any(|sequence| {
                     file == format!("{phase}-{sequence}.json")
@@ -1288,6 +1288,35 @@ mod tests {
         }
         for phase in ["basic-key-any", "basic-key-seed-extra", "../basic-key-seed"] {
             assert!(Acceptance::new(Evidence::new().0.clone(), phase).is_err());
+        }
+    }
+
+    #[test]
+    fn basic_key_picker_downloads_match_exact_native_spellings() {
+        let mut action = json!({"version":1,"sequence":1,"kind":"picker","x":1,"y":1,"width":1280,"height":720,"file":""});
+        for phase in BASIC_KEY_PHASES {
+            for sequence in 1..=16 {
+                for extension in ["json", "zip"] {
+                    action["file"] = json!(format!("{phase}-{sequence}.{extension}"));
+                    assert!(valid_action(&action), "{}", action["file"]);
+                }
+            }
+            for suffix in [
+                "0.zip",
+                "17.zip",
+                "01.zip",
+                "001.json",
+                "+1.zip",
+                "-1.zip",
+                "1.ZIP",
+                "1.mid",
+                "1.zip.extra",
+                "1.zip\n",
+                "1.json/",
+            ] {
+                action["file"] = json!(format!("{phase}-{suffix}"));
+                assert!(!valid_action(&action), "{}", action["file"]);
+            }
         }
     }
 
