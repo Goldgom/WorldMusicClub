@@ -269,20 +269,29 @@ try {
     Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) -ceq $path) "authoring fixture remains rooted $name"
     [System.IO.File]::Delete($path)
     Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) } "missing authoring file cannot fall back to downloads $name"
-    if($name -ne 'authoring-original-blocked.mid','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip') {
+    if($name -cin @('authoring-original-strict.mid','authoring-original-events.mid')) {
       Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,'authoring-original-pair') } "pair requires both original regular files: missing $name"
+    }
+    else {
+      Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,'authoring-original-pair') -ceq $expectedPair) "unrelated fixture does not alter the exact authoring pair: $name"
     }
     New-Item -ItemType Directory $path | Out-Null
     Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) } "directory cannot replace authoring file $name"
-    if($name -ne 'authoring-original-blocked.mid','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip') {
+    if($name -cin @('authoring-original-strict.mid','authoring-original-events.mid')) {
       Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,'authoring-original-pair') } "pair rejects directory $name"
+    }
+    else {
+      Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,'authoring-original-pair') -ceq $expectedPair) "unrelated fixture does not alter the exact authoring pair: $name"
     }
     [System.IO.Directory]::Delete($path)
     New-Item -ItemType SymbolicLink -Path $path -Target $linkTarget | Out-Null
     Assert-True (((Get-Item -LiteralPath $path).Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) "contract creates actual reparse file $name"
     Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) } "reparse point cannot replace authoring file $name"
-    if($name -ne 'authoring-original-blocked.mid','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip') {
+    if($name -cin @('authoring-original-strict.mid','authoring-original-events.mid')) {
       Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,'authoring-original-pair') } "pair rejects reparse file $name"
+    }
+    else {
+      Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,'authoring-original-pair') -ceq $expectedPair) "unrelated fixture does not alter the exact authoring pair: $name"
     }
     [System.IO.File]::Delete($path)
     [System.IO.File]::WriteAllText($path,'original restored fixture')
