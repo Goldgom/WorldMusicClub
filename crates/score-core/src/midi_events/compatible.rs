@@ -189,12 +189,14 @@ fn parse(
                         decode(TrackEventKind::Escape(data), &[], id, &mut diagnostics)?
                     }
                 }
-                _ => return Err(error(
-                    ErrorCode::InvalidEvent,
-                    format!(
+                _ => {
+                    return Err(error(
+                        ErrorCode::InvalidEvent,
+                        format!(
                         "Unsupported SMF event status {status:02x}; no resynchronization attempted"
                     ),
-                )),
+                    ))
+                }
             };
             ended = matches!(
                 kind,

@@ -1,0 +1,574 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:worldmusichub:basic-keys-midi1:v1",
+  "title": "WorldMusicHub complete-score basic MIDI-key profile v1",
+  "description": "Same complete-score family; compact complete source events, canonical positive-duration key projection, independent coverage/capabilities. Core decode reconstructs every attack and verifies all projections. Structural validation does not establish source hash truth or original sound rendition. Original file/base64 and duplicate derived note records are absent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "version",
+    "source",
+    "notation",
+    "performance",
+    "coverage",
+    "capabilities"
+  ],
+  "properties": {
+    "format": {
+      "const": "worldmusichub-complete-score"
+    },
+    "version": {
+      "const": 1
+    },
+    "source": {
+      "$ref": "#/$defs/Source"
+    },
+    "notation": {
+      "$ref": "#/$defs/Projection"
+    },
+    "performance": {
+      "$ref": "#/$defs/Performance"
+    },
+    "coverage": {
+      "$ref": "#/$defs/Coverage"
+    },
+    "capabilities": {
+      "$ref": "#/$defs/Capabilities"
+    }
+  },
+  "$defs": {
+    "Source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "format": {
+          "const": "midi"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5242880
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "EventRecord": {
+      "description": "Delta ticks; status+payload (FF,type,data for meta, F0/F7 packet); optional true records source running-status omission. Rust validates exact arity/framing; program high-bit values remain explicit source defects, not valid programs.",
+      "oneOf": [
+        {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 268435455
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 5242880,
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              }
+            }
+          ],
+          "items": false
+        },
+        {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 268435455
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 5242880,
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              }
+            },
+            {
+              "const": true
+            }
+          ],
+          "items": false
+        }
+      ]
+    },
+    "Track": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "source_index",
+        "end_tick",
+        "events"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "source_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "end_tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "events": {
+          "type": "array",
+          "maxItems": 250000,
+          "items": {
+            "$ref": "#/$defs/EventRecord"
+          }
+        }
+      }
+    },
+    "Route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "port",
+        "device_name_bytes"
+      ],
+      "properties": {
+        "port": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "device_name_bytes": {
+          "anyOf": [
+            {
+              "type": "array",
+              "maxItems": 5242880,
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "Part": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "track_id",
+        "channel",
+        "route",
+        "key_semantics"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "track_id": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 15
+        },
+        "route": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "key_semantics": {
+          "enum": [
+            "midi_key_number",
+            "channel10_key_number_percussion_unresolved"
+          ]
+        }
+      }
+    },
+    "ExactMicroseconds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "properties": {
+        "numerator": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32767
+        }
+      }
+    },
+    "Timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_order",
+        "relative_clock_available",
+        "end_relative_microseconds",
+        "smf_default_tempo_used",
+        "source_tempo_events",
+        "source_meter_events",
+        "meter",
+        "legacy_running_status_events",
+        "invalid_program_events"
+      ],
+      "properties": {
+        "event_order": {
+          "const": "tick_track_index_event_index"
+        },
+        "relative_clock_available": {
+          "type": "boolean"
+        },
+        "end_relative_microseconds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExactMicroseconds"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "smf_default_tempo_used": {
+          "type": "boolean"
+        },
+        "source_tempo_events": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "source_meter_events": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "meter": {
+          "enum": [
+            "unspecified",
+            "ambiguous_or_unconventional",
+            "source_declared"
+          ]
+        },
+        "legacy_running_status_events": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "invalid_program_events": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        }
+      }
+    },
+    "Performance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "source_format",
+        "ppq",
+        "end_tick",
+        "tracks",
+        "routes",
+        "parts",
+        "timing"
+      ],
+      "properties": {
+        "profile": {
+          "const": "wmh-basic-keys-midi1-v1"
+        },
+        "source_format": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "ppq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32767
+        },
+        "end_tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "tracks": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/Track"
+          }
+        },
+        "routes": {
+          "type": "array",
+          "maxItems": 250000,
+          "items": {
+            "$ref": "#/$defs/Route"
+          }
+        },
+        "parts": {
+          "type": "array",
+          "maxItems": 250000,
+          "items": {
+            "$ref": "#/$defs/Part"
+          }
+        },
+        "timing": {
+          "$ref": "#/$defs/Timing"
+        }
+      }
+    },
+    "Coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_tracks",
+        "source_events",
+        "represented_events",
+        "key_attacks",
+        "key_releases",
+        "determined_ends",
+        "zero_length_attacks",
+        "unresolved_ends",
+        "unmatched_releases",
+        "notation_notes",
+        "projected_melodic_targets",
+        "unresolved_route_ends"
+      ],
+      "properties": {
+        "source_tracks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "source_events": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "represented_events": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "key_attacks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "key_releases": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "determined_ends": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "zero_length_attacks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "unresolved_ends": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "unmatched_releases": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "notation_notes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "projected_melodic_targets": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "unresolved_route_ends": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        }
+      }
+    },
+    "Capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_events",
+        "basic_keys",
+        "score_projection",
+        "source_rendition",
+        "acoustic_pitch"
+      ],
+      "properties": {
+        "source_events": {
+          "const": "complete"
+        },
+        "basic_keys": {
+          "enum": [
+            "complete",
+            "unresolved_ends"
+          ]
+        },
+        "score_projection": {
+          "enum": [
+            "complete_positive_duration_keys",
+            "partial_positive_duration_keys"
+          ]
+        },
+        "source_rendition": {
+          "const": "requires_explicit_receiver_mapping"
+        },
+        "acoustic_pitch": {
+          "const": "not_inferred_from_key_numbers"
+        }
+      }
+    },
+    "Projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format_metadata",
+        "version",
+        "id",
+        "title",
+        "composer",
+        "provenance",
+        "parts",
+        "tempo",
+        "meters",
+        "keys",
+        "measures",
+        "repeats",
+        "source"
+      ],
+      "properties": {
+        "format_metadata": {
+          "$ref": "urn:worldmusichub:score:v1#/$defs/FormatMetadata"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "composer": {
+          "const": ""
+        },
+        "provenance": {
+          "$ref": "urn:worldmusichub:score:v1#/$defs/Provenance"
+        },
+        "parts": {
+          "type": "array",
+          "maxItems": 250000,
+          "items": {
+            "$ref": "urn:worldmusichub:score:v1#/$defs/Part"
+          }
+        },
+        "tempo": {
+          "type": "array",
+          "maxItems": 250000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "at",
+              "bpm"
+            ],
+            "properties": {
+              "at": {
+                "$ref": "urn:worldmusichub:score:v1#/$defs/Beat"
+              },
+              "bpm": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            }
+          }
+        },
+        "meters": {
+          "type": "array",
+          "maxItems": 250000,
+          "items": {
+            "$ref": "urn:worldmusichub:score:v1#/$defs/Meter"
+          }
+        },
+        "keys": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "measures": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "repeats": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "source": {
+          "type": "null"
+        }
+      },
+      "description": "Canonical Score structure as a derived nominal-key projection. Basic profile permits empty tempo/parts and source BPM beyond generic playback bounds. No fabricated default tempo/meter or acoustic instrument; do not pass this directly to the generic playback compiler."
+    }
+  }
+}

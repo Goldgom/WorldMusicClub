@@ -48,8 +48,9 @@ pub struct Performance {
     pub notes: Vec<KeyNote>,
     pub timing: Timing,
 }
-/// Each record is `[delta_ticks, [status, payload...]]`. Status is explicit;
-/// running-status encoding is normalized without changing message content.
+/// Each record is `[delta_ticks, [status, payload...], true?]`. Status is stored
+/// explicitly; an optional trailing true retains its omission in the source
+/// running-status encoding, including the declared legacy metadata dialect.
 /// Meta messages are `[255, meta_type, data...]`, without the derived length;
 /// F0/F7 messages retain every packet byte. Array indexes are original event
 /// indexes, including metadata, controls, SysEx and EndOfTrack.
