@@ -46,10 +46,11 @@ jobs:
           toolchain: '1.99.0'
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
-      - run: node --test tests/basic-key-acceptance.test.js tests/basic-keys-consumer.test.js tests/basic-key-schema.test.js
+      - run: node --test tests/basic-key-acceptance.test.js tests/basic-keys-consumer.test.js tests/basic-key-schema.test.js tests/dense-rendition-acceptance.test.js
       - run: cargo test -p score-core basic_keys --locked
       - run: "cargo test -p worldmusichub-desktop --lib acceptance:: --locked"
-      - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - id: dense_native_driver
+        run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
       - run: cargo build -p score-core --bin clean-song-batch --locked
       - run: cargo build -p practice-server --locked
       - name: Real Rust conversion and clean library persistence
@@ -59,7 +60,8 @@ jobs:
           WMH_BASIC_KEY_CONVERTER: ${{ github.workspace }}/target/debug/clean-song-batch
           WMH_BASIC_KEY_REPORT: ${{ github.workspace }}/test-results/basic-key/native-protocol/report.json
         run: node scripts/check-basic-key-native.mjs
-      - run: npx playwright install --with-deps chromium
+      - id: dense_browser_setup
+        run: npx playwright install --with-deps chromium
       - name: Actual picker, review, save, export and restart at all target sizes
         env:
           WMH_HOSTED_BROWSER: '1'
@@ -74,6 +76,25 @@ jobs:
           WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
         run: node scripts/hosted-notation-scope-check.mjs
+      - name: Continuous original dense audio across real native page rendering
+        if: ${{ !cancelled() && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
+        timeout-minutes: 4
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: node scripts/hosted-dense-rendition-check.mjs
+      - name: Retain original dense rendition timing and source evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dense-rendition-browser-${{ github.sha }}
+          path: |
+            test-results/dense-rendition/report.json
+            test-results/dense-rendition/*.png
+            test-results/dense-rendition/fixture/*
+            test-results/dense-rendition/ui-pages/*.json
+          if-no-files-found: warn
       - name: Retain original notation scope and fit evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -149,7 +170,7 @@ jobs:
           toolchain: '1.99.0'
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
-      - run: node --test tests/basic-key-acceptance.test.js tests/basic-keys-consumer.test.js tests/basic-key-schema.test.js
+      - run: node --test tests/basic-key-acceptance.test.js tests/basic-keys-consumer.test.js tests/basic-key-schema.test.js tests/dense-rendition-acceptance.test.js
       - name: Parse Windows script and check the bounded owned picker contract
         shell: pwsh
         run: |

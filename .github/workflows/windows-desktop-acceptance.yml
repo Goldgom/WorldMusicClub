@@ -42,7 +42,8 @@ jobs:
       - run: npm run test:bulk-import
       - run: node --test tests/pitch-bend-import-baseline.test.js tests/native-pitch-bend-evidence.test.js tests/pitch-bend-acceptance-workflow.test.js
       - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js tests/authoring-final-gate.test.js
-      - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - id: dense_native_driver
+        run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
       - run: cargo build -p score-core --bin clean-song-batch --locked
       - run: cargo build -p practice-server --locked
       - name: Original basic-key CLI bytes and native receiver protocol
@@ -83,7 +84,8 @@ jobs:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
           WMH_VSQ_AUTHORING_REPORT: ${{ github.workspace }}/test-results/vsq-authoring/native-protocol/report.json
         run: node scripts/check-vsq-authoring-native.mjs
-      - run: npx playwright install --with-deps chromium
+      - id: dense_browser_setup
+        run: npx playwright install --with-deps chromium
       - name: Real picker, original bytes, unified pack and fresh-profile screenshot proof
         env:
           WMH_HOSTED_BROWSER: '1'
@@ -146,6 +148,25 @@ jobs:
           WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
         run: node scripts/hosted-notation-scope-check.mjs
+      - name: Continuous original dense audio across real native page rendering
+        if: ${{ !cancelled() && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
+        timeout-minutes: 4
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: node scripts/hosted-dense-rendition-check.mjs
+      - name: Retain original dense rendition timing and source evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dense-rendition-browser-${{ github.sha }}
+          path: |
+            test-results/dense-rendition/report.json
+            test-results/dense-rendition/*.png
+            test-results/dense-rendition/fixture/*
+            test-results/dense-rendition/ui-pages/*.json
+          if-no-files-found: warn
       - name: Retain original notation scope and fit evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
