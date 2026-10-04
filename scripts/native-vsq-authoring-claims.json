@@ -1,0 +1,17 @@
+{
+  "native_original_vsq_picker": true,
+  "whole_raw_and_vocal_inventory": true,
+  "muted_and_note_free_parts_retained": true,
+  "exact_large_integer_package_strings": true,
+  "explicit_save_preserves_paused_human_take": true,
+  "draft_save_browse_no_audio_or_autoresume": true,
+  "explicit_base_note_instrumental_choice": true,
+  "native_notation_following": true,
+  "chinese_authoring_and_choice_view": true,
+  "exact_metadata_and_score_export": true,
+  "fresh_process_restart_requires_choice": true,
+  "original_vocal_synthesis": false,
+  "actual_audibility": false,
+  "full_checkpoint_acceptance": false,
+  "release_ready": false
+}

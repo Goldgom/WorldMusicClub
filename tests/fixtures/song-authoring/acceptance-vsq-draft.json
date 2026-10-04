@@ -1,0 +1,170 @@
+{
+  "state": "vsq_authoring_candidate",
+  "source": {
+    "format": "vsq",
+    "bytes": 2827,
+    "sha256": "d5e5e6969c86cd8cf5fd9e729caf0496b25788762b257547dcdfb5ed5dd76a2d"
+  },
+  "source_name": "authoring-original.vsq",
+  "title": "authoring-original",
+  "inventory": {
+    "source_tracks": 4,
+    "source_events": 152,
+    "ppq": 480,
+    "key_attacks": 0,
+    "key_releases": 0,
+    "tracks": [
+      {
+        "source_index": 0,
+        "track_id": "track-1",
+        "name": "Original conductor",
+        "source_event_count": 4,
+        "channels": [],
+        "key_attacks": 0,
+        "key_releases": 0,
+        "first_event_id": "vsq:d5e5e6969c86cd8cf5fd9e729caf0496b25788762b257547dcdfb5ed5dd76a2d:t0:e0",
+        "last_event_id": "vsq:d5e5e6969c86cd8cf5fd9e729caf0496b25788762b257547dcdfb5ed5dd76a2d:t0:e3",
+        "end": {
+          "numerator": 25,
+          "denominator": 3
+        }
+      },
+      {
+        "source_index": 1,
+        "track_id": "track-2",
+        "name": "Container 1",
+        "source_event_count": 66,
+        "channels": [
+          {
+            "channel": 0,
+            "source_event_count": 60,
+            "key_attacks": 0,
+            "key_releases": 0
+          }
+        ],
+        "key_attacks": 0,
+        "key_releases": 0,
+        "first_event_id": "vsq:d5e5e6969c86cd8cf5fd9e729caf0496b25788762b257547dcdfb5ed5dd76a2d:t1:e0",
+        "last_event_id": "vsq:d5e5e6969c86cd8cf5fd9e729caf0496b25788762b257547dcdfb5ed5dd76a2d:t1:e65",
+        "end": {
+          "numerator": 25,
+          "denominator": 3
+        }
+      },
+      {
+        "source_index": 2,
+        "track_id": "track-3",
+        "name": "Container 2",
+        "source_event_count": 66,
+        "channels": [
+          {
+            "channel": 0,
+            "source_event_count": 60,
+            "key_attacks": 0,
+            "key_releases": 0
+          }
+        ],
+        "key_attacks": 0,
+        "key_releases": 0,
+        "first_event_id": "vsq:d5e5e6969c86cd8cf5fd9e729caf0496b25788762b257547dcdfb5ed5dd76a2d:t2:e0",
+        "last_event_id": "vsq:d5e5e6969c86cd8cf5fd9e729caf0496b25788762b257547dcdfb5ed5dd76a2d:t2:e65",
+        "end": {
+          "numerator": 25,
+          "denominator": 3
+        }
+      },
+      {
+        "source_index": 3,
+        "track_id": "track-4",
+        "name": "Container 3",
+        "source_event_count": 16,
+        "channels": [
+          {
+            "channel": 0,
+            "source_event_count": 11,
+            "key_attacks": 0,
+            "key_releases": 0
+          }
+        ],
+        "key_attacks": 0,
+        "key_releases": 0,
+        "first_event_id": "vsq:d5e5e6969c86cd8cf5fd9e729caf0496b25788762b257547dcdfb5ed5dd76a2d:t3:e0",
+        "last_event_id": "vsq:d5e5e6969c86cd8cf5fd9e729caf0496b25788762b257547dcdfb5ed5dd76a2d:t3:e15",
+        "end": {
+          "numerator": 25,
+          "denominator": 3
+        }
+      }
+    ],
+    "parts": [
+      {
+        "id": "vsq-track-1",
+        "track_id": "track-2",
+        "channel": null,
+        "notation_available": true,
+        "vsq": {
+          "name": "Original vocal 1",
+          "source_track_index": 1,
+          "notes": 1,
+          "singers": 1,
+          "lyrics": 1,
+          "curves": 3,
+          "curve_points": 3,
+          "mute": false,
+          "solo": true,
+          "master_mute": false
+        }
+      },
+      {
+        "id": "vsq-track-2",
+        "track_id": "track-3",
+        "channel": null,
+        "notation_available": true,
+        "vsq": {
+          "name": "Original vocal 2",
+          "source_track_index": 2,
+          "notes": 1,
+          "singers": 1,
+          "lyrics": 1,
+          "curves": 3,
+          "curve_points": 3,
+          "mute": true,
+          "solo": false,
+          "master_mute": false
+        }
+      },
+      {
+        "id": "vsq-track-3",
+        "track_id": "track-4",
+        "channel": null,
+        "notation_available": true,
+        "vsq": {
+          "name": "Original vocal 3",
+          "source_track_index": 3,
+          "notes": 0,
+          "singers": 1,
+          "lyrics": 0,
+          "curves": 3,
+          "curve_points": 3,
+          "mute": false,
+          "solo": false,
+          "master_mute": false
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "vsq_authoring_only",
+      "message": "All authored vocal parts, mixer flags, lyrics, singer descriptors, curves and named engine dispatch are retained. This candidate does not establish receiver admission or human-voice synthesis.",
+      "source_event_id": null,
+      "track_index": null,
+      "action": "Review the complete project. Instrumental practice requires the receiver's explicit base_notes_instrumental choice; vocal synthesis and expression rendering remain unavailable."
+    }
+  ],
+  "package": {
+    "metadata_json": "{\n  \"format\": \"worldmusichub-song\",\n  \"version\": 2,\n  \"id\": \"vsq-d5e5e6969c86cd8cf5fd9e729caf0496b25788762b257547dcdfb5ed5dd76a2d\",\n  \"title\": \"authoring-original\",\n  \"score\": {\n    \"path\": \"score.json\",\n    \"bytes\": 20583,\n    \"sha256\": \"9227f1b94853bb9e904b18c87e35e8c53cdc8cd8b1e19591b971a85a573d2503\"\n  },\n  \"sources\": [\n    {\n      \"format\": \"vsq\",\n      \"bytes\": 2827,\n      \"sha256\": \"d5e5e6969c86cd8cf5fd9e729caf0496b25788762b257547dcdfb5ed5dd76a2d\"\n    }\n  ],\n  \"rights\": {\n    \"status\": \"user_supplied_unverified\",\n    \"attribution\": \"User-supplied VSQ; source rights and voicebank availability are unverified\",\n    \"license\": null\n  },\n  \"media\": []\n}",
+    "score_json": "{\n  \"format\": \"worldmusichub-complete-score\",\n  \"version\": 1,\n  \"profile\": \"wmh-vsq-clean-v1\",\n  \"source\": {\n    \"format\": \"vsq\",\n    \"bytes\": 2827,\n    \"sha256\": \"d5e5e6969c86cd8cf5fd9e729caf0496b25788762b257547dcdfb5ed5dd76a2d\"\n  },\n  \"notation\": {\n    \"format_metadata\": {\n      \"schema_revision\": 2,\n      \"producer\": \"WorldMusicHub\",\n      \"producer_version\": \"0.2.0-alpha.1\"\n    },\n    \"version\": 1,\n    \"id\": \"vsq-d5e5e6969c86cd8cf5fd9e729caf0496b25788762b257547dcdfb5ed5dd76a2d\",\n    \"title\": \"authoring-original\",\n    \"composer\": \"\",\n    \"provenance\": {\n      \"kind\": \"user-import\",\n      \"attribution\": \"VSQ authored notes; derived base-pitch audition only; vocal synthesis and voicebank equivalence are unverified\",\n      \"source_url\": null,\n      \"license\": null\n    },\n    \"parts\": [\n      {\n        \"id\": \"vsq-track-1\",\n        \"name\": \"Original vocal 1\",\n        \"instrument\": \"voice\",\n        \"notes\": [\n          {\n            \"id\": \"vsq-t1-ID#0001\",\n            \"at\": {\n              \"numerator\": 4,\n              \"denominator\": 1\n            },\n            \"duration\": {\n              \"numerator\": 267,\n              \"denominator\": 160\n            },\n            \"pitch\": {\n              \"step\": \"C\",\n              \"alter\": 0,\n              \"octave\": 4\n            },\n            \"voice\": \"ID#0000\",\n            \"staff\": 1,\n            \"velocity\": 79,\n            \"tie_start\": false,\n            \"tie_stop\": false\n          }\n        ]\n      },\n      {\n        \"id\": \"vsq-track-2\",\n        \"name\": \"Original vocal 2\",\n        \"instrument\": \"voice\",\n        \"notes\": [\n          {\n            \"id\": \"vsq-t2-ID#0001\",\n            \"at\": {\n              \"numerator\": 4,\n              \"denominator\": 1\n            },\n            \"duration\": {\n              \"numerator\": 267,\n              \"denominator\": 160\n            },\n            \"pitch\": {\n              \"step\": \"E\",\n              \"alter\": 0,\n              \"octave\": 4\n            },\n            \"voice\": \"ID#0000\",\n            \"staff\": 1,\n            \"velocity\": 79,\n            \"tie_start\": false,\n            \"tie_stop\": false\n          }\n        ]\n      },\n      {\n        \"id\": \"vsq-track-3\",\n        \"name\": \"Original vocal 3\",\n        \"instrument\": \"voice\",\n        \"notes\": []\n      }\n    ],\n    \"tempo\": [\n      {\n        \"at\": {\n          \"numerator\": 0,\n          \"denominator\": 1\n        },\n        \"bpm\": 119.99976000048\n      }\n    ],\n    \"meters\": [\n      {\n        \"at\": {\n          \"numerator\": 0,\n          \"denominator\": 1\n        },\n        \"numerator\": 4,\n        \"denominator\": 4\n      }\n    ],\n    \"keys\": [],\n    \"measures\": [\n      {\n        \"number\": 1,\n        \"at\": {\n          \"numerator\": 0,\n          \"denominator\": 1\n        },\n        \"length\": {\n          \"numerator\": 4,\n          \"denominator\": 1\n        }\n      },\n      {\n        \"number\": 2,\n        \"at\": {\n          \"numerator\": 4,\n          \"denominator\": 1\n        },\n        \"length\": {\n          \"numerator\": 4,\n          \"denominator\": 1\n        }\n      }\n    ],\n    \"repeats\": [],\n    \"source\": null\n  },\n  \"authoring\": {\n    \"profile\": \"wmh-vsq-dsb301-v1\",\n    \"source_sha256\": \"d5e5e6969c86cd8cf5fd9e729caf0496b25788762b257547dcdfb5ed5dd76a2d\",\n    \"ppq\": 480,\n    \"master_track_name\": \"Original conductor\",\n    \"master_end_tick\": 4000,\n    \"tempo\": [\n      {\n        \"tick\": 0,\n        \"event_order\": 1,\n        \"microseconds_per_quarter\": 500001\n      }\n    ],\n    \"meters\": [\n      {\n        \"tick\": 0,\n        \"event_order\": 2,\n        \"numerator\": 4,\n        \"denominator_power\": 2,\n        \"clocks_per_click\": 24,\n        \"thirty_seconds_per_quarter\": 8\n      }\n    ],\n    \"premeasure_bars\": 1,\n    \"premeasure_ticks\": 1920,\n    \"mixer\": {\n      \"master_fader\": -3,\n      \"master_panpot\": 2,\n      \"master_mute\": false,\n      \"output_mode\": 0,\n      \"tracks\": [\n        {\n          \"fader\": 4,\n          \"panpot\": -9,\n          \"mute\": false,\n          \"solo\": true\n        },\n        {\n          \"fader\": 0,\n          \"panpot\": 0,\n          \"mute\": true,\n          \"solo\": false\n        },\n        {\n          \"fader\": 0,\n          \"panpot\": 0,\n          \"mute\": false,\n          \"solo\": false\n        }\n      ]\n    },\n    \"tracks\": [\n      {\n        \"source_track_index\": 1,\n        \"smf_track_name\": \"Container 1\",\n        \"project_text_sha256\": \"202dd3734ccade1c9be6c537fedf4bb2d72136a6beccf2af5195f6f196ced89f\",\n        \"common\": {\n          \"version\": \"DSB301\",\n          \"name\": \"Original vocal 1\",\n          \"color_components\": [\n            1,\n            2,\n            3\n          ],\n          \"dynamics_mode\": 1,\n          \"play_mode\": 1\n        },\n        \"end_tick\": 4000,\n        \"eos_tick\": 4000,\n        \"singers\": [\n          {\n            \"id\": \"ID#0000\",\n            \"event_order\": 0,\n            \"tick\": 0,\n            \"handle_id\": \"h#0000\",\n            \"voice\": {\n              \"icon_id\": \"$07010000\",\n              \"ids\": \"Original voice\",\n              \"original\": 0,\n              \"caption\": \"Descriptor only\",\n              \"length\": 1,\n              \"language\": 0,\n              \"program\": 7\n            }\n          }\n        ],\n        \"notes\": [\n          {\n            \"id\": \"ID#0001\",\n            \"event_order\": 1,\n            \"tick\": 1920,\n            \"length_ticks\": 801,\n            \"note_number\": 60,\n            \"dynamics\": 79,\n            \"singer_event_id\": \"ID#0000\",\n            \"expression\": {\n              \"bend_depth\": 8,\n              \"bend_length\": 10,\n              \"portamento_use\": 2,\n              \"decay_gain_rate\": 41,\n              \"accent\": 61\n            },\n            \"lyric_handle_id\": \"h#0001\",\n            \"lyrics\": [\n              {\n                \"index\": 0,\n                \"lyric\": \"あ\",\n                \"phonetic\": \"a\",\n                \"numeric_fields\": [\n                  {\n                    \"coefficient\": 9007199254740993,\n                    \"scale\": 0\n                  },\n                  {\n                    \"coefficient\": 31,\n                    \"scale\": 0\n                  },\n                  {\n                    \"coefficient\": 0,\n                    \"scale\": 0\n                  }\n                ]\n              }\n            ],\n            \"vibrato\": {\n              \"handle_id\": \"h#0002\",\n              \"delay_ticks\": 266,\n              \"icon_id\": \"$04040001\",\n              \"ids\": \"Original vibrato\",\n              \"original\": 1,\n              \"caption\": \"Exact envelopes\",\n              \"length_ticks\": 534,\n              \"depth\": {\n                \"start\": 40,\n                \"points\": [\n                  {\n                    \"position\": {\n                      \"coefficient\": 250000,\n                      \"scale\": 6\n                    },\n                    \"value\": 20\n                  }\n                ]\n              },\n              \"rate\": {\n                \"start\": 60,\n                \"points\": [\n                  {\n                    \"position\": {\n                      \"coefficient\": 1000000,\n                      \"scale\": 6\n                    },\n                    \"value\": 0\n                  }\n                ]\n              }\n            }\n          }\n        ],\n        \"curves\": [\n          {\n            \"parameter\": \"PitchBend\",\n            \"points\": [\n              {\n                \"tick\": 1920,\n                \"value\": -234\n              }\n            ]\n          },\n          {\n            \"parameter\": \"PitchBendSensitivity\",\n            \"points\": [\n              {\n                \"tick\": 0,\n                \"value\": 12\n              }\n            ]\n          },\n          {\n            \"parameter\": \"Resonance1Frequency\",\n            \"points\": [\n              {\n                \"tick\": 1920,\n                \"value\": 255\n              }\n            ]\n          }\n        ]\n      },\n      {\n        \"source_track_index\": 2,\n        \"smf_track_name\": \"Container 2\",\n        \"project_text_sha256\": \"ba3792fceab37cd69cc6c541dbc1fc367531840e7eb40f536f9a76eb277f9d95\",\n        \"common\": {\n          \"version\": \"DSB301\",\n          \"name\": \"Original vocal 2\",\n          \"color_components\": [\n            1,\n            2,\n            3\n          ],\n          \"dynamics_mode\": 1,\n          \"play_mode\": 1\n        },\n        \"end_tick\": 4000,\n        \"eos_tick\": 4000,\n        \"singers\": [\n          {\n            \"id\": \"ID#0000\",\n            \"event_order\": 0,\n            \"tick\": 0,\n            \"handle_id\": \"h#0000\",\n            \"voice\": {\n              \"icon_id\": \"$07010000\",\n              \"ids\": \"Original voice\",\n              \"original\": 0,\n              \"caption\": \"Descriptor only\",\n              \"length\": 1,\n              \"language\": 0,\n              \"program\": 7\n            }\n          }\n        ],\n        \"notes\": [\n          {\n            \"id\": \"ID#0001\",\n            \"event_order\": 1,\n            \"tick\": 1920,\n            \"length_ticks\": 801,\n            \"note_number\": 64,\n            \"dynamics\": 79,\n            \"singer_event_id\": \"ID#0000\",\n            \"expression\": {\n              \"bend_depth\": 8,\n              \"bend_length\": 10,\n              \"portamento_use\": 2,\n              \"decay_gain_rate\": 41,\n              \"accent\": 61\n            },\n            \"lyric_handle_id\": \"h#0001\",\n            \"lyrics\": [\n              {\n                \"index\": 0,\n                \"lyric\": \"あ\",\n                \"phonetic\": \"a\",\n                \"numeric_fields\": [\n                  {\n                    \"coefficient\": 9007199254740993,\n                    \"scale\": 0\n                  },\n                  {\n                    \"coefficient\": 31,\n                    \"scale\": 0\n                  },\n                  {\n                    \"coefficient\": 0,\n                    \"scale\": 0\n                  }\n                ]\n              }\n            ],\n            \"vibrato\": {\n              \"handle_id\": \"h#0002\",\n              \"delay_ticks\": 266,\n              \"icon_id\": \"$04040001\",\n              \"ids\": \"Original vibrato\",\n              \"original\": 1,\n              \"caption\": \"Exact envelopes\",\n              \"length_ticks\": 534,\n              \"depth\": {\n                \"start\": 40,\n                \"points\": [\n                  {\n                    \"position\": {\n                      \"coefficient\": 250000,\n                      \"scale\": 6\n                    },\n                    \"value\": 20\n                  }\n                ]\n              },\n              \"rate\": {\n                \"start\": 60,\n                \"points\": [\n                  {\n                    \"position\": {\n                      \"coefficient\": 1000000,\n                      \"scale\": 6\n                    },\n                    \"value\": 0\n                  }\n                ]\n              }\n            }\n          }\n        ],\n        \"curves\": [\n          {\n            \"parameter\": \"PitchBend\",\n            \"points\": [\n              {\n                \"tick\": 1920,\n                \"value\": -234\n              }\n            ]\n          },\n          {\n            \"parameter\": \"PitchBendSensitivity\",\n            \"points\": [\n              {\n                \"tick\": 0,\n                \"value\": 12\n              }\n            ]\n          },\n          {\n            \"parameter\": \"Resonance1Frequency\",\n            \"points\": [\n              {\n                \"tick\": 1920,\n                \"value\": 255\n              }\n            ]\n          }\n        ]\n      },\n      {\n        \"source_track_index\": 3,\n        \"smf_track_name\": \"Container 3\",\n        \"project_text_sha256\": \"8d1a61b94790871ed8f8c03948a11fefcbd784d5fbe6c86cf4476aebd27641a7\",\n        \"common\": {\n          \"version\": \"DSB301\",\n          \"name\": \"Original vocal 3\",\n          \"color_components\": [\n            1,\n            2,\n            3\n          ],\n          \"dynamics_mode\": 1,\n          \"play_mode\": 1\n        },\n        \"end_tick\": 4000,\n        \"eos_tick\": 4000,\n        \"singers\": [\n          {\n            \"id\": \"ID#0000\",\n            \"event_order\": 0,\n            \"tick\": 0,\n            \"handle_id\": \"h#0000\",\n            \"voice\": {\n              \"icon_id\": \"$07010000\",\n              \"ids\": \"Original voice\",\n              \"original\": 0,\n              \"caption\": \"Descriptor only\",\n              \"length\": 1,\n              \"language\": 0,\n              \"program\": 7\n            }\n          }\n        ],\n        \"notes\": [],\n        \"curves\": [\n          {\n            \"parameter\": \"PitchBend\",\n            \"points\": [\n              {\n                \"tick\": 1920,\n                \"value\": -234\n              }\n            ]\n          },\n          {\n            \"parameter\": \"PitchBendSensitivity\",\n            \"points\": [\n              {\n                \"tick\": 0,\n                \"value\": 12\n              }\n            ]\n          },\n          {\n            \"parameter\": \"Resonance1Frequency\",\n            \"points\": [\n              {\n                \"tick\": 1920,\n                \"value\": 255\n              }\n            ]\n          }\n        ]\n      }\n    ],\n    \"interpretation_limits\": [\n      \"VoicebankIdentityAndAvailabilityUnverified\",\n      \"PhoneticNumericFieldMeaningsUnverified\",\n      \"VocalExpressionAndPitchInterpolationNotRendered\",\n      \"NrpnDispatchAndPresendNotEvaluated\",\n      \"Resonance255MeaningUnverified\",\n      \"CommonModeAndMixerOutputModeNotInterpreted\",\n      \"SingerHandleMetadataNotAcousticIdentity\",\n      \"EosDoesNotEstablishAcousticTailOrAccompaniment\"\n    ]\n  },\n  \"engine_dispatch\": {\n    \"profile\": \"wmh-vocaloid2-named-dispatch-v1\",\n    \"source_sha256\": \"d5e5e6969c86cd8cf5fd9e729caf0496b25788762b257547dcdfb5ed5dd76a2d\",\n    \"source_controller_events\": 131,\n    \"tracks\": [\n      {\n        \"source_track_index\": 1,\n        \"commands\": [\n          {\n            \"tick\": 0,\n            \"source_order_first\": 5,\n            \"source_order_last\": 7,\n            \"explicit_transport\": null,\n            \"command\": {\n              \"kind\": \"voice_bank\",\n              \"bank\": 0\n            }\n          },\n          {\n            \"tick\": 0,\n            \"source_order_first\": 8,\n            \"source_order_last\": 10,\n            \"explicit_transport\": null,\n            \"command\": {\n              \"kind\": \"voice_program\",\n              \"program\": 7\n            }\n          },\n          {\n            \"tick\": 0,\n            \"source_order_first\": 11,\n            \"source_order_last\": 15,\n            \"explicit_transport\": null,\n            \"command\": {\n              \"kind\": \"voice_parameter\",\n              \"parameter\": \"resonance1_frequency\",\n              \"value\": 255\n            }\n          },\n          {\n            \"tick\": 0,\n            \"source_order_first\": 16,\n            \"source_order_last\": 64,\n            \"explicit_transport\": null,\n            \"command\": {\n              \"kind\": \"note\",\n              \"note\": {\n                \"authored_note_id\": \"ID#0001\",\n                \"note_number\": 60,\n                \"velocity\": 79,\n                \"duration_ms\": 1419,\n                \"location\": \"isolated\",\n                \"vibrato\": {\n                  \"database_index\": 0,\n                  \"type_index\": 2,\n                  \"duration_parameter\": 85,\n                  \"delay_parameter\": 43\n                },\n                \"phonetic_symbols\": [\n                  {\n                    \"symbol\": \"a\",\n                    \"consonant_adjustment\": 31\n                  }\n                ],\n                \"intonation\": {\n                  \"v1_mean_parameter\": 8,\n                  \"d1_mean_parameter\": 20,\n                  \"d1_mean_first_note_parameter\": 20,\n                  \"d2_mean_parameter\": 40,\n                  \"d4_mean_parameter\": 24,\n                  \"p_mean_onset_first_note_parameter\": 10,\n                  \"v_mean_note_transition_parameter\": 12,\n                  \"p_mean_ending_note_parameter\": 12\n                },\n                \"portamento_flags\": 2,\n                \"decay\": 41,\n                \"accent\": 61\n              }\n            }\n          }\n        ]\n      },\n      {\n        \"source_track_index\": 2,\n        \"commands\": [\n          {\n            \"tick\": 0,\n            \"source_order_first\": 5,\n            \"source_order_last\": 7,\n            \"explicit_transport\": null,\n            \"command\": {\n              \"kind\": \"voice_bank\",\n              \"bank\": 0\n            }\n          },\n          {\n            \"tick\": 0,\n            \"source_order_first\": 8,\n            \"source_order_last\": 10,\n            \"explicit_transport\": null,\n            \"command\": {\n              \"kind\": \"voice_program\",\n              \"program\": 7\n            }\n          },\n          {\n            \"tick\": 0,\n            \"source_order_first\": 11,\n            \"source_order_last\": 15,\n            \"explicit_transport\": null,\n            \"command\": {\n              \"kind\": \"voice_parameter\",\n              \"parameter\": \"resonance1_frequency\",\n              \"value\": 255\n            }\n          },\n          {\n            \"tick\": 0,\n            \"source_order_first\": 16,\n            \"source_order_last\": 64,\n            \"explicit_transport\": null,\n            \"command\": {\n              \"kind\": \"note\",\n              \"note\": {\n                \"authored_note_id\": \"ID#0001\",\n                \"note_number\": 64,\n                \"velocity\": 79,\n                \"duration_ms\": 1419,\n                \"location\": \"isolated\",\n                \"vibrato\": {\n                  \"database_index\": 0,\n                  \"type_index\": 2,\n                  \"duration_parameter\": 85,\n                  \"delay_parameter\": 43\n                },\n                \"phonetic_symbols\": [\n                  {\n                    \"symbol\": \"a\",\n                    \"consonant_adjustment\": 31\n                  }\n                ],\n                \"intonation\": {\n                  \"v1_mean_parameter\": 8,\n                  \"d1_mean_parameter\": 20,\n                  \"d1_mean_first_note_parameter\": 20,\n                  \"d2_mean_parameter\": 40,\n                  \"d4_mean_parameter\": 24,\n                  \"p_mean_onset_first_note_parameter\": 10,\n                  \"v_mean_note_transition_parameter\": 12,\n                  \"p_mean_ending_note_parameter\": 12\n                },\n                \"portamento_flags\": 2,\n                \"decay\": 41,\n                \"accent\": 61\n              }\n            }\n          }\n        ]\n      },\n      {\n        \"source_track_index\": 3,\n        \"commands\": [\n          {\n            \"tick\": 0,\n            \"source_order_first\": 4,\n            \"source_order_last\": 6,\n            \"explicit_transport\": null,\n            \"command\": {\n              \"kind\": \"voice_bank\",\n              \"bank\": 0\n            }\n          },\n          {\n            \"tick\": 0,\n            \"source_order_first\": 7,\n            \"source_order_last\": 9,\n            \"explicit_transport\": null,\n            \"command\": {\n              \"kind\": \"voice_program\",\n              \"program\": 7\n            }\n          },\n          {\n            \"tick\": 0,\n            \"source_order_first\": 10,\n            \"source_order_last\": 14,\n            \"explicit_transport\": null,\n            \"command\": {\n              \"kind\": \"voice_parameter\",\n              \"parameter\": \"resonance1_frequency\",\n              \"value\": 255\n            }\n          }\n        ]\n      }\n    ],\n    \"interpretation_limits\": [\n      \"cross_group_transport_inheritance_unverified\",\n      \"engine_duration_rounding_not_reconstructed\",\n      \"vibrato_parameter_units_unverified\",\n      \"d1_mean_first_note_unit_unverified\",\n      \"legacy_resonance255_meaning_unverified\",\n      \"vocal_synthesis_not_implemented\"\n    ]\n  },\n  \"coverage\": {\n    \"status\": \"structurally_complete_authoring_and_named_dispatch\",\n    \"notation\": \"all_authored_base_notes\",\n    \"project\": {\n      \"tracks\": 3,\n      \"notes\": 2,\n      \"singers\": 3,\n      \"lyrics\": 2,\n      \"vibratos\": 2,\n      \"envelope_points\": 4,\n      \"curves\": 9,\n      \"curve_points\": 9,\n      \"tempo_changes\": 1,\n      \"meter_changes\": 1\n    },\n    \"named_dispatch\": {\n      \"tracks\": 3,\n      \"commands\": 11,\n      \"parameter_fields\": 56,\n      \"source_controller_records_accounted\": 131\n    }\n  },\n  \"capabilities\": {\n    \"whole_vocal_rendering\": \"blocked\",\n    \"instrumental_practice\": \"requires_explicit_base_note_choice\"\n  },\n  \"interpretation_limits\": [\n    \"whole_vocal_rendering_unavailable\",\n    \"practice_uses_authored_base_notes_only\",\n    \"pitch_bend_and_sensitivity_not_rendered\",\n    \"vibrato_and_expression_not_rendered\",\n    \"lyrics_and_phonetics_not_synthesized\",\n    \"source_voice_program_is_descriptor_not_general_midi\",\n    \"mixer_gain_pan_and_output_mode_not_interpreted\",\n    \"engine_dispatch_timing_and_acoustic_tails_not_rendered\"\n  ]\n}"
+  },
+  "draft_sha256": "eac32dbb03edc086e8bf56f60f7c5da353778925640468def485a17e65164888"
+}

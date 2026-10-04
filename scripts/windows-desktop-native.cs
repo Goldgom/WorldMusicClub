@@ -146,11 +146,11 @@ public static class NativeAcceptance {
       return "\""+first+"\" \""+second+"\"";
     }
     string directory;
-    if(Array.IndexOf(new[]{"original-duet.musicxml","original-duet.mxl","midi-original-ppq.mid","original-reference-overlap.mid","jianpu-original-steps.jianpu","malformed.json","folder-original.json","folder-conflict.json","原创曲包_日本語.zip","bulk-conflict.zip","bulk-backup.json","bulk-failure.zip","bulk-malformed.zip","bulk-standard-a.json","bulk-standard-b.json","clean-authored-song.zip","vsq-authored-song.zip","performance-authored-songs.zip","pitch-bend-authored-songs.zip","authoring-original-strict.mid","authoring-original-events.mid","authoring-original-blocked.mid"},name)>=0)
+    if(Array.IndexOf(new[]{"original-duet.musicxml","original-duet.mxl","midi-original-ppq.mid","original-reference-overlap.mid","jianpu-original-steps.jianpu","malformed.json","folder-original.json","folder-conflict.json","原创曲包_日本語.zip","bulk-conflict.zip","bulk-backup.json","bulk-failure.zip","bulk-malformed.zip","bulk-standard-a.json","bulk-standard-b.json","clean-authored-song.zip","vsq-authored-song.zip","performance-authored-songs.zip","pitch-bend-authored-songs.zip","authoring-original-strict.mid","authoring-original-events.mid","authoring-original-blocked.mid","authoring-original.vsq"},name)>=0)
       directory=fixtures;
     else if(name!=null && Regex.IsMatch(name,@"\A(seed|restart|close-active|reopen)-(?:[1-9]|1[0-6])\.json\z",RegexOptions.CultureInvariant))
       directory=Path.Combine(output,"downloads");
-    else if(name!=null && Regex.IsMatch(name,@"\A(bulk-seed|bulk-restart|bulk-failure|clean-seed|clean-restart|vsq-seed|vsq-restart|authoring-seed|authoring-restart)-(?:[1-9]|1[0-6])\.(zip|json)\z",RegexOptions.CultureInvariant))
+    else if(name!=null && Regex.IsMatch(name,@"\A(bulk-seed|bulk-restart|bulk-failure|clean-seed|clean-restart|vsq-seed|vsq-restart|authoring-seed|authoring-restart|vsq-authoring-seed|vsq-authoring-restart)-(?:[1-9]|1[0-6])\.(zip|json)\z",RegexOptions.CultureInvariant))
       directory=Path.Combine(output,"downloads");
     else throw new InvalidOperationException("File is outside the finite acceptance fixture list");
     string path=Path.GetFullPath(Path.Combine(directory,name));

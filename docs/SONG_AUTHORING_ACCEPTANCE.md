@@ -111,3 +111,12 @@ retained workflow evidence, not extra package evidence files.
 
 This wiring does not itself run those gates, publish a package, change frozen
 batch 239, or make a new source or executable accepted.
+
+## Separate VSQ authoring route
+
+The isolated [VSQ authoring slice](VSQ_AUTHORING_ACCEPTANCE.md) uses the same
+screen's actual original-source chooser but has its own two native phases,
+fixture/response oracles, proof, claims and focused workflow. It preserves muted
+and note-free vocal parts, requires an explicit base-note instrumental choice,
+and does not claim original vocal synthesis. It does not replace this MIDI
+scenario or change the final gates described above.

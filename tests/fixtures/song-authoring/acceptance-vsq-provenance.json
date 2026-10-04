@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "generator": "real native_import_driver stdio; no browser, server, GUI or audio",
+  "request_source": "tests/fixtures/song-authoring/vsq-request.json",
+  "request_sha256": "f8f1e84e76649aee16ce7ca10929226d860db52b0f096a4b73529e435de4e00d",
+  "driver_sha256": "c3624a06572ac00c696424dfb60afa4ca85889f620d99aeba7f76fd108488bc7",
+  "request": {
+    "source_name": "authoring-original.vsq",
+    "title": "authoring-original"
+  },
+  "zip_sha256": "d778a28331ebf93aa2863fe7228faf1a1c9f450f63e6652794c14083bcb7c505",
+  "key": "song-52172ec332f74ea4c91c40a49100cd29a2e2c3e073b5aa11dfadb7a3dc1455bd",
+  "files": [
+    {
+      "path": "acceptance-vsq-draft.json",
+      "bytes": 28316,
+      "sha256": "4548baf094731595f556da43a51622f26b6881f0b945705f6fc278916f29b095"
+    },
+    {
+      "path": "acceptance-vsq-opened.json",
+      "bytes": 25970,
+      "sha256": "779f1c9986c9d496bae004d3b3b9329f5ece5557b9a3d4934e72218e24dcf6f7"
+    },
+    {
+      "path": "acceptance-vsq-runtime.json",
+      "bytes": 11515,
+      "sha256": "9d0f3e2156db0fee85f495c4c8c047e4c85e8c6493f5ece37e98f2156e66b364"
+    }
+  ],
+  "basis_sha": "7758c78a04d3aedf4f436e8f480ea7ab80ec7e02",
+  "basis_tree": "4d5acaf69dcead7f78015af08cb90dfde79dfb92",
+  "capture_scope": "Real Rust canonical producer at the source basis; acceptance harness was uncommitted. This is a fixture oracle, not clean-source GUI or release acceptance."
+}

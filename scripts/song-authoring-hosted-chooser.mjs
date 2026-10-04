@@ -8,7 +8,7 @@ export function authoringPickerFiles(alias,directory){
  const names=alias===AUTHORING_PAIR_ALIAS?[AUTHORING_FIXTURE_FILENAMES.strict,AUTHORING_FIXTURE_FILENAMES.events]:alias===AUTHORING_FIXTURE_FILENAMES.blocked?[AUTHORING_FIXTURE_FILENAMES.blocked]:null;
  assert.ok(names,'Outside the finite original authoring picker aliases');return names.map(name=>path.join(directory,name));
 }
-export function createAuthoringHostedChooser(page,{timeoutMs=10000,onError=()=>{},now=()=>performance.timeOrigin+performance.now()}={}) {
+export function createAuthoringHostedChooser(page,{timeoutMs=10000,onError=()=>{},now=()=>performance.timeOrigin+performance.now(),pickerFiles=authoringPickerFiles}={}) {
  const evidence={version:1,timeline:[],events:[],late_events:0,extra_events:0,unowned_events:0,omitted_events:0};let active=null,stopped=false,lastSequence=null,lastOutcome=null;const reportedErrors=new Set();
  const fail=error=>{const value=error instanceof Error?error:Error(String(error));const message=String(value);if(!reportedErrors.has(message)&&reportedErrors.size<8){reportedErrors.add(message);onError(message);}active?.reject?.(value);};
  const mark=(stage,sequence=null)=>{if(evidence.timeline.length>=32){evidence.omitted_events++;fail(Error('Authoring chooser timeline exceeded 32 events'));return;}evidence.timeline.push({order:evidence.timeline.length+1,stage,sequence,atMs:now()});};
@@ -23,7 +23,7 @@ export function createAuthoringHostedChooser(page,{timeoutMs=10000,onError=()=>{
  }
  page.on('filechooser',observe);mark('listener-installed');
  return{evidence,navigation(stage){assert.ok(['start','end'].includes(stage));mark(`navigation-${stage}`);},async choose(action,file){
-  assert.ok(!stopped&&!active,'Authoring hosted chooser ownership unavailable');const files=authoringPickerFiles(action.file,file);let timer;
+  assert.ok(!stopped&&!active,'Authoring hosted chooser ownership unavailable');const files=pickerFiles(action.file,file);let timer;
   const owner={sequence:action.sequence,received:false,stage:'waiting-event',cancelled:false};active=owner;lastSequence=action.sequence;lastOutcome='pending';mark('action-armed',action.sequence);
   const event=new Promise((resolve,reject)=>{owner.resolve=resolve;owner.reject=reject;});
   const deadline=new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(`Authoring actual filechooser #${action.sequence} ${owner.stage} exceeded ${timeoutMs}ms`)),timeoutMs);});const started=Date.now();

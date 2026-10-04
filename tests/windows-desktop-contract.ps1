@@ -19,7 +19,7 @@ $profileRoot=Join-Path ([IO.Path]::GetTempPath()) ('wmh profile 拼谱 '+[guid]:
 $heldProfile=$null
 New-Item -ItemType Directory $profileRoot | Out-Null
 try {
-  $freshPhases=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','authoring-seed','authoring-restart')
+  $freshPhases=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart')
   New-Item -ItemType Directory (Join-Path $profileRoot 'Scores') | Out-Null
   $score=Join-Path $profileRoot 'Scores/original.bin';[IO.File]::WriteAllText($score,'native score bytes')
   $profiles=@()
@@ -225,7 +225,7 @@ $temporary=Join-Path ([System.IO.Path]::GetTempPath()) ('wmh picker 拼谱 '+[gu
 try {
   $fixtures=Join-Path $temporary 'fixtures';$downloads=Join-Path $temporary 'downloads'
   New-Item -ItemType Directory $fixtures,$downloads | Out-Null
-  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu','malformed.json','folder-original.json','folder-conflict.json','原创曲包_日本語.zip','bulk-conflict.zip','bulk-backup.json','bulk-failure.zip','bulk-malformed.zip','bulk-standard-a.json','bulk-standard-b.json','clean-authored-song.zip','vsq-authored-song.zip','performance-authored-songs.zip','pitch-bend-authored-songs.zip','authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid')
+  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu','malformed.json','folder-original.json','folder-conflict.json','原创曲包_日本語.zip','bulk-conflict.zip','bulk-backup.json','bulk-failure.zip','bulk-malformed.zip','bulk-standard-a.json','bulk-standard-b.json','clean-authored-song.zip','vsq-authored-song.zip','performance-authored-songs.zip','pitch-bend-authored-songs.zip','authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid','authoring-original.vsq')
   foreach($name in $fixed) {
     $expected=Join-Path $fixtures $name;[System.IO.File]::WriteAllText($expected,'fixture')
     Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) -ceq $expected) "fixed path $name"
@@ -241,7 +241,7 @@ try {
   $authoringPair=[NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,'authoring-original-pair')
   $expectedPair='"'+(Join-Path $fixtures 'authoring-original-strict.mid')+'" "'+(Join-Path $fixtures 'authoring-original-events.mid')+'"'
   Assert-True ($authoringPair -ceq $expectedPair) 'authoring pair resolves exactly strict then events, without blocked or arbitrary files'
-  foreach($phase in @('authoring-seed','authoring-restart')) {
+  foreach($phase in @('authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart')) {
     foreach($sequence in 1..16) {
       foreach($extension in @('zip','json')) {
         $name="$phase-$sequence.$extension";$expected=Join-Path $downloads $name
@@ -288,6 +288,28 @@ try {
     [System.IO.File]::WriteAllText($path,'original restored fixture')
   }
   Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,'authoring-original-pair') -ceq $expectedPair) 'authoring pair recovers only when both exact regular files exist'
+  # The VSQ authoring scenario has one exact original file and no new alias.
+  foreach($name in @('authoring-original.vsq')) {
+    foreach($invalid in @("../$name","..\$name","fixtures/$name","fixtures\$name",($name+'.extra'),($name+"`n"),($name+"`0"),$name.ToUpperInvariant(),(Join-Path $fixtures $name),'authoring-original-vsq-pair','vsq-authoring-original.vsq')) {
+      Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$invalid) } "unapproved VSQ authoring path $invalid"
+    }
+    $path=Join-Path $fixtures $name
+    [System.IO.File]::WriteAllText((Join-Path $downloads $name),'outside the fixture root')
+    Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) -ceq $path) 'VSQ authoring fixture remains rooted'
+    [System.IO.File]::Delete($path)
+    Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) } 'missing VSQ authoring file cannot fall back to downloads'
+    New-Item -ItemType Directory $path | Out-Null
+    Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) } 'directory cannot replace VSQ authoring file'
+    [System.IO.Directory]::Delete($path)
+    New-Item -ItemType SymbolicLink -Path $path -Target $linkTarget | Out-Null
+    Assert-True (((Get-Item -LiteralPath $path).Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) 'contract creates actual VSQ authoring reparse file'
+    Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) } 'reparse point cannot replace VSQ authoring file'
+    [System.IO.File]::Delete($path)
+    [System.IO.File]::WriteAllText($path,'original restored VSQ fixture')
+  }
+  foreach($name in @('vsq-authoring-any-1.zip','vsq-authoring-seed-extra-1.zip','vsq-authoring-restart-extra-1.json','Vsq-authoring-seed-1.zip','vsq-authoring-seed-1.zip/','vsq-authoring-restart-1.json/')) {
+    Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) } "unapproved VSQ authoring download $name"
+  }
   foreach($phase in @('seed','restart','close-active','reopen')) {
     foreach($sequence in 1..16) {
       $name="$phase-$sequence.json";$expected=Join-Path $downloads $name

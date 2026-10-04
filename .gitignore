@@ -33,3 +33,5 @@ __pycache__/
 /crates/desktop-shell/gen/schemas/windows-schema.json
 
 /desktop-authoring/
+
+/desktop-vsq-authoring/

@@ -3,7 +3,7 @@
 . (Join-Path $PSScriptRoot 'windows-desktop-evidence.ps1')
 function Get-AcceptanceProfile([string]$Directory,[string]$Phase) {
   $shared=@('seed','restart','close-active','reopen')
-  $fresh=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','authoring-seed','authoring-restart')
+  $fresh=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart')
   if($Phase -cnotin ($shared+$fresh)){throw "Unknown acceptance profile phase: $Phase"}
   if(-not [IO.Path]::IsPathFullyQualified($Directory)){throw 'Acceptance profile root must be absolute'}
   $root=Get-Item -LiteralPath $Directory -Force -ErrorAction Stop
