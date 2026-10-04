@@ -4,29 +4,55 @@ import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {performanceAcceptanceFixtures,preparePerformanceFixtures,PERFORMANCE_FIXTURE_FILENAME} from '../scripts/prepare-performance-song-fixtures.mjs';
+import {AUTHORING_PAIR_ALIAS,AUTHORING_FIXTURE_FILENAMES} from '../scripts/prepare-song-authoring-fixtures.mjs';
 import {digest,inspectAuthoredZip} from './clean-song-package-fixtures.js';
 import {preparePerformanceSong} from '../web/clean-song-package.js';
 import {performanceSeconds,createCleanPerformancePlayer} from '../web/clean-performance-player.js';
 
+const pickerSources=Object.fromEntries(await Promise.all(Object.entries({rust:'../crates/desktop-shell/src/acceptance.rs',native:'../scripts/windows-desktop-native.cs',contract:'./windows-desktop-contract.ps1',workflow:'../.github/workflows/windows-desktop-acceptance.yml'}).map(async([key,path])=>[key,await readFile(new URL(path,import.meta.url),'utf8')])));
+function assertPickerFixtureRegistries({rust,native,contract}){
+  const quoted=(text,pattern)=>[...text.matchAll(pattern)].map(match=>match[1]);
+  const aliases={'bulk-multiple':['bulk-standard-a.json','bulk-standard-b.json'],[AUTHORING_PAIR_ALIAS]:[AUTHORING_FIXTURE_FILENAMES.strict,AUTHORING_FIXTURE_FILENAMES.events]};
+  const admitted=quoted(rust.match(/let fixture = \[([\s\S]*?)\]\s*\.contains\(&file\)/)[1],/"([^"]+)"/g).sort();
+  const files=quoted(native.match(/Array\.IndexOf\(new\[\]\{([^}]+)\},name\)/)[1],/"([^"]+)"/g).sort();
+  const checkedFiles=quoted(contract.match(/\$fixed=@\(([^\r\n]+)\)/)[1],/'([^']+)'/g).sort();
+  assert.equal(new Set(admitted).size,admitted.length);assert.equal(new Set(files).size,files.length);assert.ok(files.includes(PERFORMANCE_FIXTURE_FILENAME));
+  // Rust admits request names. Windows' file table contains only single files;
+  // every additional admitted name must be one of these two closed aliases.
+  assert.deepEqual(admitted,[...files,...Object.keys(aliases)].sort());assert.deepEqual(checkedFiles,files);
+  const resolver=native.match(/public static string ResolveFixturePath\(string fixtures,string output,string name\) \{([\s\S]*?)\n  \}/)[1],prefix=resolver.split('    string directory;')[0];
+  const aliasPattern=/\s*if\(name=="([^"]+)"\) \{([\s\S]*?)\n    \}/g,blocks=[...prefix.matchAll(aliasPattern)];
+  assert.equal(prefix.replace(aliasPattern,'').trim(),'','No unparsed or permissive alias dispatch');assert.deepEqual(blocks.map(row=>row[1]).sort(),Object.keys(aliases).sort());
+  for(const [,alias,body]of blocks){const [first,second]=aliases[alias];assert.ok(first!==second&&files.includes(first)&&files.includes(second)&&!files.includes(alias));
+    assert.deepEqual(body.trim().split(/\r?\n/).map(line=>line.trim()),[`string first=ResolveFixturePath(fixtures,output,"${first}"),second=ResolveFixturePath(fixtures,output,"${second}");`,String.raw`return "\""+first+"\" \""+second+"\"";`],`${alias} must expand exactly two ordered files through the existing regular-file guard`);
+  }
+  assert.match(resolver,/else throw new InvalidOperationException\("File is outside the finite acceptance fixture list"\)/);
+  assert.match(resolver,/if\(!File\.Exists\(path\) \|\| \(File\.GetAttributes\(path\)&\(FileAttributes\.Directory\|FileAttributes\.ReparsePoint\)\)!=0\)/);
+  const checkedAliases=quoted(contract,/\$\w+=\[NativeAcceptance\]::ResolveFixturePath\(\$fixtures,\$temporary,'([^']+)'\)/g).sort();assert.deepEqual(checkedAliases,Object.keys(aliases).sort());
+  assert.ok(contract.includes(String.raw`Assert-True ($multiple -ceq ('"'+(Join-Path $fixtures 'bulk-standard-a.json')+'" "'+(Join-Path $fixtures 'bulk-standard-b.json')+'"'))`));
+  assert.ok(contract.includes(String.raw`$expectedPair='"'+(Join-Path $fixtures 'authoring-original-strict.mid')+'" "'+(Join-Path $fixtures 'authoring-original-events.mid')+'"'`));
+  assert.match(contract,/Assert-True \(\$authoringPair -ceq \$expectedPair\)/);
+  assert.equal([...contract.matchAll(/Assert-Rejected \{ \[NativeAcceptance\]::ResolveFixturePath\(\$fixtures,\$temporary,'authoring-original-pair'\) \} "pair (?:requires both original regular files: missing|rejects directory|rejects reparse file) \$name"/g)].length,3);
+  const rustAuthoring=rust.match(/fn authoring_picker_registry_accepts_only_exact_original_files_and_pair\(\) \{([\s\S]*?)\n    \}/)[1];
+  assert.deepEqual(quoted(rustAuthoring.match(/for filename in \[([\s\S]*?)\]/)[1],/"([^"]+)"/g).sort(),[AUTHORING_PAIR_ALIAS,...Object.values(AUTHORING_FIXTURE_FILENAMES)].sort());
+  assert.match(rustAuthoring,/for sequence in \[0, 65\][\s\S]*?assert!\(!valid_action\(&action\)\)/);assert.match(rustAuthoring,/action\["sequence"\] = json!\(64\);\s*assert!\(valid_action\(&action\)\)/);
+  assert.match(rustAuthoring,/action\["file"\] = json!\(invalid\);\s*assert!\(!valid_action\(&action\)/);
+}
+
 test('fixed picker fixture registries agree with Rust and the compiled Windows resolver contract',async()=>{
   // Supplemental static parity check. The PowerShell contract compiles and
   // calls the actual C# resolver on Windows; this does not substitute for it.
-  const [rust,native,contract,workflow]=await Promise.all([
-    '../crates/desktop-shell/src/acceptance.rs','../scripts/windows-desktop-native.cs',
-    './windows-desktop-contract.ps1','../.github/workflows/windows-desktop-acceptance.yml',
-  ].map(path=>readFile(new URL(path,import.meta.url),'utf8')));
-  const quoted=(text,pattern)=>[...text.matchAll(pattern)].map(match=>match[1]);
-  const fixtures=quoted(rust.match(/let fixture = \[([\s\S]*?)\]\s*\.contains\(&file\)/)[1],/"([^"]+)"/g).filter(name=>name!=='bulk-multiple').sort();
-  const nativeNames=quoted(native.match(/Array\.IndexOf\(new\[\]\{([^}]+)\},name\)/)[1],/"([^"]+)"/g).sort();
-  const checkedNames=quoted(contract.match(/\$fixed=@\(([^\r\n]+)\)/)[1],/'([^']+)'/g).sort();
-  assert.equal(new Set(fixtures).size,fixtures.length);assert.ok(fixtures.includes(PERFORMANCE_FIXTURE_FILENAME));
-  assert.deepEqual(nativeNames,fixtures);assert.deepEqual(checkedNames,fixtures);
+  const {contract,workflow}=pickerSources;assertPickerFixtureRegistries(pickerSources);
   assert.match(contract,/Add-Type -Path \(Join-Path \$PSScriptRoot '\.\.\/scripts\/windows-desktop-native\.cs'\)/);
   assert.match(contract,/\[NativeAcceptance\]::ResolveFixturePath\(\$fixtures,\$temporary,\$name\)/);
   const nativeJob=workflow.slice(workflow.indexOf('      - name: Test native filename ownership'));
   assert.ok(nativeJob.indexOf('run: ./tests/windows-desktop-contract.ps1')>=0);
   assert.ok(nativeJob.indexOf('run: ./tests/windows-desktop-contract.ps1')<nativeJob.indexOf('run: cargo test'));
   assert.ok(nativeJob.indexOf('run: ./tests/windows-desktop-contract.ps1')<nativeJob.indexOf('run: cargo build'));
+});
+
+test('picker parity rejects unknown or missing aliases, changed pairs and removed resolver bounds',()=>{
+  for(const edit of [s=>s.rust=s.rust.replace('"authoring-original-pair",','"authoring-arbitrary-pair",'),s=>s.rust=s.rust.replace('"authoring-original-pair",',''),s=>s.native=s.native.replace('name=="authoring-original-pair"','name.StartsWith("authoring-")'),s=>s.native=s.native.replace('second=ResolveFixturePath(fixtures,output,"authoring-original-events.mid")','second=ResolveFixturePath(fixtures,output,"authoring-original-blocked.mid")'),s=>s.native=s.native.replace('second=ResolveFixturePath(fixtures,output,"authoring-original-events.mid")','second=Path.Combine(fixtures,"authoring-original-events.mid")'),s=>s.native=s.native.replace('FileAttributes.Directory|FileAttributes.ReparsePoint','FileAttributes.Directory'),s=>s.contract=s.contract.replace("$expectedPair='\"'+(Join-Path $fixtures 'authoring-original-strict.mid')", "$expectedPair='\"'+(Join-Path $fixtures 'authoring-original-events.mid')"),s=>s.contract=s.contract.replace('pair rejects reparse file $name','removed reparse assertion'),s=>s.rust=s.rust.replaceAll('for sequence in [0, 65]','for sequence in [0]')]){const changed={...pickerSources};edit(changed);assert.throws(()=>assertPickerFixtureRegistries(changed),edit.toString());}
 });
 
 test('one deterministic original pack contains all four complete native fixtures and no source/media payload',async()=>{
