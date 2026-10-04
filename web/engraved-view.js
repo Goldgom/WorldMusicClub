@@ -261,7 +261,7 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
   function hide({remember=false}={}) { if(remember){preferred=false;fallbackReason=null;$('engraving-fallback').hidden=true;}clearExpectedWrittenNotes();active = false; cancel(); container.replaceChildren(); onVisibility(false); }
   function updateScore() {
     const current = getScore(); $('export-musicxml').disabled = !current||Boolean(basicSong());
-    if (current === score){redrawLocale();publishScope();return;}
+    if (current === score){if(scope==='current'&&selectedPart!==getPracticePart()){practicePartChanged();return;}redrawLocale();publishScope();return;}
     cancel();clearExpectedWrittenNotes();score = current;scope=getMode()==='practice'&&getPracticePart()?'current':'all';scopeChosen=false;firstPart=0;if($('engraving-basic-view-mode'))$('engraving-basic-view-mode').value='rendition'; cached = null; sourcePage=null;sourcePages=[];sourceBatch=null;followFailure=null; if($('engraving-basic-meter'))$('engraving-basic-meter').value=hasBasicKeyRendition(basicSong())&&(basicSong().score.performance.timing.meter!=='source_declared'||basicSong().notation.meters[0]?.at.numerator!==0)?'4/4':'source'; from = 1; selectedPart = getPracticePart(); setParts();redrawLocale(); rangeControls();publishScope('pending',[]);
     if (active || preferred) {active=true;render();}
   }
@@ -335,7 +335,8 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
       // Entering the desktop stage can expose notation and then notify the
       // screen change. Both notifications own the same in-flight render.
       // A genuinely hidden surface cancels below and creates fresh work on return.
-      if(isVisible()){if(active){if(!controller)render();}else if(sourcePage){onBasicPage(sourcePage,{...sourceBatch,scope:resolvedScope().scope});publishScope(sourceBatch?.status||'ready',sourcePages.filter(usablePage).map(page=>page.part_id));prefetchNext();}else if(!basicSong())publishScope(resolvedScope().status,partBatch().partIds);}else{cancel();publishScope('hidden',[]);}
+      // Jianpu needs its native page even when Staff and optional Follow are off.
+      if(isVisible()){if(active){if(!controller)render();}else if(sourcePage){onBasicPage(sourcePage,{...sourceBatch,scope:resolvedScope().scope});publishScope(sourceBatch?.status||'ready',sourcePages.filter(usablePage).map(page=>page.part_id));prefetchNext();}else if(basicSong()){if(!controller)void render(null,true);}else publishScope(resolvedScope().status,partBatch().partIds);}else{cancel();publishScope('hidden',[]);}
     },
     navigationState:()=>({from,ready:Boolean(rendered)||isRenditionPage()&&usablePage(sourcePage)&&!needsEngraving(sourcePage)}),
     followMeasure(index){if(!active||!score||!Number.isInteger(index)||index<0||index>=score.measures.length)return false;const page=sourceMeasurePage(index,pageSize);if(page===from)return false;from=page;render();return true}

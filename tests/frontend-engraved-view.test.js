@@ -8,12 +8,12 @@ import {prepareCleanSong} from '../web/clean-song-package.js';
 import {basicKeyWrittenAt} from '../web/basic-key-notation.js';
 import {planEngravingReveal} from '../web/engraving-reveal.js';
 const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return{promise,resolve}};
-function environment({loadAdapter,onManualNavigation,isVisible,getCleanSong,getPracticePart=()=>null,getMode,observeResize=false,i18n=createI18n({locale:'en'})}={}){
+function environment({loadAdapter,onManualNavigation,onBasicPage,isVisible,getCleanSong,getPracticePart=()=>null,getMode,observeResize=false,i18n=createI18n({locale:'en'})}={}){
  const prior=Object.fromEntries(['document','window','MutationObserver','ResizeObserver','fetch'].map(key=>[key,globalThis[key]]));const elements=new Map(),calls=[],visible=[],failures=[],resizeObservers=[],windowListeners=new Map();let score=null,pauses=0;const failure=deferred();
  const element=id=>{if(!elements.has(id))elements.set(id,{textContent:'',hidden:true,value:'',children:[],listeners:new Map(),addEventListener(type,handler){this.listeners.set(type,handler)},replaceChildren(){this.children=[]},append(item){this.children.push(item)}});return elements.get(id)};
  globalThis.document={getElementById:element,createElement:()=>({children:[],dataset:{},append(item){this.children.push(item)},replaceChildren(){this.children=[]}}),documentElement:{dataset:{theme:'light'}}};globalThis.window={addEventListener(type,handler){if(!windowListeners.has(type))windowListeners.set(type,[]);windowListeners.get(type).push(handler)}};globalThis.MutationObserver=class{observe(){}};globalThis.fetch=(path,options)=>{const response=deferred();calls.push({path,options,...response});return response.promise};
  if(observeResize)globalThis.ResizeObserver=class{constructor(callback){this.callback=callback;this.observed=[];resizeObservers.push(this)}observe(element){this.observed.push(element)}disconnect(){this.observed=[]}};
- const view=setupEngravedView({i18n,getScore:()=>score,getCleanSong,getPracticePart,getMode,isVisible,pausePlayback(){pauses++},onVisibility:value=>visible.push(value),onFallback(){failures.push(element('engraving-fallback').textContent);failure.resolve()},notice(){},loadAdapter,onManualNavigation});
+ const view=setupEngravedView({i18n,getScore:()=>score,getCleanSong,getPracticePart,getMode,isVisible,pausePlayback(){pauses++},onVisibility:value=>visible.push(value),onFallback(){failures.push(element('engraving-fallback').textContent);failure.resolve()},notice(){},loadAdapter,onManualNavigation,onBasicPage});
  return{view,elements,calls,visible,failures,failure,resizeObservers,windowListeners,get pauses(){return pauses},setScore(next=structuredClone(fixture)){score=next;view.updateScore();return score},close(){view.hide();for(const[key,value]of Object.entries(prior))if(value===undefined)delete globalThis[key];else globalThis[key]=value}};
 }
 test('the first score requests engraved presentation by default, without starting playback',()=>{const env=environment();try{assert.equal(env.calls.length,0);env.setScore();assert.equal(env.calls.length,1);assert.equal(env.view.isActive(),true);assert.equal(env.visible.at(-1),true);assert.equal(JSON.parse(env.calls[0].options.body).id,fixture.id);env.view.updateScore();assert.equal(env.calls.length,1,'Ordinary UI refreshes must not re-render an unchanged score');}finally{env.close()}});
@@ -34,6 +34,19 @@ test('duplicate visible surface notifications retain pending export and ready mo
   shown=false;env.view.surfaceChanged();assert.equal(disposals,1);shown=true;env.view.surfaceChanged();await new Promise(resolve=>setImmediate(resolve));
   assert.equal(renders,2,'Returning mounts a new visible renderer');assert.equal(env.calls.length,2,'Returning uses the exact cached export');assert.equal(env.pauses,0);
  }finally{env.close()}
+});
+
+test('Jianpu surface entry owns one native page request while Follow is off and rejects a hidden prior score response',async()=>{
+ const data=JSON.parse(readFileSync(new URL('./fixtures/basic-key-rendition-notation-page.json',import.meta.url),'utf8')),third=JSON.parse(readFileSync(new URL('./fixtures/basic-key-rendition-third-part.json',import.meta.url),'utf8')),descriptor=data.open.clean_package;
+ let song=prepareCleanSong(`native:song-${descriptor.content_sha256}`,descriptor,null),shown=false,part=song.notation.parts[0].id,adapterLoads=0;const painted=[];
+ const env=environment({isVisible:()=>shown,getCleanSong:()=>song,getPracticePart:()=>part,getMode:()=> 'practice',onBasicPage:page=>painted.push(page?.part_id),loadAdapter:async()=>{adapterLoads++;throw new Error('Jianpu must not load the staff renderer');}});
+ try{
+  env.setScore(song.notation);env.view.hide({remember:true});document.getElementById('engraving-follow').checked=false;
+  shown=true;env.view.surfaceChanged();const obsolete=env.calls[0];assert.equal(env.calls.length,1,'Opening Jianpu starts its page without a Follow frame');assert.equal(env.view.isActive(),false);env.view.surfaceChanged();assert.equal(env.calls.length,1);assert.equal(obsolete.options.signal.aborted,false,'Repeated visible notifications preserve the same owner');
+  shown=false;env.view.surfaceChanged();assert.equal(obsolete.options.signal.aborted,true);song=prepareCleanSong(`native:song-${descriptor.content_sha256}`,descriptor,null);part=song.notation.parts[2].id;env.setScore(song.notation);assert.equal(env.calls.length,1,'Loading the replacement in the library stays lazy');
+  shown=true;env.view.surfaceChanged();env.view.surfaceChanged();assert.equal(env.calls.length,2);assert.equal(JSON.parse(env.calls[1].options.body).settings.part_id,part);obsolete.resolve({ok:true,json:async()=>data.melodic.response});await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(painted,[]);assert.equal(env.view.basicPage(),null);
+  env.calls[1].resolve({ok:true,json:async()=>third.response});await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(painted,[part]);assert.equal(env.view.scopeInfo().status,'ready');assert.equal(env.view.basicPage().part_id,part);env.view.surfaceChanged();assert.equal(env.calls.length,2,'A ready retained page does not export again');assert.equal(adapterLoads,0);assert.equal(env.pauses,0);assert.deepEqual(env.failures,[]);
+ }finally{env.close();}
 });
 test('surface notifications preserve an in-flight renderer and its latest exact queued source identities',async()=>{
  const ready=deferred(),mount={tagName:'svg'},received=[];let renders=0,signal;
