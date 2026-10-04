@@ -69,8 +69,16 @@ function newDisplayBinding(node) {
 function t(key, params = {}) {
   return i18n.t(key, Object.fromEntries(Object.entries(params).map(([name, value]) => [name, typeof value === 'number' ? i18n.formatNumber(value) : String(value ?? '')])));
 }
+const IMPORT_DIAGNOSTIC_KEYS=Object.freeze({midi_notation_inferred:'app.midiNotationInferred',midi_key_release_timing:'app.midiKeyReleaseTiming',midi_initial_tempo_projection:'app.initialTempoProjection'});
 function diagnosticText(diagnostic) {
-  return diagnostic.code === 'midi_initial_tempo_projection' ? t('app.initialTempoProjection') : diagnostic.message;
+  return Object.hasOwn(IMPORT_DIAGNOSTIC_KEYS,diagnostic.code) ? t(IMPORT_DIAGNOSTIC_KEYS[diagnostic.code]) : diagnostic.message;
+}
+function attributionText(score) {
+  const provenance=score.provenance;
+  // Only this exact standard-importer statement is ours to localize. Author
+  // credits, rights declarations and other source formats stay literal.
+  return score.source?.format==='midi-base64'&&provenance.kind==='user_import'&&provenance.source_url==null&&provenance.license==null&&provenance.attribution==='User-supplied MIDI performance; ownership and usage rights are not verified. Notation is inferred, not original sheet music.'
+    ? t('app.midiImportAttribution') : provenance.attribution||'';
 }
 function bindText(node, render) {
   if (!node) return;
@@ -378,7 +386,7 @@ function renderScore() {
   $('practice-part').value = state.practicePart || '';
   updatePracticeScopeLabel();
   renderNotationPage();
-  bindText($('provenance'), () => t('app.provenance', {kind:score.provenance.kind,attribution:score.provenance.attribution||'',license:score.provenance.license?t('app.license',{license:score.provenance.license}):t('app.rightsNote')}));
+  bindText($('provenance'), () => t('app.provenance', {kind:score.provenance.kind,attribution:attributionText(score),license:score.provenance.license?t('app.license',{license:score.provenance.license}):t('app.rightsNote')}));
   $('provenance-link').hidden = true;
   if (score.provenance.source_url) { try { const url = new URL(score.provenance.source_url); if (url.protocol === 'https:') { $('provenance-link').href = url.href; $('provenance-link').hidden = false; } } catch { /* Preserve invalid source text in exported score, but never turn it into an unsafe link. */ } }
   bindText($('diagnostic-count'), () => state.compiled.diagnostics.length ? `(${state.compiled.diagnostics.length})` : '');

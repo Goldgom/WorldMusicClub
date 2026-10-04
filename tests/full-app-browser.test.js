@@ -6,7 +6,7 @@ import {registerAboveKeyboardBrowserRegressions} from './above-keyboard-browser-
 import {registerReferenceListeningBrowserRegressions} from './reference-listening-browser-regression.js';
 import {registerSharedPianoStageBrowserRegressions} from './shared-piano-stage-browser-regression.js';
 import {registerFreePianoBrowserRegressions} from './free-piano-browser-regression.js';
-import {selectLegacyEnglish, wideKeyboardBindings, keyboardBrowserScore, observeRealAudio, guitarPhraseBrowserScore, boundedPreviewBrowserRecord, orderedInitialTempoBrowserMidi} from './browser-input-fixtures.js';
+import {selectLegacyEnglish, wideKeyboardBindings, keyboardBrowserScore, observeRealAudio, guitarPhraseBrowserScore, boundedPreviewBrowserRecord, orderedInitialTempoBrowserMidi, standardMidiDisclosure} from './browser-input-fixtures.js';
 /**
  * Full-stack checks against the actual Rust executable and its embedded UI.
  * Build first: cargo build -p practice-server --locked
@@ -623,7 +623,7 @@ test('live Rust-backed desktop light/dark and mobile layouts produce real screen
   await screenshot('mobile');
 });
 
-test('real Rust ordered initial MIDI tempos retain source bytes, effective timing and localized projection notices', testOptions, async () => {
+test('real Rust ordered initial MIDI tempos retain source bytes, effective timing and fully localized known warnings', testOptions, async () => {
   const bytes = orderedInitialTempoBrowserMidi(), code = 'midi_initial_tempo_projection';
   await ui('#interface-language').selectOption('zh-CN');
   const [importResponse, compileResponse] = await Promise.all([
@@ -651,31 +651,40 @@ test('real Rust ordered initial MIDI tempos retain source bytes, effective timin
   assert.equal(retainedProjection[0].message.startsWith('Retained import observation: '), false);
   assert.deepEqual(projection, retainedProjection.map(item => ({...item, message:`Retained import observation: ${item.message}`})));
   assert.deepEqual(compiled.diagnostics.filter(item => item.code === code), projection);
+  const knownCodes = Object.keys(standardMidiDisclosure.en.warnings);
+  assert.deepEqual(imported.diagnostics.map(item => item.code), knownCodes);
+  assert.deepEqual(imported.diagnostics, imported.score.source.import_diagnostics.map(item => ({...item,message:`Retained import observation: ${item.message}`})));
+  assert.deepEqual(compiled.diagnostics, imported.diagnostics);
+  assert.equal(imported.score.provenance.attribution, standardMidiDisclosure.en.attribution);
   await readyForTitle('Original ordered tempo study');
   await waitForBrowserImportCopies(1);
   const notices = [];
-  for (const [locale, expected] of [
-    ['zh-CN','起始速度遵循来源事件顺序：零时刻最后一次速度声明用于后续计时，先前声明仍被保留。'],
-    ['en','The opening tempo follows source event order: the final declaration at tick zero controls subsequent timing. Earlier declarations are retained.'],
-  ]) {
+  for (const locale of ['zh-CN','en']) {
+    const expected=standardMidiDisclosure[locale],messages=Object.values(expected.warnings),expectedImport=messages.join(' ');
     await ui('#interface-language').selectOption(locale);
     await closeShellPanels();
     assert.equal(await page.locator('html').getAttribute('lang'), locale);
-    await page.waitForFunction(text => document.querySelector('#notice').textContent.includes(text), expected);
+    await page.waitForFunction(text => document.querySelector('#notice-message').textContent===text, expectedImport);
     assert.equal(await page.locator('#notice').isVisible(), true);
-    const importNotice = await page.locator('#notice').textContent();
+    const importNotice = await page.locator('#notice-message').textContent();
+    assert.equal(importNotice, expectedImport, 'Every known import warning must use the selected language');
     await ui('#score-details-button').click();
-    const detail = page.locator('#diagnostic-list>li').filter({hasText:code}).first();
-    await detail.waitFor({state:'visible'});
-    assert.equal(await detail.textContent(), `${code}: ${expected}`);
+    const detail = page.locator('#diagnostic-list>li');
+    await detail.first().waitFor({state:'visible'});
+    const details=await detail.allTextContents();
+    assert.deepEqual(details, Object.entries(expected.warnings).map(([id,message])=>`${id}: ${message}`));
+    const attribution=await page.locator('#provenance').textContent();
+    assert.ok(attribution.includes(expected.attribution));
+    assert.equal(attribution.includes(standardMidiDisclosure[locale==='en'?'zh-CN':'en'].attribution),false);
     await page.screenshot({path:join(artifactDirectory,`worldmusichub-live-initial-tempo-${locale}.png`),fullPage:true,animations:'disabled'});
     await ui('#back-to-library').click();
     await page.waitForFunction(() => document.querySelector('#preview-title').textContent === 'Original ordered tempo study' && !document.querySelector('#start-listen').disabled);
     if (!await page.locator('#preview-notices').evaluate(element => element.open)) await page.locator('#preview-notices>summary').click();
-    const preview = page.locator('#preview-notice-list>li').filter({hasText:expected}).first();
-    await preview.waitFor({state:'visible'});
-    assert.equal(await preview.textContent(), expected);
-    notices.push({locale,import:importNotice,details:await detail.textContent(),preview:await preview.textContent()});
+    const preview = page.locator('#preview-notice-list>li');
+    await preview.first().waitFor({state:'visible'});
+    const previewMessages=await preview.allTextContents();
+    assert.deepEqual(previewMessages, messages);
+    notices.push({locale,import:importNotice,details,preview:previewMessages,attribution});
     await page.locator('#resume-session').click();
   }
   assert.equal(await page.locator('#tempo').inputValue(), '100');

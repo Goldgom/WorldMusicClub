@@ -211,5 +211,8 @@ export default Object.freeze({
   "app.cursorLoading": "Preparing exact current-note positions…",
   "app.cursorReady": "Expected written notes follow the Rust clock. Held inputs and assessment are separate.",
   "app.cursorUnavailable": "Current-note following is unavailable. Static notation and playback remain available.",
-  "app.initialTempoProjection": "The opening tempo follows source event order: the final declaration at tick zero controls subsequent timing. Earlier declarations are retained."
+  "app.initialTempoProjection": "The opening tempo follows source event order: the final declaration at tick zero controls subsequent timing. Earlier declarations are retained.",
+  "app.midiNotationInferred": "MIDI is a performance recording, not original sheet music. Pitch spelling, voices, staff assignment and measure boundaries are inferred; timings remain exact and are not quantized. Silence is implicit, and no original rests, ties, articulations or layout can be recovered.",
+  "app.midiKeyReleaseTiming": "Note durations preserve note-on to note-off key-release timing, not acoustic decay. Sustain/sostenuto and other unsupported pedal or note-release controls are rejected rather than converted into guessed notation.",
+  "app.midiImportAttribution": "User-supplied MIDI performance; ownership and usage rights are not verified. Notation is inferred, not original sheet music."
 });

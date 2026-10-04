@@ -211,5 +211,8 @@ export default Object.freeze({
   "app.cursorLoading": "正在准备精确的当前音符位置…",
   "app.cursorReady": "预期谱面音符按 Rust 时钟跟随。按住输入和评分单独处理。",
   "app.cursorUnavailable": "当前音符跟随不可用。仍可查看静态谱面和播放乐谱。",
-  "app.initialTempoProjection": "起始速度遵循来源事件顺序：零时刻最后一次速度声明用于后续计时，先前声明仍被保留。"
+  "app.initialTempoProjection": "起始速度遵循来源事件顺序：零时刻最后一次速度声明用于后续计时，先前声明仍被保留。",
+  "app.midiNotationInferred": "MIDI 记录的是演奏，并非原始乐谱。音高拼写、声部、谱表分配和小节边界均由推断得到；时间保持精确，不进行量化。静音为隐含信息，无法还原原始休止符、连音线、演奏记号或版式。",
+  "app.midiKeyReleaseTiming": "音符时值保留从音符开启事件到音符关闭事件的松键时间，并非声音的自然衰减时长。延音、选择延音及其他不支持的踏板或释音控制会被拒绝，不会转换为猜测的记谱。",
+  "app.midiImportAttribution": "用户提供的 MIDI 演奏；所有权和使用权尚未核实。记谱由推断生成，并非原始乐谱。"
 });

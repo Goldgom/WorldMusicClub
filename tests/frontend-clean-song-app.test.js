@@ -4,7 +4,8 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {getAppI18n} from '../web/app-locale.js';
 import {cleanDescriptor,fixtureKey,mediaFixture} from './clean-song-fixtures.js';
-import {nativeScoreServer,nativeStorageApp,nativeResponse,deferred} from './native-storage-app-fixtures.js';
+import {nativeScoreServer,nativeStorageApp,nativeResponse,deferred,authoredScore} from './native-storage-app-fixtures.js';
+import {orderedInitialTempoBrowserMidi,standardMidiDisclosure} from './browser-input-fixtures.js';
 import {unavailablePianoResult} from './piano-fingering-fixtures.js';
 async function setup({media=false,now,descriptor:providedDescriptor}={}){
  const assets=media?[mediaFixture(),mediaFixture({id:'bg',role:'background',content:'authored-bg'}),mediaFixture({id:'pv',role:'pv',mime:'video/webm',content:'authored-pv'})]:[];
@@ -47,20 +48,91 @@ test('initial tempo projection disclosure follows locale in clean preview and sc
  }finally{await app.close();}
 });
 
-test('ordinary MIDI initial tempo import notice redraws in Chinese and English while the stored diagnostic stays literal',async()=>{
- const {app,server,score}=await setup();
+function standardMidiScore(){
+ const score=authoredScore({id:'authored-standard-midi',title:'Original <MIDI title> 原题',composer:'Original <author> 作者'});
+ const last=structuredClone(score.parts[0].notes[1]);last.id='g4';last.at.numerator=2;last.pitch.step='G';score.parts[0].notes.push(last);
+ score.provenance={kind:'user_import',attribution:standardMidiDisclosure.en.attribution,source_url:null,license:null};
+ const diagnostics=Object.entries(standardMidiDisclosure.en.warnings).map(([code,message])=>({severity:'warning',code,message,note_id:null}));
+ diagnostics[2].message='Canonical notation uses the final source-ordered tick-zero tempo; complete commands remain retained.';
+ score.source={format:'midi-base64',filename:'authored-initial-tempos.mid',content:orderedInitialTempoBrowserMidi().toString('base64'),import_diagnostics:diagnostics};
+ return score;
+}
+
+test('standard MIDI known warnings and generated attribution follow locale across import, preview and details without altering saved evidence or exports',async()=>{
+ const {app,server}=await setup(),imported=standardMidiScore();
+ const unknown={severity:'warning',code:'authored_unknown_warning',message:`Retained import observation: ${standardMidiDisclosure.en.warnings.midi_notation_inferred} <original detail> 原文`,note_id:null};
+ imported.source.import_diagnostics.push(unknown);
+ const original=JSON.stringify(imported),diagnostics=imported.source.import_diagnostics.map(item=>({...item,message:`Retained import observation: ${item.message}`})),diagnosticBytes=JSON.stringify(diagnostics);
+ server.setRoute(({path})=>path==='/api/import/midi'?nativeResponse({score:imported,diagnostics}):undefined);
  try{
-  const diagnostic={severity:'warning',code:'midi_initial_tempo_projection',message:'Original importer tempo projection detail',note_id:null};
-  const imported=structuredClone(score);imported.id='authored-initial-tempo-import';imported.title='Authored initial tempo import';
-  server.setRoute(({path})=>path==='/api/import/midi'?nativeResponse({score:imported,diagnostics:[diagnostic]}):undefined);
   const i18n=getAppI18n(app.document);i18n.setLocale('zh-CN');
-  const file={name:'authored-initial-tempos.mid',size:24,arrayBuffer:async()=>new ArrayBuffer(24)};
+  const bytes=orderedInitialTempoBrowserMidi(),file={name:'authored-initial-tempos.mid',size:bytes.length,arrayBuffer:async()=>Uint8Array.from(bytes).buffer};
   Object.defineProperty(app.$('score-file'),'files',{configurable:true,value:[file]});app.emit(app.$('score-file'),'change');
   await app.until(()=>app.$('score-title').textContent===imported.title&&!app.$('play-button').disabled);
-  assert.match(app.$('notice').textContent,/先前声明仍被保留/);assert.doesNotMatch(app.$('notice').textContent,/Original importer/);
-  i18n.setLocale('en');assert.match(app.$('notice').textContent,/Earlier declarations are retained/);assert.doesNotMatch(app.$('notice').textContent,/先前声明/);
-  assert.match(app.$('diagnostic-list').textContent,/final declaration at tick zero/);
-  assert.equal(diagnostic.message,'Original importer tempo projection detail');
+  await app.until(()=>[...server.records.values()].some(row=>row.entry.score_id===imported.id));
+  const detailRows=[...app.$('diagnostic-list').children],previewRows=[...app.$('preview-notice-list').children],provenance=app.$('provenance');
+  const requestCount=app.requests.length;
+  for(const locale of ['zh-CN','en','zh-CN']){
+   i18n.setLocale(locale);const expected=standardMidiDisclosure[locale],messages=Object.values(expected.warnings);
+   assert.equal(app.$('notice-message').textContent,[...messages,diagnostics.at(-1).message].join(' '));
+   assert.deepEqual(detailRows.map(row=>row.textContent),[...Object.entries(expected.warnings).map(([code,message])=>`${code}: ${message}`),`${unknown.code}: ${diagnostics.at(-1).message}`]);
+   assert.deepEqual(previewRows.map(row=>row.textContent),[...messages,diagnostics.at(-1).message]);
+   assert.ok(provenance.textContent.includes(expected.attribution));
+   assert.equal(provenance.textContent.includes(standardMidiDisclosure[locale==='en'?'zh-CN':'en'].attribution),false);
+   assert.deepEqual([...app.$('diagnostic-list').children],detailRows);assert.deepEqual([...app.$('preview-notice-list').children],previewRows);assert.equal(app.$('provenance'),provenance);
+   assert.equal(app.$('score-title').textContent,imported.title);assert.ok(app.$('score-meta').textContent.includes(imported.composer));
+   assert.equal(app.$('preview-title').textContent,imported.title);assert.ok(app.$('preview-meta').textContent.includes(imported.composer));
+   assert.equal(app.$('diagnostic-list').querySelector('original'),null);assert.equal(app.$('score-title').children.length,0);
+   assert.equal(app.requests.length,requestCount,'Locale changes must not import or recompile');
+  }
+  await app.click('back-to-library');assert.equal(app.document.body.dataset.screen,'library');
+  assert.deepEqual([...app.$('preview-notice-list').children].map(row=>row.textContent),[...Object.values(standardMidiDisclosure['zh-CN'].warnings),diagnostics.at(-1).message]);
+  await app.click('resume-session');await app.exported('export-button');const chineseExport=await app.downloads.at(-1).text();
+  i18n.setLocale('en');await app.exported('export-button');assert.equal(await app.downloads.at(-1).text(),chineseExport);
+  assert.equal(chineseExport,JSON.stringify(imported,null,2));
+  await app.click('source-files-button');
+  for(const [index,expectedBytes] of [Buffer.from(imported.source.content),bytes].entries()){
+   app.document.querySelector(`#source-archive-files [data-source-file-index="${index}"]`).click();
+   await app.until(()=>!app.$('source-archive-download').disabled);
+   for(const locale of ['zh-CN','en']){
+    i18n.setLocale(locale);await app.click('source-archive-download');
+    assert.deepEqual(Buffer.from(await app.downloads.at(-1).arrayBuffer()),expectedBytes,'Retained source and decoded MIDI downloads stay byte-for-byte identical');
+   }
+  }
+  await app.click('source-archive-close');
+  const saved=[...server.records.values()].find(row=>row.entry.score_id===imported.id);assert.equal(saved.score_json,original);
+  assert.equal(JSON.stringify(imported),original);assert.equal(JSON.stringify(diagnostics),diagnosticBytes);assert.deepEqual(i18n.getReports(),[]);
+ }finally{await app.close();}
+});
+
+test('only the exact standard MIDI generated attribution is localized; authored rights and unknown errors stay literal',async()=>{
+ const {app,server}=await setup();
+ try{
+  let index=0;const i18n=getAppI18n(app.document);
+  for(const change of [
+   score=>{score.provenance.attribution='Original author <credits> 原文';},
+   score=>{score.provenance.attribution+=' ';},
+   score=>{score.provenance.kind='original_exercise';},
+   score=>{score.provenance.license='CC-BY-4.0';},
+   score=>{score.provenance.source_url='https://example.com/original';},
+   score=>{score.source.format='musicxml';},
+   score=>{score.source=null;},
+  ]){
+   const score=standardMidiScore();score.id+=`-literal-${index++}`;score.title=score.id;change(score);const original=JSON.stringify(score);
+   app.importFile(score);await app.until(()=>app.$('score-title').textContent===score.title&&!app.$('play-button').disabled);
+   for(const locale of ['zh-CN','en']){
+    i18n.setLocale(locale);assert.ok(app.$('provenance').textContent.includes(score.provenance.attribution));
+    assert.equal(app.$('provenance').textContent.includes(standardMidiDisclosure['zh-CN'].attribution),false);assert.equal(app.$('provenance').querySelector('credits'),null);
+   }
+   assert.deepEqual(await app.exported('export-button'),score);assert.equal(JSON.stringify(score),original);
+  }
+  const error=`${standardMidiDisclosure.en.warnings.midi_key_release_timing} <unknown error> 原文`;
+  server.setRoute(({path})=>path==='/api/import/midi'?nativeResponse({error},400):undefined);
+  const file={name:'unknown-error.mid',size:1,arrayBuffer:async()=>new ArrayBuffer(1)};
+  Object.defineProperty(app.$('score-file'),'files',{configurable:true,value:[file]});app.emit(app.$('score-file'),'change');
+  await app.until(()=>app.$('notice').textContent.includes(error));
+  for(const locale of ['zh-CN','en']){i18n.setLocale(locale);assert.ok(app.$('notice').textContent.includes(error));assert.equal(app.$('notice').querySelector('unknown'),null);}
+  assert.deepEqual(i18n.getReports(),[]);
  }finally{await app.close();}
 });
 

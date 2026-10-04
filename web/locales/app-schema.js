@@ -1,5 +1,14 @@
 // Explicit parameters for application display messages.
 const schema = {
+  "app.midiNotationInferred": {
+    "params": {}
+  },
+  "app.midiKeyReleaseTiming": {
+    "params": {}
+  },
+  "app.midiImportAttribution": {
+    "params": {}
+  },
   "app.initialTempoProjection": {
     "params": {}
   },

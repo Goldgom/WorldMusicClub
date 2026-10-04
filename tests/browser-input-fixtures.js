@@ -12,6 +12,27 @@ const rows = [
 ];
 export const wideKeyboardBindings = Object.freeze(rows.flatMap(([row,codes,keys]) => codes.map((code,index) => ({row,code,key:keys[index]}))).map((binding,index) => Object.freeze({...binding,midi:36+index})));
 
+// Independent display expectations shared by DOM and real Rust/browser checks.
+// Never read these expectations from the production locale catalog.
+export const standardMidiDisclosure = {
+  'zh-CN': {
+    warnings: {
+      midi_notation_inferred: 'MIDI 记录的是演奏，并非原始乐谱。音高拼写、声部、谱表分配和小节边界均由推断得到；时间保持精确，不进行量化。静音为隐含信息，无法还原原始休止符、连音线、演奏记号或版式。',
+      midi_key_release_timing: '音符时值保留从音符开启事件到音符关闭事件的松键时间，并非声音的自然衰减时长。延音、选择延音及其他不支持的踏板或释音控制会被拒绝，不会转换为猜测的记谱。',
+      midi_initial_tempo_projection: '起始速度遵循来源事件顺序：零时刻最后一次速度声明用于后续计时，先前声明仍被保留。',
+    },
+    attribution: '用户提供的 MIDI 演奏；所有权和使用权尚未核实。记谱由推断生成，并非原始乐谱。',
+  },
+  en: {
+    warnings: {
+      midi_notation_inferred: 'MIDI is a performance recording, not original sheet music. Pitch spelling, voices, staff assignment and measure boundaries are inferred; timings remain exact and are not quantized. Silence is implicit, and no original rests, ties, articulations or layout can be recovered.',
+      midi_key_release_timing: 'Note durations preserve note-on to note-off key-release timing, not acoustic decay. Sustain/sostenuto and other unsupported pedal or note-release controls are rejected rather than converted into guessed notation.',
+      midi_initial_tempo_projection: 'The opening tempo follows source event order: the final declaration at tick zero controls subsequent timing. Earlier declarations are retained.',
+    },
+    attribution: 'User-supplied MIDI performance; ownership and usage rights are not verified. Notation is inferred, not original sheet music.',
+  },
+};
+
 // Original C4/E4/G4 quarter notes, not a transcription. All three FF51 events
 // occur in one track at tick zero; the last declaration makes each quarter 600 ms.
 export function orderedInitialTempoBrowserMidi() {
