@@ -235,7 +235,51 @@ struct Segment<'a> {
 /// Musical time is exact or the operation fails. The input and retained source
 /// are never modified; original source bytes are never embedded in the output.
 pub fn export_musicxml(score: &Score) -> Result<ExportedMusicXml, String> {
-    crate::validate(score)?;
+    export_musicxml_inner(score, &BTreeSet::new(), &BTreeSet::new(), false)
+}
+
+/// Source-bound display excerpts can carry ties beyond the requested window.
+/// The caller proves these continuations against complete source intervals;
+/// they are not orphan canonical tie segments or newly inferred durations.
+pub(crate) fn export_musicxml_excerpt(
+    score: &Score,
+    incoming: &BTreeSet<String>,
+    outgoing: &BTreeSet<String>,
+) -> Result<ExportedMusicXml, String> {
+    export_musicxml_inner(score, incoming, outgoing, true)
+}
+fn export_musicxml_inner(
+    score: &Score,
+    incoming: &BTreeSet<String>,
+    outgoing: &BTreeSet<String>,
+    display_only: bool,
+) -> Result<ExportedMusicXml, String> {
+    if display_only {
+        // Playback's10–600BPM gate is not a notation requirement. Validate all
+        // canonical structure with a local validation clock, then validate the
+        // actual display/source tempo separately. No fake tempo enters Score
+        // or exported XML; an unavailable source clock may have no tempo mark.
+        let mut validation = score.clone();
+        validation.tempo = vec![crate::Tempo {
+            at: Beat::ZERO,
+            bpm: 120.,
+        }];
+        crate::validate(&validation)?;
+        let mut prior: Option<Beat> = None;
+        for tempo in &score.tempo {
+            if !tempo.at.valid()
+                || tempo.at.numerator < 0
+                || !tempo.bpm.is_finite()
+                || tempo.bpm <= 0.
+                || prior.is_some_and(|at| at.compare(tempo.at).is_ge())
+            {
+                return Err("Invalid exact display tempo map".into());
+            }
+            prior = Some(tempo.at);
+        }
+    } else {
+        crate::validate(score)?;
+    }
     if score.measures.is_empty() {
         return Err("MusicXML export requires a contiguous measure map beginning at beat zero; add measures before export".into());
     }
@@ -445,8 +489,13 @@ pub fn export_musicxml(score: &Score) -> Result<ExportedMusicXml, String> {
                         start,
                         end: segment_end,
                         tie_start: n.note.pitch.is_some()
-                            && (segment_end < n.end || n.note.tie_start),
-                        tie_stop: n.note.pitch.is_some() && (start > n.start || n.note.tie_stop),
+                            && (segment_end < n.end
+                                || n.note.tie_start
+                                || outgoing.contains(&n.note.id)),
+                        tie_stop: n.note.pitch.is_some()
+                            && (start > n.start
+                                || n.note.tie_stop
+                                || incoming.contains(&n.note.id)),
                     });
                     start = segment_end;
                     bar_index += 1;

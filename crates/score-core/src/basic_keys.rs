@@ -11,6 +11,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod conversion;
+mod notation;
+pub use notation::{
+    notation_page, DisplayMeter, NotationCoverage, NotationMeasure, NotationPage, NotationRequest,
+    PageAttack, PageContinuation,
+};
+#[cfg(test)]
+mod notation_tests;
 #[cfg(test)]
 mod tests;
 pub use crate::clean_song::Coordinate;
