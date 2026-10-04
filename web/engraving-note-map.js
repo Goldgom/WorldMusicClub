@@ -1,6 +1,6 @@
 import {basicKeyEngravingBoundaries,basicKeyEngravingViewVersion} from './basic-key-notation.js';
 /** Verify display identity only. Rust owns every performance interval. */
-import {ENGRAVING_SOURCE_LIMITS,proveEngravingProjectionModelNotes} from './engraving-projection.js';
+import {ENGRAVING_SOURCE_LIMITS,proveEngravingProjectionModelNotes,engravingProjectionModelCoordinates} from './engraving-projection.js';
 const VERSION=1,MAX_BYTES=ENGRAVING_SOURCE_LIMITS.mapBytes,MAX_SEGMENTS=ENGRAVING_SOURCE_LIMITS.notes;
 const admittedPageBoundaries=new WeakMap();
 const nativeAdmissions=new WeakMap();
@@ -116,15 +116,18 @@ export function matchEngravingModel(renderer,validated,{includeContext=false}={}
   if(!validated.ok)return {...validated,matches:[]};
   try{
     const measures=renderer.Sheet?.SourceMeasures,instruments=renderer.Sheet?.Instruments;
-    const projection = validated.projection, sourceIndices = projection?.sourceMeasureIndices || validated.score.measures.map((_, index) => index);
+    const projection = validated.projection;
+    const coordinates=projection?.kind==='source-bound-measure-fragments-v1'?engravingProjectionModelCoordinates(projection,validated.score):null;
+    if(coordinates&&!coordinates.ok)fail('The source-bound model fragment coordinates changed after validation.');
+    const sourceIndices=coordinates?coordinates.measures.map(measure=>measure.sourceMeasureIndex):projection?.sourceMeasureIndices||validated.score.measures.map((_,index)=>index);
     if(!Array.isArray(measures)||measures.length!==sourceIndices.length||new Set(measures).size!==measures.length||!Array.isArray(instruments))fail('The renderer cannot expose an exact source-measure identity table.');
-    const ordinals=new Map(measures.map((measure,index)=>[measure,sourceIndices[index]])),notes=new Set(),index=new Map(),diagnostics=[];
+    const ordinals=new Map(measures.map((measure,index)=>[measure,sourceIndices[index]])),offsets=new Map(measures.map((measure,index)=>[measure,coordinates?rational(coordinates.measures[index].offset):[0n,1n]])),notes=new Set(),index=new Map(),diagnostics=[];
     for(const measure of measures)for(const container of measure.VerticalSourceStaffEntryContainers||[])for(const staffEntry of container.StaffEntries||[])for(const voice of staffEntry?.VoiceEntries||[])for(const note of voice.Notes||[])notes.add(note);
     for(const note of notes){
       if (note.PrintObject === false) continue; // Generated timing padding has no canonical identity.
       try{const staff=note.ParentStaff,instrument=staff?.ParentInstrument,staffIndex=instrument?.Staves?.indexOf(staff),measure=ordinals.get(note.SourceMeasure),voice=note.ParentVoiceEntry?.ParentVoice?.VoiceId;
         if(!instruments.includes(instrument)||!integer(staffIndex)||!integer(measure)||!integer(voice,1,2000))continue;
-        const key=segmentKey(instrument.IdString,measure,staffIndex+1,String(voice),modelFraction(note.ParentVoiceEntry.Timestamp),modelFraction(note.Length),modelPitch(note));
+        const key=segmentKey(instrument.IdString,measure,staffIndex+1,String(voice),add(modelFraction(note.ParentVoiceEntry.Timestamp),offsets.get(note.SourceMeasure)),modelFraction(note.Length),modelPitch(note));
         if(!index.has(key))index.set(key,[]);index.get(key).push(note);
       }catch{/* An unsupported model note cannot be used as an approximate match. */}
     }

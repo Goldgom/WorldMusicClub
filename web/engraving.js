@@ -1,6 +1,7 @@
 /** Optional, offline OSMD presentation adapter. Rust remains the score/timing authority. */
-import {validateEngravingNoteMap,createEngravingNoteBindings,validateEngravingModelTies,restoreSourceBoundPageTies} from './engraving-note-map.js';
-import {createEngravingProjection, restoreSourceBoundProjectionFractions, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from './engraving-projection.js';
+import {validateEngravingNoteMap,createEngravingNoteBindings,validateEngravingModelTies,restoreSourceBoundPageTies,isAdmittedNativeEngravingSource} from './engraving-note-map.js';
+import {createEngravingProjection,createSourceBoundEngravingFragments, restoreSourceBoundProjectionFractions, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from './engraving-projection.js';
+import {prepareEngravingFragmentLabels} from './engraving-measure-fragments.js';
 import {getAppI18n} from './app-locale.js';
 export const ENGRAVING_VERSION = '2.1.3';
 export const ENGRAVING_BUNDLE_SHA256 = '099b2125aef055ca4faae75957037404973f9451544b52d9b3a0b1f788b33581';
@@ -180,7 +181,10 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
   const checked = validateEngravingInput(xml, options&&typeof options==='object'&&!Array.isArray(options)?{...options,i18n}:options, view.DOMParser ?? globalThis.DOMParser);
   if (!checked.ok) return checked;
   const identity = checked.identity;
-  const projection = identity.ok ? createEngravingProjection(checked.document, identity, checked.options, ENGRAVING_LIMITS) : null;
+  let projection = identity.ok ? createEngravingProjection(checked.document, identity, checked.options, ENGRAVING_LIMITS) : null;
+  if (projection?.key === 'projection' && isAdmittedNativeEngravingSource(checked.document, identity)) {
+    projection = createSourceBoundEngravingFragments(checked.document, identity, checked.options, ENGRAVING_LIMITS);
+  }
   if (projection && !projection.ok) return result('unsupported', projection.key, i18n);
   const boundIdentity = projection ? {...identity, projection} : identity;
   let unsubscribeLocale, renderer, mount, observer, frame, bindings=null, expected=null, renderGeneration=0, ready = false, cancelled = false, width = 0;
@@ -256,6 +260,10 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
       if(!pageTies.ok){state.dispose();return result('unsupported',pageTies.key,i18n);}
       const ties = validateEngravingModelTies(renderer, boundIdentity);
       if (!ties.ok) { state.dispose(); return result('unsupported', ties.key, i18n); }
+      if (projection.kind === 'source-bound-measure-fragments-v1') {
+        const labels = prepareEngravingFragmentLabels(renderer.Sheet, projection, identity.score, ENGRAVING_LIMITS);
+        if (!labels.ok) { state.dispose(); return result('unsupported', 'projection', i18n); }
+      }
     }
     const instruments = renderer.Sheet?.Instruments;
     if (!Array.isArray(instruments) || !instruments.length || checked.options.partIds.some(id => !instruments.some(instrument => instrument.IdString === id))) {
@@ -289,7 +297,10 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
       });
       observer.observe(container);
     }
-    return result('ready', 'ready', i18n, {metadata: projection && (projection.drawFromIndex || projection.drawToIndex + 1 !== projection.sourceMeasureIndices.length) ? {...checked.metadata, modelFromMeasure: projection.sourceMeasureIndices[0] + 1, modelToMeasure: projection.sourceMeasureIndices.at(-1) + 1} : checked.metadata, dispose: state.dispose, resize,
+    const metadata = projection && (projection.drawFromIndex || projection.drawToIndex + 1 !== projection.sourceMeasureIndices.length)
+      ? {...checked.metadata, modelFromMeasure: projection.sourceMeasureIndices[0] + 1, modelToMeasure: projection.sourceMeasureIndices.at(-1) + 1} : {...checked.metadata};
+    if (projection?.kind === 'source-bound-measure-fragments-v1') { metadata.modelFragmentCount = projection.measureFragments.length; metadata.modelMeasureFragments = projection.measureFragments; }
+    return result('ready', 'ready', i18n, {metadata, dispose: state.dispose, resize,
       mappingStatus:()=>bindings?.mappingStatus()||unavailableMapping(),
       renderGeneration:()=>renderGeneration,
       expectedNoteBounds:()=>bindings?.expectedNoteBounds()||{status:'unavailable',rects:[],unavailableSourceNoteIds:[]},

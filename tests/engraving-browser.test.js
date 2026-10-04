@@ -511,10 +511,11 @@ async function installBindingObservation() {
             !watch.partIds.includes(segment.xml_part_id)) continue;
         const candidates = graph.filter(g => {
           const n = g.sourceNote, staff = n.ParentStaff;
+          const modelIndex=sourceMeasures.indexOf(n.SourceMeasure),fragment=watch.modelFragments?.[modelIndex];
           return staff.ParentInstrument.IdString === segment.xml_part_id && staff.ParentInstrument.Staves.indexOf(staff) + 1 === segment.staff &&
-            sourceMeasures.indexOf(n.SourceMeasure) + watch.modelFrom - 1 === segment.source_measure_index &&
+            (fragment?fragment.source_measure_index:modelIndex + watch.modelFrom - 1) === segment.source_measure_index &&
             String(n.ParentVoiceEntry.ParentVoice.VoiceId) === segment.xml_voice &&
-            watch.sameBeat(n.ParentVoiceEntry.Timestamp, segment.measure_at) &&
+            watch.sameBeat(n.ParentVoiceEntry.Timestamp, segment.measure_at,fragment?.source_offset) &&
             watch.sameBeat(n.getAbsoluteTimestamp(), segment.at, watch.origin) && watch.sameBeat(n.Length, segment.duration) &&
             watch.samePitch(watch.sourcePitch(n), segment.pitch);
         });
@@ -636,6 +637,7 @@ async function renderBinding(score, exported, renderOptions = {}, sourceBoundFix
     window.lastEngraving = ready;
     watch.modelFrom = ready.metadata?.modelFromMeasure ?? watch.from;
     watch.modelTo = ready.metadata?.modelToMeasure ?? watch.to;
+    watch.modelFragments = ready.metadata?.modelMeasureFragments;
     watch.origin = score.measures[watch.modelFrom - 1].at;
     watch.assert(typeof ready.mappingStatus === 'function', 'Public mappingStatus API');
     watch.assert(typeof ready.setExpectedWrittenNotes === 'function', 'Public exact written-note setter');
@@ -1362,3 +1364,62 @@ test('original short fractional bar retains exact clocks and source-owned SVG gl
 });
 
 registerNativeTieGraphBrowserTests({test,options,getPage:()=>page,renderBinding,expectBinding,clearBinding,bindingEvidence});
+test('native internal keys keep exact source glyphs, visible key positions and original measure numbers',options,async()=>{
+  const fixture=JSON.parse(await readFile(new URL('./fixtures/basic-key-internal-key-pages.json',import.meta.url),'utf8')),data=fixture.noncrossing,score=data.response.page.score,exported=data.response.page.musicxml,before=JSON.stringify(fixture),evidence=[];
+  const inspect=()=>page.evaluate(()=>{
+    const watch=window.__wmhBinding,renderer=watch.renderer,host=document.getElementById('staff'),fragments=watch.modelFragments;
+    watch.assert(Array.isArray(fragments)&&fragments.length===4,'Two source bars have four explicitly identified presentation intervals');
+    watch.assert(JSON.stringify(fragments.map(f=>f.source_measure_index))==='[0,0,1,1]','Fragment ordinals never become new source-measure identities');
+    const groups=[...host.querySelectorAll('.vf-keysignature')],required=[0,1,3],keys=[],internalLines=[];
+    const box=node=>{const r=node.getBBox();return{x:r.x,y:r.y,width:r.width,height:r.height,right:r.x+r.width,bottom:r.y+r.height};};
+    for(const index of required){
+      const measure=renderer.GraphicSheet.MeasureList[index][0],stave=measure.getVFStave(),modifier=stave.getModifiers().find(m=>m.getCategory?.()==='keysignatures'&&m.glyphs?.length);
+      watch.assert(Boolean(modifier),'A real VexFlow key-signature modifier exists at each original key event');
+      const candidates=groups.filter(group=>{const r=box(group);return r.width>0&&r.height>0&&Math.abs(r.x-modifier.getX())<8&&r.y>stave.getYForLine(-3)&&r.bottom<stave.getYForLine(8);});
+      watch.assert(candidates.length===1,'The actual painted key group uniquely agrees with its source-bound graphical fragment');
+      const group=candidates[0],bounds=box(group),paths=[...group.querySelectorAll('path')];
+      watch.assert(group.isConnected&&paths.length===modifier.glyphs.length&&paths.every(path=>path.getAttribute('d')&&getComputedStyle(path).visibility!=='hidden'),'Every expected accidental has a nonempty visible SVG glyph');
+      const printed=measure.staffEntries.flatMap(entry=>entry.graphicalVoiceEntries.flatMap(voice=>voice.notes)).filter(note=>note.sourceNote.PrintObject);
+      const heads=printed.map(note=>box(note.getNoteheadSVGs()[note.vfnote[1]]));
+      watch.assert(heads.length&&bounds.right<Math.min(...heads.map(head=>head.x)),'The new signature precedes its source-bound after-key note');
+      if(index&&measure.ParentStaffLine===renderer.GraphicSheet.MeasureList[index-1][0].ParentStaffLine){
+        const previous=renderer.GraphicSheet.MeasureList[index-1][0].staffEntries.flatMap(entry=>entry.graphicalVoiceEntries.flatMap(voice=>voice.notes)).filter(note=>note.sourceNote.PrintObject);
+        watch.assert(bounds.x>Math.max(...previous.map(note=>box(note.getNoteheadSVGs()[note.vfnote[1]]).right)),'The new signature stays after the before-key note in the same source bar');
+      }
+      keys.push({fragment:index,sourceMeasure:fragments[index].source_measure_index,sourceOffset:fragments[index].source_offset,glyphs:paths.length,bounds});
+    }
+    for(const [index,fragment]of fragments.entries())if(!fragment.ends_source_measure){
+      const stave=renderer.GraphicSheet.MeasureList[index][0].getVFStave(),bars=stave.getModifiers().filter(m=>m.getCategory?.()==='barlines'),end=bars.reduce((a,b)=>a.getX()>b.getX()?a:b);
+      watch.assert(end.type===end.constructor.type.NONE,'The internal interval boundary has no VexFlow barline');
+      const x=end.getX(),top=stave.getTopLineTopY(),bottom=stave.getBottomLineBottomY();
+      const painted=[...host.querySelectorAll('svg path,svg rect,svg line')].filter(node=>{const r=box(node);return r.width>0&&r.width<=6&&r.height>=(bottom-top)*.9&&Math.abs((r.x+r.width/2)-x)<4&&r.y>=top-2&&r.bottom<=bottom+2;});
+      watch.assert(painted.length===0,'There is no painted vertical bar at the artificial internal boundary');
+      internalLines.push({fragment:index,x,top,bottom,painted:painted.length});
+    }
+    const labels=renderer.GraphicSheet.MusicPages.flatMap(page=>page.MusicSystems.flatMap(system=>system.MeasureNumberLabels)).map(label=>({text:label.Label.text,node:label.SVGNode}));
+    watch.assert(labels.length===2&&labels.map(label=>label.text).sort().join(',')==='1,2','Only the two original source measure numbers are drawn');
+    watch.assert(labels.every(label=>label.node?.isConnected&&label.node.getBoundingClientRect().width>0),'Source numbers are actual visible SVG text');
+    const rows=watch.reindex();watch.assert(rows.length===4&&rows.every(row=>row.bindingStatus==='bound'),'Every original source note keeps one verified visible glyph');
+    for(const [index,measure]of renderer.Sheet.SourceMeasures.entries()){
+      watch.assert(watch.sameBeat(measure.Duration,fragments[index].length),'Fragment durations stay exact');
+      watch.assert(watch.sameBeat(measure.AbsoluteTimestamp,fragments[index].at,watch.origin),'Fragment model time is the unchanged source time');
+    }
+    return {keys,internalLines,labels:labels.map(label=>label.text),rows,mapping:window.lastEngraving.mappingStatus()};
+  });
+  for(const dark of [false,true]){
+    const shown=await renderBinding(score,exported,{fromMeasure:1,toMeasure:2,dark},data);assert.equal(shown.result.mapping.verifiedGlyphCount,4);
+    const first=await inspect();
+    for(const segment of exported.note_id_map.segments){await expectBinding([segment.source_note_id],segment.source_measure_index);const bounds=await page.evaluate(()=>window.lastEngraving.expectedNoteBounds());assert.equal(bounds.status,'ready');assert.equal(bounds.rects[0].sourceNoteId,segment.source_note_id);assert.equal(bounds.rects[0].sourceMeasureIndex,segment.source_measure_index);}
+    await clearBinding();const renders=await page.evaluate(()=>window.__wmhBinding.renderCalls);
+    await page.setViewportSize({width:dark?1100:950,height:900});await page.waitForFunction(count=>window.__wmhBinding.renderCalls>count,renders);
+    const resized=await inspect();evidence.push({dark,first,resized});await screenshot(`native-internal-keys-${dark?'dark':'light'}`);
+  }
+  const refusal=await page.evaluate(async data=>{
+    const {prepareCleanSong}=await import('/clean-song-package.js'),{basicKeyNotationPage,basicKeyEngravingIdentity}=await import('/basic-key-notation.js');
+    const song=prepareCleanSong(`native:song-${data.open.clean_package.content_sha256}`,data.open.clean_package,null),page=basicKeyNotationPage(data.response,data.request,song),before=window.__wmhBinding.loadCalls;
+    const result=await window.engraving.renderEngravedStaff(document.getElementById('staff'),page.musicxml.xml,{identity:basicKeyEngravingIdentity(song,page),fromMeasure:1,toMeasure:2});
+    return{code:result.code,loads:window.__wmhBinding.loadCalls-before};
+  },fixture.crossing);assert.deepEqual(refusal,{code:'engraving_projection',loads:0},'Crossing-note refusal happens before any third-party parse or partial glyph publication');
+  assert.equal(JSON.stringify(fixture),before,'Original native score/package/XML/timing data remains unchanged');
+  await writeFile(join(artifacts,'worldmusichub-native-internal-keys.json'),JSON.stringify({fixtureProvenance:fixture.provenance,evidence,refusal},null,2)+'\n');
+});

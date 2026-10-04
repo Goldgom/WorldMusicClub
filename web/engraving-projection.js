@@ -1,5 +1,6 @@
 /** Bounded, disposable notation view. Never edit the Rust score, export or identity map. */
 import {resolveEngravingTieContext} from './engraving-tie-context.js';
+import {createEngravingMeasureFragments} from './engraving-measure-fragments.js';
 export const ENGRAVING_SOURCE_LIMITS = Object.freeze({notes: 8192, mapBytes: 4 * 1024 * 1024});
 const children = (node, name) => Array.from(node?.children || []).filter(child => child.localName === name);
 const one = (node, name) => children(node, name)[0];
@@ -42,9 +43,9 @@ const serializeDocument = document => {
   const Serializer = document.defaultView?.XMLSerializer || globalThis.XMLSerializer;
   return Serializer ? new Serializer().serializeToString(document) : document.toString();
 };
-const projectionMetadata = projection => JSON.stringify([projection.ok, projection.sourceMeasureIndices, projection.displayedSourceMeasureIndices,
-  projection.drawFromIndex, projection.drawToIndex, projection.tieChains, projection.partIds, projection.noteCount, projection.paddingNoteCount]);
-const projectionReferenceKeys = ['document', 'sourceMeasureIndices', 'displayedSourceMeasureIndices', 'tieChains', 'partIds'];
+const projectionMetadata = projection => JSON.stringify([projection.ok, projection.kind, projection.sourceMeasureIndices, projection.displayedSourceMeasureIndices,
+  projection.drawFromIndex, projection.drawToIndex, projection.tieChains, projection.partIds, projection.noteCount, projection.paddingNoteCount, projection.measureFragments, projection.noteFragments, projection.displayedFragmentIndices]);
+const projectionReferenceKeys = ['document', 'sourceMeasureIndices', 'displayedSourceMeasureIndices', 'tieChains', 'partIds', 'measureFragments', 'noteFragments', 'displayedFragmentIndices'];
 
 // Snapshot exact original + generated-rest tuples before third-party parsing.
 // A public projection or mutable DOM alone cannot authorize a model repair.
@@ -74,7 +75,8 @@ function rememberProjection(projection, score, sourceDocument) {
   projectionProofs.set(projection, {score, scoreSnapshot: JSON.stringify(score), sourceDocument, sourceSnapshot: serializeDocument(sourceDocument),
     documentSnapshot: serializeDocument(projection.document), metadataSnapshot: projectionMetadata(projection),
     references: projectionReferenceKeys.map(key => projection[key]), chainReferences: [...projection.tieChains], notes, meters,
-    measures: projection.sourceMeasureIndices.map(index => ({at: rational(score.measures[index].at), length: rational(score.measures[index].length)}))});
+    measures: projection.kind === 'source-bound-measure-fragments-v1' ? projection.measureFragments.map(fragment => ({at: rational(fragment.at), length: rational(fragment.length)}))
+      : projection.sourceMeasureIndices.map(index => ({at: rational(score.measures[index].at), length: rational(score.measures[index].length)}))});
 }
 
 function projectionProof(projection, score) {
@@ -170,6 +172,29 @@ export function proveEngravingProjectionModelNotes(sheet, projection, score, lim
     if (!clocks.ok) fail(clocks.key);
     const inventory = modelInventory(sheet, projection, proof, limits, true);
     return {ok: true, sourceDocument: proof.sourceDocument, notes: inventory.notes};
+  } catch (error) { return {ok: false, key: error.projectionKey || 'projection'}; }
+}
+
+/** Only the native-admitted production branch may select this alternate view. */
+export function createSourceBoundEngravingFragments(source, validated, options, limits) {
+  try {
+    // One original segment must remain one model note and one unchanged XML ID.
+    const projection = createEngravingMeasureFragments(source, validated, options, limits);
+    if (!projection.ok) return {ok: false, key: ['notes', 'depth', 'elements', 'xmlLimit'].includes(projection.key) ? projection.key : 'projection'};
+    if (projection.noteFragments.some(note => note.xml_note_id !== note.source_xml_note_id)) fail();
+    rememberProjection(projection, validated.score, source);
+    return projection;
+  } catch (error) { return {ok: false, key: error.projectionKey || 'projection'}; }
+}
+
+/** Exact model-to-source coordinates, available only for an unchanged proof. */
+export function engravingProjectionModelCoordinates(projection, score) {
+  try {
+    projectionProof(projection, score);
+    const measures = projection.kind === 'source-bound-measure-fragments-v1'
+      ? projection.measureFragments.map(fragment => ({sourceMeasureIndex: fragment.source_measure_index, offset: {...fragment.source_offset}}))
+      : projection.sourceMeasureIndices.map(sourceMeasureIndex => ({sourceMeasureIndex, offset: {numerator: 0, denominator: 1}}));
+    return {ok: true, measures};
   } catch (error) { return {ok: false, key: error.projectionKey || 'projection'}; }
 }
 
@@ -306,9 +331,8 @@ export function restoreSourceBoundProjectionFractions(sheet, projection, score, 
     const pending = [], base = proof.measures[0].at;
     let readerClock = new Fraction(0, 1), clockRepair = false;
     for (const [index, measure] of measures.entries()) {
-      const source = proof.measures[index], current = score.measures[projection.sourceMeasureIndices[index]], duration = measure.Duration, timestamp = measure.AbsoluteTimestamp;
-      if (!current || !equal(source.at, rational(current.at)) || !equal(source.length, rational(current.length)) ||
-          instruments.some(instrument => !equal(ends[index].get(instrument.IdString) || [0n, 1n], source.length)) ||
+      const source = proof.measures[index], duration = measure.Duration, timestamp = measure.AbsoluteTimestamp;
+      if (instruments.some(instrument => !equal(ends[index].get(instrument.IdString) || [0n, 1n], source.length)) ||
           duration.constructor !== Fraction || timestamp.constructor !== Fraction) fail();
       const expected = exact(source.length), expectedAt = exact([source.at[0] * base[1] - base[0] * source.at[1], source.at[1] * base[1]]);
       let durationExact = false, timestampExact = false;
@@ -339,13 +363,15 @@ export function restoreSourceBoundProjectionFractions(sheet, projection, score, 
 export function validateEngravingProjectionModel(sheet, projection, score, limits) {
   try {
     const measures = sheet?.SourceMeasures, instruments = sheet?.Instruments;
-    if (!Array.isArray(measures) || measures.length !== projection.sourceMeasureIndices.length ||
+    const fragmentProof = projection.kind === 'source-bound-measure-fragments-v1' ? projectionProof(projection, score) : null;
+    const expected = fragmentProof?.measures || projection.sourceMeasureIndices.map(index => ({at: rational(score.measures[index].at), length: rational(score.measures[index].length)}));
+    if (!Array.isArray(measures) || measures.length !== expected.length ||
         !Array.isArray(instruments) || instruments.length !== projection.partIds.length ||
         instruments.some(instrument => !projection.partIds.includes(instrument.IdString))) fail();
-    const base = rational(score.measures[projection.sourceMeasureIndices[0]].at), notes = new Set();
+    const base = expected[0].at, notes = new Set();
     for (const [index, measure] of measures.entries()) {
-      const source = score.measures[projection.sourceMeasureIndices[index]], at = rational(source.at);
-      if (!equal(modelFraction(measure.Duration), rational(source.length)) || !equal(modelFraction(measure.AbsoluteTimestamp), [at[0] * base[1] - base[0] * at[1], at[1] * base[1]])) fail();
+      const source = expected[index], at = source.at;
+      if (!equal(modelFraction(measure.Duration), source.length) || !equal(modelFraction(measure.AbsoluteTimestamp), [at[0] * base[1] - base[0] * at[1], at[1] * base[1]])) fail();
       for (const container of measure.VerticalSourceStaffEntryContainers || []) for (const entry of container.StaffEntries || []) for (const voice of entry?.VoiceEntries || []) for (const note of voice.Notes || []) {
         notes.add(note); if (notes.size > limits.notes) fail('notes');
       }
