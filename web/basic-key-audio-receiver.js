@@ -5,6 +5,40 @@ const modules = new WeakMap();
 const error = (code, message, details = {}) => new BasicKeyAudioError(code, message, details);
 const ACK_TIMEOUT_MS = 5000;
 const diagnosticText = value => String(value ?? '').slice(0, 1024);
+const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
+const MAX_BLOCK_LENGTH = 0xffffffff, MAX_BLOCK_END = LIMITS.maxFrame + MAX_BLOCK_LENGTH;
+const frameDiagnostic = value => integer(value, 0, LIMITS.maxFrame);
+const ERROR_CONTEXT_FIELDS = Object.freeze({
+  generation: value => integer(value, 1, LIMITS.maxGeneration), planGeneration: value => integer(value, 0, LIMITS.maxGeneration),
+  sourceSha256: value => typeof value === 'string' && value.length === 64 && /^[a-f0-9]{64}$/.test(value),
+  policyId: value => value === 'wmh-basic-key-rendition-fifo-v1' || value === 'wmh-vsq-base-note-reference-v1',
+  identityKind: value => value === 'midi-source-coordinate' || value === 'vsq-authored-note',
+  sampleRate: value => integer(value, 8000, 384000), frame: frameDiagnostic,
+  anchorFrame: value => value === null || frameDiagnostic(value), positionFrame: value => integer(value, -600 * 384000, LIMITS.maxFrame),
+});
+const DISCONTINUITY_FIELDS = Object.freeze({
+  discontinuityKind: value => value === 'block-frame' || value === 'missed-attack',
+  expectedFrame: value => integer(value, 0, MAX_BLOCK_END), actualFrame: frameDiagnostic,
+  previousBlockFrame: value => value === null || frameDiagnostic(value), previousBlockLength: value => integer(value, 0, MAX_BLOCK_LENGTH),
+  blockLength: value => integer(value, 1, MAX_BLOCK_LENGTH), frameDelta: value => integer(value, -MAX_BLOCK_END, MAX_BLOCK_END),
+  successfulBlocks: value => integer(value, 0, LIMITS.maxFrame), missedAttackIndex: value => integer(value, 0, LIMITS.maxNotes - 1),
+});
+function processorErrorDetails(message) {
+  const details = {};
+  // Never spread processor input: only fixed scalar fields cross into errors.
+  // Even unreadable diagnostic properties must not hide the original failure.
+  function copy(source, fields) {
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return;
+    for (const [key, validate] of Object.entries(fields)) {
+      try { const value = source[key]; if (Object.hasOwn(source, key) && validate(value)) details[key] = value; } catch { /* Diagnostics are optional. */ }
+    }
+  }
+  copy(message, ERROR_CONTEXT_FIELDS);
+  if (message.code === 'audio_render_discontinuity') {
+    try { copy(message.details, DISCONTINUITY_FIELDS); } catch { /* Preserve the original processor failure. */ }
+  }
+  return details;
+}
 function startupError(context, moduleUrl, phase, message, reason, options = {}, extra = {}) {
   const details = {phase, moduleUrl, isSecureContext: typeof globalThis.isSecureContext === 'boolean' ? globalThis.isSecureContext : null, hasAudioWorklet: Boolean(context?.audioWorklet), addModuleType: typeof context?.audioWorklet?.addModule, audioWorkletNodeType: typeof globalThis.AudioWorkletNode, usesNodeFactory: typeof options.nodeFactory === 'function', contextState: context?.state ?? null, sampleRate: context?.sampleRate ?? null, ...extra};
   if (reason !== undefined) Object.assign(details, {causeName: diagnosticText(reason?.name || typeof reason), causeMessage: diagnosticText(reason?.message ?? reason), cause: diagnosticText(reason)});
@@ -158,7 +192,7 @@ export class BasicKeyAudioReceiver {
       catch (reason) { this.takePending(message.requestId); pending.reject(reason); }
       return;
     }
-    if (message.type === 'error') { const reason = error(message.code, message.message); this.fail(reason); return; }
+    if (message.type === 'error') { const reason = error(message.code, message.message, processorErrorDetails(message)); this.fail(reason); return; }
     if (message.type === 'ready') this.state = 'ready';
     if (message.type === 'started') {
       if (this.context.state !== 'running' || this.context.currentTime * this.context.sampleRate >= message.anchorFrame) { this.fail(error('clean_late_start', 'The start acknowledgement arrived after its audio anchor; playback was canceled without catching up.')); return; }

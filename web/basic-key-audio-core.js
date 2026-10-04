@@ -1,7 +1,7 @@
 import {BASIC_KEY_AUDIO_LIMITS as LIMITS, BasicKeyAudioError, basicKeySampleRate, openBasicKeyAudioTransfer, VSQ_AUDIO_IDENTITY, VSQ_TRIANGLE_SIZE, audioTransferIdentity, compareAudioTransferIdentity} from './basic-key-audio-plan.js';
 
 const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
-const reject = (code, message) => { throw new BasicKeyAudioError(code, message); };
+const reject = (code, message, details) => { throw new BasicKeyAudioError(code, message, details); };
 const TAU = 2 * Math.PI;
 
 /** Shared by the actual AudioWorkletProcessor and the block-by-block tests.
@@ -13,6 +13,7 @@ export class BasicKeyAudioCore {
     this.sampleRate = basicKeySampleRate(sampleRate); this.emit = emit; this.trace = trace;
     this.generation = 0; this.state = 'idle'; this.plan = null; this.planGeneration = 0;
     this.activeCount = 0; this.startedCount = 0; this.endedCount = 0; this.skippedCount = 0; this.cursor = 0;
+    this.previousBlockFrame = null; this.previousBlockLength = 0; this.successfulBlocks = 0;
     this.voiceSlots = Array.from({length: LIMITS.maxVoices}, () => ({note: -1, start: 0, end: 0, phase: 0, step: 0, peak: 0, drum: false, vsqRatio: 0, harmonicPhase: 0, triangleOffset: 0, noiseIndex: 0, noiseState: 0x574d4801, x1: 0, x2: 0, y1: 0, y2: 0}));
     this.activeSlots = new Uint8Array(LIMITS.maxVoices); this.freeSlots = new Uint8Array(LIMITS.maxVoices);
     this.endHeap = new Float64Array(LIMITS.maxVoices); this.heapLength = 0; this.eligibleCount = 0; this.validated = false;
@@ -42,7 +43,16 @@ export class BasicKeyAudioCore {
   silence(frame, reason) { while (this.activeCount) this.finishVoice(this.activeCount - 1, frame, reason); }
   fail(error, frame, requestId) {
     this.silence(frame, 'error'); this.state = 'error';
-    this.emit({type: 'error', requestId, ...this.snapshot(frame), code: error.code || 'audio_processor_error', message: error.message || String(error)});
+    this.emit({type: 'error', requestId, ...this.snapshot(frame), code: error.code || 'audio_processor_error', message: error.message || String(error), details: error.details});
+  }
+  discontinuity(discontinuityKind, expectedFrame, actualFrame, blockLength, missedAttackIndex) {
+    // Allocate diagnostics only at failure. Running blocks retain three scalar
+    // history fields, without per-quantum messages or an expanding trace.
+    // For missed attacks, expected/actual refer to the onset/rendered sample;
+    // for block-frame failures, they refer to the next/current block start.
+    const details = {discontinuityKind, expectedFrame, actualFrame, previousBlockFrame: this.previousBlockFrame, previousBlockLength: this.previousBlockLength, blockLength, frameDelta: actualFrame - expectedFrame, successfulBlocks: this.successfulBlocks};
+    if (discontinuityKind === 'missed-attack') details.missedAttackIndex = missedAttackIndex;
+    reject('audio_render_discontinuity', discontinuityKind === 'block-frame' ? 'The audio render sample clock was discontinuous.' : 'The audio thread missed a prepared attack; playback stops without catch-up.', details);
   }
   handleMessage(message, frame) {
     const requestId = message?.requestId;
@@ -70,6 +80,7 @@ export class BasicKeyAudioCore {
         if (!integer(message.anchorFrame, frame + 1, Math.min(LIMITS.maxFrame, frame + Math.ceil(this.sampleRate * .1)))) reject('clean_late_start', 'The start anchor must be in the future and within the declared 100 ms lead.');
         if (!integer(message.anchorFrame + this.plan.durationFrames - this.positionFrame, 0, LIMITS.maxFrame)) reject('invalid_audio_command', 'The anchored rendition exceeds the exact audio frame range.');
         this.anchorFrame = message.anchorFrame; this.expectedFrame = null; this.state = 'running';
+        this.previousBlockFrame = null; this.previousBlockLength = 0; this.successfulBlocks = 0;
         this.emit({type: 'started', requestId, ...this.snapshot(frame)}); return;
       }
       if (message.type === 'snapshot') { this.emit({type: 'snapshot', requestId, ...this.snapshot(frame)}); return; }
@@ -179,7 +190,7 @@ export class BasicKeyAudioCore {
     try {
       if (!integer(firstFrame, 0, LIMITS.maxFrame) || !length || channels.some(channel => channel.length !== length)) reject('audio_processor_error', 'The audio render block is invalid.');
       if (this.state === 'preparing') { this.prepareChunk(firstFrame, length); return true; }
-      if (this.expectedFrame !== null && firstFrame !== this.expectedFrame) reject('audio_render_discontinuity', 'The audio render sample clock was discontinuous.');
+      if (this.expectedFrame !== null && firstFrame !== this.expectedFrame) this.discontinuity('block-frame', this.expectedFrame, firstFrame, length);
       this.expectedFrame = firstFrame + length;
       const sourceEnd = this.anchorFrame + this.plan.durationFrames - this.positionFrame;
       for (let offset = 0; offset < length; offset++) {
@@ -189,7 +200,7 @@ export class BasicKeyAudioCore {
         while (this.cursor < this.eligibleCount) {
           const index = this.order[this.cursor], onset = this.anchorFrame + Math.max(this.plan.starts[index], this.positionFrame) - this.positionFrame;
           if (onset > frame) break;
-          if (onset < frame) reject('audio_render_discontinuity', 'The audio thread missed a prepared attack; playback stops without catch-up.');
+          if (onset < frame) this.discontinuity('missed-attack', onset, frame, length, index);
           this.attack(index, frame); this.cursor++;
         }
         if (frame >= sourceEnd) {
@@ -200,6 +211,8 @@ export class BasicKeyAudioCore {
         for (let index = 0; index < this.activeCount; index++) sum += this.sample(this.voiceSlots[this.activeSlots[index]], frame);
         for (const channel of channels) channel[offset] = sum;
       }
+      this.previousBlockFrame = firstFrame; this.previousBlockLength = length;
+      this.successfulBlocks = Math.min(LIMITS.maxFrame, this.successfulBlocks + 1);
     } catch (error) { for (const channel of channels) channel.fill(0); this.fail(error, firstFrame, this.state === 'preparing' ? this.prepareRequestId : undefined); }
     return true; // Keep an idle node available for explicit fresh generations.
   }

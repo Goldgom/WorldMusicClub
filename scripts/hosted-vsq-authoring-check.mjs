@@ -25,7 +25,7 @@ async function bounded(operation,label,ms=10000){let timer;try{return await Prom
 await mkdir(path.join(output,'downloads'),{recursive:true});await prepareVsqAuthoringFixtures(path.join(output,'fixtures'));
 try{
  report.asset_server={};assetServer=await startHostedAssetServer({root,sourceSha:head,binary:path.resolve(root,process.env.WMH_SERVER_BINARY||'target/debug/practice-server'),evidence:report.asset_server});origin=assetServer.origin;report.origin=origin;
- const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});
+ const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});report.browser_version=browser.version();
  for(const phase of VSQ_AUTHORING_PHASES){
   const host={phase,ok:false,actions:[],results:[],page_errors:[],api_trace:[]},downloads=[],results=new Map();report.phases.push(host);nativeBridge=createHostedNativeBridge({origin,getOwnedPage:()=>page});host.native_bridge=nativeBridge.evidence;let renderer=null,actionFailure=null,actionPending=false;
   driver=startVsqNativeDriver({binary,directory:path.join(output,'Scores'),cwd:root});host.process_id=driver.pid;context=await browser.newContext({viewport:{width,height},acceptDownloads:true});consoleObserver=createAuthoringHostedConsole({origin});host.console=consoleObserver.evidence;

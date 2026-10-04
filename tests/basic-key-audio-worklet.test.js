@@ -125,6 +125,53 @@ test('late starts and audio sample-clock discontinuities fail explicitly without
   assert.equal(messages.at(-1).code, 'audio_render_discontinuity'); assert.equal(core.startedCount, 0);
 });
 
+for (const [kind, actualFrame] of [['gap', 448], ['repeated', 256], ['backward', 128]]) test(`${kind} render frame preserves bounded block history and silences without catching up`, () => {
+  const messages = [], core = new BasicKeyAudioCore(sampleRate, {emit: message => messages.push(message)});
+  core.handleMessage({type: 'prepare', generation: 1, positionFrame: 0, wire: transferWire(plan([[0, 2000, 60, 80, 0], [1500, 2000, 64, 80, 0]]))}, 0);
+  finishCorePreparation(core); core.handleMessage({type: 'start', generation: 1, anchorFrame: 192}, 128);
+  core.process([new Float32Array(128)], 128); core.process([new Float32Array(64)], 256);
+  assert.equal(core.activeCount, 1); assert.deepEqual(messages.map(message => message.type), ['ready', 'started']);
+  const channels = [new Float32Array(96).fill(1), new Float32Array(96).fill(1)];
+  assert.equal(core.process(channels, actualFrame), true);
+  const failure = messages.at(-1);
+  assert.equal(failure.code, 'audio_render_discontinuity'); assert.equal(failure.message, 'The audio render sample clock was discontinuous.');
+  assert.deepEqual(failure.details, {discontinuityKind: 'block-frame', expectedFrame: 320, actualFrame, previousBlockFrame: 256, previousBlockLength: 64, blockLength: 96, frameDelta: actualFrame - 320, successfulBlocks: 2});
+  assert.equal(failure.generation, 1); assert.equal(failure.planGeneration, 1); assert.equal(failure.sourceSha256, hash);
+  assert.equal(core.state, 'error'); assert.equal(core.activeCount, 0); assert.equal(core.startedCount, 1); assert.equal(core.endedCount, 1);
+  assert.equal(core.actualEnds[0], actualFrame); assert.equal(core.actualStarts[1], -1); assert.ok(channels.every(channel => channel.every(value => value === 0)));
+  for (const channel of channels) channel.fill(1);
+  core.process(channels, 4096); assert.ok(channels.every(channel => channel.every(value => value === 0)));
+  assert.equal(messages.length, 3); assert.equal(core.successfulBlocks, 2); assert.equal(core.startedCount, 1);
+});
+
+test('a missed first attack is distinct from a block-clock gap and has no successful block history', () => {
+  const messages = [], core = new BasicKeyAudioCore(sampleRate, {emit: message => messages.push(message)});
+  core.handleMessage({type: 'prepare', generation: 1, positionFrame: 0, wire: transferWire(plan([[0, 2000, 60, 80, 0]]))}, 0);
+  finishCorePreparation(core); core.handleMessage({type: 'start', generation: 1, anchorFrame: 256}, 128);
+  const channel = new Float32Array(128).fill(1); core.process([channel], 384);
+  assert.equal(messages.at(-1).code, 'audio_render_discontinuity'); assert.match(messages.at(-1).message, /missed a prepared attack/);
+  assert.deepEqual(messages.at(-1).details, {discontinuityKind: 'missed-attack', expectedFrame: 256, actualFrame: 384, previousBlockFrame: null, previousBlockLength: 0, blockLength: 128, frameDelta: 128, successfulBlocks: 0, missedAttackIndex: 0});
+  assert.equal(core.state, 'error'); assert.equal(core.startedCount, 0); assert.equal(core.activeCount, 0); assert.ok(channel.every(value => value === 0));
+});
+
+for (const boundary of ['pause', 'error']) test(`fresh preparation after ${boundary} resets render history across an explicit resumed generation`, () => {
+  const messages = [], core = new BasicKeyAudioCore(sampleRate, {emit: message => messages.push(message)}), program = plan([[0, 2000, 60, 80, 0]]);
+  core.handleMessage({type: 'prepare', generation: 1, positionFrame: 0, wire: transferWire(program)}, 0);
+  finishCorePreparation(core); core.handleMessage({type: 'start', generation: 1, anchorFrame: 192}, 128);
+  core.process([new Float32Array(128)], 128); core.process([new Float32Array(64)], 256);
+  if (boundary === 'pause') core.handleMessage({type: 'cancel', generation: 2, reason: 'pause'}, 320);
+  else core.process([new Float32Array(128)], 448);
+  core.handleMessage({type: 'prepare', generation: 3, positionFrame: 250, wire: transferWire(program)}, 2048);
+  finishCorePreparation(core, 2048); core.handleMessage({type: 'start', generation: 3, anchorFrame: 2240}, 2176);
+  assert.equal(core.expectedFrame, null); assert.equal(core.previousBlockFrame, null); assert.equal(core.previousBlockLength, 0); assert.equal(core.successfulBlocks, 0);
+  core.process([new Float32Array(128)], 2176);
+  assert.equal(core.state, 'running'); assert.equal(core.startedCount, 1); assert.equal(core.actualStarts[0], 2240);
+  core.process([new Float32Array(32)], 2368);
+  const failure = messages.at(-1);
+  assert.deepEqual(failure.details, {discontinuityKind: 'block-frame', expectedFrame: 2304, actualFrame: 2368, previousBlockFrame: 2176, previousBlockLength: 128, blockLength: 32, frameDelta: 64, successfulBlocks: 1});
+  assert.equal(failure.generation, 3); assert.equal(failure.planGeneration, 3); assert.equal(failure.positionFrame, 250); assert.equal(core.activeCount, 0);
+});
+
 test('actual production processor wrapper delegates global currentFrame and output block size', () => {
   let Processor;
   class Base { constructor() { this.port = {messages: [], postMessage(message) { this.messages.push(message); }}; } }
@@ -135,6 +182,55 @@ test('actual production processor wrapper delegates global currentFrame and outp
   const first = new Float32Array(128); assert.equal(processor.process([], [[first]]), true); assert.ok(first.every(value => value === 0));
   realm.currentFrame = 128; processor.port.onmessage({data: {type: 'start', generation: 1, anchorFrame: 256}}); processor.process([], [[first]]);
   realm.currentFrame = 256; const second = new Float32Array(64); processor.process([], [[second]]); assert.notEqual(second[0], 0); assert.ok(second.slice(1).every(value => value === 0)); assert.equal(processor.port.messages.at(-1).type, 'ended');
+});
+
+test('production processor port preserves discontinuity details into the receiver failure and rejects pending work', async () => {
+  const h = basicKeyAudioHarness({autoMessages: false}), errors = [], timers = lifecycleTimers(), toMain = []; let Processor, node;
+  class Base { constructor() { this.port = {postMessage(message, transfer = []) { toMain.push(structuredClone(message, {transfer})); }}; } }
+  function deliverMain() { while (toMain.length) node.port.onmessage({data: toMain.shift()}); }
+  const realm = vm.createContext({AudioWorkletProcessor: Base, BasicKeyAudioCore, sampleRate, currentFrame: 0, registerProcessor(name, value) { assert.equal(name, BASIC_KEY_AUDIO_PROTOCOL); Processor = value; }});
+  const source = readFileSync(new URL('../web/basic-key-audio-processor.js', import.meta.url), 'utf8').replace(/^import .*;\n/, '').replace('export class ', 'class ');
+  vm.runInContext(source, realm); const processor = new Processor();
+  const receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory() { node = {connect() {}, disconnect() {}, port: {postMessage(message, transfer = []) { if (message.type !== 'snapshot') processor.port.onmessage({data: structuredClone(message, {transfer})}); }}}; return node; }, onError: failure => errors.push(failure), ...timers});
+  const preparing = receiver.prepare(plan([[0, 2000, 60, 80, 0]])); processor.process([], [[new Float32Array(128)]]); deliverMain(); await preparing;
+  realm.currentFrame = 128; h.context.currentTime = 128 / sampleRate;
+  const starting = receiver.start({anchorTime: 192 / sampleRate}); deliverMain(); await starting; processor.process([], [[new Float32Array(128)]]);
+  const pending = receiver.snapshot(), rejected = assert.rejects(pending, failure => failure === errors[0]);
+  realm.currentFrame = 384; const channel = new Float32Array(64).fill(1); processor.process([], [[channel]]); deliverMain(); await rejected;
+  assert.equal(errors.length, 1); assert.equal(errors[0].code, 'audio_render_discontinuity'); assert.equal(errors[0].message, 'The audio render sample clock was discontinuous.');
+  assert.deepEqual(errors[0].details, {generation: 1, planGeneration: 1, sourceSha256: hash, policyId: 'wmh-basic-key-rendition-fifo-v1', identityKind: 'midi-source-coordinate', sampleRate, frame: 384, anchorFrame: 192, positionFrame: 0, discontinuityKind: 'block-frame', expectedFrame: 256, actualFrame: 384, previousBlockFrame: 128, previousBlockLength: 128, blockLength: 64, frameDelta: 128, successfulBlocks: 1});
+  assert.equal(receiver.state, 'error'); assert.equal(receiver.connected, false); assert.equal(receiver.outputGate.gain.value, 0); assert.equal(receiver.pending.size, 0); assert.equal(timers.pending.size, 0);
+  assert.equal(processor.core.activeCount, 0); assert.equal(processor.core.startedCount, 1); assert.ok(channel.every(value => value === 0));
+  receiver.dispose(); deliverMain(); assert.equal(receiver.disposed, true); assert.equal(timers.pending.size, 0);
+});
+
+test('malformed processor diagnostics cannot replace or suppress its original failure', async () => {
+  const invalid = {discontinuityKind: 'anything-else', expectedFrame: NaN, actualFrame: Infinity, previousBlockFrame: -1, previousBlockLength: 0x100000000, blockLength: 0, frameDelta: -(BASIC_KEY_AUDIO_LIMITS.maxFrame + 0xffffffff + 1), successfulBlocks: '2', missedAttackIndex: BASIC_KEY_AUDIO_LIMITS.maxNotes, extra: {unbounded: ['discard']}};
+  for (const details of [undefined, null, 7, 'invalid', [], invalid, Object.defineProperty({}, 'actualFrame', {get() { throw Error('Unreadable diagnostic'); }})]) {
+    const h = basicKeyAudioHarness({autoMessages: false}), errors = [], timers = lifecycleTimers(), receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, onError: failure => errors.push(failure), ...timers});
+    const preparing = receiver.prepare(plan([[0, 2000, 60, 80, 0]])), rejected = assert.rejects(preparing, {code: 'audio_render_discontinuity', message: 'Original render failure'});
+    h.nodes[0].port.onmessage({data: {type: 'error', generation: 1, code: 'audio_render_discontinuity', message: 'Original render failure', details, planGeneration: -1, sourceSha256: 'x'.repeat(4096), policyId: {}, identityKind: [], sampleRate: 384001, frame: Number.MAX_SAFE_INTEGER, anchorFrame: '192', positionFrame: -600 * 384000 - 1}});
+    await rejected;
+    assert.equal(errors.length, 1); assert.deepEqual(errors[0].details, {generation: 1}); assert.equal(receiver.state, 'error'); assert.equal(receiver.connected, false); assert.equal(receiver.outputGate.gain.value, 0); assert.equal(receiver.prepareInFlight, null); assert.equal(timers.pending.size, 0);
+    receiver.dispose(); h.deliverCore(); h.deliverMain(); assert.equal(receiver.disposed, true); assert.equal(timers.pending.size, 0);
+  }
+});
+
+test('receiver diagnostic allowlist preserves bounded scalar values without trusting nested or inherited data', async () => {
+  const h = basicKeyAudioHarness({autoMessages: false}), errors = [], receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, onError: failure => errors.push(failure)});
+  const details = Object.assign(Object.create({previousBlockFrame: 17}), {discontinuityKind: 'missed-attack', expectedFrame: 192, actualFrame: 256, previousBlockLength: 0, blockLength: 128, frameDelta: 64, successfulBlocks: 0, missedAttackIndex: 0, sourceSha256: 'b'.repeat(64), generation: 999, trace: new Float64Array(1024)});
+  h.nodes[0].port.onmessage({data: {type: 'error', generation: 0, code: 'audio_render_discontinuity', message: 'Original missed attack', details}});
+  assert.deepEqual(errors[0].details, {discontinuityKind: 'missed-attack', expectedFrame: 192, actualFrame: 256, previousBlockLength: 0, blockLength: 128, frameDelta: 64, successfulBlocks: 0, missedAttackIndex: 0});
+  details.expectedFrame = 0; assert.equal(errors[0].details.expectedFrame, 192);
+  receiver.dispose(); h.deliverCore(); h.deliverMain();
+});
+
+test('an unreadable details property cannot suppress the processor failure or its safe context', async () => {
+  const h = basicKeyAudioHarness({autoMessages: false}), errors = [], receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, onError: failure => errors.push(failure)});
+  const message = Object.defineProperty({type: 'error', generation: 0, code: 'audio_render_discontinuity', message: 'Original render failure', sampleRate}, 'details', {get() { throw Error('Unreadable details'); }});
+  assert.doesNotThrow(() => h.nodes[0].port.onmessage({data: message}));
+  assert.equal(errors.length, 1); assert.equal(errors[0].message, 'Original render failure'); assert.deepEqual(errors[0].details, {sampleRate}); assert.equal(receiver.state, 'error');
+  receiver.dispose(); h.deliverCore(); h.deliverMain();
 });
 
 test('adapter prepares before a cheap anchored start and audio continues while main-thread messages stall', async () => {

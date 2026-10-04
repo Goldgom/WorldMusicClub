@@ -22,7 +22,7 @@ async function bounded(operation,label,milliseconds=10000){let timer;try{return 
 await mkdir(path.join(output,'downloads'),{recursive:true});await prepareVsqFixtures(path.join(output,'fixtures'));report.driver_sha256=digest(await readFile(binary));report.fixture=fixture.manifest;
 try {
  report.asset_server={};assetServer=await startHostedAssetServer({root,sourceSha:head,binary:path.resolve(root,process.env.WMH_SERVER_BINARY||'target/debug/practice-server'),evidence:report.asset_server});origin=assetServer.origin;report.origin=origin;
- const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});
+ const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});report.browser_version=browser.version();
  for(const phase of VSQ_PHASES){
   const phaseReport={phase,ok:false,actions:[],results:[],page_errors:[],api_trace:[],console:null},downloads=[],results=new Map();report.phases.push(phaseReport);nativeBridge=createHostedNativeBridge({origin,getOwnedPage:()=>page});phaseReport.native_bridge=nativeBridge.evidence;consoleObserver=createVsqHostedConsole({origin});phaseReport.console=consoleObserver.evidence;let renderer=null,actionFailure=null,actionPending=false;
   driver=startVsqNativeDriver({binary,directory:path.join(output,'Scores'),cwd:root});phaseReport.process_id=driver.pid;context=await browser.newContext({viewport:{width:1280,height:viewportHeight},acceptDownloads:true});

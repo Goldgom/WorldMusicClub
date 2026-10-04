@@ -31,7 +31,7 @@ try{
  report.asset_server={};assetServer=await startHostedAssetServer({root,sourceSha,binary:resolve(root,process.env.WMH_SERVER_BINARY||'target/debug/practice-server'),evidence:report.asset_server});origin=assetServer.origin;report.origin=origin;nativeBridge=createHostedNativeBridge({origin,getOwnedPage:()=>page,requestTimeoutMs:30000,maxRequests:128});report.native_bridge=nativeBridge.evidence;
  driver=startVsqNativeDriver({binary,directory:join(output,'Scores'),cwd:root,requestTimeoutMs:30000});report.process_id=driver.pid;
  const prepared=await prepareDenseRenditionFixture(driver,join(output,'fixture'),{retainPages:true});report.fixture=prepared.manifest;
- const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});context=await browser.newContext({viewport:report.viewport,locale:'zh-CN'});
+ const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});report.browser_version=browser.version();context=await browser.newContext({viewport:report.viewport,locale:'zh-CN'});
  await context.addInitScript(denseRenditionBootstrap());
  await context.route(`${origin}/api/**`,async route=>{
   const request=route.request(),url=new URL(request.url()),path=url.pathname;
