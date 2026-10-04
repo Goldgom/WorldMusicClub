@@ -30,6 +30,9 @@ $snapshotRoot=Join-Path ([IO.Path]::GetTempPath()) ('wmh snapshot 拼谱 '+[guid
 New-Item -ItemType Directory $snapshotRoot | Out-Null
 $replacement=$null;$staging=$null;$oldReader=$null;$exclusive=$null
 try {
+  $writer=Join-Path $snapshotRoot 'native-evidence-publish.exe'
+  & rustc --edition=2021 (Join-Path $PSScriptRoot 'native-evidence-publish.rs') -o $writer
+  if($LASTEXITCODE -ne 0){throw 'Could not compile the exact Rust evidence writer'}
   # All live host evidence kinds use this protocol, including the failure site.
   foreach($name in @('trace-performance-seed.json','action-performance-seed-1.json','renderer-performance-seed.json','profile-performance-seed.json','renderer-report.json')) {
     $snapshot=Join-Path $snapshotRoot $name;$temporary="$snapshot.tmp"
@@ -46,7 +49,12 @@ try {
     Assert-True ((Read-AcceptanceJsonSnapshot -Path $snapshot -MaximumBytes 512KB).version -eq 1) 'partial staging bytes never become published evidence'
     $tail=[Text.Encoding]::UTF8.GetBytes('"complete new 日本語"}')
     $staging.Write($tail,0,$tail.Length);$staging.Dispose();$staging=$null
-    [IO.File]::Move($temporary,$snapshot,$true)
+    # File.Move is not equivalent to Rust std::fs::rename on Windows. Call the
+    # production writer, including its actual platform implementation, instead.
+    $expected=Join-Path $snapshotRoot 'expected-payload.json'
+    [IO.File]::WriteAllText($expected,'{"version":2,"marker":"complete new 日本語"}')
+    & $writer $snapshotRoot $name $expected
+    if($LASTEXITCODE -ne 0){throw 'The production Rust writer failed while snapshot handles remained open'}
     Assert-True ((Read-AcceptanceJsonSnapshot -Path $snapshot -MaximumBytes 512KB).marker -ceq 'complete new 日本語') 'replacement publishes the whole new snapshot while old handles remain open'
     $oldText=[IO.StreamReader]::new($oldReader,[Text.Encoding]::UTF8,$true,1024,$true)
     try { Assert-True (($oldText.ReadToEnd() | ConvertFrom-Json).marker -ceq 'complete old 拼谱') 'an already-open reader retains a complete old snapshot' }

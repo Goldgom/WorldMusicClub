@@ -33,6 +33,13 @@ test('the existing mandatory Windows helper gate executes real simultaneous file
     assert.ok(windows.includes(`'${evidence}'`));
   }
   assert.doesNotMatch(windows, /Start-Sleep|Start-Process|Stop-Process/);
+  assert.doesNotMatch(windows, /\[IO\.File\]::Move/);
+  assert.match(windows, /& \$writer \$snapshotRoot \$name \$expected/);
+  const driver = read('tests/native-evidence-publish.rs');
+  assert.match(driver, /#\[path = "\.\.\/crates\/desktop-shell\/src\/acceptance_publication\.rs"\]/);
+  assert.match(driver, /publication::atomic_json\(directory, name, &payload\)/);
+  assert.match(read('crates/desktop-shell/src/acceptance.rs'), /pub use crate::acceptance_publication::atomic_json/);
+  assert.match(read('crates/desktop-shell/src/acceptance_publication.rs'), /std::fs::rename\(temporary, directory\.join\(name\)\)/);
 });
 
 test('sharing repair preserves phase clocks, action ordering, source, profile and normal-close assertions', () => {

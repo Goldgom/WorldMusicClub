@@ -1,4 +1,5 @@
 //! Process-owner-only Windows acceptance evidence. Never enabled by page content.
+pub use crate::acceptance_publication::atomic_json;
 use crate::{error, response};
 use http::{Request, Response};
 use serde_json::{json, Value};
@@ -520,14 +521,6 @@ fn valid_progress(value: &Value) -> bool {
             || value["status"]
                 .as_u64()
                 .is_some_and(|status| (100..=599).contains(&status)))
-}
-pub fn atomic_json(directory: &Path, name: &str, bytes: &[u8]) -> std::io::Result<()> {
-    // Finish and close the sibling before publishing it. Readers must open the
-    // immutable snapshot with delete-sharing on Windows so replacement can
-    // overlap a read without exposing partial JSON or a sharing violation.
-    let temporary = directory.join(format!("{name}.tmp"));
-    std::fs::write(&temporary, bytes)?;
-    std::fs::rename(temporary, directory.join(name))
 }
 fn valid_action(value: &Value) -> bool {
     let Some(object) = value.as_object() else {
