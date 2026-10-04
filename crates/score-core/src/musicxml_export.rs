@@ -197,6 +197,7 @@ struct TickNote<'a> {
     index: usize,
     start: i64,
     end: i64,
+    rhythm_pieces: bool,
 }
 struct Lane<'a> {
     voice: String,
@@ -208,12 +209,17 @@ struct Lane<'a> {
     end: i64,
     pitches: HashSet<u8>,
     pitched: bool,
+    rhythm_pieces: bool,
 }
 impl Lane<'_> {
     fn fits(&self, n: &TickNote<'_>) -> bool {
         self.end <= n.start
             || (self.onset == n.start
                 && self.pitched
+                // Unequal original chords are supported, but a newly split
+                // member can start before another member's cursor ends. Keep
+                // that display-only overlap in its own exact engraving lane.
+                && (!(self.rhythm_pieces || n.rhythm_pieces) || self.end == n.end)
                 && n.note
                     .pitch
                     .as_ref()
@@ -459,7 +465,14 @@ fn export_musicxml_inner(
     let mut voice_id_map = Vec::new();
     let mut note_map = NoteMapBuilder::new(MAX_NOTE_MAP_BYTES);
     for (part_index, part) in score.parts.iter().enumerate() {
-        let lanes = make_lanes(part, divisions, end, &repeat_boundaries, &mut diagnostics)?;
+        let lanes = make_lanes(
+            part,
+            divisions,
+            end,
+            &repeat_boundaries,
+            display_only.then_some(bars.as_slice()),
+            &mut diagnostics,
+        )?;
         if lanes
             .iter()
             .any(|lane| lane.voice != lane.original_voice || lane.ordinal > 1)
@@ -652,6 +665,7 @@ fn make_lanes<'a>(
     divisions: i64,
     score_end: i64,
     repeat_boundaries: &BTreeSet<i64>,
+    display_bars: Option<&[Bar]>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<Vec<Lane<'a>>, String> {
     // Validate the part as a whole before allocating per-voice engraving lanes.
@@ -718,6 +732,19 @@ fn make_lanes<'a>(
                 note.id
             ));
         }
+        let mut rhythm_pieces = false;
+        if let Some(bars) = display_bars {
+            for bar in &bars[bars.partition_point(|bar| bar.end <= start)..] {
+                if bar.start >= end {
+                    break;
+                }
+                let span = end.min(bar.end) - start.max(bar.start);
+                if excerpt_rhythm_piece(span, divisions)? < span {
+                    rhythm_pieces = true;
+                    break;
+                }
+            }
+        }
         if note.pitch.is_some()
             && (repeat_boundaries
                 .range((
@@ -739,6 +766,7 @@ fn make_lanes<'a>(
                 index,
                 start,
                 end,
+                rhythm_pieces,
             });
     }
     let mut lanes: Vec<Lane<'a>> = Vec::new();
@@ -800,6 +828,7 @@ fn make_lanes<'a>(
                     end: 0,
                     pitches: HashSet::new(),
                     pitched: false,
+                    rhythm_pieces: false,
                 });
                 group_lanes.push(index);
                 index
@@ -819,10 +848,12 @@ fn make_lanes<'a>(
             if lane.onset != n.start {
                 lane.pitches.clear();
                 lane.end = n.end;
+                lane.rhythm_pieces = false;
             }
             lane.onset = n.start;
             lane.end = lane.end.max(n.end);
             lane.pitched = midi.is_some();
+            lane.rhythm_pieces |= n.rhythm_pieces;
             if let Some(midi) = midi {
                 lane.pitches.insert(midi);
             }
@@ -1322,7 +1353,79 @@ mod tests {
             sounding(long_type.clone()),
             sounding(import_musicxml(&long_exported.xml).unwrap().0)
         );
-        let fixture = serde_json::json!({"score":original,"exported":excerpt,"unsplit":unchanged_full_export,"long_type":{"score":long_type,"exported":long_exported,"unsplit":long_unsplit}});
+        let mut unequal = score();
+        unequal.title = "Original unequal display rhythm lanes".into();
+        unequal.source = None;
+        unequal.measures.truncate(1);
+        unequal.parts[0].notes = vec![
+            note(
+                "original-split-C",
+                Beat::ZERO,
+                Beat::new(4095, 1024),
+                Some(("C", 0, 4)),
+                "1",
+                1,
+            ),
+            note(
+                "original-unsplit-E",
+                Beat::ZERO,
+                Beat::new(3, 1),
+                Some(("E", 0, 4)),
+                "1",
+                1,
+            ),
+        ];
+        assert_eq!(export_musicxml(&unequal).unwrap().voice_id_map.len(), 1);
+        let unequal_exported =
+            export_musicxml_excerpt(&unequal, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+        assert_eq!(unequal_exported.voice_id_map.len(), 2);
+        assert_eq!(
+            unequal_exported
+                .note_id_map
+                .as_ref()
+                .unwrap()
+                .segments
+                .len(),
+            3
+        );
+        assert_eq!(
+            sounding(unequal.clone()),
+            sounding(import_musicxml(&unequal_exported.xml).unwrap().0)
+        );
+        let document = roxmltree::Document::parse(&unequal_exported.xml).unwrap();
+        let mut cursor = 0;
+        for node in document
+            .descendants()
+            .find(|node| node.has_tag_name("measure"))
+            .unwrap()
+            .children()
+            .filter(|node| node.is_element())
+        {
+            let duration = || {
+                node.children()
+                    .find(|child| child.has_tag_name("duration"))
+                    .unwrap()
+                    .text()
+                    .unwrap()
+                    .parse::<i64>()
+                    .unwrap()
+            };
+            if node.has_tag_name("note")
+                && !node.children().any(|child| child.has_tag_name("chord"))
+            {
+                cursor += duration();
+            } else if node.has_tag_name("forward") {
+                cursor += duration();
+            } else if node.has_tag_name("backup") {
+                assert_eq!(
+                    duration(),
+                    cursor,
+                    "Every display lane switch returns exactly to the measure start"
+                );
+                cursor = 0;
+            }
+        }
+        let fixture = serde_json::json!({"score":original,"exported":excerpt,"unsplit":unchanged_full_export,"long_type":{"score":long_type,"exported":long_exported,"unsplit":long_unsplit},"unequal":{"score":unequal,"exported":unequal_exported}});
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/fixtures/exact-rhythm-excerpt.json");
         if std::env::var_os("WMH_UPDATE_EXACT_RHYTHM_FIXTURE").is_some() {

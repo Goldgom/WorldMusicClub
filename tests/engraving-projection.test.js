@@ -543,3 +543,12 @@ test('native C/C-sharp chains repair only the pinned different-alter closed perm
   }
  }finally{if(previousSelf===undefined)delete globalThis.self;else globalThis.self=previousSelf;}
 });
+
+test('an unequal chord with a split long member uses exact independent display lanes',()=>{
+ const fixture=JSON.parse(readFileSync(new URL('./fixtures/exact-rhythm-excerpt.json',import.meta.url),'utf8')).unequal;
+ const identity={score:fixture.score,noteMap:fixture.exported.note_id_map,partIdMap:fixture.exported.part_id_map,voiceIdMap:fixture.exported.voice_id_map};
+ assert.equal(identity.voiceIdMap.length,2);const {checked,projection}=project({xml:fixture.exported.xml,identity},{fromMeasure:1,toMeasure:1});assert.equal(projection.ok,true,JSON.stringify(projection));
+ const sheet=read(projection),validated={...checked.identity,projection};assert.deepEqual(validateEngravingProjectionModel(sheet,projection,fixture.score,ENGRAVING_LIMITS),{ok:true});
+ const matched=matchEngravingModel({Sheet:sheet},validated);assert.deepEqual(matched.diagnostics,[]);assert.equal(matched.matches.filter(match=>match.note).length,3);
+ assert.deepEqual(validateEngravingModelTies({Sheet:sheet},validated),{ok:true});
+});

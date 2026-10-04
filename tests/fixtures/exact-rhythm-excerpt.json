@@ -8,6 +8,18 @@
         "severity": "warning"
       },
       {
+        "code": "musicxml_engraving_lane",
+        "message": "Part 'Piano & 琴', staff 1, voice '1' contains overlapping events. Exported voice '2' preserves the additional polyphony; the canonical score is unchanged.",
+        "note_id": "original-D",
+        "severity": "warning"
+      },
+      {
+        "code": "musicxml_voice_ids",
+        "message": "Part 'Piano & 琴' uses generated positive-integer MusicXML voice IDs for engraving compatibility. voice_id_map retains every original staff/voice label and overlap lane; the canonical score is unchanged.",
+        "note_id": null,
+        "severity": "warning"
+      },
+      {
         "code": "musicxml_exact_rhythm_segments",
         "message": "Some display intervals use adjacent exact tied segments to keep inferred rhythmic ratios bounded. Every segment retains the original source note ID, pitch and complete duration; no source timing was quantized.",
         "note_id": null,
@@ -57,38 +69,6 @@
         {
           "at": {
             "denominator": 1,
-            "numerator": 0
-          },
-          "chord": true,
-          "duration": {
-            "denominator": 1,
-            "numerator": 2
-          },
-          "lane": 1,
-          "measure_at": {
-            "denominator": 1,
-            "numerator": 0
-          },
-          "measure_number": 1,
-          "part_id": "canonical/unsafe id",
-          "pitch": {
-            "alter": 0,
-            "octave": 4,
-            "step": "D"
-          },
-          "source_measure_index": 0,
-          "source_note_id": "original-D",
-          "staff": 1,
-          "tie_start": true,
-          "tie_stop": false,
-          "voice": "1",
-          "xml_note_id": "N1_2_1",
-          "xml_part_id": "P1",
-          "xml_voice": "1"
-        },
-        {
-          "at": {
-            "denominator": 1,
             "numerator": 2
           },
           "chord": false,
@@ -121,14 +101,46 @@
         {
           "at": {
             "denominator": 1,
+            "numerator": 0
+          },
+          "chord": false,
+          "duration": {
+            "denominator": 1,
             "numerator": 2
           },
-          "chord": true,
+          "lane": 2,
+          "measure_at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "measure_number": 1,
+          "part_id": "canonical/unsafe id",
+          "pitch": {
+            "alter": 0,
+            "octave": 4,
+            "step": "D"
+          },
+          "source_measure_index": 0,
+          "source_note_id": "original-D",
+          "staff": 1,
+          "tie_start": true,
+          "tie_stop": false,
+          "voice": "1",
+          "xml_note_id": "N1_2_1",
+          "xml_part_id": "P1",
+          "xml_voice": "2"
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 2
+          },
+          "chord": false,
           "duration": {
             "denominator": 1024,
             "numerator": 2043
           },
-          "lane": 1,
+          "lane": 2,
           "measure_at": {
             "denominator": 1,
             "numerator": 2
@@ -148,7 +160,7 @@
           "voice": "1",
           "xml_note_id": "N1_2_1_R2",
           "xml_part_id": "P1",
-          "xml_voice": "1"
+          "xml_voice": "2"
         },
         {
           "at": {
@@ -176,7 +188,7 @@
           "voice": "2",
           "xml_note_id": "N1_3_1",
           "xml_part_id": "P1",
-          "xml_voice": "2"
+          "xml_voice": "3"
         },
         {
           "at": {
@@ -204,7 +216,7 @@
           "voice": "2",
           "xml_note_id": "N1_3_1_R2",
           "xml_part_id": "P1",
-          "xml_voice": "2"
+          "xml_voice": "3"
         }
       ],
       "version": 1
@@ -221,14 +233,21 @@
         "xml_voice": "1"
       },
       {
+        "lane": 2,
+        "part_id": "canonical/unsafe id",
+        "staff": 1,
+        "voice": "1",
+        "xml_voice": "2"
+      },
+      {
         "lane": 1,
         "part_id": "canonical/unsafe id",
         "staff": 1,
         "voice": "2",
-        "xml_voice": "2"
+        "xml_voice": "3"
       }
     ],
-    "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<score-partwise version=\"4.0\">\n<work><work-title>Original bounded exact rhythm pieces</work-title></work>\n<identification><creator type=\"composer\">世界 &apos;Composer&apos; &quot;C&quot;</creator><rights type=\"attribution\">Test authors</rights><rights type=\"license\">MIT</rights><encoding><software>WorldMusicHub 0.2.0-alpha.1</software></encoding></identification>\n<part-list>\n<score-part id=\"P1\"><part-name>Piano &amp; 琴</part-name><score-instrument id=\"I1\"><instrument-name>piano</instrument-name></score-instrument></score-part>\n</part-list>\n<part id=\"P1\">\n<measure number=\"1\">\n<attributes><divisions>1024</divisions><key><fifths>0</fifths><mode>major</mode></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>1</staves><clef number=\"1\"><sign>G</sign><line>2</line></clef></attributes>\n<direction placement=\"above\"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>120</per-minute></metronome></direction-type><offset sound=\"yes\">0</offset><sound tempo=\"120\"/></direction>\n<note id=\"N1_1_1\" dynamics=\"81.111111\"><pitch><step>C</step><alter>0</alter><octave>4</octave></pitch><duration>2048</duration><tie type=\"start\"/><voice>1</voice><type>half</type><staff>1</staff><notations><tied type=\"start\"/></notations></note>\n<note id=\"N1_2_1\" dynamics=\"81.111111\"><chord/><pitch><step>D</step><alter>0</alter><octave>4</octave></pitch><duration>2048</duration><tie type=\"start\"/><voice>1</voice><type>half</type><staff>1</staff><notations><tied type=\"start\"/></notations></note>\n<note id=\"N1_1_1_R2\" dynamics=\"81.111111\"><pitch><step>C</step><alter>0</alter><octave>4</octave></pitch><duration>2047</duration><tie type=\"stop\"/><voice>1</voice><type>half</type><time-modification><actual-notes>2048</actual-notes><normal-notes>2047</normal-notes><normal-type>half</normal-type></time-modification><staff>1</staff><notations><tied type=\"stop\"/></notations></note>\n<note id=\"N1_2_1_R2\" dynamics=\"81.111111\"><chord/><pitch><step>D</step><alter>0</alter><octave>4</octave></pitch><duration>2043</duration><tie type=\"stop\"/><voice>1</voice><type>half</type><time-modification><actual-notes>2048</actual-notes><normal-notes>2043</normal-notes><normal-type>half</normal-type></time-modification><staff>1</staff><notations><tied type=\"stop\"/></notations></note>\n<backup><duration>4095</duration></backup>\n<note id=\"N1_3_1\"><rest/><duration>2048</duration><voice>2</voice><type>half</type><staff>1</staff></note>\n<note id=\"N1_3_1_R2\"><rest/><duration>2045</duration><voice>2</voice><type>half</type><time-modification><actual-notes>2048</actual-notes><normal-notes>2045</normal-notes><normal-type>half</normal-type></time-modification><staff>1</staff></note>\n<forward><duration>3</duration></forward>\n</measure>\n</part>\n</score-partwise>\n"
+    "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<score-partwise version=\"4.0\">\n<work><work-title>Original bounded exact rhythm pieces</work-title></work>\n<identification><creator type=\"composer\">世界 &apos;Composer&apos; &quot;C&quot;</creator><rights type=\"attribution\">Test authors</rights><rights type=\"license\">MIT</rights><encoding><software>WorldMusicHub 0.2.0-alpha.1</software></encoding></identification>\n<part-list>\n<score-part id=\"P1\"><part-name>Piano &amp; 琴</part-name><score-instrument id=\"I1\"><instrument-name>piano</instrument-name></score-instrument></score-part>\n</part-list>\n<part id=\"P1\">\n<measure number=\"1\">\n<attributes><divisions>1024</divisions><key><fifths>0</fifths><mode>major</mode></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>1</staves><clef number=\"1\"><sign>G</sign><line>2</line></clef></attributes>\n<direction placement=\"above\"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>120</per-minute></metronome></direction-type><offset sound=\"yes\">0</offset><sound tempo=\"120\"/></direction>\n<note id=\"N1_1_1\" dynamics=\"81.111111\"><pitch><step>C</step><alter>0</alter><octave>4</octave></pitch><duration>2048</duration><tie type=\"start\"/><voice>1</voice><type>half</type><staff>1</staff><notations><tied type=\"start\"/></notations></note>\n<note id=\"N1_1_1_R2\" dynamics=\"81.111111\"><pitch><step>C</step><alter>0</alter><octave>4</octave></pitch><duration>2047</duration><tie type=\"stop\"/><voice>1</voice><type>half</type><time-modification><actual-notes>2048</actual-notes><normal-notes>2047</normal-notes><normal-type>half</normal-type></time-modification><staff>1</staff><notations><tied type=\"stop\"/></notations></note>\n<backup><duration>4095</duration></backup>\n<note id=\"N1_2_1\" dynamics=\"81.111111\"><pitch><step>D</step><alter>0</alter><octave>4</octave></pitch><duration>2048</duration><tie type=\"start\"/><voice>2</voice><type>half</type><staff>1</staff><notations><tied type=\"start\"/></notations></note>\n<note id=\"N1_2_1_R2\" dynamics=\"81.111111\"><pitch><step>D</step><alter>0</alter><octave>4</octave></pitch><duration>2043</duration><tie type=\"stop\"/><voice>2</voice><type>half</type><time-modification><actual-notes>2048</actual-notes><normal-notes>2043</normal-notes><normal-type>half</normal-type></time-modification><staff>1</staff><notations><tied type=\"stop\"/></notations></note>\n<backup><duration>4091</duration></backup>\n<note id=\"N1_3_1\"><rest/><duration>2048</duration><voice>3</voice><type>half</type><staff>1</staff></note>\n<note id=\"N1_3_1_R2\"><rest/><duration>2045</duration><voice>3</voice><type>half</type><time-modification><actual-notes>2048</actual-notes><normal-notes>2045</normal-notes><normal-type>half</normal-type></time-modification><staff>1</staff></note>\n<forward><duration>3</duration></forward>\n</measure>\n</part>\n</score-partwise>\n"
   },
   "long_type": {
     "exported": {
@@ -621,6 +640,275 @@
     ],
     "title": "Original bounded exact rhythm pieces",
     "version": 1
+  },
+  "unequal": {
+    "exported": {
+      "diagnostics": [
+        {
+          "code": "musicxml_generated_engraving",
+          "message": "Generated MusicXML preserves supported canonical music, not original engraving. Clefs and rhythmic spelling are inferred; source images, source XML, layout, lyrics, articulations and source-only instructions are not copied.",
+          "note_id": null,
+          "severity": "warning"
+        },
+        {
+          "code": "musicxml_engraving_lane",
+          "message": "Part 'Piano & 琴', staff 1, voice '1' contains overlapping events. Exported voice '2' preserves the additional polyphony; the canonical score is unchanged.",
+          "note_id": "original-unsplit-E",
+          "severity": "warning"
+        },
+        {
+          "code": "musicxml_voice_ids",
+          "message": "Part 'Piano & 琴' uses generated positive-integer MusicXML voice IDs for engraving compatibility. voice_id_map retains every original staff/voice label and overlap lane; the canonical score is unchanged.",
+          "note_id": null,
+          "severity": "warning"
+        },
+        {
+          "code": "musicxml_exact_rhythm_segments",
+          "message": "Some display intervals use adjacent exact tied segments to keep inferred rhythmic ratios bounded. Every segment retains the original source note ID, pitch and complete duration; no source timing was quantized.",
+          "note_id": null,
+          "severity": "warning"
+        },
+        {
+          "code": "musicxml_inferred_rhythm",
+          "message": "Nonstandard note lengths use exact time-modification ratios. Rhythmic grouping is inferred; unusual MIDI durations may produce complex tuplets rather than quantized notation.",
+          "note_id": null,
+          "severity": "warning"
+        }
+      ],
+      "note_id_map": {
+        "segments": [
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 0
+            },
+            "chord": false,
+            "duration": {
+              "denominator": 1,
+              "numerator": 2
+            },
+            "lane": 1,
+            "measure_at": {
+              "denominator": 1,
+              "numerator": 0
+            },
+            "measure_number": 1,
+            "part_id": "canonical/unsafe id",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "C"
+            },
+            "source_measure_index": 0,
+            "source_note_id": "original-split-C",
+            "staff": 1,
+            "tie_start": true,
+            "tie_stop": false,
+            "voice": "1",
+            "xml_note_id": "N1_1_1",
+            "xml_part_id": "P1",
+            "xml_voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 2
+            },
+            "chord": false,
+            "duration": {
+              "denominator": 1024,
+              "numerator": 2047
+            },
+            "lane": 1,
+            "measure_at": {
+              "denominator": 1,
+              "numerator": 2
+            },
+            "measure_number": 1,
+            "part_id": "canonical/unsafe id",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "C"
+            },
+            "source_measure_index": 0,
+            "source_note_id": "original-split-C",
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": true,
+            "voice": "1",
+            "xml_note_id": "N1_1_1_R2",
+            "xml_part_id": "P1",
+            "xml_voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 0
+            },
+            "chord": false,
+            "duration": {
+              "denominator": 1,
+              "numerator": 3
+            },
+            "lane": 2,
+            "measure_at": {
+              "denominator": 1,
+              "numerator": 0
+            },
+            "measure_number": 1,
+            "part_id": "canonical/unsafe id",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "E"
+            },
+            "source_measure_index": 0,
+            "source_note_id": "original-unsplit-E",
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "voice": "1",
+            "xml_note_id": "N1_2_1",
+            "xml_part_id": "P1",
+            "xml_voice": "2"
+          }
+        ],
+        "version": 1
+      },
+      "part_id_map": {
+        "canonical/unsafe id": "P1"
+      },
+      "voice_id_map": [
+        {
+          "lane": 1,
+          "part_id": "canonical/unsafe id",
+          "staff": 1,
+          "voice": "1",
+          "xml_voice": "1"
+        },
+        {
+          "lane": 2,
+          "part_id": "canonical/unsafe id",
+          "staff": 1,
+          "voice": "1",
+          "xml_voice": "2"
+        }
+      ],
+      "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<score-partwise version=\"4.0\">\n<work><work-title>Original unequal display rhythm lanes</work-title></work>\n<identification><creator type=\"composer\">世界 &apos;Composer&apos; &quot;C&quot;</creator><rights type=\"attribution\">Test authors</rights><rights type=\"license\">MIT</rights><encoding><software>WorldMusicHub 0.2.0-alpha.1</software></encoding></identification>\n<part-list>\n<score-part id=\"P1\"><part-name>Piano &amp; 琴</part-name><score-instrument id=\"I1\"><instrument-name>piano</instrument-name></score-instrument></score-part>\n</part-list>\n<part id=\"P1\">\n<measure number=\"1\">\n<attributes><divisions>1024</divisions><key><fifths>0</fifths><mode>major</mode></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>1</staves><clef number=\"1\"><sign>G</sign><line>2</line></clef></attributes>\n<direction placement=\"above\"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>120</per-minute></metronome></direction-type><offset sound=\"yes\">0</offset><sound tempo=\"120\"/></direction>\n<note id=\"N1_1_1\" dynamics=\"81.111111\"><pitch><step>C</step><alter>0</alter><octave>4</octave></pitch><duration>2048</duration><tie type=\"start\"/><voice>1</voice><type>half</type><staff>1</staff><notations><tied type=\"start\"/></notations></note>\n<note id=\"N1_1_1_R2\" dynamics=\"81.111111\"><pitch><step>C</step><alter>0</alter><octave>4</octave></pitch><duration>2047</duration><tie type=\"stop\"/><voice>1</voice><type>half</type><time-modification><actual-notes>2048</actual-notes><normal-notes>2047</normal-notes><normal-type>half</normal-type></time-modification><staff>1</staff><notations><tied type=\"stop\"/></notations></note>\n<backup><duration>4095</duration></backup>\n<note id=\"N1_2_1\" dynamics=\"81.111111\"><pitch><step>E</step><alter>0</alter><octave>4</octave></pitch><duration>3072</duration><voice>2</voice><type>half</type><dot/><staff>1</staff></note>\n<forward><duration>1024</duration></forward>\n</measure>\n</part>\n</score-partwise>\n"
+    },
+    "score": {
+      "composer": "世界 'Composer' \"C\"",
+      "format_metadata": {
+        "producer": "WorldMusicHub",
+        "producer_version": "0.2.0-alpha.1",
+        "schema_revision": 2
+      },
+      "id": "original-id",
+      "keys": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "fifths": 0,
+          "mode": "major"
+        }
+      ],
+      "measures": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 1
+        }
+      ],
+      "meters": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "denominator": 4,
+          "numerator": 4
+        }
+      ],
+      "parts": [
+        {
+          "id": "canonical/unsafe id",
+          "instrument": "piano",
+          "name": "Piano & 琴",
+          "notes": [
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 0
+              },
+              "duration": {
+                "denominator": 1024,
+                "numerator": 4095
+              },
+              "id": "original-split-C",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 73,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 0
+              },
+              "duration": {
+                "denominator": 1,
+                "numerator": 3
+              },
+              "id": "original-unsplit-E",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "E"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 73,
+              "voice": "1"
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "attribution": "Test authors",
+        "kind": "original",
+        "license": "MIT",
+        "source_url": "https://example.invalid/private-source"
+      },
+      "repeats": [],
+      "source": null,
+      "tempo": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "bpm": 120.0
+        }
+      ],
+      "title": "Original unequal display rhythm lanes",
+      "version": 1
+    }
   },
   "unsplit": {
     "diagnostics": [
