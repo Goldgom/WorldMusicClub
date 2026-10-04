@@ -44,3 +44,10 @@ test('shared observer hashes the actual transferred VSQ table, bounds JSON and r
  for(let i=0;i<100&&!observer.snapshot()[0].timbre.sha256;i++)await new Promise(resolve=>setTimeout(resolve,1));
  assert.deepEqual(JSON.parse(JSON.stringify(observer.snapshot()[0].timbre)),syntheticVsqAudioThreadRun().timbre);assert.ok(JSON.stringify(observer.snapshot()).length<10000,'Table arrays must never enter reports');assert.deepEqual([...observer.status().errors],[]);assert.equal(observer.restore().restored,true);assert.equal(receiver.node.port.postMessage,original);
 });
+test('bounded PCM observation reserves source-onset evidence after a long count-in',async()=>{
+ const source=await readFile(new URL('../crates/desktop-shell/reference-acceptance.js',import.meta.url),'utf8'),begin=source.indexOf(' function sample(entry,row){'),end=source.indexOf(' const create=Receiver.create;',begin),frames=[];
+ const context={state:'running',currentTime:0,destination:{}},row={started:{anchorTime:0},pcm:{blocks:[]}},entry={sampleRow:row,sampleFromAudioTime:2,owner:{context,connected:true,state:'running'},analyser:{getFloatTimeDomainData:values=>values.fill(context.currentTime>=2?.1:0)}};
+ const realm=vm.createContext({active:true,Float32Array,clock:()=>({wallMs:context.currentTime*1000}),graphPath:()=>[{type:'AudioWorkletNode'},{type:'AudioDestinationNode'}],root:{requestAnimationFrame:callback=>(frames.push(callback),frames.length)}});vm.runInContext(source.slice(begin,end)+';globalThis.sample=sample;',realm);realm.sample(entry,row);
+ for(let index=1;index<=150;index++){context.currentTime=index/100;frames.shift()();}assert.equal(row.pcm.blocks.length,4,'Count-in must not exhaust the finite analyser budget');assert.equal(frames.length,1);
+ context.currentTime=2.01;frames.shift()();assert.equal(row.pcm.blocks.length,5);assert.ok(row.pcm.blocks.at(-1).peak>0);assert.ok(row.pcm.graphToDestination);entry.owner.disposed=true;frames.shift()();assert.equal(frames.length,0);
+});
