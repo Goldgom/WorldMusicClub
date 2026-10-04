@@ -42,7 +42,7 @@ pub(super) fn response(bytes: &[u8], pack: bool) -> ApiResponse {
         return song_api_error(
             413,
             "clean_draft_source_limit",
-            "Original MIDI exceeds the 5 MiB source limit; no source was truncated",
+            "Original MIDI/VSQ exceeds the 5 MiB source limit; no source was truncated",
         );
     }
     let draft = match clean_conversion::prepare_request(request) {
@@ -62,8 +62,10 @@ pub(super) fn response(bytes: &[u8], pack: bool) -> ApiResponse {
     if draft.state == State::Rejected {
         return bounded_response(422, &draft);
     }
-    if !pack {
-        return bounded_response(200, &draft);
+    // A compressed ZIP must not bypass the complete review response limit.
+    let prepared = bounded_response(200, &draft);
+    if !pack || prepared.status != 200 {
+        return prepared;
     }
     if expected.as_ref() != draft.draft_sha256.as_ref() {
         return song_api_error(409, "clean_draft_changed", "The source or title differs from the reviewed complete draft; prepare and review it again before saving");

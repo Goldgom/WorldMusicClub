@@ -207,3 +207,106 @@ fn rejected_sources_and_unknown_request_fields_do_not_write_library_entries() {
     );
     assert!(library.list().unwrap().entries.is_empty());
 }
+
+#[path = "../../../tests/support/vsq_authoring.rs"]
+mod vsq_fixture;
+#[test]
+fn vsq_draft_zip_import_restart_preserves_exact_authoring_and_requires_explicit_projection() {
+    let sandbox = Sandbox::new();
+    let library = sandbox.library();
+    let source = vsq_fixture::source();
+    let mut input = json!({"source_base64":base64::engine::general_purpose::STANDARD.encode(&source),"source_name":"authored.mid","title":"Original VSQ draft"});
+    let body = serde_json::to_vec(&input).unwrap();
+    let shared = practice_server::api_response("/api/clean-song/draft", body.clone());
+    let native = request(&library, "/api/clean-song/draft", body);
+    assert_eq!(native.status(), shared.status);
+    assert_eq!(native.body(), &shared.body);
+    assert_eq!(native.status(), 200);
+    let draft: Value = serde_json::from_slice(native.body()).unwrap();
+    assert_eq!(draft["state"], "vsq_authoring_candidate");
+    assert_eq!(draft["source"]["format"], "vsq");
+    assert!(draft["inventory"]["parts"][0]["channel"].is_null());
+    assert!(draft.get("runtime").is_none());
+    input["expected_draft_sha256"] = draft["draft_sha256"].clone();
+    let pack = json_request(&library, "/api/clean-song/draft/pack", &input, 200);
+    let zip = base64::engine::general_purpose::STANDARD
+        .decode(pack["zip_base64"].as_str().unwrap())
+        .unwrap();
+    let files = unzip(&zip);
+    assert_eq!(files.len(), 3);
+    let folder = format!("songs/vsq-{}", draft["source"]["sha256"].as_str().unwrap());
+    for (name, field) in [
+        ("metadata.json", "metadata_json"),
+        ("score.json", "score_json"),
+    ] {
+        assert_eq!(
+            files[&format!("{folder}/{name}")],
+            draft["package"][field].as_str().unwrap().as_bytes()
+        );
+    }
+    assert!(library.list().unwrap().entries.is_empty());
+    let response = request(&library, "/api/library/import/preview", zip.clone());
+    assert_eq!(response.status(), 200);
+    let preview: Value = serde_json::from_slice(response.body()).unwrap();
+    assert_eq!(preview["summary"]["ready"], 1, "{preview}");
+    assert_eq!(preview["items"][0]["playable"], false);
+    assert!(library.list().unwrap().entries.is_empty());
+    let response = request(&library, "/api/library/import/commit", zip);
+    assert_eq!(response.status(), 200);
+    let saved: Value = serde_json::from_slice(response.body()).unwrap();
+    assert_eq!(saved["summary"]["saved"], 1, "{saved}");
+    assert_eq!(saved["items"][0]["playable"], false);
+    let key = saved["items"][0]["entry"]["key"].as_str().unwrap();
+    let restarted = sandbox.library();
+    let package = restarted.load(key).unwrap().clean_package.unwrap();
+    assert!(package.runtime.is_null());
+    assert_eq!(package.profile.as_deref(), Some("wmh-vsq-clean-v1"));
+    assert_eq!(
+        package.metadata_json,
+        draft["package"]["metadata_json"].as_str().unwrap()
+    );
+    assert_eq!(
+        package.score_json,
+        draft["package"]["score_json"].as_str().unwrap()
+    );
+    let score = score_core::vsq_clean::decode_json(package.score_json.as_bytes()).unwrap();
+    assert_eq!(score.authoring.tracks.len(), 3);
+    assert!(score.authoring.mixer.tracks[1].mute);
+    assert!(score.authoring.mixer.tracks[0].solo);
+    assert!(score.authoring.tracks[2].notes.is_empty());
+    assert_eq!(
+        score.authoring.tracks[0].notes[0].lyrics[0].numeric_fields[0].coefficient,
+        9007199254740993
+    );
+    let missing = json_request(
+        &restarted,
+        "/api/library/runtime",
+        &json!({"key":key,"profile":"wmh-vsq-clean-v1"}),
+        400,
+    );
+    assert!(missing.get("runtime").is_none());
+    let projected = json_request(
+        &restarted,
+        "/api/library/runtime",
+        &json!({"key":key,"profile":"wmh-vsq-clean-v1","choice":"base_notes_instrumental"}),
+        200,
+    );
+    assert_eq!(projected["runtime"]["parts"].as_array().unwrap().len(), 3);
+    assert_eq!(projected["runtime"]["notes"].as_array().unwrap().len(), 2);
+    assert_eq!(projected["runtime"]["notes"][0]["audible"], true);
+    assert_eq!(projected["runtime"]["notes"][1]["audible"], false);
+    assert_eq!(
+        restarted
+            .load(key)
+            .unwrap()
+            .clean_package
+            .unwrap()
+            .score_json,
+        package.score_json
+    );
+    input["title"] = json!("Changed title");
+    assert_eq!(
+        json_request(&library, "/api/clean-song/draft/pack", &input, 409)["code"],
+        "clean_draft_changed"
+    );
+}

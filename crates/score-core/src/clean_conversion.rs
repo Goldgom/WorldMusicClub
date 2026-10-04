@@ -12,15 +12,22 @@ use std::collections::BTreeMap;
 
 #[cfg(test)]
 mod tests;
+mod vsq;
+#[cfg(test)]
+mod vsq_tests;
 
 pub const MAX_TITLE_BYTES: usize = 1000;
 pub const MAX_SOURCE_NAME_BYTES: usize = 255;
+// Portable authoring artifacts must fit the existing native clean receiver.
+pub const MAX_PACKAGE_SCORE_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_PACKAGE_METADATA_BYTES: usize = 256 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum State {
     StrictNotationCandidate,
     EventOnlyReferenceCandidate,
+    VsqAuthoringCandidate,
     Rejected,
 }
 #[derive(Clone, Debug, Serialize)]
@@ -55,8 +62,23 @@ pub struct TrackInventory {
 pub struct PartInventory {
     pub id: String,
     pub track_id: String,
-    pub channel: u8,
+    pub channel: Option<u8>,
     pub notation_available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vsq: Option<VsqPartInventory>,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct VsqPartInventory {
+    pub name: String,
+    pub source_track_index: u16,
+    pub notes: usize,
+    pub singers: usize,
+    pub lyrics: usize,
+    pub curves: usize,
+    pub curve_points: usize,
+    pub mute: bool,
+    pub solo: bool,
+    pub master_mute: bool,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct Inventory {
@@ -119,19 +141,19 @@ pub fn prepare_request(request: Request) -> Result<Draft, RequestError> {
     use base64::Engine;
     if request.source_base64.len() > midi_events::MAX_SOURCE_BYTES.div_ceil(3) * 4 {
         return Err(RequestError {
-            message: "Original MIDI exceeds the 5 MiB source limit".into(),
+            message: "Original MIDI/VSQ exceeds the 5 MiB source limit".into(),
             source_limit: true,
         });
     }
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(&request.source_base64)
         .map_err(|_| RequestError {
-            message: "Original MIDI must use valid standard Base64".into(),
+            message: "Original MIDI/VSQ must use valid standard Base64".into(),
             source_limit: false,
         })?;
     if bytes.len() > midi_events::MAX_SOURCE_BYTES {
         return Err(RequestError {
-            message: "Original MIDI exceeds the 5 MiB source limit".into(),
+            message: "Original MIDI/VSQ exceeds the 5 MiB source limit".into(),
             source_limit: true,
         });
     }
@@ -140,13 +162,14 @@ pub fn prepare_request(request: Request) -> Result<Draft, RequestError> {
         source_limit: false,
     })
 }
-/// Use existing complete converters and validators unchanged: strict notation
+/// Recognize framed VSQ project text before the generic MIDI reader, then use
+/// the existing complete converter. Other SMF sources take strict notation
 /// first, otherwise independent typed events; never partial-song fallback.
 pub fn prepare_midi(bytes: &[u8], title: &str, source_name: &str) -> Result<Draft, String> {
     presentation(title, MAX_TITLE_BYTES, "Title")?;
     presentation(source_name, MAX_SOURCE_NAME_BYTES, "Source name")?;
     if bytes.len() > midi_events::MAX_SOURCE_BYTES {
-        return Err("Original MIDI exceeds the 5 MiB source limit".into());
+        return Err("Original MIDI/VSQ exceeds the 5 MiB source limit".into());
     }
     let source = clean_song::SourceEvidence {
         format: "midi".into(),
@@ -163,6 +186,9 @@ pub fn prepare_midi(bytes: &[u8], title: &str, source_name: &str) -> Result<Draf
         package: None,
         draft_sha256: None,
     };
+    if vsq::prepare(bytes, &mut draft)? {
+        return Ok(draft);
+    }
     let timeline = match midi_events::parse_midi_events(bytes, None) {
         Ok(timeline) => timeline,
         Err(error) => {
@@ -203,8 +229,9 @@ pub fn prepare_midi(bytes: &[u8], title: &str, source_name: &str) -> Result<Draf
                 .map(|part| PartInventory {
                     id: part.id.clone(),
                     track_id: part.track_id.clone(),
-                    channel: part.channel,
+                    channel: Some(part.channel),
                     notation_available: true,
+                    vsq: None,
                 })
                 .collect();
             encoded
@@ -227,8 +254,9 @@ pub fn prepare_midi(bytes: &[u8], title: &str, source_name: &str) -> Result<Draf
                         .map(|part| PartInventory {
                             id: part.id.clone(),
                             track_id: part.track_id.clone(),
-                            channel: part.channel,
+                            channel: Some(part.channel),
                             notation_available: false,
+                            vsq: None,
                         })
                         .collect();
                     encoded
@@ -259,6 +287,13 @@ pub fn prepare_midi(bytes: &[u8], title: &str, source_name: &str) -> Result<Draf
         metadata_json: serde_json::to_string_pretty(&metadata).map_err(|e| e.to_string())?,
         score_json: String::from_utf8(score_bytes).map_err(|e| e.to_string())?,
     };
+    install_package(&mut draft, package);
+    Ok(draft)
+}
+fn install_package(draft: &mut Draft, package: Package) {
+    if reject_package_size(draft, package.score_json.len(), package.metadata_json.len()) {
+        return;
+    }
     let mut digest = Sha256::new();
     digest.update(b"worldmusichub-clean-draft-v1\0");
     for bytes in [
@@ -270,7 +305,18 @@ pub fn prepare_midi(bytes: &[u8], title: &str, source_name: &str) -> Result<Draf
     }
     draft.draft_sha256 = Some(format!("{:x}", digest.finalize()));
     draft.package = Some(package);
-    Ok(draft)
+}
+fn reject_package_size(draft: &mut Draft, score_bytes: usize, metadata_bytes: usize) -> bool {
+    if score_bytes > MAX_PACKAGE_SCORE_BYTES || metadata_bytes > MAX_PACKAGE_METADATA_BYTES {
+        draft.state = State::Rejected;
+        draft.diagnostics.push(diagnostic(
+            "complete_package_limit",
+            "Complete package exceeds the native 16 MiB score or 256 KiB metadata limit".into(),
+            "Keep the complete original source; no tracks, notes, or authoring fields were trimmed and no partial package was produced.",
+        ));
+        return true;
+    }
+    false
 }
 impl Draft {
     /// Read-only ZIP generation. No source filename, original bytes, audit,
@@ -282,7 +328,7 @@ impl Draft {
             .ok_or("Rejected conversion has no complete package")?;
         let mut writer = crate::clean_pack::Writer::new();
         writer.add_song(
-            &format!("songs/midi-{}", self.source.sha256),
+            &format!("songs/{}-{}", self.source.format, self.source.sha256),
             BTreeMap::from([
                 (
                     "metadata.json".into(),

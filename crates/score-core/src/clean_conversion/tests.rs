@@ -2,7 +2,7 @@ use super::*;
 use serde_json::Value;
 
 // Newly authored C/E/G source events only; no private song or corpus material.
-fn source(extra: &[u8]) -> Vec<u8> {
+pub(super) fn source(extra: &[u8]) -> Vec<u8> {
     let conductor = vec![
         0, 255, 81, 3, 7, 161, 33, 0, 255, 88, 4, 4, 2, 24, 8, 0, 255, 47, 0,
     ];
