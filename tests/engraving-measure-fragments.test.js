@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 import {DOMParser, Node,parseHTML} from 'linkedom';
 import {validateEngravingInput,renderEngravedStaff, ENGRAVING_LIMITS} from '../web/engraving.js';
 import {createEngravingProjection,createSourceBoundEngravingFragments,engravingProjectionModelCoordinates,proveEngravingProjectionModelNotes,validateEngravingProjectionModel,restoreSourceBoundProjectionFractions} from '../web/engraving-projection.js';
-import {createEngravingMeasureFragments, validateEngravingMeasureFragments, prepareEngravingFragmentLabels} from '../web/engraving-measure-fragments.js';
+import {createEngravingMeasureFragments, validateEngravingMeasureFragments, prepareEngravingFragmentLabels, prepareEngravingFragmentBarlines} from '../web/engraving-measure-fragments.js';
 import {prepareCleanSong} from '../web/clean-song-package.js';
 import {basicKeyNotationPage,basicKeyEngravingIdentity,basicKeyWrittenAt} from '../web/basic-key-notation.js';
 import {matchEngravingModel} from '../web/engraving-note-map.js';
@@ -59,6 +59,106 @@ function read(projection) {
     if (previousNode === undefined) delete globalThis.Node; else globalThis.Node = previousNode;
   }
 }
+
+// Exercise the pinned system builder's real line selection and VexFlow drawing
+// without launching a browser or substituting a test barline implementation.
+function fragmentGraphic(sheet, osmd) {
+  const graphic = {MeasureList: sheet.SourceMeasures.map(source => sheet.Staves.map(staff => new osmd.VexFlowMeasure(staff, source))), MusicPages: [], reCalculate() {
+    const builder = new osmd.MusicSystemBuilder(), lines = [];
+    Object.assign(builder, {measureList: this.MeasureList, rules: sheet.Rules, visibleStaffIndices: sheet.Staves.map((_, index) => index), graphicalMusicSheet: {ParentMusicSheet: sheet}});
+    for (const [index, row] of this.MeasureList.entries()) {
+      builder.measureListIndex = index;
+      const type = builder.getMeasureEndLine();
+      for (const [staff, measure] of row.entries()) {
+        measure.clean();measure.setWidth(20);measure.setAbsoluteCoordinates(index * 200, 20 + staff * 80);
+        measure.addMeasureLine(type, osmd.SystemLinePosition.MeasureEnd);
+      }
+      if (row.length > 1) row[1].lineTo(row[0], osmd.VexFlowConverter.line(type, osmd.SystemLinePosition.MeasureEnd));
+      lines.push({lineType: type, linePosition: osmd.SystemLinePosition.MeasureEnd, topMeasure: row[0], bottomMeasure: row[1], PositionAndShape: {BorderRight: 1}});
+    }
+    this.MusicPages = [{MusicSystems: [{SystemLines: lines}]}];
+    return 'real-pinned-boundary-layout';
+  }};
+  return graphic;
+}
+
+function paintBoundary(row, osmd) {
+  const oldDocument = globalThis.document, oldWindow = globalThis.window;
+  try {
+    const {document, window} = parseHTML('<html><body><div id="drawing"></div></body></html>');
+    globalThis.document = document;globalThis.window = window;
+    const backend = new osmd.SvgVexFlowBackend(row[0].parentSourceMeasure.Rules);
+    backend.graphicalMusicPage = {PageNumber: 1};backend.initialize(document.getElementById('drawing'), 1);
+    const context = backend.getContext();
+    for (const measure of row) {
+      const stave = measure.getVFStave();stave.setContext(context);
+      const bar = stave.getModifiers().find(modifier => modifier.getCategory() === 'barlines' && modifier.getPosition() === modifier.constructor.Position.END);
+      bar.setX(stave.getX() + stave.getWidth());bar.draw(stave);
+      for (const connector of measure.connectors) connector.setContext(context).draw();
+    }
+    return backend.getSvgElement().outerHTML;
+  } finally {
+    if (oldDocument === undefined) delete globalThis.document;else globalThis.document = oldDocument;
+    if (oldWindow === undefined) delete globalThis.window;else globalThis.window = oldWindow;
+  }
+}
+
+test('pinned key-change layout draws phantom fragment bars and the instance repair removes their actual SVG only', () => {
+  const spec = original({parts: 1});
+  spec.identity.score.keys.push({at: beat(4), fifths: 4, mode: 'major'});
+  spec.xml = spec.xml.replace('<measure number="7"><note', '<measure number="7"><attributes><key><fifths>4</fifths><mode>major</mode></key></attributes><note').replace('</measure></part>', '<barline location="right"><bar-style>light-heavy</bar-style></barline></measure></part>');
+  const before = JSON.stringify(spec), {projection} = project(spec), sheet = read(projection);
+  const previousSelf = globalThis.self;globalThis.self = globalThis;
+  const osmd = createRequire(import.meta.url)('opensheetmusicdisplay');
+  if (previousSelf === undefined) delete globalThis.self;else globalThis.self = previousSelf;
+  const graphic = fragmentGraphic(sheet, osmd), renderer = {Sheet: sheet, GraphicSheet: graphic}, originalRecalculate = graphic.reCalculate;
+  const clocks = JSON.stringify(sheet.SourceMeasures.map(measure => [measure.Duration, measure.AbsoluteTimestamp]));
+  assert.equal(sheet.SourceMeasures[0].endingBarStyleEnum, osmd.SystemLinesEnum.None);
+  graphic.reCalculate();
+  assert.equal(graphic.MusicPages[0].MusicSystems[0].SystemLines[0].lineType, osmd.SystemLinesEnum.DoubleThin, 'The real pinned builder overrides an explicit none before a key change');
+  const phantom = paintBoundary(graphic.MeasureList[0], osmd);
+  assert.equal((phantom.match(/<rect /g) || []).length, 6, 'Two staff double bars and their two-line connector are actual SVG paint');
+  assert.ok([...phantom.matchAll(/height="([^"]+)"/g)].every(match => Number(match[1]) > 0), 'Every emitted bar and connector has positive SVG height');
+  const genuine = graphic.MeasureList.slice(1).map(row => paintBoundary(row, osmd));
+  assert.ok(genuine.every(svg => svg.includes('<rect ')), 'The fixture includes real source boundaries, including a key change and final bar');
+  const repair = prepareEngravingFragmentBarlines(renderer, projection, spec.identity.score, ENGRAVING_LIMITS, osmd);
+  assert.equal(repair.ok, true);
+  const sibling = fragmentGraphic(sheet, osmd);sibling.reCalculate();
+  assert.equal(paintBoundary(sibling.MeasureList[0], osmd), phantom, 'Another renderer remains untouched while this instance is repaired');
+  for (let resize = 0; resize < 3; resize++) {
+    assert.equal(graphic.reCalculate(), 'real-pinned-boundary-layout');
+    assert.equal(paintBoundary(graphic.MeasureList[0], osmd), '<svg id="osmdSvgPage1" />', 'No vertical fragment bar or staff connector reaches SVG');
+    assert.equal(graphic.MusicPages[0].MusicSystems[0].SystemLines[0].lineType, osmd.SystemLinesEnum.None);
+    assert.deepEqual(graphic.MeasureList.slice(1).map(row => paintBoundary(row, osmd)), genuine, 'Source key-boundary and final-bar paint stay byte-identical');
+    assert.equal(JSON.stringify(sheet.SourceMeasures.map(measure => [measure.Duration, measure.AbsoluteTimestamp])), clocks);
+    assert.equal(validateEngravingMeasureFragments(sheet, projection, spec.identity.score, ENGRAVING_LIMITS).ok, true);
+  }
+  repair.dispose();assert.equal(graphic.reCalculate, originalRecalculate);
+  graphic.reCalculate();assert.equal(paintBoundary(graphic.MeasureList[0], osmd), phantom, 'Disposal restores the owned method without modifying a global prototype');
+  assert.equal(JSON.stringify(spec), before);
+});
+
+test('fragment barline repair refuses forged provenance and unknown or changed graphical models', () => {
+  const previousSelf = globalThis.self;globalThis.self = globalThis;
+  const osmd = createRequire(import.meta.url)('opensheetmusicdisplay');
+  if (previousSelf === undefined) delete globalThis.self;else globalThis.self = previousSelf;
+  for (const mutation of ['forged', 'missing', 'wrong-source', 'wrong-enum', 'changed-clock', 'unknown-bar', 'wrong-connector']) {
+    const spec = original({parts: 1}), {projection} = project(spec), sheet = read(projection), graphic = fragmentGraphic(sheet, osmd), renderer = {Sheet: sheet, GraphicSheet: graphic}, originalRecalculate = graphic.reCalculate;
+    if (mutation === 'missing') delete renderer.GraphicSheet;
+    if (mutation === 'wrong-source') graphic.MeasureList[0][0].parentSourceMeasure = sheet.SourceMeasures[1];
+    if (mutation === 'wrong-enum') sheet.SourceMeasures[0].endingBarStyleEnum = osmd.SystemLinesEnum.DoubleThin;
+    const repair = prepareEngravingFragmentBarlines(renderer, mutation === 'forged' ? {...projection} : projection, spec.identity.score, ENGRAVING_LIMITS, osmd);
+    if (['forged', 'missing', 'wrong-source', 'wrong-enum'].includes(mutation)) {assert.equal(repair.ok, false, mutation);assert.equal(graphic.reCalculate, originalRecalculate);continue;}
+    assert.equal(repair.ok, true);
+    if (mutation === 'changed-clock') sheet.SourceMeasures[0].Duration.Numerator++;
+    else {
+      const method = mutation === 'unknown-bar' ? 'addMeasureLine' : 'lineTo', measure = graphic.MeasureList[0][mutation === 'unknown-bar' ? 0 : 1], original = measure[method];
+      measure[method] = function (...args) {const result = Reflect.apply(original, this, args);if (mutation === 'unknown-bar') this.getVFStave().getModifiers()[1].type = 99;else this.connectors[0].bottom_stave = graphic.MeasureList[1][0].getVFStave();return result;};
+    }
+    assert.throws(() => graphic.reCalculate(), /Exact presentation fragments/, mutation);
+    repair.dispose();assert.equal(graphic.reCalculate, originalRecalculate);
+  }
+});
 
 test('noncrossing key fragments preserve source IDs, exact offsets and real-reader key times', () => {
   for (const keyTick of [7, 8]) for (const options of [{}, {partIds: ['P2']}, {partIds: ['P2', 'P1']}, {fromMeasure: 1, toMeasure: 1}]) {
@@ -219,7 +319,7 @@ test('authored native key pages retain four source IDs and reject a source note 
 
 test('production adapter permits fragments only for unchanged native v2 admission and keeps public source paging',async()=>{
   const fixture=JSON.parse(readFileSync(new URL('./fixtures/basic-key-internal-key-pages.json',import.meta.url),'utf8'));
-  for(const kind of ['native','generic','crossing']){
+  for(const kind of ['native','generic','crossing','layout-failure']){
     const data=fixture[kind==='crossing'?'crossing':'noncrossing'],song=prepareCleanSong(`native:song-${data.open.clean_package.content_sha256}`,data.open.clean_package,null),page=basicKeyNotationPage(data.response,data.request,song);
     const identity=kind==='generic'?{score:page.score,noteMap:page.musicxml.note_id_map,partIdMap:page.musicxml.part_id_map,voiceIdMap:page.musicxml.voice_id_map}:basicKeyEngravingIdentity(song,page);
     const {document}=parseHTML('<html><body><div id="staff"></div></body></html>'),instances=[],before=JSON.stringify(data);
@@ -227,13 +327,14 @@ test('production adapter permits fragments only for unchanged native v2 admissio
     class ReaderRenderer{
       constructor(mount){this.mount=mount;this.Version='2.1.3-release';this.updates=0;this.renders=0;instances.push(this);}
       async load(document){this.loaded=document;this.Sheet=read({document});this.EngravingRules=this.Sheet.Rules;}
-      updateGraphic(){this.updates++;assert.deepEqual(this.Sheet.SourceMeasures.map(measure=>measure.ImplicitMeasure),[false,true,false,true]);}
-      render(){this.renders++;this.mount.appendChild(document.createElementNS('http://www.w3.org/2000/svg','svg'));}
-      clear(){this.mount.replaceChildren();}
+      updateGraphic(){this.updates++;assert.deepEqual(this.Sheet.SourceMeasures.map(measure=>measure.ImplicitMeasure),[false,true,false,true]);this.GraphicSheet=fragmentGraphic(this.Sheet,osmd);this.originalRecalculate=this.GraphicSheet.reCalculate;}
+      render(){this.renders++;this.GraphicSheet.reCalculate();if(kind==='layout-failure')throw Error('original-layout-failure');this.mount.appendChild(document.createElementNS('http://www.w3.org/2000/svg','svg'));}
+      clear(){assert.equal(this.GraphicSheet?.reCalculate,this.originalRecalculate,'Disposal restores the owned layout hook before clearing');this.mount.replaceChildren();}
     }
     Object.defineProperty(document,'defaultView',{configurable:true,value:{DOMParser:XmlParser,opensheetmusicdisplay:{...osmd,OpenSheetMusicDisplay:ReaderRenderer}}});
     const result=await renderEngravedStaff(document.getElementById('staff'),page.musicxml.xml,{identity,fromMeasure:1,toMeasure:2,responsive:false});
-    if(kind!=='native'){assert.equal(result.code,'engraving_projection');assert.equal(instances.length,0,'Ineligible data never reaches the renderer');}
+    if(kind==='layout-failure'){assert.equal(result.code,'engraving_renderFailed');assert.equal(result.cause.message,'original-layout-failure');assert.equal(document.querySelector('svg'),null);assert.equal(instances[0].GraphicSheet.reCalculate,instances[0].originalRecalculate);}
+    else if(kind!=='native'){assert.equal(result.code,'engraving_projection');assert.equal(instances.length,0,'Ineligible data never reaches the renderer');}
     else{
       assert.equal(result.ok,true,result.message);assert.equal(instances[0].updates,1);assert.equal(instances[0].renders,1);
       assert.equal(result.metadata.measureCount,2);assert.equal(result.metadata.fromMeasure,1);assert.equal(result.metadata.toMeasure,2);assert.equal(result.metadata.modelFragmentCount,4);

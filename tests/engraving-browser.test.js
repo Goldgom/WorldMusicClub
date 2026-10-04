@@ -1396,7 +1396,7 @@ test('native internal keys keep exact source glyphs, visible key positions and o
     const watch=window.__wmhBinding,renderer=watch.renderer,host=document.getElementById('staff'),fragments=watch.modelFragments;
     watch.assert(Array.isArray(fragments)&&fragments.length===4,'Two source bars have four explicitly identified presentation intervals');
     watch.assert(JSON.stringify(fragments.map(f=>f.source_measure_index))==='[0,0,1,1]','Fragment ordinals never become new source-measure identities');
-    const groups=[...host.querySelectorAll('.vf-keysignature')],required=[0,1,3],keys=[],internalLines=[];
+    const groups=[...host.querySelectorAll('.vf-keysignature')],required=[0,1,3],keys=[],internalLines=[],sourceLines=[];
     const box=node=>{const r=node.getBBox();return{x:r.x,y:r.y,width:r.width,height:r.height,right:r.x+r.width,bottom:r.y+r.height};};
     for(const index of required){
       const measure=renderer.GraphicSheet.MeasureList[index][0],stave=measure.getVFStave(),modifier=stave.getModifiers().find(m=>m.getCategory?.()==='keysignatures'&&m.glyphs?.length);
@@ -1414,13 +1414,20 @@ test('native internal keys keep exact source glyphs, visible key positions and o
       }
       keys.push({fragment:index,sourceMeasure:fragments[index].source_measure_index,sourceOffset:fragments[index].source_offset,glyphs:paths.length,bounds});
     }
-    for(const [index,fragment]of fragments.entries())if(!fragment.ends_source_measure){
-      const stave=renderer.GraphicSheet.MeasureList[index][0].getVFStave(),bars=stave.getModifiers().filter(m=>m.getCategory?.()==='barlines'),end=bars.reduce((a,b)=>a.getX()>b.getX()?a:b);
-      watch.assert(end.type===end.constructor.type.NONE,'The internal interval boundary has no VexFlow barline');
-      const x=end.getX(),top=stave.getTopLineTopY(),bottom=stave.getBottomLineBottomY();
+    for(const [index,fragment]of fragments.entries())for(const [staff,measure]of renderer.GraphicSheet.MeasureList[index].entries()){
+      const stave=measure.getVFStave(),bars=stave.getModifiers().filter(m=>m.getCategory?.()==='barlines'&&m.getPosition?.()===m.constructor.Position?.END);
+      watch.assert(bars.length===1,'Each fragment has exactly one real end-bar modifier');
+      const end=bars[0],x=end.getX(),top=stave.getTopLineTopY(),bottom=stave.getBottomLineBottomY();
       const painted=[...host.querySelectorAll('svg path,svg rect,svg line')].filter(node=>{const r=box(node);return r.width>0&&r.width<=6&&r.height>=(bottom-top)*.9&&Math.abs((r.x+r.width/2)-x)<4&&r.y>=top-2&&r.bottom<=bottom+2;});
-      watch.assert(painted.length===0,'There is no painted vertical bar at the artificial internal boundary');
-      internalLines.push({fragment:index,x,top,bottom,painted:painted.length});
+      if(!fragment.ends_source_measure){
+        watch.assert(end.type===end.constructor.type.NONE,'The internal interval boundary has no VexFlow barline');
+        watch.assert(painted.length===0,'There is no painted vertical bar at the artificial internal boundary');
+        watch.assert(measure.connectors.every(connector=>![connector.constructor.type.SINGLE_RIGHT,connector.constructor.type.BOLD_DOUBLE_RIGHT,connector.constructor.type.THIN_DOUBLE].includes(connector.type)),'No multi-staff connector remains at an internal boundary');
+        internalLines.push({fragment:index,staff,x,top,bottom,painted:painted.length});
+      }else{
+        watch.assert(end.type!==end.constructor.type.NONE&&painted.length>0,'Genuine source barlines remain actual visible SVG paint');
+        sourceLines.push({fragment:index,staff,x,top,bottom,painted:painted.length});
+      }
     }
     const labels=renderer.GraphicSheet.MusicPages.flatMap(page=>page.MusicSystems.flatMap(system=>system.MeasureNumberLabels)).map(label=>({text:label.Label.text,node:label.SVGNode}));
     watch.assert(labels.length===2&&labels.map(label=>label.text).sort().join(',')==='1,2','Only the two original source measure numbers are drawn');
@@ -1430,7 +1437,7 @@ test('native internal keys keep exact source glyphs, visible key positions and o
       watch.assert(watch.sameBeat(measure.Duration,fragments[index].length),'Fragment durations stay exact');
       watch.assert(watch.sameBeat(measure.AbsoluteTimestamp,fragments[index].at,watch.origin),'Fragment model time is the unchanged source time');
     }
-    return {keys,internalLines,labels:labels.map(label=>label.text),rows,mapping:window.lastEngraving.mappingStatus()};
+    return {keys,internalLines,sourceLines,labels:labels.map(label=>label.text),rows,mapping:window.lastEngraving.mappingStatus()};
   });
   for(const dark of [false,true]){
     const shown=await renderBinding(score,exported,{fromMeasure:1,toMeasure:2,dark},data);assert.equal(shown.result.mapping.verifiedGlyphCount,4);

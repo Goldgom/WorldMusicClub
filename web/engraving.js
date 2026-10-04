@@ -1,7 +1,7 @@
 /** Optional, offline OSMD presentation adapter. Rust remains the score/timing authority. */
 import {validateEngravingNoteMap,createEngravingNoteBindings,validateEngravingModelTies,restoreSourceBoundPageTies,isAdmittedNativeEngravingSource} from './engraving-note-map.js';
 import {createEngravingProjection,createSourceBoundEngravingFragments, restoreSourceBoundProjectionFractions, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from './engraving-projection.js';
-import {prepareEngravingFragmentLabels} from './engraving-measure-fragments.js';
+import {prepareEngravingFragmentLabels,prepareEngravingFragmentBarlines} from './engraving-measure-fragments.js';
 import {getAppI18n} from './app-locale.js';
 export const ENGRAVING_VERSION = '2.1.3';
 export const ENGRAVING_BUNDLE_SHA256 = '099b2125aef055ca4faae75957037404973f9451544b52d9b3a0b1f788b33581';
@@ -187,7 +187,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
   }
   if (projection && !projection.ok) return result('unsupported', projection.key, i18n);
   const boundIdentity = projection ? {...identity, projection} : identity;
-  let unsubscribeLocale, renderer, mount, observer, frame, bindings=null, expected=null, renderGeneration=0, ready = false, cancelled = false, width = 0;
+  let unsubscribeLocale, renderer, mount, observer, frame, fragmentLayout, bindings=null, expected=null, renderGeneration=0, ready = false, cancelled = false, width = 0;
   const useAnimationFrame = typeof view.requestAnimationFrame === 'function' && typeof view.cancelAnimationFrame === 'function';
   let cancelWait;
   const cancellation = new Promise(resolve => { cancelWait = () => resolve(null); });
@@ -197,6 +197,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     cancelled = true;
     unsubscribeLocale?.();
     bindings?.dispose();bindings=null;expected=null;
+    fragmentLayout?.dispose?.();fragmentLayout=null;
     cancelWait();
     observer?.disconnect();
     cancelFrame();
@@ -280,6 +281,10 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     if(checked.options.compactHeader){rules.PageTopMargin=1;rules.PageTopMarginNarrow=1;}
     renderer.Zoom = checked.options.zoom;
     renderer.updateGraphic();
+    if (projection?.kind === 'source-bound-measure-fragments-v1') {
+      fragmentLayout = prepareEngravingFragmentBarlines(renderer, projection, identity.score, ENGRAVING_LIMITS, view.opensheetmusicdisplay);
+      if (!fragmentLayout.ok) { state.dispose(); return result('unsupported', 'projection', i18n); }
+    }
     renderer.render();
     if (!isCurrent()) return result('cancelled', 'cancelled', i18n);
     if (!mount.querySelector('svg')) { state.dispose(); return result('error', 'noStaff', i18n); }

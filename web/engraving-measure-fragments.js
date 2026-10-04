@@ -268,3 +268,62 @@ export function prepareEngravingFragmentLabels(sheet, projection, score, limits)
   for (const [index, measure] of sheet.SourceMeasures.entries()) measure.ImplicitMeasure = projection.measureFragments[index].suppress_measure_number;
   return {ok: true};
 }
+
+/** Keep source-proved internal boundaries invisible after each OSMD layout. */
+export function prepareEngravingFragmentBarlines(renderer, projection, score, limits, engine) {
+  const sheet = renderer?.Sheet, graphic = renderer?.GraphicSheet;
+  const checked = validateEngravingMeasureFragments(sheet, projection, score, limits);
+  if (!checked.ok) return checked;
+  const none = engine?.SystemLinesEnum?.None, double = engine?.SystemLinesEnum?.DoubleThin, end = engine?.SystemLinePosition?.MeasureEnd;
+  if (![none, double, end].every(Number.isSafeInteger) || typeof graphic?.reCalculate !== 'function') return {ok: false, key: 'fragmentProjection'};
+  const internal = new Set(projection.measureFragments.filter(fragment => !fragment.ends_source_measure).map(fragment => sheet.SourceMeasures[fragment.fragment_index]));
+  const recalculate = graphic.reCalculate, own = Object.getOwnPropertyDescriptor(graphic, 'reCalculate');
+  const validate = () => {
+    if (renderer.Sheet !== sheet || renderer.GraphicSheet !== graphic || !validateEngravingMeasureFragments(sheet, projection, score, limits).ok || !Array.isArray(graphic.MeasureList) || graphic.MeasureList.length !== sheet.SourceMeasures.length) fail();
+    for (const [index, row] of graphic.MeasureList.entries()) if (!Array.isArray(row) || !row.length || row.some(measure => measure?.parentSourceMeasure !== sheet.SourceMeasures[index])) fail();
+    for (const source of internal) if (source.endingBarStyleEnum !== none) fail();
+  };
+  try { validate(); } catch { return {ok: false, key: 'fragmentProjection'}; }
+  const wrapped = function (...args) {
+    if (this !== graphic) fail();
+    validate();
+    const result = Reflect.apply(recalculate, this, args);
+    validate();
+    const edits = [];
+    // OSMD 2.1.3 MusicSystemBuilder chooses DoubleThin before checking the
+    // explicit XML `none` when the next interval has a key instruction. Repair
+    // this instance's completed layout before its SVG drawer runs. Genuine
+    // source boundaries, key instructions, notes and clocks are untouched.
+    for (const row of graphic.MeasureList) {
+      if (!internal.has(row[0].parentSourceMeasure)) continue;
+      const staves = new Set(row.map(measure => measure.getVFStave?.()));
+      for (const measure of row) {
+        const stave = measure.getVFStave?.(), bars = stave?.getModifiers?.().filter(modifier => modifier.getCategory?.() === 'barlines' && modifier.getPosition?.() === modifier.constructor.Position?.END);
+        if (bars?.length !== 1 || typeof stave.setEndBarType !== 'function' || !Array.isArray(measure.connectors)) fail();
+        const bar = bars[0], types = bar.constructor.type;
+        if (!Number.isSafeInteger(types?.NONE) || ![types.NONE, types.DOUBLE].includes(bar.type)) fail();
+        edits.push(() => stave.setEndBarType(types.NONE));
+        for (const connector of measure.connectors) {
+          const types = connector.constructor.type;
+          if (!types || !Object.values(types).includes(connector.type)) fail();
+          if (![types.SINGLE_RIGHT, types.BOLD_DOUBLE_RIGHT, types.THIN_DOUBLE].includes(connector.type)) continue;
+          if (connector.type !== types.THIN_DOUBLE || !staves.has(connector.top_stave) || !staves.has(connector.bottom_stave) || typeof connector.setType !== 'function') fail();
+          edits.push(() => connector.setType(types.NONE));
+        }
+      }
+    }
+    if (!Array.isArray(graphic.MusicPages)) fail();
+    for (const page of graphic.MusicPages) for (const system of page.MusicSystems || []) for (const line of system.SystemLines || []) {
+      if (line.linePosition !== end || !internal.has(line.topMeasure?.parentSourceMeasure)) continue;
+      if (![none, double].includes(line.lineType) || !Number.isFinite(line.PositionAndShape?.BorderRight) || line.bottomMeasure && line.bottomMeasure.parentSourceMeasure !== line.topMeasure.parentSourceMeasure) fail();
+      edits.push(() => { line.lineType = none; line.PositionAndShape.BorderRight = 0; });
+    }
+    for (const edit of edits) edit();
+    return result;
+  };
+  graphic.reCalculate = wrapped;
+  return {ok: true, dispose() {
+    if (graphic.reCalculate !== wrapped) return;
+    if (own) Object.defineProperty(graphic, 'reCalculate', own); else delete graphic.reCalculate;
+  }};
+}
