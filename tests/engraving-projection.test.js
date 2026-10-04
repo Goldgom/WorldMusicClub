@@ -502,3 +502,13 @@ test('page tie recovery refuses forged boundaries, altered membership and existi
   assert.equal(unbound.identity.ok,false,'A copied/native-looking page cannot grant ordinary score input boundary privileges');
  }finally{if(previousSelf===undefined)delete globalThis.self;else globalThis.self=previousSelf;}
 });
+
+test('exact excerpt decomposition also retains a nonstandard breve on the bounded grid',()=>{
+ const fixture=JSON.parse(readFileSync(new URL('./fixtures/exact-rhythm-excerpt.json',import.meta.url),'utf8')).long_type;
+ const identity=exported=>({score:fixture.score,noteMap:exported.note_id_map,partIdMap:exported.part_id_map,voiceIdMap:exported.voice_id_map});
+ assert.equal(validateEngravingInput(fixture.unsplit.xml,{identity:identity(fixture.unsplit)},XmlParser).code,'engraving_exactRhythm');
+ const {checked,projection}=project({xml:fixture.exported.xml,identity:identity(fixture.exported)},{fromMeasure:1,toMeasure:1});assert.equal(projection.ok,true);
+ const sheet=read(projection),validated={...checked.identity,projection};assert.deepEqual(validateEngravingProjectionModel(sheet,projection,fixture.score,ENGRAVING_LIMITS),{ok:true});
+ const matched=matchEngravingModel({Sheet:sheet},validated);assert.deepEqual(matched.diagnostics,[]);assert.equal(matched.matches.filter(item=>item.note).length,2);
+ assert.deepEqual(validateEngravingModelTies({Sheet:sheet},validated),{ok:true});
+});

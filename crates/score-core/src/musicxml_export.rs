@@ -991,11 +991,14 @@ fn rhythm_spelling(duration: i64, divisions: i64) -> Result<Rhythm, String> {
 // exact standard piece whose written numerator keeps that same grid bounded.
 // This adds ordinary adjacent ties, never rounded timing or extra attacks.
 fn excerpt_rhythm_piece(duration: i64, divisions: i64) -> Result<i64, String> {
-    if divisions > 2048
-        || rhythm_spelling(duration, divisions)?
-            .ratio
-            .is_none_or(|(actual, normal)| actual <= 2048 && normal <= 2048)
-    {
+    let spelling = rhythm_spelling(duration, divisions)?;
+    let needs_split = spelling.ratio.is_some_and(|(actual, normal)| {
+        actual > 2048
+            || normal > 2048
+            || ((actual > 128 || normal > 128)
+                && matches!(spelling.name, "breve" | "long" | "maxima"))
+    });
+    if divisions > 2048 || !needs_split {
         return Ok(duration);
     }
     [4, 2, 1]
@@ -1294,7 +1297,32 @@ mod tests {
             .descendants()
             .filter(|n| n.has_tag_name("actual-notes") || n.has_tag_name("normal-notes"))
             .all(|n| n.text().unwrap().parse::<u32>().unwrap() <= 2048));
-        let fixture = serde_json::json!({"score":original,"exported":excerpt,"unsplit":unchanged_full_export});
+        // A reduced1536:977 ratio fits the component cap but a nonstandard
+        // breve is outside the renderer's extended-type contract.
+        let mut long_type = score();
+        long_type.title = "Original isolated long written type".into();
+        long_type.source = None;
+        long_type.measures.truncate(1);
+        long_type.measures[0].length = Beat::new(8, 1);
+        long_type.meters[0].numerator = 8;
+        long_type.parts[0].notes = vec![note(
+            "original-long-C",
+            Beat::ZERO,
+            Beat::new(977, 192),
+            Some(("C", 0, 4)),
+            "1",
+            1,
+        )];
+        let long_unsplit = export_musicxml(&long_type).unwrap();
+        assert!(long_unsplit.xml.contains("<type>breve</type>"));
+        let long_exported =
+            export_musicxml_excerpt(&long_type, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+        assert!(!long_exported.xml.contains("<type>breve</type>"));
+        assert_eq!(
+            sounding(long_type.clone()),
+            sounding(import_musicxml(&long_exported.xml).unwrap().0)
+        );
+        let fixture = serde_json::json!({"score":original,"exported":excerpt,"unsplit":unchanged_full_export,"long_type":{"score":long_type,"exported":long_exported,"unsplit":long_unsplit}});
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/fixtures/exact-rhythm-excerpt.json");
         if std::env::var_os("WMH_UPDATE_EXACT_RHYTHM_FIXTURE").is_some() {

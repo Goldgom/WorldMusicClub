@@ -1305,7 +1305,7 @@ test('verified expected bounds follow pane scrolling without rebinding or moving
 test('native incoming continuation and bounded exact-rhythm pieces own real SVG tie curves',options,async()=>{
  const incoming=JSON.parse(await readFile(new URL('./fixtures/basic-key-open-tie-page.json',import.meta.url),'utf8'));
  const exact=JSON.parse(await readFile(new URL('./fixtures/exact-rhythm-excerpt.json',import.meta.url),'utf8'));
- const cases=[{name:'incoming-native-page',score:incoming.response.page.score,exported:incoming.response.page.musicxml,fixture:incoming,curves:1},{name:'exact-excerpt-pieces',score:exact.score,exported:exact.exported,fixture:null,curves:2}],evidence=[];
+ const cases=[{name:'incoming-native-page',score:incoming.response.page.score,exported:incoming.response.page.musicxml,fixture:incoming,curves:1},{name:'exact-excerpt-pieces',score:exact.score,exported:exact.exported,fixture:null,curves:2},{name:'long-type-excerpt-pieces',score:exact.long_type.score,exported:exact.long_type.exported,fixture:null,curves:1}],evidence=[];
  for(const item of cases){
   const before=JSON.stringify(item),shown=await renderBinding(item.score,item.exported,{fromMeasure:1,toMeasure:item.score.measures.length},item.fixture);
   assert.equal(shown.result.mapping.verifiedGlyphCount,item.exported.note_id_map.segments.length);
