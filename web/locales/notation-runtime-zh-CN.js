@@ -1,4 +1,31 @@
 export default Object.freeze({
+  "notationRuntime.basicFollowChoice": "跟随需要可用的来源谱面页。请先选择显示拍号或声部，再开启跟随。",
+  "notationRuntime.basicFollowUnavailable": "此视图暂不支持精确翻页跟随；来源音符、手动翻页和练习时序保持不变。",
+
+  "notationRuntime.basicPageLimit": "此页包含超过 2,048 次来源触发。请选择更少的小节或其他声部；来源触发未被删除。",
+  "notationRuntime.basicRenderingUnavailable": "当前制谱器无法精确绘制此页。来源事件保持完整；可选择其他声部、减少每页小节数，或使用简化音高／简谱参考。",
+  "notationRuntime.basicSourceCoverage": "完整来源共 {source} 次触发，所选声部 {part} 次。",
+
+  "notationRuntime.basicCoverage": "完整来源共 {source} 次触发，所选声部 {part} 次。本页范围内 {window} 次触发，显示 {rendered} 个正时长按键区间，列出 {unresolved} 个未确定结束及 {instantaneous} 个瞬时触发，{continuations} 个区间跨越分页边界。",
+  "notationRuntime.basicAttackDetails": "未作为时值音符绘制的来源触发",
+  "notationRuntime.basicAttack": "{id} · MIDI 按键 {key} · 来源拍点 {beat} · {state}",
+  "notationRuntime.basicUnresolved": "结束未确定",
+  "notationRuntime.basicInstantaneous": "瞬时结束",
+
+  "notationRuntime.basicPercussion": "此声部包含鼓类按键编号。需要明确的鼓谱映射才能生成五线谱；所有来源触发均保留在歌曲包中。",
+  "notationRuntime.basicEmpty": "请求的范围内没有可显示的小节；全部来源事件仍保留在歌曲包中。",
+
+  "notationRuntime.basicMeterLabel": "来源拍号未确定时使用的显示拍号",
+  "notationRuntime.basicSourceMeter": "使用来源拍号",
+  "notationRuntime.basicNeedsMeter": "来源没有明确的起始拍号。请选择来源拍号未确定时使用的显示拍号，或使用简化音高／简谱参考。此选择不会添加来源拍号事件，也不会改变练习时序。",
+  "notationRuntime.basicExportUnavailable": "此 MIDI 按键投影暂不支持整曲 MusicXML 导出。五线谱显示绑定来源的一页；请导出完整歌曲包以保留所有事件和声部。",
+  "notationRuntime.basicPageInvalid": "MIDI 按键谱面页与已保存的来源或所选声部不一致。",
+  "notationRuntime.basicView": "MIDI 按键视图；来源的实际音高和鼓键映射仍未确定。",
+  "notationRuntime.basicDisplayMeter": "显示拍号是明确选择的视图设置，不是来源事件。",
+  "notationRuntime.basicAuthoredMeter": "小节线依据明确的来源拍号。",
+  "notationRuntime.basicDefaultTempo": "未生效来源速度的区间使用已声明的 SMF 默认速度时钟。",
+  "notationRuntime.basicUnknownKey": "来源调号未确定；本视图不声称来源包含调号。",
+
   "notationRuntime.input": "制谱需要 MusicXML 文本，不能使用网址或文件。",
   "notationRuntime.xmlLimit": "制谱支持的 MusicXML 大小上限为 8 MiB。",
   "notationRuntime.entities": "不接受 DTD、实体或处理指令。请使用标准 MusicXML 导出。",

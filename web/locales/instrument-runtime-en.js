@@ -1,4 +1,6 @@
 export default Object.freeze({
+  "piano.runtime.message.piano_basic_keys": "Hand/finger guidance is unavailable for nominal MIDI key projections. Key practice and complete source export remain available.",
+  "guitar.runtime.message.guitar_basic_keys": "Hand/finger guidance is unavailable for nominal MIDI key projections. Key practice and complete source export remain available.",
   "instrument.originalLabel": "Original technical details",
   "instrument.original": "Original technical details [{code}]: {details}",
   "instrument.error": "Guidance is unavailable. Review the original technical details and retry.",

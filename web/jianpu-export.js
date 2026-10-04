@@ -1,3 +1,4 @@
+import {isBasicKeysSong} from './clean-song-package.js';
 import {getAppI18n} from './app-locale.js';
 import {createReviewLocale, reviewError} from './review-locale.js';
 /** Rust supplies every token; this guard only checks complete canonical note identity coverage. */
@@ -9,7 +10,7 @@ export function validateJianpuExport(result, score) {
   if(seen.size!==expected.size)fail();
   return{sourceNotes:seen.size,gapRests:gaps};
 }
-export function setupJianpuExport({getScore,pausePlayback,api,document=globalThis.document,i18n=getAppI18n(document)}) {
+export function setupJianpuExport({getScore,getCleanSong=()=>null,pausePlayback,api,document=globalThis.document,i18n=getAppI18n(document)}) {
   const $=id=>document.getElementById(id);
   const dialog=document.createElement('dialog');dialog.id='jianpu-export';dialog.className='review-dialog jianpu-export';dialog.setAttribute('aria-labelledby','jianpu-export-title');
   dialog.innerHTML=`<div class="review-header"><div><span class="eyebrow"><span data-review-i18n="review.export.eyebrow"></span></span><h2 id="jianpu-export-title"><span data-review-i18n="review.export.title"></span></h2></div><button id="jianpu-export-close" class="button ghost" aria-label="" data-review-i18n-aria-label="review.export.closeAria">✕</button></div>
@@ -28,7 +29,7 @@ export function setupJianpuExport({getScore,pausePlayback,api,document=globalThi
   for(const id of ['jianpu-export-close','jianpu-export-cancel'])$(id).addEventListener('click',close);
   dialog.addEventListener('cancel',event=>{event.preventDefault();close()});
   $('export-jianpu').addEventListener('click',async()=>{
-    const score=getScore();if(!score)return;
+    const score=getScore();if(!score||isBasicKeysSong(getCleanSong()))return;
     pausePlayback();controller?.abort();controller=new AbortController();const current=++generation;const signal=controller.signal;prepared=null;
     $('jianpu-export-text').value='';$('jianpu-export-map').replaceChildren();$('jianpu-export-diagnostics').replaceChildren();display('jianpu-export-map-summary',m('review.export.mappingPending'));display('jianpu-export-map-limit','');$('jianpu-export-download').disabled=true;$('jianpu-export-status').classList.remove('error');display('jianpu-export-status',m('review.export.pending'));dialog.showModal();
     try{

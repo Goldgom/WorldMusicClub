@@ -132,6 +132,15 @@ export function setupNotationFollowing({api,getContext,getPlayback,view,prepareN
     const context=getContext();
     if(target!==context.score||timeline!==context.timeline){scoreChanged();target=context.score;timeline=context.timeline}
     if(!view.isActive()||!context.score||!context.timeline)return;
+    const direct=view.followPosition?.(position,running,written);
+    if(direct){
+      if(direct.status==='ready'){
+        const occurrence=direct.occurrence,reveal=view.revealExpectedWrittenNotes?.(occurrence.id,occurrence.source_measure_index,written);
+        const key=`${occurrence.id}:${direct.ready}:${running}:${reveal?.status}`;if(key===last)return;last=key;
+        presentation={occurrence,total:direct.total,ready:direct.ready,revealStatus:reveal?.status,running,announce:!running};redrawLocale();
+      }else{const key='direct-'+direct.status;if(last!==key){last=key;message(({pending:'followPreparing',choice:'basicFollowChoice',end:position<0?'countIn':'end',unavailable:'basicFollowUnavailable'})[direct.status]||'basicFollowUnavailable');}}
+      return;
+    }
     if(!index){prepare();return}
     const occurrence=index.at(position);
     if(!occurrence){const key=position<0?'count-in':'end';if(last!==key){last=key;message(position<0?'countIn':'end')}return}
@@ -144,6 +153,7 @@ export function setupNotationFollowing({api,getContext,getPlayback,view,prepareN
     if(pending)return pending;
     const context=getContext();
     if(!checkbox.checked||!context.score||!context.timeline||!view.isActive())return Promise.resolve(null);
+    if(view.usesPositionFollowing?.()){const playback=getPlayback();tick(playback.position,playback.running,playback.written);return Promise.resolve(null);}
     if(index&&target===context.score&&timeline===context.timeline){last='';const playback=getPlayback();tick(playback.position,playback.running,playback.written);return Promise.resolve(index)}
     const current=++generation;controller?.abort();controller=new AbortController();const signal=controller.signal;
     target=context.score;timeline=context.timeline;message('followPreparing');

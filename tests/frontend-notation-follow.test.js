@@ -1,3 +1,6 @@
+import {readFileSync} from 'node:fs';
+import {prepareCleanSong} from '../web/clean-song-package.js';
+import {basicKeyWrittenAt} from '../web/basic-key-notation.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createI18n} from '../web/i18n.js';
@@ -190,4 +193,21 @@ test('known follow-map failure retains its explicit original cause across locale
   assert.equal(env.calls.length,1);assert.equal(env.pages.length,0);assert.equal(error.cause,cause);assert.equal(cause.message,detail);
   assert.deepEqual(i18n.getReports(),[]);
  }finally{env.restore()}
+});
+
+
+test('basic source-clock page following retains the shared switch without consulting an empty generic measure map',async()=>{
+ const data=JSON.parse(readFileSync(new URL('./fixtures/basic-keys-notation-follow.json',import.meta.url),'utf8')),open=data.open;
+ const song=prepareCleanSong(`native:song-${open.clean_package.content_sha256}`,open.clean_package,null),context={score:song.notation,timeline:song.compilation.timeline};
+ const previous={document:globalThis.document,window:globalThis.window},{document,window}=parseHTML('<input id="engraving-follow" type="checkbox"><p id="engraving-follow-status"></p>');globalThis.document=document;globalThis.window=window;
+ let position=0,selected=0,calls=0;const seen=[];
+ const view={isActive:()=>true,usesPositionFollowing:()=>true,followPosition(at){calls++;const page=data.pages[selected].response.page,notes=context.timeline.notes.filter(note=>note.start_ms<=at&&at<note.start_ms+note.duration_ms),written=basicKeyWrittenAt(song,page,at,notes);return written?{status:'ready',occurrence:written.occurrence,total:page.total_measures,ready:true}:{status:'pending'};},revealExpectedWrittenNotes(id,index){seen.push(index);return{status:'ready'};}};
+ const i18n=createI18n({locale:'en'}),follow=setupNotationFollowing({document,i18n,getContext:()=>context,getPlayback:()=>({position,running:false}),view,prepareNavigation:()=>assert.fail('Basic following must not request generic empty-measure navigation')});
+ try{
+  await follow.prepare();assert.equal(follow.isEnabled(),true);assert.equal(seen.at(-1),0);assert.match(document.getElementById('engraving-follow-status').textContent,/source 1\/3/i);assert.deepEqual(context.score.measures,[]);
+  selected=1;position=2000;follow.tick(position,true);assert.equal(seen.at(-1),1);assert.equal(follow.isEnabled(),true);
+  selected=2;position=6500;follow.tick(position,true);assert.equal(seen.at(-1),2);
+  follow.suspend();const stopped=calls;selected=0;position=0;follow.tick(position,false);assert.equal(calls,stopped);
+  document.getElementById('engraving-follow').checked=true;await follow.prepare();assert.equal(seen.at(-1),0);assert.equal(follow.isEnabled(),true);assert.equal(context.timeline.notes[0].start_ms,500);
+ }finally{follow.suspend();for(const[key,value]of Object.entries(previous))if(value===undefined)delete globalThis[key];else globalThis[key]=value;}
 });

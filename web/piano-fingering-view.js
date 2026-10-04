@@ -1,3 +1,4 @@
+import {fingeringUnavailable} from './fingering-source.js';
 import {getAppI18n} from './app-locale.js';
 import {midiName,pitchMidi} from './music.js';
 import {pianoKeyboardRange,pianoSourceNotes,setupPianoFingering} from './piano-fingering.js';
@@ -86,7 +87,7 @@ export function setupPianoFingeringView({document,api,getContext,onChange=()=>{}
       if(signature!==stateSignature){
         stateSignature=signature;$('piano-fingering-status').textContent=statusError?errorText(statusError):state.plan?planText(state.plan):t('message.'+(state.messageCode||'piano_fresh'));$('piano-fingering-status').dataset.phase=state.phase;
         const profile=context?.profile,range=profile?.kind==='piano'?pianoKeyboardRange(profile):null;$('piano-fingering-keyboard').textContent=range?t('keyboard',{count:profile.key_count,low:midiName(range.low),high:midiName(range.high)}):t('choosePiano');
-        $('piano-fingering-replan').disabled=!context?.score||Boolean(context?.dirty)||state.phase==='loading';$('piano-fingering-discard').disabled=!state.draftDirty;
+        $('piano-fingering-replan').disabled=fingeringUnavailable(context)||!context?.score||Boolean(context?.dirty)||state.phase==='loading';$('piano-fingering-discard').disabled=!state.draftDirty;
         $('piano-lock-clear').disabled=!state.settings.locks.length;
         $('piano-source-locks').replaceChildren(...state.settings.locks.map(lock=>{const li=document.createElement('li');li.textContent=t('lock',{source:lock.source_note_id,hand:lock.hand?handName(lock.hand,i18n):t('automaticHand'),finger:lock.finger?i18n.t('instrument.finger',{finger:lock.finger}):t('automaticFinger')});return li;}));
         const plan=state.plan;$('piano-fingering-search').textContent=plan?t('search',{version:plan.version,algorithm:plan.algorithm,sources:plan.source_occurrence_count,targets:plan.physical_target_count===null?i18n.t('instrument.unknown'):i18n.formatNumber(plan.physical_target_count),beam:plan.beam_width,choices:plan.explored_choices,maximum:plan.max_expansions,pruning:t(plan.beam_pruned?'pruned':'notPruned'),cost:plan.objective_cost===null?i18n.t('instrument.unresolved'):i18n.formatNumber(plan.objective_cost),complete:t(plan.complete?'completeModel':'noPartial')}):t('fresh');

@@ -1,5 +1,7 @@
 const plain = Object.freeze({params: Object.freeze({})});
 export default Object.freeze({
+  "shell.openScore": Object.freeze({params:Object.freeze({})}),
+  "shell.inspection": Object.freeze({params:Object.freeze({})}),
   "performance.scoreBackground": plain,
   "performance.scoreOpacity": plain,
   "performance.scoreOptions": plain,

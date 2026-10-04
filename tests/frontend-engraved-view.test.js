@@ -3,14 +3,17 @@ import assert from 'node:assert/strict';
 import {createI18n} from '../web/i18n.js';
 import {setupEngravedView} from '../web/engraved-view.js';
 import {fixture} from './frontend-fixtures.js';
+import {readFileSync} from 'node:fs';
+import {prepareCleanSong} from '../web/clean-song-package.js';
+import {basicKeyWrittenAt} from '../web/basic-key-notation.js';
 import {planEngravingReveal} from '../web/engraving-reveal.js';
 const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return{promise,resolve}};
-function environment({loadAdapter,onManualNavigation,isVisible,observeResize=false,i18n=createI18n({locale:'en'})}={}){
+function environment({loadAdapter,onManualNavigation,isVisible,getCleanSong,observeResize=false,i18n=createI18n({locale:'en'})}={}){
  const prior=Object.fromEntries(['document','window','MutationObserver','ResizeObserver','fetch'].map(key=>[key,globalThis[key]]));const elements=new Map(),calls=[],visible=[],failures=[],resizeObservers=[],windowListeners=new Map();let score=null,pauses=0;const failure=deferred();
  const element=id=>{if(!elements.has(id))elements.set(id,{textContent:'',hidden:true,value:'',children:[],listeners:new Map(),addEventListener(type,handler){this.listeners.set(type,handler)},replaceChildren(){this.children=[]},append(item){this.children.push(item)}});return elements.get(id)};
- globalThis.document={getElementById:element,createElement:()=>({}),documentElement:{dataset:{theme:'light'}}};globalThis.window={addEventListener(type,handler){if(!windowListeners.has(type))windowListeners.set(type,[]);windowListeners.get(type).push(handler)}};globalThis.MutationObserver=class{observe(){}};globalThis.fetch=(_,options)=>{const response=deferred();calls.push({options,...response});return response.promise};
+ globalThis.document={getElementById:element,createElement:()=>({}),documentElement:{dataset:{theme:'light'}}};globalThis.window={addEventListener(type,handler){if(!windowListeners.has(type))windowListeners.set(type,[]);windowListeners.get(type).push(handler)}};globalThis.MutationObserver=class{observe(){}};globalThis.fetch=(path,options)=>{const response=deferred();calls.push({path,options,...response});return response.promise};
  if(observeResize)globalThis.ResizeObserver=class{constructor(callback){this.callback=callback;this.observed=[];resizeObservers.push(this)}observe(element){this.observed.push(element)}disconnect(){this.observed=[]}};
- const view=setupEngravedView({i18n,getScore:()=>score,getPracticePart:()=>null,isVisible,pausePlayback(){pauses++},onVisibility:value=>visible.push(value),onFallback(){failures.push(element('engraving-fallback').textContent);failure.resolve()},notice(){},loadAdapter,onManualNavigation});
+ const view=setupEngravedView({i18n,getScore:()=>score,getCleanSong,getPracticePart:()=>null,isVisible,pausePlayback(){pauses++},onVisibility:value=>visible.push(value),onFallback(){failures.push(element('engraving-fallback').textContent);failure.resolve()},notice(){},loadAdapter,onManualNavigation});
  return{view,elements,calls,visible,failures,failure,resizeObservers,windowListeners,get pauses(){return pauses},setScore(next=structuredClone(fixture)){score=next;view.updateScore();return score},close(){view.hide();for(const[key,value]of Object.entries(prior))if(value===undefined)delete globalThis[key];else globalThis[key]=value}};
 }
 test('the first score requests engraved presentation by default, without starting playback',()=>{const env=environment();try{assert.equal(env.calls.length,0);env.setScore();assert.equal(env.calls.length,1);assert.equal(env.view.isActive(),true);assert.equal(env.visible.at(-1),true);assert.equal(JSON.parse(env.calls[0].options.body).id,fixture.id);env.view.updateScore();assert.equal(env.calls.length,1,'Ordinary UI refreshes must not re-render an unchanged score');}finally{env.close()}});
@@ -156,4 +159,37 @@ test('manual engraved pages survive switching away and back without pausing play
   env.setScore(score);env.elements.get('engraving-next').listeners.get('click')();assert.equal(env.view.navigationState().from,9);
   env.view.hide({remember:true});env.view.show();assert.equal(env.view.navigationState().from,9);assert.equal(env.pauses,0);
  }finally{env.close()}
+});
+
+
+test('basic-key pages bind saved identity and keep an explicit missing-meter choice without a legacy export request',async()=>{
+ const open=JSON.parse(readFileSync(new URL('./fixtures/basic-keys-native-open.json',import.meta.url),'utf8')),data=JSON.parse(readFileSync(new URL('./fixtures/basic-keys-notation-page.json',import.meta.url),'utf8'));
+ const song=prepareCleanSong(`native:song-${open.clean_package.content_sha256}`,open.clean_package,null),renders=[];
+ const env=environment({getCleanSong:()=>song,loadAdapter:async()=>({disposeEngravedStaff(){},async renderEngravedStaff(_container,_xml,options){renders.push(options);return{ok:true,metadata:{fromMeasure:1,toMeasure:1},dispose(){}};}})});
+ try{
+  env.setScore(song.notation);assert.equal(env.calls[0].path,'/api/library/basic-keys/notation');const initial=JSON.parse(env.calls[0].options.body);assert.equal(initial.settings.display_meter,null);assert.equal(JSON.stringify(initial).includes('notes'),false);assert.ok(Buffer.byteLength(env.calls[0].options.body)<1024);
+  env.calls[0].resolve({ok:true,json:async()=>data.missing});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(renders.length,0);assert.equal(env.view.isActive(),true);assert.match(env.elements.get('engraving-status').textContent,/no unambiguous opening meter/);assert.equal(env.elements.get('export-musicxml').disabled,true);
+  env.elements.get('engraving-basic-meter').value='4/4';env.elements.get('engraving-basic-meter').listeners.get('change')();assert.equal(env.calls.length,2);assert.deepEqual(JSON.parse(env.calls[1].options.body),data.request);
+  env.calls[1].resolve({ok:true,json:async()=>data.ready});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(renders.length,1);assert.equal(renders[0].identity.score.parts.length,1);assert.deepEqual(song.notation.measures,[]);assert.match(env.elements.get('engraving-basic-provenance').textContent,/explicit view choice/);assert.match(env.elements.get('engraving-basic-provenance').textContent,/SMF default/);assert.equal(env.elements.get('engraving-basic-attack-list').children.length,2);
+  assert.deepEqual(env.failures,[]);assert.ok(env.calls.every(call=>call.path==='/api/library/basic-keys/notation'));
+ }finally{env.close();}
+});
+
+test('basic-key follow uses original source clock pages for leading silence, late tempo, boundary ties, seek and restart',async()=>{
+ const data=JSON.parse(readFileSync(new URL('./fixtures/basic-keys-notation-follow.json',import.meta.url),'utf8')),open=data.open;
+ const song=prepareCleanSong(`native:song-${open.clean_package.content_sha256}`,open.clean_package,null),rendered=[],expected=[];
+ const env=environment({getCleanSong:()=>song,loadAdapter:async()=>({disposeEngravedStaff(){},async renderEngravedStaff(_container,_xml,options){rendered.push(options);return{ok:true,metadata:{fromMeasure:1,toMeasure:1},dispose(){},mappingStatus:()=>({status:'ready',diagnostics:[]}),setExpectedWrittenNotes:value=>{expected.push(value);return true;},clearExpectedWrittenNotes:()=>true};}})});
+ try{
+  env.setScore(song.notation);env.elements.get('engraving-page-size').value='1';env.elements.get('engraving-page-size').listeners.get('change')();assert.equal(env.calls[0].options.signal.aborted,true);
+  env.calls[1].resolve({ok:true,json:async()=>data.pages[0].response});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(env.view.followPosition(0).status,'ready');assert.equal(env.calls.length,2);assert.deepEqual(basicKeyWrittenAt(song,env.view.basicPage(),100,[]).entries,[],'Leading silence belongs to the first source-clock page');
+  const first=song.compilation.timeline.notes[0];assert.equal(first.start_ms,500);assert.equal(basicKeyWrittenAt(song,env.view.basicPage(),500,[first]).entries[0].sourceNoteId,first.id);
+  for(const item of data.pages.slice(1)){
+   const position=item.request.settings.position_ms;assert.equal(env.view.followPosition(position).status,'pending');const call=env.calls.at(-1),request=JSON.parse(call.options.body);assert.equal(request.settings.position_ms,position);assert.ok(Buffer.byteLength(call.options.body)<1024);call.resolve({ok:true,json:async()=>item.response});await new Promise(resolve=>setImmediate(resolve));
+   const followed=env.view.followPosition(position);assert.equal(followed.status,'ready');assert.equal(followed.measure.source_measure_index,item.response.page.first_measure);assert.equal(env.view.navigationState().from,item.response.page.first_measure+1);assert.equal(rendered.at(-1).fromMeasure,1);assert.equal(rendered.at(-1).identity.score.parts[0].notes[0].id,first.id);assert.equal(env.view.setExpectedWrittenNotes({sourceNoteIds:[first.id],sourceMeasureIndex:item.response.page.first_measure}),true);assert.deepEqual(expected.at(-1),{sourceNoteIds:[first.id],sourceMeasureIndex:0});
+  }
+  assert.equal(env.view.followPosition(0).status,'ready','Restart stays within the first clock page after the backward seek');assert.deepEqual(song.notation.measures,[]);assert.deepEqual(env.failures,[]);
+ }finally{env.close();}
 });

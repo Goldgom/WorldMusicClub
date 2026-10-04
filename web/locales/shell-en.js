@@ -1,4 +1,7 @@
 export default Object.freeze({
+  "shell.openScore": "Open score",
+  "shell.inspection": "Score inspection",
+
   "performance.scoreBackground": "Score background",
   "performance.scoreOpacity": "Opacity",
   "performance.scoreOptions": "Score options",

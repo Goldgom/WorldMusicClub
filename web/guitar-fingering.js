@@ -1,5 +1,5 @@
 import {equivalentJson} from './adaptation-view.js';
-import {fingeringSource,currentFingeringSource,fingeringRequest,fingeringResponse} from './fingering-source.js';
+import {fingeringUnavailable,BASIC_KEY_FINGERING_REASON,fingeringSource,currentFingeringSource,fingeringRequest,fingeringResponse} from './fingering-source.js';
 
 const codedError=(code,message)=>Object.assign(new Error(message),{code});
 const STATUSES=new Set(['ready','no_targets','infeasible_under_model','no_plan_found','search_limit','unavailable']);
@@ -120,6 +120,7 @@ export function setupGuitarFingering({api,getContext,onChange=()=>{}}){
   }
   function prepare({retry=false}={}){
     const context=synchronize();
+    if(fingeringUnavailable(context)){if(phase!=='unavailable')publish('unavailable',BASIC_KEY_FINGERING_REASON,'guitar_basic_keys');return Promise.resolve(null);}
     if(!context?.score||!context.timeline||context.profile?.kind!=='guitar'||context.dirty){
       if(phase!=='inactive')publish('inactive',context?.dirty?'Apply edited instrument settings before planning.':'Choose Guitar to prepare a recommended phrase.',context?.dirty?'guitar_dirty':'guitar_inactive');
       return Promise.resolve(null);

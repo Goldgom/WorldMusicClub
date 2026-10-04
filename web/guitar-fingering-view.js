@@ -1,3 +1,4 @@
+import {fingeringUnavailable} from './fingering-source.js';
 import {midiName} from './music.js';
 import {getAppI18n} from './app-locale.js';
 import {validateGuitarPlanningScope} from './guitar-fingering.js';
@@ -180,7 +181,7 @@ export function setupGuitarFingeringView({document,controller,getContext,onRefre
         li.textContent=raw(diagnostic)+identity;return li;
       }));
     }
-    const enabled=Boolean(context?.score&&context?.timeline&&profile?.kind==='guitar'&&!context.dirty);
+    const enabled=!fingeringUnavailable(context)&&Boolean(context?.score&&context?.timeline&&profile?.kind==='guitar'&&!context.dirty);
     phraseFields.disabled=!enabled;$('guitar-phrase-revert').disabled=!state.scopeDraft;$('guitar-phrase-apply').disabled=!enabled;
     $('guitar-replan').disabled=!enabled||state.phase==='loading'||state.scopeDraft;
     $('guitar-lock-fields').disabled=!enabled||!sources.length;

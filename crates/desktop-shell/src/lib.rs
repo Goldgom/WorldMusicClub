@@ -2,6 +2,7 @@
 //! service; renderer requests never provide filesystem paths or process commands.
 pub mod acceptance;
 mod acceptance_publication;
+mod native_basic_keys;
 mod native_fingering;
 pub mod native_library;
 pub mod song_pack;

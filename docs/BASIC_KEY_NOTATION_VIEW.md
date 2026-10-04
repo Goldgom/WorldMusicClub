@@ -90,3 +90,43 @@ Original tests cover meter changes inside bars, carried and interior key changes
 exact unusual tempo, long-note boundary ties, missing and conflicting metadata,
 explicit display choices, zero/unresolved attacks, 41,900-attack source paging,
 density limits, and a distant page in a mathematical 8.192-trillion-measure map.
+
+
+## Native transport and app behavior
+
+`POST /api/library/basic-keys/notation` accepts a small object with `source`
+(`key`, `content_sha256`, `profile`) and `settings` (`NotationRequest`). It loads
+and validates the immutable saved package and checks both identities before
+calling the core page helper. Renderer-supplied scores, timelines and paths are
+rejected. The response repeats the binding as `source` and returns `page`.
+Existing library transport bounds apply; the page path never reposts the full
+canonical score through an ordinary 8 MiB API.
+
+The app's **Open score** action opens a paused inspection view. A package without
+a proved clock keeps `compilation: null`; no Timeline is manufactured for the
+screen. Playback and assessment remain disabled. Reopening the same saved
+identity keeps the paused take. Selecting a different score is an explicit
+session navigation, as with the existing Start action.
+
+The staff chooser lists every part and displays one bounded part/page. Missing
+or ambiguous source meter requires an explicit display choice; a valid opening
+source meter stays authoritative. Source/default tempo and key provenance are
+labeled. Separate counts and source-ID lists disclose unresolved/instantaneous
+attacks, percussion mapping limitations and page continuations. Page-limit and
+rendering-unavailable results keep the controls visible so another part or
+smaller page can be selected.
+
+Shared Follow uses `position_ms` only when the current position leaves the
+loaded page. The Rust response supplies source-clock measure boundaries;
+JavaScript indexes the already-admitted timeline's source IDs for highlights.
+It does not interpolate beats from BPM, including during leading silence or a
+mid-measure tempo change. Source-global measure indices are translated to the
+local page only for glyph mapping. Manual navigation retains the existing
+suspend-and-resume Follow behavior. Optional rendering can lag playback; it
+never changes the practice clock.
+
+Complete-source MusicXML and single-part `.jianpu` text export remain explicitly
+unavailable for this profile. The in-app numbered reference and complete song
+pack export remain available. Nominal-key packages also report unsupported
+hand/finger recommendations before issuing an API request. These capability
+limits do not remove parts, events or supported key-practice targets.

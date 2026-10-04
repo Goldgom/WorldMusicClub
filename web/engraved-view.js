@@ -1,3 +1,5 @@
+import {isBasicKeysSong} from './clean-song-package.js';
+import {basicKeyNotationRequest,basicKeyNotationPage} from './basic-key-notation.js';
 import {sourceMeasurePage,notationRevealViewport,notationScrollViewport} from './notation-follow.js';
 import {planEngravingReveal} from './engraving-reveal.js';
 import {getAppI18n} from './app-locale.js';
@@ -14,7 +16,7 @@ export function mappedPartIds(exported, canonicalId) {
   return [map[canonicalId]];
 }
 /** Optional presentation surface. All score conversion and timing stay in Rust. */
-export function setupEngravedView({getScore, getPracticePart, onVisibility, onFallback, notice, onManualNavigation=()=>{},isVisible=()=>true,loadAdapter=()=>import('./engraving.js'),document=globalThis.document,i18n=getAppI18n(document)}) {
+export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticePart, onVisibility, onFallback, notice, onManualNavigation=()=>{},isVisible=()=>true,loadAdapter=()=>import('./engraving.js'),document=globalThis.document,i18n=getAppI18n(document)}) {
   const $ = id => document.getElementById(id);
   const t=(key,params)=>i18n.t(`notationRuntime.${key}`,params);
   const errorText=value=>{
@@ -25,16 +27,20 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
   let allPartsOption=null,statusMessage=null,fallbackReason=null,noticeState=null;
   for(const id of ['engraving-range','engraving-status','engraving-fallback'])$(id)?.removeAttribute?.('data-i18n');
   let active = false, preferred = true, score = null, selectedPart = null, from = 1, pageSize = 8;
-  let generation = 0, controller = null, cached = null, adapter = null, rendered = null;
+  let generation = 0, controller = null, cached = null, adapter = null, rendered = null, sourcePage = null, rendering = false, followFailure = null;
+  const basicSong=()=>isBasicKeysSong(getCleanSong())?getCleanSong():null;
+  const totalMeasures=()=>basicSong()?(sourcePage?.total_measures||0):(score?.measures.length||0);
+  function displayMeter(){const value=$('engraving-basic-meter')?.value;if(!value||value==='source')return null;const[numerator,denominator]=value.split('/').map(Number);return{numerator,denominator};}
   let expected=null,expectedScore=null,knownScore=null,knownIds=new Set();
   let lastReveal='',revealStatus={status:'unavailable'};
   let lastDark = document.documentElement.dataset.theme === 'dark';
   const container = $('engraved-staff');
-  function cancel() { generation++;lastReveal='';revealStatus={status:'unavailable'}; controller?.abort(); controller = null; rendered?.dispose(); rendered = null; adapter?.disposeEngravedStaff(container); }
+  function cancel() { generation++;rendering=false;lastReveal='';revealStatus={status:'unavailable'}; controller?.abort(); controller = null; rendered?.dispose(); rendered = null; adapter?.disposeEngravedStaff(container); }
   function hasNoteMapping(){return ['mappingStatus','setExpectedWrittenNotes','clearExpectedWrittenNotes'].every(name=>typeof rendered?.[name]==='function')}
   function mappingStatus(){return hasNoteMapping()?rendered.mappingStatus():{status:'unavailable',verifiedGlyphCount:0,diagnostics:rendered?[{code:'engraving_note_mapping_unavailable',message:t('mappingUnavailable')}]:[]}}
   function clearExpectedWrittenNotes(){expected=null;expectedScore=null;lastReveal='';return hasNoteMapping()?rendered.clearExpectedWrittenNotes():false}
-  function revealExpectedWrittenNotes(occurrenceId,sourceMeasureIndex=expected?.sourceMeasureIndex){
+  function revealExpectedWrittenNotes(occurrenceId,sourceMeasureIndex){
+    sourceMeasureIndex=sourceMeasureIndex===undefined?expected?.sourceMeasureIndex:basicSong()?sourceMeasureIndex-(sourcePage?.first_measure||0):sourceMeasureIndex;
     if(!$('engraving-follow').checked||!active||!isVisible()||expectedScore!==score||!expected||expected.sourceMeasureIndex!==sourceMeasureIndex||!rendered)return {status:'unavailable'};
     const key=JSON.stringify([generation,rendered.renderGeneration?.(),occurrenceId,expected.sourceMeasureIndex,[...expected.sourceNoteIds].sort()]);
     if(lastReveal===key)return revealStatus;
@@ -54,8 +60,8 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
   function setExpectedWrittenNotes(value){
     const current=getScore();if(!active||!current||score!==current){clearExpectedWrittenNotes();return false}
     if(knownScore!==current){knownScore=current;knownIds=new Set(current.parts.flatMap(part=>part.notes.map(note=>note.id)))}
-    const ids=value?.sourceNoteIds,measure=value?.sourceMeasureIndex;
-    if(!Array.isArray(ids)||ids.some(id=>typeof id!=='string'||!knownIds.has(id))||new Set(ids).size!==ids.length||!Number.isInteger(measure)||measure<0||measure>=current.measures.length){expected=null;expectedScore=null;lastReveal='';if(hasNoteMapping())rendered.setExpectedWrittenNotes(value);return false}
+    const ids=value?.sourceNoteIds,measure=basicSong()?value?.sourceMeasureIndex-(sourcePage?.first_measure||0):value?.sourceMeasureIndex,view=basicSong()?sourcePage?.score:current;
+    if(!Array.isArray(ids)||ids.some(id=>typeof id!=='string'||!knownIds.has(id))||new Set(ids).size!==ids.length||!Number.isInteger(measure)||measure<0||measure>=(view?.measures.length||0)){expected=null;expectedScore=null;lastReveal='';if(hasNoteMapping())rendered.setExpectedWrittenNotes(value);return false}
     expected={sourceNoteIds:[...ids],sourceMeasureIndex:measure};expectedScore=current;return rendered?(hasNoteMapping()?rendered.setExpectedWrittenNotes(expected):false):true;
   }
   const diagnosticKeys={engraving_note_mapping_unavailable:'mappingUnavailable',engraving_note_identity_ambiguous:'identityAmbiguous',engraving_note_identity_missing:'identityMissing',engraving_shared_glyph:'sharedGlyph',engraving_expected_notes_invalid:'expectedInvalid',engraving_glyph_stale:'glyphStale'};
@@ -76,6 +82,22 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
   // Redraw retained presentation only. Never call render(), exportScore(), reveal or navigation here.
   function redrawLocale(){
     if(allPartsOption)allPartsOption.textContent=t('allParts');
+    const basic=basicSong();
+    if($('engraving-basic-controls'))$('engraving-basic-controls').hidden=!basic;
+    if($('engraving-basic-meter-label'))$('engraving-basic-meter-label').textContent=t('basicMeterLabel');
+    const sourceOption=$('engraving-basic-meter')?.querySelector?.('option[value=source]');if(sourceOption)sourceOption.textContent=t('basicSourceMeter');
+    if($('engraving-basic-provenance'))$('engraving-basic-provenance').textContent=basic?t('basicView')+(sourcePage?.meter_origin==='source'?t('basicAuthoredMeter'):sourcePage?.meter_origin?.includes('chosen')?t('basicDisplayMeter'):'')+(sourcePage?.tempo_origin==='smf_default_presentation'?t('basicDefaultTempo'):'')+(['ready','rendering_unavailable'].includes(sourcePage?.status)&&sourcePage.key_origin!=='source'?t('basicUnknownKey'):''):'';
+    if($('engraving-basic-meter'))$('engraving-basic-meter').disabled=Boolean(basic&&basic.score.performance.timing.meter==='source_declared'&&basic.notation.meters[0]?.at.numerator===0);
+    const coverage=sourcePage?.coverage;
+    if($('engraving-basic-coverage'))$('engraving-basic-coverage').textContent=basic&&coverage?(sourcePage.status==='ready'?t('basicCoverage',{source:coverage.source_attacks,part:coverage.part_attacks,window:coverage.window_attacks,rendered:coverage.rendered_positive_keys,unresolved:coverage.unresolved_attacks,instantaneous:coverage.instantaneous_attacks,continuations:sourcePage.continuations.length}):t('basicSourceCoverage',{source:coverage.source_attacks,part:coverage.part_attacks})):'';
+    if($('engraving-basic-attacks-label'))$('engraving-basic-attacks-label').textContent=t('basicAttackDetails');
+    if($('engraving-basic-attack-list')){
+      const items=basic&&sourcePage?[...sourcePage.unresolved.map(item=>[item,'basicUnresolved']),...sourcePage.instantaneous.map(item=>[item,'basicInstantaneous'])]:[];
+      $('engraving-basic-attack-list').replaceChildren();
+      for(const[item,state]of items){const node=document.createElement('li');node.textContent=t('basicAttack',{id:item.note_id,key:item.key,beat:`${item.source_at.numerator}/${item.source_at.denominator}`,state:t(state)});$('engraving-basic-attack-list').append(node);}
+      if($('engraving-basic-attacks'))$('engraving-basic-attacks').hidden=!items.length;
+    }
+    $('export-musicxml').title=basic?t('basicExportUnavailable'):'';
     rangeControls();
     if(statusMessage)$('engraving-status').textContent=t(statusMessage.key,statusMessage.params);
     paintNotices();
@@ -85,25 +107,29 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
   }
   function setParts() {
     $('engraving-part').replaceChildren();
-    const all = document.createElement('option'); all.value = ''; allPartsOption=all; all.textContent = t('allParts'); $('engraving-part').append(all);
+    const all = document.createElement('option'); all.value = ''; allPartsOption=all; all.textContent = t('allParts'); if(!basicSong())$('engraving-part').append(all);
     for (const part of score?.parts || []) { const option = document.createElement('option'); option.value = part.id; option.textContent = part.name; $('engraving-part').append(option); }
     if (selectedPart !== null && !score?.parts.some(part => part.id === selectedPart)) selectedPart = null;
+    if(basicSong()&&selectedPart===null)selectedPart=score?.parts.find(part=>part.instrument!=='midi-percussion-key-number'&&part.notes.length)?.id||score?.parts[0]?.id||null;
     $('engraving-part').value = selectedPart || '';
   }
   function rangeControls() {
-    const {total,to} = engravingWindow(score?.measures.length || 0,from,pageSize);
+    const {total,to} = engravingWindow(totalMeasures(),from,pageSize);
     $('engraving-range').textContent = total ? t('pageRange',{from,to,total}) : t('noMap');
     $('engraving-prev').disabled = from <= 1;
     $('engraving-next').disabled = to >= total;
     return {total, to};
   }
-  async function exportScore(target, signal) {
-    if (cached?.score === target) return cached.result;
-    const response = await fetch('/api/export/musicxml', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(target),signal});
+  async function exportScore(target, signal, positionMs=null) {
+    const song=basicSong(),request=song?basicKeyNotationRequest(song,{partId:selectedPart,from,count:pageSize,displayMeter:displayMeter(),positionMs}):null;
+    const key=request?JSON.stringify(request):null;
+    if (cached?.score === target&&cached.key===key) return cached.result;
+    const response = await fetch(song?'/api/library/basic-keys/notation':'/api/export/musicxml', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request||target),signal});
     let result; try { result = await response.json(); } catch { throw presentationError('exportUnreadable'); }
     if (!response.ok) {if(typeof result?.error==='string'&&result.error)throw new Error(result.error);throw presentationError('exportHttp',{status:response.status})}
-    if (typeof result?.xml !== 'string' || !result.part_id_map) throw presentationError('exportIncomplete');
-    if (!signal?.aborted && getScore() === target) cached = {score:target,result};
+    if(song){const page=basicKeyNotationPage(result,request,song);result={...(page.musicxml||{}),diagnostics:[...(page.musicxml?.diagnostics||[]),...(page.diagnostics||[])],basicPage:page};}
+    if ((!result.basicPage||result.basicPage.status==='ready')&&(typeof result?.xml !== 'string' || !result.part_id_map)) throw presentationError('exportIncomplete');
+    if (!signal?.aborted && getScore() === target&&(!song||getCleanSong()===song)) cached = {score:target,key,result};
     return result;
   }
   function fallback(reason) {
@@ -111,60 +137,65 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
     hide(); fallbackReason=reason??presentationError('unknownFailure'); redrawLocale(); $('engraving-fallback').hidden = false; onFallback();
     if($('dock-warning-count')){$('dock-warning-count').hidden=false;$('dock-warning-count').textContent=t('noticeError');}
   }
-  async function render() {
-    if (!active || !score || !isVisible()) return;
-    cancel(); const current = generation; controller = new AbortController(); const signal = controller.signal; const target = score;
-    fallbackReason=null;$('engraving-fallback').hidden = true; onVisibility(true); rangeControls();statusMessage={key:'preparing'}; $('engraving-status').textContent = t('preparing');
+  async function render(positionMs=null, navigationOnly=false) {
+    if ((!active&&!navigationOnly) || !score || !isVisible()) return;
+    cancel(); rendering=true;followFailure=null; const current = generation; controller = new AbortController(); const signal = controller.signal; const target = score;
+    fallbackReason=null;$('engraving-fallback').hidden = true; if(!navigationOnly)onVisibility(true); rangeControls();statusMessage={key:'preparing'}; $('engraving-status').textContent = t('preparing');
     noticeState=null;$('engraving-diagnostics').replaceChildren();if($('dock-warning-count'))$('dock-warning-count').textContent=t('noticePreparing');
     try {
-      const exported = await exportScore(target, signal);
-      if (signal.aborted || current !== generation || !active || target !== getScore()) return;
+      const exported = await exportScore(target, signal, positionMs);
+      if (signal.aborted || current !== generation || (!active&&!navigationOnly) || target !== getScore()) return;
+      if(exported.basicPage){sourcePage=exported.basicPage;from=sourcePage.first_measure+1;rangeControls();redrawLocale();if(sourcePage.status!=='ready'){statusMessage={key:({display_meter_required:'basicNeedsMeter',percussion_mapping_required:'basicPercussion',empty_page:'basicEmpty',page_limit:'basicPageLimit',rendering_unavailable:'basicRenderingUnavailable'})[sourcePage.status]};showNotices({...exported,diagnostics:sourcePage.diagnostics},null);redrawLocale();return;}}
+      if(navigationOnly)return;
       adapter ||= await loadAdapter();
       if (signal.aborted || current !== generation || !active) return;
       const {total,to} = rangeControls();
       if (!total) throw presentationError('missingMap');
       const mapped = mappedPartIds(exported,selectedPart);
-      const result = await adapter.renderEngravedStaff(container, exported.xml, {i18n,dark:lastDark||Boolean(document.getElementById('workspace')?.classList?.contains('notation-on-lanes')),fromMeasure:from,toMeasure:to,partIds:mapped,responsive:true,compactHeader:true,
-        identity:{score:target,noteMap:exported.note_id_map,partIdMap:exported.part_id_map,voiceIdMap:exported.voice_id_map},
+      const viewScore=exported.basicPage?.score||target;
+      const result = await adapter.renderEngravedStaff(container, exported.xml, {i18n,dark:lastDark||Boolean(document.getElementById('workspace')?.classList?.contains('notation-on-lanes')),fromMeasure:exported.basicPage?1:from,toMeasure:exported.basicPage?viewScore.measures.length:to,partIds:mapped,responsive:true,compactHeader:true,
+        identity:{score:viewScore,noteMap:exported.note_id_map,partIdMap:exported.part_id_map,voiceIdMap:exported.voice_id_map},
         onMappingChange:mapping=>{if(current===generation&&active&&getScore()===target)showNotices(exported,mapping)},
         onError:failure=>{if(current===generation&&active&&getScore()===target)fallback(failure)}}, signal);
       if (signal.aborted || current !== generation || !active || target !== getScore()) { result.dispose?.(); return; }
       if (!result.ok) { if (result.status !== 'cancelled') fallback(result); return; }
       rendered = result;
       if(expectedScore===target&&expected&&hasNoteMapping())rendered.setExpectedWrittenNotes(expected);
-      statusMessage={key:'preview',params:{from:result.metadata.fromMeasure,to:result.metadata.toMeasure}};$('engraving-status').textContent = t(statusMessage.key,statusMessage.params);
+      statusMessage={key:'preview',params:{from:exported.basicPage?from:result.metadata.fromMeasure,to:exported.basicPage?from+viewScore.measures.length-1:result.metadata.toMeasure}};$('engraving-status').textContent = t(statusMessage.key,statusMessage.params);
       showNotices(exported,mappingStatus());
       $('engraving-license-note').hidden = false;
-    } catch (error) { if (current === generation && !signal.aborted && active && error.name !== 'AbortError') fallback(error); }
+    } catch (error) { if (current === generation && !signal.aborted && error.name !== 'AbortError'){if(basicSong())followFailure=error;if(active)fallback(error);} }
+    finally{if(current===generation)rendering=false;}
   }
   function show() {
     if (!getScore()) return;
-    if(score!==getScore()){score=getScore();selectedPart=getPracticePart();from=1}
+    if(score!==getScore()){score=getScore();selectedPart=getPracticePart();from=1;sourcePage=null;cached=null;followFailure=null;if($('engraving-basic-meter'))$('engraving-basic-meter').value='source';}
     active = true; preferred = true;
-    setParts(); onVisibility(true); render();
+    setParts();redrawLocale(); onVisibility(true); render();
   }
   function hide({remember=false}={}) { if(remember){preferred=false;fallbackReason=null;$('engraving-fallback').hidden=true;}clearExpectedWrittenNotes();active = false; cancel(); container.replaceChildren(); onVisibility(false); }
   function updateScore() {
-    const current = getScore(); $('export-musicxml').disabled = !current;
-    if (current === score) return;
-    clearExpectedWrittenNotes();score = current; cached = null; from = 1; selectedPart = getPracticePart(); setParts(); rangeControls();
+    const current = getScore(); $('export-musicxml').disabled = !current||Boolean(basicSong());
+    if (current === score){redrawLocale();return;}
+    clearExpectedWrittenNotes();score = current; cached = null; sourcePage=null;followFailure=null; if($('engraving-basic-meter'))$('engraving-basic-meter').value='source'; from = 1; selectedPart = getPracticePart(); setParts();redrawLocale(); rangeControls();
     if (active || preferred) {active=true;render();}
   }
-  function selectPart(part) { onManualNavigation(); selectedPart = part; setParts(); if (active) render(); }
-  $('engraving-part').addEventListener('change', () => { onManualNavigation(); selectedPart=$('engraving-part').value || null; render(); });
+  function selectPart(part) { onManualNavigation(); selectedPart = part; if(basicSong()){from=1;sourcePage=null;}setParts(); if (active) render(); }
+  $('engraving-part').addEventListener('change', () => { onManualNavigation(); selectedPart=$('engraving-part').value || null;if(basicSong()){from=1;sourcePage=null;}render(); });
   $('engraving-page-size').addEventListener('change', () => { onManualNavigation(); pageSize=Number($('engraving-page-size').value); from=Math.floor((from-1)/pageSize)*pageSize+1; render(); });
   $('engraving-prev').addEventListener('click', () => { onManualNavigation(); from=Math.max(1,from-pageSize);render(); });
-  $('engraving-next').addEventListener('click', () => { onManualNavigation(); if(from+pageSize<=(score?.measures.length||0)){from+=pageSize;render()} });
+  $('engraving-next').addEventListener('click', () => { onManualNavigation(); if(from+pageSize<=totalMeasures()){from+=pageSize;render()} });
   $('export-musicxml').addEventListener('click', async () => {
-    const target=getScore(); if(!target)return;
+    const target=getScore(); if(!target||basicSong())return;
     const button=$('export-musicxml'); button.disabled=true;
     try {
       const exported=await exportScore(target);
       if(target!==getScore())return;
       const url=URL.createObjectURL(new Blob([exported.xml],{type:'application/vnd.recordare.musicxml+xml'}));const link=document.createElement('a');link.href=url;link.download=`${target.id.replace(/[^\w.-]/g,'_')}.musicxml`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
       notice(()=>t('exported'));
-    }catch(error){if(target===getScore())notice(()=>t('exportFailed',{reason:errorText(error)}),true)}finally{button.disabled=!getScore()}
+    }catch(error){if(target===getScore())notice(()=>t('exportFailed',{reason:errorText(error)}),true)}finally{button.disabled=!getScore()||Boolean(basicSong())}
   });
+  $('engraving-basic-meter')?.addEventListener('change',()=>{onManualNavigation();from=1;sourcePage=null;cached=null;followFailure=null;redrawLocale();if(active)render();});
   const observer=new MutationObserver(()=>{const dark=document.documentElement.dataset.theme==='dark';if(dark!==lastDark){lastDark=dark;if(active)render()}});observer.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
   window.addEventListener('pagehide',cancel);window.addEventListener('pageshow',event=>{if(event.persisted&&active)render()});
   const dock=$('notation-dock');
@@ -185,7 +216,17 @@ export function setupEngravedView({getScore, getPracticePart, onVisibility, onFa
   }
   i18n.subscribe(redrawLocale);
   redrawLocale();
-  return {show,hide,updateScore,selectPart,setExpectedWrittenNotes,clearExpectedWrittenNotes,revealExpectedWrittenNotes,resetReveal(){lastReveal=''},mappingStatus,isActive:()=>active,surfaceChanged(){
+  return {show,hide,updateScore,selectPart,basicPage:()=>sourcePage,followPosition(position){
+      const song=basicSong();if(!song)return null;
+      if(!song.compilation)return{status:'unavailable'};
+      if(position<0||position>=song.compilation.timeline.duration_ms)return{status:'end'};
+      if(followFailure)return{status:'unavailable',error:followFailure};
+      if(rendering)return{status:'pending'};
+      if(sourcePage&&sourcePage.status!=='ready')return{status:'choice'};
+      if(!sourcePage||position<sourcePage.source_start_ms||position>=sourcePage.source_end_ms){void render(position,!active);return{status:'pending'};}
+      const measure=sourcePage.measures.find(measure=>position>=measure.start_ms&&position<measure.end_ms);
+      return measure?{status:'ready',measure,total:sourcePage.total_measures,ready:!active||Boolean(rendered)}:{status:'unavailable'};
+    },setExpectedWrittenNotes,clearExpectedWrittenNotes,revealExpectedWrittenNotes,resetReveal(){lastReveal='';followFailure=null;},mappingStatus,isActive:()=>active,surfaceChanged(){
       lastReveal='';
       // Entering the desktop stage can expose notation and then notify the
       // screen change. Both notifications own the same in-flight render.

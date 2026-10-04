@@ -1,4 +1,31 @@
 export default Object.freeze({
+  "notationRuntime.basicFollowChoice": "Following needs a usable source-bound notation page. Choose the displayed meter or part first, then enable Follow.",
+  "notationRuntime.basicFollowUnavailable": "Exact page following is unavailable for this view. Source notes, manual pages and practice timing remain unchanged.",
+
+  "notationRuntime.basicPageLimit": "This page contains more than 2,048 source attacks. Choose fewer measures or another part. No attacks were removed from the source.",
+  "notationRuntime.basicRenderingUnavailable": "This page cannot be engraved exactly by the current notation renderer. Its source events remain intact; try another part or smaller page, or use the simplified pitch/numbered guide.",
+  "notationRuntime.basicSourceCoverage": "Whole source: {source} attacks; selected part: {part}.",
+
+  "notationRuntime.basicCoverage": "Whole source: {source} attacks; selected part: {part}. This window: {window} attacks; {rendered} positive key intervals shown, {unresolved} unresolved ends and {instantaneous} instantaneous attacks listed, {continuations} intervals continuing across page edges.",
+  "notationRuntime.basicAttackDetails": "Source attacks outside duration notation",
+  "notationRuntime.basicAttack": "{id} · MIDI key {key} · source beat {beat} · {state}",
+  "notationRuntime.basicUnresolved": "release unresolved",
+  "notationRuntime.basicInstantaneous": "instantaneous release",
+
+  "notationRuntime.basicPercussion": "This part contains percussion key numbers. An explicit drum mapping is required before staff notation can represent them; all source attacks remain in the song pack.",
+  "notationRuntime.basicEmpty": "This source part has no measures in the requested window. All events remain in the song pack.",
+
+  "notationRuntime.basicMeterLabel": "Display meter when the source is unavailable",
+  "notationRuntime.basicSourceMeter": "Use source meter",
+  "notationRuntime.basicNeedsMeter": "The source has no unambiguous opening meter. Choose a bar layout for this view, or use the simplified pitch/numbered guide. This choice does not add a meter event to the source or change practice timing.",
+  "notationRuntime.basicExportUnavailable": "Complete MusicXML export is unavailable for this MIDI key projection. The staff shows one source-bound page; export the complete song pack to preserve every event and part.",
+  "notationRuntime.basicPageInvalid": "The basic-key notation page does not match the saved source and selected part.",
+  "notationRuntime.basicView": "Nominal MIDI key view. Source acoustic pitch and drum mapping remain unresolved. ",
+  "notationRuntime.basicDisplayMeter": "The displayed meter is an explicit view choice, not a source event. ",
+  "notationRuntime.basicAuthoredMeter": "Bar lines follow the unambiguous source meter. ",
+  "notationRuntime.basicDefaultTempo": "The relative clock uses the declared SMF default tempo where no source tempo is active. ",
+  "notationRuntime.basicUnknownKey": "The source key is unavailable; no source key signature is claimed. ",
+
   "notationRuntime.input": "Engraving requires a MusicXML string, not a URL or file.",
   "notationRuntime.xmlLimit": "Engraving is limited to 8 MiB of MusicXML.",
   "notationRuntime.entities": "DTD, entities and processing instructions are not accepted. Use the canonical MusicXML export.",

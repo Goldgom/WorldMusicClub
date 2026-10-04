@@ -1,4 +1,7 @@
 export default Object.freeze({
+  "shell.openScore": "查看乐谱",
+  "shell.inspection": "乐谱查看",
+
   "performance.scoreBackground": "轨道背景乐谱",
   "performance.scoreOpacity": "不透明度",
   "performance.scoreOptions": "读谱设置",

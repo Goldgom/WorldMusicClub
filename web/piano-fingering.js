@@ -1,6 +1,6 @@
 import {equivalentJson} from './adaptation-view.js';
 import {keyboardGeometry} from './music.js';
-import {fingeringSource,currentFingeringSource,fingeringRequest,fingeringResponse} from './fingering-source.js';
+import {fingeringUnavailable,BASIC_KEY_FINGERING_REASON,fingeringSource,currentFingeringSource,fingeringRequest,fingeringResponse} from './fingering-source.js';
 
 const codedError=(code,message)=>Object.assign(new Error(message),{code});
 const STATUSES=new Set(['ready','no_targets','infeasible_under_model','no_plan_found','search_limit','unavailable']);
@@ -132,6 +132,7 @@ export function setupPianoFingering({api,getContext,onChange=()=>{}}){
   }
   function prepare({retry=false}={}){
     const context=synchronize();
+    if(fingeringUnavailable(context)){if(phase!=='unavailable')publish('unavailable',BASIC_KEY_FINGERING_REASON,'piano_basic_keys');return Promise.resolve(null);}
     if(!context?.score||!context.timeline||context.profile?.kind!=='piano'||context.dirty||draftDirty){
       if(phase!=='inactive')publish('inactive',draftDirty?'Apply or discard edited piano hand settings before planning.':context?.dirty?'Apply edited keyboard settings before planning.':'Choose Piano and a score to prepare hand/finger guidance.',draftDirty?'piano_draft':context?.dirty?'piano_dirty':'piano_inactive');
       return Promise.resolve(null);

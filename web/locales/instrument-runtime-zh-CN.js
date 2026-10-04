@@ -1,4 +1,6 @@
 export default Object.freeze({
+  "piano.runtime.message.piano_basic_keys": "MIDI 按键投影暂不支持手指指法建议；仍可练习已确定的按键并导出完整来源歌曲包。",
+  "guitar.runtime.message.guitar_basic_keys": "MIDI 按键投影暂不支持手指指法建议；仍可练习已确定的按键并导出完整来源歌曲包。",
   "instrument.originalLabel": "原始技术详情",
   "instrument.original": "原始技术详情 [{code}]：{details}",
   "instrument.error": "指引暂不可用。请查看原始技术详情后重试。",

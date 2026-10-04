@@ -1,11 +1,15 @@
 import {equivalentJson} from './adaptation-view.js';
-import {isCleanSong,VSQ_PROFILE,VSQ_PRACTICE_PROFILE} from './clean-song-package.js';
+import {isCleanSong,isBasicKeysSong,VSQ_PROFILE,VSQ_PRACTICE_PROFILE} from './clean-song-package.js';
 
 const fail=()=>{throw Object.assign(Error('The complete-song recommendation is not bound to the current native score, performance clock and explicit practice choice. Reload the saved song and request fresh guidance.'),{code:'clean_fingering_source_invalid'});};
+
+export const BASIC_KEY_FINGERING_REASON='Hand/finger guidance is unavailable for nominal MIDI key projections. Key practice and complete source export remain available.';
+export function fingeringUnavailable(context){return isBasicKeysSong(context?.cleanSong);}
 
 /** Bind requests to admitted saved bytes. Never reconstruct native musical time in JS. */
 export function fingeringSource(context){
   const song=context?.cleanSong;
+  if(fingeringUnavailable(context))throw Object.assign(Error(BASIC_KEY_FINGERING_REASON),{code:'basic_keys_fingering_unavailable'});
   if(song==null)return null;
   if(!isCleanSong(song)||!song.notation||!song.compilation||song.compilation.score!==context.score||song.compilation.timeline!==context.timeline
     ||!song.runtime||!/^[0-9a-f]{64}$/.test(song.identity)||song.libraryKey!==`native:song-${song.identity}`)fail();

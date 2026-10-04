@@ -1,5 +1,7 @@
 const entry=params=>Object.freeze({params:Object.freeze(params)});
 export default Object.freeze({
+  "piano.runtime.message.piano_basic_keys":entry({}),
+  "guitar.runtime.message.guitar_basic_keys":entry({}),
   "instrument.originalLabel":entry({}),
   "instrument.original":entry({"code": "text", "details": "text"}),
   "instrument.error":entry({}),
