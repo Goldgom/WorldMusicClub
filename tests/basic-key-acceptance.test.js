@@ -11,6 +11,7 @@ import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
+import {parseHTML} from 'linkedom';
 import {basicKeyAcceptanceFixture,originalBasicKeyMidi,prepareBasicKeyFixtures,BASIC_KEY_FILES,BASIC_KEY_PHASES} from '../scripts/prepare-basic-key-fixtures.mjs';
 import {validateBasicKeyOpened,validateBasicKeyExport,validateBasicKeyRenderer,validateBasicKeySourceMeterDisclosure,verifyBasicKeyNativeEvidence} from '../scripts/verify-basic-key-evidence.mjs';
 import {storedZip} from './native-import-driver-fixtures.js';
@@ -137,18 +138,28 @@ test('source-meter proof requires the actual visible disclosure and does not tre
   const value=sourceMeterDisclosure();mutate(value);assert.throws(()=>validateBasicKeySourceMeterDisclosure(value));
  }
 });
-test('source-meter inspection uses existing visible controls before the explicit view-meter choice',async()=>{
+test('source-meter inspection opens collapsed notation and help before a neutral status capture',async()=>{
  const source=await readFile(new URL('../crates/desktop-shell/basic-key-acceptance.js',import.meta.url),'utf8');
  assert.doesNotMatch(source,/score-key/);assert.match(source,/captureSourceMeterDisclosure\(false\);\n  await native\('select-second',\$\('engraving-page-size'\)\)/);
  const start=source.indexOf(' async function captureSourceMeterDisclosure('),end=source.indexOf(' async function notationInspection(',start);assert.ok(start>0&&end>start);
- const body=source.slice(start,end);
- for(const closeAfter of [false,true]){
-  const events=[],tools={id:'notation-tools',open:false},summary={id:'notation-summary'},nodes={};tools.querySelector=()=>summary;
-  for(const[id,text]of [['engraving-basic-provenance','MIDI 按键视图'],['engraving-basic-meter-label','来源拍号未确定时使用的显示拍号'],['engraving-basic-meter','使用来源拍号'],['engraving-status','来源没有明确的起始拍号'],['engraving-basic-controls','']])nodes[id]={id,textContent:text,value:id==='engraving-basic-meter'?'source':'',disabled:false,hidden:false,getBoundingClientRect:()=>({x:750,y:180,width:300,height:40}),getClientRects:()=>[{}],contains:()=>true};
-  nodes['notation-tools']=tools;
-  const context=vm.createContext({report:{screenshots:{}},$:id=>nodes[id],document:{elementFromPoint:()=>nodes['engraving-basic-provenance']},innerWidth:1280,innerHeight:720,getComputedStyle:()=>({display:'block',visibility:'visible'}),assert:(value,message)=>assert.ok(value,message),until:async(fn)=>assert.ok(fn()),native:async(kind,node)=>{assert.equal(kind,'click');events.push(node.id);if(node===summary)tools.open=!tools.open;else assert.equal(tools.open,true);return events.length;}});
+ const body=source.slice(start,end);assert.doesNotMatch(body,/native\('click',\$\('engraving-status'\)\)/);
+ for(const notationOpen of [false,true])for(const closeAfter of [false,true])for(const pointerEvents of ['auto','none']){
+  const {document}=parseHTML('<html><body><button id="notation-toggle"></button><h1 id="stage-title"></h1><details id="notation-tools"><summary id="notation-summary"></summary><aside id="notation-dock"><details class="dock-help"><summary id="help-summary"></summary><select id="engraving-page-size"></select><p id="engraving-status">来源没有明确的起始拍号</p></details><div id="engraving-basic-controls"><span id="engraving-basic-meter-label">来源拍号未确定时使用的显示拍号</span><select id="engraving-basic-meter"><option selected value="source">使用来源拍号</option></select><p id="engraving-basic-provenance">MIDI 按键视图</p></div></aside></details></body></html>');
+  const $=id=>document.getElementById(id),tools=$('notation-tools'),dock=$('notation-dock'),help=document.querySelector('.dock-help'),events=[];
+  for(const details of [tools,help])Object.defineProperty(details,'open',{get(){return this.hasAttribute('open');},set(value){this.toggleAttribute('open',value);}});
+  tools.hidden=dock.hidden=!notationOpen;$('notation-toggle').setAttribute('aria-expanded',String(notationOpen));
+  const isExposed=node=>{for(let parent=node;parent;parent=parent.parentElement)if(parent.hidden||parent.tagName==='DETAILS'&&!parent.open&&!parent.querySelector('summary').contains(node))return false;return true;};
+  const surfaces=['engraving-basic-meter-label','engraving-basic-meter','engraving-basic-provenance','engraving-status'].map($);
+  for(const[i,node]of surfaces.entries()){node.getBoundingClientRect=()=>({x:750,y:180+i*60,width:200,height:40});node.getClientRects=()=>isExposed(node)?[{}]:[];node.scrollIntoView=()=>{assert.ok(isExposed(node),'Reading cannot scroll a closed disclosure into visibility');};}
+  $('engraving-basic-meter').disabled=false;
+  const context=vm.createContext({report:{screenshots:{}},$,document:{elementFromPoint:(x,y)=>{const node=surfaces.find(n=>n.getBoundingClientRect().y+20===y);if(!node||!isExposed(node))return document.body;return node.id==='engraving-status'&&pointerEvents==='none'?help:node;}},innerWidth:1280,innerHeight:720,getComputedStyle:node=>({display:'block',visibility:'visible',pointerEvents:node.id==='engraving-status'?pointerEvents:'auto'}),assert:(value,message)=>assert.ok(value,message),until:async(fn)=>assert.ok(fn()),native:async(kind,node)=>{
+   assert.equal(kind,'click');assert.notEqual(node.id,'engraving-status');assert.ok(isExposed(node),'Every native input target must be visibly exposed');events.push(node.id);
+   if(node===$('notation-toggle')){tools.hidden=dock.hidden=false;node.setAttribute('aria-expanded','true');}
+   else if(node===$('notation-summary'))tools.open=!tools.open;else if(node===$('help-summary'))help.open=!help.open;
+   return events.length;
+  }});
   await vm.runInContext(body+`;captureSourceMeterDisclosure(${closeAfter});`,context);
-  assert.deepEqual(events,['notation-summary','engraving-basic-provenance','engraving-status',...(closeAfter?['notation-summary']:[])]);assert.equal(tools.open,!closeAfter);
-  assert.equal(context.report.sourceMeterDisclosure.choice.control.value,'source');assert.equal(context.report.sourceMeterDisclosure.status.visible,true);
+  assert.deepEqual(events,[...(!notationOpen?['notation-toggle']:[]),'notation-summary','engraving-basic-provenance','help-summary','stage-title',...(closeAfter?['notation-summary']:[])]);
+  assert.equal(tools.open,!closeAfter);assert.equal(help.open,true,'Page-size controls remain available for the explicit view choice');assert.equal(context.report.sourceMeterDisclosure.choice.control.value,'source');assert.equal(context.report.sourceMeterDisclosure.status.visible,true);
  }
 });

@@ -43,14 +43,19 @@ async function observeBasicKeyEngraving(document) {
  async function take(){closeDialogs();click('results-button');const file=await download($('export-takes'));closeDialogs();return file;}
  const audio=()=>probe.snapshot(),preview=()=>({coverage:$('clean-song-preview-status').textContent,rendition:$('clean-song-rendition').textContent,tracks:[...$('clean-song-tracks').children].map(n=>n.textContent),parts:[...$('preview-part').options].map(o=>({id:o.value,disabled:o.disabled,text:o.textContent})),listenDisabled:$('start-listen').disabled,practiceDisabled:$('start-practice').disabled,audio:audio()});
  async function captureSourceMeterDisclosure(closeAfter=true){
-  const tools=$('notation-tools');if(!tools.open)await native('click',tools.querySelector('summary'));
+  const tools=$('notation-tools');if($('notation-toggle').getAttribute('aria-expanded')!=='true')await native('click',$('notation-toggle'));
+  await until(()=>!tools.hidden&&!$('notation-dock').hidden,'notation surface open');
+  if(!tools.open)await native('click',tools.querySelector('summary'));
   await until(()=>!$('engraving-basic-controls').hidden&&$('engraving-status').textContent.includes('来源没有明确的起始拍号'),'visible source-meter disclosure');
-  const observe=node=>{const b=node.getBoundingClientRect(),x=b.x+b.width/2,y=b.y+b.height/2,hit=document.elementFromPoint(x,y),style=getComputedStyle(node);return{id:node.id,text:node.textContent,bounds:{x:b.x,y:b.y,width:b.width,height:b.height},visible:node.getClientRects().length>0&&style.display!=='none'&&style.visibility==='visible'&&b.width>0&&b.height>0&&x>0&&x<innerWidth&&y>0&&y<innerHeight&&(hit===node||node.contains(hit))};};
+  const observe=(node,readOnly=false)=>{const b=node.getBoundingClientRect(),x=b.x+b.width/2,y=b.y+b.height/2,hit=document.elementFromPoint(x,y),style=getComputedStyle(node);let exposed=true;for(let parent=node;parent;parent=parent.parentElement)if(parent.hidden||parent.tagName==='DETAILS'&&!parent.open&&!parent.querySelector('summary')?.contains(node))exposed=false;return{id:node.id,text:node.textContent,bounds:{x:b.x,y:b.y,width:b.width,height:b.height},visible:exposed&&node.getClientRects().length>0&&style.display!=='none'&&style.visibility==='visible'&&b.width>0&&b.height>0&&x>0&&x<innerWidth&&y>0&&y<innerHeight&&(hit===node||node.contains(hit)||readOnly&&style.pointerEvents==='none'&&hit?.contains(node))};};
   report.screenshots['meter-choice']=await native('click',$('engraving-basic-provenance'));
   const choice={label:observe($('engraving-basic-meter-label')),control:{...observe($('engraving-basic-meter')),value:$('engraving-basic-meter').value,disabled:$('engraving-basic-meter').disabled},provenance:observe($('engraving-basic-provenance'))};
   assert(Object.values(choice).every(node=>node.visible),'Source-meter choice must be visibly readable');
-  report.screenshots['meter-status']=await native('click',$('engraving-status'));
-  const status=observe($('engraving-status'));assert(status.visible,'Source-meter status must be visibly readable');
+  const statusNode=$('engraving-status'),help=statusNode.closest('details');assert(help?.classList.contains('dock-help'),'Source-meter status needs its existing help disclosure');
+  if(!help.open)await native('click',help.querySelector('summary'));
+  statusNode.scrollIntoView({block:'center',inline:'center'});
+  report.screenshots['meter-status']=await native('click',$('stage-title'));
+  const status=observe(statusNode,true);assert(status.visible,'Source-meter status must be visibly readable');
   report.sourceMeterDisclosure={locale:'zh-CN',viewport:{width:innerWidth,height:innerHeight},choice,status};
   if(closeAfter){await native('click',tools.querySelector('summary'));assert(!tools.open,'Notation controls must close before practice controls');}
  }
