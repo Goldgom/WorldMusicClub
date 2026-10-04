@@ -1,4 +1,6 @@
 export default Object.freeze({
+  'rhythm.authoring': 'Song authoring',
+  'rhythm.authoringDescription': 'Convert complete MIDI, review each song, then save',
   'rhythm.home': "Main menu",
   'rhythm.backHome': "← Main menu",
   'rhythm.chooseMode': "Choose a mode",

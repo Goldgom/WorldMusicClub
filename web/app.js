@@ -19,6 +19,7 @@ import {ScorePreview,filterCatalog} from './score-preview.js';
 import {openScoreStorage} from './native-score-storage.js';
 import {ScoreStorageModel,createImportPersistenceTicket,buildSongList,loadSongListItem} from './score-storage-model.js';
 import {setupScoreStorageView,setupScoreStorageLobbyStatus,describePersistenceResult} from './score-storage-view.js';
+import {setupSongAuthoringView} from './song-authoring-view.js';
 import {setupBulkImportView} from './bulk-import-view.js';
 import {isImportEnvelope} from './bulk-import.js';
 import {setupPerformanceView,FIELD_COLORS,previewMusicMetadata} from './performance-view.js';
@@ -130,7 +131,7 @@ let transpositionView = null;
 let externalOmrView = null;
 let notationFollowing = null;
 let writtenCursor = null, writtenCursorStatus = null, writtenCursorRetry = null;
-let sourceArchiveView=null,referenceListening=null,performanceListening=null,lobbyPreview=null,scoreStorage=null,scoreStorageView=null,bulkImportView=null,fileSelectionVersion=0;
+let sourceArchiveView=null,referenceListening=null,performanceListening=null,lobbyPreview=null,scoreStorage=null,scoreStorageView=null,bulkImportView=null,songAuthoringView=null,fileSelectionVersion=0;
 let pendingScoreSaveOwner=null,scoreSaveNavigation=0,noticeRevision=0;
 let midiController=null;
 let freeSession=null,freeView=null,freePreview=null,freeLiveOwner=null,freeLiveStart=0,freeCaptureState='idle',freeRecordInstrument=null,freeClockWall=0,freeWindowFocused=true;
@@ -159,6 +160,7 @@ state.recorder = createRecorder();routedScoreRecorder=state.recorder;
 inputRoutes.push({kind:'score',recorder:state.recorder,start:0,end:null});
 function refreshFreeTone(){bindText($('free-live-tone'),()=>`${i18n.t('ui.instrument')}: ${i18n.t(`free.timbre.${state.instrument}`)}`);}
 function changeScreen(screen){
+  songAuthoringView?.screenChanged(screen);
   scoreSaveNavigation++;
   referenceListening?.close();
   performanceListening?.screenChanged();
@@ -1332,6 +1334,8 @@ bulkImportView=setupBulkImportView({document,i18n,getStorageKind:async()=>(await
   onCommitted:async()=>{if(!await scoreStorage.rescan())throw new Error('Saved-song inventory refresh failed.');},
   onBrowse:identity=>{shell.show('library');void selectSongScore(identity);},onDone:()=>shell.show('library'),getSavedEntries:()=>scoreStorage.snapshot().entries});
 $('bulk-import-history-button').addEventListener('click',()=>bulkImportView.open());
+songAuthoringView=setupSongAuthoringView({document,i18n,getStorageKind:async()=>(await scoreStorage.storage()).info.kind,onCommitted:async()=>{if(!await scoreStorage.rescan())throw new Error('Saved-song inventory refresh failed.');},onHome:()=>shell.show('home'),onLibrary:()=>shell.show('library'),onBrowse:identity=>{shell.show('library');void selectSongScore(identity);}});
+window.addEventListener('pagehide',()=>songAuthoringView.destroy());
 scoreStorageView=setupScoreStorageView({model:scoreStorage,host:document.querySelector('#settings-dialog .shell-dialog-content'),document,i18n,getScore:()=>state.cleanSong?null:state.score,onSaveStart:beginExplicitScoreSave,onSaveResult:finishScoreSave});
 $('settings-dialog').addEventListener('close',()=>{scoreSaveNavigation++});
 const storageLobbyHost=document.createElement('div');$('catalog').before(storageLobbyHost);

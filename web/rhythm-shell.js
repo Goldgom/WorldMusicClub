@@ -67,11 +67,12 @@ export function setupRhythmShell({document, i18n, show, open}) {
     button.append(symbol,copy); button.disabled=planned;
     if(planned)button.append(make('span','game-mode-badge','rhythm.planned'));
     else {const arrow=make('span','game-mode-arrow');arrow.textContent='↗';arrow.setAttribute('aria-hidden','true');button.append(arrow);}
-    const handler=()=>{if(planned)return;if(target==='library')show('library');else {open('settings');if(target==='appearance')$('theme-mode').focus();}};
+    const handler=()=>{if(planned)return;if(target==='library'||target==='authoring')show(target);else {open('settings');if(target==='appearance')$('theme-mode').focus();}};
     button.addEventListener('click',handler);cleanups.push(()=>button.removeEventListener('click',handler));menu.append(button);
     return button;
   }
   mode('home-single-player','▶','rhythm.singlePlayer','rhythm.singleDescription','library');
+  mode('home-song-authoring','✎','rhythm.authoring','rhythm.authoringDescription','authoring');
   mode('home-collaboration','♬','rhythm.collaboration','rhythm.collaborationDescription',null,true);
   mode('home-online','◎','rhythm.online','rhythm.onlineDescription',null,true);
   mode('home-appearance','◈','rhythm.appearance','rhythm.appearanceDescription','appearance');
@@ -105,7 +106,7 @@ export function setupRhythmShell({document, i18n, show, open}) {
   function update({screen, hasSession = false}) {
     arrangeFreeScreen();
     homeScreen.hidden = screen !== 'home';
-    const key = screen === 'home' ? 'rhythm.home' : screen === 'stage' ? 'rhythm.stage' : screen === 'free' ? 'free.title' : 'rhythm.library';
+    const key = screen === 'authoring' ? 'rhythm.authoring' : screen === 'home' ? 'rhythm.home' : screen === 'stage' ? 'rhythm.stage' : screen === 'free' ? 'free.title' : 'rhythm.library';
     location.textContent = i18n.t(key);
     if (screen === 'home') brand.setAttribute('aria-current', 'page'); else brand.removeAttribute('aria-current');
     if (freeResume) freeResume.hidden = !hasSession;

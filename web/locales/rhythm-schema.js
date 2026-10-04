@@ -1,5 +1,7 @@
 const plain = Object.freeze({params: Object.freeze({})});
 export default Object.freeze({
+  'rhythm.authoring': plain,
+  'rhythm.authoringDescription': plain,
   'rhythm.home': plain,
   'rhythm.backHome': plain,
   'rhythm.chooseMode': plain,
