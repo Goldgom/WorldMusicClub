@@ -14,6 +14,13 @@ production Rust endpoint against that part's eligible target only. The paused
 machine-free take must have no inputs, captures or assessment. Reference/source
 audio must never start, including while sound is enabled before user input.
 
+The meter proof opens the existing score settings through its visible summary.
+It captures the source-meter choice, generated-view provenance and missing-meter
+status with nonzero viewport bounds and hit-test visibility. This happens before
+the restart phase chooses its display meter; hidden legacy labels are not source
+disclosure evidence. The settings and part inventory close through their visible
+summaries before the stage controls are used.
+
 The malformed profile and forged coverage must be refused as playable clean
 songs with visible diagnostics. The ordinary importer's separate Save action
 may still retain the original archive privately; this is not clean admission.
