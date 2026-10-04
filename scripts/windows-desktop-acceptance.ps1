@@ -242,6 +242,15 @@ function Capture-PickerFailure([IntPtr]$Dialog,$App,$Action,[hashtable]$Evidence
 function Native-Action($App,$Action,[hashtable]$Evidence) {
   $App.Refresh();$window=$App.MainWindowHandle
   if($window -eq [IntPtr]::Zero){throw 'Application window disappeared'}
+  if($Action.kind -eq 'key-c5') {
+    # Play already acquired the owned foreground window; the renderer prepared
+    # stage focus before its timing gate. Fail if ownership changed, never spend
+    # the source onset window reacquiring it or clicking the stage again.
+    $foreground=[NativeAcceptance]::GetForegroundWindow();$enabled=[NativeAcceptance]::IsWindowEnabled($window)
+    if($foreground -ne $window -or -not $enabled){throw 'Prepared C5 app foreground ownership was lost'}
+    $Evidence.native_key=[ordered]@{app_hwnd=$window.ToInt64();foreground=$foreground.ToInt64();app_process_id=$App.Id;app_enabled=$enabled;code='Digit2';virtual_key=0x32;focus_reacquired=$false;pointer_clicked=$false}
+    [NativeAcceptance]::Key(0x32);return
+  }
   [NativeAcceptance]::SetForegroundWindow($window) | Out-Null
   Start-Sleep -Milliseconds 150
   if([NativeAcceptance]::GetForegroundWindow() -ne $window){throw 'Application did not receive foreground ownership'}
@@ -265,7 +274,6 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
   if($Action.kind -eq 'select-second'){[NativeAcceptance]::Key(0x24);[NativeAcceptance]::Key(0x28);[NativeAcceptance]::Key(0x0D);return}
   if($Action.kind -eq 'select-last'){[NativeAcceptance]::Key(0x23);[NativeAcceptance]::Key(0x0D);return}
   if($Action.kind -eq 'key-r'){[NativeAcceptance]::Key(0x52);return}
-  if($Action.kind -eq 'key-c5'){[NativeAcceptance]::Key(0x32);return}
   if($Action.kind -eq 'click'){return}
   if($Action.kind -notin @('picker','cancel-picker')){throw 'Unknown acceptance action'}
   $deadline=[DateTime]::UtcNow.AddSeconds(10);$dialog=[IntPtr]::Zero
