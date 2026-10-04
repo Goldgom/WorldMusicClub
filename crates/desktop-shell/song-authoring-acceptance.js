@@ -22,12 +22,32 @@ function createAuthoringControlObserver(document,{now=()=>performance.now(),defe
    const row=owner,files=Array.from(input.files||[]);row.changes.push({trusted:event.isTrusted===true,count:files.length,input:{id,type:input.type,multiple:input.multiple,disabled:input.disabled,connected:input.isConnected}});
    pending.push(Promise.all(files.map(async file=>({filename:file.name,bytes:file.size,sha256:await digest(await file.arrayBuffer())}))).then(values=>{row.files=values;}));
   }
-  if(!id.startsWith('authoring-')&&!['home-song-authoring','settings-button','instrument-settings-summary','song-authoring-title','play-button','stage-title','back-to-library','sound-button'].includes(id)&&!role)return;
+  if(!id.startsWith('authoring-')&&!['home-song-authoring','settings-button','instrument-settings-summary','song-authoring-title','start-listen','play-button','stage-title','back-to-library','sound-button'].includes(id)&&!role)return;
   if(events.length>=256)throw Error('Authoring trusted event bound exceeded');
   events.push({sequence:actionSequence(),type:event.type,trusted:event.isTrusted===true,id,role,code:event.code||null,value:['input','change'].includes(event.type)&&typeof input.value==='string'?input.value:null});
  }
  for(const type of ['click','change','input','keydown','keyup']){document.addEventListener(type,observe,true);remove.push(()=>document.removeEventListener(type,observe,true));}
  return{events,pickers,begin(sequence,file){if(owner||pickers.length>=4)throw Error('Authoring picker ownership or finite count exceeded');owner={sequence,file,completed:false,started_wall_ms:now(),finished_wall_ms:null,blurs:[],pending:[],delegated:[],changes:[],files:[]};pickers.push(owner);},async end(sequence,completed){if(owner?.sequence!==sequence)throw Error('Authoring picker owner changed');const row=owner;owner=null;await Promise.all([...pending,...row.pending]);delete row.pending;row.finished_wall_ms=now();row.completed=completed;},async finish(){await Promise.all(pending);},restore(){owner=null;for(const fn of remove)fn();}};
+}
+async function prepareAuthoringNavigationPause({document,native,click,menu,until,snapshot}) {
+ const $=id=>document.getElementById(id),trace=observeNativeReferenceTransport(document);
+ let stage='listen-ready';
+ try {
+  await menu.waitScreen('library','start-listen','original catalog preview ready');
+  const setup={kind:'native-listen-navigation',previewId:$('song-lobby').dataset.previewId,controls:[]};
+  if($('sound-button').getAttribute('aria-pressed')!=='true'){click('sound-button');setup.controls.push('sound-button');}
+  trace.changed('listen-ready',{checkpoint:true});
+  // Start Listen already starts the real transport after compilation. A second
+  // Play toggle would pause it, as the actual focused 243 run demonstrated.
+  stage='listen-start';setup.listenAction=await native('click',$('start-listen'));setup.controls.push('start-listen');
+  await until(()=>{const current=trace.changed('await-listen-start');return current.screen==='stage'&&current.mode==='listen'&&!current.playDisabled&&!current.hidden&&current.openDialogs.length===0&&current.positionMs>0&&current.positionMs<current.durationMs&&!['paused','complete','ready'].includes(current.cue);},'native Start Listen is running');
+  trace.changed('listen-running',{checkpoint:true});setup.title=$('stage-title').textContent;const before=snapshot();
+  stage='navigation-pause';setup.navigationAction=await native('click',$('back-to-library'));setup.controls.push('back-to-library');
+  await until(()=>{trace.changed('await-navigation-pause');return document.body.dataset.screen==='library'&&$('stage-cue').dataset.cueState==='paused'&&document.querySelectorAll('.pressed').length===0;},'navigation genuinely paused');
+  trace.changed('navigation-paused',{checkpoint:true});
+  return{setup,before,after:snapshot(),admission:trace.snapshot('complete')};
+ }catch(error){trace.changed('failed',{checkpoint:true});error.authoringNavigation=trace.snapshot(stage);throw error;}
+ finally{trace.stop();}
 }
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(ok,message)=>{if(!ok)throw Error(message);};
@@ -66,7 +86,7 @@ function createAuthoringControlObserver(document,{now=()=>performance.now(),defe
    assert(['authoring-seed','authoring-restart'].includes(phase),'Unknown authoring phase');assert(localStorage.getItem('wmh.authoring.acceptance.marker')===null,'Authoring requires a fresh browser profile');report.profileMarkerAbsent=true;localStorage.setItem('wmh.authoring.acceptance.marker',phase);
    await menu.enterLibrary();const {getAppI18n}=await import('/app-locale.js');getAppI18n(document).setLocale('en');assert((await json('/api/health')).network==='native-protocol-no-listener','Actual Rust protocol required');
    if(phase==='authoring-seed'){
-    checkpoint('real-navigation-pause');report.navigationSetup=await activatePerformanceOriginalScore({document,click,menu});await native('click',$('play-button'));await until(()=>Number($('progress').value)>0&&$('stage-cue').dataset.cueState!=='paused','running original score');report.navigationBefore=snapshot();await native('click',$('back-to-library'));await until(()=>document.body.dataset.screen==='library'&&$('stage-cue').dataset.cueState==='paused'&&document.querySelectorAll('.pressed').length===0,'navigation genuinely paused');report.navigationAfter=snapshot();
+    checkpoint('real-navigation-pause');const navigation=await prepareAuthoringNavigationPause({document,native,click,menu,until,snapshot});report.navigationSetup=navigation.setup;report.navigationBefore=navigation.before;report.navigationAfter=navigation.after;report.navigationAdmission=navigation.admission;
     probe=observeNativeReferenceAudio();checkpoint('whole-midi-pair');assert((await list()).entries.length===0,'Seed library must be empty');await enterAuthoring();await choose('authoring-original-pair');assert(rows().length===2&&rows().every(row=>row.dataset.phase==='ready'),'Both complete MIDI drafts must be ready');report.initialRows=rows().map(screenRow);report.drafts.push(...['authoring-original-strict.mid','authoring-original-events.mid'].map(latestDraft));assert((await list()).entries.length===0,'Draft preview wrote the library');
     for(const row of rows())await native('click',row.querySelector('.authoring-inventory>summary'));
     report.screenshots.inventory=await native('click',$('song-authoring-title'));
@@ -89,7 +109,7 @@ function createAuthoringControlObserver(document,{now=()=>performance.now(),defe
    if(phase==='authoring-seed'){const row=rowFor('authoring-original-strict.mid');report.isolation.titleKey=await native('key-r',row.querySelector('input'));assert(row.dataset.phase==='edited','Actual title typing did not invalidate the draft');report.isolation.recheck=await native('click',control(row,'recheck'));await review();const draft=latestDraft('authoring-original-strict.mid'),saved=[report.exportedDraft,report.keptDraft];const expected=saved.some(value=>value.package.metadata_json===draft.package.metadata_json&&value.package.score_json===draft.package.score_json)?'duplicate':'conflict';assert(row.dataset.phase===expected,'Edited source preview disagrees with exact previously saved bytes');report.isolation.draft=draft;report.isolation.row=screenRow(row);}
    report.isolation.audio=silent();report.afterTakeState=snapshot();assert(JSON.stringify(report.afterTakeState)===JSON.stringify(report.beforeTakeState),'Authoring or settings changed paused human take state');report.files.afterTake=await take();report.isolation.afterExportAudio=silent();probe.restore();probe=null;report.checks.push('paused-human-take-unchanged','authoring-settings-keys-no-audio','no-auto-resume');
    await readOpened();report.screenshots.isolation=await native('click',$('song-authoring-title'));report.layout={width:innerWidth,height:innerHeight,documentWidth:document.documentElement.scrollWidth,authoringWidth:$('song-authoring-screen').scrollWidth,authoringClientWidth:$('song-authoring-screen').clientWidth};assert(report.layout.documentWidth<=innerWidth+1&&report.layout.authoringWidth<=report.layout.authoringClientWidth+1,'Authoring screen has horizontal overflow');await controls.finish();report.responseObservations=observer.snapshot();assert(report.responseObservations.every(row=>row.state==='consumed'),'Missing consumed authoring response');report.actions=sequence;report.downloads=(await json('/__desktop_smoke/state')).downloads;assert(report.errors.length===0,report.errors.join('; '));report.stage='complete';report.ok=true;
-  }catch(error){report.error=error.stack||String(error);if(error.nativeReferenceTransport)report.failedTransport=error.nativeReferenceTransport;}
+  }catch(error){report.error=error.stack||String(error);if(error.nativeReferenceTransport)report.failedTransport=error.nativeReferenceTransport;if(error.authoringNavigation)report.failedNavigation=error.authoringNavigation;}
   finally{probe?.restore();report.actions=sequence;await controls.finish().catch(error=>report.errors.push(String(error)));observing=false;observer.restore();controls.restore();globalThis.fetch=originalFetch;removeEventListener('error',errors);removeEventListener('unhandledrejection',errors);await postAuthoringAcceptanceReport({report,fetcher,waits});}
  });
 })();

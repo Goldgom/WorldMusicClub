@@ -41,7 +41,12 @@ checker also probes invalid/stale title and changed-source fingerprints, export
 reimport and unchanged source/metadata/score bytes.
 
 All chooser operations finish before the compared human take. The original
-exercise first demonstrates real navigation pause. A new native Play/KeyR/Pause
+exercise first demonstrates real navigation pause: the actual Start Listen
+click must precede an advancing listen clock, then the actual Songs click must
+leave the session paused with no held keys. Its bounded transport trace records
+both trusted gestures and their ordered state changes. Start Listen already
+starts playback; no extra Play toggle is used in this navigation check.
+A new native Play/KeyR/Pause
 take then establishes an exact baseline after navigation/input cleanup. Title,
 authoring and settings keys run with sound explicitly enabled and must leave
 that whole take unchanged, including

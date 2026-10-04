@@ -3,22 +3,76 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {webcrypto} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
+import path from 'node:path';
 import vm from 'node:vm';
 import {authoringAcceptanceFixtures,AUTHORING_PAIR_ALIAS,AUTHORING_FIXTURE_FILENAMES} from '../scripts/prepare-song-authoring-fixtures.mjs';
-import {validateAuthoringPicker,validateAuthoringExport,validateAuthoringTakes,AUTHORING_CLAIMS} from '../scripts/verify-native-song-authoring-evidence.mjs';
+import {validateAuthoringPicker,validateAuthoringExport,validateAuthoringTakes,validateAuthoringNavigation,AUTHORING_CLAIMS} from '../scripts/verify-native-song-authoring-evidence.mjs';
 import {authoringPickerFiles,createAuthoringHostedChooser} from '../scripts/song-authoring-hosted-chooser.mjs';
 import {createAuthoringHostedConsole} from '../scripts/song-authoring-hosted-console.mjs';
 import {storedZip} from './native-import-driver-fixtures.js';
+import {freePracticeApp,fixtureScoreServer} from './free-practice-app-fixtures.js';
+import {waitForTestCondition} from './async-test-wait.js';
 const read=name=>readFile(new URL(`../${name}`,import.meta.url),'utf8');
 const renderer=await read('crates/desktop-shell/song-authoring-acceptance.js'),fixtures=authoringAcceptanceFixtures();
+const navigation=await read('crates/desktop-shell/acceptance-wait.js'),reference=await read('crates/desktop-shell/reference-acceptance.js'),performanceSetup=await read('crates/desktop-shell/performance-song-acceptance.js');
+const {createAcceptanceNavigation,prepareAuthoringNavigationPause,activatePerformanceOriginalScore}=vm.runInNewContext(`${navigation}\n${reference}\n${performanceSetup.split('(() => {')[0]}\n${renderer.split('(() => {')[0]}\n({createAcceptanceNavigation,prepareAuthoringNavigationPause,activatePerformanceOriginalScore})`,{AbortController,setTimeout,clearTimeout,performance,TextEncoder,queueMicrotask});
+// Node DOM regression only: real app handlers and elapsed clock, fixture Rust
+// replies and untrusted DOM clicks. This cannot create native acceptance proof.
+async function navigationFixture({suppress=null}={}){
+ const serve=await fixtureScoreServer(),app=await freePracticeApp({fetchResult:serve}),prototype=app.window.HTMLElement.prototype,geometry=Object.getOwnPropertyDescriptor(prototype,'getBoundingClientRect'),timers=new Set(),actions=[];
+ Object.defineProperty(prototype,'getBoundingClientRect',{configurable:true,value(){return{width:120,height:40};}});
+ Object.defineProperty(globalThis,'requestAnimationFrame',{configurable:true,value:callback=>{const timer=setTimeout(()=>{timers.delete(timer);callback(performance.now());},10);timers.add(timer);return timer;}});
+ Object.defineProperty(globalThis,'cancelAnimationFrame',{configurable:true,value:timer=>{clearTimeout(timer);timers.delete(timer);}});
+ app.emit(app.window,'pageshow',{persisted:true});
+ const click=id=>app.$(id).click(),until=(condition,label)=>waitForTestCondition(condition,{label,timeoutMs:(suppress==='start-listen'&&label==='native Start Listen is running')||(suppress==='back-to-library'&&label==='navigation genuinely paused')?200:5000}),menu=createAcceptanceNavigation({document:app.document,click,until});
+ const native=async(kind,node)=>{assert.equal(kind,'click');actions.push(node.id);if(node.id!==suppress)node.click();return actions.length;};
+ const snapshot=()=>({title:app.$('score-title').textContent,stage:app.$('stage-title').textContent,mode:app.$('session-mode').value,clock:app.$('progress').value,captured:app.$('hud-captured').textContent,cue:app.$('stage-cue').dataset.cueState,soundMuted:app.$('sound-button').getAttribute('aria-pressed')==='true',pressed:app.document.querySelectorAll('.pressed').length});
+ await menu.enterLibrary();
+ return{app,click,until,menu,native,snapshot,actions,async close(){try{await app.close();}finally{for(const timer of timers)clearTimeout(timer);if(geometry)Object.defineProperty(prototype,'getBoundingClientRect',geometry);else delete prototype.getBoundingClientRect;}}};
+}
+test('real Start Listen handler starts transport and a second Play toggle pauses it',async()=>{
+ const f=await navigationFixture();try{
+  await activatePerformanceOriginalScore({document:f.app.document,click:f.click,menu:f.menu});await f.until(()=>Number(f.app.$('progress').value)>0,'Start Listen clock advances');assert.notEqual(f.snapshot().cue,'paused');
+  await f.native('click',f.app.$('play-button'));assert.equal(f.snapshot().cue,'paused');assert.deepEqual(f.app.audio(),{contexts:0,unlocks:0});
+ }finally{await f.close();}
+});
+test('authoring waits for Start Listen transport before Songs pauses it, without a second toggle',async()=>{
+ const f=await navigationFixture();try{
+  const result=await prepareAuthoringNavigationPause({document:f.app.document,...f});assert.deepEqual(f.actions,['start-listen','back-to-library']);assert.ok(Number(result.before.clock)>0);assert.equal(result.after.cue,'paused');assert.equal(result.after.pressed,0);assert.equal(result.admission.stage,'complete');assert.equal(result.admission.trustedPlayClicks,0);assert.deepEqual(f.app.audio(),{contexts:0,unlocks:0});
+  assert.deepEqual(Array.from(result.admission.rows.filter(row=>['listen-ready','listen-running','navigation-paused'].includes(row.kind)),row=>row.kind),['listen-ready','listen-running','navigation-paused']);
+  assert.ok(result.admission.rows.filter(row=>row.event?.type==='click').every(row=>row.event.trusted===false),'Node DOM evidence must remain explicitly untrusted');
+ }finally{await f.close();}
+});
+test('missing listen or navigation effects fail at their own causal boundary without retrying',async()=>{
+ for(const suppress of ['start-listen','back-to-library']){const f=await navigationFixture({suppress});try{
+  await assert.rejects(prepareAuthoringNavigationPause({document:f.app.document,...f}),error=>{assert.equal(error.authoringNavigation.stage,suppress==='start-listen'?'listen-start':'navigation-pause');assert.notEqual(error.authoringNavigation.current.screen,suppress==='start-listen'?'stage':'library');return true;});
+  assert.deepEqual(f.actions,suppress==='start-listen'?['start-listen']:['start-listen','back-to-library']);
+ }finally{await f.close();}}
+});
+function navigationEvidence(){
+ const state={screen:'library',mode:'listen',playDisabled:false,hidden:false,openDialogs:[],positionMs:0,durationMs:10000,cue:'ready',captured:'0',soundMuted:true},running={...state,screen:'stage',positionMs:100,cue:''},paused={...state,positionMs:120,cue:'paused'},event=control=>({type:'click',control,trusted:true}),rows=[{kind:'listen-ready',state},{kind:'event',event:event('start-listen'),state},{kind:'listen-running',state:running},{kind:'event',event:event('back-to-library'),state:running},{kind:'navigation-paused',state:paused}].map((row,index)=>({elapsedMs:index,...row})),snapshot=s=>({title:'Original',stage:'Original',clock:String(s.positionMs),mode:s.mode,captured:s.captured,cue:s.cue,soundMuted:true,pressed:0});
+ return{navigationSetup:{kind:'native-listen-navigation',previewId:'first-steps',title:'Original',controls:['sound-button','start-listen','back-to-library'],listenAction:1,navigationAction:2},navigationAdmission:{version:1,stage:'complete',omitted:0,rowBytes:1000,trustedPlayClicks:0,trustedKeyDowns:0,trustedKeyUps:0,rows,current:paused},navigationBefore:snapshot(running),navigationAfter:snapshot(paused),trusted:[{sequence:1,id:'start-listen',type:'click',trusted:true},{sequence:2,id:'back-to-library',type:'click',trusted:true}],pickerObservations:[{sequence:5}],baselineScope:{humanActionStart:20}};
+}
+test('navigation proof requires ordered trusted start, running clock and real paused navigation before picker or take',()=>{
+ const report=navigationEvidence();validateAuthoringNavigation(report);
+ for(const edit of [r=>r.navigationSetup.previewId='native:converted',r=>r.navigationSetup.navigationAction=1,r=>r.trusted[0].trusted=false,r=>r.trusted[1].sequence=1,r=>r.pickerObservations[0].sequence=1,r=>r.baselineScope.humanActionStart=1,r=>r.navigationAdmission.trustedPlayClicks=1,r=>r.navigationAdmission.omitted=1,r=>r.navigationAdmission.rows[1].event.trusted=false,r=>r.navigationAdmission.rows[3].event.control='play-button',r=>r.navigationAdmission.rows[2].state.positionMs=0,r=>r.navigationAdmission.rows[2].state.cue='paused',r=>r.navigationAdmission.rows[2].state.hidden=true,r=>r.navigationAdmission.rows[2].state.mode='practice',r=>r.navigationAdmission.rows[2].state.openDialogs=['settings'],r=>r.navigationAdmission.rows.reverse(),r=>r.navigationAdmission.rows[4].state.screen='stage',r=>r.navigationAfter.pressed=1,r=>r.navigationAfter.clock='101',r=>r.navigationAfter.captured='1']){const bad=structuredClone(report);edit(bad);assert.throws(()=>validateAuthoringNavigation(bad));}
+});
+test('Songs must receive its trusted click while running, even if a prior blur already paused the session',()=>{
+ for(const blur of [false,true]){const report=navigationEvidence(),paused={...report.navigationAdmission.rows[3].state,cue:'paused'};report.navigationAdmission.rows[3].state=paused;
+  if(blur)report.navigationAdmission.rows.splice(3,0,{elapsedMs:2.5,kind:'after-blur',state:paused});
+  assert.throws(()=>validateAuthoringNavigation(report),/Songs must receive its click while the original transport is still running/);
+ }
+});
 function picker(sequence,file){const chosen=fixtures.filter(f=>file===AUTHORING_PAIR_ALIAS?f.id!=='blocked':f.id==='blocked');return{sequence,file,completed:true,started_wall_ms:0,finished_wall_ms:0,blurs:[],delegated:[{id:'authoring-files',type:'click',trusted:false}],changes:[{trusted:true,count:chosen.length,input:{id:'authoring-files',type:'file',multiple:true,disabled:false,connected:true}}],files:chosen.map(f=>({filename:f.filename,bytes:f.bytes.length,sha256:f.manifest.sha256}))};}
 test('actual picker inventory requires the exact pair, blocked file, count, bytes and trusted change',()=>{
  const report={phase:'authoring-seed',pickerObservations:[picker(1,AUTHORING_PAIR_ALIAS),picker(2,AUTHORING_FIXTURE_FILENAMES.blocked),picker(3,AUTHORING_PAIR_ALIAS)]};validateAuthoringPicker(report);validateAuthoringPicker({phase:'authoring-restart',pickerObservations:[]});
  for(const edit of [r=>r.pickerObservations.pop(),r=>r.pickerObservations[0].files.pop(),r=>r.pickerObservations[0].files.reverse(),r=>r.pickerObservations[0].files[0].sha256='0'.repeat(64),r=>r.pickerObservations[0].files[0].bytes++,r=>r.pickerObservations[0].changes[0].count=1,r=>r.pickerObservations[0].changes[0].trusted=false,r=>r.pickerObservations[0].changes[0].input.id='score-file',r=>r.pickerObservations[0].delegated.push({id:'authoring-files',type:'click',trusted:false}),r=>r.pickerObservations[0].file='../other.mid',r=>r.pickerObservations[0].completed=false]){const bad=structuredClone(report);edit(bad);assert.throws(()=>validateAuthoringPicker(bad));}
 });
-test('authoring picker aliases cannot select arbitrary or expanded fixture paths',()=>{
- assert.deepEqual(authoringPickerFiles(AUTHORING_PAIR_ALIAS,'/fixtures'),['/fixtures/authoring-original-strict.mid','/fixtures/authoring-original-events.mid']);assert.deepEqual(authoringPickerFiles(AUTHORING_FIXTURE_FILENAMES.blocked,'/fixtures'),['/fixtures/authoring-original-blocked.mid']);
- for(const alias of ['*','authoring-original-multiple','authoring-original-strict.mid','../authoring-original-blocked.mid','/private/music.mid','a.mid" "b.mid',null])assert.throws(()=>authoringPickerFiles(alias,'/fixtures'));
+test('authoring picker uses host-native paths and rejects arbitrary or expanded aliases with either separator',()=>{
+ const directory=path.resolve('fixtures');
+ // FileChooser consumes filesystem paths on the host running the acceptance check.
+ assert.deepEqual(authoringPickerFiles(AUTHORING_PAIR_ALIAS,directory),[path.join(directory,'authoring-original-strict.mid'),path.join(directory,'authoring-original-events.mid')]);assert.deepEqual(authoringPickerFiles(AUTHORING_FIXTURE_FILENAMES.blocked,directory),[path.join(directory,'authoring-original-blocked.mid')]);
+ for(const alias of ['*','authoring-original-multiple','authoring-original-strict.mid','../authoring-original-blocked.mid','..\\authoring-original-blocked.mid','./authoring-original-blocked.mid','.\\authoring-original-blocked.mid','/private/music.mid','C:\\private\\music.mid','\\\\server\\share\\music.mid','a.mid" "b.mid',null])assert.throws(()=>authoringPickerFiles(alias,directory));
 });
 test('the renderer observes real selected File bytes and bounds the entire selection',async()=>{
  const listeners={},document={addEventListener:(name,fn)=>listeners[name]=fn,removeEventListener:()=>{}};
