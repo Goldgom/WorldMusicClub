@@ -1,7 +1,8 @@
 name: Original basic-key focused acceptance
+run-name: ${{ github.ref == 'refs/heads/preview/basic-key-browser' && 'Basic-key Linux transport preview (non-acceptance)' || 'Original basic-key focused acceptance' }}
 on:
   push:
-    branches: ['preview/basic-key']
+    branches: ['preview/basic-key', 'preview/basic-key-browser']
   workflow_dispatch:
 permissions:
   contents: read
@@ -137,6 +138,9 @@ jobs:
             test-results/basic-key/*/Scores/import-backups/**
           if-no-files-found: warn
   basic-key-windows:
+    # Only the explicitly named Linux transport preview omits native Windows.
+    # It cannot establish acceptance or replace any exact-source full gate.
+    if: ${{ github.ref != 'refs/heads/preview/basic-key-browser' }}
     name: Owned Windows basic-key picker and clean library restart
     runs-on: windows-latest
     timeout-minutes: 40

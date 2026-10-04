@@ -24,7 +24,7 @@ test('real-source Worklet closure receipts compare all four untouched transitive
  const receipts=await verifyHostedWorkletAssets({root,sourceSha:sha,origin,fetcher});assert.deepEqual(receipts.map(row=>row.path),['web/basic-key-audio-processor.js','web/basic-key-audio-core.js','web/basic-key-audio-plan.js','web/basic-key-rendition.js']);assert.ok(receipts.every(row=>row.source_sha===sha&&row.status===200&&row.bytes>0));
  await assert.rejects(verifyHostedWorkletAssets({root,sourceSha:sha,origin,fetcher:async url=>response(url,'modified')}),/differs from frozen source/);
  await assert.rejects(verifyHostedWorkletAssets({root,sourceSha:sha,origin,fetcher:async url=>response(url,'not found',{status:404})}),/did not serve/);
- await assert.rejects(verifyHostedWorkletAssets({root,sourceSha:sha,origin,fetcher,sourceReader:async()=>Buffer.from("import 'https://foreign.example/module.js';")}),/differs from frozen source/);
+ const remote=Buffer.from("import 'https://foreign.example/module.js';");await assert.rejects(verifyHostedWorkletAssets({root,sourceSha:sha,origin,fetcher:async url=>response(url,remote),sourceReader:async()=>remote}),/same-origin sibling/);
  await assert.rejects(boundedHostedResponse(response(origin,Buffer.alloc(32)),8),/byte bound/);
 });
 test('drain waits only for already-admitted work and rejects new admission',async()=>{
@@ -56,4 +56,18 @@ test('existing production embedding rejects symlinks and bounds source paths and
  for(const marker of ['symlink_metadata','file_type().is_symlink()','canonical.starts_with(root)','limits.files','limits.file_bytes','limits.total_bytes','limits.depth'])assert.ok(build.includes(marker),marker);
  const server=await readFile(new URL('../crates/practice-server/src/main.rs',import.meta.url),'utf8');assert.ok(server.includes('127.0.0.1:{port}'));assert.ok(server.includes('host != Some(authority)'));assert.ok(server.includes('web_asset(asset)'));
  for(const name of ['hosted-basic-key-check.mjs','hosted-dense-rendition-check.mjs']){const source=await readFile(new URL('../scripts/'+name,import.meta.url),'utf8');assert.ok(source.includes('startHostedAssetServer'));assert.ok(source.includes('nativeBridge.run'));assert.ok(source.includes('expectedOrigin:origin'));assert.ok(!source.includes('context.route(`${origin}/**`'));assert.ok(!source.includes('await readFile(file)'));}
+});
+
+test('only the named non-acceptance browser preview skips Windows; full acceptance stays mandatory',()=>{
+ const parse=name=>JSON.parse(execFileSync('python3',['scripts/check-authoring-workflow.py','--json',`.github/workflows/${name}`],{cwd:root,encoding:'utf8'}));
+ const preview=parse('basic-key-preview.yml'),full=parse('windows-desktop-acceptance.yml');
+ assert.deepEqual(preview.on.push.branches,['preview/basic-key','preview/basic-key-browser']);assert.ok(Object.hasOwn(preview.on,'workflow_dispatch'));
+ const skipRef='refs/heads/preview/basic-key-browser';assert.equal(preview.jobs['basic-key-windows'].if,"${{ github.ref != 'refs/heads/preview/basic-key-browser' }}");assert.equal(preview.jobs['basic-key-browser'].if,undefined);assert.match(preview['run-name'],/Linux transport preview \(non-acceptance\)/);
+ for(const ref of ['refs/heads/preview/basic-key','refs/heads/validation/333','refs/heads/main'])assert.notEqual(ref,skipRef);
+ assert.deepEqual(full.on.push.branches,['integration/native-desktop','validation/**']);assert.ok(Object.hasOwn(full.on,'workflow_dispatch'));
+ for(const job of ['bulk-import-browser','native-feature-acceptance'])assert.equal(full.jobs[job].if,undefined);assert.deepEqual(full.jobs['acceptance-summary'].needs,['bulk-import-browser','native-feature-acceptance']);assert.equal(full.jobs['acceptance-summary'].if,'${{ always() }}');
+});
+
+test('missing source-built executable records failure before touching the listener boundary',async()=>{
+ const evidence={};let touched=false;await assert.rejects(startHostedAssetServer({root,sourceSha:sha,evidence,environment:{GITHUB_ACTIONS:'true',WMH_HOSTED_BROWSER:'1'},boundary:{readFile:async()=>{throw Error('missing exact-source executable');},createServer:()=>{touched=true;}}}),/missing exact-source/);assert.equal(touched,false);assert.equal(evidence.status,'failed');assert.equal(evidence.cleanup.status,'not-started');
 });

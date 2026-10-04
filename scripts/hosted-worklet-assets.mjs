@@ -71,8 +71,9 @@ export async function verifyHostedWorkletAssets({root,sourceSha,origin,fetcher=f
 // process or browser. Production callers still need both explicit CI gates.
 export async function startHostedAssetServer({root,sourceSha,binary=resolve(root,'target/debug/practice-server'),evidence={},environment=process.env,boundary={}}){
  assert.equal(environment.GITHUB_ACTIONS,'true','Only authorized hosted Actions may launch the asset server');assert.equal(environment.WMH_HOSTED_BROWSER,'1','Only authorized hosted browser checks may launch the asset server');
- assert.match(sourceSha,/^[a-f0-9]{40}$/);const bytes=await (boundary.readFile||readFile)(binary);
- Object.assign(evidence,{kind:'exact-source-practice-server',source_sha:sourceSha,binary,server_bytes:bytes.length,server_sha256:hash(bytes),bind:'127.0.0.1',status:'starting',assets:[],log:'',cleanup:{status:'pending'}});
+ assert.match(sourceSha,/^[a-f0-9]{40}$/);
+ Object.assign(evidence,{kind:'exact-source-practice-server',source_sha:sourceSha,binary,bind:'127.0.0.1',status:'starting',assets:[],log:'',cleanup:{status:'not-started'}});
+ try{const bytes=await (boundary.readFile||readFile)(binary);evidence.server_bytes=bytes.length;evidence.server_sha256=hash(bytes);}catch(error){evidence.status='failed';evidence.error=String(error?.stack||error);throw error;}
  const reservation=(boundary.createServer||createServer)();let server,exited,exitResult,spawnError;
  const close=async()=>{
   if(!server){evidence.cleanup={status:'not-started'};return;}
