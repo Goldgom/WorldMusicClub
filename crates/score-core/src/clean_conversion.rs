@@ -25,6 +25,7 @@ pub const MAX_PACKAGE_METADATA_BYTES: usize = 256 * 1024;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum State {
+    BasicKeyCandidate,
     StrictNotationCandidate,
     EventOnlyReferenceCandidate,
     VsqAuthoringCandidate,
@@ -105,6 +106,15 @@ pub struct Draft {
     pub diagnostics: Vec<Diagnostic>,
     pub package: Option<Package>,
     pub draft_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub basic_key_coverage: Option<crate::basic_keys::Coverage>,
+}
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Intent {
+    #[default]
+    SourceRendition,
+    BasicKeys,
 }
 /// Transport options remain separate from raw source bytes in the core API.
 #[derive(Deserialize)]
@@ -113,6 +123,8 @@ pub struct Request {
     pub source_base64: String,
     pub source_name: String,
     pub title: String,
+    #[serde(default)]
+    pub intent: Intent,
 }
 #[derive(Debug)]
 pub struct RequestError {
@@ -157,7 +169,11 @@ pub fn prepare_request(request: Request) -> Result<Draft, RequestError> {
             source_limit: true,
         });
     }
-    prepare_midi(&bytes, &request.title, &request.source_name).map_err(|message| RequestError {
+    let prepare = match request.intent {
+        Intent::SourceRendition => prepare_midi,
+        Intent::BasicKeys => prepare_basic_keys,
+    };
+    prepare(&bytes, &request.title, &request.source_name).map_err(|message| RequestError {
         message,
         source_limit: false,
     })
@@ -185,6 +201,7 @@ pub fn prepare_midi(bytes: &[u8], title: &str, source_name: &str) -> Result<Draf
         diagnostics: vec![],
         package: None,
         draft_sha256: None,
+        basic_key_coverage: None,
     };
     if vsq::prepare(bytes, &mut draft)? {
         return Ok(draft);
@@ -288,6 +305,114 @@ pub fn prepare_midi(bytes: &[u8], title: &str, source_name: &str) -> Result<Draf
         score_json: String::from_utf8(score_bytes).map_err(|e| e.to_string())?,
     };
     install_package(&mut draft, package);
+    Ok(draft)
+}
+
+/// Explicit basic-key authoring intent. The existing source-rendition choice
+/// and all VSQ handling remain unchanged; the caller must choose this profile.
+pub fn prepare_basic_keys(bytes: &[u8], title: &str, source_name: &str) -> Result<Draft, String> {
+    presentation(title, MAX_TITLE_BYTES, "Title")?;
+    presentation(source_name, MAX_SOURCE_NAME_BYTES, "Source name")?;
+    if bytes.len() > midi_events::MAX_SOURCE_BYTES {
+        return Err("Original MIDI/VSQ exceeds the 5 MiB source limit".into());
+    }
+    let mut draft = Draft {
+        state: State::Rejected,
+        source: clean_song::SourceEvidence {
+            format: "midi".into(),
+            bytes: bytes.len(),
+            sha256: hash(bytes),
+        },
+        source_name: source_name.into(),
+        title: title.into(),
+        inventory: None,
+        diagnostics: vec![],
+        package: None,
+        draft_sha256: None,
+        basic_key_coverage: None,
+    };
+    if vsq::prepare(bytes, &mut draft)? {
+        return Ok(draft);
+    }
+    let timeline = match midi_events::parse_midi_events_compatible(bytes, None) {
+        Ok(timeline) => timeline,
+        Err(error) => {
+            draft.diagnostics.push(diagnostic("basic_source_rejected", error.message,
+                "Keep the complete original source and resolve the reported source/format error; no partial package was produced."));
+            return Ok(draft);
+        }
+    };
+    draft.inventory = Some(inventory(&timeline));
+    let score = match crate::basic_keys::convert_midi(bytes, title) {
+        Ok(score) => score,
+        Err(error) => {
+            draft.diagnostics.push(diagnostic(
+                &error.code,
+                error.message,
+                "Review the reported source error; no tracks or events were removed.",
+            ));
+            return Ok(draft);
+        }
+    };
+    let encoded = match crate::basic_keys::encode_json(&score) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            draft.diagnostics.push(diagnostic(
+                "basic_complete_conversion_rejected",
+                error,
+                "Keep the complete source; no tracks or events were trimmed.",
+            ));
+            return Ok(draft);
+        }
+    };
+    draft.inventory.as_mut().expect("parsed inventory").parts = score
+        .performance
+        .parts
+        .iter()
+        .zip(&score.notation.parts)
+        .map(|(part, notation)| PartInventory {
+            id: part.id.clone(),
+            track_id: part.track_id.clone(),
+            channel: Some(part.channel),
+            notation_available: !notation.notes.is_empty(),
+            vsq: None,
+        })
+        .collect();
+    draft.basic_key_coverage = Some(score.coverage.clone());
+    draft.diagnostics.push(diagnostic("basic_key_projection",
+        format!("All {} source events and {} key attacks are retained. {} positive determined non-channel-10 targets are available; {} attacks have unresolved ends and {} attacks have exactly zero length.",score.coverage.source_events,score.coverage.key_attacks,score.coverage.projected_melodic_targets,score.coverage.unresolved_ends,score.coverage.zero_length_attacks),
+        "Review nominal MIDI key numbers and source-clock provenance. Timed practice requires an available clock; source sound and acoustic pitch are not inferred."));
+    if !score.performance.timing.relative_clock_available {
+        draft.diagnostics.push(diagnostic("basic_clock_unavailable","The source has no single valid relative clock; all ticks, beats and key events remain present.".into(),"Inspect the complete projection; timed practice is unavailable until the clock ambiguity is resolved."));
+    }
+    if score.performance.timing.invalid_program_events > 0 {
+        draft.diagnostics.push(diagnostic(
+            "basic_invalid_program_data",
+            format!(
+                "{} invalid program data bytes are retained unchanged.",
+                score.performance.timing.invalid_program_events
+            ),
+            "Review the source defect; no program value was clamped or assigned an instrument.",
+        ));
+    }
+    if score.performance.timing.legacy_running_status_events > 0 {
+        draft.diagnostics.push(diagnostic("basic_legacy_running_status",format!("{} channel events use explicitly recorded legacy running status across metadata.",score.performance.timing.legacy_running_status_events),"Review the compatibility annotation; original event values and source coordinates remain unchanged."));
+    }
+    let metadata = serde_json::json!({
+        "format":"worldmusichub-song", "version":2, "id":score.notation.id, "title":title,
+        "score":{"path":"score.json","bytes":encoded.len(),"sha256":hash(&encoded)},
+        "sources":[draft.source],
+        "rights":{"status":"user_supplied_unverified","attribution":"User-supplied MIDI; source rights are unverified","license":null},
+        "media":[]
+    });
+    draft.state = State::BasicKeyCandidate;
+    install_package(
+        &mut draft,
+        Package {
+            metadata_json: serde_json::to_string_pretty(&metadata).map_err(|e| e.to_string())?,
+            score_json: String::from_utf8(encoded).map_err(|e| e.to_string())?,
+        },
+    );
     Ok(draft)
 }
 fn install_package(draft: &mut Draft, package: Package) {

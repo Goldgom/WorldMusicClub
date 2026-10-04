@@ -40,6 +40,31 @@ fn prepared(bytes: &[u8]) -> Draft {
     prepare_midi(bytes, "原创 C/E/G", "authored.mid").unwrap()
 }
 #[test]
+fn explicit_basic_intent_preserves_default_and_retains_unsupported_sound_events() {
+    use base64::Engine;
+    let bytes = source(&[0, 0xf0, 3, 0x7d, 0x01, 0xf7]);
+    assert_eq!(prepared(&bytes).state, State::Rejected);
+    let request: Request = serde_json::from_value(serde_json::json!({
+        "source_base64":base64::engine::general_purpose::STANDARD.encode(&bytes),
+        "source_name":"original.mid","title":"Original basic intent","intent":"basic_keys",
+    }))
+    .unwrap();
+    let draft = prepare_request(request).unwrap();
+    assert_eq!(draft.state, State::BasicKeyCandidate);
+    assert_eq!(draft.basic_key_coverage.as_ref().unwrap().key_attacks, 3);
+    let package = draft.package.as_ref().unwrap();
+    let score = crate::basic_keys::decode_json(package.score_json.as_bytes()).unwrap();
+    assert_eq!(score.coverage.source_events, 19);
+    assert_eq!(score.coverage.projected_melodic_targets, 3);
+    assert!(draft.pack().is_ok());
+    let legacy: Request = serde_json::from_value(serde_json::json!({
+        "source_base64":base64::engine::general_purpose::STANDARD.encode(&bytes),
+        "source_name":"original.mid","title":"Original default intent",
+    }))
+    .unwrap();
+    assert_eq!(prepare_request(legacy).unwrap().state, State::Rejected);
+}
+#[test]
 fn all_tracks_and_unfiltered_exact_source_clocks_survive_strict_draft() {
     let bytes = source(&[]);
     let draft = prepared(&bytes);
