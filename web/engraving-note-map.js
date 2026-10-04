@@ -2,6 +2,7 @@ import {basicKeyEngravingBoundaries} from './basic-key-notation.js';
 /** Verify display identity only. Rust owns every performance interval. */
 import {ENGRAVING_SOURCE_LIMITS} from './engraving-projection.js';
 const VERSION=1,MAX_BYTES=ENGRAVING_SOURCE_LIMITS.mapBytes,MAX_SEGMENTS=ENGRAVING_SOURCE_LIMITS.notes;
+const admittedPageBoundaries=new WeakMap();
 const STEPS=['C','D','E','F','G','A','B'],NATURAL=[0,2,4,5,7,9,11];
 const diagnostic=(code,message,segments=[])=>({code,message,sourceNoteIds:[...new Set(segments.map(s=>s.source_note_id))],xmlNoteIds:[...new Set(segments.map(s=>s.xml_note_id))]});
 const fail=message=>{throw Error(message)};
@@ -76,6 +77,7 @@ export function validateEngravingNoteMap(document,identity){
       }
     }
     if(seen.size!==segments.length)fail('The complete identity map and XML note counts differ.');
+    if(boundaryTies)admittedPageBoundaries.set(boundaryTies,new Map([...boundaryTies].map(([id,flags])=>[id,Object.freeze({...flags})])));
     return {ok:true,status:'ready',version:VERSION,segments:[...segments],sources,score,partIdMap,boundaryTies,diagnostics:boundaryTies?.size?[diagnostic('engraving_page_continuations','Open page-edge ties are verified against complete source intervals. Continuation records retain the full source duration; notation outside this page is not loaded.')]:[]};
   }catch(error){return {ok:false,status:'unavailable',diagnostics:[diagnostic('engraving_note_map_unavailable',error.message)]}}
 }
@@ -110,6 +112,48 @@ export function matchEngravingModel(renderer,validated,{includeContext=false}={}
     }
     return {...validated,matches,diagnostics};
   }catch(error){return {...validated,ok:false,status:'unavailable',matches:[],diagnostics:[diagnostic('engraving_model_unavailable',error.message)]}}
+}
+
+/**
+ * The pinned reader drops an entire chain when its first stop+start is an
+ * explicitly admitted incoming page continuation. Rebuild only that proven
+ * within-page chain from its existing exact Note objects. No outside note,
+ * XML flag, pitch, duration, or general missing tie is invented or replaced.
+ */
+export function restoreSourceBoundPageTies(renderer,validated,Tie,types){
+  const chains=validated.projection?.tieChains||[];
+  if(!validated.ok||!validated.boundaryTies?.size||!chains.length)return {ok:true,restored:0};
+  const boundaries=admittedPageBoundaries.get(validated.boundaryTies);
+  if(!boundaries)return {ok:false,key:'tieContext'};
+  const matched=matchEngravingModel(renderer,validated,{includeContext:true});
+  if(!matched.ok||matched.diagnostics.length)return {ok:false,key:'tieContext'};
+  const byId=new Map(matched.matches.map(match=>[match.segment.xml_note_id,match]));
+  const repairs=[];
+  for(const chain of chains){
+    const matches=chain.map(id=>byId.get(id)),first=matches[0]?.segment;
+    if(!first||!boundaries.get(first.source_note_id)?.incoming||!first.tie_stop)continue;
+    const sourceRecord=validated.sources.get(first.source_note_id),source=sourceRecord?.note;
+    if(!source||!equal(rational(first.at),rational(source.at)))continue;
+    if(matches.length<2||new Set(matches.map(match=>match?.note)).size!==matches.length||matches.some((match,index)=>{
+      const segment=match?.segment,previous=matches[index-1]?.segment;
+      return !match?.note||!segment.pitch||segment.source_note_id!==first.source_note_id||segment.part_id!==sourceRecord.part.id||
+        segment.staff!==source.staff||segment.voice!==source.voice||segment.xml_voice!==first.xml_voice||segment.lane!==first.lane||
+        pitchKey(segment.pitch)!==pitchKey(source.pitch)||!segment.tie_stop||
+        (index<matches.length-1&&!segment.tie_start)||
+        (previous&&!equal(add(rational(previous.at),rational(previous.duration)),rational(segment.at)));
+    }))return {ok:false,key:'tieContext'};
+    const last=matches.at(-1).segment;
+    if(!equal(add(rational(last.at),rational(last.duration)),add(rational(source.at),rational(source.duration))))return {ok:false,key:'tieContext'};
+    // Existing or partially populated ties still face the ordinary strict
+    // membership check. This path only addresses the reader's all-missing case.
+    if(matches.some(match=>match.note.NoteTie))continue;
+    repairs.push(matches.map(match=>match.note));
+  }
+  if(repairs.length&&(typeof Tie!=='function'||types?.SIMPLE!==''))return {ok:false,key:'tieContext'};
+  try{
+    for(const notes of repairs){const tie=new Tie(notes[0],types.SIMPLE);for(const note of notes.slice(1))tie.AddNote(note);}
+  }catch{return {ok:false,key:'tieContext'};}
+  return {ok:true,restored:repairs.length};
 }
 
 /** XML flags alone do not prove the pinned reader retained a visible tie. */

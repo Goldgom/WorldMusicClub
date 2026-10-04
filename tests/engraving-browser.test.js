@@ -599,16 +599,17 @@ async function installBindingObservation() {
   });
 }
 
-async function renderBinding(score, exported, renderOptions = {}) {
+async function renderBinding(score, exported, renderOptions = {}, sourceBoundFixture = null) {
   // First load the real shipped bundle through the production adapter. This warm
   // render uses the same bounded request; the observed render below is a fresh
   // real OSMD instance. A long source must never need an unbound full-score load.
   if (!await page.evaluate(() => Boolean(window.__wmhBinding))) {
-    await render(exported.xml, {...renderOptions,
+    if(sourceBoundFixture)await render((await exportScore()).xml);
+    else await render(exported.xml, {...renderOptions,
       identity: {score, noteMap: exported.note_id_map, partIdMap: exported.part_id_map, voiceIdMap: exported.voice_id_map}});
     await installBindingObservation();
   }
-  const result = await page.evaluate(async ({score, exported, options}) => {
+  const result = await page.evaluate(async ({score, exported, options, sourceBoundFixture}) => {
     const watch = window.__wmhBinding;
     watch.exported = exported;
     watch.from = options.fromMeasure ?? 1;
@@ -617,9 +618,17 @@ async function renderBinding(score, exported, renderOptions = {}) {
     watch.score = score;
     watch.partIds = options.partIds ?? Object.values(exported.part_id_map);
     watch.events = [];
+    let identity={score,noteMap:exported.note_id_map,partIdMap:exported.part_id_map,voiceIdMap:exported.voice_id_map};
+    if(sourceBoundFixture){
+      const {prepareCleanSong}=await import('/clean-song-package.js'),{basicKeyNotationPage,basicKeyEngravingIdentity}=await import('/basic-key-notation.js');
+      const song=prepareCleanSong(`native:song-${sourceBoundFixture.open.clean_package.content_sha256}`,sourceBoundFixture.open.clean_package,null);
+      const nativePage=basicKeyNotationPage(sourceBoundFixture.response,sourceBoundFixture.request,song);
+      watch.assert(JSON.stringify(nativePage.score)===JSON.stringify(score)&&nativePage.musicxml.xml===exported.xml,'The observed page is the complete native-admitted fixture');
+      identity=basicKeyEngravingIdentity(song,nativePage);
+    }
     const ready = await window.engraving.renderEngravedStaff(document.querySelector('#staff'), exported.xml, {
       ...options,
-      identity: {score, noteMap: exported.note_id_map, partIdMap: exported.part_id_map, voiceIdMap: exported.voice_id_map},
+      identity,
       onMappingChange: status => watch.events.push({status, liveSvg: Boolean(document.querySelector('#staff svg'))}),
     });
     window.lastEngraving = ready;
@@ -630,7 +639,7 @@ async function renderBinding(score, exported, renderOptions = {}) {
     watch.assert(typeof ready.setExpectedWrittenNotes === 'function', 'Public exact written-note setter');
     watch.assert(typeof ready.clearExpectedWrittenNotes === 'function', 'Public written-note clearer');
     return {status: ready.status, message: ready.message, mapping: ready.mappingStatus(), events: watch.events};
-  }, {score, exported, options: renderOptions});
+  }, {score, exported, options: renderOptions, sourceBoundFixture});
   assert.equal(result.status, 'ready', result.message);
   assert.ok(bindingStatusIsUsable(result.mapping), JSON.stringify(result.mapping));
   assert.equal(result.mapping.version, 1);
@@ -1291,4 +1300,34 @@ test('verified expected bounds follow pane scrolling without rebinding or moving
   assert.equal(after.generation,before.generation);assert.equal(after.renders,before.renders);assert.ok(Math.abs(before.bounds.rects[0].top-after.bounds.rects[0].top-movement)<1);
   await page.evaluate(()=>window.__wmhBinding.checkExpected(['tie-stop-D5'],2));await clearBinding();
   await bindingEvidence('fresh-bounds-after-scroll',{before,after,movement});
+});
+
+test('native incoming continuation and bounded exact-rhythm pieces own real SVG tie curves',options,async()=>{
+ const incoming=JSON.parse(await readFile(new URL('./fixtures/basic-key-open-tie-page.json',import.meta.url),'utf8'));
+ const exact=JSON.parse(await readFile(new URL('./fixtures/exact-rhythm-excerpt.json',import.meta.url),'utf8'));
+ const cases=[{name:'incoming-native-page',score:incoming.response.page.score,exported:incoming.response.page.musicxml,fixture:incoming,curves:1},{name:'exact-excerpt-pieces',score:exact.score,exported:exact.exported,fixture:null,curves:2}],evidence=[];
+ for(const item of cases){
+  const before=JSON.stringify(item),shown=await renderBinding(item.score,item.exported,{fromMeasure:1,toMeasure:item.score.measures.length},item.fixture);
+  assert.equal(shown.result.mapping.verifiedGlyphCount,item.exported.note_id_map.segments.length);
+  const proof=await page.evaluate(()=>{
+   const watch=window.__wmhBinding,renderer=watch.renderer,model=[];
+   for(const measure of renderer.Sheet.SourceMeasures)for(const vertical of measure.VerticalSourceStaffEntryContainers)for(const staff of vertical.StaffEntries||[])for(const voice of staff?.VoiceEntries||[])for(const note of voice.Notes||[])if(note.PrintObject!==false&&!model.includes(note))model.push(note);
+   const graphicalTies=new Set();for(const row of renderer.GraphicSheet.MeasureList)for(const measure of row||[])for(const staff of measure?.staffEntries||[])for(const tie of staff.GraphicalTies||[])graphicalTies.add(tie);
+   const curves=[];
+   for(const note of model){
+    const tie=note.NoteTie,index=tie?.Notes.indexOf(note),next=tie?.Notes[index+1];if(!next)continue;
+    const candidates=[...graphicalTies].filter(graph=>graph.StartNote?.sourceNote===note&&graph.EndNote?.sourceNote===next&&graph.Tie===tie);
+    const painted=candidates.find(graph=>graph.vfTie&&graph.SVGElement?.isConnected&&graph.SVGElement.querySelector('path'));
+    watch.assert(Boolean(painted),'Every adjacent source-proved pair owns a mounted real SVG tie curve');
+    const rect=painted.SVGElement.getBoundingClientRect();watch.assert(rect.width>0&&rect.height>0,'The actual tie curve has nonempty geometry');
+    curves.push({width:rect.width,height:rect.height,members:tie.Notes.length});
+   }
+   return {curves,modelNotes:model.length,mapping:window.lastEngraving.mappingStatus()};
+  });
+  assert.equal(proof.curves.length,item.curves);assert.equal(proof.modelNotes,item.exported.note_id_map.segments.length);
+  if(item.fixture){const sourceId=item.exported.note_id_map.segments[0].source_note_id;await expectBinding([sourceId],0);await expectBinding([sourceId],1);await clearBinding();}
+  assert.equal(JSON.stringify(item),before,'No source, native page, or exported XML changes during actual rendering');
+  evidence.push({name:item.name,...proof});
+ }
+ await bindingEvidence('native-exact-page-ties',{evidence});
 });

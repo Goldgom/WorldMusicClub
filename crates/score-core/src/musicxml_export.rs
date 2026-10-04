@@ -224,6 +224,7 @@ impl Lane<'_> {
 struct Segment<'a> {
     note: &'a Note,
     note_index: usize,
+    rhythm_piece: usize,
     lane: usize,
     start: i64,
     end: i64,
@@ -454,6 +455,7 @@ fn export_musicxml_inner(
     xml.put(format_args!("</part-list>\n"))?;
     let mut segment_count = 0;
     let mut uses_tuplets = false;
+    let mut split_exact_rhythms = false;
     let mut voice_id_map = Vec::new();
     let mut note_map = NoteMapBuilder::new(MAX_NOTE_MAP_BYTES);
     for (part_index, part) in score.parts.iter().enumerate() {
@@ -476,15 +478,23 @@ fn export_musicxml_inner(
             for n in &lane.notes {
                 let mut bar_index = bars.partition_point(|b| b.end <= n.start);
                 let mut start = n.start;
+                let mut rhythm_piece = 0;
                 while start < n.end {
                     segment_count += 1;
                     if segment_count > MAX_SEGMENTS {
                         return Err("Splitting notes/rests at measure boundaries exceeds 100,000 exported segments; export smaller sections".into());
                     }
-                    let segment_end = n.end.min(bars[bar_index].end);
+                    let bar_end = n.end.min(bars[bar_index].end);
+                    let segment_end = if display_only {
+                        start + excerpt_rhythm_piece(bar_end - start, divisions)?
+                    } else {
+                        bar_end
+                    };
+                    split_exact_rhythms |= segment_end < bar_end;
                     segments[bar_index].push(Segment {
                         note: n.note,
                         note_index: n.index,
+                        rhythm_piece,
                         lane: lane_index,
                         start,
                         end: segment_end,
@@ -498,7 +508,12 @@ fn export_musicxml_inner(
                                 || incoming.contains(&n.note.id)),
                     });
                     start = segment_end;
-                    bar_index += 1;
+                    if start == bars[bar_index].end {
+                        bar_index += 1;
+                        rhythm_piece = 0;
+                    } else {
+                        rhythm_piece += 1;
+                    }
                 }
             }
         }
@@ -575,12 +590,7 @@ fn export_musicxml_inner(
                 )?;
                 if note_map.map.is_some() {
                     note_map.push(ExportedNoteSegment {
-                        xml_note_id: format!(
-                            "N{}_{}_{}",
-                            part_index + 1,
-                            segment.note_index + 1,
-                            bar_index + 1
-                        ),
+                        xml_note_id: segment_id(segment, part_index, bar_index),
                         source_note_id: segment.note.id.clone(),
                         part_id: part.id.clone(),
                         xml_part_id: format!("P{}", part_index + 1),
@@ -614,6 +624,9 @@ fn export_musicxml_inner(
         xml.put(format_args!("</part>\n"))?;
     }
     xml.put(format_args!("</score-partwise>\n"))?;
+    if split_exact_rhythms {
+        diagnostics.push(Diagnostic::warning("musicxml_exact_rhythm_segments", "Some display intervals use adjacent exact tied segments to keep inferred rhythmic ratios bounded. Every segment retains the original source note ID, pitch and complete duration; no source timing was quantized.", None));
+    }
     if uses_tuplets {
         diagnostics.push(Diagnostic::warning("musicxml_inferred_rhythm", "Nonstandard note lengths use exact time-modification ratios. Rhythmic grouping is inferred; unusual MIDI durations may produce complex tuplets rather than quantized notation.", None));
     }
@@ -911,7 +924,12 @@ fn move_cursor(
 
 // All arithmetic is integer. Tuplet ratio is normal/actual, so the written
 // power-of-two duration times that ratio equals the exact sounding duration.
-fn write_rhythm(xml: &mut Xml, duration: i64, divisions: i64) -> Result<bool, String> {
+struct Rhythm {
+    name: &'static str,
+    dots: u8,
+    ratio: Option<(i64, i64)>,
+}
+fn rhythm_spelling(duration: i64, divisions: i64) -> Result<Rhythm, String> {
     const TYPES: [(&str, i64, i64); 14] = [
         ("maxima", 32, 1),
         ("long", 16, 1),
@@ -935,11 +953,11 @@ fn write_rhythm(xml: &mut Xml, duration: i64, divisions: i64) -> Result<bool, St
             if duration as i128 * d as i128 * factor_d as i128
                 == divisions as i128 * n as i128 * factor_n as i128
             {
-                xml.put(format_args!("<type>{name}</type>"))?;
-                for _ in 0..dots {
-                    xml.put(format_args!("<dot/>"))?;
-                }
-                return Ok(false);
+                return Ok(Rhythm {
+                    name,
+                    dots,
+                    ratio: None,
+                });
             }
         }
     }
@@ -960,8 +978,56 @@ fn write_rhythm(xml: &mut Xml, duration: i64, divisions: i64) -> Result<bool, St
     if normal > MAX_DIVISIONS || actual > MAX_DIVISIONS {
         return Err("Exact rhythmic spelling requires a tuplet ratio greater than 1,000,000; shorten the measure or simplify its note durations".into());
     }
-    xml.put(format_args!("<type>{name}</type><time-modification><actual-notes>{actual}</actual-notes><normal-notes>{normal}</normal-notes><normal-type>{name}</normal-type></time-modification>"))?;
-    Ok(true)
+    Ok(Rhythm {
+        name,
+        dots: 0,
+        ratio: Some((actual, normal)),
+    })
+}
+
+// Only disposable source-bound excerpts need this renderer-compatible spelling.
+// On the existing <=2048 divisions grid, a nonstandard ratio above2048 can
+// occur only for a written type longer than one quarter. Peel off the largest
+// exact standard piece whose written numerator keeps that same grid bounded.
+// This adds ordinary adjacent ties, never rounded timing or extra attacks.
+fn excerpt_rhythm_piece(duration: i64, divisions: i64) -> Result<i64, String> {
+    if divisions > 2048
+        || rhythm_spelling(duration, divisions)?
+            .ratio
+            .is_none_or(|(actual, normal)| actual <= 2048 && normal <= 2048)
+    {
+        return Ok(duration);
+    }
+    [4, 2, 1]
+        .into_iter()
+        .map(|quarters| quarters * divisions)
+        .find(|ticks| *ticks <= 2048 && *ticks < duration)
+        .ok_or_else(|| "Exact display rhythm cannot be split on its original tick grid".into())
+}
+
+fn write_rhythm(xml: &mut Xml, duration: i64, divisions: i64) -> Result<bool, String> {
+    let Rhythm { name, dots, ratio } = rhythm_spelling(duration, divisions)?;
+    xml.put(format_args!("<type>{name}</type>"))?;
+    for _ in 0..dots {
+        xml.put(format_args!("<dot/>"))?;
+    }
+    if let Some((actual, normal)) = ratio {
+        xml.put(format_args!("<time-modification><actual-notes>{actual}</actual-notes><normal-notes>{normal}</normal-notes><normal-type>{name}</normal-type></time-modification>"))?;
+    }
+    Ok(ratio.is_some())
+}
+fn segment_id(segment: &Segment<'_>, part_index: usize, bar_index: usize) -> String {
+    let id = format!(
+        "N{}_{}_{}",
+        part_index + 1,
+        segment.note_index + 1,
+        bar_index + 1
+    );
+    if segment.rhythm_piece == 0 {
+        id
+    } else {
+        format!("{id}_R{}", segment.rhythm_piece + 1)
+    }
 }
 #[allow(clippy::too_many_arguments)]
 fn write_note(
@@ -975,10 +1041,8 @@ fn write_note(
 ) -> Result<bool, String> {
     xml.event()?;
     xml.put(format_args!(
-        "<note id=\"N{}_{}_{}\"",
-        part_index + 1,
-        segment.note_index + 1,
-        bar_index + 1
+        "<note id=\"{}\"",
+        segment_id(segment, part_index, bar_index)
     ))?;
     if segment.note.pitch.is_some() {
         // MusicXML dynamics is a percentage of MIDI forte (90). Six decimals
@@ -1152,6 +1216,122 @@ mod tests {
         assert!((first - second).abs() < 0.000001);
         (exported, imported)
     }
+    #[test]
+    fn display_excerpt_splits_large_exact_ratios_without_changing_targets() {
+        // Authored simultaneous isolated C/D keys and a rest, not a melody.
+        let mut original = score();
+        original.title = "Original bounded exact rhythm pieces".into();
+        original.source = None;
+        original.measures.truncate(1);
+        original.parts[0].notes = vec![
+            note(
+                "original-C",
+                Beat::ZERO,
+                Beat::new(4095, 1024),
+                Some(("C", 0, 4)),
+                "1",
+                1,
+            ),
+            note(
+                "original-D",
+                Beat::ZERO,
+                Beat::new(4091, 1024),
+                Some(("D", 0, 4)),
+                "1",
+                1,
+            ),
+            note(
+                "original-rest",
+                Beat::ZERO,
+                Beat::new(4093, 1024),
+                None,
+                "2",
+                1,
+            ),
+        ];
+        let before = serde_json::to_string(&original).unwrap();
+        let unchanged_full_export = export_musicxml(&original).unwrap();
+        assert!(unchanged_full_export
+            .xml
+            .contains("<actual-notes>4096</actual-notes>"));
+        let excerpt =
+            export_musicxml_excerpt(&original, &BTreeSet::new(), &BTreeSet::new()).unwrap();
+        assert_eq!(before, serde_json::to_string(&original).unwrap());
+        let (imported, _) = import_musicxml(&excerpt.xml).unwrap();
+        assert_eq!(sounding(original.clone()), sounding(imported));
+        let map = excerpt.note_id_map.as_ref().unwrap();
+        assert_eq!(map.segments.len(), 6);
+        assert_eq!(
+            map.segments
+                .iter()
+                .map(|s| &s.xml_note_id)
+                .collect::<HashSet<_>>()
+                .len(),
+            6
+        );
+        for source in &original.parts[0].notes {
+            let pieces: Vec<_> = map
+                .segments
+                .iter()
+                .filter(|s| s.source_note_id == source.id)
+                .collect();
+            assert_eq!(pieces.len(), 2);
+            assert!(pieces[0].at.equivalent(source.at));
+            assert!(pieces[0]
+                .duration
+                .checked_add(pieces[1].duration)
+                .unwrap()
+                .equivalent(source.duration));
+            assert!(pieces[1]
+                .at
+                .equivalent(source.at.checked_add(pieces[0].duration).unwrap()));
+            assert_eq!(pieces[0].tie_start, source.pitch.is_some());
+            assert_eq!(pieces[1].tie_stop, source.pitch.is_some());
+            assert!(!pieces[0].tie_stop && !pieces[1].tie_start);
+        }
+        let document = roxmltree::Document::parse(&excerpt.xml).unwrap();
+        assert!(document
+            .descendants()
+            .filter(|n| n.has_tag_name("actual-notes") || n.has_tag_name("normal-notes"))
+            .all(|n| n.text().unwrap().parse::<u32>().unwrap() <= 2048));
+        let fixture = serde_json::json!({"score":original,"exported":excerpt,"unsplit":unchanged_full_export});
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/exact-rhythm-excerpt.json");
+        if std::env::var_os("WMH_UPDATE_EXACT_RHYTHM_FIXTURE").is_some() {
+            std::fs::write(&path, serde_json::to_vec_pretty(&fixture).unwrap()).unwrap();
+        }
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&std::fs::read(path).unwrap()).unwrap(),
+            fixture
+        );
+    }
+
+    #[test]
+    fn excerpt_rhythm_piece_boundaries_keep_the_original_integer_grid() {
+        for divisions in [1, 480, 960, 1024, 1875, 2048] {
+            for duration in [
+                1,
+                divisions,
+                divisions * 2 - 1,
+                divisions * 4 - 1,
+                divisions * 8 - 1,
+            ] {
+                let mut remaining = duration;
+                while remaining > 0 {
+                    let next = excerpt_rhythm_piece(remaining, divisions).unwrap();
+                    assert!(next > 0 && next <= remaining);
+                    assert!(rhythm_spelling(next, divisions)
+                        .unwrap()
+                        .ratio
+                        .is_none_or(|(a, n)| a <= 2048 && n <= 2048));
+                    remaining -= next;
+                }
+            }
+        }
+        // Unsupported larger grids are not rounded or disguised as supported.
+        assert_eq!(excerpt_rhythm_piece(8191, 4096).unwrap(), 8191);
+    }
+
     #[test]
     fn written_identity_map_matches_xml_cursor_voices_splits_and_unequal_chords() {
         let mut original = score();

@@ -7,7 +7,7 @@ import {createRequire} from 'node:module';
 import {DOMParser,parseHTML} from 'linkedom';
 import {validateEngravingInput, renderEngravedStaff, ENGRAVING_LIMITS} from '../web/engraving.js';
 import {createEngravingProjection, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from '../web/engraving-projection.js';
-import {matchEngravingModel,validateEngravingModelTies} from '../web/engraving-note-map.js';
+import {matchEngravingModel,validateEngravingModelTies,restoreSourceBoundPageTies} from '../web/engraving-note-map.js';
 import {resolveEngravingTieContext} from '../web/engraving-tie-context.js';
 import {createI18n} from '../web/i18n.js';
 
@@ -351,4 +351,67 @@ test('source-bound basic pages retain exact pinned-reader note identities across
   assert.equal(JSON.stringify(page),before);assert.deepEqual(song.notation.measures,[]);
   const forged={...spec,identity:structuredClone(spec.identity)};const unbound=validateEngravingInput(forged.xml,{identity:forged.identity,fromMeasure:1,toMeasure:page.measure_count},XmlParser);assert.equal(unbound.identity.ok,false,'Copying a page object cannot grant a generic source map permission for open ties');
  }
+});
+
+test('native excerpt exact rhythm pieces retain source coverage, reader clocks and internal ties',()=>{
+ const fixture=JSON.parse(readFileSync(new URL('./fixtures/exact-rhythm-excerpt.json',import.meta.url),'utf8'));
+ const identity=exported=>({score:fixture.score,noteMap:exported.note_id_map,partIdMap:exported.part_id_map,voiceIdMap:exported.voice_id_map});
+ assert.equal(validateEngravingInput(fixture.unsplit.xml,{identity:identity(fixture.unsplit)},XmlParser).code,'engraving_exactRhythm','The original unsupported component guard remains in force');
+ const spec={xml:fixture.exported.xml,identity:identity(fixture.exported)},before=JSON.stringify(fixture);
+ const {checked,projection}=project(spec,{fromMeasure:1,toMeasure:1});assert.equal(projection.ok,true,JSON.stringify(projection));
+ const sheet=read(projection),validated={...checked.identity,projection};assert.deepEqual(validateEngravingProjectionModel(sheet,projection,fixture.score,ENGRAVING_LIMITS),{ok:true});
+ const matched=matchEngravingModel({Sheet:sheet},validated);assert.equal(matched.ok,true);assert.deepEqual(matched.diagnostics,[]);assert.equal(matched.matches.filter(item=>item.note).length,6);
+ assert.deepEqual(validateEngravingModelTies({Sheet:sheet},validated),{ok:true});
+ for(const source of fixture.score.parts[0].notes){const segments=fixture.exported.note_id_map.segments.filter(segment=>segment.source_note_id===source.id);assert.equal(segments.length,2);assert.equal(new Set(segments.map(segment=>segment.xml_note_id)).size,2);}
+ assert.equal(JSON.stringify(fixture),before,'Canonical targets and generated XML remain unchanged by the renderer');
+});
+
+test('source-proved incoming page chain restores only real internal ties dropped by the pinned reader',()=>{
+ const fixture=JSON.parse(readFileSync(new URL('./fixtures/basic-key-open-tie-page.json',import.meta.url),'utf8'));
+ const song=prepareCleanSong(`native:song-${fixture.open.clean_package.content_sha256}`,fixture.open.clean_package,null),page=basicKeyNotationPage(fixture.response,fixture.request,song);
+ const spec={xml:page.musicxml.xml,identity:basicKeyEngravingIdentity(song,page)},before=JSON.stringify(page),{checked,projection}=project(spec,{fromMeasure:1,toMeasure:2});
+ assert.equal(projection.ok,true);const sheet=read(projection),renderer={Sheet:sheet},validated={...checked.identity,projection};
+ assert.deepEqual(validateEngravingProjectionModel(sheet,projection,page.score,ENGRAVING_LIMITS),{ok:true});
+ const matched=matchEngravingModel(renderer,validated);assert.deepEqual(matched.diagnostics,[]);assert.equal(matched.matches.length,2);assert.ok(matched.matches.every(match=>!match.note.NoteTie));
+ assert.deepEqual(validateEngravingModelTies(renderer,validated),{ok:false,key:'tieContext'},'Authored original C4 reproduces the incoming stop+start reader failure');
+ const previousSelf=globalThis.self;
+ try{
+  globalThis.self=globalThis;const osmd=createRequire(import.meta.url)('opensheetmusicdisplay');
+  assert.deepEqual(restoreSourceBoundPageTies(renderer,{...validated,boundaryTies:null},osmd.Tie,osmd.TieTypes),{ok:true,restored:0});
+  assert.deepEqual(validateEngravingModelTies(renderer,validated),{ok:false,key:'tieContext'},'Ordinary or unbound missing ties are not repaired');
+  assert.deepEqual(restoreSourceBoundPageTies(renderer,validated,osmd.Tie,osmd.TieTypes),{ok:true,restored:1});
+  assert.deepEqual(validateEngravingModelTies(renderer,validated),{ok:true});
+  assert.deepEqual(restoreSourceBoundPageTies(renderer,validated,osmd.Tie,osmd.TieTypes),{ok:true,restored:0},'Repeated admission never duplicates a tie or note');
+  assert.equal(matched.matches[0].note.NoteTie,matched.matches[1].note.NoteTie);assert.deepEqual(matched.matches[0].note.NoteTie.Notes,matched.matches.map(match=>match.note));
+  assert.deepEqual(validateEngravingProjectionModel(sheet,projection,page.score,ENGRAVING_LIMITS),{ok:true});
+  assert.deepEqual(matchEngravingModel(renderer,validated).diagnostics,[]);
+ }finally{if(previousSelf===undefined)delete globalThis.self;else globalThis.self=previousSelf;}
+ assert.equal(JSON.stringify(page),before,'Source page, clipped intervals, XML flags and IDs stay immutable');
+});
+
+test('page tie recovery refuses forged boundaries, altered membership and existing incorrect ties',()=>{
+ const fixture=JSON.parse(readFileSync(new URL('./fixtures/basic-key-open-tie-page.json',import.meta.url),'utf8'));
+ const song=prepareCleanSong(`native:song-${fixture.open.clean_package.content_sha256}`,fixture.open.clean_package,null),page=basicKeyNotationPage(fixture.response,fixture.request,song);
+ const previousSelf=globalThis.self;
+ try{
+  globalThis.self=globalThis;const osmd=createRequire(import.meta.url)('opensheetmusicdisplay');
+  for(const kind of ['forged-boundary','cross-source','non-adjacent','different-voice','existing-wrong-tie']){
+   const {checked,projection}=project({xml:page.musicxml.xml,identity:basicKeyEngravingIdentity(song,page)},{fromMeasure:1,toMeasure:2});
+   const renderer={Sheet:read(projection)},validated={...checked.identity,projection},matched=matchEngravingModel(renderer,validated),notes=matched.matches.map(match=>match.note);
+   if(kind==='forged-boundary')validated.boundaryTies=new Map(validated.boundaryTies);
+   if(['cross-source','non-adjacent','different-voice'].includes(kind)){
+    validated.segments=validated.segments.map(segment=>({...segment}));const second=validated.segments[1];
+    if(kind==='cross-source')second.source_note_id='unrelated-source';
+    if(kind==='non-adjacent')second.at={numerator:5,denominator:1};
+    if(kind==='different-voice')second.voice='unrelated-voice';
+   }
+   const wrong=kind==='existing-wrong-tie'?new osmd.Tie(notes[0],osmd.TieTypes.SIMPLE):null;
+   const outcome=restoreSourceBoundPageTies(renderer,validated,osmd.Tie,osmd.TieTypes);
+   if(wrong){assert.deepEqual(outcome,{ok:true,restored:0});assert.equal(notes[0].NoteTie,wrong);assert.deepEqual(wrong.Notes,[notes[0]]);}
+   else{assert.deepEqual(outcome,{ok:false,key:'tieContext'},kind);assert.ok(notes.every(note=>!note.NoteTie),kind);}
+   assert.equal(validateEngravingModelTies(renderer,validated).ok,false,kind);
+  }
+  const copied=structuredClone(basicKeyEngravingIdentity(song,page)),unbound=validateEngravingInput(page.musicxml.xml,{identity:copied,fromMeasure:1,toMeasure:2},XmlParser);
+  assert.equal(unbound.identity.ok,false,'A copied/native-looking page cannot grant ordinary score input boundary privileges');
+ }finally{if(previousSelf===undefined)delete globalThis.self;else globalThis.self=previousSelf;}
 });

@@ -1,5 +1,5 @@
 /** Optional, offline OSMD presentation adapter. Rust remains the score/timing authority. */
-import {validateEngravingNoteMap,createEngravingNoteBindings,validateEngravingModelTies} from './engraving-note-map.js';
+import {validateEngravingNoteMap,createEngravingNoteBindings,validateEngravingModelTies,restoreSourceBoundPageTies} from './engraving-note-map.js';
 import {createEngravingProjection, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from './engraving-projection.js';
 import {getAppI18n} from './app-locale.js';
 export const ENGRAVING_VERSION = '2.1.3';
@@ -250,6 +250,8 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     if (projection) {
       const model = validateEngravingProjectionModel(renderer.Sheet, projection, identity.score, ENGRAVING_LIMITS);
       if (!model.ok) { state.dispose(); return result('unsupported', model.key, i18n); }
+      const pageTies=restoreSourceBoundPageTies(renderer,boundIdentity,view.opensheetmusicdisplay?.Tie,view.opensheetmusicdisplay?.TieTypes);
+      if(!pageTies.ok){state.dispose();return result('unsupported',pageTies.key,i18n);}
       const ties = validateEngravingModelTies(renderer, boundIdentity);
       if (!ties.ok) { state.dispose(); return result('unsupported', ties.key, i18n); }
     }
