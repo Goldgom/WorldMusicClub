@@ -581,6 +581,7 @@ fn valid_action(value: &Value) -> bool {
         "key-r",
         "key-c5",
         "toggle-follow",
+        "key-ds4",
         "select-last",
         "select-first",
         "select-second",
@@ -1291,6 +1292,17 @@ mod tests {
         for phase in ["basic-key-any", "basic-key-seed-extra", "../basic-key-seed"] {
             assert!(Acceptance::new(Evidence::new().0.clone(), phase).is_err());
         }
+    }
+
+    #[test]
+    fn vsq_source_key_action_is_closed_and_has_no_free_key_payload() {
+        let mut action = json!({"version":1,"sequence":1,"kind":"key-ds4","x":1,"y":1,"width":1280,"height":720});
+        assert!(valid_action(&action));
+        action["code"] = json!("KeyU");
+        assert!(!valid_action(&action));
+        action.as_object_mut().unwrap().remove("code");
+        action["kind"] = json!("key-any");
+        assert!(!valid_action(&action));
     }
 
     #[test]

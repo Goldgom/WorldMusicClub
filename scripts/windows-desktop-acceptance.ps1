@@ -259,6 +259,14 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
     $Evidence.native_key=[ordered]@{app_hwnd=$window.ToInt64();foreground=$foreground.ToInt64();app_process_id=$App.Id;app_enabled=$enabled;code='Space';virtual_key=0x20;focus_reacquired=$false;pointer_clicked=$false}
     [NativeAcceptance]::Key(0x20);return
   }
+  if($Action.kind -eq 'key-ds4') {
+    # Closed VSQ source key: the count-in must prepare stage focus beforehand.
+    # Never click or reacquire foreground ownership inside the onset window.
+    $foreground=[NativeAcceptance]::GetForegroundWindow();$enabled=[NativeAcceptance]::IsWindowEnabled($window)
+    if($foreground -ne $window -or -not $enabled){throw 'Prepared VSQ D#4 app foreground ownership was lost'}
+    $Evidence.native_key=[ordered]@{app_hwnd=$window.ToInt64();foreground=$foreground.ToInt64();app_process_id=$App.Id;app_enabled=$enabled;code='KeyU';virtual_key=0x55;focus_reacquired=$false;pointer_clicked=$false}
+    [NativeAcceptance]::Key(0x55);return
+  }
   [NativeAcceptance]::SetForegroundWindow($window) | Out-Null
   Start-Sleep -Milliseconds 150
   if([NativeAcceptance]::GetForegroundWindow() -ne $window){throw 'Application did not receive foreground ownership'}

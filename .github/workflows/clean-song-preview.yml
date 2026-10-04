@@ -27,6 +27,7 @@ jobs:
       - run: npm run prepare:engraving
       - run: npx playwright install --with-deps chromium
       - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - run: cargo build -p practice-server --locked
       - name: Check complete original fixture through actual native protocol
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
