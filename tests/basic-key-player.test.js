@@ -95,3 +95,10 @@ test('an accepted audio ACK delayed before the player continuation cannot backda
  BasicKeyAudioReceiver.prototype.start=function(options){return original.call(this,options).then(anchor=>{h.renderTo(anchor.anchorTime+.01);return anchor;});};
  try{await assert.rejects(h.start(),{code:'clean_late_start'});assert.equal(h.player.basicKeys.running,false);assert.equal(h.nodes.at(-1).connected,false);}finally{BasicKeyAudioReceiver.prototype.start=original;h.close();}
 });
+
+
+test('canceling between preparation and the convenience start continuation fences that start',async()=>{
+ const h=harness(),basic=h.player.basicKeys,prepare=basic.prepare.bind(basic);
+ basic.prepare=options=>prepare(options).then(result=>{queueMicrotask(()=>basic.stop());return result;});
+ try{assert.equal(await h.start(),null);assert.equal(basic.running,false);assert.equal(h.nodes.at(-1).connected,false);}finally{h.close();}
+});

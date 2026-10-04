@@ -43,7 +43,8 @@ export class BasicKeyPlayer {
     }catch(error){if(epoch!==this.epoch)return null;this.stop();throw error;}
   }
   async start(options={}) {
-    const prepared=await this.prepare(options);if(!prepared)return null;
+    const preparing=this.prepare(options),epoch=this.epoch;
+    const prepared=await preparing;if(!prepared||epoch!==this.epoch)return null;
     return this.startPrepared({anchorTime:options.anchorTime??this.context.currentTime+.05});
   }
   stop(){this.epoch++;this.running=false;this.preparing=false;this.receiver?.dispose();this.receiver=null;this.plan=null;this.anchor=null;}
