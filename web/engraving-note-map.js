@@ -121,8 +121,10 @@ export function matchEngravingModel(renderer,validated,{includeContext=false}={}
  * XML flag, pitch, duration, or general missing tie is invented or replaced.
  */
 export function restoreSourceBoundPageTies(renderer,validated,Tie,types){
+  const collision=restoreSourceBoundAccidentalCollisions(renderer,validated,Tie,types);
+  if(!collision.ok)return collision;
   const chains=validated.projection?.tieChains||[];
-  if(!validated.ok||!validated.boundaryTies?.size||!chains.length)return {ok:true,restored:0};
+  if(!validated.ok||!validated.boundaryTies?.size||!chains.length)return collision;
   const boundaries=admittedPageBoundaries.get(validated.boundaryTies);
   if(!boundaries)return {ok:false,key:'tieContext'};
   const matched=matchEngravingModel(renderer,validated,{includeContext:true});
@@ -153,6 +155,65 @@ export function restoreSourceBoundPageTies(renderer,validated,Tie,types){
   try{
     for(const notes of repairs){const tie=new Tie(notes[0],types.SIMPLE);for(const note of notes.slice(1))tie.AddNote(note);}
   }catch{return {ok:false,key:'tieContext'};}
+  return {ok:true,restored:collision.restored+repairs.length};
+}
+
+/** Pinned-reader fingerprint: staff-global natural-pitch lookup ignores alter. */
+function restoreSourceBoundAccidentalCollisions(renderer,validated,Tie,types){
+  const unchanged=()=>({ok:true,restored:0}),refused=()=>({ok:false,key:'tieContext'});
+  if(!validated.ok||!admittedPageBoundaries.has(validated.boundaryTies))return unchanged();
+  const chains=validated.projection?.tieChains||[];
+  if(chains.length<2)return unchanged();
+  const matched=matchEngravingModel(renderer,validated,{includeContext:true});
+  if(!matched.ok||matched.diagnostics.length)return refused();
+  const byId=new Map(matched.matches.map(match=>[match.segment.xml_note_id,match])),groups=[],owner=new Map();
+  for(const chain of chains){
+    const matches=chain.map(id=>byId.get(id)),first=matches[0]?.segment,source=validated.sources.get(first?.source_note_id);
+    if(!source||matches.length<2||!equal(rational(first.at),rational(source.note.at)))return unchanged();
+    for(let index=0;index<matches.length;index++){
+      const match=matches[index],segment=match?.segment,prior=matches[index-1]?.segment;
+      if(!match?.note||owner.has(match.note)||!segment.pitch||segment.source_note_id!==first.source_note_id||segment.part_id!==source.part.id||
+        segment.staff!==source.note.staff||segment.voice!==source.note.voice||segment.xml_voice!==first.xml_voice||segment.lane!==first.lane||
+        pitchKey(segment.pitch)!==pitchKey(source.note.pitch)||(prior&&(!prior.tie_start||!segment.tie_stop||!equal(add(rational(prior.at),rational(prior.duration)),rational(segment.at)))))return unchanged();
+      owner.set(match.note,groups.length);
+    }
+    const last=matches.at(-1).segment;
+    if(!equal(add(rational(last.at),rational(last.duration)),add(rational(source.note.at),rational(source.note.duration))))return unchanged();
+    groups.push({first,notes:matches.map(match=>match.note)});
+  }
+  const correct=group=>{const tie=group.notes[0].NoteTie;return tie&&Array.isArray(tie.Notes)&&tie.Notes.length===group.notes.length&&group.notes.every((note,index)=>note.NoteTie===tie&&tie.Notes[index]===note);};
+  const handled=new Set(),repairs=[];
+  for(let seed=0;seed<groups.length;seed++){
+    if(handled.has(seed)||correct(groups[seed])||groups[seed].notes.every(note=>!note.NoteTie))continue;
+    const members=new Set(),ties=new Set(),queue=[seed];
+    while(queue.length){
+      const index=queue.pop();if(members.has(index))continue;members.add(index);
+      for(const note of groups[index].notes){
+        const tie=note.NoteTie;
+        if(!tie||!Array.isArray(tie.Notes)||tie.Notes.length<2||new Set(tie.Notes).size!==tie.Notes.length||tie.Type!==types?.SIMPLE)return unchanged();
+        ties.add(tie);
+        for(const member of tie.Notes){if(member.NoteTie!==tie||!owner.has(member))return unchanged();queue.push(owner.get(member));}
+      }
+    }
+    if(members.size<2||ties.size!==members.size)return unchanged();
+    const expected=new Set([...members].flatMap(index=>groups[index].notes)),actual=new Set([...ties].flatMap(tie=>tie.Notes));
+    if(expected.size!==actual.size||[...expected].some(note=>!actual.has(note)))return unchanged();
+    const signatures=new Set([...members].map(index=>{const segment=groups[index].first;return JSON.stringify([segment.xml_part_id,segment.staff,segment.pitch.step,segment.pitch.octave]);}));
+    if(signatures.size!==1||new Set([...members].map(index=>groups[index].first.pitch.alter)).size<2)return unchanged();
+    // Every wrong tie must exhibit the known different-alter collision. A
+    // merely similar malformed/partial/extra-note graph is never repaired.
+    if([...ties].some(tie=>new Set(tie.Notes.map(note=>groups[owner.get(note)].first.pitch.alter)).size<2))return unchanged();
+    for(const index of members){handled.add(index);repairs.push(groups[index].notes);}
+  }
+  if(!repairs.length)return unchanged();
+  if(typeof Tie!=='function'||types?.SIMPLE!=='')return refused();
+  const prior=new Map(repairs.flat().map(note=>[note,note.NoteTie]));
+  try{
+    // All source, membership and collision checks finish before this synchronous
+    // transaction. A constructor failure restores every previous model pointer.
+    for(const notes of repairs){const tie=new Tie(notes[0],types.SIMPLE);for(const note of notes.slice(1))tie.AddNote(note);}
+    if(repairs.some(notes=>{const tie=notes[0].NoteTie;return !tie||tie.Notes.length!==notes.length||notes.some((note,index)=>note.NoteTie!==tie||tie.Notes[index]!==note);}))throw Error('Incomplete exact tie transaction');
+  }catch{for(const [note,tie]of prior)note.NoteTie=tie;return refused();}
   return {ok:true,restored:repairs.length};
 }
 

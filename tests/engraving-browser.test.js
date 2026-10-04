@@ -1305,10 +1305,12 @@ test('verified expected bounds follow pane scrolling without rebinding or moving
 test('native incoming continuation and bounded exact-rhythm pieces own real SVG tie curves',options,async()=>{
  const incoming=JSON.parse(await readFile(new URL('./fixtures/basic-key-open-tie-page.json',import.meta.url),'utf8'));
  const exact=JSON.parse(await readFile(new URL('./fixtures/exact-rhythm-excerpt.json',import.meta.url),'utf8'));
- const cases=[{name:'incoming-native-page',score:incoming.response.page.score,exported:incoming.response.page.musicxml,fixture:incoming,curves:1},{name:'exact-excerpt-pieces',score:exact.score,exported:exact.exported,fixture:null,curves:2},{name:'long-type-excerpt-pieces',score:exact.long_type.score,exported:exact.long_type.exported,fixture:null,curves:1}],evidence=[];
+ const accidental=JSON.parse(await readFile(new URL('./fixtures/basic-key-accidental-tie-page.json',import.meta.url),'utf8'));
+ const cases=[{name:'incoming-native-page',score:incoming.response.page.score,exported:incoming.response.page.musicxml,fixture:incoming,curves:1},{name:'exact-excerpt-pieces',score:exact.score,exported:exact.exported,fixture:null,curves:2},{name:'long-type-excerpt-pieces',score:exact.long_type.score,exported:exact.long_type.exported,fixture:null,curves:1},{name:'native-accidental-collision',score:accidental.response.page.score,exported:accidental.response.page.musicxml,fixture:accidental,curves:3,coincidentHeads:true}],evidence=[];
  for(const item of cases){
   const before=JSON.stringify(item),shown=await renderBinding(item.score,item.exported,{fromMeasure:1,toMeasure:item.score.measures.length},item.fixture);
-  assert.equal(shown.result.mapping.verifiedGlyphCount,item.exported.note_id_map.segments.length);
+  if(item.coincidentHeads){assert.equal(shown.result.mapping.displayedSegmentCount,item.exported.note_id_map.segments.length);assert.ok(shown.result.mapping.bindings.every(binding=>binding.status==='bound'||binding.reason==='engraving_shared_glyph'));}
+  else assert.equal(shown.result.mapping.verifiedGlyphCount,item.exported.note_id_map.segments.length);
   const proof=await page.evaluate(()=>{
    const watch=window.__wmhBinding,renderer=watch.renderer,model=[];
    for(const measure of renderer.Sheet.SourceMeasures)for(const vertical of measure.VerticalSourceStaffEntryContainers)for(const staff of vertical.StaffEntries||[])for(const voice of staff?.VoiceEntries||[])for(const note of voice.Notes||[])if(note.PrintObject!==false&&!model.includes(note))model.push(note);
@@ -1325,7 +1327,7 @@ test('native incoming continuation and bounded exact-rhythm pieces own real SVG 
    return {curves,modelNotes:model.length,mapping:window.lastEngraving.mappingStatus()};
   });
   assert.equal(proof.curves.length,item.curves);assert.equal(proof.modelNotes,item.exported.note_id_map.segments.length);
-  if(item.fixture){const sourceId=item.exported.note_id_map.segments[0].source_note_id;await expectBinding([sourceId],0);await expectBinding([sourceId],1);await clearBinding();}
+  if(item.fixture&&!item.coincidentHeads){const sourceId=item.exported.note_id_map.segments[0].source_note_id;await expectBinding([sourceId],0);await expectBinding([sourceId],1);await clearBinding();}
   assert.equal(JSON.stringify(item),before,'No source, native page, or exported XML changes during actual rendering');
   evidence.push({name:item.name,...proof});
  }

@@ -512,3 +512,34 @@ test('exact excerpt decomposition also retains a nonstandard breve on the bounde
  const matched=matchEngravingModel({Sheet:sheet},validated);assert.deepEqual(matched.diagnostics,[]);assert.equal(matched.matches.filter(item=>item.note).length,2);
  assert.deepEqual(validateEngravingModelTies({Sheet:sheet},validated),{ok:true});
 });
+
+test('native C/C-sharp chains repair only the pinned different-alter closed permutation',()=>{
+ const fixture=JSON.parse(readFileSync(new URL('./fixtures/basic-key-accidental-tie-page.json',import.meta.url),'utf8'));
+ const song=prepareCleanSong(`native:song-${fixture.open.clean_package.content_sha256}`,fixture.open.clean_package,null),page=basicKeyNotationPage(fixture.response,fixture.request,song);
+ const previousSelf=globalThis.self;
+ try{
+  globalThis.self=globalThis;const osmd=createRequire(import.meta.url)('opensheetmusicdisplay');
+  for(const scenario of ['exact-collision','forged-native','extra-note','missing-note','singleton','noncollision-type','constructor-failure']){
+   const {checked,projection}=project({xml:page.musicxml.xml,identity:basicKeyEngravingIdentity(song,page)},{fromMeasure:1,toMeasure:3});
+   const renderer={Sheet:read(projection)},validated={...checked.identity,projection},matched=matchEngravingModel(renderer,validated),notes=matched.matches.map(match=>match.note),before=JSON.stringify(page);
+   assert.deepEqual(matched.diagnostics,[]);assert.deepEqual(validateEngravingModelTies(renderer,validated),{ok:false,key:'tieContext'});
+   const first=notes[0].NoteTie;assert.ok(first.Notes.some(note=>note.Pitch.AccidentalHalfTones!==first.StartNote.Pitch.AccidentalHalfTones),'The official reader reproduces the specific accidental collision');
+   if(scenario==='forged-native')validated.boundaryTies=new Map(validated.boundaryTies);
+   if(scenario==='extra-note')first.Notes.push({NoteTie:first});
+   if(scenario==='missing-note')notes[0].NoteTie=undefined;
+   if(scenario==='singleton'){first.Notes.splice(1);for(const note of notes.slice(1))if(note.NoteTie===first)note.NoteTie=undefined;}
+   if(scenario==='noncollision-type')first.type='H';
+   const prior=new Map(notes.map(note=>[note,note.NoteTie]));
+   let calls=0;const ThrowingTie=class extends osmd.Tie{constructor(...args){super(...args);if(++calls===2)throw Error('authored constructor interruption')}};
+   const result=restoreSourceBoundPageTies(renderer,validated,scenario==='constructor-failure'?ThrowingTie:osmd.Tie,osmd.TieTypes);
+   if(scenario==='exact-collision'){
+    assert.deepEqual(result,{ok:true,restored:2});assert.deepEqual(validateEngravingModelTies(renderer,validated),{ok:true});
+    assert.deepEqual(matchEngravingModel(renderer,validated).diagnostics,[]);assert.deepEqual(validateEngravingProjectionModel(renderer.Sheet,projection,page.score,ENGRAVING_LIMITS),{ok:true});
+   }else{
+    assert.equal(result.restored??0,0,scenario);assert.deepEqual(validateEngravingModelTies(renderer,validated),{ok:false,key:'tieContext'});
+    for(const note of notes)assert.equal(note.NoteTie,prior.get(note),`${scenario}: no partial repair survives`);
+   }
+   assert.equal(JSON.stringify(page),before,'The native source, timing, IDs and XML remain unchanged');
+  }
+ }finally{if(previousSelf===undefined)delete globalThis.self;else globalThis.self=previousSelf;}
+});
