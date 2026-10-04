@@ -1,0 +1,163 @@
+name: Original basic-key focused acceptance
+on:
+  push:
+    branches: ['preview/basic-key']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: basic-key-preview-${{ github.ref }}
+  cancel-in-progress: true
+# Isolated original-fixture proof only. This does not publish a package, change
+# the accepted release, or replace full accepted-source/package promotion gates.
+jobs:
+  basic-key-browser:
+    name: Actual basic-key UI and Rust conversion (hosted)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      source_sha: ${{ steps.basic_key_source.outputs.source_sha }}
+      source_tree: ${{ steps.basic_key_source.outputs.source_tree }}
+      run_id: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyYAML==6.0.3
+      - name: Parse complete workflow and reject malformed run scalars
+        run: python scripts/check-authoring-workflow.py .github/workflows/basic-key-preview.yml
+      - name: Bind focused proof to the exact checked-out source
+        id: basic_key_source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "source_tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: '1.99.0'
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: node --test tests/basic-key-acceptance.test.js tests/basic-keys-consumer.test.js tests/basic-key-schema.test.js
+      - run: cargo test -p score-core basic_keys --locked
+      - run: "cargo test -p worldmusichub-desktop --lib acceptance:: --locked"
+      - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - run: cargo build -p score-core --bin clean-song-batch --locked
+      - name: Real Rust conversion and clean library persistence
+        env:
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_BASIC_KEY_CONVERTER: ${{ github.workspace }}/target/debug/clean-song-batch
+          WMH_BASIC_KEY_REPORT: ${{ github.workspace }}/test-results/basic-key/native-protocol/report.json
+        run: node scripts/check-basic-key-native.mjs
+      - run: npx playwright install --with-deps chromium
+      - name: Actual picker, review, save, export and restart at all target sizes
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: |
+          WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-basic-key-check.mjs
+          WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-basic-key-check.mjs
+      - name: Retain bounded basic-key browser evidence and clean outputs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: basic-key-browser-${{ github.sha }}
+          path: |
+            test-results/basic-key/*/*.json
+            test-results/basic-key/*/*.png
+            test-results/basic-key/*/*.log
+            test-results/basic-key/*/downloads/*.json
+            test-results/basic-key/*/downloads/*.zip
+            test-results/basic-key/*/fixtures/*
+            test-results/basic-key/*/Scores/clean-songs/**
+            test-results/basic-key/*/Scores/clean-backups/**
+            test-results/basic-key/*/Scores/imports/**
+            test-results/basic-key/*/Scores/import-backups/**
+          if-no-files-found: warn
+  basic-key-windows:
+    name: Owned Windows basic-key picker and clean library restart
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      RUSTFLAGS: '-C target-feature=+crt-static'
+      CARGO_INCREMENTAL: '0'
+    outputs:
+      source_sha: ${{ steps.basic_key_source.outputs.source_sha }}
+      source_tree: ${{ steps.basic_key_source.outputs.source_tree }}
+      run_id: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyYAML==6.0.3
+      - name: Parse complete workflow and reject malformed run scalars
+        run: python scripts/check-authoring-workflow.py .github/workflows/basic-key-preview.yml
+      - name: Bind focused proof to the exact checked-out source
+        id: basic_key_source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "source_tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: '1.99.0'
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: node --test tests/basic-key-acceptance.test.js tests/basic-keys-consumer.test.js tests/basic-key-schema.test.js
+      - name: Parse Windows script and check the bounded owned picker contract
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'scripts/windows-desktop-acceptance.ps1'),[ref]$tokens,[ref]$errors)
+          if ($errors.Count) { $errors | Format-List; throw 'PowerShell syntax errors' }
+          ./tests/windows-desktop-contract.ps1
+      - run: cargo test -p score-core basic_keys --locked
+      - run: "cargo test -p worldmusichub-desktop --lib acceptance:: --locked"
+      - run: cargo build -p worldmusichub-desktop --release --locked
+      - name: Actual Windows basic-key and restart in separate native processes
+        shell: pwsh
+        run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-basic-key -Scenario basic-key
+      - name: Independently verify exact source, executable and basic-key evidence
+        shell: pwsh
+        run: |
+          $env:WMH_SOURCE_SHA='${{ github.sha }}'
+          $env:WMH_SOURCE_TREE=(git rev-parse 'HEAD^{tree}').Trim()
+          $env:WMH_BASIC_KEY_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
+          node scripts/verify-basic-key-evidence.mjs --check desktop-basic-key
+          if ($LASTEXITCODE -ne 0) { throw 'Basic-key source/EXE proof failed' }
+      - name: Retain bounded native basic-key evidence and clean outputs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: basic-key-windows-${{ github.sha }}
+          path: |
+            desktop-basic-key/*.json
+            desktop-basic-key/*.png
+            desktop-basic-key/*.log
+            desktop-basic-key/downloads/*.json
+            desktop-basic-key/downloads/*.zip
+            desktop-basic-key/fixtures/*
+            desktop-basic-key/Scores/clean-songs/**
+            desktop-basic-key/Scores/clean-backups/**
+            desktop-basic-key/Scores/imports/**
+            desktop-basic-key/Scores/import-backups/**
+          if-no-files-found: warn

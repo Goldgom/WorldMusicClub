@@ -43,6 +43,14 @@ jobs:
       - run: node --test tests/pitch-bend-import-baseline.test.js tests/native-pitch-bend-evidence.test.js tests/pitch-bend-acceptance-workflow.test.js
       - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js tests/authoring-final-gate.test.js
       - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - run: cargo build -p score-core --bin clean-song-batch --locked
+      - name: Original basic-key CLI bytes and native receiver protocol
+        env:
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_BASIC_KEY_CONVERTER: ${{ github.workspace }}/target/debug/clean-song-batch
+          WMH_BASIC_KEY_REPORT: ${{ github.workspace }}/test-results/basic-key/native-protocol/report.json
+        run: node scripts/check-basic-key-native.mjs
       - name: Complete clean media package through actual Rust protocol
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
@@ -109,12 +117,21 @@ jobs:
           WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-song-authoring-check.mjs
           WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-song-authoring-check.mjs
           WMH_VIEWPORT_WIDTH=1920 WMH_VIEWPORT_HEIGHT=1080 node scripts/hosted-song-authoring-check.mjs
+      - name: Original basic-key real keyboard, Chinese inventory, exact export and restart
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: |
+          WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-basic-key-check.mjs
+          WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-basic-key-check.mjs
       - name: Preserve authored bulk-import evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: bulk-import-browser-${{ github.sha }}
           path: |
+            test-results/basic-key/**
             test-results/bulk-import-dom.json
             test-results/bulk-import/**
             test-results/vsq-song/**
@@ -272,6 +289,9 @@ jobs:
       - name: Native original authoring pair, explicit saves, exact export and fresh-process restart
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-authoring -Scenario authoring
+      - name: Native original basic-key inventory, keyboard and restart
+        shell: pwsh
+        run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-basic-key -Scenario basic-key
       # Default success() keeps candidate packaging behind every native gate.
       # This job cannot establish browser or whole-checkpoint acceptance.
       - name: Package native candidate with exact provenance and notices
@@ -309,11 +329,17 @@ jobs:
           if ($authoringProof.source_sha -cne '${{ github.sha }}' -or $authoringProof.source_tree -cne $currentTree -or $authoringProof.executable_sha256 -cne $currentExe -or $authoringProof.executable_bytes -ne $currentExeBytes) { throw 'Song authoring evidence does not match the exact packaged source and executable' }
           python scripts/native-song-authoring-manifest.py desktop-authoring --executable target/release/worldmusichub-desktop.exe --commit '${{ github.sha }}' --tree $currentTree
           if ($LASTEXITCODE -ne 0) { throw 'Native song authoring focused manifest failed' }
+          $env:WMH_SOURCE_SHA='${{ github.sha }}'
+          $env:WMH_SOURCE_TREE=$currentTree
+          $env:WMH_BASIC_KEY_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
+          node scripts/verify-basic-key-evidence.mjs --check desktop-basic-key
+          if ($LASTEXITCODE -ne 0) { throw 'Basic-key evidence does not match exact packaged source and executable' }
           $count=(git rev-list --count HEAD).Trim()
           $folder='dist/WorldMusicHub-Native'
           New-Item -ItemType Directory "$folder/licenses/engraving","$folder/evidence" -Force | Out-Null
           Copy-Item target/release/worldmusichub-desktop.exe "$folder/WorldMusicHub-Native.exe"
           Copy-Item LICENSE $folder
+          Copy-Item desktop-basic-key/native-basic-key.json,desktop-basic-key/basic-key-proof.json,desktop-basic-key/renderer-basic-key-*.json,desktop-basic-key/profile-basic-key-*.json "$folder/evidence/"
           Copy-Item docs/WINDOWS_NATIVE.md "$folder/README.md"
           Copy-Item docs/WINDOWS_NATIVE.md "$folder/START-HERE.md"
           Copy-Item -Recurse docs,schema,schemas,catalog $folder
@@ -400,6 +426,15 @@ jobs:
             desktop-pitch-bend/Scores/clean-backups/**
             desktop-pitch-bend/Scores/imports/**
             desktop-pitch-bend/Scores/import-backups/**
+            desktop-basic-key/*.json
+            desktop-basic-key/*.png
+            desktop-basic-key/*.log
+            desktop-basic-key/downloads/*
+            desktop-basic-key/fixtures/*
+            desktop-basic-key/Scores/clean-songs/**
+            desktop-basic-key/Scores/clean-backups/**
+            desktop-basic-key/Scores/imports/**
+            desktop-basic-key/Scores/import-backups/**
             desktop-authoring/*.json
             desktop-authoring/*.png
             desktop-authoring/*.log
