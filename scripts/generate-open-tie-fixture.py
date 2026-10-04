@@ -24,11 +24,14 @@ def vlq(value):
 
 
 # Original isolated C4: ten quarter beats, followed by two silent quarter beats.
-collision = "--accidental-collision" in sys.argv[2:]
+singleton = "--boundary-singleton" in sys.argv[2:]
+unison = "--unison-collision" in sys.argv[2:]
+collision = "--accidental-collision" in sys.argv[2:] or unison
 track = bytes([0, 0x90, 60, 90]) + vlq(10240) + bytes([0x80, 60, 0]) + vlq(2048) + bytes([255, 47, 0])
 if collision:
     # Simultaneous isolated C/C-sharp lasting10/6 quarters; no authored melody.
-    track = bytes([0, 0x90, 60, 90, 0, 0x90, 61, 90]) + vlq(576) + bytes([0x80, 61, 0]) + vlq(384) + bytes([0x80, 60, 0]) + vlq(192) + bytes([255, 47, 0])
+    second_key = 60 if unison else 61
+    track = bytes([0, 0x90, 60, 90, 0, 0x90, second_key, 90]) + vlq(576) + bytes([0x80, second_key, 0]) + vlq(384) + bytes([0x80, 60, 0]) + vlq(192) + bytes([255, 47, 0])
 ppq = 96 if collision else 1024
 midi = b'MThd' + (6).to_bytes(4, 'big') + bytes([0, 0, 0, 1]) + ppq.to_bytes(2, 'big') + b'MTrk' + len(track).to_bytes(4, 'big') + track
 with tempfile.TemporaryDirectory(prefix='wmh-original-open-tie-') as temporary:
@@ -42,10 +45,10 @@ with tempfile.TemporaryDirectory(prefix='wmh-original-open-tie-') as temporary:
         assert response['status'] == 200, response
         return json.loads(base64.b64decode(response['body_base64']))
 
-    draft = call('/api/clean-song/draft', json.dumps({'source_base64': base64.b64encode(midi).decode(), 'source_name': 'original-single-c.mid', 'title': 'Original simultaneous isolated C4 and C-sharp4' if collision else 'Original isolated open-boundary C4', 'intent': 'basic_keys'}).encode())
+    draft = call('/api/clean-song/draft', json.dumps({'source_base64': base64.b64encode(midi).decode(), 'source_name': 'original-single-c.mid', 'title': 'Original two C4 attacks with unequal durations' if unison else 'Original simultaneous isolated C4 and C-sharp4' if collision else 'Original isolated open-boundary C4', 'intent': 'basic_keys'}).encode())
     package = draft['package']
     metadata = json.loads(package['metadata_json'])
-    metadata['rights'] = {'status': 'original_authored', 'attribution': 'Original isolated C4 and C-sharp4 authored by this generator for source-bound tie validation' if collision else 'Original isolated C4 authored by this generator for source-bound tie validation', 'license': 'CC0-1.0'}
+    metadata['rights'] = {'status': 'original_authored', 'attribution': 'Original two C4 attacks authored by this generator for exact source-chain validation' if unison else 'Original isolated C4 and C-sharp4 authored by this generator for source-bound tie validation' if collision else 'Original isolated C4 authored by this generator for source-bound tie validation', 'license': 'CC0-1.0'}
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as output:
         output.writestr('manifest.json', json.dumps({'format': 'worldmusichub-song-pack', 'version': 2, 'songs': [{'folder': 'songs/original'}]}))
@@ -54,12 +57,12 @@ with tempfile.TemporaryDirectory(prefix='wmh-original-open-tie-') as temporary:
     imported = call('/api/library/import/commit', archive.getvalue())
     entry = imported['items'][0]['entry']
     loaded = call('/api/library/load', json.dumps({'key': entry['key']}).encode())
-    request = {'source': {'key': entry['key'], 'content_sha256': entry['content_sha256'], 'profile': 'wmh-basic-keys-midi1-v1'}, 'settings': {'part_id': 'midi-t1-c1-r0', 'rendition_policy_id': 'wmh-basic-key-rendition-fifo-v1', 'first_measure': 0 if collision else 1, 'measure_count': 3 if collision else 2, 'display_meter': {'numerator': 4, 'denominator': 4}}}
+    request = {'source': {'key': entry['key'], 'content_sha256': entry['content_sha256'], 'profile': 'wmh-basic-keys-midi1-v1'}, 'settings': {'part_id': 'midi-t1-c1-r0', 'rendition_policy_id': 'wmh-basic-key-rendition-fifo-v1', 'first_measure': 0 if collision else 1, 'measure_count': 3 if collision else 1 if singleton else 2, 'display_meter': {'numerator': 4, 'denominator': 4}}}
     response = call('/api/library/basic-keys/notation', json.dumps(request).encode())
     assert response['page']['status'] == 'ready'
-    assert len(response['page']['musicxml']['note_id_map']['segments']) == (5 if collision else 2)
+    assert len(response['page']['musicxml']['note_id_map']['segments']) == (5 if collision else 1 if singleton else 2)
     fixture = {'open': {'score_json': loaded['score_json'], 'clean_package': loaded['clean_package']}, 'request': request, 'response': response}
-    destination = Path(__file__).resolve().parent.parent / ('tests/fixtures/basic-key-accidental-tie-page.json' if collision else 'tests/fixtures/basic-key-open-tie-page.json')
+    destination = Path(__file__).resolve().parent.parent / ('tests/fixtures/basic-key-boundary-singleton.json' if singleton else 'tests/fixtures/basic-key-unison-tie-page.json' if unison else 'tests/fixtures/basic-key-accidental-tie-page.json' if collision else 'tests/fixtures/basic-key-open-tie-page.json')
     destination.write_text(json.dumps(fixture, ensure_ascii=False, indent=2, sort_keys=True) + '\n')
     process.stdin.close()
     assert process.wait() == 0

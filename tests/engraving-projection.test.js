@@ -7,7 +7,7 @@ import {createRequire} from 'node:module';
 import {DOMParser,parseHTML} from 'linkedom';
 import {validateEngravingInput, renderEngravedStaff, ENGRAVING_LIMITS} from '../web/engraving.js';
 import {createEngravingProjection, proveEngravingProjectionModelNotes, restoreSourceBoundProjectionFractions, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from '../web/engraving-projection.js';
-import {matchEngravingModel,validateEngravingModelTies,restoreSourceBoundPageTies} from '../web/engraving-note-map.js';
+import {matchEngravingModel,validateEngravingModelTies,restoreSourceBoundPageTies,isAdmittedNativeEngravingSource} from '../web/engraving-note-map.js';
 import {resolveEngravingTieContext} from '../web/engraving-tie-context.js';
 import {createI18n} from '../web/i18n.js';
 
@@ -553,11 +553,11 @@ test('source-proved incoming page chain restores only real internal ties dropped
  const previousSelf=globalThis.self;
  try{
   globalThis.self=globalThis;const osmd=createRequire(import.meta.url)('opensheetmusicdisplay');
-  assert.deepEqual(restoreSourceBoundPageTies(renderer,{...validated,boundaryTies:null},osmd.Tie,osmd.TieTypes),{ok:true,restored:0});
+  assert.deepEqual(restoreSourceBoundPageTies(renderer,{...validated,boundaryTies:null},osmd.Tie,osmd.TieTypes,ENGRAVING_LIMITS),{ok:true,restored:0});
   assert.deepEqual(validateEngravingModelTies(renderer,validated),{ok:false,key:'tieContext'},'Ordinary or unbound missing ties are not repaired');
-  assert.deepEqual(restoreSourceBoundPageTies(renderer,validated,osmd.Tie,osmd.TieTypes),{ok:true,restored:1});
+  assert.deepEqual(restoreSourceBoundPageTies(renderer,validated,osmd.Tie,osmd.TieTypes,ENGRAVING_LIMITS),{ok:true,restored:1});
   assert.deepEqual(validateEngravingModelTies(renderer,validated),{ok:true});
-  assert.deepEqual(restoreSourceBoundPageTies(renderer,validated,osmd.Tie,osmd.TieTypes),{ok:true,restored:0},'Repeated admission never duplicates a tie or note');
+  assert.deepEqual(restoreSourceBoundPageTies(renderer,validated,osmd.Tie,osmd.TieTypes,ENGRAVING_LIMITS),{ok:true,restored:0},'Repeated admission never duplicates a tie or note');
   assert.equal(matched.matches[0].note.NoteTie,matched.matches[1].note.NoteTie);assert.deepEqual(matched.matches[0].note.NoteTie.Notes,matched.matches.map(match=>match.note));
   assert.deepEqual(validateEngravingProjectionModel(sheet,projection,page.score,ENGRAVING_LIMITS),{ok:true});
   assert.deepEqual(matchEngravingModel(renderer,validated).diagnostics,[]);
@@ -565,7 +565,7 @@ test('source-proved incoming page chain restores only real internal ties dropped
  assert.equal(JSON.stringify(page),before,'Source page, clipped intervals, XML flags and IDs stay immutable');
 });
 
-test('page tie recovery refuses forged boundaries, altered membership and existing incorrect ties',()=>{
+test('native page proof refuses altered sources and reconstructs independently proved partial ties',()=>{
  const fixture=JSON.parse(readFileSync(new URL('./fixtures/basic-key-open-tie-page.json',import.meta.url),'utf8'));
  const song=prepareCleanSong(`native:song-${fixture.open.clean_package.content_sha256}`,fixture.open.clean_package,null),page=basicKeyNotationPage(fixture.response,fixture.request,song);
  const previousSelf=globalThis.self;
@@ -582,10 +582,10 @@ test('page tie recovery refuses forged boundaries, altered membership and existi
     if(kind==='different-voice')second.voice='unrelated-voice';
    }
    const wrong=kind==='existing-wrong-tie'?new osmd.Tie(notes[0],osmd.TieTypes.SIMPLE):null;
-   const outcome=restoreSourceBoundPageTies(renderer,validated,osmd.Tie,osmd.TieTypes);
-   if(wrong){assert.deepEqual(outcome,{ok:true,restored:0});assert.equal(notes[0].NoteTie,wrong);assert.deepEqual(wrong.Notes,[notes[0]]);}
+   const outcome=restoreSourceBoundPageTies(renderer,validated,osmd.Tie,osmd.TieTypes,ENGRAVING_LIMITS);
+   if(wrong){assert.deepEqual(outcome,{ok:true,restored:1});assert.notEqual(notes[0].NoteTie,wrong);assert.deepEqual(wrong.Notes,[notes[0]]);}
    else{assert.deepEqual(outcome,{ok:false,key:'tieContext'},kind);assert.ok(notes.every(note=>!note.NoteTie),kind);}
-   assert.equal(validateEngravingModelTies(renderer,validated).ok,false,kind);
+   assert.equal(validateEngravingModelTies(renderer,validated).ok,Boolean(wrong),kind);
   }
   const copied=structuredClone(basicKeyEngravingIdentity(song,page)),unbound=validateEngravingInput(page.musicxml.xml,{identity:copied,fromMeasure:1,toMeasure:2},XmlParser);
   assert.equal(unbound.identity.ok,false,'A copied/native-looking page cannot grant ordinary score input boundary privileges');
@@ -602,7 +602,7 @@ test('exact excerpt decomposition also retains a nonstandard breve on the bounde
  assert.deepEqual(validateEngravingModelTies({Sheet:sheet},validated),{ok:true});
 });
 
-test('native C/C-sharp chains repair only the pinned different-alter closed permutation',()=>{
+test('native C/C-sharp chains derive from complete source proof independently of old partial graph shape',()=>{
  const fixture=JSON.parse(readFileSync(new URL('./fixtures/basic-key-accidental-tie-page.json',import.meta.url),'utf8'));
  const song=prepareCleanSong(`native:song-${fixture.open.clean_package.content_sha256}`,fixture.open.clean_package,null),page=basicKeyNotationPage(fixture.response,fixture.request,song);
  const previousSelf=globalThis.self;
@@ -620,8 +620,8 @@ test('native C/C-sharp chains repair only the pinned different-alter closed perm
    if(scenario==='noncollision-type')first.type='H';
    const prior=new Map(notes.map(note=>[note,note.NoteTie]));
    let calls=0;const ThrowingTie=class extends osmd.Tie{constructor(...args){super(...args);if(++calls===2)throw Error('authored constructor interruption')}};
-   const result=restoreSourceBoundPageTies(renderer,validated,scenario==='constructor-failure'?ThrowingTie:osmd.Tie,osmd.TieTypes);
-   if(scenario==='exact-collision'){
+   const result=restoreSourceBoundPageTies(renderer,validated,scenario==='constructor-failure'?ThrowingTie:osmd.Tie,osmd.TieTypes,ENGRAVING_LIMITS);
+   if(['exact-collision','missing-note','singleton'].includes(scenario)){
     assert.deepEqual(result,{ok:true,restored:2});assert.deepEqual(validateEngravingModelTies(renderer,validated),{ok:true});
     assert.deepEqual(matchEngravingModel(renderer,validated).diagnostics,[]);assert.deepEqual(validateEngravingProjectionModel(renderer.Sheet,projection,page.score,ENGRAVING_LIMITS),{ok:true});
    }else{
@@ -640,4 +640,31 @@ test('an unequal chord with a split long member uses exact independent display l
  const sheet=read(projection),validated={...checked.identity,projection};assert.deepEqual(validateEngravingProjectionModel(sheet,projection,fixture.score,ENGRAVING_LIMITS),{ok:true});
  const matched=matchEngravingModel({Sheet:sheet},validated);assert.deepEqual(matched.diagnostics,[]);assert.equal(matched.matches.filter(match=>match.note).length,3);
  assert.deepEqual(validateEngravingModelTies({Sheet:sheet},validated),{ok:true});
+});
+
+test('native admission binds the complete original objects and XML beyond a retained boundary key',()=>{
+ const fixture=JSON.parse(readFileSync(new URL('./fixtures/basic-key-open-tie-page.json',import.meta.url),'utf8'));
+ const song=prepareCleanSong(`native:song-${fixture.open.clean_package.content_sha256}`,fixture.open.clean_package,null),page=basicKeyNotationPage(fixture.response,fixture.request,song),previousSelf=globalThis.self;
+ try{
+  globalThis.self=globalThis;const osmd=createRequire(import.meta.url)('opensheetmusicdisplay');
+  for(const kind of ['source-map-copy','segment-array-copy','score-copy','part-map-copy','source-wrapper-change','source-note-copy','equal-segment-copy','changed-input-document','changed-boundary-flags','added-input-comment']){
+   const {checked,projection}=project({xml:page.musicxml.xml,identity:basicKeyEngravingIdentity(song,page)},{fromMeasure:1,toMeasure:2}),renderer={Sheet:read(projection)},validated={...checked.identity,projection};
+   const notes=matchEngravingModel(renderer,validated).matches.map(match=>match.note);
+   assert.equal(isAdmittedNativeEngravingSource(checked.document,validated),true);
+   assert.equal(isAdmittedNativeEngravingSource(checked.document.cloneNode(true),validated),false);
+   if(kind==='source-map-copy')validated.sources=new Map(validated.sources);
+   if(kind==='segment-array-copy')validated.segments=[...validated.segments];
+   if(kind==='score-copy')validated.score=structuredClone(validated.score);
+   if(kind==='part-map-copy')validated.partIdMap={...validated.partIdMap};
+   if(kind==='source-wrapper-change'){const [id,source]=[...validated.sources][0];validated.sources.set(id,{...source});}
+   if(kind==='source-note-copy'){const source=[...validated.sources.values()][0];source.note={...source.note};}
+   if(kind==='equal-segment-copy')validated.segments[0]={...validated.segments[0]};
+   if(kind==='changed-input-document')checked.document.documentElement.setAttribute('data-forged','true');
+   if(kind==='changed-boundary-flags'){const [id]=validated.boundaryTies.keys();validated.boundaryTies.set(id,{incoming:false,outgoing:false});}
+   if(kind==='added-input-comment')checked.document.appendChild(checked.document.createComment('changed after admission'));
+   assert.equal(isAdmittedNativeEngravingSource(checked.document,validated),false,kind);
+   assert.deepEqual(restoreSourceBoundPageTies(renderer,validated,osmd.Tie,osmd.TieTypes,ENGRAVING_LIMITS),{ok:false,key:'tieContext'},kind);
+   assert.ok(notes.every(note=>!note.NoteTie),`${kind}: admission failure never mutates the model`);
+  }
+ }finally{if(previousSelf===undefined)delete globalThis.self;else globalThis.self=previousSelf;}
 });

@@ -1,8 +1,32 @@
-import {basicKeyEngravingBoundaries} from './basic-key-notation.js';
+import {basicKeyEngravingBoundaries,basicKeyEngravingViewVersion} from './basic-key-notation.js';
 /** Verify display identity only. Rust owns every performance interval. */
-import {ENGRAVING_SOURCE_LIMITS} from './engraving-projection.js';
+import {ENGRAVING_SOURCE_LIMITS,proveEngravingProjectionModelNotes} from './engraving-projection.js';
 const VERSION=1,MAX_BYTES=ENGRAVING_SOURCE_LIMITS.mapBytes,MAX_SEGMENTS=ENGRAVING_SOURCE_LIMITS.notes;
 const admittedPageBoundaries=new WeakMap();
+const nativeAdmissions=new WeakMap();
+const nativeSnapshot=validated=>JSON.stringify([validated.score,validated.segments,validated.partIdMap,[...validated.boundaryTies],[...validated.sources].map(([id,source])=>[id,source.part.id,source.note])]);
+const documentSnapshot=document=>JSON.stringify(Array.from(document.childNodes).map(node=>node.nodeType===1?[1,node.outerHTML]:[node.nodeType,node.nodeName,node.nodeValue]));
+function rememberNativeAdmission(document,validated,viewVersion){
+  if(typeof document.documentElement.outerHTML!=='string')fail('The native source document cannot provide an immutable XML snapshot.');
+  nativeAdmissions.set(validated.boundaryTies,{
+    document,viewVersion,xml:documentSnapshot(document),score:validated.score,segments:validated.segments,
+    segmentObjects:[...validated.segments],sources:validated.sources,partIdMap:validated.partIdMap,
+    sourceObjects:[...validated.sources].map(([id,source])=>({id,source,note:source.note,part:source.part})),
+    snapshot:nativeSnapshot(validated),
+  });
+}
+function nativeAdmission(validated){
+  const proof=nativeAdmissions.get(validated.boundaryTies);
+  if(!proof||validated.version!==VERSION||proof.score!==validated.score||proof.segments!==validated.segments||proof.sources!==validated.sources||proof.partIdMap!==validated.partIdMap||
+    proof.segmentObjects.length!==validated.segments.length||proof.segmentObjects.some((segment,index)=>segment!==validated.segments[index])||
+    proof.sourceObjects.length!==validated.sources.size||proof.sourceObjects.some(item=>validated.sources.get(item.id)!==item.source||item.source.note!==item.note||item.source.part!==item.part)||
+    documentSnapshot(proof.document)!==proof.xml||nativeSnapshot(validated)!==proof.snapshot)fail('The native source admission changed after validation.');
+  return proof;
+}
+/** A copied identity or retained key with changed data cannot authorize a view. */
+export function isAdmittedNativeEngravingSource(sourceDocument,validated){
+  try{const proof=nativeAdmission(validated);return proof.viewVersion===2&&proof.document===sourceDocument;}catch{return false;}
+}
 const STEPS=['C','D','E','F','G','A','B'],NATURAL=[0,2,4,5,7,9,11];
 const diagnostic=(code,message,segments=[])=>({code,message,sourceNoteIds:[...new Set(segments.map(s=>s.source_note_id))],xmlNoteIds:[...new Set(segments.map(s=>s.xml_note_id))]});
 const fail=message=>{throw Error(message)};
@@ -78,7 +102,9 @@ export function validateEngravingNoteMap(document,identity){
     }
     if(seen.size!==segments.length)fail('The complete identity map and XML note counts differ.');
     if(boundaryTies)admittedPageBoundaries.set(boundaryTies,new Map([...boundaryTies].map(([id,flags])=>[id,Object.freeze({...flags})])));
-    return {ok:true,status:'ready',version:VERSION,segments:[...segments],sources,score,partIdMap,boundaryTies,diagnostics:boundaryTies?.size?[diagnostic('engraving_page_continuations','Open page-edge ties are verified against complete source intervals. Continuation records retain the full source duration; notation outside this page is not loaded.')]:[]};
+    const validated={ok:true,status:'ready',version:VERSION,segments:[...segments],sources,score,partIdMap,boundaryTies,diagnostics:boundaryTies?.size?[diagnostic('engraving_page_continuations','Open page-edge ties are verified against complete source intervals. Continuation records retain the full source duration; notation outside this page is not loaded.')]:[]};
+    if(boundaryTies)rememberNativeAdmission(document,validated,basicKeyEngravingViewVersion(identity));
+    return validated;
   }catch(error){return {ok:false,status:'unavailable',diagnostics:[diagnostic('engraving_note_map_unavailable',error.message)]}}
 }
 
@@ -120,7 +146,9 @@ export function matchEngravingModel(renderer,validated,{includeContext=false}={}
  * within-page chain from its existing exact Note objects. No outside note,
  * XML flag, pitch, duration, or general missing tie is invented or replaced.
  */
-export function restoreSourceBoundPageTies(renderer,validated,Tie,types){
+export function restoreSourceBoundPageTies(renderer,validated,Tie,types,limits){
+  if(validated.boundaryTies){try{nativeAdmission(validated);}catch{return {ok:false,key:'tieContext'};}}
+  if(nativeAdmissions.get(validated.boundaryTies)?.viewVersion===2)return reconstructNativeRenditionTies(renderer,validated,Tie,types,limits);
   const collision=restoreSourceBoundAccidentalCollisions(renderer,validated,Tie,types);
   if(!collision.ok)return collision;
   const chains=validated.projection?.tieChains||[];
@@ -156,6 +184,84 @@ export function restoreSourceBoundPageTies(renderer,validated,Tie,types){
     for(const notes of repairs){const tie=new Tie(notes[0],types.SIMPLE);for(const note of notes.slice(1))tie.AddNote(note);}
   }catch{return {ok:false,key:'tieContext'};}
   return {ok:true,restored:collision.restored+repairs.length};
+}
+
+/** Native v2 source intervals own this graph; the parser's old ties do not. */
+function reconstructNativeRenditionTies(renderer,validated,Tie,types,limits){
+  let saved;
+  try{
+    const admission=nativeAdmission(validated),boundaries=admittedPageBoundaries.get(validated.boundaryTies);
+    if(admission.viewVersion!==2||!boundaries||!limits||!integer(limits.notes,1,2000)||typeof Tie!=='function'||types?.SIMPLE!=='')fail('Unsupported native tie model.');
+    // Native basic-key XML carries plain source-derived ties, without authored
+    // tie-number/direction/slide semantics that this adapter could erase.
+    for(const element of admission.document.querySelectorAll('tie,tied'))if(Array.from(element.attributes).some(attribute=>attribute.name!=='type'))fail('Authored tie styling is not a native interval.');
+    if(admission.document.querySelector('slide,glissando,hammer-on,pull-off'))fail('Non-simple authored ties cannot be reconstructed.');
+    const inventory=proveEngravingProjectionModelNotes(renderer.Sheet,validated.projection,validated.score,limits);
+    if(!inventory.ok||inventory.sourceDocument!==admission.document||!Array.isArray(inventory.notes))fail('The full native model was not independently proved.');
+    const model=new Set(inventory.notes);
+    if(model.size!==inventory.notes.length)fail('Duplicate model note ownership.');
+    const matched=matchEngravingModel(renderer,validated,{includeContext:true});
+    if(!matched.ok||matched.diagnostics.length)fail('Native segments need unique exact model identities.');
+    const selectedParts=new Set(validated.projection.partIds),selectedMeasures=new Set(validated.projection.sourceMeasureIndices),groups=new Map(),visible=new Set();
+    for(const match of matched.matches){
+      const segment=match.segment,selected=selectedParts.has(segment.xml_part_id)&&selectedMeasures.has(segment.source_measure_index);
+      if(!selected){if(match.note)fail('Unexpected off-view model binding.');continue;}
+      const note=match.note,source=validated.sources.get(segment.source_note_id);
+      if(!note||!model.has(note)||visible.has(note)||note.PrintObject!==true||note.IsGraceNote||note.IsCueNote||!source)fail('A visible source note is missing, duplicated or hidden.');
+      const canonical=source.note,pitch=canonical.pitch;
+      if(canonical.voice!=='1'||canonical.staff!==1||canonical.tie_start!==false||canonical.tie_stop!==false||!pitch)fail('Only native basic-key interval semantics may define this graph.');
+      const midi=(pitch.octave+1)*12+NATURAL[STEPS.indexOf(pitch.step)]+pitch.alter;
+      const steps=['C','C','D','D','E','F','F','G','G','A','A','B'],alters=[0,1,0,1,0,0,1,0,1,0,1,0];
+      if(!integer(midi,0,127)||pitch.step!==steps[midi%12]||pitch.alter!==alters[midi%12]||pitch.octave!==Math.floor(midi/12)-1)fail('Native nominal pitch spelling changed.');
+      if(segment.part_id!==source.part.id||segment.staff!==canonical.staff||segment.voice!==canonical.voice||pitchKey(segment.pitch)!==pitchKey(pitch))fail('A native segment changed its source identity.');
+      visible.add(note);
+      if(!groups.has(segment.source_note_id))groups.set(segment.source_note_id,{source,items:[]});
+      groups.get(segment.source_note_id).items.push({segment,note});
+    }
+    // Unlike expected-segment matching alone, every actual Note must be owned:
+    // visible source notes are a bijection, and only proved padding is hidden.
+    for(const note of inventory.notes)if(note.PrintObject===true?!visible.has(note):note.PrintObject!==false||!note.isRest()||visible.has(note))fail('An extra, unsupported or hidden pitched model note exists.');
+    const chains=[];
+    for(const [id,group]of groups){
+      const source=group.source.note,flags=boundaries.get(id)||{incoming:false,outgoing:false};
+      group.items.sort((left,right)=>{const order=compare(rational(left.segment.at),rational(right.segment.at));return order<0n?-1:order>0n?1:0;});
+      let next=rational(source.at);const first=group.items[0].segment;
+      for(const [index,item]of group.items.entries()){
+        const segment=item.segment,duration=rational(segment.duration);
+        if(duration[0]<=0n||!equal(rational(segment.at),next)||segment.xml_voice!==first.xml_voice||segment.lane!==first.lane||
+          segment.tie_stop!==(index>0||flags.incoming)||segment.tie_start!==(index+1<group.items.length||flags.outgoing))fail('Source coverage or a page boundary is unproved.');
+        next=add(next,duration);
+      }
+      if(!equal(next,add(rational(source.at),rational(source.duration))))fail('The loaded model lacks a complete clipped source interval.');
+      if(group.items.length>1)chains.push(group.items.map(item=>item.note));
+    }
+    const chained=new Set(chains.flat()),partitionMatches=()=>{
+      for(const notes of chains){const tie=notes[0].NoteTie;if(!tie||tie.Type!==types.SIMPLE||!Array.isArray(tie.Notes)||tie.Notes.length!==notes.length||notes.some((note,index)=>note.NoteTie!==tie||tie.Notes[index]!==note))return false;}
+      return inventory.notes.every(note=>chained.has(note)||note.NoteTie==null);
+    };
+    // A parser relation may be incomplete or wrong, but it cannot introduce a
+    // foreign object outside the independently proved actual model inventory.
+    const priorTies=new Set();
+    for(const note of inventory.notes){const tie=note.NoteTie;if(tie==null||priorTies.has(tie))continue;priorTies.add(tie);if(typeof tie!=='object'||tie.Type!==types.SIMPLE||!Array.isArray(tie.Notes)||tie.Notes.length>limits.notes||tie.Notes.some(member=>!model.has(member)))fail('An old tie has unsupported semantics or an off-model member.');}
+    const verifyResult=()=>{
+      nativeAdmission(validated);
+      const after=proveEngravingProjectionModelNotes(renderer.Sheet,validated.projection,validated.score,limits);
+      if(!after.ok||after.sourceDocument!==admission.document||after.notes.length!==inventory.notes.length||after.notes.some(note=>!model.has(note))||
+        !partitionMatches()||!validateEngravingModelTies(renderer,validated).ok)fail('The complete native tie transaction failed its postconditions.');
+    };
+    if(partitionMatches()){
+      verifyResult();
+      return {ok:true,restored:0};
+    }
+    saved=new Map(inventory.notes.map(note=>[note,note.NoteTie]));
+    for(const note of inventory.notes)note.NoteTie=undefined;
+    for(const notes of chains){const tie=new Tie(notes[0],types.SIMPLE);for(const note of notes.slice(1))tie.AddNote(note);}
+    verifyResult();
+    return {ok:true,restored:chains.length};
+  }catch{
+    if(saved)for(const [note,tie]of saved)note.NoteTie=tie;
+    return {ok:false,key:'tieContext'};
+  }
 }
 
 /** Pinned-reader fingerprint: staff-global natural-pitch lookup ignores alter. */

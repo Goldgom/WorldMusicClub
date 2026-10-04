@@ -77,10 +77,11 @@ export function basicKeyNotationPage(response,request,song){
 export function basicKeyEngravingIdentity(song,page){
   if(admittedPages.get(page)!==song||page.status!=='ready')invalid();
   const exported=page.musicxml,identity={score:page.score,noteMap:exported.note_id_map,partIdMap:exported.part_id_map,voiceIdMap:exported.voice_id_map};
-  boundaryIdentities.set(identity,new Map(page.continuations.map(item=>[item.note_id,Object.freeze({incoming:item.enters_page,outgoing:item.leaves_page})])));
+  boundaryIdentities.set(identity,{version:page.view_version,boundaries:new Map(page.continuations.map(item=>[item.note_id,Object.freeze({incoming:item.enters_page,outgoing:item.leaves_page})]))});
   return Object.freeze(identity);
 }
-export function basicKeyEngravingBoundaries(identity){return boundaryIdentities.has(identity)?new Map(boundaryIdentities.get(identity)):null;}
+export function basicKeyEngravingBoundaries(identity){return boundaryIdentities.has(identity)?new Map(boundaryIdentities.get(identity).boundaries):null;}
+export function basicKeyEngravingViewVersion(identity){return boundaryIdentities.get(identity)?.version??null;}
 
 /** All times below were returned by Rust. Index them without deriving a tempo
  * clock or converting beats to milliseconds in the browser. */

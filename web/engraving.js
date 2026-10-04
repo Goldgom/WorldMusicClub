@@ -252,7 +252,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
       if (!fractions.ok) { state.dispose(); return result('unsupported', fractions.key, i18n); }
       const model = validateEngravingProjectionModel(renderer.Sheet, projection, identity.score, ENGRAVING_LIMITS);
       if (!model.ok) { state.dispose(); return result('unsupported', model.key, i18n); }
-      const pageTies=restoreSourceBoundPageTies(renderer,boundIdentity,view.opensheetmusicdisplay?.Tie,view.opensheetmusicdisplay?.TieTypes);
+      const pageTies=restoreSourceBoundPageTies(renderer,boundIdentity,view.opensheetmusicdisplay?.Tie,view.opensheetmusicdisplay?.TieTypes,ENGRAVING_LIMITS);
       if(!pageTies.ok){state.dispose();return result('unsupported',pageTies.key,i18n);}
       const ties = validateEngravingModelTies(renderer, boundIdentity);
       if (!ties.ok) { state.dispose(); return result('unsupported', ties.key, i18n); }
