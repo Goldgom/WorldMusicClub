@@ -65,6 +65,14 @@ the ZIP has a separate `.sha256` file. These are integrity/provenance records,
 not a digital signature. Check the exact workflow's successful conclusion and
 native screenshots before relying on the preview.
 
+The bounded pitch receiver additionally requires original C/E/G acceptance for
+the declared two-semitone and proved twelve-semitone ranges, exact source-clock
+frequency changes, pedal-held pause/resume, mute, unchanged human takes and
+explicit unsupported-range rejection. The package includes its five exact
+pitch evidence reports, bound to the same source/tree/executable. Its focused
+scope and false audibility/release-readiness claims remain separate from full
+checkpoint acceptance; see [the pitch proof contract](PITCH_BEND_ACCEPTANCE_SLICE.md).
+
 The Windows and Linux browser jobs run independently. A native candidate can
 therefore exist even when browser checks fail. The manifest explicitly records
 `acceptance_scope: native-windows-only` and `acceptance_workflow_run_id`; these

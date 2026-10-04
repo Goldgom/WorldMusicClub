@@ -116,3 +116,21 @@ test('standalone Python source/EXE verifier accepts exact Node claims and reject
  for(const edit of [p=>p.claims.extra=true,p=>delete p.claims.raw_14bit_source_clock_pitch_events,p=>p.claims.actual_audibility=true,p=>p.claims.native_file_picker=1,p=>p.source_tree='4'.repeat(40),p=>p.executable_bytes++]){const bad=structuredClone(proof);edit(bad);await e.save('native-pitch-bend-files.json',bad);const result=run();assert.equal(result.status,1);assert.match(result.stderr,/ValueError/);}await e.save('native-pitch-bend-files.json',proof);
  await writeFile(executable,Buffer.concat([bytes,Buffer.from('changed')]));assert.equal(run().status,1);
 });
+
+test('final release gate independently consumes real Node pitch proof and keeps focused scope under its feature prefix',async t=>{
+ // Every file is synthetic. The real Node proof and both Python consumers run;
+ // no verifier is mocked and no Windows program, GUI or browser is launched.
+ const e=await syntheticEvidence(t),executable=join(e.directory,'synthetic-executable.bin'),bytes=Buffer.from('Original synthetic final-gate bytes; not an executable');
+ await writeFile(executable,bytes);e.native.executable_sha256=digest(bytes);e.native.executable_bytes=bytes.length;await e.save('native-pitch-bend.json',e.native);
+ const proof=await verifyNativePitchBendEvidence(e.directory);await e.save('native-pitch-bend-files.json',proof);
+ const python=process.platform==='win32'?'python':'python3',options={cwd:new URL('../',import.meta.url),encoding:'utf8',timeout:45000};
+ const prepared=spawnSync(python,['scripts/native-pitch-bend-manifest.py',e.directory,'--executable',executable,'--commit',e.native.source_sha,'--tree',e.native.source_tree],options);assert.ifError(prepared.error);assert.equal(prepared.status,0,prepared.stderr);
+ const manifest=JSON.parse(prepared.stdout),script=`import importlib.util,json,sys\nfrom pathlib import Path\nspec=importlib.util.spec_from_file_location('native_release',Path('scripts/native-release-manifest.py'))\nmodule=importlib.util.module_from_spec(spec)\nspec.loader.exec_module(module)\ndirectory,executable,commit,tree=sys.argv[1:]\naccepted=module.accepted_pitch_bend_evidence(directory,executable,commit,tree)\nmodule.verify_pitch_bend_inventory(['evidence/'+name for name in module.PITCH_BEND_EVIDENCE])\nread=lambda name:Path(executable).read_bytes() if name==module.EXE else (Path(directory)/Path(name).name).read_bytes()\nmodule.verify_packaged_pitch_bend_evidence(read,{'git_commit':commit,'git_tree':tree,'acceptance':accepted})\nprint(json.dumps(accepted))\n`;
+ const run=()=>spawnSync(python,['-c',script,e.directory,executable,e.native.source_sha,e.native.source_tree],options);
+ const good=run();assert.ifError(good.error);assert.equal(good.status,0,good.stderr);const accepted=JSON.parse(good.stdout);
+ assert.ok(Object.keys(accepted).every(key=>key.startsWith('native_pitch_bend_')));assert.equal(accepted.native_pitch_bend_validated,true);assert.deepEqual(accepted.native_pitch_bend_claims,PITCH_BEND_CLAIMS);
+ assert.equal(accepted.native_pitch_bend_scope,'original-pitch-bend-focused-evidence-only');assert.equal(accepted.native_pitch_bend_full_checkpoint_acceptance,false);assert.equal(accepted.native_pitch_bend_release_ready,false);
+ assert.equal(accepted.native_pitch_bend_manifest_sha256,digest(await readFile(join(e.directory,'pitch-bend-manifest.json'))));
+ for(const edit of [m=>m.release_ready=true,m=>m.release_ready=0,m=>m.native_pitch_bend_claims.actual_audibility=true,m=>m.native_pitch_bend_claims.extra=true,m=>delete m.native_pitch_bend_claims.default2_and_proved12_ranges,m=>m.source_tree='4'.repeat(40)]){const bad=structuredClone(manifest);edit(bad);await e.save('pitch-bend-manifest.json',bad);const result=run();assert.equal(result.status,1);assert.match(result.stderr,/ValueError/);}
+ await e.save('pitch-bend-manifest.json',manifest);await writeFile(executable,Buffer.concat([bytes,Buffer.from('changed')]));assert.equal(run().status,1);
+});

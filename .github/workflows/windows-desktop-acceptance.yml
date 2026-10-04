@@ -34,6 +34,7 @@ jobs:
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
       - run: npm run test:bulk-import
+      - run: node --test tests/pitch-bend-import-baseline.test.js tests/native-pitch-bend-evidence.test.js tests/pitch-bend-acceptance-workflow.test.js
       - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
       - name: Complete clean media package through actual Rust protocol
         env:
@@ -47,6 +48,10 @@ jobs:
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
         run: node scripts/check-performance-song-native.mjs
+      - name: Original pitch packages through exact Rust protocol
+        env:
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: node scripts/check-pitch-bend-native.mjs
       - name: Real DOM and native Rust disk route without a listener
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
@@ -75,6 +80,14 @@ jobs:
         run: |
           WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-performance-song-check.mjs
           WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-performance-song-check.mjs
+      - name: Original pitch policy, exact receiver clocks, pause/resume and unchanged take
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: |
+          WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-pitch-bend-check.mjs
+          WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-pitch-bend-check.mjs
       - name: Preserve authored bulk-import evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -92,6 +105,14 @@ jobs:
             test-results/performance-song/*/Scores/clean-backups/**
             test-results/performance-song/*/Scores/imports/**
             test-results/performance-song/*/Scores/import-backups/**
+            test-results/pitch-bend/*/*.json
+            test-results/pitch-bend/*/*.png
+            test-results/pitch-bend/*/downloads/*
+            test-results/pitch-bend/*/fixtures/*
+            test-results/pitch-bend/*/Scores/clean-songs/**
+            test-results/pitch-bend/*/Scores/clean-backups/**
+            test-results/pitch-bend/*/Scores/imports/**
+            test-results/pitch-bend/*/Scores/import-backups/**
           if-no-files-found: warn
   native-feature-acceptance:
     # Independent runners retain Windows diagnostics when browser checks fail.
@@ -130,7 +151,7 @@ jobs:
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
       - run: npm test
-      - run: node --test tests/desktop-evidence.test.js tests/desktop-acceptance-wait.test.js tests/native-song-folder-evidence.test.js tests/native-bulk-import-evidence.test.js tests/native-clean-song-evidence.test.js tests/native-vsq-song-evidence.test.js tests/vsq-fingering-evidence.test.js tests/performance-song-fixtures.test.js tests/native-performance-song-evidence.test.js
+      - run: node --test tests/desktop-evidence.test.js tests/desktop-acceptance-wait.test.js tests/native-song-folder-evidence.test.js tests/native-bulk-import-evidence.test.js tests/native-clean-song-evidence.test.js tests/native-vsq-song-evidence.test.js tests/vsq-fingering-evidence.test.js tests/performance-song-fixtures.test.js tests/native-performance-song-evidence.test.js tests/pitch-bend-import-baseline.test.js tests/native-pitch-bend-evidence.test.js tests/pitch-bend-acceptance-workflow.test.js
       - name: Parse the exact native acceptance script
         shell: pwsh
         run: |
@@ -210,6 +231,9 @@ jobs:
       - name: Native complete performance chooser, reference controls, exact export and fresh-process restart
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-performance-song -Scenario performance-song
+      - name: Native original pitch policy, source-clock bends and held-state reconstruction
+        shell: pwsh
+        run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-pitch-bend -Scenario pitch-bend
       # Default success() keeps candidate packaging behind every native gate.
       # This job cannot establish browser or whole-checkpoint acceptance.
       - name: Package native candidate with exact provenance and notices
@@ -235,6 +259,12 @@ jobs:
           $performanceProof=Get-Content -Raw desktop-performance-song/native-performance-song-files.json | ConvertFrom-Json
           $currentExeBytes=(Get-Item target/release/worldmusichub-desktop.exe).Length
           if ($performanceProof.source_sha -cne '${{ github.sha }}' -or $performanceProof.source_tree -cne $currentTree -or $performanceProof.executable_sha256 -cne $currentExe -or $performanceProof.executable_bytes -ne $currentExeBytes) { throw 'Complete performance evidence does not match the exact packaged source and executable' }
+          node scripts/verify-native-pitch-bend-evidence.mjs --check desktop-pitch-bend
+          if ($LASTEXITCODE -ne 0) { throw 'Native pitch-bend exact-source proof failed' }
+          $pitchProof=Get-Content -Raw desktop-pitch-bend/native-pitch-bend-files.json | ConvertFrom-Json
+          if ($pitchProof.source_sha -cne '${{ github.sha }}' -or $pitchProof.source_tree -cne $currentTree -or $pitchProof.executable_sha256 -cne $currentExe -or $pitchProof.executable_bytes -ne $currentExeBytes) { throw 'Pitch-bend evidence does not match the exact packaged source and executable' }
+          python scripts/native-pitch-bend-manifest.py desktop-pitch-bend --executable target/release/worldmusichub-desktop.exe --commit '${{ github.sha }}' --tree $currentTree
+          if ($LASTEXITCODE -ne 0) { throw 'Native pitch-bend focused manifest failed' }
           $count=(git rev-list --count HEAD).Trim()
           $folder='dist/WorldMusicHub-Native'
           New-Item -ItemType Directory "$folder/licenses/engraving","$folder/evidence" -Force | Out-Null
@@ -250,7 +280,7 @@ jobs:
           Copy-Item desktop-bulk-import/native-bulk-import.json,desktop-bulk-import/native-bulk-import-files.json,desktop-bulk-import/renderer-bulk-*.json "$folder/evidence/"
           Copy-Item desktop-clean-song/native-clean-song.json,desktop-clean-song/native-clean-song-files.json,desktop-clean-song/renderer-clean-*.json "$folder/evidence/"
           Copy-Item desktop-vsq-song/native-vsq-song.json,desktop-vsq-song/native-vsq-song-files.json,desktop-vsq-song/renderer-vsq-*.json "$folder/evidence/"
-          python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder --performance-song desktop-performance-song
+          python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder --performance-song desktop-performance-song --pitch-bend desktop-pitch-bend
           if ($LASTEXITCODE -ne 0) { throw 'Native provenance/acceptance inventory failed' }
           $zip="dist/WorldMusicHub-Native-Windows-x64-commit-$count.zip"
           python scripts/native-release-manifest.py archive $folder $zip
@@ -317,6 +347,15 @@ jobs:
             desktop-performance-song/Scores/clean-backups/**
             desktop-performance-song/Scores/imports/**
             desktop-performance-song/Scores/import-backups/**
+            desktop-pitch-bend/*.json
+            desktop-pitch-bend/*.png
+            desktop-pitch-bend/*.log
+            desktop-pitch-bend/downloads/*
+            desktop-pitch-bend/fixtures/*
+            desktop-pitch-bend/Scores/clean-songs/**
+            desktop-pitch-bend/Scores/clean-backups/**
+            desktop-pitch-bend/Scores/imports/**
+            desktop-pitch-bend/Scores/import-backups/**
             desktop-portable/*.json
             desktop-portable/*.png
             desktop-portable/*.log

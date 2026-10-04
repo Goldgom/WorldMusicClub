@@ -103,5 +103,6 @@ music, titles and source bytes are never public fixtures.
 The independent [original pitch acceptance route](PITCH_BEND_ACCEPTANCE_SLICE.md)
 adds source-bound hosted/Windows plumbing for this receiver. Its authored
 fixtures and local contract checks alone do not establish browser/native
-acceptance; the exact-source focused workflow and eventual mandatory final
-package gate remain separate.
+acceptance. The exact-source focused workflow remains separate from the final
+checkpoint, whose browser/native jobs and package gate also require the pitch
+proof before candidate packaging.

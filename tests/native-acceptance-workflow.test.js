@@ -138,7 +138,7 @@ test('all real checks fail closed and failure evidence survives independently', 
   assert.match(nativeSteps[candidateIndex], /if-no-files-found: error/);
   assert.match(nativeSteps[packageIndex], /native-release-manifest\.py create/);
   assert.match(nativeSteps[packageIndex], /native-release-manifest\.py archive/);
-  for (const scenario of ['song-folder', 'bulk-import', 'clean-song', 'vsq-song', 'performance-song']) {
+  for (const scenario of ['song-folder', 'bulk-import', 'clean-song', 'vsq-song', 'performance-song', 'pitch-bend']) {
     const index = nativeSteps.findIndex(step => step.includes(`-Scenario ${scenario}`));
     assert.ok(index > 0 && index < packageIndex, `${scenario} gates packaging`);
     assert.doesNotMatch(nativeSteps[index], /^        (?:if|continue-on-error):/m);
@@ -197,4 +197,55 @@ test('performance artifacts retain bounded authored evidence without uploading p
   const ignore = readFileSync(new URL('../.gitignore', import.meta.url), 'utf8');
   assert.match(ignore, /^\/desktop-performance-song\/$/m);
   assert.doesNotMatch(ignore, /^\/desktop-\*\/?$/m);
+});
+
+
+test('pitch browser heights and actual Windows scenario are mandatory before the exact-source package gate', () => {
+  const browserSteps = steps(jobBlock(jobIds[0]));
+  const buildIndex = browserSteps.findIndex(step => step.includes('cargo build -p worldmusichub-desktop --example native_import_driver --locked'));
+  const protocolIndex = browserSteps.findIndex(step => step.includes('run: node scripts/check-pitch-bend-native.mjs'));
+  const hostedIndex = browserSteps.findIndex(step => step.includes('node scripts/hosted-pitch-bend-check.mjs'));
+  assert.ok(buildIndex >= 0 && protocolIndex > buildIndex && hostedIndex > protocolIndex);
+  for (const step of [browserSteps[protocolIndex], browserSteps[hostedIndex]]) {
+    assert.match(step, /WMH_NATIVE_IMPORT_DRIVER: \$\{\{ github\.workspace \}\}\/target\/debug\/examples\/native_import_driver/);
+    assert.doesNotMatch(step, /^        (?:if|continue-on-error):/m);
+  }
+  assert.match(browserSteps[hostedIndex], /WMH_HOSTED_BROWSER: '1'/);
+  assert.match(browserSteps[hostedIndex], /WMH_SOURCE_SHA: \$\{\{ github\.sha \}\}/);
+  for (const height of [720, 900]) assert.ok(browserSteps[hostedIndex].includes(`WMH_VIEWPORT_HEIGHT=${height} node scripts/hosted-pitch-bend-check.mjs`));
+  const nativeSteps = steps(jobBlock(jobIds[1]));
+  const scenarioIndex = nativeSteps.findIndex(step => step.includes('-Scenario pitch-bend'));
+  const packageIndex = nativeSteps.findIndex(step => step.includes('id: native_package'));
+  assert.ok(scenarioIndex > 0 && scenarioIndex < packageIndex);
+  assert.match(nativeSteps[scenarioIndex], /-Executable target\/release\/worldmusichub-desktop\.exe -OutputDirectory desktop-pitch-bend -Scenario pitch-bend/);
+  assert.doesNotMatch(nativeSteps[scenarioIndex], /^        (?:if|continue-on-error):/m);
+  const pack = nativeSteps[packageIndex];
+  assert.match(pack, /node scripts\/verify-native-pitch-bend-evidence\.mjs --check desktop-pitch-bend/);
+  assert.match(pack, /if \(\$LASTEXITCODE -ne 0\) \{ throw 'Native pitch-bend exact-source proof failed' \}/);
+  for (const guard of ["$pitchProof.source_sha -cne '${{ github.sha }}'", '$pitchProof.source_tree -cne $currentTree',
+    '$pitchProof.executable_sha256 -cne $currentExe', '$pitchProof.executable_bytes -ne $currentExeBytes']) assert.ok(pack.includes(guard), guard);
+  assert.match(pack, /python scripts\/native-pitch-bend-manifest\.py desktop-pitch-bend --executable target\/release\/worldmusichub-desktop\.exe --commit '\$\{\{ github.sha \}\}' --tree \$currentTree/);
+  assert.match(pack, /if \(\$LASTEXITCODE -ne 0\) \{ throw 'Native pitch-bend focused manifest failed' \}/);
+  for (const proof of ['verify-native-pitch-bend-evidence.mjs --check', 'native-pitch-bend-manifest.py desktop-pitch-bend']) assert.ok(pack.indexOf(proof) < pack.indexOf('Copy-Item target/release/worldmusichub-desktop.exe'));
+  assert.match(pack, /native-release-manifest\.py create .* --pitch-bend desktop-pitch-bend/);
+  const testCommand = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).scripts.test.split(/\s+/);
+  for (const file of ['pitch-bend-import-baseline.test.js', 'native-pitch-bend-evidence.test.js', 'pitch-bend-acceptance-workflow.test.js']) {
+    assert.equal(testCommand.filter(token => token === `tests/${file}`).length, 1);
+    for (const jobSteps of [browserSteps, nativeSteps]) assert.ok(jobSteps.some(step => step.includes('run: node --test ') && step.includes(`tests/${file}`)));
+  }
+});
+
+test('mandatory pitch artifacts use exact original-only roots and omit every browser profile tree', () => {
+  const suffixes = ['*.json', '*.png', 'downloads/*', 'fixtures/*', 'Scores/clean-songs/**',
+    'Scores/clean-backups/**', 'Scores/imports/**', 'Scores/import-backups/**'];
+  for (const [id, root, expected] of [
+    [jobIds[0], 'test-results/pitch-bend/*/', suffixes],
+    [jobIds[1], 'desktop-pitch-bend/', [...suffixes, '*.log']],
+  ]) {
+    const upload = steps(jobBlock(id)).find(step => step.includes('uses: actions/upload-artifact@') && step.includes(root));
+    assert.ok(upload);assert.match(upload, /^        if: always\(\)$/m);
+    const paths = [...upload.matchAll(/^            (.+)$/gm)].map(match => match[1]).filter(path => path.startsWith(root));
+    assert.deepEqual(paths.sort(), expected.map(suffix => root + suffix).sort());
+    assert.doesNotMatch(paths.join('\n'), /webview-profile|prior-profile|AppData|USERPROFILE/);
+  }
 });

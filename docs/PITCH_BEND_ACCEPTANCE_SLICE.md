@@ -1,10 +1,11 @@
 # Original pitch-bend focused acceptance
 
-This is an isolated future-feature acceptance route for the bounded
-[reference pitch receiver](REFERENCE_PITCH_BENDS.md). It leaves the existing
-three-phase performance fixtures, report contract, release claim set and current
-acceptance workflow unchanged. Adding this route is not evidence that a real
-browser or Windows executable has passed it.
+This is an original-source acceptance route for the bounded
+[reference pitch receiver](REFERENCE_PITCH_BENDS.md). The existing three-phase
+performance fixtures, report contract and claims remain intact. The final
+checkpoint additionally requires this independent pitch proof before packaging.
+Wiring the route is not evidence that a real browser or Windows executable has
+passed it.
 
 ## Original source and finite scope
 
@@ -92,9 +93,23 @@ evidence and workflow tests. Synthetic verifier fixtures and modeled DOM/Web
 Audio are explicitly test evidence, never a substitute for actual hosted or
 Windows acceptance. No browser, server or GUI is needed for those local checks.
 
-Before a pitch-enabled source is finally promoted or a package is labeled
-accepted, the final accepted-source workflow and release/package manifest must
-require this pitch proof for the exact same source/tree/executable, in addition
-to the existing full gates. That final-gate integration is deliberately pending;
-this standalone focused workflow cannot satisfy it by itself. Existing current
-acceptance and release claim sets are preserved by this slice.
+The final `windows-desktop-acceptance.yml` workflow also runs both real browser
+heights and the Windows `pitch-bend` scenario as required steps. Its native
+packaging step checks the pitch proof before copying the executable, matches the
+source SHA/tree and exact executable hash/length, and derives the independent
+focused manifest. `native-release-manifest.py create` requires `--pitch-bend`;
+there is no missing-proof fallback. It independently calls
+`accepted_pitch_bend_evidence`, requires the existing focused manifest to match,
+and copies exactly the native report, both renderer reports, proof and focused
+manifest only after every evidence gate passes.
+
+The package inventory binds those five files and keeps pitch acceptance fields
+under the `native_pitch_bend_` prefix. The focused scope's
+`full_checkpoint_acceptance: false` and `release_ready: false` remain scoped to
+that proof; they do not replace checkpoint acceptance fields. Package creation
+and archive verification reject missing or extra pitch evidence, altered claims,
+and source/tree/executable or report-hash mismatches, including alterations with
+regenerated ZIP checksums. Existing acceptance gates and claim sets remain
+required. Final delivery still requires the complete accepted-source workflow
+summary and the separate full verification workflow; focused preview success
+alone cannot satisfy those requirements.

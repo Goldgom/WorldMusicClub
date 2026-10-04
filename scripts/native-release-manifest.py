@@ -2,6 +2,7 @@
 """Inventory a source-bound Windows native candidate; not full checkpoint acceptance."""
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -12,6 +13,12 @@ import tomllib
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+_pitch_spec = importlib.util.spec_from_file_location('native_pitch_bend_manifest', ROOT / 'scripts/native-pitch-bend-manifest.py')
+_pitch = importlib.util.module_from_spec(_pitch_spec)
+_pitch_spec.loader.exec_module(_pitch)
+PITCH_BEND_CLAIMS = _pitch.PITCH_BEND_CLAIMS
+PITCH_BEND_REPORTS = _pitch.PITCH_BEND_REPORTS
+PITCH_BEND_EVIDENCE = [*PITCH_BEND_REPORTS, 'native-pitch-bend-files.json', 'pitch-bend-manifest.json']
 FOLDER = 'WorldMusicHub-Native'
 EXE = 'WorldMusicHub-Native.exe'
 INFO, SUMS = 'BUILD-INFO.json', 'SHA256.txt'
@@ -250,6 +257,93 @@ def accepted_performance_song_evidence(directory, executable, commit, tree):
             'native_performance_song_claims': claims}
 
 
+def exact_json(left, right):
+    """JSON equality must distinguish booleans from numeric lookalikes."""
+    return json.dumps(left, sort_keys=True) == json.dumps(right, sort_keys=True)
+
+
+def pitch_bend_acceptance_fields(manifest, manifest_bytes):
+    # A focused proof cannot set the enclosing checkpoint/release scope. Keep
+    # every focused scope field explicitly named for this feature.
+    return {key: manifest[key] for key in [
+                'native_pitch_bend_validated', 'native_pitch_bend_proof_sha256',
+                'native_pitch_bend_reports_sha256', 'native_pitch_bend_claims']} | {
+        'native_pitch_bend_manifest_sha256': sha(manifest_bytes),
+        'native_pitch_bend_scope': manifest['scope'],
+        'native_pitch_bend_full_checkpoint_acceptance': manifest['full_checkpoint_acceptance'],
+        'native_pitch_bend_release_ready': manifest['release_ready']}
+
+
+def accepted_pitch_bend_evidence(directory, executable, commit, tree):
+    """Re-derive original inventory and require the existing focused manifest."""
+    manifest = _pitch.accepted_pitch_bend_evidence(directory, executable, commit, tree)
+    manifest_path = Path(directory) / 'pitch-bend-manifest.json'
+    require(exact_json(_pitch.read_json(manifest_path), manifest),
+            'Native pitch-bend focused manifest differs from independently verified evidence')
+    return pitch_bend_acceptance_fields(manifest, manifest_path.read_bytes())
+
+
+def verify_pitch_bend_inventory(names):
+    expected = {'evidence/' + name for name in PITCH_BEND_EVIDENCE}
+    actual = {name for name in names if any(part.startswith(
+        ('native-pitch-bend', 'renderer-pitch-bend', 'pitch-bend-manifest')) for part in PurePosixPath(name).parts)}
+    require(actual == expected, 'Native pitch-bend package must contain exactly the five required evidence files')
+
+
+def verify_packaged_pitch_bend_evidence(read, metadata):
+    """Bind the five shipped pitch files to BUILD-INFO, beyond ZIP checksums.
+
+    Original disk/audio/GUI evidence is independently re-derived before copy.
+    The portable package carries its exact report/proof/manifest bindings, so
+    rewriting the generic ZIP inventory cannot replace that accepted evidence.
+    """
+    evidence_bytes = {name: read('evidence/' + name) for name in PITCH_BEND_EVIDENCE}
+    require(all(0 < len(data) <= 1024 * 1024 for data in evidence_bytes.values()),
+            'Native pitch-bend package evidence must be bounded')
+    evidence = {name: json.loads(data.decode('utf-8-sig')) for name, data in evidence_bytes.items()}
+    commit, tree = metadata.get('git_commit'), metadata.get('git_tree')
+    require(isinstance(commit, str) and re.fullmatch(r'[a-f0-9]{40}', commit)
+            and isinstance(tree, str) and re.fullmatch(r'[a-f0-9]{40}', tree),
+            'Native pitch-bend package requires exact source and tree identifiers')
+    executable_bytes = read(EXE)
+    proof = evidence['native-pitch-bend-files.json']
+    for value in [proof, evidence['native-pitch-bend.json']]:
+        require(isinstance(value, dict) and type(value.get('version')) is int and value['version'] == 1
+                and value.get('ok') is True and value.get('source_sha') == commit
+                and value.get('source_tree') == tree and value.get('executable_sha256') == sha(executable_bytes)
+                and type(value.get('executable_bytes')) is int and value['executable_bytes'] == len(executable_bytes),
+                'Packaged pitch evidence must match the exact source/tree/executable bytes')
+    claims = proof.get('claims')
+    require(isinstance(claims, dict) and exact_json(claims, PITCH_BEND_CLAIMS),
+            'Packaged pitch evidence claim set or exact boolean scope changed')
+    files = proof.get('files')
+    require(isinstance(files, list) and all(isinstance(row, dict) for row in files),
+            'Packaged pitch evidence requires its original file inventory')
+    reports = {}
+    for name in PITCH_BEND_REPORTS:
+        data = evidence_bytes[name]
+        matching = [row for row in files if row.get('path') == name]
+        require(len(matching) == 1 and matching[0].get('sha256') == sha(data)
+                and type(matching[0].get('bytes')) is int and matching[0]['bytes'] == len(data),
+                'Packaged pitch proof must bind every exact report')
+        reports[name] = sha(data)
+    manifest = {'version': 1, 'scope': 'original-pitch-bend-focused-evidence-only',
+                'source_sha': commit, 'source_tree': tree,
+                'executable_sha256': sha(executable_bytes), 'executable_bytes': len(executable_bytes),
+                'full_checkpoint_acceptance': False, 'release_ready': False,
+                'native_pitch_bend_validated': True,
+                'native_pitch_bend_proof_sha256': sha(evidence_bytes['native-pitch-bend-files.json']),
+                'native_pitch_bend_reports_sha256': reports, 'native_pitch_bend_claims': claims}
+    require(exact_json(evidence['pitch-bend-manifest.json'], manifest),
+            'Packaged pitch-bend focused manifest differs from exact evidence')
+    acceptance = metadata.get('acceptance')
+    expected = pitch_bend_acceptance_fields(manifest, evidence_bytes['pitch-bend-manifest.json'])
+    require(isinstance(acceptance, dict)
+            and {key for key in acceptance if key.startswith('native_pitch_bend_')} == set(expected)
+            and all(key in acceptance and exact_json(acceptance[key], value) for key, value in expected.items()),
+            'BUILD-INFO acceptance must bind the exact pitch-bend proof, reports, manifest and scope')
+
+
 def create_manifest(directory, metadata):
     directory = Path(directory)
     required = [EXE, 'README.md', 'LICENSE', 'START-HERE.md',
@@ -262,10 +356,13 @@ def create_manifest(directory, metadata):
                 'evidence/native-report.json', 'evidence/renderer-report.json',
                 *[f'evidence/{name}' for name in SONG_FOLDER_EVIDENCE],
                 *[f'evidence/{name}' for name in PERFORMANCE_SONG_EVIDENCE],
+                *[f'evidence/{name}' for name in PITCH_BEND_EVIDENCE],
                 *[f'evidence/renderer-{phase}.json' for phase in PHASES]]
     for name in required:
         require((directory / name).is_file(), f'Native package is missing {name}')
+    verify_pitch_bend_inventory(path.relative_to(directory).as_posix() for path in directory.rglob('*') if path.is_file())
     windows_executable((directory / EXE).read_bytes())
+    verify_packaged_pitch_bend_evidence(lambda name: (directory / name).read_bytes(), metadata)
     require(not (directory / 'WorldMusicHub.exe').exists(), 'Browser EXE must not be in the native package')
     notices = read_json(directory / 'licenses/rust/manifest.json')
     require(notices.get('format_version') == 2 and notices.get('target') == 'x86_64-pc-windows-msvc'
@@ -328,8 +425,9 @@ def verify_archive(archive):
         require(info.get('name') == FOLDER and info.get('executable') == EXE, 'Wrong native product identity')
         for name in SCORE_SCHEMAS:
             require(name in info['files'], f'Native package is missing {name}')
-        for name in PERFORMANCE_SONG_EVIDENCE:
+        for name in [*PERFORMANCE_SONG_EVIDENCE, *PITCH_BEND_EVIDENCE]:
             require(f'evidence/{name}' in info['files'], f'Native package is missing evidence/{name}')
+        verify_pitch_bend_inventory(info['files'])
         require(set(names) == {prefix + name for name in set(info['files']) | {INFO, SUMS}}, 'Native ZIP inventory differs')
         sums = {}
         for name, item in info['files'].items():
@@ -338,6 +436,7 @@ def verify_archive(archive):
             require(len(data) == item['bytes'] and sha(data) == item['sha256'], f'Native ZIP checksum differs: {name}')
             sums[name] = item['sha256']
         windows_executable(package.read(prefix + EXE))
+        verify_packaged_pitch_bend_evidence(lambda name: package.read(prefix + name), info)
         sums[INFO] = sha(package.read(prefix + INFO))
         require(package.read(prefix + SUMS).decode() == ''.join(f'{sums[name]}  {name}\n' for name in sorted(sums)), 'Native checksum file differs')
     archive.with_suffix(archive.suffix + '.sha256').write_text(f'{sha(archive.read_bytes())}  {archive.name}\n', encoding='utf-8', newline='\n')
@@ -395,6 +494,7 @@ def main():
     create.add_argument('--acceptance', required=True, type=Path)
     create.add_argument('--song-folder', required=True, type=Path)
     create.add_argument('--performance-song', required=True, type=Path)
+    create.add_argument('--pitch-bend', required=True, type=Path)
     archive = commands.add_parser('archive')
     archive.add_argument('directory', type=Path)
     archive.add_argument('archive', type=Path)
@@ -406,6 +506,7 @@ def main():
         metadata['acceptance'] = accepted_evidence(args.startup, args.acceptance, args.directory / EXE, args.commit, metadata['git_tree'])
         metadata['acceptance'].update(accepted_song_folder_evidence(args.song_folder, args.directory / EXE, args.commit, metadata['git_tree']))
         metadata['acceptance'].update(accepted_performance_song_evidence(args.performance_song, args.directory / EXE, args.commit, metadata['git_tree']))
+        metadata['acceptance'].update(accepted_pitch_bend_evidence(args.pitch_bend, args.directory / EXE, args.commit, metadata['git_tree']))
         # The source-bound gate above verified this separate proof. Keep it in
         # the package inventory without changing the dependency-cache workflow.
         (args.directory / 'evidence/native-reference-files.json').write_bytes((args.acceptance / 'native-reference-files.json').read_bytes())
@@ -413,6 +514,8 @@ def main():
             (args.directory / 'evidence' / name).write_bytes((args.song_folder / name).read_bytes())
         for name in PERFORMANCE_SONG_EVIDENCE:
             (args.directory / 'evidence' / name).write_bytes((args.performance_song / name).read_bytes())
+        for name in PITCH_BEND_EVIDENCE:
+            (args.directory / 'evidence' / name).write_bytes((args.pitch_bend / name).read_bytes())
         info = create_manifest(args.directory, metadata)
     elif args.command == 'archive':
         info = create_archive(args.directory, args.archive)
