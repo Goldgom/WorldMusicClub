@@ -103,3 +103,26 @@ test('renderer observer forwards real reader/render receiver, arguments and retu
  assert.equal(reader.load(document,options),loaded);assert.equal(reader.render(options),rendered);assert.equal(calls[0].receiver,reader);assert.deepEqual(calls[0].args,[document,options]);assert.equal(calls[1].receiver,reader);assert.deepEqual(calls[1].args,[options]);
  observer.restore();assert.equal(Renderer.prototype.load,originalLoad);assert.equal(Renderer.prototype.render,originalRender);
 });
+
+test('stage inventory closes through its visible native summary before take export and sound controls',async()=>{
+ const source=await readFile(new URL('../crates/desktop-shell/basic-key-acceptance.js',import.meta.url),'utf8');
+ const start=source.indexOf("if(!$('song-parts-tools').open)"),end=source.indexOf('\n  // Muting user monitoring',start);assert.ok(start>0&&end>start);
+ for(const initiallyOpen of [false,true]){
+  const parts={id:'song-parts-tools',open:initiallyOpen},summary={id:'song-parts-summary'},range={id:'song-complete-range-text'},events=[];
+  const context=vm.createContext({report:{screenshots:{},files:{}},$:id=>({'song-parts-tools':parts,'song-parts-summary':summary,'song-complete-range-text':range})[id],assert:(value,message)=>assert.ok(value,message),native:async(kind,node)=>{
+   assert.equal(kind,'click');events.push(node.id);
+   if(node===summary)parts.open=!parts.open;else{assert.equal(node,range);assert.equal(parts.open,true);}return events.length;
+  },take:async()=>{assert.equal(parts.open,false);events.push('take');return 'original-take.json';}});
+  await vm.runInContext('(async()=>{'+source.slice(start,end)+'})()',context);
+  assert.deepEqual(events,[...(!initiallyOpen?['song-parts-summary']:[]),'song-complete-range-text','song-parts-summary','take']);
+  assert.equal(context.report.files.machineTake,'original-take.json');assert.equal(parts.open,false);
+ }
+});
+test('native target failures retain the exact visibility guard and report only bounded target geometry',async()=>{
+ const source=await readFile(new URL('../crates/desktop-shell/basic-key-acceptance.js',import.meta.url),'utf8'),context=vm.createContext({});
+ vm.runInContext(source.slice(0,source.indexOf('\n(() => {'))+'\nglobalThis.describe=describeBasicKeyNativeTarget;',context);
+ const message=context.describe({id:'sound-button',value:'never copy input',textContent:'never copy labels'},{x:812.12345,y:64.6789,width:70,height:38},{id:'song-parts-tools',value:'never copy values'});
+ assert.deepEqual(JSON.parse(message),{target:'sound-button',bounds:{x:812.12,y:64.68,width:70,height:38},hit:'song-parts-tools'});
+ assert.doesNotMatch(message,/never copy/);assert.equal(JSON.parse(context.describe({id:'x'.repeat(500)},{x:NaN,y:Infinity,width:1,height:2},null)).target.length,96);
+ assert.match(source,/assert\(b\.width>0&&b\.height>0&&x>0&&x<innerWidth&&y>0&&y<innerHeight&&\(hit===node\|\|node\.contains\(hit\)\),`Native target obscured\/outside viewport: \$\{describeBasicKeyNativeTarget\(node,b,hit\)\}`\)/);
+});
