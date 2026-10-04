@@ -1,0 +1,43 @@
+name: Initial MIDI tempo UI preview
+on:
+  push:
+    branches: ['preview/initial-tempo']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: initial-tempo-preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  initial-tempo-ui:
+    name: Actual initial-tempo import and locale flow (not full acceptance)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: '1.99.0'
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: cargo build -p practice-server --locked
+      - run: npx playwright install --with-deps chromium
+      - name: Original MIDI through Rust import, preserved source, effective timing and Chinese/English notices
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_ARTIFACT_DIR: ${{ github.workspace }}/test-results/initial-tempo
+        run: node --test --test-name-pattern='real Rust ordered initial MIDI tempos' tests/full-app-browser.test.js
+      - name: Retain exact-source initial-tempo preview evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: initial-tempo-preview-${{ github.sha }}
+          path: test-results/initial-tempo/
+          if-no-files-found: warn

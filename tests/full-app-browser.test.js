@@ -646,8 +646,11 @@ test('real Rust ordered initial MIDI tempos retain source bytes, effective timin
   const projection = imported.diagnostics.filter(item => item.code === code);
   assert.equal(projection.length, 1);
   assert.equal(projection[0].severity, 'warning');
-  assert.deepEqual(imported.score.source.import_diagnostics.filter(item => item.code === code), projection);
-  assert.ok(compiled.diagnostics.some(item => item.code === code));
+  const retainedProjection = imported.score.source.import_diagnostics.filter(item => item.code === code);
+  assert.equal(retainedProjection.length, 1);
+  assert.equal(retainedProjection[0].message.startsWith('Retained import observation: '), false);
+  assert.deepEqual(projection, retainedProjection.map(item => ({...item, message:`Retained import observation: ${item.message}`})));
+  assert.deepEqual(compiled.diagnostics.filter(item => item.code === code), projection);
   await readyForTitle('Original ordered tempo study');
   await waitForBrowserImportCopies(1);
   const notices = [];
