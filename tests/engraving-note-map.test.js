@@ -99,6 +99,23 @@ test('fit refresh keeps active and future cues on their exact owned glyphs witho
   glyph.remove();env.output.refreshExpectedCueGeometry();assert.equal(cue.hidden,true);env.output.dispose();assert.equal(env.output.refreshExpectedCueGeometry(),false);
 });
 
+test('cue fitting batches every owned geometry read before style writes and keeps stable visibility quiet',()=>{
+  const env=bound(example(),{cueColor:'#17251d'}),cues=[...env.mount.querySelectorAll('.engraving-expected-cue')];
+  env.output.setExpectedWrittenNotes({sourceNoteIds:['short','long'],sourceMeasureIndex:0});
+  const first=cues[0],initialLeft=first.style.left;let reads=0,expectedLeft=initialLeft;
+  for(const name of ['clientLeft','clientTop','scrollLeft','scrollTop'])Object.defineProperty(env.mount,name,{configurable:true,get(){assert.equal(first.style.left,expectedLeft,'Mount layout metrics must also be read before cue styles are written');return 0;}});
+  for(const graphical of env.graphical.values()){
+    const group=graphical.getNoteheadSVGs()[graphical.vfnoteIndex],original=group.getBoundingClientRect;
+    group.getBoundingClientRect=()=>{reads++;assert.equal(first.style.left,expectedLeft,'No cue style may be written while glyph measurements are still being read');const box=original();return{...box,x:box.x+50};};
+  }
+  env.output.refreshExpectedCueGeometry();assert.equal(reads,5);assert.notEqual(first.style.left,initialLeft);
+  expectedLeft=first.style.left;reads=0;env.output.expectedNoteBounds();assert.equal(reads,2);
+  let visibilityWrites=0;
+  for(const cue of cues){let proto=cue,descriptor;while(proto&&!descriptor){descriptor=Object.getOwnPropertyDescriptor(proto,'hidden');proto=Object.getPrototypeOf(proto);}assert.equal(typeof descriptor?.set,'function');Object.defineProperty(cue,'hidden',{configurable:true,get(){return descriptor.get.call(this)},set(value){visibilityWrites++;descriptor.set.call(this,value)}});}
+  const before=env.mount.innerHTML;env.output.refreshExpectedCueGeometry();assert.equal(env.mount.innerHTML,before,'Stable refresh does not change styles or hidden attributes');assert.equal(visibilityWrites,0,'Unchanged visibility cannot retrigger the fit MutationObserver');
+  env.output.dispose();
+});
+
 test('fresh bounds refuse replaced, reparented and hidden owned paths and hide their non-color cues',()=>{
   for(const mutate of [
     ({path})=>{path.style.display='none'},

@@ -421,15 +421,22 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
   }
   function placeCue(entry,box,origin){
     if(!entry.cue)return;
-    if(!box){entry.cue.hidden=true;return;}
-    const values={left:box.x-origin.x-(mount.clientLeft||0)+(mount.scrollLeft||0)-3,top:box.y-origin.y-(mount.clientTop||0)+(mount.scrollTop||0)-3,width:box.width+6,height:box.height+6};
+    if(!box){if(!entry.cue.hidden)entry.cue.hidden=true;return;}
+    const values={left:box.x-origin.x-3,top:box.y-origin.y-3,width:box.width+6,height:box.height+6};
     for(const [key,value]of Object.entries(values)){const text=`${value}px`;if(entry.cue.style[key]!==text)entry.cue.style[key]=text;}
-    entry.cue.hidden=!current.has(entry);
+    const hidden=!current.has(entry);if(entry.cue.hidden!==hidden)entry.cue.hidden=hidden;
+  }
+  function cueOrigin(){
+    const box=mount.getBoundingClientRect();
+    return{x:box.x+(mount.clientLeft||0)-(mount.scrollLeft||0),y:box.y+(mount.clientTop||0)-(mount.scrollTop||0)};
   }
   function refreshExpectedCueGeometry(){
     if(disposed||invalidated||!cueLayer)return false;
-    const origin=mount.getBoundingClientRect();
-    for(const entry of entries)if(entry.status==='bound'&&entry.cue)placeCue(entry,ownedBox(entry),origin);
+    const origin=cueOrigin();
+    // Read the full admitted geometry before writing any presentation style.
+    // Alternating reads and writes forces one synchronous layout per source note.
+    const measured=entries.filter(entry=>entry.status==='bound'&&entry.cue).map(entry=>({entry,box:ownedBox(entry)}));
+    for(const {entry,box}of measured)placeCue(entry,box,origin);
     return true;
   }
   function clear(announce=true){for(const entry of current){for(const path of entry.glyph.paths)restore(path);if(entry.cue)entry.cue.hidden=true}current.clear();currentRequest=null;const changed=Boolean(inputDiagnostic);inputDiagnostic=null;if(changed&&!disposed&&announce)notify()}
@@ -439,12 +446,12 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
     refreshExpectedCueGeometry,
     expectedNoteBounds(){
       if(disposed||invalidated||!currentRequest)return {status:'unavailable',rects:[],unavailableSourceNoteIds:[]};
-      const rects=[],found=new Set(),origin=cueLayer?mount.getBoundingClientRect():null;
-      for(const entry of current){
+      const rects=[],found=new Set(),origin=cueLayer?cueOrigin():null;
+      const measured=[...current].map(entry=>({entry,box:ownedBox(entry)}));
+      for(const {entry,box}of measured){
         // Reuse the exact owned nodes, never search for a replacement glyph.
         // A detached/reparented head or replaced/hidden path is not evidence for
         // scrolling, even when the old group itself still has a nonempty box.
-        const box=ownedBox(entry);
         if(entry.cue)placeCue(entry,box,origin);
         if(!box)continue;
         found.add(entry.segment.xml_note_id);
