@@ -1472,7 +1472,7 @@ function renderCleanActive(){
   cleanView.renderActive({song:state.cleanSong,score:state.score,timeline:state.compiled?.timeline,targetPart:state.practicePart,mode:state.mode,mutedParts:cleanMutedParts,soloParts:cleanSoloParts,soundEnabled:!synth.muted,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,range,instrument:state.instrument});
 }
 function renderCleanPreview(){
-  if(!cleanView)return;const song=preview?.value.cleanSong||null;cleanView.renderPreview(song,{...preview?.value,deviceProfile:currentProfile(),deviceRange:state.geometry.length?[state.geometry[0].midi,state.geometry.at(-1).midi]:[21,108]});
+  if(!cleanView)return;const song=preview?.value.cleanSong||null;const deviceRange=state.instrument==='guitar'?[Math.min(...state.guitar.tuning)+state.guitar.capo,Math.max(...state.guitar.tuning)+state.guitar.frets]:[state.geometry[0].midi,state.geometry.at(-1).midi];cleanView.renderPreview(song,{...preview?.value,deviceProfile:currentProfile(),deviceRange});
   performanceListening?.select(song);
   if(previewMediaKey!==song?.identity){previewMediaKey=song?.identity||null;void previewMedia.select(song?.libraryKey,song);}
   const lobby=document.querySelector('.lobby-audition');if(lobby)lobby.hidden=Boolean(song);
@@ -1483,7 +1483,16 @@ function syncCleanMedia(){
   if(activeMediaKey!==song?.identity){activeMediaKey=song?.identity||null;void activeMedia.select(song?.libraryKey,song);}
   renderCleanActive();
 }
-cleanView=setupCleanSongView({document,i18n,onVsqStart:chooseVsqAndStart,onVsqChoice:()=>preview.chooseVsqPractice(async(song,signal)=>(await scoreStorage.storage()).chooseVsqPractice(song,{signal})),onOpen:()=>pausePlayback(),onTarget:part=>{if(!state.cleanSong||transport.running)return;state.practicePart=part;$('practice-part').value=part;rebuildPracticeScope();resetPlayback();engravedView.practicePartChanged();if(engravedView.scopeInfo().scope==='current'){state.notationPart=part;$('notation-part').value=part;renderNotationPage();}void checkInstrument();},onMute:(part,muted)=>{if(transport.running)return;if(muted)cleanMutedParts.add(part);else cleanMutedParts.delete(part);resetPlayback();},onSolo:(part,solo)=>{if(transport.running)return;if(solo)cleanSoloParts.add(part);else cleanSoloParts.delete(part);resetPlayback();},onResetMix:()=>{if(transport.running)return;cleanMutedParts.clear();cleanSoloParts.clear();resetPlayback();},onRange:()=>{$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}});
+function openCleanRangeSetup(){
+  // Open the shell's body-level dialog before focusing the existing controls.
+  // Selecting Custom starts the normal draft/reset lifecycle without applying
+  // a larger range; reopening an existing custom draft must preserve its inputs.
+  shell.open('settings');
+  if(state.instrument==='piano'&&!state.customKeys){$('key-count').value='custom';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}
+  $('instrument-settings').open=true;
+  $(state.instrument==='piano'?'custom-key-count':'guitar-tuning').focus();
+}
+cleanView=setupCleanSongView({document,i18n,onRangeSetup:openCleanRangeSetup,onVsqStart:chooseVsqAndStart,onVsqChoice:()=>preview.chooseVsqPractice(async(song,signal)=>(await scoreStorage.storage()).chooseVsqPractice(song,{signal})),onOpen:()=>pausePlayback(),onTarget:part=>{if(!state.cleanSong||transport.running)return;state.practicePart=part;$('practice-part').value=part;rebuildPracticeScope();resetPlayback();engravedView.practicePartChanged();if(engravedView.scopeInfo().scope==='current'){state.notationPart=part;$('notation-part').value=part;renderNotationPage();}void checkInstrument();},onMute:(part,muted)=>{if(transport.running)return;if(muted)cleanMutedParts.add(part);else cleanMutedParts.delete(part);resetPlayback();},onSolo:(part,solo)=>{if(transport.running)return;if(solo)cleanSoloParts.add(part);else cleanSoloParts.delete(part);resetPlayback();},onResetMix:()=>{if(transport.running)return;cleanMutedParts.clear();cleanSoloParts.clear();resetPlayback();},onRange:()=>{$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}});
 performanceListening=setupCompletePerformanceListening({document,i18n,synth,host:$('clean-song-preview'),isVisible:()=>shell.screen()==='library',allowed:()=>!document.hidden&&!document.querySelector('dialog[open]'),onBeforePlay:()=>pausePlayback(),onActiveChange:()=>syncInputRoute(),getSoundEnabled:()=>!synth.muted,onSoundChange:setSoundEnabled});
 const loadCleanAsset=async(key,handle,options)=>(await scoreStorage.storage()).loadAsset(key,handle,options);
 previewMedia=createCleanSongMedia({loadAsset:loadCleanAsset,cover:cleanView.cover,onStatus:value=>cleanView.renderPreviewMedia(value)});

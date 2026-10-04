@@ -52,7 +52,7 @@ export async function nativeScoreServer({scores=[],directory='C:\\Test-only\\Wor
 }
 
 /** Real app import, mocked DOM/audio/native transport and isolated browser storage. */
-export async function nativeStorageApp(server,{now}={}) {
+export async function nativeStorageApp(server,{now,audioSampleRate=8000}={}) {
   const {document,window}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8'));
   const audioNodes=[];const downloads=[],plays=[],values=new Map(),factory=new IDBFactory(),openedDatabases=[];
   let unlockImpl=null,audioContexts=0,unlockCalls=0,frameId=0;const frames=new Map();
@@ -68,7 +68,7 @@ export async function nativeStorageApp(server,{now}={}) {
   const parameter=()=>({value:0,events:[],setValueAtTime(value,at){this.value=value;this.events.push({value,at});},setTargetAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){},cancelScheduledValues(){}});
   const audioNode=(kind,props={})=>{const node={kind,disconnected:false,connect(){},disconnect(){this.disconnected=true;},...props};audioNodes.push(node);return node;};
   class Audio {
-    constructor(){audioContexts++;this.state='running';this.currentTime=0;this.sampleRate=8000;this.destination={};}
+    constructor(){audioContexts++;this.state='running';this.currentTime=0;this.sampleRate=audioSampleRate;this.destination={};}
     createGain(){return audioNode('gain',{gain:parameter()});}
     createStereoPanner(){return audioNode('panner',{pan:parameter()});}
     createConvolver(){return audioNode('convolver');}
