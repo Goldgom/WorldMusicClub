@@ -37,6 +37,7 @@ const defaults=()=>({program:0,volume:100,expression:127,pan:64,reverb_send:0,..
 function apply(state,command){if(command.kind===INITIAL_SENSITIVITY_KIND)applyInitialSensitivity(state,command.step);else if(command.kind===INITIAL_SENSITIVITY12_KIND)applyInitialSensitivity12(state,command.step);else if(command.kind==='instrument_program')state.program=command.program;else if(command.kind==='initial_controller_reset')state.expression=127;else if(['volume','expression','pan','reverb_send'].includes(command.kind))state[command.kind]=command.value;}
 /** Schedules against the app Transport. Never owns human-input or scoring APIs. */
 export class CleanSongPlayer {
+  get audioThreadRunning(){return this.basicKeys.running||this.vsq.running;}
   constructor({getPositionMs,onError=()=>{},setTimer=(...args)=>globalThis.setTimeout(...args),clearTimer=(...args)=>globalThis.clearTimeout(...args),lookAheadMs=100}={}) {
     if(typeof getPositionMs!=='function')throw new TypeError('The shared transport clock is required.');
     this.vsq=new VsqPracticePlayer({getPositionMs,onError,setTimer,clearTimer,lookAheadMs});
@@ -50,9 +51,10 @@ export class CleanSongPlayer {
   }
   prepare(options={}) {
     if(isBasicKeysSong(this.song))return this.basicKeys.prepare(options);
+    if(isVsqSong(this.song))return this.vsq.prepare(options);
     return null;
   }
-  startPrepared(options={}) {return this.basicKeys.startPrepared(options);}
+  startPrepared(options={}) {return (isVsqSong(this.song)?this.vsq:this.basicKeys).startPrepared(options);}
   start({context,output,mode='listen',targetPart=null,mutedParts=null,soloParts=null,resumePositionMs=null,instrument='piano',acceptedPolicyId}={}) {
     if(isBasicKeysSong(this.song))return this.basicKeys.start({context,output,mode,targetPart,mutedParts,soloParts,resumePositionMs,acceptedPolicyId});
     if(isVsqSong(this.song))return this.vsq.start({context,output,mode,targetPart,mutedParts,soloParts,resumePositionMs,instrument});

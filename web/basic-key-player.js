@@ -12,12 +12,16 @@ export class BasicKeyPlayer {
     Object.assign(this,{getPositionMs,onError,lookAheadMs});this.epoch=0;this.song=null;this.receiver=null;this.running=false;this.preparing=false;this.anchor=null;
   }
   select(song){this.stop();this.song=song;}
-  async prepare({context,output,mode='listen',targetPart=null,mutedParts=null,soloParts=null,resumePositionMs=0,acceptedPolicyId}={}) {
-    this.stop();const epoch=this.epoch,song=this.song,rendition=song?.runtime?.rendition;
+  buildPlan({context,mode='listen',targetPart=null,mutedParts=null,soloParts=null,acceptedPolicyId}={}) {
+    const song=this.song,rendition=song?.runtime?.rendition;
     if(!isBasicKeysSong(song)||!rendition||rendition.policy_id!==BASIC_KEY_RENDITION)throw new CleanSongError('clean_renderer_unsupported','A native complete basic-key rendition is required.');
     if(acceptedPolicyId!==rendition.policy_id)throw new CleanSongError('reference_policy_required','Select the disclosed basic-key interpretation before playback.');
-    if(!context||context.state!=='running'||!output)throw new CleanSongError('clean_audio_unavailable','Audio must be unlocked by a user gesture.');
     if(this.lookAheadMs!==rendition.policy.allocation_lookahead_ms)throw new CleanSongError('reference_policy_required','The renderer allocation budget must match the declared native policy.');
+    return buildBasicKeyAudioPlan(song,{sampleRate:context.sampleRate,mode,targetPart,mutedParts:mutedParts||[],soloParts:soloParts||[]});
+  }
+  async prepare(options={}) {
+    this.stop();const epoch=this.epoch,{context,output,resumePositionMs=0}=options;
+    if(!context||context.state!=='running'||!output)throw new CleanSongError('clean_audio_unavailable','Audio must be unlocked by a user gesture.');
     this.preparing=true;this.context=context;
     // A suspended then resumed device during module loading is still an interruption.
     this.contextListener=()=>{if(epoch===this.epoch&&context.state!=='running'){this.stop();this.onError(new CleanSongError('clean_clock_unavailable','The audio device stopped during playback preparation.'));}};
@@ -25,7 +29,7 @@ export class BasicKeyPlayer {
     let receiver;
     try{
       // This full-source work completes before requesting the 50 ms start lead.
-      const plan=buildBasicKeyAudioPlan(song,{sampleRate:context.sampleRate,mode,targetPart,mutedParts:mutedParts||[],soloParts:soloParts||[]});
+      const plan=this.buildPlan(options);
       receiver=await BasicKeyAudioReceiver.create(context,output,{onError:error=>{if(epoch!==this.epoch)return;this.stop();this.onError(error);},onEnded:()=>{if(epoch===this.epoch)this.running=false;}});
       if(epoch!==this.epoch){receiver.dispose();return null;}
       context.removeEventListener?.('statechange',this.contextListener);this.contextListener=null;

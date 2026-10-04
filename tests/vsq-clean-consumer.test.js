@@ -1,4 +1,4 @@
-import {ReferenceAudioReceiver} from '../web/midi-reference-synth.js';
+import {basicKeyAudioHarness} from './basic-key-audio-harness.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -25,10 +25,17 @@ async function nativeFixture(){
   server.records.set(storageKey,{...value,entry});server.setRoute(({path})=>path==='/api/library/runtime'?nativeResponse(response()):undefined);
   return{server,storageKey,key,summary,entry,descriptor,score};
 }
-async function appFixture(){const fixture=await nativeFixture(),app=await nativeStorageApp(fixture.server);await app.until(()=>app.savedButton(fixture.storageKey)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(fixture.storageKey).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choice');app.$('count-in').checked=false;return{...fixture,app};}
-const oscillators=app=>app.audioNodes.filter(node=>node.kind==='oscillator'&&!node.disconnected);
+async function appFixture(options={}){const fixture=await nativeFixture(),app=await nativeStorageApp(fixture.server,options);await app.until(()=>app.savedButton(fixture.storageKey)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(fixture.storageKey).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choice');app.$('count-in').checked=false;return{...fixture,app};}
+const connectedReceivers=app=>app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected);
+const admittedGates=app=>connectedReceivers(app).flatMap(node=>[...node.core.plan.ends].filter(end=>end>node.core.positionFrame));
+function playerHarness(Player=CleanSongPlayer){
+ const audio=basicKeyAudioHarness(),original=Object.getOwnPropertyDescriptor(globalThis,'AudioWorkletNode'),errors=[];
+ globalThis.AudioWorkletNode=class{constructor(){return audio.nodeFactory();}};
+ const player=new Player({getPositionMs:()=>{throw Error('No main-thread clock polling');},onError:error=>errors.push(error)});player.select(practiced());
+ return{...audio,player,errors,start:options=>player.start({...audio,...options}),close(){player.stop();if(original)Object.defineProperty(globalThis,'AudioWorkletNode',original);else delete globalThis.AudioWorkletNode;}};
+}
 const choose=async app=>{await app.click('vsq-choose-base-notes');await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready'&&!app.$('start-practice').disabled);};
-const start=async(app,mode)=>{await app.click(`start-${mode}`);await app.until(()=>app.document.body.dataset.screen==='stage'&&!app.$('play-button').disabled);};
+const start=async(app,mode)=>{await app.click(`start-${mode}`);await app.until(()=>app.document.body.dataset.screen==='stage'&&app.$('clean-song-stage').dataset.rendererState==='playing');};
 
 test('VSQ admission keeps unsafe authoring integers in exact strings and does not grant implicit runtime',()=>{
   const song=admitted(),{descriptor}=source();assert.ok(isVsqSong(song));assert.equal(song.runtime,null);assert.equal(song.compilation,null);assert.equal(song.score_json,descriptor.score_json);assert.equal(song.metadata_json,descriptor.metadata_json);assert.match(song.score_json,/9007199254740993/);assert.equal(inspectCleanRendition(song).supported,false);assert.equal(song.notation.parts.length,2);assert.deepEqual(song.notation.keys,[]);assert.equal(keyAt(song.notation,4),null);assert.equal(Object.isFrozen(song.notation),true);
@@ -76,19 +83,20 @@ test('a VSQ load completing after storage closes never grants a runtime choice',
   assert.equal(server.requests.filter(request=>request.path==='/api/library/runtime').length,0);
 });
 
-test('VSQ source Dynamics zero schedules fixed-level reference audio; human and muted parts never enter machine playback',()=>{
-  const audio=fakeAudio(),player=new CleanSongPlayer({getPositionMs:()=>0,setTimer:()=>1,clearTimer:()=>{}});player.select(practiced());
-  player.start({...audio,mode:'listen',mutedParts:['vsq-track-2'],instrument:'piano'});assert.equal(audio.nodes.filter(n=>n.kind==='oscillator'&&!n.disconnected).length,2);assert.ok(audio.nodes.some(n=>n.kind==='gain'&&n.gain.events.some(e=>e.value>0)));player.stop();
-  player.start({...audio,mode:'practice',targetPart:'vsq-track-1',mutedParts:['vsq-track-2'],instrument:'guitar'});assert.equal(audio.nodes.filter(n=>n.kind==='oscillator'&&!n.disconnected).length,0);player.stop();
-  player.start({...audio,mode:'practice',targetPart:'vsq-track-1',mutedParts:[],instrument:'guitar'});assert.equal(audio.nodes.filter(n=>n.kind==='oscillator'&&!n.disconnected).length,2);player.stop();assert.equal(audio.nodes.filter(n=>n.kind==='oscillator'&&!n.disconnected).length,0);
+test('VSQ Dynamics zero retains fixed reference velocity and excludes human/muted parts on the audio thread',async()=>{
+ const h=playerHarness();try{
+  await h.start({mode:'listen',mutedParts:['vsq-track-2'],instrument:'piano'});assert.equal(h.player.vsq.plan.notes.length,1);assert.equal(h.player.vsq.plan.notes[0][5],90);assert.equal(h.player.vsq.plan.notes[0][6],2);h.player.stop();
+  await h.start({mode:'practice',targetPart:'vsq-track-1',mutedParts:['vsq-track-2'],instrument:'guitar'});assert.equal(h.player.vsq.plan.notes.length,0);h.player.stop();
+  await h.start({mode:'practice',targetPart:'vsq-track-1',instrument:'guitar'});assert.equal(h.player.vsq.plan.notes.length,1);assert.equal(h.player.vsq.plan.notes[0][6],3);h.player.stop();assert.equal(h.nodes.filter(node=>node.connected).length,0);assert.deepEqual(h.errors,[]);
+ }finally{h.close();}
 });
 
-test('browser timer defaults retain global receiver through MIDI/VSQ start, pause and restart cleanup',()=>{
+test('legacy MIDI browser timer defaults retain global receiver through start, pause and restart cleanup',()=>{
   const originalSet=globalThis.setTimeout,originalClear=globalThis.clearTimeout,pending=new Map();let sequence=0;
   globalThis.setTimeout=function(callback,delay){assert.equal(this,globalThis,'Browser timer requires the global receiver');assert.equal(delay,20);const id=++sequence;pending.set(id,callback);return id;};
   globalThis.clearTimeout=function(id){assert.equal(this,globalThis,'Browser timer cancellation requires the global receiver');assert.ok(pending.delete(id),'Cancel the owned timer exactly once');};
   try{
-    for(const [Player,song] of [[CleanSongPlayer,cleanSong()],[CleanSongPlayer,practiced()],[VsqPracticePlayer,practiced()]]){
+    for(const [Player,song] of [[CleanSongPlayer,cleanSong()]]){
       const audio=fakeAudio(),player=new Player({getPositionMs:()=>0});
       try{
         player.select(song);player.start(audio);assert.equal(pending.size,1);assert.ok(audio.nodes.some(node=>node.kind==='oscillator'&&!node.disconnected));const stale=[...pending.values()][0];
@@ -106,23 +114,23 @@ test('VSQ saved/duplicate import outcomes may be playable:false only with the ex
 
 test('ordinary VSQ library selection exposes clear Chinese choice, keeps unknown key, and has no implicit playback',async()=>{
   const {app,server,storageKey}=await appFixture();try{
-    assert.equal(app.$('start-listen').disabled,true);assert.equal(app.$('start-practice').disabled,true);assert.equal(app.$('vsq-full-vocal').disabled,true);assert.equal(app.$('vsq-interpretation-limits').children.length,8);assert.equal(server.requests.filter(r=>r.path==='/api/library/runtime').length,0);assert.equal(oscillators(app).length,0);assert.match(app.$('preview-music-meta').textContent,/unspecified/i);
+    assert.equal(app.$('start-listen').disabled,true);assert.equal(app.$('start-practice').disabled,true);assert.equal(app.$('vsq-full-vocal').disabled,true);assert.equal(app.$('vsq-interpretation-limits').children.length,8);assert.equal(server.requests.filter(r=>r.path==='/api/library/runtime').length,0);assert.equal(admittedGates(app).length,0);assert.match(app.$('preview-music-meta').textContent,/unspecified/i);
     getAppI18n(app.document).setLocale('zh-CN');assert.match(app.$('vsq-choose-base-notes').textContent,/选择基础音符器乐练习/);assert.match(app.$('clean-song-rendition').textContent,/完整歌声渲染不可用/);assert.match(app.$('vsq-practice-description').textContent,/源歌手和声库独立/);assert.doesNotMatch(app.$('vsq-interpretation-limits').textContent,/not rendered|unavailable/i);
-    const before=server.requests.filter(r=>r.path==='/api/compile').length;await choose(app);assert.equal(oscillators(app).length,0);assert.equal(app.$('vsq-choose-base-notes').hidden,true);assert.equal(server.requests.filter(r=>r.path==='/api/compile').length,before);await start(app,'listen');assert.equal(oscillators(app).length,4);assert.equal(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(app.$('export-button').disabled,true);assert.equal(app.$('notation-part').value,'');await app.click('reset-button');assert.equal(oscillators(app).length,0);await app.click('play-button');assert.equal(oscillators(app).length,4);assert.equal(server.requests.filter(r=>r.path==='/api/library/runtime').length,1);
+    const before=server.requests.filter(r=>r.path==='/api/compile').length;await choose(app);assert.equal(admittedGates(app).length,0);assert.equal(app.$('vsq-choose-base-notes').hidden,true);assert.equal(server.requests.filter(r=>r.path==='/api/compile').length,before);await start(app,'listen');assert.equal(admittedGates(app).length,2);assert.equal(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(app.$('export-button').disabled,true);assert.equal(app.$('notation-part').value,'');await app.click('reset-button');assert.equal(admittedGates(app).length,0);await app.click('play-button');assert.equal(admittedGates(app).length,2);assert.equal(server.requests.filter(r=>r.path==='/api/library/runtime').length,1);
     await app.click('back-to-library');app.savedButton(storageKey).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choice');assert.equal(app.$('start-listen').disabled,true);assert.equal(app.$('vsq-choose-base-notes').hidden,false);
   }finally{await app.close();}
 });
 
 test('VSQ full-part practice includes source-muted accompaniment while grading only the human target',async()=>{
-  const {app,server}=await appFixture();try{await choose(app);await start(app,'practice');assert.equal(oscillators(app).length,2);await app.click('play-button');let take=await app.exported('export-takes');assert.equal(take.practice_part,'vsq-track-1');assert.deepEqual(take.passes[0].timeline.notes.map(n=>n.id),['vsq-t1-ID#0001']);assert.deepEqual(take.passes[0].inputs,[]);
-    const checkbox=app.document.querySelector('#clean-song-parts input[data-part-id="vsq-track-2"]');assert.equal(checkbox.checked,true);assert.match(checkbox.parentNode.textContent,/source-muted/);checkbox.checked=false;app.emit(checkbox,'change');await app.click('play-button');assert.equal(oscillators(app).length,0);await app.click('play-button');const target=app.$('clean-song-target');target.value='vsq-track-2';app.emit(target,'change');await app.until(()=>!app.$('play-button').disabled);await app.click('play-button');assert.equal(oscillators(app).length,2);take=await app.exported('export-takes');assert.equal(take.practice_part,'vsq-track-2');assert.deepEqual(take.passes[0].timeline.notes.map(n=>n.id),['vsq-t2-ID#0001']);assert.deepEqual(take.passes[0].inputs,[]);assert.equal(server.requests.filter(r=>r.path==='/api/library/runtime').length,1);
+  const {app,server}=await appFixture();try{await choose(app);await start(app,'practice');assert.equal(admittedGates(app).length,1);await app.click('play-button');let take=await app.exported('export-takes');assert.equal(take.practice_part,'vsq-track-1');assert.deepEqual(take.passes[0].timeline.notes.map(n=>n.id),['vsq-t1-ID#0001']);assert.deepEqual(take.passes[0].inputs,[]);
+    const checkbox=app.document.querySelector('#clean-song-parts input[data-part-id="vsq-track-2"]');assert.equal(checkbox.checked,true);assert.match(checkbox.parentNode.textContent,/source-muted/);checkbox.checked=false;app.emit(checkbox,'change');await app.click('play-button');assert.equal(admittedGates(app).length,0);await app.click('play-button');const target=app.$('clean-song-target');target.value='vsq-track-2';app.emit(target,'change');await app.until(()=>!app.$('play-button').disabled);await app.click('play-button');assert.equal(admittedGates(app).length,1);take=await app.exported('export-takes');assert.equal(take.practice_part,'vsq-track-2');assert.deepEqual(take.passes[0].timeline.notes.map(n=>n.id),['vsq-t2-ID#0001']);assert.deepEqual(take.passes[0].inputs,[]);assert.equal(server.requests.filter(r=>r.path==='/api/library/runtime').length,1);
   }finally{await app.close();}
 });
 
 test('repeated choice clicks coalesce, errors allow retry, and late runtime cannot replace a newer song',async()=>{
   const {app,server}=await appFixture();const pending=deferred();try{
     server.setRoute(({path})=>path==='/api/library/runtime'?nativeResponse({code:'library_runtime_invalid',error:'Synthetic failure'},422):undefined);await app.click('vsq-choose-base-notes');await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choice');assert.match(app.$('vsq-choice-status').textContent,/Retry/);assert.equal(app.$('start-listen').disabled,true);
-    server.setRoute(async({path})=>path==='/api/library/runtime'?(await pending.promise,nativeResponse(response())):undefined);await app.click('vsq-choose-base-notes');await app.click('vsq-choose-base-notes');assert.equal(server.requests.filter(r=>r.path==='/api/library/runtime').length,2);const button=app.document.querySelector('#catalog [data-score-id]');button.click();await app.until(()=>app.$('clean-song-preview').hidden);pending.resolve();await app.tick();assert.equal(app.$('clean-song-preview').hidden,true);assert.equal(oscillators(app).length,0);
+    server.setRoute(async({path})=>path==='/api/library/runtime'?(await pending.promise,nativeResponse(response())):undefined);await app.click('vsq-choose-base-notes');await app.click('vsq-choose-base-notes');assert.equal(server.requests.filter(r=>r.path==='/api/library/runtime').length,2);const button=app.document.querySelector('#catalog [data-score-id]');button.click();await app.until(()=>app.$('clean-song-preview').hidden);pending.resolve();await app.tick();assert.equal(app.$('clean-song-preview').hidden,true);assert.equal(admittedGates(app).length,0);
   }finally{pending.resolve();await app.close();}
 });
 
@@ -144,10 +152,10 @@ test('VSQ import review, saved browse and pack export remain available with play
 
 
 test('VSQ basic instrument actions derive and start the full-part mix from one click',async()=>{
- for(const [mode,voices]of [['listen',4],['practice',2]]){
+ for(const [mode,voices]of [['listen',2],['practice',1]]){
   const {app,server}=await appFixture();try{
    assert.equal(app.$(`vsq-${mode}-basic`).disabled,false);await app.click(`vsq-${mode}-basic`);await app.until(()=>app.document.body.dataset.screen==='stage'&&app.$('clean-song-stage').dataset.rendererState==='playing');
-   assert.equal(oscillators(app).length,voices);assert.equal(server.requests.filter(request=>request.path==='/api/library/runtime').length,1);assert.ok(app.audio().unlocks>0);
+   assert.equal(admittedGates(app).length,voices);assert.equal(server.requests.filter(request=>request.path==='/api/library/runtime').length,1);assert.ok(app.audio().unlocks>0);
    if(mode==='practice'){await app.click('play-button');const take=await app.exported('export-takes');assert.deepEqual(take.passes[0].inputs,[]);assert.deepEqual(take.passes[0].captures,[]);assert.match(app.$('clean-song-stage-status').textContent,/You play.*other audible parts: 1/);}
   }finally{await app.close();}
  }
@@ -156,22 +164,88 @@ test('VSQ basic instrument actions derive and start the full-part mix from one c
 test('late VSQ direct-start derivation cannot start after another selection',async()=>{
  const {app,server}=await appFixture(),pending=deferred();try{
   server.setRoute(async({path})=>path==='/api/library/runtime'?(await pending.promise,nativeResponse(response())):undefined);
-  await app.click('vsq-listen-basic');await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choosing');const bundled=app.document.querySelector('#catalog [data-score-id]');bundled.click();await app.until(()=>app.$('clean-song-preview').hidden);pending.resolve();await app.tick();assert.equal(oscillators(app).length,0);assert.notEqual(app.document.body.dataset.screen,'stage');
+  await app.click('vsq-listen-basic');await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choosing');const bundled=app.document.querySelector('#catalog [data-score-id]');bundled.click();await app.until(()=>app.$('clean-song-preview').hidden);pending.resolve();await app.tick();assert.equal(admittedGates(app).length,0);assert.notEqual(app.document.body.dataset.screen,'stage');
  }finally{pending.resolve();await app.close();}
 });
 
 test('VSQ direct-start derivation is cancelled by Home navigation',async()=>{
  const {app,server}=await appFixture(),pending=deferred();try{
   server.setRoute(async({path})=>path==='/api/library/runtime'?(await pending.promise,nativeResponse(response())):undefined);
-  await app.click('vsq-listen-basic');await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choosing');await app.click('lobby-home');assert.equal(app.document.body.dataset.screen,'home');pending.resolve();await app.tick();await app.tick();assert.equal(app.document.body.dataset.screen,'home');assert.equal(oscillators(app).length,0);
+  await app.click('vsq-listen-basic');await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choosing');await app.click('lobby-home');assert.equal(app.document.body.dataset.screen,'home');pending.resolve();await app.tick();await app.tick();assert.equal(app.document.body.dataset.screen,'home');assert.equal(admittedGates(app).length,0);
  }finally{pending.resolve();await app.close();}
 });
 
 
-test('VSQ explicit resume excludes a gate ended inside the 50 ms admission lead',()=>{
- const song=practiced(),audio=fakeAudio(),scheduled=[],original=ReferenceAudioReceiver.prototype.schedule;
- const ended=song.runtime.notes[0],resume=ended.end_ms+34.6;
- const player=new VsqPracticePlayer({getPositionMs:()=>resume-50,setTimer:()=>1,clearTimer(){}});player.select(song);
- ReferenceAudioReceiver.prototype.schedule=function(note,start,end,...options){scheduled.push({note,start,end});return original.call(this,note,start,end,...options);};
- try{player.start({...audio,resumePositionMs:resume});assert.equal(scheduled.some(row=>row.note.eventId===ended.note_id),false);assert.ok(scheduled.every(row=>row.end>row.start));assert.ok(scheduled.every(row=>song.runtime.notes.find(note=>note.note_id===row.note.eventId).end_ms>resume));}finally{player.stop();ReferenceAudioReceiver.prototype.schedule=original;}
+test('VSQ explicit resume excludes a gate ended inside the 50 ms admission lead',async()=>{
+ const h=playerHarness(VsqPracticePlayer),resume=h.player.song.runtime.notes[0].end_ms+34.6;
+ try{const anchor=await h.start({resumePositionMs:resume});assert.equal(h.nodes.at(-1).core.eligibleCount,0);assert.equal(h.nodes.at(-1).core.skippedCount,2);assert.equal(anchor.positionMs,Math.round(resume*48)/48);assert.ok(anchor.anchorTime>h.context.currentTime);}finally{h.close();}
+});
+
+
+test('VSQ count-in, audio samples, transport and human input share one accepted source anchor',async()=>{
+ let clock=1000;const {app}=await appFixture({now:()=>clock});
+ const advance=wall=>{clock=wall;app.renderAudioTo((wall-1000)/1000);};
+ try{
+  await choose(app);app.$('count-in').checked=true;await start(app,'practice');const countIn=4*60000/Number(app.$('tempo').value);
+  const node=connectedReceivers(app)[0],core=node.core,audio=app.audioHarnesses[0],sourceStart=core.positionFrame*1000/core.sampleRate,wallStart=clock+(core.anchorFrame/core.sampleRate-audio.context.currentTime)*1000;
+  assert.equal(sourceStart,Math.round(-countIn*core.sampleRate/1000)*1000/core.sampleRate);assert.equal(core.startedCount,0);assert.equal(app.audioNodes.filter(node=>node.kind==='oscillator').length,0,'Machine playback allocates no oscillator nodes');
+  advance(wallStart-sourceStart-1);assert.equal(core.startedCount,0);advance(wallStart-sourceStart+1);assert.equal(core.startedCount,1);
+  let take=await app.exported('export-takes');assert.equal(take.passes[0].clock_segments[0].wallStart,wallStart);assert.equal(take.passes[0].clock_segments[0].positionStart,sourceStart);assert.deepEqual(take.passes[0].inputs,[]);assert.deepEqual(take.passes[0].captures,[]);
+  const human=app.document.querySelector('#keyboard [data-midi="63"]');app.emit(human,'pointerdown',{pointerId:71,button:0});await app.tick();app.emit(human,'pointerup',{pointerId:71});await app.click('play-button');
+  take=await app.exported('export-takes');assert.equal(take.passes[0].inputs.length,1);assert.equal(take.passes[0].inputs[0].midi,63);assert.ok(Math.abs(take.passes[0].inputs[0].at_ms-1)<.001);assert.equal(take.passes[0].interpretation.policy_id,'wmh-vsq-base-note-reference-v1');
+  await app.click('play-button');await app.until(()=>connectedReceivers(app).length===1);assert.ok(connectedReceivers(app)[0].core.positionFrame>0,'Resume does not repeat count-in');
+ }finally{await app.close();}
+});
+
+for(const action of ['pause','reset','mute','blur','hidden','settings','navigation','part'])test(`pending VSQ audio preparation is canceled by ${action} without a take or auto-resume`,async()=>{
+ const {app}=await appFixture();let release;
+ try{
+  await choose(app);app.setAudioModule(()=>new Promise(resolve=>{release=resolve;}));await app.click('start-practice');await app.until(()=>Boolean(release)&&app.document.body.dataset.screen==='stage');
+  if(action==='pause')await app.click('play-button');
+  else if(action==='reset')await app.click('reset-button');
+  else if(action==='mute')await app.click('sound-button');
+  else if(action==='blur')app.emit(app.window,'blur');
+  else if(action==='hidden'){Object.defineProperty(app.document,'hidden',{configurable:true,value:true});app.emit(app.document,'visibilitychange');}
+  else if(action==='settings')await app.click('settings-button');
+  else if(action==='part'){app.$('practice-part').value='vsq-track-2';app.emit(app.$('practice-part'),'change');}
+  else await app.click('back-to-library');
+  release();await app.tick();await app.tick();assert.equal(connectedReceivers(app).length,0);assert.notEqual(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(app.$('export-takes').disabled,true);
+ }finally{release?.();await app.close();}
+});
+
+for(const state of ['suspended','closed'])test(`VSQ ${state} audio cancels and cannot auto-resume`,async()=>{
+ const {app}=await appFixture();try{
+  await choose(app);await start(app,'practice');app.setAudioState(state);await app.tick();assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');assert.match(app.$('notice-message').textContent,/clean_clock_unavailable/);
+  app.setAudioState('running');await app.tick();assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');
+ }finally{await app.close();}
+});
+
+test('missing worklet blocks VSQ audio explicitly; silent practice and sound toggles never restart it',async()=>{
+ const {app}=await appFixture({audioWorklet:false});try{
+  await choose(app);await app.click('start-practice');await app.until(()=>app.document.body.dataset.screen==='stage');assert.equal(app.$('play-button').disabled,true);assert.match(app.$('notice-message').textContent,/requires AudioWorklet/);assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('export-takes').disabled,true);
+  await app.click('sound-button');await app.click('play-button');assert.equal(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(connectedReceivers(app).length,0);await app.click('sound-button');assert.notEqual(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(app.$('play-button').disabled,true);
+ }finally{await app.close();}
+});
+
+test('VSQ late start acknowledgment cannot begin a take or backdate transport',async()=>{
+ const {app}=await appFixture({audioMessages:false});try{
+  await choose(app);await app.click('start-practice');await app.until(()=>app.audioHarnesses.some(audio=>audio.toCore.length));const audio=app.audioHarnesses[0];audio.deliverCore();audio.finishPreparation();audio.deliverMain();await app.tick();audio.deliverCore();
+  assert.equal(audio.toMain[0][1].type,'started');const anchor=audio.toMain[0][1].anchorFrame;while(audio.frame<=anchor)audio.renderBlock();audio.deliverMain();await app.tick();audio.deliverCore();assert.equal(connectedReceivers(app).length,0);assert.notEqual(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(app.$('export-takes').disabled,true);assert.match(app.$('notice-message').textContent,/clean_late_start/);
+ }finally{await app.close();}
+});
+
+test('VSQ full Listen reaches the native source end despite a stalled main thread and restarts explicitly',async()=>{
+ let clock=1000;const {app}=await appFixture({now:()=>clock});try{
+  await choose(app);await start(app,'listen');const node=connectedReceivers(app)[0],core=node.core;
+  app.renderAudioTo(4.2);await app.tick();assert.equal(core.state,'ended');assert.equal(core.startedCount,2);assert.equal(core.endedCount,2);assert.equal(core.activeCount,0);assert.equal(node.lastCompletion.frame,core.anchorFrame+core.plan.durationFrames);assert.equal(app.$('export-takes').disabled,true);
+  clock=5300;app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'ended');assert.equal(connectedReceivers(app).length,0);await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(connectedReceivers(app)[0].core.positionFrame,0);
+ }finally{await app.close();}
+});
+
+test('VSQ receiver seek disconnects immediately and requires a fresh explicit preparation',async()=>{
+ const h=playerHarness();try{
+  const first=await h.start(),node=h.nodes.at(-1);while(h.context.currentTime<first.anchorTime+.01)h.renderBlock();assert.equal(node.core.activeCount,2);
+  h.player.vsq.receiver.seek(600);assert.equal(node.connected,false);await Promise.resolve();assert.equal(node.core.activeCount,0);const starts=node.core.startedCount;h.renderBlock(1024);assert.equal(node.core.startedCount,starts);
+  const second=await h.start({resumePositionMs:600});assert.equal(second.positionMs,600);assert.notEqual(h.nodes.at(-1),node);assert.equal(h.nodes.at(-1).core.eligibleCount,2);
+ }finally{h.close();}
 });

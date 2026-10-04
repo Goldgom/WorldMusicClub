@@ -1,6 +1,7 @@
 import {basicKeyWrittenAt} from './basic-key-notation.js';
 import {renderBasicKeyPage} from './basic-key-numbered.js';
 import {isVsqSong,isPerformanceSong,isBasicKeysSong,basicKeysParts,hasBasicKeyRendition} from './clean-song-package.js';
+const hasAudioThreadRendition=song=>hasBasicKeyRendition(song)||isVsqSong(song)&&Boolean(song.runtime);
 import {CleanSongPlayer,inspectCleanRendition} from './clean-song-player.js';
 import {createCleanSongMedia} from './clean-song-media.js';
 import {setupCleanSongView} from './clean-song-view.js';
@@ -203,7 +204,7 @@ function updateButtons() {
   const activePass = state.recorder.active;
   const checkingCurrent = Boolean(activePass && (activePass.manualDeadline !== null || activePass.inFlight || (activePass.closedWall !== null && activePass.assessedRevision < activePass.revision && !activePass.error)));
   const allowed = (!isBasicKeysSong(state.cleanSong)||hasBasicKeyRendition(state.cleanSong)||state.mode==='practice')&&(state.mode !== 'practice' || state.compatibility.status === 'ready');
-  const audioUnavailable=hasBasicKeyRendition(state.cleanSong)&&!synth.muted&&(typeof globalThis.AudioWorkletNode!=='function'||Boolean(synth.context&&!synth.context.audioWorklet));
+  const audioUnavailable=hasAudioThreadRendition(state.cleanSong)&&!synth.muted&&(typeof globalThis.AudioWorkletNode!=='function'||Boolean(synth.context&&!synth.context.audioWorklet));
   $('play-button').disabled = !ready || (!transport.running && (!allowed || checkingCurrent || audioUnavailable));
   bindAttribute($('play-button'),'title',()=>audioUnavailable?cleanErrorText(i18n.locale,{code:'clean_audio_worklet_unavailable'}):'');
   $('reset-button').disabled = !ready;
@@ -247,7 +248,7 @@ function pausePlayback(reason = 'app.paused', evidenceReason = 'pause') {
   const recordEvidence = evidenceReason !== 'pause' || transport.running || state.held.size > 0 || state.recorder.evidence.active.size > 0;
   const pauseTime = performance.now(); advanceLoopClock(pauseTime); state.recorder.pause(pauseTime);
   if (transport.running) {
-    if(hasBasicKeyRendition(state.cleanSong)&&transport.time(pauseTime)>=state.compiled.timeline.duration_ms){
+    if(hasAudioThreadRendition(state.cleanSong)&&transport.time(pauseTime)>=state.compiled.timeline.duration_ms){
       if(state.mode==='practice')state.recorder.closeAtEnd(pauseTime);
       transport.finish(state.compiled.timeline.duration_ms);bindText($('transport-status'),()=>t('app.complete'));
     }else{transport.pause(pauseTime);bindText($('transport-status'),()=>typeof reason==='function'?reason():reason.startsWith('app.')?t(reason):reason);}
@@ -855,9 +856,12 @@ async function togglePlayback() {
   try {
     if(!muted)await synth.unlock();
     if(!current())return;
-    const options={context:synth.context,output:synth.output,mode,targetPart,mutedParts:[...cleanMutedParts],soloParts:[...cleanSoloParts],instrument,resumePositionMs:transport.position,acceptedPolicyId:song?inspectCleanRendition(song).rendition:null};
+    const audioThread=!muted&&hasAudioThreadRendition(song),beatMs=60000/(Number($('tempo').value)||100),countIn=$('count-in').checked&&!isBasicKeysSong(song)?beatMs*4:0;
+    // Count-in belongs to the same prepared source position as every audio gate,
+    // transport frame and recorder timestamp; never subtract it after admission.
+    const options={context:synth.context,output:synth.output,mode,targetPart,mutedParts:[...cleanMutedParts],soloParts:[...cleanSoloParts],instrument,resumePositionMs:transport.position-(audioThread&&!transport.hasStarted?countIn:0),acceptedPolicyId:song?inspectCleanRendition(song).rendition:null};
     let now;
-    if(!muted&&hasBasicKeyRendition(song)){
+    if(audioThread){
       const prepared=await cleanPlayer.prepare(options);
       if(!prepared||!current())return;
       // All plan building, transfer and renderer preparation precede this lead.
@@ -870,11 +874,10 @@ async function togglePlayback() {
     }else now=performance.now()+(state.cleanSong?50:0);
     if(!current())return;
     state.playPending=false;state.inspection=false;
-    const beatMs=60000/(Number($('tempo').value)||100);
-    transport.start(now,state.loop?.notes||state.practiceTimeline?.notes||state.compiled.timeline.notes,$('count-in').checked&&!isBasicKeysSong(song)?beatMs*4:0);
+    transport.start(now,state.loop?.notes||state.practiceTimeline?.notes||state.compiled.timeline.notes,audioThread?0:countIn);
     if(mode==='practice')beginPracticePass(now);
     if(song){
-      if(!muted&&!isBasicKeysSong(song))cleanPlayer.start(options);
+      if(!muted&&!audioThread&&!isBasicKeysSong(song))cleanPlayer.start(options);
       activeMedia?.sync({positionMs:transport.time(performance.now()),running:true,userGesture:true});
     }
     updateButtons();
@@ -1037,9 +1040,9 @@ function drawFrame(displayOnly = false) {
       const previouslyClosed=state.recorder.active?.closedWall!==null;
       const pass=state.recorder.closeAtEnd(now);
       if(!previouslyClosed){updateButtons();refreshPassHistory()}
-      if((pass&&now<pass.deadline)||cleanPlayer.basicKeys.running)bindText($('transport-status'), () => t('app.receivingInput'));
+      if((pass&&now<pass.deadline)||cleanPlayer.audioThreadRunning)bindText($('transport-status'), () => t('app.receivingInput'));
       else{transport.finish(duration);silenceHeld('completion',now,pass?.closedWall);updateButtons();bindText($('transport-status'), () => t('app.complete'))}
-    } else if (state.mode==='listen' && position>=duration+80 && !cleanPlayer.basicKeys.running) {transport.finish(duration);silenceHeld('completion',now);updateButtons();bindText($('transport-status'), () => t('app.complete'))}
+    } else if (state.mode==='listen' && position>=duration+80 && !cleanPlayer.audioThreadRunning) {transport.finish(duration);silenceHeld('completion',now);updateButtons();bindText($('transport-status'), () => t('app.complete'))}
     else bindText($('transport-status'), () => position < segmentStart ? t('app.countIn', {count:Math.ceil((segmentStart-position)/(60000/(Number($('tempo').value)||100)))}) : state.mode === 'practice' ? t('app.yourTurn', {loop:state.loop?t('app.loopSuffix',{count:state.loopIteration}):''}) : t('app.listening', {loop:state.loop?t('app.loopSuffix',{count:state.loopIteration}):''}));
   }
   if(displayOnly!==true&&state.mode==='practice'&&!referenceInputActive()){

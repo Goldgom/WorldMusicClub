@@ -213,3 +213,14 @@ fixture and generated gates. It proves native rational/sample traceability,
 identity width, mix/source/end counts, held/expired resume gates, negative
 count-in, recipes, corrupt transfer rejection and the complete bounds. Actual
 VSQ browser/native package and private-corpus acceptance remain separate gates.
+
+`VsqPracticePlayer` now specializes only plan construction and inherits the
+existing `BasicKeyPlayer` preparation/cancellation lifecycle. The application
+prepares a negative count-in source position before start, then uses the
+accepted quantized source position and audio anchor for both its transport and
+practice recorder; it does not subtract count-in twice or repeat it on resume.
+Natural completion waits for the audio core's terminal state. Missing worklet
+support blocks sound explicitly while preserving optional silent practice.
+The VSQ consumer tests render the production core behind a simulated port and
+cover delayed ACKs, interruptions during preparation, device state, count-in,
+real human input isolation, full end/restart and source-byte preservation.
