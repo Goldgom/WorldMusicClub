@@ -113,6 +113,71 @@ impl Acceptance {
             "score-library"
         })
     }
+    /// Only the ordinary desktop restart scenario intentionally shares browser
+    /// storage. Every disk-library phase has one finite, non-reusable profile.
+    pub fn profile_directory(&self) -> PathBuf {
+        if PHASES.contains(&self.phase) {
+            self.directory.join("webview-profile")
+        } else {
+            self.directory.join("webview-profiles").join(self.phase)
+        }
+    }
+    pub fn prepare_webview_profile(&self) -> std::io::Result<PathBuf> {
+        let profile = self.profile_directory();
+        let fresh_required = !PHASES.contains(&self.phase);
+        let prepare = || -> std::io::Result<bool> {
+            require_ordinary_directory(&self.directory)?;
+            if fresh_required {
+                let parent = self.directory.join("webview-profiles");
+                match std::fs::create_dir(&parent) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                        require_ordinary_directory(&parent)?;
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+            // create_dir (not create_dir_all) is the atomic fresh precondition.
+            // A retained profile, even an empty one, must never be reused here.
+            match std::fs::create_dir(&profile) {
+                Ok(()) => Ok(true),
+                Err(error)
+                    if !fresh_required && error.kind() == std::io::ErrorKind::AlreadyExists =>
+                {
+                    require_ordinary_directory(&profile)?;
+                    Ok(false)
+                }
+                Err(error) => Err(error),
+            }
+        };
+        let created_new = prepare().map_err(|error| {
+            std::io::Error::new(
+                error.kind(),
+                format!(
+                    "Acceptance profile preparation failed (phase={}, path={}, fresh_required={}): {}",
+                    self.phase,
+                    profile.display(),
+                    fresh_required,
+                    error
+                ),
+            )
+        })?;
+        let bytes = serde_json::to_vec(&json!({
+            "version": 1,
+            "phase": self.phase,
+            "process_id": std::process::id(),
+            "profile_directory": profile,
+            "library_directory": self.library_directory(),
+            "fresh_required": fresh_required,
+            "created_new": created_new,
+        }))?;
+        atomic_json(
+            &self.directory,
+            &format!("profile-{}.json", self.phase),
+            &bytes,
+        )?;
+        Ok(profile)
+    }
     fn report_limit(&self) -> usize {
         if CLEAN_PHASES.contains(&self.phase)
             || VSQ_PHASES.contains(&self.phase)
@@ -310,6 +375,23 @@ impl Acceptance {
             serde_json::to_vec(&result).unwrap(),
         ))
     }
+}
+fn require_ordinary_directory(path: &Path) -> std::io::Result<()> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    #[cfg(windows)]
+    let reparse = {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes() & 0x400 != 0
+    };
+    #[cfg(not(windows))]
+    let reparse = metadata.is_symlink();
+    if !metadata.is_dir() || reparse {
+        return Err(std::io::Error::other(format!(
+            "Acceptance profile parent must be an ordinary directory: {}",
+            path.display()
+        )));
+    }
+    Ok(())
 }
 /// Process-owned evidence route, shared by smoke and native acceptance. Ordinary
 /// reports retain their original size/schema contract; only exact bulk/clean phases
@@ -523,6 +605,127 @@ mod tests {
     use super::*;
 
     #[test]
+    fn fresh_profiles_are_phase_bound_while_native_scores_and_old_profiles_persist() {
+        let evidence = Evidence::new();
+        std::fs::create_dir_all(evidence.0.join("Scores")).unwrap();
+        let score = evidence.0.join("Scores/original.bin");
+        std::fs::write(&score, b"persisted native score").unwrap();
+        let mut profiles = Vec::new();
+        let mut held_profiles = Vec::new();
+        for phase in FOLDER_PHASES
+            .into_iter()
+            .chain(BULK_PHASES)
+            .chain(CLEAN_PHASES)
+            .chain(VSQ_PHASES)
+            .chain(PERFORMANCE_PHASES)
+            .chain(PITCH_BEND_PHASES)
+        {
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            let profile = run.prepare_webview_profile().unwrap();
+            assert_eq!(profile, evidence.0.join("webview-profiles").join(phase));
+            assert!(!profiles.contains(&profile));
+            assert_eq!(std::fs::read_dir(&profile).unwrap().count(), 0);
+            assert_eq!(run.library_directory(), evidence.0.join("Scores"));
+            assert_eq!(std::fs::read(&score).unwrap(), b"persisted native score");
+            let proof: Value = serde_json::from_slice(
+                &std::fs::read(evidence.0.join(format!("profile-{phase}.json"))).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                proof,
+                json!({
+                    "version": 1, "phase": phase, "process_id": std::process::id(),
+                    "profile_directory": profile, "library_directory": run.library_directory(),
+                    "fresh_required": true, "created_new": true,
+                })
+            );
+            // Keep prior cache handles open while choosing each next profile.
+            // Freshness never depends on renaming or deleting prior browser data.
+            std::fs::write(profile.join("browser-marker"), phase).unwrap();
+            held_profiles.push(std::fs::File::open(profile.join("browser-marker")).unwrap());
+            profiles.push(profile);
+        }
+        for profile in &profiles {
+            assert_eq!(
+                std::fs::read_to_string(profile.join("browser-marker")).unwrap(),
+                profile.file_name().unwrap().to_str().unwrap()
+            );
+        }
+        drop(held_profiles);
+    }
+
+    #[test]
+    fn fresh_profile_precondition_rejects_existing_empty_populated_or_file_paths() {
+        for occupied in ["empty", "populated", "file"] {
+            let evidence = Evidence::new();
+            let run = Acceptance::new(evidence.0.clone(), "vsq-restart").unwrap();
+            let profile = run.profile_directory();
+            std::fs::create_dir_all(profile.parent().unwrap()).unwrap();
+            if occupied == "file" {
+                std::fs::write(&profile, b"occupied").unwrap();
+            } else {
+                std::fs::create_dir(&profile).unwrap();
+                if occupied == "populated" {
+                    std::fs::write(profile.join("marker"), b"retained").unwrap();
+                }
+            }
+            let error = run.prepare_webview_profile().unwrap_err();
+            assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+            assert!(error.to_string().contains("vsq-restart"));
+            assert!(error.to_string().contains(profile.to_str().unwrap()));
+            assert!(!evidence.0.join("profile-vsq-restart.json").exists());
+        }
+    }
+
+    #[test]
+    fn desktop_restart_phases_keep_the_same_browser_storage() {
+        let evidence = Evidence::new();
+        for (index, phase) in PHASES.into_iter().enumerate() {
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            let profile = run.prepare_webview_profile().unwrap();
+            assert_eq!(profile, evidence.0.join("webview-profile"));
+            let marker = profile.join("shared-marker");
+            if index == 0 {
+                std::fs::write(&marker, b"shared browser state").unwrap();
+            }
+            assert_eq!(std::fs::read(marker).unwrap(), b"shared browser state");
+            let proof: Value = serde_json::from_slice(
+                &std::fs::read(evidence.0.join(format!("profile-{phase}.json"))).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(proof["fresh_required"], false);
+            assert_eq!(proof["created_new"], index == 0);
+        }
+    }
+
+    #[test]
+    fn profile_parents_must_be_ordinary_owned_directories() {
+        let evidence = Evidence::new();
+        let run = Acceptance::new(evidence.0.clone(), "pitch-bend-seed").unwrap();
+        std::fs::write(evidence.0.join("webview-profiles"), b"occupied").unwrap();
+        assert!(run.prepare_webview_profile().is_err());
+        assert!(!evidence.0.join("profile-pitch-bend-seed.json").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linked_profile_parents_and_dangling_profile_paths_are_rejected() {
+        let evidence = Evidence::new();
+        let run = Acceptance::new(evidence.0.clone(), "vsq-seed").unwrap();
+        let outside = Evidence::new();
+        std::fs::create_dir(&outside.0).unwrap();
+        let parent = evidence.0.join("webview-profiles");
+        std::os::unix::fs::symlink(&outside.0, &parent).unwrap();
+        assert!(run.prepare_webview_profile().is_err());
+        assert_eq!(std::fs::read_dir(&outside.0).unwrap().count(), 0);
+        std::fs::remove_file(&parent).unwrap();
+        std::fs::create_dir(&parent).unwrap();
+        std::os::unix::fs::symlink(outside.0.join("missing"), run.profile_directory()).unwrap();
+        assert!(run.prepare_webview_profile().is_err());
+        assert!(!outside.0.join("missing").exists());
+    }
+
+    #[test]
     fn every_acceptance_phase_uses_the_same_library_root_as_its_snapshot_owner() {
         let evidence = Evidence::new();
         for phase in PHASES {
@@ -551,6 +754,10 @@ mod tests {
             "pitch-bend-seed-extra",
             "unknown",
             "",
+            "../vsq-seed",
+            "vsq-seed/extra",
+            "VSQ-seed",
+            "vsq-seed\\extra",
         ] {
             assert!(Acceptance::new(evidence.0.clone(), phase).is_err());
         }

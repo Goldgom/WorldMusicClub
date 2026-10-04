@@ -1,3 +1,4 @@
+import {verifyNativeProfileEvidence} from './native-profile-evidence.mjs';
 import {readFile,writeFile,readdir,lstat,rm} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -49,6 +50,7 @@ export function validateCleanTake(take,{human=false,scoreId,target,transport}={}
 export async function verifyNativeCleanSongEvidence(directory){
  const allNames=await names(directory),files=[];const read=async(p,l)=>{const b=await bytes(directory,p,l);files.push({path:p,sha256:digest(b),bytes:b.length});return b;},json=async(p,l)=>parse(await read(p,l),p);
  const nativeBytes=await bytes(directory,'native-clean-song.json',CLEAN_REPORT_BYTES),native=parse(nativeBytes,'native');assert(native.version===1&&native.ok===true&&native.scenario==='clean-song'&&native.profile_reused===false,'Native clean host did not pass');for(const key of ['source_sha','source_tree'])assert(typeof native[key]==='string'&&/^[a-f0-9]{40}$/.test(native[key])&&native[key].length===40,`Native clean ${key} invalid`);assert(sha(native.executable_sha256)&&positive(native.executable_bytes),'Native clean executable identity invalid');equal(native.phases?.map(p=>p.phase),CLEAN_PHASES,'Native clean phases differ');assert(new Set(native.phases.map(p=>p.process_id)).size===2,'Clean restart did not launch a new process');
+  await verifyNativeProfileEvidence(native,CLEAN_PHASES,json);
  const fixture=cleanAcceptanceFixture();equal(await json('fixtures/clean-fixtures.json'),fixture.manifest,'Clean fixture manifest changed');assert((await read(`fixtures/${CLEAN_FIXTURE_FILENAME}`)).equals(fixture.bytes),'Clean chooser fixture bytes changed');
  const identity=digest(JSON.stringify(fixture.metadata)),key=`song-${identity}`,runtime=parse(await readFile(new URL('../tests/fixtures/clean-song-v2-long-runtime.json',import.meta.url)),'runtime'),runtimeHash=digest(JSON.stringify(stable(runtime)));
  assert(fixture.score.performance.events.length===14&&fixture.score.performance.notes.length===30&&fixture.score.coverage.source_events===74&&fixture.score.coverage.represented_events===74&&runtime.events.length===14&&runtime.notes.length===30,'Authored fixture source/command inventory changed');

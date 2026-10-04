@@ -1,3 +1,4 @@
+import {addNativeProfileEvidence,assertNativeProfileEvidence} from './native-profile-evidence-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
@@ -35,7 +36,7 @@ async function evidence(t){
  const archive=async(path,b)=>{await mkdir(join(directory,'Scores',path.slice(0,path.lastIndexOf('/'))),{recursive:true});await writeFile(join(directory,'Scores',path),b);rows.push({path,bytes:b.length,sha256:digest(b)});};
  for(const area of ['clean-songs','clean-backups']){await archive(`${area}/${key}/entry.json`,Buffer.from(JSON.stringify(entry)));for(const [p,b]of fixture.files)await archive(`${area}/${key}/package/${p}`,b);}
  for(const area of ['imports','import-backups'])for(const source of [fixture.bytes,exported])await archive(`${area}/pack-${digest(source)}/source.bin`,source);
- for(const phase of CLEAN_PHASES){await save(`snapshot-${phase}.json`,{version:1,files:rows});await save(`renderer-${phase}.json`,reports[phase]);}await save('native-clean-song.json',native);return{directory,fixture,entry,key,native,reports,save,rows};
+ for(const phase of CLEAN_PHASES){await save(`snapshot-${phase}.json`,{version:1,files:rows});await save(`renderer-${phase}.json`,reports[phase]);}await addNativeProfileEvidence(native,save);await save('native-clean-song.json',native);return{directory,fixture,entry,key,native,reports,save,rows};
 }
 
 test('clean native verifier rederives the complete authored package and new-process evidence',async t=>{const f=await evidence(t),proof=await verifyNativeCleanSongEvidence(f.directory);assert.equal(proof.ok,true);assert.equal(proof.notes,30);assert.equal(proof.events,14);assert.equal(proof.source_events,74);assert.equal(proof.decoded_media,3);assert.equal(proof.claims.actual_audibility,false);assert.equal(proof.claims.latency_or_hardware,false);});
@@ -202,4 +203,8 @@ test('clean navigation observation filters the selected score and requires actua
  assert.throws(()=>observer.ready('loading'),/not ready/);assert.deepEqual(JSON.parse(JSON.stringify(observer.ready('ready'))),{status:'ready',ordinaryNavigationRequests:0});
  observer.observe(path,options('clean'));assert.throws(()=>observer.ready('ready'),/ordinary notation navigation/);
  for(const body of [null,'{','x'.repeat(1024*1024+1)]){const invalid=create();invalid.select('clean');invalid.observe(path,{body});assert.throws(()=>invalid.ready('ready'));}
+});
+
+test('clean-song requires distinct phase profiles and matching fresh host records in the hashed proof',async t=>{
+ const f=await evidence(t);await assertNativeProfileEvidence({directory:f.directory,native:f.native,save:f.save,verify:verifyNativeCleanSongEvidence,nativeFile:'native-clean-song.json'});
 });

@@ -1,3 +1,4 @@
+import {addNativeProfileEvidence,assertNativeProfileEvidence} from './native-profile-evidence-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,rm,symlink} from 'node:fs/promises';
@@ -65,7 +66,7 @@ async function evidence(t){
   for(const area of ['songs','backups'])for(const [index,entry]of entries.entries())for(const [name,bytes]of [['metadata.json',Buffer.from(JSON.stringify(entry))],['score.json',payloads.get(entry.key)],['source.payload',Buffer.from(fixtures.scores[index].source.content)]])await archive(`${area}/${entry.key}/${name}`,bytes);
   const committed=observations.filter(row=>row.mode==='commit'&&row.status===200),archiveKeys=[...new Set(committed.map(row=>row.body.source.archive_key))];for(const area of ['imports','import-backups'])for(const key of archiveKeys){const rows=committed.filter(row=>row.body.source.archive_key===key),source=rows[0].body.source;for(const [name,bytes]of [['source.bin',sources.get(source.filename)],['source.json',Buffer.from(JSON.stringify(source))],['inventory.json',Buffer.from(JSON.stringify(rows[0].body.inventory))],...rows.map((row,index)=>[`report-${String(1700000000000000000n+BigInt(index)).padStart(32,'0')}-${String(index).padStart(20,'0')}.json`,Buffer.from(JSON.stringify(row.body))])])await archive(`${area}/${key}/${name}`,bytes);}
   for(const phase of BULK_IMPORT_PHASES){for(const [index,[kind,file]]of definitions[phase].entries()){const sequence=index+1,pid=phases.find(row=>row.phase===phase).process_id;await saveJson(`action-${phase}-${sequence}.json`,{version:1,sequence,kind,x:10,y:20,width:1024,height:768,...(file?{file}:{})});await saveJson(`result-${phase}-${sequence}.json`,{ok:true,...(['picker','cancel-picker'].includes(kind)?{owned_dialog:{hwnd:2,class:'#32770',process_id:pid,app_process_id:pid,app_hwnd:1,root_owner_hwnd:1},picker_completion:{dialog_dismissed:true,app_enabled:true,owned_popup_visible:false}}:{})});}await writeFile(join(directory,`native-${phase}.png`),PNG);for(const sequence of Object.values(reports[phase].screenshots))await writeFile(join(directory,`native-action-${phase}-${sequence}.png`),PNG);await saveJson(`snapshot-${phase}.json`,{version:1,files:snapshots});await writeReport(phase);}
-  for(const [role,value]of Object.entries(values))await saveJson(`downloads/${seedFiles[role]}`,value);for(const [path,bytes]of [[seedFiles.original,original],[seedFiles.unified,unified],[restartFiles.original,original]])await writeFile(join(directory,'downloads',path),bytes);await saveJson('native-bulk-import.json',native);
+  for(const [role,value]of Object.entries(values))await saveJson(`downloads/${seedFiles[role]}`,value);for(const [path,bytes]of [[seedFiles.original,original],[seedFiles.unified,unified],[restartFiles.original,original]])await writeFile(join(directory,'downloads',path),bytes);await addNativeProfileEvidence(native,saveJson);await saveJson('native-bulk-import.json',native);
   return{directory,native,reports,fixtures,entries,payloads,values,snapshots,saveJson,writeReport};
 }
 
@@ -104,4 +105,8 @@ test('only causally observed native chooser blur boundaries may append to the ex
  ]){const value=clone(after);edit(value);assert.throws(()=>validateBulkTakePreservation(before,value,observations,actions),/evidence|Scored take|boundary/i)}
  for(const edit of [value=>value.pop(),value=>value[0].sequence++,value=>value[0].kind='click',value=>value[0].completed=false,value=>value[0].blurs[0].trusted=false,value=>value[0].blurs=[],value=>value[0].blurs[0].started_wall_ms=0,value=>value[0].blurs[0].finished_wall_ms=Infinity,value=>value[0].blurs.push(clone(value[0].blurs[0]))]){const value=clone(observations);edit(value);assert.throws(()=>validateBulkTakePreservation(before,after,value,actions),/chooser|boundary/i)}
  const held=clone(before);held.input_evidence.events.splice(1,1);assert.throws(()=>validateBulkTakePreservation(held,clone(held),noBlur,actions),/unreleased/);
+});
+
+test('bulk-import requires distinct phase profiles and matching fresh host records in the hashed proof',async t=>{
+ const f=await evidence(t);await assertNativeProfileEvidence({directory:f.directory,native:f.native,save:f.saveJson,verify:verifyNativeBulkImportEvidence,nativeFile:'native-bulk-import.json'});
 });

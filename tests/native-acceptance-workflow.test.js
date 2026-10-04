@@ -249,3 +249,26 @@ test('mandatory pitch artifacts use exact original-only roots and omit every bro
     assert.doesNotMatch(paths.join('\n'), /webview-profile|prior-profile|AppData|USERPROFILE/);
   }
 });
+
+test('all fresh native scenarios retain small profile proofs and exclude retained browser caches', () => {
+  const nativeSteps = steps(jobBlock(jobIds[1]));
+  const upload = nativeSteps.find(step => step.includes('uses: actions/upload-artifact@') && step.includes('desktop-song-folder/'));
+  const paths = [...upload.matchAll(/^            (.+)$/gm)].map(match => match[1]);
+  for (const scenario of ['song-folder', 'bulk-import', 'clean-song', 'vsq-song', 'performance-song', 'pitch-bend']) {
+    const prefix = `desktop-${scenario}/`, own = paths.filter(path => path.startsWith(prefix));
+    assert.ok(own.includes(`${prefix}*.json`), 'host profile JSON survives success and failure');
+    assert.ok(own.length > 0);
+    for (const path of own) assert.match(path.slice(prefix.length), /^(?:\*\.(?:json|png|log)|(?:downloads|fixtures)\/\*|Scores\/(?:songs|backups|clean-songs|clean-backups|imports|import-backups)\/(?:\*\/\*|\*\*))$/);
+    assert.doesNotMatch(own.join('\n'), /webview-profile|prior-profile/);
+  }
+  const pack = nativeSteps.find(step => step.includes('id: native_package'));
+  for (const phase of ['bulk', 'clean', 'vsq']) assert.ok(pack.includes(`/profile-${phase}-*.json`));
+  const native = readFileSync(new URL('../scripts/windows-desktop-acceptance.ps1', import.meta.url), 'utf8');
+  const windows = readFileSync(new URL('../crates/desktop-shell/src/windows.rs', import.meta.url), 'utf8');
+  assert.match(windows, /acceptance\.prepare_webview_profile\(\)\?/);
+  assert.match(windows, /builder = builder\.data_directory\(profile\)/);
+  assert.match(native, /Assert-AcceptanceProfileLaunch \$OutputDirectory \$phase/);
+  assert.match(native, /Assert-AcceptanceProfileEvidence \$OutputDirectory \$profileSelection \$app.Id/);
+  assert.doesNotMatch(native, /Rotate-SongFolderProfile|prior-profile/);
+  assert.match(native, /\$app\.WaitForExit\(10000\)/);
+});

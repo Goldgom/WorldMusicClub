@@ -1,3 +1,5 @@
+import {addNativeProfileEvidence,assertNativeProfileEvidence} from './native-profile-evidence-fixtures.js';
+import {verifyNativeProfileEvidence} from '../scripts/native-profile-evidence.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,rm,symlink} from 'node:fs/promises';
@@ -88,7 +90,7 @@ async function evidence(t){
     await saveJson(`snapshot-${phase}.json`,{version:1,files:snapshots});await writeReport(phase);
   }
   for(const role of Object.keys(values))await writeExport(role);
-  await saveJson('native-song-folder.json',native);
+  await addNativeProfileEvidence(native,saveJson);await saveJson('native-song-folder.json',native);
   return{directory,native,reports,fixtures,snapshots,values,saveJson,writeReport,writeExport};
 }
 
@@ -97,7 +99,7 @@ test('verifies exact disk bytes, all backups, snapshots, native picker results a
   assert.equal(proof.ok,true);assert.equal(proof.entry_count,2);assert.equal(proof.typing_note_on_count,1);assert.equal(proof.scored_input_count,1);
   assert.equal(proof.files.filter(row=>row.path.startsWith('Scores/')).length,12);
   assert.equal(proof.files.filter(row=>row.path.startsWith('downloads/')).length,4);
-  assert.equal(proof.files.length,39);
+  assert.equal(proof.files.length,42);
   for(const row of proof.files){const bytes=await readFile(join(f.directory,row.path));assert.equal(row.sha256,hash(bytes));assert.equal(row.bytes,bytes.length);}
   assert.equal(proof.native_report_sha256,hash(await readFile(join(f.directory,'native-song-folder.json'))));
   for(const phase of SONG_FOLDER_PHASES)assert.equal(proof.renderer_sha256[phase],hash(await readFile(join(f.directory,`renderer-${phase}.json`))));
@@ -211,10 +213,28 @@ test('CLI writes a rederived proof; --check preserves bytes, rejects tampering, 
   const {stdout}=await run(process.execPath,[script,f.directory]);assert.match(stdout,/Verified two native song archives/);
   const proof=JSON.parse(await readFile(output,'utf8')),stored=Buffer.from(JSON.stringify(proof)+'\n\n');await writeFile(output,stored);
   for(const args of [['--check',f.directory],[f.directory,'--check']]){const result=await run(process.execPath,[script,...args]);assert.match(result.stdout,/stored proof matches/);assert.deepEqual(await readFile(output),stored);}
+  const hostPath=join(f.directory,'profile-folder-restart.json'),hostBytes=await readFile(hostPath);await writeFile(hostPath,Buffer.concat([hostBytes,Buffer.from('\n')]));
+  await assert.rejects(run(process.execPath,[script,'--check',f.directory]),error=>error.code===1&&/Stored native song-folder proof differs/.test(error.stderr));await writeFile(hostPath,hostBytes);
   const changed=clone(proof);changed.typing_note_on_count=99;await writeFile(output,JSON.stringify(changed));
   await assert.rejects(run(process.execPath,[script,'--check',f.directory]),error=>error.code===1&&/Stored native song-folder proof differs/.test(error.stderr));
   assert.deepEqual(JSON.parse(await readFile(output,'utf8')),changed);
   await writeFile(join(f.directory,'Scores','songs',KEYS[0],'source.payload'),'corrupted');
   await assert.rejects(run(process.execPath,[script,f.directory]),error=>error.code===1&&/exact retained source/.test(error.stderr));
   await assert.rejects(readFile(output),{code:'ENOENT'});
+});
+
+test('song-folder requires distinct phase profiles and matching fresh host records in the hashed proof',async t=>{
+ const f=await evidence(t);await assertNativeProfileEvidence({directory:f.directory,native:f.native,save:f.saveJson,verify:verifyNativeSongFolderEvidence,nativeFile:'native-song-folder.json'});
+});
+
+test('profile evidence verifies recorded Windows paths after artifact relocation without accepting path aliases',async()=>{
+ const phases=['folder-seed','folder-restart','folder-failure'],root='C:\\hosted runner\\native-folder',native={directory:`${root}\\Scores`,phases:phases.map((phase,index)=>({phase,process_id:100+index,profile_directory:`${root}\\webview-profiles\\${phase}`,profile_fresh:true,profile_reused:false,profile_absent_before_launch:true}))};
+ const records=Object.fromEntries(native.phases.map(row=>[`profile-${row.phase}.json`,{version:1,phase:row.phase,process_id:row.process_id,profile_directory:row.profile_directory,library_directory:native.directory,fresh_required:true,created_new:true}])),reads=[];
+ const read=async(path,limit)=>{reads.push(path);assert.equal(limit,16*1024);return records[path];};
+ await verifyNativeProfileEvidence(native,phases,read);assert.deepEqual(reads,phases.map(phase=>`profile-${phase}.json`));
+ for(const path of ['C:relative\\Scores','C:\\root\\..\\native-folder\\Scores','C:\\root\\.\\Scores','C:\\root\\\\Scores','C:\\root\\Scores\\','relative\\Scores']){
+  await assert.rejects(verifyNativeProfileEvidence({...native,directory:path},phases,read),/absolute without aliases/);
+ }
+ records['profile-folder-seed.json'].profile_directory=native.phases[0].profile_directory.replaceAll('\\','/');
+ await assert.rejects(verifyNativeProfileEvidence(native,phases,read),/host directory differs/);
 });

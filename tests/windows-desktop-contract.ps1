@@ -2,6 +2,7 @@
 # validation/path functions. No window creation, UIA, or native messages run.
 $ErrorActionPreference='Stop'
 Add-Type -Path (Join-Path $PSScriptRoot '../scripts/windows-desktop-native.cs')
+. (Join-Path $PSScriptRoot '../scripts/windows-desktop-profile.ps1')
 $script:checks=0
 function Assert-True([bool]$Value,[string]$Label) {
   if(-not $Value){throw "Contract failed: $Label"}
@@ -10,6 +11,57 @@ function Assert-True([bool]$Value,[string]$Label) {
 function Assert-Rejected([scriptblock]$Operation,[string]$Label) {
   try { & $Operation } catch { $script:checks++;return }
   throw "Contract unexpectedly accepted: $Label"
+}
+# Exercise the actual lifecycle helper using owned temporary paths, including
+# a retained earlier cache with an open handle. No WebView or GUI is launched.
+$profileRoot=Join-Path ([IO.Path]::GetTempPath()) ('wmh profile 拼谱 '+[guid]::NewGuid().ToString('N'))
+$heldProfile=$null
+New-Item -ItemType Directory $profileRoot | Out-Null
+try {
+  $freshPhases=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart')
+  New-Item -ItemType Directory (Join-Path $profileRoot 'Scores') | Out-Null
+  $score=Join-Path $profileRoot 'Scores/original.bin';[IO.File]::WriteAllText($score,'native score bytes')
+  $profiles=@()
+  foreach($phase in $freshPhases) {
+    $selection=Assert-AcceptanceProfileLaunch $profileRoot $phase
+    $expected=Join-Path (Join-Path $profileRoot 'webview-profiles') $phase
+    Assert-True ($selection.profile_directory -ceq $expected -and $selection.profile_absent_before_launch -eq $true -and $selection.fresh_required -eq $true) "exact fresh path for $phase"
+    Assert-True (-not (Test-Path -LiteralPath $expected)) 'PowerShell does not create the host-owned profile'
+    New-Item -ItemType Directory $expected -Force | Out-Null
+    Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $phase } 'even an empty existing profile fails freshness'
+    $proof=[ordered]@{version=1;phase=$phase;process_id=42;profile_directory=$expected;library_directory=(Join-Path $profileRoot 'Scores');fresh_required=$true;created_new=$true}
+    $proofPath=Join-Path $profileRoot "profile-$phase.json"
+    $proof | ConvertTo-Json | Set-Content -LiteralPath $proofPath -Encoding utf8
+    Assert-AcceptanceProfileEvidence $profileRoot $selection 42;$script:checks++
+    foreach($case in @(@{field='phase';value='other'},@{field='process_id';value=43},@{field='profile_directory';value=(Join-Path $profileRoot 'webview-profile')},@{field='library_directory';value=(Join-Path $expected 'Scores')},@{field='fresh_required';value=$false},@{field='created_new';value=$false})) {
+      $original=$proof[$case.field];$proof[$case.field]=$case.value
+      $proof | ConvertTo-Json | Set-Content -LiteralPath $proofPath -Encoding utf8
+      Assert-Rejected { Assert-AcceptanceProfileEvidence $profileRoot $selection 42 } "host profile evidence $($case.field)"
+      $proof[$case.field]=$original
+    }
+    Remove-Item -LiteralPath $proofPath
+    Assert-Rejected { Assert-AcceptanceProfileEvidence $profileRoot $selection 42 } 'missing host creation proof'
+    $marker=Join-Path $expected 'retained-cache';[IO.File]::WriteAllText($marker,$phase)
+    if($null -eq $heldProfile){$heldProfile=[IO.File]::Open($marker,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)}
+    $profiles+=,$expected
+    Assert-True ([IO.File]::ReadAllText($score) -ceq 'native score bytes') 'native Scores bytes stay unchanged'
+  }
+  Assert-True (@($profiles | Select-Object -Unique).Count -eq $freshPhases.Count) 'every fresh phase selects a distinct cache'
+  $heldProfile.Dispose();$heldProfile=$null
+  foreach($profile in $profiles){Assert-True ([IO.File]::ReadAllText((Join-Path $profile 'retained-cache')) -ceq (Split-Path $profile -Leaf)) 'prior cache remains in its original directory'}
+  foreach($phase in @('seed','restart','close-active','reopen')) {
+    $selection=Assert-AcceptanceProfileLaunch $profileRoot $phase
+    Assert-True ($selection.profile_directory -ceq (Join-Path $profileRoot 'webview-profile') -and -not $selection.fresh_required) 'desktop phases intentionally share the original path'
+    if($phase -eq 'seed'){New-Item -ItemType Directory $selection.profile_directory | Out-Null}
+    else{Assert-True (-not $selection.profile_absent_before_launch) 'desktop restart reuses its existing profile'}
+  }
+  foreach($phase in @('','VSQ-seed','vsq-any','../vsq-seed','vsq-seed/extra','vsq-seed\extra',"vsq-seed`n")){Assert-Rejected { Get-AcceptanceProfile $profileRoot $phase } 'unknown phase cannot select a path'}
+  Assert-Rejected { Get-AcceptanceProfile 'relative-root' 'vsq-seed' } 'relative acceptance root'
+  $fileRoot=Join-Path $profileRoot 'file-root';[IO.File]::WriteAllText($fileRoot,'not a directory')
+  Assert-Rejected { Get-AcceptanceProfile $fileRoot 'vsq-seed' } 'non-directory acceptance root'
+} finally {
+  if($null -ne $heldProfile){$heldProfile.Dispose()}
+  Remove-Item -LiteralPath $profileRoot -Recurse -Force
 }
 function New-ValidHost {
   $candidate=[NativeFileNameHost]::new()
