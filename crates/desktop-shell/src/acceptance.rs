@@ -580,6 +580,7 @@ fn valid_action(value: &Value) -> bool {
         "cancel-picker",
         "key-r",
         "key-c5",
+        "toggle-follow",
         "select-last",
         "select-first",
         "select-second",
@@ -1279,7 +1280,7 @@ mod tests {
                 &json!({"version":1,"sequence":1,"kind":"picker","x":1,"y":1,"width":1280,"height":720,"file":file})
             ));
         }
-        for kind in ["select-first", "select-second", "key-c5"] {
+        for kind in ["select-first", "select-second", "key-c5", "toggle-follow"] {
             assert!(valid_action(
                 &json!({"version":1,"sequence":1,"kind":kind,"x":1,"y":1,"width":1280,"height":720})
             ));

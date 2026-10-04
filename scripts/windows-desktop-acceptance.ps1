@@ -251,6 +251,14 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
     $Evidence.native_key=[ordered]@{app_hwnd=$window.ToInt64();foreground=$foreground.ToInt64();app_process_id=$App.Id;app_enabled=$enabled;code='Digit2';virtual_key=0x32;focus_reacquired=$false;pointer_clicked=$false}
     [NativeAcceptance]::Key(0x32);return
   }
+  if($Action.kind -eq 'toggle-follow') {
+    # The renderer owns focus on the actual Follow checkbox. Space uses its
+    # native activation behavior even if asynchronous engraving moves it.
+    $foreground=[NativeAcceptance]::GetForegroundWindow();$enabled=[NativeAcceptance]::IsWindowEnabled($window)
+    if($foreground -ne $window -or -not $enabled){throw 'Prepared Follow app foreground ownership was lost'}
+    $Evidence.native_key=[ordered]@{app_hwnd=$window.ToInt64();foreground=$foreground.ToInt64();app_process_id=$App.Id;app_enabled=$enabled;code='Space';virtual_key=0x20;focus_reacquired=$false;pointer_clicked=$false}
+    [NativeAcceptance]::Key(0x20);return
+  }
   [NativeAcceptance]::SetForegroundWindow($window) | Out-Null
   Start-Sleep -Milliseconds 150
   if([NativeAcceptance]::GetForegroundWindow() -ne $window){throw 'Application did not receive foreground ownership'}
