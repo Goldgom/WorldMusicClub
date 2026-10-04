@@ -832,13 +832,29 @@ fn rendition_notation_is_opt_in_and_bound_to_saved_source_with_all_selected_targ
     assert_eq!(shown["page"]["status"], "percussion_selectors");
     assert_eq!(shown["page"]["selectors"].as_array().unwrap().len(), 1);
     assert!(shown["page"]["score"].is_null() && shown["page"]["musicxml"].is_null());
+    let mut third_request = melodic_request.clone();
+    third_request["settings"]["part_id"] = json!("midi-t3-c1-r0");
+    let third_response = request(
+        &library,
+        "/api/library/basic-keys/notation",
+        serde_json::to_vec(&third_request).unwrap(),
+    );
+    assert_eq!(third_response.status(), 200);
+    let third: Value = serde_json::from_slice(third_response.body()).unwrap();
+    assert_eq!(third["page"]["part_id"], "midi-t3-c1-r0");
+    assert_eq!(third["page"]["status"], "ready");
+    assert_eq!(
+        third["page"]["interpreted_notes"].as_array().unwrap().len(),
+        1
+    );
     rendition_fixture(
         "basic-key-rendition-notation-page.json",
         &json!({
             "open":{"score_json":loaded.score_json,"clean_package":package},
             "legacy":legacy,
             "melodic":{"request":melodic_request,"response":melodic},
-            "percussion":{"request":body,"response":shown}
+            "percussion":{"request":body,"response":shown},
+            "third_part":{"request":third_request,"response":third}
         }),
     );
     assert_eq!(
