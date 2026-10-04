@@ -15,7 +15,15 @@ const report={version:1,kind:'original-dense-native-rendition-hosted',source_sha
 let driver,browser,context,page,traceInstalled=false,uiPageNumber=0;
 const action=async(label,run)=>{assert.ok(report.actions.length<64,'Dense UI action bound');const row={sequence:report.actions.length+1,label};report.actions.push(row);await run();row.completed=true;};
 async function screenshot(name){await denseDiskGuard(output);const filename=`${name}.png`;await page.screenshot({path:join(output,filename),fullPage:true});const bytes=await readFile(join(output,filename));validateCleanScreenshot(bytes);report.screenshots.push({path:filename,bytes:bytes.length,sha256:denseDigest(bytes)});}
-async function controls(open){if(await page.locator('#notation-toggle').getAttribute('aria-expanded')!=='true')await action('Open notation surface',()=>page.locator('#notation-toggle').click());const tools=page.locator('#notation-tools');if(await tools.evaluate(node=>node.open)!==open)await action(open?'Open notation controls':'Close notation controls',()=>tools.locator('summary').first().click());}
+async function controls(open){
+ // Clicking Open returns before its asynchronous source admission enters the
+ // stage. Wait for that owned surface before deciding whether a toggle is needed.
+ // Otherwise a delayed click can close the surface that Open just made visible.
+ await page.waitForFunction(()=>document.body.dataset.screen==='stage'&&!document.getElementById('workspace').hidden);
+ if(await page.locator('#notation-toggle').getAttribute('aria-expanded')!=='true')await action('Open notation surface',()=>page.locator('#notation-toggle').click());
+ const tools=page.locator('#notation-tools');await tools.waitFor({state:'visible'});
+ if(await tools.evaluate(node=>node.open)!==open)await action(open?'Open notation controls':'Close notation controls',()=>tools.locator('summary').first().click());
+}
 try{
  driver=startVsqNativeDriver({binary,directory:join(output,'Scores'),cwd:root,requestTimeoutMs:30000});report.process_id=driver.pid;
  const prepared=await prepareDenseRenditionFixture(driver,join(output,'fixture'),{retainPages:true});report.fixture=prepared.manifest;
