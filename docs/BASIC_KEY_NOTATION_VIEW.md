@@ -130,3 +130,13 @@ unavailable for this profile. The in-app numbered reference and complete song
 pack export remain available. Nominal-key packages also report unsupported
 hand/finger recommendations before issuing an API request. These capability
 limits do not remove parts, events or supported key-practice targets.
+
+
+The page adapter verifies each clipped interval against the immutable complete
+source before admitting open boundary ties. Only the admitted, frozen page can
+supply that context to the ordinary note-map and tie validators; copying a raw
+identity object cannot relax their ordinary full-score checks. The pinned
+MusicSheetReader is tested against every exact page note, retained XML tie flag,
+and source-local clock. Page-edge continuation records remain visible even when
+a tie extends beyond the loaded model; internal multi-segment tie membership
+still requires the ordinary exact renderer proof.

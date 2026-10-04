@@ -1,3 +1,6 @@
+import {readFileSync} from 'node:fs';
+import {prepareCleanSong} from '../web/clean-song-package.js';
+import {basicKeyNotationPage,basicKeyEngravingIdentity} from '../web/basic-key-notation.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
@@ -333,4 +336,19 @@ test('adapter draws the selected local range and refuses a lost model tie before
     if(lostTie){assert.equal(result.code,'engraving_tieContext');assert.equal(renderer.updates,0);assert.equal(renderer.renders,0);assert.equal(container.querySelector('svg'),null)}
     else{assert.equal(result.ok,true,result.message);assert.equal(renderer.EngravingRules.MinMeasureToDrawIndex,1);assert.equal(renderer.EngravingRules.MaxMeasureToDrawIndex,2);assert.equal(result.metadata.fromMeasure,2);assert.equal(result.metadata.toMeasure,3);assert.equal(result.metadata.modelFromMeasure,1);assert.equal(result.metadata.modelToMeasure,4);assert.equal(result.mappingStatus().displayedSegmentCount,2);assert.equal(result.mappingStatus().segmentCount,4);result.dispose()}
   }
+});
+
+
+test('source-bound basic pages retain exact pinned-reader note identities across open page-edge ties',()=>{
+ const data=JSON.parse(readFileSync(new URL('./fixtures/basic-keys-notation-follow.json',import.meta.url),'utf8')),open=data.open;
+ const song=prepareCleanSong(`native:song-${open.clean_package.content_sha256}`,open.clean_package,null);
+ for(const item of [...data.pages,data.two_measure]){
+  const page=basicKeyNotationPage(item.response,item.request,song),spec={xml:page.musicxml.xml,identity:basicKeyEngravingIdentity(song,page)},before=JSON.stringify(page);
+  const {checked,projection}=project(spec,{fromMeasure:1,toMeasure:page.measure_count});assert.equal(checked.identity.ok,true,JSON.stringify(checked.identity.diagnostics));assert.equal(projection.ok,true,JSON.stringify(projection));
+  const sheet=read(projection),validated={...checked.identity,projection};assert.deepEqual(validateEngravingProjectionModel(sheet,projection,page.score,ENGRAVING_LIMITS),{ok:true});
+  const matched=matchEngravingModel({Sheet:sheet},validated);assert.equal(matched.ok,true);assert.deepEqual(matched.diagnostics,[]);assert.equal(matched.matches.filter(item=>item.note).length,page.musicxml.note_id_map.segments.length);assert.deepEqual(validateEngravingModelTies({Sheet:sheet},validated),{ok:true});
+  for(const segment of page.musicxml.note_id_map.segments)assert.equal(projection.document.querySelector(`note[id="${segment.xml_note_id}"]`).toString(),checked.document.querySelector(`note[id="${segment.xml_note_id}"]`).toString(),'Projection retains the exact exported boundary tie flags');
+  assert.equal(JSON.stringify(page),before);assert.deepEqual(song.notation.measures,[]);
+  const forged={...spec,identity:structuredClone(spec.identity)};const unbound=validateEngravingInput(forged.xml,{identity:forged.identity,fromMeasure:1,toMeasure:page.measure_count},XmlParser);assert.equal(unbound.identity.ok,false,'Copying a page object cannot grant a generic source map permission for open ties');
+ }
 });

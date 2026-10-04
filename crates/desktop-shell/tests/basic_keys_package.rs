@@ -513,8 +513,18 @@ fn basic_notation_follow_uses_the_source_clock_for_silence_late_tempo_and_page_t
     );
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/fixtures/basic-keys-notation-follow.json");
-    let data =
-        json!({"open":{"score_json":loaded.score_json,"clean_package":package},"pages":pages});
+    let mut two_request = body.clone();
+    two_request["settings"]["measure_count"] = json!(2);
+    two_request["settings"]["position_ms"] = json!(0.);
+    let response = request(
+        &library,
+        "/api/library/basic-keys/notation",
+        serde_json::to_vec(&two_request).unwrap(),
+    );
+    assert_eq!(response.status(), 200);
+    let two_response: Value = serde_json::from_slice(response.body()).unwrap();
+    assert_eq!(two_response["page"]["measure_count"], 2);
+    let data = json!({"open":{"score_json":loaded.score_json,"clean_package":package},"pages":pages,"two_measure":{"request":two_request,"response":two_response}});
     if std::env::var_os("WMH_UPDATE_BASIC_KEYS_FIXTURE").is_some() {
         fs::write(&fixture, serde_json::to_vec_pretty(&data).unwrap()).unwrap();
     }

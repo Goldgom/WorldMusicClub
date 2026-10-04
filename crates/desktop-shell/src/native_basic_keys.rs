@@ -1,6 +1,6 @@
 //! Bounded views of an immutable saved source. Renderer input never supplies
 //! canonical notes, event bytes, a filesystem path, or a replacement timeline.
-use crate::native_library::{fail, LibraryError, NativeLibrary};
+use crate::native_library::{clean_package, fail, LibraryError, NativeLibrary};
 use score_core::basic_keys;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -31,8 +31,7 @@ pub(crate) fn notation(library: &NativeLibrary, bytes: &[u8]) -> Result<Value, L
     {
         return Err(mismatch());
     }
-    let loaded = library.load(&request.source.key)?;
-    let package = loaded.clean_package.ok_or_else(mismatch)?;
+    let package = clean_package::load_source(library, &request.source.key)?.ok_or_else(mismatch)?;
     if package.content_sha256 != request.source.content_sha256
         || package.profile.as_deref() != Some(basic_keys::PROFILE)
     {

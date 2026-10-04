@@ -1,4 +1,5 @@
 export default Object.freeze({
+  "notationRuntime.basicContinuation": "{id} · complete source interval: beats {from}–{to} · continues across this page edge",
   "notationRuntime.basicFollowChoice": "Following needs a usable source-bound notation page. Choose the displayed meter or part first, then enable Follow.",
   "notationRuntime.basicFollowUnavailable": "Exact page following is unavailable for this view. Source notes, manual pages and practice timing remain unchanged.",
 
@@ -7,7 +8,7 @@ export default Object.freeze({
   "notationRuntime.basicSourceCoverage": "Whole source: {source} attacks; selected part: {part}.",
 
   "notationRuntime.basicCoverage": "Whole source: {source} attacks; selected part: {part}. This window: {window} attacks; {rendered} positive key intervals shown, {unresolved} unresolved ends and {instantaneous} instantaneous attacks listed, {continuations} intervals continuing across page edges.",
-  "notationRuntime.basicAttackDetails": "Source attacks outside duration notation",
+  "notationRuntime.basicAttackDetails": "Source attack and continuation details",
   "notationRuntime.basicAttack": "{id} · MIDI key {key} · source beat {beat} · {state}",
   "notationRuntime.basicUnresolved": "release unresolved",
   "notationRuntime.basicInstantaneous": "instantaneous release",

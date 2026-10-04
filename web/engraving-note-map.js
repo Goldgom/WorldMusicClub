@@ -1,3 +1,4 @@
+import {basicKeyEngravingBoundaries} from './basic-key-notation.js';
 /** Verify display identity only. Rust owns every performance interval. */
 import {ENGRAVING_SOURCE_LIMITS} from './engraving-projection.js';
 const VERSION=1,MAX_BYTES=ENGRAVING_SOURCE_LIMITS.mapBytes,MAX_SEGMENTS=ENGRAVING_SOURCE_LIMITS.notes;
@@ -24,7 +25,7 @@ function tieFlags(note){const flags={start:false,stop:false};for(const tie of ch
 export function validateEngravingNoteMap(document,identity){
   try{
     if(!identity)return {ok:false,status:'not-requested',diagnostics:[]};
-    const {score,noteMap,partIdMap,voiceIdMap}=identity;
+    const {score,noteMap,partIdMap,voiceIdMap}=identity,boundaryTies=basicKeyEngravingBoundaries(identity);
     if(!noteMap)fail('This export has no complete written-note identity map. Static notation remains available.');
     if(noteMap.version!==VERSION)fail('The written-note identity map requires a compatible renderer version.');
     if(!score||!Array.isArray(score.parts)||!Array.isArray(score.measures)||!Array.isArray(noteMap.segments)||!noteMap.segments.length||noteMap.segments.length>MAX_SEGMENTS||new TextEncoder().encode(JSON.stringify(noteMap)).byteLength>MAX_BYTES||!Array.isArray(voiceIdMap))fail('The written-note identity map is incomplete or exceeds its display limit.');
@@ -49,7 +50,7 @@ export function validateEngravingNoteMap(document,identity){
       const source=sources.get(segment.source_note_id),measure=score.measures[segment.source_measure_index];
       if(!source||typeof segment.xml_note_id!=='string'||!segment.xml_note_id||byXmlId.has(segment.xml_note_id)||!integer(segment.source_measure_index,0,score.measures.length-1)||!measure||segment.measure_number!==measure.number||segment.part_id!==source.part.id||segment.xml_part_id!==partIdMap[source.part.id]||segment.staff!==source.note.staff||segment.voice!==source.note.voice||voices.get(JSON.stringify([segment.part_id,segment.staff,segment.voice,segment.lane]))!==segment.xml_voice||pitchKey(segment.pitch)!==pitchKey(source.note.pitch)||typeof segment.tie_start!=='boolean'||typeof segment.tie_stop!=='boolean'||typeof segment.chord!=='boolean')fail('A written segment does not match its canonical note, part, voice or measure.');
       const at=rational(segment.at),duration=rational(segment.duration),relative=rational(segment.measure_at),start=rational(source.note.at),end=add(start,rational(source.note.duration)),measureStart=rational(measure.at),measureEnd=add(measureStart,rational(measure.length)),segmentEnd=add(at,duration);
-      if(duration[0]<=0n||!equal(add(measureStart,relative),at)||compare(at,start)<0n||compare(segmentEnd,end)>0n||compare(at,measureStart)<0n||compare(segmentEnd,measureEnd)>0n||segment.tie_start!==Boolean(source.note.pitch&&(compare(segmentEnd,end)<0n||source.note.tie_start))||segment.tie_stop!==Boolean(source.note.pitch&&(compare(at,start)>0n||source.note.tie_stop)))fail('A written segment changes source duration, measure position or tie identity.');
+      if(duration[0]<=0n||!equal(add(measureStart,relative),at)||compare(at,start)<0n||compare(segmentEnd,end)>0n||compare(at,measureStart)<0n||compare(segmentEnd,measureEnd)>0n||segment.tie_start!==Boolean(source.note.pitch&&(compare(segmentEnd,end)<0n||source.note.tie_start||boundaryTies?.get(source.note.id)?.outgoing))||segment.tie_stop!==Boolean(source.note.pitch&&(compare(at,start)>0n||source.note.tie_stop||boundaryTies?.get(source.note.id)?.incoming)))fail('A written segment changes source duration, measure position or tie identity.');
       byXmlId.set(segment.xml_note_id,segment);coverage.get(segment.source_note_id).push({at,end:segmentEnd});
       usedVoices.add(JSON.stringify([segment.part_id,segment.staff,segment.voice,segment.lane]));
     }
@@ -75,7 +76,7 @@ export function validateEngravingNoteMap(document,identity){
       }
     }
     if(seen.size!==segments.length)fail('The complete identity map and XML note counts differ.');
-    return {ok:true,status:'ready',version:VERSION,segments:[...segments],sources,score,partIdMap,diagnostics:[]};
+    return {ok:true,status:'ready',version:VERSION,segments:[...segments],sources,score,partIdMap,boundaryTies,diagnostics:boundaryTies?.size?[diagnostic('engraving_page_continuations','Open page-edge ties are verified against complete source intervals. Continuation records retain the full source duration; notation outside this page is not loaded.')]:[]};
   }catch(error){return {ok:false,status:'unavailable',diagnostics:[diagnostic('engraving_note_map_unavailable',error.message)]}}
 }
 

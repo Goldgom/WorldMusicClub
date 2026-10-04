@@ -1168,5 +1168,321 @@
         }
       }
     }
-  ]
+  ],
+  "two_measure": {
+    "request": {
+      "settings": {
+        "display_meter": null,
+        "first_measure": 0,
+        "measure_count": 2,
+        "part_id": "midi-t2-c1-r0",
+        "position_ms": 0.0
+      },
+      "source": {
+        "content_sha256": "040f7f4c9c76c041223b899421ce78f0030c3f57980e46cf382d3fd27a5463ac",
+        "key": "song-040f7f4c9c76c041223b899421ce78f0030c3f57980e46cf382d3fd27a5463ac",
+        "profile": "wmh-basic-keys-midi1-v1"
+      }
+    },
+    "response": {
+      "page": {
+        "continuations": [
+          {
+            "enters_page": false,
+            "leaves_page": true,
+            "note_id": "midi-t2-e1",
+            "source_end": {
+              "denominator": 1,
+              "numerator": 12
+            },
+            "source_start": {
+              "denominator": 1,
+              "numerator": 1
+            }
+          }
+        ],
+        "coverage": {
+          "instantaneous_attacks": 0,
+          "part_attacks": 2,
+          "part_instantaneous_attacks": 0,
+          "part_unresolved_attacks": 0,
+          "rendered_positive_keys": 1,
+          "source_attacks": 2,
+          "unresolved_attacks": 0,
+          "window_attacks": 1
+        },
+        "diagnostics": [
+          {
+            "code": "basic_nominal_key_notation",
+            "message": "This view engraves determined nominal MIDI key intervals; it does not establish original engraving, acoustic pitch or source sound. All unresolved and zero-time attacks remain in the complete source package.",
+            "note_id": null,
+            "severity": "warning"
+          },
+          {
+            "code": "smf_default_presentation_tempo",
+            "message": "The initial120 BPM display mark comes from the SMF default clock, not a source tempo event.",
+            "note_id": null,
+            "severity": "warning"
+          },
+          {
+            "code": "source_key_unspecified",
+            "message": "No key signature is specified for this page; nominal MIDI-key spellings are retained without inventing a source key.",
+            "note_id": null,
+            "severity": "warning"
+          }
+        ],
+        "first_measure": 0,
+        "instantaneous": [],
+        "key_origin": "unspecified",
+        "measure_count": 2,
+        "measures": [
+          {
+            "end_ms": 2000.0,
+            "source_at": {
+              "denominator": 1,
+              "numerator": 0
+            },
+            "source_end": {
+              "denominator": 1,
+              "numerator": 4
+            },
+            "source_measure_index": 0,
+            "start_ms": 0.0
+          },
+          {
+            "end_ms": 6000.0,
+            "source_at": {
+              "denominator": 1,
+              "numerator": 4
+            },
+            "source_end": {
+              "denominator": 1,
+              "numerator": 8
+            },
+            "source_measure_index": 1,
+            "start_ms": 2000.0
+          }
+        ],
+        "meter_origin": "source",
+        "musicxml": {
+          "diagnostics": [
+            {
+              "code": "musicxml_generated_engraving",
+              "message": "Generated MusicXML preserves supported canonical music, not original engraving. Clefs and rhythmic spelling are inferred; source images, source XML, layout, lyrics, articulations and source-only instructions are not copied.",
+              "note_id": null,
+              "severity": "warning"
+            }
+          ],
+          "note_id_map": {
+            "segments": [
+              {
+                "at": {
+                  "denominator": 1,
+                  "numerator": 1
+                },
+                "chord": false,
+                "duration": {
+                  "denominator": 1,
+                  "numerator": 3
+                },
+                "lane": 1,
+                "measure_at": {
+                  "denominator": 1,
+                  "numerator": 1
+                },
+                "measure_number": 1,
+                "part_id": "midi-t2-c1-r0",
+                "pitch": {
+                  "alter": 0,
+                  "octave": 4,
+                  "step": "C"
+                },
+                "source_measure_index": 0,
+                "source_note_id": "midi-t2-e1",
+                "staff": 1,
+                "tie_start": true,
+                "tie_stop": false,
+                "voice": "1",
+                "xml_note_id": "N1_1_1",
+                "xml_part_id": "P1",
+                "xml_voice": "1"
+              },
+              {
+                "at": {
+                  "denominator": 1,
+                  "numerator": 4
+                },
+                "chord": false,
+                "duration": {
+                  "denominator": 1,
+                  "numerator": 4
+                },
+                "lane": 1,
+                "measure_at": {
+                  "denominator": 1,
+                  "numerator": 0
+                },
+                "measure_number": 2,
+                "part_id": "midi-t2-c1-r0",
+                "pitch": {
+                  "alter": 0,
+                  "octave": 4,
+                  "step": "C"
+                },
+                "source_measure_index": 1,
+                "source_note_id": "midi-t2-e1",
+                "staff": 1,
+                "tie_start": true,
+                "tie_stop": true,
+                "voice": "1",
+                "xml_note_id": "N1_1_2",
+                "xml_part_id": "P1",
+                "xml_voice": "1"
+              }
+            ],
+            "version": 1
+          },
+          "part_id_map": {
+            "midi-t2-c1-r0": "P1"
+          },
+          "voice_id_map": [
+            {
+              "lane": 1,
+              "part_id": "midi-t2-c1-r0",
+              "staff": 1,
+              "voice": "1",
+              "xml_voice": "1"
+            }
+          ],
+          "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<score-partwise version=\"4.0\">\n<work><work-title>Original basic-key follow fixture</work-title></work>\n<identification><rights type=\"attribution\">User-supplied MIDI; source rights unverified; nominal MIDI key-number projection</rights><encoding><software>WorldMusicHub 0.2.0-alpha.1</software></encoding></identification>\n<part-list>\n<score-part id=\"P1\"><part-name>Track 2 / ch 1</part-name><score-instrument id=\"I1\"><instrument-name>midi-key-number</instrument-name></score-instrument></score-part>\n</part-list>\n<part id=\"P1\">\n<measure number=\"1\">\n<attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><staves>1</staves><clef number=\"1\"><sign>G</sign><line>2</line></clef></attributes>\n<direction placement=\"above\"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>120</per-minute></metronome></direction-type><offset sound=\"yes\">0</offset><sound tempo=\"120\"/></direction>\n<forward><duration>1</duration><voice>1</voice><staff>1</staff></forward>\n<note id=\"N1_1_1\" dynamics=\"100.000000\"><pitch><step>C</step><alter>0</alter><octave>4</octave></pitch><duration>3</duration><tie type=\"start\"/><voice>1</voice><type>half</type><dot/><staff>1</staff><notations><tied type=\"start\"/></notations></note>\n</measure>\n<measure number=\"2\">\n<direction placement=\"above\"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>60</per-minute></metronome></direction-type><offset sound=\"yes\">0</offset><sound tempo=\"60\"/></direction>\n<note id=\"N1_1_2\" dynamics=\"100.000000\"><pitch><step>C</step><alter>0</alter><octave>4</octave></pitch><duration>4</duration><tie type=\"stop\"/><tie type=\"start\"/><voice>1</voice><type>whole</type><staff>1</staff><notations><tied type=\"stop\"/><tied type=\"start\"/></notations></note>\n</measure>\n</part>\n</score-partwise>\n"
+        },
+        "next_measure": 2,
+        "part_id": "midi-t2-c1-r0",
+        "profile": "wmh-basic-keys-midi1-v1",
+        "resolved_position_ms": 0.0,
+        "score": {
+          "composer": "",
+          "format_metadata": {
+            "producer": "WorldMusicHub",
+            "producer_version": "0.2.0-alpha.1",
+            "schema_revision": 2
+          },
+          "id": "midi-basic-f25a733da35a11801061071ba075e1082dc0a8148d8d4e184f4c8f0e81eb64ea",
+          "keys": [],
+          "measures": [
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 0
+              },
+              "length": {
+                "denominator": 1,
+                "numerator": 4
+              },
+              "number": 1
+            },
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 4
+              },
+              "length": {
+                "denominator": 1,
+                "numerator": 4
+              },
+              "number": 2
+            }
+          ],
+          "meters": [
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 0
+              },
+              "denominator": 4,
+              "numerator": 4
+            }
+          ],
+          "parts": [
+            {
+              "id": "midi-t2-c1-r0",
+              "instrument": "midi-key-number",
+              "name": "Track 2 / ch 1",
+              "notes": [
+                {
+                  "at": {
+                    "denominator": 1,
+                    "numerator": 1
+                  },
+                  "duration": {
+                    "denominator": 1,
+                    "numerator": 7
+                  },
+                  "id": "midi-t2-e1",
+                  "pitch": {
+                    "alter": 0,
+                    "octave": 4,
+                    "step": "C"
+                  },
+                  "staff": 1,
+                  "tie_start": false,
+                  "tie_stop": false,
+                  "velocity": 90,
+                  "voice": "1"
+                }
+              ]
+            }
+          ],
+          "provenance": {
+            "attribution": "User-supplied MIDI; source rights unverified; nominal MIDI key-number projection",
+            "kind": "user_supplied_unverified",
+            "license": null,
+            "source_url": null
+          },
+          "repeats": [],
+          "source": null,
+          "tempo": [
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 0
+              },
+              "bpm": 120.0
+            },
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 4
+              },
+              "bpm": 60.0
+            }
+          ],
+          "title": "Original basic-key follow fixture",
+          "version": 1
+        },
+        "source_duration_ms": 10000.0,
+        "source_end": {
+          "denominator": 1,
+          "numerator": 8
+        },
+        "source_end_ms": 6000.0,
+        "source_sha256": "f25a733da35a11801061071ba075e1082dc0a8148d8d4e184f4c8f0e81eb64ea",
+        "source_start": {
+          "denominator": 1,
+          "numerator": 0
+        },
+        "source_start_ms": 0.0,
+        "status": "ready",
+        "tempo_origin": "smf_default_presentation",
+        "total_measures": 3,
+        "unresolved": [],
+        "view_version": 1
+      },
+      "source": {
+        "content_sha256": "040f7f4c9c76c041223b899421ce78f0030c3f57980e46cf382d3fd27a5463ac",
+        "key": "song-040f7f4c9c76c041223b899421ce78f0030c3f57980e46cf382d3fd27a5463ac",
+        "profile": "wmh-basic-keys-midi1-v1"
+      }
+    }
+  }
 }

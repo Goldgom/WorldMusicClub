@@ -33,17 +33,23 @@ export function resolveEngravingTieContext(validated, options, limits) {
     if (candidate(other, !backwards) !== segment) fail();
     return other;
   };
+  const openBoundary=(segment,backwards)=>{
+    const source=validated.sources?.get(segment.source_note_id)?.note,flags=validated.boundaryTies?.get(segment.source_note_id);
+    if(!source||!(backwards?flags?.incoming:flags?.outgoing))return false;
+    const at=rational(segment.at),sourceAt=rational(source.at);
+    return fractionKey(backwards?at:add(at,rational(segment.duration)))===fractionKey(backwards?sourceAt:add(sourceAt,rational(source.duration)));
+  };
   let fromMeasure = options.fromMeasure, toMeasure = options.toMeasure;
   const chains = new Map(), covered = new Set();
   for (const segment of validated.segments) {
     if (covered.has(segment.xml_note_id) || !selectedParts.has(segment.xml_part_id) || segment.source_measure_index < options.fromMeasure - 1 || segment.source_measure_index >= options.toMeasure || !segment.tie_start && !segment.tie_stop) continue;
     let first = segment, steps = 0;
-    while (first.tie_stop) { first = adjacent(first, true); if (++steps > validated.segments.length) fail(); }
+    while (first.tie_stop) { if(openBoundary(first,true))break;first = adjacent(first, true); if (++steps > validated.segments.length) fail(); }
     if (chains.has(first.xml_note_id)) continue;
     const chain = [first]; let next = first;
-    while (next.tie_start) { next = adjacent(next, false); chain.push(next); if (chain.length > validated.segments.length) fail(); }
-    if (chain.length < 2) fail();
-    chains.set(first.xml_note_id, chain.map(note => note.xml_note_id));
+    while (next.tie_start) { if(openBoundary(next,false))break;next = adjacent(next, false); chain.push(next); if (chain.length > validated.segments.length) fail(); }
+    if (chain.length < 2&&!openBoundary(first,true)&&!openBoundary(next,false)) fail();
+    if(chain.length>1)chains.set(first.xml_note_id, chain.map(note => note.xml_note_id));
     for (const note of chain) { covered.add(note.xml_note_id); fromMeasure = Math.min(fromMeasure, note.source_measure_index + 1); toMeasure = Math.max(toMeasure, note.source_measure_index + 1); }
     if (toMeasure - fromMeasure + 1 > limits.measuresPerView) fail();
   }

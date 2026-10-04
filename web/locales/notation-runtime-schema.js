@@ -1,6 +1,7 @@
 const plain=Object.freeze({params:Object.freeze({})});
 const params=value=>Object.freeze({params:Object.freeze(value)});
 export default Object.freeze({
+  "notationRuntime.basicContinuation":params({id:"text",from:"text",to:"text"}),
   "notationRuntime.basicFollowChoice":plain,
   "notationRuntime.basicFollowUnavailable":plain,
   "notationRuntime.basicPageLimit":plain,

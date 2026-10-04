@@ -1,7 +1,8 @@
 import {isBasicKeysSong} from './clean-song-package.js';
 import {equivalentJson} from './adaptation-view.js';
 
-const sourceIndexes=new WeakMap();
+const freeze=value=>{if(value&&typeof value==='object'&&!Object.isFrozen(value)){Object.freeze(value);for(const item of Object.values(value))freeze(item);}return value;};
+const sourceIndexes=new WeakMap(),admittedPages=new WeakMap(),boundaryIdentities=new WeakMap();
 const invalid=()=>{throw Object.assign(Error('The basic-key notation page does not match the saved source and selected part.'),{code:'basic_keys_notation_identity',messageKey:'notationRuntime.basicPageInvalid'});};
 
 /** Bind a small view request to immutable native bytes. The Rust view owns all
@@ -44,6 +45,18 @@ export function basicKeyNotationPage(response,request,song){
     ||counts.rendered_positive_keys!==notes.length||notes.length+page.unresolved.length+page.instantaneous.length>2048
     ||notes.some(note=>!ids.has(note.id)||!equivalentJson(note.pitch,ids.get(note.id).pitch)||note.velocity!==ids.get(note.id).velocity||note.voice!==ids.get(note.id).voice||note.staff!==ids.get(note.id).staff)
     ||page.continuations.some(item=>!ids.has(item.note_id)||!rational(item.source_start)||!rational(item.source_end)))invalid();
+  if(!rational(page.source_start)||!rational(page.source_end))invalid();
+  const fraction=beat=>{if(!rational(beat))invalid();return[BigInt(beat.numerator),BigInt(beat.denominator)];},add=(a,b)=>[a[0]*b[1]+b[0]*a[1],a[1]*b[1]],cmp=(a,b)=>a[0]*b[1]-b[0]*a[1];
+  const start=fraction(page.source_start),stop=fraction(page.source_end),continuations=new Map(page.continuations.map(item=>[item.note_id,item]));
+  if(cmp(start,stop)>=0n||continuations.size!==page.continuations.length)invalid();
+  for(const note of notes){
+    const original=ids.get(note.id),sourceStart=fraction(original.at),sourceEnd=add(sourceStart,fraction(original.duration));
+    const actualStart=add(start,fraction(note.at)),actualEnd=add(actualStart,fraction(note.duration));
+    if(cmp(actualStart,cmp(sourceStart,start)>0n?sourceStart:start)!==0n||cmp(actualEnd,cmp(sourceEnd,stop)<0n?sourceEnd:stop)!==0n)invalid();
+    const incoming=cmp(sourceStart,start)<0n,outgoing=cmp(sourceEnd,stop)>0n,item=continuations.get(note.id);
+    if(incoming||outgoing){if(!item||item.enters_page!==incoming||item.leaves_page!==outgoing||cmp(fraction(item.source_start),sourceStart)!==0n||cmp(fraction(item.source_end),sourceEnd)!==0n)invalid();}
+    else if(item)invalid();
+  }
   if(!Array.isArray(page.measures)||page.measures.length!==page.score.measures.length)invalid();
   let end=page.source_start_ms;
   for(const[index,measure]of page.measures.entries()){
@@ -53,8 +66,19 @@ export function basicKeyNotationPage(response,request,song){
   }
   if(song.compilation&&(end!==page.source_end_ms||page.source_duration_ms!==song.compilation.timeline.duration_ms
     ||request.settings.position_ms!==undefined&&(page.resolved_position_ms!==Math.min(request.settings.position_ms,page.source_duration_ms)||page.resolved_position_ms<page.source_start_ms||page.resolved_position_ms>page.source_end_ms||page.resolved_position_ms===page.source_end_ms&&page.source_end_ms!==page.source_duration_ms)))invalid();
+  freeze(page);admittedPages.set(page,song);
   return page;
 }
+
+/** Only a page admitted against the original native source can authorize open
+ * ties at its boundaries. Ordinary and caller-made identity objects get none. */
+export function basicKeyEngravingIdentity(song,page){
+  if(admittedPages.get(page)!==song||page.status!=='ready')invalid();
+  const exported=page.musicxml,identity={score:page.score,noteMap:exported.note_id_map,partIdMap:exported.part_id_map,voiceIdMap:exported.voice_id_map};
+  boundaryIdentities.set(identity,new Map(page.continuations.map(item=>[item.note_id,Object.freeze({incoming:item.enters_page,outgoing:item.leaves_page})])));
+  return Object.freeze(identity);
+}
+export function basicKeyEngravingBoundaries(identity){return boundaryIdentities.has(identity)?new Map(boundaryIdentities.get(identity)):null;}
 
 /** All times below were returned by Rust. Index them without deriving a tempo
  * clock or converting beats to milliseconds in the browser. */

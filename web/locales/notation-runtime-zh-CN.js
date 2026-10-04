@@ -1,4 +1,5 @@
 export default Object.freeze({
+  "notationRuntime.basicContinuation": "{id} · 完整来源区间：第 {from}–{to} 拍 · 跨越当前分页边界",
   "notationRuntime.basicFollowChoice": "跟随需要可用的来源谱面页。请先选择显示拍号或声部，再开启跟随。",
   "notationRuntime.basicFollowUnavailable": "此视图暂不支持精确翻页跟随；来源音符、手动翻页和练习时序保持不变。",
 
@@ -7,7 +8,7 @@ export default Object.freeze({
   "notationRuntime.basicSourceCoverage": "完整来源共 {source} 次触发，所选声部 {part} 次。",
 
   "notationRuntime.basicCoverage": "完整来源共 {source} 次触发，所选声部 {part} 次。本页范围内 {window} 次触发，显示 {rendered} 个正时长按键区间，列出 {unresolved} 个未确定结束及 {instantaneous} 个瞬时触发，{continuations} 个区间跨越分页边界。",
-  "notationRuntime.basicAttackDetails": "未作为时值音符绘制的来源触发",
+  "notationRuntime.basicAttackDetails": "来源触发与跨页延续详情",
   "notationRuntime.basicAttack": "{id} · MIDI 按键 {key} · 来源拍点 {beat} · {state}",
   "notationRuntime.basicUnresolved": "结束未确定",
   "notationRuntime.basicInstantaneous": "瞬时结束",

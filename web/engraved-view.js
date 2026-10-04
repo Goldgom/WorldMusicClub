@@ -1,5 +1,5 @@
 import {isBasicKeysSong} from './clean-song-package.js';
-import {basicKeyNotationRequest,basicKeyNotationPage} from './basic-key-notation.js';
+import {basicKeyNotationRequest,basicKeyNotationPage,basicKeyEngravingIdentity} from './basic-key-notation.js';
 import {sourceMeasurePage,notationRevealViewport,notationScrollViewport} from './notation-follow.js';
 import {planEngravingReveal} from './engraving-reveal.js';
 import {getAppI18n} from './app-locale.js';
@@ -95,7 +95,9 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
       const items=basic&&sourcePage?[...sourcePage.unresolved.map(item=>[item,'basicUnresolved']),...sourcePage.instantaneous.map(item=>[item,'basicInstantaneous'])]:[];
       $('engraving-basic-attack-list').replaceChildren();
       for(const[item,state]of items){const node=document.createElement('li');node.textContent=t('basicAttack',{id:item.note_id,key:item.key,beat:`${item.source_at.numerator}/${item.source_at.denominator}`,state:t(state)});$('engraving-basic-attack-list').append(node);}
-      if($('engraving-basic-attacks'))$('engraving-basic-attacks').hidden=!items.length;
+      const continued=basic&&sourcePage?sourcePage.continuations:[];
+      for(const item of continued){const node=document.createElement('li');node.textContent=t('basicContinuation',{id:item.note_id,from:`${item.source_start.numerator}/${item.source_start.denominator}`,to:`${item.source_end.numerator}/${item.source_end.denominator}`});$('engraving-basic-attack-list').append(node);}
+      if($('engraving-basic-attacks'))$('engraving-basic-attacks').hidden=!items.length&&!continued.length;
     }
     $('export-musicxml').title=basic?t('basicExportUnavailable'):'';
     rangeControls();
@@ -154,7 +156,7 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
       const mapped = mappedPartIds(exported,selectedPart);
       const viewScore=exported.basicPage?.score||target;
       const result = await adapter.renderEngravedStaff(container, exported.xml, {i18n,dark:lastDark||Boolean(document.getElementById('workspace')?.classList?.contains('notation-on-lanes')),fromMeasure:exported.basicPage?1:from,toMeasure:exported.basicPage?viewScore.measures.length:to,partIds:mapped,responsive:true,compactHeader:true,
-        identity:{score:viewScore,noteMap:exported.note_id_map,partIdMap:exported.part_id_map,voiceIdMap:exported.voice_id_map},
+        identity:exported.basicPage?basicKeyEngravingIdentity(basicSong(),exported.basicPage):{score:viewScore,noteMap:exported.note_id_map,partIdMap:exported.part_id_map,voiceIdMap:exported.voice_id_map},
         onMappingChange:mapping=>{if(current===generation&&active&&getScore()===target)showNotices(exported,mapping)},
         onError:failure=>{if(current===generation&&active&&getScore()===target)fallback(failure)}}, signal);
       if (signal.aborted || current !== generation || !active || target !== getScore()) { result.dispose?.(); return; }
@@ -219,11 +221,15 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
   return {show,hide,updateScore,selectPart,basicPage:()=>sourcePage,followPosition(position){
       const song=basicSong();if(!song)return null;
       if(!song.compilation)return{status:'unavailable'};
-      if(position<0||position>=song.compilation.timeline.duration_ms)return{status:'end'};
+      if(!Number.isFinite(position))return{status:'unavailable'};
+      const duration=song.compilation.timeline.duration_ms,ended=position>=duration;
+      if(position<0||duration<=0)return{status:'end'};
+      position=Math.min(position,duration);
       if(followFailure)return{status:'unavailable',error:followFailure};
       if(rendering)return{status:'pending'};
       if(sourcePage&&sourcePage.status!=='ready')return{status:'choice'};
-      if(!sourcePage||position<sourcePage.source_start_ms||position>=sourcePage.source_end_ms){void render(position,!active);return{status:'pending'};}
+      if(!sourcePage||position<sourcePage.source_start_ms||position>=sourcePage.source_end_ms&&!(ended&&sourcePage.source_end_ms===duration)){void render(position,!active);return{status:'pending'};}
+      if(ended)return{status:'end'};
       const measure=sourcePage.measures.find(measure=>position>=measure.start_ms&&position<measure.end_ms);
       return measure?{status:'ready',measure,total:sourcePage.total_measures,ready:!active||Boolean(rendered)}:{status:'unavailable'};
     },setExpectedWrittenNotes,clearExpectedWrittenNotes,revealExpectedWrittenNotes,resetReveal(){lastReveal='';followFailure=null;},mappingStatus,isActive:()=>active,surfaceChanged(){
