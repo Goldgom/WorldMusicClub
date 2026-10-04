@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {webcrypto} from 'node:crypto';
+import {webcrypto,createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import path from 'node:path';
 import vm from 'node:vm';
 import {authoringAcceptanceFixtures,AUTHORING_PAIR_ALIAS,AUTHORING_FIXTURE_FILENAMES} from '../scripts/prepare-song-authoring-fixtures.mjs';
-import {validateAuthoringPicker,validateAuthoringExport,validateAuthoringTakes,validateAuthoringNavigation,AUTHORING_CLAIMS} from '../scripts/verify-native-song-authoring-evidence.mjs';
+import {validateAuthoringPicker,validateAuthoringExport,validateAuthoringTakes,validateAuthoringNavigation,validateAuthoringEventOnlyOpened,AUTHORING_CLAIMS} from '../scripts/verify-native-song-authoring-evidence.mjs';
 import {authoringPickerFiles,createAuthoringHostedChooser} from '../scripts/song-authoring-hosted-chooser.mjs';
 import {createAuthoringHostedConsole} from '../scripts/song-authoring-hosted-console.mjs';
 import {storedZip} from './native-import-driver-fixtures.js';
@@ -14,6 +14,15 @@ import {freePracticeApp,fixtureScoreServer} from './free-practice-app-fixtures.j
 import {waitForTestCondition} from './async-test-wait.js';
 const read=name=>readFile(new URL(`../${name}`,import.meta.url),'utf8');
 const renderer=await read('crates/desktop-shell/song-authoring-acceptance.js'),fixtures=authoringAcceptanceFixtures();
+test('captured original Rust open response proves null notation through the summary, score and receiver identity',async()=>{
+ const bytes=await readFile(new URL('./fixtures/song-authoring/acceptance-events-opened.json',import.meta.url)),opened=JSON.parse(bytes),provenance=JSON.parse(await read('tests/fixtures/song-authoring/acceptance-events-opened-provenance.json')),source=fixtures.find(f=>f.id==='events');
+ assert.equal(bytes.length,provenance.file.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),provenance.file.sha256);assert.deepEqual(provenance.source_midi,{format:'midi',bytes:source.bytes.length,sha256:source.manifest.sha256});assert.equal(provenance.limits.original_run_post_verifier_passed,false);assert.equal(provenance.limits.full_checkpoint_acceptance,false);
+ assert.equal(Object.hasOwn(opened.clean_package,'notation_available'),false,'Rust OpenPackage does not own the summary boolean');assert.equal(opened.entry.clean_package.notation_available,false);validateAuthoringEventOnlyOpened(opened);
+ const score=JSON.parse(opened.clean_package.score_json);assert.equal(score.source.sha256,source.manifest.sha256);assert.equal(score.coverage.performance.source_events,source.inventory.source_events);assert.equal(score.coverage.performance.source_tracks,source.inventory.source_tracks);
+ const editScore=(value,edit)=>{const score=JSON.parse(value.clean_package.score_json);edit(score);value.clean_package.score_json=JSON.stringify(score);};
+ for(const edit of [v=>delete v.entry.clean_package,v=>v.entry.clean_package=null,v=>v.entry.clean_package={},v=>delete v.entry.clean_package.notation_available,v=>v.entry.clean_package.notation_available=0,v=>v.entry.clean_package.notation_available=null,v=>v.entry.clean_package.notation_available=true,v=>v.entry.clean_package.profile='wmh-semantic-midi1-v1',v=>v.entry.clean_package.content_sha256='0'.repeat(64),v=>delete v.entry.clean_package.coverage,v=>delete v.score_json,v=>v.score_json='null',v=>editScore(v,s=>delete s.notation),v=>editScore(v,s=>s.notation=false),v=>editScore(v,s=>s.notation={parts:[]}),v=>editScore(v,s=>s.coverage.notation.represented_attacks=1),v=>editScore(v,s=>s.coverage.targets.status='complete'),v=>v.clean_package.profile='wmh-semantic-midi1-v1',v=>delete v.clean_package.runtime,v=>v.clean_package.runtime.profile='wmh-semantic-midi1-v1',v=>delete v.clean_package.runtime.score_id,v=>delete v.clean_package.runtime.source_sha256,v=>delete v.clean_package.runtime.score_sha256,v=>v.clean_package.runtime.source_sha256='0'.repeat(64),v=>v.clean_package.runtime.score_sha256='0'.repeat(64),v=>v.clean_package.runtime.score_id+='-other',v=>delete v.clean_package.runtime.coverage,v=>v.clean_package.runtime.coverage.notation.status='complete',v=>v.clean_package.runtime.compilation=null,v=>v.clean_package.runtime.notes=[]]){const bad=structuredClone(opened);edit(bad);assert.throws(()=>validateAuthoringEventOnlyOpened(bad));}
+ assert.match(await read('scripts/check-song-authoring-native.mjs'),/validateAuthoringEventOnlyOpened\(opened\)/,'Real Rust stdio must exercise the same opened-package assertion before GUI acceptance');
+});
 const navigation=await read('crates/desktop-shell/acceptance-wait.js'),reference=await read('crates/desktop-shell/reference-acceptance.js'),performanceSetup=await read('crates/desktop-shell/performance-song-acceptance.js');
 const {createAcceptanceNavigation,prepareAuthoringNavigationPause,activatePerformanceOriginalScore}=vm.runInNewContext(`${navigation}\n${reference}\n${performanceSetup.split('(() => {')[0]}\n${renderer.split('(() => {')[0]}\n({createAcceptanceNavigation,prepareAuthoringNavigationPause,activatePerformanceOriginalScore})`,{AbortController,setTimeout,clearTimeout,performance,TextEncoder,queueMicrotask});
 // Node DOM regression only: real app handlers and elapsed clock, fixture Rust

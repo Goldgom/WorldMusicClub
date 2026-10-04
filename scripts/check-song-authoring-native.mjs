@@ -12,6 +12,7 @@ import {readBulkEvidenceZip} from './verify-native-bulk-import-evidence.mjs';
 import {prepareCleanSong,preparePerformanceSong} from '../web/clean-song-package.js';
 import {inspectCleanRendition} from '../web/clean-song-player.js';
 import {validateAuthoringDraft} from './song-authoring-fixture-contract.mjs';
+import {validateAuthoringEventOnlyOpened} from './verify-native-song-authoring-evidence.mjs';
 
 const digest=value=>createHash('sha256').update(value).digest('hex');
 export function assertAuthoringZip(bytes,expected){
@@ -74,7 +75,7 @@ export async function checkSongAuthoringNative({binary=process.env.WMH_NATIVE_IM
       assert.equal(admission.profile,fixture.expectedProfile);assert.equal(admission.metadata_json,draft.package.metadata_json);assert.equal(admission.score_json,draft.package.score_json);
       const runtime=opened.clean_package.runtime;
       if(fixture.id==='strict'){assert.equal(runtime.notes.length,fixture.inventory.key_attacks);assert.ok(runtime.notes.some(n=>n.key===24));assert.ok(runtime.notes.some(n=>n.key===100));}
-      else{assert.equal(admission.notation,null);assert.equal(admission.compilation,null);assert.equal('notes' in runtime,false);assert.equal(runtime.events.length,fixture.inventory.source_events);assert.ok(runtime.events.some(e=>e.command.kind==='key_attack'&&e.command.key===24));assert.ok(runtime.events.some(e=>e.command.kind==='key_attack'&&e.command.key===100));}
+      else{validateAuthoringEventOnlyOpened(opened);assert.equal(admission.notation,null);assert.equal(admission.compilation,null);assert.equal('notes' in runtime,false);assert.equal(runtime.events.length,fixture.inventory.source_events);assert.ok(runtime.events.some(e=>e.command.kind==='key_attack'&&e.command.key===24));assert.ok(runtime.events.some(e=>e.command.kind==='key_attack'&&e.command.key===100));}
       const rendition=fixture.id==='strict'?inspectCleanRendition(admission):null;
       if(rendition){assert.equal(preview.items[0].playable,true);assert.equal(rendition.supported,false);assert.ok(rendition.blockers.includes('bank_select'));}
       report.admission.push({receiver_rendition:rendition,fixture:fixture.id,profile:admission.profile,runtime_received:true,notation_available:fixture.id==='strict',native_import_playable:preview.items[0].playable,reference_playable:admission.reference?.playable??null,reference_blockers:admission.reference?.blockers??[],instrument_range_acceptance:'not-asserted',physical_audio:false});

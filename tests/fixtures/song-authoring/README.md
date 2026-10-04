@@ -42,3 +42,17 @@ explicit keep-both, fresh-process restart, exact export and fresh-library import
 This is native stdio evidence, not browser, native-window or physical-audio
 acceptance. Neither conversion state nor import's `playable` flag establishes
 receiver sound or instrument-range acceptance.
+
+## Original opened-package regression capture
+
+`acceptance-events-opened.json` retains the event-only opened record from the
+actual original-fixture hosted seed in run 37172374342. Its adjacent provenance
+file binds the source tree, driver, artifact, renderer report and fixture hashes.
+Only the outer JSON was reserialized; the embedded metadata and score strings
+are unchanged. This is unit-test input from a run whose post-renderer verifier
+failed, not a replacement acceptance report or evidence of restart/Windows.
+
+Rust `Summary` carries `notation_available: false`; Rust `OpenPackage` carries
+the complete score and runtime and has no such boolean. Tests require the actual
+summary false, explicit null normalized/canonical notation, unavailable notation
+and target coverage, and the matching native receiver identity.

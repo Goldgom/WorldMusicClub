@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "generator": "scripts/prepare-song-authoring-fixtures.mjs",
+  "rights": {
+    "status": "original_authored",
+    "license": "CC0-1.0",
+    "attribution": "WorldMusicHub original C/E/G acceptance exercise"
+  },
+  "capture": "Unchanged opened record projected from actual hosted original-fixture renderer report; outer JSON reserialized, metadata_json and score_json strings unchanged",
+  "run_id": "37172374342",
+  "artifact_id": "11292160817",
+  "artifact_sha256": "5215144981320a3497abbe7f6f16bb3909c51c91ac85b212c4827ae8eb384427",
+  "source_sha": "956560d50d6110e15be1b3260bde815c14606c06",
+  "source_tree": "843575b260087abee5ce872b72cbd3cfea2d54f9",
+  "driver_sha256": "2da7810ca4752437bf9d86c94484cdaff47a0db697babf38356b3d9eff076c71",
+  "source_report": {
+    "path": "1280x720/renderer-authoring-seed.json",
+    "bytes": 709984,
+    "sha256": "706be460611e527fa979c583fcb134623cf893ce5d700b3f2451ac77262372d5"
+  },
+  "file": {
+    "path": "acceptance-events-opened.json",
+    "bytes": 16585,
+    "sha256": "f434c491c48ba131b8b64030a3dce6ce45555795d7bfc50cf2f96750e7b07e51"
+  },
+  "source_midi": {
+    "format": "midi",
+    "bytes": 189,
+    "sha256": "444b550fc5647a46f8715f7bc0376b7daaf6999330049241a113c76a33549cc9"
+  },
+  "limits": {
+    "unit_fixture_only": true,
+    "hosted_seed_renderer_completed": true,
+    "original_run_post_verifier_passed": false,
+    "restart_observed": false,
+    "native_window": false,
+    "physical_audio": false,
+    "full_checkpoint_acceptance": false
+  }
+}
