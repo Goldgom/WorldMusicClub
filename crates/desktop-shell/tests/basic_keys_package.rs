@@ -108,6 +108,19 @@ fn unzip(bytes: &[u8]) -> BTreeMap<String, Vec<u8>> {
     files
 }
 
+fn targets(runtime: &Value) -> Vec<Value> {
+    let timeline = &runtime["compilation"]["timeline"];
+    assert_eq!(
+        timeline["note_columns"],
+        json!(practice_server::basic_keys_api::TARGET_NOTE_COLUMNS)
+    );
+    timeline["notes"].as_array().unwrap().iter().map(|row| {
+        assert_eq!(row.as_array().unwrap().len(), 6);
+        json!({"id":row[0],"part_id":row[1],"midi":row[2],"velocity":row[3],"start_ms":row[4],"duration_ms":row[5],
+            "source_note_id":row[0],"source_note_ids":[row[0]],"voice":"1","staff":1})
+    }).collect()
+}
+
 #[test]
 fn basic_keys_preserve_every_source_event_part_and_attack_across_export_and_restart() {
     let sandbox = Sandbox::new();
@@ -116,7 +129,7 @@ fn basic_keys_preserve_every_source_event_part_and_attack_across_export_and_rest
     let saved = imported(&library, original.clone());
     let item = &saved["items"][0];
     let key = item["entry"]["key"].as_str().unwrap();
-    assert_eq!(item["playable"], false);
+    assert_eq!(item["playable"], true);
     assert_eq!(
         item["clean_package"]["profile"],
         score_core::basic_keys::PROFILE
@@ -135,23 +148,44 @@ fn basic_keys_preserve_every_source_event_part_and_attack_across_export_and_rest
     assert_eq!(decoded.performance.notes.len(), 5);
     assert!(decoded.notation.meters.is_empty());
     assert!(decoded.notation.tempo.is_empty());
-    let notes = package.runtime["compilation"]["timeline"]["notes"]
-        .as_array()
-        .unwrap();
-    assert_eq!(notes.len(), 2);
+    let notes = targets(&package.runtime);
+    assert_eq!(
+        serde_json::to_value(&notes).unwrap(),
+        serde_json::to_value(
+            score_core::basic_keys::compile_rendition(&decoded)
+                .unwrap()
+                .timeline
+                .notes
+        )
+        .unwrap(),
+        "Compact target transport must restore every typed timeline field exactly"
+    );
+    assert_eq!(notes.len(), 5);
     assert_eq!(
         notes
             .iter()
             .map(|note| note["midi"].as_u64().unwrap())
             .collect::<Vec<_>>(),
-        vec![60, 72]
+        vec![60, 35, 64, 67, 72]
     );
-    for note in notes {
+    for note in &notes {
         assert_eq!(note["source_note_ids"], json!([note["id"]]));
         assert_eq!(note["source_note_id"], note["id"]);
         assert!(note["duration_ms"].as_f64().unwrap() > 0.0);
     }
-    assert_eq!(package.runtime["reference_audio"], "unavailable");
+    assert_eq!(package.runtime["reference_audio"], "basic_synthesized");
+    assert_eq!(
+        package.runtime["rendition"]["coverage"]["derived_voices"],
+        5
+    );
+    assert_eq!(
+        package.runtime["rendition"]["coverage"]["practice_targets"],
+        5
+    );
+    assert_eq!(
+        package.runtime["rendition"]["coverage"]["synthetic_gates"],
+        1
+    );
     assert_eq!(package.runtime["source_rendition"], "unresolved");
     assert_eq!(
         package.runtime["parts"]
@@ -164,7 +198,7 @@ fn basic_keys_preserve_every_source_event_part_and_attack_across_export_and_rest
     );
     let body = json!({"score_json":loaded.score_json,"clean_package":package});
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/basic-keys-native-open.json");
+        .join("../../tests/fixtures/basic-key-rendition-native-open.json");
     if std::env::var_os("WMH_UPDATE_BASIC_KEYS_FIXTURE").is_some() {
         fs::write(&fixture, serde_json::to_vec_pretty(&body).unwrap()).unwrap();
     }
@@ -229,6 +263,70 @@ fn basic_key_stateless_api_matches_native_runtime_and_rejects_forged_projection(
         serde_json::from_slice::<Value>(&rejected.body).unwrap()["code"],
         "basic_keys_invalid"
     );
+}
+
+#[test]
+fn basic_key_import_availability_checks_attacks_and_receiver_capacity() {
+    for (attacks, ppq, simultaneous) in [
+        (0, 96_u16, true),
+        (128, 96, true),
+        (129, 96, true),
+        (129, 32767, false),
+    ] {
+        let mut track = vec![];
+        for _ in 0..attacks {
+            if simultaneous {
+                track.extend([0, 0x90, 60, 90]);
+            } else {
+                track.extend([1, 0x90, 60, 90, 1, 0x80, 60, 0]);
+            }
+        }
+        track.extend([96, 0xb0, 123, 0, 0, 255, 47, 0]);
+        let mut source = b"MThd\0\0\0\x06\0\0\0\x01".to_vec();
+        source.extend(ppq.to_be_bytes());
+        source.extend(b"MTrk");
+        source.extend((track.len() as u32).to_be_bytes());
+        source.extend(track);
+        let sandbox = Sandbox::new();
+        let library = sandbox.library();
+        let saved = imported(
+            &library,
+            files_for_source(&source, "Authored receiver capacity test"),
+        );
+        let item = &saved["items"][0];
+        assert_eq!(item["playable"], attacks == 128);
+        let loaded = library
+            .load(item["entry"]["key"].as_str().unwrap())
+            .unwrap();
+        let package = loaded.clean_package.unwrap();
+        assert_eq!(
+            package.runtime["rendition"]["coverage"]["source_attacks"],
+            attacks
+        );
+        assert_eq!(
+            package.runtime["rendition"]["coverage"]["maximum_allocated_voices"],
+            attacks
+        );
+        assert_eq!(
+            package.runtime["rendition"]["coverage"]["derived_voices"],
+            attacks
+        );
+        assert_eq!(
+            package.runtime["rendition"]["coverage"]["maximum_simultaneous_voices"],
+            if simultaneous { attacks } else { 1 }
+        );
+        assert_eq!(
+            package.runtime["compilation"]["timeline"]["notes"]
+                .as_array()
+                .unwrap()
+                .len(),
+            attacks
+        );
+        assert!(!item["message"]
+            .as_str()
+            .unwrap()
+            .contains("reference audio are unavailable"));
+    }
 }
 
 #[test]
@@ -490,14 +588,11 @@ fn basic_notation_follow_uses_the_source_clock_for_silence_late_tempo_and_page_t
         assert_eq!(page["page"]["source_end_ms"], end);
         assert_eq!(
             page["page"]["score"]["parts"][0]["notes"][0]["id"],
-            package.runtime["compilation"]["timeline"]["notes"][0]["id"]
+            targets(&package.runtime)[0]["id"]
         );
         pages.push(json!({"request":lookup,"response":page}));
     }
-    assert_eq!(
-        package.runtime["compilation"]["timeline"]["notes"][0]["start_ms"],
-        500.
-    );
+    assert_eq!(targets(&package.runtime)[0]["start_ms"], 500.);
     assert_eq!(
         pages[0]["response"]["page"]["tempo_origin"],
         "smf_default_presentation"
@@ -512,7 +607,7 @@ fn basic_notation_follow_uses_the_source_clock_for_silence_late_tempo_and_page_t
         true
     );
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/basic-keys-notation-follow.json");
+        .join("../../tests/fixtures/basic-key-rendition-notation-follow.json");
     let mut two_request = body.clone();
     two_request["settings"]["measure_count"] = json!(2);
     two_request["settings"]["position_ms"] = json!(0.);
@@ -545,7 +640,7 @@ fn basic_notation_follow_uses_the_source_clock_for_silence_late_tempo_and_page_t
 }
 
 #[test]
-fn no_clock_basic_notation_is_a_paused_view_without_any_fabricated_timeline() {
+fn conflicting_source_clock_keeps_notation_paused_and_labels_the_chosen_rendition_clock() {
     let conductor = vec![
         0, 255, 88, 4, 4, 2, 24, 8, 0, 255, 81, 3, 7, 161, 32, 96, 255, 47, 0,
     ];
@@ -566,7 +661,15 @@ fn no_clock_basic_notation_is_a_paused_view_without_any_fabricated_timeline() {
     let key = entry["key"].as_str().unwrap();
     let loaded = library.load(key).unwrap();
     let package = loaded.clean_package.as_ref().unwrap();
-    assert!(package.runtime["compilation"].is_null());
+    assert!(!package.runtime["compilation"].is_null());
+    assert_eq!(
+        package.runtime["rendition"]["source_clock_available"],
+        false
+    );
+    assert_eq!(
+        package.runtime["compilation"]["timeline"]["duration_ms"],
+        1000.0
+    );
     let body = json!({"source":{"key":key,"content_sha256":entry["content_sha256"],"profile":score_core::basic_keys::PROFILE},"settings":{"part_id":package.runtime["parts"][0]["id"],"first_measure":0,"measure_count":8,"display_meter":null}});
     let response = request(
         &library,
@@ -589,7 +692,7 @@ fn no_clock_basic_notation_is_a_paused_view_without_any_fabricated_timeline() {
         .unwrap()
         .is_empty());
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/basic-keys-notation-no-clock.json");
+        .join("../../tests/fixtures/basic-key-rendition-notation-no-clock.json");
     let data = json!({"open":{"score_json":loaded.score_json,"clean_package":package},"request":body,"response":page});
     if std::env::var_os("WMH_UPDATE_BASIC_KEYS_FIXTURE").is_some() {
         fs::write(&fixture, serde_json::to_vec_pretty(&data).unwrap()).unwrap();

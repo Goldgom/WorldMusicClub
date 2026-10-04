@@ -8,11 +8,17 @@ acoustic pitch, physical routing, release ownership, or sustained sound.
 
 ## One timeline for audition and practice
 
-`compilation.timeline.notes` contains exactly one positive receiver gate for
+The decoded `compilation.timeline.notes` contains exactly one positive receiver gate for
 every source attack, in tick/track/event order. No MIDI key is dropped, folded,
 transposed, or clamped. Its IDs are the existing stable source note IDs.
 `rendition.notes` has the same order and cardinality; join by `note_id`. This
 avoids duplicating the key/velocity/part/millisecond schedule in large responses.
+On the v2 transport wire the timeline uses six-column rows declared by
+`compilation.timeline.note_columns`: `id, part_id, midi, velocity, start_ms,
+duration_ms`. Each is exactly one source attack; the admission adapter restores
+`source_note_id=id`, `source_note_ids=[id]`, `voice="1"`, and `staff=1` before
+ordinary timeline consumers run. The typed Rust timeline always has these
+complete fields. Neither the source package nor its identity is rewritten.
 Evidence is serialized as compact rows; `rendition.note_columns` declares the
 exact thirteen columns. Coordinates are `[track,event]`, rational clocks are
 `[decimal numerator string,denominator]`. Consumers must validate this versioned
@@ -105,3 +111,6 @@ The native 31MiB response guard remains unchanged. Its conservative size proof
 includes each target/evidence record and room for every release to be unmatched;
 near the boundary, native admission runs the real compiler and measures the
 response. An oversized response fails explicitly without trimming the source.
+The stateless API retains its separate 8MiB request and 16MiB response bounds.
+A source above that request bound must use the native saved-package path;
+native load does not repost a large source through the stateless endpoint.

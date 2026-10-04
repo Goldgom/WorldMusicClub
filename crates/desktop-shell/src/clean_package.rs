@@ -289,11 +289,11 @@ fn basic_runtime(score: &score_core::basic_keys::CompleteBasicKeys) -> Result<Va
         .map_err(|e| invalid(e.to_string()))
 }
 
-/// A one-sided proof for the current basic-key runtime wire. It includes every
-/// decoded attack (even those excluded from practice), exact escaped identifier
-/// sizes and full part inventory. Each JSON f64 uses fewer than 64 bytes; all
-/// other TimedNote numbers are u8. 4096 covers the fixed compilation/timeline
-/// envelope, duration and the one fixed diagnostic (under 512 bytes). Tests
+/// A one-sided proof for the basic-key runtime wire. It includes every decoded
+/// attack's target and rendition evidence, exact escaped identifiers, the full
+/// part inventory, and room for every release to be unmatched. Each JSON f64
+/// uses fewer than 64 bytes. 8192 covers compilation/timeline envelopes, clocks,
+/// the fixed diagnostic and maximal decimal coverage counters. Tests
 /// compare the bound with the actual compiler, including extreme numbers and
 /// escaped identifiers. Failure to prove room always invokes the real compiler;
 /// this is never an estimated size used to reject or admit a borderline song.
@@ -302,23 +302,65 @@ fn basic_runtime_upper_bound(score: &score_core::basic_keys::CompleteBasicKeys) 
         profile: practice_server::basic_keys_api::RUNTIME_PROFILE,
         source_sha256: score.source.sha256.clone(),
         compilation: None,
+        rendition: Some(score_core::basic_keys::RenditionEvidence {
+            policy_id: score_core::basic_keys::RENDITION_POLICY,
+            source_sha256: score.source.sha256.clone(),
+            source_clock_available: false,
+            source_duration_ms: 0.0,
+            duration_ms: 0.0,
+            policy: score_core::basic_keys::RenditionPolicy::default(),
+            coverage: score_core::basic_keys::RenditionCoverage::default(),
+            note_columns: score_core::basic_keys::RENDITION_NOTE_COLUMNS,
+            notes: vec![],
+            unmatched_releases: vec![],
+        }),
         parts: score_core::basic_keys::part_inventory(score),
-        reference_audio: "unavailable",
+        reference_audio: "basic_synthesized",
         source_rendition: "unresolved",
     })?;
-    if !score.performance.timing.relative_clock_available {
-        return Ok(base);
-    }
     let envelope = basic_note_envelope_bytes()?;
-    let mut bytes = base.saturating_add(4096);
+    let evidence_envelope = basic_rendition_note_envelope_bytes()?;
+    let mut bytes = base
+        .saturating_add(8192)
+        .saturating_add(score.coverage.key_releases.saturating_mul(64));
     for note in &score.performance.notes {
         bytes = bytes.saturating_add(basic_note_upper_bound(
             envelope,
             &note.note_id,
             &note.part_id,
         )?);
+        bytes = bytes
+            .saturating_add(evidence_envelope)
+            .saturating_add(json_bytes(&note.note_id)?.saturating_sub(2))
+            .saturating_add(1); // Array comma.
     }
     Ok(bytes)
+}
+fn basic_rendition_note_envelope_bytes() -> Result<usize> {
+    use score_core::basic_keys::*;
+    let at = Coordinate {
+        track: u16::MAX,
+        event: u32::MAX,
+    };
+    let time = ExactMicroseconds {
+        numerator: u64::MAX.to_string(),
+        denominator: u16::MAX,
+    };
+    json_bytes(&RenditionNote {
+        note_id: String::new(),
+        attack: at,
+        release: Some(at),
+        route: usize::MAX,
+        channel: u8::MAX,
+        role: RenditionRole::PercussionSelector,
+        start: time.clone(),
+        end: time,
+        source_end_tick: Some(u64::MAX),
+        receiver_end_tick: u64::MAX,
+        source_release_status: ReleaseStatus::UnresolvedRouteOwnership,
+        end_reason: RenditionEndReason::SourceEndCleanup,
+        synthetic_gate: false,
+    })
 }
 fn basic_note_envelope_bytes() -> Result<usize> {
     json_bytes(&score_core::TimedNote {
@@ -756,6 +798,8 @@ fn parse_inner(
             response_bytes = open_response_bytes(&package)?;
         }
     }
+    #[cfg(test)]
+    tests::record_response_bytes(response_bytes);
     if response_bytes > MAX_OPEN_RESPONSE_BYTES {
         return Err(invalid(
             "Clean song exceeds the bounded native open response",
@@ -1538,12 +1582,16 @@ mod tests {
         static VALIDATIONS: RefCell<Option<Vec<PathBuf>>> = const { RefCell::new(None) };
         static PROFILE_VALIDATIONS: RefCell<usize> = const { RefCell::new(0) };
         static RUNTIME_COMPILATIONS: RefCell<usize> = const { RefCell::new(0) };
+        static LAST_RESPONSE_BYTES: RefCell<usize> = const { RefCell::new(0) };
     }
     pub(super) fn record_profile_validation() {
         PROFILE_VALIDATIONS.with_borrow_mut(|count| *count += 1);
     }
     pub(super) fn record_runtime_compilation() {
         RUNTIME_COMPILATIONS.with_borrow_mut(|count| *count += 1);
+    }
+    pub(super) fn record_response_bytes(bytes: usize) {
+        LAST_RESPONSE_BYTES.with_borrow_mut(|count| *count = bytes);
     }
     fn reset_work_counts() {
         PROFILE_VALIDATIONS.with_borrow_mut(|count| *count = 0);
@@ -1735,9 +1783,13 @@ mod tests {
             sha256: digest(&midi),
         }];
         let mut outcomes = Vec::new();
-        for padded in [false, true] {
-            if padded {
-                score.resize(MAX_JSON_BYTES, b' ');
+        let unpadded_len = score.len();
+        for padding in [None, Some(b' '), Some(b'\t')] {
+            score.truncate(unpadded_len);
+            if let Some(byte) = padding {
+                // Escaped valid JSON whitespace exercises the native string
+                // envelope's real boundary after compact runtime transport.
+                score.resize(MAX_JSON_BYTES, byte);
             }
             metadata.score.bytes = score.len() as u64;
             metadata.score.sha256 = digest(&score);
@@ -1751,7 +1803,10 @@ mod tests {
             ]);
             reset_work_counts();
             let full = parse_inner(&metadata, &score, &files, ReadMode::Full);
+            let full_bytes = LAST_RESPONSE_BYTES.with_borrow(|bytes| *bytes);
             let catalog = parse_inner(&metadata, &score, &files, ReadMode::Catalog);
+            assert_eq!(full_bytes, LAST_RESPONSE_BYTES.with_borrow(|bytes| *bytes));
+            eprintln!("Basic response boundary: source={} bytes, native={full_bytes} bytes, padding={padding:?}", score.len());
             assert_eq!(
                 work_counts(),
                 (2, 2),
@@ -1778,7 +1833,7 @@ mod tests {
                 _ => panic!("catalog and full response admission diverged"),
             }
         }
-        assert_eq!(outcomes, [true, false]);
+        assert_eq!(outcomes, [true, true, false]);
     }
 
     #[test]
@@ -1810,8 +1865,9 @@ mod tests {
         let runtime = &package.runtime;
         let mut envelope = runtime.clone();
         envelope["compilation"]["timeline"]["notes"] = serde_json::json!([]);
+        envelope["rendition"]["notes"] = serde_json::json!([]);
         assert!(json_bytes(&runtime["compilation"]["diagnostics"]).unwrap() < 512);
-        assert!(json_bytes(&envelope).unwrap() < 4096);
+        assert!(json_bytes(&envelope).unwrap() < 8192);
     }
 
     #[test]

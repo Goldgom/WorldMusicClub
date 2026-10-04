@@ -3,6 +3,53 @@ use practice_server::{api_response, content_type_allowed, is_song_api_route, MAX
 use serde_json::{json, Value};
 
 #[test]
+fn basic_rendition_api_keeps_complete_rows_below_and_rejects_above_16_mib() {
+    // Authored same-key mechanical attacks; compact source fits the real8MiB
+    // request limit while its derived response exercises the16MiB guard.
+    for (attacks, expected_status) in [(80_000, 200), (100_000, 413)] {
+        let mut track = Vec::with_capacity(attacks * 4 + 4);
+        for _ in 0..attacks {
+            track.extend([0, 0x90, 60, 90]);
+        }
+        track.extend([0, 255, 47, 0]);
+        let mut midi = b"MThd\0\0\0\x06\0\0\0\x01\0\x60MTrk".to_vec();
+        midi.extend((track.len() as u32).to_be_bytes());
+        midi.extend(track);
+        let score =
+            score_core::basic_keys::convert_midi(&midi, "Authored API response bound").unwrap();
+        let bytes = score_core::basic_keys::encode_json(&score).unwrap();
+        assert!(bytes.len() < MAX_REQUEST_BYTES);
+        let runtime = practice_server::basic_keys_api::compile(&score).unwrap();
+        let full_response_bytes = serde_json::to_vec(&runtime).unwrap().len();
+        drop(runtime);
+        let request_bytes = bytes.len();
+        let response = api_response("/api/clean-song/basic-keys", bytes);
+        eprintln!("Basic runtime API: attacks={attacks}, request={request_bytes} bytes, full_response={full_response_bytes} bytes, status={}, returned={} bytes", response.status, response.body.len());
+        assert_eq!(response.status, expected_status);
+        let body: Value = serde_json::from_slice(&response.body).unwrap();
+        if expected_status == 200 {
+            assert_eq!(response.body.len(), full_response_bytes);
+            assert_eq!(
+                body["compilation"]["timeline"]["notes"]
+                    .as_array()
+                    .unwrap()
+                    .len(),
+                attacks
+            );
+            assert_eq!(
+                body["rendition"]["notes"].as_array().unwrap().len(),
+                attacks
+            );
+            assert!(full_response_bytes <= practice_server::MAX_SONG_RESPONSE_BYTES);
+        } else {
+            assert!(full_response_bytes > practice_server::MAX_SONG_RESPONSE_BYTES);
+            assert_eq!(body["code"], "response_body_limit");
+            assert!(body.get("compilation").is_none() && body.get("rendition").is_none());
+        }
+    }
+}
+
+#[test]
 fn complete_draft_transport_rejects_bad_base64_fields_and_byte_limits() {
     let path = "/api/clean-song/draft";
     assert!(is_song_api_route(path));
@@ -168,11 +215,15 @@ fn explicit_basic_key_drafts_preserve_default_and_vsq_routes_and_bind_pack_inten
         .join("../../tests/fixtures/song-authoring");
     if std::env::var_os("WMH_UPDATE_BASIC_KEYS_FIXTURE").is_some() {
         std::fs::write(fixtures.join("basic-key-response.json"), &response.body).unwrap();
-        std::fs::write(fixtures.join("basic-key-runtime.json"), &runtime.body).unwrap();
+        std::fs::write(
+            fixtures.join("basic-key-rendition-runtime.json"),
+            &runtime.body,
+        )
+        .unwrap();
     }
     for (name, actual) in [
         ("basic-key-response.json", &response.body),
-        ("basic-key-runtime.json", &runtime.body),
+        ("basic-key-rendition-runtime.json", &runtime.body),
     ] {
         let stored: Value =
             serde_json::from_slice(&std::fs::read(fixtures.join(name)).unwrap()).unwrap();

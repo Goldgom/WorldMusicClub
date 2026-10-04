@@ -1107,11 +1107,46 @@ pub fn import(
                     .clean
                     .as_ref()
                     .is_some_and(|p| p.profile.as_deref() == Some(score_core::basic_keys::PROFILE));
-                item.playable = !explicit_practice && !performance_only && !basic_keys;
+                // This is availability for the shipped 128-voice basic
+                // receiver, not a claim of original rendition or device range.
+                let basic_ready = basic_keys
+                    && candidate.clean.as_ref().is_some_and(|p| {
+                        let runtime = &p.runtime;
+                        let rendition = &runtime["rendition"];
+                        let count = runtime["compilation"]["timeline"]["notes"]
+                            .as_array()
+                            .map(Vec::len);
+                        runtime["profile"] == practice_server::basic_keys_api::RUNTIME_PROFILE
+                            && rendition["policy_id"] == score_core::basic_keys::RENDITION_POLICY
+                            && count.is_some_and(|count| {
+                                count > 0
+                                    && rendition["notes"]
+                                        .as_array()
+                                        .is_some_and(|notes| notes.len() == count)
+                                    && rendition["coverage"]["source_attacks"].as_u64()
+                                        == Some(count as u64)
+                                    && rendition["coverage"]["derived_voices"].as_u64()
+                                        == Some(count as u64)
+                                    && rendition["coverage"]["practice_targets"].as_u64()
+                                        == Some(count as u64)
+                            })
+                            && rendition["coverage"]["maximum_allocated_voices"]
+                                .as_u64()
+                                .is_some_and(|voices| {
+                                    voices <= score_core::basic_keys::RENDITION_VOICE_LIMIT as u64
+                                })
+                    });
+                item.playable =
+                    basic_ready || (!explicit_practice && !performance_only && !basic_keys);
+                let basic_message = if basic_ready {
+                    "Complete basic synthesized rendition and note-on practice compiled from every source attack"
+                } else {
+                    "Complete key source retained; basic rendition needs a nonempty target set and sufficient receiver capacity"
+                };
                 item.status = "ready".into();
                 item.code = "pack_valid_score".into();
                 item.message = if basic_keys {
-                    "All source events and key attacks retained; determined key targets are independent of unresolved source rendition"
+                    basic_message
                 } else if performance_only {
                     "Complete performance validated by Rust; canonical notation is unavailable"
                 } else {
@@ -1168,8 +1203,8 @@ pub fn import(
                             item.status = "saved".into();
                             item.code = "pack_saved".into();
                             item.message = if basic_keys {
-                    "All source events and key attacks retained; determined key targets are independent of unresolved source rendition"
-                } else if performance_only {
+                                basic_message
+                            } else if performance_only {
                                 "Saved complete performance with its independent native backup"
                             } else {
                                 "Saved complete canonical score with its independent native backup"
@@ -1193,7 +1228,7 @@ pub fn import(
                     item.message.push_str(" Complete independent performance commands retained for all tracks. Notation and practice targets are unavailable. Listening requires an explicitly selected, fully supported reference receiver.");
                 }
                 if basic_keys {
-                    item.message.push_str(" All source events, parts and key attacks remain in the complete package. Practice uses only determined positive melodic key targets; percussion, instantaneous and unresolved attacks are retained without pitched scoring. Source rendition and reference audio are unavailable.");
+                    item.message.push_str(" Every source event and attack remains unchanged. Basic sine/pulse audition and selected-part note-on targets use the same declared FIFO/tempo interpretation. Inferred ends and zero gates are disclosed; percussion selectors do not identify an original kit. Original source-sound fidelity remains unresolved. Device range, receiver allocation and part selection require their own checks.");
                 }
                 if explicit_practice {
                     item.message.push_str(" All authored VSQ tracks and expressions are retained. Choose limited base-note instrumental practice explicitly; every authored note, including Dynamics 0, remains a practice target. Whole-vocal rendering is unsupported.");
