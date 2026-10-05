@@ -114,3 +114,35 @@ test('original Mod reed override and restore preserve exact gates and restore ba
  assert.equal(override.plan.sourceFingerprint,original.plan.sourceFingerprint);assert.equal(override.plan.compiledFingerprint,original.plan.compiledFingerprint);assert.notEqual(override.plan.planFingerprint,original.plan.planFingerprint);assert.notEqual(override.pcmHash,original.pcmHash);
  assert.deepEqual(restored.plan,original.plan);assert.equal(restored.pcmHash,original.pcmHash);
 });
+
+
+// Regression for actual Windows477 action32: Mod closes before the second
+// Rust instrument check settles. These are real app handlers with modeled
+// backend replies and an untrusted action double, never native acceptance.
+for(const rejects of [false,true])test(`canonical native Play waits for post-Mod Rust target readiness; rejected=${rejects}`,async()=>{
+ const {nativeScoreServer,nativeStorageApp,nativeResponse}=await import('./native-storage-app-fixtures.js');
+ const {readPlaybackClock}=await import('../web/playback-clock-view.js');
+ const original=canonicalPracticeFixture().score,server=await nativeScoreServer({scores:[original]}),app=await nativeStorageApp(server,{now:()=>1000});
+ const source=readFileSync(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8');
+ const dispatch=runInNewContext(source.split('(() => {')[0]+'\ndispatchCanonicalPracticePlay;');
+ let release,pending;const nativeActions=[];
+ try{
+  const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('configure-song-mod').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('configure-song-mod').disabled);
+  await app.click('configure-song-mod');await app.click('song-mod-all-machine');
+  for(const id of ['P1','P2']){const field=app.$('song-mod-parts').querySelector(`[data-mod-performer="${id}"]`);field.value='human';app.emit(field,'change');}
+  await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open&&!app.$('start-performance').disabled);await app.click('start-performance');await app.until(()=>app.document.body.dataset.screen==='stage'&&!app.$('play-button').disabled);await app.click('reset-button');await app.until(()=>!app.$('play-button').disabled);
+  let checks=0;const requestStart=server.requests.length;
+  server.setRoute(({path,defaultReply})=>path==='/api/instrument-check'&&++checks===2?new Promise(resolve=>{release=()=>resolve(rejects?nativeResponse({error:'Original delayed compatibility rejection'},503):defaultReply());}):undefined);
+  await app.click('edit-song-mod');await app.click('song-mod-all-human');await app.click('song-mod-apply');await app.until(()=>Boolean(release)&&!app.$('song-mod-dialog').open);
+  assert.equal(app.$('play-button').disabled,true,'The old native assertion fails in this real post-commit window');assert.equal(app.$('practice-gate').hidden,false);assert.equal(app.$('practice-gate-retry').disabled,true);
+  assert.equal(readPlaybackClock(app.document).phase,'ready');assert.equal(readPlaybackClock(app.document).running,false);assert.equal(app.$('hud-captured').textContent,'0');
+  pending=dispatch({document:app.document,until:app.until,readClock:()=>readPlaybackClock(app.document),click:async id=>{assert.equal(app.$(id).disabled,false);assert.equal(app.$('practice-gate').hidden,true);nativeActions.push(id);}});
+  await app.tick();await app.tick();assert.deepEqual(nativeActions,[],'No native action may precede the completed target/compatibility check');
+  release();
+  if(rejects){await assert.rejects(pending,/Canonical Play blocked:.*could not be verified/);assert.deepEqual(nativeActions,[]);assert.equal(app.$('play-button').disabled,true);}
+  else{await pending;assert.deepEqual(nativeActions,['play-button']);assert.equal(app.$('play-button').disabled,false);assert.equal(app.$('practice-scope').textContent,'All parts · 9 physical attacks from 9 sounding events','The modeled reply is published only after its compatibility check; real Rust tie/unison counts stay in the independent source oracle');}
+  const targets=server.requests.slice(requestStart).filter(row=>row.path==='/api/practice-targets');assert.equal(targets.length,2);for(const row of targets)assert.deepEqual([...new Set(row.body.timeline.notes.map(note=>note.part_id))].sort(),['P1','P2','P3','P4']);
+  assert.equal(server.requests.slice(requestStart).filter(row=>row.path==='/api/assess').length,0);assert.equal(server.records.get(key).score_json,JSON.stringify(original));
+  assert.match(source,/async function play\(\)\{await dispatchCanonicalPracticePlay\(\{document,until,click,readClock:clock\}\);await until\(\(\)=>state\(\)==='playing'&&!\$\('play-button'\)\.disabled,'acknowledged play'\)/);
+ }finally{release?.();await pending?.catch(()=>{});await app.close();}
+});

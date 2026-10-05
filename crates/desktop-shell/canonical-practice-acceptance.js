@@ -11,6 +11,21 @@ function canonicalPracticeSampleOffsetFrames(plan,positionFrame){
  const next=plan.maxPasses>1&&plan.notes[plan.rangeOrder[0]];
  return next?plan.initialCountInFrames+plan.rangeEndFrame-plan.initialPositionFrame+plan.countInFrames+Math.max(next[1],plan.rangeStartFrame)-plan.rangeStartFrame:null;
 }
+// Closing Mod commits the selection before Rust rebuilds the stage targets.
+// Native coordinate dispatch has no Playwright-style enabled-control wait.
+// Admit Play only from the public, settled stage UI; keep the owned hit and
+// subsequent receiver acknowledgement checks in the unchanged caller.
+async function dispatchCanonicalPracticePlay({document,until,click,readClock}){
+ const $=id=>document.getElementById(id);
+ await until(()=>{
+  const stage=$('workspace'),play=$('play-button'),gate=$('practice-gate'),retry=$('practice-gate-retry');
+  if(document.body.dataset.screen!=='stage'||!stage||stage.hidden||stage.dataset.scoreState!=='session'||document.querySelector('dialog[open]'))return false;
+  if(gate&&!gate.hidden&&retry&&!retry.disabled)throw Error(`Canonical Play blocked: ${$('practice-gate-reason')?.textContent||'target compatibility failed'}`);
+  const clock=readClock();
+  return Boolean(play&&!play.disabled&&!play.closest('[hidden]')&&gate?.hidden&&clock.available&&!clock.running&&['ready','paused','ended'].includes(clock.phase));
+ },'canonical Play ready after target and compatibility checks');
+ return click('play-button');
+}
 function compactCanonicalPracticeAudio(rows){
  const compact=record=>{const r=structuredClone(record);if(r.ledgerLayout==='range-pass-major'&&r.ledger){r.ledgerCapacity=r.ledger.actualStarts.length;r.unusedLedgerSentinel=0;r.unusedLedgerEmpty=r.ledger.actualStarts.slice(r.recordCount).every(n=>n===0)&&r.ledger.actualEnds.slice(r.recordCount).every(n=>n===0);r.ledger.actualStarts=r.ledger.actualStarts.slice(0,r.recordCount);r.ledger.actualEnds=r.ledger.actualEnds.slice(0,r.recordCount);r.passFrames=Array.from(r.passFrames||[]).slice(0,r.passCount);}if(r.pauseSpans)r.pauseSpans=Array.from(r.pauseSpans);return r;};
  return rows.map(row=>({...row,terminals:row.terminals.map(t=>({...t,record:compact(t.record)})),rawTerminals:row.rawTerminals.map(t=>({...t,record:compact(t.record)}))}));
@@ -37,7 +52,7 @@ function compactCanonicalPracticeAudio(rows){
  const mod=createAcceptanceSongMod({document,native,until});
  const click=async id=>native('click',typeof id==='string'?$(id):id),clock=()=>globalThis.__wmhReadPlaybackClock(document),state=()=>clock().phase;
  const geometry=()=>({width:innerWidth,height:innerHeight,dpr:devicePixelRatio,documentWidth:document.documentElement.scrollWidth,canvas:(()=>{const {x,y,width,height}=$('falling-notes').getBoundingClientRect();return{x,y,width,height};})()});
- function scene(){return{sequence,clock:clock(),state:state(),renderer:$('canonical-audio-policy').dataset.rendererState,captured:$('hud-captured').textContent,exportDisabled:$('export-takes').disabled,part:$('practice-part').value,complete:$('song-mod-layout').value==='complete',human:JSON.parse($('falling-notes').dataset.humanNoteIds||'[]'),machine:JSON.parse($('falling-notes').dataset.machineNoteIds||'[]'),selection:mod.fields().filter(n=>n.value==='human').map(n=>n.dataset.modPerformer),audio:receiver.status(),geometry:geometry()};}
+ function scene(){return{sequence,clock:clock(),state:state(),renderer:$('canonical-audio-policy').dataset.rendererState,captured:$('hud-captured').textContent,playDisabled:$('play-button').disabled,practiceGate:{hidden:$('practice-gate').hidden,retryDisabled:$('practice-gate-retry').disabled,reason:$('practice-gate-reason').textContent},exportDisabled:$('export-takes').disabled,part:$('practice-part').value,complete:$('song-mod-layout').value==='complete',human:JSON.parse($('falling-notes').dataset.humanNoteIds||'[]'),machine:JSON.parse($('falling-notes').dataset.machineNoteIds||'[]'),selection:mod.fields().filter(n=>n.value==='human').map(n=>n.dataset.modPerformer),audio:receiver.status(),geometry:geometry()};}
  async function sample(name){await click('stage-title');await frame();report.samples[name]=scene();report.screenshots[name]=sequence;}
  async function library(){if(document.body.dataset.screen==='stage')await click('back-to-library');else if(document.body.dataset.screen==='home')await click('home-single-player');await until(()=>document.body.dataset.screen==='library'&&$('song-lobby').dataset.previewStatus==='ready','library preview');}
  async function close(id){await click($(id).querySelector('[data-close-panel]'));}
@@ -48,7 +63,7 @@ function compactCanonicalPracticeAudio(rows){
  async function score(name){await click('score-tools-button');await download('export-button',name);await close('score-tools-dialog');}
  async function reset(){await click('reset-button');await until(()=>!$('play-button').disabled&&receiver.quiet(),'reset disposed source');}
  async function pause(){await click('play-button');await until(()=>state()==='paused'&&!$('play-button').disabled&&receiver.status().ownedNodes.some(n=>n.state==='paused'&&n.pendingCommands===0),'acknowledged pause');}
- async function play(){await click('play-button');await until(()=>state()==='playing'&&!$('play-button').disabled,'acknowledged play');}
+ async function play(){await dispatchCanonicalPracticePlay({document,until,click,readClock:clock});await until(()=>state()==='playing'&&!$('play-button').disabled,'acknowledged play');}
  async function end(){await until(()=>clock().completed&&state()==='ended'&&receiver.quiet(),'natural source end',10000);}
  async function popup(){await mod.open();}
  async function choose(ids){await mod.choose(ids,{layout:'complete'});}
