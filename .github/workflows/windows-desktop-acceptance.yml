@@ -422,6 +422,113 @@ jobs:
             test-results/song-authoring/*/Scores/imports/**
             test-results/song-authoring/*/Scores/import-backups/**
           if-no-files-found: warn
+      # JSON-only subsets aid diagnosis; full evidence above is still required.
+      # Separate always-run steps keep one oversized group from suppressing others.
+      - name: Collect bounded bulk-import browser JSON diagnostics
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}/test-results" "${{ runner.temp }}/bulk-import-browser-json"
+          --root bulk-import
+          --source-sha "${{ github.sha }}"
+      - name: Upload bulk-import browser JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: bulk-import-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/bulk-import-browser-json/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Collect bounded vsq-song browser JSON diagnostics
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}/test-results" "${{ runner.temp }}/vsq-song-browser-json"
+          --root vsq-song
+          --source-sha "${{ github.sha }}"
+      - name: Upload vsq-song browser JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: vsq-song-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/vsq-song-browser-json/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Collect bounded performance-song browser JSON diagnostics
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}/test-results" "${{ runner.temp }}/performance-song-browser-json"
+          --root performance-song
+          --source-sha "${{ github.sha }}"
+      - name: Upload performance-song browser JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: performance-song-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/performance-song-browser-json/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Collect bounded pitch-bend browser JSON diagnostics
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}/test-results" "${{ runner.temp }}/pitch-bend-browser-json"
+          --root pitch-bend
+          --source-sha "${{ github.sha }}"
+      - name: Upload pitch-bend browser JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pitch-bend-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/pitch-bend-browser-json/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Collect bounded song-authoring browser JSON diagnostics
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}/test-results" "${{ runner.temp }}/song-authoring-browser-json"
+          --root song-authoring
+          --source-sha "${{ github.sha }}"
+      - name: Upload song-authoring browser JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: song-authoring-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/song-authoring-browser-json/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Collect bounded vsq-authoring browser JSON diagnostics
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}/test-results" "${{ runner.temp }}/vsq-authoring-browser-json"
+          --root vsq-authoring
+          --source-sha "${{ github.sha }}"
+      - name: Upload vsq-authoring browser JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: vsq-authoring-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/vsq-authoring-browser-json/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Collect bounded canonical-practice browser JSON diagnostics
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}/test-results" "${{ runner.temp }}/canonical-practice-browser-json"
+          --root canonical-practice
+          --source-sha "${{ github.sha }}"
+      - name: Upload canonical-practice browser JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: canonical-practice-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/canonical-practice-browser-json/
+          if-no-files-found: error
+          include-hidden-files: true
   native-feature-acceptance:
     # Independent runners retain Windows diagnostics when browser checks fail.
     runs-on: windows-latest
@@ -850,6 +957,113 @@ jobs:
             dist/WorldMusicClub-Native-Windows-x64-*.zip
             dist/WorldMusicClub-Native-Windows-x64-*.zip.sha256
           if-no-files-found: error
+      # JSON-only subsets aid diagnosis; full evidence above is still required.
+      # Separate always-run steps keep one oversized group from suppressing others.
+      - name: Collect bounded bulk-import windows JSON diagnostics
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}" "${{ runner.temp }}/bulk-import-windows-json"
+          --root desktop-bulk-import
+          --source-sha "${{ github.sha }}"
+      - name: Upload bulk-import windows JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: bulk-import-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/bulk-import-windows-json/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Collect bounded vsq-song windows JSON diagnostics
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}" "${{ runner.temp }}/vsq-song-windows-json"
+          --root desktop-vsq-song
+          --source-sha "${{ github.sha }}"
+      - name: Upload vsq-song windows JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: vsq-song-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/vsq-song-windows-json/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Collect bounded performance-song windows JSON diagnostics
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}" "${{ runner.temp }}/performance-song-windows-json"
+          --root desktop-performance-song
+          --source-sha "${{ github.sha }}"
+      - name: Upload performance-song windows JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: performance-song-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/performance-song-windows-json/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Collect bounded pitch-bend windows JSON diagnostics
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}" "${{ runner.temp }}/pitch-bend-windows-json"
+          --root desktop-pitch-bend
+          --source-sha "${{ github.sha }}"
+      - name: Upload pitch-bend windows JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pitch-bend-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/pitch-bend-windows-json/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Collect bounded song-authoring windows JSON diagnostics
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}" "${{ runner.temp }}/song-authoring-windows-json"
+          --root desktop-authoring
+          --source-sha "${{ github.sha }}"
+      - name: Upload song-authoring windows JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: song-authoring-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/song-authoring-windows-json/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Collect bounded vsq-authoring windows JSON diagnostics
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}" "${{ runner.temp }}/vsq-authoring-windows-json"
+          --root desktop-vsq-authoring
+          --source-sha "${{ github.sha }}"
+      - name: Upload vsq-authoring windows JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: vsq-authoring-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/vsq-authoring-windows-json/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Collect bounded canonical-practice windows JSON diagnostics
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}" "${{ runner.temp }}/canonical-practice-windows-json"
+          --root desktop-canonical-practice
+          --source-sha "${{ github.sha }}"
+      - name: Upload canonical-practice windows JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: canonical-practice-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/canonical-practice-windows-json/
+          if-no-files-found: error
+          include-hidden-files: true
       # No WebView profile, private fixtures, installer or GitHub Release upload.
   acceptance-summary:
     name: Native and browser acceptance summary
