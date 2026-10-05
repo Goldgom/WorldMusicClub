@@ -220,9 +220,9 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
       const current=()=>!signal.aborted&&active&&isVisible()&&target===score&&target===getScore()&&song===basicSong()&&context.key===preparationContext()?.key;
       adapter ||= await loadAdapter();if(!current())return null;
       let prepared;
-      const owned=()=>prepared?.active&&rendered===prepared.renderer&&active&&target===getScore();
+      const owned=()=>prepared?.active&&prepared.ownerGeneration===generation&&rendered===prepared.renderer&&active&&target===getScore();
       prepared=await prepareNotationBatch({document,width:context.width,pages:exported.basicPages.filter(usablePage),signal,isCurrent:current,needsEngraving,quietPart,
-        renderPage:(mount,page,pendingSignal)=>adapter.renderEngravedStaff(mount,page.musicxml.xml,{i18n,cooperative:true,dark:context.dark,fromMeasure:1,toMeasure:page.score.measures.length,partIds:mappedPartIds(page.musicxml,page.part_id),responsive:true,compactHeader:true,identity:basicKeyEngravingIdentity(song,page),onMappingChange:mapping=>{if(owned())showNotices(exported,mapping);},onError:failure=>{if(owned())fallback(failure);else if(nextRender.peek()?.key===key){declinedPreparation=key;nextRender.clear();}}},pendingSignal)});
+        renderPage:(mount,page,pendingSignal)=>adapter.renderEngravedStaff(mount,page.musicxml.xml,{i18n,cooperative:true,dark:context.dark,fromMeasure:1,toMeasure:page.score.measures.length,partIds:mappedPartIds(page.musicxml,page.part_id),responsive:true,compactHeader:true,identity:basicKeyEngravingIdentity(song,page),onMappingChange:mapping=>{if(owned())showNotices(exported,mapping);},onError:failure=>{if(owned())fallback(failure);else if(nextRender.peek()?.controller.signal===signal){declinedPreparation=key;nextRender.clear();}}},pendingSignal)});
       return prepared;
     });
   }
@@ -257,6 +257,9 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
       if(prepared){
         rendered?.dispose();rendered=null;adapter?.disposeEngravedStaff(container);
         if(prepared.activate(container)){
+          // keepPaint can retain these nodes into another pending request;
+          // only the generation that adopted them owns status/error callbacks.
+          prepared.ownerGeneration=current;
           rendered=prepared.renderer;
           if(expectedScore===target&&expected)rendered.setExpectedWrittenNotes(expected);
           statusMessage={key:'preview',params:{from,to:from+sourcePage.measure_count-1}};redrawLocale();showNotices(exported,mappingStatus());publishScope(sourceBatch.status,sourcePages.filter(usablePage).map(page=>page.part_id));$('engraving-license-note').hidden=false;prefetchNext();return;

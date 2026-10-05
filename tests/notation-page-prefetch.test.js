@@ -163,3 +163,18 @@ test('a staged resize failure cannot leave a broken prepared batch or repeatedly
   env.view.followPosition(16001);await turn();assert.equal(env.renders.length,2,'The complete target page can still use the ordinary foreground renderer');assert.equal(env.live.querySelector('svg'),env.renders[1].svg);
  }finally{env.close();}
 });
+
+for(const callback of ['mapping','error'])test(`an adopted page's ${callback} callback cannot change the next pending or published generation`,async()=>{
+ const env=nativePreparationEnvironment();try{
+  await env.readyJson();env.clock(true);env.view.followPosition(1000);await turn();env.view.followPosition(16001);await turn();const entry=env.renders[0];
+  const staleMapping={status:'partial',verifiedGlyphCount:0,displayedSegmentCount:1,diagnostics:[{code:'synthetic_old_mapping',message:'Old prepared-page mapping'}]};
+  entry.options.onMappingChange(staleMapping);assert.ok(env.document.getElementById('engraving-diagnostics').children.length>0,'Current adopted-generation callbacks still work');
+  env.view.followPosition(1000);await turn();const pending=env.requests.at(-1),status=env.document.getElementById('engraving-status').textContent;
+  assert.equal(JSON.parse(pending.options.body).settings.position_ms,1000);assert.equal(env.live.querySelector('svg'),entry.svg,'keepPaint retains the adopted old page');assert.equal(entry.disposed,false);assert.equal(env.document.getElementById('engraving-diagnostics').children.length,0);
+  const invoke=()=>callback==='mapping'?entry.options.onMappingChange(staleMapping):entry.options.onError({status:'error',message:'Old prepared-page resize failure'});
+  invoke();
+  assert.equal(env.view.isActive(),true,'An old callback must not force fallback');assert.equal(pending.options.signal.aborted,false,'An old callback must not cancel the new request');assert.equal(env.document.getElementById('engraving-status').textContent,status);assert.equal(env.document.getElementById('engraving-diagnostics').children.length,0,'Old exported diagnostics must not replace pending notices');
+  const response=structuredClone(env.fixture.first.response);response.page.resolved_position_ms=1000;pending.resolve({ok:true,json:async()=>response});await turn();
+  assert.equal(env.view.basicPage().first_measure,0);assert.equal(entry.disposed,true);const currentStatus=env.document.getElementById('engraving-status').textContent,currentNotices=env.document.getElementById('engraving-diagnostics').textContent;invoke();assert.equal(env.view.isActive(),true);assert.equal(env.document.getElementById('engraving-status').textContent,currentStatus);assert.equal(env.document.getElementById('engraving-diagnostics').textContent,currentNotices);
+ }finally{env.close();}
+});

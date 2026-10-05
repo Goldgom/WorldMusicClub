@@ -107,7 +107,10 @@ The slot owns partial construction as well as completed renderers. Source,
 scope, part-page, page-size, meter, source-inspection, width, theme/layout,
 seek/reset, pause, hidden view and obsolete generation changes dispose it.
 A failed staged renderer cannot invalidate current paint or masquerade as a
-ready future page. Overshot or backwards-seek pages are discarded before
+ready future page. Adopted mapping/error callbacks also carry their publication
+generation, so retained old paint cannot overwrite a newer pending request's
+notices or force its fallback. Staged error cleanup requires the exact slot's
+controller identity, not merely a matching page key. Overshot or backwards-seek pages are discarded before
 publication. A miss or refused speculative budget uses the existing complete
 cooperative foreground path. The current page can remain visible while a
 pending prepared batch finishes; its old cues are cleared and status is
