@@ -444,6 +444,13 @@ $phases=if($Scenario -eq 'library-catalog'){@('catalog-seed','catalog-restart','
 if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','library-catalog')){$native.profile_reused=$false;$native.scenario=$Scenario;$native.directory=Join-Path $OutputDirectory 'Scores'}
 try {
 if($Scenario -in @('complete-practice','canonical-practice')){$native.profile_reused=$true}
+if($Scenario -eq 'canonical-practice') {
+  $canonicalBindingJson=& node (Join-Path $PSScriptRoot 'canonical-practice-source-evidence.mjs') $Repository
+  if($LASTEXITCODE -ne 0){throw 'Cannot bind canonical acceptance to its frozen source'}
+  $canonicalBinding=ConvertFrom-Json -InputObject $canonicalBindingJson -AsHashtable
+  if($canonicalBinding.source_sha -cne $native.source_sha -or $canonicalBinding.source_tree -cne $native.source_tree){throw 'Canonical acceptance source changed before launch'}
+  $native.source_hashes=$canonicalBinding.source_hashes
+}
 if($Scenario -eq 'library-catalog') {
   $native.profile_reused=$true;$native.screenshots=@();$native.diagnostic_screenshots=@();$native.requested_viewport=[ordered]@{width=1280;height=720};$native.minimum_viewport=[ordered]@{width=900;height=640}
   $sourceNames=& node --input-type=module -e 'import {pathToFileURL} from "node:url"; const module=await import(pathToFileURL(process.argv[2])); console.log(JSON.stringify(module.CATALOG_SOURCE_FILES));' -- catalog-source-list (Join-Path $PSScriptRoot 'verify-library-catalog-acceptance.mjs')
