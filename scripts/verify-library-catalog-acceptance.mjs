@@ -87,6 +87,29 @@ export function validateCatalogScreenshot(bytes, observation, native = undefined
   return {bytes: bytes.length, sha256: sha256(bytes), ...dimensions};
 }
 
+// Formal client captures remain an exact one-to-one set. Dialog diagnostics
+// retain their own hashes and pixels, without claiming app geometry or coverage.
+export function validateCatalogNativePhaseCaptures(screenshots, diagnostics, phase, actions) {
+  const expectedImages = [...actions.map(action => `native-action-${phase}-${action.sequence}.png`), `native-${phase}.png`].sort();
+  assert.deepEqual(screenshots.filter(image => image.phase === phase).map(image => image.file).sort(), expectedImages, 'Native captures must cover every action and phase exactly once');
+  for (const image of diagnostics.filter(image => image.phase === phase)) {
+    assert.equal(image.kind, 'diagnostic-only'); assert.equal(image.accepted, false);
+    assert.ok(['picker-before-open', 'picker-failure', 'popup-failure'].includes(image.capture), 'Unknown catalog diagnostic capture');
+    assert.ok(uint(image.action) && image.action > 0 && image.action <= actions.length && actions[image.action - 1].sequence === image.action && actions[image.action - 1].kind === 'picker', 'Catalog dialog diagnostic must bind its actual picker action');
+    assert.equal(image.file, `owned-${image.capture}-${phase}-${image.action}.png`, 'Catalog dialog diagnostic filename differs');
+    assert.equal(Object.hasOwn(image, 'geometry_file'), false, 'Catalog dialog diagnostic cannot borrow app geometry');
+  }
+}
+
+export function validateCatalogDiagnosticScreenshot(bytes, image) {
+  assert.ok(object(image) && image.kind === 'diagnostic-only' && image.accepted === false);
+  assert.ok(bytes.length >= 33 && bytes.length <= CATALOG_EVIDENCE_LIMITS.file && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) && bytes.readUInt32BE(8) === 13 && bytes.toString('ascii', 12, 16) === 'IHDR', 'Catalog diagnostic must retain its original bounded PNG');
+  const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
+  assert.ok(width > 0 && height > 0 && width <= 8192 && height <= 8192 && width * height <= 16777216, 'Catalog diagnostic pixels exceed their finite capture bound');
+  assert.deepEqual({width: image.width, height: image.height}, {width, height}, 'Catalog diagnostic dimensions differ from raw PNG');
+  assert.equal(image.bytes, bytes.length); assert.equal(image.sha256, sha256(bytes), 'Catalog diagnostic hash differs');
+}
+
 export function validateCatalogApiEvidence(rows) {
   assert.ok(Array.isArray(rows) && rows.length > 0 && rows.length <= CATALOG_EVIDENCE_LIMITS.api, 'Bounded actual catalog API trace required');
   const outcomes = [];
@@ -451,6 +474,9 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
     assert.ok(Array.isArray(host.screenshots) && host.screenshots.length > 0 && host.screenshots.length <= CATALOG_ACCEPTANCE_PHASES.length * (CATALOG_EVIDENCE_LIMITS.actions + 1), 'Bounded native screenshot manifest is required');
     assert.equal(new Set(host.screenshots.map(image => image.file)).size, host.screenshots.length, 'Duplicate native screenshot manifest entries');
     assert.ok(host.screenshots.every(image => CATALOG_ACCEPTANCE_PHASES.includes(image.phase)), 'Native screenshot has an unknown phase');
+    assert.ok(Array.isArray(host.diagnostic_screenshots) && host.diagnostic_screenshots.length <= CATALOG_ACCEPTANCE_PHASES.length * CATALOG_EVIDENCE_LIMITS.actions * 3, 'Bounded separate native diagnostic manifest is required');
+    assert.equal(new Set([...host.screenshots, ...host.diagnostic_screenshots].map(image => image.file)).size, host.screenshots.length + host.diagnostic_screenshots.length, 'Duplicate or overlapping native capture manifest entries');
+    assert.ok(host.diagnostic_screenshots.every(image => CATALOG_ACCEPTANCE_PHASES.includes(image.phase)), 'Native diagnostic has an unknown phase');
   } else assert.deepEqual(host.viewport, CATALOG_REQUESTED_VIEWPORT, 'Hosted catalog viewport must remain exactly 1280×720');
   const fixture = originalCatalogAcceptanceFixtures(); assert.deepEqual(config.fixture, fixture.manifest);
   assert.deepEqual(await json('fixtures/catalog-fixtures.json'), fixture.manifest);
@@ -473,8 +499,8 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
       phaseGeometry = await json(row.geometry_file, 16384);
       validateCatalogNativeGeometry(phaseGeometry, {phase, processId: row.process_id, renderer: report.geometry, layout: report.layout, stage: `native-${phase}`});
       nativeGeometries.push(phaseGeometry);
-      const expectedImages = [...report.actions.map(action => `native-action-${phase}-${action.sequence}.png`), `native-${phase}.png`].sort();
-      assert.deepEqual(host.screenshots.filter(image => image.phase === phase).map(image => image.file).sort(), expectedImages, 'Native captures must cover every action and phase exactly once');
+      validateCatalogNativePhaseCaptures(host.screenshots, host.diagnostic_screenshots, phase, report.actions);
+      for (const image of host.diagnostic_screenshots.filter(image => image.phase === phase)) validateCatalogDiagnosticScreenshot(await read(image.file), image);
     }
     const nativeScreenshot = async (image, geometry, extra = {}) => validateCatalogScreenshot(await read(image.file), image, {geometry, phase, processId: row.process_id, renderer: report.geometry, layout: report.layout, ...extra});
     const sentActions = [];

@@ -135,7 +135,11 @@ A failed renderer report is retained before capture. Failure diagnostics preserv
 the first error plus separate measurement/capture errors, measured rectangles and
 a raw owned-client PNG at its actual size when available. These files are marked
 `diagnostic-only` and cannot enter accepted screenshot evidence. Picker diagnostics
-still capture the whole owned dialog. Other scenarios keep their existing capture
+still capture the whole owned dialog. Their separate `diagnostic_screenshots`
+manifest binds the picker action, raw dimensions and PNG hash, never a previous
+app-window geometry file. These bytes remain in the artifact and verified package.
+Only actual app-client captures enter `screenshots`; it must contain exactly one
+capture for every action and phase. Other scenarios keep their existing capture
 and window/profile behavior. No DPI, screen resolution or OS setting is changed.
 The catalog seed reserves a new profile; both restart phases require the same
 existing ordinary profile and matching earlier process records. The renderer

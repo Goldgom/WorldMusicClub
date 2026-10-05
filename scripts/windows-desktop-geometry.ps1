@@ -62,3 +62,20 @@ function New-NativeFailureDiagnostics([string]$Phase,[string]$FirstError,[script
   try {$result.capture=& $Capture} catch {$result.errors+=,"capture: $($_.Exception.Message)"}
   return $result
 }
+
+# Classify catalog capture metadata before registering it. Full owned-dialog
+# diagnostics cannot satisfy client action/phase coverage or borrow app geometry.
+function Get-CatalogCaptureAssociation([string]$Name,[string]$Phase,[switch]$ClientOnly,[string]$GeometryFile) {
+  if($Phase -cnotin @('catalog-seed','catalog-restart','catalog-final')){throw 'Unknown catalog capture phase'}
+  $sequence='([1-9]|[1-5][0-9]|6[0-4])'
+  if($ClientOnly) {
+    $metadata=[ordered]@{phase=$Phase;locale='zh-CN';geometry_file=$GeometryFile}
+    if($Name -cmatch "\Anative-action-$Phase-$sequence\z"){$metadata.action=[int]$Matches[1]}
+    elseif($Name -cne "native-$Phase"){throw 'Catalog client capture must name its exact action or phase'}
+    if($GeometryFile -cne "geometry-$Name.json"){throw 'Catalog client capture must bind its own geometry'}
+    return @{manifest='screenshots';metadata=$metadata}
+  }
+  if($GeometryFile){throw 'Catalog dialog diagnostic cannot borrow app geometry'}
+  if($Name -cnotmatch "\Aowned-(picker-before-open|picker-failure|popup-failure)-$Phase-$sequence\z"){throw 'Unknown catalog dialog diagnostic'}
+  return @{manifest='diagnostic_screenshots';metadata=[ordered]@{kind='diagnostic-only';accepted=$false;phase=$Phase;capture=$Matches[1];action=[int]$Matches[2]}}
+}

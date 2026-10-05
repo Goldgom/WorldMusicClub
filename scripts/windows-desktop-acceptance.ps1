@@ -67,7 +67,7 @@ function Save-Json($Value,[string]$Path) {
   $Value | ConvertTo-Json -Depth 16 | Set-Content -Encoding utf8 $temporary
   Move-Item -Force $temporary $Path
 }
-function Capture-Handle([IntPtr]$Handle,[string]$Name,[switch]$ClientOnly) {
+function Capture-Handle([IntPtr]$Handle,[string]$Name,[switch]$ClientOnly,[string]$GeometryFile) {
   $rectangle=New-Object NativeAcceptance+RECT;$printFlags=2
   if($ClientOnly) {
     if($Scenario -cnotin @('library-catalog','complete-practice')){throw 'Client-only acceptance capture requires a measured scenario'}
@@ -86,9 +86,10 @@ function Capture-Handle([IntPtr]$Handle,[string]$Name,[switch]$ClientOnly) {
     if($Scenario -eq 'library-catalog') {
       $capture=Get-Item -LiteralPath (Join-Path $OutputDirectory "$Name.png") -Force
       if($capture.Length -le 0 -or $capture.Length -gt 16MB -or ($capture.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Catalog screenshot must be a bounded ordinary PNG'}
-      $row=[ordered]@{file="$Name.png";bytes=$capture.Length;sha256=(Get-FileHash -LiteralPath $capture.FullName -Algorithm SHA256).Hash.ToLowerInvariant();phase=$env:WMH_DESKTOP_ACCEPTANCE_PHASE;locale='zh-CN';width=$bitmap.Width;height=$bitmap.Height;geometry_file=$catalogCaptureGeometryFile}
-      if($Name -cmatch '^native-action-catalog-(seed|restart|final)-([1-9]|[1-5][0-9]|6[0-4])$'){$row.action=[int]$Matches[2]}
-      $native.screenshots+=,$row
+      $association=Get-CatalogCaptureAssociation $Name $env:WMH_DESKTOP_ACCEPTANCE_PHASE -ClientOnly:$ClientOnly -GeometryFile $GeometryFile
+      $row=[ordered]@{file="$Name.png";bytes=$capture.Length;sha256=(Get-FileHash -LiteralPath $capture.FullName -Algorithm SHA256).Hash.ToLowerInvariant();width=$bitmap.Width;height=$bitmap.Height}
+      foreach($key in $association.metadata.Keys){$row[$key]=$association.metadata[$key]}
+      $native[$association.manifest]+=,$row
     }
   }
   finally { $bitmap.Dispose() }
@@ -99,7 +100,7 @@ function Capture-Window($App,[string]$Name) {
     $geometry=Get-NativeWindowGeometry $App $env:WMH_DESKTOP_ACCEPTANCE_PHASE $Name $catalogRendererGeometry $catalogReportedViewport
     Save-Json $geometry (Join-Path $OutputDirectory $catalogCaptureGeometryFile)
   }
-  Capture-Handle $App.MainWindowHandle $Name -ClientOnly:($Scenario -cin @('library-catalog','complete-practice'))
+  Capture-Handle $App.MainWindowHandle $Name -ClientOnly:($Scenario -cin @('library-catalog','complete-practice')) -GeometryFile $catalogCaptureGeometryFile
 }
 function Find-Control($Root,[string]$Id) {
   $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,$Id)
@@ -424,7 +425,7 @@ if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performa
 try {
 if($Scenario -eq 'complete-practice'){$native.profile_reused=$true}
 if($Scenario -eq 'library-catalog') {
-  $native.profile_reused=$true;$native.screenshots=@();$native.requested_viewport=[ordered]@{width=1280;height=720};$native.minimum_viewport=[ordered]@{width=900;height=640}
+  $native.profile_reused=$true;$native.screenshots=@();$native.diagnostic_screenshots=@();$native.requested_viewport=[ordered]@{width=1280;height=720};$native.minimum_viewport=[ordered]@{width=900;height=640}
   $sourceNames=& node --input-type=module -e 'import {pathToFileURL} from "node:url"; const module=await import(pathToFileURL(process.argv[2])); console.log(JSON.stringify(module.CATALOG_SOURCE_FILES));' -- catalog-source-list (Join-Path $PSScriptRoot 'verify-library-catalog-acceptance.mjs')
   if($LASTEXITCODE -ne 0){throw 'Cannot read catalog acceptance source allowlist'}
   $sourceNames=ConvertFrom-Json -InputObject $sourceNames

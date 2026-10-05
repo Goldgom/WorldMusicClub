@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {deflateSync} from 'node:zlib';
 import {CATALOG_ACCEPTANCE_PHASES, catalogSha256 as sha256} from '../scripts/prepare-library-catalog-acceptance.mjs';
-import {CATALOG_SOURCE_FILES, validateCatalogScreenshot, validateCatalogPhaseSequence} from '../scripts/verify-library-catalog-acceptance.mjs';
+import {CATALOG_SOURCE_FILES, validateCatalogScreenshot, validateCatalogPhaseSequence, validateCatalogNativePhaseCaptures, validateCatalogDiagnosticScreenshot} from '../scripts/verify-library-catalog-acceptance.mjs';
 import {validateCatalogNativeRenderer, validateCatalogNativeGeometry, validateCatalogNativeCaptureStable, validateCatalogNativeClick} from '../scripts/catalog-native-geometry.mjs';
 
 function fixture({phase = 'catalog-seed', processId = 101, width = 1024, height = 689, dpr = 1, pixelsWidth = Math.round(width * dpr), pixelsHeight = Math.round(height * dpr), origin = [0, 31]} = {}) {
@@ -200,4 +200,33 @@ test('default PNG contract is still exact hosted size and hashes geometry verifi
   assert.throws(() => validateCatalogScreenshot(native, imageRow(native, 1024, 689)), /exact 1280/);
   assert.throws(() => validateCatalogScreenshot(native, imageRow(native, 1024, 689), {width: 1024, height: 689}));
   for (const file of ['scripts/catalog-native-geometry.mjs', 'scripts/windows-desktop-geometry.ps1']) assert.ok(CATALOG_SOURCE_FILES.includes(file));
+});
+
+
+test('real-run 48/24/10 formal coverage rejects all five extra picker diagnostics without dropping any capture', () => {
+  const counts = [48, 24, 10], pickerSequences = [[1, 3, 5], [4, 6], []];
+  const reports = CATALOG_ACCEPTANCE_PHASES.map((phase, index) => ({phase, actions: Array.from({length: counts[index]}, (_, i) => ({sequence: i + 1, kind: pickerSequences[index].includes(i + 1) ? 'picker' : 'click'}))}));
+  const screenshots = reports.flatMap(({phase, actions}) => [...actions.map(action => ({phase, action: action.sequence, file: `native-action-${phase}-${action.sequence}.png`})), {phase, file: `native-${phase}.png`}]);
+  const diagnostics = reports.flatMap(({phase, actions}) => actions.filter(action => action.kind === 'picker').map(({sequence}) => ({phase, action: sequence, file: `owned-picker-before-open-${phase}-${sequence}.png`, capture: 'picker-before-open', kind: 'diagnostic-only', accepted: false})));
+  assert.equal(screenshots.length, 85); assert.equal(diagnostics.length, 5);
+  for (const {phase, actions} of reports) {
+    const validate = (images = screenshots, extra = diagnostics) => validateCatalogNativePhaseCaptures(images, extra, phase, actions);
+    assert.doesNotThrow(() => validate());
+    assert.throws(() => validate(screenshots.filter(image => image.file !== `native-${phase}.png`)), /exactly once/);
+    assert.throws(() => validate([...screenshots, screenshots.find(image => image.phase === phase)]), /exactly once/);
+    if (actions.some(action => action.kind === 'picker')) {
+      assert.throws(() => validate([...screenshots, ...diagnostics], []), /exactly once/, 'original producer misclassification remains rejected');
+      const image = diagnostics.find(image => image.phase === phase);
+      for (const change of [{geometry_file: null}, {geometry_file: `geometry-native-action-${phase}-2.json`}, {accepted: true}, {action: 2}, {file: image.file.toUpperCase()}, {capture: 'app-client'}]) assert.throws(() => validate(screenshots, [{...image, ...change}]));
+    }
+  }
+});
+
+test('625×480 picker diagnostics bind original PNG bytes without claiming app-client geometry', () => {
+  const bytes = syntheticPng(625, 480), image = {kind: 'diagnostic-only', accepted: false, width: 625, height: 480, bytes: bytes.length, sha256: sha256(bytes)};
+  assert.doesNotThrow(() => validateCatalogDiagnosticScreenshot(bytes, image));
+  for (const change of [{width: 1024}, {height: 689}, {sha256: '0'.repeat(64)}, {bytes: bytes.length + 1}, {kind: 'acceptance'}, {accepted: true}]) assert.throws(() => validateCatalogDiagnosticScreenshot(bytes, {...image, ...change}));
+  assert.throws(() => validateCatalogDiagnosticScreenshot(Buffer.from('original fixture is not a PNG'), image));
+  const changed = Buffer.from(bytes); changed[32] ^= 1;
+  assert.throws(() => validateCatalogDiagnosticScreenshot(changed, image), /hash differs/);
 });

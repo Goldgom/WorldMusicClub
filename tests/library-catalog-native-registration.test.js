@@ -62,12 +62,13 @@ test('catalog config and before snapshot remain bounded process-owner evidence r
 
 test('catalog application screenshots capture exactly the actual client pixels without changing picker captures',()=>{
   const capture=host.slice(host.indexOf('function Capture-Handle('),host.indexOf('function Find-Control('));
-  assert.match(capture,/function Capture-Handle\(\[IntPtr\]\$Handle,\[string\]\$Name,\[switch\]\$ClientOnly\)/);
+  assert.match(capture,/function Capture-Handle\(\[IntPtr\]\$Handle,\[string\]\$Name,\[switch\]\$ClientOnly,\[string\]\$GeometryFile\)/);
   assert.match(capture,/\$printFlags=2/);
   assert.match(capture,/if\(\$ClientOnly\) \{\s*if\(\$Scenario -cnotin @\('library-catalog','complete-practice'\)\)\{throw/);
   assert.match(capture,/GetClientRect\(\$Handle,\[ref\]\$rectangle\)/);
   assert.match(capture,/actual client pixels exceed the finite capture bound/);
-  assert.match(capture,/geometry_file=\$catalogCaptureGeometryFile/);
+  assert.match(capture,/Get-CatalogCaptureAssociation \$Name \$env:WMH_DESKTOP_ACCEPTANCE_PHASE -ClientOnly:\$ClientOnly -GeometryFile \$GeometryFile/);
+  assert.match(capture,/\$native\[\$association.manifest\]\+=,\$row/);
   assert.match(capture,/Get-NativeWindowGeometry \$App/);
   assert.ok(capture.indexOf('Get-NativeWindowGeometry')<capture.lastIndexOf('Capture-Handle $App.MainWindowHandle'));
   assert.doesNotMatch(capture,/-ne 1280|-ne 720/);
@@ -78,7 +79,9 @@ test('catalog application screenshots capture exactly the actual client pixels w
   assert.doesNotMatch(capture,/DrawImage|\.Resize\(|\.ScaleTransform\(/);
   const pickerCalls=host.split('\n').filter(line=>line.includes('Capture-Handle $dialog '));
   assert.ok(pickerCalls.length>0);
-  for(const line of pickerCalls)assert.doesNotMatch(line,/-ClientOnly/);
+  for(const line of pickerCalls)assert.doesNotMatch(line,/-ClientOnly|-GeometryFile/);
+  assert.match(capture,/Capture-Handle \$App.MainWindowHandle[^\n]*-GeometryFile \$catalogCaptureGeometryFile/);
+  assert.match(host,/\$native.diagnostic_screenshots=@\(\)/);
 });
 
 
