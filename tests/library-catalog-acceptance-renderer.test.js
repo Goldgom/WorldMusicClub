@@ -6,8 +6,9 @@ import {fileURLToPath} from 'node:url';
 import {Script} from 'node:vm';
 import {createHash} from 'node:crypto';
 import {catalogAcceptanceRendererHelpers} from './catalog-acceptance-renderer-helpers.js';
+import {originalCatalogAcceptanceFixtures} from '../scripts/prepare-library-catalog-acceptance.mjs';
 import {validateCatalogApiEvidence} from '../scripts/verify-library-catalog-acceptance.mjs';
-const {createCatalogAcceptanceTransport, catalogAcceptanceEqual} = await catalogAcceptanceRendererHelpers();
+const {createCatalogAcceptanceTransport, catalogAcceptanceEqual, catalogSeedImportFilenames} = await catalogAcceptanceRendererHelpers();
 const digest = async bytes => createHash('sha256').update(bytes).digest('hex'), plain = value => JSON.parse(JSON.stringify(value)), origin = 'https://wmh.localhost';
 const options = value => ({method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(value)});
 const commit = options({library_id: `library-${'a'.repeat(64)}`, preview: {request: {operation_id: `operation-${'b'.repeat(32)}`}}});
@@ -69,4 +70,22 @@ test('common renderer parses and hosted runner rejects local execution before an
   new Script(await readFile(new URL('../crates/desktop-shell/library-catalog-acceptance.js', import.meta.url), 'utf8'));
   const result = spawnSync(process.execPath, ['scripts/hosted-library-catalog-check.mjs'], {cwd: fileURLToPath(new URL('../', import.meta.url)), env: {...process.env, GITHUB_ACTIONS: '', WMH_HOSTED_BROWSER: ''}, encoding: 'utf8', timeout: 10000});
   assert.equal(result.status, 1); assert.match(result.stderr, /requires authorized hosted Actions/);
+});
+
+
+test('native sorted JSON object keys cannot reorder the seed import protocol', async () => {
+  const fixture = originalCatalogAcceptanceFixtures();
+  const sortedJson = value => JSON.stringify(value, function(key, item) {
+    return item && !Array.isArray(item) && typeof item === 'object' ? Object.fromEntries(Object.entries(item).sort(([left], [right]) => left.localeCompare(right))) : item;
+  });
+  // Equivalent to the current serde_json::Value map roundtrip at /catalog-config.
+  const nativeConfig = JSON.parse(sortedJson({fixture: fixture.manifest}));
+  assert.deepEqual(Object.keys(nativeConfig.fixture.spec.filenames), ['clean', 'legacy', 'shared']);
+  assert.deepEqual(Object.values(nativeConfig.fixture.spec.filenames), [fixture.clean.filename, fixture.legacy.filename, fixture.shared.filename], 'reproduce the actual 419 producer failure');
+  for (const spec of [fixture.spec, nativeConfig.fixture.spec]) {
+    assert.deepEqual(plain(catalogSeedImportFilenames(spec)), [fixture.legacy.filename, fixture.shared.filename, fixture.clean.filename]);
+  }
+  const source = await readFile(new URL('../crates/desktop-shell/library-catalog-acceptance.js', import.meta.url), 'utf8');
+  assert.match(source, /for \(const filename of catalogSeedImportFilenames\(spec\)\) await choose\(filename\)/);
+  assert.doesNotMatch(source, /Object\.(values|keys|entries)\(spec\.filenames\)/);
 });

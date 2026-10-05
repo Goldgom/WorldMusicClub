@@ -207,3 +207,13 @@ Rust driver. Its five original-fixture cases cover current Basic Trash protectio
 and normal source handoffs in the production app DOM with real Rust stdin. The
 JSON report is retained with its actual driver build SHA. It explicitly remains
 Node DOM evidence, not a rendered Basic protection or physical-audio claim.
+
+
+The seed import protocol explicitly selects the legacy archive, its shared-content
+archive, then the clean archive. JSON object member order is never used as an
+execution order: native configuration passes through `serde_json::Value`, which
+may reorder object keys. Restart explicitly reimports legacy then clean. The
+verifier requires that exact sequence and binds each picker plus its following
+Save action to one preview/commit pair with the chosen original request bytes
+and response source identity. Directory ordering and JSON serialization cannot
+silently change this protocol.

@@ -11,7 +11,7 @@ import {authoredCleanPackage} from './clean-song-package-fixtures.js';
 import {catalogServer} from './library-catalog-fixtures.js';
 import {inspectOriginalManagementZip} from '../scripts/pack-management-acceptance-fixtures.mjs';
 import {CATALOG_ACCEPTANCE_PHASES, originalCatalogAcceptanceFixtures, prepareLibraryCatalogFixtures, catalogSha256 as sha256} from '../scripts/prepare-library-catalog-acceptance.mjs';
-import {CATALOG_SOURCE_FILES, CATALOG_REQUIRED_CHECKS, CATALOG_SCREENSHOTS, readCatalogEvidenceFile, validateCatalogSourceBinding, validateCatalogScreenshot, validateCatalogApiEvidence, validateCatalogHostApiTrace, validateCatalogRetainedSnapshots, catalogLibraryInventory, validateCatalogProtocolPhases, validateCatalogJournal} from '../scripts/verify-library-catalog-acceptance.mjs';
+import {CATALOG_SOURCE_FILES, CATALOG_REQUIRED_CHECKS, CATALOG_SCREENSHOTS, readCatalogEvidenceFile, validateCatalogSourceBinding, validateCatalogScreenshot, validateCatalogApiEvidence, validateCatalogHostApiTrace, validateCatalogRetainedSnapshots, catalogLibraryInventory, validateCatalogProtocolPhases, validateCatalogJournal, validateCatalogPickerProtocol} from '../scripts/verify-library-catalog-acceptance.mjs';
 
 const owned = async t => { const directory = await mkdtemp(join(tmpdir(), 'wmc-catalog-evidence-unit-')); t.after(() => rm(directory, {recursive: true, force: true})); return directory; };
 const digestRow = (path, text) => ({path, bytes: Buffer.byteLength(text), sha256: sha256(text)});
@@ -202,4 +202,41 @@ test('actual ORIGINAL prior-runtime journal replay verifies both copies, generat
   const wrong = structuredClone(operations); wrong.allApi[1].response.catalog_digest = sha256('foreign state'); await assert.rejects(validateCatalogJournal(directory, rows, wrong), /catalog digest differs/);
   const missing = rows.filter(row => row.path !== target); await assert.rejects(validateCatalogJournal(directory, missing, operations));
   const extra = [...rows, digestRow('.catalog-staging/stage-unfinished/manifest.json', 'pending')]; await assert.rejects(validateCatalogJournal(directory, extra, operations), /unfinished journal staging/);
+});
+
+
+test('catalog chooser binds ordered actions to each exact preview and commit archive', () => {
+  const fixture = originalCatalogAcceptanceFixtures();
+  function phaseFixture(phase) {
+    const inputs = phase === 'catalog-seed' ? fixture.inputs : phase === 'catalog-restart' ? [fixture.legacy, fixture.clean] : [];
+    const sentActions = [], report = {actions: [], api_trace: []};
+    for (const input of inputs) {
+      const sequence = sentActions.length + 1;
+      sentActions.push({sequence, kind: 'picker', file: input.filename}, {sequence: sequence + 1, kind: 'click'});
+      report.actions.push({sequence, kind: 'picker', control: 'import-button'}, {sequence: sequence + 1, kind: 'click', control: 'bulk-import-save'});
+      for (const [offset, mode] of ['preview', 'commit'].entries()) report.api_trace.push({action_sequence: sequence + offset, path: `/api/library/import/${mode}`, source: 'app', method: 'POST', dispatched: true, delivery: 'forwarded', status: 200, request_base64: input.bytes.toString('base64'), request_sha256: input.sha256, response: {source: {archive_key: input.archive_key, bytes: input.bytes.length, filename: input.filename, retained: mode === 'commit', sha256: input.sha256}}});
+    }
+    return {sentActions, report};
+  }
+  for (const phase of CATALOG_ACCEPTANCE_PHASES) {
+    const value = phaseFixture(phase);
+    assert.doesNotThrow(() => validateCatalogPickerProtocol(phase, value.sentActions, value.report, fixture));
+  }
+  const original = phaseFixture('catalog-seed');
+  const failures = [
+    ['419 sorted object protocol', v => { const names = [fixture.clean.filename, fixture.legacy.filename, fixture.shared.filename]; v.sentActions.filter(row => row.kind === 'picker').forEach((row, index) => row.file = names[index]); }],
+    ['picker filename alias', v => v.sentActions[0].file = '../' + v.sentActions[0].file],
+    ['save target', v => v.report.actions[1].control = 'import-button'],
+    ['wrong action', v => v.report.api_trace[0].action_sequence = 3],
+    ['swapped preview and commit', v => v.report.api_trace.reverse()],
+    ['orphan import', v => v.report.api_trace.push(v.report.api_trace[0])],
+    ['missing commit', v => v.report.api_trace.pop()],
+    ['wrong chosen bytes', v => v.report.api_trace[0].request_base64 = fixture.clean.bytes.toString('base64')],
+    ['wrong source hash', v => v.report.api_trace[1].request_sha256 = fixture.clean.sha256],
+    ['wrong receipt filename', v => v.report.api_trace[1].response.source.filename = fixture.clean.filename],
+    ['unretained commit', v => v.report.api_trace[1].response.source.retained = false],
+    ['not dispatched', v => v.report.api_trace[1].dispatched = false],
+    ['wrong owner', v => v.report.api_trace[1].source = 'probe'],
+  ];
+  for (const [label, edit] of failures) { const value = structuredClone(original); edit(value); assert.throws(() => validateCatalogPickerProtocol('catalog-seed', value.sentActions, value.report, fixture), undefined, label); }
 });

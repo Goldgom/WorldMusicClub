@@ -50,6 +50,12 @@ function catalogPracticeBaselineReady(document) {
   return result && ['assessed', 'review'].includes(result.dataset.phase) && result.dataset.revision === result.dataset.assessedRevision && !document.getElementById('assess-button').disabled && document.getElementById('retry-assessments').hidden && !document.getElementById('feedback-results').hidden;
 }
 
+// JSON object member order is not a protocol. Native serde_json may sort keys;
+// the duplicate-import exercise requires legacy before its shared archive.
+function catalogSeedImportFilenames(spec) {
+  return [spec.filenames.legacy, spec.filenames.shared, spec.filenames.clean];
+}
+
 function catalogAcceptanceEqual(left, right) {
   const sorted = value => Array.isArray(value) ? value.map(sorted) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, sorted(value[key])])) : value;
   return JSON.stringify(sorted(left)) === JSON.stringify(sorted(right));
@@ -160,7 +166,7 @@ function catalogAcceptanceEqual(left, right) {
   }
   async function runSeed() {
     assert((await probe('/api/library/list')).entries.length === 0, 'Seed requires an empty ORIGINAL library');
-    for (const filename of Object.values(spec.filenames)) await choose(filename);
+    for (const filename of catalogSeedImportFilenames(spec)) await choose(filename);
     await membershipEvidence(); await openCatalog('uninitialized'); await native('catalog-snapshot-before', $('management-title'));
     await review('initialize-preview'); const initialization = apiLast('/api/library/catalog/initialize/preview');
     assert(same(initialization.preview.counts, spec.expected.initial), 'Initialization review count differs'); await native('click', cat('cancel')); assert(apiCount('/api/library/catalog/initialize') === 0, 'Cancel initialized catalog');

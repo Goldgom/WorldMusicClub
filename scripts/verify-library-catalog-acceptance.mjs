@@ -110,6 +110,28 @@ export function validateCatalogDiagnosticScreenshot(bytes, image) {
   assert.equal(image.bytes, bytes.length); assert.equal(image.sha256, sha256(bytes), 'Catalog diagnostic hash differs');
 }
 
+export function validateCatalogPickerProtocol(phase, sentActions, report, fixture = originalCatalogAcceptanceFixtures()) {
+  assert.ok(CATALOG_ACCEPTANCE_PHASES.includes(phase));
+  const expectedPickers = phase === 'catalog-seed' ? fixture.inputs.map(input => input.filename) : phase === 'catalog-restart' ? [fixture.legacy.filename, fixture.clean.filename] : [];
+  const pickerActions = sentActions.filter(action => action.kind === 'picker');
+  assert.deepEqual(pickerActions.map(action => action.file), expectedPickers, 'Catalog picker order must follow the explicit import protocol');
+  const imports = report.api_trace.filter(row => row.path.startsWith('/api/library/import/'));
+  assert.equal(imports.length, pickerActions.length * 2, 'Each picker requires exactly one preview and one commit');
+  for (const [index, action] of pickerActions.entries()) {
+    const input = fixture.inputs.find(row => row.filename === action.file), save = report.actions[action.sequence];
+    assert.equal(save?.sequence, action.sequence + 1); assert.equal(save?.kind, 'click'); assert.equal(save?.control, 'bulk-import-save', 'Picker must be followed by its explicit Save action');
+    for (const [offset, mode] of ['preview', 'commit'].entries()) {
+      const row = imports[index * 2 + offset];
+      assert.equal(row.path, `/api/library/import/${mode}`); assert.equal(row.action_sequence, action.sequence + offset, 'Import API belongs to a different picker or Save action');
+      assert.equal(row.source, 'app'); assert.equal(row.method, 'POST'); assert.equal(row.dispatched, true); assert.equal(row.delivery, 'forwarded'); assert.equal(row.status, 200);
+      assert.equal(row.request_base64, input.bytes.toString('base64'), 'Picker import request bytes differ from the chosen ORIGINAL fixture');
+      assert.equal(row.request_sha256, input.sha256);
+      assert.deepEqual(row.response.source, {archive_key: input.archive_key, bytes: input.bytes.length, filename: input.filename, retained: mode === 'commit', sha256: input.sha256}, 'Picker response source differs from the chosen ORIGINAL fixture');
+    }
+  }
+  return {pickerActions, expectedPickers};
+}
+
 export function validateCatalogApiEvidence(rows) {
   assert.ok(Array.isArray(rows) && rows.length > 0 && rows.length <= CATALOG_EVIDENCE_LIMITS.api, 'Bounded actual catalog API trace required');
   const outcomes = [];
@@ -529,8 +551,7 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
         }
       } else { assert.equal(result.browser_action, true); assert.equal(result.process_id, row.process_id); }
     }
-    const expectedPickers = index === 0 ? fixture.inputs.map(input => input.filename) : index === 1 ? [fixture.legacy.filename, fixture.clean.filename] : [];
-    const pickerActions = sentActions.filter(action => action.kind === 'picker'); assert.deepEqual(pickerActions.map(action => action.file), expectedPickers);
+    const {pickerActions, expectedPickers} = validateCatalogPickerProtocol(phase, sentActions, report, fixture);
     assert.equal(sentActions.filter(action => action.kind === 'catalog-snapshot-before').length, index === 0 ? 1 : 0);
     if (!native) {
       assert.deepEqual(row.page_errors, []);
