@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
 import {IDBFactory} from 'fake-indexeddb';
 import {Synth} from '../web/transport.js';
+import {canonicalDomAudio,syntheticCanonicalProfile} from './canonical-dom-audio-fixture.js';
 
 let sequence=0;
 export async function freePracticeApp({fetchResult=null}={}) {
@@ -20,12 +21,12 @@ export async function freePracticeApp({fetchResult=null}={}) {
   const paint=new Proxy({createLinearGradient:()=>({addColorStop(){}})},{get:(target,key)=>target[key]||(()=>{})});
   window.HTMLCanvasElement.prototype.getContext=()=>paint;
   const param={setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){},setTargetAtTime(){},cancelScheduledValues(){}};
-  class Audio{constructor(){audioContexts++;this.state='running';this.currentTime=0;this.destination={};}createGain(){return{gain:{...param},connect(){},disconnect(){}};}createOscillator(){return{frequency:{},connect(){},disconnect(){},start(){},stop(){}};}}
+  const {AudioContext:Audio,AudioWorkletNode}=canonicalDomAudio({onCreate:()=>audioContexts++});
   const originalUnlock=Synth.prototype.unlock,originalPlay=Synth.prototype.play,originalURL=URL.createObjectURL;
   Synth.prototype.unlock=function(...args){unlockCalls++;return unlockImpl?unlockImpl():originalUnlock.apply(this,args);};
   Synth.prototype.play=function(...args){plays.push(args);return originalPlay.apply(this,args);};
   URL.createObjectURL=blob=>{downloads.push(blob);return 'blob:node-free-practice';};
-  const installed={window,document,indexedDB:factory,navigator:{requestMIDIAccess:async()=>{midiRequests++;return access;}},location:{origin:'http://free-node-dom.invalid'},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},matchMedia:()=>({matches:false,addEventListener(){}}),MutationObserver:class{observe(){}disconnect(){}},requestAnimationFrame:()=>0,cancelAnimationFrame:()=>{},AudioContext:Audio,fetch:async(path,options={})=>{
+  const installed={window,document,indexedDB:factory,navigator:{requestMIDIAccess:async()=>{midiRequests++;return access;}},location:{origin:'http://free-node-dom.invalid'},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},matchMedia:()=>({matches:false,addEventListener(){}}),MutationObserver:class{observe(){}disconnect(){}},requestAnimationFrame:()=>0,cancelAnimationFrame:()=>{},AudioContext:Audio,AudioWorkletNode,fetch:async(path,options={})=>{
     const body=options.body?JSON.parse(options.body):null;requests.push({path,body});
     if(fetchResult)return {ok:true,json:async()=>fetchResult(path,body)};
     throw new Error('Test server unavailable');
@@ -53,6 +54,7 @@ export async function fixtureScoreServer() {
     if(path==='/api/catalog/index')return {version:1,items:[{id:fixture.id,title:fixture.title,composer:fixture.composer,provenance:fixture.provenance,written_event_count:2,pitched_note_count:2,rest_count:0,opening_bpm:120,part_count:1}]};
     if(path==='/api/catalog/score/'+fixture.id)return structuredClone(fixture);
     if(path==='/api/compile')return compile(body);
+    if(path==='/api/canonical-audio-profile')return syntheticCanonicalProfile(compile(body));
     if(path==='/api/practice-targets')return {timeline:body.timeline,groups:body.timeline.notes.map(note=>({target_id:note.id,source_occurrence_ids:[note.id],source_note_ids:[note.id],part_ids:[note.part_id]})),diagnostics:[],source_note_count:body.timeline.notes.length,target_count:body.timeline.notes.length,playable:true};
     if(path==='/api/instrument-check')return {lowest_midi:36,highest_midi:96,note_options:body.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:true,positions:[]})),diagnostics:[],changed_source_notes:false};
     if(path==='/api/fingering/piano')return unavailablePianoResult(body,compile(body.score).timeline);

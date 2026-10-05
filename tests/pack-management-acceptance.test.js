@@ -149,6 +149,7 @@ test('practice baseline waits through actual app grace and in-flight assessment 
     assert.equal(app.$('count-in').closest('dialog')?.id, 'settings-dialog', 'Performance layout moves this control into Settings');
     app.$('count-in').checked = false;
     await app.click('start-practice'); await app.until(() => app.document.body.dataset.screen === 'stage' && /Pause/.test(app.$('play-button').textContent));
+    now=app.sourceStartWall()+10;app.renderAudioTo((now-10000)/1000);
     const key = app.$('keyboard').querySelector('[data-midi="60"]'); app.emit(key, 'pointerdown', {pointerId: 9, button: 0}); app.emit(key, 'pointerup', {pointerId: 9});
     await app.click('back-to-library'); await app.click('results-button');
     assert.equal(practiceBaselineReady(app.document), false); await app.click('assess-button');

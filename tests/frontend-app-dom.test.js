@@ -9,6 +9,8 @@ import {beat,pitchMidi} from '../web/music.js';
 import {InputEvidence} from '../web/input-evidence.js';
 import {Synth} from '../web/transport.js';
 import {getAppI18n} from '../web/app-locale.js';
+import {canonicalDomAudio} from './canonical-dom-audio-fixture.js';
+import {fixtureScoreServer} from './free-practice-app-fixtures.js';
 
 // Node DOM integration only: no browser, layout engine, real audio or HTTP is run.
 test('application module initializes the lobby and activates only through explicit Start',async()=>{
@@ -17,7 +19,7 @@ test('application module initializes the lobby and activates only through explic
  // 1000 ms performance window. Only explicit input events advance this clock;
  // real timers still run normally, and epoch timestamps keep a real timeOrigin.
  let eventWall=1000;const timeOrigin=performance.timeOrigin;
- const advanceEventTime=milliseconds=>{assert.ok(Number.isFinite(milliseconds)&&milliseconds>0);eventWall+=milliseconds;return eventWall;};
+ const advanceEventTime=milliseconds=>{assert.ok(Number.isFinite(milliseconds)&&milliseconds>0);eventWall+=milliseconds;audioFixture.advanceWall(eventWall);return eventWall;};
  const requests=[],values=new Map();let audioContexts=0,unlockCalls=0,holdCheck=null,heldCheck=null,holdCompile=null,heldCompile=false;
  const originalEvidenceStart=InputEvidence.prototype.start,originalCreateUrl=URL.createObjectURL,originalUnlock=Synth.prototype.unlock,originalPlay=Synth.prototype.play;
  Synth.prototype.unlock=function(...args){unlockCalls++;return originalUnlock.apply(this,args)};
@@ -26,16 +28,18 @@ test('application module initializes the lobby and activates only through explic
  window.HTMLElement.prototype.showModal=function(){this.setAttribute('open','')};window.HTMLElement.prototype.close=function(){this.removeAttribute('open');this.dispatchEvent(new window.Event('close'))};
  const paint=new Proxy({createLinearGradient:()=>({addColorStop(){}})},{get:(target,key)=>target[key]||(()=>{})});window.HTMLCanvasElement.prototype.getContext=()=>paint;
  const param={setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){},cancelScheduledValues(){}};
- class Audio{constructor(){audioContexts++;this.state='running';this.currentTime=0;this.destination={}}createGain(){return{gain:{...param},connect(){},disconnect(){}}}createOscillator(){return{frequency:{},connect(){},disconnect(){},start(){},stop(){}}}}
+ const audioFixture=canonicalDomAudio({onCreate:()=>audioContexts++}),{AudioContext:Audio,AudioWorkletNode}=audioFixture;
+ const profileFixture=await fixtureScoreServer();
  const compile=score=>({score,timeline:{notes:score.parts.flatMap(part=>part.notes.filter(note=>note.pitch).map(note=>({id:note.id,source_note_id:note.id,source_note_ids:[note.id],velocity:note.velocity,part_id:part.id,midi:pitchMidi(note.pitch),start_ms:beat(note.at)*500,duration_ms:beat(note.duration)*500,voice:note.voice,staff:note.staff}))),duration_ms:1000},diagnostics:[]});
  const item={id:fixture.id,title:fixture.title,composer:fixture.composer,provenance:fixture.provenance,written_event_count:2,pitched_note_count:2,rest_count:0,opening_bpm:120,part_count:1};
  const otherScore={...structuredClone(fixture),id:'other-preview',title:'Another selected score'};
- const installed={window,document,performance:{now:()=>eventWall,timeOrigin},location:{origin:'http://local-node-dom.invalid'},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},matchMedia:()=>({matches:false,addEventListener(){}}),MutationObserver:class{observe(){}disconnect(){}},requestAnimationFrame:()=>0,cancelAnimationFrame:()=>{},AudioContext:Audio,fetch:async(path,options={})=>{
+ const installed={window,document,performance:{now:()=>eventWall,timeOrigin},location:{origin:'http://local-node-dom.invalid'},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},matchMedia:()=>({matches:false,addEventListener(){}}),MutationObserver:class{observe(){}disconnect(){}},requestAnimationFrame:()=>0,cancelAnimationFrame:()=>{},AudioContext:Audio,AudioWorkletNode,fetch:async(path,options={})=>{
   const body=options.body?JSON.parse(options.body):null;requests.push({path,body});let result;
   if(path==='/api/catalog/index')result={version:1,items:[item,{...item,id:otherScore.id,title:otherScore.title}]};
   else if(path==='/api/catalog/score/'+fixture.id)result=structuredClone(fixture);
   else if(path==='/api/catalog/score/'+otherScore.id)result=structuredClone(otherScore);
   else if(path==='/api/compile')result=compile(body);
+  else if(path==='/api/canonical-audio-profile')result=profileFixture(path,body);
   else if(path==='/api/transposition/preview'){const score=structuredClone(body.score);for(const part of score.parts)for(const note of part.notes)if(note.pitch)note.pitch.octave++;score.id+=':semitones:+12';score.title+=' [+12 semitones]';score.source={format:'semitone-transposition',filename:null,content:JSON.stringify({version:1,operation:body.operation,original:body.score}),import_diagnostics:[{severity:'warning',code:'explicit_semitone_transposition',message:'Keep original JSON',note_id:null}]};const compilation=compile(score);result={compilation,operation:body.operation,written_interval:{diatonic_steps:7,fifths_delta:0},changed_note_count:score.parts.flatMap(part=>part.notes).filter(note=>note.pitch).length,original_preserved:true,scored_mode_allowed:true,instrument_report:{lowest_midi:36,highest_midi:96,note_options:compilation.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:true,positions:[]})),diagnostics:[],changed_source_notes:false}};}
   else if(path==='/api/transposition/restore')result=compile(JSON.parse(body.source.content).original);
   else if(path==='/api/practice-targets')result={timeline:body.timeline,groups:body.timeline.notes.map(note=>({target_id:note.id,source_occurrence_ids:[note.id],source_note_ids:[note.id],part_ids:[note.part_id]})),diagnostics:[],source_note_count:body.timeline.notes.length,target_count:body.timeline.notes.length,playable:true};
@@ -124,8 +128,8 @@ test('application module initializes the lobby and activates only through explic
   assert.equal(unlockCalls,beforeSilentUnlock,'Silent physical input never calls AudioContext unlock');
   document.getElementById('sound-button').click();
   let blob;URL.createObjectURL=value=>{blob=value;return 'blob:node-evidence-test'};
-  const exportTake=async()=>{document.getElementById('export-takes').click();return JSON.parse(await blob.text())};
-  const startPractice=async()=>{document.getElementById('count-in').checked=false;document.getElementById('play-button').click();await until(()=>document.getElementById('play-button').textContent.includes('Pause'),'Practice did not start')};
+  const exportTake=async()=>{const previous=blob;document.getElementById('export-takes').click();await until(()=>blob!==previous,'The take export did not settle');return JSON.parse(await blob.text())};
+  const startPractice=async()=>{document.getElementById('count-in').checked=false;await until(()=>!document.getElementById('play-button').disabled,'Prior audio pause did not settle');document.getElementById('play-button').click();await until(()=>document.getElementById('play-button').textContent.includes('Pause'),'Practice did not start');advanceEventTime(60);};
   await startPractice();
   const unchangedScore=document.getElementById('score-title').textContent;
   const runningBefore=await exportTake(),runningRequests=requests.length;

@@ -126,10 +126,10 @@ test('actual app Import entry preserves prior score, take, drafts and nodes; sup
   const $=id=>document.getElementById(id),exportJson=async id=>{$(id).click();return JSON.parse(await downloads.at(-1).text());};
   const event=(node,type,properties={})=>{const e=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(e,{repeat:false,...properties});Object.defineProperty(e,'timeStamp',{value:performance.now()});node.dispatchEvent(e);};
   try {
-    await import('../web/app.js?reference-listening-integration');await until(()=>!$('start-practice').disabled);$('start-practice').click();await until(()=>document.body.dataset.screen==='stage'&&!$('start-practice').disabled);
+    await import('../web/app.js?reference-listening-integration');await until(()=>!$('start-practice').disabled);$('sound-button').click();$('start-practice').click();await until(()=>document.body.dataset.screen==='stage'&&!$('start-practice').disabled);
     if($('play-button').textContent.includes('暂停'))$('play-button').click();$('midi-button').click();await until(()=>device.onmidimessage!==null);$('count-in').checked=false;$('play-button').click();await until(()=>$('play-button').textContent.includes('暂停'));
     const earlierHumanTime=performance.now();event(document.body,'keydown',{key:'r',code:'KeyR'});event(document.body,'keyup',{key:'r',code:'KeyR'});
-    $('play-button').click();$('custom-lowest').value='D#3';const draft=$('custom-lowest'),key=document.querySelector('#keyboard [data-midi="60"]');
+    $('play-button').click();$('sound-button').click();$('custom-lowest').value='D#3';const draft=$('custom-lowest'),key=document.querySelector('#keyboard [data-midi="60"]');
     const priorTake=await exportJson('export-takes'),priorScore=await exportJson('export-button'),priorSounds=scoreSounds;
     $('import-tools-button').click();$('reference-listening-entry').click();assert.equal($('reference-listening-dialog').open,true);
     setFile(window,$('reference-file'),sourceFile(f));await until(()=>$('reference-counts').dataset.eventCount==='26');

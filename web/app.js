@@ -21,7 +21,8 @@ import {setupGameShell} from './game-shell.js';
 import {setupNoticeView} from './notice-view.js';
 import {resolvePracticeSelection,humanPracticePartIds} from './practice-selection.js';
 import {setupCompletePracticeView} from './complete-practice-view.js';
-import {canonicalPracticeOptions,canonicalDisplayNotes} from './canonical-practice-session.js';
+import {CanonicalPracticeSession,canonicalPracticeOptions,canonicalDisplayNotes} from './canonical-practice-session.js';
+import {canonicalAudioPolicyText,canonicalAudioErrorText,canonicalLoopBudgetText} from './canonical-practice-text.js';
 import {practiceStageNotes,markPracticeNotation,createPracticeDisplayCache} from './practice-stage-display.js';
 import {setupFallingNoteLabels} from './falling-note-labels.js';
 import {ScorePreview,filterCatalog} from './score-preview.js';
@@ -136,6 +137,8 @@ function liveAudioErrorText(error) { return cleanErrorText(i18n.locale,{code:err
 let cleanView=null,previewMedia=null,activeMedia=null,previewMediaKey=null,activeMediaKey=null;
 const cleanMutedParts=new Set(),cleanSoloParts=new Set();
 const cleanPlayer=new CleanSongPlayer({getPositionMs:()=>transport.time(performance.now()),onError:error=>{pausePlayback();notice(()=>cleanErrorText(i18n.locale,error),true);}});
+const canonicalSession=new CanonicalPracticeSession({api,onError:error=>{pausePlayback();notice(()=>canonicalAudioErrorText(i18n.locale,error),true);}});
+function playbackPosition(now=performance.now()){return !state.cleanSong&&transport.running?(canonicalSession.sourcePositionMs()??transport.time(now)):transport.time(now);}
 let metronome = null;
 let adaptationView = null;
 let transpositionView = null;
@@ -205,21 +208,22 @@ async function api(path, body, signal) {
   const response = await fetch(path, {method: body === undefined ? 'GET' : 'POST', headers: body === undefined ? {} : {'Content-Type': 'application/json'}, body: body === undefined ? undefined : JSON.stringify(body), signal});
   let result;
   try { result = await response.json(); } catch { throw appError('app.serverUnreadable'); }
-  if (!response.ok) throw result.error ? new Error(result.error) : appError('app.serverStatus',{status:response.status});
+  if (!response.ok) throw result.error ? Object.assign(new Error(result.error),{code:result.code}) : appError('app.serverStatus',{status:response.status});
   return result;
 }
 function updateButtons() {
   refreshPracticeView();
+  renderCanonicalAudio();
   const ready = Boolean(state.compiled);
   state.finishing = state.recorder.pending || state.assessmentBusy;
   const activePass = state.recorder.active;
   const checkingCurrent = Boolean(activePass && (activePass.manualDeadline !== null || activePass.inFlight || (activePass.closedWall !== null && activePass.assessedRevision < activePass.revision && !activePass.error)));
   const allowed = (!isBasicKeysSong(state.cleanSong)||hasBasicKeyRendition(state.cleanSong)||state.mode==='practice')&&(state.mode !== 'practice' || state.compatibility.status === 'ready');
-  const audioUnavailable=hasAudioThreadRendition(state.cleanSong)&&!synth.muted&&(typeof globalThis.AudioWorkletNode!=='function'||Boolean(synth.context&&!synth.context.audioWorklet));
-  $('play-button').disabled = !ready || (!transport.running && (!allowed || checkingCurrent || audioUnavailable));
+  const audioUnavailable=(!state.cleanSong||hasAudioThreadRendition(state.cleanSong))&&!synth.muted&&(typeof globalThis.AudioWorkletNode!=='function'||Boolean(synth.context&&!synth.context.audioWorklet));
+  $('play-button').disabled = !ready || canonicalSession.pausePending || (!transport.running && (!allowed || checkingCurrent || audioUnavailable));
   bindAttribute($('play-button'),'title',()=>audioUnavailable?cleanErrorText(i18n.locale,{code:'clean_audio_worklet_unavailable'}):'');
   $('reset-button').disabled = !ready;
-  $('export-takes').disabled = state.recorder.passes.length === 0;
+  $('export-takes').disabled = state.recorder.passes.length === 0||canonicalSession.pausePending;
   $('retry-assessments').hidden = !state.recorder.passes.some(pass=>pass.error);
   $('export-button').disabled = !state.score||Boolean(state.cleanSong);
   $('export-jianpu').disabled = !state.score||isBasicKeysSong(state.cleanSong);
@@ -227,7 +231,7 @@ function updateButtons() {
   $('loop-apply').disabled = !ready||Boolean(state.cleanSong);
   for(const id of ['tempo','loop-enabled','loop-from','loop-to','metronome-enabled','metronome-pulse'])$(id).disabled=Boolean(state.cleanSong);
   $('count-in').disabled=isBasicKeysSong(state.cleanSong);
-  if(!transport.running&&!state.playPending){cleanPlayer.stop();activeMedia?.pause();}
+  if(!transport.running&&!state.playPending){cleanPlayer.stop();if(!canonicalSession.held)canonicalSession.stop();activeMedia?.pause();}
   renderCleanActive();
   $('assess-button').disabled = !ready || state.mode !== 'practice' || checkingCurrent || !allowed;
   $('practice-gate').hidden = state.mode !== 'practice' || state.compatibility.status === 'ready';
@@ -248,7 +252,7 @@ function silenceHeld(reason = 'application_cleanup', eventWall = performance.now
   synth.silence();
   document.querySelectorAll('.pressed').forEach(el => el.classList.remove('pressed'));
 }
-function pausePlayback(reason = 'app.paused', evidenceReason = 'pause', {redraw = true} = {}) {
+function pausePlayback(reason = 'app.paused', evidenceReason = 'pause', {redraw = true,preserveCanonical=false} = {}) {
   lobbyPreview?.stop(['blur','hidden','pagehide'].includes(evidenceReason)?'interrupted':'stopped');
   if(referenceListening?.isOpen()){referenceListening.pause();return;}
   if(performanceListening?.isActive()){if(['blur','hidden','pagehide'].includes(evidenceReason))performanceListening.stop();else performanceListening.pause();return;}
@@ -257,12 +261,17 @@ function pausePlayback(reason = 'app.paused', evidenceReason = 'pause', {redraw 
   // Opening a panel or browsing an already-paused session is not a new input
   // boundary. Real lifecycle events still matter even before a late onset arrives.
   const recordEvidence = evidenceReason !== 'pause' || transport.running || state.held.size > 0 || state.recorder.evidence.active.size > 0;
-  const pauseTime = performance.now(); advanceLoopClock(pauseTime); state.recorder.pause(pauseTime);
+  const pauseTime = performance.now(); advanceLoopClock(pauseTime); const canonicalPosition=!state.cleanSong?canonicalSession.sourcePositionMs():null;
+  const preserve=preserveCanonical&&!state.cleanSong&&canonicalSession.running,recorder=state.recorder,generation=state.generation;
+  if(preserve){
+    const pending=canonicalSession.pause();
+    pending.then(result=>{if(!result||recorder!==state.recorder||generation!==state.generation||!canonicalSession.paused)return;transport.position=result.positionMs;recorder.pause(result.wallTime);updateButtons();drawFrame();}).catch(error=>{if(recorder!==state.recorder||generation!==state.generation)return;recorder.pause(pauseTime);notice(()=>canonicalAudioErrorText(i18n.locale,error),true);updateButtons();});
+  }else{canonicalSession.stop();state.recorder.pause(pauseTime);}
   if (transport.running) {
-    if(hasAudioThreadRendition(state.cleanSong)&&transport.time(pauseTime)>=state.compiled.timeline.duration_ms){
+    if(!state.loop&&(!state.cleanSong||hasAudioThreadRendition(state.cleanSong))&&(canonicalPosition??playbackPosition(pauseTime))>=state.compiled.timeline.duration_ms){
       if(state.mode==='practice')state.recorder.closeAtEnd(pauseTime);
       transport.finish(state.compiled.timeline.duration_ms);bindText($('transport-status'),()=>t('app.complete'));
-    }else{transport.pause(pauseTime);bindText($('transport-status'),()=>typeof reason==='function'?reason():reason.startsWith('app.')?t(reason):reason);}
+    }else{transport.pause(pauseTime);if(canonicalPosition!==null)transport.position=canonicalPosition;bindText($('transport-status'),()=>typeof reason==='function'?reason():reason.startsWith('app.')?t(reason):reason);}
   }
   silenceHeld(evidenceReason,pauseTime,pauseTime,recordEvidence);metronome?.pause();
   if(redraw){updateButtons();drawFrame();}
@@ -274,7 +283,7 @@ function resetPlayback() {
   pausePlayback(undefined,'pause',{redraw:false});
   transport.reset();activeMedia?.sync({positionMs:0,running:false});
   if (state.loop) transport.seek(state.loop.start_ms);
-  state.loopIteration = 1;metronome?.reset();
+  state.loopIteration = 1;state.canonicalPassIndex=0;state.canonicalBudgetEnded=false;metronome?.reset();
   if (state.loopPending && !state.loop) bindText($('loop-status'), () => t('app.loopCancelled'));
   state.loopPending = false;
   state.loopRequest++; $('loop-enabled').checked = Boolean(state.loop);
@@ -348,7 +357,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     writtenCursor?.reset();
     const previousPart = requestedPracticePart !== undefined ? requestedPracticePart : preserveTempo ? state.practicePart : null;
     state.cleanSong=cleanSong;libraryManagement?.catalog.sessionChanged();if(!cleanSong){previewMedia?.clear();previewMediaKey=null;}cleanMutedParts.clear();cleanSoloParts.clear();cleanPlayer.select(cleanSong);activeMedia?.clear();activeMediaKey=null;
-    state.score = compiled?.score||score;state.inspection=inspection;
+    state.score = compiled?.score||score;state.inspection=inspection;canonicalSession.select(cleanSong?null:compiled);
     if(requestedMode!==undefined){state.mode=requestedMode;$('session-mode').value=requestedMode;}
     state.importDiagnostics = importDiagnostics;
     const diagnostics = [...new Map([...(compiled?.diagnostics||[]), ...importDiagnostics].map(item => [`${item.code}:${item.note_id || ''}:${item.message}`, item])).values()];
@@ -535,7 +544,7 @@ function renderNotationPage() {
       }
       if(!state.engravingActive)engravedView.reportPaint(pages.filter(item=>(['ready','rendering_unavailable','onset_page','percussion_selectors'].includes(item.status)||item.status==='empty_page'&&item.measures?.length>0&&item.follow_end_ms>item.source_start_ms)).map(item=>item.part_id),engravedView.basicBatch()?.status||'ready');
       bindText($('notation-page'),()=>i18n.locale==='en'?`Rendition measures ${page.first_measure+1}–${page.first_measure+page.measure_count} / ${page.total_measures}`:`解释小节 ${page.first_measure+1}～${page.first_measure+page.measure_count} / ${page.total_measures}`);$('notation-prev').disabled=page.first_measure===0;$('notation-next').disabled=page.next_measure===null;
-    }else{const status=shell.notationVisible()?engravedView.followPosition(Math.max(0,transport.time(performance.now()))):null;bindText($('notation-page'),()=>status?.status==='unavailable'?(i18n.locale==='en'?'The native rendition page is unavailable. Reopen Staff to retry.':'本机解释页面不可用。请重新打开五线谱重试。'):(i18n.locale==='en'?'Preparing the shared rendition page…':'正在准备共用解释页面…'));$('notation-prev').disabled=$('notation-next').disabled=true;}
+    }else{const status=shell.notationVisible()?engravedView.followPosition(Math.max(0,playbackPosition(performance.now()))):null;bindText($('notation-page'),()=>status?.status==='unavailable'?(i18n.locale==='en'?'The native rendition page is unavailable. Reopen Staff to retry.':'本机解释页面不可用。请重新打开五线谱重试。'):(i18n.locale==='en'?'Preparing the shared rendition page…':'正在准备共用解释页面…'));$('notation-prev').disabled=$('notation-next').disabled=true;}
     bindText($('score-key'),()=>i18n.locale==='en'?'Basic interpretation v1':'基础解释 v1');state.lastHighlight='';markNotationRoles();return;
   }
   const layout = notationLayout(Math.max(240, $('notation').clientWidth - 36));
@@ -922,7 +931,8 @@ function connectPlayable(container) {
 async function togglePlayback() {
   if(referenceInputActive())return;
   if (shell.screen()!=='stage' || !state.compiled) return;
-  if (transport.running || state.playPending) { pausePlayback(); return; }
+  if (canonicalSession.pausePending)return;
+  if (transport.running || state.playPending) { pausePlayback(undefined,'pause',{preserveCanonical:transport.running}); return; }
   if(state.cleanSong&&!inspectCleanRendition(state.cleanSong).supported&&!(isBasicKeysSong(state.cleanSong)&&state.mode==='practice'&&state.targetTimeline?.notes.length)){notice(()=>cleanErrorText(i18n.locale,{code:'clean_renderer_unsupported'}),true);return;}
   if (state.mode === 'practice' && state.compatibility.status !== 'ready') { notice(compatibilityNotice(state.compatibility), true); return; }
   const waiting=state.recorder.active;
@@ -934,40 +944,42 @@ async function togglePlayback() {
   try {
     if(!muted)await synth.unlock();
     if(!current())return;
-    const audioThread=!muted&&hasAudioThreadRendition(song),beatMs=60000/(Number($('tempo').value)||100),countIn=$('count-in').checked&&!isBasicKeysSong(song)?beatMs*4:0;
+    const audioThread=!muted&&(!song||hasAudioThreadRendition(song)),beatMs=60000/(Number($('tempo').value)||100),countIn=$('count-in').checked&&!isBasicKeysSong(song)?beatMs*4:0;
     // Count-in belongs to the same prepared source position as every audio gate,
     // transport frame and recorder timestamp; never subtract it after admission.
-    const options={context:synth.context,output:synth.output,mode,targetPart,practiceSelection,mutedParts:[...cleanMutedParts],soloParts:[...cleanSoloParts],instrument,resumePositionMs:transport.position-(audioThread&&!transport.hasStarted?countIn:0),acceptedPolicyId:song?inspectCleanRendition(song).rendition:null};
+    const options={context:synth.context,output:synth.output,mode,targetPart,practiceSelection,mutedParts:[...cleanMutedParts],soloParts:[...cleanSoloParts],instrument,resumePositionMs:!song&&state.loop&&!transport.hasStarted?undefined:transport.position-(audioThread&&!transport.hasStarted?countIn:0),acceptedPolicyId:song?inspectCleanRendition(song).rendition:null};
     let now;
     if(audioThread){
       // Admit the fixed live-input graph before building the source plan or
       // choosing its 50 ms anchor. Human keys and clicks then use only messages.
       await synth.prepareLiveAudio();
       if(!current())return;
-      const prepared=await cleanPlayer.prepare(options);
-      if(!prepared||!current())return;
+      const resumeCanonical=!song&&canonicalSession.paused;
+      if(!resumeCanonical){const prepared=await (song?cleanPlayer.prepare(options):canonicalSession.prepare({...options,soundEnabled:true,audiblePartIds:mode==='listen'&&targetPart?[targetPart]:undefined,range:state.loop?{startMs:state.loop.start_ms,endMs:state.loop.end_ms}:undefined,countInMs:countIn,loop:state.loop?{enabled:true}:undefined}));if(!prepared||!current())return;}
       // All plan building, transfer and renderer preparation precede this lead.
-      const anchor=await cleanPlayer.startPrepared({anchorTime:synth.context.currentTime+.05});
+      const anchor=await (resumeCanonical?canonicalSession.resume({anchorTime:synth.context.currentTime+.05}):(song?cleanPlayer:canonicalSession).startPrepared({anchorTime:synth.context.currentTime+.05}));
       if(!anchor||!current())return;
       if(synth.context.state!=='running'||synth.context.currentTime>=anchor.anchorTime)throw Object.assign(new Error('The shared audio start anchor elapsed before transport admission.'),{code:'clean_late_start'});
       // Use the renderer's quantized sample anchor for both transport and inputs.
-      now=performance.now()+(anchor.anchorTime-synth.context.currentTime)*1000;
+      const wallTime=performance.now(),audioTime=synth.context.currentTime;
+      now=wallTime+(anchor.anchorTime-audioTime)*1000;
+      if(!song&&!resumeCanonical){canonicalSession.bindWallClock({wallTime,audioTime,sampleRate:synth.context.sampleRate});state.canonicalPassIndex=0;state.canonicalBudgetEnded=false;}
       transport.position=anchor.positionMs;
-    }else now=performance.now()+(state.cleanSong?50:0);
+    }else{if(!song){const prepared=await canonicalSession.prepare({...options,soundEnabled:false,audiblePartIds:mode==='listen'&&targetPart?[targetPart]:undefined,range:state.loop?{startMs:state.loop.start_ms,endMs:state.loop.end_ms}:undefined,countInMs:countIn,loop:state.loop?{enabled:true}:undefined});if(!prepared||!current())return;}now=performance.now()+(state.cleanSong?50:0);}
     if(!current())return;
     state.playPending=false;state.inspection=false;
     transport.start(now,state.loop?.notes||state.practiceTimeline?.notes||state.compiled.timeline.notes,audioThread?0:countIn);
     if(mode==='practice')beginPracticePass(now);
     if(song){
       if(!muted&&!audioThread&&!isBasicKeysSong(song))cleanPlayer.start(options);
-      activeMedia?.sync({positionMs:transport.time(performance.now()),running:true,userGesture:true});
+      activeMedia?.sync({positionMs:playbackPosition(performance.now()),running:true,userGesture:true});
     }
     updateButtons();
   }catch(error){
     if(ticket!==state.playTicket)return;
-    pausePlayback();notice(()=>song?liveAudioErrorText(error):errorDetail(error),true);
+    pausePlayback();notice(()=>song?liveAudioErrorText(error):canonicalAudioErrorText(i18n.locale,error),true);
   }finally{
-    if(ticket===state.playTicket&&state.playPending){state.playPending=false;cleanPlayer.stop();updateButtons();}
+    if(ticket===state.playTicket&&state.playPending){state.playPending=false;cleanPlayer.stop();canonicalSession.stop();updateButtons();}
   }
 }
 function beginPracticePass(now, captureEnabled = true) {
@@ -975,6 +987,11 @@ function beginPracticePass(now, captureEnabled = true) {
   if(pass&&pass.closedWall===null&&pass.captureEnabled&&captureEnabled) recorder.resume(now,transport.position);
   else {pass=recorder.begin({wallTime:now,position:transport.position,startMs:state.loop?.start_ms||0,endMs:state.loop?.end_ms||state.compiled.timeline.duration_ms,timeline:state.targetTimeline,label:state.loop?`Loop ${state.loopIteration}`:`Take ${recorder.passes.length+1}`,captureEnabled});passDisplayLabels.set(pass,{kind:state.loop?'loop':'take',number:state.loop?state.loopIteration:recorder.passes.length});}
   if(!passInterpretations.has(pass)&&state.cleanSong){const song=state.cleanSong,rendition=song.runtime?.rendition;passInterpretations.set(pass,{package_content_sha256:song.identity,source_sha256:song.score.source.sha256,runtime_profile:song.runtime?.profile||song.profile,policy_id:rendition?.policy_id||(isVsqSong(song)?'wmh-vsq-base-note-reference-v1':null),practice_part:state.practicePart,practice_selection:structuredClone(state.practiceSelection),source_target_ids:state.sourceTargetTimeline.notes.map(note=>note.id),scoring:'selected_human_parts_key_and_onset_only',...(rendition?{policy:structuredClone(rendition.policy),source_clock_available:rendition.source_clock_available}:{})});}
+  if(!state.cleanSong&&canonicalSession.interpretation){
+    if(!passInterpretations.has(pass))passInterpretations.set(pass,{...structuredClone(canonicalSession.interpretation),practice_part:state.practicePart,practice_selection:structuredClone(state.practiceSelection),practice_layout:state.practiceLayout,source_target_ids:state.sourceTargetTimeline.notes.map(note=>note.id),scoring:'selected_human_parts_key_and_onset_only',playback_segments:[]});
+    const clock=canonicalSession.sourceClock();
+    passInterpretations.get(pass).playback_segments.push({wall_start_ms:now,position_start_ms:transport.position,...structuredClone(canonicalSession.interpretation),...(clock?{audio_clock:{player_epoch:clock.playerEpoch,generation:clock.generation,pass_index:clock.passIndex,cycle_start_frame:clock.cycleStartFrame,pass_start_frame:clock.passStartFrame,next_boundary_frame:clock.nextBoundaryFrame,initial_anchor_frame:clock.initialAnchorFrame}}:{})});
+  }
   state.inputs=pass.inputs;refreshPassHistory();displayChosenPass();return pass;
 }
 
@@ -1069,21 +1086,28 @@ async function drainAssessments() {
     }
   }finally{if(recorder===state.recorder){state.assessmentBusy=false;updateButtons();refreshPassHistory()}}
 }
-function assess() {
+async function assess() {
   if(referenceInputActive())return;
   if(!state.compiled||state.mode!=='practice')return;
   if(state.compatibility.status!=='ready'){notice(compatibilityNotice(state.compatibility),true);return}
   const played=Boolean(state.recorder.active?.captureEnabled);
-  pausePlayback();const now=performance.now();if(!state.recorder.active)beginPracticePass(now,false);
+  pausePlayback();const generation=state.generation,recorder=state.recorder;
+  if(!state.cleanSong&&!recorder.active){
+    try{const prepared=await canonicalSession.prepare({soundEnabled:false,mode:'practice',practiceSelection:state.practiceSelection,range:state.loop?{startMs:state.loop.start_ms,endMs:state.loop.end_ms}:undefined,loop:state.loop?{enabled:true}:undefined});if(!prepared||generation!==state.generation||recorder!==state.recorder)return;}
+    catch(error){if(generation===state.generation)notice(()=>canonicalAudioErrorText(i18n.locale,error),true);return;}
+  }
+  const now=performance.now();if(!state.recorder.active)beginPracticePass(now,false);
   state.recorder.requestAssessment(now,{grace:played});
   bindText($('transport-status'), () => played?t('app.receivingInput'):t('app.checkingTake'));
   updateButtons();refreshPassHistory();drainAssessments();
 }
 $('feedback-pass').addEventListener('change',displayChosenPass);
 $('retry-assessments').addEventListener('click',()=>{state.recorder.retryFailed();drainAssessments()});
-$('export-takes').addEventListener('click',()=>{const routing=midiController?.exportRoutingData(),exported=state.recorder.exportData();exported.passes=exported.passes.map((pass,index)=>({...pass,...(passInterpretations.has(state.recorder.passes[index])?{interpretation:passInterpretations.get(state.recorder.passes[index])}:{})}));const data={...exported,score_id:state.score?.id,practice_part:state.practicePart,practice_selection:structuredClone(state.practiceSelection),view_configuration:{practice_layout:state.practiceLayout,show_other_parts:state.showOtherParts,falling_note_labels:fallingNoteLabels?.enabled()===true},target_plan:state.practicePlan,...(routing?{midi_routing:routing}:{}),keyboard_input_configuration:keyboardInput.exportConfigurationData()};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
+$('export-takes').addEventListener('click',async()=>{const recorder=state.recorder;if(canonicalSession.pendingPause){try{await canonicalSession.pendingPause;await Promise.resolve();}catch{return;}if(recorder!==state.recorder)return;}const routing=midiController?.exportRoutingData(),exported=state.recorder.exportData();exported.passes=exported.passes.map((pass,index)=>({...pass,...(passInterpretations.has(state.recorder.passes[index])?{interpretation:passInterpretations.get(state.recorder.passes[index])}:{})}));const data={...exported,score_id:state.score?.id,practice_part:state.practicePart,practice_selection:structuredClone(state.practiceSelection),view_configuration:{practice_layout:state.practiceLayout,show_other_parts:state.showOtherParts,falling_note_labels:fallingNoteLabels?.enabled()===true},target_plan:state.practicePlan,...(routing?{midi_routing:routing}:{}),keyboard_input_configuration:keyboardInput.exportConfigurationData()};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
 function advanceLoopClock(now) {
   if(!state.loop||!transport.running)return;
+  const clock=!state.cleanSong?canonicalSession.sourceClock():null;
+  if(clock&&canonicalSession.plan?.rangeMode){advanceCanonicalLoopClock(now,clock);return;}
   const beatMs=60000/(Number($('tempo').value)||100);
   const result=transport.wrapLoop(now,state.loop.notes,{start:state.loop.start_ms,end:state.loop.end_ms,countIn:$('count-in').checked?beatMs*4:0});
   if(result.status==='pending')return;
@@ -1099,6 +1123,36 @@ function advanceLoopClock(now) {
   }
   updateButtons();refreshPassHistory();
 }
+function advanceCanonicalLoopClock(now,clock){
+  const previous=state.canonicalPassIndex||0,difference=clock.passIndex-previous;
+  if(difference<0)return;
+  const cycleWall=canonicalSession.wallAtFrame(clock.cycleStartFrame),endWall=canonicalSession.wallAtFrame(clock.nextBoundaryFrame);
+  if(!Number.isFinite(cycleWall)||!Number.isFinite(endWall))return;
+  if(difference>0){
+    const active=state.recorder.active,segment=active?.segments.at(-1),boundaryWall=segment?segment.wallStart+Math.max(0,active.endMs-segment.positionStart):cycleWall;
+    if(state.mode==='practice')state.recorder.closeAtEnd(boundaryWall);
+    const missed=difference>1||clock.ended,skippedPasses=difference-(clock.ended?0:1);
+    silenceHeld(missed?'loop_clock_stall':'loop_boundary',now,boundaryWall);
+    state.canonicalPassIndex=clock.passIndex;
+    if(missed){
+      if(state.mode==='practice')state.recorder.recordInterruption({boundaryWall,observedWall:now,skippedPasses});
+      canonicalSession.stop();transport.pause(now);transport.position=clock.positionMs;
+      notice(()=>t('app.loopClockGap',{count:skippedPasses}),true);bindText($('transport-status'),()=>t('app.loopInterrupted'));
+      if(clock.ended){state.canonicalBudgetEnded=true;transport.finish(state.loop.end_ms);}
+      updateButtons();refreshPassHistory();return;
+    }
+    state.loopIteration++;
+    const plan=canonicalSession.plan;
+    transport.position=(plan.rangeStartFrame-plan.countInFrames)*1000/plan.sampleRate;transport.startedAt=cycleWall;
+    if(state.mode==='practice'&&!clock.ended)beginPracticePass(cycleWall);
+    bindText($('transport-status'),()=>t('app.loopIteration',{count:state.loopIteration}));refreshPassHistory();
+  }
+  if(clock.ended){
+    if(state.mode==='practice')state.recorder.closeAtEnd(endWall);
+    state.canonicalBudgetEnded=true;transport.finish(state.loop.end_ms);silenceHeld('completion',now,endWall);
+    const budget=canonicalSession.interpretation?.loop_budget;notice(()=>canonicalLoopBudgetText(i18n.locale,budget,{ended:true}));bindText($('transport-status'),()=>t('app.complete'));updateButtons();refreshPassHistory();
+  }
+}
 // Displayed parts are independent of playback keys and assessed practice targets.
 function displayedPartId(){return state.engravingActive?$('engraving-part').value||null:state.notationPart}
 function displayedWrittenEntries(written) {
@@ -1108,7 +1162,7 @@ function displayedWrittenEntries(written) {
 function drawFrame(displayOnly = false) {
   const now = performance.now();
   if(displayOnly!==true)advanceLoopClock(now);
-  let position = transport.time(now);
+  let position = playbackPosition(now);
   if (displayOnly!==true && synth.droppedVoices && !state.audioLimitWarned) { state.audioLimitWarned = true; notice(() => t('app.audioLimit')); }
   const timeline = state.compiled?.timeline;
   const duration = timeline?.duration_ms || 0;
@@ -1117,14 +1171,15 @@ function drawFrame(displayOnly = false) {
   const playbackIndex = state.mode==='practice'&&state.physicalIndex ? state.physicalIndex : state.cleanSong?state.timelineIndex:state.loop?.index || state.practiceIndex || state.timelineIndex;
   if (displayOnly!==true && transport.running && timeline) {
     if(!state.cleanSong)metronome?.advance({running:true,position,segment:transport.startedAt,startPosition:transport.position});
-    for (const note of transport.due(now, playbackNotes)) if (state.mode === 'listen'&&!state.cleanSong) synth.play(`score:${note.id}:${note.part_id}:${note.start_ms}`, note.midi, note.remaining_ms, note.delay_ms, state.instrument, note.velocity ?? 90);
+    // Source notes are scheduled only by their admitted audio-thread renderer.
+    // Synth is reserved for explicit human input and metronome clicks.
     if (!state.loop && state.mode==='practice' && position>=duration) {
       const previouslyClosed=state.recorder.active?.closedWall!==null;
       const pass=state.recorder.closeAtEnd(now);
       if(!previouslyClosed){updateButtons();refreshPassHistory()}
-      if((pass&&now<pass.deadline)||cleanPlayer.audioThreadRunning)bindText($('transport-status'), () => t('app.receivingInput'));
+      if((pass&&now<pass.deadline)||cleanPlayer.audioThreadRunning||canonicalSession.running)bindText($('transport-status'), () => t('app.receivingInput'));
       else{transport.finish(duration);silenceHeld('completion',now,pass?.closedWall);updateButtons();bindText($('transport-status'), () => t('app.complete'))}
-    } else if (state.mode==='listen' && position>=duration+80 && !cleanPlayer.audioThreadRunning) {transport.finish(duration);silenceHeld('completion',now);updateButtons();bindText($('transport-status'), () => t('app.complete'))}
+    } else if (!state.loop&&state.mode==='listen' && position>=duration+(state.cleanSong?80:0) && !cleanPlayer.audioThreadRunning&&!canonicalSession.running) {transport.finish(duration);silenceHeld('completion',now);updateButtons();bindText($('transport-status'), () => t('app.complete'))}
     else bindText($('transport-status'), () => position < segmentStart ? t('app.countIn', {count:Math.ceil((segmentStart-position)/(60000/(Number($('tempo').value)||100)))}) : state.mode === 'practice' ? t('app.yourTurn', {loop:state.loop?t('app.loopSuffix',{count:state.loopIteration}):''}) : t('app.listening', {loop:state.loop?t('app.loopSuffix',{count:state.loopIteration}):''}));
   }
   if(displayOnly!==true&&state.mode==='practice'&&!referenceInputActive()){
@@ -1135,7 +1190,7 @@ function drawFrame(displayOnly = false) {
   // Completion above may have replaced an overshooting frame time with the
   // exact source endpoint. Every display below, including written-note lookup,
   // uses this same frame's current transport sample, never range readback.
-  position=transport.time(now);
+  position=playbackPosition(now);
   if(displayOnly!==true&&state.cleanSong)activeMedia?.sync({positionMs:position,running:transport.running});
   updateProgress(position,duration);
   performanceView?.update();
@@ -1244,12 +1299,13 @@ $('notation-part').addEventListener('change', () => { notationFollowing?.suspend
 $('notation-prev').addEventListener('click', () => { notationFollowing?.suspend();if(hasBasicKeyRendition(state.cleanSong)){engravedView.turnBasicPage(-1);return;}state.notationPage--; renderNotationPage(); });
 $('notation-next').addEventListener('click', () => { notationFollowing?.suspend();if(hasBasicKeyRendition(state.cleanSong)){engravedView.turnBasicPage(1);return;}state.notationPage++; renderNotationPage(); });
 $('play-button').addEventListener('click', togglePlayback);
+$('count-in').addEventListener('change',()=>{if(!state.cleanSong)pausePlayback();});
 $('reset-button').addEventListener('click', resetPlayback);
 $('progress').addEventListener('pointerdown',event=>{if(event.button===0&&canSeekPlayback())pausePlayback('app.seekPaused','seek');});
 $('progress').addEventListener('input',event=>{const bounds=playbackSeekBounds();seekPlayback(bounds&&canSeekPlayback()?nativeRangeSeekPosition(event.target,bounds):NaN);});
 $('progress').addEventListener('keydown',event=>{
   if(!canSeekPlayback()||event.altKey||event.ctrlKey||event.metaKey)return;
-  const bounds=playbackSeekBounds(),position=transport.time(performance.now());
+  const bounds=playbackSeekBounds(),position=playbackPosition(performance.now());
   const target=({ArrowLeft:position-1000,ArrowDown:position-1000,ArrowRight:position+1000,ArrowUp:position+1000,PageDown:position-10000,PageUp:position+10000,Home:bounds.start,End:bounds.end})[event.key];
   if(target===undefined)return;
   event.preventDefault();seekPlayback(target);
@@ -1268,11 +1324,13 @@ function selectBasicNotation(mode,{remember=true}={}) { engravedView.hide({remem
 for (const mode of ['staff', 'jianpu']) $(mode + '-button').addEventListener('click', () => selectBasicNotation(mode));
 $('engraved-button').addEventListener('click', () => {engravedView.show();drawFrame()});
 function setSoundEnabled(enabled){
-  if(state.cleanSong&&(transport.running||state.playPending))pausePlayback();
+  const resumeCanonical=!state.cleanSong&&transport.running;
+  if(transport.running||state.playPending)pausePlayback();
   synth.muted=!enabled;if(enabled&&transport.running)synth.unlock().catch(error=>notice(()=>errorDetail(error),true));if(synth.muted){synth.silence();heldAudioTokens.clear();freePreview?.stop('muted');}
   bindText($('sound-button'),()=>synth.muted?t('app.soundOff'):t('app.soundOn'));$('sound-button').setAttribute('aria-pressed',String(synth.muted));metronome?.updateMute();referenceListening?.soundChanged();performanceListening?.soundChanged();
   updateButtons();
   try{freeSession?.configure('sound',enabled);}catch{/* Session reports configuration failures without losing retained input. */}freeView?.render();
+  if(resumeCanonical)void togglePlayback();
 }
 $('sound-button').addEventListener('click',()=>setSoundEnabled(synth.muted));
 $('import-button').addEventListener('click', () => {referenceListening?.close();performanceListening?.stop({revokePolicy:true});$('score-file').click();});
@@ -1402,6 +1460,7 @@ async function checkPreview(compiled,part,signal){
 }
 function renderPreview(){
   refreshPracticeView();
+  renderCanonicalAudio();
   lobbyPreview?.select(preview.value.cleanSong?{status:'empty'}:preview.value);
   renderCleanPreview();
   const value=preview.value,changedIdentity=$('song-lobby').dataset.previewId!==(value.identity||'');$('song-lobby').dataset.previewStatus=value.status;$('song-lobby').dataset.previewId=value.identity||'';
@@ -1427,6 +1486,12 @@ function renderPreview(){
   if(select.dataset.parts!==signature){select.replaceChildren();if(!value.cleanSong){const all=document.createElement('option');all.value='';bindText(all, () => t('app.allParts'));select.append(all);}for(const part of item?.parts||[]){const option=document.createElement('option');option.value=part.id;option.disabled=basicKeys&&!basicKeysParts(value.cleanSong).some(item=>item.id===part.id&&item.practice_available);bindText(option, () => part.name);select.append(option)}select.dataset.parts=signature;}
   select.value=value.part||'';$('preview-part-label').hidden=!value.compiled;
   if(changedIdentity){$('preview-notices').open=false;document.querySelector('.preview-copy').scrollTop=0;}
+}
+function renderCanonicalAudio(){
+  for(const [id,host,visible]of [['canonical-audio-policy',$('progress-help')?.parentElement,Boolean(state.compiled)&&!state.cleanSong],['canonical-preview-policy',$('preview-part-help')?.parentElement,Boolean(preview?.value.compiled)&&!preview?.value.cleanSong]]){
+    if(!host)continue;let node=$(id);if(!node){node=document.createElement('p');node.id=id;node.className='progress-help';host.append(node);}node.hidden=!visible;bindText(node,()=>canonicalAudioPolicyText(i18n.locale));
+  }
+  const node=$('canonical-audio-policy');if(node){bindText(node,()=>canonicalAudioPolicyText(i18n.locale)+(state.loop?' '+canonicalLoopBudgetText(i18n.locale,canonicalSession.interpretation?.loop_budget,{ended:state.canonicalBudgetEnded}):''));node.dataset.rendererState=state.playPending?'preparing':canonicalSession.running?'playing':transport.completed?'ended':transport.running?'silent':'stopped';node.dataset.sourceFingerprint=canonicalSession.interpretation?.source_fingerprint||'';node.dataset.planFingerprint=canonicalSession.interpretation?.plan_fingerprint||'';}
 }
 async function selectSongScore(identity){
   const row=songRows().find(entry=>entry.selectionKey===identity);if(!row)return;
@@ -1586,7 +1651,7 @@ const followingView={
 };
 notationFollowing = setupNotationFollowing({i18n,getContext:()=>({score:state.score,timeline:state.compiled?.timeline}),
   prepareNavigation:async options=>{const cached=writtenCursor.navigation();if(cached)return cached;await writtenCursor.prepare(options);const navigation=writtenCursor.navigation();if(!navigation){const detail=writtenCursor.state().message;throw Object.assign(new Error(detail),{code:'notation_followMap',cause:{message:detail}})}return navigation},
-  getPlayback:()=>{const position=transport.time(performance.now()),written=writtenCursor?.at(position);return{position:position<(state.loop?.start_ms||0)?-1:position,running:transport.running,written:{...written,entries:displayedWrittenEntries(written),pageAnchor:writtenCursor?.pageAnchor(position,displayedPartId())}}},view:followingView});
+  getPlayback:()=>{const position=playbackPosition(performance.now()),written=writtenCursor?.at(position);return{position:position<(state.loop?.start_ms||0)?-1:position,running:transport.running,written:{...written,entries:displayedWrittenEntries(written),pageAnchor:writtenCursor?.pageAnchor(position,displayedPartId())}}},view:followingView});
 setupJianpuEditor({onImport:importJianpuText,pausePlayback});
 setupJianpuExport({getScore:()=>state.score,getCleanSong:()=>state.cleanSong,pausePlayback,api});
 setupSourceDirectory({pausePlayback,onScoreFile:()=>{referenceListening?.close();performanceListening?.stop({revokePolicy:true});$('score-file').click();},onImageFile:()=>$('score-image-file').click(),onExternalOmr:()=>externalOmrView.open()});
@@ -1600,15 +1665,15 @@ const guitarContext=()=>({score:state.score,timeline:state.compiled?.timeline,cl
 guitarFingering=setupGuitarFingering({api,getContext:guitarContext,onChange:()=>guitarFingeringView?.render()});
 guitarFingeringView=setupGuitarFingeringView({document,controller:guitarFingering,getContext:guitarContext,onRefresh:drawFrame});
 guitarFingeringView.render();
-metronome = setupMetronome({api,getScore:()=>state.cleanSong?null:state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:transport.time(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
-performanceView=setupPerformanceView({i18n,getContext:()=>({geometry:state.geometry,rangeLabel:`${midiName(state.geometry[0].midi)}–${midiName(state.geometry.at(-1).midi)}`,mode:state.mode,instrument:state.instrument,position:transport.time(performance.now()),segmentStart:state.loop?.start_ms||0,countInBeatMs:60000/(Number($('tempo').value)||100),running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,now:performance.now(),recorder:state.recorder})});
+metronome = setupMetronome({api,getScore:()=>state.cleanSong?null:state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:playbackPosition(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
+performanceView=setupPerformanceView({i18n,getContext:()=>({geometry:state.geometry,rangeLabel:`${midiName(state.geometry[0].midi)}–${midiName(state.geometry.at(-1).midi)}`,mode:state.mode,instrument:state.instrument,position:playbackPosition(performance.now()),segmentStart:state.loop?.start_ms||0,countInBeatMs:60000/(Number($('tempo').value)||100),running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,now:performance.now(),recorder:state.recorder})});
 pianoFingering=setupPianoFingeringView({document,api,getContext:()=>({score:state.score,timeline:state.compiled?.timeline,cleanSong:state.cleanSong,part_id:state.practicePart,profile:currentProfile(),dirty:state.profileDirty}),onChange:()=>drawFrame(),openSettings:()=>shell.open('settings')});
 performanceView.setPianoGuidance($('piano-fingering-guidance'));
 writtenCursorStatus=document.createElement('p');writtenCursorStatus.id='written-cursor-status';writtenCursorStatus.setAttribute('aria-live','off');
 writtenCursorRetry=document.createElement('button');writtenCursorRetry.id='written-cursor-retry';writtenCursorRetry.type='button';writtenCursorRetry.className='button compact';bindText(writtenCursorRetry, () => t('app.retryNotePositions'));writtenCursorRetry.hidden=true;
 document.querySelector('#notation-dock .dock-help').append(writtenCursorStatus,writtenCursorRetry);
 writtenCursor=setupWrittenCursor({api,getContext:()=>({score:state.score,timeline:state.compiled?.timeline,cleanSong:state.cleanSong,nativeRuntime:state.cleanSong?.runtime}),onStatus:({status,message})=>{writtenCursorStatus.dataset.status=status;writtenCursorStatus.dataset.sourceNoteIds='[]';bindText(writtenCursorStatus, () => t(({idle:'app.cursorIdle',loading:'app.cursorLoading',ready:'app.cursorReady',unavailable:'app.cursorUnavailable'})[status]||'app.cursorUnavailable'));bindAttribute(writtenCursorStatus,'title',()=>originalDetail(message));writtenCursorRetry.hidden=status!=='unavailable';state.lastHighlight='';beginnerView?.refresh();}});
-beginnerView=setupBeginnerView({document,i18n,getContext:()=>({score:state.score,numberedMode:state.numberedMode,written:beginnerView?.enabled()&&state.numberedMode==='movable'?writtenCursor?.at(transport.time(performance.now())):null}),onNumberedMode:setNumberedMode});
+beginnerView=setupBeginnerView({document,i18n,getContext:()=>({score:state.score,numberedMode:state.numberedMode,written:beginnerView?.enabled()&&state.numberedMode==='movable'?writtenCursor?.at(playbackPosition(performance.now())):null}),onNumberedMode:setNumberedMode});
 writtenCursorRetry.addEventListener('click',()=>writtenCursor.prepare({retry:true}));
 window.addEventListener('pagehide',()=>writtenCursor.reset());
 midiController=setupMidi({pressNote, releaseNote, releaseMatching, notice, pausePlayback,
@@ -1643,12 +1708,12 @@ function openCleanRangeSetup(){
   $(state.instrument==='piano'?'custom-key-count':'guitar-tuning').focus();
 }
 fallingNoteLabels=setupFallingNoteLabels({document,i18n,onChange:()=>drawFrame(true)});
-completePracticeView=setupCompletePracticeView({document,i18n,getContext:origin=>origin==='preview'?{...preview.value,selection:preview.value.practiceSelection,previewVersion:preview.version}:({score:state.score,compiled:state.compiled,selection:state.practiceSelection,showOthers:state.showOtherParts,hasTakes:transport.hasStarted||state.recorder.passes.length>0}),onOpen:()=>pausePlayback(),onDisplay:show=>{state.showOtherParts=show;engravedView.practicePartChanged();renderNotationPage();drawFrame(true);refreshPracticeView();},onApply:applyCompletePracticeChoice});
+completePracticeView=setupCompletePracticeView({document,i18n,getContext:origin=>origin==='preview'?{...preview.value,selection:preview.value.practiceSelection,previewVersion:preview.version}:({score:state.score,compiled:state.compiled,cleanSong:state.cleanSong,selection:state.practiceSelection,showOthers:state.showOtherParts,hasTakes:transport.hasStarted||state.recorder.passes.length>0}),onOpen:()=>pausePlayback(),onDisplay:show=>{state.showOtherParts=show;engravedView.practicePartChanged();renderNotationPage();drawFrame(true);refreshPracticeView();},onApply:applyCompletePracticeChoice});
 cleanView=setupCleanSongView({document,i18n,onRangeSetup:openCleanRangeSetup,onVsqStart:chooseVsqAndStart,onVsqChoice:()=>preview.chooseVsqPractice(async(song,signal)=>(await scoreStorage.storage()).chooseVsqPractice(song,{signal})),onOpen:()=>pausePlayback(),onTarget:part=>{if(!state.cleanSong||transport.running)return;void applyHumanSelection({kind:'parts',part_ids:[part]},{layout:'solo'});},onMute:(part,muted)=>{if(transport.running)return;if(muted)cleanMutedParts.add(part);else cleanMutedParts.delete(part);resetPlayback();},onSolo:(part,solo)=>{if(transport.running)return;if(solo)cleanSoloParts.add(part);else cleanSoloParts.delete(part);resetPlayback();},onResetMix:()=>{if(transport.running)return;cleanMutedParts.clear();cleanSoloParts.clear();resetPlayback();},onRange:()=>{$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}});
 performanceListening=setupCompletePerformanceListening({document,i18n,synth,host:$('clean-song-preview'),isVisible:()=>shell.screen()==='library',allowed:()=>!document.hidden&&!document.querySelector('dialog[open]'),onBeforePlay:()=>pausePlayback(),onActiveChange:()=>syncInputRoute(),getSoundEnabled:()=>!synth.muted,onSoundChange:setSoundEnabled});
 const loadCleanAsset=async(key,handle,options)=>(await scoreStorage.storage()).loadAsset(key,handle,options);
 previewMedia=createCleanSongMedia({loadAsset:loadCleanAsset,cover:cleanView.cover,onStatus:value=>cleanView.renderPreviewMedia(value)});
 activeMedia=createCleanSongMedia({loadAsset:loadCleanAsset,background:cleanView.background,video:cleanView.video,onStatus:value=>cleanView.renderMedia(value)});
-window.addEventListener('pagehide',()=>{cleanPlayer.destroy();performanceListening.stop({revokePolicy:true});previewMedia.destroy();activeMedia.destroy();});
+window.addEventListener('pagehide',()=>{canonicalSession.destroy();cleanPlayer.destroy();performanceListening.stop({revokePolicy:true});previewMedia.destroy();activeMedia.destroy();});
 
 renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); void scoreStorage.start(); loadCatalog();

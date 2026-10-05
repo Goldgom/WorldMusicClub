@@ -1,3 +1,4 @@
+import {canonicalAudioPolicyText} from './canonical-practice-text.js';
 /** A selection dialog owns only a draft. Applying is the explicit reset boundary. */
 export function setupCompletePracticeView({document,i18n,getContext,onOpen=()=>{},onApply,onDisplay}) {
   const text=(en,zh)=>i18n.locale==='en'?en:zh,make=(tag,id,parent)=>{const node=document.createElement(tag);if(id)node.id=id;parent?.append(node);return node;};
@@ -8,6 +9,7 @@ export function setupCompletePracticeView({document,i18n,getContext,onOpen=()=>{
   const summary=make('p','complete-practice-summary',stage);summary.setAttribute('role','status');
   const dialog=make('dialog','complete-practice-dialog',document.body);dialog.className='shell-dialog complete-practice-dialog';dialog.dataset.keyboardInput='off';dialog.setAttribute('aria-labelledby','complete-practice-title');
   const body=make('div',null,dialog);body.className='shell-dialog-content';const title=make('h2','complete-practice-title',body),intro=make('p','complete-practice-intro',body);
+  const policy=make('p','complete-practice-canonical-policy',body);
   const all=make('button','complete-practice-all',body);all.type='button';all.className='button secondary compact';
   const list=make('fieldset','complete-practice-parts',body),legend=make('legend',null,list);
   const displayLabel=make('label',null,body),display=make('input','complete-practice-show-others',displayLabel),displayText=make('span',null,displayLabel);display.type='checkbox';
@@ -16,6 +18,7 @@ export function setupCompletePracticeView({document,i18n,getContext,onOpen=()=>{
   let draft=null,origin=null,busy=false,ticket=0,focusReturn=null,lastState={};const rows=new Map();
   const selected=()=>[...rows].filter(([,row])=>row.input.checked).map(([id])=>id);
   function localize(){
+    policy.hidden=!draft||Boolean(draft.cleanSong);policy.textContent=canonicalAudioPolicyText(i18n.locale);
     preview.disabled=!lastState.previewReady||busy;edit.disabled=busy;
     preview.textContent=text('Complete practice…','完整演奏…');edit.textContent=text('Choose human parts…','选择人演奏声部…');showText.textContent=text('Show accompaniment notes','显示其他声部音符');
     title.textContent=text('Complete practice','完整演奏');intro.textContent=text('Choose every part you will play. The remaining parts accompany you. Accompaniment notes use a dashed outline and never count as your input or receive hit feedback. Only accompaniment notes with a position on this instrument appear on its keyboard or fretboard; percussion accompaniment is not projected onto melody keys. Instrument and simultaneous-target checks still apply.','请选择您要演奏的一个或多个声部，其余声部由伴奏演奏。伴奏音符使用虚线标记，不计为您的输入，也没有打击反馈。键盘或指板只显示当前乐器有对应位置的伴奏音符；伴奏打击乐不投影为旋律按键。仍需通过乐器音域与同时演奏目标检查。');

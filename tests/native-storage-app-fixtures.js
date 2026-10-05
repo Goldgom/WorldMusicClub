@@ -1,5 +1,8 @@
 import {basicKeyAudioHarness} from './basic-key-audio-harness.js';
 import {LiveToneCore, LIVE_TONE_PROTOCOL} from '../web/live-tone-core.js';
+import {CanonicalAudioCore} from '../web/canonical-audio-core.js';
+import {CANONICAL_AUDIO_PROTOCOL} from '../web/canonical-audio-plan.js';
+import {syntheticCanonicalProfile} from './canonical-dom-audio-fixture.js';
 import {waitForTestCondition} from './async-test-wait.js';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -48,6 +51,11 @@ export async function nativeScoreServer({scores=[],directory='C:\\Test-only\\Wor
     const body=typeof options.body==='string'&&options.headers?.['Content-Type']==='application/json'?JSON.parse(options.body):options.body??null;
     const request={path,body,options};requests.push(request);
     const response=route?await route({...request,defaultReply:()=>defaultReply(path,body)}):undefined;
+    if(response===undefined&&path==='/api/canonical-audio-profile'){
+      const compiled=(route?await route({...request,path:'/api/compile',defaultReply:()=>defaultReply('/api/compile',body)}):undefined)??defaultReply('/api/compile',body);
+      if(!compiled.ok)return compiled;
+      return nativeResponse(syntheticCanonicalProfile(await compiled.json()));
+    }
     return response??defaultReply(path,body);
   }
   return{fetcher,requests,records,seed,directory,issues,setRoute:handler=>{route=handler;}};
@@ -90,7 +98,7 @@ export async function nativeStorageApp(server,{now,audioSampleRate=8000,audioWor
   Synth.prototype.play=function(...args){plays.push(args);return originalPlay.apply(this,args);};
   URL.createObjectURL=blob=>{downloads.push(blob);return 'blob:node-native-storage';};
   const installed={window,document,indexedDB:factory,navigator:{requestMIDIAccess:async()=>midiAccess},location:{origin},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},matchMedia:()=>({matches:false,addEventListener(){}}),MutationObserver:class{observe(){}disconnect(){}},requestAnimationFrame:callback=>{frames.set(++frameId,callback);return frameId;},cancelAnimationFrame:id=>frames.delete(id),AudioContext:Audio,AudioWorkletNode:audioWorklet?class{constructor(context,name){
-    const live=name===LIVE_TONE_PROTOCOL,harness=context.harness,node=harness.nodeFactory(live?{Core:LiveToneCore,automatic:liveAudioMessages}:undefined),post=node.port.postMessage,emit=node.core.emit;
+    const live=name===LIVE_TONE_PROTOCOL,harness=context.harness,node=harness.nodeFactory(live?{Core:LiveToneCore,automatic:liveAudioMessages}:name===CANONICAL_AUDIO_PROTOCOL?{Core:CanonicalAudioCore}:undefined),post=node.port.postMessage,emit=node.core.emit;
     node.kind=live?'live-audio-worklet':'audio-worklet';audioGraphEvents.push(['create',node.kind]);
     for(const method of ['connect','disconnect']){const original=node[method];node[method]=function(...args){audioGraphEvents.push([method,node.kind]);return original.apply(this,args);};}
     node.port.postMessage=function(message,...args){if(message.type==='start')harness.wallAudioOffset=context.currentTime-(performance.now()-context.createdWall)/1000;return post.call(this,message,...args);};
@@ -112,6 +120,7 @@ export async function nativeStorageApp(server,{now,audioSampleRate=8000,audioWor
   const exported=async id=>{const before=downloads.length;await click(id);await until(()=>downloads.length===before+1,`${id} did not export`);return JSON.parse(await downloads.at(-1).text());};
   const storageAction=name=>document.querySelector(`[data-score-storage] [data-storage-action="${name}"]`);
   const savedButton=key=>document.querySelector(`#catalog [data-library-key="native:${key}"]`);
+  const sourceStartWall=()=>{for(const audio of audioDevices){const source=audio.harness.nodes.findLast(node=>node.connected&&node.core?.plan?.protocol===CANONICAL_AUDIO_PROTOCOL);if(source?.core.anchorFrame!=null)return audio.createdWall+(source.core.anchorFrame/audio.sampleRate-(audio.harness.wallAudioOffset||0))*1000;}return null;};
   const storageStatus=()=>document.querySelector('[data-score-storage] .score-storage-status');
   function importFile(score,{name='authored-score.json',text}={}) {
     const raw=typeof score==='string'?score:JSON.stringify(score),file={name,size:Buffer.byteLength(raw),text:text||(async()=>raw),arrayBuffer:async()=>new TextEncoder().encode(raw).buffer};
@@ -124,6 +133,7 @@ export async function nativeStorageApp(server,{now,audioSampleRate=8000,audioWor
   try{await import(`../web/app.js?native-storage-integration-${++sequence}`);getAppI18n(document).setLocale('en');await tick();}
   catch(error){await close();throw error;}
   return{document,window,$,audioNodes,audioHarnesses,audioGraphEvents,setAudioState(state){for(const audio of audioDevices){audio.state=state;audio.harness.setState(state);}},renderAudioTo(seconds){for(const harness of audioHarnesses){const target=Math.floor((seconds+(harness.wallAudioOffset||0))*harness.context.sampleRate);while(harness.frame<target)harness.renderBlock(Math.min(128,target-harness.frame));} },downloads,plays,openedDatabases,factory,requests:server.requests,tick,until,emit,click,exported,storageAction,savedButton,storageStatus,importFile,close,
+    sourceStartWall,waitForSourceStart:()=>until(()=>sourceStartWall()!==null&&performance.now()>=sourceStartWall(),'The source audio anchor has not arrived'),
     midiDevice,midi:(data,time=performance.now())=>midiDevice.onmidimessage?.({data,timeStamp:time}),
     frame(){const work=[...frames.values()];frames.clear();for(const callback of work)callback(performance.now());},audio:()=>({contexts:audioContexts,unlocks:unlockCalls}),setUnlock:fn=>{unlockImpl=fn;},setAudioModule:fn=>{audioModuleImpl=fn;}};
 }

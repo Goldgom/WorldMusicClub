@@ -140,7 +140,7 @@ test('complete-event preview excludes human contacts from the prior practice tak
   Object.defineProperty(globalThis,'AudioContext',{configurable:true,value:PerformanceAudio});
   try{
     app.document.querySelector('#catalog [data-score-id]').click();await app.until(()=>!app.$('start-practice').disabled);
-    app.$('count-in').checked=false;await app.click('start-practice');await app.until(()=>app.document.body.dataset.screen==='stage'&&!app.$('play-button').disabled);await app.click('play-button');
+    await app.click('sound-button');app.$('count-in').checked=false;await app.click('start-practice');await app.until(()=>app.document.body.dataset.screen==='stage'&&app.$('play-button').textContent.includes('Pause'));await app.click('play-button');await app.click('sound-button');
     await app.click('back-to-library');app.savedButton(key).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='performance');
     const before=await app.exported('export-takes'),sounds=app.plays.length,note=app.document.querySelector('#keyboard [data-midi="60"]');
     const interval=performance.now();

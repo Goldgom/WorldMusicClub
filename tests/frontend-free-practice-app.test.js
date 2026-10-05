@@ -127,7 +127,7 @@ test('muted scored Start and Play need no audio and a stale unmuted Start cannot
     await app.until(()=>!app.$('start-practice').disabled);getAppI18n(app.document).setLocale('en');await enter(app);await app.click('free-sound');await app.click('free-exit');app.$('count-in').checked=false;
     app.$('start-practice').click();await app.until(()=>app.document.body.dataset.screen==='stage'&&app.$('play-button').textContent.includes('Pause'));assert.deepEqual(app.audio(),{contexts:0,unlocks:0});
     key(app,musical,app.$('stage-title'));app.$('play-button').click();const scored=await app.exported('export-takes');assert.equal(scored.passes.at(-1).inputs.length,1);
-    app.$('play-button').click();assert.match(app.$('play-button').textContent,/Pause/);assert.deepEqual(app.audio(),{contexts:0,unlocks:0});
+    app.$('play-button').click();await app.until(()=>app.$('play-button').textContent.includes('Pause'));assert.deepEqual(app.audio(),{contexts:0,unlocks:0});
     app.$('sound-button').click();await app.tick();assert.deepEqual(app.audio(),{contexts:1,unlocks:1},'An explicit unmute initializes sound for a running silent transport');
     app.$('back-to-library').click();let resolve;app.setUnlock(()=>new Promise(done=>{resolve=done;}));app.$('start-listen').click();await app.tick();await enter(app);const before=app.requests.length;resolve();await app.tick();assert.equal(app.document.body.dataset.screen,'free');assert.equal(app.requests.length,before,'Cancelled audio admission cannot compile a replacement session');
     app.$('settings-button').click();for(const node of app.document.querySelectorAll('#settings-dialog .control-grid,#instrument-settings,#settings-dialog .practice-options'))assert.ok(node.classList.contains('free-score-settings-hidden'));
