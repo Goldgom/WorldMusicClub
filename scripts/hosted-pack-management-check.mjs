@@ -10,7 +10,7 @@ import {observeRealAudio} from '../tests/browser-input-fixtures.js';
 import {assertCleanExportInventory} from '../tests/clean-song-package-fixtures.js';
 import {validateCleanScreenshot} from './verify-native-clean-song-evidence.mjs';
 import {managementRequest, checkedManagementResponse} from '../web/library-management-contract.js';
-import {PACK_MANAGEMENT_LIMITS as LIMIT, originalPackManagementFixtures, fixtureManifest, writeOriginalFixtures, requireHostedPackManagement, moveOriginalReceiptsAside, originalLibraryInventory, assertOriginalManagementInventory, assertSelectedLegacyExport, inspectOriginalManagementZip, sha256} from './pack-management-acceptance-fixtures.mjs';
+import {PACK_MANAGEMENT_LIMITS as LIMIT, originalPackManagementFixtures, fixtureManifest, writeOriginalFixtures, requireHostedPackManagement, moveOriginalReceiptsAside, originalLibraryInventory, assertOriginalManagementInventory, assertSelectedLegacyExport, inspectOriginalManagementZip, practiceBaselineReady, assertSettledPracticeExport, sha256} from './pack-management-acceptance-fixtures.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const git = (...args) => execFileSync('git', args, {cwd: root, encoding: 'utf8'}).trim();
@@ -44,7 +44,7 @@ async function native(path, options = {}, source = 'browser') {
   if (path === '/api/library/manage/query' || path === '/api/library/pack/export' || path === '/api/library/import/export') row.request = JSON.parse(body);
   const response = await driver.fetcher(path, options), bytes = await response.bytes();
   Object.assign(row, {status: response.status, bytes: bytes.length, sha256: sha256(bytes)});
-  if (path.startsWith('/api/library/import/') || path === '/api/library/manage/query' || path === '/api/library/pack/export' || path === '/api/health') {
+  if (path.startsWith('/api/library/import/') || path === '/api/library/manage/query' || path === '/api/library/pack/export' || path === '/api/health' || path === '/api/assess') {
     row.file = `api/${String(row.sequence).padStart(3, '0')}${response.contentType.includes('json') ? '.json' : '.bin'}`;
     await writeFile(join(owned, row.file), bytes, {flag: 'wx'});
   }
@@ -88,7 +88,18 @@ async function download(selector, filename) {
 }
 async function captureScoreAndTake(suffix) {
   await page.locator('#score-tools-button').click(); const score = await download('#export-button', `active-score-${suffix}.json`); await page.locator('[data-close-panel="score-tools"]').click();
-  await page.locator('#results-button').click(); const take = await download('#export-takes', `practice-take-${suffix}.json`); await page.locator('[data-close-panel="results"]').click();
+  await page.locator('#results-button').click();
+  if (suffix === 'before') await action('Finish real practice assessment before freezing the preservation baseline', async () => {
+    await page.locator('#assess-button:not([disabled])').waitFor({state: 'visible'});
+    const response = page.waitForResponse(value => new URL(value.url()).pathname === '/api/assess');
+    await page.locator('#assess-button').click(); assert.equal((await response).status(), 200);
+    await page.waitForFunction(practiceBaselineReady, undefined, {timeout: 15000});
+    report.practice_baseline = {dom: await page.locator('#result-summary').evaluate(node => ({phase: node.dataset.phase, pass_id: node.dataset.passId, revision: node.dataset.revision, assessed_revision: node.dataset.assessedRevision})), assessment_api: report.api.filter(row => row.path === '/api/assess').map(row => ({sequence: row.sequence, status: row.status, sha256: row.sha256, file: row.file}))};
+  });
+  const take = await download('#export-takes', `practice-take-${suffix}.json`);
+  const settled = assertSettledPracticeExport(JSON.parse(take));
+  if (suffix === 'before') report.practice_baseline.passes = settled;
+  await page.locator('[data-close-panel="results"]').click();
   return {score, take};
 }
 async function browserState() {
@@ -156,7 +167,7 @@ async function run() {
     await page.locator('#start-practice').click(); await page.waitForFunction(() => document.body.dataset.screen === 'stage' && /暂停/.test(document.querySelector('#play-button').textContent));
     await page.locator('#keyboard [data-midi="60"]').click(); await page.locator('#back-to-library').click();
   });
-  const before = await captureScoreAndTake('before'); assert.ok(JSON.parse(before.take).passes.some(pass => pass.inputs.length > 0), 'Actual pointer practice input required');
+  const before = await captureScoreAndTake('before');
   let savedRecording, draftRecording;
   await action('Keep one saved and one unsaved free recording', async () => {
     await page.locator('#lobby-home').click(); await page.locator('#start-free-practice').click(); await page.locator('#free-start').click();

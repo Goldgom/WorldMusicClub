@@ -6,9 +6,10 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {storedZip} from './native-import-driver-fixtures.js';
-import {songRow, packRow} from './library-management-fixtures.js';
+import {songRow, packRow, managementServer} from './library-management-fixtures.js';
+import {nativeStorageApp, nativeResponse, deferred} from './native-storage-app-fixtures.js';
 import {checkedManagementResponse, managementRequest} from '../web/library-management-contract.js';
-import {PACK_MANAGEMENT_LIMITS, originalPackManagementFixtures, fixtureManifest, writeOriginalFixtures, requireHostedPackManagement, moveOriginalReceiptsAside, originalLibraryInventory, assertOriginalManagementInventory, inspectOriginalManagementZip, sha256} from '../scripts/pack-management-acceptance-fixtures.mjs';
+import {PACK_MANAGEMENT_LIMITS, originalPackManagementFixtures, fixtureManifest, writeOriginalFixtures, requireHostedPackManagement, moveOriginalReceiptsAside, originalLibraryInventory, assertOriginalManagementInventory, inspectOriginalManagementZip, practiceBaselineReady, assertSettledPracticeExport, sha256} from '../scripts/pack-management-acceptance-fixtures.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const ownedRoot = async t => {
@@ -135,4 +136,36 @@ test('current Rust-emitted recovery samples remain accepted without claiming thi
   for (const response of Object.values(responses)) assert.deepEqual(checkedManagementResponse(response, managementRequest({view: response.view, limit: 100})), response);
   const packs = responses.packs.rows; assert.ok(packs.some(row => row.provenance === 'unresolved'));
   assert.ok(packs.some(row => row.retained_only_count > 0));
+});
+
+test('practice baseline waits through actual app grace and in-flight assessment before preserving its complete export', async () => {
+  const server = await managementServer(), gate = deferred(); let now = 10000, assessing = false;
+  server.setExtraRoute(async ({path}) => {
+    if (path === '/api/assess') { assessing = true; await gate.promise; return nativeResponse({hits: [], misses: [], extras: [], accuracy_percent: 0, mean_abs_error_ms: null}); }
+  });
+  const app = await nativeStorageApp(server, {now: () => now});
+  try {
+    await app.until(() => !app.$('start-listen').disabled); await app.click('home-single-player');
+    assert.equal(app.$('count-in').closest('dialog')?.id, 'settings-dialog', 'Performance layout moves this control into Settings');
+    app.$('count-in').checked = false;
+    await app.click('start-practice'); await app.until(() => app.document.body.dataset.screen === 'stage' && /Pause/.test(app.$('play-button').textContent));
+    const key = app.$('keyboard').querySelector('[data-midi="60"]'); app.emit(key, 'pointerdown', {pointerId: 9, button: 0}); app.emit(key, 'pointerup', {pointerId: 9});
+    await app.click('back-to-library'); await app.click('results-button');
+    assert.equal(practiceBaselineReady(app.document), false); await app.click('assess-button');
+    now += 179; app.frame(); assert.equal(assessing, false); assert.equal(practiceBaselineReady(app.document), false, 'Input grace is not a stable baseline');
+    // Cross the real grace deadline and the app's 100ms idle-render cadence in this controlled Node clock.
+    now += 101; app.frame(); await app.until(() => assessing, 'Explicit assessment did not enter the native route');
+    assert.equal(practiceBaselineReady(app.document), false, 'An in-flight native response is not a stable baseline');
+    const pending = await app.exported('export-takes'); assert.throws(() => assertSettledPracticeExport(pending), /pending/);
+    gate.resolve(); await app.until(() => !app.$('feedback-results').hidden && !app.$('assess-button').disabled, 'Completed assessment did not reach the Results surface');
+    assert.equal(practiceBaselineReady(app.document), true, JSON.stringify({phase: app.$('result-summary').dataset.phase, pass: app.$('result-summary').dataset.passId, revision: app.$('result-summary').dataset.revision, assessed: app.$('result-summary').dataset.assessedRevision, retryHidden: app.$('retry-assessments').hidden}));
+    const before = await app.exported('export-takes'), settled = assertSettledPracticeExport(before);
+    assert.deepEqual(settled, [{id: 1, revision: 1, assessed_revision: 1, pending: false, inputs: 1}]);
+    for (const mutate of [pass => { pass.pending = true; }, pass => { pass.manual_deadline_wall_ms = now + 180; }, pass => { pass.assessed_revision--; }, pass => { pass.error = 'Original failed assessment'; }, pass => { pass.assessment = null; }, pass => { pass.clock_segments.at(-1).wallEnd = null; }]) {
+      const changed = structuredClone(before); mutate(changed.passes[0]); assert.throws(() => assertSettledPracticeExport(changed));
+    }
+    app.document.querySelector('[data-close-panel="results"]').click();
+    await app.click('library-management-button'); await app.until(() => app.$('library-management-dialog').dataset.phase === 'ready'); await app.click('management-close');
+    assert.deepEqual(await app.exported('export-takes'), before); assert.equal(server.requests.filter(row => row.path === '/api/assess').length, 1);
+  } finally { gate.resolve(); await app.close(); }
 });

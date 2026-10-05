@@ -149,3 +149,22 @@ export function assertSelectedLegacyExport(inventory, song, receipts) {
   assert.equal(inventory[`${folder}/score.json`].sha256, entry.score_sha256, 'Selected export must preserve the exact stored canonical score bytes');
   assert.equal(inventory[`${folder}/score.json`].bytes, entry.score_bytes);
 }
+
+/** Browser-side read predicate. Results exposes actual recorder assessment/grace state. */
+export function practiceBaselineReady(document = globalThis.document) {
+  const summary = document.getElementById('result-summary'), assess = document.getElementById('assess-button'), retry = document.getElementById('retry-assessments'), feedback = document.getElementById('feedback-results');
+  return Boolean(summary && ['assessed', 'review'].includes(summary.dataset.phase) && /^\d+$/.test(summary.dataset.passId) && /^\d+$/.test(summary.dataset.revision) && summary.dataset.revision === summary.dataset.assessedRevision && assess && !assess.disabled && retry?.hidden && feedback && !feedback.hidden);
+}
+export function assertSettledPracticeExport(value) {
+  assert.ok(Array.isArray(value?.passes) && value.passes.length > 0, 'A real recorded practice pass is required');
+  for (const pass of value.passes) {
+    assert.equal(pass.pending, false, 'Practice baseline still has pending assessment/grace work');
+    assert.equal(pass.error, null, 'Practice baseline assessment failed');
+    assert.equal(pass.manual_deadline_wall_ms, null, 'Practice baseline still has an assessment deadline');
+    assert.equal(pass.assessed_revision, pass.revision, 'Practice baseline does not own the current input revision');
+    assert.ok(pass.assessment && typeof pass.assessment === 'object', 'Practice baseline has no completed assessment');
+    assert.ok(pass.clock_segments.length > 0 && pass.clock_segments.every(segment => segment.wallEnd !== null), 'Practice baseline must be paused');
+  }
+  assert.ok(value.passes.some(pass => pass.inputs.length > 0), 'Actual pointer practice input required');
+  return value.passes.map(pass => ({id: pass.id, revision: pass.revision, assessed_revision: pass.assessed_revision, pending: pass.pending, inputs: pass.inputs.length}));
+}

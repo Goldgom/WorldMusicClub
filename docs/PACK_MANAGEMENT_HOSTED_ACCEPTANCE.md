@@ -30,7 +30,7 @@ node --check scripts/check-pack-management-native.mjs
 node --check scripts/hosted-pack-management-check.mjs
 ```
 
-These tests verify deterministic fixture bytes, source provenance, Unicode ZIP inventory, byte-identical retries, admission guards, receipt-move isolation, full byte-inventory comparisons, and adversarial mutations of a clearly labeled in-memory protocol oracle. They also revalidate existing Rust-emitted recovery samples against the renderer contract. They start no browser, native driver, listener, HTTP server or Cargo process. The hosted-entry guard is exercised only with authorization variables deliberately absent.
+These tests verify deterministic fixture bytes, source provenance, Unicode ZIP inventory, byte-identical retries, admission guards, receipt-move isolation, full byte-inventory comparisons, and adversarial mutations of a clearly labeled in-memory protocol oracle. They also revalidate existing Rust-emitted recovery samples against the renderer contract. An actual app DOM regression uses the existing controlled Node clock and a delayed protocol response to reject grace/in-flight practice baselines, accept a completed current revision, and preserve that full export through management. The real hosted browser uses its actual clock and native assessment. These tests start no browser, native driver, listener, HTTP server or Cargo process. The hosted-entry guard is exercised only with authorization variables deliberately absent.
 
 ## Independent native stdio preflight
 
@@ -71,7 +71,7 @@ The planned browser assertions cover:
 3. A 40-row first page and five-row second page using one snapshot; explicit search; selection hidden on another page and clearing that selection
 4. Explicit selection of one legacy and one clean edition, separate exports with exact selected keys, and preserved complete export inventory/content hashes
 5. Escape, close/reopen, selection reset, opener focus and explicit refresh
-6. Byte-equivalent active score, paused practice take, saved free recording and unsaved free draft; unchanged preview/transport/audio counters; no score IndexedDB fallback
+6. Byte-equivalent active score, paused practice take, saved free recording and unsaved free draft; unchanged preview/transport/audio counters; no score IndexedDB fallback. Before freezing the practice baseline, the script explicitly requests a real assessment, observes the Results assessment/grace state until the displayed current and assessed revisions agree, and requires a completed, error-free export with `pending: false` and no manual deadline. It records the actual assessment response hash; it does not use a fixed sleep or suppress assessment
 7. No non-management API requests during browsing/exports, unchanged native library bytes, and fresh native process plus fresh browser-profile reopening
 
 Real screenshots are captured by `page.screenshot`, then checked as decoded PNGs with exact 1280×720 dimensions and recorded hashes. Screenshots include packs, paging/hidden selection, explicit search, unfiled, duplicate evidence, source issues, selected exports, preserved recordings, and fresh-process reopening. They are created only by an actual hosted run, never by preparation tests. Screenshots support later visual review; automated geometry assertions do not replace that review.
