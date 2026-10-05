@@ -178,7 +178,7 @@ async function checkNativeReferenceListening({document,native,click,closeDialogs
 }
 
 // Shared actual AudioWorklet evidence for MIDI and authored VSQ.
-async function observeBasicKeyReceiver(document,{Receiver,root=globalThis,onContext=()=>{},onStart=()=>{}}={}){
+async function observeBasicKeyReceiver(document,{Receiver,root=globalThis,onContext=()=>{},onStart=()=>{},readStartFrame=note=>note[2],readEndFrame=note=>note[3]}={}){
  // Observe the shipped adapter and native MessagePort without replacing a
  // processor, audio clock, command, callback result, or application promise.
  Receiver ||= (await import('/basic-key-audio-receiver.js')).BasicKeyAudioReceiver;
@@ -269,7 +269,7 @@ async function observeBasicKeyReceiver(document,{Receiver,root=globalThis,onCont
   const entry=observe(this),row=entry.rows.at(-1),result=Reflect.apply(start,this,args);
   if(row){
    result.then(value=>{if(!active)return;row.started={...copy(value),observedAudioTime:this.context.currentTime,connected:this.connected,outputContextMatches:this.output?.context===this.context,outputGain:this.output?.gain?.value??null,graphToDestination:graphPath(this.node,this.context.destination)};onStart(this,row);
-    try{entry.sampleRow=row;const first=row.plan.notes.find(note=>note[3]>row.positionFrame);entry.sampleFromAudioTime=row.started.anchorTime+(Math.max(first?.[2]??row.positionFrame,row.positionFrame)-row.positionFrame)/row.plan.sampleRate;sample(entry,row);}catch(error){pushError(error);}
+    try{entry.sampleRow=row;const first=row.plan.notes.find(note=>readEndFrame(note)>row.positionFrame);entry.sampleFromAudioTime=row.started.anchorTime+(Math.max(first?readStartFrame(first):row.positionFrame,row.positionFrame)-row.positionFrame)/row.plan.sampleRate;sample(entry,row);}catch(error){pushError(error);}
    },pushError);
   }return result;
  }

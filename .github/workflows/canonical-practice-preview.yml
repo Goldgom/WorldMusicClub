@@ -1,0 +1,144 @@
+name: Canonical actual-app focused acceptance
+on:
+  push:
+    branches: ['preview/canonical-practice']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: canonical-practice-preview-${{ github.ref }}
+  cancel-in-progress: true
+# Original four-part source only. This workflow never publishes a package/release.
+jobs:
+  canonical-browser:
+    name: Original four-part actual application and Rust stdin
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: npm run test:canonical-practice-acceptance
+      - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - run: cargo build -p practice-server --locked
+      - name: Original JSON and MusicXML through real Rust and production app DOM
+        env:
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_CANONICAL_PRACTICE_REPORT: ${{ runner.temp }}/canonical-practice-native/report.json
+          WMH_SOURCE_SHA: ${{ github.sha }}
+        run: npm run test:canonical-practice-native
+      - run: npx playwright install --with-deps chromium
+      - name: First actual browser feedback at 1280x720
+        id: smoke
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_ARTIFACT_DIR: ${{ runner.temp }}/canonical-practice-browser/720
+        run: npm run test:canonical-practice-hosted
+      - name: Reverify exact original source and every 720px result
+        env:
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: |
+          export WMH_SOURCE_TREE="$(git rev-parse 'HEAD^{tree}')"
+          node scripts/verify-canonical-practice-evidence.mjs "$RUNNER_TEMP/canonical-practice-browser/720"
+          node scripts/verify-canonical-practice-evidence.mjs --check "$RUNNER_TEMP/canonical-practice-browser/720"
+      - name: Same original score at 960x640
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_VIEWPORT_WIDTH: '960'
+          WMH_VIEWPORT_HEIGHT: '640'
+          WMH_ARTIFACT_DIR: ${{ runner.temp }}/canonical-practice-browser/640
+        run: npm run test:canonical-practice-hosted
+      - name: Reverify exact original source and every 640px result
+        env:
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: |
+          export WMH_SOURCE_TREE="$(git rev-parse 'HEAD^{tree}')"
+          node scripts/verify-canonical-practice-evidence.mjs "$RUNNER_TEMP/canonical-practice-browser/640"
+          node scripts/verify-canonical-practice-evidence.mjs --check "$RUNNER_TEMP/canonical-practice-browser/640"
+      - name: Retain original browser evidence and exact native driver
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: canonical-practice-browser-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/canonical-practice-native/**
+            ${{ runner.temp }}/canonical-practice-browser/**
+            target/debug/examples/native_import_driver
+          if-no-files-found: warn
+  canonical-windows:
+    name: Actual owned Windows picker, input and restart
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      RUSTFLAGS: '-C target-feature=+crt-static'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: npm run test:canonical-practice-acceptance
+      - name: Pure owned action and profile contracts
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path scripts/windows-desktop-acceptance.ps1),[ref]$tokens,[ref]$errors)
+          if ($errors.Count) { $errors | Format-List; throw 'PowerShell syntax errors' }
+          ./tests/windows-desktop-contract.ps1
+      - run: cargo test -p worldmusichub-desktop canonical_practice --locked
+      - run: cargo build -p worldmusichub-desktop --release --locked
+      - name: Three owned native processes with exact original sources
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -cne $env:GITHUB_SHA) { throw 'Unexpected build source' }
+          if (git status --porcelain --untracked-files=normal) { throw 'Acceptance source is dirty' }
+          ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory "$env:RUNNER_TEMP/canonical-practice-windows" -Scenario canonical-practice
+      - name: Reverify executable-bound native evidence
+        shell: pwsh
+        env:
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_CANONICAL_PRACTICE_EXECUTABLE: ${{ github.workspace }}/target/release/worldmusichub-desktop.exe
+        run: |
+          $env:WMH_SOURCE_TREE=git rev-parse 'HEAD^{tree}'
+          node scripts/verify-canonical-practice-evidence.mjs --check "$env:RUNNER_TEMP/canonical-practice-windows"
+          if ($LASTEXITCODE -ne 0) { throw 'Canonical native proof failed' }
+      - name: Retain original native evidence and executable, excluding profiles
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: canonical-practice-windows-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/canonical-practice-windows/**
+            !${{ runner.temp }}/canonical-practice-windows/webview-profiles/**
+            target/release/worldmusichub-desktop.exe
+          if-no-files-found: warn
+  canonical-focused-summary:
+    name: Focused original canonical app proof only
+    needs: [canonical-browser, canonical-windows]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          BROWSER: ${{ needs.canonical-browser.result }}
+          WINDOWS: ${{ needs.canonical-windows.result }}
+        run: |
+          test "$BROWSER" = success
+          test "$WINDOWS" = success
+          echo 'Original canonical app proof passed; full release gates and physical listening remain separate.'
