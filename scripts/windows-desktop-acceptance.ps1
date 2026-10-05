@@ -1,7 +1,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$Executable,
   [string]$OutputDirectory='desktop-acceptance',
-  [ValidateSet('desktop','song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key')][string]$Scenario='desktop'
+  [ValidateSet('desktop','song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','library-catalog')][string]$Scenario='desktop'
 )
 $ErrorActionPreference='Stop'
 $Executable=(Resolve-Path $Executable).Path
@@ -11,9 +11,13 @@ New-Item -ItemType Directory $OutputDirectory | Out-Null
 $OutputDirectory=(Resolve-Path $OutputDirectory).Path
 $Fixtures=Join-Path $OutputDirectory 'fixtures'
 New-Item -ItemType Directory $Fixtures | Out-Null
-$fixtureNames=if($Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key')){@()}elseif($Scenario -eq 'song-folder'){@('folder-original.json','folder-conflict.json')}else{@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu')}
+$fixtureNames=if($Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','library-catalog')){@()}elseif($Scenario -eq 'song-folder'){@('folder-original.json','folder-conflict.json')}else{@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu')}
 foreach($name in $fixtureNames) {
   Copy-Item (Join-Path $Repository "tests/fixtures/$name") (Join-Path $Fixtures $name)
+}
+if($Scenario -eq 'library-catalog') {
+  & node (Join-Path $PSScriptRoot 'prepare-library-catalog-acceptance.mjs') $Fixtures
+  if($LASTEXITCODE -ne 0){throw 'Original library-catalog fixture generation failed'}
 }
 if($Scenario -eq 'bulk-import') {
   & node (Join-Path $PSScriptRoot 'prepare-bulk-import-fixtures.mjs') $Fixtures
@@ -51,22 +55,39 @@ Set-Content -NoNewline -Encoding utf8 (Join-Path $Fixtures 'malformed.json') '{i
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing
 Add-Type -Path (Join-Path $PSScriptRoot 'windows-desktop-native.cs')
 . (Join-Path $PSScriptRoot 'windows-desktop-profile.ps1')
+. (Join-Path $PSScriptRoot 'windows-desktop-catalog-snapshot.ps1')
 function Save-Json($Value,[string]$Path) {
   $temporary="$Path.tmp"
   $Value | ConvertTo-Json -Depth 16 | Set-Content -Encoding utf8 $temporary
   Move-Item -Force $temporary $Path
 }
-function Capture-Handle([IntPtr]$Handle,[string]$Name) {
-  $rectangle=New-Object NativeAcceptance+RECT
-  if (-not [NativeAcceptance]::GetWindowRect($Handle,[ref]$rectangle)) { throw 'Cannot read native window bounds' }
+function Capture-Handle([IntPtr]$Handle,[string]$Name,[switch]$ClientOnly) {
+  $rectangle=New-Object NativeAcceptance+RECT;$printFlags=2
+  if($ClientOnly) {
+    if($Scenario -cne 'library-catalog'){throw 'Client-only acceptance capture requires the catalog scenario'}
+    if(-not [NativeAcceptance]::GetClientRect($Handle,[ref]$rectangle)){throw 'Cannot read catalog native client bounds'}
+    if(($rectangle.Right-$rectangle.Left) -ne 1280 -or ($rectangle.Bottom-$rectangle.Top) -ne 720){throw 'Catalog native client pixels must be exactly 1280x720; DPI scaling or window resizing changed the capture size'}
+    # PW_CLIENTONLY | PW_RENDERFULLCONTENT. Keep the actual client pixels;
+    # never resize or synthesize an image to satisfy the acceptance dimensions.
+    $printFlags=3
+  } elseif(-not [NativeAcceptance]::GetWindowRect($Handle,[ref]$rectangle)) { throw 'Cannot read native window bounds' }
   $bitmap=New-Object System.Drawing.Bitmap(($rectangle.Right-$rectangle.Left),($rectangle.Bottom-$rectangle.Top))
   $graphics=[System.Drawing.Graphics]::FromImage($bitmap);$device=$graphics.GetHdc()
-  try { if(-not [NativeAcceptance]::PrintWindow($Handle,$device,2)){throw 'Native screenshot failed'} }
+  try { if(-not [NativeAcceptance]::PrintWindow($Handle,$device,$printFlags)){throw 'Native screenshot failed'} }
   finally { $graphics.ReleaseHdc($device);$graphics.Dispose() }
-  try { $bitmap.Save((Join-Path $OutputDirectory "$Name.png"),[System.Drawing.Imaging.ImageFormat]::Png) }
+  try {
+    $bitmap.Save((Join-Path $OutputDirectory "$Name.png"),[System.Drawing.Imaging.ImageFormat]::Png)
+    if($Scenario -eq 'library-catalog') {
+      $capture=Get-Item -LiteralPath (Join-Path $OutputDirectory "$Name.png") -Force
+      if($capture.Length -le 0 -or $capture.Length -gt 16MB -or ($capture.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Catalog screenshot must be a bounded ordinary PNG'}
+      $row=[ordered]@{file="$Name.png";bytes=$capture.Length;sha256=(Get-FileHash -LiteralPath $capture.FullName -Algorithm SHA256).Hash.ToLowerInvariant();phase=$env:WMH_DESKTOP_ACCEPTANCE_PHASE;locale='zh-CN';width=$bitmap.Width;height=$bitmap.Height}
+      if($Name -cmatch '^native-action-catalog-(seed|restart|final)-([1-9]|[1-5][0-9]|6[0-4])$'){$row.action=[int]$Matches[2]}
+      $native.screenshots+=,$row
+    }
+  }
   finally { $bitmap.Dispose() }
 }
-function Capture-Window($App,[string]$Name) { Capture-Handle $App.MainWindowHandle $Name }
+function Capture-Window($App,[string]$Name) { Capture-Handle $App.MainWindowHandle $Name -ClientOnly:($Scenario -ceq 'library-catalog') }
 function Find-Control($Root,[string]$Id) {
   $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,$Id)
   return $Root.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$condition)
@@ -240,6 +261,14 @@ function Capture-PickerFailure([IntPtr]$Dialog,$App,$Action,[hashtable]$Evidence
   }
 }
 function Native-Action($App,$Action,[hashtable]$Evidence) {
+  if($Action.kind -ceq 'catalog-snapshot-before') {
+    if($Scenario -cne 'library-catalog' -or $env:WMH_DESKTOP_ACCEPTANCE_PHASE -cne 'catalog-seed'){throw 'Catalog snapshot requires the catalog seed phase'}
+    $snapshot=Join-Path $OutputDirectory 'snapshot-catalog-before.json'
+    if(Test-Path -LiteralPath $snapshot){throw 'Catalog before snapshot already exists'}
+    Save-Json (Get-CatalogAcceptanceSnapshot (Join-Path $OutputDirectory 'Scores') -BeforeBootstrap) $snapshot
+    $Evidence.snapshot='snapshot-catalog-before.json'
+    return
+  }
   $App.Refresh();$window=$App.MainWindowHandle
   if($window -eq [IntPtr]::Zero){throw 'Application window disappeared'}
   [NativeAcceptance]::SetForegroundWindow($window) | Out-Null
@@ -331,6 +360,10 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
 # renderer API. Only these newly generated fixture archives are ever inspected.
 function Save-SongFolderSnapshot([string]$Phase) {
   $root=Join-Path $OutputDirectory 'Scores';$rows=@()
+  if($Scenario -eq 'library-catalog') {
+    Save-Json (Get-CatalogAcceptanceSnapshot $root) (Join-Path $OutputDirectory "snapshot-$Phase.json")
+    return
+  }
   foreach($area in $(if($Scenario -in @('clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key')){@('clean-songs','clean-backups','imports','import-backups')}elseif($Scenario -eq 'bulk-import'){@('songs','backups','imports','import-backups')}else{@('songs','backups')})) {
     $directory=Join-Path $root $area
     if(-not (Test-Path -LiteralPath $directory -PathType Container)){throw 'Isolated score archive directory is missing'}
@@ -348,10 +381,30 @@ $previousDirectory=$env:WMH_DESKTOP_SMOKE_DIR;$previousPhase=$env:WMH_DESKTOP_AC
 $env:WMH_DESKTOP_SMOKE_DIR=$OutputDirectory
 $native=[ordered]@{version=1;source_sha=(git rev-parse HEAD);source_tree=(git rev-parse 'HEAD^{tree}');executable_sha256=(Get-FileHash $Executable -Algorithm SHA256).Hash.ToLower();executable_bytes=(Get-Item $Executable).Length;os=[System.Environment]::OSVersion.VersionString;profile_reused=$true;phases=@();ok=$false}
 $app=$null;$blockedStage=$false;$blockedStagePath=$null;$preservedStagePath=$null;$profileSelection=$null
-$nativeReportName=if($Scenario -eq 'basic-key'){'native-basic-key.json'}elseif($Scenario -eq 'vsq-authoring'){'native-vsq-authoring.json'}elseif($Scenario -eq 'authoring'){'native-song-authoring.json'}elseif($Scenario -eq 'pitch-bend'){'native-pitch-bend.json'}elseif($Scenario -eq 'performance-song'){'native-performance-song.json'}elseif($Scenario -eq 'vsq-song'){'native-vsq-song.json'}elseif($Scenario -eq 'clean-song'){'native-clean-song.json'}elseif($Scenario -eq 'bulk-import'){'native-bulk-import.json'}elseif($Scenario -eq 'song-folder'){'native-song-folder.json'}else{'native-acceptance.json'}
-$phases=if($Scenario -eq 'basic-key'){@('basic-key-seed','basic-key-restart')}elseif($Scenario -eq 'vsq-authoring'){@('vsq-authoring-seed','vsq-authoring-restart')}elseif($Scenario -eq 'authoring'){@('authoring-seed','authoring-restart')}elseif($Scenario -eq 'pitch-bend'){@('pitch-bend-seed','pitch-bend-restart')}elseif($Scenario -eq 'performance-song'){@('performance-seed','performance-controls','performance-restart')}elseif($Scenario -eq 'vsq-song'){@('vsq-seed','vsq-restart')}elseif($Scenario -eq 'clean-song'){@('clean-seed','clean-restart')}elseif($Scenario -eq 'bulk-import'){@('bulk-seed','bulk-restart','bulk-failure')}elseif($Scenario -eq 'song-folder'){@('folder-seed','folder-restart','folder-failure')}else{@('seed','restart','close-active','reopen')}
-if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key')){$native.profile_reused=$false;$native.scenario=$Scenario;$native.directory=Join-Path $OutputDirectory 'Scores'}
+$nativeReportName=if($Scenario -eq 'library-catalog'){'native-library-catalog.json'}elseif($Scenario -eq 'basic-key'){'native-basic-key.json'}elseif($Scenario -eq 'vsq-authoring'){'native-vsq-authoring.json'}elseif($Scenario -eq 'authoring'){'native-song-authoring.json'}elseif($Scenario -eq 'pitch-bend'){'native-pitch-bend.json'}elseif($Scenario -eq 'performance-song'){'native-performance-song.json'}elseif($Scenario -eq 'vsq-song'){'native-vsq-song.json'}elseif($Scenario -eq 'clean-song'){'native-clean-song.json'}elseif($Scenario -eq 'bulk-import'){'native-bulk-import.json'}elseif($Scenario -eq 'song-folder'){'native-song-folder.json'}else{'native-acceptance.json'}
+$phases=if($Scenario -eq 'library-catalog'){@('catalog-seed','catalog-restart','catalog-final')}elseif($Scenario -eq 'basic-key'){@('basic-key-seed','basic-key-restart')}elseif($Scenario -eq 'vsq-authoring'){@('vsq-authoring-seed','vsq-authoring-restart')}elseif($Scenario -eq 'authoring'){@('authoring-seed','authoring-restart')}elseif($Scenario -eq 'pitch-bend'){@('pitch-bend-seed','pitch-bend-restart')}elseif($Scenario -eq 'performance-song'){@('performance-seed','performance-controls','performance-restart')}elseif($Scenario -eq 'vsq-song'){@('vsq-seed','vsq-restart')}elseif($Scenario -eq 'clean-song'){@('clean-seed','clean-restart')}elseif($Scenario -eq 'bulk-import'){@('bulk-seed','bulk-restart','bulk-failure')}elseif($Scenario -eq 'song-folder'){@('folder-seed','folder-restart','folder-failure')}else{@('seed','restart','close-active','reopen')}
+if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','library-catalog')){$native.profile_reused=$false;$native.scenario=$Scenario;$native.directory=Join-Path $OutputDirectory 'Scores'}
 try {
+if($Scenario -eq 'library-catalog') {
+  $native.profile_reused=$true;$native.screenshots=@()
+  $sourceNames=& node --input-type=module -e 'import {pathToFileURL} from "node:url"; const module=await import(pathToFileURL(process.argv[2])); console.log(JSON.stringify(module.CATALOG_SOURCE_FILES));' -- catalog-source-list (Join-Path $PSScriptRoot 'verify-library-catalog-acceptance.mjs')
+  if($LASTEXITCODE -ne 0){throw 'Cannot read catalog acceptance source allowlist'}
+  $sourceNames=ConvertFrom-Json -InputObject $sourceNames
+  if($sourceNames.Count -lt 15 -or $sourceNames.Count -gt 40){throw 'Catalog source allowlist is outside its finite bound'}
+  $native.source_hashes=[ordered]@{}
+  foreach($name in $sourceNames) {
+    if($name -cnotmatch '^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)+$' -or $name.Split('/') -contains '..'){throw 'Catalog source allowlist contains an unsafe path'}
+    $sourceFile=Get-Item -LiteralPath (Join-Path $Repository $name) -Force -ErrorAction Stop
+    if($sourceFile.PSIsContainer -or ($sourceFile.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $sourceFile.Length -gt 4MB){throw 'Catalog source module must be a bounded ordinary file'}
+    $native.source_hashes[$name]=(Get-FileHash -LiteralPath $sourceFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+  }
+  $native.run_id=[guid]::NewGuid().ToString('D')
+  $config=[ordered]@{version=1;run_id=$native.run_id;source_binding=[ordered]@{source_sha=$native.source_sha;source_tree=$native.source_tree;source_hashes=$native.source_hashes};fixture=(Read-AcceptanceJsonSnapshot -Path (Join-Path $Fixtures 'catalog-fixtures.json') -MaximumBytes 128KB)}
+  $configPath=Join-Path $OutputDirectory 'catalog-config.json'
+  Save-Json $config $configPath
+  if((Get-Item -LiteralPath $configPath).Length -gt 128KB){throw 'Catalog configuration exceeds 128 KiB'}
+  $native.config_sha256=(Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash.ToLowerInvariant()
+}
   foreach($phase in $phases) {
     $profileSelection=Get-AcceptanceProfile $OutputDirectory $phase
     $native.profile_launch=$profileSelection
@@ -359,7 +412,7 @@ try {
     $profileSelection=Assert-AcceptanceProfileLaunch $OutputDirectory $phase
     $native.profile_launch=$profileSelection
     Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
-    if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key')) {
+    if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','library-catalog')) {
       if($phase -in @('folder-failure','bulk-failure')) {
         $stageName=if($phase -eq 'bulk-failure'){'.import-staging'}else{'.staging'}
         $stage=Join-Path $OutputDirectory "Scores/$stageName"
@@ -373,11 +426,11 @@ try {
     $app=Start-Process -FilePath $Executable -PassThru -RedirectStandardError (Join-Path $OutputDirectory "stderr-$phase.log")
     $phaseStart=[DateTime]::UtcNow;$deadline=$phaseStart.AddSeconds(240);$sequence=1;$reportDeliveryWatch=$null
     $reportFile=Join-Path $OutputDirectory "renderer-$phase.json"
-    $reportLimit=if($Scenario -eq 'bulk-import'){4MB}elseif($Scenario -in @('clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key')){1MB}else{64KB}
+    $reportLimit=if($Scenario -eq 'bulk-import'){4MB}elseif($Scenario -in @('clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','library-catalog')){1MB}else{64KB}
     while($null -eq ($report=Read-AcceptanceJsonSnapshot -Path $reportFile -MaximumBytes $reportLimit -AllowPending)) {
       $app.Refresh();if($app.HasExited){throw "Process exited before $phase evidence: $($app.ExitCode); profile=$($profileSelection.profile_directory); see stderr-$phase.log"}
       if([DateTime]::UtcNow -ge $deadline){throw "Native $phase exceeded 240 seconds"}
-      if($Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key')) {
+      if($Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','library-catalog')) {
         $traceFile=Join-Path $OutputDirectory "trace-$phase.json"
         $trace=Read-AcceptanceJsonSnapshot -Path $traceFile -MaximumBytes 512KB -AllowPending
         if($null -ne $trace) {
@@ -393,7 +446,7 @@ try {
       if($null -ne $action) {
         if($action.sequence -ne $sequence -or $sequence -gt 64){throw 'Out-of-order or over-limit native action'}
         $result=@{ok=$false}
-        try{Native-Action $app $action $result;if($Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key')){Capture-Window $app "native-action-$phase-$sequence"};$result.ok=$true}catch{$result.error=$_.Exception.Message}
+        try{Native-Action $app $action $result;if($Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','library-catalog')){Capture-Window $app "native-action-$phase-$sequence"};$result.ok=$true}catch{$result.error=$_.Exception.Message}
         Save-Json $result (Join-Path $OutputDirectory "result-$phase-$sequence.json")
         # A native modal can suspend the renderer, including its result poll.
         # Fail here after preserving the real action error instead of waiting
@@ -410,7 +463,8 @@ try {
     $listeners=@(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object OwningProcess -eq $app.Id)
     $item=[ordered]@{phase=$phase;process_id=$app.Id;renderer_ok=$report.ok;renderer_origin=$report.origin;actions=$sequence-1;elapsed_seconds=([DateTime]::UtcNow-$phaseStart).TotalSeconds;executable_tcp_listeners=$listeners.Count;normal_close=$false}
     $item.profile_directory=$profileSelection.profile_directory;$item.profile_absent_before_launch=$profileSelection.profile_absent_before_launch
-    if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key')){$item.launched_new_process=$true;$item.profile_fresh=$true;$item.profile_reused=$false}
+    if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','library-catalog')){$item.launched_new_process=$true;$item.profile_fresh=$true;$item.profile_reused=$false}
+    if($Scenario -eq 'library-catalog'){$item.profile_fresh=$profileSelection.fresh_required;$item.profile_reused=$profileSelection.existing_required}
     $native.phases+=,$item;Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
     if(-not $report.ok){throw "Native $phase failed: $($report.error)"}
     if($report.origin -ne 'https://wmh.localhost'){throw 'Origin/profile continuity changed'}
@@ -420,16 +474,26 @@ try {
     if($app.ExitCode -ne 0){throw "Normal close failed during $phase : $($app.ExitCode)"}
     $item.normal_close=$true;$item.close_seconds=([DateTime]::UtcNow-$closeStart).TotalSeconds
     Save-Json $native (Join-Path $OutputDirectory $nativeReportName);$app=$null
-    if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key')){Save-SongFolderSnapshot $phase}
+    if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','library-catalog')){Save-SongFolderSnapshot $phase}
   }
-  if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key')) {
+  if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','library-catalog')) {
     # Restore only the test-owned blocker; no user folder or permissions change.
     if($blockedStage){Remove-Item -LiteralPath $blockedStagePath;Move-Item -LiteralPath $preservedStagePath -Destination $blockedStagePath;$blockedStage=$false}
     $native.ok=$true;Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
-    $verifier=if($Scenario -eq 'basic-key'){'verify-basic-key-evidence.mjs'}elseif($Scenario -eq 'vsq-authoring'){'verify-native-vsq-authoring-evidence.mjs'}elseif($Scenario -eq 'authoring'){'verify-native-song-authoring-evidence.mjs'}elseif($Scenario -eq 'pitch-bend'){'verify-native-pitch-bend-evidence.mjs'}elseif($Scenario -eq 'performance-song'){'verify-native-performance-song-evidence.mjs'}elseif($Scenario -eq 'vsq-song'){'verify-native-vsq-song-evidence.mjs'}elseif($Scenario -eq 'clean-song'){'verify-native-clean-song-evidence.mjs'}elseif($Scenario -eq 'bulk-import'){'verify-native-bulk-import-evidence.mjs'}else{'verify-native-song-folder-evidence.mjs'}
-    & node (Join-Path $PSScriptRoot $verifier) $OutputDirectory
-    if($LASTEXITCODE -ne 0){throw 'Native song-folder disk/backup/profile verification failed'}
-    if($Scenario -eq 'pitch-bend'){Write-Output 'Original pitch-bend source/receiver, unchanged human take and fresh-process focused gates passed.'}
+    $verifier=if($Scenario -eq 'library-catalog'){'verify-library-catalog-acceptance.mjs'}elseif($Scenario -eq 'basic-key'){'verify-basic-key-evidence.mjs'}elseif($Scenario -eq 'vsq-authoring'){'verify-native-vsq-authoring-evidence.mjs'}elseif($Scenario -eq 'authoring'){'verify-native-song-authoring-evidence.mjs'}elseif($Scenario -eq 'pitch-bend'){'verify-native-pitch-bend-evidence.mjs'}elseif($Scenario -eq 'performance-song'){'verify-native-performance-song-evidence.mjs'}elseif($Scenario -eq 'vsq-song'){'verify-native-vsq-song-evidence.mjs'}elseif($Scenario -eq 'clean-song'){'verify-native-clean-song-evidence.mjs'}elseif($Scenario -eq 'bulk-import'){'verify-native-bulk-import-evidence.mjs'}else{'verify-native-song-folder-evidence.mjs'}
+    if($Scenario -eq 'library-catalog') {
+      $previousSourceSha=$env:WMH_SOURCE_SHA;$previousSourceTree=$env:WMH_SOURCE_TREE;$previousCatalogExecutable=$env:WMH_LIBRARY_CATALOG_EXECUTABLE
+      try {
+        $env:WMH_SOURCE_SHA=$native.source_sha;$env:WMH_SOURCE_TREE=$native.source_tree;$env:WMH_LIBRARY_CATALOG_EXECUTABLE=$Executable
+        & node (Join-Path $PSScriptRoot $verifier) $OutputDirectory
+        if($LASTEXITCODE -ne 0){throw 'Native library-catalog verification failed'}
+      } finally {$env:WMH_SOURCE_SHA=$previousSourceSha;$env:WMH_SOURCE_TREE=$previousSourceTree;$env:WMH_LIBRARY_CATALOG_EXECUTABLE=$previousCatalogExecutable}
+    } else {
+      & node (Join-Path $PSScriptRoot $verifier) $OutputDirectory
+      if($LASTEXITCODE -ne 0){throw 'Native song-folder disk/backup/profile verification failed'}
+    }
+    if($Scenario -eq 'library-catalog'){Write-Output 'Native original catalog recovery, same-profile persistence, trusted controls and retained archive focused gates passed.'}
+    elseif($Scenario -eq 'pitch-bend'){Write-Output 'Original pitch-bend source/receiver, unchanged human take and fresh-process focused gates passed.'}
     elseif($Scenario -eq 'vsq-authoring'){Write-Output 'Native original VSQ authoring, exact package export and fresh-process restart focused gates passed.'}
     elseif($Scenario -eq 'authoring'){Write-Output 'Native original source authoring, trusted title edits, exact package export and fresh-process restart gates passed.'}
     elseif($Scenario -eq 'performance-song'){Write-Output 'Native complete performance explicit-choice, independent controls, exact export and fresh-process restart gates passed.'}

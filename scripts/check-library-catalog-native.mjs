@@ -13,6 +13,7 @@ import {authoredImportScore} from '../tests/bulk-import-fixtures.js';
 import {openScoreStorage} from '../web/native-score-storage.js';
 import {getAppI18n} from '../web/app-locale.js';
 import {LIBRARY_OPERATION_STORAGE_KEY} from '../web/library-operation-store.js';
+import {catalogAcceptanceRendererHelpers} from '../tests/catalog-acceptance-renderer-helpers.js';
 
 const binary = process.env.WMH_NATIVE_IMPORT_DRIVER;
 if (!binary) throw Error('Build the exact-source native_import_driver and set WMH_NATIVE_IMPORT_DRIVER.');
@@ -27,11 +28,23 @@ const report = {
   source_tree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], {encoding: 'utf8'}).trim(),
   browser: false, native_window: false, physical_audio: false, network_listener: false,
   driver_sha256: digest(await readFile(binary)), fixture_sha256: {legacy: digest(legacy.bytes), shared: digest(shared), clean: digest(clean.bytes)},
+  driver_build_source: process.env.WMH_CATALOG_DRIVER_BUILD_SHA || null,
   cases: [], native_catalog_calls: [],
 };
 const storageValues = new Map();
 let driver, app, mediaStorage, loseAfterCommit = false, loseBeforeCommit = false;
 const passed = (name, details = {}) => report.cases.push({name, ...details, ok: true});
+
+// Exercise the same fault/evidence adapter injected into the real browser gate.
+const {createCatalogAcceptanceTransport} = await catalogAcceptanceRendererHelpers();
+const sharedTransport = createCatalogAcceptanceTransport({origin: 'https://wmh.localhost', digest: async value => digest(value), fetcher: async (path, options = {}) => {
+  const response = await driver.fetcher(path, options), bytes = await response.bytes();
+  if (path.startsWith('/api/library/catalog/')) report.native_catalog_calls.push({path, method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : null, status: response.status, response: JSON.parse(bytes)});
+  const result = new Response(bytes, {status: response.status, headers: {'Content-Type': response.contentType}});
+  Object.defineProperty(result, 'url', {value: `https://wmh.localhost${path}`}); return result;
+}});
+report.shared_renderer_transport_trace = sharedTransport.rows;
+report.shared_renderer_transport_faults = sharedTransport.faults;
 
 // Preserve the actual native response bytes while presenting Fetch's interface.
 // Faults are injected only at transport boundaries, never by fabricating replies.
@@ -45,28 +58,21 @@ const transport = {
     if (path === '/api/library/catalog/commit' && loseBeforeCommit) {
       loseBeforeCommit = false;
       request.injected_loss = 'before_native_dispatch';
-      throw Error('Authored transport loss before native dispatch');
+      sharedTransport.arm({kind: 'lose-before'});
     }
-    const response = await driver.fetcher(path, {...options, body});
-    const bytes = await response.bytes();
-    if (path.startsWith('/api/library/catalog/')) report.native_catalog_calls.push({...request, status: response.status, response: JSON.parse(bytes)});
     if (path === '/api/library/catalog/commit' && loseAfterCommit) {
       loseAfterCommit = false;
-      assert.equal(response.status, 200);
       request.injected_loss = 'after_native_commit';
-      throw Error('Authored transport loss after durable native commit');
+      sharedTransport.arm({kind: 'lose-after'});
     }
-    return {...response, url: `https://wmh.localhost${path}`, redirected: false,
-      headers: new Headers({'Content-Type': response.contentType}),
-      arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
-      blob: async () => new Blob([bytes], {type: response.contentType})};
+    return sharedTransport.fetcher(path, {...options, body});
   },
 };
 const request = (path, body) => transport.fetcher(path, body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
-async function json(path, body) { const response = await request(path, body); assert.ok(response.ok, await response.text()); return response.json(); }
+async function json(path, body) { const response = await request(path, body); if (!response.ok) assert.fail(await response.text()); return response.json(); }
 async function upload(name, bytes) {
   const response = await transport.fetcher('/api/library/import/commit', {method: 'POST', headers: {'Content-Type': 'application/octet-stream', 'x-wmh-filename': encodeURIComponent(name)}, body: bytes});
-  assert.ok(response.ok, await response.text()); return response.json();
+  if (!response.ok) assert.fail(await response.text()); return response.json();
 }
 const catalog = suffix => app.$(`management-catalog-${suffix}`);
 const click = suffix => app.click(`management-catalog-${suffix}`);
@@ -122,6 +128,7 @@ try {
   await click('cancel'); assert.equal((await json('/api/library/catalog/status')).state, 'uninitialized');
   assert.equal(report.native_catalog_calls.some(row => row.path.endsWith('/initialize')), false);
   await review('initialize-preview'); await confirm();
+  const initializedOperation = savedOperation();
   const initialized = await query('active');
   assert.deepEqual(initialized.counts, {managed_songs: 3, active_songs: 3, trashed_songs: 0, packs: 3, memberships: 4});
   assert.equal(catalog('rows').children.length, 3);
@@ -143,6 +150,10 @@ try {
   const uncertain = savedOperation(); assert.equal(uncertain.phase, 'uncertain');
   assert.deepEqual(uncertain.preview.request.action.song_ids, selected.map(row => row.edition_id));
   assert.equal(catalog('preview').disabled, true);
+  sharedTransport.arm({kind: 'wrong-operation', operation_id: initializedOperation.operation_id});
+  await click('check'); await app.until(() => !catalog('operation-error').hidden && !catalog('check').disabled, 'Wrong native operation reply rejected');
+  assert.deepEqual(savedOperation(), uncertain, 'A real committed initialization reply cannot confirm the different pending Trash operation');
+  passed('shared-renderer-transport-rejects-real-wrong-operation-reply');
   assert.equal(app.$('song-lobby').dataset.previewId, priorPreview); assert.deepEqual(app.audio(), priorAudio);
   assert.equal((await query('trash')).total, 2);
   assert.equal((await json('/api/library/list')).entries.length, 1);
@@ -170,6 +181,13 @@ try {
   await unchanged(before);
   passed('exact-restore-restores-memberships-and-app-inventory');
 
+  sharedTransport.arm({kind: 'defer-query'}); await click('trash'); await app.until(() => Boolean(sharedTransport.held()), 'Actual old native query held');
+  await app.click('management-close'); await open(); await click('active'); await settled();
+  const currentOwner = {rows: catalog('rows').textContent, active: catalog('active').getAttribute('aria-pressed'), operation: savedOperation()};
+  sharedTransport.release(); await app.until(() => !sharedTransport.held()); await app.tick(); await app.tick();
+  assert.deepEqual({rows: catalog('rows').textContent, active: catalog('active').getAttribute('aria-pressed'), operation: savedOperation()}, currentOwner);
+  passed('shared-renderer-transport-discards-real-stale-query-after-reopen');
+
   const fresh = authoredImportScore('original-catalog-dom-new', 'Original later import');
   assert.equal((await upload('Original later import.json', Buffer.from(JSON.stringify(fresh)))).summary.saved, 1);
   await click('refresh'); await settled();
@@ -196,12 +214,13 @@ try {
   assert.equal(catalog('rows').children.length, 4); assert.equal((await query('trash')).total, 0);
   await unchanged(after); assert.deepEqual(await readFile(join(root, 'outside-sentinel')), sentinel);
   passed('second-restart-retains-all-originals-backups-history-media-and-final-state', {retained_files: Object.keys(after).length});
-  for (const file of ['scripts/check-library-catalog-native.mjs', 'web/app.js', 'web/native-score-storage.js', 'web/library-catalog-contract.js', 'web/library-catalog-model.js', 'web/library-catalog-view.js', 'web/library-operation-store.js', 'crates/desktop-shell/src/lib.rs', 'crates/desktop-shell/src/catalog_product.rs', 'crates/desktop-shell/src/catalog_journal.rs', 'crates/desktop-shell/src/catalog.rs']) {
+  for (const file of ['scripts/check-library-catalog-native.mjs', 'tests/catalog-acceptance-renderer-helpers.js', 'crates/desktop-shell/library-catalog-acceptance.js', 'web/app.js', 'web/native-score-storage.js', 'web/library-catalog-contract.js', 'web/library-catalog-model.js', 'web/library-catalog-view.js', 'web/library-operation-store.js', 'crates/desktop-shell/src/lib.rs', 'crates/desktop-shell/src/catalog_product.rs', 'crates/desktop-shell/src/catalog_journal.rs', 'crates/desktop-shell/src/catalog.rs']) {
     report.source_hashes ??= {}; report.source_hashes[file] = digest(await readFile(new URL(`../${file}`, import.meta.url)));
   }
   report.ok = true;
 } catch (error) { report.error = error.stack || String(error); process.exitCode = 1; }
 finally {
+  sharedTransport.stop();
   try { await close(); } finally {
     assert.deepEqual(await readFile(join(root, 'outside-sentinel')), sentinel);
     await rm(root, {recursive: true, force: true});

@@ -8,7 +8,8 @@ export function authoringPickerFiles(alias,directory){
  const names=alias===AUTHORING_PAIR_ALIAS?[AUTHORING_FIXTURE_FILENAMES.strict,AUTHORING_FIXTURE_FILENAMES.events]:alias===AUTHORING_FIXTURE_FILENAMES.blocked?[AUTHORING_FIXTURE_FILENAMES.blocked]:null;
  assert.ok(names,'Outside the finite original authoring picker aliases');return names.map(name=>path.join(directory,name));
 }
-export function createAuthoringHostedChooser(page,{timeoutMs=10000,onError=()=>{},now=()=>performance.timeOrigin+performance.now(),pickerFiles=authoringPickerFiles}={}) {
+export function createAuthoringHostedChooser(page,{timeoutMs=10000,onError=()=>{},now=()=>performance.timeOrigin+performance.now(),pickerFiles=authoringPickerFiles,inputId='authoring-files'}={}) {
+ assert.ok(['authoring-files','score-file'].includes(inputId),'Finite original acceptance input required');
  const evidence={version:1,timeline:[],events:[],late_events:0,extra_events:0,unowned_events:0,omitted_events:0};let active=null,stopped=false,lastSequence=null,lastOutcome=null;const reportedErrors=new Set();
  const fail=error=>{const value=error instanceof Error?error:Error(String(error));const message=String(value);if(!reportedErrors.has(message)&&reportedErrors.size<8){reportedErrors.add(message);onError(message);}active?.reject?.(value);};
  const mark=(stage,sequence=null)=>{if(evidence.timeline.length>=32){evidence.omitted_events++;fail(Error('Authoring chooser timeline exceeded 32 events'));return;}evidence.timeline.push({order:evidence.timeline.length+1,stage,sequence,atMs:now()});};
@@ -35,7 +36,7 @@ export function createAuthoringHostedChooser(page,{timeoutMs=10000,onError=()=>{
    if(owner.cancelled)throw Error('Authoring chooser action expired before input observation');owner.stage='input-identity';
    assert.equal(row.samePage,true,'Authoring chooser belongs to another page');assert.equal(row.multiple,true,'Authoring chooser lost the original multi-file input');
    row.input=await chooser.element().evaluate(input=>({id:input.id,tag:input.tagName,type:input.type,disabled:input.disabled,multiple:input.multiple,connected:input.isConnected}));
-   assert.deepEqual(row.input,{id:'authoring-files',tag:'INPUT',type:'file',disabled:false,multiple:true,connected:true},'Authoring chooser is not the original enabled authoring-files input');
+   assert.deepEqual(row.input,{id:inputId,tag:'INPUT',type:'file',disabled:false,multiple:true,connected:true},'Chooser is not the original enabled acceptance input');
    assert.equal(evidence.events.filter(event=>event.sequence===action.sequence).length,1,'Authoring action did not own exactly one chooser');
    if(owner.cancelled)throw Error('Authoring chooser action expired before file selection');owner.stage='set-files';row.selected_count=files.length;row.selected_filenames=files.map(file=>path.basename(file));await chooser.setFiles(files,{timeout:Math.max(1,timeoutMs-(Date.now()-started))});if(owner.cancelled)throw Error('Authoring chooser action expired during file selection');row.state='files-set';mark('files-set',action.sequence);lastOutcome='completed';return row;})(),deadline]);
   } catch(error){lastOutcome='failed';mark('action-failed',action.sequence);throw error;}
