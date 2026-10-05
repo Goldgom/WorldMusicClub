@@ -67,6 +67,22 @@ jobs:
           export WMH_SOURCE_TREE="$(git rev-parse 'HEAD^{tree}')"
           node scripts/verify-canonical-practice-evidence.mjs "$RUNNER_TEMP/canonical-practice-browser/640"
           node scripts/verify-canonical-practice-evidence.mjs --check "$RUNNER_TEMP/canonical-practice-browser/640"
+      - name: Retain bounded canonical-browser JSON diagnostics alongside full evidence
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ runner.temp }}" "${{ runner.temp }}/canonical-browser-json"
+          --root canonical-practice-native
+          --root canonical-practice-browser
+          --source-sha "${{ github.sha }}"
+      - name: Upload canonical-browser JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: canonical-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/canonical-browser-json/
+          if-no-files-found: warn
+          include-hidden-files: true
       - name: Retain original browser evidence and exact native driver
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -119,6 +135,21 @@ jobs:
           $env:WMH_SOURCE_TREE=git rev-parse 'HEAD^{tree}'
           node scripts/verify-canonical-practice-evidence.mjs --check "$env:RUNNER_TEMP/canonical-practice-windows"
           if ($LASTEXITCODE -ne 0) { throw 'Canonical native proof failed' }
+      - name: Retain bounded canonical-windows JSON diagnostics alongside full evidence
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ runner.temp }}" "${{ runner.temp }}/canonical-windows-json"
+          --root canonical-practice-windows
+          --source-sha "${{ github.sha }}"
+      - name: Upload canonical-windows JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: canonical-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/canonical-windows-json/
+          if-no-files-found: warn
+          include-hidden-files: true
       - name: Retain original native evidence and executable, excluding profiles
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

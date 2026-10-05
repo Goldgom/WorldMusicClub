@@ -89,6 +89,22 @@ jobs:
         run: |
           export WMH_SOURCE_TREE="$(git rev-parse 'HEAD^{tree}')"
           node scripts/verify-library-catalog-acceptance.mjs --check "$RUNNER_TEMP/library-management-browser/catalog"
+      - name: Retain bounded management-browser JSON diagnostics alongside full evidence
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ runner.temp }}" "${{ runner.temp }}/management-browser-json"
+          --root library-management-native
+          --root library-management-browser
+          --source-sha "${{ github.sha }}"
+      - name: Upload management-browser JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: management-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/management-browser-json/
+          if-no-files-found: warn
+          include-hidden-files: true
       - name: Retain original browser proof, exact driver and asset server, excluding browser profiles
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -157,6 +173,21 @@ jobs:
           $env:WMH_SOURCE_TREE=git rev-parse 'HEAD^{tree}'
           node scripts/verify-library-catalog-acceptance.mjs --check "$env:RUNNER_TEMP/library-management-windows"
           if ($LASTEXITCODE -ne 0) { throw 'Native catalog proof check failed' }
+      - name: Retain bounded management-windows JSON diagnostics alongside full evidence
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ runner.temp }}" "${{ runner.temp }}/management-windows-json"
+          --root library-management-windows
+          --source-sha "${{ github.sha }}"
+      - name: Upload management-windows JSON diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: management-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/management-windows-json/
+          if-no-files-found: warn
+          include-hidden-files: true
       - name: Retain original native proof and exact EXE, excluding WebView profiles
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

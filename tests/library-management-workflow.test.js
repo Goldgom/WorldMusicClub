@@ -84,7 +84,7 @@ test('management proof runs only on its named preview branch or explicit dispatc
     assert.deepEqual(job.steps.find(row => row.uses?.startsWith('actions/checkout@')).with, {ref: '${{ github.sha }}', 'fetch-depth': 0});
     for (const row of job.steps) {
       assert.equal(row['continue-on-error'], undefined);
-      if (row.run && row.if) assert.ok([focusedBrowserGuard, "${{ !cancelled() && steps.management_catalog_browser.outcome == 'success' }}"].includes(row.if));
+      if (row.run && row.if) { if (row.run.includes('scripts/collect-json-evidence.py')) assert.equal(row.if, 'always()'); else assert.ok([focusedBrowserGuard, "${{ !cancelled() && steps.management_catalog_browser.outcome == 'success' }}"].includes(row.if)); }
       if (row.uses) assert.match(row.uses, /@[a-f0-9]{40}$/);
     }
     assert.ok(step(id, 'npm run prepare:engraving'));
@@ -134,7 +134,7 @@ test('Windows builds its actual EXE before the three-process shared-profile scen
 
 test('failed runs retain evidence and exact binaries without browser profiles, while summary requires both gates', () => {
   for (const id of jobIds) {
-    const artifact = workflow.jobs[id].steps.find(row => row.uses?.startsWith('actions/upload-artifact@'));
+    const artifact = workflow.jobs[id].steps.find(row => row.with?.name === `library-management-${id.endsWith('browser') ? 'browser' : 'windows'}-${'${{ github.sha }}'}`);
     assert.equal(artifact.if, 'always()');
     assert.equal(artifact.with['include-hidden-files'], true);
     assert.ok(artifact.with.name.includes('${{ github.sha }}'));
