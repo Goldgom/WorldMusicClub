@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {nativeScoreServer,nativeStorageApp,nativeResponse} from './native-storage-app-fixtures.js';
 import {basicKeyRenditionFixture} from './basic-key-rendition-fixtures.js';
 import {originalMultipartNotation} from './notation-scope-fixtures.js';
+import {beat,pitchMidi} from '../web/music.js';
 import {getAppI18n} from '../web/app-locale.js';
 import {SONG_MOD_STORAGE_PREFIX} from '../web/song-mod.js';
 
@@ -117,4 +118,34 @@ test('an already active legacy Listen session opens Mod with machine roles and d
  const f=await basicFixture(),{app,score}=f;
  try{await app.click('start-listen');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');await app.click('edit-song-mod');assert.ok(score.parts.every(part=>control(app,'performer',part.id).value==='machine'));set(app,'visible',score.parts[1].id,false);await apply(app);assert.equal(app.$('session-mode').value,'listen');const take=await app.exported('export-takes');assert.equal(take.passes.length,0);assert.ok(take.song_mod.config.parts.every(part=>part.performer==='machine'));}
  finally{await app.close();}
+});
+
+
+test('one-part All-human Mod retains selected-part octave adaptation and exact original restore',async()=>{
+ const transposed=JSON.parse(readFileSync(new URL('./fixtures/first-steps-transposed-v1.json',import.meta.url),'utf8')),original=JSON.parse(transposed.source.content).original;
+ original.title='Original reversible octave exercise';original.source={format:'original-test-text',filename:'original.txt',content:'\uFEFFOriginal source · 原稿\r\nKeep exact bytes and credits.'};const partId=original.parts[0].id;
+ const compile=score=>{const notes=score.parts.flatMap(part=>part.notes.filter(note=>note.pitch).map(note=>({id:note.id,source_note_id:note.id,source_note_ids:[note.id],velocity:note.velocity,part_id:part.id,midi:pitchMidi(note.pitch),start_ms:beat(note.at)*500,duration_ms:beat(note.duration)*500,voice:note.voice,staff:note.staff})));return {score,timeline:{notes,duration_ms:Math.max(...notes.map(note=>note.start_ms+note.duration_ms))},diagnostics:[]};};
+ const server=await nativeScoreServer({scores:[original]});let prepared;
+ server.setRoute(({path,body})=>{
+  if(path==='/api/compile')return nativeResponse(compile(body));
+  if(path==='/api/adaptation/preview'){
+   assert.deepEqual(body.operation,{part_id:partId,octaves:1});assert.deepEqual(body.score,original);const score=structuredClone(body.score);score.id+=':octave:+1';score.title+=' [+1 octave]';for(const part of score.parts)if(part.id===body.operation.part_id)for(const note of part.notes)if(note.pitch)note.pitch.octave+=1;
+   score.source={format:'octave-adaptation',filename:null,content:JSON.stringify({version:1,operation:body.operation,original:body.score}),import_diagnostics:[]};const compilation=compile(score);
+   prepared={compilation,operation:body.operation,changed_note_count:15,original_preserved:true,scored_mode_allowed:true,instrument_report:{lowest_midi:36,highest_midi:96,note_options:compilation.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:true,positions:[]})),diagnostics:[],changed_source_notes:false}};return nativeResponse(prepared);
+  }
+  if(path==='/api/adaptation/restore')return nativeResponse(compile(JSON.parse(body.source.content).original));
+ });
+ const app=await nativeStorageApp(server);
+ try{const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('start-performance').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('configure-song-mod');await app.click('song-mod-all-machine');await apply(app);if(app.$('sound-button').getAttribute('aria-pressed')!=='true')await app.click('sound-button');await app.click('start-performance');await app.until(()=>app.document.body.dataset.screen==='stage');await app.click('edit-song-mod');await app.click('song-mod-all-human');await apply(app);await app.until(()=>!app.$('play-button').disabled);
+  const before=await app.exported('export-takes');assert.equal(before.practice_selection.kind,'all');assert.equal(before.practice_part,null);assert.deepEqual(before.practice_selection.part_ids,[partId]);assert.equal(before.target_plan.target_count,15);
+  await app.click('adaptation-button');assert.equal(app.$('adaptation-scope').options[1].disabled,false);app.$('adaptation-scope').value='selected';app.$('adaptation-octaves').value='1';await app.click('adaptation-preview');await app.until(()=>!app.$('adaptation-result').hidden);assert.equal(prepared.operation.part_id,partId);assert.equal(prepared.changed_note_count,15);assert.equal(app.$('adaptation-activate').disabled,true);assert.deepEqual(await app.exported('export-button'),original);
+  app.$('adaptation-confirm').checked=true;app.emit(app.$('adaptation-confirm'),'change');await app.click('adaptation-activate');await app.until(()=>!app.$('adaptation-dialog').open&&app.$('score-title').textContent===prepared.compilation.score.title);const copy=await app.exported('export-button');assert.deepEqual(copy,prepared.compilation.score);assert.deepEqual(JSON.parse(copy.source.content).original,original);assert.equal(JSON.parse(copy.source.content).original.source.content,original.source.content);assert.equal((await app.exported('export-takes')).practice_selection.kind,'all');assert.equal((await app.exported('export-takes')).practice_part,null);
+  await app.click('adaptation-button');await app.click('adaptation-restore-preview');await app.until(()=>app.$('adaptation-status').textContent.startsWith('Original preview ready'));app.$('adaptation-confirm').checked=true;app.emit(app.$('adaptation-confirm'),'change');await app.click('adaptation-activate');await app.until(()=>!app.$('adaptation-dialog').open&&app.$('score-title').textContent===original.title);assert.deepEqual(await app.exported('export-button'),original);const restored=await app.exported('export-takes');assert.equal(restored.practice_selection.kind,'all');assert.equal(restored.practice_part,null);assert.deepEqual(restored.practice_selection.part_ids,[partId]);
+ }finally{await app.close();}
+});
+
+test('multipart All-human Mod does not invent a selected part for octave adaptation',async()=>{
+ const score=originalMultipartNotation({partCount:2,measures:4}),server=await nativeScoreServer({scores:[score]}),app=await nativeStorageApp(server);
+ try{const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('start-performance').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('configure-song-mod');await app.click('song-mod-all-human');await apply(app);if(app.$('sound-button').getAttribute('aria-pressed')!=='true')await app.click('sound-button');await app.click('start-performance');await app.until(()=>app.document.body.dataset.screen==='stage');await app.click('adaptation-button');assert.equal(app.$('adaptation-scope').options[1].disabled,true);assert.equal(app.$('adaptation-scope').value,'all');assert.equal(server.requests.filter(request=>request.path==='/api/adaptation/preview').length,0);const take=await app.exported('export-takes');assert.equal(take.practice_selection.kind,'all');assert.equal(take.practice_part,null);assert.equal(take.practice_selection.part_ids.length,2);
+ }finally{await app.close();}
 });
