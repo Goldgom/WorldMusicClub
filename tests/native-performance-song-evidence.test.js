@@ -22,27 +22,28 @@ const {createAcceptanceNavigation,createAcceptanceWait}=vm.runInNewContext(`${na
 
 // Ordinary Node DOM contracts exercise the real menu/preview handlers. They
 // neither generate trusted input nor constitute browser/native acceptance.
-async function setupFixture({suppressStart=false,deferCompilation=false}={}) {
+async function setupFixture({suppressStart=false,suppressMute=false,deferCompilation=false}={}) {
  const serve=await fixtureScoreServer();let compiles=0,release;
  const app=await freePracticeApp({fetchResult:(path,body)=>{
   if(path==='/api/compile'&&++compiles===2&&deferCompilation)return new Promise(resolve=>{release=()=>resolve(serve(path,body));});
   return serve(path,body);
  }}),clicks=[],wait=createAcceptanceWait(),prototype=app.window.HTMLElement.prototype,geometry=Object.getOwnPropertyDescriptor(prototype,'getBoundingClientRect');
  Object.defineProperty(prototype,'getBoundingClientRect',{configurable:true,writable:true,value(){return {width:120,height:40};}});
- const click=id=>{clicks.push(id);if(id!=='start-performance'||!suppressStart)app.$(id).click();};
+ const click=id=>{const node=app.$(id);assert.ok(!node.closest('[hidden]'),`${id} belongs to a hidden screen`);if(node.closest('#workspace'))assert.equal(app.document.body.dataset.screen,'stage',`${id} is stage-only`);clicks.push(id);if(!(id==='start-performance'&&suppressStart)&&!(id==='free-sound'&&suppressMute))node.click();};
  const menu=createAcceptanceNavigation({document:app.document,click,until:(condition,label)=>wait.until(condition,label,suppressStart?40:5000)});
  return {app,clicks,menu,click,release:()=>release?.(),compiles:()=>compiles,async close(){try{release?.();await app.close();}finally{if(geometry)Object.defineProperty(prototype,'getBoundingClientRect',geometry);else delete prototype.getBoundingClientRect;}}};
 }
 test('performance setup admits the original preview through real app controls before human transport preparation',async()=>{
  const f=await setupFixture({deferCompilation:true});try{
   await f.menu.enterLibrary();assert.equal(f.app.$('resume-session').hidden,true);assert.equal(f.app.$('play-button').disabled,true);
+  assert.throws(()=>f.click('sound-button'),/hidden screen|stage-only/,'Constant test rectangles must not admit the hidden stage Sound control');
   const preview=f.app.$('preview-title').textContent,identity=f.app.$('song-lobby').dataset.previewId;
   let settled=false;const pending=activateOriginal({document:f.app.document,click:f.click,menu:f.menu});pending.then(()=>{settled=true;});
   await f.app.until(()=>f.compiles()===2);await f.app.tick();assert.equal(settled,false);assert.equal(f.app.document.body.dataset.screen,'library');
   assert.deepEqual(f.app.audio(),{contexts:0,unlocks:0},'Scripted setup cannot wait on autoplay permission');
   f.release();const setup=await pending;
-  assert.deepEqual(JSON.parse(JSON.stringify(setup)),{kind:'scripted-menu',controls:['sound-button','configure-song-mod','song-mod-all-machine','song-mod-apply','start-performance'],previewId:identity,title:preview});
-  assert.deepEqual(f.clicks,['home-single-player','sound-button','configure-song-mod','song-mod-all-machine','song-mod-apply','start-performance']);
+  assert.deepEqual(JSON.parse(JSON.stringify(setup)),{kind:'scripted-menu',controls:['free-sound','configure-song-mod','song-mod-all-machine','song-mod-apply','start-performance'],previewId:identity,title:preview});
+  assert.deepEqual(f.clicks,['home-single-player','lobby-home','start-free-practice','free-sound','free-exit','configure-song-mod','song-mod-all-machine','song-mod-apply','start-performance']);
   assert.equal(f.menu.ready('stage','play-button'),true);assert.equal(f.app.$('resume-session').hidden,false);
   assert.equal(f.app.$('stage-title').textContent,preview);assert.ok(readPlaybackClock(f.app.document).durationMs>0);
   assert.equal(f.app.$('hud-captured').textContent,'0');assert.deepEqual(f.app.audio(),{contexts:0,unlocks:0});
@@ -51,8 +52,25 @@ test('performance setup admits the original preview through real app controls be
 test('performance setup fails when Listen does not admit a stage and never retries or resumes an empty session',async()=>{
  const f=await setupFixture({suppressStart:true});try{
   await f.menu.enterLibrary();await assert.rejects(activateOriginal({document:f.app.document,click:f.click,menu:f.menu}),/Timed out: original score admitted to stage/);
-  assert.deepEqual(f.clicks,['home-single-player','sound-button','configure-song-mod','song-mod-all-machine','song-mod-apply','start-performance']);assert.equal(f.app.document.body.dataset.screen,'library');
+  assert.deepEqual(f.clicks,['home-single-player','lobby-home','start-free-practice','free-sound','free-exit','configure-song-mod','song-mod-all-machine','song-mod-apply','start-performance']);assert.equal(f.app.document.body.dataset.screen,'library');
   assert.equal(f.app.$('resume-session').hidden,true);assert.equal(f.app.$('play-button').disabled,true);assert.deepEqual(f.app.audio(),{contexts:0,unlocks:0});
+ }finally{await f.close();}
+});
+test('visible Sound setup retains exact action receipts and skips an already-muted shared control',async()=>{
+ for(const alreadyMuted of [false,true]){const f=await setupFixture();try{
+  await f.menu.enterLibrary();
+  if(alreadyMuted){await f.menu.enterFree();f.click('free-sound');await f.menu.exitFree();f.clicks.length=0;}
+  let sequence=10;const setup=await activateOriginal({document:f.app.document,menu:f.menu,click:id=>{f.click(id);return ++sequence;}});
+  const ids=[...(alreadyMuted?[]:['free-sound']),'configure-song-mod','song-mod-all-machine','song-mod-apply','start-performance'];
+  assert.deepEqual(JSON.parse(JSON.stringify(setup.actions)),ids.map((id,index)=>({sequence:11+index,id})));
+  assert.equal(f.app.$('sound-button').getAttribute('aria-pressed'),'true');assert.deepEqual(f.app.audio(),{contexts:0,unlocks:0});
+  assert.equal(f.clicks.filter(id=>id==='free-sound').length,alreadyMuted?0:1);
+ }finally{await f.close();}}
+});
+test('a failed visible Sound effect stops before Mod or Start instead of clicking a hidden fallback',async()=>{
+ const f=await setupFixture({suppressMute:true});try{
+  await f.menu.enterLibrary();await assert.rejects(activateOriginal({document:f.app.document,click:f.click,menu:f.menu}),/did not mute the shared sound/);
+  assert.deepEqual(f.clicks,['home-single-player','lobby-home','start-free-practice','free-sound']);assert.equal(f.app.document.body.dataset.screen,'free');assert.deepEqual(f.app.audio(),{contexts:0,unlocks:0});
  }finally{await f.close();}
 });
 class Param{constructor(){this.value=0;}setValueAtTime(value){this.value=value;return this;}linearRampToValueAtTime(){return this;}}

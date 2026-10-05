@@ -37,14 +37,15 @@ async function navigationFixture({suppress=null}={}){
  Object.defineProperty(globalThis,'cancelAnimationFrame',{configurable:true,value:timer=>{clearTimeout(timer);timers.delete(timer);}});
  app.emit(app.window,'pageshow',{persisted:true});
  const click=id=>app.$(id).click(),until=(condition,label)=>waitForTestCondition(condition,{label,timeoutMs:(suppress==='start-performance'&&label==='native Start Listen is running')||(suppress==='back-to-library'&&label==='navigation genuinely paused')?200:5000}),menu=createAcceptanceNavigation({document:app.document,click,until});
- const native=async(kind,node)=>{assert.equal(kind,'click');actions.push(node.id);if(node.id!==suppress)node.click();return actions.length;};
+ const native=async(kind,node)=>{assert.equal(kind,'click');assert.ok(!node.closest('[hidden]'),`${node.id} belongs to a hidden screen`);if(node.closest('#workspace'))assert.equal(app.document.body.dataset.screen,'stage',`${node.id} is stage-only`);actions.push(node.id);if(node.id!==suppress)node.click();return actions.length;};
  const snapshot=()=>({title:app.$('score-title').textContent,stage:app.$('stage-title').textContent,mode:app.$('session-mode').value,clock:readPlaybackClock(app.document).positionMs,captured:app.$('hud-captured').textContent,cue:app.$('stage-cue').dataset.cueState,soundMuted:app.$('sound-button').getAttribute('aria-pressed')==='true',pressed:app.document.querySelectorAll('.pressed').length});
  await menu.enterLibrary();
  return{app,click,until,menu,native,snapshot,actions,async close(){try{await app.close();}finally{for(const timer of timers)clearTimeout(timer);if(geometry)Object.defineProperty(prototype,'getBoundingClientRect',geometry);else delete prototype.getBoundingClientRect;}}};
 }
 test('real Start Listen handler starts transport and a second Play toggle pauses it',async()=>{
  const f=await navigationFixture();try{
-  await activatePerformanceOriginalScore({document:f.app.document,click:f.click,menu:f.menu});await f.until(()=>readPlaybackClock(f.app.document).positionMs>0,'Start Listen clock advances');assert.notEqual(f.snapshot().cue,'paused');
+  await assert.rejects(f.native('click',f.app.$('sound-button')),/hidden screen|stage-only/);
+  await activatePerformanceOriginalScore({document:f.app.document,click:id=>f.native('click',f.app.$(id)),menu:f.menu});await f.until(()=>readPlaybackClock(f.app.document).positionMs>0,'Start Listen clock advances');assert.notEqual(f.snapshot().cue,'paused');
   await f.native('click',f.app.$('play-button'));assert.equal(f.snapshot().cue,'paused');assert.deepEqual(f.app.audio(),{contexts:0,unlocks:0});
  }finally{await f.close();}
 });

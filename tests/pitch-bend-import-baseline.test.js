@@ -36,7 +36,7 @@ async function fixture(){
  const contexts=[],audioDescriptor=Object.getOwnPropertyDescriptor(globalThis,'AudioContext');
  class ObservedAudio extends PerformanceAudio{constructor(){super();this.sampleRate=48000;contexts.push(this);}}
  Object.defineProperty(globalThis,'AudioContext',{configurable:true,value:ObservedAudio});
- const click=id=>app.$(id).click(),menu=createAcceptanceNavigation({document:app.document,click,until:app.until});
+ const click=id=>{const node=app.$(id);assert.ok(!node.closest('[hidden]'),`${id} belongs to a hidden screen`);if(node.closest('#workspace'))assert.equal(app.document.body.dataset.screen,'stage',`${id} is stage-only`);node.click();},menu=createAcceptanceNavigation({document:app.document,click,until:app.until});
  const snapshot=()=>plain(helpers.readPerformanceImportState(app.document));
  const starts=()=>contexts.flatMap(context=>context.nodes).reduce((sum,node)=>sum+node.starts.length,0);
  async function importSeed({blur=true}={}){

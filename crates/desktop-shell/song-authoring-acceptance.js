@@ -22,7 +22,7 @@ function createAuthoringControlObserver(document,{now=()=>performance.now(),defe
    const row=owner,files=Array.from(input.files||[]);row.changes.push({trusted:event.isTrusted===true,count:files.length,input:{id,type:input.type,multiple:input.multiple,disabled:input.disabled,connected:input.isConnected}});
    pending.push(Promise.all(files.map(async file=>({filename:file.name,bytes:file.size,sha256:await digest(await file.arrayBuffer())}))).then(values=>{row.files=values;}));
   }
-  if(!id.startsWith('authoring-')&&!['home-song-authoring','settings-button','instrument-settings-summary','song-authoring-title','play-button','stage-title','back-to-library','sound-button','configure-song-mod','song-mod-all-machine','song-mod-apply','start-performance'].includes(id)&&!role)return;
+  if(!id.startsWith('authoring-')&&!['home-song-authoring','settings-button','instrument-settings-summary','song-authoring-title','play-button','stage-title','back-to-library','sound-button','free-sound','configure-song-mod','song-mod-all-machine','song-mod-apply','start-performance'].includes(id)&&!role)return;
   if(events.length>=256)throw Error('Authoring trusted event bound exceeded');
   events.push({sequence:actionSequence(),type:event.type,trusted:event.isTrusted===true,id,role,code:event.code||null,value:['input','change'].includes(event.type)&&typeof input.value==='string'?input.value:null});
  }

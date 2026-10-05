@@ -7,7 +7,7 @@ function createPerformanceControlObserver(document) {
   const trigger=event.target?.closest?.('#import-button'),id=trigger?'import-button':event.target?.id,part=event.target?.dataset?.partId;
   if(active&&((id==='import-button'&&['pointerdown','pointerup','click'].includes(event.type))||(id==='score-file'&&['click','change'].includes(event.type)))){if(active.gestures.length>=8)throw Error('Performance picker gesture bound exceeded');active.gestures.push(readVsqPickerGesture(document,event));}
   if(['pointerdown','pointerup'].includes(event.type))return;
-  if(!['play-button','stage-title','bulk-import-save','score-file','import-button'].includes(id)&&!String(id||'').startsWith('complete-performance-')&&event.code!=='KeyR')return;
+  if(!['play-button','stage-title','bulk-import-save','score-file','import-button','free-sound'].includes(id)&&!String(id||'').startsWith('complete-performance-')&&event.code!=='KeyR')return;
   const row={type:event.type,trusted:event.isTrusted===true,id:id||null,part:part||null,code:event.code||null,value:event.target?.value||null,checked:typeof event.target?.checked==='boolean'?event.target.checked:null};
   if(id==='score-file'&&active){
    if(event.type==='click'&&event.isTrusted===false){if(active.delegatedClicks.length>=1)throw Error('Performance picker has repeated hidden-input delegation');active.delegatedClicks.push({type:'click',trusted:false,id,sequence:active.sequence});return;}
@@ -35,8 +35,15 @@ async function activatePerformanceOriginalScore({document,click,menu}) {
  const $=id=>document.getElementById(id),setup={kind:'scripted-menu',controls:[]};const actions=[];const setupClick=async id=>{const sequence=await click(id);if(Number.isSafeInteger(sequence))actions.push({sequence,id});};
  await menu.waitScreen('library','configure-song-mod','original catalog preview ready');
  setup.previewId=$('song-lobby').dataset.previewId;
- // Silent setup must not wait for AudioContext activation without a gesture.
- if($('sound-button').getAttribute('aria-pressed')!=='true'){await setupClick('sound-button');setup.controls.push('sound-button');}
+ // The stage Sound button is hidden while browsing. Use the existing visible
+ // Free control to mute the shared sound before Start can schedule any audio.
+ if($('sound-button').getAttribute('aria-pressed')!=='true'){
+  await menu.enterFree();await menu.waitScreen('free','free-sound','visible shared Sound control');
+  await setupClick('free-sound');setup.controls.push('free-sound');
+  if($('sound-button').getAttribute('aria-pressed')!=='true'||$('free-sound').getAttribute('aria-pressed')!=='false')throw Error('Visible Free Sound did not mute the shared sound');
+  await menu.exitFree();await menu.waitScreen('library','configure-song-mod','original catalog preview retained after mute');
+  if($('song-lobby').dataset.previewId!==setup.previewId)throw Error('Shared Sound setup changed the original preview');
+ }
  for(const id of ['configure-song-mod','song-mod-all-machine','song-mod-apply']){await setupClick(id);setup.controls.push(id);}
  await menu.waitScreen('library','start-performance','original Listen Mod ready');
  await setupClick('start-performance');setup.controls.push('start-performance');
