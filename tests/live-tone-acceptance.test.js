@@ -24,7 +24,7 @@ test('live proof rejects fabricated, absent, untrusted, silent, unconnected and 
  for(const [index,change]of changes.entries()){const e=syntheticLiveToneEvidence();change(e);assert.throws(()=>verify(e),`Adversary ${index} was accepted`);}
 });
 
-function harness({readyCheckpoint=false}={}){
+function harness({readyCheckpoint=false,initialGate=1}={}){
  const listeners=new Map(),frames=new Map(),nativeCalls=[];let wall=0,nextFrame=0,token=0;
  class MessageEvent{constructor(data,port,{trusted=true}={}){Object.assign(this,{data,target:port,currentTarget:port,isTrusted:trusted});}}
  class MessagePort{constructor(){this.listeners=new Set();}addEventListener(type,fn){this.listeners.add(fn);}removeEventListener(type,fn){this.listeners.delete(fn);}emit(data,options){const event=options?.plain?{data,target:this,currentTarget:this,isTrusted:true}:new MessageEvent(data,this,options);if(options?.checkpoint){this.onmessage?.(event);return(async()=>{await Promise.resolve();await Promise.resolve();await Promise.resolve();for(const listener of this.listeners)listener(event);})();}for(const listener of this.listeners)listener(event);this.onmessage?.(event);}}
@@ -37,7 +37,7 @@ function harness({readyCheckpoint=false}={}){
  let lastPromise,lastReadyDelivery;
  class Receiver{
   static create(context,output,options){const owner=new Receiver(context,output,options);lastPromise=owner.request('initialize').then(()=>{owner.state='ready';return owner;});return lastPromise;}
-  constructor(context,output,{onEvent=()=>{}}={}){Object.assign(this,{context,output,onEvent,generation:1,state:'initializing',disposed:false});this.node=new AudioWorkletNode(context);this.outputGate=context.createGain();this.node.connect(this.outputGate);this.outputGate.connect(output);this.node.port.onmessage=event=>{if(event.data.type==='ready')this.readyResolve?.('real-ack');if(['started','ended'].includes(event.data.type))this.onEvent(event.data);};}
+  constructor(context,output,{onEvent=()=>{}}={}){Object.assign(this,{context,output,onEvent,generation:1,state:'initializing',disposed:false});this.node=new AudioWorkletNode(context);this.outputGate=context.createGain();this.outputGate.gain.value=initialGate;this.node.connect(this.outputGate);this.outputGate.connect(output);this.node.port.onmessage=event=>{if(event.data.type==='ready')this.readyResolve?.('real-ack');if(['started','ended'].includes(event.data.type))this.onEvent(event.data);};}
   request(type){if(type==='fail')throw context.sentinel;return new Promise(resolve=>{this.readyResolve=resolve;queueMicrotask(()=>{lastReadyDelivery=this.node.port.emit({type:'ready',source:'live-tone',generation:1,sampleRate:48000,frame:0},{checkpoint:readyCheckpoint});});});}
   play(...args){nativeCalls.push(['play',this,...args]);if(args[0]==='throw')throw context.sentinel;return ++token;}
  }
@@ -98,4 +98,25 @@ test('initialization partial order still rejects early/late or substituted tap a
  const reversed=syntheticLiveToneEvidence();reversed.initialization.ready.sequence=3;reversed.initialization.ready.wallMs=3;reversed.initialization.tapReady.sequence=2;reversed.initialization.tapReady.wallMs=2;verify(reversed);
  const mutations=[e=>e.initialization.ready.sequence=e.initialization.created.sequence,e=>e.initialization.tapReady.sequence=e.initialization.created.sequence,e=>e.initialization.ready.sequence=e.ready.sequence,e=>e.initialization.tapReady.sequence=e.ready.sequence,e=>e.initialization.tapReady.sequence=e.initialization.ready.sequence,e=>e.initialization.tapReady.wallMs=e.ready.wallMs+1,e=>e.initialization.ready.wallMs=e.initialization.created.wallMs-1,e=>delete e.initialization.tapReady.receiver,e=>e.initialization.tapReady.receiver.state='initializing',e=>e.initialization.tapReady.receiver.generation++,e=>e.initialization.tapReady.receiver.nodeId++,e=>e.initialization.tapReady.receiver.gateId++,e=>e.initialization.tapReady.receiver.disposed=true,e=>e.initialization.tapReady.receiver.contextState='suspended',e=>e.initialization.tapReady.receiver.nativeNode=false,e=>e.initialization.tapReady.receiver.tapConnected=false,e=>e.initialization.tapReady.source.started=1,e=>e.initialization.tapReady.source.pendingReceivers=1,e=>e.initialization.ready.isTrusted=false,e=>e.initialization.ready.portMatches=false];
  for(const mutate of mutations){const e=structuredClone(reversed);mutate(e);assert.throws(()=>verify(e));}
+});
+test('initialization may observe zero scheduled gate gain before the audible human window',async()=>{
+ for(const readyCheckpoint of [false,true]){const f=harness({readyCheckpoint,initialGate:0}),{observer,owner}=await initialized(f);
+  assert.equal(owner.outputGate.gain.value,0);
+  // Model the scheduled value becoming visible as rendering advances. The
+  // earlier passive initialization observation must retain its actual zero.
+  owner.outputGate.gain.value=1;const e=perform(f,owner,observer);
+  assert.equal(e.initialization.tapReady.receiver.graphToDestination[1].gain,0);
+  for(const path of [e.ready.receiver.graphToDestination,e.after.receiver.graphToDestination,...e.pcm.blocks.map(block=>block.graphToDestination)])assert.equal(path[1].gain,1);
+  assert.equal(e.ready.graphRevision,e.after.graphRevision);validateLiveToneEvidence(e,{keyCode:'Digit2',midi:72,transport:syntheticLiveToneTransport(e)});validateLiveToneCleanup(serializable(observer.restore()));
+ }
+});
+test('initialization zero never admits an invalid connection, muted human path or absent PCM',()=>{
+ const evidence=syntheticLiveToneEvidence();evidence.initialization.tapReady.receiver.graphToDestination[1].gain=0;verify(evidence);
+ const changes=[
+  ...[-1,NaN,Infinity,-Infinity,undefined,null,'0'].map(gain=>e=>{e.initialization.tapReady.receiver.graphToDestination[1].gain=gain;}),
+  e=>e.initialization.tapReady.receiver.graphToDestination=null,e=>e.initialization.tapReady.receiver.graphToDestination[0].id++,e=>e.initialization.tapReady.receiver.graphToDestination[1].id++,e=>e.initialization.tapReady.receiver.graphToDestination.at(-1).id++,e=>e.initialization.tapReady.receiver.tapConnected=false,e=>e.initialization.tapReady.receiver.generation++,
+  e=>e.ready.receiver.graphToDestination[1].gain=0,e=>e.after.receiver.graphToDestination[1].gain=0,e=>e.pcm.blocks[0].graphToDestination[1].gain=0,e=>e.pcm.blocks[0].graphToDestination[2].gain=0,
+  e=>e.ready.receiver.graphToDestination[1].gain=null,e=>e.pcm.blocks[0].graphToDestination[1].gain=null,e=>e.pcm.blocks=[],e=>e.pcm.blocks[0].peak=0,e=>e.pcm.blocks[0].energy=0,e=>e.pcm.blocks[0].nonzeroSamples=0,e=>e.receipts[1].record.pcmPeak=0,e=>e.receipts[1].record.pcmEnergy=0,e=>e.receipts[1].record.nonzeroSamples=0,
+ ];
+ for(const [index,change]of changes.entries()){const e=structuredClone(evidence);change(e);assert.throws(()=>verify(e),`Initialization-zero adversary ${index} was accepted`);}
 });
