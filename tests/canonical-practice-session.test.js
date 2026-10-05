@@ -22,7 +22,7 @@ test('canonical audio keeps every machine occurrence while human same-onset keys
   const f=await canonicalPracticeApp(),{app,score,evidence}=f;
   try{
     app.$('count-in').checked=false;await app.click('start-complete-practice');
-    assert.match(app.$('complete-practice-canonical-policy').textContent,/sine-tone.*compiled score/);
+    const policy=app.$('complete-practice-canonical-policy').textContent;assert.match(policy,/reference.*compiled score/);assert.match(policy,/sine/);assert.match(policy,/Mod/);
     for(const box of app.$('complete-practice-parts').querySelectorAll('input'))box.checked=[score.parts[0].id,score.parts[2].id].includes(box.value);
     await app.click('complete-practice-apply');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');
     const receiver=f.receiver();assert.ok(receiver);assert.equal(receiver.core.plan.count,4);

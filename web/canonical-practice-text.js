@@ -1,6 +1,6 @@
 const text=(locale,en,zh)=>locale==='en'?en:zh;
 export function canonicalAudioPolicyText(locale) {
-  return text(locale,'Play uses a sine-tone reference of the compiled score, including ties and repeats. It does not reproduce the original instruments. Rust millisecond times become sample-frame note boundaries. Practice accompanies only the parts you have not selected; silent or all-human practice keeps the full source clock.','播放使用已编译乐谱的正弦音参考，保留连音和反复，不再现原始乐器音色。Rust 毫秒时间转换为采样帧音符边界。练习时只为未选择的声部伴奏；静音或全部声部由人演奏时仍保留完整来源时钟。');
+  return text(locale,'Play uses a basic synthesized reference of the compiled score, including ties and repeats. The default is sine; explicit Mod choices replace only the selected machine parts. It does not reproduce the original instruments. Rust millisecond times become sample-frame note boundaries. Practice accompanies only the parts you have not selected; silent or all-human practice keeps the full source clock.','播放使用已编译乐谱的基础合成参考，保留连音和反复。默认正弦音；明确选择的 Mod 音色仅替换对应机器声部，不再现原始乐器音色。Rust 毫秒时间转换为采样帧音符边界。练习时只为未选择的声部伴奏；静音或全部声部由人演奏时仍保留完整来源时钟。');
 }
 export function canonicalLoopBudgetText(locale,budget,{ended=false}={}) {
   if(!budget)return text(locale,'Each loop generation has a finite audio audit budget: at most 4096 passes and 500000 machine gate records. It stops at a complete-pass boundary; the prepared limit is shown when playback starts.','每轮循环具有有限音频审计容量：最多 4096 次演奏和 500000 个机器音符门限记录。播放会在完整轮次边界停止，准备后的具体上限在开始播放时显示。');

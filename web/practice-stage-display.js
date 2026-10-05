@@ -1,5 +1,6 @@
 /** Presentation-only roles. Never alter source events or feed machine notes to input. */
-export function practiceStageNotes({humanNotes=[],sourceNotes=[],humanPartIds=new Set(),mode='practice',layout='complete',showOthers=true,range=null,availableMidi=null,excludedMachinePartIds=new Set()}={}) {
+export function practiceStageNotes({humanNotes=[],sourceNotes=[],humanPartIds=new Set(),mode='practice',layout='complete',showOthers=true,range=null,availableMidi=null,excludedMachinePartIds=new Set(),hiddenPartIds=new Set(),targetGroups=new Map()}={}) {
+  sourceNotes=sourceNotes.filter(note=>!hiddenPartIds.has(note.part_id));humanNotes=humanNotes.filter(note=>(targetGroups.get(note.id)?.part_ids||[note.part_id]).some(id=>!hiddenPartIds.has(id)));
   if(mode!=='practice')return sourceNotes.map(note=>({...note,practice_role:'listen'}));
   const human=humanNotes.map(note=>({...note,practice_role:'human'}));
   if(layout==='solo'||!showOthers)return human;

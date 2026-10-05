@@ -25,3 +25,19 @@
 #start-free-practice{flex-shrink:0}
 
 .free-score-settings-hidden{display:none!important}
+
+/* Song Mod is the selected-song configuration surface. Transport stays in-stage. */
+.song-mod-dialog {width:min(58rem,calc(100vw - 2rem));max-height:calc(100dvh - 2rem)}
+.song-mod-dialog .shell-dialog-content {overflow:auto;max-height:calc(100dvh - 5rem)}
+.song-mod-dialog fieldset {border:0;padding:0;min-width:0}
+.song-mod-presets,.song-mod-actions,.song-mod-stage {display:flex;flex-wrap:wrap;align-items:center;gap:.6rem}
+.song-mod-actions {justify-content:flex-end;margin-top:1rem}
+.song-mod-part {display:grid;grid-template-columns:minmax(8rem,1.2fr) minmax(8rem,1fr) minmax(10rem,1.2fr) auto auto;gap:.7rem;align-items:center;padding:.9rem 0;border-bottom:1px solid var(--border-color,#65708055)}
+.song-mod-part h3 {font-size:1rem;margin:0;overflow-wrap:anywhere}
+.song-mod-part label {display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;min-width:0}
+.song-mod-part label:has(select) {display:grid;gap:.25rem}
+.song-mod-part select {min-width:0;width:100%}
+.song-mod-part-reason {grid-column:1/-1;font-size:.82rem;margin:0;opacity:.8}
+.song-mod-summary,#song-mod-stage-summary {font-size:.85rem;overflow-wrap:anywhere}
+.song-mod-stage {max-width:100%;padding:.35rem .5rem}
+@media (max-width:700px) {.song-mod-part {grid-template-columns:1fr 1fr}.song-mod-part h3 {grid-column:1/-1}.song-mod-dialog {width:calc(100vw - 1rem)}}

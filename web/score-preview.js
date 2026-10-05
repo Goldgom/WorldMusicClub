@@ -3,7 +3,7 @@ import {resolvePracticeSelection,humanPracticePartIds} from './practice-selectio
 import {referencePreviewBudget,BASIC_KEY_MAX_VOICES} from './basic-key-rendition.js';
 /** A browsing candidate never owns, pauses, or replaces the active performance. */
 export class ScorePreview {
-  constructor({compile,check,onChange=()=>{}}) { this.compile=compile;this.check=check;this.onChange=onChange;this.version=0;this.controller=null;this.value={status:'empty',score:null,compiled:null,identity:null,part:null,compatibility:{status:'pending',reason:'Choose a score.'}}; }
+  constructor({compile,check,resolveOptions=()=>null,onChange=()=>{}}) { this.resolveOptions=resolveOptions;this.compile=compile;this.check=check;this.onChange=onChange;this.version=0;this.controller=null;this.value={status:'empty',score:null,compiled:null,identity:null,part:null,compatibility:{status:'pending',reason:'Choose a score.'}}; }
   publish(value) { this.value=value;this.onChange(value); }
   cancel() { this.version++;this.controller?.abort();this.controller=null; }
   async select(identity,load,{part=null,practiceSelection,practiceLayout='solo',showOthers=true}={}) {
@@ -22,7 +22,9 @@ export class ScorePreview {
       if(cleanSong&&!cleanSong.compilation){this.publish({status:'choice',identity,part,cleanSong,score,compiled:null,compatibility:{status:'pending',reason:'Choose base-note instrumental practice.'}});return valid();}
       const compiled=cleanSong?cleanSong.compilation:await this.compile(score,controller.signal);if(!valid())return false;
       practiceSelection=resolvePracticeSelection(compiled.score.parts,practiceSelection??(part===null?{kind:'all'}:{kind:'parts',part_ids:[part]}));
-      const candidate={status:'ready',identity,part,practiceSelection,practiceLayout,showOthers,cleanSong,score:compiled.score,compiled,compatibility:{status:'pending',reason:'Checking selected pitches with your instrument…'}};
+      const overrides=this.resolveOptions({score:compiled.score,compiled,cleanSong,identity,part,practiceSelection,practiceLayout,showOthers});
+      if(overrides){part=overrides.part;practiceSelection=resolvePracticeSelection(compiled.score.parts,overrides.practiceSelection);practiceLayout=overrides.practiceLayout;showOthers=overrides.showOthers;}
+      const candidate={status:'ready',identity,part,practiceSelection,practiceLayout,showOthers,...(overrides?.songMod?{songMod:overrides.songMod}:{}),cleanSong,score:compiled.score,compiled,compatibility:{status:'pending',reason:'Checking selected pitches with your instrument…'}};
       if(isBasicKeysSong(cleanSong)&&!hasBasicKeyRendition(cleanSong)&&practiceSelection.part_ids.some(id=>!basicKeysParts(cleanSong).some(item=>item.id===id&&item.practice_available))){this.publish({...candidate,compatibility:{status:'blocked',reason:'This retained part has no supported positive-duration melodic MIDI-key targets.'}});return valid();}
       this.publish(candidate);
       try {const compatibility=await this.check(compiled,practiceSelection,controller.signal);if(valid())this.publish({...candidate,compatibility});}
@@ -49,7 +51,7 @@ export class ScorePreview {
   adopt(compiled,compatibility,part=null,identity=compiled.score.id,cleanSong=null,{practiceSelection,practiceLayout='solo',showOthers=true}={}) {
     this.cancel();this.publish({status:'ready',identity,part,practiceSelection:resolvePracticeSelection(compiled.score.parts,practiceSelection??(part===null?{kind:'all'}:{kind:'parts',part_ids:[part]})),practiceLayout,showOthers,score:compiled.score,compiled,compatibility,cleanSong});
   }
-  canStart(mode) {const value=this.value;if(value.compiled&&(hasBasicKeyRendition(value.cleanSong)||isVsqSong(value.cleanSong))&&referencePreviewBudget(value.compiled.timeline.notes,mode==='practice'?(value.practiceSelection??value.part):null,value.cleanSong.runtime.rendition)>BASIC_KEY_MAX_VOICES)return false;return value.status==='ready'&&(!isBasicKeysSong(value.cleanSong)||mode==='listen'&&hasBasicKeyRendition(value.cleanSong)||mode==='practice'&&[...humanPracticePartIds(value.score.parts,{practiceSelection:value.practiceSelection,targetPart:value.part})].some(id=>basicKeysParts(value.cleanSong).some(part=>part.id===id&&part.practice_available)))&&(mode==='listen'||value.compatibility.status==='ready');}
+  canStart(mode) {const value=this.value,muted=value.songMod?.config.parts.filter(part=>part.muted).map(part=>part.partId)||[],human=mode==='practice'?(value.practiceSelection?.part_ids||(value.part?[value.part]:[])):[],excluded=[...new Set([...human,...muted])],budgetSelection=muted.length?(excluded.length?{kind:'parts',part_ids:excluded}:null):mode==='practice'?(value.practiceSelection??value.part):null;if(value.compiled&&(hasBasicKeyRendition(value.cleanSong)||isVsqSong(value.cleanSong))&&referencePreviewBudget(value.compiled.timeline.notes,budgetSelection,value.cleanSong.runtime.rendition)>BASIC_KEY_MAX_VOICES)return false;return value.status==='ready'&&(!isBasicKeysSong(value.cleanSong)||mode==='listen'&&hasBasicKeyRendition(value.cleanSong)||mode==='practice'&&[...humanPracticePartIds(value.score.parts,{practiceSelection:value.practiceSelection,targetPart:value.part})].some(id=>basicKeysParts(value.cleanSong).some(part=>part.id===id&&part.practice_available)))&&(mode==='listen'||value.compatibility.status==='ready');}
 }
 
 export function filterCatalog(items,query='',origin='all') {

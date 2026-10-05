@@ -20,6 +20,8 @@ import {setupSourceArchiveView} from './source-archive-view.js';
 import {setupGameShell} from './game-shell.js';
 import {setupNoticeView} from './notice-view.js';
 import {resolvePracticeSelection,humanPracticePartIds} from './practice-selection.js';
+import {SongModStore,createSongMod,songModOptions,songModCapabilities,assertSongModSupported,validateSongMod} from './song-mod.js';
+import {setupSongModView} from './song-mod-view.js';
 import {setupCompletePracticeView} from './complete-practice-view.js';
 import {CanonicalPracticeSession,canonicalPracticeOptions,canonicalDisplayNotes} from './canonical-practice-session.js';
 import {canonicalAudioPolicyText,canonicalAudioErrorText,canonicalLoopBudgetText} from './canonical-practice-text.js';
@@ -159,13 +161,14 @@ let scoreLiveStart=0;
 let keyboardInput=null, keyboardInputView=null, cleaningAllInputs=false, keyboardComposing=false;
 let guitarFingering=null,guitarFingeringView=null;
 let pianoFingering=null, beginnerView=null;
-let completePracticeView=null,fallingNoteLabels=null;
+const songMods=new SongModStore();
+let songModView=null,completePracticeView=null,fallingNoteLabels=null;
 const practiceDisplayCache=createPracticeDisplayCache({getParts:basicKeysParts});
 let shell=null,preview=null,performanceView=null,startingPreview=false,previewRefreshQueued=false,startRequest=0,enteringPreview=false;
 const catalogCache=new CatalogScoreCache();
 const latencyPreference=readLatencyPreference();
 let catalogIndexController=null,catalogIndexRequest=0,catalogIndexFailed=false;
-const state = {inspection:false,cleanSong:null,catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceSelection:null, practiceLayout:'solo', showOtherParts:true, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reasonKey:'app.compatibilityWaiting'}, instrumentOutOfRange: null, instrumentConflict: false, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, playPending: false, noticeTimer: null, audioLimitWarned: false};
+const state = {songMod:null,hiddenPartIds:new Set(),inspection:false,cleanSong:null,catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceSelection:null, practiceLayout:'solo', showOtherParts:true, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reasonKey:'app.compatibilityWaiting'}, instrumentOutOfRange: null, instrumentConflict: false, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, playPending: false, noticeTimer: null, audioLimitWarned: false};
 
 function createRecorder() {
   return new PracticeRecorder({latencyMs:state.latency,onEvidenceLimit:()=>{
@@ -197,7 +200,7 @@ shell=setupGameShell({i18n,pausePlayback,onPanel:name=>{scoreSaveNavigation++;re
   onNotation:()=>{engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
 const noticeView=setupNoticeView({document,i18n,getScope:()=>state.score?.title});
 lobbyPreview=setupLobbyPreview({document,i18n,api,allowed:()=>shell.screen()==='library'&&!startingPreview&&!document.hidden&&!document.querySelector('dialog[open]')});
-preview=new ScorePreview({compile:(score,signal)=>api('/api/compile',score,signal),check:checkPreview,onChange:()=>{renderPreview();renderCatalog()}});
+preview=new ScorePreview({resolveOptions:context=>{const entry=songMods.read(context);return entry.explicit?{...songModOptions(entry.mod),songMod:entry.mod}:null;},compile:(score,signal)=>api('/api/compile',score,signal),check:checkPreview,onChange:()=>{renderPreview();renderCatalog()}});
 
 function notice(message, error = false) {
   noticeRevision++;
@@ -359,7 +362,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     writtenCursor?.reset();
     const previousPart = requestedPracticePart !== undefined ? requestedPracticePart : preserveTempo ? state.practicePart : null;
     state.cleanSong=cleanSong;libraryManagement?.catalog.sessionChanged();if(!cleanSong){previewMedia?.clear();previewMediaKey=null;}cleanMutedParts.clear();cleanSoloParts.clear();cleanPlayer.select(cleanSong);activeMedia?.clear();activeMediaKey=null;
-    state.score = compiled?.score||score;state.inspection=inspection;canonicalSession.select(cleanSong?null:compiled);
+    state.score = compiled?.score||score;state.songMod=practiceOptions?.songMod||(preserveTempo?state.songMod:null);if(state.songMod){const identity=songMods.identity({score:state.score,cleanSong});state.songMod=createSongMod(identity,state.songMod.config);}state.hiddenPartIds=new Set(state.songMod?songModOptions(state.songMod).hiddenPartIds:[]);if(state.songMod)for(const id of songModOptions(state.songMod).mutedPartIds)cleanMutedParts.add(id);state.inspection=inspection;canonicalSession.select(cleanSong?null:compiled);
     if(requestedMode!==undefined){state.mode=requestedMode;$('session-mode').value=requestedMode;}
     state.importDiagnostics = importDiagnostics;
     const diagnostics = [...new Map([...(compiled?.diagnostics||[]), ...importDiagnostics].map(item => [`${item.code}:${item.note_id || ''}:${item.message}`, item])).values()];
@@ -486,7 +489,40 @@ function renderScore() {
   drawFrame();
 }
 function humanPartIds(){if(!state.score||!state.practiceSelection)return new Set();return humanPracticePartIds(state.score?.parts||[],{mode:state.mode,practiceSelection:state.practiceSelection,targetPart:state.practicePart});}
-function refreshPracticeView(){$('practice-part')?.closest('label')?.toggleAttribute('hidden',state.mode==='practice'&&state.practiceLayout==='complete');const available=value=>Boolean(value?.compiled)&&(!value.cleanSong||hasBasicKeyRendition(value.cleanSong)||isVsqSong(value.cleanSong)&&Boolean(value.cleanSong.runtime));completePracticeView?.update({previewAvailable:available(preview?.value),previewReady:!startingPreview&&preview?.value.status==='ready'&&available(preview.value),stageReady:available(state),mode:state.mode,layout:state.practiceLayout,selection:state.practiceSelection,parts:state.score?.parts||[],showOthers:state.showOtherParts});}
+function refreshPracticeView(){$('practice-part')?.closest('label')?.toggleAttribute('hidden',state.mode==='practice'&&state.practiceLayout==='complete');const available=value=>Boolean(value?.compiled)&&(!value.cleanSong||hasBasicKeyRendition(value.cleanSong)||isVsqSong(value.cleanSong)&&Boolean(value.cleanSong.runtime));completePracticeView?.update({previewAvailable:available(preview?.value),previewReady:!startingPreview&&preview?.value.status==='ready'&&available(preview.value),stageReady:available(state),mode:state.mode,layout:state.practiceLayout,selection:state.practiceSelection,parts:state.score?.parts||[],showOthers:state.showOtherParts});refreshSongModView();}
+function modContext(origin) {
+  const value=origin==='preview'?preview.value:{score:state.score,compiled:state.compiled,cleanSong:state.cleanSong,practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts};
+  if(!value?.score||!value.compiled)return null;
+  const entry=songMods.read(value);
+  return {...value,...entry,mod:origin==='stage'&&state.songMod?state.songMod:entry.mod,capabilities:songModCapabilities(value),previewVersion:preview.version,navigation:scoreSaveNavigation,generation:state.generation,hasTakes:origin==='stage'&&(transport.hasStarted||state.recorder.passes.length>0)};
+}
+function refreshSongModView(){
+  if(!songModView)return;
+  const candidate=modContext('preview'),active=modContext('stage');let reason='',canStart=false;
+  if(candidate){try{assertSongModSupported(candidate.mod,candidate.capabilities);const options=songModOptions(candidate.mod);canStart=!startingPreview&&preview.canStart(options.mode);if(!canStart)reason=compatibilityText(preview.value.compatibility);if(!synth.muted&&(typeof globalThis.AudioWorkletNode!=='function'||Boolean(synth.context&&!synth.context.audioWorklet))){canStart=false;reason=cleanErrorText(i18n.locale,{code:'clean_audio_worklet_unavailable'});}}catch(error){reason=i18n.locale==='en'?error.message:'当前 Mod 无法播放：'+error.message;}}
+  if(!candidate&&preview.value.status==='choice')reason=i18n.locale==='en'?'Choose the basic instrumental renderer below to configure this source.':'请先在下方选择基础器乐渲染器，再配置此来源。';songModView.update({preview:candidate,stage:active,canStart,reason});
+}
+async function applySongMod({origin,context,mod,isCurrent=()=>true}) {
+  validateSongMod(mod,{identity:songMods.identity(context),parts:context.score.parts});assertSongModSupported(mod,songModCapabilities(context));
+  const options=songModOptions(mod),current=()=>isCurrent()&&!document.hidden&&context.navigation===scoreSaveNavigation&&(origin==='stage'?context.score===state.score&&context.generation===state.generation&&shell.screen()==='stage':context.score===preview.value.score&&context.identity===preview.value.identity&&context.previewVersion===preview.version&&shell.screen()==='library');
+  if(!current())return;
+  const compatibility=options.mode==='practice'?await checkPreview(context.compiled,options.practiceSelection):{status:'ready'};
+  if(!current())return;
+  songMods.save(context,mod);
+  if(origin==='preview'){
+    preview.cancel();preview.publish({...preview.value,...options,songMod:mod,compatibility});
+  }else{
+    state.songMod=mod;state.hiddenPartIds=new Set(options.hiddenPartIds);cleanMutedParts.clear();cleanSoloParts.clear();for(const id of options.mutedPartIds)cleanMutedParts.add(id);
+    state.mode=options.mode;$('session-mode').value=options.mode;
+    await applyHumanSelection(options.practiceSelection,{layout:options.practiceLayout,showOthers:options.showOthers});
+  }
+  refreshSongModView();
+}
+async function startUnifiedPerformance(){
+  if(startingPreview)return;const context=modContext('preview');if(!context)return;
+  try{assertSongModSupported(context.mod,context.capabilities);const options=songModOptions(context.mod);preview.publish({...preview.value,...options,songMod:context.mod});await startPreview(options.mode);}
+  catch(error){notice(()=>error.message,true);}
+}
 function markNotationRoles(){markPracticeNotation($('workspace'),{sourceNotes:state.sourceNotes,humanPartIds:humanPartIds(),mode:state.mode});}
 async function applyHumanSelection(selection,{layout='complete',showOthers=state.showOtherParts}={}){
   // Canonical scores use null for the legacy All parts option. Clean songs
@@ -949,7 +985,8 @@ async function togglePlayback() {
     const audioThread=!muted&&(!song||hasAudioThreadRendition(song)),beatMs=60000/(Number($('tempo').value)||100),countIn=$('count-in').checked&&!isBasicKeysSong(song)?beatMs*4:0;
     // Count-in belongs to the same prepared source position as every audio gate,
     // transport frame and recorder timestamp; never subtract it after admission.
-    const options={context:synth.context,output:synth.output,mode,targetPart,practiceSelection,mutedParts:[...cleanMutedParts],soloParts:[...cleanSoloParts],instrument,resumePositionMs:!song&&state.loop&&!transport.hasStarted?undefined:transport.position-(audioThread&&!transport.hasStarted?countIn:0),acceptedPolicyId:song?inspectCleanRendition(song).rendition:null};
+    const modOptions=state.songMod?songModOptions(state.songMod):null;
+    const options={context:synth.context,output:synth.output,mode,targetPart,practiceSelection,...(modOptions?{instrumentOverrides:modOptions.instrumentOverrides,mutedPartIds:modOptions.mutedPartIds}:{}),mutedParts:[...cleanMutedParts],soloParts:[...cleanSoloParts],instrument,resumePositionMs:!song&&state.loop&&!transport.hasStarted?undefined:transport.position-(audioThread&&!transport.hasStarted?countIn:0),acceptedPolicyId:song?inspectCleanRendition(song).rendition:null};
     let now;
     if(audioThread){
       // Admit the fixed live-input graph before building the source plan or
@@ -957,7 +994,7 @@ async function togglePlayback() {
       await synth.prepareLiveAudio();
       if(!current())return;
       const resumeCanonical=!song&&canonicalSession.paused;
-      if(!resumeCanonical){const prepared=await (song?cleanPlayer.prepare(options):canonicalSession.prepare({...options,soundEnabled:true,audiblePartIds:mode==='listen'&&targetPart?[targetPart]:undefined,range:state.loop?{startMs:state.loop.start_ms,endMs:state.loop.end_ms}:undefined,countInMs:countIn,loop:state.loop?{enabled:true}:undefined}));if(!prepared||!current())return;}
+      if(!resumeCanonical){const prepared=await (song?cleanPlayer.prepare(options):canonicalSession.prepare({...options,soundEnabled:true,audiblePartIds:mode==='listen'&&targetPart&&!state.songMod?[targetPart]:undefined,range:state.loop?{startMs:state.loop.start_ms,endMs:state.loop.end_ms}:undefined,countInMs:countIn,loop:state.loop?{enabled:true}:undefined}));if(!prepared||!current())return;}
       // All plan building, transfer and renderer preparation precede this lead.
       const anchor=await (resumeCanonical?canonicalSession.resume({anchorTime:synth.context.currentTime+.05}):(song?cleanPlayer:canonicalSession).startPrepared({anchorTime:synth.context.currentTime+.05}));
       if(!anchor||!current())return;
@@ -967,7 +1004,7 @@ async function togglePlayback() {
       now=wallTime+(anchor.anchorTime-audioTime)*1000;
       if(!song&&!resumeCanonical){canonicalSession.bindWallClock({wallTime,audioTime,sampleRate:synth.context.sampleRate});state.canonicalPassIndex=0;state.canonicalBudgetEnded=false;}
       transport.position=anchor.positionMs;
-    }else{if(!song){const prepared=await canonicalSession.prepare({...options,soundEnabled:false,audiblePartIds:mode==='listen'&&targetPart?[targetPart]:undefined,range:state.loop?{startMs:state.loop.start_ms,endMs:state.loop.end_ms}:undefined,countInMs:countIn,loop:state.loop?{enabled:true}:undefined});if(!prepared||!current())return;state.canonicalPassIndex=0;state.canonicalBudgetEnded=false;}now=performance.now()+(state.cleanSong?50:0);}
+    }else{if(!song){const prepared=await canonicalSession.prepare({...options,soundEnabled:false,audiblePartIds:mode==='listen'&&targetPart&&!state.songMod?[targetPart]:undefined,range:state.loop?{startMs:state.loop.start_ms,endMs:state.loop.end_ms}:undefined,countInMs:countIn,loop:state.loop?{enabled:true}:undefined});if(!prepared||!current())return;state.canonicalPassIndex=0;state.canonicalBudgetEnded=false;}now=performance.now()+(state.cleanSong?50:0);}
     if(!current())return;
     state.playPending=false;state.inspection=false;
     transport.start(now,state.loop?.notes||state.practiceTimeline?.notes||state.compiled.timeline.notes,audioThread?0:countIn);
@@ -1105,7 +1142,7 @@ async function assess() {
 }
 $('feedback-pass').addEventListener('change',displayChosenPass);
 $('retry-assessments').addEventListener('click',()=>{state.recorder.retryFailed();drainAssessments()});
-$('export-takes').addEventListener('click',async()=>{const recorder=state.recorder;if(canonicalSession.pendingPause){try{await canonicalSession.pendingPause;await Promise.resolve();}catch{return;}if(recorder!==state.recorder)return;}const routing=midiController?.exportRoutingData(),exported=state.recorder.exportData();exported.passes=exported.passes.map((pass,index)=>({...pass,...(passInterpretations.has(state.recorder.passes[index])?{interpretation:passInterpretations.get(state.recorder.passes[index])}:{})}));const data={...exported,score_id:state.score?.id,practice_part:state.practicePart,practice_selection:structuredClone(state.practiceSelection),view_configuration:{practice_layout:state.practiceLayout,show_other_parts:state.showOtherParts,falling_note_labels:fallingNoteLabels?.enabled()===true},target_plan:state.practicePlan,...(routing?{midi_routing:routing}:{}),keyboard_input_configuration:keyboardInput.exportConfigurationData()};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
+$('export-takes').addEventListener('click',async()=>{const recorder=state.recorder;if(canonicalSession.pendingPause){try{await canonicalSession.pendingPause;await Promise.resolve();}catch{return;}if(recorder!==state.recorder)return;}const routing=midiController?.exportRoutingData(),exported=state.recorder.exportData();exported.passes=exported.passes.map((pass,index)=>({...pass,...(passInterpretations.has(state.recorder.passes[index])?{interpretation:passInterpretations.get(state.recorder.passes[index])}:{})}));const data={...exported,score_id:state.score?.id,practice_part:state.practicePart,practice_selection:structuredClone(state.practiceSelection),song_mod:state.songMod?structuredClone(state.songMod):null,view_configuration:{practice_layout:state.practiceLayout,show_other_parts:state.showOtherParts,falling_note_labels:fallingNoteLabels?.enabled()===true},target_plan:state.practicePlan,...(routing?{midi_routing:routing}:{}),keyboard_input_configuration:keyboardInput.exportConfigurationData()};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
 function advanceLoopClock(now) {
   if(!state.loop||!transport.running)return;
   const clock=!state.cleanSong?canonicalSession.sourceClock():null;
@@ -1236,7 +1273,7 @@ function drawFrame(displayOnly = false) {
   }
   const displayRange=state.instrument==='piano'?[state.geometry[0].midi,state.geometry.at(-1).midi]:[Math.min(...state.guitar.tuning)+state.guitar.capo,Math.max(...state.guitar.tuning)+state.guitar.frets];
   const {availableMidi,excludedMachinePartIds}=practiceDisplayCache(state);
-  const stageNotes=(humanNotes,sourceNotes)=>practiceStageNotes({humanNotes,sourceNotes:state.mode==='listen'&&!state.cleanSong?humanNotes:sourceNotes,availableMidi,excludedMachinePartIds,humanPartIds:humanIds,mode:state.mode,layout:state.practiceLayout,showOthers:state.showOtherParts,range:displayRange});
+  const stageNotes=(humanNotes,sourceNotes)=>practiceStageNotes({humanNotes,hiddenPartIds:state.hiddenPartIds,targetGroups:state.targetGroups,sourceNotes:state.mode==='listen'&&!state.cleanSong?humanNotes:sourceNotes,availableMidi,excludedMachinePartIds,humanPartIds:humanIds,mode:state.mode,layout:state.practiceLayout,showOthers:state.showOtherParts,range:displayRange});
   const activeDisplay=stageNotes(active,position<segmentStart?[]:state.sourceDisplayIndex?.range(position)||[]);
   highlightKeys(activeDisplay);
   if (state.instrument === 'guitar') {
@@ -1499,6 +1536,7 @@ function renderPreview(){
   if(select.dataset.parts!==signature){select.replaceChildren();if(!value.cleanSong){const all=document.createElement('option');all.value='';bindText(all, () => t('app.allParts'));select.append(all);}for(const part of item?.parts||[]){const option=document.createElement('option');option.value=part.id;option.disabled=basicKeys&&!basicKeysParts(value.cleanSong).some(item=>item.id===part.id&&item.practice_available);bindText(option, () => part.name);select.append(option)}select.dataset.parts=signature;}
   select.value=value.part||'';$('preview-part-label').hidden=!value.compiled;
   if(changedIdentity){$('preview-notices').open=false;document.querySelector('.preview-copy').scrollTop=0;}
+  refreshSongModView();
 }
 function renderCanonicalAudio(){
   for(const [id,host,visible]of [['canonical-audio-policy',$('progress-help')?.parentElement,Boolean(state.compiled)&&!state.cleanSong],['canonical-preview-policy',$('preview-part-help')?.parentElement,Boolean(preview?.value.compiled)&&!preview?.value.cleanSong]]){
@@ -1597,7 +1635,7 @@ async function importCanonicalScore(score, signal, {practicePart=undefined,diagn
   finally{signal.removeEventListener('abort',cancel)}
 }
 function activateCanonicalTransformation(score,signal,options={}) {
-  const practiceOptions=canonicalPracticeOptions(score.parts,{practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts});
+  const practiceOptions={...canonicalPracticeOptions(score.parts,{practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts}),...(state.songMod?{songMod:createSongMod(songMods.identity({score}),state.songMod.config)}:{})};
   return importCanonicalScore(score,signal,{...options,practicePart:practiceOptions.part,practiceOptions});
 }
 async function importReviewedScore(kind,score,signal,options) {
@@ -1626,7 +1664,7 @@ setupScoreStorageLobbyStatus({model:scoreStorage,host:storageLobbyHost,document,
 let managementInventorySignature=null;
 scoreStorage.subscribe(snapshot=>{const signature=JSON.stringify(snapshot.entries.map(row=>row.libraryKey));if(managementInventorySignature!==null&&signature!==managementInventorySignature)libraryManagement.invalidate();managementInventorySignature=signature;const candidate=preview.value;if(snapshot.kind==='native'&&!snapshot.reading&&!snapshot.error&&candidate.identity?.startsWith('native:')&&candidate.status!=='error'&&!snapshot.entries.some(row=>row.libraryKey===candidate.identity)){preview.cancel();preview.publish({...candidate,status:'error',errorCode:'library_not_found',message:i18n.t('management.catalog.previewUnavailable')});}renderCatalog();const binding=displayBindings.get(legacyLibraryButton);if(binding?.text)legacyLibraryButton.textContent=binding.text()});
 $('score-library').addEventListener('close',()=>{if(scoreStorage.snapshot().kind==='browser')void scoreStorage.rescan()});
-const engravedView = setupEngravedView({i18n,onBasicPage:(page,batch)=>{if(hasBasicKeyRendition(state.cleanSong)){if(page){state.notationPart=batch?.scope==='all'?null:page.part_id;$('notation-part').value=state.notationPart||'';}if(!state.engravingActive)renderNotationPage();}},getScore:()=>state.score,getCleanSong:()=>state.cleanSong,getPracticePart:()=>state.practicePart,getPracticeSelection:()=>state.practiceSelection,getPracticeDisplay:()=>({layout:state.inspection?'inspection':state.practiceLayout,showOthers:state.inspection||state.showOtherParts}),getMode:()=>state.mode,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),notice,onVisibility:active=>{
+const engravedView = setupEngravedView({i18n,onBasicPage:(page,batch)=>{if(hasBasicKeyRendition(state.cleanSong)){if(page){state.notationPart=batch?.scope==='all'?null:page.part_id;$('notation-part').value=state.notationPart||'';}if(!state.engravingActive)renderNotationPage();}},getScore:()=>state.score,getCleanSong:()=>state.cleanSong,getPracticePart:()=>state.practicePart,getPracticeSelection:()=>state.practiceSelection,getPracticeDisplay:()=>({layout:state.inspection?'inspection':state.practiceLayout,showOthers:state.inspection||state.showOtherParts,hiddenPartIds:state.inspection?[]:[...state.hiddenPartIds]}),getMode:()=>state.mode,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),notice,onVisibility:active=>{
   state.engravingActive=active;
   document.querySelector('.engraving-pages').hidden=!active;
   const displayOptions=document.querySelector('.notation-display-options');if(displayOptions)displayOptions.hidden=!active;
@@ -1697,7 +1735,7 @@ for(const dialog of document.querySelectorAll('dialog'))dialog.addEventListener(
 function renderCleanActive(){
   if(!cleanView)return;
   const range=state.instrument==='piano'?[state.geometry[0].midi,state.geometry.at(-1).midi]:[Math.min(...state.guitar.tuning)+state.guitar.capo,Math.max(...state.guitar.tuning)+state.guitar.frets];
-  cleanView.renderActive({song:state.cleanSong,score:state.score,timeline:state.compiled?.timeline,targetPart:state.practicePart,practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,mode:state.mode,mutedParts:cleanMutedParts,soloParts:cleanSoloParts,soundEnabled:!synth.muted,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,range,instrument:state.instrument});
+  cleanView.renderActive({song:state.cleanSong,songMod:state.songMod,score:state.score,timeline:state.compiled?.timeline,targetPart:state.practicePart,practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,mode:state.mode,mutedParts:cleanMutedParts,soloParts:cleanSoloParts,soundEnabled:!synth.muted,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,range,instrument:state.instrument});
 }
 function renderCleanPreview(){
   if(!cleanView)return;const song=preview?.value.cleanSong||null;const deviceRange=state.instrument==='guitar'?[Math.min(...state.guitar.tuning)+state.guitar.capo,Math.max(...state.guitar.tuning)+state.guitar.frets]:[state.geometry[0].midi,state.geometry.at(-1).midi];cleanView.renderPreview(song,{...preview?.value,deviceProfile:currentProfile(),deviceRange});
@@ -1722,6 +1760,7 @@ function openCleanRangeSetup(){
 }
 fallingNoteLabels=setupFallingNoteLabels({document,i18n,onChange:()=>drawFrame(true)});
 completePracticeView=setupCompletePracticeView({document,i18n,getContext:origin=>origin==='preview'?{...preview.value,selection:preview.value.practiceSelection,previewVersion:preview.version}:({score:state.score,compiled:state.compiled,cleanSong:state.cleanSong,selection:state.practiceSelection,showOthers:state.showOtherParts,hasTakes:transport.hasStarted||state.recorder.passes.length>0}),onOpen:()=>pausePlayback(),onDisplay:show=>{state.showOtherParts=show;engravedView.practicePartChanged();renderNotationPage();drawFrame(true);refreshPracticeView();},onApply:applyCompletePracticeChoice});
+songModView=setupSongModView({document,i18n,getContext:modContext,onOpen:()=>pausePlayback(),onApply:applySongMod,onStart:startUnifiedPerformance});
 cleanView=setupCleanSongView({document,i18n,onRangeSetup:openCleanRangeSetup,onVsqStart:chooseVsqAndStart,onVsqChoice:()=>preview.chooseVsqPractice(async(song,signal)=>(await scoreStorage.storage()).chooseVsqPractice(song,{signal})),onOpen:()=>pausePlayback(),onTarget:part=>{if(!state.cleanSong||transport.running)return;void applyHumanSelection({kind:'parts',part_ids:[part]},{layout:'solo'});},onMute:(part,muted)=>{if(transport.running)return;if(muted)cleanMutedParts.add(part);else cleanMutedParts.delete(part);resetPlayback();},onSolo:(part,solo)=>{if(transport.running)return;if(solo)cleanSoloParts.add(part);else cleanSoloParts.delete(part);resetPlayback();},onResetMix:()=>{if(transport.running)return;cleanMutedParts.clear();cleanSoloParts.clear();resetPlayback();},onRange:()=>{$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}});
 performanceListening=setupCompletePerformanceListening({document,i18n,synth,host:$('clean-song-preview'),isVisible:()=>shell.screen()==='library',allowed:()=>!document.hidden&&!document.querySelector('dialog[open]'),onBeforePlay:()=>pausePlayback(),onActiveChange:()=>syncInputRoute(),getSoundEnabled:()=>!synth.muted,onSoundChange:setSoundEnabled});
 const loadCleanAsset=async(key,handle,options)=>(await scoreStorage.storage()).loadAsset(key,handle,options);
