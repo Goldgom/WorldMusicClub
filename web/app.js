@@ -1194,7 +1194,10 @@ function drawFrame(displayOnly = false) {
   }
   if(displayOnly!==true&&state.mode==='practice'&&!referenceInputActive()){
     const pass=state.recorder.active;
-    if(!transport.running&&!state.loop&&pass&&pass.closedWall!==null&&pass.deadline!==null&&now>=pass.deadline&&!transport.completed){transport.finish(duration);bindText($('transport-status'), () => t('app.complete'));updateButtons()}
+    // Replay retains the old take while a new source is preparing. Its closed
+    // deadline can finish only an already-started transport, never the reset
+    // clock during admission or after a canceled/failed admission.
+    if(!state.playPending&&transport.hasStarted&&!transport.running&&!state.loop&&pass&&pass.closedWall!==null&&pass.deadline!==null&&now>=pass.deadline&&!transport.completed){transport.finish(duration);bindText($('transport-status'), () => t('app.complete'));updateButtons()}
     if(state.recorder.ready(now).length)drainAssessments();
   }
   // Completion above may have replaced an overshooting frame time with the
