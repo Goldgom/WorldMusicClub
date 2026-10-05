@@ -7,6 +7,26 @@ const settled = app => app.until(() => app.$('management-catalog').dataset.phase
 async function open(app) { await app.until(() => !app.$('start-listen').disabled); await app.click('home-single-player'); await app.click('library-management-button'); await app.until(() => !app.$('management-catalog-button').hidden); await app.click('management-catalog-button'); await settled(app); }
 function select(app, row) { const box = app.document.querySelector(`[data-catalog-edition="${row.edition_id}"]`); assert.equal(box.disabled, false); box.checked = true; app.emit(box, 'change'); }
 const reviewed = app => app.until(() => !app.$('management-catalog-review').hidden);
+
+test('a new keyboard review receives focus once and Cancel returns to the initiating input', async () => {
+  const server = await userPackServer(), app = await nativeStorageApp(server), focused = [], scrolled = [];
+  try {
+    await open(app);
+    const input = app.$('management-catalog-create-name'), title = app.$('management-catalog-review-title'), cancel = app.$('management-catalog-cancel');
+    for (const node of [input, title, cancel]) {
+      node.focus = () => { Object.defineProperty(app.document, 'activeElement', {configurable: true, value: node}); focused.push(node.id); };
+      node.scrollIntoView = () => scrolled.push(node.id);
+    }
+    input.value = 'Original keyboard review'; input.focus(); app.emit(app.$('management-catalog-create-form'), 'submit'); await reviewed(app);
+    assert.equal(app.document.activeElement, title); assert.deepEqual(scrolled, [title.id]);
+    cancel.focus(); getAppI18n(app.document).setLocale('zh-CN');
+    assert.equal(app.document.activeElement, cancel); assert.equal(focused.filter(id => id === title.id).length, 1);
+    await app.click(cancel.id); assert.equal(app.document.activeElement, input); assert.deepEqual(scrolled, [title.id, input.id]);
+    assert.equal(server.history.size, 0);
+    app.emit(app.$('management-catalog-create-form'), 'submit'); await reviewed(app);
+    assert.equal(focused.filter(id => id === title.id).length, 2);
+  } finally { await app.close(); }
+});
 async function confirm(app) { await app.click('management-catalog-confirm'); await app.until(() => app.$('management-catalog-review').hidden); await settled(app); }
 function target(app, id, value) { app.$(`management-catalog-${id}`).value = value; app.emit(app.$(`management-catalog-${id}`), 'change'); }
 test('production DOM creates and renames empty packs, filters editions, and keeps imported names read only in both languages', async () => {

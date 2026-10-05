@@ -14,7 +14,7 @@ export function setupLibraryCatalogView({document, i18n, getStorage, getProtecte
     <section id="management-catalog-review" class="management-operation" aria-labelledby="management-catalog-review-title" hidden><h3 id="management-catalog-review-title" tabindex="-1"></h3><div id="management-catalog-review-content"></div><p data-catalog-text="cancelHelp"></p><div class="management-actions"><button id="management-catalog-confirm" type="button" class="button primary"></button><button id="management-catalog-cancel" type="button" class="button secondary" data-catalog-text="cancel"></button></div></section>
     <section id="management-catalog-operation" class="management-operation" aria-labelledby="management-catalog-operation-title" hidden><h3 id="management-catalog-operation-title" data-catalog-text="operationTitle"></h3><p id="management-catalog-operation-status" role="status" aria-live="polite" aria-atomic="true"></p><p id="management-catalog-operation-id" class="management-identity"></p><p id="management-catalog-operation-help" data-catalog-text="operationHelp"></p><div id="management-catalog-operation-content"></div><div id="management-catalog-operation-error" role="alert" hidden></div><p id="management-catalog-refresh-error" data-catalog-text="refreshError" hidden></p><p id="management-catalog-recovery-warning" data-catalog-text="recoveryWarning" hidden></p><div class="management-actions"><button id="management-catalog-check" type="button" class="button secondary" data-catalog-text="check"></button><button id="management-catalog-retry" type="button" class="button secondary" data-catalog-text="retry" hidden></button><button id="management-catalog-dismiss" type="button" class="button secondary" data-catalog-text="dismiss" hidden></button></div></section>`;
   const $ = id => host.querySelector(`#management-catalog-${id}`);
-  let state = model.snapshot(), rowsSignature = null, reviewSignature = null, operationSignature = null, packsSignature = null, exporting = false, exportGeneration = 0, exportController = null, exportState = null, exportError = null, destroyed = false;
+  let state = model.snapshot(), rowsSignature = null, reviewSignature = null, operationSignature = null, packsSignature = null, exporting = false, exportGeneration = 0, exportController = null, exportState = null, exportError = null, destroyed = false, reviewInvoker = null, focusedReview = null;
   function paragraph(parent, key, params) { const p = make('p'); p.textContent = t(key, params); parent.append(p); return p; }
   function problem(node, error) {
     const signature = JSON.stringify([error, i18n.locale]); if (node.dataset.signature === signature) return;
@@ -124,6 +124,8 @@ export function setupLibraryCatalogView({document, i18n, getStorage, getProtecte
     $('previous').disabled = busy || state.stale || state.page === 0; $('next').disabled = busy || state.stale || !response?.next_cursor;
     const preview = state.preview; $('review').hidden = !preview; $('pending-cancel').hidden = state.phase !== 'previewing';
     const currentReview = JSON.stringify([preview, i18n.locale]); if (preview && reviewSignature !== currentReview) { reviewSignature = currentReview; $('review-title').textContent = t(`review.${preview.kind}`); impact($('review-content'), preview); }
+    const reviewId = preview?.preview?.request?.operation_id || preview?.preview?.operation_id;
+    if (preview && reviewId !== focusedReview) { focusedReview = reviewId; $('review-title').focus({preventScroll: true}); $('review-title').scrollIntoView?.({block: 'start', inline: 'nearest'}); }
     $('confirm').textContent = t(`confirm.${preview?.kind || 'trash_songs'}`); $('confirm').disabled = busy || state.stale || Boolean(pending) || model.recordProtected(preview); $('cancel').disabled = state.phase === 'submitting';
     const op = state.operation; $('operation').hidden = !op;
     if (op) {
@@ -146,12 +148,15 @@ export function setupLibraryCatalogView({document, i18n, getStorage, getProtecte
     catch (error) { if (owns()) exportError = {code: error.code, message: error.message}; }
     finally { if (generation === exportGeneration) { exporting = false; exportController = null; render(); } }
   }
+  function beginReview(node, action) { reviewInvoker = node; void action(); }
+  function cancelReview() { model.cancelPreview(); if (reviewInvoker?.isConnected && !reviewInvoker.disabled) { reviewInvoker.focus({preventScroll: true}); reviewInvoker.scrollIntoView?.({block: 'nearest', inline: 'nearest'}); } }
+  function formInvoker(event, fallback) { return event.submitter || (event.currentTarget.contains(document.activeElement) ? document.activeElement : fallback); }
   for (const kind of ['legacy', 'clean']) $(`export-${kind}`).addEventListener('click', () => void exportSelection(kind));
   $('packs').addEventListener('click', () => void changeView({view: 'packs', collection_id: null, search: ''}));
   $('filter').addEventListener('change', () => void changeView({collection_id: $('filter').value || null}));
-  $('create-form').addEventListener('submit', event => { event.preventDefault(); void model.previewOrganization('create_pack', {name: $('create-name').value}); });
-  $('rename-form').addEventListener('submit', event => { event.preventDefault(); void model.previewOrganization('rename_pack', {name: $('rename-name').value, collectionId: $('rename-target').value}); });
-  $('add-preview').addEventListener('click', () => void model.previewOrganization('add_memberships', {collectionId: $('add-target').value}));
+  $('create-form').addEventListener('submit', event => { event.preventDefault(); beginReview(formInvoker(event, $('create-preview')), () => model.previewOrganization('create_pack', {name: $('create-name').value})); });
+  $('rename-form').addEventListener('submit', event => { event.preventDefault(); beginReview(formInvoker(event, $('rename-preview')), () => model.previewOrganization('rename_pack', {name: $('rename-name').value, collectionId: $('rename-target').value})); });
+  $('add-preview').addEventListener('click', () => beginReview($('add-preview'), () => model.previewOrganization('add_memberships', {collectionId: $('add-target').value})));
   $('rename-target').addEventListener('change', () => { model.cancelPreview(); $('rename-name').value = state.packs?.find(pack => pack.collection_id === $('rename-target').value)?.name || ''; render(); });
   $('add-target').addEventListener('change', () => { model.cancelPreview(); render(); });
   for (const id of ['create-name', 'rename-name']) $(id).addEventListener('input', () => { if (state.preview || state.phase === 'previewing') model.cancelPreview(); });
@@ -159,9 +164,9 @@ export function setupLibraryCatalogView({document, i18n, getStorage, getProtecte
   $('trash').addEventListener('click', () => { $('search').value = ''; void changeView({view: 'trash', collection_id: null, search: ''}); });
   $('refresh').addEventListener('click', () => { cancelExport(); void (state.status?.state === 'ready' ? model.refresh() : model.open()); });
   $('search-form').addEventListener('submit', event => { event.preventDefault(); void changeView({search: $('search').value}); });
-  $('initialize-preview').addEventListener('click', () => void model.previewInitialize()); $('preview').addEventListener('click', () => void model.previewSelection()); $('sync-preview').addEventListener('click', () => void model.previewSync());
-  $('pending-cancel').addEventListener('click', () => model.cancelPreview());
-  $('confirm').addEventListener('click', () => void model.commit()); $('cancel').addEventListener('click', () => model.cancelPreview());
+  $('initialize-preview').addEventListener('click', () => beginReview($('initialize-preview'), () => model.previewInitialize())); $('preview').addEventListener('click', () => beginReview($('preview'), () => model.previewSelection())); $('sync-preview').addEventListener('click', () => beginReview($('sync-preview'), () => model.previewSync()));
+  $('pending-cancel').addEventListener('click', cancelReview);
+  $('confirm').addEventListener('click', () => void model.commit()); $('cancel').addEventListener('click', cancelReview);
   $('check').addEventListener('click', () => void model.checkOperation()); $('retry').addEventListener('click', () => void model.retry()); $('dismiss').addEventListener('click', () => model.acknowledgeUncommitted());
   $('clear').addEventListener('click', () => model.clearSelection()); $('select-page').addEventListener('change', () => model.selectPage($('select-page').checked));
   $('previous').addEventListener('click', () => void model.previous()); $('next').addEventListener('click', () => void model.next());
