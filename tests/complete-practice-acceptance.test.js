@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
+import {createBulkImportTransport} from '../web/bulk-import.js';
 import {completePracticeFixture,originalCompletePracticeMidi,COMPLETE_PRACTICE_PHASES} from '../scripts/prepare-complete-practice-fixtures.mjs';
 import {validateCompleteOpened,validateCompleteGeometry,validateCompletePracticeTakes,validateCompletePracticeRenderer,verifyCompletePracticeProfiles,validateCompletePracticeLabels} from '../scripts/verify-complete-practice-evidence.mjs';
 import {digest} from './clean-song-package-fixtures.js';
@@ -40,4 +41,26 @@ test('label evidence distinguishes first use, a real reload and retained applica
  for(const mutate of [r=>r.labelsAtLaunch.stored=null,r=>r.labelsAtLaunch.checked=false,r=>r.labelsResetByUser.stored='true',r=>r.trusted[0].trusted=false,r=>r.trusted[0].checked=true]){const changed=structuredClone(restart);mutate(changed);assert.throws(()=>validateCompletePracticeLabels(changed));}
  const wrong=structuredClone(seed);wrong.labelReload.navigationType='navigate';assert.throws(()=>validateCompletePracticeLabels(wrong));
  const [host,renderer]=await Promise.all([source('scripts/hosted-complete-practice-check.mjs'),source('crates/desktop-shell/complete-practice-acceptance.js')]);assert.match(host,/persistedStorage=await context.storageState\(\)/);assert.match(host,/storageState:persistedStorage/);assert.doesNotMatch(renderer,/localStorage\.setItem/);assert.match(renderer,/User label setting did not survive application restart/);
+});
+
+
+test('import evidence observes transports captured before DOMContentLoaded without changing binary body or promises',async()=>{
+ const [runner,shared]=await Promise.all([source('crates/desktop-shell/complete-practice-acceptance.js'),source('crates/desktop-shell/vsq-song-acceptance.js')]);
+ assert.ok(runner.indexOf('const requestObserver=observeCompletePracticeRequests({report});')<runner.indexOf("addEventListener('DOMContentLoaded'"),'The observer must precede application transport construction');
+ const context=vm.createContext({structuredClone});vm.runInContext(shared.slice(shared.indexOf('function createVsqJsonObserver('),shared.indexOf('/* Actual rendered identities'))+runner.slice(runner.indexOf('function observeCompletePracticeRequests('),runner.indexOf('(() => {'))+';globalThis.install=observeCompletePracticeRequests;',context);
+ const file=new File([f.bytes],'complete-practice-original.zip',{type:'application/zip'});
+ const reply={format:'worldmusichub-import-report',version:1,mode:'preview',source:{filename:file.name,bytes:file.size,sha256:f.manifest.package.sha256},items:[],warnings:[],summary:{ready:1}};
+ for(const installEarly of [false,true]){
+  const report={requests:[],responses:[],errors:[]},calls=[],reads=[];let originalPromise;
+  const root={fetch(...args){calls.push(args);const response={status:200,ok:true,url:'https://wmh.localhost/api/library/import/preview',redirected:false,json(...args){reads.push({receiver:this,args});return Promise.resolve(reply);}};originalPromise=Promise.resolve(response);return originalPromise;}};const original=root.fetch;
+  let observer;if(installEarly)observer=context.install({root,report});
+  // This is the production transport constructor's captured-fetch boundary.
+  const transport=createBulkImportTransport({fetcher:root.fetch,origin:'https://wmh.localhost'});
+  if(!installEarly)observer=context.install({root,report});
+  assert.equal(await transport.preview(file),reply);await Promise.resolve();
+  assert.equal(calls.length,1);assert.equal(calls[0][0],'/api/library/import/preview');assert.equal(calls[0][1].body,file);assert.equal(calls[0][1].headers['Content-Type'],'application/octet-stream');assert.equal(reads.length,1);assert.deepEqual(reads[0].args,[]);
+  assert.equal(report.requests.length,installEarly?1:0);assert.equal(report.responses.length,installEarly?1:0);assert.deepEqual(report.errors,[]);
+  if(installEarly){assert.equal(report.requests[0].body,null);assert.equal(report.responses[0].path,'/api/library/import/preview');assert.equal(report.responses[0].status,200);assert.deepEqual(report.responses[0].body,reply);const returned=root.fetch('/api/library/import/preview',{body:file});assert.equal(returned,originalPromise,'Observe without replacing the application promise');await returned;}
+  assert.equal(observer.restore(),true);assert.equal(root.fetch,original);
+ }
 });
