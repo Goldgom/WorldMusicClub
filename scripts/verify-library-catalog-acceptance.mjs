@@ -193,6 +193,15 @@ export function validateCatalogApiEvidence(rows) {
   return outcomes;
 }
 
+export function validateCatalogTransportSettlement(value, rows) {
+  assert.ok(object(value), 'Bounded renderer transport settlement is required');
+  assert.equal(value.version, 1); assert.equal(value.status, 'complete');
+  assert.equal(value.admitted, rows.length); assert.equal(value.dispatched, rows.filter(row => row.dispatched).length); assert.equal(value.pending, 0);
+  assert.deepEqual(value.errors, [], 'Renderer fetch/body/hash failures cannot be replaced by host replies');
+  assert.deepEqual(value.late_admissions, [], 'Late application reads cannot escape the closed trace');
+  for (const row of rows) assert.equal(row.observation_error, undefined, 'A failed response observation cannot claim successful evidence');
+}
+
 export function validateCatalogHostApiTrace(hostRows, rendererRows) {
   assert.ok(Array.isArray(hostRows) && hostRows.length > 0 && hostRows.length <= 256, 'Independent bounded native dispatch trace required');
   for (const [index, row] of hostRows.entries()) {
@@ -205,7 +214,7 @@ export function validateCatalogHostApiTrace(hostRows, rendererRows) {
   assert.equal(actual.length, observed.length, 'Renderer evidence omitted or invented an independently dispatched native request');
   for (const [index, row] of observed.entries()) {
     const host = actual[index];
-    assert.equal(host.path, row.path); assert.equal(host.method, row.method); assert.equal(host.status, row.status);
+    assert.equal(host.path, row.path); assert.equal(host.method, row.method); assert.equal(host.status, row.status, `Native status differs at renderer sequence ${row.sequence}, dispatch ${row.dispatch_order}, ${row.method} ${row.path}`);
     assert.equal(host.request_sha256, row.delivery === 'wrong-operation-read' ? row.wire_request_sha256 : row.request_sha256, 'Actual native request differs from renderer transport record');
     assert.equal(host.response_sha256, row.response_sha256); assert.equal(host.response_bytes, row.path === '/api/library/pack/export' && row.status === 200 ? row.response_binary_bytes : Buffer.byteLength(row.response_text));
   }
@@ -263,7 +272,7 @@ export function validateCatalogProtocolPhases(reports, {sourceBinding, runId, fi
   for (const report of reports) {
     assert.equal(report.version, 1); assert.equal(report.scenario, 'library-catalog'); assert.equal(report.ok, true);
     assert.equal(report.run_id, runId); assert.equal(report.origin, validateRendererOrigin(expectedOrigin));
-    assert.deepEqual(report.errors, []); validateCatalogSourceBinding(report.source_binding, sourceBinding);
+    assert.deepEqual(report.errors, []); validateCatalogTransportSettlement(report.transport_settlement, report.api_trace); validateCatalogSourceBinding(report.source_binding, sourceBinding);
     assert.deepEqual(report.opened_score_databases, [], 'Native acceptance opened browser score fallback storage');
     assert.deepEqual(report.claims, {synthetic_clock: false, mock_success: false, private_music: false});
     assert.deepEqual([...report.checks].sort(), [...CATALOG_REQUIRED_CHECKS[report.phase]].sort());
@@ -574,6 +583,7 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
   const reports = [], profileDirectories = new Set(), nativeGeometries = [];
   for (const [index, phase] of CATALOG_ACCEPTANCE_PHASES.entries()) {
     const row = host.phases[index], report = await json(`renderer-${phase}.json`); reports.push(report);
+    validateCatalogTransportSettlement(report.transport_settlement, report.api_trace);
     assert.ok(uint(row.process_id) && row.process_id > 0); assert.equal(row.launched_new_process, true); assert.equal(row.renderer_ok, true); assert.equal(row.normal_close, true);
     assert.equal(row.renderer_origin, expectedOrigin); assert.equal(row.executable_tcp_listeners, 0);
     assert.equal(row.actions, report.actions.length); assert.ok(row.actions > 0 && row.actions <= CATALOG_EVIDENCE_LIMITS.actions);

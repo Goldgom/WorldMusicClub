@@ -2,11 +2,14 @@
  * The host supplies real trusted input, real native replies and a private profile.
  * Faults lose/delay actual transport replies; they never manufacture success. */
 function createCatalogAcceptanceTransport({fetcher, digest, origin, limit = 128, getActionSequence = () => 0}) {
-  const rows = [], faults = []; let mode = null, held = null, dispatchOrder = 0, eventOrder = 0;
+  const rows = [], faults = [], pending = new Set(), injectedErrors = new WeakSet(); let mode = null, held = null, dispatchOrder = 0, eventOrder = 0, closing = false, draining;
+  const settlement = {version: 1, status: 'open', admitted: 0, dispatched: 0, pending: 0, errors: [], late_admissions: []};
+  const errorInfo = error => ({name: String(error?.name || 'Error').slice(0, 128), message: String(error?.message || error).slice(0, 1024)});
+  const injectedLoss = message => { const error = Error(message); injectedErrors.add(error); return error; };
   const pathOf = input => new URL(String(input), origin).pathname;
   const tracked = path => path.startsWith('/api/library/catalog/') || path.startsWith('/api/library/import/') || ['/api/library/list', '/api/library/manage/query', '/api/library/pack/export', '/api/assess'].includes(path);
   const text = value => value === undefined ? '' : typeof value === 'string' ? value : JSON.stringify(value);
-  async function send(input, options = {}, source = 'app') {
+  async function observe(input, options = {}, source = 'app', capture) {
     const path = pathOf(input);
     if (!tracked(path)) return fetcher(input, options);
     if (rows.length >= limit) throw Error('Catalog native API evidence exceeded its finite bound');
@@ -15,12 +18,12 @@ function createCatalogAcceptanceTransport({fetcher, digest, origin, limit = 128,
     const contentType = new Headers(options.headers).get('content-type') || '', isJson = contentType.includes('json');
     const requestText = isJson ? new TextDecoder().decode(body) : '';
     const row = {sequence: rows.length + 1, action_sequence: getActionSequence(), source, path, method: options.method || 'GET', request: isJson && requestText ? JSON.parse(requestText) : null, request_text: isJson ? requestText : '', ...(!isJson && body.length ? {request_base64: btoa(Array.from(body, byte => String.fromCharCode(byte)).join(''))} : {}), request_sha256: null, dispatched: true, delivery: 'forwarded', status: null, response: null, response_text: null, response_sha256: null};
-    rows.push(row); row.request_sha256 = await digest(body);
+    rows.push(row); capture.row = row; row.request_sha256 = await digest(body);
     let sent = options, fault = null;
     if (path === '/api/library/catalog/commit' && ['lose-before', 'lose-after'].includes(mode?.kind)) {
       fault = mode; mode = null; row.delivery = fault.kind === 'lose-before' ? 'lost-before-native' : 'lost-after-native';
       faults.push({kind: row.delivery, sequence: row.sequence, operation_id: row.request.preview.request.operation_id});
-      if (fault.kind === 'lose-before') { row.dispatched = false; throw Error('ORIGINAL acceptance transport loss before native dispatch'); }
+      if (fault.kind === 'lose-before') { row.dispatched = false; throw injectedLoss('ORIGINAL acceptance transport loss before native dispatch'); }
     }
     if (path === '/api/library/catalog/operation' && mode?.kind === 'wrong-operation') {
       fault = mode; mode = null; row.delivery = 'wrong-operation-read';
@@ -32,7 +35,7 @@ function createCatalogAcceptanceTransport({fetcher, digest, origin, limit = 128,
       fault = mode; mode = null; row.delivery = 'deferred-read';
     }
     row.dispatch_order = ++dispatchOrder; row.dispatch_event = ++eventOrder;
-    const response = await fetcher(input, sent);
+    const response = await fetcher(input, sent); row.status = response.status;
     if (path === '/api/library/pack/export' && response.status === 200) {
       const bytes = new Uint8Array(await response.clone().arrayBuffer());
       row.status = response.status; row.response_binary_bytes = bytes.length; row.response_sha256 = await digest(bytes); row.response_event = ++eventOrder;
@@ -41,14 +44,64 @@ function createCatalogAcceptanceTransport({fetcher, digest, origin, limit = 128,
     const responseText = await response.clone().text();
     row.status = response.status; row.response_text = responseText; row.response_sha256 = await digest(new TextEncoder().encode(responseText));
     row.response = JSON.parse(responseText); row.response_event = ++eventOrder;
-    if (fault?.kind === 'lose-after') throw Error('ORIGINAL acceptance transport loss after durable native commit');
+    if (fault?.kind === 'lose-after') throw injectedLoss('ORIGINAL acceptance transport loss after durable native commit');
     if (fault?.kind === 'defer-query') {
       let release; const gate = new Promise(resolve => { release = resolve; }); held = {row, release};
-      faults.push({kind: 'deferred-read', sequence: row.sequence}); await gate; row.delivery_complete = true; row.release_event = ++eventOrder; held = null;
+      faults.push({kind: 'deferred-read', sequence: row.sequence}); if (closing) release(); await gate; row.delivery_complete = true; row.release_event = ++eventOrder; held = null;
     }
     return response;
   }
-  return {rows, faults, fetcher: send, probe: (path, body) => send(path, body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}, 'probe'), arm(value) { if (mode || held) throw Error('Overlapping catalog transport faults'); mode = value; }, held: () => held, release() { if (!held) throw Error('No held catalog query'); held.release(); }, stop() { held?.release(); mode = null; }};
+  function send(input, options = {}, source = 'app') {
+    const path = pathOf(input);
+    if (!tracked(path)) return fetcher(input, options);
+    if (closing) {
+      const error = Error(`Catalog transport admission closed: ${path}`);
+      if (settlement.late_admissions.length < limit) settlement.late_admissions.push({path, ...errorInfo(error)});
+      settlement.status = 'failed'; return Promise.reject(error);
+    }
+    // Admission is recorded synchronously, before body conversion, hashing or
+    // the real fetch can yield. Rejections remain visible after leaving pending.
+    const capture = {}, task = observe(input, options, source, capture); pending.add(task); settlement.admitted++; settlement.pending = pending.size;
+    task.then(() => { pending.delete(task); settlement.pending = pending.size; }, error => {
+      pending.delete(task); settlement.pending = pending.size;
+      if (!injectedErrors.has(error)) {
+        const detail = {sequence: capture.row?.sequence ?? null, path, ...errorInfo(error)};
+        if (capture.row) capture.row.observation_error = detail;
+        if (settlement.errors.length < limit) settlement.errors.push(detail);
+      }
+    });
+    return task;
+  }
+  function stop() { held?.release(); mode = null; }
+  function assertSettled() {
+    settlement.dispatched = rows.filter(row => row.dispatched).length;
+    const incomplete = rows.find(row => row.dispatched && (!Number.isInteger(row.status) || row.response_sha256 === null || row.response_event === undefined));
+    if (settlement.errors.length || settlement.late_admissions.length || incomplete || pending.size) {
+      settlement.status = 'failed';
+      throw Error(`Catalog transport observations incomplete: ${JSON.stringify({pending: pending.size, row: incomplete && {sequence: incomplete.sequence, path: incomplete.path, status: incomplete.status}, errors: settlement.errors, late_admissions: settlement.late_admissions})}`);
+    }
+    settlement.status = 'complete'; return settlement;
+  }
+  function drain() {
+    if (!draining) {
+      closing = true; settlement.status = 'draining'; stop();
+      draining = Promise.all([...pending].map(task => task.catch(() => undefined)));
+    }
+    return draining.then(assertSettled);
+  }
+  return {rows, faults, settlement, drain, fetcher: send, probe: (path, body) => send(path, body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}, 'probe'), arm(value) { if (closing || mode || held) throw Error('Overlapping or closed catalog transport faults'); mode = value; }, held: () => held, release() { if (!held) throw Error('No held catalog query'); held.release(); }, stop};
+}
+
+async function settleCatalogAcceptanceTransport(transport, report, bounded) {
+  try { await bounded(() => transport.drain(), 'catalog transport evidence settlement', 15000); }
+  catch (error) { report.ok = false; report.transport_error = String(error.stack || error); report.error ||= report.transport_error; }
+}
+
+function catalogManagementPaneReady(document) {
+  const dialog = document.getElementById('library-management-dialog'), catalog = document.getElementById('management-catalog'), browser = document.getElementById('management-browser');
+  if (!dialog?.open) return false;
+  if (catalog && !catalog.hidden) return ['ready', 'uninitialized'].includes(catalog.dataset.phase) && catalog.getAttribute('aria-busy') === 'false';
+  return Boolean(browser && !browser.hidden && dialog.dataset.phase === 'ready' && dialog.getAttribute('aria-busy') === 'false');
 }
 
 function catalogPracticeBaselineReady(document) {
@@ -153,7 +206,7 @@ async function runCatalogUserPackAcceptance({document, native, until, query, ope
   const digest = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), value => value.toString(16).padStart(2, '0')).join('');
   const json = (path, options) => waits.json(originalFetch, path, options, 15000);
   const transport = createCatalogAcceptanceTransport({fetcher: originalFetch, digest, origin: location.origin, getActionSequence: () => sequence}); globalThis.fetch = transport.fetcher;
-  const report = {version: 1, scenario: 'library-catalog', phase, ok: false, origin: location.origin, checks: [], errors: [], actions: [], screenshots: {}, api_trace: transport.rows, faults: transport.faults, files: {}, profile: {}, operations: {}, catalog: {}, state: {}, media: null, opened_score_databases: [], claims: {synthetic_clock: false, mock_success: false, private_music: false}};
+  const report = {version: 1, scenario: 'library-catalog', phase, ok: false, origin: location.origin, checks: [], errors: [], actions: [], screenshots: {}, api_trace: transport.rows, transport_settlement: transport.settlement, faults: transport.faults, files: {}, profile: {}, operations: {}, catalog: {}, state: {}, media: null, opened_score_databases: [], claims: {synthetic_clock: false, mock_success: false, private_music: false}};
   const storageKey = 'worldmusichub.library-operation.v1', markerKey = 'wmh.catalog.acceptance.owner', organizationKey = 'wmh.catalog.acceptance.organization';
   const operation = () => {
     const value = JSON.parse(localStorage.getItem(storageKey) || '{"libraries":{}}'), records = Object.values(value.libraries);
@@ -212,7 +265,7 @@ async function runCatalogUserPackAcceptance({document, native, until, query, ope
   }
   async function openCatalog(expected = 'ready') {
     await native('click', $('library-management-button')); await until(() => !$('management-catalog-button').hidden && !$('management-catalog-button').disabled, 'Catalog capability entry');
-    if ($('management-catalog').hidden) await native('click', $('management-catalog-button')); await until(() => $('management-catalog').dataset.phase === expected, `Catalog ${expected}`);
+    if ($('management-catalog').hidden) { await until(() => catalogManagementPaneReady(document), 'Initial management refresh completed'); await native('click', $('management-catalog-button')); } await until(() => $('management-catalog').dataset.phase === expected, `Catalog ${expected}`);
   }
   async function catalogView(view) { await native('click', cat(view)); await until(() => $('management-catalog').dataset.phase === 'ready' && cat(view).getAttribute('aria-pressed') === 'true', `Catalog ${view} view`); }
   async function select(ids) {
@@ -248,7 +301,7 @@ async function runCatalogUserPackAcceptance({document, native, until, query, ope
     closeDialogs(); await menu.enterFree(); if (!$('free-recordings').open) click('free-recordings-toggle'); await until(() => !$('free-load').disabled, 'Persisted saved free record'); await native('click', $('free-load')); await until(() => !$('free-export-record').disabled && $('free-practice-screen').getAttribute('aria-busy') === 'false', 'Actual persisted record loaded'); report.files.restartedSavedFree = await download($('free-export-record')); await menu.exitFree();
   }
   async function membershipEvidence() {
-    closeDialogs(); await native('click', $('library-management-button')); await native('click', document.querySelector('[data-management-view="packs"]')); await until(() => $('library-management-dialog').dataset.phase === 'ready', 'Read-only membership view');
+    closeDialogs(); await native('click', $('library-management-button')); await until(() => catalogManagementPaneReady(document), 'Management read completed before membership view'); await native('click', document.querySelector('[data-management-view="packs"]')); await until(() => $('library-management-dialog').dataset.phase === 'ready', 'Read-only membership view');
     const packs = await probe('/api/library/manage/query', {view: 'packs', limit: 100, refresh: true}), duplicates = await probe('/api/library/manage/query', {view: 'duplicates', limit: 100});
     assert(packs.rows.length === 3 && duplicates.rows.length === 1 && duplicates.rows[0].editions.length === 1 && duplicates.rows[0].evidence_type === 'shared_edition', 'Pack membership or duplicate ownership changed');
     await native('click', document.querySelector('[data-management-view="duplicates"]')); await until(() => $('library-management-dialog').dataset.phase === 'ready' && document.querySelector('[data-management-group]'), 'Actual shared duplicate UI');
@@ -336,9 +389,14 @@ async function runCatalogUserPackAcceptance({document, native, until, query, ope
       assert(report.opened_score_databases.length === 0 && report.errors.length === 0, 'Catalog opened fallback score storage or reported an uncaught error'); report.ok = true;
     } catch (error) { report.error = String(error.stack || error); }
     finally {
-      transport.stop(); mediaStorage?.close(); globalThis.fetch = originalFetch; IDBFactory.prototype.open = originalOpen;
+      transport.stop(); mediaStorage?.close();
+      await settleCatalogAcceptanceTransport(transport, report, waits.bounded);
+      // Keep the closed observer installed until the host closes this owned
+      // window, so later app reads cannot bypass the frozen evidence trace.
+      IDBFactory.prototype.open = originalOpen;
       document.removeEventListener('click', trustedClick, true); document.removeEventListener('keydown', trustedKey, true); document.removeEventListener('keyup', trustedKey, true); document.removeEventListener('change', trustedChange, true); document.removeEventListener('input', selectionEvent, true);
       report.downloads = (await json('/__desktop_smoke/state')).downloads;
+      if (transport.settlement.status !== 'complete') { report.ok = false; report.error ||= 'Catalog transport settlement failed before report serialization'; }
       const body = JSON.stringify(report); assert(new TextEncoder().encode(body).length <= 1024 * 1024, 'Catalog renderer report exceeds 1MiB');
       await json('/__desktop_smoke/report', {method: 'POST', headers: {'Content-Type': 'application/json'}, body});
     }

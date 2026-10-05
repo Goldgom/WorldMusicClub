@@ -205,7 +205,7 @@ async function protocol({organization = false} = {}) {
     current.screenshots['persisted-user-pack'] = current.organization.filter_action;
   }
   current.catalog.active = await query('active'); current.catalog.trash = await query('trash');
-  for (const report of reports) { let order = 0; for (const row of report.api_trace) if (row.dispatched) row.dispatch_order = ++order; }
+  for (const report of reports) { let order = 0; for (const row of report.api_trace) if (row.dispatched) row.dispatch_order = ++order; report.transport_settlement = {version: 1, status: 'complete', admitted: report.api_trace.length, dispatched: order, pending: 0, errors: [], late_admissions: []}; }
   return {reports, options: {sourceBinding: binding, runId, fixture, requireOrganization: organization}};
 }
 
@@ -213,6 +213,7 @@ test('three-phase protocol oracle independently checks exact ownership, lost res
   const {reports, options} = await protocol(); const proof = validateCatalogProtocolPhases(reports, options);
   assert.equal(proof.selectedIds.length, 2); assert.equal(proof.imports.length, 5);
   for (const edit of [
+    v => delete v[0].transport_settlement, v => v[0].transport_settlement.status = 'draining', v => v[0].transport_settlement.pending = 1, v => v[0].transport_settlement.admitted--, v => v[0].transport_settlement.dispatched--, v => v[0].transport_settlement.errors.push({name: 'AbortError'}), v => v[0].transport_settlement.late_admissions.push({path: '/api/library/list'}),
     v => v.reverse(), v => v[1].profile.marker_before = null, v => v[1].profile.recovery_before_open.phase = 'committed',
     v => v[0].actions[0].trusted_clicks = 0, v => v[0].actions[0].untrusted_clicks = 1, v => delete v[0].source_binding,
     v => v[0].catalog.active.counts.memberships = 4, v => v[1].catalog.trashed.rows[0].trashed_by = v[1].operations.restore.operation_id,
