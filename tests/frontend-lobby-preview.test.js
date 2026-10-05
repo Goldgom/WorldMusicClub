@@ -86,7 +86,7 @@ test('all audition and instrument labels are populated on mount and stay localiz
    assert.equal(app.$('lobby-preview-volume').value,'23');assert.equal(app.$('lobby-instrument').value,'piano');
    assert.equal(app.$('preview-part').value,'piano');assert.equal(app.$('preview-part').querySelector('option[value="piano"]').textContent,'Piano','Source part names remain authored data');
    const partLabel=[...app.$('preview-part-label').childNodes].filter(node=>node.nodeType===3).map(node=>node.textContent).join('');
-   assert.equal(partLabel,i18n.t('shell.targetPart'));
+   assert.equal(partLabel,i18n.t('shell.targetPart'));assert.equal(app.$('start-listen').textContent,i18n.t('shell.startListen'));assert.equal(app.$('preview-part-help').hidden,true);
    assert.equal(app.$('preview-part').querySelector('option[value=""]').textContent,i18n.t('app.allParts'));
   }
   assert.equal(app.requests.length,requests);assert.deepEqual(app.audio(),audio);assert.equal(app.$('lobby-preview-status').dataset.state,'ready');
