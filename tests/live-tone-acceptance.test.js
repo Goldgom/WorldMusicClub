@@ -31,7 +31,7 @@ function harness(){
  class AudioNode{constructor(context){this.context=context;}connect(...args){nativeCalls.push(['connect',this,...args]);if(args[0]===null)throw this.context.sentinel;return args[0];}disconnect(...args){nativeCalls.push(['disconnect',this,...args]);return 'native-disconnected';}}
  class AudioDestinationNode extends AudioNode{}
  class GainNode extends AudioNode{constructor(context){super(context);this.gain={value:1};}}
- class AnalyserNode extends AudioNode{constructor(context){super(context);this.fftSize=2048;}getFloatTimeDomainData(values){values.fill(.125);}}
+ class AnalyserNode extends AudioNode{constructor(context){super(context);this.fftSize=16384;}getFloatTimeDomainData(values){values.fill(.125);}}
  class AudioWorkletNode extends AudioNode{constructor(context){super(context);this.port=new MessagePort();this.listeners=new Set();this.numberOfInputs=0;this.numberOfOutputs=1;}addEventListener(type,fn){this.listeners.add(fn);}removeEventListener(type,fn){this.listeners.delete(fn);}}
  const context={state:'running',sampleRate:48000,currentTime:0,sentinel:Error('original native failure'),createGain(){return new GainNode(this);},createAnalyser(){return new AnalyserNode(this);}};context.destination=new AudioDestinationNode(context);
  let lastPromise;
@@ -81,4 +81,10 @@ test('renderer and hosted entry points install the passive helper before source 
  for(const [index,runner]of files.slice(2).entries()){assert.ok(runner.indexOf("'live-tone-acceptance.js'")<runner.indexOf(index===0?"'basic-key-acceptance.js'":"'vsq-song-acceptance.js'"));assert.ok(runner.includes(`page.keyboard.press('${index===0?'Digit2':'KeyU'}',{delay:40})`));}
  assert.ok(files[0].includes("value)>=350,'C5 source onset approaching'"));assert.ok(files[0].includes("value)<650,'Real input window missed"));assert.ok(files[1].includes("value)<120,'VSQ source onset window missed"));
  assert.doesNotMatch(source,/root\.AudioWorkletNode\s*=|globalThis\.AudioWorkletNode\s*=|new AudioWorkletNode/);
+});
+test('fixed output history tolerates a main-thread long frame without moving the real key or processor frames',async()=>{
+ const f=harness(),{observer,owner}=await initialized(f);f.time(100);observer.begin();f.input('keydown',200);const id='manual:key:keyboard-2:3:Digit2',token=owner.play(id,72,null,0,'piano',90);f.time(201);owner.node.port.emit(receipt('started',id,token));f.input('keyup',240);f.time(252);owner.node.port.emit(receipt('ended',id,token));
+ // The actual observed output block is late; its fixed 16384-sample history
+ // intersects the native voice interval. Neither timestamp is rewritten.
+ f.frame(400);assert.equal(observer.settled(),true);f.time(401);const e=serializable(observer.finish());assert.equal(e.inputs[0].eventTime,200);assert.equal(e.receipts[1].record.actualEndFrame,12096);assert.equal(e.pcm.blocks[0].audioTime,.4);validateLiveToneEvidence(e,{keyCode:'Digit2',midi:72,transport:syntheticLiveToneTransport(e)});validateLiveToneCleanup(serializable(observer.restore()));
 });
