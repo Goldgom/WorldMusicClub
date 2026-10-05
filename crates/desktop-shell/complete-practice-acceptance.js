@@ -9,8 +9,35 @@ function observeCompletePracticeCanvas(root=globalThis){
 // Preserve the exact application promise, body and response-consumption path.
 function observeCompletePracticeRequests({root=globalThis,report}){
  const original=root.fetch,responses=createVsqJsonObserver({maxRows:128,onValue:row=>report.responses.push(row),onError:error=>report.errors.push(error)});
- function observed(...args){const result=Reflect.apply(original,this,args),path=String(args[0]);try{if(path.startsWith('/api/')){if(report.requests.length>=128)throw Error('Request bound');report.requests.push({path,body:typeof args[1]?.body==='string'?JSON.parse(args[1].body):null});responses.observe(path,result);}}catch(error){report.errors.push(String(error));}return result;}
+ function observed(...args){const result=Reflect.apply(original,this,args),path=String(args[0]);try{if(path.startsWith('/api/')){if(report.requests.length>=128)throw Error('Request bound');report.requests.push({path,body:typeof args[1]?.body==='string'?JSON.parse(args[1].body):null});responses.observe(path,result,report.requests.length-1);}}catch(error){report.errors.push(String(error));}return result;}
  root.fetch=observed;return{restore(){responses.restore();if(root.fetch===observed)root.fetch=original;return root.fetch===original;}};
+}
+// Mod closes before its stage target rebuild finishes. A disabled Play can
+// mean pending, rejected, or genuinely outside the instrument range.
+async function captureSettledCompletePracticeMod({document,until,report,requestStart,humanParts,blocked,name,sample}){
+ const $=id=>document.getElementById(id),same=(a,b)=>JSON.stringify([...new Set(a)].sort())===JSON.stringify([...new Set(b)].sort());let readiness;
+ await until(()=>{
+  if(document.body.dataset.screen!=='stage'||$('workspace')?.dataset.scoreState!=='session'||document.querySelector('dialog[open]'))return false;
+  const last=path=>report.requests.findLastIndex((row,index)=>index>=requestStart&&row.path===path),targetIndex=last('/api/practice-targets'),checkIndex=last('/api/instrument-check');
+  if(targetIndex<requestStart)return false;
+  const target=report.responses.find(row=>row.requestIndex===targetIndex);
+  if(target&&target.status!==200)throw Error(`Complete Mod targets failed: HTTP ${target.status}`);
+  if(!target||checkIndex<targetIndex)return false;
+  const check=report.responses.find(row=>row.requestIndex===checkIndex);
+  if(check&&check.status!==200)throw Error(`Complete Mod compatibility failed: HTTP ${check.status}`);
+  if(!check)return false;
+  const requested=report.requests[targetIndex].body.timeline.notes,checked=report.requests[checkIndex].body.timeline.notes;
+  if(!same(requested.map(note=>note.part_id),humanParts)||!same(checked.map(note=>note.part_id),humanParts)||!same(checked.map(note=>note.id),requested.map(note=>note.id)))throw Error('Complete Mod target response belongs to another human selection');
+  if(typeof target.body?.playable!=='boolean'||!Array.isArray(target.body?.groups)||!Array.isArray(check.body?.note_options)||!check.body.note_options.every(note=>typeof note.playable==='boolean'))throw Error('Complete Mod target/compatibility response is incomplete');
+  if(!same(target.body.groups.flatMap(group=>group.part_ids),humanParts)||!same(check.body.note_options.map(note=>note.note_id),requested.map(note=>note.id)))throw Error('Complete Mod settled targets differ from the selected human source');
+  const gate=$('practice-gate'),retry=$('practice-gate-retry'),play=$('play-button'),outside=check.body.note_options.filter(note=>!note.playable).map(note=>note.note_id);
+  if(retry.disabled)return false;
+  if(blocked?(!outside.length||target.body.playable!==false||gate.hidden||!play.disabled):(outside.length||!gate.hidden||play.disabled||!target.body.playable))throw Error(`Complete Mod ${name} has the wrong settled compatibility outcome`);
+  if($('workspace').dataset.notationRenderStatus!=='ready')return false;
+  readiness={requestStart,targetRequestIndex:targetIndex,checkRequestIndex:checkIndex,humanParts:[...humanParts],outsideSourceIds:outside,playDisabled:play.disabled,gateHidden:gate.hidden,retryDisabled:retry.disabled};return true;
+ },'settled Mod human targets, compatibility and notation',20000);
+ (report.modReadiness??={})[name]=readiness;
+ return sample(name);
 }
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(v,m)=>{if(!v)throw Error(m);},originalFetch=globalThis.fetch,fetcher=originalFetch.bind(globalThis),waits=createAcceptanceWait(),resumeKey='wmh.complete.acceptance.resume';
@@ -35,7 +62,7 @@ function observeCompletePracticeRequests({root=globalThis,report}){
  const mod=createAcceptanceSongMod({document,native,until});
  async function popup(){await mod.open();}
  async function checkHuman(ids){await mod.choose(ids,{layout:'complete'});}
- async function apply(){await mod.apply();await until(()=>$('workspace').dataset.notationRenderStatus==='ready','applied notation',20000);}
+ async function apply(name,humanParts,blocked=false){const requestStart=report.requests.length;await mod.apply();await captureSettledCompletePracticeMod({document,until,report,requestStart,humanParts,blocked,name,sample});}
  addEventListener('DOMContentLoaded',async()=>{try{
   assert(['complete-practice-seed','complete-practice-restart'].includes(phase),'Invalid phase');
   const resume=sessionStorage.getItem(resumeKey);if(resume){sessionStorage.removeItem(resumeKey);report=JSON.parse(resume);sequence=report.actions;await until(()=>$('falling-note-labels'),'restored settings control');await frame();report.labelReload={checked:$('falling-note-labels').checked,stored:localStorage.getItem('worldmusichub.falling-note-labels.v1'),navigationType:performance.getEntriesByType('navigation')[0]?.type};assert(report.labelReload.checked&&report.labelReload.stored==='true'&&report.labelReload.navigationType==='reload','Falling labels did not survive real reload');report.ok=true;report.stage='complete';assert(requestObserver.restore(),'Reload request observer did not restore');await json('/__desktop_smoke/report',report);return;}
@@ -54,7 +81,7 @@ function observeCompletePracticeRequests({root=globalThis,report}){
    report.stage='cancel-keeps-take';await popup();await checkHuman([parts[0]]);await mod.cancel();await sample('cancel');
    report.stage='display-only';await mod.configure(parts.slice(0,2),{layout:'complete',showOthers:false});await until(()=>noteArray($('workspace').dataset.renderedNotationParts).length===2,'hidden machine notation');await sample('multi-hidden');await mod.configure(parts.slice(0,2),{layout:'complete',showOthers:true});await until(()=>noteArray($('workspace').dataset.renderedNotationParts).length===3,'restored machine notation');await sample('multi-restored');
    report.stage='trusted-unison';await native('click',$('reset-button'));await sample('reset');await native('click',$('play-button'));await until(()=>clock()>0,'human capture started');$('stage-title').focus();await frame();await frame();await until(()=>clock()>=1350,'C5 original onset approaching');assert(clock()<1650,'Trusted key dispatch missed the source window');report.keyAction=await native('key-c5',$('stage-title'));await until(()=>clock()>=1650,'original human gate active');assert(clock()<2500&&$('clean-song-stage').dataset.rendererState==='playing','Original C5 gate expired before visible capture');report.activePauseAction=await native('click',$('play-button'));await until(()=>$('clean-song-stage').dataset.rendererState==='paused'&&receiver.quiet(),'original C5 gate paused');assert(clock()>=1500&&clock()<2500,'Visible capture must stay within the original C5 gate');await sample('active-human');report.activeResumeAction=await native('click',$('play-button'));await until(()=>clock()>=5000&&receiver.quiet(),'natural complete end',10000);await until(()=>report.responses.some(row=>row.path==='/api/assess'&&row.body.hits?.length===1),'settled human assessment');await take('human');await sample('human-ended');
-   report.stage='apply-resets-and-all-blocks';await popup();await mod.choose('all',{layout:'complete'});await apply();await until(()=>$('play-button').disabled,'all-parts retains out-of-range blocker');await sample('all-blocked');await popup();await checkHuman([parts[0]]);await apply();await sample('single-complete');await popup();await checkHuman(parts.slice(0,2));await apply();await sample('reapplied');
+   report.stage='apply-resets-and-all-blocks';await popup();await mod.choose('all',{layout:'complete'});await apply('all-blocked',parts,true);await popup();await checkHuman([parts[0]]);await apply('single-complete',[parts[0]]);await popup();await checkHuman(parts.slice(0,2));await apply('reapplied',parts.slice(0,2));
    report.stage='persist-labels';await native('click',$('settings-button'));await native('click',$('falling-note-labels'));await native('click',$('settings-dialog').querySelector('[data-close-panel]'));await sample('labels-enabled');
   }else{
    report.stage='solo';await mod.start([parts[0]],{layout:'solo'});await until(()=>document.body.dataset.screen==='stage'&&clock()>0,'solo stage');await pause();await notationReady();await sample('solo');await take('solo');

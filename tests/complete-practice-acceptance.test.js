@@ -10,7 +10,7 @@ import {PracticeRecorder} from '../web/practice-recorder.js';
 import {syntheticAudioThreadRun} from './audio-thread-proof-fixtures.js';
 import {expectedAudioPlan} from '../scripts/audio-thread-rendition-proof.mjs';
 import {createBulkImportTransport} from '../web/bulk-import.js';
-import {completePracticeFixture,originalCompletePracticeMidi,COMPLETE_PRACTICE_PHASES} from '../scripts/prepare-complete-practice-fixtures.mjs';
+import {completePracticeFixture,originalCompletePracticeMidi,COMPLETE_PRACTICE_PHASES,COMPLETE_PARTS} from '../scripts/prepare-complete-practice-fixtures.mjs';
 import {validateCompleteOpened,validateCompleteGeometry,validateCompletePracticeTakes,validateCompletePracticeRenderer,verifyCompletePracticeProfiles,validateCompletePracticeLabels,completePracticeWindowIds,validateCompletePracticeWindow,validateCompletePracticeAudio} from '../scripts/verify-complete-practice-evidence.mjs';
 import {digest} from './clean-song-package-fixtures.js';
 const root=fileURLToPath(new URL('../',import.meta.url)),source=name=>readFile(new URL(`../${name}`,import.meta.url),'utf8');
@@ -89,4 +89,48 @@ test('original machine plan keeps all three processor ledgers and full 5000ms na
  const r={audio:runs,samples:{'active-human':{position:1800,audioPrepared:2},'human-ended':{audioPrepared:3}}};validateCompletePracticeAudio(r);
  for(const mutate of [v=>v.audio.shift(),v=>v.audio.splice(1,1),v=>v.samples['active-human'].position=1801,v=>v.audio[2].terminals[0].record.ledger.actualEnds[0]--,v=>v.audio[2].plan.durationFrames--]){const bad=structuredClone(r);mutate(bad);assert.throws(()=>validateCompletePracticeAudio(bad));}
  const recorder=new PracticeRecorder({toleranceMs:180}),timeline={duration_ms:5000,notes:[{id:'midi-t1-e2',midi:72,start_ms:1500,duration_ms:1000},{id:'midi-t1-e4',midi:76,start_ms:3500,duration_ms:750},{id:'midi-t2-e3',midi:79,start_ms:3500,duration_ms:750}]};const pass=recorder.begin({wallTime:0,position:0,startMs:0,endMs:5000,timeline});recorder.capture({midi:72,eventWall:1500});recorder.pause(1800);assert.equal(recorder.resume(2800,1800),pass);recorder.closeAtEnd(6000);const take=recorder.exportData();assert.equal(take.tolerance_ms,180);assert.equal(take.passes.length,1);assert.equal(take.passes[0].clock_segments.length,2);assert.equal(take.passes[0].inputs.length,1);assert.equal(take.passes[0].inputs[0].at_ms,1500);assert.deepEqual(take.passes[0].range,{start_ms:0,end_ms:5000});
+});
+
+// Pure app-DOM regression only: defer the second compatibility response after
+// Mod closes. Modeled backend replies and capture callbacks are not GUI proof.
+for(const name of ['all-blocked','single-complete','reapplied'])for(const rejects of [false,true])test(`complete Mod snapshot waits for current human targets: ${name}, rejected=${rejects}`,async()=>{
+ const {nativeScoreServer,nativeStorageApp,nativeResponse}=await import('./native-storage-app-fixtures.js');
+ const {canonicalPracticeFixture}=await import('../scripts/prepare-canonical-practice-fixtures.mjs');
+ const original=canonicalPracticeFixture().score;for(const note of original.parts[3].notes)note.pitch={step:'G',alter:0,octave:8};
+ const server=await nativeScoreServer({scores:[original]});let hold=false,checks=0,release,pending,observer;
+ server.setRoute(({path,body,defaultReply})=>{
+  if(path==='/api/practice-targets')return defaultReply().json().then(value=>nativeResponse({...value,playable:body.timeline.notes.every(note=>note.midi>=36&&note.midi<=96)}));
+  if(path!=='/api/instrument-check')return;
+  const reply=()=>nativeResponse({lowest_midi:36,highest_midi:96,note_options:body.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:note.midi>=36&&note.midi<=96,positions:[]})),diagnostics:[],changed_source_notes:false});
+  if(hold&&++checks===2)return new Promise(resolve=>{release=()=>resolve(rejects?nativeResponse({error:'Original delayed compatibility rejection'},503):reply());});
+  return reply();
+ });
+ const app=await nativeStorageApp(server,{now:()=>1000}),runner=await source('crates/desktop-shell/complete-practice-acceptance.js'),shared=await source('crates/desktop-shell/vsq-song-acceptance.js');
+ const context=vm.createContext({structuredClone});vm.runInContext(shared.slice(shared.indexOf('function createVsqJsonObserver('),shared.indexOf('/* Actual rendered identities'))+runner.slice(runner.indexOf('function observeCompletePracticeRequests('),runner.indexOf('(() => {'))+';globalThis.helpers={observeCompletePracticeRequests,captureSettledCompletePracticeMod};',context);
+ const report={requests:[],responses:[],errors:[]},captures=[],expected=name==='all-blocked'?['P1','P2','P3','P4']:name==='single-complete'?['P1']:['P1','P2'];
+ const roles=async ids=>{await app.click('song-mod-all-machine');for(const id of ids){const field=app.$('song-mod-parts').querySelector(`[data-mod-performer="${id}"]`);field.value='human';app.emit(field,'change');}};
+ try{
+  const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('configure-song-mod').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('configure-song-mod').disabled);
+  await app.click('configure-song-mod');await roles(name==='reapplied'?['P1']:['P1','P2']);await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open&&!app.$('start-performance').disabled);await app.click('start-performance');await app.until(()=>app.document.body.dataset.screen==='stage'&&!app.$('play-button').disabled);await app.click('reset-button');await app.until(()=>!app.$('play-button').disabled);
+  if(app.$('notation-toggle').getAttribute('aria-expanded')!=='true')await app.click('notation-toggle');await app.click('jianpu-button');await app.until(()=>app.$('workspace').dataset.notationRenderStatus==='ready');
+  observer=context.helpers.observeCompletePracticeRequests({root:globalThis,report});await app.click('edit-song-mod');await roles(expected);hold=true;await app.click('song-mod-apply');await app.until(()=>Boolean(release)&&!app.$('song-mod-dialog').open);
+  assert.equal(app.$('play-button').disabled,true);assert.equal(app.$('practice-gate').hidden,false);assert.equal(app.$('practice-gate-retry').disabled,true,'Disabled Play is pending, not an established range blocker');const heldCheckIndex=report.requests.findLastIndex(row=>row.path==='/api/instrument-check');
+  pending=context.helpers.captureSettledCompletePracticeMod({document:app.document,until:app.until,report,requestStart:0,humanParts:expected,blocked:name==='all-blocked',name,sample:async role=>captures.push(role)});
+  await app.tick();await app.tick();assert.deepEqual(captures,[],'A closed Mod and ready notation cannot admit a pending target screenshot');release();
+  if(rejects){await assert.rejects(pending,/Complete Mod compatibility failed: HTTP 503/);assert.deepEqual(captures,[]);assert.equal(report.modReadiness,undefined);}
+  else{await pending;assert.deepEqual(captures,[name]);const receipt=report.modReadiness[name];assert.equal(report.requests[receipt.targetRequestIndex].path,'/api/practice-targets');assert.ok(receipt.targetRequestIndex>=2);assert.equal(receipt.checkRequestIndex,heldCheckIndex);assert.equal(receipt.retryDisabled,false);assert.equal(receipt.playDisabled,name==='all-blocked');assert.equal(receipt.gateHidden,name!=='all-blocked');assert.deepEqual(Array.from(receipt.humanParts),expected);assert.equal(receipt.outsideSourceIds.length,name==='all-blocked'?2:0);}
+  assert.equal(app.$('hud-captured').textContent,'0');assert.equal(server.records.get(key).score_json,JSON.stringify(original));assert.equal(report.requests.filter(row=>row.path==='/api/assess').length,0);assert.deepEqual(report.errors,[]);
+ }finally{release?.();await pending?.catch(()=>{});observer?.restore();await app.close();}
+});
+
+test('complete settled screenshot receipts reject pending, failed and wrong-human response substitutes',async()=>{
+ const {validateCompleteModReadiness}=await import('../scripts/verify-complete-practice-evidence.mjs');
+ const ids=['midi-t3-e1','midi-t3-e2','midi-t1-e2','midi-t2-e1','midi-t1-e4','midi-t2-e3'],parts=[COMPLETE_PARTS[0],COMPLETE_PARTS[0],human[0],human[1],human[0],human[1]],requests=[],responses=[],samples={},modReadiness={};
+ for(const [name,wanted]of Object.entries({'all-blocked':COMPLETE_PARTS,'single-complete':[human[0]],reapplied:human})){
+  const notes=ids.flatMap((id,index)=>wanted.includes(parts[index])?[{id,part_id:parts[index]}]:[]),targetRequestIndex=requests.length,checkRequestIndex=targetRequestIndex+1,blocked=name==='all-blocked';
+  requests.push({path:'/api/practice-targets',body:{timeline:{notes}}},{path:'/api/instrument-check',body:{timeline:{notes}}});responses.push({requestIndex:targetRequestIndex,path:'/api/practice-targets',status:200,body:{playable:!blocked,groups:notes.map(note=>({part_ids:[note.part_id]}))}},{requestIndex:checkRequestIndex,path:'/api/instrument-check',status:200,body:{note_options:notes.map(note=>({note_id:note.id,playable:note.id!=='midi-t3-e2'}))}});
+  samples[name]={playDisabled:blocked};modReadiness[name]={requestStart:targetRequestIndex,targetRequestIndex,checkRequestIndex,humanParts:wanted,outsideSourceIds:blocked?['midi-t3-e2']:[],playDisabled:blocked,gateHidden:!blocked,retryDisabled:false};
+ }
+ const good={requests,responses,samples,modReadiness};validateCompleteModReadiness(good);
+ for(const edit of [r=>r.modReadiness['all-blocked'].retryDisabled=true,r=>r.responses[1].status=503,r=>r.responses[0].status=503,r=>r.modReadiness.reapplied.requestStart=0,r=>r.requests[0].path='/api/compile',r=>r.responses[0].requestIndex=9,r=>r.modReadiness['all-blocked'].outsideSourceIds=[],r=>r.responses[0].body.playable=true,r=>r.modReadiness['single-complete'].checkRequestIndex=1,r=>r.responses[2].body.groups[0].part_ids=['wrong-human'],r=>r.samples.reapplied.playDisabled=true,r=>r.requests[5].body.timeline.notes=[]]){const bad=structuredClone(good);edit(bad);assert.throws(()=>validateCompleteModReadiness(bad));}
 });

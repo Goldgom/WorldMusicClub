@@ -68,6 +68,20 @@ export function validateCompletePracticeAudio(r,f=completePracticeFixture()){
  assert.equal(r.audio.length,3,'Retain cold start, human capture and explicit resumed ledgers');assert.deepEqual(r.audio.map(run=>run.terminals[0].record.type),['canceled','canceled','ended']);assert.equal(r.audio[0].positionFrame,0);assert.equal(r.audio[1].positionFrame,0);
  const resumed=r.audio[2],paused=r.samples['active-human'];assert.equal(paused.audioPrepared,2);assert.equal(r.samples['human-ended'].audioPrepared,3);assert.equal(resumed.positionFrame,Math.round(paused.position*resumed.plan.sampleRate/1000),'Resume must use the actual paused source position');
 }
+export function validateCompleteModReadiness(r){
+ const expected={'all-blocked':COMPLETE_PARTS,'single-complete':[human[0]],reapplied:human};
+ assert.deepEqual(Object.keys(r.modReadiness).sort(),Object.keys(expected).sort());let previousCheck=-1;
+ for(const [name,parts]of Object.entries(expected)){
+  const value=r.modReadiness[name],target=r.responses.find(row=>row.requestIndex===value.targetRequestIndex),check=r.responses.find(row=>row.requestIndex===value.checkRequestIndex);
+  assert.ok(Number.isSafeInteger(value.requestStart)&&value.requestStart>previousCheck&&value.targetRequestIndex>=value.requestStart&&value.checkRequestIndex>value.targetRequestIndex);previousCheck=value.checkRequestIndex;
+  assert.deepEqual(sorted(value.humanParts),sorted(parts));assert.equal(target?.path,'/api/practice-targets');assert.equal(target?.status,200);assert.equal(check?.path,'/api/instrument-check');assert.equal(check?.status,200);
+  assert.equal(r.requests[value.targetRequestIndex].path,'/api/practice-targets');assert.equal(r.requests[value.checkRequestIndex].path,'/api/instrument-check');const requested=r.requests[value.targetRequestIndex].body.timeline.notes,checked=r.requests[value.checkRequestIndex].body.timeline.notes;
+  assert.deepEqual(sorted([...new Set(requested.map(note=>note.part_id))]),sorted(parts));assert.deepEqual(checked,requested);assert.deepEqual(sorted([...new Set(target.body.groups.flatMap(group=>group.part_ids))]),sorted(parts));
+  assert.deepEqual(sorted(check.body.note_options.map(note=>note.note_id)),sorted(requested.map(note=>note.id)));
+  assert.deepEqual(value.outsideSourceIds,check.body.note_options.filter(note=>!note.playable).map(note=>note.note_id));assert.deepEqual(value.outsideSourceIds,name==='all-blocked'?['midi-t3-e2']:[]);
+  assert.equal(value.retryDisabled,false);assert.equal(value.gateHidden,name!=='all-blocked');assert.equal(value.playDisabled,name==='all-blocked');assert.equal(r.samples[name].playDisabled,value.playDisabled);assert.equal(target.body.playable,name!=='all-blocked');
+ }
+}
 export function validateCompletePracticeRenderer(r,f=completePracticeFixture(),{expectedOrigin=NATIVE_PROTOCOL_ORIGIN}={}){
  assert.equal(r.ok,true,`Complete practice ${r.phase} failed at ${r.stage}: ${r.error}`);assert.equal(r.version,1);assert.ok(COMPLETE_PRACTICE_PHASES.includes(r.phase));validateCompletePracticeLabels(r);validateRendererOrigin(expectedOrigin);assert.equal(r.origin,expectedOrigin);assert.ok(Number.isSafeInteger(r.actions)&&r.actions>0&&r.actions<=64);assert.deepEqual(r.errors,[]);assert.equal(r.fetchRestored,true);assert.equal(r.canvasRestored,true);assert.deepEqual(r.receiverCleanup,{restored:true,overflow:false,errors:[],cleanupErrors:[]});layout(r.layout);validateCompleteOpened(r.opened,f);assert.equal(r.key,`song-${r.opened.clean_package.content_sha256}`);
  validateOwnedFilePickers(r.pickerObservations,r.pickerFileEvents,[r.phase==='complete-practice-seed'?COMPLETE_PRACTICE_FILES.valid:COMPLETE_PRACTICE_FILES.vsq]);assert.deepEqual(Object.keys(r.samples).sort(),sorted(COMPLETE_SCREENSHOTS[r.phase]));assert.deepEqual(Object.keys(r.screenshots).sort(),sorted(COMPLETE_SCREENSHOTS[r.phase]));
@@ -76,6 +90,7 @@ export function validateCompletePracticeRenderer(r,f=completePracticeFixture(),{
  validateSongModActionHistory(r,{requireTrusted:true});
  const s=r.samples;
  if(r.phase==='complete-practice-seed'){
+  validateCompleteModReadiness(r);
   assert.equal(r.labelsDefaultHidden,true);assert.deepEqual(r.labelsAtLaunch,{stored:null,checked:false});const cold=r.audioUnlocks.find(row=>row.sequence===r.coldStartAction);assert.ok(cold&&cold.before===null&&cold.active&&cold.settled&&cold.after==='running','Cold Start must unlock under the original trusted gesture');for(const row of r.audioResumes.filter(row=>row.sequence===r.coldStartAction)){assert.equal(row.before,'suspended');assert.equal(row.active,true);assert.equal(row.settled,true);assert.equal(row.after,'running');}assert.equal(r.allMachineAllowed,true);assert.deepEqual(r.dialog.ids,human);for(const name of ['apply','cancel']){const b=r.dialog[name];assert.ok(b.width>0&&b.height>0&&b.x>=0&&b.y>=0&&b.x+b.width<=r.dialog.viewport.width&&b.y+b.height<=r.dialog.viewport.height,'Popup actions must fit visible viewport');}
   for(const name of ['multi-visible','cancel','multi-restored','reset','active-human','reapplied','labels-enabled']){assert.deepEqual(s[name].machine,['midi-t3-e1'],'Only playable-range machine gates may be displayed');assert.deepEqual(sorted(s[name].notationParts),sorted(COMPLETE_PARTS));assert.ok(s[name].paint.fills.some(row=>row.color==='#8a91ac'&&row.shadow===0),'Machine paint needs distinct color and no glow');assert.ok(s[name].paint.strokes.some(row=>JSON.stringify(row.dash)==='[5,4]'&&row.width===2),'Machine notes need noncolor dashed outlines');}
   assert.deepEqual(s['multi-hidden'].machine,[]);assert.deepEqual(sorted(s['multi-hidden'].notationParts),human);assert.ok(!s['multi-hidden'].paint.strokes.some(row=>row.dash.length));
