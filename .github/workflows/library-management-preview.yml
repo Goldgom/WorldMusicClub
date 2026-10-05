@@ -1,0 +1,174 @@
+name: Original library-management focused acceptance
+on:
+  push:
+    branches: ['preview/library-management']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: library-management-preview-${{ github.ref }}
+  cancel-in-progress: true
+# Isolated original-fixture proof only. No package publication or release promotion.
+jobs:
+  management-browser:
+    name: Actual pack browsing and catalog recovery (hosted)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: '1.99.0'
+      - run: python -m pip install PyYAML==6.0.3
+      - run: python scripts/check-authoring-workflow.py .github/workflows/library-management-preview.yml
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: npm run test:library-management
+      - run: npm run test:library-catalog-acceptance
+      - run: cargo test -p worldmusichub-desktop --test catalog --test pack_groups --locked
+      - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - name: Verify build source and actual original native protocol
+        timeout-minutes: 6
+        env:
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_CATALOG_DRIVER_BUILD_SHA: ${{ github.sha }}
+          WMH_CATALOG_REPORT: ${{ runner.temp }}/library-management-native/catalog.json
+          WMH_ARTIFACT_DIR: ${{ runner.temp }}/library-management-native/packs
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=normal)"
+          mkdir -p "$RUNNER_TEMP/library-management-native"
+          npm run test:library-catalog-native
+          npm run test:pack-management-native
+      - id: management_browser_ready
+        run: npx playwright install --with-deps chromium
+      - name: Real pack picker, duplicates, paging and selected exports
+        id: management_pack_browser
+        timeout-minutes: 6
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_ARTIFACT_DIR: ${{ runner.temp }}/library-management-browser/packs
+        run: npm run test:pack-management-hosted
+      - name: Three actual catalog processes with one persisted browser profile
+        id: management_catalog_browser
+        if: ${{ !cancelled() && steps.management_browser_ready.outcome == 'success' }}
+        timeout-minutes: 15
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_ARTIFACT_DIR: ${{ runner.temp }}/library-management-browser/catalog
+        run: npm run test:library-catalog-hosted
+      - name: Reverify exact source, native driver and retained bytes
+        if: ${{ !cancelled() && steps.management_catalog_browser.outcome == 'success' }}
+        env:
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: |
+          export WMH_SOURCE_TREE="$(git rev-parse 'HEAD^{tree}')"
+          node scripts/verify-library-catalog-acceptance.mjs --check "$RUNNER_TEMP/library-management-browser/catalog"
+      - name: Retain original browser proof and exact driver, excluding browser profiles
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: library-management-browser-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/library-management-native/**
+            ${{ runner.temp }}/library-management-browser/**
+            !${{ runner.temp }}/library-management-browser/**/webview-catalog-profile/**
+            target/debug/examples/native_import_driver
+          include-hidden-files: true
+          if-no-files-found: warn
+  management-windows:
+    name: Actual Windows catalog controls and restart recovery
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      RUSTFLAGS: '-C target-feature=+crt-static'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: '1.99.0'
+      - run: python -m pip install PyYAML==6.0.3
+      - run: python scripts/check-authoring-workflow.py .github/workflows/library-management-preview.yml
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: npm run test:library-catalog-acceptance
+      - name: Parse native scripts and verify owned profile and snapshot contracts
+        shell: pwsh
+        run: |
+          foreach ($file in @('scripts/windows-desktop-acceptance.ps1','scripts/windows-desktop-profile.ps1','scripts/windows-desktop-catalog-snapshot.ps1')) {
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)
+            if ($errors.Count) { $errors | Format-List; throw "PowerShell syntax errors in $file" }
+          }
+          ./tests/windows-desktop-contract.ps1
+      - run: cargo test -p worldmusichub-desktop --test catalog --test pack_groups --locked
+      - run: 'cargo test -p worldmusichub-desktop --lib acceptance:: --locked'
+      - run: cargo build -p worldmusichub-desktop --release --locked
+      - name: Three bounded actual windows on one original library and profile
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -cne $env:GITHUB_SHA) { throw 'Unexpected build source' }
+          if (git status --porcelain --untracked-files=normal) { throw 'Acceptance source is dirty' }
+          ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory "$env:RUNNER_TEMP/library-management-windows" -Scenario library-catalog
+      - name: Reverify source, executable and exact catalog proof
+        shell: pwsh
+        env:
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_LIBRARY_CATALOG_EXECUTABLE: ${{ github.workspace }}/target/release/worldmusichub-desktop.exe
+        run: |
+          $env:WMH_SOURCE_TREE=git rev-parse 'HEAD^{tree}'
+          node scripts/verify-library-catalog-acceptance.mjs --check "$env:RUNNER_TEMP/library-management-windows"
+          if ($LASTEXITCODE -ne 0) { throw 'Native catalog proof check failed' }
+      - name: Retain original native proof and exact EXE, excluding WebView profiles
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: library-management-windows-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/library-management-windows/**
+            !${{ runner.temp }}/library-management-windows/webview-catalog-profile/**
+            target/release/worldmusichub-desktop.exe
+          include-hidden-files: true
+          if-no-files-found: warn
+  management-focused-summary:
+    name: Focused original management proof only
+    needs: [management-browser, management-windows]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require actual hosted and Windows evidence
+        env:
+          BROWSER: ${{ needs.management-browser.result }}
+          WINDOWS: ${{ needs.management-windows.result }}
+        run: |
+          test "$BROWSER" = success
+          test "$WINDOWS" = success
+          echo 'Focused original management browser/native proof passed; full release gates and visual review remain separate.'

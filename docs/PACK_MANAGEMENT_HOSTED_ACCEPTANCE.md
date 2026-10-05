@@ -1,6 +1,6 @@
 # ORIGINAL pack-management acceptance preparation
 
-This is a separate acceptance entry point for the read-only native library management UI. It is intentionally **not registered in package.json, a workflow, the existing 303 gate, or a release promotion rule**. The integrator can register it at a later authorized checkpoint. Nothing here publishes a build or dispatches CI.
+This is the read-only pack browsing and explicit-export slice of library management. It is registered as `npm run test:pack-management-native` and `npm run test:pack-management-hosted`. The focused `.github/workflows/library-management-preview.yml` runs this hosted slice alongside the separate recoverable catalog gate, then exercises that catalog in actual Windows processes. The workflow does not publish a package or promote a release; it runs only when the integration owner publishes a clean, frozen source to `preview/library-management`, or explicitly dispatches the workflow after registration. This dedicated branch allows the first run without publishing unaccepted source to main.
 
 Local fixture/contract tests and syntax checks do not establish that native API or browser acceptance passed. A passing native stdio report establishes its actual API/filesystem cases only. A later hosted run must produce its own real browser screenshots and report; neither script supplies sample or mock screenshots. Windows native-window acceptance remains a separate required gate.
 
@@ -18,7 +18,7 @@ Local fixture/contract tests and syntax checks do not establish that native API 
 
 The result is six source groups and 45 immutable song editions. The shared edition has two logical source references; the two renamed retries only increase receipt references. Source-only and unresolved packs have no fabricated members. Missing-receipt recovery only renames the new test fixture's receipt files after checking an ownership marker; both source copies and all song bytes remain retained. No real library path is an input to either script.
 
-The management UI remains read-only groups plus explicit selected exports. Deletion, membership editing, rename, restore, permanent stores and Trash are outside this acceptance slice and remain open work.
+This pack-query slice remains read-only groups plus explicit selected exports. The integrated **移入回收站与恢复 / Remove and restore songs** panel has its own [catalog recovery acceptance](library-catalog-acceptance-evidence.md), including durable song Trash and selected restoration. Membership editing/moving, pack removal and renaming remain unexposed product work. Neither slice permanently deletes files or changes a real user library.
 
 ## Local preparation checks
 
@@ -34,13 +34,13 @@ These tests verify deterministic fixture bytes, source provenance, Unicode ZIP i
 
 ## Independent native stdio preflight
 
-First obtain an already-built immutable `native_import_driver` from the declared product source. Building it is the integrator's separately coordinated step; this script never invokes Cargo. For example, with a driver built from the product freeze `98de7cb29b553c1402bb438dfa0c0afc384a4cb7`:
+First obtain an already-built immutable `native_import_driver` from the declared product source. Building it is the integrator's separately coordinated step; this script never invokes Cargo. In a clean frozen checkout, after building its exact source:
 
 ```sh
-WMH_SOURCE_SHA=98de7cb29b553c1402bb438dfa0c0afc384a4cb7 \
+WMH_SOURCE_SHA="$(git rev-parse HEAD)" \
 WMH_NATIVE_IMPORT_DRIVER=/absolute/path/to/immutable/native_import_driver \
 WMH_ARTIFACT_DIR=/absolute/test-owned/output/pack-management-native \
-node scripts/check-pack-management-native.mjs
+npm run test:pack-management-native
 ```
 
 The preflight checks that tracked `Cargo.toml`, `Cargo.lock`, `crates/` and `web/` match the declared driver source. This permits an acceptance-only scripts/tests/docs commit on top of that product source. It records the product SHA/tree, current harness HEAD, whether the harness is dirty, driver SHA-256 and exact harness file hashes. The build job remains responsible for binding that driver binary to its declared source; a supplied path or SHA variable alone cannot prove a build's provenance. Prefer a clean committed harness for reviewable evidence.
@@ -57,7 +57,7 @@ WMH_HOSTED_BROWSER=1 \
 WMH_SOURCE_SHA="$GITHUB_SHA" \
 WMH_NATIVE_IMPORT_DRIVER=/absolute/path/to/exact-source/native_import_driver \
 WMH_ARTIFACT_DIR="$RUNNER_TEMP/pack-management-hosted" \
-node scripts/hosted-pack-management-check.mjs
+npm run test:pack-management-hosted
 ```
 
 The checked-out source must be clean and equal to `WMH_SOURCE_SHA`. Install the existing locked Node dependencies and Playwright Chromium, and prepare any repository-required local engraving assets through the normal workflow. The runner must have Python for the bounded in-memory ZIP inventory helper. Do not set authorization variables on a local machine to bypass a local browser restriction.
@@ -80,6 +80,6 @@ Real screenshots are captured by `page.screenshot`, then checked as decoded PNGs
 
 Both entry points create a unique `original-run-*` directory under the specified artifact directory. They retain the fixture manifest, actual API response bytes with SHA-256, selected exports, before/after library inventories, and `report.json`; `latest-run.json` points to the completed or failed run. Hosted reports also contain actions and real screenshot hashes. Failed assertions leave `ok: false` and the original error rather than fabricating a partial pass.
 
-Bounds are 45 songs, six packs, less than 1 MiB of authored inputs, 180 API requests, 100 declared UI actions, 512 inventoried files, 8 MiB of inventoried library content, 15-second native/request/UI waits and a four-minute execution deadline. ZIP inspection subprocesses have a five-second deadline. Driver shutdown has a three-second bound; hosted cleanup waits at most five seconds per context/browser/driver and reports timeout failures. When registering the future CI job, also give the entire process a six-minute job limit as a last-resort process cleanup bound. Outputs are test-owned and left for normal artifact collection/cleanup; neither script accepts an existing user library or exposes destructive management actions.
+Bounds are 45 songs, six packs, less than 1 MiB of authored inputs, 180 API requests, 100 declared UI actions, 512 inventoried files, 8 MiB of inventoried library content, 15-second native/request/UI waits and a four-minute execution deadline. ZIP inspection subprocesses have a five-second deadline. Driver shutdown has a three-second bound; hosted cleanup waits at most five seconds per context/browser/driver and reports timeout failures. The focused workflow caps the entire pack step at six minutes as a last-resort process cleanup bound. Outputs are test-owned and left for normal artifact collection/cleanup; neither script accepts an existing user library or exposes destructive management actions.
 
-The original fixture/oracle and assessment-baseline contract tests are registered in both `npm test` and `npm run test:library-management`. Those Node commands do not launch a browser. The hosted and pure-stdio entry points remain separate commands requiring the explicit environment described above.
+The original fixture/oracle and assessment-baseline contract tests are registered in both `npm test` and `npm run test:library-management`. Those Node commands do not launch a browser. The hosted and pure-stdio entry points remain separate commands requiring the explicit environment described above. The focused workflow wires these checks without weakening their hosted-only guards.
