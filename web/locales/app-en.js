@@ -1,5 +1,11 @@
 // Application-owned dynamic display strings. Source metadata is never translated.
 export default Object.freeze({
+  "app.seekPaused": "Paused · press Play to continue",
+  "app.seekHelp": "Drag or use arrow keys to seek. Playback stays paused.",
+  "app.seekLoopHelp": "Seek within the selected loop. Playback stays paused.",
+  "app.seekPracticeDisabled": "Seeking is available only in Listen; scored practice keeps each take continuous.",
+  "app.seekUnavailable": "Seeking needs an available source clock.",
+
   "app.evidenceLimit": "Release evidence reached its export limit. Later observations are omitted; onset recording and scoring continue unchanged.",
   "app.serverUnreadable": "The local server returned an unreadable response. Restart the Rust server and try again.",
   "app.pause": "Ⅱ Pause",

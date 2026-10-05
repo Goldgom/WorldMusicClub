@@ -1,5 +1,11 @@
 // Explicit parameters for application display messages.
 const schema = {
+  "app.seekPaused": {"params": {}},
+  "app.seekHelp": {"params": {}},
+  "app.seekLoopHelp": {"params": {}},
+  "app.seekPracticeDisabled": {"params": {}},
+  "app.seekUnavailable": {"params": {}},
+
   "app.midiNotationInferred": {
     "params": {}
   },

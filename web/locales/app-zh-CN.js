@@ -1,5 +1,11 @@
 // Application-owned dynamic display strings. Source metadata is never translated.
 export default Object.freeze({
+  "app.seekPaused": "已暂停 · 按播放继续",
+  "app.seekHelp": "拖动或使用方向键跳转；跳转后保持暂停。",
+  "app.seekLoopHelp": "可在已选循环范围内跳转；跳转后保持暂停。",
+  "app.seekPracticeDisabled": "仅聆听模式可跳转；评分练习须保持每次演奏连续。",
+  "app.seekUnavailable": "来源时钟可用后才能跳转。",
+
   "app.evidenceLimit": "松键记录已达到导出上限。后续观察将被省略；按键起始时间的记录和评分照常进行。",
   "app.serverUnreadable": "本地服务器返回了无法读取的响应。请重启 Rust 服务器后重试。",
   "app.pause": "Ⅱ 暂停",

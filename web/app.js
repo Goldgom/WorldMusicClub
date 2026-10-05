@@ -278,6 +278,41 @@ function resetPlayback() {
   bindText($('feedback-description'), () => state.mode === 'practice' ? t('app.practiceHelp') : t('app.listenHelp'));
   updateButtons(); drawFrame();
 }
+function playbackSeekBounds() {
+  const duration=state.compiled?.timeline.duration_ms;
+  if(!Number.isFinite(duration)||duration<=0)return null;
+  return {start:state.loop?.start_ms??0,end:state.loop?.end_ms??duration};
+}
+function canSeekPlayback() {
+  return state.mode==='listen'&&Boolean(playbackSeekBounds())&&shell?.screen()==='stage'&&!referenceInputActive();
+}
+function updateProgress(position,duration) {
+  const progress=$('progress'),bounds=playbackSeekBounds();
+  progress.min=bounds?.start??0;progress.max=bounds?.end??Math.max(1,duration);
+  progress.value=Math.min(Number(progress.max),Math.max(Number(progress.min),position));
+  progress.disabled=!canSeekPlayback();
+  const help=()=>t(!bounds?'app.seekUnavailable':state.mode==='practice'?'app.seekPracticeDisabled':state.loop?'app.seekLoopHelp':'app.seekHelp');
+  bindText($('progress-help'),help);bindAttribute(progress,'title',help);
+  bindAttribute(progress,'aria-valuetext',()=>`${formatTime(position)} / ${formatTime(duration)}`);
+  bindText($('time-label'),()=>state.inspection&&!state.compiled?(i18n.locale==='en'?'Source clock unavailable':'来源时钟不可用'):`${formatTime(position)} / ${formatTime(duration)}`);
+}
+function seekPlayback(value) {
+  // Read the requested position before pausePlayback redraws the range control.
+  const position=Number(value),bounds=playbackSeekBounds();
+  if(!canSeekPlayback()||!Number.isFinite(position)){drawFrame();return;}
+  pausePlayback('app.seekPaused','seek');
+  transport.seek(Math.max(bounds.start,Math.min(bounds.end,position)));
+  // Seeking establishes a source position. An explicit Play resumes it exactly,
+  // without subtracting the four-beat initial count-in or replacing take history.
+  transport.hasStarted=true;state.lastHighlight='';metronome?.reset();
+  // There is no remaining source at the selected endpoint. Use the existing
+  // explicit Replay path from source/loop start, never prepare beyond the end.
+  const completed=transport.position===bounds.end;
+  if(completed)transport.finish(bounds.end);
+  activeMedia?.sync({positionMs:transport.position,running:false});
+  bindText($('transport-status'),()=>t(completed?'app.complete':'app.seekPaused'));
+  updateButtons();drawFrame();
+}
 async function compileScore(score, preserveTempo = false, expectedIntent = null, importDiagnostics = [], requestedPracticePart = undefined, requestedMode = undefined, requestedIdentity = undefined, cleanSong = null, inspection = false) {
   if(preserveTempo&&state.cleanSong){notice(()=>cleanErrorText(i18n.locale,{code:'clean_derived_runtime_required'}),true);return false;}
   if (preserveTempo) importDiagnostics = state.importDiagnostics;
@@ -1056,8 +1091,7 @@ function drawFrame(displayOnly = false) {
     if(state.recorder.ready(now).length)drainAssessments();
   }
   if(displayOnly!==true&&state.cleanSong)activeMedia?.sync({positionMs:position,running:transport.running});
-  $('progress').max = Math.max(1, duration); $('progress').value = Math.min(duration, Math.max(0, position));
-  bindText($('time-label'), () => state.inspection&&!state.compiled?(i18n.locale==='en'?'Source clock unavailable':'来源时钟不可用'):`${formatTime(position)} / ${formatTime(duration)}`);$('progress').disabled=!state.compiled;
+  updateProgress(position,duration);
   performanceView?.update();
   if($('results-dialog').open)updateResultsSummary(undefined,now);
   if(displayOnly!==true)pianoFingering?.render({position,segmentStart,segmentEnd:state.loop?.end_ms||duration,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed});
@@ -1086,8 +1120,6 @@ function drawFrame(displayOnly = false) {
     }else if(isBasicKeysSong(state.cleanSong)&&writtenCursorStatus){writtenCursorStatus.dataset.sourceNoteIds='[]';writtenCursorStatus.dataset.sourceMeasureIndex='';writtenCursorStatus.dataset.status=position>=duration?'ended':'pending';bindText(writtenCursorStatus,()=>position>=duration?(i18n.locale==='en'?'End of the interpreted timeline':'解释时间线已结束'):(i18n.locale==='en'?'Following is waiting for a matching native page. Playback targets keep their original timeline.':'跟随正在等待匹配的本机页面。播放目标仍使用原时间线。'));}
   }
   highlightKeys(active);
-  $('progress').max = Math.max(1, duration); $('progress').value = Math.min(duration, Math.max(0, position));
-  bindText($('time-label'), () => state.inspection&&!state.compiled?(i18n.locale==='en'?'Source clock unavailable':'来源时钟不可用'):`${formatTime(position)} / ${formatTime(duration)}`);$('progress').disabled=!state.compiled;
   if (state.instrument === 'guitar') {
     if(displayOnly!==true)guitarFingering?.prepare();
     const guidance=renderGuitarGuidance({profile:currentProfile(),plan:guitarFingering?.state().plan,...guitarFingeringView?.options(),timeline:state.mode==='practice'?state.targetTimeline:state.cleanSong?timeline:state.practiceTimeline||timeline,groups:state.mode==='practice'?state.targetGroups:new Map(),parts:state.score?.parts||[],position,segmentStart,segmentEnd:state.loop?.end_ms||duration,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,mode:state.mode,loopIteration:state.loop?state.loopIteration:null});
@@ -1161,6 +1193,15 @@ $('notation-prev').addEventListener('click', () => { notationFollowing?.suspend(
 $('notation-next').addEventListener('click', () => { notationFollowing?.suspend();if(hasBasicKeyRendition(state.cleanSong)){engravedView.turnBasicPage(1);return;}state.notationPage++; renderNotationPage(); });
 $('play-button').addEventListener('click', togglePlayback);
 $('reset-button').addEventListener('click', resetPlayback);
+$('progress').addEventListener('pointerdown',event=>{if(event.button===0&&canSeekPlayback())pausePlayback('app.seekPaused','seek');});
+$('progress').addEventListener('input',event=>seekPlayback(event.target.value));
+$('progress').addEventListener('keydown',event=>{
+  if(!canSeekPlayback()||event.altKey||event.ctrlKey||event.metaKey)return;
+  const bounds=playbackSeekBounds(),position=transport.time(performance.now());
+  const target=({ArrowLeft:position-1000,ArrowDown:position-1000,ArrowRight:position+1000,ArrowUp:position+1000,PageDown:position-10000,PageUp:position+10000,Home:bounds.start,End:bounds.end})[event.key];
+  if(target===undefined)return;
+  event.preventDefault();seekPlayback(target);
+});
 $('assess-button').addEventListener('click', () => assess());
 $('session-mode').addEventListener('change', () => { state.mode = $('session-mode').value; resetPlayback();engravedView.modeChanged();const scope=engravedView.scopeInfo();state.notationPart=scope.scope==='all'?null:scope.partId;$('notation-part').value=state.notationPart||'';renderNotationPage(); updateRangeWarning(); });
 $('instrument').addEventListener('change', () => { resetPlayback(); state.instrument = $('instrument').value; state.profileDirty = false; syncProfileFields(); profileControls(); if (state.instrument === 'guitar') $('instrument-settings').open = true; checkInstrument(); $('piano-stage').hidden = state.instrument !== 'piano'; $('guitar-stage').hidden = state.instrument !== 'guitar'; $('key-count').disabled = state.instrument !== 'piano'; updateRangeWarning(); keyboardInputView?.refreshRange(); drawFrame(); });
