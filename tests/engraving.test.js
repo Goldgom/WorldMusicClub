@@ -4,7 +4,7 @@ import {DOMParser} from 'linkedom';
 import {createRequire} from 'node:module';
 import {createI18n} from '../web/i18n.js';
 import {validateEngravingInput, renderEngravedStaff, disposeEngravedStaff, ENGRAVING_LIMITS, EXACT_RHYTHM_LIMITS} from '../web/engraving.js';
-import {createEngravingRenderScheduler} from '../web/engraving-render-scheduler.js';
+import {createEngravingRenderScheduler,notationAudioAdmission} from '../web/engraving-render-scheduler.js';
 
 // Deliberately small DOM/renderer doubles. These exercise the adapter, not OSMD's glyph/layout code.
 class Element {
@@ -295,6 +295,48 @@ test('responsive render coalesces width changes and cleanup cancels queued work'
   assert.equal(env.frames.size, 0);
   assert.equal(outcome.resize(), false);
   disposeEngravedStaff(env.container); // idempotent
+});
+
+test('audio admission defers first bundle injection and cancels superseded notation before any parse', async () => {
+  const env = environment({withoutBundle:true}), admission = notationAudioAdmission(env.view), audio = await admission.acquireAudio();
+  const controller = new AbortController(), pending = renderEngravedStaff(env.container,xml,{},controller.signal);
+  await tick(); assert.equal(env.scripts.length,0); assert.equal(env.instances.length,0);
+  controller.abort(); assert.equal((await pending).status,'cancelled'); audio.release(); await tick();
+  assert.equal(env.scripts.length,0); assert.equal(env.instances.length,0);
+});
+
+test('a canceled in-flight bundle retains its native evaluation fence until actual load finishes', async () => {
+  const env = environment({withoutBundle:true}), admission = notationAudioAdmission(env.view), controller = new AbortController();
+  env.document.head.onAppend = script => env.scripts.push(script);
+  const pending = renderEngravedStaff(env.container,xml,{},controller.signal); await tick(); assert.equal(env.scripts.length,1);
+  let admitted = false; const audio = admission.acquireAudio().then(lease => { admitted=true; return lease; });
+  controller.abort(); assert.equal((await pending).status,'cancelled'); await tick(); assert.equal(admitted,false);
+  env.view.opensheetmusicdisplay={OpenSheetMusicDisplay:env.Renderer}; env.scripts[0].onload();
+  const lease = await audio; assert.equal(admitted,true); assert.equal(env.instances.length,0); lease.release();
+});
+
+test('the original bundle deadline rejects pending audio without admitting a later native evaluation', async () => {
+  const env=environment({withoutBundle:true}),admission=notationAudioAdmission(env.view);let timeout;
+  env.view.setTimeout=(callback,milliseconds)=>{assert.equal(milliseconds,8000);timeout=callback;return 1;};env.view.clearTimeout=()=>{};
+  env.document.head.onAppend=script=>env.scripts.push(script);
+  const rendering=renderEngravedStaff(env.container,xml);await tick();
+  const audio=admission.acquireAudio(),rejected=assert.rejects(audio,{code:'clean_audio_unavailable'});
+  timeout();assert.equal((await rendering).status,'unavailable');await rejected;
+  await assert.rejects(admission.acquireAudio(),{code:'clean_audio_unavailable'});
+  env.view.opensheetmusicdisplay={OpenSheetMusicDisplay:env.Renderer};env.scripts[0].onload();await tick();
+  const explicit=await admission.acquireAudio();assert.equal(env.instances.length,0);explicit.release();
+});
+
+test('audio admission waits for owned renderer load while new renders and resize cannot overtake it', async () => {
+  const held = deferred(), env = environment({load:(_,count)=>count===1?held.promise:Promise.resolve()}), admission=notationAudioAdmission(env.view);
+  const first = renderEngravedStaff(env.container,xml); await tick();
+  let admitted=false;const audio=admission.acquireAudio().then(lease=>{admitted=true;return lease;});
+  const next=env.document.createElement('section'),second=renderEngravedStaff(next,xml);await tick();assert.equal(env.instances.length,1);assert.equal(admitted,false);
+  held.resolve();const painted=await first,lease=await audio;assert.equal(env.instances.length,1);
+  env.container.clientWidth=700;env.observers[0].callback();const frames=[...env.frames.values()];env.frames.clear();frames.forEach(frame=>frame());
+  assert.equal(env.instances[0].renders,1);assert.equal(painted.resize(),true);env.container.clientWidth=600;
+  lease.release();const other=await second;await tick();assert.equal(env.instances[0].renders,2);assert.equal(env.container.children[0].style.width,'600px');
+  const nextAudio=await admission.acquireAudio();env.container.clientWidth=500;painted.resize();painted.dispose();nextAudio.release();await tick();assert.equal(env.instances[0].renders,2);other.dispose();
 });
 
 test('layout errors, empty output and mismatched bundle versions return truthful status', async () => {

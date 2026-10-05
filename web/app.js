@@ -64,6 +64,7 @@ import {setupImageReview} from './image-review.js';
 import {setupThemes} from './themes.js';
 import {PIANO_RANGES, beat, midiName, pitchMidi, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, renderNotation, notationPageCount, notationLayout, keyAt, keyTonic} from './music.js';
 import {Transport, Synth, TimelineIndex} from './transport.js';
+import {notationAudioAdmission} from './engraving-render-scheduler.js';
 import {publishPlaybackClock,nativeRangeSeekPosition} from './playback-clock-view.js';
 import {formatTime} from './music.js';
 
@@ -180,6 +181,7 @@ state.recorder = createRecorder();routedScoreRecorder=state.recorder;
 inputRoutes.push({kind:'score',recorder:state.recorder,start:0,end:null});
 function refreshFreeTone(){bindText($('free-live-tone'),()=>`${i18n.t('ui.instrument')}: ${i18n.t(`free.timbre.${state.instrument}`)}`);}
 function changeScreen(screen){
+  state.audioAdmissionController?.abort();
   state.playTicket++;state.playPending=false;
   songAuthoringView?.screenChanged(screen);
   scoreSaveNavigation++;
@@ -258,6 +260,7 @@ function silenceHeld(reason = 'application_cleanup', eventWall = performance.now
   document.querySelectorAll('.pressed').forEach(el => el.classList.remove('pressed'));
 }
 function pausePlayback(reason = 'app.paused', evidenceReason = 'pause', {redraw = true,preserveCanonical=false} = {}) {
+  state.audioAdmissionController?.abort();
   lobbyPreview?.stop(['blur','hidden','pagehide'].includes(evidenceReason)?'interrupted':'stopped');
   if(referenceListening?.isOpen()){referenceListening.pause();return;}
   if(performanceListening?.isActive()){if(['blur','hidden','pagehide'].includes(evidenceReason))performanceListening.stop();else performanceListening.pause();return;}
@@ -995,6 +998,7 @@ async function togglePlayback() {
   const generation=state.generation,ticket=++state.playTicket,song=state.cleanSong,score=state.score,mode=state.mode,targetPart=state.practicePart,practiceSelection=state.practiceSelection,instrument=state.instrument,muted=synth.muted;
   const current=()=>generation===state.generation&&ticket===state.playTicket&&song===state.cleanSong&&score===state.score&&mode===state.mode&&targetPart===state.practicePart&&practiceSelection===state.practiceSelection&&instrument===state.instrument&&muted===synth.muted&&!transport.running&&Boolean(state.compiled)&&shell.screen()==='stage'&&!document.hidden&&!document.querySelector('dialog[open]')&&(mode!=='practice'||state.compatibility.status==='ready');
   state.playPending=true;
+  const admissionController=new AbortController();state.audioAdmissionController=admissionController;let admissionLease=null;
   try {
     if(!muted)await synth.unlock();
     if(!current())return;
@@ -1012,6 +1016,10 @@ async function togglePlayback() {
       const resumeCanonical=!song&&canonicalSession.paused;
       if(!resumeCanonical){const prepared=await (song?cleanPlayer.prepare(options):canonicalSession.prepare({...options,soundEnabled:true,audiblePartIds:mode==='listen'&&targetPart&&!state.songMod?[targetPart]:undefined,range:state.loop?{startMs:state.loop.start_ms,endMs:state.loop.end_ms}:undefined,countInMs:countIn,loop:state.loop?{enabled:true}:undefined}));if(!prepared||!current())return;}
       // All plan building, transfer and renderer preparation precede this lead.
+      // Drain only already-owned notation preparation; new renders have lower
+      // priority until the native ACK and shared recorder/transport bind finish.
+      admissionLease=await notationAudioAdmission(window).acquireAudio(admissionController.signal);
+      if(!admissionLease||!current())return;
       const anchor=await (resumeCanonical?canonicalSession.resume({anchorTime:synth.context.currentTime+.05}):(song?cleanPlayer:canonicalSession).startPrepared({anchorTime:synth.context.currentTime+.05}));
       if(!anchor||!current())return;
       if(synth.context.state!=='running'||synth.context.currentTime>=anchor.anchorTime)throw Object.assign(new Error('The shared audio start anchor elapsed before transport admission.'),{code:'clean_late_start'});
@@ -1034,6 +1042,7 @@ async function togglePlayback() {
     if(ticket!==state.playTicket)return;
     pausePlayback();notice(()=>song?liveAudioErrorText(error):canonicalAudioErrorText(i18n.locale,error),true);
   }finally{
+    admissionLease?.release();if(state.audioAdmissionController===admissionController)state.audioAdmissionController=null;
     if(ticket===state.playTicket&&state.playPending){state.playPending=false;cleanPlayer.stop();canonicalSession.stop();updateButtons();}
   }
 }

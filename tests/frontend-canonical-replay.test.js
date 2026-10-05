@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {canonicalPracticeApp} from './canonical-practice-fixtures.js';
 import {CanonicalPlayer} from '../web/canonical-player.js';
 import {readPlaybackClock} from '../web/playback-clock-view.js';
+import {notationAudioAdmission} from '../web/engraving-render-scheduler.js';
 
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};}
 async function completedPractice(){
@@ -23,6 +24,22 @@ function holdPrepared(){
   CanonicalPlayer.prototype.prepare=async function(...args){const result=await original.apply(this,args);entered=true;await gate.promise;return result;};
   return {...gate,entered:()=>entered,restore(){CanonicalPlayer.prototype.prepare=original;}};
 }
+
+for(const action of ['admit','pause','navigate'])test(`canonical Replay awaiting notation ${action} preserves original take and chooses its anchor only after ownership`,async()=>{
+  const f=await completedPractice(),{app,take}=f,lease=notationAudioAdmission(app.window).tryVisual();
+  try{
+    app.$('play-button').click();await app.until(()=>f.receiver()?.core.state==='ready');
+    f.time(f.zero+4800);app.frame();assert.equal(readPlaybackClock(app.document).running,false);assert.equal(f.receiver().core.anchorFrame,null);
+    assert.deepEqual(await app.exported('export-takes'),take);
+    if(action==='pause')app.$('play-button').click();
+    if(action==='navigate')app.$('back-to-library').click();
+    lease.release();await app.tick();
+    if(action==='admit'){
+      await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');
+      const resumed=await app.exported('export-takes');assert.equal(resumed.passes.length,2);assert.deepEqual(resumed.passes[0],take.passes[0]);assert.equal(Math.round(resumed.passes[1].clock_segments[0].wallStart*48),Math.round(app.sourceStartWall()*48));
+    }else{assert.equal(readPlaybackClock(app.document).running,false);assert.equal(f.receiver(),undefined);assert.deepEqual(await app.exported('export-takes'),take);const next=await notationAudioAdmission(app.window).acquireAudio();next.release();}
+  }finally{lease.release();await app.close();}
+});
 
 for(const boundary of ['unlock','prepared'])test(`canonical Replay crosses a real frame during delayed ${boundary} without old-pass completion`,async()=>{
   const f=await completedPractice(),{app,take,first}=f,gate=boundary==='prepared'?holdPrepared():deferred();

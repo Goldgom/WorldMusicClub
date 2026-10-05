@@ -2,7 +2,7 @@
 import {validateEngravingNoteMap,createEngravingNoteBindings,validateEngravingModelTies,restoreSourceBoundPageTies,isAdmittedNativeEngravingSource} from './engraving-note-map.js';
 import {createEngravingProjection,createSourceBoundEngravingFragments, restoreSourceBoundProjectionFractions, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from './engraving-projection.js';
 import {prepareEngravingFragmentLabels,prepareEngravingFragmentBarlines} from './engraving-measure-fragments.js';
-import {createEngravingRenderScheduler} from './engraving-render-scheduler.js';
+import {createEngravingRenderScheduler,notationAudioAdmission} from './engraving-render-scheduler.js';
 import {getAppI18n} from './app-locale.js';
 export const ENGRAVING_VERSION = '2.1.3';
 export const ENGRAVING_BUNDLE_SHA256 = '099b2125aef055ca4faae75957037404973f9451544b52d9b3a0b1f788b33581';
@@ -137,16 +137,22 @@ export function validateEngravingInput(xml, options = {}, Parser = globalThis.DO
   return {ok: true, status: 'validated', document, identity, options: {dark: options.dark === true, responsive: options.responsive !== false, compactHeader:options.compactHeader===true, fromMeasure, toMeasure, partIds: selectedIds, zoom, width: options.width}, metadata: {noteCount, measureCount, partIds, fromMeasure, toMeasure}};
 }
 
-function loadRenderer(document) {
+function loadRenderer(document, visualLease) {
   const view = document.defaultView ?? globalThis;
+  const setTimer = view.setTimeout?.bind(view) ?? setTimeout, clearTimer = view.clearTimeout?.bind(view) ?? clearTimeout;
   if (typeof view.opensheetmusicdisplay?.OpenSheetMusicDisplay === 'function') return Promise.resolve(view.opensheetmusicdisplay.OpenSheetMusicDisplay);
   if (loaders.has(document)) return loaders.get(document);
   const promise = new Promise((resolve, reject) => {
     const script = document.createElement('script');
+    let settled = false, nativeFinished;
+    const pendingNative = new Promise(done => { nativeFinished = done; });
+    const retained = visualLease.retainUntil(pendingNative);
     const finish = (error) => {
-      clearTimeout(timer);
+      clearTimer(timer);
       script.onload = script.onerror = null;
       script.remove();
+      nativeFinished();
+      if (settled) return; settled = true;
       const Renderer = view.opensheetmusicdisplay?.OpenSheetMusicDisplay;
       if (error || typeof Renderer !== 'function') reject(Object.assign(new Error('The optional offline engraving bundle is unavailable.'),{code:'engraving_bundle'}));
       else resolve(Renderer);
@@ -157,7 +163,15 @@ function loadRenderer(document) {
     script.integrity = 'sha256-CZshJa7wVcpPqudZVwN0BJc/lFFUS1LZs6Cx94izNYE=';
     script.onload = () => finish();
     script.onerror = () => finish(true);
-    const timer = setTimeout(() => finish(true), 8000);
+    const timer = setTimer(() => {
+      if (settled) return; settled = true;
+      // Removing an already requested script cannot prove it will never
+      // evaluate. Keep its native load/error fence, and fail admission at the
+      // existing load deadline instead of awaiting it or shifting an anchor.
+      retained.fail(Object.assign(new Error('Notation bundle loading did not finish before audio admission.'), {code: 'clean_audio_unavailable'}));
+      script.remove();
+      reject(Object.assign(new Error('The optional offline engraving bundle is unavailable.'), {code: 'engraving_bundle'}));
+    }, 8000);
     try { document.head.appendChild(script); } catch { finish(true); }
   });
   loaders.set(document, promise);
@@ -181,6 +195,8 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
   disposeEngravedStaff(container);
   const document = container.ownerDocument;
   const view = document.defaultView ?? globalThis;
+  const admission = notationAudioAdmission(view), disposal = new AbortController();
+  let visualLease = null, resizePending = null;
   if (signal?.aborted) return result('cancelled', 'cancelled', i18n);
   const scheduler = options?.cooperative === true ? createEngravingRenderScheduler(view) : null;
   let checked, identity, projection, boundIdentity;
@@ -192,6 +208,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
   const state = {dispose() {
     if (cancelled) return;
     cancelled = true;
+    disposal.abort();
     unsubscribeLocale?.();
     bindings?.dispose();bindings=null;expected=null;
     fragmentLayout?.dispose?.();fragmentLayout=null;
@@ -216,7 +233,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     reportMapping(bindings.mappingStatus());
   };
   const getWidth = () => Math.max(320, Math.min(4096, Math.round(checked.options.width ?? container.clientWidth ?? 800) || 800));
-  const resize = () => {
+  const resizeOwned = () => {
     if (!isCurrent() || !ready) return false;
     const nextWidth = getWidth();
     if (nextWidth === width) return true;
@@ -228,7 +245,24 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
       return false;
     }
   };
+  const resize = () => {
+    if (!isCurrent() || !ready) return false;
+    const lease = admission.tryVisual();
+    if (lease) { try { return resizeOwned(); } finally { lease.release(); } }
+    // One coalesced successor reads the latest width and checks ownership
+    // again. Disposing a score cancels it before it can paint another source.
+    if (!resizePending) resizePending = admission.acquireVisual(disposal.signal).then(lease => {
+      if (!lease) return;
+      try { resizeOwned(); } finally { lease.release(); }
+    }).catch(error => {
+      state.dispose();
+      if (typeof options.onError === 'function') { try { options.onError(result('error', 'resize', i18n, {cause:error})); } catch { /* Preserve cleanup. */ } }
+    }).finally(() => { resizePending = null; });
+    return true;
+  };
   try {
+    visualLease = admission.tryVisual() ?? await admission.acquireVisual(disposal.signal);
+    if (!visualLease || !isCurrent()) return result('cancelled', 'cancelled', i18n);
     // Register ownership and cancellation before yielding, including before
     // parsing. A newer score/scope must be able to cancel every queued phase.
     if (scheduler && (!await scheduler.yield() || !isCurrent())) return result('cancelled', 'cancelled', i18n);
@@ -243,7 +277,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     if (projection && !projection.ok) { state.dispose(); return result('unsupported', projection.key, i18n); }
     boundIdentity = projection ? {...identity, projection} : identity;
     if (scheduler && (!await scheduler.yield() || !isCurrent())) return result('cancelled', 'cancelled', i18n);
-    const Renderer = await Promise.race([loadRenderer(document), cancellation]);
+    const Renderer = await Promise.race([loadRenderer(document, visualLease), cancellation]);
     if (!isCurrent() || !Renderer) return result('cancelled', 'cancelled', i18n);
     mount = document.createElement('div');
     mount.className = 'engraved-staff';
@@ -263,6 +297,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     renderer.setLogLevel?.('error');
     // Passing a parsed Document avoids OSMD.load(string)'s automatic URL/MXL detection entirely.
     const loaded = renderer.load(projection?.document || checked.document);
+    visualLease.retainUntil(loaded);
     await Promise.race([loaded, cancellation]);
     if (!isCurrent()) return result('cancelled', 'cancelled', i18n);
     if (scheduler && (!await scheduler.yield() || !isCurrent())) return result('cancelled', 'cancelled', i18n);
@@ -334,5 +369,5 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     const hadRenderer = Boolean(renderer);
     state.dispose();
     return wasCancelled ? result('cancelled', 'cancelled', i18n) : result(hadRenderer ? 'error' : 'unavailable', hadRenderer ? 'renderFailed' : 'bundle', i18n, error?.code==='engraving_bundle'?{}:{cause:error});
-  }
+  } finally { visualLease?.release(); }
 }

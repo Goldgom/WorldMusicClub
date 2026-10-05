@@ -8,6 +8,7 @@ import {createNotationRenderGroup} from './notation-render-group.js';
 import {NotationPagePrefetch} from './notation-page-prefetch.js';
 import {prepareNotationBatch,notationPreparationWithinBudget} from './notation-prepared-batch.js';
 import {readPlaybackClock} from './playback-clock-view.js';
+import {notationAudioAdmission} from './engraving-render-scheduler.js';
 import {getAppI18n} from './app-locale.js';
 import notationMessages from './locales/notation-runtime-schema.js';
 const presentationError=(key,messageParams={})=>Object.assign(new Error(getAppI18n().t(`notationRuntime.${key}`,messageParams)),{code:`engraving_${key}`,messageKey:`notationRuntime.${key}`,messageParams});
@@ -24,6 +25,7 @@ export function mappedPartIds(exported, canonicalId) {
 /** Optional presentation surface. All score conversion and timing stay in Rust. */
 export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticePart,getPracticeSelection=()=>null,getPracticeDisplay=()=>null,getMode=()=>null, onVisibility, onFallback, notice, onManualNavigation=()=>{},onBasicPage=()=>{},isVisible=()=>true,loadAdapter=()=>import('./engraving.js'),document=globalThis.document,i18n=getAppI18n(document)}) {
   const $ = id => document.getElementById(id);
+  const loadAdmittedAdapter = signal => notationAudioAdmission(document.defaultView ?? globalThis).prepareVisual(loadAdapter, signal);
   const t=(key,params)=>i18n.t(`notationRuntime.${key}`,params);
   const errorText=value=>{
     const own=value?.messageKey&&Object.hasOwn(notationMessages,value.messageKey);
@@ -221,7 +223,7 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
     const exported=queued.value;
     void nextRender.prime(key,{exported,source:target,song,context:context.key,generation,jsonKey:queued.key},async signal=>{
       const current=()=>!signal.aborted&&active&&isVisible()&&target===score&&target===getScore()&&song===basicSong()&&context.key===preparationContext()?.key;
-      adapter ||= await loadAdapter();if(!current())return null;
+      adapter ||= await loadAdmittedAdapter(signal);if(!current())return null;
       let prepared;
       const owned=()=>prepared?.active&&prepared.ownerGeneration===generation&&rendered===prepared.renderer&&active&&target===getScore();
       prepared=await prepareNotationBatch({document,width:context.width,pages:exported.basicPages.filter(usablePage),signal,isCurrent:current,needsEngraving,quietPart,
@@ -269,7 +271,7 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
         }
         prepared=null;
       }
-      adapter ||= await loadAdapter();
+      adapter ||= await loadAdmittedAdapter(signal);
       if (signal.aborted || current !== generation || !active) return;
       rendered?.dispose();rendered=null;adapter?.disposeEngravedStaff(container);
       if(sourcePages.length>1){
