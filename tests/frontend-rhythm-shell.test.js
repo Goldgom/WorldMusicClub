@@ -236,6 +236,14 @@ test('compact rhythm title and guide reserve separate real hit boxes without hid
   const compactRules=[...stageDocument.querySelector('style').sheet.cssRules].filter(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:651px)').flatMap(rule=>[...rule.cssRules]);
   const intrinsic=compactRules.findLast(rule=>rule.selectorText==='.game-shell .piano-workspace .piano-workspace-heading .stage-heading:has(>.beginner-controls-compact)');
   assert.equal(intrinsic.style['min-width'],'min-content','The heading cannot shrink below its 64px title plus the real guide label and help widths');
+  const portraitRules=[...stageDocument.querySelector('style').sheet.cssRules].filter(rule=>rule.media?.mediaText==='(max-width:650px)').flatMap(rule=>[...rule.cssRules]);
+  const portraitIntrinsic=portraitRules.findLast(rule=>rule.selectorText===intrinsic.selectorText);
+  assert.equal(portraitIntrinsic?.style['min-width'],'min-content','The same title plus full guide minimum must protect 390px English and Chinese headers');
+  const spacing=portraitRules.findLast(rule=>rule.selectorText==='.game-shell .piano-workspace .piano-workspace-heading');
+  assert.ok(parseFloat(spacing.style.gap)<=6,'Compact row gaps leave the intrinsic title/guide track room beside all three normal-mode actions');
+  const actions=portraitRules.findLast(rule=>rule.selectorText==='.game-shell .piano-workspace .piano-workspace-heading>.button');
+  assert.ok(parseFloat(actions.style['padding-left'])<=4&&parseFloat(actions.style['padding-right'])<=4);
+  for(const property of ['font-size','height','min-height','max-height','display','visibility','overflow','pointer-events'])assert.equal(actions.style.getPropertyValue(property),'',`Portrait spacing preserves button text, hit-target height and operation: ${property}`);
   for (const rule of [heading,title,guide,metadata]) {
     assert.notEqual(rule.style['pointer-events'], 'none');
     assert.notEqual(rule.style.display, 'none');

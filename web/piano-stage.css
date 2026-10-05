@@ -150,6 +150,14 @@
    A viewport-fixed top can cover the opener when a notice moves the heading. */
 .game-shell .piano-workspace .stage-heading:has(>.beginner-controls-compact){position:static}
 .game-shell .piano-workspace .beginner-controls-compact .beginner-help-body{position:absolute;left:0;top:calc(100% + 4px);max-height:50dvh}
+@media(max-width:650px){
+ /* The inner grid needs its 64px title plus the complete guide. A 100px flex
+    minimum lets the help button overflow into Close score in English. Spend
+    horizontal chrome spacing instead, preserving text and control heights. */
+ .game-shell .piano-workspace .piano-workspace-heading{gap:6px}
+ .game-shell .piano-workspace .piano-workspace-heading .stage-heading:has(>.beginner-controls-compact){min-width:min-content}
+ .game-shell .piano-workspace .piano-workspace-heading>.button{padding-left:4px;padding-right:4px}
+}
 @media(max-width:650px){.game-shell :is(#workspace,#free-practice-screen).piano-workspace .keyboard-footer.keyboard-input-footer{grid-template-columns:minmax(0,1fr) auto}}
 
 /* Keep the lane's viewing time useful on laptop and portrait screens. The
