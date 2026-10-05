@@ -2,6 +2,7 @@ import {isBasicKeysSong,hasBasicKeyRendition} from './clean-song-package.js';
 import {basicKeyNotationRequest,basicKeyNotationPage,basicKeyEngravingIdentity} from './basic-key-notation.js';
 import {sourceMeasurePage,notationRevealViewport,notationScrollViewport} from './notation-follow.js';
 import {planEngravingReveal} from './engraving-reveal.js';
+import {notationScopeRestrictionText} from './notation-scope-controls.js';
 import {resolveNotationScope,planNotationPartBatch,loadNotationPartBatch} from './notation-scope.js';
 import {createNotationRenderGroup} from './notation-render-group.js';
 import {NotationPagePrefetch} from './notation-page-prefetch.js';
@@ -37,11 +38,12 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
   const practiceContext=()=>JSON.stringify([getMode(),getPracticeSelection(),getPracticeDisplay()]);
   const nextPage=new NotationPagePrefetch(),nextRender=new NotationPagePrefetch({dispose:value=>value.dispose()});let lastFollowPosition=null,declinedPreparation=null;
   const basicSong=()=>isBasicKeysSong(getCleanSong())?getCleanSong():null;
-  function resolvedScope(){const display=getPracticeDisplay(),selection=score===getScore()?getPracticeSelection():null,humanOnly=getMode()==='practice'&&selection&&(display?.layout==='solo'||display?.showOthers===false);return resolveNotationScope({parts:score?.parts||[],scope:humanOnly?'current':basicSong()&&!hasBasicKeyRendition(basicSong())&&!scopeChosen?'part':scope,practiceSelection:selection,practicePartId:getPracticePart(),selectedPartId:selectedPart});}
+  function practiceDisplayRestriction(){const display=getPracticeDisplay();return getMode()==='practice'&&score===getScore()&&getPracticeSelection()?(display?.layout==='solo'?'solo':display?.showOthers===false?'hidden_others':null):null;}
+  function resolvedScope(){const selection=score===getScore()?getPracticeSelection():null,humanOnly=Boolean(practiceDisplayRestriction());return resolveNotationScope({parts:score?.parts||[],scope:humanOnly?'current':basicSong()&&!hasBasicKeyRendition(basicSong())&&!scopeChosen?'part':scope,practiceSelection:selection,practicePartId:getPracticePart(),selectedPartId:selectedPart});}
   function partBatch(){return planNotationPartBatch(resolvedScope().partIds,{firstPart,maxParts:4});}
   function publishScope(status=scopeStatus,ids=paintedPartIds){
     scopeStatus=status;paintedPartIds=ids;const stage=$('workspace'),Window=document.defaultView||globalThis.window;if(!stage?.dispatchEvent||!Window?.CustomEvent)return;
-    const resolved=resolvedScope();stage.dataset.notationScope=resolved.scope;stage.dataset.notationRenderStatus=status;stage.dataset.renderedNotationParts=JSON.stringify(ids);stage.dataset.notationLoadMs=String(Math.round(sourceBatch?.load_ms||0));stage.dataset.notationPrefetch=nextPage.peek()?(nextPage.peek().value?'ready':'pending'):'none';const count=sourceBatch?.measureCount||pageSize,total=totalMeasures();stage.dispatchEvent(new Window.CustomEvent('notationscopecontext',{detail:{parts:score?.parts||[],scope:resolved.scope,practiceSelection:getPracticeSelection(),practicePartId:getPracticePart(),selectedPartId:selectedPart,renderedPartIds:ids,page:Math.floor((from-1)/count)+1,totalPages:Math.max(1,Math.ceil(total/count)),firstPart,maxParts:4,status}}));
+    const resolved=resolvedScope(),restriction=practiceDisplayRestriction(),reason=notationScopeRestrictionText(i18n,restriction);for(const id of ['engraving-part','notation-part']){const control=$(id);if(control){control.disabled=Boolean(restriction);control.title=reason;}}stage.dataset.notationScopeRestriction=restriction||'';stage.dataset.notationScope=resolved.scope;stage.dataset.notationRenderStatus=status;stage.dataset.renderedNotationParts=JSON.stringify(ids);stage.dataset.notationLoadMs=String(Math.round(sourceBatch?.load_ms||0));stage.dataset.notationPrefetch=nextPage.peek()?(nextPage.peek().value?'ready':'pending'):'none';const count=sourceBatch?.measureCount||pageSize,total=totalMeasures();stage.dispatchEvent(new Window.CustomEvent('notationscopecontext',{detail:{parts:score?.parts||[],scope:resolved.scope,practiceDisplayRestriction:restriction,practiceSelection:getPracticeSelection(),practicePartId:getPracticePart(),selectedPartId:selectedPart,renderedPartIds:ids,page:Math.floor((from-1)/count)+1,totalPages:Math.max(1,Math.ceil(total/count)),firstPart,maxParts:4,status}}));
   }
   const totalMeasures=()=>basicSong()?(sourcePage?.total_measures||0):(score?.measures.length||0);
   function displayMeter(){const value=$('engraving-basic-meter')?.value;if(!value||value==='source')return null;const[numerator,denominator]=value.split('/').map(Number);return{numerator,denominator};}
@@ -316,6 +318,7 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
     if (active || preferred) {active=true;render();}
   }
   function setScope(value,{manual=true}={}){
+    if(manual&&practiceDisplayRestriction()&&value.scope!=='current'){notice(()=>notationScopeRestrictionText(i18n,practiceDisplayRestriction()));publishScope();return;}
     if(manual)onManualNavigation();cancel();scope=value.scope;scopeChosen=manual||scopeChosen;selectedPart=value.selectedPartId??value.partId??null;firstPart=value.firstPart||0;resolvedScope();sourcePage=null;sourcePages=[];sourceBatch=null;cached=null;followFailure=null;setParts();redrawLocale();publishScope('pending',[]);if(active||basicSong())void render(null,!active);
   }
   function selectPart(part){setScope({scope:part===null?'all':'part',partId:part,firstPart:0});}

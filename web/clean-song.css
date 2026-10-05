@@ -6,3 +6,16 @@
 .complete-practice-controls{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .8rem;padding:.35rem .5rem}.complete-practice-controls label,.complete-practice-dialog label{display:flex;align-items:center;gap:.5rem}.complete-practice-controls p{flex-basis:100%;margin:0;font-size:.8rem}.complete-practice-dialog{max-width:min(38rem,calc(100vw - 2rem));max-height:90dvh}.complete-practice-dialog .shell-dialog-content{display:grid;gap:.8rem;overflow:auto}.complete-practice-dialog fieldset{display:grid;gap:.6rem;max-height:40dvh;overflow:auto}.complete-practice-actions{display:flex;gap:.7rem;justify-content:flex-end}.machine-notation-part{border-inline-start:3px dashed #8a91ac;padding-inline-start:.4rem}.machine-note{color:#8a91ac!important;opacity:.65}.machine-note.active{filter:none!important}.piano-key.accompaniment{outline:2px dashed #8a91ac;outline-offset:-4px;box-shadow:none}.complete-practice-controls[hidden]{display:none}
 #engraved-staff [data-practice-role="machine"] path{fill:#8a91ac!important}#engraved-staff [data-practice-role="machine"]{opacity:.65}.falling-note-label-setting{display:flex;align-items:center;gap:.5rem;margin-block:.8rem}
 .fret-button.accompaniment{outline:2px dashed #8a91ac;outline-offset:-3px;box-shadow:none}
+
+/* Keep the new selection controls out of the title/navigation width budget. */
+.performance-layout .stage-hud:has(.complete-practice-controls:not([hidden])){flex-wrap:wrap!important;row-gap:6px}
+.performance-layout .stage-hud:has(.complete-practice-controls:not([hidden])) .stage-heading{flex:1 1 14rem;min-width:14rem}
+.performance-layout .stage-hud:has(.complete-practice-controls:not([hidden]))>nav{flex:0 0 auto}
+.performance-layout .stage-hud:has(.complete-practice-controls:not([hidden]))>.button,.performance-layout .stage-hud:has(.complete-practice-controls:not([hidden])) nav .button{flex:none;white-space:nowrap}
+.performance-layout .stage-hud:has(.complete-practice-controls:not([hidden])) nav #library-button{max-width:none;white-space:nowrap}
+.performance-layout .stage-hud>.complete-practice-controls{order:10;flex:1 0 100%;min-width:0;padding:0;flex-wrap:nowrap;gap:8px}
+.performance-layout .complete-practice-controls>.button,.performance-layout .complete-practice-controls>label{flex:none;white-space:nowrap}
+.performance-layout .complete-practice-controls>p{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
+@media(max-width:650px){.performance-layout .stage-hud:has(.complete-practice-controls:not([hidden])) .stage-heading{min-width:10rem}.performance-layout .stage-hud>.complete-practice-controls{flex-wrap:wrap}.performance-layout .complete-practice-controls>p{flex-basis:100%}}
+.performance-layout .stage-hud:has(.complete-practice-controls:not([hidden]))>#song-parts-tools{flex:0 1 10rem;min-width:6rem;max-width:10rem}
+.performance-layout .stage-hud:has(.complete-practice-controls:not([hidden])) #song-parts-summary{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

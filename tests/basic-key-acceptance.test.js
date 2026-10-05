@@ -457,3 +457,18 @@ test('Follow native result binds exact Space to the owned app without pointer cl
 });
 
 import "./engraving-ownership-observer.test.js";
+
+test('native toolbar observation rejects collapsed labels, overlapping actions and unbounded summary rows',async()=>{
+ const source=await readFile(new URL('../crates/desktop-shell/basic-key-acceptance.js',import.meta.url),'utf8'),start=source.indexOf('function observeBasicKeyToolbar('),end=source.indexOf('function visibleBasicKeyPage(',start),observe=vm.runInNewContext(source.slice(start,end)+'\nobserveBasicKeyToolbar');
+ const fixture=height=>{const element=(id,x,y,width,h=40)=>({id,clientWidth:width,scrollWidth:width,closest:()=>null,getClientRects:()=>[{}],getBoundingClientRect:()=>({x,y,width,height:h})}),buttons=[element('back-to-library',18,12,70),element('library-button',750,12,110),element('settings-button',870,12,55),element('edit-complete-practice',18,58,175)],hud=element('stage-hud',18,12,1244,86),title=element('stage-title',100,12,300,26),summary=element('complete-practice-summary',210,65,1000,18),style={whiteSpace:'nowrap',textOverflow:'ellipsis'};hud.querySelectorAll=()=>buttons;return{buttons,hud,title,summary,style,document:{defaultView:{innerWidth:1280,innerHeight:height,getComputedStyle:()=>style},querySelector:()=>hud,getElementById:id=>id==='stage-title'?title:summary}};};
+ for(const height of [720,960,681]){const f=fixture(height),result=observe(f.document);assert.equal(result.viewport.height,height);assert.equal(result.buttons.length,4);assert.equal(result.summary.whiteSpace,'nowrap');}
+ for(const mutate of [f=>f.buttons[1].getBoundingClientRect=()=>({x:750,y:12,width:12,height:140}),f=>f.hud.getBoundingClientRect=()=>({x:18,y:12,width:1244,height:150}),f=>f.title.getBoundingClientRect=()=>({x:100,y:12,width:70,height:26}),f=>f.buttons[2].getBoundingClientRect=()=>({x:800,y:12,width:100,height:40}),f=>f.buttons[1].scrollWidth=150,f=>f.style.whiteSpace='normal']){const f=fixture(720);mutate(f);assert.throws(()=>observe(f.document),/Stage toolbar layout/);}
+ assert.match(source,/e\.frames\[name\]=\{toolbar:observeBasicKeyToolbar\(document\)/);
+});
+
+test('all-part numbered acceptance explicitly reopens source inspection after solo playback and reset',async()=>{
+ const source=await readFile(new URL('../crates/desktop-shell/basic-key-acceptance.js',import.meta.url),'utf8'),start=source.indexOf("await capture('reset');"),end=source.indexOf("await capture('numbered',false);",start),sequence=source.slice(start,end);
+ assert.match(sequence,/menu\.returnToLibrary\(\)[^]*?native\('click',\$\('open-score'\)\)[^]*?dataset\.scoreState==='inspection'[^]*?!\$\('notation-scope'\)\.disabled[^]*?native\('click',\$\('jianpu-button'\)\)/);
+ assert.match(sequence,/dataset\.renderedNotationParts\|\|'\[\]'\)\.length===3/);
+ assert.doesNotMatch(sequence,/\.value\s*=(?!=)|timeout|20000|30000/);
+});
