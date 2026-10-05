@@ -1,0 +1,36 @@
+name: Canonical audio thread preview
+on:
+  push:
+    branches: ['integration/canonical-audio']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  canonical-audio:
+    name: Original canonical processor and continuous PCM (not app acceptance)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npx playwright install --with-deps chromium
+      - run: cargo build -p practice-server --locked
+      - run: node --test tests/canonical-hosted-proof.test.js
+      - name: Measure original 2-second and stalled 48-second renditions
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+        run: node scripts/hosted-canonical-audio-check.mjs
+      - name: Retain source-bound original PCM and gate evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: canonical-audio-preview-${{ github.sha }}
+          path: test-results/canonical-audio/
+          if-no-files-found: warn
