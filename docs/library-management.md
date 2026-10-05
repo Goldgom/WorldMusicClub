@@ -4,6 +4,7 @@ The song library's **Packs and duplicates / 曲包与查重** entry opens a meta
 
 ## Identity and evidence
 
+- Packs with only an independently verified source backup or no valid complete receipt have `provenance: unresolved`. They remain visible beside verified groups, with an explicit unresolved-membership explanation and access to their issues. No song membership is inferred from those sources.
 - Imported pack groups use `import-<source SHA-256>` and verified receipt references. They are read-only projections, not editable collections.
 - Song rows use `legacy:song-<SHA-256>` or `clean:song-<SHA-256>` as the edition identity. A song shared between packs appears once in All songs, with separate pack references. Sources retained without a usable imported edition appear in Source and import issues, not as selectable songs.
 - Exact-content evidence uses format-specific content identity. It does not assert byte equality between uploaded ZIP archives. One stored edition referenced by multiple packs or distinct source items is labeled as reusing the same edition; it is not reported as reclaimable storage.
@@ -24,7 +25,7 @@ Rows are capped at 40 per page. Duplicate edition details and pack membership re
 
 Selection is exact by edition ID, persists across pages within a view and shows the count outside the current page. Users can select the current page, clear all selection or clear hidden selection. A view/filter change or refresh clears selection; newly appearing rows are never added implicitly. Switching the interface language preserves selection.
 
-Legacy scores and complete clean packages have separate export buttons and explicit selected counts. Each button captures exactly its named format's selected editions and uses the existing native pack export contract. A failed export retains selection. These exports are not backups of membership history, Trash, practice takes or standalone free-performance recordings.
+Legacy scores and complete clean packages have separate export buttons and explicit selected counts. Each button captures exactly its named format's selected editions and uses the existing native pack export contract. A failed export retains selection. Closing the dialog, changing views or filters, known inventory changes and destruction cancel its owned read-only export. Late results cannot download into a newer dialog session or replace its status. The native export may finish its already-admitted read after cancellation, but that abandoned response is discarded. These exports are not backups of membership history, Trash, practice takes or standalone free-performance recordings.
 
 ## Session boundaries and accessibility
 

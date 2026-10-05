@@ -1,4 +1,5 @@
 export default Object.freeze({
+  "management.packEvidenceUnresolved": "已核验保留的来源，但乐曲归属尚未确认。仅有来源备份或缺少有效导入回执时，不推断任何乐曲成员；请查看来源与导入问题。",
   "management.error.limit": "此结果超过元数据上限。请打开“全部乐曲”或缩小搜索范围分批查看。",
   "management.open": "曲包与查重",
   "management.title": "本机曲库管理",
@@ -42,7 +43,7 @@ export default Object.freeze({
   "management.clearHidden": "清除非本页选择",
   "management.export.legacy": "导出已选旧版谱面（{count}）",
   "management.export.clean": "导出已选完整曲目包（{count}）",
-  "management.exportHelp": "两种格式分别导出，保留各自完整内容。导出文件不包含曲包管理历史或演奏记录。",
+  "management.exportHelp": "两种格式分别导出，保留各自完整内容。导出文件不包含曲包管理历史或演奏记录。关闭窗口或切换视图、搜索条件会取消正在准备的导出。",
   "management.exporting": "正在准备完整导出…",
   "management.exported": "已请求下载所选曲目。",
   "management.category": "查重依据",

@@ -105,3 +105,19 @@ test('a failed filtered query cannot erase the pending-import freshness warning'
   model.selectPage(true); assert.equal(model.snapshot().selected.length, 0);
   await model.refresh(); assert.equal(model.snapshot().stale, false);
 });
+
+test('actual native recovery responses accept mixed valid/unresolved provenance without inventing members', async () => {
+  const {readFile} = await import('node:fs/promises');
+  const samples = JSON.parse(await readFile(new URL('./fixtures/library-management/native-recovery-responses.json', import.meta.url), 'utf8'));
+  for (const response of Object.values(samples)) {
+    const adapter = await openScoreStorage({origin, fetcher: async path => path === '/api/health' ? nativeResponse(health) : nativeResponse(response)});
+    assert.deepEqual(await adapter.queryManagement({view: response.view}), response);
+  }
+  const unresolved = samples.packs.rows.find(row => row.provenance === 'unresolved'), verified = samples.packs.rows.filter(row => row.provenance === 'validated_receipts');
+  assert.ok(unresolved); assert.ok(verified.length > 0); assert.equal(unresolved.song_count, 0); assert.equal(unresolved.receipt_count, 0);
+  assert.ok(samples.songs.rows.every(song => !song.pack_ids.includes(unresolved.pack_id)));
+  for (const patch of [{provenance: 'unsupported_future_value'}, {song_count: 1}, {shared_song_count: 1}, {receipt_count: 1}]) {
+    const invalid = structuredClone(samples.packs); Object.assign(invalid.rows.find(row => row.provenance === 'unresolved'), patch);
+    assert.throws(() => checkedManagementResponse(invalid, managementRequest({view: 'packs'})), {code: 'library_management_invalid_response'});
+  }
+});

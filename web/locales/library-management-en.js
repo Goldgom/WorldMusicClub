@@ -1,4 +1,5 @@
 export default Object.freeze({
+  "management.packEvidenceUnresolved": "The retained source is verified, but song memberships are unresolved. A backup-only source or missing valid import receipt does not establish any song membership. Review source and import issues.",
   "management.error.limit": "This result exceeds the metadata limit. Open All songs or narrow the search to inspect a smaller set.",
   "management.open": "Packs and duplicates",
   "management.title": "Native library management",
@@ -42,7 +43,7 @@ export default Object.freeze({
   "management.clearHidden": "Clear hidden selection",
   "management.export.legacy": "Export selected legacy scores ({count})",
   "management.export.clean": "Export selected complete songs ({count})",
-  "management.exportHelp": "The two formats export separately, preserving their complete content. Exports do not include management history or performance recordings.",
+  "management.exportHelp": "The two formats export separately, preserving their complete content. Exports do not include management history or performance recordings. Closing or changing views or search filters cancels a pending export.",
   "management.exporting": "Preparing a complete export…",
   "management.exported": "Download requested for the selected songs.",
   "management.category": "Match category",

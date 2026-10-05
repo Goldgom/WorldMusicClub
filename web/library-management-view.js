@@ -26,13 +26,13 @@ export function setupLibraryManagementView({document = globalThis.document, i18n
     <div class="management-actions management-pagination"><button id="management-previous" type="button" class="button secondary" data-management-text="previous"></button><p id="management-page"></p><button id="management-next" type="button" class="button secondary" data-management-text="next"></button></div></div>`;
   document.body.append(dialog);
   const $ = id => document.getElementById(`management-${id}`);
-  let state = model.snapshot(), exporting = false, exportState = null, exportError = null, rowsSignature = null, packName = '', opener = null, destroyed = false;
+  let state = model.snapshot(), exporting = false, exportState = null, exportError = null, rowsSignature = null, packName = '', opener = null, destroyed = false, exportGeneration = 0, exportController = null;
   const viewButtons = new Map();
   for (const view of ['packs', 'songs', 'unfiled', 'duplicates', 'issues']) {
     const button = make('button', 'button secondary'); button.type = 'button'; button.dataset.managementView = view;
     button.addEventListener('click', () => {
       packName = ''; $('search').value = ''; exportError = null; exportState = null;
-      void model.setView({view: view === 'unfiled' ? 'songs' : view, unfiled: view === 'unfiled', pack_id: null, search: '', duplicate_kind: view === 'duplicates' ? $('category').value : null});
+      void changeView({view: view === 'unfiled' ? 'songs' : view, unfiled: view === 'unfiled', pack_id: null, search: '', duplicate_kind: view === 'duplicates' ? $('category').value : null});
     });
     $('views').append(button); viewButtons.set(view, button);
   }
@@ -52,7 +52,7 @@ export function setupLibraryManagementView({document = globalThis.document, i18n
     button.setAttribute('aria-label', t('openPack', {name: pack.name || pack.pack_id})); button.dataset.managementPack = pack.pack_id;
     button.addEventListener('click', () => {
       packName = pack.name || pack.pack_id; $('search').value = ''; exportError = null; exportState = null;
-      void model.setView({view: 'songs', pack_id: pack.pack_id, unfiled: false, search: '', duplicate_kind: null});
+      void changeView({view: 'songs', pack_id: pack.pack_id, unfiled: false, search: '', duplicate_kind: null});
     });
     return button;
   }
@@ -108,12 +108,12 @@ export function setupLibraryManagementView({document = globalThis.document, i18n
       const li = make('li', 'management-row');
       if (state.response.view === 'songs') { li.dataset.managementSong = row.edition_id; li.append(songCard(row, true)); }
       else if (state.response.view === 'packs') {
-        li.dataset.managementPackRow = row.pack_id;
+        li.dataset.managementPackRow = row.pack_id; li.dataset.managementProvenance = row.provenance;
         const title = make('h3'), counts = make('p'), evidence = make('p', 'muted'); title.append(packLink(row));
-        counts.textContent = t('packCounts', {songs: row.song_count, shared: row.shared_song_count, retained: row.retained_only_count, issues: row.issue_count}); evidence.textContent = t('packEvidence'); li.append(title, counts, evidence);
-        if (row.retained_only_count || row.issue_count) {
+        counts.textContent = t('packCounts', {songs: row.song_count, shared: row.shared_song_count, retained: row.retained_only_count, issues: row.issue_count}); evidence.textContent = t(row.provenance === 'unresolved' ? 'packEvidenceUnresolved' : 'packEvidence'); li.append(title, counts, evidence);
+        if (row.retained_only_count || row.issue_count || row.provenance === 'unresolved') {
           const issues = make('button', 'button ghost'); issues.type = 'button'; issues.textContent = t('issues');
-          issues.addEventListener('click', () => { packName = row.name; $('search').value = ''; void model.setView({view: 'issues', pack_id: row.pack_id, unfiled: false, search: '', duplicate_kind: null}); }); li.append(issues);
+          issues.addEventListener('click', () => { packName = row.name; $('search').value = ''; void changeView({view: 'issues', pack_id: row.pack_id, unfiled: false, search: '', duplicate_kind: null}); }); li.append(issues);
         }
       } else if (state.response.view === 'duplicates') { li.dataset.managementDuplicate = row.group_id; li.append(duplicateCard(row)); }
       else {
@@ -152,31 +152,38 @@ export function setupLibraryManagementView({document = globalThis.document, i18n
     $('page').textContent = response ? t('page', {page: state.page + 1, total: response.total}) : '';
     $('previous').disabled = busy || state.stale || state.page === 0; $('next').disabled = busy || state.stale || !response?.next_cursor; $('refresh').disabled = busy || exporting;
   }
+  function cancelExport() {
+    exportGeneration++; exportController?.abort(); exportController = null;
+    exporting = false; exportState = null; exportError = null;
+  }
+  function changeView(patch) { cancelExport(); return model.setView(patch); }
   async function exportSelection(kind) {
     if (exporting || state.phase !== 'ready' || state.stale) return;
     const rows = state.selected.filter(row => row.storage_kind === kind); if (!rows.length) return;
+    const request = ++exportGeneration, controller = new AbortController(); exportController = controller;
+    const ownsResult = () => !destroyed && request === exportGeneration && !controller.signal.aborted && dialog.open;
     exporting = true; exportError = null; exportState = null; render();
     try {
       const entries = rows.map(row => ({storageKind: 'native', storageKey: row.key, ...(kind === 'clean' ? {clean_package: {}} : {})}));
-      const blob = await transport.exportPack(entries);
-      if (!destroyed) { await download(document, blob, kind === 'clean' ? 'worldmusicclub-complete-songs.zip' : 'worldmusicclub-legacy-scores.zip'); exportState = 'exported'; }
-    } catch (error) { exportError = {code: error.code, message: error.message}; }
-    finally { exporting = false; render(); }
+      const blob = await transport.exportPack(entries, {signal: controller.signal});
+      if (ownsResult()) { await download(document, blob, kind === 'clean' ? 'worldmusicclub-complete-songs.zip' : 'worldmusicclub-legacy-scores.zip'); if (ownsResult()) exportState = 'exported'; }
+    } catch (error) { if (ownsResult()) exportError = {code: error.code, message: error.message}; }
+    finally { if (request === exportGeneration) { exportController = null; exporting = false; render(); } }
   }
-  function open() { if (dialog.open) return; opener = document.activeElement || entry; exportState = null; exportError = null; dialog.showModal(); $('title').focus(); void model.refresh(); }
-  function close() { if (dialog.open) dialog.close(); }
+  function open() { if (dialog.open) return; cancelExport(); opener = document.activeElement || entry; exportState = null; exportError = null; dialog.showModal(); $('title').focus(); void model.refresh(); }
+  function close() { cancelExport(); model.close(); if (dialog.open) dialog.close(); }
   entry.addEventListener('click', open); $('close').addEventListener('click', close);
   dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
-  dialog.addEventListener('close', () => { model.close(); if (opener?.isConnected) opener.focus(); });
-  $('search-form').addEventListener('submit', event => { event.preventDefault(); exportError = null; exportState = null; void model.setView({search: $('search').value}); });
-  $('category').addEventListener('change', () => { exportError = null; exportState = null; void model.setView({duplicate_kind: $('category').value}); });
-  $('refresh').addEventListener('click', () => { exportError = null; exportState = null; void model.refresh(); });
+  dialog.addEventListener('close', () => { if (destroyed || dialog.open) return; cancelExport(); model.close(); if (opener?.isConnected) opener.focus(); });
+  $('search-form').addEventListener('submit', event => { event.preventDefault(); exportError = null; exportState = null; void changeView({search: $('search').value}); });
+  $('category').addEventListener('change', () => { exportError = null; exportState = null; void changeView({duplicate_kind: $('category').value}); });
+  $('refresh').addEventListener('click', () => { if (exporting) return; cancelExport(); void model.refresh(); });
   $('previous').addEventListener('click', () => void model.previous()); $('next').addEventListener('click', () => void model.next());
   $('select-page').addEventListener('change', () => model.selectPage($('select-page').checked));
   $('clear').addEventListener('click', () => model.clearSelection()); $('clear-hidden').addEventListener('click', () => model.clearSelection({hiddenOnly: true}));
   for (const kind of ['legacy', 'clean']) $(`export-${kind}`).addEventListener('click', () => void exportSelection(kind));
   const unsubscribe = model.subscribe(next => { state = next; render(); }), unlocale = i18n.subscribe(render); render();
-  return {open, close, model, dialog, invalidate: () => model.invalidate(), destroy() { destroyed = true; unsubscribe(); unlocale(); model.destroy(); dialog.remove(); entry.remove(); }};
+  return {open, close, model, dialog, invalidate: () => { cancelExport(); model.invalidate(); }, destroy() { cancelExport(); destroyed = true; unsubscribe(); unlocale(); model.destroy(); dialog.remove(); entry.remove(); }};
 }
 function downloadPack(document, blob, filename) {
   const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);

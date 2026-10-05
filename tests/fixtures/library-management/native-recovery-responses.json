@@ -1,0 +1,326 @@
+{
+  "duplicates": {
+    "format": "worldmusichub-library-management",
+    "freshness": {
+      "cached": true,
+      "change_detection": "explicit_refresh",
+      "kind": "advisory_snapshot",
+      "song_integrity": "verified_at_snapshot",
+      "verified_at_unix_ms": 1791122291578
+    },
+    "native_only": true,
+    "next_cursor": null,
+    "read_only": true,
+    "rows": [
+      {
+        "edition_count": 1,
+        "editions": [
+          {
+            "composer": "Unknown",
+            "content_sha256": "999012ef617c15ea9a6413ce0cadae226bf5b1d1ffa007ad8c74548381838bb8",
+            "edition_id": "legacy:song-999012ef617c15ea9a6413ce0cadae226bf5b1d1ffa007ad8c74548381838bb8",
+            "key": "song-999012ef617c15ea9a6413ce0cadae226bf5b1d1ffa007ad8c74548381838bb8",
+            "pack_count": 2,
+            "pack_ids": [
+              "import-82e21e2420023af46b0bf08908550ffdee685f9ea51d3c6397cb83458d458c05",
+              "import-c67765356aa7f8bc35b86668b17bed74728067f74911d40b9da105370d8369e8"
+            ],
+            "packs": [
+              {
+                "name": "Original playable B.zip",
+                "pack_id": "import-82e21e2420023af46b0bf08908550ffdee685f9ea51d3c6397cb83458d458c05"
+              },
+              {
+                "name": "Original playable A.zip",
+                "pack_id": "import-c67765356aa7f8bc35b86668b17bed74728067f74911d40b9da105370d8369e8"
+              }
+            ],
+            "profile": "canonical",
+            "receipt_reference_count": 2,
+            "score_id": "original-recovery-one",
+            "source_reference_count": 2,
+            "storage_kind": "legacy",
+            "title": "Original recovery song"
+          }
+        ],
+        "evidence_type": "shared_edition",
+        "group_id": "exact_content:8c48b55f2ee1afb3dad54b005be75983a446df319628889dbf362d2ae0a62052",
+        "kind": "exact_content",
+        "match": "legacy:999012ef617c15ea9a6413ce0cadae226bf5b1d1ffa007ad8c74548381838bb8",
+        "pack_count": 2,
+        "reference_count": 2
+      }
+    ],
+    "snapshot_id": "61298901df810d227f02fe5ea5ee069a626d2672ec33b447c9a44e75ac1c0f13",
+    "summary": {
+      "duplicate_groups": 1,
+      "issues": 2,
+      "memberships": 2,
+      "packs": 4,
+      "shared_songs": 1,
+      "songs": 2,
+      "unfiled_songs": 1
+    },
+    "total": 1,
+    "version": 1,
+    "view": "duplicates"
+  },
+  "issues": {
+    "format": "worldmusichub-library-management",
+    "freshness": {
+      "cached": true,
+      "change_detection": "explicit_refresh",
+      "kind": "advisory_snapshot",
+      "song_integrity": "verified_at_snapshot",
+      "verified_at_unix_ms": 1791122291578
+    },
+    "native_only": true,
+    "next_cursor": null,
+    "read_only": true,
+    "rows": [
+      {
+        "archive_key": "pack-cd2d4d336abad5e1acb23e19be3c287b3712d9342abf756df155f87209e2670b",
+        "code": "pack_source_only",
+        "issue_id": "issue-8e8e30cc52c45e7391ac2898e43d95b49fe3311a32e752e67615f5fd192b0198",
+        "message": "Source item song/metadata.json: Current retained MIDI recheck: Expected a Standard MIDI File with an MThd header. Previous import diagnostic: No notation",
+        "song_key": null
+      },
+      {
+        "archive_key": "pack-cd18e4df9a5fb1933ceec978104b3c8397ecf419d674b88356386db57d7ab11d",
+        "code": "pack_report_pending",
+        "issue_id": "issue-a96c580a27f4d9389f36dc87829e6ed158528dda4b32a32bd7354337b8604ad7",
+        "message": "Retained original has no validated complete import receipt",
+        "song_key": null
+      }
+    ],
+    "snapshot_id": "61298901df810d227f02fe5ea5ee069a626d2672ec33b447c9a44e75ac1c0f13",
+    "summary": {
+      "duplicate_groups": 1,
+      "issues": 2,
+      "memberships": 2,
+      "packs": 4,
+      "shared_songs": 1,
+      "songs": 2,
+      "unfiled_songs": 1
+    },
+    "total": 2,
+    "version": 1,
+    "view": "issues"
+  },
+  "packs": {
+    "format": "worldmusichub-library-management",
+    "freshness": {
+      "cached": true,
+      "change_detection": "explicit_refresh",
+      "kind": "advisory_snapshot",
+      "song_integrity": "verified_at_snapshot",
+      "verified_at_unix_ms": 1791122291578
+    },
+    "native_only": true,
+    "next_cursor": null,
+    "read_only": true,
+    "rows": [
+      {
+        "archive_key": "pack-82e21e2420023af46b0bf08908550ffdee685f9ea51d3c6397cb83458d458c05",
+        "issue_count": 0,
+        "name": "Original playable B.zip",
+        "pack_id": "import-82e21e2420023af46b0bf08908550ffdee685f9ea51d3c6397cb83458d458c05",
+        "provenance": "validated_receipts",
+        "receipt_count": 1,
+        "retained_only_count": 0,
+        "shared_song_count": 1,
+        "song_count": 1,
+        "source_bytes": 2196
+      },
+      {
+        "archive_key": "pack-c67765356aa7f8bc35b86668b17bed74728067f74911d40b9da105370d8369e8",
+        "issue_count": 0,
+        "name": "Original playable A.zip",
+        "pack_id": "import-c67765356aa7f8bc35b86668b17bed74728067f74911d40b9da105370d8369e8",
+        "provenance": "validated_receipts",
+        "receipt_count": 1,
+        "retained_only_count": 0,
+        "shared_song_count": 1,
+        "song_count": 1,
+        "source_bytes": 2034
+      },
+      {
+        "archive_key": "pack-cd18e4df9a5fb1933ceec978104b3c8397ecf419d674b88356386db57d7ab11d",
+        "issue_count": 1,
+        "name": "Original unresolved source.zip",
+        "pack_id": "import-cd18e4df9a5fb1933ceec978104b3c8397ecf419d674b88356386db57d7ab11d",
+        "provenance": "unresolved",
+        "receipt_count": 0,
+        "retained_only_count": 0,
+        "shared_song_count": 0,
+        "song_count": 0,
+        "source_bytes": 2048
+      },
+      {
+        "archive_key": "pack-cd2d4d336abad5e1acb23e19be3c287b3712d9342abf756df155f87209e2670b",
+        "issue_count": 1,
+        "name": "Original unsupported source.zip",
+        "pack_id": "import-cd2d4d336abad5e1acb23e19be3c287b3712d9342abf756df155f87209e2670b",
+        "provenance": "validated_receipts",
+        "receipt_count": 1,
+        "retained_only_count": 1,
+        "shared_song_count": 0,
+        "song_count": 0,
+        "source_bytes": 580
+      }
+    ],
+    "snapshot_id": "61298901df810d227f02fe5ea5ee069a626d2672ec33b447c9a44e75ac1c0f13",
+    "summary": {
+      "duplicate_groups": 1,
+      "issues": 2,
+      "memberships": 2,
+      "packs": 4,
+      "shared_songs": 1,
+      "songs": 2,
+      "unfiled_songs": 1
+    },
+    "total": 4,
+    "version": 1,
+    "view": "packs"
+  },
+  "songs": {
+    "format": "worldmusichub-library-management",
+    "freshness": {
+      "cached": true,
+      "change_detection": "explicit_refresh",
+      "kind": "advisory_snapshot",
+      "song_integrity": "verified_at_snapshot",
+      "verified_at_unix_ms": 1791122291578
+    },
+    "native_only": true,
+    "next_cursor": null,
+    "read_only": true,
+    "rows": [
+      {
+        "composer": "Unknown",
+        "content_sha256": "999012ef617c15ea9a6413ce0cadae226bf5b1d1ffa007ad8c74548381838bb8",
+        "edition_id": "legacy:song-999012ef617c15ea9a6413ce0cadae226bf5b1d1ffa007ad8c74548381838bb8",
+        "key": "song-999012ef617c15ea9a6413ce0cadae226bf5b1d1ffa007ad8c74548381838bb8",
+        "pack_count": 2,
+        "pack_ids": [
+          "import-82e21e2420023af46b0bf08908550ffdee685f9ea51d3c6397cb83458d458c05",
+          "import-c67765356aa7f8bc35b86668b17bed74728067f74911d40b9da105370d8369e8"
+        ],
+        "packs": [
+          {
+            "name": "Original playable B.zip",
+            "pack_id": "import-82e21e2420023af46b0bf08908550ffdee685f9ea51d3c6397cb83458d458c05"
+          },
+          {
+            "name": "Original playable A.zip",
+            "pack_id": "import-c67765356aa7f8bc35b86668b17bed74728067f74911d40b9da105370d8369e8"
+          }
+        ],
+        "profile": "canonical",
+        "receipt_reference_count": 2,
+        "score_id": "original-recovery-one",
+        "source_reference_count": 2,
+        "storage_kind": "legacy",
+        "title": "Original recovery song"
+      },
+      {
+        "composer": "Unknown",
+        "content_sha256": "de4d1a9f93b93c605452e90050cc64632553ca5cd3248acd7c76e08e5de22dd3",
+        "edition_id": "legacy:song-de4d1a9f93b93c605452e90050cc64632553ca5cd3248acd7c76e08e5de22dd3",
+        "key": "song-de4d1a9f93b93c605452e90050cc64632553ca5cd3248acd7c76e08e5de22dd3",
+        "pack_count": 0,
+        "pack_ids": [],
+        "packs": [],
+        "profile": "canonical",
+        "receipt_reference_count": 0,
+        "score_id": "original-unresolved",
+        "source_reference_count": 0,
+        "storage_kind": "legacy",
+        "title": "Original unresolved song"
+      }
+    ],
+    "snapshot_id": "61298901df810d227f02fe5ea5ee069a626d2672ec33b447c9a44e75ac1c0f13",
+    "summary": {
+      "duplicate_groups": 1,
+      "issues": 2,
+      "memberships": 2,
+      "packs": 4,
+      "shared_songs": 1,
+      "songs": 2,
+      "unfiled_songs": 1
+    },
+    "total": 2,
+    "version": 1,
+    "view": "songs"
+  },
+  "unresolved_issues": {
+    "format": "worldmusichub-library-management",
+    "freshness": {
+      "cached": true,
+      "change_detection": "explicit_refresh",
+      "kind": "advisory_snapshot",
+      "song_integrity": "verified_at_snapshot",
+      "verified_at_unix_ms": 1791122291578
+    },
+    "native_only": true,
+    "next_cursor": null,
+    "read_only": true,
+    "rows": [
+      {
+        "archive_key": "pack-cd18e4df9a5fb1933ceec978104b3c8397ecf419d674b88356386db57d7ab11d",
+        "code": "pack_report_pending",
+        "issue_id": "issue-a96c580a27f4d9389f36dc87829e6ed158528dda4b32a32bd7354337b8604ad7",
+        "message": "Retained original has no validated complete import receipt",
+        "song_key": null
+      }
+    ],
+    "snapshot_id": "61298901df810d227f02fe5ea5ee069a626d2672ec33b447c9a44e75ac1c0f13",
+    "summary": {
+      "duplicate_groups": 1,
+      "issues": 2,
+      "memberships": 2,
+      "packs": 4,
+      "shared_songs": 1,
+      "songs": 2,
+      "unfiled_songs": 1
+    },
+    "total": 1,
+    "version": 1,
+    "view": "issues"
+  },
+  "unsupported_issues": {
+    "format": "worldmusichub-library-management",
+    "freshness": {
+      "cached": true,
+      "change_detection": "explicit_refresh",
+      "kind": "advisory_snapshot",
+      "song_integrity": "verified_at_snapshot",
+      "verified_at_unix_ms": 1791122291578
+    },
+    "native_only": true,
+    "next_cursor": null,
+    "read_only": true,
+    "rows": [
+      {
+        "archive_key": "pack-cd2d4d336abad5e1acb23e19be3c287b3712d9342abf756df155f87209e2670b",
+        "code": "pack_source_only",
+        "issue_id": "issue-8e8e30cc52c45e7391ac2898e43d95b49fe3311a32e752e67615f5fd192b0198",
+        "message": "Source item song/metadata.json: Current retained MIDI recheck: Expected a Standard MIDI File with an MThd header. Previous import diagnostic: No notation",
+        "song_key": null
+      }
+    ],
+    "snapshot_id": "61298901df810d227f02fe5ea5ee069a626d2672ec33b447c9a44e75ac1c0f13",
+    "summary": {
+      "duplicate_groups": 1,
+      "issues": 2,
+      "memberships": 2,
+      "packs": 4,
+      "shared_songs": 1,
+      "songs": 2,
+      "unfiled_songs": 1
+    },
+    "total": 1,
+    "version": 1,
+    "view": "issues"
+  }
+}

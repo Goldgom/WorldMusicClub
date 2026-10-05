@@ -150,3 +150,70 @@ test('actual Rust responses render all views, including conflict issues without 
     await view(app, 'issues'); assert.match(app.$('management-rows').textContent, /remains conflict; no membership was inferred/); assert.equal(songRows(app).length, 0);
   } finally { await app.close(); }
 });
+
+test('closing and reopening owns a new export; an older response cannot download or replace new status', async () => {
+  const server = await managementServer(), old = deferred(), current = deferred(); let count = 0;
+  server.setExtraRoute(async ({path}) => {
+    if (path !== '/api/library/pack/export') return;
+    const index = count++; await (index === 0 ? old.promise : current.promise);
+    return {...nativeResponse({}), blob: async () => new Blob([index === 0 ? 'abandoned old export' : 'current exact export'])};
+  });
+  const app = await nativeStorageApp(server);
+  try {
+    await ready(app); await open(app); await view(app, 'songs'); select(app, app.$('management-rows').querySelector('[data-management-edition]'), true);
+    await app.click('management-export-legacy'); await app.until(() => count === 1);
+    const originalRequest = server.requests.find(row => row.path === '/api/library/pack/export'); assert.deepEqual(originalRequest.body.keys, [server.fixture.songs[0].key]);
+    await app.click('management-close'); assert.equal(originalRequest.options.signal.aborted, true); await open(app); assert.match(app.$('management-selected').textContent, /0 editions selected/);
+    select(app, app.$('management-rows').querySelectorAll('[data-management-edition]')[1], true); await app.click('management-export-clean'); await app.until(() => count === 2);
+    old.resolve(); await app.tick(); await app.tick(); assert.equal(app.downloads.length, 0); assert.match(app.$('management-status').textContent, /Preparing a complete export/); assert.equal(app.$('management-export-clean').disabled, true);
+    current.resolve(); await app.until(() => app.downloads.length === 1); assert.equal(await app.downloads[0].text(), 'current exact export'); assert.match(app.$('management-status').textContent, /Download requested/);
+    assert.deepEqual(server.requests.filter(row => row.path === '/api/library/pack/export')[1].body.keys, [server.fixture.songs[1].key]);
+  } finally { old.resolve(); current.resolve(); await app.close(); }
+});
+
+for (const action of ['view', 'search', 'destroy']) test(`changing ${action} cancels an export and discards its late result`, async () => {
+  const server = await managementServer(), gate = deferred(); let requested = false;
+  server.setExtraRoute(async ({path}) => { if (path === '/api/library/pack/export') { requested = true; await gate.promise; return {...nativeResponse({}), blob: async () => new Blob(['must not download'])}; } });
+  const app = await nativeStorageApp(server); let closed = false;
+  try {
+    await ready(app); await open(app); await view(app, 'songs'); select(app, app.$('management-rows').querySelector('[data-management-edition]'), true); await app.click('management-export-legacy'); await app.until(() => requested);
+    const request = server.requests.find(row => row.path === '/api/library/pack/export');
+    if (action === 'view') await view(app, 'packs');
+    else if (action === 'search') { app.$('management-search').value = 'unfiled'; app.emit(app.$('management-search-form'), 'submit'); await settled(app); }
+    else { await app.close(); closed = true; }
+    assert.equal(request.options.signal.aborted, true); gate.resolve(); await app.tick(); await app.tick(); assert.equal(app.downloads.length, 0);
+    if (!closed) { assert.doesNotMatch(app.$('management-status').textContent, /Download requested/); assert.equal(app.$('management-error').hidden, true); }
+  } finally { gate.resolve(); if (!closed) await app.close(); }
+});
+
+test('a queued native close event cannot cancel or overwrite a reopened dialog session', async () => {
+  const server = await managementServer(), app = await nativeStorageApp(server);
+  try {
+    await ready(app); await open(app); const dialog = app.$('library-management-dialog');
+    dialog.close = function () { this.open = false; };
+    await app.click('management-close'); await open(app); assert.equal(dialog.dataset.phase, 'ready');
+    app.emit(dialog, 'close'); assert.equal(dialog.open, true); assert.equal(dialog.dataset.phase, 'ready');
+    await view(app, 'songs'); select(app, app.$('management-rows').querySelector('[data-management-edition]'), true); assert.equal(app.$('management-export-legacy').disabled, false);
+  } finally { await app.close(); }
+});
+
+test('native unresolved and retained-only packs stay visible with localized evidence and linked original issues', async () => {
+  const {readFile} = await import('node:fs/promises');
+  const samples = JSON.parse(await readFile(new URL('./fixtures/library-management/native-recovery-responses.json', import.meta.url), 'utf8'));
+  const unresolved = samples.packs.rows.find(row => row.provenance === 'unresolved'), unsupported = samples.packs.rows.find(row => row.retained_only_count > 0);
+  const server = await managementServer(); server.setManagementRoute(({body}) => nativeResponse(body.view === 'issues' && body.pack_id === unresolved.pack_id ? samples.unresolved_issues : body.view === 'issues' && body.pack_id === unsupported.pack_id ? samples.unsupported_issues : samples[body.view]));
+  const app = await nativeStorageApp(server);
+  try {
+    await ready(app); await open(app); assert.equal(app.document.querySelectorAll('[data-management-pack-row]').length, samples.packs.rows.length); assert.equal(app.$('management-error').hidden, true);
+    const row = () => app.document.querySelector(`[data-management-pack-row="${unresolved.pack_id}"]`);
+    assert.equal(row().dataset.managementProvenance, 'unresolved'); assert.match(row().textContent, /song memberships are unresolved/); assert.doesNotMatch(row().textContent, /Read-only grouping from verified import records/);
+    getAppI18n(app.document).setLocale('zh-CN'); assert.match(row().textContent, /乐曲归属尚未确认/); assert.doesNotMatch(row().textContent, /按已验证导入记录建立/);
+    row().lastElementChild.click(); await settled(app); assert.equal(server.queryRequests.at(-1).body.pack_id, unresolved.pack_id); assert.equal(app.document.querySelectorAll('[data-management-issue]').length, samples.unresolved_issues.rows.length); assert.match(app.$('management-rows').textContent, /no validated complete import receipt/); assert.equal(app.$('management-selection').hidden, true); assert.equal(app.$('management-rows').querySelectorAll('input[type="checkbox"]').length, 0);
+    await view(app, 'packs'); app.document.querySelector(`[data-management-pack-row="${unsupported.pack_id}"]`).lastElementChild.click(); await settled(app);
+    assert.equal(server.queryRequests.at(-1).body.pack_id, unsupported.pack_id); assert.equal(app.document.querySelectorAll('[data-management-issue]').length, samples.unsupported_issues.rows.length);
+    for (const issue of samples.unsupported_issues.rows) assert.ok(app.$('management-rows').textContent.includes(issue.message));
+    assert.match(app.$('management-rows').textContent, /song\/metadata.json/); assert.equal(app.$('management-selection').hidden, true); assert.equal(songRows(app).length, 0);
+    await view(app, 'songs'); assert.equal(songRows(app).length, samples.songs.rows.length); assert.ok(samples.songs.rows.every(song => !song.pack_ids.includes(unresolved.pack_id) && !song.pack_ids.includes(unsupported.pack_id)));
+    assert.deepEqual(getAppI18n(app.document).getReports(), []);
+  } finally { await app.close(); }
+});

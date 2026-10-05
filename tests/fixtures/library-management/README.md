@@ -10,3 +10,9 @@ The sample includes all four nonempty query views, a shared immutable edition an
 an import conflict that does not become a membership. JavaScript adapter and
 actual app DOM tests consume the complete unchanged native responses. The
 verification timestamp is fixture capture evidence, not a current user scan.
+
+`native-recovery-responses.json` is a second unchanged Rust-emitted fixture. It
+adds a retained-only authored source with its original import diagnostic and a
+source with no validated complete receipt (`provenance: unresolved`). It includes
+actual filtered issue responses for both sources, alongside valid shared packs
+and an unfiled song. Recovery metadata does not invent any song membership.

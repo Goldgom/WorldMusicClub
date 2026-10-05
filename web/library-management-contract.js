@@ -27,7 +27,8 @@ export function checkedManagementResponse(value, request) {
   const ids = value.rows.map(row => {
     if (request.view === 'songs') return checkSong(row);
     if (request.view === 'packs') {
-      if (!row || !packId.test(row.pack_id) || !archiveKey.test(row.archive_key) || row.pack_id.slice(7) !== row.archive_key.slice(5) || !text(row.name) || row.provenance !== 'validated_receipts' || ['song_count', 'shared_song_count', 'retained_only_count', 'receipt_count', 'issue_count', 'source_bytes'].some(key => !count(row[key]))) fail();
+      if (!row || !packId.test(row.pack_id) || !archiveKey.test(row.archive_key) || row.pack_id.slice(7) !== row.archive_key.slice(5) || !text(row.name) || !['validated_receipts', 'unresolved'].includes(row.provenance) || ['song_count', 'shared_song_count', 'retained_only_count', 'receipt_count', 'issue_count', 'source_bytes'].some(key => !count(row[key]))) fail();
+      if (row.provenance === 'unresolved' && (row.song_count !== 0 || row.shared_song_count !== 0 || row.receipt_count !== 0)) fail();
       return row.pack_id;
     }
     if (request.view === 'duplicates') {

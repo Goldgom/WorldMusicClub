@@ -1,6 +1,7 @@
 const plain = Object.freeze({params: Object.freeze({})});
 const params = value => Object.freeze({params: Object.freeze(value)});
 export default Object.freeze({
+  "management.packEvidenceUnresolved": plain,
   "management.error.limit": plain,
   "management.open": plain,
   "management.title": plain,
