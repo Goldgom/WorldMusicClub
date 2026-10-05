@@ -45,8 +45,15 @@
 .game-shell .piano-stage-shared .piano-key.black .beginner-note-label{bottom:38px;font-size:11px}
 .game-shell .free-performance-panel .free-stage-footer{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:7px 14px;border:0;background:var(--paper);color:var(--ink);font-size:12px}
 .game-shell .free-performance-panel #free-mapping-status{margin:0;font-size:12px}.free-input-help{margin-left:auto}.free-input-help summary{cursor:pointer}.free-input-help[open]{flex-basis:100%}.free-scroll-hint{display:none}
-.game-shell .piano-workspace .piano-transport{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;flex:none;min-height:56px;margin:0;padding:9px 14px;border:1px solid var(--border);border-radius:0 0 14px 14px;background:var(--paper);color:var(--ink)}
+/* Reserve the full 24px seek target inside the existing transport height.
+   Reclaim chrome spacing rather than the shared falling lane or keybed. */
+.game-shell .piano-workspace .piano-transport{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;flex:none;min-height:56px;margin:0;padding:6px 14px;border:1px solid var(--border);border-radius:0 0 14px 14px;background:var(--paper);color:var(--ink)}
 .game-shell .piano-workspace .piano-transport .button{min-height:36px;padding:7px 12px;font-size:12px}
+@media(max-width:650px){
+ /* Buttons and seek occupy separate rows here; keep their native targets and
+    leave room for the workspace's bottom padding without scrolling the stage. */
+ .game-shell .piano-workspace .piano-transport{padding:4px 14px;row-gap:4px}
+}
 .game-shell .piano-workspace .performance-status{top:66px;z-index:4}
 .game-shell .piano-workspace .performance-overlay{z-index:3;top:56px;bottom:var(--piano-key-height)}
 .game-shell .piano-stage-shared .free-live-copy{position:absolute;top:var(--piano-toolbar-height);left:12px;right:12px;height:var(--piano-lane-height);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;pointer-events:none;color:#ddfff8;z-index:3;overflow:hidden}
