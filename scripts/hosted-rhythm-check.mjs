@@ -9,7 +9,7 @@ import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 
-if (process.env.WMH_HOSTED_BROWSER !== '1' || process.env.GITHUB_ACTIONS !== 'true' || !(['integration/rhythm-ui', 'dev/initial-prototype', 'main'].includes(process.env.WMH_SOURCE_REF) || /^validation\/.+/.test(process.env.WMH_SOURCE_REF || ''))) {
+if (process.env.WMH_HOSTED_BROWSER !== '1' || process.env.GITHUB_ACTIONS !== 'true' || !(['integration/rhythm-ui', 'preview/rhythm-controls', 'dev/initial-prototype', 'main'].includes(process.env.WMH_SOURCE_REF) || /^validation\/.+/.test(process.env.WMH_SOURCE_REF || ''))) {
   throw new Error('Requires an authorized GitHub Actions WorldMusicClub source runner with WMH_HOSTED_BROWSER=1; local browser execution is not authorized.');
 }
 const root = fileURLToPath(new URL('../', import.meta.url));

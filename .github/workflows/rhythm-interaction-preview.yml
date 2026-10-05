@@ -1,7 +1,7 @@
 name: Rhythm interaction preview
 on:
   push:
-    branches: ['integration/rhythm-ui']
+    branches: ['integration/rhythm-ui', 'preview/rhythm-controls']
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   rhythm-ui:
-    name: Seven real rhythm layouts and controls (not package acceptance)
+    name: Rhythm controls and stalled-keyboard timing (not package acceptance)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -25,8 +25,11 @@ jobs:
           toolchain: '1.99.0'
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
-      - run: npx playwright install --with-deps chromium
-      - run: cargo build -p practice-server --locked
+      - run: node --test tests/stalled-keyboard-evidence.test.js
+      - id: rhythm_browser_setup
+        run: npx playwright install --with-deps chromium
+      - id: rhythm_server
+        run: cargo build -p practice-server --locked
       - name: Exercise actual hover, Pause, notation and free recording
         env:
           WMH_HOSTED_BROWSER: '1'
@@ -35,10 +38,24 @@ jobs:
           WMH_SOURCE_REF: ${{ github.ref_name }}
           WMH_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node scripts/hosted-rhythm-check.mjs
+      - name: Verify delayed trusted keyboard events against actual Rust scoring
+        if: ${{ !cancelled() && steps.rhythm_server.outcome == 'success' && steps.rhythm_browser_setup.outcome == 'success' }}
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_ARTIFACT_DIR: ${{ runner.temp }}/wmc-stalled-keyboard
+          WMH_SOURCE_SHA: ${{ github.sha }}
+        run: node scripts/hosted-stalled-keyboard-check.mjs
       - name: Preserve exact-source rhythm evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: rhythm-interaction-preview-${{ github.sha }}
           path: ${{ runner.temp }}/wmc-rhythm-preview/
+          if-no-files-found: warn
+      - name: Preserve original delayed-input evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: stalled-keyboard-preview-${{ github.sha }}
+          path: ${{ runner.temp }}/wmc-stalled-keyboard/
           if-no-files-found: warn
