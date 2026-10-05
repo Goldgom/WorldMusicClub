@@ -76,6 +76,7 @@ fn seed() -> Seed {
             receipt_filename: "receipt-authored.json".into(),
             item_index: 0,
             item_path: "scores/original.exercise.json".into(),
+            item_kind: OriginItemKind::RelativePath,
             evidence_type: EvidenceType::ReceiptDerived,
         }],
     }
@@ -121,6 +122,790 @@ fn restore_action(op: u32, entities: Vec<Entity>, memberships: Vec<MembershipId>
         entities,
         memberships,
     }
+}
+
+fn new_inventory_song(n: u32) -> Seed {
+    Seed {
+        songs: vec![Song {
+            id: song_id(n),
+            retained_bytes: 71,
+            revision: 0,
+            trashed_by: None,
+        }],
+        packs: vec![],
+        memberships: vec![Membership {
+            id: edge(1, n),
+            position: 7,
+            added_at_unix_ms: 123,
+            revision: 0,
+        }],
+        sources: vec![],
+        origins: vec![Origin {
+            song: song_id(n),
+            source: source_id(1),
+            receipt_filename: "receipt-adopted.json".into(),
+            item_index: n,
+            item_path: format!("scores/authored-{n}.json"),
+            item_kind: OriginItemKind::RelativePath,
+            evidence_type: EvidenceType::VerifiedImport,
+        }],
+    }
+}
+
+#[test]
+fn adoption_adds_new_song_to_existing_pack_without_rewriting_history() {
+    let removed = execute(
+        &catalog(),
+        1,
+        Action::RemoveMemberships {
+            pack_id: pack_id(1),
+            song_ids: vec![song_id(1)],
+        },
+    )
+    .catalog;
+    let start = execute(
+        &removed,
+        2,
+        Action::TrashSongs {
+            song_ids: vec![song_id(2)],
+        },
+    )
+    .catalog;
+    let old_receipts = serde_json::to_vec(&start.snapshot().receipts).unwrap();
+    let delta = new_inventory_song(4);
+    let adopted = execute(
+        &start,
+        3,
+        Action::AdoptInventory {
+            inventory: delta.clone(),
+        },
+    );
+    let state = adopted.catalog.snapshot();
+    assert_eq!(
+        adopted.receipt.preview.effects.adopted_songs,
+        vec![song_id(4)]
+    );
+    assert!(adopted.receipt.preview.effects.adopted_packs.is_empty());
+    assert!(adopted.receipt.preview.effects.adopted_sources.is_empty());
+    assert_eq!(
+        adopted.receipt.preview.effects.added_memberships,
+        vec![edge(1, 4)]
+    );
+    assert_eq!(
+        adopted.receipt.preview.effects.affected_packs,
+        vec![pack_id(1)]
+    );
+    assert_eq!(adopted.receipt.preview.effects.retained_payload_bytes, 374);
+    assert_eq!(adopted.receipt.preview.effects.retained_source_bytes, 156);
+    assert_eq!(adopted.receipt.preview.effects.reclaimed_bytes, 0);
+    assert_eq!(state.inventory.packs, start.snapshot().inventory.packs);
+    assert_eq!(state.inventory.sources, start.snapshot().inventory.sources);
+    assert_eq!(state.trash, start.snapshot().trash);
+    assert_eq!(
+        serde_json::to_vec(&state.receipts[..2]).unwrap(),
+        old_receipts
+    );
+    for original in &start.snapshot().inventory.songs {
+        assert!(state.inventory.songs.contains(original));
+    }
+    for original in &start.snapshot().inventory.memberships {
+        assert!(state.inventory.memberships.contains(original));
+    }
+    for original in &start.snapshot().inventory.origins {
+        assert!(state.inventory.origins.contains(original));
+    }
+    assert!(state.inventory.origins.contains(&delta.origins[0]));
+    assert!(!has_edge(&adopted.catalog, &edge(1, 1)));
+    assert!(is_trashed(&adopted.catalog, &song_id(2)));
+    let edge = state
+        .inventory
+        .memberships
+        .iter()
+        .find(|edge| edge.id == delta.memberships[0].id)
+        .unwrap();
+    assert_eq!(
+        (edge.position, edge.added_at_unix_ms, edge.revision),
+        (7, 123, 3)
+    );
+    assert_eq!(
+        Catalog::from_json(&serde_json::to_vec(state).unwrap()).unwrap(),
+        adopted.catalog
+    );
+}
+
+#[test]
+fn adoption_rejects_old_song_edges_origins_and_all_identity_collisions_atomically() {
+    let start = execute(
+        &catalog(),
+        1,
+        Action::RemoveMemberships {
+            pack_id: pack_id(1),
+            song_ids: vec![song_id(1)],
+        },
+    )
+    .catalog;
+    let frozen = start.clone();
+    let mut old_edge = new_inventory_song(4);
+    old_edge.memberships[0].id.song = song_id(1);
+    let mut old_origin = new_inventory_song(4);
+    old_origin.origins[0].song = song_id(1);
+    for delta in [old_edge, old_origin] {
+        assert_eq!(
+            start.preview(request(
+                &start,
+                2,
+                Action::AdoptInventory { inventory: delta }
+            )),
+            Err(Error::Invalid("inventory evidence without new song"))
+        );
+    }
+    let mut song_collision = new_inventory_song(1);
+    song_collision.songs[0].retained_bytes = 999;
+    let mut pack_collision = new_inventory_song(4);
+    pack_collision.packs.push(custom_pack(1));
+    let mut source_collision = new_inventory_song(4);
+    source_collision.sources.push(Source {
+        id: source_id(1),
+        retained_bytes: 999,
+        default_imported_pack: None,
+    });
+    for delta in [song_collision, pack_collision, source_collision] {
+        assert_eq!(
+            start.preview(request(
+                &start,
+                2,
+                Action::AdoptInventory { inventory: delta }
+            )),
+            Err(Error::Conflict)
+        );
+    }
+    assert_eq!(start, frozen);
+    assert!(!has_edge(&start, &edge(1, 1)));
+}
+
+#[test]
+fn adoption_accepts_source_only_imported_pack_and_retains_earlier_byte_receipts() {
+    let first = execute(
+        &catalog(),
+        1,
+        Action::AdoptInventory {
+            inventory: new_inventory_song(4),
+        },
+    );
+    let mut pack = custom_pack(4);
+    pack.kind = PackKind::Imported;
+    pack.source_archive_keys = vec![source_id(3)];
+    let source = Source {
+        id: source_id(3),
+        retained_bytes: 43,
+        default_imported_pack: Some(pack_id(4)),
+    };
+    let delta = Seed {
+        songs: vec![],
+        packs: vec![pack],
+        memberships: vec![],
+        sources: vec![source.clone()],
+        origins: vec![],
+    };
+    let adopted = execute(
+        &first.catalog,
+        2,
+        Action::AdoptInventory { inventory: delta },
+    );
+    assert_eq!(
+        adopted.receipt.preview.effects.adopted_packs,
+        vec![pack_id(4)]
+    );
+    assert_eq!(
+        adopted.receipt.preview.effects.adopted_sources,
+        vec![source_id(3)]
+    );
+    assert_eq!(
+        adopted.receipt.preview.effects.affected_packs,
+        vec![pack_id(4)]
+    );
+    assert_eq!(adopted.receipt.preview.effects.retained_payload_bytes, 374);
+    assert_eq!(adopted.receipt.preview.effects.retained_source_bytes, 199);
+    assert_eq!(adopted.catalog.snapshot().receipts[0], first.receipt);
+    assert!(adopted
+        .catalog
+        .snapshot()
+        .inventory
+        .sources
+        .contains(&source));
+    assert_eq!(
+        Catalog::from_snapshot(adopted.catalog.snapshot().clone()).unwrap(),
+        adopted.catalog
+    );
+    let trashed = execute(
+        &adopted.catalog,
+        3,
+        Action::TrashPack {
+            pack_id: pack_id(4),
+            exclusive_song_ids: vec![],
+        },
+    );
+    let restored = execute(
+        &trashed.catalog,
+        4,
+        restore_action(3, vec![Entity::Pack(pack_id(4))], vec![]),
+    );
+    assert_eq!(restored.receipt.preview.effects.retained_source_bytes, 199);
+}
+
+#[test]
+fn adopted_song_uses_normal_trash_restore_and_exact_idempotency() {
+    let start = catalog();
+    let body = request(
+        &start,
+        1,
+        Action::AdoptInventory {
+            inventory: new_inventory_song(4),
+        },
+    );
+    assert_eq!(
+        Request::from_json(&serde_json::to_vec(&body).unwrap()).unwrap(),
+        body
+    );
+    let preview = start.preview(body.clone()).unwrap();
+    let adopted = start.apply(&preview).unwrap();
+    let trashed = execute(
+        &adopted.catalog,
+        2,
+        Action::TrashSongs {
+            song_ids: vec![song_id(4)],
+        },
+    );
+    assert!(is_trashed(&trashed.catalog, &song_id(4)));
+    assert!(!has_edge(&trashed.catalog, &edge(1, 4)));
+    let restored = execute(
+        &trashed.catalog,
+        3,
+        restore_action(2, vec![Entity::Song(song_id(4))], vec![]),
+    );
+    assert!(!is_trashed(&restored.catalog, &song_id(4)));
+    assert!(has_edge(&restored.catalog, &edge(1, 4)));
+    let reloaded =
+        Catalog::from_json(&serde_json::to_vec(restored.catalog.snapshot()).unwrap()).unwrap();
+    assert_eq!(reloaded.preview(body.clone()).unwrap(), preview);
+    let replay = reloaded.apply(&preview).unwrap();
+    assert!(replay.replayed);
+    assert_eq!(replay.catalog, reloaded);
+    let mut changed = body;
+    changed.at_unix_ms += 1;
+    assert_eq!(reloaded.preview(changed), Err(Error::IdempotencyConflict));
+    let competing = execute(
+        &start,
+        4,
+        Action::RenamePack {
+            pack_id: pack_id(1),
+            name: "Renamed".into(),
+        },
+    );
+    assert_eq!(competing.catalog.apply(&preview), Err(Error::Stale));
+    let mut edited = preview.clone();
+    edited.effects.adopted_songs.clear();
+    assert_eq!(start.apply(&edited), Err(Error::InvalidPlan));
+    assert_eq!(reloaded.apply(&edited), Err(Error::InvalidPlan));
+}
+
+#[test]
+fn adoption_checks_new_history_complete_graph_and_trashed_destinations() {
+    let start = catalog();
+    let mut revision = new_inventory_song(4);
+    revision.songs[0].revision = 1;
+    let mut tombstone = new_inventory_song(4);
+    tombstone.songs[0].trashed_by = Some(operation_id(9));
+    for delta in [revision, tombstone] {
+        assert_eq!(
+            start.preview(request(
+                &start,
+                1,
+                Action::AdoptInventory { inventory: delta }
+            )),
+            Err(Error::Invalid("inventory adoption history"))
+        );
+    }
+    let mut missing_source = new_inventory_song(4);
+    missing_source.origins[0].source = source_id(99);
+    assert_eq!(
+        start.preview(request(
+            &start,
+            1,
+            Action::AdoptInventory {
+                inventory: missing_source
+            }
+        )),
+        Err(Error::Invalid("missing origin source"))
+    );
+    let mut missing_pack = new_inventory_song(4);
+    missing_pack.memberships[0].id.pack = pack_id(99);
+    assert_eq!(
+        start.preview(request(
+            &start,
+            1,
+            Action::AdoptInventory {
+                inventory: missing_pack
+            }
+        )),
+        Err(Error::NotFound)
+    );
+    let trashed = execute(
+        &start,
+        1,
+        Action::TrashPack {
+            pack_id: pack_id(1),
+            exclusive_song_ids: vec![],
+        },
+    )
+    .catalog;
+    assert_eq!(
+        trashed.preview(request(
+            &trashed,
+            2,
+            Action::AdoptInventory {
+                inventory: new_inventory_song(4)
+            }
+        )),
+        Err(Error::InTrash)
+    );
+    let mut collision = new_inventory_song(4);
+    collision.packs.push(
+        start
+            .snapshot()
+            .inventory
+            .packs
+            .iter()
+            .find(|pack| pack.id == pack_id(1))
+            .unwrap()
+            .clone(),
+    );
+    assert_eq!(
+        trashed.preview(request(
+            &trashed,
+            2,
+            Action::AdoptInventory {
+                inventory: collision
+            }
+        )),
+        Err(Error::Conflict)
+    );
+}
+
+#[test]
+fn adoption_cannot_exceed_candidate_capacity_or_retained_byte_bounds() {
+    let mut full = seed();
+    full.songs.extend((4..=MAX_SONGS as u32).map(|n| Song {
+        id: song_id(n),
+        retained_bytes: 0,
+        revision: 0,
+        trashed_by: None,
+    }));
+    let start = Catalog::from_seed(full).unwrap();
+    assert_eq!(
+        start.preview(request(
+            &start,
+            1,
+            Action::AdoptInventory {
+                inventory: new_inventory_song(MAX_SONGS as u32 + 1)
+            }
+        )),
+        Err(Error::Limit("songs"))
+    );
+    let start = catalog();
+    let mut overflow = new_inventory_song(4);
+    overflow.songs[0].retained_bytes = u64::MAX;
+    assert_eq!(
+        start.preview(request(
+            &start,
+            1,
+            Action::AdoptInventory {
+                inventory: overflow
+            }
+        )),
+        Err(Error::Limit("retained bytes"))
+    );
+    let mut duplicate = new_inventory_song(4);
+    duplicate.songs.push(duplicate.songs[0].clone());
+    assert_eq!(
+        start.preview(request(
+            &start,
+            1,
+            Action::AdoptInventory {
+                inventory: duplicate
+            }
+        )),
+        Err(Error::Invalid("duplicate identity"))
+    );
+    assert_eq!(start.snapshot().generation, 0);
+}
+
+#[test]
+fn old_effects_json_round_trips_without_new_empty_fields() {
+    let legacy = concat!(
+        "{\"created_packs\":[],\"renamed_packs\":[],\"added_memberships\":[],\"removed_memberships\":[],",
+        "\"trashed_songs\":[],\"trashed_packs\":[],\"restored_songs\":[],\"restored_packs\":[],",
+        "\"noops\":[],\"blocked_memberships\":[],\"affected_packs\":[],\"newly_unfiled_songs\":[],",
+        "\"retained_payload_bytes\":0,\"retained_source_bytes\":0,\"reclaimed_bytes\":0}"
+    );
+    let effects: Effects = serde_json::from_str(legacy).unwrap();
+    assert_eq!(effects, Effects::default());
+    assert_eq!(serde_json::to_string(&effects).unwrap(), legacy);
+    let adopted = execute(
+        &catalog(),
+        1,
+        Action::AdoptInventory {
+            inventory: new_inventory_song(4),
+        },
+    );
+    let mut corrupt = adopted.catalog.snapshot().clone();
+    corrupt
+        .inventory
+        .songs
+        .iter_mut()
+        .find(|song| song.id == song_id(4))
+        .unwrap()
+        .retained_bytes += 1;
+    assert!(Catalog::from_snapshot(corrupt).is_err());
+    let mut corrupt = adopted.catalog.snapshot().clone();
+    corrupt
+        .inventory
+        .origins
+        .retain(|origin| origin.song != song_id(4));
+    assert_eq!(
+        Catalog::from_snapshot(corrupt),
+        Err(Error::Invalid("adopted origin history"))
+    );
+}
+
+#[test]
+fn historical_origins_default_to_relative_paths_without_changing_json_bytes() {
+    let legacy = format!(
+        r#"{{"song":"{}","source":"{}","receipt_filename":"receipt-authored.json","item_index":0,"item_path":"scores/original.exercise.json","evidence_type":"receipt_derived"}}"#,
+        song_id(1).as_str(),
+        source_id(1).as_str()
+    );
+    let origin: Origin = serde_json::from_str(&legacy).unwrap();
+    assert_eq!(origin.item_kind, OriginItemKind::RelativePath);
+    assert_eq!(origin, seed().origins[0]);
+    assert_eq!(serde_json::to_string(&origin).unwrap(), legacy);
+    let old_history = execute(
+        &catalog(),
+        1,
+        Action::TrashSongs {
+            song_ids: vec![song_id(1)],
+        },
+    )
+    .catalog;
+    let bytes = serde_json::to_vec(old_history.snapshot()).unwrap();
+    assert!(!String::from_utf8(bytes.clone())
+        .unwrap()
+        .contains("\"item_kind\""));
+    let reloaded = Catalog::from_json(&bytes).unwrap();
+    assert_eq!(serde_json::to_vec(reloaded.snapshot()).unwrap(), bytes);
+}
+
+#[test]
+fn inert_origin_labels_preserve_upload_spelling_through_adoption_and_trash() {
+    for label in [
+        r"C:\uploads\take:one.json",
+        r"album:one\score.mxl#entries/0",
+        "../upload label",
+        "/upload label",
+        " ",
+    ] {
+        let mut delta = new_inventory_song(4);
+        delta.origins[0].item_path = label.into();
+        delta.origins[0].item_kind = OriginItemKind::InertLabel;
+        let adopted = execute(
+            &catalog(),
+            1,
+            Action::AdoptInventory {
+                inventory: delta.clone(),
+            },
+        );
+        assert!(adopted
+            .catalog
+            .snapshot()
+            .inventory
+            .origins
+            .contains(&delta.origins[0]));
+        let encoded = serde_json::to_value(&delta.origins[0]).unwrap();
+        assert_eq!(encoded["item_kind"], "inert_label");
+        assert_eq!(encoded["item_path"], label);
+        let trashed = execute(
+            &adopted.catalog,
+            2,
+            Action::TrashSongs {
+                song_ids: vec![song_id(4)],
+            },
+        );
+        let restored = execute(
+            &trashed.catalog,
+            3,
+            restore_action(2, vec![Entity::Song(song_id(4))], vec![]),
+        );
+        let reloaded =
+            Catalog::from_json(&serde_json::to_vec(restored.catalog.snapshot()).unwrap()).unwrap();
+        assert!(reloaded
+            .snapshot()
+            .inventory
+            .origins
+            .contains(&delta.origins[0]));
+    }
+}
+
+#[test]
+fn origin_item_kinds_use_bounded_utf8_bytes_and_keep_relative_path_rules() {
+    for kind in [OriginItemKind::RelativePath, OriginItemKind::InertLabel] {
+        for label in [
+            "x".repeat(MAX_ORIGIN_ITEM_BYTES),
+            "é".repeat(MAX_ORIGIN_ITEM_BYTES / 2),
+            format!("{}#entries/1023", "x".repeat(1024)),
+        ] {
+            let mut authored = seed();
+            authored.origins[0].item_kind = kind.clone();
+            authored.origins[0].item_path = label;
+            assert!(Catalog::from_seed(authored).is_ok());
+        }
+        for label in [
+            "x".repeat(MAX_ORIGIN_ITEM_BYTES + 1),
+            "é".repeat(MAX_ORIGIN_ITEM_BYTES / 2 + 1),
+        ] {
+            let mut delta = new_inventory_song(4);
+            delta.origins[0].item_kind = kind.clone();
+            delta.origins[0].item_path = label.clone();
+            let start = catalog();
+            assert!(start
+                .preview(request(
+                    &start,
+                    1,
+                    Action::AdoptInventory { inventory: delta }
+                ))
+                .is_err());
+            let mut authored = seed();
+            authored.origins[0].item_kind = kind.clone();
+            authored.origins[0].item_path = label;
+            assert!(Catalog::from_seed(authored).is_err());
+        }
+    }
+    for label in ["", "bad\nlabel", "bad\rlabel", "bad\tlabel", "bad\0label"] {
+        let mut delta = new_inventory_song(4);
+        delta.origins[0].item_kind = OriginItemKind::InertLabel;
+        delta.origins[0].item_path = label.into();
+        let start = catalog();
+        assert_eq!(
+            start.preview(request(
+                &start,
+                1,
+                Action::AdoptInventory { inventory: delta }
+            )),
+            Err(Error::Invalid("source evidence label"))
+        );
+    }
+    for label in [
+        r"take:one\score",
+        "../score",
+        "/score",
+        "scores//score",
+        r"scores\score",
+        ".",
+        "..",
+    ] {
+        let mut authored = seed();
+        authored.origins[0].item_path = label.into();
+        assert_eq!(
+            Catalog::from_seed(authored),
+            Err(Error::Invalid("source evidence path"))
+        );
+    }
+}
+
+#[test]
+fn adoption_request_limit_accepts_dense_immutable_evidence_for_one_new_song() {
+    let start = catalog();
+    let mut delta = new_inventory_song(4);
+    let origin = delta.origins[0].clone();
+    delta.origins = (0..512)
+        .map(|index| {
+            let mut item = origin.clone();
+            item.receipt_filename = format!("receipt-{index:04}.json");
+            item.item_path = format!("scores/{}.json", "x".repeat(1024));
+            item
+        })
+        .collect();
+    let body = request(&start, 1, Action::AdoptInventory { inventory: delta });
+    let bytes = serde_json::to_vec(&body).unwrap();
+    assert!(bytes.len() > MAX_REQUEST_BYTES);
+    assert!(bytes.len() < MAX_ADOPTION_REQUEST_BYTES);
+    assert_eq!(Request::from_json(&bytes).unwrap(), body);
+    let preview = start.preview(body).unwrap();
+    let adopted = start.apply(&preview).unwrap();
+    assert_eq!(adopted.catalog.snapshot().inventory.origins.len(), 513);
+    let snapshot_bytes = serde_json::to_vec(adopted.catalog.snapshot()).unwrap();
+    assert!(snapshot_bytes.len() < MAX_STATE_BYTES);
+    let reloaded = Catalog::from_json(&snapshot_bytes).unwrap();
+    assert!(reloaded.apply(&preview).unwrap().replayed);
+}
+
+#[test]
+fn ordinary_requests_keep_original_byte_cap_and_digest() {
+    let start = catalog();
+    let body = request(
+        &start,
+        1,
+        Action::TrashSongs {
+            song_ids: vec![song_id(1)],
+        },
+    );
+    let preview = start.preview(body.clone()).unwrap();
+    // Frozen digest of the existing, unchanged v1 request JSON.
+    assert_eq!(
+        preview.request_digest,
+        "5c7b318d4b5ef24121f1e213a40a6624099e52587f1a4acdf1209c3997e07c83"
+    );
+    let mut padded = serde_json::to_vec(&body).unwrap();
+    padded.resize(MAX_REQUEST_BYTES, b' ');
+    assert_eq!(Request::from_json(&padded).unwrap(), body);
+    padded.push(b' ');
+    assert_eq!(
+        Request::from_json(&padded),
+        Err(Error::Limit("request bytes"))
+    );
+    let oversized = request(
+        &start,
+        2,
+        Action::RenamePack {
+            pack_id: pack_id(1),
+            name: "x".repeat(MAX_REQUEST_BYTES),
+        },
+    );
+    assert_eq!(
+        Request::from_json(&serde_json::to_vec(&oversized).unwrap()),
+        Err(Error::Limit("request bytes"))
+    );
+    assert_eq!(start.preview(oversized), Err(Error::Limit("request bytes")));
+}
+
+#[test]
+fn adoption_request_outer_and_typed_bounds_reject_oversized_bodies() {
+    assert_eq!(MAX_ADOPTION_REQUEST_BYTES, MAX_STATE_BYTES);
+    let start = catalog();
+    let mut delta = new_inventory_song(4);
+    delta.origins[0].item_path = "x".repeat(MAX_ADOPTION_REQUEST_BYTES);
+    let body = request(&start, 1, Action::AdoptInventory { inventory: delta });
+    let bytes = serde_json::to_vec(&body).unwrap();
+    assert!(bytes.len() > MAX_ADOPTION_REQUEST_BYTES);
+    assert_eq!(
+        Request::from_json(&bytes),
+        Err(Error::Limit("request bytes"))
+    );
+    assert_eq!(start.preview(body), Err(Error::Limit("request bytes")));
+    assert_eq!(start.snapshot().generation, 0);
+}
+
+#[test]
+fn imported_pack_names_preserve_exact_bounded_upload_labels() {
+    for name in [
+        " ".to_owned(),
+        r"C:\uploads\name:take.json".to_owned(),
+        "x".repeat(1024),
+        "é".repeat(512),
+    ] {
+        let mut authored = seed();
+        authored.packs[0].name = name.clone();
+        let seeded = Catalog::from_seed(authored).unwrap();
+        assert_eq!(seeded.snapshot().inventory.packs[0].name, name);
+        let mut delta = new_inventory_song(4);
+        let mut imported = custom_pack(4);
+        imported.name = name.clone();
+        imported.kind = PackKind::Imported;
+        imported.source_archive_keys = vec![source_id(3)];
+        delta.packs.push(imported);
+        delta.sources.push(Source {
+            id: source_id(3),
+            retained_bytes: 11,
+            default_imported_pack: Some(pack_id(4)),
+        });
+        let adopted = execute(&catalog(), 1, Action::AdoptInventory { inventory: delta });
+        let reloaded =
+            Catalog::from_json(&serde_json::to_vec(adopted.catalog.snapshot()).unwrap()).unwrap();
+        assert_eq!(
+            reloaded
+                .snapshot()
+                .inventory
+                .packs
+                .iter()
+                .find(|pack| pack.id == pack_id(4))
+                .unwrap()
+                .name,
+            name
+        );
+    }
+}
+
+#[test]
+fn imported_label_bounds_do_not_relax_custom_or_mutated_pack_names() {
+    for name in [
+        String::new(),
+        "x".repeat(1025),
+        "é".repeat(513),
+        "bad\nname".into(),
+        "bad\0name".into(),
+    ] {
+        let mut authored = seed();
+        authored.packs[0].name = name;
+        assert_eq!(Catalog::from_seed(authored), Err(Error::Invalid("text")));
+    }
+    for name in [" ".to_owned(), "x".repeat(257), "é".repeat(129)] {
+        let mut authored = seed();
+        authored.packs[1].name = name.clone();
+        assert_eq!(Catalog::from_seed(authored), Err(Error::Invalid("text")));
+        let start = catalog();
+        assert_eq!(
+            start.preview(request(
+                &start,
+                1,
+                Action::CreatePack {
+                    pack_id: pack_id(99),
+                    name: name.clone()
+                }
+            )),
+            Err(Error::Invalid("text"))
+        );
+        assert_eq!(
+            start.preview(request(
+                &start,
+                1,
+                Action::RenamePack {
+                    pack_id: pack_id(1),
+                    name
+                }
+            )),
+            Err(Error::Invalid("text"))
+        );
+    }
+    let start = catalog();
+    assert!(start
+        .preview(request(
+            &start,
+            1,
+            Action::CreatePack {
+                pack_id: pack_id(99),
+                name: "x".repeat(256)
+            }
+        ))
+        .is_ok());
+    assert!(start
+        .preview(request(
+            &start,
+            1,
+            Action::RenamePack {
+                pack_id: pack_id(1),
+                name: "x".repeat(256)
+            }
+        ))
+        .is_ok());
 }
 
 #[test]

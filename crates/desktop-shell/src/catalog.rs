@@ -13,6 +13,11 @@ pub const MAX_SELECTION: usize = 1024;
 pub const MAX_HISTORY: usize = 4096;
 pub const MAX_STATE_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_REQUEST_BYTES: usize = 256 * 1024;
+/// Adoption may carry many immutable origins for one newly verified song. The
+/// resulting full snapshot, including its receipt, must still fit the state cap.
+pub const MAX_ADOPTION_REQUEST_BYTES: usize = MAX_STATE_BYTES;
+/// Includes bounded virtual-item suffixes appended to verified upload labels.
+pub const MAX_ORIGIN_ITEM_BYTES: usize = 2048;
 const MAX_SOURCES: usize = 1024;
 const MAX_ORIGINS: usize = 16_384;
 const MAX_CAPTURED_EDGES: usize = 65_536;
@@ -156,6 +161,19 @@ pub enum EvidenceType {
     ReceiptDerived,
     VerifiedImport,
 }
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OriginItemKind {
+    #[default]
+    RelativePath,
+    /// A verified upload/item label, never interpreted as a filesystem path.
+    InertLabel,
+}
+impl OriginItemKind {
+    fn is_relative_path(&self) -> bool {
+        matches!(self, Self::RelativePath)
+    }
+}
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Origin {
@@ -164,6 +182,9 @@ pub struct Origin {
     pub receipt_filename: String,
     pub item_index: u32,
     pub item_path: String,
+    // Historical origins retain their exact serialized bytes and ordering.
+    #[serde(default, skip_serializing_if = "OriginItemKind::is_relative_path")]
+    pub item_kind: OriginItemKind,
     pub evidence_type: EvidenceType,
 }
 
@@ -221,6 +242,11 @@ pub struct Snapshot {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
+    /// Append host-verified inventory discovered after bootstrap. Existing
+    /// identities must be omitted; only new songs may have new edges/evidence.
+    AdoptInventory {
+        inventory: Seed,
+    },
     CreatePack {
         pack_id: PackId,
         name: String,
@@ -303,6 +329,13 @@ pub struct BlockedMembership {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Effects {
+    // Omit empty additions so existing serialized receipts keep their digests.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adopted_songs: Vec<SongId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adopted_packs: Vec<PackId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adopted_sources: Vec<SourceId>,
     pub created_packs: Vec<PackId>,
     pub renamed_packs: Vec<PackId>,
     pub added_memberships: Vec<MembershipId>,
@@ -373,10 +406,23 @@ fn bounded(len: usize, max: usize, label: &'static str) -> Result<()> {
     }
 }
 fn text_value(value: &str, limit: usize) -> Result<()> {
-    if value.trim().is_empty() || value.len() > limit || value.chars().any(char::is_control) {
+    if value.trim().is_empty() {
+        Err(Error::Invalid("text"))
+    } else {
+        inert_text_value(value, limit)
+    }
+}
+fn inert_text_value(value: &str, limit: usize) -> Result<()> {
+    if value.is_empty() || value.len() > limit || value.chars().any(char::is_control) {
         Err(Error::Invalid("text"))
     } else {
         Ok(())
+    }
+}
+fn pack_name_value(pack: &Pack) -> Result<()> {
+    match pack.kind {
+        PackKind::Imported => inert_text_value(&pack.name, 1024),
+        PackKind::Custom => text_value(&pack.name, 256),
     }
 }
 fn relative_label(value: &str, limit: usize) -> Result<()> {
@@ -390,6 +436,13 @@ fn relative_label(value: &str, limit: usize) -> Result<()> {
     }
     Ok(())
 }
+fn origin_item_label(origin: &Origin) -> Result<()> {
+    match origin.item_kind {
+        OriginItemKind::RelativePath => relative_label(&origin.item_path, MAX_ORIGIN_ITEM_BYTES),
+        OriginItemKind::InertLabel => inert_text_value(&origin.item_path, MAX_ORIGIN_ITEM_BYTES)
+            .map_err(|_| Error::Invalid("source evidence label")),
+    }
+}
 fn selection<T: Ord>(values: &[T], empty: bool) -> Result<()> {
     bounded(values.len(), MAX_SELECTION, "selection")?;
     if !empty && values.is_empty() {
@@ -397,13 +450,80 @@ fn selection<T: Ord>(values: &[T], empty: bool) -> Result<()> {
     }
     unique(values)
 }
+fn validate_adoption(inventory: &Seed) -> Result<()> {
+    bounded(inventory.songs.len(), MAX_SONGS, "songs")?;
+    bounded(inventory.packs.len(), MAX_PACKS, "packs")?;
+    bounded(
+        inventory.memberships.len(),
+        MAX_SELECTION,
+        "affected memberships",
+    )?;
+    bounded(inventory.sources.len(), MAX_SOURCES, "sources")?;
+    bounded(inventory.origins.len(), MAX_ORIGINS, "origins")?;
+    unique(inventory.songs.iter().map(|song| &song.id))?;
+    unique(inventory.packs.iter().map(|pack| &pack.id))?;
+    unique(inventory.sources.iter().map(|source| &source.id))?;
+    unique(inventory.memberships.iter().map(|edge| &edge.id))?;
+    unique(&inventory.origins)?;
+    if inventory.songs.is_empty() && inventory.packs.is_empty() && inventory.sources.is_empty() {
+        return Err(Error::Invalid("empty inventory adoption"));
+    }
+    if inventory
+        .songs
+        .iter()
+        .any(|song| song.revision != 0 || song.trashed_by.is_some())
+        || inventory
+            .packs
+            .iter()
+            .any(|pack| pack.revision != 0 || pack.trashed_by.is_some())
+        || inventory.memberships.iter().any(|edge| edge.revision != 0)
+    {
+        return Err(Error::Invalid("inventory adoption history"));
+    }
+    let new_songs: BTreeSet<_> = inventory.songs.iter().map(|song| &song.id).collect();
+    if inventory
+        .memberships
+        .iter()
+        .any(|edge| !new_songs.contains(&edge.id.song))
+        || inventory
+            .origins
+            .iter()
+            .any(|origin| !new_songs.contains(&origin.song))
+    {
+        return Err(Error::Invalid("inventory evidence without new song"));
+    }
+    for pack in &inventory.packs {
+        pack_name_value(pack)?;
+        bounded(pack.source_archive_keys.len(), MAX_SOURCES, "pack sources")?;
+        unique(&pack.source_archive_keys)?;
+        if pack.kind == PackKind::Imported && pack.source_archive_keys.is_empty() {
+            return Err(Error::Invalid("imported pack without source"));
+        }
+    }
+    for origin in &inventory.origins {
+        relative_label(&origin.receipt_filename, 256)?;
+        if origin.receipt_filename.contains('/') {
+            return Err(Error::Invalid("receipt filename"));
+        }
+        origin_item_label(origin)?;
+    }
+    Ok(())
+}
 impl Request {
     pub fn from_json(bytes: &[u8]) -> Result<Self> {
-        bounded(bytes.len(), MAX_REQUEST_BYTES, "request bytes")?;
+        bounded(bytes.len(), MAX_ADOPTION_REQUEST_BYTES, "request bytes")?;
         let request: Self =
             serde_json::from_slice(bytes).map_err(|_| Error::Invalid("request JSON"))?;
+        bounded(bytes.len(), request.byte_limit(), "request bytes")?;
         request.validate()?;
         Ok(request)
+    }
+    fn byte_limit(&self) -> usize {
+        if matches!(self.action, Action::AdoptInventory { .. }) {
+            MAX_ADOPTION_REQUEST_BYTES
+        } else {
+            MAX_REQUEST_BYTES
+        }
     }
     fn validate(&self) -> Result<()> {
         if self.schema_version != VERSION {
@@ -413,10 +533,11 @@ impl Request {
             serde_json::to_vec(self)
                 .map_err(|_| Error::Invalid("request JSON"))?
                 .len(),
-            MAX_REQUEST_BYTES,
+            self.byte_limit(),
             "request bytes",
         )?;
         match &self.action {
+            Action::AdoptInventory { inventory } => validate_adoption(inventory),
             Action::CreatePack { name, .. } | Action::RenamePack { name, .. } => {
                 text_value(name, 256)
             }
@@ -871,6 +992,49 @@ fn transition(before: &Snapshot, request: &Request, revision: u64) -> Result<(Sn
     let mut state = before.clone();
     let mut effects = Effects::default();
     match &request.action {
+        Action::AdoptInventory { inventory } => {
+            if inventory
+                .songs
+                .iter()
+                .any(|new| state.inventory.songs.iter().any(|old| old.id == new.id))
+                || inventory
+                    .packs
+                    .iter()
+                    .any(|new| state.inventory.packs.iter().any(|old| old.id == new.id))
+                || inventory
+                    .sources
+                    .iter()
+                    .any(|new| state.inventory.sources.iter().any(|old| old.id == new.id))
+            {
+                return Err(Error::Conflict);
+            }
+            for song in &inventory.songs {
+                let mut adopted = song.clone();
+                adopted.revision = revision;
+                state.inventory.songs.push(adopted);
+                effects.adopted_songs.push(song.id.clone());
+            }
+            for pack in &inventory.packs {
+                let mut adopted = pack.clone();
+                adopted.revision = revision;
+                state.inventory.packs.push(adopted);
+                effects.adopted_packs.push(pack.id.clone());
+            }
+            for edge in &inventory.memberships {
+                let mut adopted = edge.clone();
+                adopted.revision = revision;
+                state.inventory.memberships.push(adopted);
+                effects.added_memberships.push(edge.id.clone());
+            }
+            for source in &inventory.sources {
+                state.inventory.sources.push(source.clone());
+                effects.adopted_sources.push(source.id.clone());
+            }
+            state
+                .inventory
+                .origins
+                .extend(inventory.origins.iter().cloned());
+        }
         Action::CreatePack { pack_id, name } => {
             if state.inventory.packs.iter().any(|pack| &pack.id == pack_id) {
                 return Err(Error::Conflict);
@@ -1022,7 +1186,9 @@ fn transition(before: &Snapshot, request: &Request, revision: u64) -> Result<(Sn
     state.generation = revision;
     finish_effects(before, &state, &mut effects)?;
     for pack in &mut state.inventory.packs {
-        if effects.affected_packs.contains(&pack.id) {
+        if effects.affected_packs.contains(&pack.id)
+            && !matches!(request.action, Action::AdoptInventory { .. })
+        {
             pack.revision = revision;
         }
     }
@@ -1037,6 +1203,7 @@ fn finish_effects(before: &Snapshot, after: &Snapshot, effects: &mut Effects) ->
     let mut affected: BTreeSet<_> = effects
         .created_packs
         .iter()
+        .chain(&effects.adopted_packs)
         .chain(&effects.renamed_packs)
         .chain(&effects.trashed_packs)
         .chain(&effects.restored_packs)
@@ -1083,6 +1250,9 @@ fn finish_effects(before: &Snapshot, after: &Snapshot, effects: &mut Effects) ->
                 sum.checked_add(source.retained_bytes)
                     .ok_or(Error::Limit("retained bytes"))
             })?;
+    effects.adopted_songs.sort();
+    effects.adopted_packs.sort();
+    effects.adopted_sources.sort();
     effects.created_packs.sort();
     effects.renamed_packs.sort();
     effects.added_memberships.sort();
@@ -1141,7 +1311,7 @@ fn validate_state(state: &Snapshot) -> Result<()> {
         }
     };
     let check_pack = |item: &Pack| -> Result<()> {
-        text_value(&item.name, 256)?;
+        pack_name_value(item)?;
         bounded(item.source_archive_keys.len(), MAX_SOURCES, "pack sources")?;
         unique(&item.source_archive_keys)?;
         if item.kind == PackKind::Imported && item.source_archive_keys.is_empty() {
@@ -1187,17 +1357,22 @@ fn validate_state(state: &Snapshot) -> Result<()> {
         if origin.receipt_filename.contains('/') {
             return Err(Error::Invalid("receipt filename"));
         }
-        relative_label(&origin.item_path, 1024)?;
+        origin_item_label(origin)?;
     }
-    let payload_bytes = inventory.songs.iter().try_fold(0u64, |sum, song| {
+    let mut payload_bytes = inventory.songs.iter().try_fold(0u64, |sum, song| {
         sum.checked_add(song.retained_bytes)
             .ok_or(Error::Limit("retained bytes"))
     })?;
-    let source_bytes = inventory.sources.iter().try_fold(0u64, |sum, source| {
+    let mut source_bytes = inventory.sources.iter().try_fold(0u64, |sum, source| {
         sum.checked_add(source.retained_bytes)
             .ok_or(Error::Limit("retained bytes"))
     })?;
-    for (index, receipt) in state.receipts.iter().enumerate() {
+    let mut adopted_songs = BTreeSet::new();
+    let mut adopted_packs = BTreeSet::new();
+    let mut adopted_sources = BTreeSet::new();
+    // Earlier receipts retain the physical-byte totals observed at their own
+    // generation. Walk backward, removing only recorded immutable additions.
+    for (index, receipt) in state.receipts.iter().enumerate().rev() {
         let preview = &receipt.preview;
         preview.request.validate()?;
         if preview.request.expected_generation != index as u64
@@ -1212,6 +1387,72 @@ fn validate_state(state: &Snapshot) -> Result<()> {
             return Err(Error::Invalid("receipt integrity"));
         }
         match &preview.request.action {
+            Action::AdoptInventory { inventory: delta } => {
+                let mut songs: Vec<_> = delta.songs.iter().map(|song| song.id.clone()).collect();
+                let mut packs: Vec<_> = delta.packs.iter().map(|pack| pack.id.clone()).collect();
+                let mut sources: Vec<_> = delta
+                    .sources
+                    .iter()
+                    .map(|source| source.id.clone())
+                    .collect();
+                let mut memberships: Vec<_> = delta
+                    .memberships
+                    .iter()
+                    .map(|edge| edge.id.clone())
+                    .collect();
+                songs.sort();
+                packs.sort();
+                sources.sort();
+                memberships.sort();
+                if preview.effects.adopted_songs != songs
+                    || preview.effects.adopted_packs != packs
+                    || preview.effects.adopted_sources != sources
+                    || preview.effects.added_memberships != memberships
+                {
+                    return Err(Error::Invalid("inventory adoption effects"));
+                }
+                for added in &delta.songs {
+                    let current = song(state, &added.id)?;
+                    if !adopted_songs.insert(&added.id)
+                        || current.retained_bytes != added.retained_bytes
+                        || current.revision < preview.next_generation
+                    {
+                        return Err(Error::Invalid("adopted song history"));
+                    }
+                    payload_bytes = payload_bytes
+                        .checked_sub(added.retained_bytes)
+                        .ok_or(Error::Invalid("adopted payload bytes"))?;
+                }
+                for added in &delta.packs {
+                    let current = pack(state, &added.id)?;
+                    if !adopted_packs.insert(&added.id)
+                        || current.kind != added.kind
+                        || current.source_archive_keys.iter().collect::<BTreeSet<_>>()
+                            != added.source_archive_keys.iter().collect::<BTreeSet<_>>()
+                        || current.origin_import_operation_id != added.origin_import_operation_id
+                        || current.revision < preview.next_generation
+                    {
+                        return Err(Error::Invalid("adopted pack history"));
+                    }
+                }
+                for added in &delta.sources {
+                    if !adopted_sources.insert(&added.id)
+                        || !state.inventory.sources.contains(added)
+                    {
+                        return Err(Error::Invalid("adopted source history"));
+                    }
+                    source_bytes = source_bytes
+                        .checked_sub(added.retained_bytes)
+                        .ok_or(Error::Invalid("adopted source bytes"))?;
+                }
+                if delta
+                    .origins
+                    .iter()
+                    .any(|origin| !state.inventory.origins.contains(origin))
+                {
+                    return Err(Error::Invalid("adopted origin history"));
+                }
+            }
             Action::TrashSongs { .. } | Action::TrashPack { .. } => {
                 if !state
                     .trash
@@ -1232,6 +1473,13 @@ fn validate_state(state: &Snapshot) -> Result<()> {
             }
             _ => {}
         }
+        if !matches!(preview.request.action, Action::AdoptInventory { .. })
+            && (!preview.effects.adopted_songs.is_empty()
+                || !preview.effects.adopted_packs.is_empty()
+                || !preview.effects.adopted_sources.is_empty())
+        {
+            return Err(Error::Invalid("unexpected inventory adoption effects"));
+        }
         bounded(
             preview.effects.noops.len(),
             MAX_SELECTION * 2,
@@ -1247,6 +1495,7 @@ fn validate_state(state: &Snapshot) -> Result<()> {
             .effects
             .created_packs
             .iter()
+            .chain(&preview.effects.adopted_packs)
             .chain(&preview.effects.renamed_packs)
             .chain(&preview.effects.trashed_packs)
             .chain(&preview.effects.restored_packs)
@@ -1258,6 +1507,7 @@ fn validate_state(state: &Snapshot) -> Result<()> {
             .effects
             .trashed_songs
             .iter()
+            .chain(&preview.effects.adopted_songs)
             .chain(&preview.effects.restored_songs)
             .chain(&preview.effects.newly_unfiled_songs)
         {
