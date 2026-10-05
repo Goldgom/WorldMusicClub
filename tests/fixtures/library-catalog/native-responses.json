@@ -1,0 +1,3208 @@
+{
+  "active": {
+    "catalog_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b",
+    "counts": {
+      "active_songs": 3,
+      "managed_songs": 3,
+      "memberships": 4,
+      "packs": 3,
+      "trashed_songs": 0
+    },
+    "format": "worldmusichub-catalog",
+    "freshness": {
+      "cached": false,
+      "change_detection": "explicit_refresh",
+      "kind": "advisory_snapshot",
+      "verified_at_unix_ms": 1791135262330
+    },
+    "generation": 0,
+    "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+    "native_only": true,
+    "next_cursor": null,
+    "rows": [
+      {
+        "catalog_managed": true,
+        "composer": "",
+        "edition_id": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+        "key": "song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+        "pack_count": 1,
+        "packs": [
+          {
+            "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+            "import_pack_id": "import-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887",
+            "name": "clean.zip"
+          }
+        ],
+        "physical_available": true,
+        "profile": "wmh-performance-midi1-v1",
+        "score_id": "original-catalog-clean",
+        "storage_kind": "clean",
+        "title": "Original catalog clean",
+        "trashed_by": null
+      },
+      {
+        "catalog_managed": true,
+        "composer": "Unknown",
+        "edition_id": "legacy:song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+        "key": "song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+        "pack_count": 1,
+        "packs": [
+          {
+            "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+            "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+            "name": "first.zip"
+          }
+        ],
+        "physical_available": true,
+        "profile": "canonical",
+        "score_id": "b",
+        "storage_kind": "legacy",
+        "title": "Original b",
+        "trashed_by": null
+      },
+      {
+        "catalog_managed": true,
+        "composer": "Unknown",
+        "edition_id": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+        "key": "song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+        "pack_count": 2,
+        "packs": [
+          {
+            "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+            "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+            "name": "first.zip"
+          },
+          {
+            "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+            "import_pack_id": "import-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174",
+            "name": "second.zip"
+          }
+        ],
+        "physical_available": true,
+        "profile": "canonical",
+        "score_id": "a",
+        "storage_kind": "legacy",
+        "title": "Original a",
+        "trashed_by": null
+      }
+    ],
+    "snapshot_id": "aaef5edb23db4a2144d127c7d47c6d22d0855f6cd5295a3b58ba6765aa83a6d9",
+    "total": 3,
+    "version": 1,
+    "view": "active"
+  },
+  "final_active": {
+    "catalog_digest": "cdd5b95108088d1a9681e0567b91f35bd47aee86806b619cbf21bea202585877",
+    "counts": {
+      "active_songs": 4,
+      "managed_songs": 4,
+      "memberships": 5,
+      "packs": 4,
+      "trashed_songs": 0
+    },
+    "format": "worldmusichub-catalog",
+    "freshness": {
+      "cached": false,
+      "change_detection": "explicit_refresh",
+      "kind": "advisory_snapshot",
+      "verified_at_unix_ms": 1791135263054
+    },
+    "generation": 3,
+    "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+    "native_only": true,
+    "next_cursor": null,
+    "rows": [
+      {
+        "catalog_managed": true,
+        "composer": "",
+        "edition_id": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+        "key": "song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+        "pack_count": 1,
+        "packs": [
+          {
+            "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+            "import_pack_id": "import-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887",
+            "name": "clean.zip"
+          }
+        ],
+        "physical_available": true,
+        "profile": "wmh-performance-midi1-v1",
+        "score_id": "original-catalog-clean",
+        "storage_kind": "clean",
+        "title": "Original catalog clean",
+        "trashed_by": null
+      },
+      {
+        "catalog_managed": true,
+        "composer": "Unknown",
+        "edition_id": "legacy:song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+        "key": "song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+        "pack_count": 1,
+        "packs": [
+          {
+            "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+            "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+            "name": "first.zip"
+          }
+        ],
+        "physical_available": true,
+        "profile": "canonical",
+        "score_id": "b",
+        "storage_kind": "legacy",
+        "title": "Original b",
+        "trashed_by": null
+      },
+      {
+        "catalog_managed": true,
+        "composer": "Unknown",
+        "edition_id": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+        "key": "song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+        "pack_count": 2,
+        "packs": [
+          {
+            "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+            "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+            "name": "first.zip"
+          },
+          {
+            "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+            "import_pack_id": "import-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174",
+            "name": "second.zip"
+          }
+        ],
+        "physical_available": true,
+        "profile": "canonical",
+        "score_id": "a",
+        "storage_kind": "legacy",
+        "title": "Original a",
+        "trashed_by": null
+      },
+      {
+        "catalog_managed": true,
+        "composer": "Unknown",
+        "edition_id": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+        "key": "song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+        "pack_count": 1,
+        "packs": [
+          {
+            "collection_id": "collection-b02bba62fa519883855c96b838c6f538",
+            "import_pack_id": "import-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+            "name": "new-sync.json"
+          }
+        ],
+        "physical_available": true,
+        "profile": "canonical",
+        "score_id": "fixture-new-sync",
+        "storage_kind": "legacy",
+        "title": "Original fixture-new-sync",
+        "trashed_by": null
+      }
+    ],
+    "snapshot_id": "a495d734ad42fe7b8a605d68ac0c1569ccc596694cb25beaafb85e2c8f61396b",
+    "total": 4,
+    "version": 1,
+    "view": "active"
+  },
+  "initial_status": {
+    "catalog_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b",
+    "counts": {
+      "active_songs": 3,
+      "managed_songs": 3,
+      "memberships": 4,
+      "packs": 3,
+      "trashed_songs": 0
+    },
+    "format": "worldmusichub-catalog",
+    "generation": 0,
+    "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+    "native_only": true,
+    "operation_id": "operation-a00fb808d1c09635b18d56efc95e2b1c",
+    "outcome": "committed",
+    "replayed": false,
+    "state": "ready",
+    "version": 1
+  },
+  "initialization": {
+    "format": "worldmusichub-catalog",
+    "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+    "native_only": true,
+    "preview": {
+      "collections": [
+        {
+          "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+          "source_id": "pack-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680"
+        },
+        {
+          "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+          "source_id": "pack-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174"
+        },
+        {
+          "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+          "source_id": "pack-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887"
+        }
+      ],
+      "counts": {
+        "active_songs": 3,
+        "managed_songs": 3,
+        "memberships": 4,
+        "packs": 3,
+        "trashed_songs": 0
+      },
+      "inventory_digest": "9f94823850e87ff1b29c03c06d9bdc85119689d5668c0b134c51cfdefa37ba1c",
+      "kind": "initialize",
+      "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+      "operation_id": "operation-a00fb808d1c09635b18d56efc95e2b1c",
+      "retained_payload_bytes": 10860,
+      "retained_source_bytes": 17554,
+      "seed_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b"
+    },
+    "version": 1
+  },
+  "native_calls": [
+    {
+      "method": "GET",
+      "path": "/api/library/catalog/status",
+      "request": null,
+      "response": {
+        "catalog_digest": null,
+        "counts": null,
+        "format": "worldmusichub-catalog",
+        "generation": null,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "state": "uninitialized",
+        "supported_operations": [
+          "initialize",
+          "trash_songs",
+          "restore_songs",
+          "sync_inventory"
+        ],
+        "version": 1
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/initialize/preview",
+      "request": {},
+      "response": {
+        "format": "worldmusichub-catalog",
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "preview": {
+          "collections": [
+            {
+              "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+              "source_id": "pack-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680"
+            },
+            {
+              "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+              "source_id": "pack-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174"
+            },
+            {
+              "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+              "source_id": "pack-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887"
+            }
+          ],
+          "counts": {
+            "active_songs": 3,
+            "managed_songs": 3,
+            "memberships": 4,
+            "packs": 3,
+            "trashed_songs": 0
+          },
+          "inventory_digest": "9f94823850e87ff1b29c03c06d9bdc85119689d5668c0b134c51cfdefa37ba1c",
+          "kind": "initialize",
+          "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+          "operation_id": "operation-a00fb808d1c09635b18d56efc95e2b1c",
+          "retained_payload_bytes": 10860,
+          "retained_source_bytes": 17554,
+          "seed_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b"
+        },
+        "version": 1
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/initialize",
+      "request": {
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "preview": {
+          "collections": [
+            {
+              "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+              "source_id": "pack-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680"
+            },
+            {
+              "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+              "source_id": "pack-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174"
+            },
+            {
+              "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+              "source_id": "pack-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887"
+            }
+          ],
+          "counts": {
+            "active_songs": 3,
+            "managed_songs": 3,
+            "memberships": 4,
+            "packs": 3,
+            "trashed_songs": 0
+          },
+          "inventory_digest": "9f94823850e87ff1b29c03c06d9bdc85119689d5668c0b134c51cfdefa37ba1c",
+          "kind": "initialize",
+          "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+          "operation_id": "operation-a00fb808d1c09635b18d56efc95e2b1c",
+          "retained_payload_bytes": 10860,
+          "retained_source_bytes": 17554,
+          "seed_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b"
+        }
+      },
+      "response": {
+        "catalog_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b",
+        "counts": {
+          "active_songs": 3,
+          "managed_songs": 3,
+          "memberships": 4,
+          "packs": 3,
+          "trashed_songs": 0
+        },
+        "format": "worldmusichub-catalog",
+        "generation": 0,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "operation_id": "operation-a00fb808d1c09635b18d56efc95e2b1c",
+        "outcome": "committed",
+        "replayed": false,
+        "state": "ready",
+        "version": 1
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/query",
+      "request": {
+        "limit": 100,
+        "refresh": true,
+        "view": "active"
+      },
+      "response": {
+        "catalog_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b",
+        "counts": {
+          "active_songs": 3,
+          "managed_songs": 3,
+          "memberships": 4,
+          "packs": 3,
+          "trashed_songs": 0
+        },
+        "format": "worldmusichub-catalog",
+        "freshness": {
+          "cached": false,
+          "change_detection": "explicit_refresh",
+          "kind": "advisory_snapshot",
+          "verified_at_unix_ms": 1791135262330
+        },
+        "generation": 0,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "next_cursor": null,
+        "rows": [
+          {
+            "catalog_managed": true,
+            "composer": "",
+            "edition_id": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+            "key": "song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+            "pack_count": 1,
+            "packs": [
+              {
+                "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+                "import_pack_id": "import-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887",
+                "name": "clean.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "wmh-performance-midi1-v1",
+            "score_id": "original-catalog-clean",
+            "storage_kind": "clean",
+            "title": "Original catalog clean",
+            "trashed_by": null
+          },
+          {
+            "catalog_managed": true,
+            "composer": "Unknown",
+            "edition_id": "legacy:song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+            "key": "song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+            "pack_count": 1,
+            "packs": [
+              {
+                "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+                "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+                "name": "first.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "canonical",
+            "score_id": "b",
+            "storage_kind": "legacy",
+            "title": "Original b",
+            "trashed_by": null
+          },
+          {
+            "catalog_managed": true,
+            "composer": "Unknown",
+            "edition_id": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+            "key": "song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+            "pack_count": 2,
+            "packs": [
+              {
+                "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+                "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+                "name": "first.zip"
+              },
+              {
+                "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                "import_pack_id": "import-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174",
+                "name": "second.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "canonical",
+            "score_id": "a",
+            "storage_kind": "legacy",
+            "title": "Original a",
+            "trashed_by": null
+          }
+        ],
+        "snapshot_id": "aaef5edb23db4a2144d127c7d47c6d22d0855f6cd5295a3b58ba6765aa83a6d9",
+        "total": 3,
+        "version": 1,
+        "view": "active"
+      },
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/library/catalog/status",
+      "request": null,
+      "response": {
+        "catalog_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b",
+        "counts": {
+          "active_songs": 3,
+          "managed_songs": 3,
+          "memberships": 4,
+          "packs": 3,
+          "trashed_songs": 0
+        },
+        "format": "worldmusichub-catalog",
+        "generation": 0,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "state": "ready",
+        "supported_operations": [
+          "initialize",
+          "trash_songs",
+          "restore_songs",
+          "sync_inventory"
+        ],
+        "version": 1
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/preview",
+      "request": {
+        "action": "trash_songs",
+        "catalog_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b",
+        "edition_ids": [
+          "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+          "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+        ],
+        "expected_generation": 0,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "trash_operation_id": null
+      },
+      "response": {
+        "format": "worldmusichub-catalog",
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "preview": {
+          "base_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b",
+          "effects": {
+            "added_memberships": [],
+            "affected_packs": [
+              "collection-38455d61691ea1c530a0515f4a2226df",
+              "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+              "collection-d55065c918f18a0c6ea40080ff5ad8ed"
+            ],
+            "blocked_memberships": [],
+            "created_packs": [],
+            "newly_unfiled_songs": [],
+            "noops": [],
+            "reclaimed_bytes": 0,
+            "removed_memberships": [
+              {
+                "pack": "collection-38455d61691ea1c530a0515f4a2226df",
+                "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              },
+              {
+                "pack": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              },
+              {
+                "pack": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+                "song": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f"
+              }
+            ],
+            "renamed_packs": [],
+            "restored_packs": [],
+            "restored_songs": [],
+            "retained_payload_bytes": 10860,
+            "retained_source_bytes": 17554,
+            "trashed_packs": [],
+            "trashed_songs": [
+              "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+              "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+            ]
+          },
+          "next_generation": 1,
+          "plan_digest": "bfbe6d6a9aa7d8a99fc4db765dcd37cd1f64df5ed8e73dd6926179cab68e02ec",
+          "request": {
+            "action": {
+              "song_ids": [
+                "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+                "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              ],
+              "type": "trash_songs"
+            },
+            "at_unix_ms": 1791135262356,
+            "expected_generation": 0,
+            "operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+            "schema_version": 1
+          },
+          "request_digest": "0e1ed7b310dd1a2a9680541798703781d888a18d1ad829b5de419a92e9cb3fc8"
+        },
+        "summary": {
+          "affected_packs": [
+            {
+              "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+              "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+              "name": "first.zip",
+              "selected_song_count": 1
+            },
+            {
+              "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+              "import_pack_id": "import-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174",
+              "name": "second.zip",
+              "selected_song_count": 1
+            },
+            {
+              "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+              "import_pack_id": "import-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887",
+              "name": "clean.zip",
+              "selected_song_count": 1
+            }
+          ],
+          "changed_song_count": 2,
+          "reclaimed_bytes": 0,
+          "removed_membership_count": 3,
+          "restored_membership_count": 0,
+          "selected_count": 2,
+          "shared_song_count": 1
+        },
+        "version": 1
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/commit",
+      "request": {
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "preview": {
+          "base_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b",
+          "effects": {
+            "added_memberships": [],
+            "affected_packs": [
+              "collection-38455d61691ea1c530a0515f4a2226df",
+              "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+              "collection-d55065c918f18a0c6ea40080ff5ad8ed"
+            ],
+            "blocked_memberships": [],
+            "created_packs": [],
+            "newly_unfiled_songs": [],
+            "noops": [],
+            "reclaimed_bytes": 0,
+            "removed_memberships": [
+              {
+                "pack": "collection-38455d61691ea1c530a0515f4a2226df",
+                "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              },
+              {
+                "pack": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              },
+              {
+                "pack": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+                "song": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f"
+              }
+            ],
+            "renamed_packs": [],
+            "restored_packs": [],
+            "restored_songs": [],
+            "retained_payload_bytes": 10860,
+            "retained_source_bytes": 17554,
+            "trashed_packs": [],
+            "trashed_songs": [
+              "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+              "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+            ]
+          },
+          "next_generation": 1,
+          "plan_digest": "bfbe6d6a9aa7d8a99fc4db765dcd37cd1f64df5ed8e73dd6926179cab68e02ec",
+          "request": {
+            "action": {
+              "song_ids": [
+                "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+                "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              ],
+              "type": "trash_songs"
+            },
+            "at_unix_ms": 1791135262356,
+            "expected_generation": 0,
+            "operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+            "schema_version": 1
+          },
+          "request_digest": "0e1ed7b310dd1a2a9680541798703781d888a18d1ad829b5de419a92e9cb3fc8"
+        }
+      },
+      "response": {
+        "catalog_digest": "5a480fb9ca484216b1b3ff3a9b7aa39bf893a08bce10e23be57cd42b8dc4265b",
+        "format": "worldmusichub-catalog",
+        "generation": 1,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+        "outcome": "committed",
+        "receipt": {
+          "preview": {
+            "base_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b",
+            "effects": {
+              "added_memberships": [],
+              "affected_packs": [
+                "collection-38455d61691ea1c530a0515f4a2226df",
+                "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                "collection-d55065c918f18a0c6ea40080ff5ad8ed"
+              ],
+              "blocked_memberships": [],
+              "created_packs": [],
+              "newly_unfiled_songs": [],
+              "noops": [],
+              "reclaimed_bytes": 0,
+              "removed_memberships": [
+                {
+                  "pack": "collection-38455d61691ea1c530a0515f4a2226df",
+                  "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+                },
+                {
+                  "pack": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                  "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+                },
+                {
+                  "pack": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+                  "song": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f"
+                }
+              ],
+              "renamed_packs": [],
+              "restored_packs": [],
+              "restored_songs": [],
+              "retained_payload_bytes": 10860,
+              "retained_source_bytes": 17554,
+              "trashed_packs": [],
+              "trashed_songs": [
+                "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+                "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              ]
+            },
+            "next_generation": 1,
+            "plan_digest": "bfbe6d6a9aa7d8a99fc4db765dcd37cd1f64df5ed8e73dd6926179cab68e02ec",
+            "request": {
+              "action": {
+                "song_ids": [
+                  "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+                  "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+                ],
+                "type": "trash_songs"
+              },
+              "at_unix_ms": 1791135262356,
+              "expected_generation": 0,
+              "operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+              "schema_version": 1
+            },
+            "request_digest": "0e1ed7b310dd1a2a9680541798703781d888a18d1ad829b5de419a92e9cb3fc8"
+          }
+        },
+        "replayed": false,
+        "version": 1
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/query",
+      "request": {
+        "limit": 100,
+        "refresh": true,
+        "view": "trash"
+      },
+      "response": {
+        "catalog_digest": "5a480fb9ca484216b1b3ff3a9b7aa39bf893a08bce10e23be57cd42b8dc4265b",
+        "counts": {
+          "active_songs": 1,
+          "managed_songs": 3,
+          "memberships": 1,
+          "packs": 3,
+          "trashed_songs": 2
+        },
+        "format": "worldmusichub-catalog",
+        "freshness": {
+          "cached": false,
+          "change_detection": "explicit_refresh",
+          "kind": "advisory_snapshot",
+          "verified_at_unix_ms": 1791135262497
+        },
+        "generation": 1,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "next_cursor": null,
+        "rows": [
+          {
+            "catalog_managed": true,
+            "composer": "",
+            "edition_id": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+            "key": "song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+            "pack_count": 1,
+            "packs": [
+              {
+                "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+                "import_pack_id": "import-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887",
+                "name": "clean.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "wmh-performance-midi1-v1",
+            "score_id": "original-catalog-clean",
+            "storage_kind": "clean",
+            "title": "Original catalog clean",
+            "trashed_by": "operation-28d22eaa00133ca355a8c6bef59f13c6"
+          },
+          {
+            "catalog_managed": true,
+            "composer": "Unknown",
+            "edition_id": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+            "key": "song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+            "pack_count": 2,
+            "packs": [
+              {
+                "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+                "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+                "name": "first.zip"
+              },
+              {
+                "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                "import_pack_id": "import-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174",
+                "name": "second.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "canonical",
+            "score_id": "a",
+            "storage_kind": "legacy",
+            "title": "Original a",
+            "trashed_by": "operation-28d22eaa00133ca355a8c6bef59f13c6"
+          }
+        ],
+        "snapshot_id": "3f4d6be2d188aad3a4255d5620dde43651f32cfd1d38d2a15bca854a5c81b7e9",
+        "total": 2,
+        "version": 1,
+        "view": "trash"
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/query",
+      "request": {
+        "limit": 100,
+        "refresh": true,
+        "view": "active"
+      },
+      "response": {
+        "catalog_digest": "5a480fb9ca484216b1b3ff3a9b7aa39bf893a08bce10e23be57cd42b8dc4265b",
+        "counts": {
+          "active_songs": 1,
+          "managed_songs": 3,
+          "memberships": 1,
+          "packs": 3,
+          "trashed_songs": 2
+        },
+        "format": "worldmusichub-catalog",
+        "freshness": {
+          "cached": false,
+          "change_detection": "explicit_refresh",
+          "kind": "advisory_snapshot",
+          "verified_at_unix_ms": 1791135262513
+        },
+        "generation": 1,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "next_cursor": null,
+        "rows": [
+          {
+            "catalog_managed": true,
+            "composer": "Unknown",
+            "edition_id": "legacy:song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+            "key": "song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+            "pack_count": 1,
+            "packs": [
+              {
+                "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+                "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+                "name": "first.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "canonical",
+            "score_id": "b",
+            "storage_kind": "legacy",
+            "title": "Original b",
+            "trashed_by": null
+          }
+        ],
+        "snapshot_id": "3f4d6be2d188aad3a4255d5620dde43651f32cfd1d38d2a15bca854a5c81b7e9",
+        "total": 1,
+        "version": 1,
+        "view": "active"
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/manage/query",
+      "request": {
+        "refresh": true,
+        "view": "songs"
+      },
+      "response": {
+        "format": "worldmusichub-library-management",
+        "freshness": {
+          "cached": false,
+          "change_detection": "explicit_refresh",
+          "kind": "advisory_snapshot",
+          "song_integrity": "verified_at_snapshot",
+          "verified_at_unix_ms": 1791135262533
+        },
+        "native_only": true,
+        "next_cursor": null,
+        "read_only": true,
+        "rows": [
+          {
+            "composer": "Unknown",
+            "content_sha256": "13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+            "edition_id": "legacy:song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+            "key": "song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+            "pack_count": 1,
+            "pack_ids": [
+              "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680"
+            ],
+            "packs": [
+              {
+                "name": "first.zip",
+                "pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680"
+              }
+            ],
+            "profile": "canonical",
+            "receipt_reference_count": 2,
+            "score_id": "b",
+            "source_reference_count": 1,
+            "storage_kind": "legacy",
+            "title": "Original b"
+          }
+        ],
+        "snapshot_id": "4ba3eec7dc2b47a1c2f41fdebd0691118c78b846703ae2e86628aebad1223621",
+        "summary": {
+          "duplicate_groups": 0,
+          "issues": 0,
+          "memberships": 1,
+          "packs": 3,
+          "shared_songs": 0,
+          "songs": 1,
+          "unfiled_songs": 0
+        },
+        "total": 1,
+        "version": 1,
+        "view": "songs"
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/commit",
+      "request": {
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "preview": {
+          "base_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b",
+          "effects": {
+            "added_memberships": [],
+            "affected_packs": [
+              "collection-38455d61691ea1c530a0515f4a2226df",
+              "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+              "collection-d55065c918f18a0c6ea40080ff5ad8ed"
+            ],
+            "blocked_memberships": [],
+            "created_packs": [],
+            "newly_unfiled_songs": [],
+            "noops": [],
+            "reclaimed_bytes": 0,
+            "removed_memberships": [
+              {
+                "pack": "collection-38455d61691ea1c530a0515f4a2226df",
+                "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              },
+              {
+                "pack": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              },
+              {
+                "pack": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+                "song": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f"
+              }
+            ],
+            "renamed_packs": [],
+            "restored_packs": [],
+            "restored_songs": [],
+            "retained_payload_bytes": 10860,
+            "retained_source_bytes": 17554,
+            "trashed_packs": [],
+            "trashed_songs": [
+              "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+              "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+            ]
+          },
+          "next_generation": 1,
+          "plan_digest": "bfbe6d6a9aa7d8a99fc4db765dcd37cd1f64df5ed8e73dd6926179cab68e02ec",
+          "request": {
+            "action": {
+              "song_ids": [
+                "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+                "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              ],
+              "type": "trash_songs"
+            },
+            "at_unix_ms": 1791135262356,
+            "expected_generation": 0,
+            "operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+            "schema_version": 1
+          },
+          "request_digest": "0e1ed7b310dd1a2a9680541798703781d888a18d1ad829b5de419a92e9cb3fc8"
+        }
+      },
+      "response": {
+        "catalog_digest": "5a480fb9ca484216b1b3ff3a9b7aa39bf893a08bce10e23be57cd42b8dc4265b",
+        "format": "worldmusichub-catalog",
+        "generation": 1,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+        "outcome": "committed",
+        "receipt": {
+          "preview": {
+            "base_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b",
+            "effects": {
+              "added_memberships": [],
+              "affected_packs": [
+                "collection-38455d61691ea1c530a0515f4a2226df",
+                "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                "collection-d55065c918f18a0c6ea40080ff5ad8ed"
+              ],
+              "blocked_memberships": [],
+              "created_packs": [],
+              "newly_unfiled_songs": [],
+              "noops": [],
+              "reclaimed_bytes": 0,
+              "removed_memberships": [
+                {
+                  "pack": "collection-38455d61691ea1c530a0515f4a2226df",
+                  "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+                },
+                {
+                  "pack": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                  "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+                },
+                {
+                  "pack": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+                  "song": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f"
+                }
+              ],
+              "renamed_packs": [],
+              "restored_packs": [],
+              "restored_songs": [],
+              "retained_payload_bytes": 10860,
+              "retained_source_bytes": 17554,
+              "trashed_packs": [],
+              "trashed_songs": [
+                "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+                "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              ]
+            },
+            "next_generation": 1,
+            "plan_digest": "bfbe6d6a9aa7d8a99fc4db765dcd37cd1f64df5ed8e73dd6926179cab68e02ec",
+            "request": {
+              "action": {
+                "song_ids": [
+                  "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+                  "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+                ],
+                "type": "trash_songs"
+              },
+              "at_unix_ms": 1791135262356,
+              "expected_generation": 0,
+              "operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+              "schema_version": 1
+            },
+            "request_digest": "0e1ed7b310dd1a2a9680541798703781d888a18d1ad829b5de419a92e9cb3fc8"
+          }
+        },
+        "replayed": true,
+        "version": 1
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/operation",
+      "request": {
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6"
+      },
+      "response": {
+        "catalog_digest": "5a480fb9ca484216b1b3ff3a9b7aa39bf893a08bce10e23be57cd42b8dc4265b",
+        "format": "worldmusichub-catalog",
+        "generation": 1,
+        "kind": "transition",
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+        "outcome": "committed",
+        "receipt": {
+          "preview": {
+            "base_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b",
+            "effects": {
+              "added_memberships": [],
+              "affected_packs": [
+                "collection-38455d61691ea1c530a0515f4a2226df",
+                "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                "collection-d55065c918f18a0c6ea40080ff5ad8ed"
+              ],
+              "blocked_memberships": [],
+              "created_packs": [],
+              "newly_unfiled_songs": [],
+              "noops": [],
+              "reclaimed_bytes": 0,
+              "removed_memberships": [
+                {
+                  "pack": "collection-38455d61691ea1c530a0515f4a2226df",
+                  "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+                },
+                {
+                  "pack": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                  "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+                },
+                {
+                  "pack": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+                  "song": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f"
+                }
+              ],
+              "renamed_packs": [],
+              "restored_packs": [],
+              "restored_songs": [],
+              "retained_payload_bytes": 10860,
+              "retained_source_bytes": 17554,
+              "trashed_packs": [],
+              "trashed_songs": [
+                "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+                "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              ]
+            },
+            "next_generation": 1,
+            "plan_digest": "bfbe6d6a9aa7d8a99fc4db765dcd37cd1f64df5ed8e73dd6926179cab68e02ec",
+            "request": {
+              "action": {
+                "song_ids": [
+                  "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+                  "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+                ],
+                "type": "trash_songs"
+              },
+              "at_unix_ms": 1791135262356,
+              "expected_generation": 0,
+              "operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+              "schema_version": 1
+            },
+            "request_digest": "0e1ed7b310dd1a2a9680541798703781d888a18d1ad829b5de419a92e9cb3fc8"
+          }
+        },
+        "seed_digest": null,
+        "version": 1
+      },
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/library/catalog/status",
+      "request": null,
+      "response": {
+        "catalog_digest": "5a480fb9ca484216b1b3ff3a9b7aa39bf893a08bce10e23be57cd42b8dc4265b",
+        "counts": {
+          "active_songs": 1,
+          "managed_songs": 3,
+          "memberships": 1,
+          "packs": 3,
+          "trashed_songs": 2
+        },
+        "format": "worldmusichub-catalog",
+        "generation": 1,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "state": "ready",
+        "supported_operations": [
+          "initialize",
+          "trash_songs",
+          "restore_songs",
+          "sync_inventory"
+        ],
+        "version": 1
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/preview",
+      "request": {
+        "action": "restore_songs",
+        "catalog_digest": "5a480fb9ca484216b1b3ff3a9b7aa39bf893a08bce10e23be57cd42b8dc4265b",
+        "edition_ids": [
+          "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+          "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+        ],
+        "expected_generation": 1,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "trash_operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6"
+      },
+      "response": {
+        "format": "worldmusichub-catalog",
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "preview": {
+          "base_digest": "5a480fb9ca484216b1b3ff3a9b7aa39bf893a08bce10e23be57cd42b8dc4265b",
+          "effects": {
+            "added_memberships": [
+              {
+                "pack": "collection-38455d61691ea1c530a0515f4a2226df",
+                "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              },
+              {
+                "pack": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              },
+              {
+                "pack": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+                "song": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f"
+              }
+            ],
+            "affected_packs": [
+              "collection-38455d61691ea1c530a0515f4a2226df",
+              "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+              "collection-d55065c918f18a0c6ea40080ff5ad8ed"
+            ],
+            "blocked_memberships": [],
+            "created_packs": [],
+            "newly_unfiled_songs": [],
+            "noops": [],
+            "reclaimed_bytes": 0,
+            "removed_memberships": [],
+            "renamed_packs": [],
+            "restored_packs": [],
+            "restored_songs": [
+              "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+              "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+            ],
+            "retained_payload_bytes": 10860,
+            "retained_source_bytes": 17554,
+            "trashed_packs": [],
+            "trashed_songs": []
+          },
+          "next_generation": 2,
+          "plan_digest": "b22273bc72fbe7b81d6bdeef315385a4d028bebe84ab14982c026e053558cb70",
+          "request": {
+            "action": {
+              "entities": [
+                {
+                  "id": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+                  "kind": "song"
+                },
+                {
+                  "id": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+                  "kind": "song"
+                }
+              ],
+              "memberships": [],
+              "trash_operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+              "type": "restore"
+            },
+            "at_unix_ms": 1791135262598,
+            "expected_generation": 1,
+            "operation_id": "operation-919bbd47e689a116ff8ba066d66b4f95",
+            "schema_version": 1
+          },
+          "request_digest": "2119ce5c42d8b6d02e436e7e7c24bcbc83bde491bebeb3bc744df04f0c979057"
+        },
+        "summary": {
+          "affected_packs": [
+            {
+              "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+              "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+              "name": "first.zip",
+              "selected_song_count": 1
+            },
+            {
+              "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+              "import_pack_id": "import-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174",
+              "name": "second.zip",
+              "selected_song_count": 1
+            },
+            {
+              "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+              "import_pack_id": "import-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887",
+              "name": "clean.zip",
+              "selected_song_count": 1
+            }
+          ],
+          "changed_song_count": 2,
+          "reclaimed_bytes": 0,
+          "removed_membership_count": 0,
+          "restored_membership_count": 3,
+          "selected_count": 2,
+          "shared_song_count": 1
+        },
+        "version": 1
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/query",
+      "request": {
+        "limit": 100,
+        "refresh": true,
+        "view": "active"
+      },
+      "response": {
+        "catalog_digest": "80a15ddf83390c6c2d7510a70d3623bdc542dd34d0337884c1c03c2930b13f56",
+        "counts": {
+          "active_songs": 3,
+          "managed_songs": 3,
+          "memberships": 4,
+          "packs": 3,
+          "trashed_songs": 0
+        },
+        "format": "worldmusichub-catalog",
+        "freshness": {
+          "cached": false,
+          "change_detection": "explicit_refresh",
+          "kind": "advisory_snapshot",
+          "verified_at_unix_ms": 1791135262715
+        },
+        "generation": 2,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "next_cursor": null,
+        "rows": [
+          {
+            "catalog_managed": true,
+            "composer": "",
+            "edition_id": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+            "key": "song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+            "pack_count": 1,
+            "packs": [
+              {
+                "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+                "import_pack_id": "import-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887",
+                "name": "clean.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "wmh-performance-midi1-v1",
+            "score_id": "original-catalog-clean",
+            "storage_kind": "clean",
+            "title": "Original catalog clean",
+            "trashed_by": null
+          },
+          {
+            "catalog_managed": true,
+            "composer": "Unknown",
+            "edition_id": "legacy:song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+            "key": "song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+            "pack_count": 1,
+            "packs": [
+              {
+                "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+                "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+                "name": "first.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "canonical",
+            "score_id": "b",
+            "storage_kind": "legacy",
+            "title": "Original b",
+            "trashed_by": null
+          },
+          {
+            "catalog_managed": true,
+            "composer": "Unknown",
+            "edition_id": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+            "key": "song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+            "pack_count": 2,
+            "packs": [
+              {
+                "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+                "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+                "name": "first.zip"
+              },
+              {
+                "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                "import_pack_id": "import-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174",
+                "name": "second.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "canonical",
+            "score_id": "a",
+            "storage_kind": "legacy",
+            "title": "Original a",
+            "trashed_by": null
+          }
+        ],
+        "snapshot_id": "a1f92ba41176e8b23966c7151ca9102f6985dbedf1ebc09680410a3475264bb9",
+        "total": 3,
+        "version": 1,
+        "view": "active"
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/initialize",
+      "request": {
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "preview": {
+          "collections": [
+            {
+              "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+              "source_id": "pack-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680"
+            },
+            {
+              "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+              "source_id": "pack-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174"
+            },
+            {
+              "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+              "source_id": "pack-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887"
+            }
+          ],
+          "counts": {
+            "active_songs": 3,
+            "managed_songs": 3,
+            "memberships": 4,
+            "packs": 3,
+            "trashed_songs": 0
+          },
+          "inventory_digest": "9f94823850e87ff1b29c03c06d9bdc85119689d5668c0b134c51cfdefa37ba1c",
+          "kind": "initialize",
+          "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+          "operation_id": "operation-a00fb808d1c09635b18d56efc95e2b1c",
+          "retained_payload_bytes": 10860,
+          "retained_source_bytes": 17554,
+          "seed_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b"
+        }
+      },
+      "response": {
+        "catalog_digest": "80a15ddf83390c6c2d7510a70d3623bdc542dd34d0337884c1c03c2930b13f56",
+        "counts": {
+          "active_songs": 3,
+          "managed_songs": 3,
+          "memberships": 4,
+          "packs": 3,
+          "trashed_songs": 0
+        },
+        "format": "worldmusichub-catalog",
+        "generation": 2,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "operation_id": "operation-a00fb808d1c09635b18d56efc95e2b1c",
+        "outcome": "committed",
+        "replayed": true,
+        "state": "ready",
+        "version": 1
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/commit",
+      "request": {
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "preview": {
+          "base_digest": "5a480fb9ca484216b1b3ff3a9b7aa39bf893a08bce10e23be57cd42b8dc4265b",
+          "effects": {
+            "added_memberships": [
+              {
+                "pack": "collection-38455d61691ea1c530a0515f4a2226df",
+                "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              },
+              {
+                "pack": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              },
+              {
+                "pack": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+                "song": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f"
+              }
+            ],
+            "affected_packs": [
+              "collection-38455d61691ea1c530a0515f4a2226df",
+              "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+              "collection-d55065c918f18a0c6ea40080ff5ad8ed"
+            ],
+            "blocked_memberships": [],
+            "created_packs": [],
+            "newly_unfiled_songs": [],
+            "noops": [],
+            "reclaimed_bytes": 0,
+            "removed_memberships": [],
+            "renamed_packs": [],
+            "restored_packs": [],
+            "restored_songs": [
+              "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+              "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+            ],
+            "retained_payload_bytes": 10860,
+            "retained_source_bytes": 17554,
+            "trashed_packs": [],
+            "trashed_songs": []
+          },
+          "next_generation": 2,
+          "plan_digest": "b22273bc72fbe7b81d6bdeef315385a4d028bebe84ab14982c026e053558cb70",
+          "request": {
+            "action": {
+              "entities": [
+                {
+                  "id": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+                  "kind": "song"
+                },
+                {
+                  "id": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+                  "kind": "song"
+                }
+              ],
+              "memberships": [],
+              "trash_operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+              "type": "restore"
+            },
+            "at_unix_ms": 1791135262598,
+            "expected_generation": 1,
+            "operation_id": "operation-919bbd47e689a116ff8ba066d66b4f95",
+            "schema_version": 1
+          },
+          "request_digest": "2119ce5c42d8b6d02e436e7e7c24bcbc83bde491bebeb3bc744df04f0c979057"
+        }
+      },
+      "response": {
+        "catalog_digest": "80a15ddf83390c6c2d7510a70d3623bdc542dd34d0337884c1c03c2930b13f56",
+        "format": "worldmusichub-catalog",
+        "generation": 2,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "operation_id": "operation-919bbd47e689a116ff8ba066d66b4f95",
+        "outcome": "committed",
+        "receipt": {
+          "preview": {
+            "base_digest": "5a480fb9ca484216b1b3ff3a9b7aa39bf893a08bce10e23be57cd42b8dc4265b",
+            "effects": {
+              "added_memberships": [
+                {
+                  "pack": "collection-38455d61691ea1c530a0515f4a2226df",
+                  "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+                },
+                {
+                  "pack": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                  "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+                },
+                {
+                  "pack": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+                  "song": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f"
+                }
+              ],
+              "affected_packs": [
+                "collection-38455d61691ea1c530a0515f4a2226df",
+                "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                "collection-d55065c918f18a0c6ea40080ff5ad8ed"
+              ],
+              "blocked_memberships": [],
+              "created_packs": [],
+              "newly_unfiled_songs": [],
+              "noops": [],
+              "reclaimed_bytes": 0,
+              "removed_memberships": [],
+              "renamed_packs": [],
+              "restored_packs": [],
+              "restored_songs": [
+                "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+                "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+              ],
+              "retained_payload_bytes": 10860,
+              "retained_source_bytes": 17554,
+              "trashed_packs": [],
+              "trashed_songs": []
+            },
+            "next_generation": 2,
+            "plan_digest": "b22273bc72fbe7b81d6bdeef315385a4d028bebe84ab14982c026e053558cb70",
+            "request": {
+              "action": {
+                "entities": [
+                  {
+                    "id": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+                    "kind": "song"
+                  },
+                  {
+                    "id": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+                    "kind": "song"
+                  }
+                ],
+                "memberships": [],
+                "trash_operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+                "type": "restore"
+              },
+              "at_unix_ms": 1791135262598,
+              "expected_generation": 1,
+              "operation_id": "operation-919bbd47e689a116ff8ba066d66b4f95",
+              "schema_version": 1
+            },
+            "request_digest": "2119ce5c42d8b6d02e436e7e7c24bcbc83bde491bebeb3bc744df04f0c979057"
+          }
+        },
+        "replayed": true,
+        "version": 1
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/query",
+      "request": {
+        "limit": 100,
+        "refresh": true,
+        "view": "trash"
+      },
+      "response": {
+        "catalog_digest": "80a15ddf83390c6c2d7510a70d3623bdc542dd34d0337884c1c03c2930b13f56",
+        "counts": {
+          "active_songs": 3,
+          "managed_songs": 3,
+          "memberships": 4,
+          "packs": 3,
+          "trashed_songs": 0
+        },
+        "format": "worldmusichub-catalog",
+        "freshness": {
+          "cached": false,
+          "change_detection": "explicit_refresh",
+          "kind": "advisory_snapshot",
+          "verified_at_unix_ms": 1791135262795
+        },
+        "generation": 2,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "next_cursor": null,
+        "rows": [],
+        "snapshot_id": "a1f92ba41176e8b23966c7151ca9102f6985dbedf1ebc09680410a3475264bb9",
+        "total": 0,
+        "version": 1,
+        "view": "trash"
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/query",
+      "request": {
+        "limit": 100,
+        "refresh": true,
+        "view": "active"
+      },
+      "response": {
+        "catalog_digest": "80a15ddf83390c6c2d7510a70d3623bdc542dd34d0337884c1c03c2930b13f56",
+        "counts": {
+          "active_songs": 3,
+          "managed_songs": 3,
+          "memberships": 4,
+          "packs": 3,
+          "trashed_songs": 0
+        },
+        "format": "worldmusichub-catalog",
+        "freshness": {
+          "cached": false,
+          "change_detection": "explicit_refresh",
+          "kind": "advisory_snapshot",
+          "verified_at_unix_ms": 1791135262843
+        },
+        "generation": 2,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "next_cursor": null,
+        "rows": [
+          {
+            "catalog_managed": true,
+            "composer": "",
+            "edition_id": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+            "key": "song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+            "pack_count": 1,
+            "packs": [
+              {
+                "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+                "import_pack_id": "import-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887",
+                "name": "clean.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "wmh-performance-midi1-v1",
+            "score_id": "original-catalog-clean",
+            "storage_kind": "clean",
+            "title": "Original catalog clean",
+            "trashed_by": null
+          },
+          {
+            "catalog_managed": true,
+            "composer": "Unknown",
+            "edition_id": "legacy:song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+            "key": "song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+            "pack_count": 1,
+            "packs": [
+              {
+                "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+                "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+                "name": "first.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "canonical",
+            "score_id": "b",
+            "storage_kind": "legacy",
+            "title": "Original b",
+            "trashed_by": null
+          },
+          {
+            "catalog_managed": true,
+            "composer": "Unknown",
+            "edition_id": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+            "key": "song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+            "pack_count": 2,
+            "packs": [
+              {
+                "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+                "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+                "name": "first.zip"
+              },
+              {
+                "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                "import_pack_id": "import-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174",
+                "name": "second.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "canonical",
+            "score_id": "a",
+            "storage_kind": "legacy",
+            "title": "Original a",
+            "trashed_by": null
+          },
+          {
+            "catalog_managed": false,
+            "composer": "Unknown",
+            "edition_id": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+            "key": "song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+            "pack_count": 0,
+            "packs": [],
+            "physical_available": true,
+            "profile": "canonical",
+            "score_id": "fixture-new-sync",
+            "storage_kind": "legacy",
+            "title": "Original fixture-new-sync",
+            "trashed_by": null
+          }
+        ],
+        "snapshot_id": "b00c12d619664815bf429cdf6e2b6d161ffc4126a4f01e1ad03db94645f4d863",
+        "total": 4,
+        "version": 1,
+        "view": "active"
+      },
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/library/catalog/status",
+      "request": null,
+      "response": {
+        "catalog_digest": "80a15ddf83390c6c2d7510a70d3623bdc542dd34d0337884c1c03c2930b13f56",
+        "counts": {
+          "active_songs": 3,
+          "managed_songs": 3,
+          "memberships": 4,
+          "packs": 3,
+          "trashed_songs": 0
+        },
+        "format": "worldmusichub-catalog",
+        "generation": 2,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "state": "ready",
+        "supported_operations": [
+          "initialize",
+          "trash_songs",
+          "restore_songs",
+          "sync_inventory"
+        ],
+        "version": 1
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/sync/preview",
+      "request": {
+        "catalog_digest": "80a15ddf83390c6c2d7510a70d3623bdc542dd34d0337884c1c03c2930b13f56",
+        "expected_generation": 2,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e"
+      },
+      "response": {
+        "format": "worldmusichub-catalog",
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "preview": {
+          "base_digest": "80a15ddf83390c6c2d7510a70d3623bdc542dd34d0337884c1c03c2930b13f56",
+          "effects": {
+            "added_memberships": [
+              {
+                "pack": "collection-b02bba62fa519883855c96b838c6f538",
+                "song": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+              }
+            ],
+            "adopted_packs": [
+              "collection-b02bba62fa519883855c96b838c6f538"
+            ],
+            "adopted_songs": [
+              "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+            ],
+            "adopted_sources": [
+              "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+            ],
+            "affected_packs": [
+              "collection-b02bba62fa519883855c96b838c6f538"
+            ],
+            "blocked_memberships": [],
+            "created_packs": [],
+            "newly_unfiled_songs": [],
+            "noops": [],
+            "reclaimed_bytes": 0,
+            "removed_memberships": [],
+            "renamed_packs": [],
+            "restored_packs": [],
+            "restored_songs": [],
+            "retained_payload_bytes": 14708,
+            "retained_source_bytes": 21354,
+            "trashed_packs": [],
+            "trashed_songs": []
+          },
+          "next_generation": 3,
+          "plan_digest": "974322ea692822ca3d6a9c687ace7ed7ec51d1444db0a4d2e802db49e8e6bbff",
+          "request": {
+            "action": {
+              "inventory": {
+                "memberships": [
+                  {
+                    "added_at_unix_ms": 0,
+                    "id": {
+                      "pack": "collection-b02bba62fa519883855c96b838c6f538",
+                      "song": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+                    },
+                    "position": 0,
+                    "revision": 0
+                  }
+                ],
+                "origins": [
+                  {
+                    "evidence_type": "receipt_derived",
+                    "item_index": 0,
+                    "item_kind": "inert_label",
+                    "item_path": "new-sync.json",
+                    "receipt_filename": "report-00000000000001791135262819889651-00000000000000000037.json",
+                    "song": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                    "source": "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+                  }
+                ],
+                "packs": [
+                  {
+                    "id": "collection-b02bba62fa519883855c96b838c6f538",
+                    "kind": "imported",
+                    "name": "new-sync.json",
+                    "origin_import_operation_id": null,
+                    "revision": 0,
+                    "source_archive_keys": [
+                      "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+                    ],
+                    "trashed_by": null
+                  }
+                ],
+                "songs": [
+                  {
+                    "id": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                    "retained_bytes": 3848,
+                    "revision": 0,
+                    "trashed_by": null
+                  }
+                ],
+                "sources": [
+                  {
+                    "default_imported_pack": "collection-b02bba62fa519883855c96b838c6f538",
+                    "id": "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                    "retained_bytes": 3800
+                  }
+                ]
+              },
+              "type": "adopt_inventory"
+            },
+            "at_unix_ms": 1791135262902,
+            "expected_generation": 2,
+            "operation_id": "operation-2db308e23d5a0a3261ad71311d66b54b",
+            "schema_version": 1
+          },
+          "request_digest": "03ea296b35e1b06358e77f26d09ee789997ea2a4dcfb0bd88048724b5a47c2a9"
+        },
+        "summary": {
+          "affected_packs": [
+            {
+              "collection_id": "collection-b02bba62fa519883855c96b838c6f538",
+              "import_pack_id": "import-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+              "name": "new-sync.json",
+              "selected_song_count": 1
+            }
+          ],
+          "changed_song_count": 1,
+          "reclaimed_bytes": 0,
+          "remaining_song_count": 0,
+          "remaining_source_count": 0,
+          "removed_membership_count": 0,
+          "restored_membership_count": 1,
+          "selected_count": 1,
+          "shared_song_count": 0
+        },
+        "version": 1
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/commit",
+      "request": {
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "preview": {
+          "base_digest": "80a15ddf83390c6c2d7510a70d3623bdc542dd34d0337884c1c03c2930b13f56",
+          "effects": {
+            "added_memberships": [
+              {
+                "pack": "collection-b02bba62fa519883855c96b838c6f538",
+                "song": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+              }
+            ],
+            "adopted_packs": [
+              "collection-b02bba62fa519883855c96b838c6f538"
+            ],
+            "adopted_songs": [
+              "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+            ],
+            "adopted_sources": [
+              "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+            ],
+            "affected_packs": [
+              "collection-b02bba62fa519883855c96b838c6f538"
+            ],
+            "blocked_memberships": [],
+            "created_packs": [],
+            "newly_unfiled_songs": [],
+            "noops": [],
+            "reclaimed_bytes": 0,
+            "removed_memberships": [],
+            "renamed_packs": [],
+            "restored_packs": [],
+            "restored_songs": [],
+            "retained_payload_bytes": 14708,
+            "retained_source_bytes": 21354,
+            "trashed_packs": [],
+            "trashed_songs": []
+          },
+          "next_generation": 3,
+          "plan_digest": "974322ea692822ca3d6a9c687ace7ed7ec51d1444db0a4d2e802db49e8e6bbff",
+          "request": {
+            "action": {
+              "inventory": {
+                "memberships": [
+                  {
+                    "added_at_unix_ms": 0,
+                    "id": {
+                      "pack": "collection-b02bba62fa519883855c96b838c6f538",
+                      "song": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+                    },
+                    "position": 0,
+                    "revision": 0
+                  }
+                ],
+                "origins": [
+                  {
+                    "evidence_type": "receipt_derived",
+                    "item_index": 0,
+                    "item_kind": "inert_label",
+                    "item_path": "new-sync.json",
+                    "receipt_filename": "report-00000000000001791135262819889651-00000000000000000037.json",
+                    "song": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                    "source": "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+                  }
+                ],
+                "packs": [
+                  {
+                    "id": "collection-b02bba62fa519883855c96b838c6f538",
+                    "kind": "imported",
+                    "name": "new-sync.json",
+                    "origin_import_operation_id": null,
+                    "revision": 0,
+                    "source_archive_keys": [
+                      "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+                    ],
+                    "trashed_by": null
+                  }
+                ],
+                "songs": [
+                  {
+                    "id": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                    "retained_bytes": 3848,
+                    "revision": 0,
+                    "trashed_by": null
+                  }
+                ],
+                "sources": [
+                  {
+                    "default_imported_pack": "collection-b02bba62fa519883855c96b838c6f538",
+                    "id": "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                    "retained_bytes": 3800
+                  }
+                ]
+              },
+              "type": "adopt_inventory"
+            },
+            "at_unix_ms": 1791135262902,
+            "expected_generation": 2,
+            "operation_id": "operation-2db308e23d5a0a3261ad71311d66b54b",
+            "schema_version": 1
+          },
+          "request_digest": "03ea296b35e1b06358e77f26d09ee789997ea2a4dcfb0bd88048724b5a47c2a9"
+        }
+      },
+      "response": {
+        "catalog_digest": "cdd5b95108088d1a9681e0567b91f35bd47aee86806b619cbf21bea202585877",
+        "format": "worldmusichub-catalog",
+        "generation": 3,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "operation_id": "operation-2db308e23d5a0a3261ad71311d66b54b",
+        "outcome": "committed",
+        "receipt": {
+          "preview": {
+            "base_digest": "80a15ddf83390c6c2d7510a70d3623bdc542dd34d0337884c1c03c2930b13f56",
+            "effects": {
+              "added_memberships": [
+                {
+                  "pack": "collection-b02bba62fa519883855c96b838c6f538",
+                  "song": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+                }
+              ],
+              "adopted_packs": [
+                "collection-b02bba62fa519883855c96b838c6f538"
+              ],
+              "adopted_songs": [
+                "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+              ],
+              "adopted_sources": [
+                "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+              ],
+              "affected_packs": [
+                "collection-b02bba62fa519883855c96b838c6f538"
+              ],
+              "blocked_memberships": [],
+              "created_packs": [],
+              "newly_unfiled_songs": [],
+              "noops": [],
+              "reclaimed_bytes": 0,
+              "removed_memberships": [],
+              "renamed_packs": [],
+              "restored_packs": [],
+              "restored_songs": [],
+              "retained_payload_bytes": 14708,
+              "retained_source_bytes": 21354,
+              "trashed_packs": [],
+              "trashed_songs": []
+            },
+            "next_generation": 3,
+            "plan_digest": "974322ea692822ca3d6a9c687ace7ed7ec51d1444db0a4d2e802db49e8e6bbff",
+            "request": {
+              "action": {
+                "inventory": {
+                  "memberships": [
+                    {
+                      "added_at_unix_ms": 0,
+                      "id": {
+                        "pack": "collection-b02bba62fa519883855c96b838c6f538",
+                        "song": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+                      },
+                      "position": 0,
+                      "revision": 0
+                    }
+                  ],
+                  "origins": [
+                    {
+                      "evidence_type": "receipt_derived",
+                      "item_index": 0,
+                      "item_kind": "inert_label",
+                      "item_path": "new-sync.json",
+                      "receipt_filename": "report-00000000000001791135262819889651-00000000000000000037.json",
+                      "song": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                      "source": "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+                    }
+                  ],
+                  "packs": [
+                    {
+                      "id": "collection-b02bba62fa519883855c96b838c6f538",
+                      "kind": "imported",
+                      "name": "new-sync.json",
+                      "origin_import_operation_id": null,
+                      "revision": 0,
+                      "source_archive_keys": [
+                        "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+                      ],
+                      "trashed_by": null
+                    }
+                  ],
+                  "songs": [
+                    {
+                      "id": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                      "retained_bytes": 3848,
+                      "revision": 0,
+                      "trashed_by": null
+                    }
+                  ],
+                  "sources": [
+                    {
+                      "default_imported_pack": "collection-b02bba62fa519883855c96b838c6f538",
+                      "id": "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                      "retained_bytes": 3800
+                    }
+                  ]
+                },
+                "type": "adopt_inventory"
+              },
+              "at_unix_ms": 1791135262902,
+              "expected_generation": 2,
+              "operation_id": "operation-2db308e23d5a0a3261ad71311d66b54b",
+              "schema_version": 1
+            },
+            "request_digest": "03ea296b35e1b06358e77f26d09ee789997ea2a4dcfb0bd88048724b5a47c2a9"
+          }
+        },
+        "replayed": false,
+        "version": 1
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/query",
+      "request": {
+        "limit": 100,
+        "refresh": true,
+        "view": "active"
+      },
+      "response": {
+        "catalog_digest": "cdd5b95108088d1a9681e0567b91f35bd47aee86806b619cbf21bea202585877",
+        "counts": {
+          "active_songs": 4,
+          "managed_songs": 4,
+          "memberships": 5,
+          "packs": 4,
+          "trashed_songs": 0
+        },
+        "format": "worldmusichub-catalog",
+        "freshness": {
+          "cached": false,
+          "change_detection": "explicit_refresh",
+          "kind": "advisory_snapshot",
+          "verified_at_unix_ms": 1791135263013
+        },
+        "generation": 3,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "next_cursor": null,
+        "rows": [
+          {
+            "catalog_managed": true,
+            "composer": "",
+            "edition_id": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+            "key": "song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+            "pack_count": 1,
+            "packs": [
+              {
+                "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+                "import_pack_id": "import-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887",
+                "name": "clean.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "wmh-performance-midi1-v1",
+            "score_id": "original-catalog-clean",
+            "storage_kind": "clean",
+            "title": "Original catalog clean",
+            "trashed_by": null
+          },
+          {
+            "catalog_managed": true,
+            "composer": "Unknown",
+            "edition_id": "legacy:song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+            "key": "song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+            "pack_count": 1,
+            "packs": [
+              {
+                "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+                "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+                "name": "first.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "canonical",
+            "score_id": "b",
+            "storage_kind": "legacy",
+            "title": "Original b",
+            "trashed_by": null
+          },
+          {
+            "catalog_managed": true,
+            "composer": "Unknown",
+            "edition_id": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+            "key": "song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+            "pack_count": 2,
+            "packs": [
+              {
+                "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+                "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+                "name": "first.zip"
+              },
+              {
+                "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                "import_pack_id": "import-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174",
+                "name": "second.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "canonical",
+            "score_id": "a",
+            "storage_kind": "legacy",
+            "title": "Original a",
+            "trashed_by": null
+          },
+          {
+            "catalog_managed": true,
+            "composer": "Unknown",
+            "edition_id": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+            "key": "song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+            "pack_count": 1,
+            "packs": [
+              {
+                "collection_id": "collection-b02bba62fa519883855c96b838c6f538",
+                "import_pack_id": "import-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                "name": "new-sync.json"
+              }
+            ],
+            "physical_available": true,
+            "profile": "canonical",
+            "score_id": "fixture-new-sync",
+            "storage_kind": "legacy",
+            "title": "Original fixture-new-sync",
+            "trashed_by": null
+          }
+        ],
+        "snapshot_id": "a495d734ad42fe7b8a605d68ac0c1569ccc596694cb25beaafb85e2c8f61396b",
+        "total": 4,
+        "version": 1,
+        "view": "active"
+      },
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/catalog/query",
+      "request": {
+        "limit": 100,
+        "refresh": true,
+        "view": "active"
+      },
+      "response": {
+        "catalog_digest": "cdd5b95108088d1a9681e0567b91f35bd47aee86806b619cbf21bea202585877",
+        "counts": {
+          "active_songs": 4,
+          "managed_songs": 4,
+          "memberships": 5,
+          "packs": 4,
+          "trashed_songs": 0
+        },
+        "format": "worldmusichub-catalog",
+        "freshness": {
+          "cached": false,
+          "change_detection": "explicit_refresh",
+          "kind": "advisory_snapshot",
+          "verified_at_unix_ms": 1791135263054
+        },
+        "generation": 3,
+        "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+        "native_only": true,
+        "next_cursor": null,
+        "rows": [
+          {
+            "catalog_managed": true,
+            "composer": "",
+            "edition_id": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+            "key": "song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+            "pack_count": 1,
+            "packs": [
+              {
+                "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+                "import_pack_id": "import-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887",
+                "name": "clean.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "wmh-performance-midi1-v1",
+            "score_id": "original-catalog-clean",
+            "storage_kind": "clean",
+            "title": "Original catalog clean",
+            "trashed_by": null
+          },
+          {
+            "catalog_managed": true,
+            "composer": "Unknown",
+            "edition_id": "legacy:song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+            "key": "song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+            "pack_count": 1,
+            "packs": [
+              {
+                "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+                "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+                "name": "first.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "canonical",
+            "score_id": "b",
+            "storage_kind": "legacy",
+            "title": "Original b",
+            "trashed_by": null
+          },
+          {
+            "catalog_managed": true,
+            "composer": "Unknown",
+            "edition_id": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+            "key": "song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+            "pack_count": 2,
+            "packs": [
+              {
+                "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+                "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+                "name": "first.zip"
+              },
+              {
+                "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+                "import_pack_id": "import-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174",
+                "name": "second.zip"
+              }
+            ],
+            "physical_available": true,
+            "profile": "canonical",
+            "score_id": "a",
+            "storage_kind": "legacy",
+            "title": "Original a",
+            "trashed_by": null
+          },
+          {
+            "catalog_managed": true,
+            "composer": "Unknown",
+            "edition_id": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+            "key": "song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+            "pack_count": 1,
+            "packs": [
+              {
+                "collection_id": "collection-b02bba62fa519883855c96b838c6f538",
+                "import_pack_id": "import-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                "name": "new-sync.json"
+              }
+            ],
+            "physical_available": true,
+            "profile": "canonical",
+            "score_id": "fixture-new-sync",
+            "storage_kind": "legacy",
+            "title": "Original fixture-new-sync",
+            "trashed_by": null
+          }
+        ],
+        "snapshot_id": "a495d734ad42fe7b8a605d68ac0c1569ccc596694cb25beaafb85e2c8f61396b",
+        "total": 4,
+        "version": 1,
+        "view": "active"
+      },
+      "status": 200
+    }
+  ],
+  "pending_sync": {
+    "catalog_digest": "80a15ddf83390c6c2d7510a70d3623bdc542dd34d0337884c1c03c2930b13f56",
+    "counts": {
+      "active_songs": 3,
+      "managed_songs": 3,
+      "memberships": 4,
+      "packs": 3,
+      "trashed_songs": 0
+    },
+    "format": "worldmusichub-catalog",
+    "freshness": {
+      "cached": false,
+      "change_detection": "explicit_refresh",
+      "kind": "advisory_snapshot",
+      "verified_at_unix_ms": 1791135262843
+    },
+    "generation": 2,
+    "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+    "native_only": true,
+    "next_cursor": null,
+    "rows": [
+      {
+        "catalog_managed": true,
+        "composer": "",
+        "edition_id": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+        "key": "song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+        "pack_count": 1,
+        "packs": [
+          {
+            "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+            "import_pack_id": "import-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887",
+            "name": "clean.zip"
+          }
+        ],
+        "physical_available": true,
+        "profile": "wmh-performance-midi1-v1",
+        "score_id": "original-catalog-clean",
+        "storage_kind": "clean",
+        "title": "Original catalog clean",
+        "trashed_by": null
+      },
+      {
+        "catalog_managed": true,
+        "composer": "Unknown",
+        "edition_id": "legacy:song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+        "key": "song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+        "pack_count": 1,
+        "packs": [
+          {
+            "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+            "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+            "name": "first.zip"
+          }
+        ],
+        "physical_available": true,
+        "profile": "canonical",
+        "score_id": "b",
+        "storage_kind": "legacy",
+        "title": "Original b",
+        "trashed_by": null
+      },
+      {
+        "catalog_managed": true,
+        "composer": "Unknown",
+        "edition_id": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+        "key": "song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+        "pack_count": 2,
+        "packs": [
+          {
+            "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+            "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+            "name": "first.zip"
+          },
+          {
+            "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+            "import_pack_id": "import-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174",
+            "name": "second.zip"
+          }
+        ],
+        "physical_available": true,
+        "profile": "canonical",
+        "score_id": "a",
+        "storage_kind": "legacy",
+        "title": "Original a",
+        "trashed_by": null
+      },
+      {
+        "catalog_managed": false,
+        "composer": "Unknown",
+        "edition_id": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+        "key": "song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+        "pack_count": 0,
+        "packs": [],
+        "physical_available": true,
+        "profile": "canonical",
+        "score_id": "fixture-new-sync",
+        "storage_kind": "legacy",
+        "title": "Original fixture-new-sync",
+        "trashed_by": null
+      }
+    ],
+    "snapshot_id": "b00c12d619664815bf429cdf6e2b6d161ffc4126a4f01e1ad03db94645f4d863",
+    "total": 4,
+    "version": 1,
+    "view": "active"
+  },
+  "restore_commit": {
+    "catalog_digest": "80a15ddf83390c6c2d7510a70d3623bdc542dd34d0337884c1c03c2930b13f56",
+    "format": "worldmusichub-catalog",
+    "generation": 2,
+    "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+    "native_only": true,
+    "operation_id": "operation-919bbd47e689a116ff8ba066d66b4f95",
+    "outcome": "committed",
+    "receipt": {
+      "preview": {
+        "base_digest": "5a480fb9ca484216b1b3ff3a9b7aa39bf893a08bce10e23be57cd42b8dc4265b",
+        "effects": {
+          "added_memberships": [
+            {
+              "pack": "collection-38455d61691ea1c530a0515f4a2226df",
+              "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+            },
+            {
+              "pack": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+              "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+            },
+            {
+              "pack": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+              "song": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f"
+            }
+          ],
+          "affected_packs": [
+            "collection-38455d61691ea1c530a0515f4a2226df",
+            "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+            "collection-d55065c918f18a0c6ea40080ff5ad8ed"
+          ],
+          "blocked_memberships": [],
+          "created_packs": [],
+          "newly_unfiled_songs": [],
+          "noops": [],
+          "reclaimed_bytes": 0,
+          "removed_memberships": [],
+          "renamed_packs": [],
+          "restored_packs": [],
+          "restored_songs": [
+            "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+            "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+          ],
+          "retained_payload_bytes": 10860,
+          "retained_source_bytes": 17554,
+          "trashed_packs": [],
+          "trashed_songs": []
+        },
+        "next_generation": 2,
+        "plan_digest": "b22273bc72fbe7b81d6bdeef315385a4d028bebe84ab14982c026e053558cb70",
+        "request": {
+          "action": {
+            "entities": [
+              {
+                "id": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+                "kind": "song"
+              },
+              {
+                "id": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+                "kind": "song"
+              }
+            ],
+            "memberships": [],
+            "trash_operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+            "type": "restore"
+          },
+          "at_unix_ms": 1791135262598,
+          "expected_generation": 1,
+          "operation_id": "operation-919bbd47e689a116ff8ba066d66b4f95",
+          "schema_version": 1
+        },
+        "request_digest": "2119ce5c42d8b6d02e436e7e7c24bcbc83bde491bebeb3bc744df04f0c979057"
+      }
+    },
+    "replayed": true,
+    "version": 1
+  },
+  "restore_preview": {
+    "format": "worldmusichub-catalog",
+    "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+    "native_only": true,
+    "preview": {
+      "base_digest": "5a480fb9ca484216b1b3ff3a9b7aa39bf893a08bce10e23be57cd42b8dc4265b",
+      "effects": {
+        "added_memberships": [
+          {
+            "pack": "collection-38455d61691ea1c530a0515f4a2226df",
+            "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+          },
+          {
+            "pack": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+            "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+          },
+          {
+            "pack": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+            "song": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f"
+          }
+        ],
+        "affected_packs": [
+          "collection-38455d61691ea1c530a0515f4a2226df",
+          "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+          "collection-d55065c918f18a0c6ea40080ff5ad8ed"
+        ],
+        "blocked_memberships": [],
+        "created_packs": [],
+        "newly_unfiled_songs": [],
+        "noops": [],
+        "reclaimed_bytes": 0,
+        "removed_memberships": [],
+        "renamed_packs": [],
+        "restored_packs": [],
+        "restored_songs": [
+          "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+          "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+        ],
+        "retained_payload_bytes": 10860,
+        "retained_source_bytes": 17554,
+        "trashed_packs": [],
+        "trashed_songs": []
+      },
+      "next_generation": 2,
+      "plan_digest": "b22273bc72fbe7b81d6bdeef315385a4d028bebe84ab14982c026e053558cb70",
+      "request": {
+        "action": {
+          "entities": [
+            {
+              "id": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+              "kind": "song"
+            },
+            {
+              "id": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+              "kind": "song"
+            }
+          ],
+          "memberships": [],
+          "trash_operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+          "type": "restore"
+        },
+        "at_unix_ms": 1791135262598,
+        "expected_generation": 1,
+        "operation_id": "operation-919bbd47e689a116ff8ba066d66b4f95",
+        "schema_version": 1
+      },
+      "request_digest": "2119ce5c42d8b6d02e436e7e7c24bcbc83bde491bebeb3bc744df04f0c979057"
+    },
+    "summary": {
+      "affected_packs": [
+        {
+          "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+          "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+          "name": "first.zip",
+          "selected_song_count": 1
+        },
+        {
+          "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+          "import_pack_id": "import-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174",
+          "name": "second.zip",
+          "selected_song_count": 1
+        },
+        {
+          "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+          "import_pack_id": "import-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887",
+          "name": "clean.zip",
+          "selected_song_count": 1
+        }
+      ],
+      "changed_song_count": 2,
+      "reclaimed_bytes": 0,
+      "removed_membership_count": 0,
+      "restored_membership_count": 3,
+      "selected_count": 2,
+      "shared_song_count": 1
+    },
+    "version": 1
+  },
+  "restored_trash": {
+    "catalog_digest": "80a15ddf83390c6c2d7510a70d3623bdc542dd34d0337884c1c03c2930b13f56",
+    "counts": {
+      "active_songs": 3,
+      "managed_songs": 3,
+      "memberships": 4,
+      "packs": 3,
+      "trashed_songs": 0
+    },
+    "format": "worldmusichub-catalog",
+    "freshness": {
+      "cached": false,
+      "change_detection": "explicit_refresh",
+      "kind": "advisory_snapshot",
+      "verified_at_unix_ms": 1791135262795
+    },
+    "generation": 2,
+    "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+    "native_only": true,
+    "next_cursor": null,
+    "rows": [],
+    "snapshot_id": "a1f92ba41176e8b23966c7151ca9102f6985dbedf1ebc09680410a3475264bb9",
+    "total": 0,
+    "version": 1,
+    "view": "trash"
+  },
+  "sync_commit": {
+    "catalog_digest": "cdd5b95108088d1a9681e0567b91f35bd47aee86806b619cbf21bea202585877",
+    "format": "worldmusichub-catalog",
+    "generation": 3,
+    "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+    "native_only": true,
+    "operation_id": "operation-2db308e23d5a0a3261ad71311d66b54b",
+    "outcome": "committed",
+    "receipt": {
+      "preview": {
+        "base_digest": "80a15ddf83390c6c2d7510a70d3623bdc542dd34d0337884c1c03c2930b13f56",
+        "effects": {
+          "added_memberships": [
+            {
+              "pack": "collection-b02bba62fa519883855c96b838c6f538",
+              "song": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+            }
+          ],
+          "adopted_packs": [
+            "collection-b02bba62fa519883855c96b838c6f538"
+          ],
+          "adopted_songs": [
+            "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+          ],
+          "adopted_sources": [
+            "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+          ],
+          "affected_packs": [
+            "collection-b02bba62fa519883855c96b838c6f538"
+          ],
+          "blocked_memberships": [],
+          "created_packs": [],
+          "newly_unfiled_songs": [],
+          "noops": [],
+          "reclaimed_bytes": 0,
+          "removed_memberships": [],
+          "renamed_packs": [],
+          "restored_packs": [],
+          "restored_songs": [],
+          "retained_payload_bytes": 14708,
+          "retained_source_bytes": 21354,
+          "trashed_packs": [],
+          "trashed_songs": []
+        },
+        "next_generation": 3,
+        "plan_digest": "974322ea692822ca3d6a9c687ace7ed7ec51d1444db0a4d2e802db49e8e6bbff",
+        "request": {
+          "action": {
+            "inventory": {
+              "memberships": [
+                {
+                  "added_at_unix_ms": 0,
+                  "id": {
+                    "pack": "collection-b02bba62fa519883855c96b838c6f538",
+                    "song": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+                  },
+                  "position": 0,
+                  "revision": 0
+                }
+              ],
+              "origins": [
+                {
+                  "evidence_type": "receipt_derived",
+                  "item_index": 0,
+                  "item_kind": "inert_label",
+                  "item_path": "new-sync.json",
+                  "receipt_filename": "report-00000000000001791135262819889651-00000000000000000037.json",
+                  "song": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                  "source": "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+                }
+              ],
+              "packs": [
+                {
+                  "id": "collection-b02bba62fa519883855c96b838c6f538",
+                  "kind": "imported",
+                  "name": "new-sync.json",
+                  "origin_import_operation_id": null,
+                  "revision": 0,
+                  "source_archive_keys": [
+                    "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+                  ],
+                  "trashed_by": null
+                }
+              ],
+              "songs": [
+                {
+                  "id": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                  "retained_bytes": 3848,
+                  "revision": 0,
+                  "trashed_by": null
+                }
+              ],
+              "sources": [
+                {
+                  "default_imported_pack": "collection-b02bba62fa519883855c96b838c6f538",
+                  "id": "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                  "retained_bytes": 3800
+                }
+              ]
+            },
+            "type": "adopt_inventory"
+          },
+          "at_unix_ms": 1791135262902,
+          "expected_generation": 2,
+          "operation_id": "operation-2db308e23d5a0a3261ad71311d66b54b",
+          "schema_version": 1
+        },
+        "request_digest": "03ea296b35e1b06358e77f26d09ee789997ea2a4dcfb0bd88048724b5a47c2a9"
+      }
+    },
+    "replayed": false,
+    "version": 1
+  },
+  "sync_preview": {
+    "format": "worldmusichub-catalog",
+    "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+    "native_only": true,
+    "preview": {
+      "base_digest": "80a15ddf83390c6c2d7510a70d3623bdc542dd34d0337884c1c03c2930b13f56",
+      "effects": {
+        "added_memberships": [
+          {
+            "pack": "collection-b02bba62fa519883855c96b838c6f538",
+            "song": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+          }
+        ],
+        "adopted_packs": [
+          "collection-b02bba62fa519883855c96b838c6f538"
+        ],
+        "adopted_songs": [
+          "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+        ],
+        "adopted_sources": [
+          "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+        ],
+        "affected_packs": [
+          "collection-b02bba62fa519883855c96b838c6f538"
+        ],
+        "blocked_memberships": [],
+        "created_packs": [],
+        "newly_unfiled_songs": [],
+        "noops": [],
+        "reclaimed_bytes": 0,
+        "removed_memberships": [],
+        "renamed_packs": [],
+        "restored_packs": [],
+        "restored_songs": [],
+        "retained_payload_bytes": 14708,
+        "retained_source_bytes": 21354,
+        "trashed_packs": [],
+        "trashed_songs": []
+      },
+      "next_generation": 3,
+      "plan_digest": "974322ea692822ca3d6a9c687ace7ed7ec51d1444db0a4d2e802db49e8e6bbff",
+      "request": {
+        "action": {
+          "inventory": {
+            "memberships": [
+              {
+                "added_at_unix_ms": 0,
+                "id": {
+                  "pack": "collection-b02bba62fa519883855c96b838c6f538",
+                  "song": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+                },
+                "position": 0,
+                "revision": 0
+              }
+            ],
+            "origins": [
+              {
+                "evidence_type": "receipt_derived",
+                "item_index": 0,
+                "item_kind": "inert_label",
+                "item_path": "new-sync.json",
+                "receipt_filename": "report-00000000000001791135262819889651-00000000000000000037.json",
+                "song": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                "source": "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+              }
+            ],
+            "packs": [
+              {
+                "id": "collection-b02bba62fa519883855c96b838c6f538",
+                "kind": "imported",
+                "name": "new-sync.json",
+                "origin_import_operation_id": null,
+                "revision": 0,
+                "source_archive_keys": [
+                  "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1"
+                ],
+                "trashed_by": null
+              }
+            ],
+            "songs": [
+              {
+                "id": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                "retained_bytes": 3848,
+                "revision": 0,
+                "trashed_by": null
+              }
+            ],
+            "sources": [
+              {
+                "default_imported_pack": "collection-b02bba62fa519883855c96b838c6f538",
+                "id": "pack-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+                "retained_bytes": 3800
+              }
+            ]
+          },
+          "type": "adopt_inventory"
+        },
+        "at_unix_ms": 1791135262902,
+        "expected_generation": 2,
+        "operation_id": "operation-2db308e23d5a0a3261ad71311d66b54b",
+        "schema_version": 1
+      },
+      "request_digest": "03ea296b35e1b06358e77f26d09ee789997ea2a4dcfb0bd88048724b5a47c2a9"
+    },
+    "summary": {
+      "affected_packs": [
+        {
+          "collection_id": "collection-b02bba62fa519883855c96b838c6f538",
+          "import_pack_id": "import-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+          "name": "new-sync.json",
+          "selected_song_count": 1
+        }
+      ],
+      "changed_song_count": 1,
+      "reclaimed_bytes": 0,
+      "remaining_song_count": 0,
+      "remaining_source_count": 0,
+      "removed_membership_count": 0,
+      "restored_membership_count": 1,
+      "selected_count": 1,
+      "shared_song_count": 0
+    },
+    "version": 1
+  },
+  "synced_active": {
+    "catalog_digest": "cdd5b95108088d1a9681e0567b91f35bd47aee86806b619cbf21bea202585877",
+    "counts": {
+      "active_songs": 4,
+      "managed_songs": 4,
+      "memberships": 5,
+      "packs": 4,
+      "trashed_songs": 0
+    },
+    "format": "worldmusichub-catalog",
+    "freshness": {
+      "cached": false,
+      "change_detection": "explicit_refresh",
+      "kind": "advisory_snapshot",
+      "verified_at_unix_ms": 1791135263013
+    },
+    "generation": 3,
+    "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+    "native_only": true,
+    "next_cursor": null,
+    "rows": [
+      {
+        "catalog_managed": true,
+        "composer": "",
+        "edition_id": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+        "key": "song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+        "pack_count": 1,
+        "packs": [
+          {
+            "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+            "import_pack_id": "import-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887",
+            "name": "clean.zip"
+          }
+        ],
+        "physical_available": true,
+        "profile": "wmh-performance-midi1-v1",
+        "score_id": "original-catalog-clean",
+        "storage_kind": "clean",
+        "title": "Original catalog clean",
+        "trashed_by": null
+      },
+      {
+        "catalog_managed": true,
+        "composer": "Unknown",
+        "edition_id": "legacy:song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+        "key": "song-13e5b1c3966daa43cfcc98a299fa6a332fa7bb3b4e0b3fff0aa8b15aacc18573",
+        "pack_count": 1,
+        "packs": [
+          {
+            "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+            "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+            "name": "first.zip"
+          }
+        ],
+        "physical_available": true,
+        "profile": "canonical",
+        "score_id": "b",
+        "storage_kind": "legacy",
+        "title": "Original b",
+        "trashed_by": null
+      },
+      {
+        "catalog_managed": true,
+        "composer": "Unknown",
+        "edition_id": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+        "key": "song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06",
+        "pack_count": 2,
+        "packs": [
+          {
+            "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+            "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+            "name": "first.zip"
+          },
+          {
+            "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+            "import_pack_id": "import-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174",
+            "name": "second.zip"
+          }
+        ],
+        "physical_available": true,
+        "profile": "canonical",
+        "score_id": "a",
+        "storage_kind": "legacy",
+        "title": "Original a",
+        "trashed_by": null
+      },
+      {
+        "catalog_managed": true,
+        "composer": "Unknown",
+        "edition_id": "legacy:song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+        "key": "song-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+        "pack_count": 1,
+        "packs": [
+          {
+            "collection_id": "collection-b02bba62fa519883855c96b838c6f538",
+            "import_pack_id": "import-b137c9eff9b316a75eca7e19c2b40327940ff759c15c505885ed9b995690a6c1",
+            "name": "new-sync.json"
+          }
+        ],
+        "physical_available": true,
+        "profile": "canonical",
+        "score_id": "fixture-new-sync",
+        "storage_kind": "legacy",
+        "title": "Original fixture-new-sync",
+        "trashed_by": null
+      }
+    ],
+    "snapshot_id": "a495d734ad42fe7b8a605d68ac0c1569ccc596694cb25beaafb85e2c8f61396b",
+    "total": 4,
+    "version": 1,
+    "view": "active"
+  },
+  "trash_operation": {
+    "catalog_digest": "5a480fb9ca484216b1b3ff3a9b7aa39bf893a08bce10e23be57cd42b8dc4265b",
+    "format": "worldmusichub-catalog",
+    "generation": 1,
+    "kind": "transition",
+    "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+    "native_only": true,
+    "operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+    "outcome": "committed",
+    "receipt": {
+      "preview": {
+        "base_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b",
+        "effects": {
+          "added_memberships": [],
+          "affected_packs": [
+            "collection-38455d61691ea1c530a0515f4a2226df",
+            "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+            "collection-d55065c918f18a0c6ea40080ff5ad8ed"
+          ],
+          "blocked_memberships": [],
+          "created_packs": [],
+          "newly_unfiled_songs": [],
+          "noops": [],
+          "reclaimed_bytes": 0,
+          "removed_memberships": [
+            {
+              "pack": "collection-38455d61691ea1c530a0515f4a2226df",
+              "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+            },
+            {
+              "pack": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+              "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+            },
+            {
+              "pack": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+              "song": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f"
+            }
+          ],
+          "renamed_packs": [],
+          "restored_packs": [],
+          "restored_songs": [],
+          "retained_payload_bytes": 10860,
+          "retained_source_bytes": 17554,
+          "trashed_packs": [],
+          "trashed_songs": [
+            "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+            "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+          ]
+        },
+        "next_generation": 1,
+        "plan_digest": "bfbe6d6a9aa7d8a99fc4db765dcd37cd1f64df5ed8e73dd6926179cab68e02ec",
+        "request": {
+          "action": {
+            "song_ids": [
+              "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+              "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+            ],
+            "type": "trash_songs"
+          },
+          "at_unix_ms": 1791135262356,
+          "expected_generation": 0,
+          "operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+          "schema_version": 1
+        },
+        "request_digest": "0e1ed7b310dd1a2a9680541798703781d888a18d1ad829b5de419a92e9cb3fc8"
+      }
+    },
+    "seed_digest": null,
+    "version": 1
+  },
+  "trash_preview": {
+    "format": "worldmusichub-catalog",
+    "library_id": "library-0cdd410ee95ca76294bfe4e4d41fffe6299ac785ca4566f6615433555889569e",
+    "native_only": true,
+    "preview": {
+      "base_digest": "f1c5d352b51c898637afe3a1e03710c278fb83fe0d66d0c032338cc64d68a46b",
+      "effects": {
+        "added_memberships": [],
+        "affected_packs": [
+          "collection-38455d61691ea1c530a0515f4a2226df",
+          "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+          "collection-d55065c918f18a0c6ea40080ff5ad8ed"
+        ],
+        "blocked_memberships": [],
+        "created_packs": [],
+        "newly_unfiled_songs": [],
+        "noops": [],
+        "reclaimed_bytes": 0,
+        "removed_memberships": [
+          {
+            "pack": "collection-38455d61691ea1c530a0515f4a2226df",
+            "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+          },
+          {
+            "pack": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+            "song": "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+          },
+          {
+            "pack": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+            "song": "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f"
+          }
+        ],
+        "renamed_packs": [],
+        "restored_packs": [],
+        "restored_songs": [],
+        "retained_payload_bytes": 10860,
+        "retained_source_bytes": 17554,
+        "trashed_packs": [],
+        "trashed_songs": [
+          "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+          "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+        ]
+      },
+      "next_generation": 1,
+      "plan_digest": "bfbe6d6a9aa7d8a99fc4db765dcd37cd1f64df5ed8e73dd6926179cab68e02ec",
+      "request": {
+        "action": {
+          "song_ids": [
+            "clean:song-543eeb845a34a0db12078a13a7a21704467b7f37b48c67c774c786728b17dc5f",
+            "legacy:song-7e507b9de38bc14e81413b276d51c087b9c780fa83fcf22338bad6563d37eb06"
+          ],
+          "type": "trash_songs"
+        },
+        "at_unix_ms": 1791135262356,
+        "expected_generation": 0,
+        "operation_id": "operation-28d22eaa00133ca355a8c6bef59f13c6",
+        "schema_version": 1
+      },
+      "request_digest": "0e1ed7b310dd1a2a9680541798703781d888a18d1ad829b5de419a92e9cb3fc8"
+    },
+    "summary": {
+      "affected_packs": [
+        {
+          "collection_id": "collection-38455d61691ea1c530a0515f4a2226df",
+          "import_pack_id": "import-6058d13c770146435565c1f306b4f7a85180ae506613231b234d91a6f1820680",
+          "name": "first.zip",
+          "selected_song_count": 1
+        },
+        {
+          "collection_id": "collection-3fe32fe3032e7b93e4b52c5e5b01ba4e",
+          "import_pack_id": "import-60ac26000de3e58bd7b6afc5eafea0a95327e3e034982600de7310094a8ff174",
+          "name": "second.zip",
+          "selected_song_count": 1
+        },
+        {
+          "collection_id": "collection-d55065c918f18a0c6ea40080ff5ad8ed",
+          "import_pack_id": "import-86edea546c97edf7afdee56657049605be4f31a28593333c89b2fbc13b2ce887",
+          "name": "clean.zip",
+          "selected_song_count": 1
+        }
+      ],
+      "changed_song_count": 2,
+      "reclaimed_bytes": 0,
+      "removed_membership_count": 3,
+      "restored_membership_count": 0,
+      "selected_count": 2,
+      "shared_song_count": 1
+    },
+    "version": 1
+  }
+}

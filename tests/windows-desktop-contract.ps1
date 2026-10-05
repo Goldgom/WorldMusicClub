@@ -225,7 +225,7 @@ $temporary=Join-Path ([System.IO.Path]::GetTempPath()) ('wmh picker 拼谱 '+[gu
 try {
   $fixtures=Join-Path $temporary 'fixtures';$downloads=Join-Path $temporary 'downloads'
   New-Item -ItemType Directory $fixtures,$downloads | Out-Null
-  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu','malformed.json','folder-original.json','folder-conflict.json','原创曲包_日本語.zip','bulk-conflict.zip','bulk-backup.json','bulk-failure.zip','bulk-malformed.zip','bulk-standard-a.json','bulk-standard-b.json','clean-authored-song.zip','vsq-authored-song.zip','performance-authored-songs.zip','pitch-bend-authored-songs.zip','authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid','authoring-original.vsq','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip')
+  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu','malformed.json','folder-original.json','folder-conflict.json','原创曲包_日本語.zip','bulk-conflict.zip','bulk-backup.json','bulk-failure.zip','bulk-malformed.zip','bulk-standard-a.json','bulk-standard-b.json','clean-authored-song.zip','vsq-authored-song.zip','performance-authored-songs.zip','pitch-bend-authored-songs.zip','authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid','authoring-original.vsq','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip','catalog-original-legacy.zip','catalog-original-shared.zip','catalog-original-clean.zip')
   foreach($name in $fixed) {
     $expected=Join-Path $fixtures $name;[System.IO.File]::WriteAllText($expected,'fixture')
     Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) -ceq $expected) "fixed path $name"
@@ -360,4 +360,5 @@ try {
 } finally {
   if(Test-Path $temporary){Remove-Item -LiteralPath $temporary -Recurse -Force}
 }
-Write-Output "$script:checks native picker identity, completion and fixture-path contract checks passed without GUI or native calls."
+. (Join-Path $PSScriptRoot 'windows-catalog-contract.ps1')
+Write-Output "$script:checks native picker identity, completion, catalog profile/snapshot and fixture-path contract checks passed without GUI or native calls."

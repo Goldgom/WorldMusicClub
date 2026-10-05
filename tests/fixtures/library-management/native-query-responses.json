@@ -1,0 +1,222 @@
+{
+  "duplicates": {
+    "format": "worldmusichub-library-management",
+    "freshness": {
+      "cached": true,
+      "change_detection": "explicit_refresh",
+      "kind": "advisory_snapshot",
+      "song_integrity": "verified_at_snapshot",
+      "verified_at_unix_ms": 1791121185882
+    },
+    "native_only": true,
+    "next_cursor": null,
+    "read_only": true,
+    "rows": [
+      {
+        "edition_count": 1,
+        "editions": [
+          {
+            "composer": "Unknown",
+            "content_sha256": "868c6bacd4a4b6bfd8cf1eea970e97815c6a9024c03e24c798e78763eb17ee2f",
+            "edition_id": "legacy:song-868c6bacd4a4b6bfd8cf1eea970e97815c6a9024c03e24c798e78763eb17ee2f",
+            "key": "song-868c6bacd4a4b6bfd8cf1eea970e97815c6a9024c03e24c798e78763eb17ee2f",
+            "pack_count": 2,
+            "pack_ids": [
+              "import-085c7475797edb4b0b451344803deb15b63a826dc96bfe41a79ddd64845bd064",
+              "import-2a953ae904a2feaf3b34365aa9b14353f63dbf43345946a432f73438100469be"
+            ],
+            "packs": [
+              {
+                "name": "Original pack A.zip",
+                "pack_id": "import-085c7475797edb4b0b451344803deb15b63a826dc96bfe41a79ddd64845bd064"
+              },
+              {
+                "name": "Original pack B.zip",
+                "pack_id": "import-2a953ae904a2feaf3b34365aa9b14353f63dbf43345946a432f73438100469be"
+              }
+            ],
+            "profile": "canonical",
+            "receipt_reference_count": 2,
+            "score_id": "original-contract-one",
+            "source_reference_count": 2,
+            "storage_kind": "legacy",
+            "title": "Original <inert> song"
+          }
+        ],
+        "evidence_type": "shared_edition",
+        "group_id": "exact_content:38e82b9f482c349594cf3c73538125225677dadf8605018e6b6a99fc1fff7251",
+        "kind": "exact_content",
+        "match": "legacy:868c6bacd4a4b6bfd8cf1eea970e97815c6a9024c03e24c798e78763eb17ee2f",
+        "pack_count": 2,
+        "reference_count": 2
+      }
+    ],
+    "snapshot_id": "13b2f65e0cbcd8a18b47eb87bbd9a21ec3f85351ec23362a381eb9fc55425f59",
+    "summary": {
+      "duplicate_groups": 1,
+      "issues": 1,
+      "memberships": 2,
+      "packs": 3,
+      "shared_songs": 1,
+      "songs": 1,
+      "unfiled_songs": 0
+    },
+    "total": 1,
+    "version": 1,
+    "view": "duplicates"
+  },
+  "issues": {
+    "format": "worldmusichub-library-management",
+    "freshness": {
+      "cached": true,
+      "change_detection": "explicit_refresh",
+      "kind": "advisory_snapshot",
+      "song_integrity": "verified_at_snapshot",
+      "verified_at_unix_ms": 1791121185882
+    },
+    "native_only": true,
+    "next_cursor": null,
+    "read_only": true,
+    "rows": [
+      {
+        "archive_key": "pack-82c3ce06364d2400431bcbcb1778ea0e36efeda99bdae65a617f15468befa43c",
+        "code": "pack_item_unresolved",
+        "issue_id": "issue-ca41d5b9415fd8f91a556f4359fe58de899d109f7994ff3eefe49d432d580699",
+        "message": "Source item different.wmhscore.json remains conflict; no membership was inferred",
+        "song_key": null
+      }
+    ],
+    "snapshot_id": "13b2f65e0cbcd8a18b47eb87bbd9a21ec3f85351ec23362a381eb9fc55425f59",
+    "summary": {
+      "duplicate_groups": 1,
+      "issues": 1,
+      "memberships": 2,
+      "packs": 3,
+      "shared_songs": 1,
+      "songs": 1,
+      "unfiled_songs": 0
+    },
+    "total": 1,
+    "version": 1,
+    "view": "issues"
+  },
+  "packs": {
+    "format": "worldmusichub-library-management",
+    "freshness": {
+      "cached": true,
+      "change_detection": "explicit_refresh",
+      "kind": "advisory_snapshot",
+      "song_integrity": "verified_at_snapshot",
+      "verified_at_unix_ms": 1791121185882
+    },
+    "native_only": true,
+    "next_cursor": null,
+    "read_only": true,
+    "rows": [
+      {
+        "archive_key": "pack-085c7475797edb4b0b451344803deb15b63a826dc96bfe41a79ddd64845bd064",
+        "issue_count": 0,
+        "name": "Original pack A.zip",
+        "pack_id": "import-085c7475797edb4b0b451344803deb15b63a826dc96bfe41a79ddd64845bd064",
+        "provenance": "validated_receipts",
+        "receipt_count": 1,
+        "retained_only_count": 0,
+        "shared_song_count": 1,
+        "song_count": 1,
+        "source_bytes": 2033
+      },
+      {
+        "archive_key": "pack-2a953ae904a2feaf3b34365aa9b14353f63dbf43345946a432f73438100469be",
+        "issue_count": 0,
+        "name": "Original pack B.zip",
+        "pack_id": "import-2a953ae904a2feaf3b34365aa9b14353f63dbf43345946a432f73438100469be",
+        "provenance": "validated_receipts",
+        "receipt_count": 1,
+        "retained_only_count": 0,
+        "shared_song_count": 1,
+        "song_count": 1,
+        "source_bytes": 2195
+      },
+      {
+        "archive_key": "pack-82c3ce06364d2400431bcbcb1778ea0e36efeda99bdae65a617f15468befa43c",
+        "issue_count": 1,
+        "name": "Original conflict.zip",
+        "pack_id": "import-82c3ce06364d2400431bcbcb1778ea0e36efeda99bdae65a617f15468befa43c",
+        "provenance": "validated_receipts",
+        "receipt_count": 1,
+        "retained_only_count": 0,
+        "shared_song_count": 0,
+        "song_count": 0,
+        "source_bytes": 2050
+      }
+    ],
+    "snapshot_id": "13b2f65e0cbcd8a18b47eb87bbd9a21ec3f85351ec23362a381eb9fc55425f59",
+    "summary": {
+      "duplicate_groups": 1,
+      "issues": 1,
+      "memberships": 2,
+      "packs": 3,
+      "shared_songs": 1,
+      "songs": 1,
+      "unfiled_songs": 0
+    },
+    "total": 3,
+    "version": 1,
+    "view": "packs"
+  },
+  "songs": {
+    "format": "worldmusichub-library-management",
+    "freshness": {
+      "cached": true,
+      "change_detection": "explicit_refresh",
+      "kind": "advisory_snapshot",
+      "song_integrity": "verified_at_snapshot",
+      "verified_at_unix_ms": 1791121185882
+    },
+    "native_only": true,
+    "next_cursor": null,
+    "read_only": true,
+    "rows": [
+      {
+        "composer": "Unknown",
+        "content_sha256": "868c6bacd4a4b6bfd8cf1eea970e97815c6a9024c03e24c798e78763eb17ee2f",
+        "edition_id": "legacy:song-868c6bacd4a4b6bfd8cf1eea970e97815c6a9024c03e24c798e78763eb17ee2f",
+        "key": "song-868c6bacd4a4b6bfd8cf1eea970e97815c6a9024c03e24c798e78763eb17ee2f",
+        "pack_count": 2,
+        "pack_ids": [
+          "import-085c7475797edb4b0b451344803deb15b63a826dc96bfe41a79ddd64845bd064",
+          "import-2a953ae904a2feaf3b34365aa9b14353f63dbf43345946a432f73438100469be"
+        ],
+        "packs": [
+          {
+            "name": "Original pack A.zip",
+            "pack_id": "import-085c7475797edb4b0b451344803deb15b63a826dc96bfe41a79ddd64845bd064"
+          },
+          {
+            "name": "Original pack B.zip",
+            "pack_id": "import-2a953ae904a2feaf3b34365aa9b14353f63dbf43345946a432f73438100469be"
+          }
+        ],
+        "profile": "canonical",
+        "receipt_reference_count": 2,
+        "score_id": "original-contract-one",
+        "source_reference_count": 2,
+        "storage_kind": "legacy",
+        "title": "Original <inert> song"
+      }
+    ],
+    "snapshot_id": "13b2f65e0cbcd8a18b47eb87bbd9a21ec3f85351ec23362a381eb9fc55425f59",
+    "summary": {
+      "duplicate_groups": 1,
+      "issues": 1,
+      "memberships": 2,
+      "packs": 3,
+      "shared_songs": 1,
+      "songs": 1,
+      "unfiled_songs": 0
+    },
+    "total": 1,
+    "version": 1,
+    "view": "songs"
+  }
+}
