@@ -22,7 +22,7 @@ function createAuthoringControlObserver(document,{now=()=>performance.now(),defe
    const row=owner,files=Array.from(input.files||[]);row.changes.push({trusted:event.isTrusted===true,count:files.length,input:{id,type:input.type,multiple:input.multiple,disabled:input.disabled,connected:input.isConnected}});
    pending.push(Promise.all(files.map(async file=>({filename:file.name,bytes:file.size,sha256:await digest(await file.arrayBuffer())}))).then(values=>{row.files=values;}));
   }
-  if(!id.startsWith('authoring-')&&!['home-song-authoring','settings-button','instrument-settings-summary','song-authoring-title','start-listen','play-button','stage-title','back-to-library','sound-button'].includes(id)&&!role)return;
+  if(!id.startsWith('authoring-')&&!['home-song-authoring','settings-button','instrument-settings-summary','song-authoring-title','start-listen','play-button','stage-title','back-to-library','sound-button','configure-song-mod','song-mod-all-machine','song-mod-apply','start-performance'].includes(id)&&!role)return;
   if(events.length>=256)throw Error('Authoring trusted event bound exceeded');
   events.push({sequence:actionSequence(),type:event.type,trusted:event.isTrusted===true,id,role,code:event.code||null,value:['input','change'].includes(event.type)&&typeof input.value==='string'?input.value:null});
  }
@@ -33,13 +33,14 @@ async function prepareAuthoringNavigationPause({document,native,click,menu,until
  const $=id=>document.getElementById(id),trace=observeNativeReferenceTransport(document);
  let stage='listen-ready';
  try {
-  await menu.waitScreen('library','start-listen','original catalog preview ready');
+  await menu.waitScreen('library','configure-song-mod','original catalog preview ready');
   const setup={kind:'native-listen-navigation',previewId:$('song-lobby').dataset.previewId,controls:[]};
   if($('sound-button').getAttribute('aria-pressed')!=='true'){click('sound-button');setup.controls.push('sound-button');}
+  const mod=createAcceptanceSongMod({document,native,until});await mod.configure('none');setup.modActions=mod.history;setup.controls.push(...mod.history.map(row=>row.id));
   trace.changed('listen-ready',{checkpoint:true});
   // Start Listen already starts the real transport after compilation. A second
   // Play toggle would pause it, as the actual focused 243 run demonstrated.
-  stage='listen-start';setup.listenAction=await native('click',$('start-listen'));setup.controls.push('start-listen');
+  stage='listen-start';setup.listenAction=await native('click',$('start-performance'));setup.controls.push('start-performance');
   await until(()=>{const current=trace.changed('await-listen-start');return current.screen==='stage'&&current.mode==='listen'&&!current.playDisabled&&!current.hidden&&current.openDialogs.length===0&&current.positionMs>0&&current.positionMs<current.durationMs&&!['paused','complete','ready'].includes(current.cue);},'native Start Listen is running');
   trace.changed('listen-running',{checkpoint:true});setup.title=$('stage-title').textContent;const before=snapshot();
   stage='navigation-pause';setup.navigationAction=await native('click',$('back-to-library'));setup.controls.push('back-to-library');

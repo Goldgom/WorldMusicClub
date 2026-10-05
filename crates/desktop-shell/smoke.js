@@ -89,7 +89,7 @@ async function enterNativeSmokeLibrary({document,waitFor}) {
   await waitFor(() => nativeSmokeControlReady(document,'home','game-home','home-single-player'), 'visible app home menu');
   document.querySelector('#home-single-player').click();
   await waitFor(() => document.querySelectorAll('#catalog .catalog-item').length > 0, 'unchanged app catalog');
-  await waitFor(() => nativeSmokeControlReady(document,'library','song-lobby','start-listen') && document.querySelector('#song-lobby').dataset.previewStatus === 'ready', 'visible app single-player catalog preview');
+  await waitFor(() => nativeSmokeControlReady(document,'library','song-lobby','configure-song-mod') && document.querySelector('#song-lobby').dataset.previewStatus === 'ready', 'visible app single-player catalog preview');
   return {entry:'home-single-player',destination:'library',catalogPreviewReady:true};
 }
 
@@ -116,8 +116,12 @@ async function enterNativeSmokeLibrary({document,waitFor}) {
       report.homeMenu = await enterNativeSmokeLibrary({document,waitFor});
       document.querySelector('#sound-button').click();
       if (document.querySelector('#sound-button').getAttribute('aria-pressed') !== 'true') throw Error('Silent smoke mode did not activate');
-      document.querySelector('#start-listen').click();
-      await waitFor(() => nativeSmokeControlReady(document,'stage','workspace','reset-button') && document.querySelector('#export-button') && !document.querySelector('#export-button').disabled && !document.querySelector('#start-listen').disabled, 'app score activation');
+      document.querySelector('#configure-song-mod').click();
+      document.querySelector('#song-mod-all-machine').click();
+      document.querySelector('#song-mod-apply').click();
+      await waitFor(()=>!document.querySelector('#song-mod-dialog').open&&!document.querySelector('#start-performance').disabled,'all-machine Mod applied');
+      document.querySelector('#start-performance').click();
+      await waitFor(() => nativeSmokeControlReady(document,'stage','workspace','reset-button') && document.querySelector('#export-button') && !document.querySelector('#export-button').disabled, 'app score activation');
       // Compact windows can keep the dock closed. Exercise the actual display
       // control when needed before requiring the lazily rendered SVG.
       if (document.querySelector('#notation-toggle').getAttribute('aria-expanded') !== 'true') document.querySelector('#notation-toggle').click();

@@ -54,7 +54,7 @@
   async function selectSaved(entry){
     const key=`native:${entry.key}`;await until(()=>$('catalog').querySelector(`[data-library-key="${key}"]`),'saved row listed');
     await native('click',$('catalog').querySelector(`[data-library-key="${key}"]`));
-    await until(()=>$('song-lobby').dataset.previewId===key&&$('song-lobby').dataset.previewStatus==='ready'&&!$('start-listen').disabled,'saved row Rust preview ready');
+    await until(()=>$('song-lobby').dataset.previewId===key&&$('song-lobby').dataset.previewStatus==='ready'&&!$('configure-song-mod').disabled,'saved row Rust preview ready');
   }
   addEventListener('DOMContentLoaded',async()=>{
     const report={version:1,phase,ok:false,origin:location.origin,checks:[],saveResults,openedScoreDatabases,errors};
@@ -87,7 +87,7 @@
         const entry=current.entries.find(row=>row.title==='Folder acceptance original');assert(entry,'Original edition missing');await selectSaved(entry);
         const probe=observeNativeReferenceAudio();
         try{await native('click',$('lobby-preview-play'));await until(()=>probe.snapshot().sourceStarts>0&&$('lobby-preview-status').dataset.state==='playing','saved score actual audition');await native('click',$('lobby-preview-play'));report.audition=probe.snapshot();assert(report.audition.activeSources===0&&report.audition.pendingSources===0,'Saved audition left audio active');}finally{probe.restore();}
-        await native('click',$('start-listen'));await menu.waitScreen('stage','play-button','saved score activated');
+        await createAcceptanceSongMod({document,native,until}).start('none');await menu.waitScreen('stage','play-button','saved score activated');
         assert($('score-title').textContent===entry.title,'Wrong saved score activated');report.checks.push('saved-row-select-audition-activate');
         report.transportAdmission=await prepareNativeReferenceScoredTake({document,native,click,closeDialogs,until});
         report.files={beforeScore:await exportScore(),beforeTake:await exportTake()};

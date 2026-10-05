@@ -280,9 +280,9 @@ async function runCatalogUserPackAcceptance({document, native, until, query, ope
     report.files[suffix === 'before' ? 'beforeTake' : 'afterTake'] = await download($('export-takes')); closeDialogs();
   }
   async function prepareSession(shared) {
-    await native('click', $('catalog').querySelector(`[data-library-key="native:${shared.key}"]`)); await until(() => !$('start-practice').disabled, 'Original shared practice preview');
+    await native('click', $('catalog').querySelector(`[data-library-key="native:${shared.key}"]`)); await until(() => !$('configure-song-mod').disabled, 'Original shared practice preview');
     click('settings-button'); if ($('count-in').checked) await native('click', $('count-in')); closeDialogs();
-    await native('click', $('start-practice')); await until(() => document.body.dataset.screen === 'stage' && /暂停/.test($('play-button').textContent), 'Real practice playback admitted');
+    await createAcceptanceSongMod({document,native,until}).start('all',{layout:'solo'}); await until(() => document.body.dataset.screen === 'stage' && /暂停/.test($('play-button').textContent), 'Real practice playback admitted');
     await native('key-r', $('stage-title')); await until(() => $('hud-captured').textContent === '1', 'One real practice onset'); await native('click', $('play-button'));
     click('results-button'); await native('click', $('assess-button')); await until(() => catalogPracticeBaselineReady(document), 'Practice assessment and grace completed', 15000); closeDialogs();
     await menu.returnToLibrary(); await sessionFiles('before');

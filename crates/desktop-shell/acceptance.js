@@ -117,7 +117,7 @@
         assert((await scores.list()).length===0 && (await performances.list()).length===0,'Acceptance needs a fresh profile');
         $('interface-language').value='en';$('interface-language').dispatchEvent(new Event('change',{bubbles:true}));
         if($('sound-button').getAttribute('aria-pressed')!=='true')click('sound-button');
-        click('start-listen');await until(()=>menu.ready('stage','reset-button')&&$('export-button')&&!$('export-button').disabled&&!$('start-listen').disabled,'stage activation');click('reset-button');
+        await createAcceptanceSongMod({document,native,until}).start('none');await until(()=>menu.ready('stage','reset-button')&&$('export-button')&&!$('export-button').disabled,'stage activation');click('reset-button');
         if($('notation-toggle').getAttribute('aria-expanded')!=='true')click('notation-toggle');
         await until(()=>$('engraved-staff').querySelector('svg'),'offline OSMD');
         report.checks.push('catalog-stage-offline-engraving');

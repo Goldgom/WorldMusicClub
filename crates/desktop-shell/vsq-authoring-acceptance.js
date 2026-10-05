@@ -4,7 +4,8 @@
 // natural terminal before Reset, so setup never cancels pending preparation.
 async function prepareVsqAuthoringListen({document,native,until,receiver,audio,silence,endMs}){
  const $=id=>document.getElementById(id),before=receiver.count();
- const listenAction=await native('click',$('start-listen'));
+ const mod=createAcceptanceSongMod({document,native,until});await mod.configure('none');
+ const listenAction=await native('click',$('start-performance'));
  const state=()=>({screen:document.body.dataset.screen,mode:$('session-mode').value,renderer:$('clean-song-stage').dataset.rendererState,positionMs:globalThis.__wmhReadPlaybackClock(document).positionMs,audio:audio()});
  await until(()=>{receiver.assertHealthy();const value=state();return value.screen==='stage'&&value.mode==='listen'&&value.renderer==='playing'&&!$('play-button').disabled&&value.positionMs>0&&value.positionMs<endMs&&value.audio.worklet.started===before+1&&value.audio.worklet.activeReceivers===1;},'explicit Listen receiver admitted',10000);
  const admission=state();
@@ -13,7 +14,7 @@ async function prepareVsqAuthoringListen({document,native,until,receiver,audio,s
  const resetAction=await native('click',$('reset-button'));
  await until(()=>globalThis.__wmhReadPlaybackClock(document).positionMs===0&&!$('play-button').disabled&&$('clean-song-stage').dataset.rendererState==='ready','admitted listen reset');
  const afterResetAudio=await silence('listen setup reset disposal');
- return {listenAction,resetAction,admission,afterResetAudio,thread:receiver.snapshot().slice(before)};
+ return {listenAction,resetAction,modActions:mod.history,admission,afterResetAudio,thread:receiver.snapshot().slice(before)};
 }
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(ok,message)=>{if(!ok)throw Error(message);};
@@ -27,7 +28,7 @@ async function prepareVsqAuthoringListen({document,native,until,receiver,audio,s
  const until=(fn,label,ms=10000)=>waits.until(fn,`VSQ authoring ${report.stage}: ${label}`,ms),frame=()=>new Promise(requestAnimationFrame),click=id=>{assert($(id)&&!$(id).disabled,`Unavailable ${id}`);$(id).click();};
  const closeDialogs=()=>{for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();},menu=createAcceptanceNavigation({document,until,click});
  const errors=event=>report.errors.push(String(event.message||event.reason));addEventListener('error',errors);addEventListener('unhandledrejection',errors);
- const choiceEvent=event=>{const setup=event.target.closest?.('#start-listen,#reset-button');if(report.stage==='notation-and-native-following'&&setup){assert(report.listenSetupEvents.length<2,'VSQ Listen setup event bound exceeded');report.listenSetupEvents.push({sequence,type:event.type,id:setup.id,trusted:event.isTrusted===true});}if(event.target.closest?.('#vsq-choose-base-notes')){assert(report.choiceEvents.length<4,'VSQ choice event bound exceeded');report.choiceEvents.push({sequence,type:event.type,id:'vsq-choose-base-notes',trusted:event.isTrusted===true});}};document.addEventListener('click',choiceEvent,true);
+ const choiceEvent=event=>{const setup=event.target.closest?.('#start-performance,#reset-button');if(report.stage==='notation-and-native-following'&&setup){assert(report.listenSetupEvents.length<2,'VSQ Listen setup event bound exceeded');report.listenSetupEvents.push({sequence,type:event.type,id:setup.id,trusted:event.isTrusted===true});}if(event.target.closest?.('#vsq-choose-base-notes')){assert(report.choiceEvents.length<4,'VSQ choice event bound exceeded');report.choiceEvents.push({sequence,type:event.type,id:'vsq-choose-base-notes',trusted:event.isTrusted===true});}};document.addEventListener('click',choiceEvent,true);
  const checkpoint=value=>{report.stage=value;};
  async function native(kind,node,file){
   assert(node&&!node.disabled,'VSQ authoring control unavailable');node.scrollIntoView({block:'center',inline:'center'});node.focus();await frame();await frame();

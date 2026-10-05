@@ -58,25 +58,25 @@ async function menuFixture() {
 
 test('native menu admission rejects the preloaded hidden lobby and follows the real Single player control',async()=>{
   const f=await menuFixture();try {
-    await f.app.until(()=>!f.app.$('start-listen').disabled);
+    await f.app.until(()=>!f.app.$('configure-song-mod').disabled);
     assert.equal(f.app.document.body.dataset.screen,'home');
-    assert.equal(f.menu.ready('library','start-listen'),false,'An enabled hidden Listen button cannot admit startup');
+    assert.equal(f.menu.ready('library','configure-song-mod'),false,'An enabled hidden Listen button cannot admit startup');
     assert.equal(f.menu.ready('home','home-single-player'),true);
     const button=f.app.$('home-single-player');button.disabled=true;assert.equal(f.menu.ready('home','home-single-player'),false);button.disabled=false;
     const geometry=button.getBoundingClientRect;button.getBoundingClientRect=()=>({width:0,height:40});assert.equal(f.menu.ready('home','home-single-player'),false);button.getBoundingClientRect=geometry;
     f.app.$('home-settings').click();assert.equal(f.menu.ready('home','home-single-player'),false,'An open settings dialog blocks menu admission');f.app.$('settings-dialog').close();
     await f.menu.enterLibrary();assert.deepEqual(f.clicks,['home-single-player']);
-    assert.equal(f.menu.ready('library','start-listen'),true);assert.equal(f.app.$('song-lobby').dataset.previewStatus,'ready');
+    assert.equal(f.menu.ready('library','configure-song-mod'),true);assert.equal(f.app.$('song-lobby').dataset.previewStatus,'ready');
   }finally{await f.close();}
 });
 
 test('native menu waits for actual catalog readiness after one entry click without retries',async()=>{
   const f=await menuFixture();try {
-    await f.app.until(()=>!f.app.$('start-listen').disabled);
-    f.app.$('start-listen').disabled=true;
-    const pending=f.menu.enterLibrary();await f.app.until(()=>f.clicks.length===1);
+    await f.app.until(()=>!f.app.$('configure-song-mod').disabled);
+    const wait=createWait(),menu=createNavigation({document:f.app.document,until:(condition,label)=>wait.until(condition,label,1000),click:id=>{f.clicks.push(id);f.app.$(id).click();f.app.$('configure-song-mod').disabled=true;}});
+    const pending=menu.enterLibrary();await f.app.until(()=>f.clicks.length===1);
     let settled=false;pending.then(()=>{settled=true;});await f.app.tick();assert.equal(settled,false);
-    f.app.$('start-listen').disabled=false;await pending;
+    f.app.$('configure-song-mod').disabled=false;await pending;
     assert.deepEqual(f.clicks,['home-single-player']);assert.equal(f.app.document.body.dataset.screen,'library');
   }finally{await f.close();}
 });
@@ -85,8 +85,8 @@ test('native free-practice routing goes through the visible home entry and Exit 
   const f=await menuFixture();try {
     await f.menu.enterLibrary();
     // Mute before the real stage handler so this Node menu test never unlocks audio.
-    f.app.$('sound-button').click();await f.app.click('start-listen');
-    await f.app.until(()=>f.app.document.body.dataset.screen==='stage'&&!f.app.$('start-listen').disabled);f.app.$('reset-button').click();
+    f.app.$('sound-button').click();await f.app.click('configure-song-mod');await f.app.click('song-mod-all-machine');await f.app.click('song-mod-apply');await f.app.until(()=>!f.app.$('song-mod-dialog').open);await f.app.click('start-performance');
+    await f.app.until(()=>f.app.document.body.dataset.screen==='stage'&&!f.app.$('configure-song-mod').disabled);f.app.$('reset-button').click();
     const stageTitle=f.app.$('stage-title').textContent,entry=f.app.$('start-free-practice');
     f.clicks.length=0;await f.menu.enterFree();
     assert.deepEqual(f.clicks,['back-to-library','lobby-home','start-free-practice']);
@@ -100,7 +100,7 @@ test('native free-practice routing goes through the visible home entry and Exit 
 
 test('native navigation fails within its deadline if the menu click does not transition screens',async()=>{
   const f=await menuFixture();try {
-    await f.app.until(()=>!f.app.$('start-listen').disabled);
+    await f.app.until(()=>!f.app.$('configure-song-mod').disabled);
     const clicks=[],wait=createWait(),menu=createNavigation({document:f.app.document,until:(condition,label)=>wait.until(condition,label,20),click:id=>clicks.push(id)});
     await assert.rejects(menu.enterLibrary(),/Timed out: visible native single-player catalog preview/);
     assert.deepEqual(clicks,['home-single-player']);assert.equal(f.app.document.body.dataset.screen,'home');
@@ -146,12 +146,12 @@ const songSmoke=runInNewContext(`${songSmokeSource}\n({nativeSongApiFixture,chec
 
 test('startup smoke enters the actual visible Single player menu before catalog and stage work',async()=>{
   const f=await menuFixture();try {
-    await f.app.until(()=>!f.app.$('start-listen').disabled);
-    assert.equal(songSmoke.nativeSmokeControlReady(f.app.document,'library','song-lobby','start-listen'),false);
+    await f.app.until(()=>!f.app.$('configure-song-mod').disabled);
+    assert.equal(songSmoke.nativeSmokeControlReady(f.app.document,'library','song-lobby','configure-song-mod'),false);
     const calls=[],wait=createWait();
     const report=await songSmoke.enterNativeSmokeLibrary({document:f.app.document,waitFor:(condition,label)=>{calls.push(label);return wait.until(condition,label,1000);}});
     assert.equal(report.entry,'home-single-player');assert.equal(report.destination,'library');assert.equal(report.catalogPreviewReady,true);
-    assert.equal(f.app.document.body.dataset.screen,'library');assert.equal(songSmoke.nativeSmokeControlReady(f.app.document,'library','song-lobby','start-listen'),true);
+    assert.equal(f.app.document.body.dataset.screen,'library');assert.equal(songSmoke.nativeSmokeControlReady(f.app.document,'library','song-lobby','configure-song-mod'),true);
     assert.deepEqual(calls,['visible app home menu','unchanged app catalog','visible app single-player catalog preview']);
     assert.match(songSmokeSource,/report\.homeMenu = await enterNativeSmokeLibrary\(/,'The injected startup invokes this checked menu path');
   }finally{await f.close();}
@@ -274,4 +274,22 @@ test('bulk report serialization, byte limit and failed fallback remain explicit 
 test('passive native chooser observation brackets synchronous blur handlers with the same clock and accepts no blur',async()=>{
  let listener,clock=10;const tasks=[],target={addEventListener(type,callback,capture){assert.equal(type,'blur');assert.equal(capture,true);listener=callback},removeEventListener(type,callback,capture){assert.equal(type,'blur');assert.equal(callback,listener);assert.equal(capture,true);listener=null}};
  const observer=bulkHelpers.createBulkChooserObserver({target,now:()=>clock,defer:callback=>tasks.push(callback)});observer.begin(7,'picker');clock=11;listener({isTrusted:true,target:{}});assert.equal(observer.records[0].blurs.length,0,'Descendant focus blur is not a window blur');listener({isTrusted:true,target});clock=12;const actualBoundary=clock;let settled=false;const done=observer.end(7,true).then(()=>{settled=true});await Promise.resolve();assert.equal(settled,false,'Ending the action awaits the task after synchronous app handlers');clock=13;tasks.shift()();await done;const record=observer.records[0];assert.equal(record.completed,true);assert.ok(record.blurs[0].started_wall_ms<=actualBoundary&&record.blurs[0].finished_wall_ms>=actualBoundary);assert.equal(record.blurs[0].trusted,true);clock=20;observer.begin(8,'cancel-picker');clock=21;await observer.end(8,true);assert.equal(observer.records[1].blurs.length,0);observer.stop();assert.equal(listener,null);
+});
+
+// This is a helper contract only. The owned-action double is deliberately
+// untrusted; native/hosted evidence still requires actual OS/browser events.
+test('Mod setup waits for Apply and uses only visible owned actions before Start',async()=>{
+ const {parseHTML}=await import('linkedom'),{document}=parseHTML('<html><body data-screen="library"><div id="configure-song-mod"></div><button id="start-performance"></button><button id="edit-song-mod"></button><dialog id="song-mod-dialog"><button id="song-mod-all-human"></button><button id="song-mod-all-machine"></button><button id="song-mod-apply"></button><button id="song-mod-cancel"></button><button id="song-mod-restore"></button><select id="song-mod-layout"><option value="complete">Complete</option><option value="solo">Solo</option></select><input id="song-mod-show-others" type="checkbox"><div id="song-mod-parts"></div></dialog></body></html>');
+ const $=id=>document.getElementById(id),calls=[];let sequence=0,release;
+ const select=(field,part,values)=>{const n=document.createElement('select');n.dataset[field]=part;for(const value of values){const option=document.createElement('option');option.value=value;n.append(option);}Object.defineProperty(n,'value',{value:values[0],writable:true});return n;};
+ for(const id of ['P1','P2']){const row=document.createElement('section');row.className='song-mod-part';row.dataset.partId=id;row.append(select('modPerformer',id,['human','machine']),select('modInstrument',id,['source','sine','triangle','reed']));for(const kind of ['modMute','modVisible']){const input=document.createElement('input');input.type='checkbox';input.dataset[kind]=id;input.checked=kind==='modVisible';row.append(input);}$('song-mod-parts').append(row);}
+ Object.defineProperty($('song-mod-layout'),'value',{value:'solo',writable:true});
+ const until=async(condition)=>{for(let i=0;i<40;i++){if(condition())return;await new Promise(resolve=>setImmediate(resolve));}throw Error('pending visible Mod state');};
+ const native=async(kind,n)=>{calls.push([kind,n.id||n.closest('.song-mod-part')?.dataset.partId]);sequence++;if(n.id==='configure-song-mod')$('song-mod-dialog').open=true;if(n.id==='song-mod-apply')release=()=>{$('song-mod-dialog').open=false;};if(n.id==='start-performance'){assert.equal($('song-mod-dialog').open,false);document.body.dataset.screen='stage';}if(n.tagName==='SELECT'){const index=kind==='select-first'?0:kind==='select-second'?1:n.options.length-1;n.value=n.options[index].value;}if(n.tagName==='INPUT')n.checked=!n.checked;return sequence;};
+ const helper=runInNewContext(`${source}\ncreateAcceptanceSongMod`)({document,native,until});
+ const pending=helper.start(['P1'],{layout:'complete',instrument:{P2:'reed'},muted:{P2:true},visible:{P2:false}});await until(()=>Boolean(release));assert.ok(!calls.some(([,id])=>id==='start-performance'));release();await pending;
+ assert.deepEqual(calls,[['click','configure-song-mod'],['select-last','P2'],['select-first','song-mod-layout'],['click','P2'],['click','P2'],['select-last','P2'],['click','song-mod-apply'],['click','start-performance']]);assert.equal(helper.history.length,8);assert.equal(helper.history.at(-1).sequence,8);
+ const helperSource=source.slice(source.indexOf('function createAcceptanceSongMod'));
+ assert.doesNotMatch(helperSource,/dispatchEvent|\.click\(|\.value\s*=(?!=)|\.checked\s*=(?!=)|start-listen|start-practice|start-complete-practice/);
+ $('configure-song-mod').hidden=true;document.body.dataset.screen='library';await assert.rejects(helper.open(),/Visible Mod control unavailable/);
 });
