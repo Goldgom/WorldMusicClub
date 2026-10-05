@@ -157,6 +157,11 @@
  .game-shell .piano-workspace .piano-workspace-heading{gap:6px}
  .game-shell .piano-workspace .piano-workspace-heading .stage-heading:has(>.beginner-controls-compact){min-width:min-content}
  .game-shell .piano-workspace .piano-workspace-heading>.button{padding-left:4px;padding-right:4px}
+ /* Give Mod one row, with its summary using the remaining width. Its original
+    button retains the full description and tooltip when that text is longer. */
+ .game-shell #workspace .piano-workspace-heading>#song-mod-stage{flex:1 1 100%;min-width:0;padding:0;flex-wrap:nowrap;gap:6px}
+ .game-shell #workspace #edit-song-mod{flex:none;white-space:nowrap}
+ .game-shell #workspace #song-mod-stage-summary{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 }
 @media(max-width:650px){.game-shell :is(#workspace,#free-practice-screen).piano-workspace .keyboard-footer.keyboard-input-footer{grid-template-columns:minmax(0,1fr) auto}}
 

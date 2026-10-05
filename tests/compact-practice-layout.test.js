@@ -9,6 +9,45 @@ import {setupPerformanceView} from '../web/performance-view.js';
 import {setupKeyboardInputView} from '../web/keyboard-input-view.js';
 import {createKeyboardInput} from '../web/keyboard-input.js';
 import {createI18n} from '../web/i18n.js';
+import {setupSongModView} from '../web/song-mod-view.js';
+import {defaultSongMod} from '../web/song-mod.js';
+
+test('long Mod diagnostics scroll with preview details while source identity, admission and Start stay anchored',()=>{
+  const {document}=parseHTML('<body><section class="song-preview"><div class="preview-identity"><h2 id="preview-title">Retained source</h2><p id="preview-meta">Composer and source</p></div><div class="preview-copy"><p id="preview-status">Full source notices</p></div><div class="preview-footer"><p id="preview-gate">Blocked instrument range</p><div class="preview-actions"><button id="open-score" hidden>Inspect</button></div></div></section><main id="workspace"><div class="stage-hud"></div></main></body>');
+  const i18n={locale:'en',subscribe(){}},view=setupSongModView({document,i18n,getContext:()=>null,onApply(){},onStart(){}});
+  const mod=defaultSongMod({score:{id:'long-source',parts:[{id:'one'},{id:'two'}]},mode:'practice'}),reason='Selected notes outside this instrument range: 18. Change the range, tuning, part or loop before practicing. '.repeat(12);
+  const copy=document.querySelector('.preview-copy'),footer=document.querySelector('.preview-footer'),identity=document.querySelector('.preview-identity'),summary=document.getElementById('song-mod-preview-summary'),configure=document.getElementById('configure-song-mod');
+  for(const locale of ['en','zh-CN']){
+    i18n.locale=locale;view.update({preview:{mod},stage:{mod},canStart:false,reason});
+    assert.equal(summary.parentElement,copy);assert.equal(copy.firstElementChild,summary,'The current configuration is the first item in the existing detail scroller');
+    assert.equal(summary.textContent.endsWith(reason),true,'No Mod diagnostic is shortened or discarded');
+    assert.equal(summary.hidden,false);assert.equal(summary.getAttribute('aria-hidden'),null);assert.equal(summary.getAttribute('role'),'status');
+    assert.equal(configure.getAttribute('aria-describedby'),summary.id,'The pinned Mod control still exposes its complete current description');
+    assert.equal(document.getElementById('preview-title').parentElement,identity);assert.equal(document.getElementById('preview-meta').parentElement,identity);
+    assert.equal(document.getElementById('preview-gate').parentElement,footer);
+    assert.deepEqual([...footer.children].map(node=>node.className||node.id),['preview-gate','preview-actions'],'Only admission and the original actions consume pinned footer height');
+    assert.deepEqual([...document.querySelectorAll('.preview-actions button')].filter(node=>!node.hidden).map(node=>node.id),['start-performance','configure-song-mod']);
+  }
+  view.update({reason,inspectionOnly:true});
+  assert.equal(document.getElementById('open-score').parentElement,footer,'Inspection-only sources retain their existing pinned action');
+});
+
+test('portrait Mod keeps one readable button row without reserving another row for its summary',async()=>{
+  // A CSS contract only; actual field dimensions remain checked by D768 and
+  // the shared-stage hosted suites with their unchanged viewport thresholds.
+  const css=await readFile(new URL('../web/piano-stage.css',import.meta.url),'utf8');
+  const {document}=parseHTML(`<style>${css}</style><body class="game-shell"><main id="workspace" class="piano-workspace"><div class="piano-workspace-heading"><section id="song-mod-stage"><button id="edit-song-mod"></button><span id="song-mod-stage-summary"></span></section></div></main></body>`);
+  const rules=[...document.querySelector('style').sheet.cssRules].filter(rule=>rule.media?.mediaText==='(max-width:650px)').flatMap(rule=>[...rule.cssRules]);
+  const mod=rules.findLast(rule=>rule.selectorText.endsWith('>#song-mod-stage')),button=rules.findLast(rule=>rule.selectorText.endsWith(' #edit-song-mod')),summary=rules.findLast(rule=>rule.selectorText.endsWith(' #song-mod-stage-summary'));
+  assert.equal(mod.style.flex,'1 1 100%');assert.equal(mod.style['flex-wrap'],'nowrap');assert.equal(mod.style.padding,'0');
+  assert.equal(button.style.flex,'none');assert.equal(button.style['white-space'],'nowrap','Mod keeps its full label and inherited touch-target height');
+  assert.equal(summary.style['min-width'],'0');assert.equal(summary.style['white-space'],'nowrap');assert.equal(summary.style.overflow,'hidden');assert.equal(summary.style['text-overflow'],'ellipsis');
+  for(const rule of [mod,button,summary])for(const property of ['display','visibility','pointer-events','height','min-height'])assert.equal(rule.style.getPropertyValue(property),'','The compact arrangement does not hide controls or shrink their original targets');
+  for(const piano of [true,false,true]){
+    document.getElementById('workspace').classList.toggle('piano-workspace',piano);
+    for(const [id,rule]of [['song-mod-stage',mod],['edit-song-mod',button],['song-mod-stage-summary',summary]])assert.equal(document.getElementById(id).matches(rule.selectorText),true,`${id} keeps its compact arrangement across piano and guitar`);
+  }
+});
 
 function notationGeometry() {
   const {document}=parseHTML('<aside id="dock"><section class="short-notation"><div class="engraving-follow-controls"></div><div id="notation"><svg><g class="score-note" data-note-id="current"></g></svg></div></section></aside>');
