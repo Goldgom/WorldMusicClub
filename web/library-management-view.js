@@ -29,7 +29,7 @@ export function setupLibraryManagementView({document = globalThis.document, i18n
   const $ = id => document.getElementById(`management-${id}`);
   let state = model.snapshot(), exporting = false, exportState = null, exportError = null, rowsSignature = null, packName = '', opener = null, destroyed = false, exportGeneration = 0, exportController = null;
   let catalogActive = false;
-  const catalogView = setupLibraryCatalogView({document, i18n, getStorage, onCommitted: async () => { model.invalidate(); await onCommitted(); }});
+  const catalogView = setupLibraryCatalogView({document, i18n, getStorage, onCommitted: async () => { cancelExport(); model.invalidate(); await onCommitted(); }});
   $('browser').before(catalogView.element);
   const catalogButton = make('button', 'button secondary'); catalogButton.id = 'management-catalog-button'; catalogButton.type = 'button'; catalogButton.hidden = true;
   catalogButton.addEventListener('click', () => { catalogActive = true; cancelExport(); model.close(); $('browser').hidden = true; catalogButton.setAttribute('aria-pressed', 'true'); catalogView.open(); });

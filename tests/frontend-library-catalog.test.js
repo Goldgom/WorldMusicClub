@@ -94,3 +94,16 @@ test('a legitimate asynchronous assessment completes for its original practice p
     assert.equal(after.passes.length, before.passes.length); assert.deepEqual(after.passes.map(pass => pass.inputs), before.passes.map(pass => pass.inputs)); assert.equal(server.requests.filter(row => row.path === '/api/assess').length, 1);
   } finally { gate.resolve(); await app.close(); }
 });
+
+test('a committed catalog write cancels an owned read-only export opened during its pending response', async () => {
+  const server = await catalogServer(), commitGate = deferred(), exportGate = deferred(); let exporting = false;
+  server.setCatalogRoute(async request => { if (request.path.endsWith('/commit')) { await commitGate.promise; return request.proceed(); } });
+  server.setAuxRoute(async ({path}) => { if (path === '/api/library/pack/export') { exporting = true; await exportGate.promise; return {...nativeResponse({}), blob: async () => new Blob(['authored abandoned export'])}; } });
+  const app = await nativeStorageApp(server);
+  try {
+    await ready(app); await open(app); select(app, server.rows[0]); await review(app); await app.click('management-catalog-confirm'); await app.until(() => server.catalogRequests.some(row => row.path.endsWith('/commit')));
+    app.document.querySelector('[data-management-view="songs"]').click(); await app.until(() => app.$('library-management-dialog').dataset.phase === 'ready');
+    const box = app.$('management-rows').querySelector('[data-management-edition]'); box.checked = true; app.emit(box, 'change'); await app.click('management-export-legacy'); await app.until(() => exporting);
+    const request = server.requests.find(row => row.path === '/api/library/pack/export'), downloads = app.downloads.length; commitGate.resolve(); await app.until(() => request.options.signal.aborted); exportGate.resolve(); await app.tick(); assert.equal(app.downloads.length, downloads); assert.ok(server.rows[0].trashed_by);
+  } finally { commitGate.resolve(); exportGate.resolve(); await app.close(); }
+});
