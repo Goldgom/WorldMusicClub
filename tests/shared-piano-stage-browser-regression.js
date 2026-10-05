@@ -6,6 +6,7 @@ import {originalAboveKeyboardScore} from './above-keyboard-browser-regression.js
 import {compareScreenshotPixels} from './browser-png-evidence.js';
 import {contrastRatio} from '../web/themes.js';
 import {readBeginnerHelpGeometry,assertBeginnerHelpGeometry} from './beginner-browser-regression.js';
+import {readNotationHudGeometry,assertNotationHudClear} from './notation-hud-geometry.js';
 
 export const settlePianoPaint=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))));
 
@@ -242,16 +243,19 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,read
     const page=getPage(),score=originalAboveKeyboardScore(),evidence=[];await installPlaybackClockReader(page);await waitForPlaybackClock(page);score.id='original-live-overlay';score.title='Original live falling-lane overlay';score.tempo[0].bpm=60;
     await ui('#instrument').selectOption('piano');await ui('#key-count').selectOption('61');await ui('#session-mode').selectOption('listen');await ui('#count-in').uncheck();await ui('#score-file').setInputFiles({name:`${score.id}.json`,mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);
     await ui('#interface-language').selectOption('zh-CN');await ui('#theme-mode').selectOption('light');await page.emulateMedia({reducedMotion:'no-preference'});
-    for(const viewport of [{width:1280,height:720},{width:1920,height:1080}])for(const [button,view]of [['#engraved-button','staff'],['#jianpu-button','jianpu']]){
-      await page.setViewportSize(viewport);await ui(button).click();await ui('#engraving-follow').check();await closeShellPanels();if(view==='staff')await waitForEngraving();
+    for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:1033,height:403},{width:844,height:390},{width:390,height:844}])for(const [button,view]of [['#engraved-button','staff'],['#jianpu-button','jianpu']]){
+      await page.setViewportSize(viewport);await ui('#interface-language').selectOption([1920,844].includes(viewport.width)?'zh-CN':'en');await ui(button).click();await ui('#engraving-follow').check();await closeShellPanels();if(view==='staff')await waitForEngraving();
       if(await page.locator('#notice-dismiss').isVisible())await page.locator('#notice-dismiss').click();await page.locator('#reset-button').click();await page.locator('#play-button').click();
       await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>300&&document.querySelector('#stage-cue').hidden);
       const toolbar=await readSharedPianoGeometry(page);assertPianoToolbarLabels(toolbar);
       const geometry=await readLaneOverlayGeometry(page);assertLaneOverlay(geometry);assert.ok(geometry.canvasAlpha.opaque>20,'The real canvas contains painted falling blocks');
-      const current=await page.locator(view==='staff'?'.engraving-expected-cue:not([hidden])':'#notation .score-note.active').count();assert.equal(current,2,'Both original staff voices are visibly followed while playing');
+      const selector=view==='staff'?'.engraving-expected-cue:not([hidden])':'#notation .score-note.active',current=await page.locator(selector).count();assert.equal(current,2,'Both original staff voices are visibly followed while playing');
+      const hud=await readNotationHudGeometry(page,selector);await writeFile(join(artifactDirectory,'worldmusichub-live-notation-hud-checkpoint.json'),JSON.stringify({original_fixtures_only:true,viewport,view,playing:true,hud},null,2));assertNotationHudClear(hud);
       assert.equal(await page.locator('#notation-tools').evaluate(node=>node.open),false,'Music keeps rendering while its controls are closed');
       await page.screenshot({path:join(artifactDirectory,`worldmusichub-lane-overlay-live-${viewport.width}x${viewport.height}-${view}.png`),fullPage:true,animations:'disabled'});
-      evidence.push({viewport,view,geometry,toolbar_labels:toolbar.labels,locale:toolbar.locale,current_markers:current,playing:true,controls_closed:true});await page.locator('#play-button').click();
+      await page.locator('#play-button').click();await settlePianoPaint(page);
+      const pausedHud=await readNotationHudGeometry(page,selector);assert.equal(pausedHud.cueState,'paused');assertNotationHudClear(pausedHud);
+      evidence.push({viewport,view,geometry,toolbar_labels:toolbar.labels,locale:toolbar.locale,current_markers:current,playing:true,controls_closed:true,hud,pausedHud});
     }
     assert.deepEqual(await exportScore(),score);await writeFile(join(artifactDirectory,'worldmusichub-lane-overlay-live.json'),JSON.stringify({original_fixtures_only:true,actual_playback:true,evidence},null,2));
   });

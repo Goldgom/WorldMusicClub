@@ -3,6 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {resolve,join} from 'node:path';
+import {assertNotationHudClear} from '../tests/notation-hud-geometry.js';
 
 const directory=resolve(process.argv[2]||'ui-preview'),tap=readFileSync(join(directory,'tests.tap'),'utf8');
 const names=['real free piano fills desktop','original grand staff and Jianpu follow','game menu and audible song preview','normal and free piano share','original falling bars visibly cross'];
@@ -33,7 +34,9 @@ assert.deepEqual(paired.localeProof.map(row=>row.locale),['en','zh-CN']);
 assert.deepEqual(paired.normalProbe.map(event=>[event.kind,event.midi,event.encoding,event.onset_capture]),[['note_on',60,'key_down',null],['note_off',null,'key_up',null]]);
 assert.equal(paired.sharedFooter.one_original_node,true);assert.equal(paired.sharedFooter.score_passes_preserved,true);assert.deepEqual(paired.sharedFooter.actual_free_onsets,[60,60,60,61]);assert.deepEqual(paired.sharedFooter.transpose_configuration.map(row=>row.value.transpose_semitones),[0,1]);
 for(const pair of paired.evidence){assert.equal(pair.normal.locale,'zh-CN');assert.equal(pair.free.locale,'zh-CN');assert.equal(pair.normal.keys.length,61);assert.equal(pair.free.keys.length,61);assert.deepEqual(pair.normal.style,pair.free.style);assert.deepEqual(pair.normal.viewport,pair.free.viewport);}
-const live=record('worldmusichub-lane-overlay-live.json');assert.equal(live.original_fixtures_only,true);assert.equal(live.actual_playback,true);assert.equal(live.evidence.length,4);for(const frame of live.evidence){assert.equal(frame.playing,true);assert.equal(frame.controls_closed,true);assert.equal(frame.current_markers,2);assert.ok(frame.geometry.canvasAlpha.opaque>20);}
+for(const row of overlay.evidence)for(const notes of row.currentNotes)assertNotationHudClear(notes.hud);
+const live=record('worldmusichub-lane-overlay-live.json');assert.equal(live.original_fixtures_only,true);assert.equal(live.actual_playback,true);assert.equal(live.evidence.length,10);assert.deepEqual([...new Set(live.evidence.map(frame=>frame.locale))].sort(),['en','zh-CN']);for(const frame of live.evidence){assert.equal(frame.playing,true);assert.equal(frame.controls_closed,true);assert.equal(frame.current_markers,2);assert.ok(frame.geometry.canvasAlpha.opaque>20);assertNotationHudClear(frame.hud);assertNotationHudClear(frame.pausedHud);assert.equal(frame.pausedHud.cueState,'paused');}
+for(const size of ['1033x403','844x390','390x844'])for(const view of ['staff','jianpu'])record(`worldmusichub-lane-overlay-live-${size}-${view}.png`,{size,png:true});
 const git=(...args)=>execFileSync('git',args,{encoding:'utf8'}).trim();
 const result={version:2,scope:'Actual hosted Rust/browser UI preview only',source_sha:git('rev-parse','HEAD'),source_tree:git('rev-parse','HEAD^{tree}'),commit_count:Number(git('rev-list','--count','HEAD')),accepted_package:false,windows_native_verified:false,physical_midi_verified:false,actual_speaker_output_verified:false,cases:names,files};
 writeFileSync(join(directory,'worldmusichub-ui-preview.json'),JSON.stringify(result,null,2));

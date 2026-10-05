@@ -3,6 +3,7 @@ import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fixture} from './frontend-fixtures.js';
 import {readLaneOverlayGeometry,assertLaneOverlay,captureOverlayPaintEvidence} from './shared-piano-stage-browser-regression.js';
+import {readNotationHudGeometry,assertNotationHudClear} from './notation-hud-geometry.js';
 
 // Authored for this regression. No user score, retained source, or external music.
 export function originalAboveKeyboardScore() {
@@ -50,7 +51,7 @@ export function registerAboveKeyboardBrowserRegressions({test,getPage,ui,readyFo
     };
     const paintEvidence=[];
     for(const viewport of [{width:1920,height:1080},{width:1280,height:720},{width:1033,height:403},{width:844,height:390},{width:390,height:844},{width:1280,height:720}]){
-      await page.setViewportSize(viewport);await settle();
+      await ui('#interface-language').selectOption([1033,390].includes(viewport.width)?'en':'zh-CN');await closeShellPanels();await page.setViewportSize(viewport);await settle();
       const geometry=await simultaneousStageGeometry();
       await writeFile(join(artifactDirectory,'worldmusichub-live-lane-overlay-layout-checkpoint.json'),JSON.stringify({original_fixtures_only:true,complete:false,completed_layouts:evidence,current:{viewport,geometry}},null,2));
       await verifyPlacement(geometry);
@@ -62,11 +63,13 @@ export function registerAboveKeyboardBrowserRegressions({test,getPage,ui,readyFo
         if(button==='#engraved-button'){await waitForEngraving();await page.waitForFunction(()=>document.querySelectorAll('.engraving-expected-cue:not([hidden])').length===2);await settle();}
         else{await page.waitForFunction(()=>document.querySelector('#notation .score-note.active'));const digits=await page.locator('#notation .jianpu-note').evaluateAll(nodes=>nodes.map(node=>parseFloat(getComputedStyle(node).fontSize)));assert.ok(digits.length&&digits.every(size=>size>=25),'Jianpu is never shrunk to fit the band');}
         await verifyPlacement(await simultaneousStageGeometry());
-        const markers=await actualMarkerVisibility(button==='#engraved-button'?'.engraving-expected-cue:not([hidden])':'#notation .score-note.active');
+        const markerSelector=button==='#engraved-button'?'.engraving-expected-cue:not([hidden])':'#notation .score-note.active';
+        const markers=await actualMarkerVisibility(markerSelector),hud=await readNotationHudGeometry(page,markerSelector);
         const follow=await page.evaluate(()=>{const overlay=document.querySelector('#notation-lane-overlay'),bounds=overlay.getBoundingClientRect();return{status:document.querySelector('#engraving-follow-status').textContent,enabled:document.querySelector('#engraving-follow').checked,source_note_ids:document.querySelector('#written-cursor-status').dataset.sourceNoteIds,source_measure_index:document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex,viewport:{top:bounds.top,bottom:bounds.bottom,left:bounds.left,right:bounds.right,clientHeight:overlay.clientHeight,scrollHeight:overlay.scrollHeight,scrollTop:overlay.scrollTop},fit:overlay.dataset.notationFit,scale:overlay.dataset.notationScale};});
         // Keep the observed compact failure state even when an assertion stops
         // this loop. The live prefix is included in hosted evidence uploads.
-        await writeFile(join(artifactDirectory,'worldmusichub-live-lane-overlay-follow-checkpoint.json'),JSON.stringify({original_fixtures_only:true,complete:false,completed_layouts:evidence,current:{viewport,button,markers,follow}},null,2));
+        await writeFile(join(artifactDirectory,'worldmusichub-live-lane-overlay-follow-checkpoint.json'),JSON.stringify({original_fixtures_only:true,complete:false,completed_layouts:evidence,current:{viewport,button,markers,follow,hud}},null,2));
+        assertNotationHudClear(hud);
         assert.equal(markers.length,2,'Both original voices retain a current-note marker after every resize and view switch');
         let compactFallback=null;
         if(viewport.width>=1280&&viewport.height>=700)assert.ok(markers.every(marker=>marker.painted&&marker.fraction>=.9),`${button}: both current staff voices stay readable at ${viewport.width}×${viewport.height}`);
@@ -82,7 +85,7 @@ export function registerAboveKeyboardBrowserRegressions({test,getPage,ui,readyFo
         const view=button==='#engraved-button'?'staff':'jianpu';
         if(viewport.width===1280&&evidence.length===1)paintEvidence.push(await captureOverlayPaintEvidence({page,ui,view,artifactDirectory,prefix:'worldmusichub-lane-overlay-light'}));
         await page.screenshot({path:join(artifactDirectory,`worldmusichub-above-keyboard-${viewport.width}x${viewport.height}-${view}.png`),fullPage:true,animations:'disabled'});
-        currentNotes.push({view,markers,compactFallback});
+        currentNotes.push({view,markers,compactFallback,hud});
       }
       await page.screenshot({path:join(artifactDirectory,`worldmusichub-above-keyboard-${viewport.width}x${viewport.height}.png`),fullPage:true,animations:'disabled'});
       if(viewport.width<=650){

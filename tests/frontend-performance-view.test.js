@@ -4,12 +4,13 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
 import {setupGameShell} from '../web/game-shell.js';
-import {setupPerformanceView,performanceCue,previewMusicMetadata,FIELD_COLORS,updateWrittenNoteHighlights,fallingNoteShadow} from '../web/performance-view.js';
+import {setupPerformanceView,performanceCue,previewMusicMetadata,FIELD_COLORS,updateWrittenNoteHighlights,fallingNoteShadow,observePianoStatusBudget} from '../web/performance-view.js';
 import {keyboardGeometry} from '../web/music.js';
 import {Transport} from '../web/transport.js';
 import {contrastRatio} from '../web/themes.js';
 import {fixture} from './frontend-fixtures.js';
 import './frontend-midi-settings.test.js';
+import './notation-hud-geometry.test.js';
 const english=createI18n({locale:'en',onReport(){}});
 
 test('dense written highlighting mutates only changed identities and initializes replaced pages',()=>{
@@ -50,6 +51,31 @@ test('count-in and first-onset pauses use transport start state rather than the 
 });
 test('note names retain AA contrast on every scheduled note color',()=>{for(const key of ['natural','accidental','scheduled'])assert.ok(contrastRatio(FIELD_COLORS.noteText,FIELD_COLORS[key])>=4.5,key)});
 
+test('the piano status row reserves its actual wrapped height and preserves the shared budget while Free is visible',()=>{
+ const {document}=parseHTML('<html><body><main id="workspace" class="piano-workspace"><div class="performance-status"></div></main></body></html>'),status=document.querySelector('.performance-status');
+ let height=36,width=1000,refresh,disconnected=false;const listeners=new Map();
+ status.getBoundingClientRect=()=>({width,height});
+ const window={ResizeObserver:class{constructor(callback){refresh=callback;}observe(node){assert.equal(node,status);}disconnect(){disconnected=true;}},addEventListener:(type,callback)=>listeners.set(type,callback),removeEventListener:type=>listeners.delete(type)};
+ const stop=observePianoStatusBudget({document,status,window}),budget=()=>document.body.style.getPropertyValue('--piano-status-space');
+ assert.equal(budget(),'36px');height=61.25;refresh();assert.equal(budget(),'62px','A longer localized label reserves the complete wrapped row');
+ width=height=0;refresh();assert.equal(budget(),'62px','A hidden normal stage does not change shared Free geometry');
+ width=1000;height=40;document.getElementById('workspace').classList.remove('piano-workspace');refresh();assert.equal(budget(),'62px','Guitar status does not replace the piano budget');
+ document.getElementById('workspace').classList.add('piano-workspace');listeners.get('resize')();assert.equal(budget(),'40px');
+ stop();assert.equal(budget(),undefined);assert.equal(disconnected,true);assert.equal(listeners.size,0);
+});
+
+test('piano HUD is a wrapping flow row outside the canvas and all shared lane sizes reserve its measured height',async()=>{
+ const css=await readFile(new URL('../web/piano-stage.css',import.meta.url),'utf8'),{document}=parseHTML(`<style>${css}</style>`),rules=[...document.querySelector('style').sheet.cssRules];
+ const rule=selector=>rules.findLast(item=>item.selectorText===selector)?.style;
+ const status=rule('.game-shell #workspace.piano-workspace .play-panel>.performance-status');
+ assert.equal(status.position,'static');assert.equal(status['flex-wrap'],'wrap');assert.equal(status.flex,'none');
+ for(const name of ['display','overflow','max-height','text-overflow'])assert.notEqual(status.getPropertyValue(name),'hidden');
+ const copy=rule('.game-shell #workspace.piano-workspace .performance-status>.performance-status-copy');assert.equal(copy['overflow-wrap'],'anywhere');assert.equal(copy['min-width'],'0');
+ const cue=rule('.game-shell #workspace.piano-workspace .performance-status>#stage-cue');assert.equal(cue.position,'static');assert.equal(cue['flex-wrap'],'wrap');
+ const nested=rules.flatMap(item=>item.cssRules?[...item.cssRules]:[item]),activeBudgets=nested.filter(item=>item.style?.getPropertyValue('--piano-lane-height')?.includes('piano-notice-space'));
+ assert.equal(activeBudgets.length,4);for(const item of activeBudgets){const value=item.style.getPropertyValue('--piano-lane-height');assert.match(value,/piano-status-space/);assert.match(value,/max\(100px/);}
+});
+
 test('short landscape gives following status a full non-shrinking row instead of the controls remainder',async()=>{
  // CSS/DOM contract only: actual notehead visibility still requires real-browser
  // geometry checks on the exact source, including Windows font metrics.
@@ -85,7 +111,7 @@ test('performance presentation moves existing controls once and scopes checked v
   assert.equal(document.querySelector('.preview-actions').parentElement.className,'preview-footer');assert.equal(document.querySelector('.preview-footnote').closest('details').className,'preview-session-help');
   for(const id of ['preview-title','preview-meta','preview-music-meta'])assert.ok(document.getElementById(id).closest('.preview-identity'),`${id} stays above the scrolling details`);assert.ok(document.getElementById('preview-gate').closest('.preview-footer'),'The blocking instrument warning stays with Start');
   shell.show('stage');assert.equal(document.querySelector('.shell-header').hidden,true);assert.equal(document.querySelectorAll('.stage-hud nav').length,1);assert.equal(document.getElementById('hud-result').hidden,true);assert.equal(document.getElementById('stage-cue-main').textContent,'READY');
-  const cue=document.getElementById('stage-cue'),field=document.querySelector('.performance-field');assert.equal(cue.closest('#piano-stage,#guitar-stage'),null,'Neither instrument can hide the shared transport cue');assert.equal(field.querySelector('#piano-stage'),document.getElementById('piano-stage'));assert.equal(field.querySelector('#guitar-stage'),document.getElementById('guitar-stage'));
+  const cue=document.getElementById('stage-cue'),field=document.querySelector('.performance-field');assert.equal(cue.closest('#piano-stage,#guitar-stage'),null,'Neither instrument can hide the shared transport cue');assert.equal(cue.parentElement,document.querySelector('.performance-status'),'Piano cues live in the status row, outside the notation and falling canvas');assert.equal(cue.closest('.performance-field'),null);assert.equal(field.querySelector('#piano-stage'),document.getElementById('piano-stage'));assert.equal(field.querySelector('#guitar-stage'),document.getElementById('guitar-stage'));
   compactMedia.matches=true;onViewportChange();context.instrument='guitar';document.getElementById('piano-stage').hidden=true;document.getElementById('guitar-stage').hidden=false;view.update();assert.ok(pan.previousSibling===panHome);assert.ok(guidance.previousSibling===guidanceHome);assert.equal(document.querySelector('.transport').classList.contains('piano-compact-transport'),false);assert.equal(document.querySelector('.play-panel').dataset.instrument,'guitar');assert.ok(document.getElementById('sound-button')===sound,'Guitar keeps the exact original sound control');assert.equal(sound.closest('.transport')!==null,true,'Guitar exposes sound in its visible transport');assert.equal(cue.hidden,false);assert.equal(document.querySelector('.keyboard-pan').hidden,true);
   context.running=true;context.position=-1000;view.update();assert.equal(document.getElementById('stage-cue-main').textContent,'2');context.running=false;context.hasStarted=true;view.update();assert.equal(document.getElementById('stage-cue-main').textContent,'PAUSED');context.completed=true;view.update();assert.equal(document.getElementById('stage-cue-main').textContent,'LISTEN COMPLETE');
   context.instrument='piano';context.position=0;context.hasStarted=false;context.completed=false;document.getElementById('piano-stage').hidden=false;document.getElementById('guitar-stage').hidden=true;view.update();assert.equal(document.getElementById('stage-cue'),cue);assert.equal(document.getElementById('stage-cue-main').textContent,'READY');assert.ok(document.getElementById('sound-button')===sound,'Piano restores the original sound control');assert.equal(sound.closest('.piano-stage-toolbar')!==null,true);

@@ -42,6 +42,23 @@ export function performanceCue(context,i18n=getAppI18n()){
   return{main:t(context.hasStarted?'performance.paused':'performance.ready'),detail:t(context.hasStarted?'performance.playContinue':'performance.playReady')};
 }
 
+/** The status bar owns real space outside the music. Keep the last visible
+ * height while Free is open so both piano modes retain the same lane budget. */
+export function observePianoStatusBudget({document,status,window=document.defaultView}){
+  let previous=0;
+  const refresh=()=>{
+    if(!document.getElementById('workspace')?.classList.contains('piano-workspace'))return;
+    const box=status.getBoundingClientRect?.();
+    if(!box?.width||!box.height)return;
+    const height=Math.ceil(box.height);
+    if(height===previous)return;previous=height;
+    document.body.style.setProperty('--piano-status-space',`${height}px`);
+  };
+  const observer=window.ResizeObserver?new window.ResizeObserver(refresh):null;
+  observer?.observe(status);window.addEventListener('resize',refresh);refresh();
+  return()=>{observer?.disconnect();window.removeEventListener('resize',refresh);document.body.style.removeProperty('--piano-status-space');};
+}
+
 /** Presentation only. The app still owns all timing, sound and recorder state. */
 export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
   const $=id=>document.getElementById(id),header=document.querySelector('.shell-header'),nav=header.querySelector('nav'),hud=document.querySelector('.stage-hud'),play=document.querySelector('.play-panel');
@@ -98,9 +115,12 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
   const piano=$('piano-stage');piano.classList.add('performance-piano');const overlay=document.createElement('div');overlay.className='performance-overlay';overlay.innerHTML='<div id="stage-cue" aria-live="off" hidden><strong id="stage-cue-main"></strong><span id="stage-cue-detail"></span></div><div class="keyboard-pan"><button id="keyboard-pan-left" class="button secondary" data-i18n-aria-label="performance.panLower" aria-label="显示更低的琴键音高">←</button><span id="keyboard-range-context"></span><button id="keyboard-pan-right" class="button secondary" data-i18n-aria-label="performance.panHigher" aria-label="显示更高的琴键音高">→</button></div>';
   const field=document.createElement('div');field.className='performance-field';piano.before(field);field.append(overlay,piano,$('guitar-stage'));const pan=overlay.querySelector('.keyboard-pan');play.insertBefore(pan,document.querySelector('.transport'));const scroll=$('piano-scroll');for(const[id,direction]of[['keyboard-pan-left',-1],['keyboard-pan-right',1]])$(id).addEventListener('click',()=>{scroll.scrollBy({left:direction*scroll.clientWidth*.65,behavior:'auto'});updateRange()});
   const transport=document.querySelector('.transport'),panHome=document.createComment('Piano pan controls home');pan.before(panHome);
+  const cue=$('stage-cue'),cueHome=document.createComment('Guitar transport cue home');cue.before(cueHome);
   let pianoGuidance=null,guidanceHome=null;
   function arrangePianoAuxiliary(){
     const compact=Boolean(shortLandscape?.matches)&&play.dataset.instrument!=='guitar',focused=document.activeElement;
+    if(play.dataset.instrument!=='guitar'){if(cue.parentElement!==status)status.append(cue);}
+    else if(cue.previousSibling!==cueHome)cueHome.after(cue);
     transport.classList.toggle('piano-compact-transport',compact);
     if(compact){if(pan.parentElement!==transport)transport.append(pan);if(pianoGuidance&&pianoGuidance.parentElement!==transport)transport.append(pianoGuidance);}
     else{if(pan.previousSibling!==panHome)panHome.after(pan);if(pianoGuidance&&pianoGuidance.previousSibling!==guidanceHome)guidanceHome.after(pianoGuidance);}
@@ -148,5 +168,6 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
   const refreshLocale=()=>{localizeStatic(document,i18n);update();notationLayout.refresh();};
   localizeStatic(document,i18n);screenChanged(document.body.dataset.screen);
   const unsubscribe=i18n.subscribe(refreshLocale);
-  return{update,screenChanged,setPianoGuidance,destroy(){stopNoticeBudget();unsubscribe();notationLayout.destroy();window.removeEventListener('resize',updateRange);scroll.removeEventListener('scroll',updateRange);shortLandscape?.removeEventListener('change',arrangeNotationTools);shortLandscape?.removeEventListener('change',arrangePianoAuxiliary);panHome.after(pan);if(pianoGuidance)guidanceHome.after(pianoGuidance);panHome.remove();guidanceHome?.remove();transport.classList.remove('piano-compact-transport');}};
+  const stopStatusBudget=observePianoStatusBudget({document,status});
+  return{update,screenChanged,setPianoGuidance,destroy(){stopStatusBudget();stopNoticeBudget();unsubscribe();notationLayout.destroy();window.removeEventListener('resize',updateRange);scroll.removeEventListener('scroll',updateRange);shortLandscape?.removeEventListener('change',arrangeNotationTools);shortLandscape?.removeEventListener('change',arrangePianoAuxiliary);cueHome.after(cue);cueHome.remove();panHome.after(pan);if(pianoGuidance)guidanceHome.after(pianoGuidance);panHome.remove();guidanceHome?.remove();transport.classList.remove('piano-compact-transport');}};
 }
