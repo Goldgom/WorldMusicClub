@@ -11,6 +11,11 @@ import {finishDenseReport} from '../scripts/dense-report-cleanup.mjs';
 import {DENSE_STREAM,originalDenseRenditionMidi,expectedDenseAttacks,denseDigest} from '../scripts/prepare-dense-rendition-fixture.mjs';
 import {observeDenseRenditionAudio,denseRenditionBootstrap} from '../scripts/dense-rendition-observer.mjs';
 import {denseTimingMetrics,validateDenseRenditionEvidence} from '../scripts/verify-dense-rendition-evidence.mjs';
+import {observeCanonicalPcm} from './canonical-pcm-observer-fixture.js';
+import {basicKeySong} from './basic-key-rendition-fixtures.js';
+import {buildBasicKeyAudioPlan} from '../web/basic-key-audio-plan.js';
+import {BasicKeyAudioReceiver} from '../web/basic-key-audio-receiver.js';
+import {BasicKeyAudioCore} from '../web/basic-key-audio-core.js';
 function clockProgress(positionMs,{durationMs=48000,...state}={}) {
  const node={id:'progress',value:String(positionMs),max:String(durationMs),dataset:{},
   getAttribute(name){return name==='data-playback-clock'?this.dataset.playbackClock:null;}};
@@ -33,12 +38,34 @@ test('dense audio observation forwards every real method and does not inherit th
  for(let i=0;i<6144;i++){const node=context.createOscillator(i);assert.equal(node.start(1),'started');assert.equal(node.stop(2),'stopped');assert.equal(node.disconnect(),'disconnected');}
  assert.equal(probe.snapshot().created,6144);assert.equal(probe.snapshot().sourceStarts,6144);assert.equal(probe.snapshot().oscillatorStarts,6144);assert.equal(probe.snapshot().overflow,false);assert.equal(probe.snapshot().activeSources,0);assert.equal(calls[0][1],context);assert.deepEqual(calls[0][2],[0]);assert.equal(probe.restore(),true);assert.equal(Audio.prototype.createOscillator,original);
 });
-test('dense init namespace survives the real init-script closure boundary',()=>{
+test('dense init namespace survives the real init-script closure boundary',async()=>{
  const writes=[],realm=vm.createContext({localStorage:{setItem:(...args)=>writes.push(args)}});
  vm.runInContext(`(()=>{${denseRenditionBootstrap()}})();`,realm);
  assert.equal(vm.runInContext('typeof installDenseRenditionObserver',realm),'undefined','Local init names are intentionally not page globals');
  assert.equal(typeof realm.__wmhReadPlaybackClock,'function');assert.equal(typeof realm.__wmhDenseObserverTools.install,'function');assert.equal(typeof realm.__wmhDenseObserverTools.observeAudio,'function');assert.equal(Object.isFrozen(realm.__wmhDenseObserverTools),true);
- assert.deepEqual(writes,[['worldmusichub.locale.v1','zh-CN']]);delete realm.__wmhDenseObserverTools;assert.equal(realm.__wmhDenseObserverTools,undefined);
+ assert.deepEqual(writes,[['worldmusichub.locale.v1','zh-CN']]);const graph=await realm.__wmhDenseAudioGraph;assert.equal(typeof graph.path,'function');assert.equal(graph.restore(),true);delete realm.__wmhDenseObserverTools;assert.equal(realm.__wmhDenseObserverTools,undefined);
+});
+test('early graph capture retains an actual pre-existing mixer path when the dense receiver attaches later',async()=>{
+ const plan=buildBasicKeyAudioPlan(basicKeySong(),{sampleRate:48000}),options={canonical:false,ReceiverClass:BasicKeyAudioReceiver,Core:BasicKeyAudioCore,connectBeforeObserver:true};
+ const missed=await observeCanonicalPcm(plan,options),captured=await observeCanonicalPcm(plan,{...options,earlyGraph:true});
+ assert.equal(missed.row.started.graphToDestination,null);assert.equal(missed.row.pcm.graphToDestination,null,'Late receiver attachment cannot infer the missing destination edge');
+ for(const run of [missed.row,captured.row]){assert.ok(run.pcm.blocks.some(block=>block.peak>1e-6&&block.rms>1e-7));assert.equal(run.plan.sourceSha256,plan.sourceSha256);assert.equal(run.started.planGeneration,run.planGeneration);assert.equal(run.started.sourceSha256,plan.sourceSha256);assert.equal(run.terminals[0].record.started,plan.notes.length);}
+ assert.deepEqual(captured.row.started.graphToDestination.map(node=>node.type),['AudioWorkletNode','GainNode','GainNode','AudioDestinationNode']);
+ assert.deepEqual(captured.row.pcm.graphToDestination,captured.row.started.graphToDestination);
+ assert.equal(captured.graphHistory.events[0].nodeType,'GainNode');assert.equal(captured.graphHistory.events[0].targetType,'AudioDestinationNode');assert.equal(captured.graphHistory.events[0].kind,'connect');
+ assert.deepEqual(captured.row.terminals[0].record.ledger,missed.row.terminals[0].record.ledger,'Observation timing changes no source gate or frame');
+});
+for(const negative of [{disconnected:true},{disconnectBeforeObserver:true},{foreignDestination:true}])test(`early graph never invents a destination edge: ${Object.keys(negative)[0]}`,async()=>{
+ const plan=buildBasicKeyAudioPlan(basicKeySong(),{sampleRate:48000}),{row}=await observeCanonicalPcm(plan,{canonical:false,ReceiverClass:BasicKeyAudioReceiver,Core:BasicKeyAudioCore,connectBeforeObserver:true,earlyGraph:true,...negative});
+ assert.ok(row.pcm.blocks.some(block=>block.peak>1e-6),'Positive analyser data alone cannot prove a destination connection');
+ assert.equal(row.started.graphToDestination,null);assert.equal(row.pcm.graphToDestination,null);
+});
+test('dense graph capture starts in the navigation init script without source evaluation or security relaxation',async()=>{
+ const bootstrap=denseRenditionBootstrap(),host=await readFile(new URL('../scripts/hosted-dense-rendition-check.mjs',import.meta.url),'utf8');
+ assert.match(bootstrap,/__wmhDenseAudioGraph=.*observeReceiver\(globalThis.document,\{graphOnly:true\}\)/);
+ assert.ok(host.indexOf('context.addInitScript(denseRenditionBootstrap())')<host.indexOf('page.goto(origin)'));
+ assert.doesNotMatch(bootstrap,/\beval\b|\bFunction\s*\(|bypassCSP|unsafe-eval/);
+ assert.doesNotMatch(host,/bypassCSP|unsafe-eval|content-security-policy/i);
 });
 test('dense trace preserves renderer promises and frame callbacks without inventing main-thread audio pumps',async()=>{
  const nodes={progress:clockProgress(10),'clean-song-stage':{dataset:{rendererState:'playing'}},workspace:{dataset:{scoreState:'active'},addEventListener(){},removeEventListener(){}},'engraving-range':{textContent:'Measures 9–16 / 24'},'hud-captured':{textContent:'0'},notice:{textContent:''}},calls=[],context={currentTime:1,state:'running',addEventListener(){},removeEventListener(){}},promise=Promise.resolve('loaded');

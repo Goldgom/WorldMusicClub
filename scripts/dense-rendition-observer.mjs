@@ -13,7 +13,7 @@ const engravingOwnershipSource=engravingObserver.slice(engravingStart,engravingE
 export function denseRenditionBootstrap(){
  // Playwright wraps init scripts in an IIFE. Explicitly export the shared
  // clock reader and observer namespace; page.evaluate cannot see local names.
- return `globalThis.__wmhReadPlaybackClock=(${readPlaybackClock.toString()});\n${engravingOwnershipSource}\nglobalThis.__wmhDenseObserverTools=Object.freeze({observeEngraving:createEngravingOwnershipObserver,observeAudio:${observeDenseRenditionAudio.toString()},observeReceiver:${audioThreadObserverSource},install:${installDenseRenditionObserver.toString()}});\nlocalStorage.setItem('worldmusichub.locale.v1','zh-CN');`;
+ return `globalThis.__wmhReadPlaybackClock=(${readPlaybackClock.toString()});\n${engravingOwnershipSource}\nglobalThis.__wmhDenseObserverTools=Object.freeze({observeEngraving:createEngravingOwnershipObserver,observeAudio:${observeDenseRenditionAudio.toString()},observeReceiver:${audioThreadObserverSource},install:${installDenseRenditionObserver.toString()}});\nglobalThis.__wmhDenseAudioGraph=globalThis.__wmhDenseObserverTools.observeReceiver(globalThis.document,{graphOnly:true});\nlocalStorage.setItem('worldmusichub.locale.v1','zh-CN');`;
 }
 export function observeDenseRenditionAudio(root=globalThis){
  const prototypes=new Set([root.AudioContext?.prototype,root.webkitAudioContext?.prototype].filter(Boolean));if(!prototypes.size)throw Error('Real Web Audio is required');const live=new Set(),restores=[];let sourceStarts=0,oscillatorStarts=0,created=0,overflow=false;
@@ -40,7 +40,7 @@ export async function installDenseRenditionObserver({library,audioProbe}={}){
  const attachContext=value=>{context=value;if(contexts.has(value))return;const observe=()=>push('states',{wall:now(),audioTime:value.currentTime,state:value.state});contexts.set(value,observe);observe();value.addEventListener?.('statechange',observe);};
  const observeReceiver=library?.observeReceiver||globalThis.__wmhDenseObserverTools?.observeReceiver;
  if(typeof observeReceiver!=='function')throw Error('Actual receiver observer unavailable');
- const receiver=await observeReceiver(doc,{Receiver:BasicKeyAudioReceiver,onContext:attachContext,onStart(owner){if(data.listeningStarted===null)data.listeningStarted=screen();}});
+ const receiver=await observeReceiver(doc,{Receiver:BasicKeyAudioReceiver,graphObserver:await globalThis.__wmhDenseAudioGraph,onContext:attachContext,onStart(owner){if(data.listeningStarted===null)data.listeningStarted=screen();}});
  const engraving=(library?.observeEngraving||globalThis.__wmhDenseObserverTools?.observeEngraving)(Renderer,doc);
  for(const method of ['load','updateGraphic','render']){
   const original=Renderer.prototype[method];if(typeof original!=='function')throw Error(`Actual renderer method missing: ${method}`);

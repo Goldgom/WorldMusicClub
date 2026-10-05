@@ -184,11 +184,11 @@ async function checkNativeReferenceListening({document,native,click,closeDialogs
 }
 
 // Shared actual AudioWorklet evidence for MIDI and authored VSQ.
-async function observeBasicKeyReceiver(document,{Receiver,root=globalThis,onContext=()=>{},onStart=()=>{},readStartFrame=note=>note[2],readEndFrame=note=>note[3],readSampleOffsetFrames}={}){
+async function observeBasicKeyReceiver(document,{Receiver,root=globalThis,onContext=()=>{},onStart=()=>{},readStartFrame=note=>note[2],readEndFrame=note=>note[3],readSampleOffsetFrames,graphOnly=false,graphObserver}={}){
  // Observe the shipped adapter and native MessagePort without replacing a
  // processor, audio clock, command, callback result, or application promise.
- Receiver ||= (await import('/basic-key-audio-receiver.js')).BasicKeyAudioReceiver;
- const proto=Receiver.prototype,rows=[],initializations=[],owners=new Map(),contexts=new Map(),errors=[];let active=true,overflow=false;
+ if(!graphOnly)Receiver ||= (await import('/basic-key-audio-receiver.js')).BasicKeyAudioReceiver;
+ const rows=[],initializations=[],owners=new Map(),contexts=new Map(),errors=[];let active=true,overflow=false;
  const errorRecord=error=>{
   const details={};for(const key of ['phase','moduleUrl','isSecureContext','hasAudioWorklet','addModuleType','audioWorkletNodeType','usesNodeFactory','contextState','sampleRate','causeName','causeMessage','cause','command','timeoutMs','outcome','discontinuityKind','expectedFrame','actualFrame','previousBlockFrame','previousBlockLength','blockLength','frameDelta','successfulBlocks','missedAttackIndex','generation','planGeneration','sourceSha256','policyId','identityKind','frame','anchorFrame','positionFrame']){const value=error?.details?.[key];if(['string','number','boolean'].includes(typeof value)||value===null)details[key]=typeof value==='string'?value.slice(0,1024):value;}
   return{code:String(error?.code||error?.name||'error').slice(0,96),name:String(error?.name||'Error').slice(0,96),message:String(error?.message||error).slice(0,1024),details};
@@ -200,8 +200,20 @@ async function observeBasicKeyReceiver(document,{Receiver,root=globalThis,onCont
  const graphChange=(kind,node,target)=>{if(!active)return;try{graphTotal++;if(graphEvents.length===64)graphEvents.shift();graphEvents.push({sequence:graphTotal,kind,node:graphId(node),nodeType:String(node?.constructor?.name||'unknown').slice(0,64),target:graphId(target),targetType:String(target?.constructor?.name||'none').slice(0,64),wallMs:root.performance.now(),audioTime:node?.context?.currentTime??null});}catch(error){pushError(error);}};
  function connected(target,...args){const result=Reflect.apply(connect,this,[target,...args]);if(active){if(edges.size>=4096&&!edges.has(this))overflow=true;else{if(!edges.has(this))edges.set(this,new Set());edges.get(this).add(target);}graphChange('connect',this,target);}return result;}
  function disconnected(...args){const result=Reflect.apply(disconnect,this,args);if(!args.length||typeof args[0]==='number')edges.delete(this);else edges.get(this)?.delete(args[0]);graphChange('disconnect',this,args[0]);return result;}
- if(audioProto){audioProto.connect=connected;audioProto.disconnect=disconnected;}
- const graphPath=(node,destination,seen=new Set())=>{if(seen.has(node))return null;seen.add(node);const current={type:node.constructor.name,gain:node.gain?.value??null};if(node===destination)return[current];for(const next of edges.get(node)||[]){const path=graphPath(next,destination,seen);if(path)return[current,...path];}return null;};
+ if(audioProto&&!graphObserver){audioProto.connect=connected;audioProto.disconnect=disconnected;}
+ const graphPath=graphObserver?.path||((node,destination,seen=new Set())=>{if(seen.has(node))return null;seen.add(node);const current={type:node.constructor.name,gain:node.gain?.value??null};if(node===destination)return[current];for(const next of edges.get(node)||[]){const path=graphPath(next,destination,seen);if(path)return[current,...path];}return null;});
+ // A graph-only observer can begin before application navigation creates its
+ // persistent output chain. Late receiver attachment borrows these exact node
+ // objects and observed connect/disconnect calls; no edge is inferred or added.
+ const graphStatus=()=>graphObserver?.status()||{errors:copy(errors),overflow,graphHistory:{total:graphTotal,omitted:Math.max(0,graphTotal-graphEvents.length),events:copy(graphEvents)}};
+ const graphConnections=node=>graphObserver?graphObserver.connections(node):edges.get(node)?.size||0;
+ const restoreGraph=()=>{if(graphObserver)return graphObserver.restore();let restored=true;
+  if(audioProto){for(const[method,wrapped,original]of [['connect',connected,connect],['disconnect',disconnected,disconnect]])try{if(audioProto[method]===wrapped)audioProto[method]=original;if(audioProto[method]!==original)restored=false;}catch(error){pushError(error);restored=false;}}
+  return restored;
+ };
+ if(graphOnly)return{path:graphPath,connections:graphConnections,status:graphStatus,restore(){active=false;return restoreGraph();}};
+ const proto=Receiver.prototype;
+ const observedErrors=()=>graphObserver?[...copy(errors),...graphStatus().errors]:copy(errors),observedOverflow=()=>overflow||Boolean(graphObserver&&graphStatus().overflow);
  function observe(owner){
   if(owners.has(owner))return owners.get(owner);
   if(owners.size>=32){overflow=true;throw Error('Audio receiver observation bound');}
@@ -286,10 +298,10 @@ async function observeBasicKeyReceiver(document,{Receiver,root=globalThis,onCont
   }return result;
  }
  proto.prepare=prepared;proto.start=started;
- const lifecycle=entry=>({receiverId:entry.id,state:entry.owner.state,connected:entry.owner.connected===true,nodeConnections:edges.get(entry.node)?.size||0,gateConnections:entry.owner.outputGate?(edges.get(entry.owner.outputGate)?.size||0):null,disposed:entry.owner.disposed===true,disposing:entry.owner.disposing===true,pendingCommands:entry.owner.pending?.size??null,pendingStarts:entry.owner.pending?[...entry.owner.pending.values()].filter(command=>command.type==='start').length:null});
+ const lifecycle=entry=>({receiverId:entry.id,state:entry.owner.state,connected:entry.owner.connected===true,nodeConnections:graphConnections(entry.node),gateConnections:entry.owner.outputGate?graphConnections(entry.owner.outputGate):null,disposed:entry.owner.disposed===true,disposing:entry.owner.disposing===true,pendingCommands:entry.owner.pending?.size??null,pendingStarts:entry.owner.pending?[...entry.owner.pending.values()].filter(command=>command.type==='start').length:null});
  const ownedNodes=()=>[...owners.values()].map(lifecycle),quiet=()=>[...owners.values()].every(entry=>entry.hashes.size===0)&&ownedNodes().every(row=>!row.connected&&row.nodeConnections===0&&row.gateConnections===0&&row.disposed&&!row.disposing&&row.pendingCommands===0&&row.pendingStarts===0);
- const status=()=>({errors:copy(errors),initializations:copy(initializations),overflow,graphHistory:{total:graphTotal,omitted:Math.max(0,graphTotal-graphEvents.length),events:copy(graphEvents)},contexts:contexts.size,states:[...contexts.values()].flatMap(value=>copy(value.states)),receivers:owners.size,ownedNodes:ownedNodes(),started:rows.filter(row=>row.started).length,activeReceivers:[...owners.values()].filter(({owner})=>owner.connected).length,pendingReceivers:[...owners.values()].filter(({owner})=>['preparing','ready','starting'].includes(owner.state)||[...(owner.pending?.values()||[])].some(command=>command.type==='start')).length,completed:rows.filter(row=>row.terminals.some(t=>t.record.type==='ended')).length});
- return{snapshot:()=>copy(rows.map(row=>({...row,lifecycle:lifecycle([...owners.values()].find(entry=>entry.id===row.receiverId))}))),count:()=>rows.length,status,assertHealthy(){if(errors.length)throw Error('Basic-key audio failed: '+JSON.stringify(errors[0])+'\nProduction UI: '+String(document.getElementById?.('notice')?.textContent||'').slice(0,4096));},quiet,settledSince:index=>rows.slice(index).length>0&&rows.slice(index).every(row=>row.terminals.length>0),restore(){active=false;const cleanupErrors=[];let restored=true;
+ const status=()=>({errors:observedErrors(),initializations:copy(initializations),overflow:observedOverflow(),graphHistory:graphStatus().graphHistory,contexts:contexts.size,states:[...contexts.values()].flatMap(value=>copy(value.states)),receivers:owners.size,ownedNodes:ownedNodes(),started:rows.filter(row=>row.started).length,activeReceivers:[...owners.values()].filter(({owner})=>owner.connected).length,pendingReceivers:[...owners.values()].filter(({owner})=>['preparing','ready','starting'].includes(owner.state)||[...(owner.pending?.values()||[])].some(command=>command.type==='start')).length,completed:rows.filter(row=>row.terminals.some(t=>t.record.type==='ended')).length});
+ return{snapshot:()=>copy(rows.map(row=>({...row,lifecycle:lifecycle([...owners.values()].find(entry=>entry.id===row.receiverId))}))),count:()=>rows.length,status,assertHealthy(){const failures=observedErrors();if(failures.length)throw Error('Basic-key audio failed: '+JSON.stringify(failures[0])+'\nProduction UI: '+String(document.getElementById?.('notice')?.textContent||'').slice(0,4096));},quiet,settledSince:index=>rows.slice(index).length>0&&rows.slice(index).every(row=>row.terminals.length>0),restore(){active=false;const cleanupErrors=[];let restored=true;
   const attempt=(name,run)=>{try{if(run()===false)throw Error('Original method was not restored');}catch(error){restored=false;if(cleanupErrors.length<128)cleanupErrors.push({name,message:String(error?.message||error).slice(0,512)});else overflow=true;}};
   if(typeof create==='function')attempt('receiver.create',()=>{if(Receiver.create===created)Receiver.create=create;return Receiver.create===create;});
   attempt('receiver.prepare',()=>{if(proto.prepare===prepared)proto.prepare=prepare;return proto.prepare===prepare;});attempt('receiver.start',()=>{if(proto.start===started)proto.start=start;return proto.start===start;});
@@ -300,8 +312,8 @@ async function observeBasicKeyReceiver(document,{Receiver,root=globalThis,onCont
    for(const kind of ['onEnded','onStopped','onError'])attempt(`receiver-${entry.id}.${kind}`,()=>{if(entry.owner[kind]===entry[kind])entry.owner[kind]=entry.originals[kind];return entry.owner[kind]===entry.originals[kind];});
   }
   for(const[context,{listener}]of contexts)attempt('context.statechange',()=>context.removeEventListener?.('statechange',listener));
-  if(audioProto){attempt('AudioNode.connect',()=>{if(audioProto.connect===connected)audioProto.connect=connect;return audioProto.connect===connect;});attempt('AudioNode.disconnect',()=>{if(audioProto.disconnect===disconnected)audioProto.disconnect=disconnect;return audioProto.disconnect===disconnect;});}
-  return{restored,overflow,errors:copy(errors),cleanupErrors};
+  attempt('AudioNode.graph',restoreGraph);
+  return{restored,overflow:observedOverflow(),errors:observedErrors(),cleanupErrors};
  }};
 }
 // End shared audio-thread observer.
