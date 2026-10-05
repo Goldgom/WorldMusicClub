@@ -1532,6 +1532,15 @@ async function compactGeometry() {
   });
 }
 
+async function saveCompactPrecheck(name,geometry) {
+  const chrome=await page.evaluate(()=>{
+    const box=node=>{const b=node.getBoundingClientRect(),s=getComputedStyle(node);return{id:node.id,className:String(node.className),x:b.x,y:b.y,right:b.right,bottom:b.bottom,width:b.width,height:b.height,display:s.display,gap:s.gap,padding:s.padding};};
+    const selectors=['.stage-heading','.performance-status','.piano-stage-toolbar','#piano-scroll','.keyboard-footer','.piano-stage-pan','.transport','.song-mod-preview','.preview-footer'];
+    return selectors.map(selector=>({selector,nodes:[...document.querySelectorAll(selector)].map(node=>({...box(node),children:[...node.children].map(box)}))}));
+  });
+  await writeFile(join(artifactDirectory,`worldmusichub-compact-${name}-precheck.json`),JSON.stringify({geometry,chrome},null,2));
+}
+
 function assertBoundedDocument(geometry) {
   assert.ok(geometry.document.width<=geometry.viewport.width+1&&geometry.document.height<=geometry.viewport.height+1,JSON.stringify(geometry));
 }
@@ -1566,7 +1575,7 @@ for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:8
     const musicMeta=await page.locator('#preview-music-meta').textContent();assert.match(musicMeta,/^Opening: /);assert.match(musicMeta,/2 flats Mode unspecified/);assert.ok(musicMeta.includes(`${preview.score.tempo[0].bpm} BPM`));assert.ok(musicMeta.includes(`${preview.score.parts.length} parts`));
     assert.equal(await page.locator('#preview-notices').evaluate(element=>element.open),false);assert.equal(await page.locator('.preview-copy').evaluate(element=>element.scrollTop),0);
     if(viewport.width<651)await page.locator('.preview-footer').scrollIntoViewIfNeeded();
-    const lobby=await compactGeometry();assertPinnedPreview(lobby,viewport);assert.equal(await page.locator('html').getAttribute('data-theme'),'light');assert.equal(await page.locator('#workspace').isVisible(),false);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby`);
+    const lobby=await compactGeometry();await saveCompactPrecheck(`${viewport.width}x${viewport.height}-lobby`,lobby);assertPinnedPreview(lobby,viewport);assert.equal(await page.locator('html').getAttribute('data-theme'),'light');assert.equal(await page.locator('#workspace').isVisible(),false);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby`);
     await page.locator('#preview-notices-title').click();assert.ok(await page.locator('#preview-notice-list li').count()>0);assert.ok((await page.locator('#preview-notice-list').textContent()).length>300,'The retained D768 notices exercise a long preview');
     if(viewport.width<651)await page.locator('.preview-footer').scrollIntoViewIfNeeded();
     const expandedLobby=await compactGeometry();assertPinnedPreview(expandedLobby,viewport);assert.ok(expandedLobby.copy.scrollHeight>expandedLobby.copy.clientHeight,'Expanded source notices must exercise the preview detail scroller');await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby-notices`);
@@ -1578,7 +1587,7 @@ for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:8
     if(viewport.width>=1280){await ui('#theme-mode').selectOption('dark');await closeShellPanels();assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');assertPinnedPreview(await compactGeometry(),viewport);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby-dark`);await ui('#theme-mode').selectOption('light');await closeShellPanels();assert.equal(await page.locator('html').getAttribute('data-theme'),'light');}
     assert.deepEqual(await exportScore(),initialCompilation.score);await closeShellPanels();
     await startPreview({notation:false});assert.equal(await page.locator('#stage-title').textContent(),edition.title);assert.equal(await page.locator('.shell-header').isVisible(),false);assert.equal(await page.locator('#notation-dock').isVisible(),false);assert.equal(await page.locator('#stage-cue-main').textContent(),'READY');
-    const stage=await compactGeometry();assertBoundedDocument(stage);assertInsideViewport(stage.stage,viewport,'Performance stage');assertInsideViewport(stage.play,viewport,'Playfield and transport');assertInsideViewport(stage.transport,viewport,'Transport');assert.ok(stage.stage.scrollHeight<=stage.stage.clientHeight+1,'The stage must not become a scrolling dashboard');assert.ok(stage.play.scrollHeight<=stage.play.clientHeight+1,'Playfield and transport must fit without panel scrolling');assert.ok(stage.field.height>=viewport.height*(viewport.width>=1280?.5:.32),`The musical field needs substantial vertical space: ${JSON.stringify(stage.field)}`);
+    const stage=await compactGeometry();await saveCompactPrecheck(`${viewport.width}x${viewport.height}-stage`,stage);assertBoundedDocument(stage);assertInsideViewport(stage.stage,viewport,'Performance stage');assertInsideViewport(stage.play,viewport,'Playfield and transport');assertInsideViewport(stage.transport,viewport,'Transport');assert.ok(stage.stage.scrollHeight<=stage.stage.clientHeight+1,'The stage must not become a scrolling dashboard');assert.ok(stage.play.scrollHeight<=stage.play.clientHeight+1,'Playfield and transport must fit without panel scrolling');assert.ok(stage.field.height>=viewport.height*(viewport.width>=1280?.5:.32),`The musical field needs substantial vertical space: ${JSON.stringify(stage.field)}`);
     if(viewport.width>=1280){const centers=stage.hudItems.map(item=>item.centerY);assert.ok(Math.max(...centers)-Math.min(...centers)<=2,`Desktop tools and title share one HUD row: ${JSON.stringify(stage.hudItems)}`);assert.ok(stage.hud.height<=70,JSON.stringify(stage.hud));}
     for(const item of stage.hudItems)assert.ok(item.x>=-1&&item.right<=viewport.width+1,`HUD control stays reachable: ${JSON.stringify(item)}`);
     for(const id of ['midi-button','count-in','keyboard-base-midi','keyboard-input-offset','keyboard-preset']){assert.equal(await page.locator(`#${id}`).count(),1);assert.equal(await page.locator(`#settings-dialog #${id}`).count(),1);assert.equal(await page.locator(`#${id}`).isVisible(),false);}

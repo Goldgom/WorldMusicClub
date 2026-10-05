@@ -6,7 +6,7 @@ import {resolve,join} from 'node:path';
 import {assertNotationHudClear} from '../tests/notation-hud-geometry.js';
 
 const directory=resolve(process.argv[2]||'ui-preview'),tap=readFileSync(join(directory,'tests.tap'),'utf8');
-const names=['real free piano fills desktop','original grand staff and Jianpu follow','game menu and audible song preview','normal and free piano share','original falling bars visibly cross'];
+const names=['real free piano fills desktop','original grand staff and Jianpu follow','game menu and audible song preview','normal and free piano share','original falling bars visibly cross',...['1280 by 720','1920 by 1080','844 by 390','390 by 844'].map(size=>`real D768 lobby and compact performance fit ${size}`),'short-landscape following reveals','real guitar current and next six-note','real initial compact guide stays'];
 for(const name of names)assert.ok(tap.split('\n').some(line=>/^ok \d+ - /.test(line)&&line.includes(name)&&!line.includes('# SKIP')),`Missing executed passing preview case: ${name}`);
 const files=[];
 function record(name,{size,png=false}={}){

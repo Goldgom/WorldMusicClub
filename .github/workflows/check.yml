@@ -113,7 +113,7 @@ jobs:
       # Additive, bounded copies of the same evidence. The complete artifact
       # below remains unchanged; each part has a full source/hash inventory.
       - name: Partition browser evidence for bounded retrieval
-        if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' }}
+        if: ${{ always() && steps.browser_setup.outcome == 'success' }}
         run: >-
           python3 scripts/partition-browser-evidence.py
           /tmp "${{ runner.temp }}/worldmusichub-rhythm"
