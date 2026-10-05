@@ -6,12 +6,14 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {deflateSync} from 'node:zlib';
 import {execFileSync} from 'node:child_process';
-import {authoredLegacyPack, STREAMING_ZIP_SCRIPT} from './native-import-driver-fixtures.js';
+import {authoredLegacyPack, storedZip, STREAMING_ZIP_SCRIPT} from './native-import-driver-fixtures.js';
 import {authoredCleanPackage} from './clean-song-package-fixtures.js';
 import {catalogServer} from './library-catalog-fixtures.js';
+import {userPackServer} from './library-user-pack-fixtures.js';
+import {organizationJournalFixture} from './library-catalog-organization-journal-fixtures.js';
 import {inspectOriginalManagementZip} from '../scripts/pack-management-acceptance-fixtures.mjs';
 import {CATALOG_ACCEPTANCE_PHASES, originalCatalogAcceptanceFixtures, prepareLibraryCatalogFixtures, catalogSha256 as sha256} from '../scripts/prepare-library-catalog-acceptance.mjs';
-import {CATALOG_SOURCE_FILES, CATALOG_REQUIRED_CHECKS, CATALOG_SCREENSHOTS, readCatalogEvidenceFile, validateCatalogSourceBinding, validateCatalogScreenshot, validateCatalogApiEvidence, validateCatalogHostApiTrace, validateCatalogRetainedSnapshots, catalogLibraryInventory, validateCatalogProtocolPhases, validateCatalogJournal, validateCatalogPickerProtocol} from '../scripts/verify-library-catalog-acceptance.mjs';
+import {CATALOG_SOURCE_FILES, CATALOG_REQUIRED_CHECKS, CATALOG_SCREENSHOTS, readCatalogEvidenceFile, validateCatalogSourceBinding, validateCatalogScreenshot, validateCatalogApiEvidence, validateCatalogHostApiTrace, validateCatalogRetainedSnapshots, catalogLibraryInventory, validateCatalogProtocolPhases, validateCatalogJournal, validateCatalogPickerProtocol, validateCatalogSelectedExport} from '../scripts/verify-library-catalog-acceptance.mjs';
 
 const owned = async t => { const directory = await mkdtemp(join(tmpdir(), 'wmc-catalog-evidence-unit-')); t.after(() => rm(directory, {recursive: true, force: true})); return directory; };
 const digestRow = (path, text) => ({path, bytes: Buffer.byteLength(text), sha256: sha256(text)});
@@ -116,14 +118,15 @@ test('synthetic in-memory PNG format fixtures exercise dimensions, CRC, pixels a
 });
 
 /** Generate protocol values through the isolated in-memory contract fixture, never a host/browser report. */
-async function protocol() {
+async function protocol({organization = false} = {}) {
   const fixture = originalCatalogAcceptanceFixtures(), binding = sourceBinding(), runId = 'protocol-only-catalog-contract';
-  const server = await catalogServer({initialized: false});
-  const packs = fixture.inputs.map(input => ({collection_id: `collection-${input.sha256.slice(0, 32)}`, import_pack_id: input.pack_id, name: input.filename}));
+  const server = await (organization ? userPackServer : catalogServer)({initialized: false});
+  const packs = fixture.inputs.map(input => ({collection_id: `collection-${input.sha256.slice(0, 32)}`, import_pack_id: input.pack_id, name: input.filename, ...(organization ? {kind: 'imported'} : {})}));
   for (const [index, row] of server.rows.entries()) {
     row.score_id = index === 0 ? fixture.spec.legacy_ids[0] : index === 1 ? fixture.spec.clean_id : fixture.spec.legacy_ids[1];
     row.packs = index === 0 ? packs.slice(0, 2) : [packs[index === 1 ? 2 : 0]]; row.pack_count = row.packs.length;
   }
+  if (organization) { server.packs.clear(); for (const pack of packs) server.packs.set(pack.collection_id, pack); }
   const reports = CATALOG_ACCEPTANCE_PHASES.map(phase => ({version: 1, scenario: 'library-catalog', phase, ok: true, run_id: runId, origin: 'https://wmh.localhost', layout: {width: 1280, height: 720, locale: 'zh-CN'}, source_binding: binding, errors: [], opened_score_databases: [], claims: {synthetic_clock: false, mock_success: false, private_music: false}, checks: [...CATALOG_REQUIRED_CHECKS[phase]], actions: [{sequence: 1, kind: 'click', control: 'protocol-only', trusted_clicks: 1, untrusted_clicks: 0, trusted_key_downs: 0, trusted_key_ups: 0, completed: true}], screenshots: Object.fromEntries(CATALOG_SCREENSHOTS[phase].map(name => [name, 1])), profile: {marker_before: phase === 'catalog-seed' ? null : runId, recovery_before_open: null}, api_trace: [], catalog: {}, operations: {}}));
   let current = reports[0];
   const call = async (path, request, extra = {}) => {
@@ -158,9 +161,47 @@ async function protocol() {
   const stable = {view: 'active', edition_ids: latest.rows.map(row => row.edition_id), operation_id: restore.operation_id};
   current.stale_ownership = {held_sequence, latest_active_sequence: current.api_trace.at(-1).sequence, close_action: 2, reopen_action: 3, before: stable, after: structuredClone(stable)};
   current.operations.restore = restore; current.catalog.active = await query('active'); current.catalog.trash = await query('trash');
-  current = reports[2]; current.profile.recovery_before_open = structuredClone(restore); current.profile.recovery_after_open = structuredClone(restore); await call('/api/library/catalog/operation', {library_id: initial.library_id, operation_id: restore.operation_id}); current.catalog.active = await query('active'); current.catalog.trash = await query('trash');
+  let organizationRecords;
+  const action = (control, kind = 'click', extras = {}) => { const template = current.actions[0], sequence = current.actions.length + 1; current.actions.push({...template, sequence, control, kind, trusted_key_downs: kind === 'key-r' ? 1 : 0, trusted_key_ups: kind === 'key-r' ? 1 : 0, ...extras}); return sequence; };
+  const packsQuery = () => call('/api/library/catalog/query', {view: 'packs', limit: 100, refresh: true});
+  const filterPack = async target => { const sequence = action('management-catalog-open-pack', 'click', {collection_id: target}); const filtered = await call('/api/library/catalog/query', {view: 'active', collection_id: target, limit: 100, refresh: true}, {source: 'app', action_sequence: sequence}); return {filtered, filter_action: sequence, visible_editions: filtered.rows.map(row => row.edition_id).sort()}; };
+  if (organization) {
+    current.catalog.restored = structuredClone(current.catalog.active); current.screenshots['restored-current-owner'] = 4; current.profile.organization_before_open = null;
+    const organize = async (kind, target, name) => {
+      const selectedRows = kind === 'add_memberships' ? selected : [], before = await query('active');
+      const action_sequence = action(`management-catalog-${{create_pack: 'create', rename_pack: 'rename', add_memberships: 'add'}[kind]}-preview`);
+      const preview = await call('/api/library/catalog/preview', {action: kind, edition_ids: selectedRows.map(row => row.edition_id), collection_id: target, name, trash_operation_id: null, library_id: initial.library_id, expected_generation: before.generation, catalog_digest: before.catalog_digest}, {source: 'app', action_sequence});
+      const record = {kind, library_id: initial.library_id, operation_id: preview.preview.request.operation_id, preview: preview.preview, summary: preview.summary, selected: selectedRows.map(({edition_id, title}) => ({edition_id, title})), phase: 'committed'};
+      if (kind === 'add_memberships') current.screenshots['user-pack-add-review'] = action_sequence;
+      await call('/api/library/catalog/commit', {library_id: initial.library_id, preview: record.preview}, {source: 'app', action_sequence: action('management-catalog-confirm')});
+      return record;
+    };
+    action('management-catalog-create-name', 'key-r'); const create = await organize('create_pack', null, 'r');
+    current.screenshots['user-pack-empty-review'] = action('management-catalog-packs'); const empty = await packsQuery(), target = create.preview.request.action.pack_id;
+    action('management-catalog-rename-pack', 'click', {collection_id: target}); action('management-catalog-rename-name', 'key-r'); const rename = await organize('rename_pack', target, 'rr');
+    action('management-catalog-add-target', 'select-last'); const add = await organize('add_memberships', target, null);
+    const readonly = {imported_collection_ids: packs.map(pack => pack.collection_id).sort(), rename_target_ids: [target], add_target_ids: [target], imported_rename_controls: []};
+    const review_focus = ['create_pack', 'rename_pack', 'add_memberships'].map(kind => ({kind, action_sequence: current.api_trace.find(row => row.path === '/api/library/catalog/preview' && row.request.action === kind).action_sequence, active_element: 'management-catalog-review-title', top: 200, bottom: 240, width: 400, height: 40, viewport: {width: 1280, height: 720}}));
+    current.organization = {create, rename, add, empty, packs: await packsQuery(), readonly, review_focus, ...await filterPack(target)};
+    current.screenshots['user-pack-filtered'] = current.organization.filter_action;
+    for (const kind of ['legacy', 'clean']) {
+      const request = {keys: [selected.find(row => row.storage_kind === kind).key]}, request_text = JSON.stringify(request), bytes = fixture[kind].bytes;
+      current.api_trace.push({sequence: current.api_trace.length + 1, source: 'app', path: '/api/library/pack/export', method: 'POST', request, request_text, request_sha256: sha256(request_text), dispatched: true, delivery: 'forwarded', status: 200, response: null, response_text: null, response_binary_bytes: bytes.length, response_sha256: sha256(bytes), action_sequence: action(`management-catalog-export-${kind}`)});
+    }
+    current.catalog.active = await query('active'); current.catalog.trash = await query('trash'); organizationRecords = {restore, create, rename, add};
+  }
+  current = reports[2]; const finalRecord = organization ? organizationRecords.add : restore;
+  current.profile.recovery_before_open = structuredClone(finalRecord); current.profile.recovery_after_open = structuredClone(finalRecord);
+  await call('/api/library/catalog/operation', {library_id: initial.library_id, operation_id: restore.operation_id});
+  if (organization) {
+    current.operations.restore = structuredClone(restore); current.profile.organization_before_open = structuredClone(organizationRecords);
+    await call('/api/library/catalog/operation', {library_id: initial.library_id, operation_id: finalRecord.operation_id}, {source: 'app'});
+    current.organization = {...structuredClone(reports[1].organization), empty: null, review_focus: [], packs: await packsQuery(), ...await filterPack(organizationRecords.create.preview.request.action.pack_id)};
+    current.screenshots['persisted-user-pack'] = current.organization.filter_action;
+  }
+  current.catalog.active = await query('active'); current.catalog.trash = await query('trash');
   for (const report of reports) { let order = 0; for (const row of report.api_trace) if (row.dispatched) row.dispatch_order = ++order; }
-  return {reports, options: {sourceBinding: binding, runId, fixture}};
+  return {reports, options: {sourceBinding: binding, runId, fixture, requireOrganization: organization}};
 }
 
 test('three-phase protocol oracle independently checks exact ownership, lost responses, retry bytes and memberships', async () => {
@@ -239,4 +280,104 @@ test('catalog chooser binds ordered actions to each exact preview and commit arc
     ['wrong owner', v => v.report.api_trace[1].source = 'probe'],
   ];
   for (const [label, edit] of failures) { const value = structuredClone(original); edit(value); assert.throws(() => validateCatalogPickerProtocol('catalog-seed', value.sentActions, value.report, fixture), undefined, label); }
+});
+
+function refreshProtocolBodies(reports) {
+  for (const report of reports) for (const row of report.api_trace) {
+    if (row.request !== null) { row.request_text = JSON.stringify(row.request); row.request_sha256 = sha256(row.request_text); }
+    if (row.response !== null) { row.response_text = JSON.stringify(row.response); row.response_sha256 = sha256(row.response_text); }
+  }
+}
+
+test('required user-pack protocol binds the original restore, three reviewed operations, source groups, filtered DOM and selected exports', async () => {
+  const {reports, options} = await protocol({organization: true});
+  const result = validateCatalogProtocolPhases(reports, options);
+  assert.equal(result.create.kind, 'create_pack'); assert.equal(result.rename.kind, 'rename_pack'); assert.equal(result.add.kind, 'add_memberships');
+  assert.equal(result.allApi.filter(row => row.path === '/api/library/catalog/commit').length, 6);
+  const original = await protocol(); assert.throws(() => validateCatalogProtocolPhases(original.reports, {...original.options, requireOrganization: true}));
+  const cases = [
+    ['omitted organization', v => delete v[1].organization],
+    ['missing required check', v => v[1].checks.pop()],
+    ['forged create name', v => v[1].organization.create.preview.request.action.name = 'forged'],
+    ['forged renamed name', v => v[1].organization.rename.preview.request.action.name = 'r'],
+    ['changed target identity', v => v[1].organization.rename.preview.request.action.pack_id = v[0].catalog.initialized.rows[0].packs[0].collection_id],
+    ['extra committed action', v => { const row = structuredClone(v[1].api_trace.find(row => row.request?.preview?.request.operation_id === v[1].organization.add.operation_id)); row.sequence = v[1].api_trace.length + 1; row.dispatch_order = v[1].api_trace.filter(row => row.dispatched).length + 1; v[1].api_trace.push(row); }],
+    ['imported group renamed', v => v[1].organization.packs.rows.find(row => row.kind === 'imported').name = 'changed source'],
+    ['added imported rename control', v => v[1].organization.readonly.imported_rename_controls.push(v[1].organization.readonly.imported_collection_ids[0])],
+    ['source group as add destination', v => v[1].organization.readonly.add_target_ids.push(v[1].organization.readonly.imported_collection_ids[0])],
+    ['extra membership', v => v[1].catalog.active.rows.find(row => !result.selectedIds.includes(row.edition_id)).packs.push(v[1].catalog.active.rows.find(row => result.selectedIds.includes(row.edition_id)).packs.at(-1))],
+    ['selected filtered DOM omitted', v => v[1].organization.visible_editions.pop()],
+    ['wrong filter click', v => v[1].organization.filter_action--],
+    ['missing original restore checkpoint', v => delete v[1].catalog.restored],
+    ['old restore changed', v => v[1].catalog.restored.generation = 5],
+    ['final marker substituted', v => v[2].profile.organization_before_open.add = v[2].profile.organization_before_open.rename],
+    ['final recovery still points at restore', v => v[2].profile.recovery_before_open = v[1].operations.restore],
+    ['final organization write', v => { const row = structuredClone(v[1].api_trace.find(row => row.request?.preview?.request.operation_id === v[1].organization.add.operation_id)); row.sequence = v[2].api_trace.length + 1; row.dispatch_order = v[2].api_trace.filter(row => row.dispatched).length + 1; v[2].api_trace.push(row); }],
+    ['untrusted name input', v => v[1].actions.find(row => row.control === 'management-catalog-create-name').trusted_key_downs = 0],
+    ['review outside viewport', v => v[1].organization.review_focus[0].bottom = 721],
+    ['review never focused', v => v[1].organization.review_focus[1].active_element = 'management-title'],
+    ['selected ZIP extra key', v => v[1].api_trace.find(row => row.path === '/api/library/pack/export').request.keys.push(v[0].catalog.initialized.rows[2].key)],
+    ['selected ZIP probe substituted', v => v[1].api_trace.find(row => row.path === '/api/library/pack/export').source = 'probe'],
+    ['selected ZIP action substituted', v => v[1].api_trace.find(row => row.path === '/api/library/pack/export').action_sequence--],
+  ];
+  for (const [label, edit] of cases) { const changed = structuredClone(reports); edit(changed); refreshProtocolBodies(changed); assert.throws(() => validateCatalogProtocolPhases(changed, options), label); }
+});
+
+test('selected ZIP transport evidence is exclusive, bounded and independently matches host bytes and digest', () => {
+  const bytes = Buffer.from('ORIGINAL protocol-only ZIP transport body'), request = {keys: [`song-${'a'.repeat(64)}`]}, request_text = JSON.stringify(request);
+  const row = {...apiRow(request), source: 'app', path: '/api/library/pack/export', request_text, request_sha256: sha256(request_text), response: null, response_text: null, response_binary_bytes: bytes.length, response_sha256: sha256(bytes)};
+  assert.doesNotThrow(() => validateCatalogApiEvidence([row]));
+  const host = [{sequence: 1, method: 'POST', path: row.path, request_bytes: Buffer.byteLength(request_text), request_sha256: row.request_sha256, response_bytes: bytes.length, response_sha256: sha256(bytes), response_file: 'api/selected.zip', status: 200}];
+  assert.equal(validateCatalogHostApiTrace(host, [row]), 1);
+  for (const edit of [r => r.source = 'probe', r => r.method = 'GET', r => r.delivery = 'deferred-read', r => r.path = '/api/library/list', r => r.status = 500, r => r.response_binary_bytes = 0, r => r.response_binary_bytes = 16777217, r => r.response_binary_bytes = 1.5, r => r.response_sha256 = null, r => r.response = {ok: true}, r => r.response_text = '{}']) { const changed = structuredClone(row); edit(changed); assert.throws(() => validateCatalogApiEvidence([changed])); }
+  assert.throws(() => validateCatalogHostApiTrace([{...host[0], response_bytes: bytes.length + 1}], [row]));
+  assert.throws(() => validateCatalogHostApiTrace([{...host[0], response_sha256: sha256('altered ZIP')}], [row]));
+  const error = {...apiRow(request, {error: 'ORIGINAL rejected export'}), path: row.path, status: 400}; assert.doesNotThrow(() => validateCatalogApiEvidence([error]));
+  assert.throws(() => validateCatalogApiEvidence([{...error, response_binary_bytes: 10}]));
+});
+
+test('downloaded selected ORIGINAL legacy and complete-song ZIPs must match native bytes and exact declared inventories', () => {
+  const fixture = originalCatalogAcceptanceFixtures(), legacyKey = `song-${sha256('selected legacy protocol fixture')}`, cleanKey = `song-${sha256('selected complete protocol fixture')}`;
+  const initialRows = [{key: legacyKey, edition_id: `legacy:${legacyKey}`, storage_kind: 'legacy'}, {key: cleanKey, edition_id: `clean:${cleanKey}`, storage_kind: 'clean'}];
+  const score = Buffer.from(JSON.stringify(authoredLegacyPack().scores[0]));
+  const operations = {initialRows, selectedIds: initialRows.map(row => row.edition_id), imports: [{response: {items: [{entry: {key: legacyKey, score_sha256: sha256(score), score_bytes: score.length}}]}}]};
+  const legacyEntries = [['manifest.json', '{}'], [`songs/${legacyKey}/metadata.json`, '{}'], [`songs/${legacyKey}/score.json`, score]];
+  const cleanEntries = [['manifest.json', '{}'], ...[...fixture.cleanFixture.files].map(([path, bytes]) => [`songs/${cleanKey}/${path}`, bytes])];
+  for (const [kind, key, entries] of [['legacy', legacyKey, legacyEntries], ['clean', cleanKey, cleanEntries]]) {
+    const bytes = storedZip(entries), row = {...apiRow({keys: [key]}), source: 'app', path: '/api/library/pack/export', response: null, response_text: null, response_binary_bytes: bytes.length, response_sha256: sha256(bytes)}, report = {api_trace: [row]};
+    assert.ok(validateCatalogSelectedExport(bytes, report, kind, operations, fixture));
+    const corrupted = Buffer.from(bytes); corrupted[40] ^= 1; assert.throws(() => validateCatalogSelectedExport(corrupted, report, kind, operations, fixture), /actual native export response/);
+    for (const changed of [entries.slice(0, -1), [...entries, ['unrequested-source.bin', 'extra original source']], entries.map(([name, data], index) => [name, index === entries.length - 1 ? Buffer.from('altered ORIGINAL payload') : data])]) {
+      const invalid = storedZip(changed), alteredReport = {api_trace: [{...row, response_binary_bytes: invalid.length, response_sha256: sha256(invalid)}]};
+      assert.throws(() => validateCatalogSelectedExport(invalid, alteredReport, kind, operations, fixture));
+    }
+  }
+});
+
+test('six-generation protocol journal preserves every original source/song/tombstone and exact custom metadata and membership position/time/revision', async t => {
+  const root = await owned(t), valid = await organizationJournalFixture(join(root, 'valid'));
+  assert.equal((await validateCatalogJournal(join(root, 'valid'), valid.rows, valid.operations)).length, 6);
+  const cases = [
+    ['imported group name', ({states}) => states[3].inventory.packs.find(row => row.kind === 'imported').name = 'renamed source'],
+    ['imported group revision', ({states}) => states[3].inventory.packs.find(row => row.kind === 'imported').revision = 3],
+    ['source reference', ({states}) => states[3].inventory.sources[0].retained_bytes++],
+    ['origin receipt', ({states}) => states[4].inventory.origins[0].item_path = 'changed-source'],
+    ['song revision', ({states}) => states[5].inventory.songs[0].revision = 5],
+    ['tombstone owner', ({states}) => states[4].trash[0].entities[0].restored_by = null],
+    ['retained receipt history', ({states}) => states[5].receipts[0].preview.request.at_unix_ms++],
+    ['custom source key', ({states, target}) => states[3].inventory.packs.find(row => row.id === target).source_archive_keys = [states[3].inventory.sources[0].id]],
+    ['custom import identity', ({states, target, records}) => states[3].inventory.packs.find(row => row.id === target).origin_import_operation_id = records[0].operation_id],
+    ['custom creation revision', ({states, target}) => states[3].inventory.packs.find(row => row.id === target).revision = 0],
+    ['custom renamed name', ({states, target}) => states[4].inventory.packs.find(row => row.id === target).name = 'r'],
+    ['custom add revision', ({states, target}) => states[5].inventory.packs.find(row => row.id === target).revision = 4],
+    ['membership position', ({states, target}) => states[5].inventory.memberships.find(row => row.id.pack === target).position = 5],
+    ['membership timestamp', ({states, target}) => states[5].inventory.memberships.find(row => row.id.pack === target).added_at_unix_ms++],
+    ['membership revision', ({states, target}) => states[5].inventory.memberships.find(row => row.id.pack === target).revision = 2],
+    ['original edge position', ({states, target}) => states[5].inventory.memberships.find(row => row.id.pack !== target).position++],
+    ['unknown new state field', ({states}) => states[3].organization_extra = true],
+  ];
+  for (const [index, [label, mutate]] of cases.entries()) { const directory = join(root, `tampered-${index}`), changed = await organizationJournalFixture(directory, mutate); await assert.rejects(validateCatalogJournal(directory, changed.rows, changed.operations), /Organization journal changed/, label); }
+  const noDigest = structuredClone(valid.operations); noDigest.allApi.pop(); await assert.rejects(validateCatalogJournal(join(root, 'valid'), valid.rows, noDigest), /exact native committed digest/);
+  const extra = [...valid.rows, digestRow('catalog/commits/00000000000000000006-operation-' + 'f'.repeat(32) + '/state.json', '{}')]; await assert.rejects(validateCatalogJournal(join(root, 'valid'), extra, valid.operations), /Unexpected or missing journal/);
+  const missing = valid.rows.filter(row => !row.path.startsWith('catalog-backups/commits/00000000000000000005-')); await assert.rejects(validateCatalogJournal(join(root, 'valid'), missing, valid.operations));
 });

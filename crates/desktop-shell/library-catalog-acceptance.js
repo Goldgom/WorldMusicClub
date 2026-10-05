@@ -4,7 +4,7 @@
 function createCatalogAcceptanceTransport({fetcher, digest, origin, limit = 128, getActionSequence = () => 0}) {
   const rows = [], faults = []; let mode = null, held = null, dispatchOrder = 0, eventOrder = 0;
   const pathOf = input => new URL(String(input), origin).pathname;
-  const tracked = path => path.startsWith('/api/library/catalog/') || path.startsWith('/api/library/import/') || ['/api/library/list', '/api/library/manage/query', '/api/assess'].includes(path);
+  const tracked = path => path.startsWith('/api/library/catalog/') || path.startsWith('/api/library/import/') || ['/api/library/list', '/api/library/manage/query', '/api/library/pack/export', '/api/assess'].includes(path);
   const text = value => value === undefined ? '' : typeof value === 'string' ? value : JSON.stringify(value);
   async function send(input, options = {}, source = 'app') {
     const path = pathOf(input);
@@ -32,7 +32,13 @@ function createCatalogAcceptanceTransport({fetcher, digest, origin, limit = 128,
       fault = mode; mode = null; row.delivery = 'deferred-read';
     }
     row.dispatch_order = ++dispatchOrder; row.dispatch_event = ++eventOrder;
-    const response = await fetcher(input, sent), responseText = await response.clone().text();
+    const response = await fetcher(input, sent);
+    if (path === '/api/library/pack/export' && response.status === 200) {
+      const bytes = new Uint8Array(await response.clone().arrayBuffer());
+      row.status = response.status; row.response_binary_bytes = bytes.length; row.response_sha256 = await digest(bytes); row.response_event = ++eventOrder;
+      return response;
+    }
+    const responseText = await response.clone().text();
     row.status = response.status; row.response_text = responseText; row.response_sha256 = await digest(new TextEncoder().encode(responseText));
     row.response = JSON.parse(responseText); row.response_event = ++eventOrder;
     if (fault?.kind === 'lose-after') throw Error('ORIGINAL acceptance transport loss after durable native commit');
@@ -61,6 +67,61 @@ function catalogAcceptanceEqual(left, right) {
   return JSON.stringify(sorted(left)) === JSON.stringify(sorted(right));
 }
 
+// The exact UI sequence is also run against the real Rust stdin adapter in Node.
+// Only native() differs: real acceptance supplies trusted OS/browser input.
+async function runCatalogUserPackAcceptance({document, native, until, query, operation, apiLast, download, screenshot, selected, prior = null, viewport, assert = (value, message) => { if (!value) throw Error(message); }}) {
+  const cat = id => document.getElementById(`management-catalog-${id}`), clone = value => structuredClone(value);
+  const output = {review_focus: []}, files = {};
+  const ready = () => until(() => document.getElementById('management-catalog').dataset.phase === 'ready', 'User pack catalog ready');
+  async function view(id) { await native('click', cat(id)); await ready(); }
+  async function review(id, kind) {
+    const actionSequence = await native('click', cat(id)); await until(() => !cat('review').hidden && !cat('confirm').disabled, `User pack ${kind} review`);
+    const title = cat('review-title'), rect = title.getBoundingClientRect();
+    assert(document.activeElement === title, 'New user-pack review must receive keyboard focus');
+    assert(rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.bottom <= viewport.height, 'New user-pack review title must be visible without an extra navigation click');
+    output.review_focus.push({kind, action_sequence: actionSequence, active_element: title.id, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, viewport: {...viewport}});
+  }
+  async function confirm(kind) {
+    const preview = apiLast('/api/library/catalog/preview'), id = preview.preview.request.operation_id;
+    assert(preview.preview.request.action.type === kind, 'Wrong user-pack preview kind');
+    await native('click', cat('confirm')); await until(() => operation()?.operation_id === id && operation().phase === 'committed' && document.getElementById('management-catalog').dataset.phase === 'ready', `Durable user-pack ${kind}`);
+    return clone(operation());
+  }
+  let packId;
+  if (!prior) {
+    if (!cat('organize').open) await native('click', cat('organize').querySelector('summary'));
+    assert(cat('create-name').value === '', 'Original create input must start empty'); await native('key-r', cat('create-name')); assert(cat('create-name').value === 'r', 'Create name must come from the real bounded keyboard action');
+    await review('create-preview', 'create_pack'); await screenshot('user-pack-empty-review', cat('review-title')); output.create = await confirm('create_pack'); packId = output.create.preview.request.action.pack_id;
+    output.empty = await query('packs'); const empty = output.empty.rows.find(row => row.collection_id === packId);
+    assert(empty?.kind === 'custom' && empty.import_pack_id === null && empty.name === 'r' && empty.active_song_count === 0 && empty.available_song_count === 0, 'Created empty user pack is missing or misidentified');
+    await view('packs'); const rename = cat('rows').querySelector(`[data-catalog-rename-pack="${packId}"]`); assert(rename, 'Empty custom pack needs its real rename control'); await native('click', rename);
+    assert(cat('rename-name').value === 'r', 'Rename must target the created name'); await native('key-r', cat('rename-name')); assert(cat('rename-name').value === 'rr', 'Rename must append exactly one real key');
+    await review('rename-preview', 'rename_pack'); output.rename = await confirm('rename_pack');
+    await view('active');
+    for (const song of selected) { const box = cat('rows').querySelector(`[data-catalog-edition="${song.edition_id}"]`); assert(box && !box.disabled && !box.checked, 'Exact user-pack edition is unavailable'); await native('click', box); assert(box.checked, 'Exact selected edition was not checked'); }
+    await native('select-last', cat('add-target')); assert(cat('add-target').value === packId, 'Real destination selection differs from the created custom pack');
+    await review('add-preview', 'add_memberships'); await screenshot('user-pack-add-review', cat('review-title')); output.add = await confirm('add_memberships');
+  } else {
+    for (const kind of ['create', 'rename', 'add']) output[kind] = clone(prior[kind]);
+    output.empty = null;
+    packId = output.create.preview.request.action.pack_id;
+  }
+  output.packs = await query('packs'); await view('packs');
+  const imported = output.packs.rows.filter(row => row.kind === 'imported').map(row => row.collection_id).sort();
+  output.readonly = {imported_collection_ids: imported, rename_target_ids: [...cat('rename-target').options].map(row => row.value).filter(Boolean).sort(), add_target_ids: [...cat('add-target').options].map(row => row.value).filter(Boolean).sort(), imported_rename_controls: [...cat('rows').querySelectorAll('[data-catalog-rename-pack]')].map(node => node.dataset.catalogRenamePack).filter(id => imported.includes(id))};
+  assert(output.readonly.imported_rename_controls.length === 0 && output.readonly.rename_target_ids.length === 1 && output.readonly.rename_target_ids[0] === packId && output.readonly.add_target_ids.length === 1 && output.readonly.add_target_ids[0] === packId, 'Imported source groups became editable destinations');
+  const open = cat('rows').querySelector(`[data-catalog-open-pack="${packId}"]`); assert(open, 'Persisted custom pack has no browse control'); output.filter_action = await native('click', open); await ready();
+  assert(cat('filter').value === packId, 'Visible catalog filter differs from the selected collection');
+  output.filtered = await query('active', packId); output.visible_editions = [...cat('rows').querySelectorAll('[data-catalog-song]')].map(node => node.dataset.catalogSong).sort();
+  assert(catalogAcceptanceEqual(output.visible_editions, selected.map(row => row.edition_id).sort()), 'Pack filter omitted or added an exact edition');
+  await screenshot(prior ? 'persisted-user-pack' : 'user-pack-filtered', document.getElementById('management-title'));
+  if (!prior) {
+    for (const song of selected) await native('click', cat('rows').querySelector(`[data-catalog-edition="${song.edition_id}"]`));
+    files.selectedLegacyPack = await download(cat('export-legacy')); files.selectedCleanPack = await download(cat('export-clean'));
+  }
+  return {organization: output, files};
+}
+
 (() => {
   const phase = globalThis.__WMH_ACCEPTANCE_PHASE__, $ = id => document.getElementById(id), assert = (value, message) => { if (!value) throw Error(message); };
   if (!['catalog-seed', 'catalog-restart', 'catalog-final'].includes(phase)) throw Error('Unknown catalog acceptance phase');
@@ -69,7 +130,7 @@ function catalogAcceptanceEqual(left, right) {
   const json = (path, options) => waits.json(originalFetch, path, options, 15000);
   const transport = createCatalogAcceptanceTransport({fetcher: originalFetch, digest, origin: location.origin, getActionSequence: () => sequence}); globalThis.fetch = transport.fetcher;
   const report = {version: 1, scenario: 'library-catalog', phase, ok: false, origin: location.origin, checks: [], errors: [], actions: [], screenshots: {}, api_trace: transport.rows, faults: transport.faults, files: {}, profile: {}, operations: {}, catalog: {}, state: {}, media: null, opened_score_databases: [], claims: {synthetic_clock: false, mock_success: false, private_music: false}};
-  const storageKey = 'worldmusichub.library-operation.v1', markerKey = 'wmh.catalog.acceptance.owner';
+  const storageKey = 'worldmusichub.library-operation.v1', markerKey = 'wmh.catalog.acceptance.owner', organizationKey = 'wmh.catalog.acceptance.organization';
   const operation = () => {
     const value = JSON.parse(localStorage.getItem(storageKey) || '{"libraries":{}}'), records = Object.values(value.libraries);
     assert(records.length <= 1, 'Catalog fixture must own exactly one renderer library pointer'); return records[0] || null;
@@ -78,7 +139,7 @@ function catalogAcceptanceEqual(left, right) {
   const apiLast = path => transport.rows.filter(row => row.path === path && row.dispatched && row.status === 200).at(-1)?.response;
   const apiCount = path => transport.rows.filter(row => row.path === path).length;
   async function probe(path, body) { const response = await waits.bounded(signal => transport.probe(path, body), `catalog probe ${path}`, 15000); const value = await response.json(); assert(response.ok, `${path}: ${JSON.stringify(value)}`); return value; }
-  const cat = id => $(`management-catalog-${id}`), query = view => probe('/api/library/catalog/query', {view, limit: 100, refresh: true});
+  const cat = id => $(`management-catalog-${id}`), query = (view, collection_id = null) => probe('/api/library/catalog/query', {view, ...(collection_id ? {collection_id} : {}), limit: 100, refresh: true});
   const checked = name => report.checks.push(name);
   let sequence = 0, armed = null, config, spec, mediaStorage;
   const trustedClick = event => { if (armed && (event.target === armed.node || armed.node.contains(event.target))) { armed.row.trusted_clicks += Number(event.isTrusted); if (!event.isTrusted) armed.row.untrusted_clicks++; } };
@@ -92,7 +153,8 @@ function catalogAcceptanceEqual(left, right) {
     node.scrollIntoView({block: 'center', inline: 'center'}); node.focus();
     await new Promise(resolve => requestAnimationFrame(resolve));
     const bounds = node.getBoundingClientRect(); assert(bounds.width > 0 && bounds.height > 0 && !node.closest('[hidden]'), 'Catalog target must be visible');
-    const row = {sequence: ++sequence, kind, control: node.id || node.dataset.catalogEdition || node.tagName, trusted_clicks: 0, untrusted_clicks: 0, trusted_key_downs: 0, trusted_key_ups: 0}; report.actions.push(row); armed = {row, node};
+    const collectionId = node.dataset.catalogOpenPack || node.dataset.catalogRenamePack;
+    const row = {sequence: ++sequence, kind, control: node.id || (node.dataset.catalogOpenPack ? 'management-catalog-open-pack' : node.dataset.catalogRenamePack ? 'management-catalog-rename-pack' : node.dataset.catalogEdition || node.tagName), ...(collectionId ? {collection_id: collectionId} : {}), trusted_clicks: 0, untrusted_clicks: 0, trusted_key_downs: 0, trusted_key_ups: 0}; report.actions.push(row); armed = {row, node};
     try {
       await json('/__desktop_smoke/action', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({version: 1, sequence, kind, x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2, width: innerWidth, height: innerHeight, ...(file ? {file} : {})})});
       let result;
@@ -211,19 +273,29 @@ function catalogAcceptanceEqual(left, right) {
     const stable = JSON.stringify({rows: cat('rows').textContent, active: cat('active').getAttribute('aria-pressed'), operation: operation()}); transport.release(); await until(() => !transport.held(), 'Old native query released');
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     assert(JSON.stringify({rows: cat('rows').textContent, active: cat('active').getAttribute('aria-pressed'), operation: operation()}) === stable, 'Stale query replaced reopened active view or operation'); report.stale_ownership.after = ownership(); checked('late-native-query-cannot-own-reopened-view');
-    await screenshot('restored-current-owner', cat('operation-title')); closeDialogs(); await savedFreeAfterRestart(); report.catalog.active = await query('active'); report.catalog.trash = await query('trash');
+    await screenshot('restored-current-owner', cat('operation-title'));
+    const userPacks = await runCatalogUserPackAcceptance({document, native, until, query, operation, apiLast, download, screenshot, selected: report.catalog.restored.rows.filter(row => spec.selected_score_ids.includes(row.score_id)), viewport: {width: innerWidth, height: innerHeight}, assert});
+    report.organization = userPacks.organization; Object.assign(report.files, userPacks.files);
+    localStorage.setItem(organizationKey, JSON.stringify({restore: report.operations.restore, create: report.organization.create, rename: report.organization.rename, add: report.organization.add}));
+    checked('custom-pack-create-rename-add-and-selected-export'); checked('imported-source-groups-remain-readonly');
+    closeDialogs(); await savedFreeAfterRestart(); report.catalog.active = await query('active'); report.catalog.trash = await query('trash');
   }
   async function runFinal() {
-    const prior = report.profile.recovery_before_open; assert(prior?.kind === 'restore_songs' && prior.phase === 'committed', 'Final restart requires real persisted restore identity');
-    await openCatalog(); await committed(prior.operation_id); report.profile.recovery_after_open = clone(operation()); report.operations.restore = clone(operation());
-    assert(apiCount('/api/library/catalog/commit') === 0 && apiCount('/api/library/catalog/initialize') === 0, 'Final restart must be read-only'); report.catalog.active = await query('active'); report.catalog.trash = await query('trash'); assert(same(report.catalog.active.counts, spec.expected.restored) && report.catalog.trash.rows.length === 0, 'Final state did not persist');
+    const prior = report.profile.recovery_before_open, organization = report.profile.organization_before_open;
+    assert(prior?.kind === 'add_memberships' && prior.phase === 'committed' && same(prior, organization?.add), 'Final restart requires the real persisted user-pack operation');
+    await openCatalog(); await committed(prior.operation_id); report.profile.recovery_after_open = clone(operation()); report.operations.restore = clone(organization.restore);
+    const restored = await probe('/api/library/catalog/operation', {library_id: prior.library_id, operation_id: organization.restore.operation_id}); assert(restored.outcome === 'committed' && same(restored.receipt.preview, organization.restore.preview), 'Original restore receipt did not survive organization');
+    assert(apiCount('/api/library/catalog/commit') === 0 && apiCount('/api/library/catalog/initialize') === 0, 'Final restart must be read-only'); report.catalog.active = await query('active'); report.catalog.trash = await query('trash'); assert(same(report.catalog.active.counts, {...spec.expected.restored, packs: spec.expected.restored.packs + 1, memberships: spec.expected.restored.memberships + 2}) && report.catalog.trash.rows.length === 0, 'Final state did not persist');
     await screenshot('persisted-restored-catalog', cat('operation-title')); closeDialogs(); await membershipEvidence(); await savedFreeAfterRestart(); checked('second-process-restart-restores-native-and-renderer-persistence');
+    await openCatalog(); const userPacks = await runCatalogUserPackAcceptance({document, native, until, query, operation, apiLast, download, screenshot, selected: prior.selected, prior: organization, viewport: {width: innerWidth, height: innerHeight}, assert}); report.organization = userPacks.organization;
+    assert(apiCount('/api/library/catalog/commit') === 0, 'Final user-pack restart unexpectedly wrote'); checked('custom-pack-organization-survives-second-restart');
   }
   addEventListener('DOMContentLoaded', async () => {
     try {
       config = await json('/__desktop_smoke/catalog-config'); assert(config.version === 1 && config.run_id && config.fixture.private_music === false, 'Process-owned ORIGINAL catalog configuration missing'); spec = config.fixture.spec;
       report.run_id = config.run_id; report.source_binding = config.source_binding; report.fixture = config.fixture;
       report.profile.marker_before = localStorage.getItem(markerKey); report.profile.recovery_before_open = clone(operation());
+      report.profile.organization_before_open = JSON.parse(localStorage.getItem(organizationKey) || 'null');
       if (phase === 'catalog-seed') { assert(report.profile.marker_before === null && report.profile.recovery_before_open === null, 'Catalog seed must have a fresh real profile'); localStorage.setItem(markerKey, config.run_id); }
       else assert(report.profile.marker_before === config.run_id, 'Restart must reuse the same actual browser profile');
       report.profile.marker_after = localStorage.getItem(markerKey);

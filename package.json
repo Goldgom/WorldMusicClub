@@ -28,7 +28,8 @@
     "test:current-basic-catalog-native": "node scripts/check-current-basic-catalog-native.mjs",
     "test:user-pack-catalog-native": "node scripts/check-user-pack-catalog-native.mjs",
     "test:canonical-audio": "node --test tests/canonical-audio-plan.test.js tests/canonical-audio-worklet.test.js tests/canonical-player.test.js",
-    "test:canonical-hosted": "node scripts/hosted-canonical-audio-check.mjs"
+    "test:canonical-hosted": "node scripts/hosted-canonical-audio-check.mjs",
+    "test:user-pack-acceptance-flow": "node scripts/check-user-pack-acceptance-flow.mjs"
   },
   "devDependencies": {
     "ajv": "^8.20.0",

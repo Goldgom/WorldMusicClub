@@ -15,8 +15,14 @@ three memberships while retaining one active edition. An actual committed reply
 is lost; a deliberately mismatched operation lookup must not confirm it. The
 next process reconciles the original operation, reimports the exact original
 legacy and clean archives without escaping Trash, proves an undispatched restore
-absent, and retries the identical restore request. The final process must report
-three active editions, zero in Trash and all four original memberships.
+absent, and retries the identical restore request. It then creates an empty
+custom pack with the real keyboard name `r`, renames that same pack to `rr`, adds
+the two exact restored editions, opens the pack filter and exports the selected
+legacy and clean formats separately. Imported source groups remain excluded from
+rename/add destination controls. The final process makes no writes: it reconciles
+the original addition and restore receipts and proves the named custom pack and
+its exact two memberships persisted. It reports three active editions, zero in
+Trash, all four original memberships and two additional custom memberships.
 
 The verifier rejects missing/reordered phases, absent source binding, source
 files not contained in the reported Git commit, changed module hashes, a missing
@@ -34,9 +40,23 @@ The original pre-bootstrap snapshot has an exact, fixture-derived file allowlist
 All original scores, metadata, source payloads, import inventories, receipts,
 backups and clean media remain byte-identical. Reimport may add exactly two
 receipts and their two matching backups. Journal additions must form precisely
-the bootstrap, Trash and restore generations. Both copies of every generation,
+the bootstrap, Trash, restore, create, rename and addition generations. Both copies of every generation,
 their manifest links, state hashes, native receipt previews and recorded API
 state digests are verified. An unfinished journal stage is rejected.
+
+The user-pack extension reuses the existing Windows window, trusted `click`,
+`key-r` and `select-last` roles. It introduces no arbitrary text injection or new
+window role. Both hosted and native gates run the same
+`runCatalogUserPackAcceptance` function. Each new review must focus its title
+once and make that title visible before the next screenshot action; observations
+bind the initiating trusted action and current viewport. Cancel restores its
+initiating control, covered separately by the keyboard DOM regression.
+
+Selected ZIP downloads bind their exact native request keys, response byte count
+and SHA-256 to the completed host download. The verifier independently inspects
+the ZIP member inventory and compares original canonical score bytes/embedded
+source or the exact clean metadata, score and media. Binary replies remain binary;
+they are never interpreted as JSON or substituted with mock export success.
 
 The focused Node tests are verifier and transport contract tests. Their generated
 PNG and in-memory API values are explicitly synthetic test inputs and do not
@@ -74,6 +94,15 @@ an explicitly approved earlier build, set `WMH_CATALOG_DRIVER_BUILD_SHA` to its
 actual build commit and retain the independent production-module compatibility
 record plus driver hashes before/after the run. Do not label that driver as a
 newer build. The script does not invoke Cargo.
+
+`npm run test:user-pack-acceptance-flow` rehearses the exact shared user-pack
+function using the production DOM and an already-built native Rust stdin driver.
+It initializes and exercises Trash/restore before organization, runs the strict
+six-generation journal validator against that owned library, and restarts a new
+process for the read-only pack/filter check. Set `WMH_USER_PACK_FLOW_REPORT` to
+save its report. It explicitly labels its input and geometry as synthetic; it is
+not a hosted-browser or Windows acceptance result. It needs no browser, GUI,
+network listener, new music inputs, or shared build-target copy.
 
 Only on the later authorized hosted runner, after its normal dependency/browser
 setup and an exact-source native driver build, use:

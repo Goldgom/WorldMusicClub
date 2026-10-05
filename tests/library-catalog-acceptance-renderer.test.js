@@ -30,6 +30,19 @@ test('shared catalog transport records exact real response bytes before losing t
   assert.equal(transport.rows[0].delivery, 'lost-after-native'); validateCatalogApiEvidence(plain(transport.rows));
 });
 
+test('selected pack exports retain exact binary response evidence without parsing ZIP bytes as JSON', async () => {
+  const bytes = originalCatalogAcceptanceFixtures().legacy.bytes;
+  const transport = createCatalogAcceptanceTransport({origin, digest, fetcher: async () => new Response(bytes, {status: 200, headers: {'Content-Type': 'application/zip'}})});
+  const request = options({keys: [`song-${'a'.repeat(64)}`]});
+  const response = await transport.fetcher('/api/library/pack/export', request);
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
+  const rows = plain(transport.rows); assert.equal(rows[0].response_binary_bytes, bytes.length); assert.equal(rows[0].response_sha256, await digest(bytes));
+  assert.equal(rows[0].response_text, null); assert.equal(rows[0].response, null); validateCatalogApiEvidence(rows);
+  const failed = createCatalogAcceptanceTransport({origin, digest, fetcher: async () => new Response('{"code":"catalog_in_trash"}', {status: 409})});
+  assert.equal((await failed.fetcher('/api/library/pack/export', request)).status, 409);
+  assert.equal(failed.rows[0].response.code, 'catalog_in_trash'); assert.equal(failed.rows[0].response_binary_bytes, undefined); validateCatalogApiEvidence(plain(failed.rows));
+});
+
 test('wrong-operation injection changes only the native read target and preserves its actual bytes', async () => {
   const requested = `operation-${'a'.repeat(32)}`, other = `operation-${'b'.repeat(32)}`; let sent;
   const transport = createCatalogAcceptanceTransport({origin, digest, fetcher: async (_, input) => { sent = JSON.parse(input.body); return new Response(JSON.stringify({operation_id: sent.operation_id, outcome: 'committed'})); }});
