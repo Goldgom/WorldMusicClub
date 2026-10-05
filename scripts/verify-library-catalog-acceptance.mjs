@@ -269,7 +269,19 @@ export function validateCatalogProtocolPhases(reports, {sourceBinding, runId, fi
       assert.ok(typeof action.control === 'string');
       for (const field of ['trusted_clicks', 'trusted_key_downs', 'trusted_key_ups']) assert.ok(uint(action[field]));
       assert.equal(action.untrusted_clicks, 0, 'Catalog control used synthetic event evidence'); assert.equal(action.completed, true);
-      if (action.kind !== 'catalog-snapshot-before') assert.equal(action.trusted_clicks, 1, 'Catalog control lacks exactly one actual trusted click');
+      if (action.kind === 'select-last') {
+        assert.equal(action.control, 'management-catalog-add-target'); assert.ok([1, 2].includes(action.trusted_clicks));
+        assert.deepEqual(Object.keys(action.selection || {}).sort(), ['target_id', 'target_tag', 'before', 'after', 'option_values', 'selected_index', 'selected_text', 'trusted_changes', 'untrusted_changes', 'events'].sort());
+        assert.equal(action.selection.target_id, action.control); assert.equal(action.selection.target_tag, 'SELECT');
+        assert.equal(action.selection.before, ''); assert.match(action.selection.after, /^collection-[a-f0-9]{32}$/);
+        assert.deepEqual(action.selection.option_values, ['', action.selection.after]); assert.equal(action.selection.selected_index, 1); assert.equal(action.selection.selected_text, `rr · ${action.selection.after}`);
+        assert.equal(action.selection.trusted_changes, 1); assert.equal(action.selection.untrusted_changes, 0);
+        const events = action.selection.events; assert.ok(Array.isArray(events) && events.length >= 2 && events.length <= 4);
+        const types = events.map(event => event.type); assert.equal(types.filter(type => type === 'change').length, 1); assert.ok(types.filter(type => type === 'input').length <= 1);
+        assert.ok(!types.includes('input') || types.indexOf('input') < types.indexOf('change'));
+        assert.equal(events.filter(event => event.type === 'click').length, action.trusted_clicks);
+        for (const event of events) { assert.ok(['click', 'input', 'change'].includes(event.type)); assert.ok((event.type === 'click' ? ['', action.selection.after] : [action.selection.after]).includes(event.value)); assert.deepEqual(event, {type: event.type, trusted: true, target_id: action.control, value: event.value}); }
+      } else if (action.kind !== 'catalog-snapshot-before') { assert.equal(action.trusted_clicks, 1, 'Catalog control lacks exactly one actual trusted click'); assert.equal(action.selection, undefined); }
       if (action.kind === 'key-r') { assert.equal(action.trusted_key_downs, 1); assert.equal(action.trusted_key_ups, 1); }
       if (action.kind === 'catalog-snapshot-before') { assert.equal(report.phase, 'catalog-seed'); assert.equal(action.trusted_clicks, 0); }
     }

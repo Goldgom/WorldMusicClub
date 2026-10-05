@@ -1,0 +1,24 @@
+{
+  "kind": "actual-original-hosted-select-popup-observation",
+  "run_id": 37332543259,
+  "source_sha": "baf48b4efa0624b61926c9d68b4d5e4bbf243af1",
+  "source_tree": "414e19a2d5f55d01f5100b2e5f2079275903df95",
+  "artifact_id": 11354713212,
+  "artifact_sha256": "badf29fd0fb33ab6ee06ce8cda13af72087bb29b183eb15978b1a3714e2da5b0",
+  "phase": "catalog-restart",
+  "action": {
+    "sequence": 36,
+    "kind": "select-last",
+    "control": "management-catalog-add-target",
+    "trusted_clicks": 2,
+    "untrusted_clicks": 0,
+    "trusted_key_downs": 0,
+    "trusted_key_ups": 0
+  },
+  "screenshot": {
+    "filename": "browser-action-catalog-restart-36.png",
+    "bytes": 133139,
+    "sha256": "cc5f1e7b06ed8c014874fa4ff4b61839d26c9bf2f5f7df624774b91b06d2e732"
+  },
+  "limitation": "The original recorder captured click counts only. Individual click/input/change events and before/after selection values were not recorded; they must not be fabricated or treated as a passing selection proof."
+}

@@ -8,11 +8,26 @@ import {createHash} from 'node:crypto';
 import {catalogAcceptanceRendererHelpers} from './catalog-acceptance-renderer-helpers.js';
 import {originalCatalogAcceptanceFixtures} from '../scripts/prepare-library-catalog-acceptance.mjs';
 import {validateCatalogApiEvidence} from '../scripts/verify-library-catalog-acceptance.mjs';
-const {createCatalogAcceptanceTransport, catalogAcceptanceEqual, catalogSeedImportFilenames} = await catalogAcceptanceRendererHelpers();
+const {createCatalogAcceptanceTransport, catalogAcceptanceEqual, catalogSeedImportFilenames, catalogTrustedActionComplete} = await catalogAcceptanceRendererHelpers();
 const digest = async bytes => createHash('sha256').update(bytes).digest('hex'), plain = value => JSON.parse(JSON.stringify(value)), origin = 'https://wmh.localhost';
 const options = value => ({method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(value)});
 const commit = options({library_id: `library-${'a'.repeat(64)}`, preview: {request: {operation_id: `operation-${'b'.repeat(32)}`}}});
 const deferred = () => { let resolve; const promise = new Promise(value => { resolve = value; }); return {promise, resolve}; };
+
+test('native destination selection needs its exact trusted change even when popup close produces a second click', async () => {
+  const observation = JSON.parse(await readFile(new URL('./fixtures/library-catalog/original-select-popup-observation.json', import.meta.url), 'utf8'));
+  assert.equal(observation.run_id, 37332543259); assert.equal(observation.action.trusted_clicks, 2); assert.equal(observation.action.untrusted_clicks, 0);
+  assert.equal(catalogTrustedActionComplete(observation.action), false, 'Old counters alone cannot be relabeled as a passing selection proof');
+  // Authored protocol inputs below supply the new fields; these are not claims
+  // that the old run recorded events or selection values it never captured.
+  const target = `collection-${'a'.repeat(32)}`, control = 'management-catalog-add-target';
+  const row = {...observation.action, selection: {target_id: control, target_tag: 'SELECT', before: '', after: target, option_values: ['', target], selected_index: 1, selected_text: `rr · ${target}`, trusted_changes: 1, untrusted_changes: 0, events: [{type: 'click', trusted: true, target_id: control, value: ''}, {type: 'input', trusted: true, target_id: control, value: target}, {type: 'change', trusted: true, target_id: control, value: target}, {type: 'click', trusted: true, target_id: control, value: target}]}};
+  assert.equal(catalogTrustedActionComplete(row), true);
+  const single = structuredClone(row); single.trusted_clicks = 1; single.selection.events.pop(); assert.equal(catalogTrustedActionComplete(single), true);
+  for (const edit of [r => r.control = 'management-catalog-filter', r => r.kind = 'click', r => r.trusted_clicks = 3, r => r.untrusted_clicks = 1, r => r.selection.trusted_changes = 0, r => r.selection.trusted_changes = 2, r => r.selection.untrusted_changes = 1, r => r.selection.before = target, r => r.selection.after = '', r => r.selection.option_values.push(`collection-${'b'.repeat(32)}`), r => r.selection.selected_index = 0, r => r.selection.selected_text = 'wrong pack', r => r.selection.events[1].trusted = false, r => r.selection.events[2].target_id = 'other', r => r.selection.events[2].value = '', r => r.selection.events.push(r.selection.events[2])]) {
+    const changed = structuredClone(row); edit(changed); assert.equal(catalogTrustedActionComplete(changed), false);
+  }
+});
 
 test('shared catalog transport loses before dispatch without fabricating any native receipt', async () => {
   let calls = 0; const transport = createCatalogAcceptanceTransport({origin, digest, fetcher: async () => { calls++; throw Error('must not dispatch'); }});

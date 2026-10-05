@@ -179,7 +179,7 @@ async function protocol({organization = false} = {}) {
     action('management-catalog-create-name', 'key-r'); const create = await organize('create_pack', null, 'r');
     current.screenshots['user-pack-empty-review'] = action('management-catalog-packs'); const empty = await packsQuery(), target = create.preview.request.action.pack_id;
     action('management-catalog-rename-pack', 'click', {collection_id: target}); action('management-catalog-rename-name', 'key-r'); const rename = await organize('rename_pack', target, 'rr');
-    action('management-catalog-add-target', 'select-last'); const add = await organize('add_memberships', target, null);
+    action('management-catalog-add-target', 'select-last', {trusted_clicks: 2, selection: {target_id: 'management-catalog-add-target', target_tag: 'SELECT', before: '', after: target, option_values: ['', target], selected_index: 1, selected_text: `rr · ${target}`, trusted_changes: 1, untrusted_changes: 0, events: [{type: 'click', trusted: true, target_id: 'management-catalog-add-target', value: ''}, {type: 'input', trusted: true, target_id: 'management-catalog-add-target', value: target}, {type: 'change', trusted: true, target_id: 'management-catalog-add-target', value: target}, {type: 'click', trusted: true, target_id: 'management-catalog-add-target', value: target}]}}); const add = await organize('add_memberships', target, null);
     const readonly = {imported_collection_ids: packs.map(pack => pack.collection_id).sort(), rename_target_ids: [target], add_target_ids: [target], imported_rename_controls: []};
     const review_focus = ['create_pack', 'rename_pack', 'add_memberships'].map(kind => ({kind, action_sequence: current.api_trace.find(row => row.path === '/api/library/catalog/preview' && row.request.action === kind).action_sequence, active_element: 'management-catalog-review-title', top: 200, bottom: 240, width: 400, height: 40, viewport: {width: 1280, height: 720}}));
     current.organization = {create, rename, add, empty, packs: await packsQuery(), readonly, review_focus, ...await filterPack(target)};
@@ -314,6 +314,21 @@ test('required user-pack protocol binds the original restore, three reviewed ope
     ['final recovery still points at restore', v => v[2].profile.recovery_before_open = v[1].operations.restore],
     ['final organization write', v => { const row = structuredClone(v[1].api_trace.find(row => row.request?.preview?.request.operation_id === v[1].organization.add.operation_id)); row.sequence = v[2].api_trace.length + 1; row.dispatch_order = v[2].api_trace.filter(row => row.dispatched).length + 1; v[2].api_trace.push(row); }],
     ['untrusted name input', v => v[1].actions.find(row => row.control === 'management-catalog-create-name').trusted_key_downs = 0],
+    ['old count-only select lacks change evidence', v => delete v[1].actions.find(row => row.kind === 'select-last').selection],
+    ['select repeated change', v => v[1].actions.find(row => row.kind === 'select-last').selection.trusted_changes = 2],
+    ['select synthetic change', v => v[1].actions.find(row => row.kind === 'select-last').selection.untrusted_changes = 1],
+    ['select wrong target element', v => v[1].actions.find(row => row.kind === 'select-last').selection.target_id = 'management-catalog-filter'],
+    ['select missing option identity', v => v[1].actions.find(row => row.kind === 'select-last').selection.option_values = ['']],
+    ['select wrong selected index', v => v[1].actions.find(row => row.kind === 'select-last').selection.selected_index = 0],
+    ['select wrong label', v => v[1].actions.find(row => row.kind === 'select-last').selection.selected_text = 'wrong pack'],
+    ['select source option injected', v => v[1].actions.find(row => row.kind === 'select-last').selection.option_values.push(v[0].catalog.initialized.rows[0].packs[0].collection_id)],
+    ['select nonempty initial value', v => v[1].actions.find(row => row.kind === 'select-last').selection.before = v[1].organization.create.preview.request.action.pack_id],
+    ['select raw synthetic event', v => v[1].actions.find(row => row.kind === 'select-last').selection.events[1].trusted = false],
+    ['select raw wrong change value', v => v[1].actions.find(row => row.kind === 'select-last').selection.events[2].value = ''],
+    ['select raw wrong event target', v => v[1].actions.find(row => row.kind === 'select-last').selection.events[0].target_id = 'different-control'],
+    ['select three trusted clicks', v => v[1].actions.find(row => row.kind === 'select-last').trusted_clicks = 3],
+    ['ordinary button double click remains rejected', v => v[1].actions.find(row => row.control === 'management-catalog-add-preview').trusted_clicks = 2],
+
     ['review outside viewport', v => v[1].organization.review_focus[0].bottom = 721],
     ['review never focused', v => v[1].organization.review_focus[1].active_element = 'management-title'],
     ['selected ZIP extra key', v => v[1].api_trace.find(row => row.path === '/api/library/pack/export').request.keys.push(v[0].catalog.initialized.rows[2].key)],

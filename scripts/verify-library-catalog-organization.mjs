@@ -11,7 +11,8 @@ const actionAt = (report, sequence, control, kind = 'click') => {
   assert.ok(Number.isSafeInteger(sequence) && sequence > 0, 'Organization evidence needs an actual action sequence');
   const action = report.actions[sequence - 1];
   assert.equal(action?.sequence, sequence); assert.equal(action.kind, kind); assert.equal(action.control, control);
-  assert.equal(action.trusted_clicks, 1); assert.equal(action.untrusted_clicks, 0); assert.equal(action.completed, true);
+  if (kind === 'select-last') assert.ok([1, 2].includes(action.trusted_clicks)); else assert.equal(action.trusted_clicks, 1);
+  assert.equal(action.untrusted_clicks, 0); assert.equal(action.completed, true);
   return action;
 };
 function nativeQuery(report, value, request, generation, libraryId) {
@@ -72,6 +73,7 @@ export function validateCatalogOrganization(reports, {initial, restore, selected
   assert.equal(new Set([seed.operations.initialize, seed.operations.trash, restore, ...records].map(record => record.operation_id)).size, 6, 'Every durable operation needs a distinct native identity');
   for (const [control, kind] of [['management-catalog-create-name', 'key-r'], ['management-catalog-rename-name', 'key-r'], ['management-catalog-add-target', 'select-last']]) {
     const actions = restart.actions.filter(action => action.control === control && action.kind === kind); assert.equal(actions.length, 1); actionAt(restart, actions[0].sequence, control, kind);
+    if (kind === 'select-last') { assert.equal(actions[0].selection.after, target, 'Native destination must change exactly once to the reviewed custom pack'); assert.deepEqual(actions[0].selection.option_values, ['', target]); }
   }
   assert.equal(org.review_focus?.length, 3, 'Each organization review needs actual viewport focus evidence');
   for (const [index, focus] of org.review_focus.entries()) {

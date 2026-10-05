@@ -67,6 +67,30 @@ function catalogAcceptanceEqual(left, right) {
   return JSON.stringify(sorted(left)) === JSON.stringify(sorted(right));
 }
 
+function catalogTrustedActionComplete(action) {
+  if (action.untrusted_clicks !== 0) return false;
+  if (action.kind === 'catalog-snapshot-before') return action.trusted_clicks === 0;
+  if (action.kind === 'select-last') {
+    const selected = action.selection;
+    // A native select may emit a second trusted click when its popup closes.
+    // Only this exact selector may use that bounded event sequence, and one
+    // trusted change from its placeholder must prove the selected destination.
+    if (action.control !== 'management-catalog-add-target' || ![1, 2].includes(action.trusted_clicks)
+      || selected?.target_id !== action.control || selected.target_tag !== 'SELECT'
+      || selected.before !== '' || !/^collection-[0-9a-f]{32}$/.test(selected.after)
+      || !catalogAcceptanceEqual(selected.option_values, ['', selected.after]) || selected.selected_index !== 1
+      || selected.selected_text !== `rr · ${selected.after}` || selected.trusted_changes !== 1 || selected.untrusted_changes !== 0
+      || !Array.isArray(selected.events)) return false;
+    const types = selected.events.map(event => event.type);
+    return selected.events.length >= 2 && selected.events.length <= 4
+      && selected.events.filter(event => event.type === 'click').length === action.trusted_clicks
+      && types.filter(type => type === 'change').length === 1 && types.filter(type => type === 'input').length <= 1
+      && (!types.includes('input') || types.indexOf('input') < types.indexOf('change'))
+      && selected.events.every(event => ['click', 'input', 'change'].includes(event.type) && event.trusted === true && event.target_id === action.control && (event.type === 'click' ? ['', selected.after].includes(event.value) : event.value === selected.after));
+  }
+  return action.trusted_clicks === 1 && (action.kind !== 'key-r' || action.trusted_key_downs === 1 && action.trusted_key_ups === 1);
+}
+
 // The exact UI sequence is also run against the real Rust stdin adapter in Node.
 // Only native() differs: real acceptance supplies trusted OS/browser input.
 async function runCatalogUserPackAcceptance({document, native, until, query, operation, apiLast, download, screenshot, selected, prior = null, viewport, assert = (value, message) => { if (!value) throw Error(message); }}) {
@@ -142,9 +166,11 @@ async function runCatalogUserPackAcceptance({document, native, until, query, ope
   const cat = id => $(`management-catalog-${id}`), query = (view, collection_id = null) => probe('/api/library/catalog/query', {view, ...(collection_id ? {collection_id} : {}), limit: 100, refresh: true});
   const checked = name => report.checks.push(name);
   let sequence = 0, armed = null, config, spec, mediaStorage;
-  const trustedClick = event => { if (armed && (event.target === armed.node || armed.node.contains(event.target))) { armed.row.trusted_clicks += Number(event.isTrusted); if (!event.isTrusted) armed.row.untrusted_clicks++; } };
+  const selectionEvent = event => { if (armed?.row.kind === 'select-last' && event.target === armed.node) armed.row.selection.events.push({type: event.type, trusted: event.isTrusted, target_id: event.target.id, value: armed.node.value}); };
+  const trustedClick = event => { if (armed && (event.target === armed.node || armed.node.contains(event.target))) { armed.row.trusted_clicks += Number(event.isTrusted); if (!event.isTrusted) armed.row.untrusted_clicks++; selectionEvent(event); } };
   const trustedKey = event => { if (armed && event.code === 'KeyR' && event.target === armed.node) armed.row[event.type === 'keydown' ? 'trusted_key_downs' : 'trusted_key_ups'] += Number(event.isTrusted); };
-  document.addEventListener('click', trustedClick, true); document.addEventListener('keydown', trustedKey, true); document.addEventListener('keyup', trustedKey, true);
+  const trustedChange = event => { if (armed?.row.kind === 'select-last' && event.target === armed.node) { armed.row.selection[event.isTrusted ? 'trusted_changes' : 'untrusted_changes']++; selectionEvent(event); } };
+  document.addEventListener('click', trustedClick, true); document.addEventListener('keydown', trustedKey, true); document.addEventListener('keyup', trustedKey, true); document.addEventListener('change', trustedChange, true); document.addEventListener('input', selectionEvent, true);
   const originalOpen = IDBFactory.prototype.open;
   IDBFactory.prototype.open = function(name, ...args) { if (String(name) === 'worldmusichub.scores.v1') report.opened_score_databases.push(String(name)); return originalOpen.call(this, name, ...args); };
   addEventListener('error', event => report.errors.push(String(event.message))); addEventListener('unhandledrejection', event => report.errors.push(String(event.reason)));
@@ -155,11 +181,13 @@ async function runCatalogUserPackAcceptance({document, native, until, query, ope
     const bounds = node.getBoundingClientRect(); assert(bounds.width > 0 && bounds.height > 0 && !node.closest('[hidden]'), 'Catalog target must be visible');
     const collectionId = node.dataset.catalogOpenPack || node.dataset.catalogRenamePack;
     const row = {sequence: ++sequence, kind, control: node.id || (node.dataset.catalogOpenPack ? 'management-catalog-open-pack' : node.dataset.catalogRenamePack ? 'management-catalog-rename-pack' : node.dataset.catalogEdition || node.tagName), ...(collectionId ? {collection_id: collectionId} : {}), trusted_clicks: 0, untrusted_clicks: 0, trusted_key_downs: 0, trusted_key_ups: 0}; report.actions.push(row); armed = {row, node};
+    if (kind === 'select-last') { assert(node.tagName === 'SELECT' && node.id === 'management-catalog-add-target', 'Only the exact user-pack destination selector may use native select-last'); row.selection = {target_id: node.id, target_tag: node.tagName, before: node.value, after: null, option_values: [...node.options].map(option => option.value), selected_index: null, selected_text: null, trusted_changes: 0, untrusted_changes: 0, events: []}; }
     try {
       await json('/__desktop_smoke/action', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({version: 1, sequence, kind, x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2, width: innerWidth, height: innerHeight, ...(file ? {file} : {})})});
       let result;
       await until(async signal => { const response = await originalFetch(`/__desktop_smoke/result/${row.sequence}`, {signal}); if (response.status === 404) return false; result = await response.json(); assert(response.ok && result.ok, result.error || 'Catalog native action failed'); return true; }, `trusted catalog ${kind} ${sequence}`, 15000);
-      if (kind !== 'catalog-snapshot-before') { assert(row.trusted_clicks === 1 && row.untrusted_clicks === 0, 'Catalog action lacks exactly one trusted click'); if (kind === 'key-r') assert(row.trusted_key_downs === 1 && row.trusted_key_ups === 1, 'Catalog key input lacks trusted key events'); }
+      if (kind === 'select-last') { row.selection.after = node.value; row.selection.selected_index = node.selectedIndex; row.selection.selected_text = node.options[node.selectedIndex]?.textContent; }
+      assert(catalogTrustedActionComplete(row), 'Catalog action lacks its exact trusted click/key/selection evidence');
       row.completed = true; return row.sequence;
     } finally { armed = null; }
   }
@@ -309,7 +337,7 @@ async function runCatalogUserPackAcceptance({document, native, until, query, ope
     } catch (error) { report.error = String(error.stack || error); }
     finally {
       transport.stop(); mediaStorage?.close(); globalThis.fetch = originalFetch; IDBFactory.prototype.open = originalOpen;
-      document.removeEventListener('click', trustedClick, true); document.removeEventListener('keydown', trustedKey, true); document.removeEventListener('keyup', trustedKey, true);
+      document.removeEventListener('click', trustedClick, true); document.removeEventListener('keydown', trustedKey, true); document.removeEventListener('keyup', trustedKey, true); document.removeEventListener('change', trustedChange, true); document.removeEventListener('input', selectionEvent, true);
       report.downloads = (await json('/__desktop_smoke/state')).downloads;
       const body = JSON.stringify(report); assert(new TextEncoder().encode(body).length <= 1024 * 1024, 'Catalog renderer report exceeds 1MiB');
       await json('/__desktop_smoke/report', {method: 'POST', headers: {'Content-Type': 'application/json'}, body});
