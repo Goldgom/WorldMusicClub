@@ -22,9 +22,10 @@ export function authoredLegacyPack(){
 
 /** Python's streaming local ZIP64 header matches the delivered envelope style.
  * The central directory remains ordinary; content is newly authored above. */
+export const STREAMING_ZIP_SCRIPT='import sys,json,io,zipfile,base64\nsource=json.loads(sys.stdin.buffer.read().decode("utf-8"))\noutput=io.BytesIO()\nwith zipfile.ZipFile(output,"w",compression=zipfile.ZIP_DEFLATED) as archive:\n for name,encoded in source:\n  info=zipfile.ZipInfo(name,date_time=(1980,1,1,0,0,0));info.create_system=3;info.compress_type=zipfile.ZIP_DEFLATED\n  with archive.open(info,"w",force_zip64=True) as member: member.write(base64.b64decode(encoded))\nsys.stdout.buffer.write(output.getvalue())\n';
 export function streamingZip(entries){
- const script='import sys,json,io,zipfile,base64\nsource=json.loads(sys.stdin.buffer.read().decode("utf-8"))\noutput=io.BytesIO()\nwith zipfile.ZipFile(output,"w",compression=zipfile.ZIP_DEFLATED) as archive:\n for name,encoded in source:\n  info=zipfile.ZipInfo(name,date_time=(1980,1,1,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED\n  with archive.open(info,"w",force_zip64=True) as member: member.write(base64.b64decode(encoded))\nsys.stdout.buffer.write(output.getvalue())\n';
- return execFileSync(process.platform==='win32'?'python':'python3',['-c',script],{input:JSON.stringify(entries.map(([name,value])=>[name,Buffer.from(value).toString('base64')])),maxBuffer:8*1024*1024});
+
+ return execFileSync(process.platform==='win32'?'python':'python3',['-c',STREAMING_ZIP_SCRIPT],{input:JSON.stringify(entries.map(([name,value])=>[name,Buffer.from(value).toString('base64')])),maxBuffer:8*1024*1024});
 }
 
 /** Minimal stored ZIP fixture writer with UTF-8 paths; never unpacks user input. */

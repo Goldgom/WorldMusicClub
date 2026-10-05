@@ -5,7 +5,8 @@ import {mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile} from 'node:fs
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {deflateSync} from 'node:zlib';
-import {authoredLegacyPack} from './native-import-driver-fixtures.js';
+import {execFileSync} from 'node:child_process';
+import {authoredLegacyPack, STREAMING_ZIP_SCRIPT} from './native-import-driver-fixtures.js';
 import {authoredCleanPackage} from './clean-song-package-fixtures.js';
 import {catalogServer} from './library-catalog-fixtures.js';
 import {inspectOriginalManagementZip} from '../scripts/pack-management-acceptance-fixtures.mjs';
@@ -32,6 +33,23 @@ test('catalog fixture preparation requires a fresh directory and preserves exact
   assert.equal((await readdir(directory)).length, 4); assert.deepEqual(JSON.parse(await readFile(join(directory, 'catalog-fixtures.json'))), manifest);
   for (const row of manifest.inputs) { const bytes = await readFile(join(directory, row.filename)); assert.equal(bytes.length, row.bytes); assert.equal(sha256(bytes), row.sha256); }
   await assert.rejects(prepareLibraryCatalogFixtures(directory), /fresh empty/);
+});
+
+test('original streaming ZIP bytes are independent of the host ZipInfo platform default', () => {
+  const original = authoredLegacyPack();
+  const input = JSON.stringify(original.entries.map(([name, value]) => [name, Buffer.from(value).toString('base64')]));
+  const python = process.platform === 'win32' ? 'python' : 'python3';
+  const run = (host, script = STREAMING_ZIP_SCRIPT) => {
+    const preamble = `import zipfile\noriginal_init=zipfile.ZipInfo.__init__\ndef simulated_init(self,*args,**kwargs):\n original_init(self,*args,**kwargs)\n self.create_system=${host}\nzipfile.ZipInfo.__init__=simulated_init\n`;
+    return execFileSync(python, ['-c', preamble + script], {input, maxBuffer: 1024 * 1024, timeout: 5000});
+  };
+  for (const host of [0, 3]) assert.deepEqual(run(host), original.bytes);
+  // A real regression control: implicit Windows metadata reproduces the exact
+  // first-run failure while every authored member stays byte-identical.
+  const implicitWindows = run(0, STREAMING_ZIP_SCRIPT.replace('info.create_system=3;', ''));
+  assert.equal(sha256(implicitWindows), '09f2c31c8f45022dcb37d614f9da977ce4f7d9234d0ed5aa45ceb48d7b971d98');
+  assert.notDeepEqual(implicitWindows, original.bytes);
+  assert.deepEqual(inspectOriginalManagementZip(implicitWindows), inspectOriginalManagementZip(original.bytes));
 });
 
 test('source binding rejects old, unbound and independently changed evidence', () => {
