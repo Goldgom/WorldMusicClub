@@ -1,10 +1,36 @@
-# Native selected-song Trash and restore
+# Native catalog and user packs
 
 The native host advertises `library_catalog_version: 1`. The bounded product API
 is separate from read-only query v1; its full wire contract is in
 [catalog-product-contract.json](catalog-product-contract.json). No browser-store
-fallback, pack rename/move/cascade, permanent deletion, cleanup, or source rewrite
-is exposed.
+fallback, pack move/unlink/cascade, permanent deletion, cleanup, or source rewrite
+is exposed. Custom user packs support separately reviewed create, rename and
+add-selected-edition operations. Imported source groups remain read-only.
+
+The host advertises `create_pack`, `rename_pack` and `add_memberships` through
+`supported_operations`; renderers must check these capabilities. Pack query uses
+`view: packs`, includes empty packs, and shares its snapshot with song queries.
+`collection_id` filters active songs or the captured memberships of trashed songs.
+Each pack has a typed `kind` and an explicit nullable `import_pack_id`: a custom
+pack never acquires an invented import identity. Active counts include retained
+unavailable editions; available counts include only verified physical editions.
+Shared counts include memberships in other source or custom packs. Existing
+import-group projections continue to describe source evidence, not user filing.
+
+Create names and renamed names are bounded to 256 UTF-8 bytes, nonblank, and free
+of control characters. Create allocates a collision-checked random collection ID.
+Add uses exact active managed edition IDs, at most 1024 per reviewed transaction,
+and verifies payload availability again at commit. Existing memberships produce
+explicit already-present noops and retain their position, time and revision.
+Create followed by add is two transactions; a cancelled add leaves the empty pack.
+No membership move/removal, pack Trash, cascade or historical Undo is exposed.
+
+These actions already exist in the v1 core, so existing persisted catalogs need
+no migration and historical receipts retain their exact bytes and digests.
+Older native hosts do not advertise these controls. Older renderers may reject
+custom references with a null import identity and fail closed; use a newer app
+instead of resetting or reseeding a catalog. This is preservation compatibility,
+not a promise of full organization support in an older application.
 
 Initialization is an explicit reviewed operation. Its preview verifies physical
 legacy and clean editions, retained originals, and complete historical receipts.

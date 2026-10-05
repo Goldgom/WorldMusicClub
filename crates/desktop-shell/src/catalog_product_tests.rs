@@ -1,4 +1,6 @@
 //! Native contract tests use only original generated material and owned roots.
+#[path = "catalog_product_pack_tests.rs"]
+mod user_packs;
 use super::*;
 use crate::{native_library::SaveRequest, song_pack};
 use std::{

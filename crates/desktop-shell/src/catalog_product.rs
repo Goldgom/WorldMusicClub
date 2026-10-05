@@ -87,9 +87,23 @@ fn journal_error(error: journal::Error) -> LibraryError {
     match error {
         journal::Error::Storage(error) => error,
         journal::Error::Core(error) => core_error(error),
-        journal::Error::NeverManaged => fail(409,"catalog_not_initialized","Preview and confirm catalog initialization before managing songs"),
-        journal::Error::Capacity => fail(413,"catalog_capacity","Catalog journal capacity reached; no retained history was discarded"),
-        journal::Error::Recovery(message) => fail(409,"catalog_recovery_required",format!("Catalog recovery is required: {message}. Preserve the catalog and catalog-backups folders; do not reset or reinitialize. Retry the saved operation only after recovery.")),
+        journal::Error::NeverManaged => fail(
+            409,
+            "catalog_not_initialized",
+            "Preview and confirm catalog initialization before managing songs",
+        ),
+        journal::Error::Capacity => fail(
+            413,
+            "catalog_capacity",
+            "Catalog journal capacity reached; no retained history was discarded",
+        ),
+        journal::Error::Recovery(message) => fail(
+            409,
+            "catalog_recovery_required",
+            format!(
+                "Catalog recovery is required: {message}. Preserve the catalog and catalog-backups folders; do not reset or reinitialize. Retry the saved operation only after recovery."
+            ),
+        ),
     }
 }
 pub(crate) fn load_managed_locked(library: &NativeLibrary) -> Result<Option<journal::Loaded>> {
@@ -131,7 +145,11 @@ pub(crate) fn require_active_locked(library: &NativeLibrary, edition: &str) -> R
             .iter()
             .any(|song| song.id.as_str() == edition && song.trashed_by.is_some())
         {
-            return Err(fail(409,"catalog_in_trash","This edition is in Trash. Restore it before loading it again; already admitted media remains usable"));
+            return Err(fail(
+                409,
+                "catalog_in_trash",
+                "This edition is in Trash. Restore it before loading it again; already admitted media remains usable",
+            ));
         }
     }
     Ok(())
@@ -295,7 +313,14 @@ fn verified(library: &NativeLibrary) -> Result<Verified> {
     let inventory = library.scan()?;
     let evidence = crate::song_pack::storage::project_receipts_locked(library, &inventory.entries)?;
     if let Some(error) = &evidence.blocking_source_error {
-        return Err(fail(409,"catalog_recovery_required",format!("A retained original copy needs recovery before catalog changes: {}. All original evidence was preserved.",error.error)));
+        return Err(fail(
+            409,
+            "catalog_recovery_required",
+            format!(
+                "A retained original copy needs recovery before catalog changes: {}. All original evidence was preserved.",
+                error.error
+            ),
+        ));
     }
     let payload_bytes = inventory
         .entries
@@ -592,6 +617,10 @@ struct Selection {
     action: String,
     edition_ids: Vec<SongId>,
     trash_operation_id: Option<OperationId>,
+    #[serde(default)]
+    collection_id: Option<PackId>,
+    #[serde(default)]
+    name: Option<String>,
     expected_generation: u64,
     catalog_digest: String,
 }
@@ -625,7 +654,11 @@ fn require_physical(catalog: &Catalog, verified: &Verified, ids: &[SongId]) -> R
             return Err(core_error(catalog::Error::NotFound));
         }
         if !physical.contains(id.as_str()) {
-            return Err(fail(409,"catalog_recovery_required","A selected edition has no verified physical payload; recover its retained backup before changing its catalog state"));
+            return Err(fail(
+                409,
+                "catalog_recovery_required",
+                "A selected edition has no verified physical payload; recover its retained backup before changing its catalog state",
+            ));
         }
     }
     Ok(())
@@ -638,11 +671,36 @@ fn pack_ref(catalog: &Catalog, id: &PackId) -> Value {
         .iter()
         .find(|p| p.id == *id)
         .expect("validated pack");
-    json!({"collection_id":id,"import_pack_id":pack.source_archive_keys.first().map(|s|format!("import-{}",&s.as_str()[5..])),"name":pack.name})
+    pack_value(pack)
+}
+fn pack_value(pack: &catalog::Pack) -> Value {
+    json!({"collection_id":pack.id,"kind":pack.kind,"import_pack_id":pack.source_archive_keys.first().map(|s|format!("import-{}",&s.as_str()[5..])),"name":pack.name})
+}
+fn require_custom(catalog: &Catalog, id: &PackId) -> Result<()> {
+    let pack = catalog
+        .snapshot()
+        .inventory
+        .packs
+        .iter()
+        .find(|pack| pack.id == *id)
+        .ok_or_else(|| core_error(catalog::Error::NotFound))?;
+    if pack.kind != catalog::PackKind::Custom {
+        return Err(fail(
+            409,
+            "catalog_readonly_pack",
+            "Imported source groups are read-only; choose a custom user pack",
+        ));
+    }
+    if pack.trashed_by.is_some() {
+        return Err(core_error(catalog::Error::InTrash));
+    }
+    Ok(())
 }
 fn summary(catalog: &Catalog, preview: &Preview) -> Value {
     let ids = match &preview.request.action {
-        Action::TrashSongs { song_ids } => song_ids.clone(),
+        Action::TrashSongs { song_ids } | Action::AddMemberships { song_ids, .. } => {
+            song_ids.clone()
+        }
         Action::Restore { entities, .. } => entities
             .iter()
             .filter_map(|e| {
@@ -706,20 +764,30 @@ fn summary(catalog: &Catalog, preview: &Preview) -> Value {
                 .iter()
                 .find(|p| p.id == *id)
                 .expect("adopted pack");
-            json!({"collection_id":id,"import_pack_id":p.source_archive_keys.first().map(|s|format!("import-{}",&s.as_str()[5..])),"name":p.name})
+            pack_value(p)
+        } else if let Action::CreatePack { name, .. } = &preview.request.action {
+            json!({"collection_id":id,"kind":"custom","import_pack_id":null,"name":name})
         } else {
             json!({"collection_id":id,"import_pack_id":null,"name":""})
         };
+        if let Action::RenamePack { pack_id, name } = &preview.request.action {
+            if pack_id == id {
+                row["name"] = json!(name);
+            }
+        }
         row["selected_song_count"] = json!(edges
             .iter()
             .filter(|m| m.pack == *id && selected.contains(&m.song))
             .count());
         affected.push(row)
     }
-    json!({"selected_count":ids.len(),"changed_song_count":effects.trashed_songs.len()+effects.restored_songs.len()+effects.adopted_songs.len(),"removed_membership_count":effects.removed_memberships.len(),"restored_membership_count":effects.added_memberships.len(),"shared_song_count":shared,"affected_packs":affected,"reclaimed_bytes":0})
+    json!({"selected_count":ids.len(),"changed_song_count":effects.trashed_songs.len()+effects.restored_songs.len()+effects.adopted_songs.len(),"created_pack_count":effects.created_packs.len(),"renamed_pack_count":effects.renamed_packs.len(),"added_membership_count":effects.added_memberships.len(),"unchanged_membership_count":effects.noops.iter().filter(|n|n.reason == catalog::NoopReason::AlreadyPresent).count(),"removed_membership_count":effects.removed_memberships.len(),"restored_membership_count":effects.added_memberships.len(),"shared_song_count":shared,"affected_packs":affected,"reclaimed_bytes":0})
 }
 fn preview(library: &NativeLibrary, request: Selection) -> Result<Value> {
     bind(library, &request.library_id)?;
+    if request.edition_ids.len() > catalog::MAX_SELECTION {
+        return Err(core_error(catalog::Error::Limit("selection")));
+    }
     let _lock = library.lock()?;
     let loaded =
         load_managed_locked(library)?.ok_or_else(|| journal_error(journal::Error::NeverManaged))?;
@@ -728,28 +796,72 @@ fn preview(library: &NativeLibrary, request: Selection) -> Result<Value> {
         request.expected_generation,
         &request.catalog_digest,
     )?;
-    if request.edition_ids.is_empty() {
-        return Err(core_error(catalog::Error::Invalid("empty selection")));
-    }
     let verified = verified(library)?;
     require_physical(&loaded.catalog, &verified, &request.edition_ids)?;
     let action = match request.action.as_str() {
-        "trash_songs" if request.trash_operation_id.is_none() => Action::TrashSongs {
-            song_ids: request.edition_ids,
-        },
-        "restore_songs" => Action::Restore {
-            trash_operation_id: request
-                .trash_operation_id
-                .ok_or_else(|| core_error(catalog::Error::Invalid("missing trash operation")))?,
-            entities: request.edition_ids.into_iter().map(Entity::Song).collect(),
-            memberships: vec![],
-        },
+        "create_pack"
+            if request.edition_ids.is_empty()
+                && request.collection_id.is_none()
+                && request.trash_operation_id.is_none() =>
+        {
+            let mut used = loaded
+                .catalog
+                .snapshot()
+                .inventory
+                .packs
+                .iter()
+                .map(|pack| pack.id.as_str().to_owned())
+                .collect();
+            Action::CreatePack {
+                pack_id: PackId::parse(random_id("collection-", &mut used)?).map_err(core_error)?,
+                name: request
+                    .name
+                    .ok_or_else(|| core_error(catalog::Error::Invalid("missing name")))?,
+            }
+        }
+        "rename_pack" if request.edition_ids.is_empty() && request.trash_operation_id.is_none() => {
+            Action::RenamePack {
+                pack_id: request
+                    .collection_id
+                    .ok_or_else(|| core_error(catalog::Error::Invalid("missing collection")))?,
+                name: request
+                    .name
+                    .ok_or_else(|| core_error(catalog::Error::Invalid("missing name")))?,
+            }
+        }
+        "add_memberships" if request.name.is_none() && request.trash_operation_id.is_none() => {
+            Action::AddMemberships {
+                pack_id: request
+                    .collection_id
+                    .ok_or_else(|| core_error(catalog::Error::Invalid("missing collection")))?,
+                song_ids: request.edition_ids,
+            }
+        }
+        "trash_songs"
+            if request.trash_operation_id.is_none()
+                && request.collection_id.is_none()
+                && request.name.is_none() =>
+        {
+            Action::TrashSongs {
+                song_ids: request.edition_ids,
+            }
+        }
+        "restore_songs" if request.collection_id.is_none() && request.name.is_none() => {
+            Action::Restore {
+                trash_operation_id: request.trash_operation_id.ok_or_else(|| {
+                    core_error(catalog::Error::Invalid("missing trash operation"))
+                })?,
+                entities: request.edition_ids.into_iter().map(Entity::Song).collect(),
+                memberships: vec![],
+            }
+        }
         _ => {
             return Err(core_error(catalog::Error::Invalid(
                 "unsupported product action",
-            )))
+            )));
         }
     };
+    allowed_action(&loaded.catalog, &verified, &action)?;
     let preview = loaded
         .catalog
         .preview(catalog::Request {
@@ -831,6 +943,12 @@ fn sync_preview(library: &NativeLibrary, request: Sync) -> Result<Value> {
 }
 fn allowed_action(catalog: &Catalog, verified: &Verified, action: &Action) -> Result<()> {
     match action {
+        Action::CreatePack { .. } => Ok(()),
+        Action::RenamePack { pack_id, .. } => require_custom(catalog, pack_id),
+        Action::AddMemberships { pack_id, song_ids } if !song_ids.is_empty() => {
+            require_custom(catalog, pack_id)?;
+            require_physical(catalog, verified, song_ids)
+        }
         Action::TrashSongs { song_ids } if !song_ids.is_empty() => {
             require_physical(catalog, verified, song_ids)
         }
@@ -1041,11 +1159,14 @@ pub(crate) struct Projection {
     counts: Counts,
     active: Vec<Value>,
     trash: Vec<Value>,
+    packs: Vec<Value>,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Query {
     view: String,
+    #[serde(default)]
+    collection_id: Option<PackId>,
     #[serde(default)]
     search: String,
     #[serde(default = "page_limit")]
@@ -1109,8 +1230,40 @@ fn build(library: &NativeLibrary, loaded: &journal::Loaded) -> Result<Projection
     }
     active.sort_by(|a, b| a["edition_id"].as_str().cmp(&b["edition_id"].as_str()));
     trash.sort_by(|a, b| a["edition_id"].as_str().cmp(&b["edition_id"].as_str()));
+    let mut packs = Vec::new();
+    for pack in &catalog.snapshot().inventory.packs {
+        if pack.trashed_by.is_some() {
+            continue;
+        }
+        let mut row = pack_value(pack);
+        let members: Vec<_> = active
+            .iter()
+            .filter(|song| {
+                song["packs"]
+                    .as_array()
+                    .expect("song packs")
+                    .iter()
+                    .any(|p| p["collection_id"] == row["collection_id"])
+            })
+            .collect();
+        row["active_song_count"] = json!(members.len());
+        row["available_song_count"] = json!(members
+            .iter()
+            .filter(|song| song["physical_available"] == true)
+            .count());
+        row["shared_song_count"] = json!(members
+            .iter()
+            .filter(|song| song["pack_count"].as_u64().unwrap_or(0) > 1)
+            .count());
+        packs.push(row);
+    }
+    packs.sort_by(|a, b| {
+        a["collection_id"]
+            .as_str()
+            .cmp(&b["collection_id"].as_str())
+    });
     let digest = catalog_digest(catalog);
-    let snapshot_id = hash(&(&digest, &active, &trash));
+    let snapshot_id = hash(&(&digest, &active, &trash, &packs));
     Ok(Projection {
         manifest: loaded.manifest_sha256.clone(),
         catalog_digest: digest,
@@ -1120,6 +1273,7 @@ fn build(library: &NativeLibrary, loaded: &journal::Loaded) -> Result<Projection
         counts: counts(catalog),
         active,
         trash,
+        packs,
     })
 }
 fn song_row(
@@ -1133,7 +1287,8 @@ fn song_row(
     json!({"edition_id":id,"key":key,"storage_kind":kind,"title":entry.map_or("Unavailable retained edition",|e|e.title.as_str()),"composer":entry.map_or("",|e|e.composer.as_str()),"score_id":entry.map_or("",|e|e.score_id.as_str()),"profile":entry.and_then(|e|e.clean_package.as_ref()).and_then(|p|p.profile.as_deref()).unwrap_or("canonical"),"catalog_managed":managed,"physical_available":entry.is_some(),"trashed_by":trashed,"pack_count":packs.len(),"packs":packs})
 }
 fn query(library: &NativeLibrary, request: Query) -> Result<Value> {
-    if !matches!(request.view.as_str(), "active" | "trash")
+    if !matches!(request.view.as_str(), "active" | "trash" | "packs")
+        || (request.view == "packs" && request.collection_id.is_some())
         || !(1..=100).contains(&request.limit)
         || request.search.len() > 256
         || (request.refresh && request.cursor.is_some())
@@ -1143,6 +1298,18 @@ fn query(library: &NativeLibrary, request: Query) -> Result<Value> {
     let _lock = library.lock()?;
     let loaded =
         load_managed_locked(library)?.ok_or_else(|| journal_error(journal::Error::NeverManaged))?;
+    if let Some(id) = &request.collection_id {
+        if !loaded
+            .catalog
+            .snapshot()
+            .inventory
+            .packs
+            .iter()
+            .any(|pack| pack.id == *id && pack.trashed_by.is_none())
+        {
+            return Err(core_error(catalog::Error::NotFound));
+        }
+    }
     let mut cache = library
         .process_lock
         .catalog_product
@@ -1157,7 +1324,12 @@ fn query(library: &NativeLibrary, request: Query) -> Result<Value> {
         *cache = Some(build(library, &loaded)?)
     }
     let projection = cache.as_ref().expect("built");
-    let filter = hash(&(&request.view, &request.search, request.limit));
+    let filter = hash(&(
+        &request.view,
+        &request.collection_id,
+        &request.search,
+        request.limit,
+    ));
     let offset = if let Some(cursor) = &request.cursor {
         if cursor.len() > 160 {
             return Err(core_error(catalog::Error::Invalid("cursor")));
@@ -1178,15 +1350,22 @@ fn query(library: &NativeLibrary, request: Query) -> Result<Value> {
         0
     };
     let needle = request.search.to_lowercase();
-    let source = if request.view == "active" {
-        &projection.active
-    } else {
-        &projection.trash
+    let source = match request.view.as_str() {
+        "active" => &projection.active,
+        "trash" => &projection.trash,
+        _ => &projection.packs,
     };
     let rows: Vec<_> = source
         .iter()
         .filter(|r| {
-            ["title", "composer", "score_id"]
+            request.collection_id.as_ref().is_none_or(|id| {
+                r["packs"]
+                    .as_array()
+                    .is_some_and(|packs| packs.iter().any(|p| p["collection_id"] == id.as_str()))
+            })
+        })
+        .filter(|r| {
+            ["title", "composer", "score_id", "name"]
                 .iter()
                 .any(|k| r[k].as_str().unwrap_or("").to_lowercase().contains(&needle))
         })
@@ -1215,7 +1394,7 @@ fn query(library: &NativeLibrary, request: Query) -> Result<Value> {
     }
     envelope(
         library,
-        json!({"view":request.view,"generation":projection.generation,"catalog_digest":projection.catalog_digest,"snapshot_id":projection.snapshot_id,"freshness":{"kind":"advisory_snapshot","verified_at_unix_ms":projection.verified_at,"cached":cached,"change_detection":"explicit_refresh"},"counts":projection.counts,"total":rows.len(),"next_cursor":if end<rows.len(){Some(format!("{}:{filter}:{end}",projection.snapshot_id))}else{None},"rows":page}),
+        json!({"view":request.view,"collection_id":request.collection_id,"generation":projection.generation,"catalog_digest":projection.catalog_digest,"snapshot_id":projection.snapshot_id,"freshness":{"kind":"advisory_snapshot","verified_at_unix_ms":projection.verified_at,"cached":cached,"change_detection":"explicit_refresh"},"counts":projection.counts,"total":rows.len(),"next_cursor":if end<rows.len(){Some(format!("{}:{filter}:{end}",projection.snapshot_id))}else{None},"rows":page}),
     )
 }
 fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T> {
@@ -1264,7 +1443,10 @@ pub fn dispatch(
                 "initialize",
                 "trash_songs",
                 "restore_songs",
-                "sync_inventory"
+                "sync_inventory",
+                "create_pack",
+                "rename_pack",
+                "add_memberships"
             ]);
             envelope(library, value)
         })(),

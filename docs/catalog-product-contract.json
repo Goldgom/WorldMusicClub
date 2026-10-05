@@ -5,7 +5,7 @@
   "capability": {
     "health_field": "library_catalog_version",
     "value": 1,
-    "scope": "Explicit initialization, exact selected-song Trash, selected-song restore; no pack edits/cascade/purge"
+    "scope": "Explicit initialization, exact selected-song Trash/restore, inventory sync, and custom user pack create/rename/add; no unlink/move/cascade/purge"
   },
   "envelope": {
     "format": "worldmusichub-catalog",
@@ -26,7 +26,10 @@
           "initialize",
           "trash_songs",
           "restore_songs",
-          "sync_inventory"
+          "sync_inventory",
+          "create_pack",
+          "rename_pack",
+          "add_memberships"
         ]
       }
     },
@@ -69,14 +72,15 @@
       "method": "POST",
       "path": "/api/library/catalog/query",
       "request": {
-        "view": "active | trash",
+        "view": "active | trash | packs",
         "search": "string, default empty; <=256 bytes",
         "limit": "1..100, default40",
         "cursor": "null | opaque returned next_cursor",
-        "refresh": "boolean, default false"
+        "refresh": "boolean, default false",
+        "collection_id": "optional null | collection-32hex; filters song membership, forbidden with view packs"
       },
       "response": {
-        "view": "active | trash",
+        "view": "active | trash | packs",
         "generation": "uint",
         "catalog_digest": "sha256",
         "snapshot_id": "sha256",
@@ -89,21 +93,22 @@
         "counts": "counts",
         "total": "uint",
         "next_cursor": "null | opaque cursor",
-        "rows": "song_row[]"
+        "rows": "song_row[] for active/trash; pack_row[] for packs including empty packs",
+        "collection_id": "null | requested collection-32hex"
       }
     },
     "preview": {
       "method": "POST",
       "path": "/api/library/catalog/preview",
       "request": {
-        "action": "trash_songs | restore_songs",
-        "edition_ids": [
-          "legacy:song-64hex | clean:song-64hex"
-        ],
-        "trash_operation_id": "null for trash; operation-32hex for restore",
+        "action": "trash_songs | restore_songs | create_pack | rename_pack | add_memberships",
+        "edition_ids": "nonempty exact edition ID array <=1024 for song actions and add_memberships; empty for create_pack/rename_pack",
+        "trash_operation_id": "null/absent except required original operation-32hex for restore_songs",
         "expected_generation": "uint",
         "catalog_digest": "sha256",
-        "library_id": "exact status/preview library_id"
+        "library_id": "exact status/preview library_id",
+        "collection_id": "optional null; required exact active custom collection ID for rename_pack/add_memberships",
+        "name": "optional null; required 1..256 UTF-8 bytes, nonblank, no control characters for create_pack/rename_pack"
       },
       "response": {
         "preview": "core_preview",
@@ -170,7 +175,7 @@
     "catalog_managed": "boolean",
     "physical_available": "boolean",
     "trashed_by": "null | operation-32hex",
-    "packs": "[{collection_id:collection-32hex,import_pack_id:import-64hex,name:literal text}]",
+    "packs": "pack_ref[]; historical imported references without kind remain readable",
     "pack_count": "uint"
   },
   "core_preview": {
@@ -179,14 +184,14 @@
       "operation_id": "operation-32hex",
       "expected_generation": "uint",
       "at_unix_ms": "uint",
-      "action": "{type:trash_songs,song_ids:[edition_id]} OR {type:restore,trash_operation_id:operation_id,entities:[{kind:song,id:edition_id}],memberships:[]} OR {type:adopt_inventory,inventory:<host delta; resend unchanged>}"
+      "action": "{type:trash_songs,song_ids:[edition_id]} OR {type:restore,trash_operation_id:operation_id,entities:[{kind:song,id:edition_id}],memberships:[]} OR {type:adopt_inventory,inventory:<host delta; resend unchanged>} OR {type:create_pack,pack_id:<host allocated collection ID>,name} OR {type:rename_pack,pack_id,name} OR {type:add_memberships,pack_id,song_ids:[edition_id]}"
     },
     "request_digest": "sha256",
     "base_digest": "sha256",
     "next_generation": "uint",
     "effects": {
-      "created_packs": [],
-      "renamed_packs": [],
+      "created_packs": "collection_id[]",
+      "renamed_packs": "collection_id[]",
       "added_memberships": "[{pack:collection-id,song:edition-id}]",
       "removed_memberships": "same shape",
       "trashed_songs": "edition_id[]",
@@ -212,13 +217,17 @@
     "removed_membership_count": "uint",
     "restored_membership_count": "uint",
     "shared_song_count": "uint",
-    "affected_packs": "[{collection_id,import_pack_id,name,selected_song_count}]",
+    "affected_packs": "[{...pack_ref,selected_song_count}]; changed name for rename; empty for unchanged-name/all-already-present noops",
     "reclaimed_bytes": 0,
     "remaining_song_count": "uint; present for sync only",
-    "remaining_source_count": "uint; present for sync only"
+    "remaining_source_count": "uint; present for sync only",
+    "created_pack_count": "uint",
+    "renamed_pack_count": "uint",
+    "added_membership_count": "uint",
+    "unchanged_membership_count": "uint, already-present membership noops"
   },
   "error": {
-    "code": "catalog_invalid_request | catalog_not_initialized | catalog_already_initialized | catalog_stale | catalog_conflict | catalog_in_trash | catalog_not_found | catalog_recovery_required | catalog_capacity | library_busy | library_io | catalog_random_unavailable",
+    "code": "catalog_invalid_request | catalog_not_initialized | catalog_already_initialized | catalog_stale | catalog_conflict | catalog_in_trash | catalog_not_found | catalog_recovery_required | catalog_capacity | library_busy | library_io | catalog_random_unavailable | catalog_readonly_pack",
     "error": "actionable literal text",
     "outcome": "not_committed | uncertain (present only for a submitted commit/initialize)",
     "operation_id": "present with mutation outcome"
@@ -231,11 +240,26 @@
     "Changing selection invalidates the visible preview; commit must use the frozen preview exactly. Any stale generation/digest requires refresh and new review. Do not replay selection automatically after refresh.",
     "After lost commit response or uncertain outcome retain exact preview and ID, disable new mutation, query operation. Committed => reconcile receipt/current status and refresh. not_committed => explicit retry of same preview is allowed if its generation remains current; do not substitute a new ID. An error means absence is unproved.",
     "Errors from transport/admission without outcome are uncertain for a submitted mutation. Never infer not_committed from HTTP code alone.",
-    "Query pagination binds snapshot,view,search,limit. Cursor plus refresh invalid; changed cached snapshot rejects stale cursor. Mutations invalidate advisory caches; external changes require explicit Refresh. Query cache never authorizes a commit.",
+    "Query pagination binds snapshot,view,collection_id,search,limit. Cursor plus refresh invalid; changed cached snapshot rejects stale cursor. Mutations invalidate advisory caches; external changes require explicit Refresh. Query cache never authorizes a commit.",
     "V1 /manage/query retains its import-* IDs; catalog routes separately return collection_id and explicit import_pack_id mapping. No v1 rows acquire collection IDs.",
     "New physical editions created after initialization remain active and catalog_managed:false in this bounded slice. Explicit sync/preview then the ordinary commit adopts only verified new IDs; afterwards they are eligible for Trash. Existing catalog identities remain stable; exact reimport of a trashed edition stays in Trash.",
     "Trash retains every original, payload, backup and history; reclaimed_bytes is zero. Current admitted performance/media remains usable; newly loading a trashed edition requires restore.",
-    "No route accepts paths or calls open_default. No pack mutation, permanent delete, payload cleanup or browser-store fallback is supported.",
-    "Sync adopts at most32 new source groups and32 new editions per explicitly reviewed batch, bounded to1024 affected memberships. New editions wait until all proved source dependencies are admitted. Summary remaining_song_count/remaining_source_count are present only for sync. Refresh and explicitly preview/confirm the next batch until both are zero; never automatically commit the remainder."
-  ]
+    "No route accepts paths or calls open_default. Only create/rename/add to custom packs are exposed. Imported/source groups are read-only; move/unlink/pack Trash/cascade/history Undo/permanent delete/payload cleanup/browser-store fallback are not supported.",
+    "Sync adopts at most32 new source groups and32 new editions per explicitly reviewed batch, bounded to1024 affected memberships. New editions wait until all proved source dependencies are admitted. Summary remaining_song_count/remaining_source_count are present only for sync. Refresh and explicitly preview/confirm the next batch until both are zero; never automatically commit the remainder.",
+    "Create and add are separately reviewed transactions, never an implied atomic combined request. Create IDs are host allocated with operating-system randomness and collision checks against every retained pack. Duplicate add preserves original edge metadata and reports noops.",
+    "The pack projection shares snapshot_id with active/trash. Count all active members, including unavailable physical editions; available_song_count alone counts present verified payloads. Empty custom packs remain visible. Read-only import-group counts are not organizational counts.",
+    "Persisted catalog/journal remain v1 without migration because custom actions and PackKind already exist in that core. New UI gates on supported_operations; historical source references and receipt bytes remain unchanged. Older renderers may reject custom refs (null import_pack_id), fail closed and require a newer app. Do not reset, reseed or rewrite a managed catalog to downgrade."
+  ],
+  "pack_ref": {
+    "collection_id": "collection-32hex",
+    "kind": "imported | custom",
+    "import_pack_id": "import-64hex for imported; null for custom",
+    "name": "literal text; imported original names may be <=1024 UTF-8 bytes"
+  },
+  "pack_row": {
+    "reference": "pack_ref fields",
+    "active_song_count": "active member editions including unavailable retained payloads",
+    "available_song_count": "active member editions with verified present payloads",
+    "shared_song_count": "active members also belonging to another catalog pack; source groups count as another pack"
+  }
 }
