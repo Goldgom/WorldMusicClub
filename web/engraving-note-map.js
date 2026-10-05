@@ -366,9 +366,39 @@ function headFor(note,renderer,mount){
   return {group,parent,paths,box};
 }
 
+// One cooperative cue batch per document, shared by every part renderer. Hidden
+// future cues must not turn four sequential note updates into read/write/read
+// layout barriers. No task may visit more than 32 entries, including stale skips.
+// The 4ms read budget yields after the current indivisible glyph measurement.
+const cuePreparationQueues=new WeakMap(),CUE_PREPARATION_BATCH=32,CUE_PREPARATION_MS=4;
+function prepareCueGeometry(document,step){
+  const view=document.defaultView;
+  if(!['requestAnimationFrame','cancelAnimationFrame','setTimeout','clearTimeout'].every(key=>typeof view?.[key]==='function'))return()=>{};
+  let queue=cuePreparationQueues.get(document);
+  if(!queue){
+    const jobs=new Set();let frame=null,timer=null;
+    const now=()=>typeof view.performance?.now==='function'?view.performance.now():Date.now();
+    const schedule=()=>{
+      if(!jobs.size||frame!==null||timer!==null)return;
+      frame=view.requestAnimationFrame(()=>{
+        frame=null;
+        timer=view.setTimeout(()=>{
+          timer=null;
+          const job=jobs.values().next().value;
+          if(job){jobs.delete(job);let pending=false;try{pending=job(CUE_PREPARATION_BATCH,now()+CUE_PREPARATION_MS,now);}catch{/* Optional geometry cannot interrupt playback. */}if(pending)jobs.add(job);}
+          schedule();
+        },0);
+      });
+    };
+    queue={add(job){jobs.add(job);schedule();},remove(job){jobs.delete(job);if(!jobs.size){if(frame!==null)view.cancelAnimationFrame(frame);if(timer!==null)view.clearTimeout(timer);frame=null;timer=null;}}};
+    cuePreparationQueues.set(document,queue);
+  }
+  queue.add(step);return()=>queue.remove(step);
+}
+
 /** Bind only verified current-render glyphs. No update below invokes OSMD.render(). */
 export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasure,toMeasure,partIds,color,cueColor,onChange=()=>{}}){
-  const matched=matchEngravingModel(renderer,validated),entries=[],diagnostics=[],snapshots=new Map(),allowedByMeasure=new Map();let disposed=false,invalidated=false,current=new Set(),currentRequest=null,inputDiagnostic=null,cueLayer=null,cueEpoch=0;
+  const matched=matchEngravingModel(renderer,validated),entries=[],diagnostics=[],snapshots=new Map(),allowedByMeasure=new Map();let disposed=false,invalidated=false,current=new Set(),currentRequest=null,inputDiagnostic=null,cueLayer=null,cueEpoch=0,stopCuePreparation=null;
   for(const segment of validated.segments||[]){if(!allowedByMeasure.has(segment.source_measure_index))allowedByMeasure.set(segment.source_measure_index,new Set());allowedByMeasure.get(segment.source_measure_index).add(segment.source_note_id)}
   if(!matched.ok)diagnostics.push(...matched.diagnostics);
   else{const displayedIds=new Set(validated.segments.filter(segment=>partIds.includes(segment.xml_part_id)&&segment.source_measure_index>=fromMeasure-1&&segment.source_measure_index<=toMeasure-1).map(segment=>segment.xml_note_id));diagnostics.push(...matched.diagnostics.filter(item=>item.xmlNoteIds.some(id=>displayedIds.has(id))))}
@@ -437,6 +467,31 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
     // cues need no layout work. Recheck their exact owned glyphs on first use.
     // A prepared page with no current notes therefore performs no geometry reads.
     cueEpoch++;
+    stopCuePreparation?.();
+    const epoch=cueEpoch;let cursor=0;
+    stopCuePreparation=prepareCueGeometry(mount.ownerDocument,(limit,deadline,now)=>{
+      if(disposed||invalidated||cueEpoch!==epoch)return false;
+      const measured=[];let origin=null,readOrigin=false,visited=0;
+      while(cursor<entries.length&&visited++<limit){
+        const entry=entries[cursor++];
+        if(entry.cue&&entry.status==='bound'&&entry.cueEpoch!==epoch){
+          if(!readOrigin){readOrigin=true;try{origin=cueOrigin();}catch{}}
+          let box=null;try{if(origin)box=ownedBox(entry);}catch{}measured.push({entry,box});
+        }
+        if(disposed||invalidated||cueEpoch!==epoch)return false;
+        if(now()>=deadline)break;
+      }
+      if(measured.length){
+        // The whole batch is read before a single cue is changed. Ownership,
+        // visibility and future positions come from the real glyphs, not scale
+        // inference. Current membership is consulted only when writing cues.
+        if(disposed||invalidated||cueEpoch!==epoch)return false;
+        // A speculative failure must remain stale: an actual attack may retry
+        // after a temporary hidden surface or unavailable layout has recovered.
+        for(const {entry,box}of measured){if(box)placeCue(entry,box,origin);else if(!entry.cue.hidden)entry.cue.hidden=true;}
+      }
+      return cursor<entries.length;
+    });
     if(!current.size)return true;
     const origin=cueOrigin();
     // Read current geometry before writing any presentation style.
@@ -487,6 +542,6 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
       for(const {entry,box}of measured)placeCue(entry,box,origin);
       return true;
     },
-    dispose(){if(disposed)return;clear();disposed=true;cueLayer?.remove();cueLayer=null;for(const entry of entries)if(entry.status==='bound'){entry.status='unavailable';entry.reason='engraving_view_disposed'}snapshots.clear()},
+    dispose(){if(disposed)return;stopCuePreparation?.();stopCuePreparation=null;clear();disposed=true;cueLayer?.remove();cueLayer=null;for(const entry of entries)if(entry.status==='bound'){entry.status='unavailable';entry.reason='engraving_view_disposed'}snapshots.clear()},
   };
 }

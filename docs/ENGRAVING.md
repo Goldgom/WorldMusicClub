@@ -186,9 +186,24 @@ Automatic SVG fitting also refreshes the separate outline positions through
 `refreshExpectedCueGeometry()`, including while Follow is disabled and when a
 replacement page has the same fit dimensions. It reuses only already verified
 owned glyph nodes and never changes their identities. A geometry epoch invalidates
-hidden future cues without measuring them; only current cues are refreshed.
-The first activation of a stale cue reads its exact owned glyph before showing
-it. Every incoming read completes before any fill or cue style/visibility write.
+hidden future cues without synchronously measuring them; only current cues are
+refreshed immediately. One document-wide queue primes the remaining cues after
+an animation frame and a separate task turn, rotating between part renderers.
+A turn visits at most 32 entries and stops reading after a 4 ms wall-time budget;
+the current indivisible glyph/layout read can exceed that budget, and cue writes
+follow the complete read batch. This is not a guaranteed frame-duration ceiling.
+The queue starts only on explicit geometry invalidation, so initial offscreen
+preparation does not start another speculative queue. Repeated fits replace the
+binding's pending job; obsolete generations and disposal cannot publish or retain
+work. At most one frame or task is scheduled for the entire document.
+
+Priming uses actual owned glyph rectangles and the current mount origin, never
+inferred SVG scale or saved screen coordinates from a prior task. A note that
+arrives before priming still reads its exact owned glyph before showing its cue.
+Within each synchronous binding update, incoming reads finish before its fill or
+cue style/visibility writes. Different parts can still interleave these fallback
+updates until priming finishes; the scheduled priming batch has one shared read
+phase followed by its writes.
 Unreadable, hidden or unowned cue geometry stays hidden, and optional measurement
 errors cannot escape into the playback update. Repeated updates and reactivation
 within the same epoch perform no cue geometry reads. Follow bounds include the outline's three-pixel
@@ -198,8 +213,14 @@ Follow setting continues to own scrolling.
 
 The original 2,048-note four-part DOM regression checks zero mount/style/glyph
 reads at inactive adoption, current-only fitting, lazy future activation after
-repeated fits, exact source/measure identity, and disposal. This is a work-count
-proof with non-rendering doubles, not a browser timing claim. The existing real
+repeated fits, exact source/measure identity, and disposal. A second original
+four-part regression shares one document: it checks the global count/time limits,
+read-before-write ordering, round-robin preparation, an entire dense attack
+sequence without additional lazy reads after priming, repeated-fit replacement,
+immediate exact fallback and cancellation between the frame, task and writes.
+Priming need not finish before Listen; time budgets and rendering load can defer
+it, and exact attack fallback remains necessary. These are work-count
+checks with non-rendering doubles, not browser timing claims. The existing real
 OSMD fit/current/future cue cases and original dense hosted scene still need to
 pass for the exact source. Compare animation callback start intervals separately
 from callback durations; neither is direct paint or physical audio latency.

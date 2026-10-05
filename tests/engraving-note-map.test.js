@@ -49,7 +49,16 @@ function graphics(renderer,mount,spec){
   }
   renderer.EngravingRules.GNote=note=>graphical.get(note);return {graphical,paths,svg};
 }
-function bound(spec=example(),options={}){const env=mountEnvironment(),renderer=model(spec),paint=graphics(renderer,env.mount,spec),validation=checked(spec),changes=[];const output=createEngravingNoteBindings(renderer,env.mount,validation,{fromMeasure:1,toMeasure:2,partIds:['P1'],color:'#f7cf68',onChange:value=>changes.push(value),...options});return {...env,renderer,...paint,validation,output,changes,spec}}
+function bound(spec=example(),options={},env=mountEnvironment()){const renderer=model(spec),paint=graphics(renderer,env.mount,spec),validation=checked(spec),changes=[];const output=createEngravingNoteBindings(renderer,env.mount,validation,{fromMeasure:1,toMeasure:2,partIds:['P1'],color:'#f7cf68',onChange:value=>changes.push(value),...options});return {...env,renderer,...paint,validation,output,changes,spec}}
+
+function cueTurns(env){
+  let serial=0;const frames=new Map(),tasks=new Map();
+  env.window.performance={now:()=>0};
+  env.window.requestAnimationFrame=fn=>{frames.set(++serial,fn);return serial;};env.window.cancelAnimationFrame=id=>frames.delete(id);
+  env.window.setTimeout=fn=>{tasks.set(++serial,fn);return serial;};env.window.clearTimeout=id=>tasks.delete(id);
+  const run=queue=>{const batch=[...queue.values()];queue.clear();for(const fn of batch)fn();};
+  return{frames,tasks,frame:()=>run(frames),task:()=>run(tasks),turn(){run(frames);run(tasks);}};
+}
 
 // Original exact 512-note page. No imported score, renderer output or user data.
 function denseCueExample(prefix){
@@ -172,6 +181,78 @@ test('lazy chord cue measurements finish before fills, visibility or presentatio
   for(const xmlId of ['N1_1_1','N1_2_1']){const head=env.paths.get(xmlId).parentElement,box=head.getBoundingClientRect;head.getBoundingClientRect=()=>{reads++;assert.equal(env.mount.innerHTML,before,'Every incoming glyph is measured before changing any selected fill or cue');return{...box(),x:80+reads*10};};}
   env.output.setExpectedWrittenNotes({sourceNoteIds:['short','long'],sourceMeasureIndex:0});assert.equal(reads,2);
   assert.equal([...env.mount.querySelectorAll('.engraving-expected-cue')].filter(cue=>!cue.hidden).length,2);env.output.dispose();
+});
+
+test('one shared document primes all four original dense parts in bounded read-before-write turns before later attacks',()=>{
+  const shared=mountEnvironment(),turns=cueTurns(shared),parts=[];let reads=0,shift=100,readingSnapshot=null;
+  for(let part=0;part<4;part++){
+    const mount=shared.document.createElement('div');shared.document.body.append(mount);mount.getBoundingClientRect=()=>({x:5,y:10,width:800,height:500});
+    const env=bound(denseCueExample(`shared-part-${part}`),{toMeasure:8,cueColor:'#17251d'},{...shared,mount});parts.push(env);
+    for(const graphical of env.graphical.values()){
+      const head=graphical.getNoteheadSVGs()[graphical.vfnoteIndex],box=head.getBoundingClientRect;
+      head.getBoundingClientRect=()=>{reads++;if(readingSnapshot!==null)assert.equal(shared.document.body.innerHTML,readingSnapshot,'Every scheduled geometry read precedes every cue write in the entire document');const value=box();return{...value,x:value.x+shift};};
+    }
+  }
+  const source=JSON.stringify(parts.map(part=>part.spec)),group=createNotationRenderGroup(parts.map(part=>({mount:part.mount,renderer:part.output,noteIds:new Set(part.spec.score.parts[0].notes.map(note=>note.id))})));
+  group.refreshExpectedCueGeometry();assert.equal(reads,0);assert.equal(turns.frames.size,1,'Four bindings share exactly one pending frame');assert.equal(turns.tasks.size,0);
+  for(let part=0;part<4;part++){
+    turns.frame();assert.equal(reads,part*32,'Preparation waits for the frame and then a separate task');assert.equal(turns.tasks.size,1);
+    readingSnapshot=shared.document.body.innerHTML;turns.task();readingSnapshot=null;assert.equal(reads,(part+1)*32,'One turn visits at most 32 cues across all renderers');
+    const cue=parts[part].mount.querySelector(`[data-source-note-id="shared-part-${part}-0"]`);assert.equal(cue.style.left,'112px');assert.equal(cue.hidden,true,'Preparation never activates a future note');
+  }
+  const first={sourceNoteIds:parts.map((_,part)=>`shared-part-${part}-0`),sourceMeasureIndex:0};
+  group.setExpectedWrittenNotes(first);assert.equal(reads,128,'All four first attacks use their freshly primed exact geometry');
+  group.clearExpectedWrittenNotes();let steps=4;
+  while(turns.frames.size||turns.tasks.size){const before=reads;turns.turn();assert.ok(reads-before<=32);assert.ok(++steps<=64,'The queue drains after one bounded pass through the admitted entries');}
+  assert.equal(reads,2048);assert.equal(steps,64);
+  for(let measure=0;measure<8;measure++)for(let note=0;note<64;note++)group.setExpectedWrittenNotes({sourceNoteIds:parts.map((_,part)=>`shared-part-${part}-${measure*64+note}`),sourceMeasureIndex:measure});
+  assert.equal(reads,2048,'The complete original dense attack sequence adds no lazy geometry reads after priming');
+  assert.equal(JSON.stringify(parts.map(part=>part.spec)),source);group.dispose();assert.equal(turns.frames.size+turns.tasks.size,0);
+});
+
+test('repeated fit epochs coalesce priming, keep immediate exact fallback, and cancel on disposal',()=>{
+  const env=mountEnvironment(),turns=cueTurns(env),page=bound(example(),{cueColor:'#17251d'},env),cue=page.mount.querySelector('[data-xml-note-id="N1_1_1"]'),head=page.paths.get('N1_1_1').parentElement;
+  let x=100,reads=0;head.getBoundingClientRect=()=>{reads++;return{x,y:20,width:8,height:7};};
+  page.output.refreshExpectedCueGeometry();turns.frame();assert.equal(turns.tasks.size,1);
+  page.output.refreshExpectedCueGeometry();page.output.refreshExpectedCueGeometry();assert.equal(turns.tasks.size,0);assert.equal(turns.frames.size,1,'New epochs replace queued work instead of stacking tasks');
+  page.output.setExpectedWrittenNotes({sourceNoteIds:['short'],sourceMeasureIndex:0});assert.equal(cue.style.left,'92px');assert.equal(cue.hidden,false);assert.equal(reads,1,'An attack before priming uses the exact current glyph');
+  page.output.clearExpectedWrittenNotes();x=150;page.output.refreshExpectedCueGeometry();turns.turn();assert.equal(cue.style.left,'142px');assert.equal(cue.hidden,true);assert.equal(reads,2);
+  page.output.setExpectedWrittenNotes({sourceNoteIds:['short'],sourceMeasureIndex:0});assert.equal(cue.hidden,false);assert.equal(reads,2);
+  page.output.clearExpectedWrittenNotes();page.output.refreshExpectedCueGeometry();turns.frame();const before=reads;page.output.dispose();turns.turn();assert.equal(reads,before);assert.equal(turns.frames.size+turns.tasks.size,0);assert.equal(page.mount.querySelector('.engraving-expected-cues'),null);
+});
+
+test('cue preparation yields on its wall-time budget without dropping remaining exact glyphs',()=>{
+  const env=mountEnvironment(),turns=cueTurns(env),page=bound(example(),{cueColor:'#17251d'},env);let clock=0,reads=0;
+  env.window.performance.now=()=>clock;
+  for(const graphical of page.graphical.values()){
+    const head=graphical.getNoteheadSVGs()[graphical.vfnoteIndex],box=head.getBoundingClientRect;
+    head.getBoundingClientRect=()=>{reads++;clock+=3;return{...box(),x:100};};
+  }
+  page.output.refreshExpectedCueGeometry();turns.turn();assert.equal(reads,2,'The 4ms budget stops after the second indivisible 3ms measurement');assert.equal(turns.frames.size,1);
+  turns.turn();assert.equal(reads,4);turns.turn();assert.equal(reads,5);assert.equal(turns.frames.size+turns.tasks.size,0);
+  assert.ok([...page.mount.querySelectorAll('.engraving-expected-cue')].every(cue=>cue.style.left==='92px'&&cue.hidden));
+  page.output.setExpectedWrittenNotes({sourceNoteIds:['short','long','rest'],sourceMeasureIndex:0});assert.equal(reads,5,'All retained work completes with exact future positions');page.output.dispose();
+});
+
+test('a failed speculative cue measurement stays stale for an exact retry on the real attack',()=>{
+  for(const failure of ['origin','glyph']){
+    const env=mountEnvironment(),turns=cueTurns(env),page=bound(example(),{cueColor:'#17251d'},env),cue=page.mount.querySelector('[data-xml-note-id="N1_1_1"]'),head=page.paths.get('N1_1_1').parentElement;
+    let unavailable=true,reads=0;const origin=page.mount.getBoundingClientRect;
+    page.mount.getBoundingClientRect=()=>{if(unavailable&&failure==='origin')throw Error('Temporarily unavailable origin');return origin();};
+    head.getBoundingClientRect=()=>{reads++;if(unavailable&&failure==='glyph')throw Error('Temporarily unavailable glyph');return{x:100,y:20,width:8,height:7};};
+    page.output.refreshExpectedCueGeometry();assert.doesNotThrow(()=>turns.turn());assert.equal(cue.hidden,true);const before=reads;
+    unavailable=false;page.output.setExpectedWrittenNotes({sourceNoteIds:['short'],sourceMeasureIndex:0});assert.equal(reads,before+1,'The real attack retries instead of accepting failed speculative geometry');assert.equal(cue.hidden,false);assert.equal(cue.style.left,'92px');page.output.dispose();
+  }
+});
+
+test('a superseded or disposed measurement batch cannot write cues or resurrect its queue',()=>{
+  for(const action of ['fit','dispose']){
+    const env=mountEnvironment(),turns=cueTurns(env),page=bound(example(),{cueColor:'#17251d'},env),cue=page.mount.querySelector('[data-xml-note-id="N1_1_1"]'),head=page.paths.get('N1_1_1').parentElement,initial=cue.style.left;
+    let triggered=false;head.getBoundingClientRect=()=>{if(!triggered){triggered=true;if(action==='fit')page.output.refreshExpectedCueGeometry();else page.output.dispose();}return{x:100,y:20,width:8,height:7};};
+    page.output.refreshExpectedCueGeometry();turns.turn();assert.equal(cue.style.left,initial,'Obsolete reads cannot publish their coordinates');
+    if(action==='fit'){assert.equal(turns.frames.size,1);turns.turn();assert.equal(cue.style.left,'92px');page.output.dispose();}
+    assert.equal(turns.frames.size+turns.tasks.size,0);
+  }
 });
 
 test('unreadable or unowned lazy cue geometry stays hidden and cannot abort the expected-note update',()=>{
