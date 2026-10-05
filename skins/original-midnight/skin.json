@@ -1,0 +1,72 @@
+{
+  "format": "worldmusicclub-skin",
+  "version": 1,
+  "id": "original-midnight",
+  "name": "Original Midnight",
+  "author": "WorldMusicClub contributors",
+  "license": "MIT",
+  "attribution": "Original procedural woven backdrop and palette authored for WorldMusicClub, 2026-10-05. No third-party assets or music.",
+  "palette": {
+    "background": "#0B1220",
+    "surface": "#111C2E",
+    "foreground": "#F8FAFC",
+    "muted": "#B8C6DA",
+    "outline": "#94A3B8",
+    "judgment": "#F8FAFC"
+  },
+  "notes": {
+    "human": {
+      "fill": "#FBBF24",
+      "foreground": "#111111",
+      "outline": "#111111",
+      "marker": "square",
+      "pattern": "solid"
+    },
+    "machine": {
+      "fill": "#67E8F9",
+      "foreground": "#111111",
+      "outline": "#111111",
+      "marker": "triangle",
+      "pattern": "stripes"
+    }
+  },
+  "keyboard": {
+    "white": "#F8FAFC",
+    "white_foreground": "#111111",
+    "black": "#111111",
+    "black_foreground": "#F8FAFC",
+    "pressed": "#2563EB",
+    "pressed_foreground": "#FFFFFF",
+    "border": "#727272"
+  },
+  "notation": {
+    "background": "#111C2E",
+    "foreground": "#F8FAFC"
+  },
+  "layout": {
+    "notation_height": 0.28,
+    "piano_height": 0.24,
+    "side_margin": 0.04,
+    "note_width_scale": 0.8
+  },
+  "background": {
+    "asset": "woven",
+    "fit": "tile",
+    "opacity": 0.2
+  },
+  "assets": [
+    {
+      "id": "woven",
+      "path": "assets/woven.png",
+      "media_type": "image/png",
+      "bytes": 246,
+      "width": 64,
+      "height": 64
+    }
+  ],
+  "fallback": {
+    "missing_asset": "solid_background",
+    "unsupported_feature": "builtin_default",
+    "invalid_skin": "builtin_default"
+  }
+}

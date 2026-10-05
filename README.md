@@ -6,6 +6,10 @@ Repository: [Goldgom/WorldMusicClub](https://github.com/Goldgom/WorldMusicClub).
 
 [中文上手指南](docs/QUICKSTART.zh-CN.md) · [完整曲包格式](docs/SONG_PACKAGE_FORMAT.md) · [Accepted Windows recovery 155](docs/releases/0.2.0-alpha.1-commit-155.md) · [Newer source changes](docs/releases/unreleased.md)
 
+[Portable skin v1](docs/SKIN_FORMAT.md) supplies an independent visual manifest,
+schema, bounded validator and original sample for browser/Unity renderer work.
+It does not change musical semantics or claim product-wide skin switching is accepted.
+
 ## Current alpha
 
 - One versioned score model preserving exact note timing, spelling, voices, staves, ties, meter, keys and source provenance

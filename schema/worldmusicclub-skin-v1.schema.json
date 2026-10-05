@@ -1,0 +1,338 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:worldmusicclub:skin:v1",
+  "title": "WorldMusicClub portable visual skin v1",
+  "description": "Structural contract only. Reference validator additionally enforces contrast, distinct performer markers, resource budgets, safe package paths and PNG bytes. No musical semantics or executable extensions.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "const": "worldmusicclub-skin"
+    },
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])\\S(?:[\\s\\S]*\\S)?$"
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])\\S(?:[\\s\\S]*\\S)?$"
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])\\S(?:[\\s\\S]*\\S)?$"
+    },
+    "attribution": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])\\S(?:[\\s\\S]*\\S)?$"
+    },
+    "palette": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "$ref": "#/$defs/Color"
+        },
+        "surface": {
+          "$ref": "#/$defs/Color"
+        },
+        "foreground": {
+          "$ref": "#/$defs/Color"
+        },
+        "muted": {
+          "$ref": "#/$defs/Color"
+        },
+        "outline": {
+          "$ref": "#/$defs/Color"
+        },
+        "judgment": {
+          "$ref": "#/$defs/Color"
+        }
+      },
+      "required": [
+        "background",
+        "surface",
+        "foreground",
+        "muted",
+        "outline",
+        "judgment"
+      ]
+    },
+    "notes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "human": {
+          "$ref": "#/$defs/NoteStyle"
+        },
+        "machine": {
+          "$ref": "#/$defs/NoteStyle"
+        }
+      },
+      "required": [
+        "human",
+        "machine"
+      ]
+    },
+    "keyboard": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "white": {
+          "$ref": "#/$defs/Color"
+        },
+        "white_foreground": {
+          "$ref": "#/$defs/Color"
+        },
+        "black": {
+          "$ref": "#/$defs/Color"
+        },
+        "black_foreground": {
+          "$ref": "#/$defs/Color"
+        },
+        "pressed": {
+          "$ref": "#/$defs/Color"
+        },
+        "pressed_foreground": {
+          "$ref": "#/$defs/Color"
+        },
+        "border": {
+          "$ref": "#/$defs/Color"
+        }
+      },
+      "required": [
+        "white",
+        "white_foreground",
+        "black",
+        "black_foreground",
+        "pressed",
+        "pressed_foreground",
+        "border"
+      ]
+    },
+    "notation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "$ref": "#/$defs/Color"
+        },
+        "foreground": {
+          "$ref": "#/$defs/Color"
+        }
+      },
+      "required": [
+        "background",
+        "foreground"
+      ]
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "notation_height": {
+          "type": "number",
+          "minimum": 0.15,
+          "maximum": 0.35
+        },
+        "piano_height": {
+          "type": "number",
+          "minimum": 0.15,
+          "maximum": 0.3
+        },
+        "side_margin": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 0.06
+        },
+        "note_width_scale": {
+          "type": "number",
+          "minimum": 0.6,
+          "maximum": 0.95
+        }
+      },
+      "required": [
+        "notation_height",
+        "piano_height",
+        "side_margin",
+        "note_width_scale"
+      ]
+    },
+    "background": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "asset": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fit": {
+          "enum": [
+            "cover",
+            "contain",
+            "tile"
+          ]
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 0.25
+        }
+      },
+      "required": [
+        "asset",
+        "fit",
+        "opacity"
+      ]
+    },
+    "assets": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "$ref": "#/$defs/Asset"
+      }
+    },
+    "fallback": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "missing_asset": {
+          "const": "solid_background"
+        },
+        "unsupported_feature": {
+          "const": "builtin_default"
+        },
+        "invalid_skin": {
+          "const": "builtin_default"
+        }
+      },
+      "required": [
+        "missing_asset",
+        "unsupported_feature",
+        "invalid_skin"
+      ]
+    }
+  },
+  "required": [
+    "format",
+    "version",
+    "id",
+    "name",
+    "author",
+    "license",
+    "attribution",
+    "palette",
+    "notes",
+    "keyboard",
+    "notation",
+    "layout",
+    "background",
+    "assets",
+    "fallback"
+  ],
+  "$defs": {
+    "Color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+    },
+    "Identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "NoteStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fill": {
+          "$ref": "#/$defs/Color"
+        },
+        "foreground": {
+          "$ref": "#/$defs/Color"
+        },
+        "outline": {
+          "$ref": "#/$defs/Color"
+        },
+        "marker": {
+          "enum": [
+            "circle",
+            "diamond",
+            "square",
+            "triangle"
+          ]
+        },
+        "pattern": {
+          "enum": [
+            "solid",
+            "stripes"
+          ]
+        }
+      },
+      "required": [
+        "fill",
+        "foreground",
+        "outline",
+        "marker",
+        "pattern"
+      ]
+    },
+    "Asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 160,
+          "pattern": "^assets/(?:[a-z0-9][a-z0-9_-]*/)*[a-z0-9][a-z0-9_-]*\\.png$"
+        },
+        "media_type": {
+          "const": "image/png"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 57,
+          "maximum": 2097152
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2048
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2048
+        }
+      },
+      "required": [
+        "id",
+        "path",
+        "media_type",
+        "bytes",
+        "width",
+        "height"
+      ]
+    }
+  }
+}

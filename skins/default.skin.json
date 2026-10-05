@@ -1,0 +1,63 @@
+{
+  "format": "worldmusicclub-skin",
+  "version": 1,
+  "id": "wmc-default",
+  "name": "WorldMusicClub Default",
+  "author": "WorldMusicClub contributors",
+  "license": "MIT",
+  "attribution": "Original WorldMusicClub presentation defaults.",
+  "palette": {
+    "background": "#0B1220",
+    "surface": "#111C2E",
+    "foreground": "#F8FAFC",
+    "muted": "#B8C6DA",
+    "outline": "#94A3B8",
+    "judgment": "#F8FAFC"
+  },
+  "notes": {
+    "human": {
+      "fill": "#FBBF24",
+      "foreground": "#111111",
+      "outline": "#111111",
+      "marker": "circle",
+      "pattern": "solid"
+    },
+    "machine": {
+      "fill": "#67E8F9",
+      "foreground": "#111111",
+      "outline": "#111111",
+      "marker": "diamond",
+      "pattern": "stripes"
+    }
+  },
+  "keyboard": {
+    "white": "#F8FAFC",
+    "white_foreground": "#111111",
+    "black": "#111111",
+    "black_foreground": "#F8FAFC",
+    "pressed": "#2563EB",
+    "pressed_foreground": "#FFFFFF",
+    "border": "#727272"
+  },
+  "notation": {
+    "background": "#111C2E",
+    "foreground": "#F8FAFC"
+  },
+  "layout": {
+    "notation_height": 0.25,
+    "piano_height": 0.22,
+    "side_margin": 0.03,
+    "note_width_scale": 0.85
+  },
+  "background": {
+    "asset": null,
+    "fit": "cover",
+    "opacity": 0
+  },
+  "assets": [],
+  "fallback": {
+    "missing_asset": "solid_background",
+    "unsupported_feature": "builtin_default",
+    "invalid_skin": "builtin_default"
+  }
+}
