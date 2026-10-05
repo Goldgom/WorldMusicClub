@@ -11,6 +11,22 @@ assert.equal(parsed.status, 0, parsed.stderr);
 const workflow = JSON.parse(parsed.stdout), jobIds = ['management-browser', 'management-windows'];
 const step = (id, command) => workflow.jobs[id].steps.find(row => row.run?.includes(command));
 
+test('Python manifest checks install the locked Node evidence verifier dependencies on both Rust runners', () => {
+  const parsed = spawnSync(python, ['scripts/check-authoring-workflow.py', '.github/workflows/check.yml', '--json'], {cwd: root, encoding: 'utf8', timeout: 10000});
+  assert.equal(parsed.status, 0, parsed.stderr);
+  const rust = JSON.parse(parsed.stdout).jobs.rust;
+  assert.deepEqual(rust.strategy.matrix.os, ['ubuntu-latest', 'windows-latest']);
+  function verify(steps) {
+    const tests = steps.findIndex(row => row.run === "python -m unittest discover -s tests -p 'test_*.py'");
+    const node = steps.findIndex(row => row.uses?.startsWith('actions/setup-node@') && row.with?.['node-version'] === '22');
+    const dependencies = steps.findIndex(row => row.run === 'npm ci --ignore-scripts --omit=optional');
+    assert.ok(node >= 0 && dependencies > node && tests > dependencies, 'The independent Node verifier needs installed locked dependencies before Python invokes it');
+    for (const row of [steps[node], steps[dependencies]]) { assert.equal(row.if, undefined); assert.equal(row['continue-on-error'], undefined); }
+  }
+  verify(rust.steps);
+  assert.throws(() => verify(rust.steps.filter(row => row.run !== 'npm ci --ignore-scripts --omit=optional')));
+});
+
 test('management proof runs only on its named preview branch or explicit dispatch with exact frozen source', () => {
   assert.deepEqual(workflow.on, {push: {branches: ['preview/library-management']}, workflow_dispatch: null});
   assert.deepEqual(workflow.permissions, {contents: 'read'});
