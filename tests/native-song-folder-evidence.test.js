@@ -9,12 +9,66 @@ import {createHash} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {fileURLToPath} from 'node:url';
-import {verifyNativeSongFolderEvidence,folderFixtureContentHash,SONG_FOLDER_PHASES,SONG_FOLDER_CHECKS} from '../scripts/verify-native-song-folder-evidence.mjs';
+import {runInNewContext} from 'node:vm';
+import {verifyNativeSongFolderEvidence,validateFolderAudition,folderFixtureContentHash,SONG_FOLDER_PHASES,SONG_FOLDER_CHECKS} from '../scripts/verify-native-song-folder-evidence.mjs';
+import {syntheticCanonicalProfile} from './canonical-dom-audio-fixture.js';
+import {syntheticAudioThreadStatus,syntheticAudioThreadLifecycle} from './audio-thread-proof-fixtures.js';
+import {buildCanonicalAudioPlan,createCanonicalAudioTransfer,CANONICAL_AUDIO_POLICY} from '../web/canonical-audio-plan.js';
+import {CanonicalAudioCore} from '../web/canonical-audio-core.js';
 
 const hash=value=>createHash('sha256').update(value).digest('hex'),run=promisify(execFile);
 const KEYS=['song-bb8051fad28349e6f49786f8a691421d297e81677abe984dbb340cb934ea1127','song-59713d099a383cc6736ab7c7b9f4822faf68b850b67a276a5b1fdf1694911f08'];
 const script=fileURLToPath(new URL('../scripts/verify-native-song-folder-evidence.mjs',import.meta.url));
 const clone=structuredClone;
+
+// Production DSP exercises the oracle; native provenance below is modeled.
+// This unit fixture is never evidence that a browser or Windows ran.
+function audition(score){
+  const notes=score.parts[0].notes.map((note,index)=>({id:note.id,part_id:'piano',midi:index?64:60,start_ms:index?4000:0,duration_ms:index?4000:3000,velocity:note.velocity,source_note_id:note.id,source_note_ids:[note.id],voice:'1',staff:1})),compilation={score,timeline:{duration_ms:8000,notes}},profile=syntheticCanonicalProfile(compilation);
+  const plan=buildCanonicalAudioPlan(compilation,profile,{sampleRate:8000,mode:'listen',acceptedPolicyId:CANONICAL_AUDIO_POLICY,range:{startMs:0,endMs:8000},countInMs:0}),messages=[],core=new CanonicalAudioCore(plan.sampleRate,{emit:(message,transfer=[])=>messages.push(structuredClone(message,{transfer}))});
+  let frame=0;const blocks=[],render=()=>{const samples=new Float32Array(128);core.process([samples],frame);const peak=Math.max(...samples.map(Math.abs)),rms=Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length);blocks.push({audioTime:frame/8000,peak,rms});frame+=128;};
+  const wire=createCanonicalAudioTransfer(plan);core.handleMessage({type:'prepare',generation:1,positionFrame:0,wire:wire.wire},frame);while(core.state==='preparing')render();core.handleMessage({type:'start',generation:1,anchorFrame:frame+64},frame);while(frame<4096)render();core.handleMessage({type:'cancel',generation:2,reason:'dispose'},frame);
+  const started=messages.find(row=>row.type==='started'),raw=messages.find(row=>row.type==='canceled'),record={...raw,ledger:{actualStarts:Array.from(raw.ledger.actualStarts).slice(0,raw.recordCount),actualEnds:Array.from(raw.ledger.actualEnds).slice(0,raw.recordCount)},ledgerCapacity:raw.ledger.actualStarts.length,unusedLedgerSentinel:0,unusedLedgerEmpty:Array.from(raw.ledger.actualStarts).slice(raw.recordCount).every(value=>value===0)&&Array.from(raw.ledger.actualEnds).slice(raw.recordCount).every(value=>value===0),passFrames:Array.from(raw.passFrames).slice(0,raw.passCount),pauseSpans:Array.from(raw.pauseSpans)};
+  const graphToDestination=[{type:'AudioWorkletNode',gain:null},{type:'GainNode',gain:.315},{type:'AudioDestinationNode',gain:null}],run={receiverId:1,planGeneration:1,positionFrame:0,plan,prepared:messages.find(row=>row.type==='ready'),started:{...started,anchorTime:started.anchorFrame/8000,connected:true,outputContextMatches:true,outputGain:.315,graphToDestination},node:{actualAudioWorkletNode:true,contextMatches:true,numberOfInputs:0,numberOfOutputs:1},messages:messages.map(row=>({type:row.type,generation:row.generation,planGeneration:row.planGeneration,frame:row.frame,isTrusted:true,portMatches:true})),terminals:[{callback:'onStopped',ledgerType:'Float64Array',record:structuredClone(record)}],rawTerminals:[{isTrusted:true,portMatches:true,ledgerType:'Float64Array',record:structuredClone(record)}],lifecycle:syntheticAudioThreadLifecycle(),pcm:{method:'passive-output-analyser',fftSize:256,blocks,graphToDestination}};
+  const state={screen:'library',previewId:`native:song-${folderFixtureContentHash(score)}`,durationMs:8000,captured:'0',grades:{accuracy:'—'},assessments:0};
+  return{version:1,compilation,profile,fetchRestored:true,responses:[{path:'/api/compile',status:200,state:'consumed',body:compilation},{path:'/api/canonical-audio-profile',status:200,state:'consumed',body:profile}],playAction:1,stopAction:2,trusted:[1,2].map(actionSequence=>({type:'click',id:'lobby-preview-play',trusted:true,actionSequence})),before:{...structuredClone(state),status:'ready',positionMs:0},playing:{...structuredClone(state),status:'playing',positionMs:300},stopped:{...structuredClone(state),status:'stopped',positionMs:400},playingAudio:syntheticAudioThreadStatus({started:1,activeReceivers:1,completed:0}),finalAudio:syntheticAudioThreadStatus({started:1,completed:0}),audio:[run],cleanup:{restored:true,overflow:false,errors:[],cleanupErrors:[]}};
+}
+
+test('folder audition requires source-bound native PCM, cancellation frames and quiet zero-input cleanup',async()=>{
+  const score=JSON.parse(await readFile(new URL('./fixtures/folder-original.json',import.meta.url))),original=audition(score);validateFolderAudition(original,score);
+  for(const [index,change] of [
+    value=>value.responses[0].state='awaiting-consumption',
+    value=>value.compilation.timeline.notes[0].duration_ms++,
+    value=>value.profile.source_fingerprint='0'.repeat(64),
+    value=>value.audio[0].node.actualAudioWorkletNode=false,
+    value=>value.audio[0].plan.notes[0][1]++,
+    value=>value.audio[0].pcm.blocks.forEach(block=>{block.peak=block.rms=0;}),
+    value=>value.audio[0].pcm.graphToDestination.pop(),
+    value=>value.audio[0].messages[2].isTrusted=false,
+    value=>value.audio[0].rawTerminals[0].portMatches=false,
+    value=>value.audio[0].terminals[0].record.ledger.actualEnds[0]--,
+    value=>{value.audio[0].terminals[0].record.ledger.actualStarts[0]++;value.audio[0].rawTerminals[0].record.ledger.actualStarts[0]++;},
+    value=>value.audio[0].lifecycle.connected=true,
+    value=>value.finalAudio.pendingReceivers=1,
+    value=>value.playing.positionMs=0,
+    value=>value.stopped.captured='1',
+    value=>value.stopped.assessments=1,
+    value=>value.stopped.grades.accuracy='100%',
+    value=>value.stopAction++,
+    value=>value.trusted[0].trusted=false,
+    value=>value.cleanup.restored=false,
+    value=>value.fetchRestored=false,
+  ].entries()){const changed=structuredClone(original);change(changed);assert.throws(()=>validateFolderAudition(changed,score),/audition/,`Audition mutation ${index}`);}
+});
+
+test('folder audition observes only caller-consumed JSON and forwards promises and request arguments',async()=>{
+  const source=await readFile(new URL('../crates/desktop-shell/song-folder-acceptance.js',import.meta.url),'utf8'),observe=runInNewContext(source.slice(0,source.indexOf('(() => {'))+';observeFolderAuditionResponses;',{structuredClone});
+  const value={original:'source'},bodyPromise=Promise.resolve(value),calls=[],errors=[],response={status:200,json(...args){calls.push({owner:this,args});return bodyPromise;}},original=response.json,promise=Promise.resolve(response),owner={};
+  const probe=observe(function(...args){assert.equal(this,owner);calls.push(args);return promise;},{onError:error=>errors.push(error)});
+  assert.equal(probe.fetch.call(owner,'/api/compile',{method:'POST',body:'unchanged'}),promise);await promise;assert.equal(probe.rows[0].state,'awaiting-consumption');
+  assert.equal(response.json('original argument'),bodyPromise);await bodyPromise;await Promise.resolve();assert.equal(probe.rows[0].state,'consumed');assert.deepEqual(probe.rows[0].body,value);assert.equal(response.json,original);assert.equal(calls[1].owner,response);assert.deepEqual(calls[1].args,['original argument']);
+  probe.fetch.call(owner,'/api/assess');assert.equal(probe.assessmentRequests(),1);probe.restore();assert.deepEqual(errors,[]);
+});
 
 // Independently authored observations only. These tests launch Node, never a
 // GUI, WebView, browser, native executable or server, and never claim acceptance.
@@ -57,7 +111,7 @@ async function evidence(t){
   }
   const inventory=fixtures.map(f=>f.entry).sort((a,b)=>a.key.localeCompare(b.key));
   const phases=SONG_FOLDER_PHASES.map((phase,index)=>({phase,process_id:100+index,renderer_ok:true,renderer_origin:'https://wmh.localhost',normal_close:true,executable_tcp_listeners:0,
-    launched_new_process:true,profile_fresh:true,profile_reused:false,actions:index===0?6:index===1?3:1}));
+    launched_new_process:true,profile_fresh:true,profile_reused:false,actions:index===0?6:index===1?4:1}));
   const native={version:1,ok:true,source_sha:'1'.repeat(40),source_tree:'2'.repeat(40),executable_sha256:'3'.repeat(64),directory:join(directory,'Scores'),phases};
   const reports=Object.fromEntries(SONG_FOLDER_PHASES.map((phase,index)=>[phase,{version:1,ok:true,phase,origin:'https://wmh.localhost',profileMarkerAbsent:true,actions:phases[index].actions,
     checks:[...SONG_FOLDER_CHECKS[phase]],openedScoreDatabases:[],errors:[],saveResults:[],downloads:[]} ]));
@@ -65,7 +119,7 @@ async function evidence(t){
     {status:200,code:null,key:KEYS[0],allowConflictingId:false},{status:409,code:'library_duplicate',key:KEYS[0],allowConflictingId:false},
     {status:409,code:'library_id_conflict',key:KEYS[0],allowConflictingId:false},{status:200,code:null,key:KEYS[1],allowConflictingId:true},
   ]});
-  Object.assign(reports['folder-restart'],{inventory:clone(inventory),directory:native.directory,audition:{sourceStarts:2,activeSources:0,pendingSources:0},transportAdmission:transport(),files:{beforeScore:'folder-restart-1.json',beforeTake:'folder-restart-2.json',afterScore:'folder-restart-3.json',afterTake:'folder-restart-4.json'}});
+  Object.assign(reports['folder-restart'],{inventory:clone(inventory),directory:native.directory,audition:audition(fixtures[0].score),transportAdmission:transport(),files:{beforeScore:'folder-restart-1.json',beforeTake:'folder-restart-2.json',afterScore:'folder-restart-3.json',afterTake:'folder-restart-4.json'}});
   const restart=reports['folder-restart'];restart.downloads=Object.values(restart.files).map(file=>({file,complete:true,success:true}));
   Object.assign(reports['folder-failure'],{persistence:'not-saved',saveResults:[{status:422,code:'library_unsafe_path',key:null,allowConflictingId:false}]});
   const values={beforeScore:fixtures[0].score,afterScore:clone(fixtures[0].score),beforeTake:take(),afterTake:take()};
@@ -74,14 +128,14 @@ async function evidence(t){
   async function writeExport(role,value=values[role]){await saveJson(`downloads/${restart.files[role]}`,value);}
   const definitions={
     'folder-seed':[['picker','folder-original.json'],['picker','folder-original.json'],['picker','folder-conflict.json'],['click'],['cancel-picker'],['picker','malformed.json']],
-    'folder-restart':[['click'],['key-r'],['click']],
+    'folder-restart':[['click'],['click'],['key-r'],['click']],
     'folder-failure':[['picker','folder-original.json']],
   };
   for(const phase of SONG_FOLDER_PHASES){
     for(const [index,[kind,file]]of definitions[phase].entries()){
       const sequence=index+1,process=phases.find(row=>row.phase===phase).process_id;
       const action={version:1,sequence,kind,x:10,y:20,width:1024,height:768,...(file?{file}:{})};
-      const result={ok:true,...(['picker','cancel-picker'].includes(kind)?{
+      const result={ok:true,...(phase==='folder-restart'&&sequence<=2?{client_click:{app_hwnd:1,foreground:1,hit_hwnd:1,actual:[10,20],requested:[10,20],viewport:[1024,768]}}:{}),...(['picker','cancel-picker'].includes(kind)?{
         owned_dialog:{hwnd:2,class:'#32770',process_id:process,app_process_id:process,app_hwnd:1,root_owner_hwnd:1},
         picker_completion:{dialog_dismissed:true,app_enabled:true,owned_popup_visible:false},
       }:{})};
@@ -99,7 +153,7 @@ test('verifies exact disk bytes, all backups, snapshots, native picker results a
   assert.equal(proof.ok,true);assert.equal(proof.entry_count,2);assert.equal(proof.typing_note_on_count,1);assert.equal(proof.scored_input_count,1);
   assert.equal(proof.files.filter(row=>row.path.startsWith('Scores/')).length,12);
   assert.equal(proof.files.filter(row=>row.path.startsWith('downloads/')).length,4);
-  assert.equal(proof.files.length,42);
+  assert.equal(proof.files.length,44);
   for(const row of proof.files){const bytes=await readFile(join(f.directory,row.path));assert.equal(row.sha256,hash(bytes));assert.equal(row.bytes,bytes.length);}
   assert.equal(proof.native_report_sha256,hash(await readFile(join(f.directory,'native-song-folder.json'))));
   for(const phase of SONG_FOLDER_PHASES)assert.equal(proof.renderer_sha256[phase],hash(await readFile(join(f.directory,`renderer-${phase}.json`))));
@@ -118,7 +172,7 @@ test('fixture identity encodes native Rust f64 and rejects implicit schema/defau
 test('host process continuity, ordered phases, fresh profiles and renderer success fail closed',async t=>{
   const f=await evidence(t),original=clone(f.native);
   const edits=[value=>value.ok='true',value=>value.source_sha+='\n',value=>value.phases.reverse(),value=>value.phases[1].launched_new_process=false,
-    value=>value.phases[1].profile_fresh=false,value=>value.phases[1].profile_reused=true,value=>value.phases[2].normal_close=false,value=>value.phases[0].executable_tcp_listeners=1,value=>value.phases[0].actions=65];
+    value=>value.phases[1].profile_fresh=false,value=>value.phases[1].profile_reused=true,value=>value.phases[2].normal_close=false,value=>value.phases[0].executable_tcp_listeners=1,value=>value.phases[0].actions=76];
   for(const edit of edits){const value=clone(original);edit(value);await f.saveJson('native-song-folder.json',value);await assert.rejects(verifyNativeSongFolderEvidence(f.directory),/Native|native/);}
   await f.saveJson('native-song-folder.json',original);
   for(const edit of [value=>value.ok=false,value=>value.origin='http://localhost',value=>value.actions++,value=>value.profileMarkerAbsent=false,value=>value.openedScoreDatabases=['worldmusichub.scores.v1'],value=>value.errors=['script error'],value=>value.checks=[]]){
@@ -180,7 +234,7 @@ test('duplicate/conflict/Keep both native responses and failed-save no-fallback 
 
 test('transport claims cannot replace trusted observations, genuine routed captures, or positive audio',async t=>{
   const f=await evidence(t),restart=clone(f.reports['folder-restart']);
-  for(const edit of [value=>value.audition.sourceStarts=0,value=>value.audition.pendingSources=1,value=>value.transportAdmission.stage='transport-start',
+  for(const edit of [value=>value.audition.audio[0].pcm.blocks.forEach(block=>{block.peak=block.rms=0;}),value=>value.audition.finalAudio.pendingReceivers=1,value=>value.transportAdmission.stage='transport-start',
     value=>value.transportAdmission.omitted=1,value=>value.transportAdmission.rows[1].event.trusted=false,value=>value.transportAdmission.rows[2].state.positionMs=0,
     value=>value.transportAdmission.rows[3].event.code='KeyC']){
     const value=clone(restart);edit(value);await f.saveJson('renderer-folder-restart.json',value);await assert.rejects(verifyNativeSongFolderEvidence(f.directory),/audition|Native transport/);

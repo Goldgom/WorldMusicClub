@@ -51,3 +51,9 @@ Basic and VSQ assertions remain in the independent evidence verifiers. Added
 Mod receipts bind the source part, field, option, trusted event and native action
 sequence. Hosted/native execution is still required before acceptance; local
 syntax and pure contract tests alone do not establish a UI pass.
+
+The saved-folder audition now observes the actual canonical Worklet rather than
+an obsolete oscillator counter. Its two trusted clicks bind caller-consumed Rust
+compilation/profile responses, positive destination PCM, exact canceled source
+frames, receiver disposal and unchanged input/grade state. The ordinary folder
+report remains capped at 64 KiB.

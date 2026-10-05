@@ -56,7 +56,7 @@
     let result;
     await until(async signal=>{const response=await originalFetch(`/__desktop_smoke/result/${sequence}`,{signal});if(response.status===404)return false;checkpoint('native-result-headers',{status:response.status});result=await response.json();if(!response.ok)throw Error(result.error || `Native result HTTP ${response.status}`);return true;},`native ${kind} result ${sequence}`);
     checkpoint('native-result-read');
-    assert(result.ok,result.error || `Native ${kind} failed`);
+    assert(result.ok,result.error || `Native ${kind} failed`);return sequence;
   }
   const click=id=>{assert($(id) && !$(id).disabled,`Control ${id} unavailable`);$(id).click();};
   const closeDialogs=()=>{for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();};

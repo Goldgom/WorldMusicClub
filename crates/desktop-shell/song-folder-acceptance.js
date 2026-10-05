@@ -1,5 +1,24 @@
 /* Process-owner Windows proof for disk archives. No app state setters, mocked
  * transport, injected picker files, or IDB replacement are used. */
+function observeFolderAuditionResponses(fetcher,{onError}){
+  const rows=[],restores=new Set();let active=true,assessmentRequests=0;
+  const observe=function(...args){
+    const promise=Reflect.apply(fetcher,this,args),path=String(args[0]);
+    if(path==='/api/assess')assessmentRequests++;
+    if(!['/api/compile','/api/canonical-audio-profile'].includes(path))return promise;
+    if(rows.length>=4){onError('Audition response observation bound');return promise;}
+    const row={path,status:null,state:'fetching'};rows.push(row);
+    promise.then(response=>{
+      if(!active)return;row.status=response.status;row.state='awaiting-consumption';
+      const original=response.json,descriptor=Object.getOwnPropertyDescriptor(response,'json');
+      const restore=()=>{if(response.json===json){if(descriptor)Object.defineProperty(response,'json',descriptor);else delete response.json;}restores.delete(restore);};
+      function json(...values){const result=Reflect.apply(original,this,values);if(this===response)result.then(body=>{if(active){row.body=structuredClone(body);row.state='consumed';}restore();},error=>{if(active){row.state='rejected';onError(String(error));}restore();});return result;}
+      response.json=json;restores.add(restore);
+    },error=>{if(active){row.state='rejected';onError(String(error));}});
+    return promise;
+  };
+  return{fetch:observe,rows,assessmentRequests:()=>assessmentRequests,restore(){active=false;for(const restore of [...restores])restore();}};
+}
 (() => {
   const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id);
   const assert=(value,message)=>{if(!value)throw Error(message);};
@@ -30,11 +49,11 @@
   async function native(kind,node,file){
     assert(node&&!node.disabled,'Native control unavailable');node.scrollIntoView({block:'center',inline:'center'});node.focus();await delay(150);
     const bounds=node.getBoundingClientRect();assert(bounds.width>0&&bounds.height>0,'Native target invisible');
-    assert(sequence<64,'Dedicated folder process exceeded 64 native actions');
+    assert(sequence<75,'Dedicated folder process exceeded 75 native actions');
     const action={version:1,sequence:++sequence,kind,x:bounds.x+bounds.width/2,y:bounds.y+bounds.height/2,width:innerWidth,height:innerHeight,...(file?{file}:{})};
     await json('/__desktop_smoke/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action)});
     let result;await until(async signal=>{const response=await originalFetch(`/__desktop_smoke/result/${sequence}`,{signal});if(response.status===404)return false;result=await response.json();assert(response.ok,result.error||'Native result failure');return true;},`folder native ${kind} ${sequence}`);
-    assert(result.ok,result.error||'Native action failed');
+    assert(result.ok,result.error||'Native action failed');return sequence;
   }
   async function importFile(file,{cancel=false,malformed=false}={}){
     closeDialogs();click('import-tools-button');const before=saveResults.length,title=$('score-title').textContent;let event;
@@ -84,9 +103,31 @@
         const current=await inventory();report.inventory=current.entries;report.directory=current.directory;
         assert(current.entries.length===2,'Clean-profile EXE restart did not recover two disk entries');
         report.checks.push('clean-profile-disk-reload');
-        const entry=current.entries.find(row=>row.title==='Folder acceptance original');assert(entry,'Original edition missing');await selectSaved(entry);
-        const probe=observeNativeReferenceAudio();
-        try{await native('click',$('lobby-preview-play'));await until(()=>probe.snapshot().sourceStarts>0&&$('lobby-preview-status').dataset.state==='playing','saved score actual audition');await native('click',$('lobby-preview-play'));report.audition=probe.snapshot();assert(report.audition.activeSources===0&&report.audition.pendingSources===0,'Saved audition left audio active');}finally{probe.restore();}
+        const entry=current.entries.find(row=>row.title==='Folder acceptance original');assert(entry,'Original edition missing');
+        const {CanonicalAudioReceiver}=await import('/canonical-audio-receiver.js'),receiver=await observeBasicKeyReceiver(document,{Receiver:CanonicalAudioReceiver,readStartFrame:n=>n[1],readEndFrame:n=>n[2]});
+        const audition=report.audition={version:1,trusted:[]},button=$('lobby-preview-play');
+        const previousFetch=globalThis.fetch,responses=observeFolderAuditionResponses(previousFetch,{onError:error=>errors.push(error)});globalThis.fetch=responses.fetch;audition.responses=responses.rows;
+        const snapshot=()=>({screen:document.body.dataset.screen,previewId:$('song-lobby').dataset.previewId,status:$('lobby-preview-status').dataset.state,positionMs:Number($('lobby-preview-progress').value),durationMs:Number($('lobby-preview-progress').max),captured:$('hud-captured').textContent,grades:Object.fromEntries(['hud-accuracy','accuracy','hits','misses','timing'].map(id=>[id,$(id)?.textContent||''])),assessments:responses.assessmentRequests()});
+        const trusted=event=>{assert(audition.trusted.length<2,'Audition pointer bound');audition.trusted.push({type:event.type,id:event.currentTarget.id,trusted:event.isTrusted===true,actionSequence:sequence});};button.addEventListener('click',trusted,true);
+        const compact=record=>{const value=structuredClone(record);if(value.ledgerLayout==='range-pass-major'){value.ledgerCapacity=value.ledger.actualStarts.length;value.unusedLedgerSentinel=0;value.unusedLedgerEmpty=value.ledger.actualStarts.slice(value.recordCount).every(frame=>frame===0)&&value.ledger.actualEnds.slice(value.recordCount).every(frame=>frame===0);value.ledger.actualStarts=value.ledger.actualStarts.slice(0,value.recordCount);value.ledger.actualEnds=value.ledger.actualEnds.slice(0,value.recordCount);value.passFrames=Array.from(value.passFrames||[]).slice(0,value.passCount);}value.pauseSpans=Array.from(value.pauseSpans||[]);return value;};
+        let auditionFailure;
+        try{
+          await selectSaved(entry);
+          audition.before=snapshot();audition.playAction=sequence+1;await native('click',button);
+          await until(()=>{receiver.assertHealthy();const run=receiver.snapshot()[0],state=receiver.status();return $('lobby-preview-status').dataset.state==='playing'&&Number($('lobby-preview-progress').value)>250&&state.started===1&&state.activeReceivers===1&&state.pendingReceivers===0&&run?.pcm.blocks.some(block=>block.audioTime>=run.started.anchorTime&&block.peak>1e-6&&block.rms>1e-8);},'saved canonical audition actual PCM and advancing source clock');
+          audition.playing=snapshot();audition.playingAudio=receiver.status();audition.stopAction=sequence+1;await native('click',button);
+          await until(()=>{receiver.assertHealthy();return $('lobby-preview-status').dataset.state==='stopped'&&receiver.settledSince(0)&&receiver.quiet();},'saved canonical audition canceled frame ledger and disconnected receiver');audition.stopped=snapshot();
+          await until(()=>responses.rows.some(row=>row.path==='/api/compile'&&row.state==='consumed'&&row.status===200&&row.body.score?.id===entry.score_id&&row.body.score?.title===entry.title)&&responses.rows.some(row=>row.path==='/api/canonical-audio-profile'&&row.state==='consumed'&&row.status===200&&row.body.source_fingerprint===receiver.snapshot()[0].plan.sourceFingerprint),'consumed saved-score compilation and audio profile');
+          audition.compilation=responses.rows.find(row=>row.path==='/api/compile'&&row.state==='consumed').body;
+          audition.profile=responses.rows.find(row=>row.path==='/api/canonical-audio-profile'&&row.state==='consumed').body;
+          assert(audition.stopped.captured===audition.before.captured&&JSON.stringify(audition.stopped.grades)===JSON.stringify(audition.before.grades)&&audition.stopped.assessments===audition.before.assessments,'Lobby audition changed scored input or results');
+        }catch(error){auditionFailure=error;audition.error=String(error);}finally{
+          button.removeEventListener('click',trusted,true);
+          responses.restore();if(globalThis.fetch===responses.fetch)globalThis.fetch=previousFetch;audition.fetchRestored=globalThis.fetch===previousFetch;
+          try{audition.audio=receiver.snapshot().map(row=>({...row,terminals:row.terminals.map(terminal=>({...terminal,record:compact(terminal.record)})),rawTerminals:row.rawTerminals.map(terminal=>({...terminal,record:compact(terminal.record)}))}));audition.finalAudio=receiver.status();}catch(error){audition.observationError=String(error);auditionFailure??=error;}
+          try{audition.cleanup=receiver.restore();assert(audition.cleanup.restored&&!audition.cleanup.errors.length&&!audition.cleanup.cleanupErrors.length&&!audition.cleanup.overflow,'Audition observer cleanup failed');}catch(error){audition.cleanupError=String(error);auditionFailure??=error;}
+        }
+        if(auditionFailure)throw auditionFailure;
         await createAcceptanceSongMod({document,native,until}).start('none');await menu.waitScreen('stage','play-button','saved score activated');
         assert($('score-title').textContent===entry.title,'Wrong saved score activated');report.checks.push('saved-row-select-audition-activate');
         report.transportAdmission=await prepareNativeReferenceScoredTake({document,native,click,closeDialogs,until});
@@ -108,6 +149,7 @@
       assert(openedScoreDatabases.length===0,'Native song workflow opened fallback IndexedDB');
       assert(errors.length===0,errors.join('; '));report.actions=sequence;report.downloads=(await json('/__desktop_smoke/state')).downloads;report.ok=true;
     }catch(error){report.error=String(error);if(error.nativeReferenceTransport)report.transportAdmission=error.nativeReferenceTransport;}
+    assert(new TextEncoder().encode(JSON.stringify(report)).length<=64*1024,'Folder report exceeds its 64 KiB evidence envelope');
     await json('/__desktop_smoke/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(report)});
   },{once:true});
 })();

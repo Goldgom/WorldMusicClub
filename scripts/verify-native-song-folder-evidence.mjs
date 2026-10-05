@@ -4,6 +4,9 @@ import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
+import {buildCanonicalAudioPlan,CANONICAL_AUDIO_POLICY} from '../web/canonical-audio-plan.js';
+import {validateCanonicalFrameLedger} from './verify-canonical-practice-evidence.mjs';
+import {validateAudioThreadStatus,validateAudioThreadLifecycle} from './audio-thread-rendition-proof.mjs';
 
 export const SONG_FOLDER_PHASES=Object.freeze(['folder-seed','folder-restart','folder-failure']);
 export const SONG_FOLDER_CHECKS=Object.freeze({
@@ -21,6 +24,44 @@ const sorted=rows=>[...rows].sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
 const FILE_NAMES=['metadata.json','score.json','source.payload'];
 const TAKE_ROLES=['beforeScore','beforeTake','afterScore','afterTake'];
 const ENTRY_FIELDS=['library_format_version','revision','key','content_sha256','score_sha256','score_bytes','score_id','title','composer','label','saved_at_unix_ms','provenance','retained_source'];
+export function validateFolderAudition(value,score,{actions}={}){
+ try{
+  assert(value?.version===1&&!value.error&&!value.cleanupError&&!value.observationError&&value.fetchRestored===true,'Actual canonical audition evidence is missing');
+  equal(value.responses,[{path:'/api/compile',status:200,state:'consumed',body:value.compilation},{path:'/api/canonical-audio-profile',status:200,state:'consumed',body:value.profile}],'Audition must bind the exact responses consumed by the application');
+  equal(value.compilation?.score,score,'Audition compilation must retain the exact saved source');
+  const timeline=value.compilation.timeline;
+  assert(timeline.duration_ms===8000,'Original audition duration changed');
+  equal(timeline.notes.map(note=>[note.part_id,note.midi,note.start_ms,note.duration_ms,note.velocity,note.source_note_ids]),[['piano',60,0,3000,90,['folder-c']],['piano',64,4000,4000,85,['folder-e']]],'Original audition source gates changed');
+  assert(Array.isArray(value.audio)&&value.audio.length===1,'Audition must own one canonical receiver generation');const run=value.audio[0],plan=run.plan;
+  const expected=buildCanonicalAudioPlan(value.compilation,value.profile,{sampleRate:plan.sampleRate,mode:'listen',acceptedPolicyId:CANONICAL_AUDIO_POLICY,range:{startMs:0,endMs:8000},countInMs:0});
+  equal(plan,expected,'Audition plan must match the exact source/profile and Listen range');
+  equal(run.node,{actualAudioWorkletNode:true,contextMatches:true,numberOfInputs:0,numberOfOutputs:1},'Audition must use the real native Worklet node');
+  assert(positive(run.receiverId)&&positive(run.planGeneration)&&run.positionFrame===0,'Audition receiver identity or source start is invalid');
+  for(const [row,type]of [[run.prepared,'ready'],[run.started,'started']]){assert(row?.type===type&&row.generation===run.planGeneration&&row.planGeneration===run.planGeneration&&row.planFingerprint===plan.planFingerprint&&row.sampleRate===plan.sampleRate,'Audition native admission is not bound to its source plan');}
+  assert(run.started.connected&&run.started.outputContextMatches&&run.started.outputGain>0&&positive(run.started.anchorFrame)&&run.started.anchorFrame>run.started.frame&&run.started.anchorTime===run.started.anchorFrame/plan.sampleRate,'Audition output or audio-clock anchor is invalid');
+  const graph=run.started.graphToDestination;assert(Array.isArray(graph)&&graph.length>=3&&graph[0].type==='AudioWorkletNode'&&graph.at(-1).type==='AudioDestinationNode','Audition lacks its connected destination graph');
+  assert(Array.isArray(run.messages)&&run.messages.length===4,'Audition needs exactly the ready/start/pass/cancel messages');equal(run.messages.map(row=>row.type),['ready','started','pass_started','canceled'],'Audition native lifecycle changed');
+  for(const message of run.messages)assert(message.isTrusted===true&&message.portMatches===true&&message.planGeneration===run.planGeneration&&(message.type==='canceled'?message.generation>run.planGeneration:message.generation===run.planGeneration),'Audition lifecycle contains a forged or stale native message');
+  assert(run.terminals.length===1&&run.rawTerminals.length===1,'Audition requires one cancellation and its raw native ledger');const terminal=run.terminals[0],raw=run.rawTerminals[0];
+  assert(terminal.ledgerType==='Float64Array'&&raw.ledgerType==='Float64Array'&&raw.isTrusted===true&&raw.portMatches===true,'Audition cancellation ledger must come from its actual native MessagePort');
+  const {anchorTime,positionMs,...callbackRecord}=terminal.record;equal(callbackRecord,raw.record,'Audition callback and raw native cancellation differ');
+  assert(terminal.record.type==='canceled'&&terminal.record.reason==='dispose'&&terminal.record.generation>run.planGeneration&&terminal.record.frame>run.started.anchorFrame&&terminal.record.frame<run.started.anchorFrame+plan.durationFrames,'Explicit Stop must cancel the advancing audition before source End');
+  assert(run.messages[2].frame===run.started.anchorFrame,'Audition first source pass must begin at the actual audio anchor');const cancel=run.messages[3];assert(cancel.generation===terminal.record.generation&&cancel.frame===terminal.record.frame,'Audition cancellation must match the actual native message');
+  assert(run.pcm?.method==='passive-output-analyser'&&run.pcm.fftSize===256&&Array.isArray(run.pcm.blocks)&&run.pcm.blocks.length>0&&run.pcm.blocks.length<=64,'Audition needs bounded actual output PCM');
+  for(const block of run.pcm.blocks)assert(Number.isFinite(block.audioTime)&&Number.isFinite(block.peak)&&Number.isFinite(block.rms)&&block.peak>=0&&block.rms>=0&&block.rms<=block.peak+1e-12,'Audition PCM block is invalid');
+  assert(run.pcm.blocks.some(block=>block.audioTime>=run.started.anchorTime&&block.peak>1e-6&&block.rms>1e-8),'Audition has no positive actual PCM after its start anchor');
+  validateCanonicalFrameLedger(run,{pcm:true});validateAudioThreadLifecycle(run.lifecycle);validateAudioThreadStatus(value.playingAudio);validateAudioThreadStatus(value.finalAudio,{quiet:true});
+  assert(value.playingAudio.receivers===1&&value.playingAudio.started===1&&value.playingAudio.activeReceivers===1&&value.playingAudio.pendingReceivers===0&&value.finalAudio.receivers===1&&value.finalAudio.started===1&&value.finalAudio.completed===0,'Audition receiver admission or stop outcome differs');
+  equal(value.cleanup,{restored:true,overflow:false,errors:[],cleanupErrors:[]},'Audition observers did not restore cleanly');
+  const previewId=`native:song-${folderFixtureContentHash(score)}`;
+  for(const sample of [value.before,value.playing,value.stopped]){assert(sample?.screen==='library'&&sample.previewId===previewId&&sample.durationMs===8000&&sample.captured==='0'&&sample.assessments===0,'Audition left its saved-source lobby or generated scored input');equal(sample.grades,value.before.grades,'Audition changed scored grades');}
+  assert(value.before.status==='ready'&&value.before.positionMs===0&&value.playing.status==='playing'&&value.playing.positionMs>250&&value.playing.positionMs<8000&&value.stopped.status==='stopped'&&value.stopped.positionMs>=value.playing.positionMs&&value.stopped.positionMs<8000,'Audition source clock did not advance and then stop');
+  assert(positive(value.playAction)&&value.stopAction===value.playAction+1,'Audition must have separate consecutive native Play and Stop clicks');
+  equal(value.trusted,[value.playAction,value.stopAction].map(actionSequence=>({type:'click',id:'lobby-preview-play',trusted:true,actionSequence})),'Audition requires both actual trusted lobby button clicks');
+  if(actions)for(const sequence of [value.playAction,value.stopAction])assert(actions[sequence-1]?.sequence===sequence&&actions[sequence-1].kind==='click','Audition click lacks its native action');
+  return{generations:1,started:terminal.record.started,canceledFrame:terminal.record.frame};
+ }catch(error){throw Error(`Saved-score audition: ${error.message}`);}
+}
 function exactKeys(value,keys,message){assert(object(value)&&isDeepStrictEqual(Object.keys(value).sort(),[...keys].sort()),message);}
 function recordedDirectory(value){
   assert(typeof value==='string'&&value.length>0&&!/[\r\n\0]/.test(value),'Native archive directory is invalid');
@@ -140,9 +181,9 @@ export async function verifyNativeSongFolderEvidence(directory){
   for(const phase of SONG_FOLDER_PHASES){
     const host=native.phases.find(row=>row.phase===phase);
     assert(host.renderer_ok===true&&host.normal_close===true&&host.renderer_origin==='https://wmh.localhost'&&host.executable_tcp_listeners===0&&
-      positive(host.process_id)&&host.launched_new_process===true&&positive(host.actions)&&host.actions<=64,`Native ${phase} process evidence is incomplete`);
+      positive(host.process_id)&&host.launched_new_process===true&&positive(host.actions)&&host.actions<=75,`Native ${phase} process evidence is incomplete`);
     assert(host.profile_fresh===true&&host.profile_reused===false,`Native ${phase} requires a fresh profile`);
-    const reportBytes=await readOrdinary(directory,`renderer-${phase}.json`,2*1024*1024),report=parse(reportBytes,phase);reports[phase]=report;rendererHashes[phase]=hash(reportBytes);
+    const reportBytes=await readOrdinary(directory,`renderer-${phase}.json`,64*1024),report=parse(reportBytes,phase);reports[phase]=report;rendererHashes[phase]=hash(reportBytes);
     assert(report.version===1&&report.ok===true&&report.phase===phase&&report.origin==='https://wmh.localhost'&&report.profileMarkerAbsent===true&&report.actions===host.actions,`Renderer ${phase} did not pass with matching native actions`);
     equal(report.openedScoreDatabases,[],`Renderer ${phase} opened the browser score database`);equal(report.errors,[],`Renderer ${phase} reported errors`);
     assert(Array.isArray(report.checks)&&new Set(report.checks).size===report.checks.length,`Renderer ${phase} checks must be unique`);
@@ -156,6 +197,7 @@ export async function verifyNativeSongFolderEvidence(directory){
         [action.x,action.y,action.width,action.height].every(Number.isFinite)&&action.width>0&&action.height>0&&action.x>=0&&action.x<action.width&&action.y>=0&&action.y<action.height,
       `Invalid native ${phase} action ${sequence}`);
       assert(result.ok===true,`Native ${phase} action ${sequence} failed`);
+      if(phase==='folder-restart'&&[report.audition?.playAction,report.audition?.stopAction].includes(sequence)){const hit=result.client_click;assert(hit&&positive(hit.app_hwnd)&&hit.foreground===hit.app_hwnd&&positive(hit.hit_hwnd)&&isDeepStrictEqual(hit.actual,hit.requested)&&isDeepStrictEqual(hit.viewport,[action.width,action.height]),'Saved-score audition native click lacks foreground hit ownership');}
       if(['picker','cancel-picker'].includes(action.kind)){
         const owner=result.owned_dialog,completion=result.picker_completion;
         assert(object(owner)&&positive(owner.hwnd)&&owner.class==='#32770'&&owner.process_id===host.process_id&&owner.app_process_id===host.process_id&&
@@ -229,7 +271,7 @@ export async function verifyNativeSongFolderEvidence(directory){
   assert(Array.isArray(failure.saveResults)&&failure.saveResults.length===1,'Failure requires exactly one native save response');
   const failed=failure.saveResults[0];
   assert(Number.isInteger(failed.status)&&failed.status>=400&&failed.status<=599&&failed.code==='library_unsafe_path'&&failed.key===null&&failed.allowConflictingId===false&&failure.persistence==='not-saved','Failed native save did not retain an explicit unsaved storage failure');
-  assert(object(restart.audition)&&positive(restart.audition.sourceStarts)&&restart.audition.activeSources===0&&restart.audition.pendingSources===0,'Saved-score audition did not start and clean up audio');
+  validateFolderAudition(restart.audition,original.score,{actions:actionsByPhase['folder-restart']});
   validateTransport(restart.transportAdmission);
   exactKeys(restart.files,TAKE_ROLES,'Restart requires four score/take export roles');
   assert(new Set(Object.values(restart.files)).size===4,'Restart export paths must be distinct');
