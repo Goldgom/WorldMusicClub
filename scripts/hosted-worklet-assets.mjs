@@ -69,7 +69,7 @@ export async function boundedHostedResponse(response,maximum=1024*1024){
 export async function verifyHostedWorkletAssets({root,sourceSha,origin,fetcher=fetch,sourceReader}){
  validateHostedOrigin(origin);assert.match(sourceSha,/^[a-f0-9]{40}$/);
  const readSource=sourceReader||((name)=>execFileSync('git',['show',`${sourceSha}:web/${name}`],{cwd:root,maxBuffer:1024*1024}));
- const queue=['basic-key-audio-processor.js','live-tone-audio-processor.js','live-tone-receiver.js'],seen=new Set(),receipts=[];let total=0;
+ const queue=['basic-key-audio-processor.js','live-tone-audio-processor.js','live-tone-receiver.js','canonical-audio-processor.js'],seen=new Set(),receipts=[];let total=0;
  for(const name of queue){if(seen.has(name))continue;assert.match(name,/^[a-z0-9-]+\.js$/,'Worklet import must be a checked-in sibling JavaScript asset');assert.ok(seen.size<16,'Worklet import closure bound');seen.add(name);
   const source=Buffer.from(await readSource(name));total+=source.length;assert.ok(source.length<=1024*1024&&total<=8*1024*1024,'Worklet source byte bound');
   const url=`${origin}/${name}`,response=await fetcher(url,{redirect:'error',signal:AbortSignal.timeout(10000)});assert.equal(response.status,200,`Real server did not serve ${name}`);assert.equal(response.url,url);assert.match(response.headers.get('content-type')||'',/^text\/javascript(?:;|$)/);const body=await boundedHostedResponse(response);assert.equal(hash(body),hash(source),`Embedded asset differs from frozen source: ${name}`);
@@ -107,6 +107,6 @@ export function validateHostedAssetEvidence(evidence,{origin,sourceSha}){
  validateHostedOrigin(origin);assert.match(sourceSha,/^[a-f0-9]{40}$/);assert.equal(evidence.origin,origin);assert.equal(evidence.source_sha,sourceSha);assert.equal(evidence.bind,'127.0.0.1');assert.equal(evidence.status,'ready');assert.equal(evidence.cleanup.status,'closed');assert.match(evidence.server_sha256,/^[a-f0-9]{64}$/);assert.ok(evidence.server_bytes>0);assert.ok(evidence.assets.length>=7&&evidence.assets.length<=16);
  assert.equal(new Set(evidence.assets.map(row=>row.path)).size,evidence.assets.length,'Worklet source receipts must be distinct');
  for(const row of evidence.assets){assert.equal(row.kind,'real-http-source-byte-probe');assert.equal(row.source_sha,sourceSha);assert.equal(row.status,200);assert.equal(row.method,'GET');assert.equal(row.url,`${origin}/${row.path.slice(4)}`);assert.match(row.sha256,/^[a-f0-9]{64}$/);assert.ok(row.bytes>0&&row.bytes<=1024*1024);}
- for(const name of ['processor','core','plan'])assert.ok(evidence.assets.some(row=>row.path===`web/basic-key-audio-${name}.js`));assert.ok(evidence.assets.some(row=>row.path==='web/basic-key-rendition.js'));
+ for(const name of ['processor','core','plan']){assert.ok(evidence.assets.some(row=>row.path===`web/basic-key-audio-${name}.js`));assert.ok(evidence.assets.some(row=>row.path===`web/canonical-audio-${name}.js`));}assert.ok(evidence.assets.some(row=>row.path==='web/canonical-audio-fingerprint.js'));assert.ok(evidence.assets.some(row=>row.path==='web/basic-key-rendition.js'));
  for(const name of ['live-tone-audio-processor.js','live-tone-core.js','live-tone-receiver.js'])assert.ok(evidence.assets.some(row=>row.path===`web/${name}`),'Persistent live audio asset receipt required');
 }

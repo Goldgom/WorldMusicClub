@@ -74,9 +74,9 @@ export class BasicKeyAudioReceiver {
     try { await cache.get(moduleUrl); } finally { context.removeEventListener?.('statechange', loadingStateListener); }
     if (interrupted || context.state !== 'running') throw error('clean_audio_unavailable', 'The audio device stopped during processor preparation; explicitly retry after unlocking it.');
     let node;
-    try { node = nodeFactory(context, BASIC_KEY_AUDIO_PROTOCOL, {numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1], channelCount: 1}); }
+    try { node = nodeFactory(context, this.processorProtocol || BASIC_KEY_AUDIO_PROTOCOL, {numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1], channelCount: 1}); }
     catch (reason) { throw startupError(context, moduleUrl, 'node-construction', 'The basic-key audio processor could not be created.', reason, options); }
-    try { return new BasicKeyAudioReceiver(context, output, node, options); }
+    try { return new this(context, output, node, options); }
     catch (reason) {
       try { node.disconnect(); } catch { /* Preserve the initialization failure. */ }
       try { node.port.close?.(); } catch { /* Preserve the initialization failure. */ }
@@ -93,7 +93,7 @@ export class BasicKeyAudioReceiver {
       this.node.port.onmessageerror = () => this.fail(error('audio_processor_error', 'The audio receiver received an unreadable processor message.'));
       this.node.onprocessorerror = () => { this.broken = true; this.fail(error('audio_processor_error', 'The audio processor failed; create a new receiver before retrying.')); };
       this.stateListener = () => {
-        if (this.context.state !== 'running' && ['preparing', 'ready', 'starting', 'running'].includes(this.state)) this.fail(error('clean_clock_unavailable', 'The audio device stopped; playback was canceled and will not automatically resume.'));
+        if (this.context.state !== 'running' && ['preparing', 'ready', 'starting', 'running', 'pausing', 'paused', 'resuming'].includes(this.state)) this.fail(error('clean_clock_unavailable', 'The audio device stopped; playback was canceled and will not automatically resume.'));
       };
       this.context.addEventListener?.('statechange', this.stateListener);
       this.node.port.start?.();
@@ -118,7 +118,7 @@ export class BasicKeyAudioReceiver {
       const pending = {resolve, reject, generation, type, timer: null}; this.pending.set(requestId, pending);
       // These are acknowledgment/lifecycle deadlines, never audio scheduling.
       // A start cannot await an acknowledgment past its existing audio anchor.
-      const timeoutMs = type === 'start' ? Math.max(1, Math.ceil((payload.anchorFrame / this.context.sampleRate - this.context.currentTime) * 1000)) : ACK_TIMEOUT_MS;
+      const timeoutMs = (type === 'start' || type === 'resume') ? Math.max(1, Math.ceil((payload.anchorFrame / this.context.sampleRate - this.context.currentTime) * 1000)) : type === 'prepare' ? (this.prepareTimeoutMs || ACK_TIMEOUT_MS) : ACK_TIMEOUT_MS;
       pending.timer = this.setTimer(() => {
         if (this.pending.get(requestId) !== pending) return;
         this.fail(error('audio_command_timeout', `The audio processor did not acknowledge ${type} before its deadline.`, {command: type, generation, timeoutMs}));
