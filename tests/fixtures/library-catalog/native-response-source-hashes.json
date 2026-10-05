@@ -1,0 +1,23 @@
+{
+  "sample_sha256": "7ef800d249c9471a390b8187b7e135be00ff49e9e6034d0f37c1d5da3d0eb5c5",
+  "sample_bytes": 124452,
+  "native_calls": 24,
+  "source_files": {
+    "crates/desktop-shell/src/catalog.rs": "5ec04bcc8852a1cea4771b61984669f01c0f61825364f739f39dcccb2c0cc088",
+    "crates/desktop-shell/src/catalog_journal.rs": "b82bf8ebd866a83db40d83ef7f8cf56509c594d1f6b14b697dc770a6bcaad3d4",
+    "crates/desktop-shell/src/catalog_product.rs": "101c8d32519bc4b17d956771ad37f9f8b751240093ea791646e5dd828fc1dbc5",
+    "crates/desktop-shell/src/catalog_product_tests.rs": "daf37db38c4a5682ed5fce7736f77ae4665461769794f9376d1a16f544cf0e1d",
+    "crates/desktop-shell/src/clean_package.rs": "82cb6948f53b3ddd6bae877295bd0375240449da0f610588ef948c3eefab228f",
+    "crates/desktop-shell/src/lib.rs": "34eaab1f6da676967d5f426c59ada5aa0e071851adf39f52c6dc8aaa3b532d93",
+    "crates/desktop-shell/src/native_library.rs": "0cd0a319e9e681a1fbc13728f38a0e72420fe1b965b725acddda8f9e20588038",
+    "crates/desktop-shell/src/pack_groups.rs": "b1cf6bb6370595c21f1e42f27fbde3d9a08c02615a134f147ed05ac185a7eda6",
+    "crates/desktop-shell/src/song_pack.rs": "d6633a92134c323f23f0019cc364dcb0e73f19f5065488e5d257b1fb3e300b90",
+    "crates/desktop-shell/src/song_pack_storage.rs": "94c4341d67436dd79abca84c85e21f1a36e942fae2e7178db7926c7f2d3ee0c0",
+    "crates/desktop-shell/tests/catalog.rs": "5f180ff2bfcfce7b6fc0c00fe9efcdb836fc41e785b808487d9cae42e0199f4a",
+    "docs/catalog-journal.md": "6f7afb408357afe4c6cde4d48f6ad40148eff6c572108db86226d9f24fcf6378",
+    "docs/catalog-product-contract.json": "321c0568572aaabebeea7ceb53421292137f3fed6362cdfafee5d270ff67c28f",
+    "docs/catalog-product-examples.md": "3cef36ca932cffc5d93eac06e004f2626233712fe381c2696b86a572bf9a22da",
+    "docs/catalog-product.md": "3b8bfe2cffe7a79d6f2d4efa81d90b1594171a07cc035e9fb666f018ceabe8ec",
+    "docs/catalog-transition-core.md": "a658de162248ddaf1ac15e83dc5a0b424d3eb0763fef7468d2fe2fe99eb55d88"
+  }
+}

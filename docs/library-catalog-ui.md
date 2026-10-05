@@ -11,7 +11,9 @@ reviewed initialization with exact native operation ID, inventory/seed digests,
 counts and retained-byte disclosure. Canceling any preview sends no write.
 New imported editions are visible but unselectable until **Review new imports for
 management** previews and explicitly commits the verified native inventory delta.
-Sync preserves existing tombstones and removed memberships.
+Sync preserves existing tombstones and removed memberships. Native previews bound
+each batch; any remaining edition/source counts are displayed in both languages.
+Each later batch needs its own new review and explicit confirmation.
 
 Song selection uses the complete `legacy:song-*` or `clean:song-*` edition ID,
 including hidden selected rows across pages. Search, view changes, refresh and
@@ -66,3 +68,20 @@ paused sessions, legitimate pending assessment and already admitted media.
 These Node checks are development evidence. They do not launch a browser, HTTP
 server, native GUI or access a private user library. Exact-source Rust/native,
 real-browser, Windows and full checkpoint acceptance remain separate gates.
+
+## Actual native wire evidence
+
+`tests/fixtures/library-catalog/native-responses.json` preserves 24 exact native
+request/response records and named snapshots from the backend's original-fixture
+integration test. The adjacent source-hash manifest records the producing files
+and artifact SHA-256. `native-library-catalog-wire.test.js` verifies that hash,
+passes all recorded responses unchanged through the production adapter, and runs
+the real app DOM through initialization, mixed-format/shared-pack Trash, a lost
+response, app restart with same-ID reconciliation, selected restore, and sync.
+All mutating request objects must exactly match the recorded native request.
+Only documented defaults are expanded for read queries.
+
+The restore response is a native same-ID replay after a real subprocess restore
+in the producer test. DOM transport replays those actual outputs; it does not
+launch a native executable or independently prove process recovery. The original
+backend restart tests and renderer replay tests are distinct evidence layers.

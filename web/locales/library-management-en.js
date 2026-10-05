@@ -1,4 +1,5 @@
 export default Object.freeze({
+  "management.catalog.syncRemaining": "This reviewed batch leaves {songs} new song editions and {sources} source archives to sync. After this batch is saved, review and confirm the next batch explicitly.",
   "management.catalog.syncImpact": "{songs} newly managed editions · {memberships} new memberships · {packs} new packs",
   "management.packEvidenceUnresolved": "The retained source is verified, but song memberships are unresolved. A backup-only source or missing valid import receipt does not establish any song membership. Review source and import issues.",
   "management.error.limit": "This result exceeds the metadata limit. Open All songs or narrow the search to inspect a smaller set.",

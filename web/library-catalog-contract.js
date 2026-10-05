@@ -78,12 +78,14 @@ export function checkedCatalogPreview(value, request) {
   require(request.action === 'trash_songs' ? action.type === 'trash_songs' && sameCatalogValue(action.song_ids, request.edition_ids) : action.type === 'restore' && action.trash_operation_id === request.trash_operation_id && sameCatalogValue(action.entities.map(row => row.id), request.edition_ids));
   require(s && ['selected_count', 'changed_song_count', 'removed_membership_count', 'restored_membership_count', 'shared_song_count'].every(key => uint(s[key])) && s.selected_count === request.edition_ids.length && s.changed_song_count === p.effects.trashed_songs.length + p.effects.restored_songs.length && s.removed_membership_count === p.effects.removed_memberships.length && s.restored_membership_count === p.effects.added_memberships.length && s.shared_song_count <= s.selected_count && s.reclaimed_bytes === 0 && Array.isArray(s.affected_packs));
   s.affected_packs.forEach(row => { pack(row); require(uint(row.selected_song_count)); });
+  for (const key of ['remaining_song_count', 'remaining_source_count']) if (s[key] !== undefined) require(uint(s[key]));
   require(sameCatalogValue(s.affected_packs.map(row => row.collection_id).sort(), [...p.effects.affected_packs].sort())); return value;
 }
 export function checkedCatalogSync(value, request) {
   checkedCatalogEnvelope(value, request.library_id); const p = core(value.preview), s = value.summary, adopted = p.effects.adopted_songs || [];
   require(p.request.action.type === 'adopt_inventory' && p.request.expected_generation === request.expected_generation && p.base_digest === request.catalog_digest && s && ['selected_count', 'changed_song_count', 'removed_membership_count', 'restored_membership_count', 'shared_song_count'].every(key => uint(s[key])) && s.selected_count === adopted.length && s.changed_song_count === adopted.length && s.removed_membership_count === p.effects.removed_memberships.length && s.restored_membership_count === p.effects.added_memberships.length && s.shared_song_count <= s.selected_count && s.reclaimed_bytes === 0 && Array.isArray(s.affected_packs));
   s.affected_packs.forEach(row => { pack(row); require(uint(row.selected_song_count)); });
+  for (const key of ['remaining_song_count', 'remaining_source_count']) if (s[key] !== undefined) require(uint(s[key]));
   require(sameCatalogValue(s.affected_packs.map(row => row.collection_id).sort(), [...p.effects.affected_packs].sort())); return value;
 }
 export function checkedCatalogResult(value, record, {lookup = false} = {}) {

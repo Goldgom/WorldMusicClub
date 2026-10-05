@@ -1,4 +1,5 @@
 export default Object.freeze({
+  "management.catalog.syncRemaining": "本次核对批次完成后仍有 {songs} 个新乐曲版本及 {sources} 个源文件归档待同步。保存此批次后，请再次核对并明确确认下一批。",
   "management.catalog.syncImpact": "新纳入管理 {songs} 个版本 · 新增 {memberships} 条归属 · 新增 {packs} 个曲包",
   "management.packEvidenceUnresolved": "已核验保留的来源，但乐曲归属尚未确认。仅有来源备份或缺少有效导入回执时，不推断任何乐曲成员；请查看来源与导入问题。",
   "management.error.limit": "此结果超过元数据上限。请打开“全部乐曲”或缩小搜索范围分批查看。",

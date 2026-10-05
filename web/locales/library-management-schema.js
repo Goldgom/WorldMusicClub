@@ -1,6 +1,7 @@
 const plain = Object.freeze({params: Object.freeze({})});
 const params = value => Object.freeze({params: Object.freeze(value)});
 export default Object.freeze({
+  "management.catalog.syncRemaining": params({songs: "count", sources: "count"}),
   "management.catalog.syncImpact": params({songs: "count", memberships: "count", packs: "count"}),
   "management.packEvidenceUnresolved": plain,
   "management.error.limit": plain,

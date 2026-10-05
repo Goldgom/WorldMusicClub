@@ -107,3 +107,14 @@ test('a committed catalog write cancels an owned read-only export opened during 
     const request = server.requests.find(row => row.path === '/api/library/pack/export'), downloads = app.downloads.length; commitGate.resolve(); await app.until(() => request.options.signal.aborted); exportGate.resolve(); await app.tick(); assert.equal(app.downloads.length, downloads); assert.ok(server.rows[0].trashed_by);
   } finally { commitGate.resolve(); exportGate.resolve(); await app.close(); }
 });
+
+test('bounded sync reports remaining imports in both languages and never submits another batch automatically', async () => {
+  const server = await catalogServer({syncBatchSize: 1}), app = await nativeStorageApp(server);
+  try {
+    await ready(app); server.addNew('authored-batch-one'); server.addNew('authored-batch-two'); server.addNew('authored-batch-three'); await open(app);
+    await app.click('management-catalog-sync-preview'); await app.until(() => !app.$('management-catalog-review').hidden); assert.match(app.$('management-catalog-review-content').textContent, /leaves 2 new song editions and 0 source archives/);
+    getAppI18n(app.document).setLocale('zh-CN'); assert.match(app.$('management-catalog-review-content').textContent, /仍有 2 个新乐曲版本及 0 个源文件归档待同步/); getAppI18n(app.document).setLocale('en'); await commit(app);
+    assert.equal(server.rows.filter(row => !row.catalog_managed).length, 2); assert.equal(server.catalogRequests.filter(row => row.path.endsWith('/sync/preview')).length, 1); assert.equal(server.catalogRequests.filter(row => row.path.endsWith('/commit')).length, 1); assert.equal(app.$('management-catalog-review').hidden, true);
+    await app.click('management-catalog-sync-preview'); await app.until(() => !app.$('management-catalog-review').hidden); assert.match(app.$('management-catalog-review-content').textContent, /leaves 1 new song editions/); assert.equal(server.catalogRequests.filter(row => row.path.endsWith('/commit')).length, 1); assert.deepEqual(getAppI18n(app.document).getReports(), []);
+  } finally { await app.close(); }
+});

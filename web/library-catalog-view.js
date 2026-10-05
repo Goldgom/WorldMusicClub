@@ -32,6 +32,7 @@ export function setupLibraryCatalogView({document, i18n, getStorage, onCommitted
     } else {
       if (record.kind === 'sync_imports') paragraph(parent, 'syncImpact', {songs: summary.changed_song_count, memberships: effects.added_memberships.length, packs: (effects.adopted_packs || []).length});
       else paragraph(parent, 'impact', {selected: summary.selected_count, changed: summary.changed_song_count, removed: summary.removed_membership_count, restored: summary.restored_membership_count, shared: summary.shared_song_count});
+      if (record.kind === 'sync_imports' && (summary.remaining_song_count || summary.remaining_source_count)) paragraph(parent, 'syncRemaining', {songs: summary.remaining_song_count || 0, sources: summary.remaining_source_count || 0});
       exactSelection(parent, record.selected);
       const details = make('details'); details.open = true; const label = make('summary'), list = make('ul'); label.textContent = t('affectedPacks', {count: summary.affected_packs.length});
       for (const pack of summary.affected_packs) { const li = make('li'), name = make('strong'), id = make('p', 'management-identity'); name.textContent = pack.name; id.textContent = `${pack.import_pack_id}\n${pack.collection_id}`; li.append(name, id); paragraph(li, 'packSelection', {count: pack.selected_song_count}); list.append(li); }
