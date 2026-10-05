@@ -60,6 +60,9 @@ export function setupGameShell({pausePlayback,onScreen,onNotation,onPanel=()=>{}
     if(score)$('resume-session').title=i18n.t('shell.returnTitle',{title:score.title});else $('resume-session').removeAttribute('title');
     skip.textContent=i18n.t(screen==='authoring'?'rhythm.authoring':screen==='free'?'free.title':screen==='stage'?'nav.skipStage':screen==='home'?'rhythm.home':'nav.skipLibrary');
     $('notation-toggle').textContent=i18n.t(notation?'shell.closeNotation':'nav.notation');
+    // Narrow landscape uses icons for these same controls, retaining their
+    // complete translated text for accessible names and pointer tooltips.
+    for(const id of ['back-to-library','library-button','import-tools-button','score-tools-button','settings-button','results-button']){const node=$(id);if(!node)continue;const label=node.textContent.trim();if(node.title!==label)node.title=label;}
   }
   function setNotation(visible){notation=visible;dock.hidden=!notation;$('notation-toggle').setAttribute('aria-expanded',String(notation));stage.classList.toggle('with-notation',notation);render();onNotation(notation)}
   function show(next){if(!['home','library','stage','free','authoring'].includes(next))return;pausePlayback();for(const el of dialogs.values())if(el.open)el.close();screen=next;stage.hidden=next!=='stage';lobby.hidden=next!=='library';$('game-home').hidden=next!=='home';document.body.dataset.screen=next;const heading=next==='authoring'?'song-authoring-title':next==='free'?'free-practice-title':next==='stage'?'stage-title':next==='home'?'home-title':'lobby-title';skip.href=`#${heading}`;if(next==='stage'&&!notationChosen&&!notation&&$('instrument').value==='piano'&&document.defaultView.innerWidth>650&&document.defaultView.innerHeight>=700)setNotation(true);render();onScreen(next);$(heading)?.focus();}

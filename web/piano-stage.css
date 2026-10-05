@@ -186,6 +186,24 @@
  .game-shell #workspace #edit-song-mod{flex:none;white-space:nowrap}
  .game-shell #workspace #song-mod-stage-summary{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 }
+
+/* A 651px landscape cannot fit full session-tool labels beside the title and
+   guide. Keep every original control in one row at a usable 34px target; their
+   full text remains the accessible name and tooltip. Only decoration changes. */
+@media(max-height:600px) and (min-width:651px) and (max-width:800px){
+ .game-shell :is(.piano-workspace,:where(#workspace)) .piano-workspace-heading{gap:4px}
+ .game-shell :is(.piano-workspace,:where(#workspace)) .piano-workspace-heading nav{flex:0 0 auto;gap:3px}
+ .game-shell .piano-workspace-heading nav :is(#library-button,#import-tools-button,#score-tools-button,#settings-button,#results-button),.game-shell .piano-workspace-heading>#back-to-library{position:relative;flex:0 0 34px;width:34px;min-width:34px;max-width:34px;height:34px;min-height:34px;padding:0;overflow:hidden;text-indent:-9999px;white-space:nowrap}
+ .game-shell .piano-workspace-heading nav :is(#library-button,#import-tools-button,#score-tools-button,#settings-button,#results-button)::before,.game-shell .piano-workspace-heading>#back-to-library::before{content:'';position:absolute;inset:7px;background:currentColor;mask:var(--stage-tool-icon) center/contain no-repeat;pointer-events:none}
+ .game-shell .piano-workspace-heading #library-button{--stage-tool-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M3 7V5h7l2 3h9v12H3z'/%3E%3Cpath d='M3 11h18'/%3E%3C/svg%3E")}
+ .game-shell .piano-workspace-heading #import-tools-button{--stage-tool-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12m-4-4 4 4 4-4M4 15v6h16v-6'/%3E%3C/svg%3E")}
+ .game-shell .piano-workspace-heading #score-tools-button{--stage-tool-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h8'/%3E%3C/svg%3E")}
+ .game-shell .piano-workspace-heading #settings-button{--stage-tool-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='M5 3v4m0 6v8M12 3v10m0 6v2M19 3v2m0 6v10'/%3E%3Ccircle cx='5' cy='10' r='3'/%3E%3Ccircle cx='12' cy='16' r='3'/%3E%3Ccircle cx='19' cy='8' r='3'/%3E%3C/svg%3E")}
+ .game-shell .piano-workspace-heading #results-button{--stage-tool-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M3 21V11h4v10M10 21V3h4v18M17 21V7h4v14M2 21h20'/%3E%3C/svg%3E")}
+ .game-shell .piano-workspace-heading>#back-to-library{--stage-tool-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m10 5-7 7 7 7M3 12h18'/%3E%3C/svg%3E")}
+ .game-shell #workspace .piano-workspace-heading>#notation-toggle,.game-shell #workspace .piano-workspace-heading>#rhythm-stage-free{flex:none;max-width:70px;white-space:normal}
+ .game-shell #workspace #edit-song-mod{max-width:60px;white-space:normal}
+}
 /* Guitar retains the original two-column reading surface, independently of the
    piano paint-root's DOM anchor. Instrument scrolling stays above transport. */
 @media(min-width:651px){

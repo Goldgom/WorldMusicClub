@@ -70,6 +70,12 @@ test('static DOM shell keeps every source control exactly once and pauses on pan
   document.getElementById('notation-toggle').click();assert.deepEqual(notation,[true]);assert.equal(shell.notationVisible(),true);
   assert.equal(document.querySelector('.skip-link').getAttribute('href'),'#stage-title');shell.show('library');assert.equal(pauses,3);assert.equal(shell.screen(),'library');assert.equal(document.querySelector('#workspace').hidden,true);assert.equal(document.querySelector('.skip-link').getAttribute('href'),'#lobby-title');
   shell.open('settings');const settings=document.getElementById('settings-dialog');settings.removeAttribute('open');const next=document.querySelector('.skip-link');next.focus();settings.dispatchEvent(new window.Event('close'));assert.ok(focused===next,'A queued close event must not steal focus after the user has moved to another control');
+  const tools=['back-to-library','library-button','import-tools-button','score-tools-button','settings-button','results-button'],identities=tools.map(id=>document.getElementById(id));
+  for(const locale of ['en','zh-CN']){
+   getAppI18n(document).setLocale(locale);shell.update({score:fixture,passes:23});
+   for(const [index,id]of tools.entries()){const node=document.getElementById(id);assert.equal(node,identities[index]);assert.ok(node.textContent.trim());assert.equal(node.title,node.textContent.trim(),'Icon presentation keeps the full current label and tooltip');assert.equal(node.getAttribute('aria-hidden'),null);}
+   assert.match(document.getElementById('results-button').title,/23/,'Dynamic take counts remain in the Results label');
+  }
  }finally{if(original)Object.defineProperty(globalThis,'document',original);else delete globalThis.document}
 });
 

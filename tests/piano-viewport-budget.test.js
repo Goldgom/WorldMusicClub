@@ -24,6 +24,28 @@ test('short-landscape Mod and navigation stay compact when the shared stage swit
   }
 });
 
+test('narrow landscape reserves six real navigation targets without consuming a second music row',async()=>{
+  const css=await readFile(new URL('../web/piano-stage.css',import.meta.url),'utf8');
+  const {document}=parseHTML(`<style>${css}</style>`),rules=[...document.querySelector('style').sheet.cssRules];
+  const narrow=rules.find(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:651px) and (max-width:800px)');
+  assert.ok(narrow,'The full 651–800px range needs a layout distinct from the wider compact header');
+  const targets=[...narrow.cssRules].find(rule=>rule.style?.width==='34px');
+  for(const id of ['library-button','import-tools-button','score-tools-button','settings-button','results-button','back-to-library'])assert.ok(targets.selectorText.includes('#'+id));
+  assert.equal(targets.style.flex,'0 0 34px');assert.equal(targets.style['min-width'],'34px');assert.equal(targets.style['min-height'],'34px');
+  assert.equal(targets.style.overflow,'hidden','Full text cannot paint over an adjacent pointer target');
+  for(const property of ['display','visibility','pointer-events'])assert.equal(targets.style.getPropertyValue(property),'','Every action remains operable');
+  const icons=[...narrow.cssRules].find(rule=>rule.selectorText?.includes('::before'));
+  assert.equal(icons.style.content,"''");assert.equal(icons.style['pointer-events'],'none','Decorative icons cannot intercept the original button');
+  const gap=Number.parseFloat([...narrow.cssRules].find(rule=>rule.selectorText?.endsWith(' .piano-workspace-heading')).style.gap);
+  const primary=[...narrow.cssRules].find(rule=>rule.selectorText?.includes('>#notation-toggle'));
+  const mod=[...narrow.cssRules].find(rule=>rule.selectorText?.endsWith(' #edit-song-mod'));
+  // Include the full 64px title + observed 70.6875px guide + 6px grid gap,
+  // all five primary actions, and the existing fullscreen target.
+  const titleAndGuide=64+70.6875+6,toolRow=6*34+5*3;
+  const required=34+titleAndGuide+2*parseFloat(primary.style['max-width'])+parseFloat(mod.style['max-width'])+5*gap+toolRow;
+  for(const width of [651,700,731,800])assert.ok(required<=width-20,`${width}px reserves every target inside both 10px workspace edges`);
+});
+
 test('viewport capacity accounts for real footer overflow, preserves spare desktop space and converts CSS zoom once',()=>{
   assert.deepEqual(pianoViewportBudget({viewportBottom:720,laneHeight:308,transportBottom:729.796875,bottomPadding:8}),{height:290.2,available:290.2,deficit:0});
   const spacious=pianoViewportBudget({viewportBottom:1080,laneHeight:488,transportBottom:995.8,bottomPadding:16});
