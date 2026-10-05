@@ -6,6 +6,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import vm from 'node:vm';
+import {DOMParser,parseHTML} from 'linkedom';
 import {finishDenseReport} from '../scripts/dense-report-cleanup.mjs';
 import {DENSE_STREAM,originalDenseRenditionMidi,expectedDenseAttacks,denseDigest} from '../scripts/prepare-dense-rendition-fixture.mjs';
 import {observeDenseRenditionAudio,denseRenditionBootstrap} from '../scripts/dense-rendition-observer.mjs';
@@ -101,7 +102,20 @@ test('dense pending report is unaccepted, every cleanup runs and final validatio
 });
 function syntheticProof(){
  // Synthetic verifier records only; these never establish a browser/audio run.
- const expected=expectedDenseAttacks(sourceSha),trace={version:2,cleanup:{restored:true,stopped:true,players:1,contexts:1,errors:[],receiver:{restored:true,overflow:false,errors:[],cleanupErrors:[]}},errors:[],overflow:[],states:[{state:'running'}],longTasks:[{startTime:16000,duration:200}],counts:{pumps:0,schedules:0},pumps:[],schedules:[],frames:Array.from({length:200},(_,i)=>({durationMs:1,audioTime:i*.24,audioState:'running',renderer:'playing'})),listeningStarted:{audioTime:0,wall:0},current:{renderer:'ended',position:48000,clock:createPlaybackClock({positionMs:48000,durationMs:48000,completed:true}),captured:'0',audioState:'running',audioTime:48.1,wall:48100},audio:{created:0,overflow:false,sourceStarts:0,oscillatorStarts:0,activeSources:0,pendingSources:0},receiver:syntheticAudioThreadStatus(),audioThread:[syntheticAudioThreadRun(expected,{sourceSha256:sourceSha,durationMs:48000})],scope:[0,8,16].map(first=>({scope:'all',status:'ready',range:`第 ${first+1}–${first+8} 小节，共24小节`,renderer:first?'playing':'ready',parts:[2,3,4,5].map((track,i)=>`midi-t${track}-c${i+1}-r0`),sourceIds:expected.filter(n=>n.startMs>=first*2000&&n.startMs<(first+8)*2000).map(n=>n.id),svg:4,heads:2048,loadMs:30})),renders:[9,17].map(from=>({method:'render',renderer:'playing',range:`Measures ${from}–${from+7} / 24`,durationMs:200}))};trace.listeningEnded={...trace.current,clock:{...trace.current.clock}};return{ok:true,origin:'https://wmh.localhost',cleanup:{status:'complete',resources:['context','browser','driver'].map(name=>({name,status:'closed'})),errors:[],writeErrors:[]},locale:'zh-CN',fixture:{source_sha256:sourceSha,fixture:DENSE_STREAM,pages:Array(12).fill({})},trace,metrics:denseTimingMetrics(trace),assessmentRequests:0,results:{historyHidden:true,passOptions:[''],exportDisabled:true,assessmentDisabled:true},actions:Array.from({length:10},()=>({completed:true})),pageErrors:[],claims:{physical_audio:false,synthetic_clock:false,production_behavior_changed:false}};
+ const expected=expectedDenseAttacks(sourceSha),trace={version:2,cleanup:{restored:true,stopped:true,players:1,contexts:1,errors:[],receiver:{restored:true,overflow:false,errors:[],cleanupErrors:[]}},errors:[],overflow:[],states:[{state:'running'}],longTasks:[{startTime:16000,duration:200}],counts:{pumps:0,schedules:0},pumps:[],schedules:[],frames:Array.from({length:200},(_,i)=>({durationMs:1,audioTime:i*.24,audioState:'running',renderer:'playing'})),listeningStarted:{audioTime:0,wall:0},current:{renderer:'ended',position:48000,clock:createPlaybackClock({positionMs:48000,durationMs:48000,completed:true}),captured:'0',audioState:'running',audioTime:48.1,wall:48100},audio:{created:0,overflow:false,sourceStarts:0,oscillatorStarts:0,activeSources:0,pendingSources:0},receiver:syntheticAudioThreadStatus(),audioThread:[syntheticAudioThreadRun(expected,{sourceSha256:sourceSha,durationMs:48000})],scope:[0,8,16].map(first=>({scope:'all',status:'ready',range:`第 ${first+1}–${first+8} 小节，共24小节`,renderer:first?'playing':'ready',parts:[2,3,4,5].map((track,i)=>`midi-t${track}-c${i+1}-r0`),sourceIds:expected.filter(n=>n.startMs>=first*2000&&n.startMs<(first+8)*2000).map(n=>n.id),svg:4,heads:2048,loadMs:30})),renders:[9,17].map(from=>({method:'render',renderer:'playing',range:`Measures ${from}–${from+7} / 24`,durationMs:200}))};
+ const pages=[];trace.renders=[];trace.engravingOwnership={version:1,overflow:false};
+ for(const [pageIndex,frame]of trace.scope.entries()){
+  const first=pageIndex*8;frame.wall=1000+first*2000;frame.renderOwners=[];
+  for(const [partIndex,partId]of frame.parts.entries()){
+   const id=pageIndex*4+partIndex+1,written=expected.filter(note=>note.part===partId&&note.startMs>=first*2000&&note.startMs<(first+8)*2000).map(note=>['xml-'+note.id,note.id]),xmlNoteIds=written.map(pair=>pair[0]);
+   const ownership={version:1,rendererId:id,loadId:id,renderId:id,svgNodes:[id],xmlNoteIds},wall=pageIndex?first*2000-14000+partIndex:100+partIndex;
+   pages.push({first_measure:first,request:{settings:{part_id:partId}},written_ids:written});
+   frame.renderOwners.push({...ownership,partId,bindings:written});
+   trace.renders.push({method:'load',renderer:pageIndex?'playing':'ready',wall:wall-1,durationMs:5,ownership:{version:1,rendererId:id,loadId:id,xmlNoteIds}},
+    {method:'render',renderer:pageIndex?'playing':'ready',wall,durationMs:200,range:`Measures ${Math.max(1,first-7)}–${Math.max(8,first)} / 24`,ownership});
+  }
+ }
+ trace.listeningEnded={...trace.current,clock:{...trace.current.clock}};return{ok:true,origin:'https://wmh.localhost',cleanup:{status:'complete',resources:['context','browser','driver'].map(name=>({name,status:'closed'})),errors:[],writeErrors:[]},locale:'zh-CN',fixture:{source_sha256:sourceSha,fixture:DENSE_STREAM,pages},trace,metrics:denseTimingMetrics(trace),assessmentRequests:0,results:{historyHidden:true,passOptions:[''],exportDisabled:true,assessmentDisabled:true},actions:Array.from({length:10},()=>({completed:true})),pageErrors:[],claims:{physical_audio:false,synthetic_clock:false,production_behavior_changed:false}};
 }
 test('dense proof rejects lost processor onsets, stale generations, fake PCM, paused clocks and machine input',()=>{
  const good=syntheticProof();validateDenseRenditionEvidence(good);assert.equal(good.metrics.maxRenderMs,200,'Long measured rendering is reported without being hidden or relabeled');assert.equal(good.metrics.processorStarted,6144);
@@ -153,4 +167,65 @@ test('dense startup failure exposes initialization phase and product notice befo
  const original=Receiver.create,observer=await realm.__wmhDenseObserverTools.install({library:{BasicKeyAudioReceiver:Receiver,Renderer},audioProbe:{snapshot:()=>({}),restore:()=>true}});await assert.rejects(Receiver.create({state:'running'},{}),/Module import failed/);
  const status=observer.status();assert.equal(status.schedules,0);assert.equal(status.current.position,0);assert.equal(status.errors[0].details.phase,'module-load');assert.equal(status.errors[0].details.causeMessage,'Underlying loader rejection');assert.equal(status.current.notice,'Actual startup module failure');assert.equal(observer.snapshot().receiver.initializations[0].ok,false);assert.equal(observer.stop().cleanup.restored,true);assert.equal(Receiver.create,original);
  const host=await readFile(new URL('../scripts/hosted-dense-rendition-check.mjs',import.meta.url),'utf8');assert.match(host,/Actual audio failure:/);assert.match(host,/Production UI: '\+status.current.notice/);
+});
+
+test('dense prepared pages require actual load/render and same adopted SVG/source bindings without page-label timing assumptions',()=>{
+ const good=syntheticProof();
+ assert.equal(good.trace.renders.some(row=>row.method==='render'&&Number(row.range?.match(/\d+/)?.[0])===17),false,'The next page actually renders before its new range label');
+ validateDenseRenditionEvidence(good);
+ for(const mutate of [
+  report=>delete report.trace.engravingOwnership,
+  report=>report.trace.engravingOwnership.overflow=true,
+  report=>delete report.trace.scope[1].renderOwners,
+  report=>report.trace.scope[1].renderOwners.pop(),
+  report=>report.trace.scope[1].renderOwners[0].partId='unrelated-part',
+  report=>report.trace.scope[1].renderOwners[0].svgNodes=[499],
+  report=>report.trace.scope[1].renderOwners[1].svgNodes=report.trace.scope[1].renderOwners[0].svgNodes,
+  report=>report.trace.scope[1].renderOwners[0].loadId=1,
+  report=>report.trace.scope[1].renderOwners[0].renderId=1,
+  report=>report.trace.scope[1].renderOwners[0].bindings[0][1]='unrelated-source-note',
+  report=>report.trace.scope[1].renderOwners[0].bindings[0][0]='unrelated-xml-note',
+  report=>report.trace.scope[1].renderOwners[0].xmlNoteIds.pop(),
+  report=>report.fixture.pages[4].written_ids[0][1]='unrelated-native-source',
+  report=>report.trace.renders=report.trace.renders.filter(row=>row.ownership?.renderId!==5),
+  report=>report.trace.renders=report.trace.renders.filter(row=>!(row.method==='load'&&row.ownership?.loadId===5)),
+  report=>report.trace.renders.find(row=>row.ownership?.renderId===5).method='updateGraphic',
+  report=>report.trace.renders.find(row=>row.ownership?.renderId===5).ownership.svgNodes=[498],
+  report=>report.trace.renders.find(row=>row.ownership?.renderId===5).ownership.rendererId=1,
+  report=>report.trace.renders.find(row=>row.ownership?.renderId===5).error='real render failed',
+  report=>report.trace.renders.find(row=>row.ownership?.renderId===5).wall=report.trace.scope[1].wall+1,
+  report=>report.trace.renders.push(structuredClone(report.trace.renders.find(row=>row.ownership?.renderId===5))),
+ ]){const changed=structuredClone(good);mutate(changed);changed.metrics=denseTimingMetrics(changed.trace);assert.throws(()=>validateDenseRenditionEvidence(changed));}
+});
+
+for(const changedNodes of [false,true])test(`dense passive observer ${changedNodes?'rejects substituted':'links prepared and adopted'} SVG objects through the real scope event`,async()=>{
+ const {document}=parseHTML('<html><body><div id="workspace"></div><div id="clean-song-stage"></div><div id="engraving-range"></div><div id="hud-captured"></div><div id="notice"></div><div id="engraved-staff"></div><div id="staged" inert data-notation-preparation=""></div></body></html>'),Event=document.defaultView.CustomEvent;
+ const bounds=node=>{node.getBoundingClientRect=()=>({x:10,y:10,width:200,height:100});return node;};for(const node of document.querySelectorAll('*'))bounds(node);
+ Object.defineProperty(document,'defaultView',{value:{getComputedStyle:()=>({display:'block',visibility:'visible',opacity:'1'})}});
+ const find=document.getElementById.bind(document),progress=clockProgress(1000);document.getElementById=id=>id==='progress'?progress:find(id);
+ const stage=find('workspace');stage.dataset.scoreState='session';stage.dataset.notationLoadMs='0';find('clean-song-stage').dataset.rendererState='playing';find('engraving-range').textContent='第 1–8 小节，共24小节';find('hud-captured').textContent='0';
+ class Renderer{
+  constructor(container){this.container=container;}
+  load(){this.clear();this.Sheet={SourceMeasures:[{}]};return Promise.resolve();}
+  updateGraphic(){return 'actual graphic';}
+  render(){const svg=bounds(document.createElement('svg')),head=bounds(document.createElement('g'));head.setAttribute('class','vf-notehead');svg.append(head);this.container.append(svg);this.GraphicSheet={MeasureList:[]};return 'actual render';}
+  clear(){this.container.replaceChildren();delete this.Sheet;delete this.GraphicSheet;}
+ }
+ const realm=vm.createContext({document,performance,structuredClone,localStorage:{setItem(){}}});vm.runInContext(`(()=>{${denseRenditionBootstrap()}})();`,realm);
+ const observer=await realm.__wmhDenseObserverTools.install({library:{Renderer,observeReceiver:async()=>({status:()=>syntheticAudioThreadStatus(),snapshot:()=>[],count:()=>1,quiet:()=>true,restore:()=>({restored:true,overflow:false,errors:[],cleanupErrors:[]})})},audioProbe:{snapshot:()=>({}),restore:()=>true}});
+ delete realm.__wmhDenseObserverTools;
+ const parts=[],mounts=[];
+ for(let index=0;index<4;index++){
+  const mount=bounds(document.createElement('div'));mount.dataset.notationPartId=`part-${index}`;parts.push(mount.dataset.notationPartId);find('staged').append(mount);mounts.push(mount);
+  const renderer=new Renderer(mount),xml=new DOMParser().parseFromString(`<score-partwise><part><measure><note id="xml-${index}"/></measure></part></score-partwise>`,'application/xml');await renderer.load(xml);assert.equal(renderer.render(),'actual render');
+  const cue=document.createElement('span');cue.className='engraving-expected-cue';cue.dataset.sourceNoteId=`original-${index}`;cue.dataset.xmlNoteId=`xml-${index}`;mount.append(cue);
+ }
+ assert.equal(find('engraved-staff').querySelectorAll('svg').length,0);
+ const prepared=observer.snapshot().renders.filter(row=>row.method==='render');assert.equal(prepared.length,4);assert.ok(prepared.every(row=>row.range.includes('1–8')&&row.ownership));
+ if(changedNodes){const svg=mounts[0].querySelector('svg'),clone=bounds(svg.cloneNode(true));svg.replaceWith(clone);}
+ find('engraved-staff').replaceChildren(...mounts);find('engraving-range').textContent='第 9–16 小节，共24小节';
+ assert.doesNotThrow(()=>stage.dispatchEvent(new Event('notationscopecontext',{detail:{scope:'all',status:'ready',page:2,renderedPartIds:parts}})),'Passive observation failure must not throw into the application event');
+ const trace=observer.stop();assert.equal(trace.cleanup.restored,true);
+ if(changedNodes){assert.ok(trace.errors.some(error=>error.code==='dense_engraving_ownership'));assert.equal(trace.scope[0].renderOwners,undefined);}
+ else{assert.deepEqual([...trace.scope[0].renderOwners].map(owner=>owner.svgNodes[0]),prepared.map(row=>row.ownership.svgNodes[0]));assert.deepEqual([...trace.scope[0].renderOwners].map(owner=>[...owner.bindings[0]]),[0,1,2,3].map(index=>[`xml-${index}`,`original-${index}`]));assert.deepEqual([...trace.errors],[]);}
 });

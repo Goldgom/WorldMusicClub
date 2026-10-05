@@ -4,12 +4,16 @@ const nativeObserver=readFileSync(new URL('../crates/desktop-shell/reference-acc
 const observerStart=nativeObserver.indexOf('async function observeBasicKeyReceiver('),observerEnd=nativeObserver.indexOf('// End shared audio-thread observer.');
 if(observerStart<0||observerEnd<=observerStart)throw Error('Shared audio-thread observer boundary is missing');
 export const audioThreadObserverSource=nativeObserver.slice(observerStart,observerEnd);
+const engravingObserver=readFileSync(new URL('../crates/desktop-shell/basic-key-acceptance.js',import.meta.url),'utf8');
+const engravingStart=engravingObserver.indexOf('function createEngravingOwnershipObserver('),engravingEnd=engravingObserver.indexOf('// End shared engraving ownership observer.');
+if(engravingStart<0||engravingEnd<=engravingStart)throw Error('Shared engraving ownership observer boundary is missing');
+const engravingOwnershipSource=engravingObserver.slice(engravingStart,engravingEnd);
 // Acceptance-only observers. Every production call keeps its receiver, arguments,
 // return value and errors. No clock, note, timer, lookahead or input is modified.
 export function denseRenditionBootstrap(){
  // Playwright wraps init scripts in an IIFE. Explicitly export the shared
  // clock reader and observer namespace; page.evaluate cannot see local names.
- return `globalThis.__wmhReadPlaybackClock=(${readPlaybackClock.toString()});\nglobalThis.__wmhDenseObserverTools=Object.freeze({observeAudio:${observeDenseRenditionAudio.toString()},observeReceiver:${audioThreadObserverSource},install:${installDenseRenditionObserver.toString()}});\nlocalStorage.setItem('worldmusichub.locale.v1','zh-CN');`;
+ return `globalThis.__wmhReadPlaybackClock=(${readPlaybackClock.toString()});\n${engravingOwnershipSource}\nglobalThis.__wmhDenseObserverTools=Object.freeze({observeEngraving:createEngravingOwnershipObserver,observeAudio:${observeDenseRenditionAudio.toString()},observeReceiver:${audioThreadObserverSource},install:${installDenseRenditionObserver.toString()}});\nlocalStorage.setItem('worldmusichub.locale.v1','zh-CN');`;
 }
 export function observeDenseRenditionAudio(root=globalThis){
  const prototypes=new Set([root.AudioContext?.prototype,root.webkitAudioContext?.prototype].filter(Boolean));if(!prototypes.size)throw Error('Real Web Audio is required');const live=new Set(),restores=[];let sourceStarts=0,oscillatorStarts=0,created=0,overflow=false;
@@ -37,11 +41,13 @@ export async function installDenseRenditionObserver({library,audioProbe}={}){
  const observeReceiver=library?.observeReceiver||globalThis.__wmhDenseObserverTools?.observeReceiver;
  if(typeof observeReceiver!=='function')throw Error('Actual receiver observer unavailable');
  const receiver=await observeReceiver(doc,{Receiver:BasicKeyAudioReceiver,onContext:attachContext,onStart(owner){if(data.listeningStarted===null)data.listeningStarted=screen();}});
+ const engraving=(library?.observeEngraving||globalThis.__wmhDenseObserverTools?.observeEngraving)(Renderer,doc);
  for(const method of ['load','updateGraphic','render']){
   const original=Renderer.prototype[method];if(typeof original!=='function')throw Error(`Actual renderer method missing: ${method}`);
-  function observed(...args){const begin=now(),row={method,...screen()};data.counts.renders++;try{const result=Reflect.apply(original,this,args);if(result?.then)result.then(()=>{row.settledMs=now()-begin;},error=>{row.settledMs=now()-begin;row.error=String(error?.message||error).slice(0,512);});return result;}catch(error){row.error=String(error?.message||error).slice(0,512);throw error;}finally{row.durationMs=now()-begin;row.afterAudioTime=context?.currentTime??null;push('renders',row);}}
+  function observed(...args){const begin=now(),row={method,...screen()};data.counts.renders++;try{const result=Reflect.apply(original,this,args);if(result?.then)result.then(()=>{row.settledMs=now()-begin;},error=>{row.settledMs=now()-begin;row.error=String(error?.message||error).slice(0,512);});return result;}catch(error){row.error=String(error?.message||error).slice(0,512);throw error;}finally{row.durationMs=now()-begin;row.afterAudioTime=context?.currentTime??null;if(method==='load')row.ownership=engraving.describeLoad(this);if(method==='render')row.ownership=engraving.describe(this);push('renders',row);}}
   Renderer.prototype[method]=observed;restores.push(()=>{if(Renderer.prototype[method]===observed)Renderer.prototype[method]=original;return Renderer.prototype[method]===original;});
  }
+ restores.push(()=>engraving.restore());
  const requestFrame=globalThis.requestAnimationFrame;
  if(typeof requestFrame==='function'){
   function observedFrame(...requestArgs){
@@ -56,10 +62,10 @@ export async function installDenseRenditionObserver({library,audioProbe}={}){
  }
  let longTaskObserver;if(globalThis.PerformanceObserver?.supportedEntryTypes?.includes('longtask')){data.longTaskSupported=true;longTaskObserver=new PerformanceObserver(list=>{for(const entry of list.getEntries())push('longTasks',{startTime:entry.startTime,duration:entry.duration});});longTaskObserver.observe({type:'longtask',buffered:false});}
  const scope=event=>{const detail=event.detail,stage=get('workspace'),row={...screen(),scope:detail.scope,status:detail.status,page:detail.page,parts:[...(detail.renderedPartIds||[])],loadMs:Number(stage.dataset.notationLoadMs),prefetch:stage.dataset.notationPrefetch};
-  const identity=JSON.stringify([row.range,row.parts]);if(detail.status==='ready'&&row.parts.length===4&&!painted.has(identity)){painted.add(identity);row.sourceIds=[...get('engraved-staff').querySelectorAll('[data-source-note-id]')].map(node=>node.dataset.sourceNoteId);row.heads=get('engraved-staff').querySelectorAll('.vf-notehead').length;row.svg=get('engraved-staff').querySelectorAll('svg').length;}push('scope',row);};
+  const identity=JSON.stringify([row.range,row.parts]);if(detail.status==='ready'&&row.parts.length===4&&!painted.has(identity)){painted.add(identity);row.sourceIds=[...get('engraved-staff').querySelectorAll('[data-source-note-id]')].map(node=>node.dataset.sourceNoteId);row.heads=get('engraved-staff').querySelectorAll('.vf-notehead').length;row.svg=get('engraved-staff').querySelectorAll('svg').length;try{row.renderOwners=engraving.visible(get('engraved-staff')).map(owner=>{const nodes=[...owner.container.querySelectorAll('.engraving-expected-cue[data-source-note-id][data-xml-note-id]')];if(nodes.length>8192)throw Error('Visible source-binding observation bound');return {...owner.evidence,partId:owner.container.closest('[data-notation-part-id]')?.dataset.notationPartId,bindings:nodes.map(node=>[node.dataset.xmlNoteId,node.dataset.sourceNoteId])};});}catch(error){push('errors',{code:'dense_engraving_ownership',message:String(error?.message||error).slice(0,512)});}}push('scope',row);};
  get('workspace').addEventListener('notationscopecontext',scope);
  const receiverState=()=>receiver.status();
- const snapshot=()=>({...structuredClone(data),current:screen(),audio:audioProbe?.snapshot(),audioThread:receiver.snapshot(),receiver:receiverState()});
+ const snapshot=()=>({...structuredClone(data),engravingOwnership:engraving.status(),current:screen(),audio:audioProbe?.snapshot(),audioThread:receiver.snapshot(),receiver:receiverState()});
  return{markEnded(){const end=screen();if(!end.clock.completed||end.clock.phase!=='ended'||end.position!==end.clock.durationMs||end.renderer!=='ended'||!receiverState().completed||!receiver.quiet())throw Error('Natural processor End and disposal are not observable yet');data.listeningEnded=end;return structuredClone(end);},status:()=>({errors:[...structuredClone(data.errors),...receiverState().errors],overflow:[...data.overflow,...(receiverState().overflow?['audioThread']:[])],schedules:receiver.count(),completed:receiverState().completed,quiet:receiver.quiet(),current:screen()}),snapshot,stop(){
   const cleanupErrors=[];let restored=true,final,receiverCleanup;
   const attempt=(name,run)=>{try{const result=run();if(result===false||result?.restored===false||result?.cleanupErrors?.length)throw Error(result?.cleanupErrors?.map(error=>error.message).join('; ')||'Observer restoration was incomplete');return result;}catch(error){restored=false;cleanupErrors.push({name,message:String(error?.message||error).slice(0,512)});}};

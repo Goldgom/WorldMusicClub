@@ -7,6 +7,40 @@ export function denseTimingMetrics(trace){
  const end=trace.listeningEnded||trace.current,max=values=>values.length?Math.max(...values):null,min=values=>values.length?Math.min(...values):null;
  return{maxAnimationFrameMs:max((trace.frames||[]).map(row=>row.durationMs)),maxPumpGapMs:max(trace.pumps.map(row=>row.gapMs).filter(Number.isFinite)),maxPumpDurationMs:max(trace.pumps.map(row=>row.durationMs)),maxSynchronousRendererMs:max(trace.renders.map(row=>row.durationMs)),maxRenderMs:max(trace.renders.filter(row=>row.method==='render').map(row=>row.durationMs)),maxLoadCallMs:max(trace.renders.filter(row=>row.method==='load').map(row=>row.durationMs)),maxLoadSettledMs:max(trace.renders.map(row=>row.settledMs).filter(Number.isFinite)),maxNativeBatchMs:max(trace.scope.map(row=>row.loadMs).filter(Number.isFinite)),minScheduledLeadMs:min(trace.schedules.map(row=>(row.start-row.audioNow)*1000)),maxLongTaskMs:max(trace.longTasks.map(row=>row.duration)),audioElapsedMs:trace.listeningStarted&&end.audioTime!==null?(end.audioTime-trace.listeningStarted.audioTime)*1000:null,wallElapsedMs:trace.listeningStarted?end.wall-trace.listeningStarted.wall:null,lateEvents:trace.errors.filter(row=>['clean_late_scheduler','late_scheduler'].includes(row.code)),scheduled:trace.schedules.length,processorStarted:(trace.audioThread||[]).reduce((sum,run)=>sum+(run.terminals?.[0]?.record.started||0),0),processorEnded:(trace.audioThread||[]).reduce((sum,run)=>sum+(run.terminals?.[0]?.record.ended||0),0),minStartAckLeadMs:min((trace.audioThread||[]).filter(run=>run.started).map(run=>(run.started.anchorTime-run.started.observedAudioTime)*1000))};
 }
+/** A ready source page must own the exact DOM objects produced by an observed
+ * load/render pair. Rendering may precede the visible range label: readiness is
+ * adoption, not an instruction to run OSMD again. Tokens are private WeakMap
+ * object identities assigned by the passive observer, never DOM attributes.
+ */
+export function validateDenseEngravingOwnership(trace,fixture,frame,first,wanted){
+ assert.deepEqual(trace.engravingOwnership,{version:1,overflow:false},'Bounded renderer ownership observation is required');
+ assert.ok(Array.isArray(frame.renderOwners)&&frame.renderOwners.length===4,'Every visible part needs its own actual renderer');
+ const svgNodes=new Set(),renderIds=new Set();
+ for(const [index,owner]of frame.renderOwners.entries()){
+  assert.equal(owner.version,1);assert.equal(owner.partId,frame.parts[index]);
+  for(const[key,max]of [['rendererId',64],['loadId',128],['renderId',256]])assert.ok(Number.isInteger(owner[key])&&owner[key]>0&&owner[key]<=max,`Invalid observed ${key}`);
+  assert.ok(Array.isArray(owner.svgNodes)&&owner.svgNodes.length>0&&owner.svgNodes.length<=16);
+  for(const id of owner.svgNodes){assert.ok(Number.isInteger(id)&&id>0&&id<=512&&!svgNodes.has(id),'SVG object ownership must be unique');svgNodes.add(id);}
+  assert.ok(!renderIds.has(owner.renderId),'Parts cannot borrow the same render');renderIds.add(owner.renderId);
+  const renders=trace.renders.filter(row=>row.method==='render'&&!row.error&&row.ownership?.renderId===owner.renderId);
+  assert.equal(renders.length,1,'Visible adopted nodes require one actual shipped render call');const render=renders[0];
+  const loads=trace.renders.filter(row=>row.method==='load'&&!row.error&&row.ownership?.loadId===owner.loadId&&row.ownership.rendererId===owner.rendererId);
+  assert.equal(loads.length,1,'Rendered output requires its own actual load call');const load=loads[0];
+  assert.ok(Number.isFinite(load.wall)&&Number.isFinite(render.wall)&&Number.isFinite(frame.wall)&&load.wall<=render.wall&&render.wall<=frame.wall,'Load, render and visible adoption must be ordered');
+  assert.equal(render.ownership.rendererId,owner.rendererId);assert.equal(render.ownership.loadId,owner.loadId);
+  assert.deepEqual(render.ownership.svgNodes,owner.svgNodes,'Adoption must retain the same observed SVG objects');
+  assert.deepEqual(render.ownership.xmlNoteIds,owner.xmlNoteIds);assert.deepEqual(load.ownership.xmlNoteIds,owner.xmlNoteIds,'Model and rendered source cannot come from another load');
+  if(first)assert.equal(render.renderer,'playing','Each upcoming part must have actually rendered during playback');
+  const page=fixture.pages.find(page=>page.first_measure===first&&page.request?.settings?.part_id===owner.partId);
+  assert.ok(page&&Array.isArray(page.written_ids)&&page.written_ids.length===512,'Independent native written/source identities are required');
+  const expected=wanted.filter(note=>note.part===owner.partId).map(note=>note.id).sort(),written=page.written_ids;
+  assert.ok(written.every(pair=>Array.isArray(pair)&&pair.length===2&&pair.every(id=>typeof id==='string'&&id.length>0&&id.length<=512)));
+  assert.equal(new Set(written.map(pair=>pair[0])).size,512);assert.deepEqual(written.map(pair=>pair[1]).sort(),expected);
+  assert.ok(Array.isArray(owner.xmlNoteIds)&&owner.xmlNoteIds.length===512);assert.deepEqual([...owner.xmlNoteIds].sort(),written.map(pair=>pair[0]).sort());
+  assert.ok(Array.isArray(owner.bindings)&&owner.bindings.length===512);assert.deepEqual([...owner.bindings].sort((a,b)=>a[0].localeCompare(b[0])),[...written].sort((a,b)=>a[0].localeCompare(b[0])),'Visible source cues must bind this exact loaded XML');
+ }
+ assert.equal(svgNodes.size,frame.svg,'Every visible SVG must be covered by the adopted owners');
+}
 export function validateDenseRenditionEvidence(report,{expectedOrigin=NATIVE_PROTOCOL_ORIGIN}={}){
  validateRendererOrigin(expectedOrigin);assert.equal(report.origin,expectedOrigin);
  const hosted=expectedOrigin!==NATIVE_PROTOCOL_ORIGIN;if(hosted){validateHostedAssetEvidence(report.asset_server,{origin:expectedOrigin,sourceSha:report.source_sha});assert.equal(report.native_bridge?.drain?.status,'complete');}
@@ -25,7 +59,6 @@ export function validateDenseRenditionEvidence(report,{expectedOrigin=NATIVE_PRO
  assert.ok(trace.frames.length>0&&trace.frames.length<=4096);let previousAudio=-Infinity;for(const frame of trace.frames){assert.equal(frame.audioState,'running');assert.ok(frame.audioTime>=previousAudio,'AudioContext clock reversed');assert.ok(frame.durationMs>=0);assert.notEqual(frame.renderer,'paused','Dense playback paused');previousAudio=frame.audioTime;}
  assert.ok(trace.current.audioTime>trace.listeningStarted.audioTime);assert.equal(report.assessmentRequests,0);assert.deepEqual(report.results,{historyHidden:true,passOptions:[''],exportDisabled:true,assessmentDisabled:true});assert.ok(report.actions.length>=8&&report.actions.length<=64&&report.actions.every(row=>row.completed));assert.deepEqual(report.pageErrors,[]);
  const parts=Array.from({length:4},(_,part)=>`midi-t${part+2}-c${part+1}-r0`);
- for(const first of [0,8,16]){const from=first+1,frame=trace.scope.find(row=>row.status==='ready'&&Number(row.range.match(/\d+/)?.[0])===from&&row.sourceIds&&row.parts.length===4);assert.ok(frame,`Native page ${from} never had all four actual mounts`);assert.equal(frame.scope,'all');assert.deepEqual(frame.parts,parts);assert.ok(frame.svg>=4&&frame.heads>=2048);const ids=new Set(frame.sourceIds),wanted=expected.filter(note=>note.startMs>=first*2000&&note.startMs<(first+8)*2000);assert.equal(ids.size,2048);for(const note of wanted)assert.ok(ids.has(note.id),`Missing displayed source ${note.id}`);if(first)assert.equal(frame.renderer,'playing',`Page ${from} did not paint during playback`);}
- for(const from of [9,17])assert.ok(trace.renders.some(row=>row.renderer==='playing'&&Number(row.range.match(/\d+/)?.[0])===from&&row.method==='render'),'Both actual page turns must invoke the shipped renderer during playback');
+ for(const first of [0,8,16]){const from=first+1,frame=trace.scope.find(row=>row.status==='ready'&&Number(row.range.match(/\d+/)?.[0])===from&&row.sourceIds&&row.parts.length===4);assert.ok(frame,`Native page ${from} never had all four actual mounts`);assert.equal(frame.scope,'all');assert.deepEqual(frame.parts,parts);assert.ok(frame.svg>=4&&frame.heads>=2048);const ids=new Set(frame.sourceIds),wanted=expected.filter(note=>note.startMs>=first*2000&&note.startMs<(first+8)*2000);assert.equal(ids.size,2048);for(const note of wanted)assert.ok(ids.has(note.id),`Missing displayed source ${note.id}`);if(first)assert.equal(frame.renderer,'playing',`Page ${from} did not paint during playback`);validateDenseEngravingOwnership(trace,fixture,frame,first,wanted);}
  assert.deepEqual(report.metrics,denseTimingMetrics(trace));assert.equal(report.claims.physical_audio,false);assert.equal(report.claims.synthetic_clock,false);assert.equal(report.claims.production_behavior_changed,false);return report;
 }

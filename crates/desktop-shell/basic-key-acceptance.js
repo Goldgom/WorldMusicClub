@@ -23,24 +23,88 @@ function runBasicKeyAcceptanceCleanup(report,actions){
  if(report.cleanupErrors.length){report.ok=false;report.error ||= 'Acceptance cleanup failed: '+report.cleanupErrors.map(error=>`${error.name}: ${error.message}`).join('; ');}
  return report.cleanupErrors;
 }
+// Shared, bounded acceptance-only ownership of real OSMD calls and DOM objects.
+// Wrappers forward receivers, arguments, return values and exceptions unchanged.
+function createEngravingOwnershipObserver(Renderer,document,{retainXml=false}={}) {
+ const proto=Renderer.prototype,originals=new Map(),wrapped=new Map(),owners=new WeakMap(),live=new Set(),rendererIds=new WeakMap(),svgIds=new WeakMap();
+ let nextRenderer=0,nextLoad=0,nextRender=0,nextSvg=0,overflow=false;
+ const ids=nodes=>nodes.map(node=>{if(!svgIds.has(node)){if(nextSvg>=512){overflow=true;throw Error('Engraving SVG observation bound');}svgIds.set(node,++nextSvg);}return svgIds.get(node);});
+ const describe=owner=>!overflow&&owner?.renderId?{version:1,rendererId:owner.rendererId,loadId:owner.loadId,renderId:owner.renderId,svgNodes:ids(owner.svgs),xmlNoteIds:[...owner.xmlNoteIds]}:null;
+ const invalidate=renderer=>{const prior=owners.get(renderer);if(prior){prior.disposed=true;live.delete(prior);owners.delete(renderer);}};
+ function readXml(value){
+  if(!value?.documentElement||typeof value.querySelectorAll!=='function')return null;
+  const nodes=[...value.querySelectorAll('note[id]')];if(!nodes.length||nodes.length>8192)return null;
+  const names=nodes.map(node=>node.getAttribute('id'));if(names.some(name=>!name||name.length>512)||new Set(names).size!==names.length)return null;
+  return {xml:retainXml?value.cloneNode(true):null,xmlNoteIds:names};
+ }
+ for(const method of ['load','render','clear']){
+  const original=proto[method];if(typeof original!=='function')continue;originals.set(method,original);
+  function observed(...args){
+   if(method==='clear'){try{return Reflect.apply(original,this,args);}finally{invalidate(this);}}
+   if(method==='load'){
+    let source;try{source=readXml(args[0]);}catch{/* Invalid evidence never changes the real loader's behavior. */}
+    invalidate(this);const result=Reflect.apply(original,this,args);
+    if(!rendererIds.has(this)){if(nextRenderer>=64){overflow=true;return result;}rendererIds.set(this,++nextRenderer);}
+    if(nextLoad>=128){overflow=true;return result;}
+    const owner={renderer:this,rendererId:rendererIds.get(this),loadId:++nextLoad,...source,loaded:false,disposed:false,renderId:null};owners.set(this,owner);live.add(owner);
+    const settled=()=>{if(owners.get(this)===owner&&!owner.disposed){owner.sheet=this.Sheet;owner.loaded=Boolean(source&&Array.isArray(owner.sheet?.SourceMeasures));}};
+    if(result?.then)Reflect.apply(Promise.prototype.then,result,[settled,()=>{if(owners.get(this)===owner)invalidate(this);}]);else settled();
+    return result;
+   }
+   const result=Reflect.apply(original,this,args),owner=owners.get(this);
+   try{
+    if(!owner?.loaded||owner.disposed||owner.sheet!==this.Sheet)return result;
+    const container=this.container,svgs=[...(container?.querySelectorAll?.('svg')||[])];
+    if(!container||!svgs.length||svgs.length>16||!this.GraphicSheet)return result;
+    if(nextRender>=256){overflow=true;return result;}
+    owner.container=container;owner.svgs=svgs;owner.graphic=this.GraphicSheet;owner.renderId=++nextRender;ids(svgs);
+   }catch{/* A failed observation is rejected when evidence is requested. */}
+   return result;
+  }
+  proto[method]=observed;wrapped.set(method,observed);
+ }
+ function visible(node){
+  if(!node?.isConnected)return false;
+  const style=document.defaultView?.getComputedStyle?.bind(document.defaultView)||globalThis.getComputedStyle;
+  if(typeof style!=='function')return false;
+  for(let current=node;current?.nodeType===1;current=current.parentElement){
+   if(current.hidden||current.inert||current.hasAttribute?.('inert')||current.hasAttribute?.('data-notation-preparation'))return false;
+   const css=style(current);if(css.display==='none'||css.visibility==='hidden'||css.visibility==='collapse'||Number(css.opacity)===0)return false;
+  }
+  const box=node.getBoundingClientRect();return Number.isFinite(box.width)&&Number.isFinite(box.height)&&box.width>0&&box.height>0;
+ }
+ return {describeLoad(renderer){const owner=owners.get(renderer);return owner&&!owner.disposed&&owner.xmlNoteIds?{version:1,rendererId:owner.rendererId,loadId:owner.loadId,xmlNoteIds:[...owner.xmlNoteIds]}:null;},describe(renderer){const owner=owners.get(renderer);return owner&&!owner.disposed&&owner.sheet===renderer.Sheet&&owner.graphic===renderer.GraphicSheet?describe(owner):null;},
+  visible(root){
+   if(overflow)throw Error('Engraving ownership observation bound');
+   const svgs=[...(root?.querySelectorAll?.('svg')||[])].filter(visible),found=[],covered=new Set();
+   if(!svgs.length)throw Error('Visible adopted engraving SVG unavailable');
+   for(const owner of live){
+    const r=owner.renderer;if(owner.disposed||!owner.renderId||!root.contains(owner.container)||!visible(owner.container))continue;
+    if(owner.container!==r.container||owner.sheet!==r.Sheet||owner.graphic!==r.GraphicSheet||!Array.isArray(r.Sheet?.SourceMeasures))throw Error('Visible engraving model owner changed or was disposed');
+    const actual=[...owner.container.querySelectorAll('svg')];
+    if(actual.length!==owner.svgs.length||actual.some((node,index)=>node!==owner.svgs[index])||owner.svgs.some(node=>!svgs.includes(node)||covered.has(node)))throw Error('Visible SVG differs from the observed renderer output');
+    owner.svgs.forEach(node=>covered.add(node));found.push({...owner,evidence:describe(owner)});
+   }
+   if(covered.size!==svgs.length||!found.length)throw Error('Visible SVG has no uniquely observed loaded renderer');
+   return found;
+  },status:()=>({version:1,overflow}),restore(){let restored=true;for(const[method,original]of originals){if(proto[method]===wrapped.get(method))proto[method]=original;if(proto[method]!==original)restored=false;}live.clear();return restored;}};
+}
+// End shared engraving ownership observer.
 async function observeBasicKeyEngraving(document) {
  // Preload the same pinned offline bundle used by the application, then observe
  // the real reader/model/render methods. No response, model or clock is replaced.
  if(!globalThis.opensheetmusicdisplay?.OpenSheetMusicDisplay)await new Promise((resolve,reject)=>{
   const script=document.createElement('script');script.src='/vendor/opensheetmusicdisplay.min.js';script.integrity='sha256-CZshJa7wVcpPqudZVwN0BJc/lFFUS1LZs6Cx94izNYE=';script.onload=resolve;script.onerror=()=>reject(Error('Pinned engraving bundle unavailable'));document.head.append(script);
  });
- const proto=globalThis.opensheetmusicdisplay.OpenSheetMusicDisplay.prototype,load=proto.load,render=proto.render;let renderer=null,xml=null;
- function observedLoad(value,...args){xml=value.cloneNode(true);return Reflect.apply(load,this,[value,...args]);}
- function observedRender(...args){const result=Reflect.apply(render,this,args);renderer=this;return result;}
- proto.load=observedLoad;proto.render=observedRender;
+ const ownership=createEngravingOwnershipObserver(globalThis.opensheetmusicdisplay.OpenSheetMusicDisplay,document,{retainXml:true});
  const fraction=f=>({numerator:4*((f.WholeValue||0)*f.Denominator+f.Numerator),denominator:f.Denominator}),box=node=>{const b=node?.getBoundingClientRect();return{x:b?.x||0,y:b?.y||0,width:b?.width||0,height:b?.height||0,connected:node?.isConnected===true};};
  return{snapshot(){
-  if(!renderer||!xml)throw Error('Actual renderer model unavailable');const measures=renderer.Sheet.SourceMeasures,notes=[];
+  const visible=ownership.visible(document.getElementById('engraved-staff'));if(visible.length!==1)throw Error('Basic snapshot requires exactly one current renderer owner');const {renderer,xml,evidence}=visible[0];if(!xml)throw Error('Actual renderer XML unavailable');const measures=renderer.Sheet.SourceMeasures,notes=[],modelBox=node=>{if(node&&!visible[0].svgs.some(svg=>svg.contains(node)))throw Error('Model glyph belongs to another rendered SVG');return box(node);};
   for(const measure of measures)for(const vertical of measure.VerticalSourceStaffEntryContainers)for(const staff of vertical.StaffEntries||[])for(const voice of staff?.VoiceEntries||[])for(const note of voice.Notes||[])if(note.PrintObject!==false&&!notes.includes(note))notes.push(note);
   if(notes.length>16||measures.length>8)throw Error('Original notation observation bound');
   const curves=new Set();for(const row of renderer.GraphicSheet.MeasureList)for(const measure of row||[])for(const staff of measure?.staffEntries||[])for(const tie of staff.GraphicalTies||[])curves.add(tie);
-  return{measures:measures.length,notes:notes.map(note=>{const g=renderer.EngravingRules.GNote(note);return{measure:measures.indexOf(note.SourceMeasure),part:note.ParentStaff.ParentInstrument.IdString,staff:note.ParentStaff.ParentInstrument.Staves.indexOf(note.ParentStaff)+1,voice:String(note.ParentVoiceEntry.ParentVoice.VoiceId),at:fraction(note.getAbsoluteTimestamp()),measureAt:fraction(note.ParentVoiceEntry.Timestamp),duration:fraction(note.Length),pitch:note.isRest()?null:{step:{0:'C',2:'D',4:'E',5:'F',7:'G',9:'A',11:'B'}[note.Pitch.FundamentalNote],alter:note.Pitch.AccidentalHalfTones,octave:note.Pitch.Octave+3},tieMembers:(note.NoteTie?.Notes||[]).map(n=>notes.indexOf(n)),head:box(g?.getNoteheadSVGs?.()[g?.vfnoteIndex])};}),curves:[...curves].map(tie=>({from:notes.indexOf(tie.StartNote?.sourceNote),to:notes.indexOf(tie.EndNote?.sourceNote),...box(tie.SVGElement)})),xmlNotes:[...xml.querySelectorAll('note[id]')].map(note=>({id:note.getAttribute('id'),ties:[...note.children].filter(n=>n.localName==='tie').map(n=>n.getAttribute('type')).sort()}))};
- },restore(){if(proto.load===observedLoad)proto.load=load;if(proto.render===observedRender)proto.render=render;return proto.load===load&&proto.render===render;}};
+  return{ownership:evidence,measures:measures.length,notes:notes.map(note=>{const g=renderer.EngravingRules.GNote(note);return{measure:measures.indexOf(note.SourceMeasure),part:note.ParentStaff.ParentInstrument.IdString,staff:note.ParentStaff.ParentInstrument.Staves.indexOf(note.ParentStaff)+1,voice:String(note.ParentVoiceEntry.ParentVoice.VoiceId),at:fraction(note.getAbsoluteTimestamp()),measureAt:fraction(note.ParentVoiceEntry.Timestamp),duration:fraction(note.Length),pitch:note.isRest()?null:{step:{0:'C',2:'D',4:'E',5:'F',7:'G',9:'A',11:'B'}[note.Pitch.FundamentalNote],alter:note.Pitch.AccidentalHalfTones,octave:note.Pitch.Octave+3},tieMembers:(note.NoteTie?.Notes||[]).map(n=>notes.indexOf(n)),head:modelBox(g?.getNoteheadSVGs?.()[g?.vfnoteIndex])};}),curves:[...curves].map(tie=>({from:notes.indexOf(tie.StartNote?.sourceNote),to:notes.indexOf(tie.EndNote?.sourceNote),...modelBox(tie.SVGElement)})),xmlNotes:[...xml.querySelectorAll('note[id]')].map(note=>({id:note.getAttribute('id'),ties:[...note.children].filter(n=>n.localName==='tie').map(n=>n.getAttribute('type')).sort()}))};
+ },restore:()=>ownership.restore()};
 }
 /* Preserve every application request across bootstrap and selected-source work.
  * The two JSON observations read only values consumed by the application. */

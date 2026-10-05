@@ -23,6 +23,9 @@ export function validateBasicKeyNotationResponse(row,fixture=basicKeyAcceptanceF
 }
 
 function model(snapshot,page){
+ const owner=snapshot.model?.ownership;assert.equal(owner?.version,1,'Current renderer ownership proof is required');
+ for(const[key,max]of [['rendererId',64],['loadId',128],['renderId',256]])assert.ok(Number.isInteger(owner[key])&&owner[key]>0&&owner[key]<=max,`Invalid observed ${key}`);
+ assert.equal(owner.svgNodes.length,snapshot.svg);assert.equal(new Set(owner.svgNodes).size,owner.svgNodes.length);assert.ok(owner.svgNodes.every(id=>Number.isInteger(id)&&id>0&&id<=512));assert.deepEqual(owner.xmlNoteIds,snapshot.model.xmlNotes.map(note=>note.id),'Loaded XML must belong to this observed model');
  assert.ok(snapshot.svg>0&&snapshot.paths>0&&snapshot.heads>=2&&snapshot.tieCurves>=1,'Actual mounted staff/tie geometry is required');assert.equal(snapshot.model.measures,2);assert.equal(snapshot.model.notes.length,2);
  for(const[i,n]of snapshot.model.notes.entries()){assert.equal(n.measure,i);assert.equal(n.part,'P1');assert.equal(n.staff,1);assert.equal(n.voice,'1');assert.deepEqual(n.pitch,{step:'C',alter:0,octave:4});beat(n.at,i*4);beat(n.measureAt,0);beat(n.duration,4);assert.deepEqual(n.tieMembers,[0,1]);assert.ok(n.head.width>0&&n.head.height>0&&n.head.connected);const b=snapshot.surface.bounds;assert.ok(n.head.x+n.head.width>b.x&&n.head.x<b.x+b.width&&n.head.y+n.head.height>b.y&&n.head.y<b.y+b.height,'Model head must intersect the visible score background');}
  assert.equal(snapshot.model.xmlNotes.length,2);for(const[i,n]of snapshot.model.xmlNotes.entries()){const expected=page.musicxml.note_id_map.segments[i];assert.equal(n.id,expected.xml_note_id);assert.deepEqual(n.ties,[...(expected.tie_stop?['stop']:[]),...(expected.tie_start?['start']:[])].sort());}

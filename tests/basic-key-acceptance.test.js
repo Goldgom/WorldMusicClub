@@ -178,7 +178,8 @@ test('notation gate rejects substituted source pages, clocks, ties, missing real
   v=>v.responses[1].request.source.content_sha256='0'.repeat(64),v=>v.responses[1].response.page.source_sha256='0'.repeat(64),
   v=>v.responses[1].response.page.source_end_ms++,v=>v.responses[1].response.page.musicxml.note_id_map.segments[1].tie_stop=false,
   v=>v.responses[2].response.page.continuations[0].source_end.numerator=8,v=>v.responses[3].response.page.onsets=[],
-  v=>v.frames.first.model.notes[0].duration.numerator=3,v=>v.frames.crossed.model.notes[1].tieMembers=[1],
+  v=>delete v.frames.first.model.ownership,v=>v.frames.first.model.ownership.rendererId=0,v=>v.frames.first.model.ownership.svgNodes[0]=0,v=>v.frames.first.model.ownership.xmlNoteIds[0]='unrelated-source',
+  v=>v.frames.first.model.notes[0].pitch.step='D',v=>v.frames.first.model.notes[0].duration.numerator=3,v=>v.frames.crossed.model.notes[1].tieMembers=[1],
   v=>v.frames.crossed.model.curves[0].from=1,v=>v.frames.reset.model.xmlNotes[1].ties=[],v=>v.frames.numbered.numbered=[],
   v=>v.frames.crossed.ids=[],v=>v.frames.crossed.cues[0].measure='2',v=>v.frames.first.heads=0,
   v=>v.frames.end.pageFirst=2,v=>v.frames.reset.position=12000,v=>v.frames.crossed.audio.worklet.started=0,
@@ -188,7 +189,7 @@ test('notation gate rejects substituted source pages, clocks, ties, missing real
 });
 test('notation interactions remain real native controls and retain finite original-source bounds',async()=>{
  const source=await readFile(new URL('../crates/desktop-shell/basic-key-acceptance.js',import.meta.url),'utf8');
- assert.match(source,/observeBasicKeyEngraving/);assert.match(source,/Reflect.apply\(load,this/);assert.match(source,/Reflect.apply\(render,this/);
+ assert.match(source,/observeBasicKeyEngraving/);assert.match(source,/createEngravingOwnershipObserver/);assert.match(source,/Reflect.apply\(original,this,args\)/);
  assert.match(source,/native\('select-second',\$\('engraving-basic-meter'\)\)/);assert.match(source,/natural End and actual empty-input practice assessment/);
  assert.doesNotMatch(source,/dispatchEvent|transport\.seek|state\.notation|progress'\)\.value\s*=/);
  for(const name of ['scripts/hosted-basic-key-check.mjs','scripts/windows-desktop-acceptance.ps1','crates/desktop-shell/src/acceptance.rs']){const text=await readFile(new URL('../'+name,import.meta.url),'utf8');assert.ok(text.includes('select-second'));assert.ok(!text.includes('seek-end'));}
@@ -454,3 +455,5 @@ test('Follow native result binds exact Space to the owned app without pointer cl
  const original=renderer('basic-key-restart');validateBasicKeyRenderer(original);
  for(const mutate of [r=>r.trusted=r.trusted.filter(e=>e.id!=='engraving-follow'),r=>r.trusted.find(e=>e.id==='engraving-follow').checked=false,r=>r.trusted.find(e=>e.id==='engraving-follow').trusted=false,r=>r.trusted.find(e=>e.id==='engraving-follow').actionSequence++,r=>r.notation.followActivations[0].sequence=r.actions+1]){const r=structuredClone(original);mutate(r);assert.throws(()=>validateBasicKeyRenderer(r));}
 });
+
+import "./engraving-ownership-observer.test.js";
