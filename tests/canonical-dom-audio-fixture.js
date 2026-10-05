@@ -23,7 +23,7 @@ export function canonicalDomAudio({onCreate=()=>{}}={}){
   class AudioWorkletNode {
     constructor(context,name){const node=context.harness.nodeFactory(name===CANONICAL_AUDIO_PROTOCOL?{Core:CanonicalAudioCore}:name===LIVE_TONE_PROTOCOL?{Core:LiveToneCore}:undefined),post=node.port.postMessage;node.port.postMessage=function(message,...args){if(message.type==='start')context.wallAudioOffset=context.currentTime-(performance.now()-context.createdWall)/1000;return post.call(this,message,...args);};return node;}
   }
-  return {AudioContext,AudioWorkletNode,advanceWall(wall){for(const device of devices)device.currentTime=(wall-device.createdWall)/1000+(device.wallAudioOffset||0);}};
+  return {AudioContext,AudioWorkletNode,sources:()=>devices.flatMap(device=>device.harness.nodes).filter(node=>node.core?.plan?.protocol===CANONICAL_AUDIO_PROTOCOL),advanceWall(wall){for(const device of devices)device.currentTime=(wall-device.createdWall)/1000+(device.wallAudioOffset||0);}};
 }
 
 /** Host-side fixture evidence, never a replacement for Rust acceptance. */

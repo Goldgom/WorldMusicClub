@@ -155,6 +155,7 @@ const MIDI_QUARANTINE_LIMITS=Object.freeze({observations:4096,observationBytes:1
 const midiQuarantineViews=[],quarantineEncoder=new TextEncoder();
 let midiRouteAmbiguous=false;
 let routedScoreRecorder=null;
+let scoreLiveStart=0;
 let keyboardInput=null, keyboardInputView=null, cleaningAllInputs=false, keyboardComposing=false;
 let guitarFingering=null,guitarFingeringView=null;
 let pianoFingering=null, beginnerView=null;
@@ -195,7 +196,7 @@ function changeScreen(screen){
 shell=setupGameShell({i18n,pausePlayback,onPanel:name=>{scoreSaveNavigation++;referenceListening?.close();performanceListening?.stop({revokePolicy:true});cancelPendingStart();if(name==='results')updateResultsSummary()},onScreen:changeScreen,
   onNotation:()=>{engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
 const noticeView=setupNoticeView({document,i18n,getScope:()=>state.score?.title});
-lobbyPreview=setupLobbyPreview({document,i18n,allowed:()=>shell.screen()==='library'&&!startingPreview&&!document.hidden&&!document.querySelector('dialog[open]')});
+lobbyPreview=setupLobbyPreview({document,i18n,api,allowed:()=>shell.screen()==='library'&&!startingPreview&&!document.hidden&&!document.querySelector('dialog[open]')});
 preview=new ScorePreview({compile:(score,signal)=>api('/api/compile',score,signal),check:checkPreview,onChange:()=>{renderPreview();renderCatalog()}});
 
 function notice(message, error = false) {
@@ -242,6 +243,7 @@ function updateButtons() {
   shell?.update({score:state.score,mode:state.mode,inspection:state.inspection,part:state.score?.parts.find(part=>part.id===state.practicePart)?.name,compatibility:{...state.compatibility,reason:compatibilityText(state.compatibility)},passes:state.recorder.passes.length});
 }
 function silenceHeld(reason = 'application_cleanup', eventWall = performance.now(), boundaryWall = null, recordEvidence = true) {
+  scoreLiveStart=Math.max(scoreLiveStart,reason==='loop_clock_stall'?eventWall:boundaryWall??eventWall);
   if (recordEvidence) state.recorder.evidence.cancel({reason,eventWall,receivedWall:performance.now(),boundaryWall});
   // The all-input evidence boundary above already owns these cancellations.
   // Synchronize physical ownership without appending a duplicate key boundary.
@@ -281,7 +283,7 @@ function resetPlayback() {
   // Keep the ordinary pause cleanup/evidence boundary, but render only after
   // this reset has replaced the old completed transport with the new clock.
   pausePlayback(undefined,'pause',{redraw:false});
-  transport.reset();activeMedia?.sync({positionMs:0,running:false});
+  transport.reset();canonicalSession.interpretation=null;activeMedia?.sync({positionMs:0,running:false});
   if (state.loop) transport.seek(state.loop.start_ms);
   state.loopIteration = 1;state.canonicalPassIndex=0;state.canonicalBudgetEnded=false;metronome?.reset();
   if (state.loopPending && !state.loop) bindText($('loop-status'), () => t('app.loopCancelled'));
@@ -857,7 +859,7 @@ async function pressNote(source, midi, velocity = 90, eventTime = null, options 
   if(options.inputKind==='midi' && !afterMidiCleanup(route,source,captureTime))return;
   rememberContact(source,{route,eventWall:captureTime,active:true});
   const freeLive=freeLiveInputAllowed(route,captureTime,options);
-  const scoreLive=route.kind==='score' && shell.screen()==='stage';
+  const scoreLive=route.kind==='score' && shell.screen()==='stage'&&captureTime>=scoreLiveStart;
   if(options.liveInput===false || document.hidden || document.querySelector('dialog[open]') || (!freeLive&&!scoreLive))return;
   const audioToken={route,eventWall:captureTime,liveOwner:freeLive?freeSession.liveOwner():null};heldAudioTokens.set(source,audioToken);
   state.held.set(source,midi);highlightKeys();
@@ -965,7 +967,7 @@ async function togglePlayback() {
       now=wallTime+(anchor.anchorTime-audioTime)*1000;
       if(!song&&!resumeCanonical){canonicalSession.bindWallClock({wallTime,audioTime,sampleRate:synth.context.sampleRate});state.canonicalPassIndex=0;state.canonicalBudgetEnded=false;}
       transport.position=anchor.positionMs;
-    }else{if(!song){const prepared=await canonicalSession.prepare({...options,soundEnabled:false,audiblePartIds:mode==='listen'&&targetPart?[targetPart]:undefined,range:state.loop?{startMs:state.loop.start_ms,endMs:state.loop.end_ms}:undefined,countInMs:countIn,loop:state.loop?{enabled:true}:undefined});if(!prepared||!current())return;}now=performance.now()+(state.cleanSong?50:0);}
+    }else{if(!song){const prepared=await canonicalSession.prepare({...options,soundEnabled:false,audiblePartIds:mode==='listen'&&targetPart?[targetPart]:undefined,range:state.loop?{startMs:state.loop.start_ms,endMs:state.loop.end_ms}:undefined,countInMs:countIn,loop:state.loop?{enabled:true}:undefined});if(!prepared||!current())return;state.canonicalPassIndex=0;state.canonicalBudgetEnded=false;}now=performance.now()+(state.cleanSong?50:0);}
     if(!current())return;
     state.playPending=false;state.inspection=false;
     transport.start(now,state.loop?.notes||state.practiceTimeline?.notes||state.compiled.timeline.notes,audioThread?0:countIn);
@@ -1108,6 +1110,14 @@ function advanceLoopClock(now) {
   if(!state.loop||!transport.running)return;
   const clock=!state.cleanSong?canonicalSession.sourceClock():null;
   if(clock&&canonicalSession.plan?.rangeMode){advanceCanonicalLoopClock(now,clock);return;}
+  // A failed/suspended source renderer must never fall through to a wall-clock
+  // wrap that could create a new pass after its audio generation was canceled.
+  if(!state.cleanSong&&!synth.muted&&canonicalSession.interpretation?.sound_enabled)return;
+  const silentBudget=!state.cleanSong&&synth.muted?canonicalSession.interpretation?.loop_budget:null;
+  if(silentBudget&&(state.canonicalPassIndex||0)>=silentBudget.max_passes-1&&transport.time(now)>=state.loop.end_ms){
+    const boundaryWall=transport.startedAt+state.loop.end_ms-transport.position;if(state.mode==='practice')state.recorder.closeAtEnd(boundaryWall);
+    state.canonicalBudgetEnded=true;transport.finish(state.loop.end_ms);silenceHeld('completion',now,boundaryWall);notice(()=>canonicalLoopBudgetText(i18n.locale,silentBudget,{ended:true}));bindText($('transport-status'),()=>t('app.complete'));updateButtons();refreshPassHistory();return;
+  }
   const beatMs=60000/(Number($('tempo').value)||100);
   const result=transport.wrapLoop(now,state.loop.notes,{start:state.loop.start_ms,end:state.loop.end_ms,countIn:$('count-in').checked?beatMs*4:0});
   if(result.status==='pending')return;
@@ -1118,6 +1128,7 @@ function advanceLoopClock(now) {
     bindText($('transport-status'), () => t('app.loopInterrupted'));
     notice(() => t('app.loopClockGap', {count:result.skippedPasses}),true);
   }else{
+    if(silentBudget)state.canonicalPassIndex=(state.canonicalPassIndex||0)+1;
     if(state.mode==='practice')beginPracticePass(result.boundaryWall);
     bindText($('transport-status'), () => t('app.loopIteration', {count:state.loopIteration}));
   }
@@ -1167,7 +1178,6 @@ function drawFrame(displayOnly = false) {
   const timeline = state.compiled?.timeline;
   const duration = timeline?.duration_ms || 0;
   const segmentStart = state.loop?.start_ms || 0;
-  const playbackNotes = state.cleanSong?timeline?.notes||[]:state.loop?.notes || state.practiceTimeline?.notes || timeline?.notes || [];
   const playbackIndex = state.mode==='practice'&&state.physicalIndex ? state.physicalIndex : state.cleanSong?state.timelineIndex:state.loop?.index || state.practiceIndex || state.timelineIndex;
   if (displayOnly!==true && transport.running && timeline) {
     if(!state.cleanSong)metronome?.advance({running:true,position,segment:transport.startedAt,startPosition:transport.position});
@@ -1299,7 +1309,7 @@ $('notation-part').addEventListener('change', () => { notationFollowing?.suspend
 $('notation-prev').addEventListener('click', () => { notationFollowing?.suspend();if(hasBasicKeyRendition(state.cleanSong)){engravedView.turnBasicPage(-1);return;}state.notationPage--; renderNotationPage(); });
 $('notation-next').addEventListener('click', () => { notationFollowing?.suspend();if(hasBasicKeyRendition(state.cleanSong)){engravedView.turnBasicPage(1);return;}state.notationPage++; renderNotationPage(); });
 $('play-button').addEventListener('click', togglePlayback);
-$('count-in').addEventListener('change',()=>{if(!state.cleanSong)pausePlayback();});
+$('count-in').addEventListener('change',()=>{if(!state.cleanSong){pausePlayback();if(!$('count-in').checked&&transport.position<(state.loop?.start_ms||0)){transport.position=state.loop?.start_ms||0;drawFrame();}}});
 $('reset-button').addEventListener('click', resetPlayback);
 $('progress').addEventListener('pointerdown',event=>{if(event.button===0&&canSeekPlayback())pausePlayback('app.seekPaused','seek');});
 $('progress').addEventListener('input',event=>{const bounds=playbackSeekBounds();seekPlayback(bounds&&canSeekPlayback()?nativeRangeSeekPosition(event.target,bounds):NaN);});

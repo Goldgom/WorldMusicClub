@@ -133,7 +133,7 @@ export async function nativeStorageApp(server,{now,audioSampleRate=8000,audioWor
   try{await import(`../web/app.js?native-storage-integration-${++sequence}`);getAppI18n(document).setLocale('en');await tick();}
   catch(error){await close();throw error;}
   return{document,window,$,audioNodes,audioHarnesses,audioGraphEvents,setAudioState(state){for(const audio of audioDevices){audio.state=state;audio.harness.setState(state);}},renderAudioTo(seconds){for(const harness of audioHarnesses){const target=Math.floor((seconds+(harness.wallAudioOffset||0))*harness.context.sampleRate);while(harness.frame<target)harness.renderBlock(Math.min(128,target-harness.frame));} },downloads,plays,openedDatabases,factory,requests:server.requests,tick,until,emit,click,exported,storageAction,savedButton,storageStatus,importFile,close,
-    sourceStartWall,waitForSourceStart:()=>until(()=>sourceStartWall()!==null&&performance.now()>=sourceStartWall(),'The source audio anchor has not arrived'),
+    sourceStartWall,waitForSourceStart:()=>until(()=>sourceStartWall()!==null&&performance.now()>=sourceStartWall()+10,'The source audio anchor has not arrived'),
     midiDevice,midi:(data,time=performance.now())=>midiDevice.onmidimessage?.({data,timeStamp:time}),
     frame(){const work=[...frames.values()];frames.clear();for(const callback of work)callback(performance.now());},audio:()=>({contexts:audioContexts,unlocks:unlockCalls}),setUnlock:fn=>{unlockImpl=fn;},setAudioModule:fn=>{audioModuleImpl=fn;}};
 }

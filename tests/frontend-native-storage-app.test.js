@@ -26,7 +26,7 @@ test('actual app lists native editions independently of a bundled score with the
     app.savedButton(firstKey).click();await app.until(()=>app.$('preview-title').textContent===saved.title&&!app.$('start-listen').disabled);
     assert.equal(app.savedButton(firstKey).getAttribute('aria-pressed'),'true');assert.equal(bundled.getAttribute('aria-pressed'),'false');
     await app.click('lobby-preview-play');await app.until(()=>app.$('lobby-preview-status').dataset.state==='playing');
-    assert.ok(app.plays.some(args=>String(args[0]).startsWith('lobby:')));assert.equal(app.$('export-button').disabled,true,'Audition has not created a score session');
+    assert.equal(app.plays.some(args=>String(args[0]).startsWith('lobby:')),false);assert.equal(app.audioNodes.filter(node=>node.connected&&node.core?.plan?.protocol==='wmh-canonical-audio-v1'&&node.core.plan.rangeMode).length,1);assert.equal(app.$('export-button').disabled,true,'Audition has not created a score session');
     await activate(app);assert.equal(app.$('score-title').textContent,saved.title);assert.deepEqual(await app.exported('export-button'),saved);
     assert.equal(saves(app).length,0,'Browsing, audition and activating an existing saved copy never autosave');noBrowserScoreStorage(app);
   }finally{await app.close();}
@@ -160,7 +160,7 @@ test('a save settling after Main menu and Free piano navigation preserves the li
 test('auditioning a saved edition leaves the existing score and take exports intact',async()=>{
   const saved=authoredScore({title:'Separate authored audition'}),server=await nativeScoreServer({scores:[saved]}),app=await nativeStorageApp(server);
   try {
-    await enterLibrary(app);await activate(app,'practice');
+    await enterLibrary(app);await activate(app,'practice');await app.waitForSourceStart();
     const key=app.$('keyboard').querySelector('[data-midi="60"]');app.emit(key,'pointerdown',{pointerId:1,button:0});app.emit(key,'pointerup',{pointerId:1,button:0});
     await app.click('back-to-library');
     const beforeScore=await app.exported('export-button'),beforeTakes=await app.exported('export-takes'),title=app.$('score-title').textContent,progress=readPlaybackClock(app.document).positionMs;

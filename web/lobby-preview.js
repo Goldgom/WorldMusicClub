@@ -1,86 +1,64 @@
-import {Synth, Transport} from './transport.js';
+import {Synth} from './transport.js';
+import {CanonicalPracticeSession} from './canonical-practice-session.js';
 import {localizeStatic} from './locale-view.js';
 
 export const LOBBY_PREVIEW_MS = 30000;
 
-/** A separate transport and Synth consume Rust's compiled source timeline.
- * There is no recorder, score mutation, adaptation, or input ownership here. */
+/** An independent, bounded source-audio generation. The timer observes the
+ * source clock for display and lifecycle only; all note gates run in a worklet. */
 export function createLobbyPreview({audio = new Synth(), now = () => performance.now(),
   schedule = callback => setTimeout(callback, 25), cancel = clearTimeout,
-  allowed = () => true, onChange = () => {}} = {}) {
-  const transport = new Transport();
-  let compiled = null, identity = null, notes = [], start = 0, end = 0;
-  let generation = 0, timer = null, status = 'empty', sound = true, volume = .45;
-  let lastTick = 0, instrument = 'piano', disposed = false;
-  const snapshot = () => ({status, identity, sound, volume, available: notes.length > 0,
-    position: Math.max(0, Math.min(end - start, transport.time(now()) - start)), duration: end - start});
-  const emit = () => onChange(snapshot());
-  function gain() {
-    audio.muted = !sound;
-    if (audio.output) audio.output.gain.value = .7 * volume;
+  allowed = () => true, onChange = () => {}, api, sessionFactory=options=>new CanonicalPracticeSession(options)} = {}) {
+  let compiled=null,identity=null,notes=[],start=0,end=0,position=0,generation=0,timer=null,status='empty',sound=true,volume=.45,lastTick=0,instrument='piano',disposed=false;
+  const session=sessionFactory({api,onError:()=>stop('failed'),onEnded:()=>stop('ended')});
+  const snapshot=()=>({status,identity,sound,volume,available:notes.length>0,position:Math.max(0,Math.min(end-start,(session.sourcePositionMs()??position)-start)),duration:end-start});
+  const emit=()=>onChange(snapshot());
+  function gain(){audio.muted=!sound;if(audio.output)audio.output.gain.value=.7*volume;}
+  function stop(reason='stopped'){
+    generation++;if(timer!==null)cancel(timer);timer=null;position=session.sourcePositionMs()??position;session.stop();status=reason;emit();
   }
-  function stop(reason = 'stopped') {
-    generation++;
-    if (timer !== null) cancel(timer);
-    timer = null;
-    transport.pause(now());
-    audio.silence();
-    status = reason; emit();
+  function tick(token){
+    if(disposed||token!==generation)return;
+    if(!allowed()||now()-lastTick>1000||audio.context?.state!=='running'){stop('interrupted');return;}
+    lastTick=now();position=session.sourcePositionMs()??position;
+    if(position>=end&&!session.running){stop('ended');return;}
+    emit();timer=schedule(()=>tick(token));
   }
-  function tick(token) {
-    if (disposed || token !== generation) return;
-    if (!allowed() || now() - lastTick > 1000 || audio.context?.state === 'suspended') {stop('interrupted');return;}
-    lastTick = now();
-    if (transport.time(lastTick) >= end) {transport.finish(end);stop('ended');return;}
-    try {
-      for (const note of transport.due(lastTick, notes, 80)) {
-        if (note.start_ms >= end) continue;
-        audio.play(`lobby:${token}:${transport.cursor}:${note.id}`, note.midi,
-          Math.min(note.remaining_ms, end - Math.max(transport.time(lastTick), note.start_ms)),
-          note.delay_ms, instrument, note.velocity ?? 90);
-      }
-    } catch {stop('failed');return;}
-    emit(); timer = schedule(() => tick(token));
-  }
-  function select(value) {
-    const next = value?.status === 'ready' ? value.compiled : null;
-    if (next === compiled && (value?.identity ?? null) === identity) return;
-    stop(); compiled = next; identity = value?.identity ?? null; notes = []; start = 0; end = 0;
-    const timeline = next?.timeline;
-    if (timeline && Array.isArray(timeline.notes) && Number.isFinite(timeline.duration_ms)) {
-      // Work on a sorted array; never sort or alter the canonical compiled data.
-      const valid = timeline.notes.every(note => Number.isFinite(note.start_ms) && note.start_ms >= 0 &&
-        Number.isFinite(note.duration_ms) && note.duration_ms > 0 && Number.isInteger(note.midi) && note.midi >= 0 && note.midi <= 127);
-      if (valid && timeline.notes.length) {
-        const sorted = [...timeline.notes].sort((a,b) => a.start_ms-b.start_ms);
-        start = sorted[0].start_ms;end = Math.min(timeline.duration_ms, start + LOBBY_PREVIEW_MS);
-        if (end > start) notes = sorted.filter(note => note.start_ms < end);
-      }
+  function select(value){
+    const next=value?.status==='ready'?value.compiled:null;
+    if(next===compiled&&(value?.identity??null)===identity)return;
+    stop();compiled=next;identity=value?.identity??null;notes=[];start=0;end=0;
+    const timeline=next?.timeline;
+    if(timeline&&Array.isArray(timeline.notes)&&Number.isFinite(timeline.duration_ms)){
+      const valid=timeline.notes.every(note=>Number.isFinite(note.start_ms)&&note.start_ms>=0&&Number.isFinite(note.duration_ms)&&note.duration_ms>0&&Number.isInteger(note.midi)&&note.midi>=0&&note.midi<=127);
+      if(valid&&timeline.notes.length){const sorted=[...timeline.notes].sort((a,b)=>a.start_ms-b.start_ms);start=sorted[0].start_ms;end=Math.min(timeline.duration_ms,start+LOBBY_PREVIEW_MS);if(end>start)notes=sorted.filter(note=>note.start_ms<end);}
     }
-    transport.seek(start);
-    status = value?.status === 'loading' ? 'loading' : next ? (notes.length ? 'ready' : 'noNotes') : 'empty';emit();
+    position=start;session.select(compiled);status=value?.status==='loading'?'loading':next?(notes.length?'ready':'noNotes'):'empty';emit();
   }
-  async function play() {
-    if (disposed || !allowed() || !notes.length || !sound || volume === 0 || ['playing','loadingAudio'].includes(status)) return false;
-    stop(); const token = generation, source = compiled; status = 'loadingAudio';emit();
-    try {
-      // Called synchronously from the button gesture, before any await.
-      await audio.unlock();
-      if (disposed || token !== generation || source !== compiled) return false;
-      if (!allowed() || !sound || volume === 0) {stop('interrupted');return false;}
-      gain();transport.seek(start);lastTick = now();transport.start(lastTick,notes);status = 'playing';emit();tick(token);return true;
-    } catch {if (token === generation) stop('failed');return false;}
+  async function play(){
+    if(disposed||!allowed()||!notes.length||!sound||volume===0||['playing','loadingAudio'].includes(status))return false;
+    stop();const token=generation,source=compiled;status='loadingAudio';emit();
+    const current=()=>!disposed&&token===generation&&source===compiled&&allowed()&&sound&&volume>0;
+    try{
+      await audio.unlock();if(!current()){if(token===generation)stop('interrupted');return false;}
+      gain();
+      const prepared=await session.prepare({context:audio.context,output:audio.output,mode:'listen',range:{startMs:start,endMs:end},countInMs:0});
+      if(!prepared||!current()){if(token===generation)stop('interrupted');return false;}
+      const anchor=await session.startPrepared({anchorTime:audio.context.currentTime+.05});
+      if(!anchor||!current()){if(token===generation)stop('interrupted');return false;}
+      session.bindWallClock({wallTime:now(),audioTime:audio.context.currentTime,sampleRate:audio.context.sampleRate});position=start;lastTick=now();status='playing';emit();tick(token);return true;
+    }catch{if(token===generation)stop('failed');return false;}
   }
   return {select,play,stop,snapshot,
-    setSound(value) {sound=Boolean(value);gain();if(!sound)stop('muted');else {if(status==='muted')status='stopped';emit();}},
-    setVolume(value) {const next=Number(value);if(!Number.isFinite(next))return;volume=Math.max(0,Math.min(1,next));gain();if(volume===0)stop('muted');else {if(status==='muted')status='stopped';emit();}},
-    setInstrument(value) {if(!['piano','guitar'].includes(value)||instrument===value)return;instrument=value;stop();},
-    destroy() {stop();disposed=true;}
+    setSound(value){sound=Boolean(value);gain();if(!sound)stop('muted');else{if(status==='muted')status='stopped';emit();}},
+    setVolume(value){const next=Number(value);if(!Number.isFinite(next))return;volume=Math.max(0,Math.min(1,next));gain();if(volume===0)stop('muted');else{if(status==='muted')status='stopped';emit();}},
+    setInstrument(value){if(!['piano','guitar'].includes(value)||instrument===value)return;instrument=value;stop();},
+    destroy(){stop();session.destroy();disposed=true;}
   };
 }
 
 const time = ms => `${Math.floor(ms/60000)}:${String(Math.floor(ms/1000)%60).padStart(2,'0')}`;
-export function setupLobbyPreview({document,i18n,allowed,audio,now,schedule,cancel}) {
+export function setupLobbyPreview({document,i18n,allowed,audio,now,schedule,cancel,api}) {
   const $ = id => document.getElementById(id), host=document.querySelector('.preview-copy');
   const panel=document.createElement('section');panel.className='lobby-audition';panel.setAttribute('aria-labelledby','lobby-preview-heading');
   panel.dataset.keyboardInput='off';
@@ -110,7 +88,7 @@ export function setupLobbyPreview({document,i18n,allowed,audio,now,schedule,canc
     $('lobby-preview-volume').value=String(Math.round(value.volume*100));
     $('lobby-preview-volume').setAttribute('aria-valuetext',`${Math.round(value.volume*100)}%`);
   }
-  const player=createLobbyPreview({audio,now,schedule,cancel,allowed,onChange:render});
+  const player=createLobbyPreview({audio,now,schedule,cancel,allowed,api,onChange:render});
   const cleanups=[];
   const listen=(node,event,callback)=>{node.addEventListener(event,callback);cleanups.push(()=>node.removeEventListener(event,callback));};
   listen($('lobby-preview-play'),'click',()=>['playing','loadingAudio'].includes(player.snapshot().status)?player.stop():player.play());

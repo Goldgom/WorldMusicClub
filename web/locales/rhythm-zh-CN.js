@@ -19,7 +19,7 @@ export default Object.freeze({
   'rhythm.previewStop': "■ 停止试听",
   'rhythm.previewSound': "试听声音",
   'rhythm.previewVolume': "试听音量",
-  'rhythm.previewScope': "原谱合成试听 · 最多 30 秒 · 不计入演奏记录",
+  'rhythm.previewScope': "乐谱正弦音参考 · 最多 30 秒 · 不计入演奏记录",
   'rhythm.previewEmpty': "选好曲子后，点击试听",
   'rhythm.previewReady': "已准备好，点击试听",
   'rhythm.previewLoading': "正在准备试听…",

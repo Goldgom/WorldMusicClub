@@ -11,6 +11,10 @@ export async function canonicalPracticeApp(options={}){
     const {path,body}=request;
     if(path==='/api/compile'&&body.id===score.id)return nativeResponse(evidence.compilation);
     if(path==='/api/canonical-audio-profile'&&body.id===score.id)return nativeResponse(evidence.profile);
+    if(path==='/api/practice-window'){
+      const start_ms=body.from.numerator/body.from.denominator*500,end_ms=body.to.numerator/body.to.denominator*500;
+      return nativeResponse({start_ms,end_ms,from:body.from,to:body.to,target_note_ids:evidence.compilation.timeline.notes.filter(note=>note.start_ms>=start_ms&&note.start_ms<end_ms).map(note=>note.id),crossing_notes:evidence.compilation.timeline.notes.filter(note=>note.start_ms<start_ms&&note.start_ms+note.duration_ms>start_ms).length,diagnostics:[]});
+    }
     if(path==='/api/practice-targets'){
       // Model the existing Rust physical-input result. Keep source audio raw.
       const grouped=new Map();for(const note of body.timeline.notes){const key=`${note.start_ms}:${note.midi}`;if(!grouped.has(key))grouped.set(key,[]);grouped.get(key).push(note);}
@@ -19,7 +23,7 @@ export async function canonicalPracticeApp(options={}){
       }
       return nativeResponse({timeline:{...body.timeline,notes},groups,diagnostics:[],source_note_count:body.timeline.notes.length,target_count:notes.length,playable:notes.length>0});
     }
-    if(path==='/api/assess')return nativeResponse({summary:null,matches:[],misses:body.timeline.notes,extras:[],advice:[]});
+    if(path==='/api/assess')return nativeResponse({hits:[],misses:body.timeline.notes.map(note=>note.id),extras:[],accuracy_percent:0,mean_abs_error_ms:null,summary:{expected_notes:body.timeline.notes.length,coverage_percent:0,timing_bias_ms:null,timing_stddev_ms:null,advice:[]},pitch_breakdown:[],grade_counts:{perfect:0,good:0,early:0,late:0,missed:body.timeline.notes.length,extra:0},onset_completion:{total:body.timeline.notes.length,complete:0,longest_complete_sequence:0}});
   });
   const app=await nativeStorageApp(server,{now:()=>clock,...options});const key=[...server.records.keys()][0];
   await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('start-complete-practice').disabled);

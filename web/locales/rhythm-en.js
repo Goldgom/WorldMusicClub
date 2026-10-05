@@ -19,7 +19,7 @@ export default Object.freeze({
   'rhythm.previewStop': "■ Stop preview",
   'rhythm.previewSound': "Preview sound",
   'rhythm.previewVolume': "Preview volume",
-  'rhythm.previewScope': "Synthesized source score · Up to 30 seconds · No performance recording",
+  'rhythm.previewScope': "Sine-tone score reference · Up to 30 seconds · No performance recording",
   'rhythm.previewEmpty': "Choose a song, then press Preview",
   'rhythm.previewReady': "Ready. Press Preview to listen",
   'rhythm.previewLoading': "Preparing preview…",

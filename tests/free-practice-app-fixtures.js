@@ -21,7 +21,7 @@ export async function freePracticeApp({fetchResult=null}={}) {
   const paint=new Proxy({createLinearGradient:()=>({addColorStop(){}})},{get:(target,key)=>target[key]||(()=>{})});
   window.HTMLCanvasElement.prototype.getContext=()=>paint;
   const param={setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){},setTargetAtTime(){},cancelScheduledValues(){}};
-  const {AudioContext:Audio,AudioWorkletNode}=canonicalDomAudio({onCreate:()=>audioContexts++});
+  const audioFixture=canonicalDomAudio({onCreate:()=>audioContexts++}),{AudioContext:Audio,AudioWorkletNode}=audioFixture;
   const originalUnlock=Synth.prototype.unlock,originalPlay=Synth.prototype.play,originalURL=URL.createObjectURL;
   Synth.prototype.unlock=function(...args){unlockCalls++;return unlockImpl?unlockImpl():originalUnlock.apply(this,args);};
   Synth.prototype.play=function(...args){plays.push(args);return originalPlay.apply(this,args);};
@@ -42,7 +42,7 @@ export async function freePracticeApp({fetchResult=null}={}) {
   await import(`../web/app.js?free-practice-integration-${++sequence}`);await tick();
   return {document,window,$,requests,downloads,plays,factory,device,access,emit,click,exported,until,tick,
     midi:(data,time=performance.now())=>device.onmidimessage?.({data,timeStamp:time}),
-    audio:()=>({contexts:audioContexts,unlocks:unlockCalls}),midiRequests:()=>midiRequests,setUnlock:fn=>{unlockImpl=fn;},
+    audio:()=>({contexts:audioContexts,unlocks:unlockCalls}),audioSources:audioFixture.sources,midiRequests:()=>midiRequests,setUnlock:fn=>{unlockImpl=fn;},
     async close(){emit(window,'pagehide');await tick();Synth.prototype.unlock=originalUnlock;Synth.prototype.play=originalPlay;URL.createObjectURL=originalURL;for(const [key,descriptor]of originals)if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key];}
   };
 }
