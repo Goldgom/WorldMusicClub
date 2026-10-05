@@ -11,6 +11,8 @@ import {setupKeyboardInputView} from '../web/keyboard-input-view.js';
 import {createKeyboardInput} from '../web/keyboard-input.js';
 import {setupBeginnerView} from '../web/beginner-view.js';
 import {createI18n} from '../web/i18n.js';
+import {nativeScoreServer,nativeStorageApp} from './native-storage-app-fixtures.js';
+import {readPlaybackClock} from '../web/playback-clock-view.js';
 
 const physicalC = {code:'KeyR', key:'r'};
 const fixedTones = ['1','♯1','2','♯2','3','4','♯4','5','♯5','6','♯6','7'];
@@ -197,6 +199,58 @@ test('guide and locale changes while holding a scored key retain its contact, DO
     assert.equal(after.input_evidence.events.filter(event=>event.kind==='note_on').length,1);
     assert.equal(after.input_evidence.events.filter(event=>event.kind==='note_off').length,1);
   } finally {await app.close();}
+});
+
+test('a beginner held-key probe needs source-clock progress to preserve a scored onset',async()=>{
+  // Pure DOM plus the production audio core, with an explicit clock. This
+  // reproduces a live held key before the 50 ms anchor without a browser/server.
+  let wall=1000;
+  const server=await nativeScoreServer(),app=await nativeStorageApp(server,{now:()=>wall});
+  try{
+    await app.click('import-tools-button');app.importFile(fixture);
+    await app.until(()=>app.$('score-title').textContent===fixture.title&&app.$('practice-scope').textContent.includes('physical attacks'));
+    app.$('import-tools-dialog').querySelector('[data-close-panel]').click();
+    await app.click('home-single-player');await app.click('resume-session');
+    await app.click('edit-song-mod');await app.click('song-mod-all-human');await app.click('song-mod-apply');
+    await app.until(()=>!app.$('song-mod-dialog').open&&!app.$('play-button').disabled);
+    app.$('count-in').checked=false;
+    await app.click('play-button');await app.until(()=>app.sourceStartWall()!==null);app.frame();
+    const anchor=app.sourceStartWall(),map=app.document.querySelector('#keyboard-map [data-code="KeyR"]');
+    assert.ok(anchor>wall);
+    assert.equal(readPlaybackClock(app.document).running,true);
+    assert.equal(readPlaybackClock(app.document).positionMs,0);
+    app.emit(app.$('stage-title'),'keydown',physicalC);
+    assert.equal(map.classList.contains('held'),true);
+    const early=await app.exported('export-takes');
+    assert.deepEqual(early.passes.at(-1).inputs,[],'A pre-anchor contact is live but cannot be assigned to the future take');
+    assert.equal(early.input_evidence.events[0].kind,'note_on');
+    assert.equal(early.input_evidence.events[0].onset_capture,null);
+
+    wall=anchor+60;app.renderAudioTo((wall-1000)/1000);app.frame();
+    assert.ok(readPlaybackClock(app.document).positionMs>0);
+    assert.deepEqual((await app.exported('export-takes')).passes.at(-1).inputs,[],'Crossing the anchor cannot invent a later onset for a held key');
+    app.emit(app.$('stage-title'),'keyup',physicalC);
+    app.emit(app.$('stage-title'),'keydown',physicalC);
+    const captured=await app.exported('export-takes');
+    assert.deepEqual(captured.passes.at(-1).inputs,[{midi:60,at_ms:60,velocity:90}]);
+    assert.equal(captured.input_evidence.events.at(-1).onset_capture.pass_id,captured.passes.at(-1).id);
+    toggle(app,'beginner-enabled',true);toggle(app,'beginner-enabled',false);toggle(app,'beginner-enabled',true);
+    assert.equal(app.document.querySelector('#keyboard-map [data-code="KeyR"]'),map);
+    assert.equal(map.classList.contains('held'),true);
+    assert.equal(readPlaybackClock(app.document).running,true);
+    assert.deepEqual(await app.exported('export-takes'),captured,'Guide changes keep the scored contact and its clock/evidence unchanged');
+
+    await app.click('settings-button');app.frame();
+    assert.equal(app.$('settings-dialog').open,true);
+    assert.equal(readPlaybackClock(app.document).running,false);
+    assert.equal(map.classList.contains('held'),false,'The real Settings boundary must still clean up held input');
+    const paused=await app.exported('export-takes');
+    assert.deepEqual(paused.passes.at(-1).inputs,captured.passes.at(-1).inputs);
+    assert.deepEqual(paused.input_evidence.events.filter(event=>event.kind==='synthetic_release').map(event=>event.reason),['pause']);
+    app.emit(app.$('stage-title'),'keyup',physicalC);
+    assert.deepEqual((await app.exported('export-takes')).passes.at(-1).inputs,captured.passes.at(-1).inputs);
+    assert.deepEqual(await app.exported('export-button'),fixture);
+  }finally{await app.close();}
 });
 
 test('input transposition labels sounded MIDI once while piano pitches, score key and source stay fixed', async()=>{

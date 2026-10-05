@@ -1,4 +1,4 @@
-import {readPlaybackClock, installPlaybackClockReader, waitForPlaybackClock} from './browser-playback-clock.js';
+import {readPlaybackClock, installPlaybackClockReader, waitForPlaybackClock, waitForPlaybackClockAdvance} from './browser-playback-clock.js';
 import assert from 'node:assert/strict';
 import {readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -156,8 +156,12 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui,setSession
     await setSessionMode('practice');await ui('#count-in').uncheck();await closeShellPanels();
     await page.locator('#notation-toggle').click();await page.waitForFunction(()=>document.querySelector('#engraved-staff svg .vf-notehead path'));
     const off=await compactStageGeometry(page);assertCompactStage(off);
-    await page.locator('#play-button:not([disabled])').click();await page.locator('#stage-title').click();await page.keyboard.down('r');
+    await page.locator('#play-button:not([disabled])').click();
+    // A held live key is not necessarily scored: Play admits a future audio
+    // anchor. Start this preservation probe only after the source clock moves.
+    await waitForPlaybackClockAdvance(page);await page.locator('#stage-title').click();await page.keyboard.down('r');
     await page.waitForFunction(()=>document.querySelector('#keyboard [data-midi="60"]').getAttribute('aria-pressed')==='true');
+    await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');
     await page.evaluate(()=>{window.beginnerResponsiveNodes=Object.fromEntries(['beginner-controls','beginner-enabled','beginner-reference','keyboard-compact-status','keyboard-map'].map(id=>[id,document.getElementById(id)]));});
     await page.locator('#beginner-enabled').check();
     const on=await compactStageGeometry(page);assertCompactStage(on);
@@ -226,8 +230,9 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui,setSession
     assert.equal(await page.locator('.beginner-note-label').count(),0);
     assert.equal(await page.locator('#beginner-controls').isVisible(),true);
     await setSessionMode('practice'); await ui('#count-in').uncheck(); await closeShellPanels();
-    await page.locator('#play-button:not([disabled])').click(); await page.locator('#stage-title').click(); await page.keyboard.down('r');
+    await page.locator('#play-button:not([disabled])').click(); await waitForPlaybackClockAdvance(page); await page.locator('#stage-title').click(); await page.keyboard.down('r');
     await page.waitForFunction(()=>document.querySelector('#keyboard [data-midi="60"]').getAttribute('aria-pressed')==='true');
+    await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');
     await page.evaluate(()=>{window.beginnerHeldNodes={key:document.querySelector('#keyboard [data-midi="60"]'),map:document.querySelector('#keyboard-map [data-code="KeyR"]')};});
     await page.locator('#beginner-enabled').check();
     assert.equal(await page.locator('#keyboard [data-midi="60"]').getAttribute('aria-pressed'),'true','Visible opt-in does not synthesize a release');
