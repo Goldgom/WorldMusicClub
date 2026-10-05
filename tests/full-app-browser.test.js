@@ -36,6 +36,7 @@ import {fixture} from './frontend-fixtures.js';
 import {densePianoforte} from './numbered-layout-fixtures.js';
 import {originalGuitarChordTransitions} from './guitar-live-fixtures.js';
 import {connectionDiagnostics} from './browser-connection-diagnostics.js';
+import {installAudioAdmissionDiagnostics, readAudioAdmissionDiagnostics} from './browser-audio-admission-diagnostics.js';
 import {validatePerformanceRecord} from '../web/performance-library.js';
 import {assertAddedLibraryCopies} from './library-copy-assertions.js';
 
@@ -359,7 +360,8 @@ async function captureFailureState(stage,error=null) {
   if(!page||page.isClosed())return;
   const name=`worldmusichub-live-${stage}-${currentTestName.replace(/[^a-zA-Z0-9]+/g,'-').slice(0,85)}`;
   const observed=await page.evaluate(()=>({scoreTitle:document.querySelector('#score-title')?.textContent,notice:document.querySelector('#notice')?.textContent,engravingStatus:document.querySelector('#engraving-status')?.textContent,engravingFallback:document.querySelector('#engraving-fallback')?.textContent,fallbackHidden:document.querySelector('#engraving-fallback')?.hidden,engravedSelected:document.querySelector('#engraved-button')?.getAttribute('aria-pressed'),svgCount:document.querySelectorAll('#engraved-staff svg').length,followStatus:document.querySelector('#engraving-follow-status')?.textContent,practiceGate:document.querySelector('#practice-gate-reason')?.textContent,transport:document.querySelector('#transport-status')?.textContent})).catch(error=>({observationError:error.message}));
-  const diagnostics={test:currentTestName,failure:error?{name:error.name,code:error.code,causeName:error.cause?.name,frames:String(error.stack||'').split('\n').filter(line=>/^\s*at /.test(line)).slice(0,6)}:null,observed,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverOutput:serverOutput.slice(-4000)};
+  const audioAdmission=await readAudioAdmissionDiagnostics(page);
+  const diagnostics={test:currentTestName,failure:error?{name:error.name,code:error.code,causeName:error.cause?.name,frames:String(error.stack||'').split('\n').filter(line=>/^\s*at /.test(line)).slice(0,6)}:null,observed,audioAdmission,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverOutput:serverOutput.slice(-4000)};
   await writeFile(join(artifactDirectory,`${name}.json`),JSON.stringify(diagnostics,null,2));
   await page.screenshot({path:join(artifactDirectory,`${name}.png`),fullPage:true,timeout:3000}).catch(()=>{});
 }
@@ -465,6 +467,7 @@ beforeEach(async t => {
       page.goto(origin, {waitUntil: 'domcontentloaded'}),
     ]);
     await waitForPlaybackClock(page);
+    await installAudioAdmissionDiagnostics(page);
     initialCompilation = await responseJson(compilation);
     await page.locator('#game-home').waitFor({state:'visible'});
     assert.equal(await page.locator('#workspace').isVisible(),false,'Startup menu does not activate a practice session');
@@ -477,10 +480,13 @@ beforeEach(async t => {
     await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('physical attacks'));
     await waitForEngraving();
     assert.equal(await ui('#engraved-button').getAttribute('aria-pressed'),'true','Supported original scores use the offline engraved view by default');
+    const audioAdmission=await readAudioAdmissionDiagnostics(page);
+    await writeFile(join(artifactDirectory,`worldmusichub-live-bootstrap-audio-${attemptedContexts}.json`),JSON.stringify({test:currentTestName,status:'ready',audioAdmission},null,2));
   } catch (error) {
     const observed = await page.evaluate(() => ({url:location.href,readyState:document.readyState,title:document.title,notice:document.querySelector('#notice')?.textContent,scoreTitle:document.querySelector('#score-title')?.textContent,playDisabled:document.querySelector('#play-button')?.disabled})).catch(failure=>({observationError:failure.message}));
     const connections=await connectionDiagnostics(origin);
-    const diagnostics={failure:error.message,connections,observed,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,runtime:{platform:process.platform,node:process.version,browser:browser.version(),attemptedContexts,processMemory:process.memoryUsage(),systemFreeBytes:freemem(),systemTotalBytes:totalmem(),activeResources:process.getActiveResourcesInfo()},apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverRunning:serverRunning(),serverOutput:serverOutput.slice(-4000)};
+    const audioAdmission=await readAudioAdmissionDiagnostics(page);
+    const diagnostics={failure:error.message,connections,observed,audioAdmission,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,runtime:{platform:process.platform,node:process.version,browser:browser.version(),attemptedContexts,processMemory:process.memoryUsage(),systemFreeBytes:freemem(),systemTotalBytes:totalmem(),activeResources:process.getActiveResourcesInfo()},apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverRunning:serverRunning(),serverOutput:serverOutput.slice(-4000)};
     await writeFile(join(artifactDirectory,'worldmusichub-live-bootstrap-diagnostics.json'),JSON.stringify(diagnostics,null,2));
     await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-bootstrap-failure.png'),fullPage:true,timeout:3000}).catch(()=>{});
     throw new Error(`Live app bootstrap failed without retry. Diagnostics: ${JSON.stringify(diagnostics)}`,{cause:error});
