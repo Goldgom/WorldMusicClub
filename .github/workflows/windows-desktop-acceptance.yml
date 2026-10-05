@@ -18,6 +18,11 @@ jobs:
       management_catalog_browser_verify: ${{ steps.management_catalog_browser_verify.outcome }}
       complete_practice_protocol: ${{ steps.complete_practice_protocol.outcome }}
       complete_practice_browser: ${{ steps.complete_practice_browser.outcome }}
+      canonical_practice_protocol: ${{ steps.canonical_practice_protocol.outcome }}
+      canonical_practice_browser_720: ${{ steps.canonical_practice_browser_720.outcome }}
+      canonical_practice_browser_720_verify: ${{ steps.canonical_practice_browser_720_verify.outcome }}
+      canonical_practice_browser_640: ${{ steps.canonical_practice_browser_640.outcome }}
+      canonical_practice_browser_640_verify: ${{ steps.canonical_practice_browser_640_verify.outcome }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -45,6 +50,7 @@ jobs:
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
       - run: node --test tests/complete-practice-acceptance.test.js
+      - run: npm run test:canonical-practice-acceptance
       - run: npm run test:bulk-import
       - run: node --test tests/pitch-bend-import-baseline.test.js tests/native-pitch-bend-evidence.test.js tests/pitch-bend-acceptance-workflow.test.js
       - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js tests/authoring-final-gate.test.js
@@ -77,6 +83,16 @@ jobs:
           WMH_COMPLETE_PRACTICE_CONVERTER: ${{ github.workspace }}/target/debug/clean-song-batch
           WMH_COMPLETE_PRACTICE_REPORT: ${{ github.workspace }}/test-results/complete-practice/native-protocol/report.json
         run: node scripts/check-complete-practice-native.mjs
+      - name: Original canonical JSON and MusicXML through exact Rust and production app DOM
+        id: canonical_practice_protocol
+        if: ${{ !cancelled() && steps.dense_native_driver.outcome == 'success' }}
+        timeout-minutes: 3
+        env:
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_SOURCE_TREE: ${{ steps.acceptance_source.outputs.source_tree }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_CANONICAL_PRACTICE_REPORT: ${{ github.workspace }}/test-results/canonical-practice/native-protocol/report.json
+        run: node scripts/check-canonical-practice-native.mjs
       - name: Complete clean media package through actual Rust protocol
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
@@ -179,6 +195,64 @@ jobs:
         run: |
           WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-complete-practice-check.mjs
           WMH_VIEWPORT_WIDTH=960 WMH_VIEWPORT_HEIGHT=640 node scripts/hosted-complete-practice-check.mjs
+      - name: Original canonical actual application at 1280x720
+        id: canonical_practice_browser_720
+        # Independent original source/storage; three phases are each bounded to 120s.
+        if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
+        timeout-minutes: 8
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_SOURCE_TREE: ${{ steps.acceptance_source.outputs.source_tree }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
+          WMH_VIEWPORT_WIDTH: '1280'
+          WMH_VIEWPORT_HEIGHT: '720'
+          WMH_ARTIFACT_DIR: ${{ github.workspace }}/test-results/canonical-practice/720
+        run: |
+          test ! -e "$WMH_ARTIFACT_DIR"
+          node scripts/hosted-canonical-practice-check.mjs
+      - name: Create and reverify original canonical 720px proof against exact source and driver
+        id: canonical_practice_browser_720_verify
+        if: ${{ !cancelled() && steps.canonical_practice_browser_720.outcome == 'success' }}
+        timeout-minutes: 2
+        env:
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_SOURCE_TREE: ${{ steps.acceptance_source.outputs.source_tree }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_ARTIFACT_DIR: ${{ github.workspace }}/test-results/canonical-practice/720
+        run: |
+          node scripts/verify-canonical-practice-evidence.mjs "$WMH_ARTIFACT_DIR"
+          node scripts/verify-canonical-practice-evidence.mjs --check "$WMH_ARTIFACT_DIR"
+      - name: Original canonical actual application at 960x640
+        id: canonical_practice_browser_640
+        # Independent original source/storage; three phases are each bounded to 120s.
+        if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
+        timeout-minutes: 8
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_SOURCE_TREE: ${{ steps.acceptance_source.outputs.source_tree }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
+          WMH_VIEWPORT_WIDTH: '960'
+          WMH_VIEWPORT_HEIGHT: '640'
+          WMH_ARTIFACT_DIR: ${{ github.workspace }}/test-results/canonical-practice/640
+        run: |
+          test ! -e "$WMH_ARTIFACT_DIR"
+          node scripts/hosted-canonical-practice-check.mjs
+      - name: Create and reverify original canonical 640px proof against exact source and driver
+        id: canonical_practice_browser_640_verify
+        if: ${{ !cancelled() && steps.canonical_practice_browser_640.outcome == 'success' }}
+        timeout-minutes: 2
+        env:
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_SOURCE_TREE: ${{ steps.acceptance_source.outputs.source_tree }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_ARTIFACT_DIR: ${{ github.workspace }}/test-results/canonical-practice/640
+        run: |
+          node scripts/verify-canonical-practice-evidence.mjs "$WMH_ARTIFACT_DIR"
+          node scripts/verify-canonical-practice-evidence.mjs --check "$WMH_ARTIFACT_DIR"
       - name: Original VSQ authoring, whole inventory, explicit practice and restart
         # Own fixtures, Scores and fresh processes; no basic-key evidence input.
         if: ${{ !cancelled() && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
@@ -244,6 +318,23 @@ jobs:
         run: |
           export WMH_SOURCE_TREE="$(git rev-parse 'HEAD^{tree}')"
           node scripts/verify-library-catalog-acceptance.mjs --check "$RUNNER_TEMP/library-management-browser/catalog"
+      - name: Retain original canonical browser proof, source files and exact driver
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: canonical-practice-browser-${{ github.sha }}
+          # Root JSON retains proof, report, action/results and renderer geometry.
+          # Only original fixture/library data; no browser profile directory.
+          path: |
+            test-results/canonical-practice/*/*.json
+            test-results/canonical-practice/*/*.png
+            test-results/canonical-practice/*/*.log
+            test-results/canonical-practice/*/downloads/*
+            test-results/canonical-practice/*/fixtures/*
+            test-results/canonical-practice/*/Scores/songs/**
+            test-results/canonical-practice/*/Scores/backups/**
+            target/debug/examples/native_import_driver
+          if-no-files-found: warn
       - name: Retain original management browser proof, exact driver and asset server
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -343,6 +434,8 @@ jobs:
       management_catalog_windows_verify: ${{ steps.management_catalog_windows_verify.outcome }}
       complete_practice_windows: ${{ steps.complete_practice_windows.outcome }}
       complete_practice_windows_verify: ${{ steps.complete_practice_windows_verify.outcome }}
+      canonical_practice_windows: ${{ steps.canonical_practice_windows.outcome }}
+      canonical_practice_windows_verify: ${{ steps.canonical_practice_windows_verify.outcome }}
     env:
       RUSTFLAGS: '-C target-feature=+crt-static'
       CARGO_INCREMENTAL: '0'
@@ -375,6 +468,7 @@ jobs:
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
       - run: node --test tests/complete-practice-acceptance.test.js
+      - run: npm run test:canonical-practice-acceptance
       - run: npm test
       - run: node --test tests/desktop-evidence.test.js tests/desktop-acceptance-wait.test.js tests/native-song-folder-evidence.test.js tests/native-bulk-import-evidence.test.js tests/native-clean-song-evidence.test.js tests/native-vsq-song-evidence.test.js tests/vsq-fingering-evidence.test.js tests/performance-song-fixtures.test.js tests/native-performance-song-evidence.test.js tests/pitch-bend-import-baseline.test.js tests/native-pitch-bend-evidence.test.js tests/pitch-bend-acceptance-workflow.test.js
       - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js tests/authoring-final-gate.test.js
@@ -482,6 +576,32 @@ jobs:
           $env:WMH_SOURCE_TREE=(git rev-parse 'HEAD^{tree}').Trim()
           node scripts/verify-complete-practice-evidence.mjs --check desktop-complete-practice
           if ($LASTEXITCODE -ne 0) { throw 'Complete-practice exact-source proof failed' }
+      - name: Native original canonical controls, PCM, exports and three-process restart
+        id: canonical_practice_windows
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
+        # Three owned native phases are each bounded to 240s.
+        timeout-minutes: 14
+        shell: pwsh
+        env:
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_SOURCE_TREE: ${{ steps.acceptance_source.outputs.source_tree }}
+          WMH_CANONICAL_PRACTICE_EXECUTABLE: ${{ github.workspace }}/target/release/worldmusichub-desktop.exe
+        run: |
+          if ((git rev-parse HEAD) -cne $env:GITHUB_SHA) { throw 'Unexpected canonical build source' }
+          if (git status --porcelain --untracked-files=normal) { throw 'Canonical acceptance source is dirty' }
+          ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-canonical-practice -Scenario canonical-practice
+      - name: Reverify canonical source, exact executable and every retained native result
+        id: canonical_practice_windows_verify
+        if: ${{ !cancelled() && steps.canonical_practice_windows.outcome == 'success' }}
+        timeout-minutes: 2
+        shell: pwsh
+        env:
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_CANONICAL_PRACTICE_EXECUTABLE: ${{ github.workspace }}/target/release/worldmusichub-desktop.exe
+        run: |
+          $env:WMH_SOURCE_TREE=(git rev-parse 'HEAD^{tree}').Trim()
+          node scripts/verify-canonical-practice-evidence.mjs --check desktop-canonical-practice
+          if ($LASTEXITCODE -ne 0) { throw 'Canonical-practice exact-source proof failed' }
       - name: Native original VSQ authoring and exact fresh-process restart
         # Generates its own fixtures and profile from the same checked build.
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
@@ -568,6 +688,9 @@ jobs:
           $env:WMH_COMPLETE_PRACTICE_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
           node scripts/verify-complete-practice-evidence.mjs --check desktop-complete-practice
           if ($LASTEXITCODE -ne 0) { throw 'Complete-practice evidence does not match exact packaged source and executable' }
+          $env:WMH_CANONICAL_PRACTICE_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
+          node scripts/verify-canonical-practice-evidence.mjs --check desktop-canonical-practice
+          if ($LASTEXITCODE -ne 0) { throw 'Canonical-practice evidence does not match exact packaged source and executable' }
           $count=(git rev-list --count HEAD).Trim()
           $folder='dist/WorldMusicClub-Native'
           New-Item -ItemType Directory "$folder/licenses/engraving","$folder/evidence" -Force | Out-Null
@@ -575,6 +698,7 @@ jobs:
           Copy-Item LICENSE $folder
           Copy-Item desktop-basic-key/native-basic-key.json,desktop-basic-key/basic-key-proof.json,desktop-basic-key/renderer-basic-key-*.json,desktop-basic-key/profile-basic-key-*.json "$folder/evidence/"
           Copy-Item desktop-complete-practice/native-complete-practice.json,desktop-complete-practice/complete-practice-proof.json,desktop-complete-practice/renderer-complete-practice-*.json,desktop-complete-practice/profile-complete-practice-*.json "$folder/evidence/"
+          Copy-Item desktop-canonical-practice/native-canonical-practice.json,desktop-canonical-practice/canonical-practice-proof.json,desktop-canonical-practice/renderer-canonical-practice-*.json,desktop-canonical-practice/profile-canonical-practice-*.json "$folder/evidence/"
           Copy-Item docs/WINDOWS_NATIVE.md "$folder/README.md"
           Copy-Item docs/WINDOWS_NATIVE.md "$folder/START-HERE.md"
           Copy-Item -Recurse docs,schema,schemas,catalog $folder
@@ -585,7 +709,7 @@ jobs:
           Copy-Item desktop-bulk-import/native-bulk-import.json,desktop-bulk-import/native-bulk-import-files.json,desktop-bulk-import/renderer-bulk-*.json,desktop-bulk-import/profile-bulk-*.json "$folder/evidence/"
           Copy-Item desktop-clean-song/native-clean-song.json,desktop-clean-song/native-clean-song-files.json,desktop-clean-song/renderer-clean-*.json,desktop-clean-song/profile-clean-*.json "$folder/evidence/"
           Copy-Item desktop-vsq-song/native-vsq-song.json,desktop-vsq-song/native-vsq-song-files.json,desktop-vsq-song/renderer-vsq-*.json,desktop-vsq-song/profile-vsq-*.json "$folder/evidence/"
-          python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder --performance-song desktop-performance-song --pitch-bend desktop-pitch-bend --song-authoring desktop-authoring --vsq-authoring desktop-vsq-authoring --basic-key desktop-basic-key --catalog-evidence "$env:RUNNER_TEMP/library-management-windows"
+          python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder --performance-song desktop-performance-song --pitch-bend desktop-pitch-bend --song-authoring desktop-authoring --vsq-authoring desktop-vsq-authoring --basic-key desktop-basic-key --canonical-practice desktop-canonical-practice --catalog-evidence "$env:RUNNER_TEMP/library-management-windows"
           if ($LASTEXITCODE -ne 0) { throw 'Native provenance/acceptance inventory failed' }
           $zip="dist/WorldMusicClub-Native-Windows-x64-commit-$count.zip"
           python scripts/native-release-manifest.py archive $folder $zip
@@ -598,6 +722,23 @@ jobs:
           $destination=Join-Path $env:RUNNER_TEMP 'wmh-native-portable-extracted'
           Expand-Archive -Path '${{ steps.native_package.outputs.archive }}' -DestinationPath $destination
           ./scripts/windows-native-portable-smoke.ps1 -Directory (Join-Path $destination 'WorldMusicClub-Native') -OutputDirectory desktop-portable
+      - name: Retain original canonical native proof and exact executable
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: canonical-practice-windows-${{ github.sha }}
+          # Retain all action/result/geometry JSON and original scores/backups.
+          # Keep the shared WebView profile outside this explicit allowlist.
+          path: |
+            desktop-canonical-practice/*.json
+            desktop-canonical-practice/*.png
+            desktop-canonical-practice/*.log
+            desktop-canonical-practice/downloads/*
+            desktop-canonical-practice/fixtures/*
+            desktop-canonical-practice/Scores/songs/**
+            desktop-canonical-practice/Scores/backups/**
+            target/release/worldmusichub-desktop.exe
+          if-no-files-found: warn
       - name: Preserve bounded evidence on success and failure
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -728,9 +869,9 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs');
           const jobs = ['bulk-import-browser', 'native-feature-acceptance'];
-          const managementSteps = {
-            'bulk-import-browser': ['management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser'],
-            'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify'],
+          const mandatorySteps = {
+            'bulk-import-browser': ['management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser', 'canonical_practice_protocol', 'canonical_practice_browser_720', 'canonical_practice_browser_720_verify', 'canonical_practice_browser_640', 'canonical_practice_browser_640_verify'],
+            'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify', 'canonical_practice_windows', 'canonical_practice_windows_verify'],
           };
           const needs = JSON.parse(process.env.ACCEPTANCE_NEEDS);
           const sha = process.env.ACCEPTANCE_SHA;
@@ -748,7 +889,7 @@ jobs:
             } else if (outputs.source_sha !== sha || outputs.run_id !== run || !/^[0-9a-f]{40}$/.test(outputs.source_tree || '')) {
               errors.push(`${job}: source/run identity is missing or differs`);
             }
-            for (const step of managementSteps[job]) {
+            for (const step of mandatorySteps[job]) {
               const outcome = outputs[step] || 'missing';
               lines.push(`${job}/${step}: ${outcome}`);
               if (outcome !== 'success') errors.push(`${job}/${step}: ${outcome} (success required)`);

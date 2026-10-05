@@ -7,9 +7,9 @@ import test from 'node:test';
 
 const workflow = readFileSync(new URL('../.github/workflows/windows-desktop-acceptance.yml', import.meta.url), 'utf8');
 const jobIds = ['bulk-import-browser', 'native-feature-acceptance'];
-const managementOutputs = {
-  'bulk-import-browser': ['management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser'],
-  'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify'],
+const mandatoryOutputs = {
+  'bulk-import-browser': ['management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser', 'canonical_practice_protocol', 'canonical_practice_browser_720', 'canonical_practice_browser_720_verify', 'canonical_practice_browser_640', 'canonical_practice_browser_640_verify'],
+  'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify', 'canonical_practice_windows', 'canonical_practice_windows_verify'],
 };
 // These contracts intentionally inspect the workflow's literal job/step blocks;
 // the behavioral cases execute its actual summary program, not a test copy.
@@ -29,7 +29,7 @@ const sha = 'a'.repeat(40), tree = 'b'.repeat(40), run = '123456';
 function passingNeeds() {
   return Object.fromEntries(jobIds.map(id => [id, {
     result: 'success', outputs: { source_sha: sha, source_tree: tree, run_id: run,
-      ...Object.fromEntries(managementOutputs[id].map(name => [name, 'success'])) },
+      ...Object.fromEntries(mandatoryOutputs[id].map(name => [name, 'success'])) },
   }]));
 }
 function check(needs, extraEnv = {}) {
@@ -59,7 +59,7 @@ function gateRuns(step, { failed = false, cancelled = false, outcomes = {} } = {
     if (clause === 'success()') return !failed && !cancelled;
     if (clause === '!cancelled()') return !cancelled;
     if (clause === 'always()') return true;
-    const prerequisite = clause.match(/^steps\.([a-z_]+)\.outcome == 'success'$/)?.[1];
+    const prerequisite = clause.match(/^steps\.([a-z_][a-z_0-9]*)\.outcome == 'success'$/)?.[1];
     assert.ok(prerequisite, `Unsupported acceptance condition: ${clause}`);
     return outcomes[prerequisite] === 'success';
   });
@@ -95,7 +95,7 @@ test('a failed basic-key gate cannot suppress independent VSQ, twelve-part and m
     assert.doesNotMatch(jobSteps[basicIndex], /^        continue-on-error:/m);
     assert.doesNotMatch(gate, /^        continue-on-error:/m);
     const outcomes = Object.fromEntries(Object.keys(prerequisites).map(id => [id, 'success']));
-    const actual = [...gate.matchAll(/steps\.([a-z_]+)\.outcome/g)].map(match => match[1]);
+    const actual = [...gate.matchAll(/steps\.([a-z_][a-z_0-9]*)\.outcome/g)].map(match => match[1]);
     assert.deepEqual(actual.sort(), Object.keys(prerequisites).sort(), `${target}: only real inputs`);
     for (const [id, command] of Object.entries(prerequisites)) {
       const index = jobSteps.findIndex(step => step.includes(`id: ${id}\n`));
@@ -216,8 +216,8 @@ test('missing jobs/outputs and stale source, tree or run fail even with successf
   assert.equal(check(passingNeeds(), { ACCEPTANCE_RUN_ID: '' }).status, 1);
 });
 
-test('the exact-source summary requires every management run and recheck even when both jobs report success', () => {
-  for (const [id, names] of Object.entries(managementOutputs)) {
+test('the exact-source summary requires every mandatory run and recheck even when both jobs report success', () => {
+  for (const [id, names] of Object.entries(mandatoryOutputs)) {
     const block = jobBlock(id), jobSteps = steps(block);
     for (const name of names) {
       assert.ok(block.includes(`${name}: \${{ steps.${name}.outcome }}`), `${name}: export actual step outcome`);
@@ -419,7 +419,7 @@ test('one failed picker cannot hide later independent song browser evidence', ()
   for(const name of ['vsq-song','performance-song','pitch-bend','song-authoring','basic-key']) {
     const index=jobSteps.findIndex(step=>step.includes(`node scripts/hosted-${name}-check.mjs`)),gate=jobSteps[index];
     assert.ok(index>predecessor);assert.doesNotMatch(gate,/^        continue-on-error:/m);
-    assert.deepEqual([...gate.matchAll(/steps\.([a-z_]+)\.outcome/g)].map(row=>row[1]).sort(),Object.keys(inputs).sort());
+    assert.deepEqual([...gate.matchAll(/steps\.([a-z_][a-z_0-9]*)\.outcome/g)].map(row=>row[1]).sort(),Object.keys(inputs).sort());
     assert.equal(gateRuns(gate,{failed:true,outcomes:inputs}),true);
     assert.equal(gateRuns(gate,{cancelled:true,outcomes:inputs}),false);
     for(const key of Object.keys(inputs))for(const outcome of ['failure','skipped','cancelled',undefined])
@@ -470,4 +470,114 @@ test('failed packaging still retains original desktop downloads without profile 
   const paths = [...upload.matchAll(/^            (.+)$/gm)].map(match => match[1]).filter(path => path.startsWith('desktop-acceptance/'));
   assert.deepEqual(paths, ['desktop-acceptance/*.json', 'desktop-acceptance/*.png', 'desktop-acceptance/*.log', 'desktop-acceptance/downloads/*']);
   assert.doesNotMatch(paths.join('\n'), /webview|profile|\*\*/);
+});
+
+
+test('canonical Rust and both actual browser sizes have independent mandatory execution and strict proof gates', () => {
+  const browser = steps(jobBlock(jobIds[0]));
+  const find = id => browser.find(step => step.includes(`id: ${id}\n`));
+  const protocol = find('canonical_practice_protocol');
+  assert.equal(browser.indexOf(protocol), browser.indexOf(find('complete_practice_protocol')) + 1);
+  assert.match(protocol, /run: node scripts\/check-canonical-practice-native\.mjs/);
+  assert.match(protocol, /WMH_CANONICAL_PRACTICE_REPORT: \$\{\{ github\.workspace \}\}\/test-results\/canonical-practice\/native-protocol\/report\.json/);
+  const build = browser.find(step => step.includes('id: dense_native_driver\n'));
+  const server = browser.find(step => step.includes('id: notation_server\n'));
+  const setup = browser.find(step => step.includes('id: dense_browser_setup\n'));
+  assert.ok(browser.indexOf(build) < browser.indexOf(protocol));
+  assert.equal(browser.filter(step => step.includes('cargo build -p worldmusichub-desktop --example native_import_driver --locked')).length, 1);
+  assert.equal(browser.filter(step => step.includes('cargo build -p practice-server --locked')).length, 1);
+  const gates = [[protocol, {dense_native_driver: 'success'}, 3]];
+  let previous = find('complete_practice_browser');
+  for (const [width, height] of [[1280, 720], [960, 640]]) {
+    const id = `canonical_practice_browser_${height}`, hosted = find(id), verify = find(`${id}_verify`);
+    assert.ok(browser.indexOf(previous) < browser.indexOf(hosted));
+    for (const prerequisite of [build, server, setup]) assert.ok(browser.indexOf(prerequisite) < browser.indexOf(hosted));
+    assert.ok(browser.indexOf(hosted) < browser.indexOf(verify));
+    previous = verify;
+    gates.push([hosted, {notation_server: 'success', dense_native_driver: 'success', dense_browser_setup: 'success'}, 8], [verify, {[id]: 'success'}, 2]);
+    assert.match(hosted, /WMH_HOSTED_BROWSER: '1'/);
+    assert.ok(hosted.includes(`WMH_VIEWPORT_WIDTH: '${width}'`));
+    assert.ok(hosted.includes(`WMH_VIEWPORT_HEIGHT: '${height}'`));
+    assert.match(hosted, /WMH_SERVER_BINARY: \$\{\{ github\.workspace \}\}\/target\/debug\/practice-server/);
+    assert.match(hosted, /test ! -e "\$WMH_ARTIFACT_DIR"/);
+    assert.match(hosted, /node scripts\/hosted-canonical-practice-check\.mjs/);
+    for (const step of [hosted, verify]) assert.ok(step.includes(`WMH_ARTIFACT_DIR: \${{ github.workspace }}/test-results/canonical-practice/${height}\n`));
+    const create = 'node scripts/verify-canonical-practice-evidence.mjs "$WMH_ARTIFACT_DIR"';
+    const check = 'node scripts/verify-canonical-practice-evidence.mjs --check "$WMH_ARTIFACT_DIR"';
+    assert.ok(verify.includes(create) && verify.indexOf(check) > verify.indexOf(create), 'Create proof first, then check retained proof without rewriting it');
+  }
+  for (const [step, prerequisites, minutes] of gates) {
+    assert.ok(step);
+    assert.match(step, /WMH_SOURCE_SHA: \$\{\{ github\.sha \}\}/);
+    assert.match(step, /WMH_SOURCE_TREE: \$\{\{ steps\.acceptance_source\.outputs\.source_tree \}\}/);
+    assert.match(step, /WMH_NATIVE_IMPORT_DRIVER: \$\{\{ github\.workspace \}\}\/target\/debug\/examples\/native_import_driver/);
+    assert.ok(step.includes(`timeout-minutes: ${minutes}\n`));
+    assert.doesNotMatch(step, /continue-on-error/);
+    assert.deepEqual([...step.matchAll(/steps\.([a-z_][a-z_0-9]*)\.outcome/g)].map(row => row[1]).sort(), Object.keys(prerequisites).sort());
+    assert.equal(gateRuns(step, {failed: true, outcomes: prerequisites}), true);
+    assert.equal(gateRuns(step, {cancelled: true, outcomes: prerequisites}), false);
+    for (const id of Object.keys(prerequisites)) for (const outcome of ['failure', 'skipped', 'cancelled', undefined]) {
+      assert.equal(gateRuns(step, {outcomes: {...prerequisites, [id]: outcome}}), false);
+    }
+  }
+  assert.match(jobBlock(jobIds[0]), /^    timeout-minutes: 45$/m);
+  assert.match(jobBlock(jobIds[1]), /^    timeout-minutes: 60$/m);
+});
+
+test('canonical Windows proof binds the built EXE and source before both package copy and required manifest inclusion', () => {
+  const native = steps(jobBlock(jobIds[1]));
+  const windows = native.find(step => step.includes('id: canonical_practice_windows\n'));
+  const verify = native.find(step => step.includes('id: canonical_practice_windows_verify\n'));
+  const pack = native.find(step => step.includes('id: native_package\n'));
+  for (const [step, prerequisites, minutes] of [[windows, {native_build: 'success'}, 14], [verify, {canonical_practice_windows: 'success'}, 2]]) {
+    assert.ok(step);
+    assert.match(step, /WMH_SOURCE_SHA: \$\{\{ github\.sha \}\}/);
+    assert.match(step, /WMH_CANONICAL_PRACTICE_EXECUTABLE: \$\{\{ github\.workspace \}\}\/target\/release\/worldmusichub-desktop\.exe/);
+    assert.ok(step.includes(`timeout-minutes: ${minutes}\n`));
+    assert.doesNotMatch(step, /continue-on-error/);
+    assert.equal(gateRuns(step, {failed: true, outcomes: prerequisites}), true);
+    assert.equal(gateRuns(step, {cancelled: true, outcomes: prerequisites}), false);
+    for (const id of Object.keys(prerequisites)) for (const outcome of ['failure', 'skipped', 'cancelled', undefined]) {
+      assert.equal(gateRuns(step, {outcomes: {...prerequisites, [id]: outcome}}), false);
+    }
+  }
+  assert.match(windows, /WMH_SOURCE_TREE: \$\{\{ steps\.acceptance_source\.outputs\.source_tree \}\}/);
+  assert.match(windows, /git status --porcelain --untracked-files=normal/);
+  assert.match(windows, /-Executable target\/release\/worldmusichub-desktop\.exe -OutputDirectory desktop-canonical-practice -Scenario canonical-practice/);
+  assert.match(verify, /WMH_SOURCE_TREE=\(git rev-parse 'HEAD\^\{tree\}'\)\.Trim\(\)/);
+  const command = 'node scripts/verify-canonical-practice-evidence.mjs --check desktop-canonical-practice';
+  assert.ok(verify.includes(command));
+  assert.match(verify, /if \(\$LASTEXITCODE -ne 0\) \{ throw 'Canonical-practice exact-source proof failed' \}/);
+  assert.ok(native.indexOf(windows) < native.indexOf(verify) && native.indexOf(verify) < native.indexOf(pack));
+  const checked = pack.indexOf(command);
+  for (const binding of ["$env:WMH_SOURCE_SHA='\${{ github.sha }}'", '$env:WMH_SOURCE_TREE=$currentTree',
+    "$env:WMH_CANONICAL_PRACTICE_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path"]) {
+    assert.ok(pack.indexOf(binding) >= 0 && checked > pack.indexOf(binding), binding);
+  }
+  assert.ok(checked >= 0 && checked < pack.indexOf('Copy-Item target/release/worldmusichub-desktop.exe'));
+  assert.ok(checked < pack.indexOf('native-release-manifest.py create'));
+  assert.match(pack, /if \(\$LASTEXITCODE -ne 0\) \{ throw 'Canonical-practice evidence does not match exact packaged source and executable' \}/);
+  assert.match(pack, /native-release-manifest\.py create .* --canonical-practice desktop-canonical-practice(?: |$)/);
+  assert.match(pack, /Copy-Item desktop-canonical-practice\/native-canonical-practice\.json,desktop-canonical-practice\/canonical-practice-proof\.json,desktop-canonical-practice\/renderer-canonical-practice-\*\.json,desktop-canonical-practice\/profile-canonical-practice-\*\.json/);
+  assert.doesNotMatch(pack, /^        (?:if|continue-on-error):/m);
+  assert.equal(gateRuns(pack, {failed: true}), false);
+});
+
+test('canonical evidence uploads preserve original proof and score bytes after failure without profile directories', () => {
+  const suffixes = ['*.json', '*.png', '*.log', 'downloads/*', 'fixtures/*', 'Scores/songs/**', 'Scores/backups/**'];
+  for (const [id, name, root, executable] of [
+    [jobIds[0], 'canonical-practice-browser', 'test-results/canonical-practice/*/', 'target/debug/examples/native_import_driver'],
+    [jobIds[1], 'canonical-practice-windows', 'desktop-canonical-practice/', 'target/release/worldmusichub-desktop.exe'],
+  ]) {
+    const upload = steps(jobBlock(id)).find(step => step.includes(`name: ${name}-\${{ github.sha }}`));
+    assert.ok(upload); assert.match(upload, /uses: actions\/upload-artifact@/);
+    assert.equal(gateRuns(upload, {failed: true}), true);
+    assert.equal(gateRuns(upload, {cancelled: true}), true);
+    const paths = [...upload.matchAll(/^            (.+)$/gm)].map(row => row[1]);
+    assert.deepEqual(paths.sort(), [...suffixes.map(suffix => root + suffix), executable].sort());
+    assert.doesNotMatch(paths.join('\n'), /webview-profile|prior-profile|AppData|USERPROFILE/);
+  }
+  const ignore = readFileSync(new URL('../.gitignore', import.meta.url), 'utf8');
+  assert.match(ignore, /^\/desktop-canonical-practice\/$/m);
+  assert.doesNotMatch(ignore, /^\/desktop-\*\/?$/m);
 });
