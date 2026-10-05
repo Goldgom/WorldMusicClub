@@ -23,6 +23,7 @@ pub const PITCH_BEND_PHASES: [&str; 2] = ["pitch-bend-seed", "pitch-bend-restart
 pub const BASIC_KEY_PHASES: [&str; 2] = ["basic-key-seed", "basic-key-restart"];
 pub const AUTHORING_PHASES: [&str; 2] = ["authoring-seed", "authoring-restart"];
 pub const VSQ_AUTHORING_PHASES: [&str; 2] = ["vsq-authoring-seed", "vsq-authoring-restart"];
+pub const CATALOG_PHASES: [&str; 3] = ["catalog-seed", "catalog-restart", "catalog-final"];
 pub const MAX_CLEAN_REPORT_BYTES: usize = 1024 * 1024;
 pub const MAX_SMOKE_REPORT_BYTES: usize = 64 * 1024;
 pub const MAX_BULK_REPORT_BYTES: usize = 4 * 1024 * 1024;
@@ -31,6 +32,7 @@ pub struct Acceptance {
     pub phase: &'static str,
     downloads: Mutex<Vec<Value>>,
     trace: Mutex<Vec<Value>>,
+    catalog_snapshot_requested: Mutex<bool>,
     started: Instant,
 }
 impl Acceptance {
@@ -46,6 +48,7 @@ impl Acceptance {
             .chain(AUTHORING_PHASES)
             .chain(VSQ_AUTHORING_PHASES)
             .chain(BASIC_KEY_PHASES)
+            .chain(CATALOG_PHASES)
             .find(|candidate| *candidate == phase)
             .ok_or("Unknown acceptance phase")?;
         std::fs::create_dir_all(directory.join("downloads"))
@@ -55,6 +58,7 @@ impl Acceptance {
             phase,
             downloads: Mutex::new(Vec::new()),
             trace: Mutex::new(Vec::new()),
+            catalog_snapshot_requested: Mutex::new(false),
             started: Instant::now(),
         })
     }
@@ -118,6 +122,8 @@ impl Acceptance {
                 || BASIC_KEY_PHASES.contains(&self.phase)
             {
                 &performance
+            } else if CATALOG_PHASES.contains(&self.phase) {
+                include_str!("../library-catalog-acceptance.js")
             } else if VSQ_PHASES.contains(&self.phase) {
                 include_str!("../vsq-song-acceptance.js")
             } else if CLEAN_PHASES.contains(&self.phase) {
@@ -144,17 +150,20 @@ impl Acceptance {
             || PITCH_BEND_PHASES.contains(&self.phase)
             || AUTHORING_PHASES.contains(&self.phase)
             || VSQ_AUTHORING_PHASES.contains(&self.phase)
-            || BASIC_KEY_PHASES.contains(&self.phase);
+            || BASIC_KEY_PHASES.contains(&self.phase)
+            || CATALOG_PHASES.contains(&self.phase);
         self.directory.join(if song_folder {
             "Scores"
         } else {
             "score-library"
         })
     }
-    /// Only the ordinary desktop restart scenario intentionally shares browser
-    /// storage. Every disk-library phase has one finite, non-reusable profile.
+    /// Desktop restarts and the catalog recovery scenario share browser storage.
+    /// Other disk-library phases retain their finite, non-reusable profiles.
     pub fn profile_directory(&self) -> PathBuf {
-        if PHASES.contains(&self.phase) {
+        if CATALOG_PHASES.contains(&self.phase) {
+            self.directory.join("webview-catalog-profile")
+        } else if PHASES.contains(&self.phase) {
             self.directory.join("webview-profile")
         } else {
             self.directory.join("webview-profiles").join(self.phase)
@@ -162,10 +171,22 @@ impl Acceptance {
     }
     pub fn prepare_webview_profile(&self) -> std::io::Result<PathBuf> {
         let profile = self.profile_directory();
-        let fresh_required = !PHASES.contains(&self.phase);
+        let catalog = CATALOG_PHASES.contains(&self.phase);
+        let existing_required = catalog && self.phase != "catalog-seed";
+        let fresh_required = !PHASES.contains(&self.phase) && !existing_required;
         let prepare = || -> std::io::Result<bool> {
             require_ordinary_directory(&self.directory)?;
-            if fresh_required {
+            if existing_required {
+                // A restart must never manufacture a replacement browser profile.
+                // Require the same ordinary path and bounded earlier host records.
+                require_ordinary_directory(&profile)?;
+                self.require_catalog_profile_evidence("catalog-seed", true)?;
+                if self.phase == "catalog-final" {
+                    self.require_catalog_profile_evidence("catalog-restart", false)?;
+                }
+                return Ok(false);
+            }
+            if fresh_required && !catalog {
                 let parent = self.directory.join("webview-profiles");
                 match std::fs::create_dir(&parent) {
                     Ok(()) => {}
@@ -216,6 +237,23 @@ impl Acceptance {
         )?;
         Ok(profile)
     }
+    fn require_catalog_profile_evidence(&self, phase: &str, fresh: bool) -> std::io::Result<()> {
+        let path = self.directory.join(format!("profile-{phase}.json"));
+        let proof = read_ordinary_json(&path, 8192)?;
+        if proof["version"] != 1
+            || proof["phase"] != phase
+            || !proof["process_id"].as_u64().is_some_and(|id| id > 0)
+            || proof["profile_directory"] != json!(self.profile_directory())
+            || proof["library_directory"] != json!(self.library_directory())
+            || proof["fresh_required"] != fresh
+            || proof["created_new"] != fresh
+        {
+            return Err(std::io::Error::other(
+                "Catalog profile ownership evidence does not match",
+            ));
+        }
+        Ok(())
+    }
     fn report_limit(&self) -> usize {
         if CLEAN_PHASES.contains(&self.phase)
             || VSQ_PHASES.contains(&self.phase)
@@ -224,6 +262,7 @@ impl Acceptance {
             || AUTHORING_PHASES.contains(&self.phase)
             || VSQ_AUTHORING_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
+            || CATALOG_PHASES.contains(&self.phase)
         {
             MAX_CLEAN_REPORT_BYTES
         } else if BULK_PHASES.contains(&self.phase) {
@@ -247,6 +286,7 @@ impl Acceptance {
             && !AUTHORING_PHASES.contains(&self.phase)
             && !VSQ_AUTHORING_PHASES.contains(&self.phase)
             && !BASIC_KEY_PHASES.contains(&self.phase)
+            && !CATALOG_PHASES.contains(&self.phase)
         {
             return;
         }
@@ -333,10 +373,12 @@ impl Acceptance {
             || PITCH_BEND_PHASES.contains(&self.phase)
             || AUTHORING_PHASES.contains(&self.phase)
             || VSQ_AUTHORING_PHASES.contains(&self.phase)
-            || BASIC_KEY_PHASES.contains(&self.phase))
+            || BASIC_KEY_PHASES.contains(&self.phase)
+            || CATALOG_PHASES.contains(&self.phase))
             && (name.to_lowercase().ends_with(".zip")
                 || ((AUTHORING_PHASES.contains(&self.phase)
-                    || VSQ_AUTHORING_PHASES.contains(&self.phase))
+                    || VSQ_AUTHORING_PHASES.contains(&self.phase)
+                    || CATALOG_PHASES.contains(&self.phase))
                     && name.to_lowercase().ends_with(".wmhpack")))
         {
             "zip"
@@ -365,7 +407,15 @@ impl Acceptance {
     }
     pub fn handle(&self, request: &Request<Vec<u8>>) -> Option<Response<Vec<u8>>> {
         let path = request.uri().path();
-        let result = if path == "/__desktop_smoke/progress" && request.method() == "POST" {
+        let result = if path == "/__desktop_smoke/catalog-config" {
+            if !CATALOG_PHASES.contains(&self.phase) || request.method() != "GET" {
+                return Some(error(404, "Not found"));
+            }
+            match read_ordinary_json(&self.directory.join("catalog-config.json"), 128 * 1024) {
+                Ok(value) if value.is_object() => value,
+                _ => return Some(error(500, "Invalid catalog acceptance configuration")),
+            }
+        } else if path == "/__desktop_smoke/progress" && request.method() == "POST" {
             if request.body().len() > 1024 {
                 return Some(error(400, "Invalid acceptance progress"));
             }
@@ -389,6 +439,18 @@ impl Acceptance {
             };
             if !valid_action(&value) {
                 return Some(error(400, "Invalid acceptance action"));
+            }
+            if value["kind"] == "catalog-snapshot-before" {
+                if self.phase != "catalog-seed" {
+                    return Some(error(400, "Catalog snapshot requires the seed phase"));
+                }
+                let Ok(mut requested) = self.catalog_snapshot_requested.lock() else {
+                    return Some(error(500, "Cannot reserve catalog snapshot"));
+                };
+                if *requested {
+                    return Some(error(400, "Catalog snapshot already requested"));
+                }
+                *requested = true;
             }
             let name = format!(
                 "action-{}-{}.json",
@@ -426,8 +488,26 @@ impl Acceptance {
         ))
     }
 }
-fn require_ordinary_directory(path: &Path) -> std::io::Result<()> {
+fn read_ordinary_json(path: &Path, limit: usize) -> std::io::Result<Value> {
+    use std::io::Read;
     let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.is_file() || is_reparse(&metadata) || metadata.len() > limit as u64 {
+        return Err(std::io::Error::other(
+            "Invalid bounded acceptance JSON file",
+        ));
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(limit as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > limit {
+        return Err(std::io::Error::other(
+            "Acceptance JSON file exceeds its byte bound",
+        ));
+    }
+    serde_json::from_slice(&bytes).map_err(std::io::Error::from)
+}
+fn is_reparse(metadata: &std::fs::Metadata) -> bool {
     #[cfg(windows)]
     let reparse = {
         use std::os::windows::fs::MetadataExt;
@@ -435,7 +515,11 @@ fn require_ordinary_directory(path: &Path) -> std::io::Result<()> {
     };
     #[cfg(not(windows))]
     let reparse = metadata.is_symlink();
-    if !metadata.is_dir() || reparse {
+    reparse
+}
+fn require_ordinary_directory(path: &Path) -> std::io::Result<()> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.is_dir() || is_reparse(&metadata) {
         return Err(std::io::Error::other(format!(
             "Acceptance profile parent must be an ordinary directory: {}",
             path.display()
@@ -463,6 +547,7 @@ pub fn receive_report(
             || AUTHORING_PHASES.contains(&run.phase)
             || VSQ_AUTHORING_PHASES.contains(&run.phase)
             || BASIC_KEY_PHASES.contains(&run.phase)
+            || CATALOG_PHASES.contains(&run.phase)
     });
     let limit = bulk.map_or(MAX_SMOKE_REPORT_BYTES, Acceptance::report_limit);
     let reject = |status, code, message| {
@@ -579,6 +664,7 @@ fn valid_action(value: &Value) -> bool {
     if ![
         "picker",
         "cancel-picker",
+        "catalog-snapshot-before",
         "key-r",
         "key-c5",
         "toggle-follow",
@@ -625,6 +711,9 @@ fn valid_action(value: &Value) -> bool {
             "vsq-authored-song.zip",
             "performance-authored-songs.zip",
             "pitch-bend-authored-songs.zip",
+            "catalog-original-legacy.zip",
+            "catalog-original-shared.zip",
+            "catalog-original-clean.zip",
             "basic-key-original.zip",
             "basic-key-invalid-profile.zip",
             "basic-key-forged-coverage.zip",
@@ -657,6 +746,7 @@ fn valid_action(value: &Value) -> bool {
             .iter()
             .chain(VSQ_AUTHORING_PHASES.iter())
             .chain(BASIC_KEY_PHASES.iter())
+            .chain(CATALOG_PHASES.iter())
             .any(|phase| {
                 (1..=16).any(|sequence| {
                     file == format!("{phase}-{sequence}.json")
@@ -846,6 +936,198 @@ mod tests {
             .unwrap();
             assert_eq!(proof["fresh_required"], false);
             assert_eq!(proof["created_new"], index == 0);
+        }
+    }
+
+    #[test]
+    fn catalog_profiles_require_new_seed_then_matching_existing_predecessors() {
+        let evidence = Evidence::new();
+        for phase in ["catalog-restart", "catalog-final"] {
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert!(run.prepare_webview_profile().is_err());
+            assert!(!run.profile_directory().exists());
+        }
+        let seed = Acceptance::new(evidence.0.clone(), "catalog-seed").unwrap();
+        let profile = seed.prepare_webview_profile().unwrap();
+        assert_eq!(profile, evidence.0.join("webview-catalog-profile"));
+        assert!(seed.prepare_webview_profile().is_err());
+        std::fs::write(profile.join("retained-browser-data"), b"unchanged").unwrap();
+        let restart = Acceptance::new(evidence.0.clone(), "catalog-restart").unwrap();
+        let seed_proof = evidence.0.join("profile-catalog-seed.json");
+        let original = std::fs::read(&seed_proof).unwrap();
+        for (field, wrong) in [
+            ("phase", json!("seed")),
+            ("process_id", json!(true)),
+            (
+                "profile_directory",
+                json!(evidence.0.join("webview-profile")),
+            ),
+            ("library_directory", json!(evidence.0.join("score-library"))),
+            ("fresh_required", json!(false)),
+            ("created_new", json!(false)),
+        ] {
+            let mut proof: Value = serde_json::from_slice(&original).unwrap();
+            proof[field] = wrong;
+            std::fs::write(&seed_proof, serde_json::to_vec(&proof).unwrap()).unwrap();
+            assert!(restart.prepare_webview_profile().is_err(), "{field}");
+        }
+        std::fs::write(&seed_proof, original).unwrap();
+        let final_run = Acceptance::new(evidence.0.clone(), "catalog-final").unwrap();
+        assert!(final_run.prepare_webview_profile().is_err());
+        assert_eq!(restart.prepare_webview_profile().unwrap(), profile);
+        assert_eq!(final_run.prepare_webview_profile().unwrap(), profile);
+        for phase in CATALOG_PHASES {
+            let proof = read_ordinary_json(&evidence.0.join(format!("profile-{phase}.json")), 8192)
+                .unwrap();
+            assert_eq!(proof["fresh_required"], phase == "catalog-seed");
+            assert_eq!(proof["created_new"], phase == "catalog-seed");
+            assert_eq!(proof["library_directory"], json!(evidence.0.join("Scores")));
+        }
+        assert_eq!(
+            std::fs::read(profile.join("retained-browser-data")).unwrap(),
+            b"unchanged"
+        );
+        std::fs::remove_dir_all(&profile).unwrap();
+        assert!(restart.prepare_webview_profile().is_err());
+        assert!(!profile.exists());
+    }
+
+    #[test]
+    fn catalog_configuration_and_snapshot_routes_are_bounded_and_phase_owned() {
+        let evidence = Evidence::new();
+        let seed = Acceptance::new(evidence.0.clone(), "catalog-seed").unwrap();
+        let config = evidence.0.join("catalog-config.json");
+        std::fs::write(&config, br#"{"version":1,"run_id":"owned"}"#).unwrap();
+        let get = Request::builder()
+            .method("GET")
+            .uri("/__desktop_smoke/catalog-config")
+            .body(vec![])
+            .unwrap();
+        assert_eq!(seed.handle(&get).unwrap().status(), 200);
+        for phase in PHASES.into_iter().chain(BASIC_KEY_PHASES) {
+            let other = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert_eq!(other.handle(&get).unwrap().status(), 404);
+        }
+        for bytes in [
+            b"[]".to_vec(),
+            b"invalid".to_vec(),
+            vec![b' '; 128 * 1024 + 1],
+        ] {
+            std::fs::write(&config, bytes).unwrap();
+            assert_eq!(seed.handle(&get).unwrap().status(), 500);
+        }
+        let checkpoint = Request::builder().method("POST").uri("/__desktop_smoke/action")
+            .body(serde_json::to_vec(&json!({"version":1,"sequence":1,"kind":"catalog-snapshot-before","x":1,"y":1,"width":1280,"height":720})).unwrap()).unwrap();
+        assert_eq!(seed.handle(&checkpoint).unwrap().status(), 200);
+        assert_eq!(seed.handle(&checkpoint).unwrap().status(), 400);
+        for phase in ["catalog-restart", "catalog-final", "seed", "bulk-seed"] {
+            let other = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert_eq!(other.handle(&checkpoint).unwrap().status(), 400);
+        }
+        assert!(evidence.0.join("action-catalog-seed-1.json").is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn catalog_profiles_and_configuration_reject_linked_evidence() {
+        let evidence = Evidence::new();
+        let seed = Acceptance::new(evidence.0.clone(), "catalog-seed").unwrap();
+        let profile = seed.prepare_webview_profile().unwrap();
+        let outside = evidence.0.join("outside-profile");
+        std::fs::rename(&profile, &outside).unwrap();
+        std::os::unix::fs::symlink(&outside, &profile).unwrap();
+        let restart = Acceptance::new(evidence.0.clone(), "catalog-restart").unwrap();
+        assert!(restart.prepare_webview_profile().is_err());
+        std::fs::remove_file(&profile).unwrap();
+        std::fs::rename(&outside, &profile).unwrap();
+        let seed_proof = evidence.0.join("profile-catalog-seed.json");
+        let linked = evidence.0.join("linked-proof.json");
+        std::fs::rename(&seed_proof, &linked).unwrap();
+        std::os::unix::fs::symlink(&linked, &seed_proof).unwrap();
+        assert!(restart.prepare_webview_profile().is_err());
+        std::os::unix::fs::symlink(&linked, evidence.0.join("catalog-config.json")).unwrap();
+        let get = Request::builder()
+            .method("GET")
+            .uri("/__desktop_smoke/catalog-config")
+            .body(vec![])
+            .unwrap();
+        assert_eq!(seed.handle(&get).unwrap().status(), 500);
+    }
+
+    #[test]
+    fn catalog_registration_preserves_finite_inputs_and_one_mib_report_protocol() {
+        let evidence = Evidence::new();
+        for phase in CATALOG_PHASES {
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert!(run
+                .script()
+                .contains(include_str!("../library-catalog-acceptance.js")));
+            assert!(run.script().contains(include_str!("../acceptance-wait.js")));
+            assert!(run
+                .script()
+                .contains(include_str!("../reference-acceptance.js")));
+            assert_eq!(run.library_directory(), evidence.0.join("Scores"));
+            assert_eq!(run.report_limit(), MAX_CLEAN_REPORT_BYTES);
+            let request = report_request("POST", sized_report(Some(phase), MAX_CLEAN_REPORT_BYTES));
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &request).status(),
+                200
+            );
+            let oversized = report_request(
+                "POST",
+                sized_report(Some(phase), MAX_CLEAN_REPORT_BYTES + 1),
+            );
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &oversized).status(),
+                400
+            );
+            let rejected =
+                read_ordinary_json(&evidence.0.join(run.report_name()), MAX_CLEAN_REPORT_BYTES)
+                    .unwrap();
+            assert_eq!(rejected["report_failure"]["code"], "report_size");
+            let wrong_phase = report_request("POST", sized_report(Some("seed"), 512));
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &wrong_phase).status(),
+                400
+            );
+            assert!(run
+                .download("catalog.wmhpack")
+                .unwrap()
+                .ends_with(format!("{phase}-1.zip")));
+            assert!(run
+                .download("catalog.zip")
+                .unwrap()
+                .ends_with(format!("{phase}-2.zip")));
+            for suffix in ["1.zip", "16.json"] {
+                assert!(valid_action(
+                    &json!({"version":1,"sequence":64,"kind":"picker","x":1,"y":1,"width":1280,"height":720,"file":format!("{phase}-{suffix}")})
+                ));
+            }
+        }
+        for file in [
+            "catalog-original-legacy.zip",
+            "catalog-original-shared.zip",
+            "catalog-original-clean.zip",
+        ] {
+            let action = json!({"version":1,"sequence":1,"kind":"picker","x":1,"y":1,"width":1280,"height":720,"file":file});
+            assert!(valid_action(&action));
+            for invalid in [
+                format!("../{file}"),
+                format!("{file}.extra"),
+                file.to_uppercase(),
+            ] {
+                let mut wrong = action.clone();
+                wrong["file"] = json!(invalid);
+                assert!(!valid_action(&wrong));
+            }
+        }
+        for phase in [
+            "catalog-any",
+            "catalog-seed-extra",
+            "Catalog-seed",
+            "../catalog-seed",
+        ] {
+            assert!(Acceptance::new(evidence.0.clone(), phase).is_err());
         }
     }
 

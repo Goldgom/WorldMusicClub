@@ -1,0 +1,151 @@
+{
+  "endpoint": "POST /api/library/manage/query",
+  "content_type": "application/json",
+  "native_only": true,
+  "request": {
+    "view": "packs",
+    "search": "",
+    "pack_id": null,
+    "unfiled": false,
+    "duplicate_kind": null,
+    "limit": 40,
+    "cursor": null,
+    "refresh": false
+  },
+  "request_rules": {
+    "view": [
+      "packs",
+      "songs",
+      "duplicates",
+      "issues"
+    ],
+    "duplicate_kind": [
+      null,
+      "exact_content",
+      "same_id",
+      "same_title"
+    ],
+    "limit": "1..100; default 40",
+    "search": "up to 256 UTF-8 bytes",
+    "cursor": "opaque string from next_cursor, binds snapshot/view/filter/limit; refresh with cursor is invalid",
+    "refresh": "Initial query builds verified snapshot. Explicit refresh rebuilds it. Search/pagination reuse cached metadata without payload hashing. An import completion should refresh.",
+    "pack_id": "null or import-<64 lowercase hex>; supported for songs and issues views",
+    "unfiled": "songs view only; cannot combine with pack_id"
+  },
+  "response_example": {
+    "format": "worldmusichub-library-management",
+    "version": 1,
+    "view": "packs",
+    "read_only": true,
+    "native_only": true,
+    "snapshot_id": "sha256",
+    "freshness": {
+      "kind": "advisory_snapshot",
+      "verified_at_unix_ms": 0,
+      "cached": false,
+      "change_detection": "explicit_refresh",
+      "song_integrity": "verified_at_snapshot"
+    },
+    "summary": {
+      "packs": 1,
+      "songs": 1,
+      "memberships": 1,
+      "shared_songs": 0,
+      "unfiled_songs": 0,
+      "duplicate_groups": 0,
+      "issues": 0
+    },
+    "total": 1,
+    "next_cursor": null,
+    "rows": [
+      {
+        "pack_id": "import-<sha256>",
+        "archive_key": "pack-<sha256>",
+        "name": "original.zip",
+        "song_count": 1,
+        "shared_song_count": 0,
+        "retained_only_count": 0,
+        "receipt_count": 1,
+        "issue_count": 0,
+        "source_bytes": 500,
+        "provenance": "validated_receipts"
+      }
+    ]
+  },
+  "song_row": {
+    "edition_id": "legacy:song-<sha256>",
+    "key": "song-<sha256>",
+    "storage_kind": "legacy",
+    "content_sha256": "sha256",
+    "score_id": "original-id",
+    "title": "Original",
+    "composer": "",
+    "profile": "canonical",
+    "pack_ids": [
+      "import-<sha256>"
+    ],
+    "pack_count": 1,
+    "receipt_reference_count": 1,
+    "source_reference_count": 1,
+    "packs": [
+      {
+        "pack_id": "import-<sha256>",
+        "name": "original.zip"
+      }
+    ]
+  },
+  "duplicate_row": {
+    "group_id": "same_id:<sha256>",
+    "kind": "same_id",
+    "match": "original-id",
+    "edition_count": 2,
+    "pack_count": 1,
+    "reference_count": 2,
+    "editions": [
+      {
+        "edition_id": "legacy:song-<sha256>",
+        "key": "song-<sha256>",
+        "storage_kind": "legacy",
+        "content_sha256": "sha256",
+        "score_id": "original-id",
+        "title": "Original",
+        "composer": "",
+        "profile": "canonical",
+        "pack_ids": [
+          "import-<sha256>"
+        ],
+        "pack_count": 1,
+        "receipt_reference_count": 1,
+        "source_reference_count": 1,
+        "packs": [
+          {
+            "pack_id": "import-<sha256>",
+            "name": "original.zip"
+          }
+        ]
+      }
+    ],
+    "evidence_type": "distinct_editions"
+  },
+  "duplicate_rules": "exact_content: multiple format-qualified editions with same content identity, or one edition referenced by distinct archive/item paths. evidence_type is multiple_editions, shared_edition, or repeated_source_item. Retry receipts for the same archive/item are counted only in receipt_reference_count and do not create duplicate songs. duplicate.reference_count sums source_reference_count. same_id: distinct editions with exact same score_id. same_title: distinct editions with Unicode lowercase + collapsed whitespace title. Both use evidence_type distinct_editions. Categories may overlap; never auto-merge or claim reclaimable bytes.",
+  "issue_row": {
+    "issue_id": "issue-<sha256>",
+    "code": "pack_report_pending",
+    "message": "Retained source has no complete receipt",
+    "archive_key": "pack-<sha256>",
+    "song_key": null
+  },
+  "errors": {
+    "400": "library_invalid_request or library_invalid_cursor",
+    "409": "library_snapshot_stale",
+    "413": "library_query_limit",
+    "503": "library_unavailable"
+  },
+  "scope": "No delete, rename, membership writes, restore or trash endpoint. No browser fallback. Payload verification remains authoritative on existing list/load/export. Snapshot refresh may perform existing verified scan recovery. Retained-only/conflict/ready/error rows never become song memberships.",
+  "issue_rules": "archive_key is null or validated pack-64hex; song_key is null or validated song-64hex. Receipt references with malformed song keys are unresolved and have null song_key. Retained-only source items expose their latest bounded original diagnostic code and a message containing the item path and original diagnostic detail; they remain absent from song rows. Later failed reimports preserve their original bounded code/message/path even if older successful receipts proved existing membership; normal duplicate and unselected-ready retries do not create failure issues.",
+  "pack_provenance": {
+    "validated_receipts": "Retained source identity has at least one validated complete committed receipt; may still contain unsupported-only items or visible issues.",
+    "unresolved": "Retained source has no validated complete receipt, its retained inventory cannot be validated, or only its independent original backup exists; no membership was inferred from that source."
+  },
+  "source_reference_identity": "Format-aware logical identity: standalone/MXL singleton, standalone library-backup entry index, exact ZIP member path, or ZIP backup member plus original entry index. Upload renames do not add references; distinct ZIP paths never collapse by title."
+}

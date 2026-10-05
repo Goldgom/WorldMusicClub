@@ -195,8 +195,9 @@ test('new phases agree across Rust, native orchestration and every fresh-profile
  const rustPhases=Object.fromEntries([...rust.matchAll(/pub const (\w*PHASES): \[&str; \d+\] = \[([\s\S]*?)\];/g)]
   .map(([,key,value])=>[key,quoted(value,/"([^"]+)"/g)]));
  assert.deepEqual(rustPhases.VSQ_AUTHORING_PHASES,phases);
- const fresh=Object.entries(rustPhases).filter(([key])=>key!=='PHASES').flatMap(([,values])=>values);
+ const fresh=Object.entries(rustPhases).filter(([key])=>!['PHASES','CATALOG_PHASES'].includes(key)).flatMap(([,values])=>values);
  assert.deepEqual(quoted(profile.match(/\$fresh=@\(([^\n]+)\)/)[1],/'([^']+)'/g),fresh);
+ assert.deepEqual(quoted(profile.match(/\$catalog=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.CATALOG_PHASES);
  assert.deepEqual(quoted(contract.match(/\$freshPhases=@\(([^\n]+)\)/)[1],/'([^']+)'/g),fresh);
  assert.match(native,/\$Scenario -eq 'vsq-authoring'\)\{@\('vsq-authoring-seed','vsq-authoring-restart'\)\}/);
  assert.ok(quoted(native.match(/\[ValidateSet\(([^\n]+?)\)\]/)[1],/'([^']+)'/g).includes('vsq-authoring'));

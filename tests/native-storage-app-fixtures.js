@@ -54,9 +54,9 @@ export async function nativeScoreServer({scores=[],directory='C:\\Test-only\\Wor
 }
 
 /** Real app import, mocked DOM/audio/native transport and isolated browser storage. */
-export async function nativeStorageApp(server,{now,audioSampleRate=8000,audioWorklet=true,audioMessages=true,liveAudioMessages=true}={}) {
+export async function nativeStorageApp(server,{now,audioSampleRate=8000,audioWorklet=true,audioMessages=true,liveAudioMessages=true,storageValues=new Map()}={}) {
   const {document,window}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8'));
-  const audioNodes=[],audioHarnesses=[],audioDevices=[],audioGraphEvents=[];const downloads=[],plays=[],values=new Map(),factory=new IDBFactory(),openedDatabases=[];
+  const audioNodes=[],audioHarnesses=[],audioDevices=[],audioGraphEvents=[];const downloads=[],plays=[],values=storageValues,factory=new IDBFactory(),openedDatabases=[];
   const midiDevice={id:'test-device',name:'Test MIDI',state:'connected',connection:'open',onmidimessage:null};
   const midiAccess={inputs:new Map([[midiDevice.id,midiDevice]]),onstatechange:null};
   let unlockImpl=null,audioModuleImpl=null,audioContexts=0,unlockCalls=0,frameId=0;const frames=new Map();

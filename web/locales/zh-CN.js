@@ -1,3 +1,4 @@
+import libraryManagementMessages from './library-management-zh-CN.js';
 import referenceListeningMessages from './reference-listening-zh-CN.js';
 import rhythmMessages from './rhythm-zh-CN.js';
 import preferencesRuntimeMessages from './preferences-runtime-zh-CN.js';
@@ -18,6 +19,7 @@ import shellMessages from './shell-zh-CN.js';
 import staticMessages from './static-zh-CN.js';
 /** Application-owned display text only. Authored score data and identifiers stay unchanged. */
 export default Object.freeze({
+  ...libraryManagementMessages,
   ...referenceListeningMessages,
   ...rhythmMessages,
   ...preferencesRuntimeMessages,

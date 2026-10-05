@@ -1204,25 +1204,41 @@ fn room_for(library: &NativeLibrary, bytes: u64) -> Result<()> {
 /// this transaction's freshly verified index. No persistent cache can hide edits.
 pub struct Batch<'a> {
     library: &'a NativeLibrary,
-    _lock: super::LibraryLock<'a>,
+    _lock: Option<super::LibraryLock<'a>>,
     inventory: Inventory,
     reserved_bytes: u64,
+    inventory_dirty: bool,
 }
 impl<'a> Batch<'a> {
     pub fn begin(library: &'a NativeLibrary) -> Result<Self> {
         let lock = library.lock()?;
+        crate::catalog_product::load_managed_locked(library)?;
+        let mut batch = Self::begin_locked(library)?;
+        batch._lock = Some(lock);
+        Ok(batch)
+    }
+    /// The importer holds the native lock across source retention, every song
+    /// save and the final receipt, and checks the managed catalog before entry.
+    pub(crate) fn begin_locked(library: &'a NativeLibrary) -> Result<Self> {
         areas(library)?;
         let inventory = library.scan()?;
         let reserved_bytes = storage_usage(library)?;
         Ok(Self {
             library,
-            _lock: lock,
+            _lock: None,
             inventory,
             reserved_bytes,
+            inventory_dirty: false,
         })
     }
     pub fn entries(&self) -> &[Entry] {
         &self.inventory.entries
+    }
+    pub(crate) fn save_legacy(&mut self, request: super::SaveRequest) -> Result<Entry> {
+        // A failed publication can still leave a recoverable backup. The next
+        // clean admission must refresh physical quota/dedupe even on an error.
+        self.inventory_dirty = true;
+        self.library.save_locked(request)
     }
     pub fn save(
         &mut self,
@@ -1231,6 +1247,11 @@ impl<'a> Batch<'a> {
         keep_both: bool,
         mut reader: impl FnMut(&Media) -> Result<Vec<u8>>,
     ) -> Result<Entry> {
+        if self.inventory_dirty {
+            self.inventory = self.library.scan()?;
+            self.reserved_bytes = storage_usage(self.library)?;
+            self.inventory_dirty = false;
+        }
         save_checked(
             self.library,
             &mut self.inventory,
@@ -1556,6 +1577,7 @@ fn load_source_with_cache(
         ));
     }
     let _lock = library.lock()?;
+    crate::catalog_product::require_active_locked(library, &format!("clean:{key}"))?;
     // Snapshot after queueing on the existing library gate: a preceding cold
     // request may have published this exact source while we were waiting.
     let reuse = cache.lock().ok().and_then(|cache| cache.clone());
@@ -1615,6 +1637,44 @@ pub(super) fn load(library: &NativeLibrary, key: &str) -> Result<Option<LoadedSc
             clean_package: Some(package.opened()),
         }),
     )
+}
+/// Caller holds the native lock; each existing copy is fully reverified.
+pub(super) fn verified_retained_payload_bytes(
+    library: &NativeLibrary,
+    entry: &Entry,
+) -> Result<u64> {
+    let expected = serde_json::to_value(entry).map_err(|e| invalid(e.to_string()))?;
+    let mut total = 0u64;
+    for area in ["clean-songs", "clean-backups"] {
+        let folder = library.root.join(area).join(&entry.key);
+        match fs::symlink_metadata(&folder) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(io_error(error)),
+            Ok(_) => (),
+        }
+        let (stored, package) = load_folder(&folder, &entry.key)?;
+        if serde_json::to_value(stored).map_err(|e| invalid(e.to_string()))? != expected {
+            return Err(invalid(
+                "Retained clean copies disagree with the verified edition",
+            ));
+        }
+        // package.bytes includes metadata.json; only the exact semantic score
+        // and declared, fully verified runtime media are retained payloads.
+        total = total
+            .checked_add(package.metadata.score.bytes)
+            .ok_or_else(|| invalid("Retained clean payload size overflow"))?;
+        for media in package.metadata.media {
+            total = total
+                .checked_add(media.bytes)
+                .ok_or_else(|| invalid("Retained clean payload size overflow"))?;
+        }
+    }
+    if total == 0 {
+        return Err(invalid(
+            "No verified retained clean payload remains for this edition",
+        ));
+    }
+    Ok(total)
 }
 pub fn export_files(library: &NativeLibrary, key: &str) -> Result<BTreeMap<String, Vec<u8>>> {
     if !super::valid_key(key) {
@@ -1844,6 +1904,29 @@ mod tests {
         fn drop(&mut self) {
             fs::remove_dir_all(&self.root).unwrap();
         }
+    }
+
+    #[test]
+    fn retained_clean_payload_count_excludes_metadata_and_rejects_changed_media() {
+        let fixture = SyntheticLibrary::new(1);
+        let sentinel = fixture.root.join("ORIGINAL-outside-sentinel");
+        fs::write(&sentinel, b"ORIGINAL outside sentinel").unwrap();
+        let expected_one = fixture.files[0]["score.json"].len() as u64
+            + fixture.files[0]["media/silence.wav"].len() as u64;
+        let _lock = fixture.library.lock().unwrap();
+        assert_eq!(
+            verified_retained_payload_bytes(&fixture.library, &fixture.entries[0]).unwrap(),
+            expected_one * 2
+        );
+        let media = fixture
+            .folder("clean-backups", 0)
+            .join("package/media/silence.wav");
+        let original = fs::read(&media).unwrap();
+        fs::write(&media, b"ORIGINAL changed test media").unwrap();
+        assert!(verified_retained_payload_bytes(&fixture.library, &fixture.entries[0]).is_err());
+        fs::write(&media, original).unwrap();
+        fixture.assert_exact_files(0);
+        assert_eq!(fs::read(sentinel).unwrap(), b"ORIGINAL outside sentinel");
     }
 
     #[test]
@@ -2093,6 +2176,70 @@ mod tests {
             &source,
             changed.basic_source.as_ref().unwrap()
         ));
+        fixture.assert_exact_files(0);
+    }
+
+    #[test]
+    fn warmed_notation_source_obeys_catalog_trash_and_explicit_restore() {
+        let fixture = SyntheticLibrary::basic(1);
+        let library = &fixture.library;
+        let key = &fixture.entries[0].key;
+        let cache = Mutex::new(None);
+        let before = load_source_with_cache(library, key, &cache)
+            .unwrap()
+            .unwrap()
+            .basic_source
+            .unwrap();
+        let call = |suffix: &str, body: Value| {
+            let response = crate::catalog_product::dispatch(
+                library,
+                if suffix == "status" { "GET" } else { "POST" },
+                &format!("/api/library/catalog/{suffix}"),
+                &serde_json::to_vec(&body).unwrap(),
+            );
+            let value: Value = serde_json::from_slice(response.body()).unwrap();
+            assert_eq!(response.status(), 200, "{value}");
+            value
+        };
+        let commit_body = |value: &Value| serde_json::json!({"library_id":value["library_id"],"preview":value["preview"]});
+        let initialize = call("initialize/preview", serde_json::json!({}));
+        call("initialize", commit_body(&initialize));
+        let plan = |action: &str, trash: Value| {
+            let status = call("status", serde_json::json!({}));
+            call(
+                "preview",
+                serde_json::json!({
+                    "library_id":status["library_id"], "action":action,
+                    "edition_ids":[format!("clean:{key}")], "trash_operation_id":trash,
+                    "expected_generation":status["generation"], "catalog_digest":status["catalog_digest"]
+                }),
+            )
+        };
+        let trash = plan("trash_songs", Value::Null);
+        call("commit", commit_body(&trash));
+        // Warm and cold requests both recheck the journal before source reuse.
+        for source_cache in [&cache, &Mutex::new(None)] {
+            let error = load_source_with_cache(library, key, source_cache)
+                .err()
+                .unwrap();
+            assert_eq!(error.status, 409);
+            assert_eq!(error.code, "catalog_in_trash");
+        }
+        assert!(Arc::ptr_eq(
+            &before,
+            cache.lock().unwrap().as_ref().unwrap()
+        ));
+        let restore = plan(
+            "restore_songs",
+            trash["preview"]["request"]["operation_id"].clone(),
+        );
+        call("commit", commit_body(&restore));
+        let after = load_source_with_cache(library, key, &cache)
+            .unwrap()
+            .unwrap()
+            .basic_source
+            .unwrap();
+        assert!(Arc::ptr_eq(&before, &after));
         fixture.assert_exact_files(0);
     }
 
