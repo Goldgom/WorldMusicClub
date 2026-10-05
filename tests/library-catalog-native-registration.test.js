@@ -93,7 +93,8 @@ test('native source allowlist import cannot accidentally invoke the verifier CLI
   assert.equal(result.status,0,result.stderr);
   assert.equal(result.stderr,'');
   const files=JSON.parse(result.stdout);
-  assert.ok(Array.isArray(files)&&files.length>=15&&files.length<=40);
+  assert.ok(Array.isArray(files)&&files.length>=15&&files.length<=42);
+  assert.match(host,/\$sourceNames\.Count -gt 42\)\{throw 'Catalog source allowlist is outside its finite bound'/);
   assert.ok(files.includes('scripts/verify-library-catalog-acceptance.mjs'));
   assert.ok(files.includes('scripts/windows-desktop-acceptance.ps1'));
 });

@@ -43,4 +43,8 @@ test('actual native and hosted routes never activate hidden legacy performance c
  const hosted=(await readdir(hostedDir)).filter(name=>/^hosted-.*-check\.mjs$/.test(name));
  for(const [base,names]of [[nativeDir,native],[hostedDir,hosted]])for(const name of names){const source=await readFile(new URL(name,base),'utf8');assert.doesNotMatch(source,/['"#](?:start-listen|start-practice|start-complete-practice|vsq-listen-basic|vsq-practice-basic)['"\s)]/,name);}
  const helper=await readFile(new URL('hosted-song-mod-controls.mjs',hostedDir),'utf8');assert.doesNotMatch(helper,/dispatchEvent|\.evaluate\([^\n]*\.click\(|\.value\s*=(?!=)|\.checked\s*=(?!=)/);
+ const rhythm=await readFile(new URL('hosted-rhythm-check.mjs',hostedDir),'utf8');
+ const hashLoop=rhythm.match(/for \(const name of \[([^\]]+)\]\) \{\s*sourceHashes\[name\] =/);assert.ok(hashLoop,'Rhythm evidence must hash its declared source files');
+ const bound=[...hashLoop[1].matchAll(/'([^']+)'/g)].map(match=>match[1]);
+ for(const file of ['web/song-mod.js','web/song-mod-view.js','scripts/hosted-song-mod-controls.mjs','web/piano-viewport-budget.js'])assert.equal(bound.filter(name=>name===file).length,1,`Rhythm source binding must retain ${file} exactly once`);
 });
