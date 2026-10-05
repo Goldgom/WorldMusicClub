@@ -156,10 +156,10 @@ export async function captureOverlayPaintEvidence({page,ui,view,artifactDirector
 }
 
 // Imported by the authorized hosted runner. This module never launches a browser.
-export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,readyForTitle,closeShellPanels,artifactDirectory,exportScore,exportTakeData,waitForEngraving}) {
+export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,setSessionMode,readyForTitle,closeShellPanels,artifactDirectory,exportScore,exportTakeData,waitForEngraving}) {
   test('normal and free piano share actual geometry colors toolbar and held feedback at the same configured range',{timeout:90_000},async()=>{
     const page=getPage(),score=originalAboveKeyboardScore(),evidence=[];await installPlaybackClockReader(page);await waitForPlaybackClock(page);score.id='original-shared-stage';score.title='Original shared piano stage comparison';score.parts[0].notes=score.parts[0].notes.filter(note=>note.at.numerator>=4);
-    await ui('#instrument').selectOption('piano');await ui('#key-count').selectOption('61');await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();
+    await ui('#instrument').selectOption('piano');await ui('#key-count').selectOption('61');await setSessionMode('practice');await ui('#count-in').uncheck();
     await ui('#score-file').setInputFiles({name:`${score.id}.json`,mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await closeShellPanels();
     if(await page.locator('#notation-toggle').getAttribute('aria-expanded')==='true')await page.locator('#notation-toggle').click();
     if(await page.locator('#sound-button').getAttribute('aria-pressed')==='true')await ui('#sound-button').click();
@@ -246,7 +246,7 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,read
   });
   test('original falling bars visibly cross staff and Jianpu lane background during actual playback',{timeout:90_000},async()=>{
     const page=getPage(),score=originalAboveKeyboardScore(),evidence=[];await installPlaybackClockReader(page);await waitForPlaybackClock(page);score.id='original-live-overlay';score.title='Original live falling-lane overlay';score.tempo[0].bpm=60;
-    await ui('#instrument').selectOption('piano');await ui('#key-count').selectOption('61');await ui('#session-mode').selectOption('listen');await ui('#count-in').uncheck();await ui('#score-file').setInputFiles({name:`${score.id}.json`,mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);
+    await ui('#instrument').selectOption('piano');await ui('#key-count').selectOption('61');await setSessionMode('listen');await ui('#count-in').uncheck();await ui('#score-file').setInputFiles({name:`${score.id}.json`,mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);
     await ui('#interface-language').selectOption('zh-CN');await ui('#theme-mode').selectOption('light');await page.emulateMedia({reducedMotion:'no-preference'});
     for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:1033,height:403},{width:844,height:390},{width:390,height:844}])for(const [button,view]of [['#engraved-button','staff'],['#jianpu-button','jianpu']]){
       await page.setViewportSize(viewport);await ui('#interface-language').selectOption([1920,844].includes(viewport.width)?'zh-CN':'en');await ui(button).click();await ui('#engraving-follow').check();await closeShellPanels();if(view==='staff')await waitForEngraving();

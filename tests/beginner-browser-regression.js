@@ -22,7 +22,7 @@ export function assertBeginnerHelpGeometry(proof) {
 
 // Registration only: the host suite owns its already-authorized real browser,
 // Rust server, fixtures and lifecycle. Importing this module launches nothing.
-export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForTitle, exportScore, exportTakeData, closeShellPanels, artifactDirectory}) {
+export function registerBeginnerBrowserRegressions({test, getPage, ui,setSessionMode, readyForTitle, exportScore, exportTakeData, closeShellPanels, artifactDirectory}) {
   const options = {timeout:45_000};
   async function hideNotation(page) {
     await closeShellPanels();
@@ -149,11 +149,11 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
 
   test('real initial compact guide stays on stage through tall and short resizes without losing held input or playfield space',{timeout:60_000},async()=>{
     const page=getPage();await installPlaybackClockReader(page);await page.setViewportSize({width:844,height:390});await page.reload();await waitForPlaybackClock(page);
-    await page.locator('#home-single-player').click();await page.locator('#start-listen:not([disabled])').waitFor();
+    await page.locator('#home-single-player').click();await page.locator('#start-performance:not([disabled])').waitFor();
     const {score}=await prepare('beginner-initial-compact');
     assert.equal(await page.locator('#beginner-enabled').isChecked(),false);
     assert.equal(await page.locator('#beginner-controls').evaluate(element=>element.closest('dialog')),null);
-    await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();
+    await setSessionMode('practice');await ui('#count-in').uncheck();await closeShellPanels();
     await page.locator('#notation-toggle').click();await page.waitForFunction(()=>document.querySelector('#engraved-staff svg .vf-notehead path'));
     const off=await compactStageGeometry(page);assertCompactStage(off);
     await page.locator('#play-button:not([disabled])').click();await page.locator('#stage-title').click();await page.keyboard.down('r');
@@ -225,7 +225,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
     assert.equal(await page.locator('#beginner-enabled').isChecked(),false);
     assert.equal(await page.locator('.beginner-note-label').count(),0);
     assert.equal(await page.locator('#beginner-controls').isVisible(),true);
-    await ui('#session-mode').selectOption('practice'); await ui('#count-in').uncheck(); await closeShellPanels();
+    await setSessionMode('practice'); await ui('#count-in').uncheck(); await closeShellPanels();
     await page.locator('#play-button:not([disabled])').click(); await page.locator('#stage-title').click(); await page.keyboard.down('r');
     await page.waitForFunction(()=>document.querySelector('#keyboard [data-midi="60"]').getAttribute('aria-pressed')==='true');
     await page.evaluate(()=>{window.beginnerHeldNodes={key:document.querySelector('#keyboard [data-midi="60"]'),map:document.querySelector('#keyboard-map [data-code="KeyR"]')};});

@@ -1,3 +1,5 @@
+import {browserSongModControls} from './browser-song-mod-controls.js';
+import {configureSongMod, openSongMod} from '../scripts/hosted-song-mod-controls.mjs';
 import {readPlaybackClock, installPlaybackClockReader, waitForPlaybackClock, waitForPlaybackClockAdvance} from './browser-playback-clock.js';
 import {registerGameLobbyBrowserRegressions} from './game-lobby-browser-regression.js';
 import {assertLocaleRoundTrip,registerLocaleBrowserRegressions} from './locale-browser-regression.js';
@@ -107,17 +109,7 @@ function ui(selector) {
   }});
   return wrap(page.locator(selector));
 }
-async function startPreview({reset = true, notation = true, mode = 'listen'} = {}) {
-  await closeShellPanels();
-  if (await page.locator('#game-home').isVisible()) await page.locator('#home-single-player').click();
-  await page.locator(`#start-${mode}:not([disabled])`).waitFor();
-  await page.locator(`#start-${mode}`).click();
-  await page.locator('#play-button').waitFor({state: 'visible'});
-  await page.waitForFunction(() => !document.querySelector('#start-listen').disabled);
-  if (reset) await page.locator('#reset-button').click();
-  // This helper makes an explicit test view choice; desktop startup may already show notation.
-  if ((await page.locator('#notation-toggle').getAttribute('aria-expanded')==='true') !== notation) await page.locator('#notation-toggle').click();
-}
+const {configureStageMod,setSessionMode,selectPracticePart,startPreview}=browserSongModControls({getPage:()=>page,closeShellPanels});
 async function reloadStage(options) {
   const response = await page.reload(options);await waitForPlaybackClock(page);
   await selectLegacyEnglish(page);
@@ -225,9 +217,15 @@ async function readyForTitle(title) {
 
 async function activateCatalogTitle(title) {
   await page.waitForFunction(expected => document.querySelector('#preview-title').textContent === expected
-    && !document.querySelector('#start-listen').disabled, title);
+    && !document.querySelector('#configure-song-mod').disabled, title);
   await startPreview();
   await readyForTitle(title);
+}
+
+async function humanModPartIds() {
+  await closeShellPanels();if(await page.locator('#song-lobby').isVisible())await page.locator('#resume-session').click();
+  const draft=await openSongMod(page,{origin:'stage'});await page.locator('#song-mod-cancel').click();
+  return draft.parts.filter(part=>part.performer==='human').map(part=>part.partId);
 }
 
 async function hideNotation() {
@@ -681,7 +679,7 @@ test('real Rust ordered initial MIDI tempos retain source bytes, effective timin
     assert.equal(attribution.includes(standardMidiDisclosure[locale==='en'?'zh-CN':'en'].attribution),false);
     await page.screenshot({path:join(artifactDirectory,`worldmusichub-live-initial-tempo-${locale}.png`),fullPage:true,animations:'disabled'});
     await ui('#back-to-library').click();
-    await page.waitForFunction(() => document.querySelector('#preview-title').textContent === 'Original ordered tempo study' && !document.querySelector('#start-listen').disabled);
+    await page.waitForFunction(() => document.querySelector('#preview-title').textContent === 'Original ordered tempo study' && !document.querySelector('#start-performance').disabled);
     if (!await page.locator('#preview-notices').evaluate(element => element.open)) await page.locator('#preview-notices>summary').click();
     const preview = page.locator('#preview-notice-list>li');
     await preview.first().waitFor({state:'visible'});
@@ -899,7 +897,7 @@ test('PNG review uses real Rust candidates and requires every duration plus rene
 });
 
 test('browser practice records real keyboard timing and displays the Rust assessment response', testOptions, async () => {
-  await ui('#session-mode').selectOption('practice');
+  await setSessionMode('practice');
   await ui('#count-in').uncheck();
   await ui('#stage-title').click();
   await page.keyboard.press('r');
@@ -956,7 +954,7 @@ test('real Rust Results retain partial chords, late grades and extras, then revi
     {...structuredClone(template),id:'next-g',at:{numerator:1,denominator:1},duration:{numerator:3,denominator:1},pitch:{step:'G',alter:0,octave:4}},
   ];
   const[compiledResponse]=await Promise.all([nextResponse('/api/compile'),ui('#score-file').setInputFiles({name:'results-chord.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))})]);
-  const compiled=await responseJson(compiledResponse);await readyForTitle(score.title);await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#play-button:not([disabled])').waitFor();await ui('#play-button').click();
+  const compiled=await responseJson(compiledResponse);await readyForTitle(score.title);await setSessionMode('practice');await ui('#count-in').uncheck();await ui('#play-button:not([disabled])').waitFor();await ui('#play-button').click();
   await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>800);
   const exportTake=async()=>{const[download]=await Promise.all([page.waitForEvent('download'),ui('#export-takes').click()]);assert.equal(await download.failure(),null);return JSON.parse(await readFile(await download.path(),'utf8'))};
   const before=await exportTake(),startedWall=before.passes[0].clock_segments[0].wallStart;
@@ -1049,14 +1047,14 @@ test('real Rust physical targets retain unison source voices and score one piano
   assert.equal(plan.source_note_count,16);assert.equal(plan.target_count,15);
   assert.ok(plan.groups.some(group=>group.source_note_ids.includes('unison-source')&&group.source_occurrence_ids.length===2));
   await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('15 physical attacks from 16 sounding'));
-  await ui('#session-mode').selectOption('practice');
+  await setSessionMode('practice');
   const [assessmentResponse]=await Promise.all([nextResponse('/api/assess'),ui('#assess-button').click()]);
   assert.deepEqual(assessmentResponse.request().postDataJSON().timeline,plan.timeline);
   const assessment=await responseJson(assessmentResponse);assert.equal(assessment.misses.length,15);
   const downloadPromise=page.waitForEvent('download');await ui('#export-button').click();
   const exported=JSON.parse(await readFile(await(await downloadPromise).path(),'utf8'));
   assert.deepEqual(exported,score);
-  const [partResponse]=await Promise.all([nextResponse('/api/practice-targets'),ui('#practice-part').selectOption('unison-part')]);
+  const [partResponse]=await Promise.all([nextResponse('/api/practice-targets'),selectPracticePart('unison-part')]);
   const selected=await responseJson(partResponse);assert.equal(selected.source_note_count,1);assert.equal(selected.target_count,1);assert.deepEqual(selected.groups[0].source_note_ids,['unison-source']);
 });
 
@@ -1117,10 +1115,10 @@ test('embedded source directory remains local until a fixed official link or loc
 });
 
 test('real explicitly confirmed part-octave copy preserves source JSON and restores it exactly',testOptions,async()=>{
-  const original=structuredClone(initialCompilation.score);original.title='Original reversible octave exercise';original.source={format:'original-test-text',filename:'original.txt',content:'\uFEFFOriginal source · 原稿\r\nKeep exact bytes and credits.'};await ui('#score-file').setInputFiles({name:'original.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(original))});await readyForTitle(original.title);const part=original.parts[0].id;await ui('#practice-part').selectOption(part);await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('physical attacks'));
+  const original=structuredClone(initialCompilation.score);original.title='Original reversible octave exercise';original.source={format:'original-test-text',filename:'original.txt',content:'\uFEFFOriginal source · 原稿\r\nKeep exact bytes and credits.'};await ui('#score-file').setInputFiles({name:'original.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(original))});await readyForTitle(original.title);const part=original.parts[0].id;await selectPracticePart(part);await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('physical attacks'));
   await ui('#instrument-settings>summary').click();await ui('#adaptation-button').click();await ui('#adaptation-scope').selectOption('selected');await ui('#adaptation-octaves').fill('1');const[previewResponse]=await Promise.all([nextResponse('/api/adaptation/preview'),ui('#adaptation-preview').click()]);const preview=await responseJson(previewResponse);assert.equal(preview.operation.part_id,part);assert.equal(preview.changed_note_count,15);assert.equal(preview.original_preserved,true);await ui('#adaptation-result').waitFor();assert.equal(await ui('#score-title').textContent(),original.title);assert.equal(await ui('#adaptation-activate').isDisabled(),true);
-  await ui('#adaptation-confirm').check();await ui('#adaptation-activate').click();await ui('#adaptation-dialog').waitFor({state:'hidden'});await readyForTitle(preview.compilation.score.title);assert.equal(await ui('#practice-part').inputValue(),part);const copy=await exportScore();assert.deepEqual(copy,preview.compilation.score);assert.deepEqual(JSON.parse(copy.source.content).original,original);assert.equal(JSON.parse(copy.source.content).original.source.content,original.source.content);
-  await ui('#adaptation-button').click();const[restoreResponse]=await Promise.all([nextResponse('/api/adaptation/restore'),ui('#adaptation-restore-preview').click()]);const restored=await responseJson(restoreResponse);assert.deepEqual(restored.score,original);await page.waitForFunction(()=>document.querySelector('#adaptation-status').textContent.startsWith('Original preview ready'));assert.equal(await ui('#score-title').textContent(),copy.title);await ui('#adaptation-confirm').check();await ui('#adaptation-activate').click();await ui('#adaptation-dialog').waitFor({state:'hidden'});await readyForTitle(original.title);assert.deepEqual(await exportScore(),original);assert.equal(await ui('#practice-part').inputValue(),part);
+  await ui('#adaptation-confirm').check();await ui('#adaptation-activate').click();await ui('#adaptation-dialog').waitFor({state:'hidden'});await readyForTitle(preview.compilation.score.title);assert.deepEqual(await humanModPartIds(),[part]);const copy=await exportScore();assert.deepEqual(copy,preview.compilation.score);assert.deepEqual(JSON.parse(copy.source.content).original,original);assert.equal(JSON.parse(copy.source.content).original.source.content,original.source.content);
+  await ui('#adaptation-button').click();const[restoreResponse]=await Promise.all([nextResponse('/api/adaptation/restore'),ui('#adaptation-restore-preview').click()]);const restored=await responseJson(restoreResponse);assert.deepEqual(restored.score,original);await page.waitForFunction(()=>document.querySelector('#adaptation-status').textContent.startsWith('Original preview ready'));assert.equal(await ui('#score-title').textContent(),copy.title);await ui('#adaptation-confirm').check();await ui('#adaptation-activate').click();await ui('#adaptation-dialog').waitFor({state:'hidden'});await readyForTitle(original.title);assert.deepEqual(await exportScore(),original);assert.deepEqual(await humanModPartIds(),[part]);
 });
 
 async function openSemitoneReview(){
@@ -1140,7 +1138,7 @@ test('real whole-score semitone preview retains exact sources, timeline, JSON an
   source.parts.push({...structuredClone(fixture.parts[0]),id:'bass',name:'Bass',notes:fixture.parts[0].notes.map(note=>({...structuredClone(note),id:`bass-${note.id}`,pitch:{...note.pitch,octave:3}}))});source.keys.push({at:{numerator:2,denominator:1},fifths:-3,mode:'minor'});
   await ui('#score-file').setInputFiles({name:'whole-score.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(source))});await readyForTitle(source.title);
   const importedCopies=await waitForBrowserImportCopies(1);assertAddedLibraryCopies([],importedCopies,[{label:null,score:source}]);
-  const original=await exportScore(),compiled=await rustApi('/api/compile',original);await ui('#practice-part').selectOption('piano');await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('physical attacks'));
+  const original=await exportScore(),compiled=await rustApi('/api/compile',original);await selectPracticePart('piano');await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('physical attacks'));
   await ui('.practice-options>summary').click();
   await ui('#loop-from').fill('0');await ui('#loop-to').fill('2');await ui('#loop-apply').click();await page.waitForFunction(()=>document.querySelector('#loop-status').textContent.includes('ready'));
   const copiesBefore=requests.filter(request=>request.path==='/api/compile').length,result=await realSemitonePreview(2);
@@ -1154,21 +1152,21 @@ test('real whole-score semitone preview retains exact sources, timeline, JSON an
 });
 
 test('real semitone copy keeps out-of-range notes visible while actual Practice admission stays blocked',testOptions,async()=>{
-  await ui('#session-mode').selectOption('listen');await ui('#key-count').selectOption('49');await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('physical attacks'));
+  await setSessionMode('listen');await ui('#key-count').selectOption('49');await page.waitForFunction(()=>document.querySelector('#practice-scope').textContent.includes('physical attacks'));
   const original=await exportScore(),result=await realSemitonePreview(36);assert.equal(result.scored_mode_allowed,false);assert.ok(result.instrument_report.note_options.some(note=>!note.playable));assert.equal(result.changed_note_count,original.parts.flatMap(part=>part.notes).filter(note=>note.pitch).length);assert.match(await ui('#transposition-instrument-summary').textContent(),/not allowed in scored mode/);
   await ui('#transposition-confirm').check();await ui('#transposition-activate').click();await ui('#transposition-dialog').waitFor({state:'hidden'});await readyForTitle(result.compilation.score.title);assert.deepEqual(await exportScore(),result.compilation.score);assert.equal(await ui('#play-button').isEnabled(),true);
-  await ui('#session-mode').selectOption('practice');await page.waitForFunction(()=>!document.querySelector('#practice-gate').hidden);assert.equal(await ui('#play-button').isDisabled(),true);assert.equal(await ui('#assess-button').isDisabled(),true);assert.match(await ui('#practice-gate-reason').textContent(),/Selected notes outside this instrument range: \d+\./);assert.deepEqual(await exportScore(),result.compilation.score);
+  await setSessionMode('practice');await page.waitForFunction(()=>!document.querySelector('#practice-gate').hidden);assert.equal(await ui('#play-button').isDisabled(),true);assert.equal(await ui('#assess-button').isDisabled(),true);assert.match(await ui('#practice-gate-reason').textContent(),/Selected notes outside this instrument range: \d+\./);assert.deepEqual(await exportScore(),result.compilation.score);
 });
 
 test('real landscape semitone review controls remain reachable and cancelled preview preserves a paused take',testOptions,async()=>{
-  await hideNotation();await page.setViewportSize({width:844,height:390});await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();await page.locator('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>0);await page.locator('#stage-title').click();await page.keyboard.press('a');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
+  await hideNotation();await page.setViewportSize({width:844,height:390});await setSessionMode('practice');await ui('#count-in').uncheck();await closeShellPanels();await page.locator('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>0);await page.locator('#stage-title').click();await page.keyboard.press('a');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
   const before=await exportTakeData(),position=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;await realSemitonePreview(2);
   async function visibleControl(selector){await page.locator(selector).scrollIntoViewIfNeeded();const geometry=await page.locator(selector).evaluate(element=>{const r=element.getBoundingClientRect(),d=element.closest('dialog'),b=d.getBoundingClientRect();return{control:{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height},dialog:{x:b.x,y:b.y,right:b.right,bottom:b.bottom,width:b.width,height:b.height},viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight}}});assertInsideViewport(geometry.control,geometry.viewport,selector);assertInsideViewport(geometry.dialog,geometry.viewport,'Semitone review');assert.ok(geometry.control.y>=geometry.dialog.y&&geometry.control.bottom<=geometry.dialog.bottom);assertBoundedDocument(geometry)}
   await visibleControl('#transposition-semitones');await viewportSnapshot('transposition-844x390-controls');await visibleControl('#transposition-confirm');await ui('#transposition-confirm').check();await visibleControl('#transposition-activate');await viewportSnapshot('transposition-844x390-confirmation');await page.keyboard.press('Escape');await ui('#transposition-dialog').waitFor({state:'hidden'});await closeShellPanels();assert.deepEqual(await exportTakeData(),before);assert.equal((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,position);assert.match(await ui('#play-button').textContent(),/Play/);
 });
 
 test('real semitone activation cancels before compile commit and finishes review before delayed compatibility',testOptions,async()=>{
-  await hideNotation();await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();await page.locator('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>0);await page.locator('#stage-title').click();await page.keyboard.press('a');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');const original=await exportScore(),before=await exportTakeData();
+  await hideNotation();await setSessionMode('practice');await ui('#count-in').uncheck();await closeShellPanels();await page.locator('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>0);await page.locator('#stage-title').click();await page.keyboard.press('a');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');const original=await exportScore(),before=await exportTakeData();
   let releaseCompile,compileSeen;const compileGate=new Promise(resolve=>releaseCompile=resolve),seenCompile=new Promise(resolve=>compileSeen=resolve);const delayedCompile=async route=>{compileSeen();await compileGate;await route.continue().catch(()=>{})};
   await realSemitonePreview(2);await ui('#transposition-confirm').check();await page.route('**/api/compile',delayedCompile);try{await ui('#transposition-activate').click();await seenCompile;await ui('#transposition-cancel').click()}finally{releaseCompile();await page.unroute('**/api/compile',delayedCompile)}assert.equal(await ui('#score-title').textContent(),original.title);assert.deepEqual(await exportTakeData(),before);assert.deepEqual(await exportScore(),original);
   const result=await realSemitonePreview(2);await ui('#transposition-confirm').check();let releaseCheck,checkSeen;const checkGate=new Promise(resolve=>releaseCheck=resolve),seenCheck=new Promise(resolve=>checkSeen=resolve);const delayedCheck=async route=>{checkSeen();await checkGate;await route.continue().catch(()=>{})};await page.route('**/api/instrument-check',delayedCheck);
@@ -1283,7 +1281,7 @@ test('real written-note cursor separates tied continuations, short unisons, rest
   await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.status==='ready');
   // Canonical scores use Listen for independent displayed-part inspection.
   // Solo practice below must keep notation on its actual human part.
-  await ui('#session-mode').selectOption('listen');await ui('#play-button:not([disabled])').waitFor();
+  await setSessionMode('listen');await ui('#play-button:not([disabled])').waitFor();
   assert.equal(await ui('#notation-scope').isEnabled(),true,'Listen permits independent notation inspection');
   await ui('#count-in').uncheck();await ui('#reset-button').click();await closeShellPanels();
   const waitIds=expected=>page.waitForFunction(ids=>JSON.stringify(JSON.parse(document.querySelector('#written-cursor-status').dataset.sourceNoteIds||'[]').sort())===JSON.stringify(ids),[...expected].sort());
@@ -1305,11 +1303,13 @@ test('real written-note cursor separates tied continuations, short unisons, rest
   const continuation=await snapshot();assert.deepEqual(continuation.activeWritten,['tie-stop','written-rest']);assert.deepEqual(continuation.expectedKeys,[60]);assert.equal(continuation.heldKeys,0);
   assert.equal(await ui('#engraving-follow').isChecked(),false,'Current-note display does not enable page following');
   await screenshot('written-cursor-tie-jianpu');
-  await ui('#practice-part').selectOption('counter');await ui('#notation-scope').selectOption('current');await ui('#play-button:not([disabled])').waitFor();await ui('#reset-button').click();await closeShellPanels();
-  await waitIds(['short-unison']);await waitPainted(['short-unison']);const selectedListening=await snapshot();assert.deepEqual(selectedListening.activeWritten,['short-unison']);assert.deepEqual(selectedListening.expectedKeys,[60]);
-  await ui('#notation-part').selectOption('');await page.waitForFunction(()=>document.querySelectorAll('#notation .score-note.active').length===3);assert.deepEqual((await snapshot()).expectedKeys,[60]);assert.equal(await ui('#practice-part').inputValue(),'counter');await ui('#notation-part').selectOption('counter');
-  assert.equal(requests.some(request=>request.path==='/api/assess'),false,'Listen inspection never creates an assessment');
-  await ui('#session-mode').selectOption('practice');await ui('#play-button:not([disabled])').waitFor();await ui('#reset-button').click();await closeShellPanels();
+  assert.equal(requests.some(request=>request.path==='/api/assess'),false,'All-machine Listen inspection never creates an assessment');
+  // A scoped target is now an explicit human Mod. Complete view still permits independent notation inspection.
+  await configureStageMod({performers:['counter'],layout:'complete'});await ui('#notation-scope').selectOption('current');await ui('#play-button:not([disabled])').waitFor();await ui('#reset-button').click();await closeShellPanels();
+  await waitIds(['short-unison']);await waitPainted(['short-unison']);const selectedComplete=await snapshot();assert.deepEqual(selectedComplete.activeWritten,['short-unison']);assert.deepEqual(selectedComplete.expectedKeys,[60]);
+  await ui('#notation-part').selectOption('');await page.waitForFunction(()=>document.querySelectorAll('#notation [data-note-id=\"tie-start\"],#notation [data-note-id=\"short-D\"],#notation [data-note-id=\"short-unison\"]').length===3);await waitPainted(['short-unison']);assert.deepEqual((await snapshot()).expectedKeys,[60]);assert.equal(await ui('#practice-part').inputValue(),'counter');await ui('#notation-part').selectOption('counter');
+  assert.equal(requests.some(request=>request.path==='/api/assess'),false,'Display inspection never creates an assessment');
+  await setSessionMode('practice');await ui('#play-button:not([disabled])').waitFor();await ui('#reset-button').click();await closeShellPanels();
   await page.waitForFunction(()=>document.querySelector('#notation-scope').disabled&&document.querySelector('#notation-scope').value==='current'&&JSON.stringify(JSON.parse(document.querySelector('#workspace').dataset.renderedNotationParts||'[]'))==='["counter"]');
   for(const selector of ['#notation-scope','#notation-scope-part','#notation-part'])assert.equal(await ui(selector).isDisabled(),true,'Solo cannot display other parts through notation selectors');
   assert.match(await ui('#notation-scope-status').textContent(),/Solo practice shows only your human part/);
@@ -1317,7 +1317,7 @@ test('real written-note cursor separates tied continuations, short unisons, rest
   assert.equal(await ui('#practice-part').inputValue(),'counter');assert.equal(await ui('#notation [data-note-id="tie-start"],#notation [data-note-id="short-D"]').count(),0,'Solo excludes the other source part from the displayed notation');
   await ui('#play-button').click();await waitIds(['repeated-C']);await ui('#play-button').click();const repeat=await snapshot();assert.deepEqual(repeat.activeWritten,['repeated-C']);assert.deepEqual(repeat.expectedKeys,[60]);
   assert.deepEqual(await exportScore(),score,'Display tracking never rewrites canonical music');
-  await writeFile(join(artifactDirectory,'worldmusichub-live-written-cursor.json'),JSON.stringify({initial,allParts,first,continuation,selectedListening,selected,repeat,source_retained:true,scope:'Real Rust navigation/timeline and browser; expected notes only, no physical input or sustain assessment'},null,2));
+  await writeFile(join(artifactDirectory,'worldmusichub-live-written-cursor.json'),JSON.stringify({initial,allParts,first,continuation,selectedComplete,selected,repeat,source_retained:true,scope:'Real Rust navigation/timeline and browser; expected notes only, no physical input or sustain assessment'},null,2));
 });
 
 test('complete CC0 D768 edition retains every event and source while range gates, later pages and following remain explicit', {timeout:60_000},async()=>{
@@ -1331,8 +1331,8 @@ test('complete CC0 D768 edition retains every event and source while range gates
   assert.match(await ui('#score-meta').textContent(),/334 written events.*321 playback note events.*14 measures/);assert.match(await ui('#score-retention-note').textContent(),/324 pitched note segments \+ 10 rests/);assert.equal(await ui('#score-origin-label').textContent(),'CC0 source edition');assert.equal(await ui(`#practice-part option[value="${voice.id}"]`).textContent(),voice.name,'Raw part names are retained rather than silently cleaned');
   await waitForEngraving();assert.equal(await ui('#engraved-button').getAttribute('aria-pressed'),'true');assert.ok(await ui('#engraved-staff svg path').count()>100);await screenshot('cc0-d768-light');await checkpoint('initial-source-and-svg-ready');
   await ui('#score-details-button').click();assert.match(await ui('#provenance').textContent(),/Johann Wolfgang von Goethe/);assert.match(await ui('#provenance').textContent(),/pental/);assert.match(await ui('#diagnostic-list').textContent(),/327 key attacks versus 321 canonical/);assert.match(await ui('#diagnostic-list').textContent(),/fermata/);assert.equal(await ui('#provenance-link').getAttribute('href'),edition.provenance.source_url);await ui('#score-details>summary').click();assert.deepEqual(await exportScore(),edition);
-  assert.equal(await ui('#key-count').inputValue(),'61');await ui('#session-mode').selectOption('practice');await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));assert.equal(await ui('#play-button').isDisabled(),true);assert.equal(await ui('#assess-button').isDisabled(),true);
-  await ui('#practice-part').selectOption(voice.id);await ui('#play-button:not([disabled])').waitFor();assert.equal(await ui('#key-count').inputValue(),'61');await ui('#practice-part').selectOption(piano.id);await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));assert.equal(await ui('#play-button').isDisabled(),true);await ui('#practice-part').selectOption('');await ui('#key-count').selectOption('76');await ui('#play-button:not([disabled])').waitFor();await ui('#session-mode').selectOption('listen');assert.deepEqual(await exportScore(),edition,'Part/profile changes never adapt or discard source events');await checkpoint('source-provenance-and-range-gates-complete');
+  assert.equal(await ui('#key-count').inputValue(),'61');await setSessionMode('practice');await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));assert.equal(await ui('#play-button').isDisabled(),true);assert.equal(await ui('#assess-button').isDisabled(),true);
+  await selectPracticePart(voice.id);await ui('#play-button:not([disabled])').waitFor();assert.equal(await ui('#key-count').inputValue(),'61');await selectPracticePart(piano.id);await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));assert.equal(await ui('#play-button').isDisabled(),true);await selectPracticePart('');await ui('#key-count').selectOption('76');await ui('#play-button:not([disabled])').waitFor();await setSessionMode('listen');assert.deepEqual(await exportScore(),edition,'Part/profile changes never adapt or discard source events');await checkpoint('source-provenance-and-range-gates-complete');
   const pageTurnStarted=performance.now();await ui('#engraving-next').click();await page.waitForFunction(()=>document.querySelector('#engraving-status').textContent.includes('Measures 9–14'));await waitForEngraving();const laterPageToReadyMs=performance.now()-pageTurnStarted;assert.match(await ui('#engraving-range').textContent(),/Measures 9–14 \/ 14/);await screenshot('cc0-d768-later-page');await ui('#theme-mode').selectOption('dark');await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark'&&document.querySelector('#engraving-status').textContent.includes('Measures 9–14'));await screenshot('cc0-d768-dark');await checkpoint('later-page-and-theme-ready');
   await ui('.practice-options>summary').click();await ui('#loop-from').fill('32');await ui('#loop-to').fill('36');const[windowResponse]=await Promise.all([nextResponse('/api/practice-window'),ui('#loop-apply').click()]);const window=await responseJson(windowResponse);await page.waitForFunction(()=>document.querySelector('#loop-status').textContent.includes('ready'));await ui('#count-in').uncheck();await ui('#engraving-follow').check();const navigation=await responseJson(await editionNavigation);assert.equal(navigation.occurrences.length,14);assert.equal(navigation.sounding_groups.length,321);assert.ok(navigation.occurrences.every(occurrence=>occurrence.repeat_region_index===null));await page.waitForFunction(()=>document.querySelector('#engraving-follow-status').textContent.includes('source 9/14'));
   await ui('#play-button').click();await page.waitForFunction(start=>{const clock=globalThis.__wmhReadPlaybackClock();return clock.running&&clock.phase==='playing'&&clock.positionMs>start;},window.start_ms);assert.match(await ui('#engraving-follow-status').textContent(),/Following written measure 9/);assert.match(await ui('#engraving-range').textContent(),/Measures 9–14/);await ui('#play-button').click();assert.match(await ui('#transport-status').textContent(),/Paused/);assert.deepEqual(await exportScore(),edition);await ui('#engraving-prev').click();assert.equal(await ui('#engraving-follow').isChecked(),false);assert.match(await ui('#engraving-follow-status').textContent(),/Manual navigation suspended/);await checkpoint('loop-playback-and-manual-follow-complete');
@@ -1364,15 +1364,15 @@ test('complete D768 browser library backup and restore preserve sources while gu
   await ui('#library-close').click();await reloadStage();await readyForTitle(initialCompilation.score.title);await ui('#library-button').click();await page.getByRole('button',{name:'Open saved copy Complete D768 archive',exact:true}).click();await ui('#score-library').waitFor({state:'hidden'});await readyForTitle(edition.title);assert.deepEqual(await exportScore(),edition);
   await ui('#library-button').click();await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Ready.'));await ui('#library-backup-file').setInputFiles({name:'d768-backup.json',mimeType:'application/json',buffer:backupBytes});await page.waitForFunction(()=>document.querySelector('#library-status').textContent.startsWith('Restored 1 new copies'));assert.equal(await ui('#library-list>li').count(),2);const keys=await ui('#library-list>li').evaluateAll(rows=>rows.map(row=>row.dataset.libraryKey));assert.ok(keys.includes(originalKey));assert.equal(new Set(keys).size,2);const restoredKey=keys.find(key=>key!==originalKey);
   await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-cc0-d768-library.png'),fullPage:true});await ui(`[data-library-key="${restoredKey}"] [data-library-open]`).click();await ui('#score-library').waitFor({state:'hidden'});await readyForTitle(edition.title);assert.deepEqual(await exportScore(),edition);
-  await ui('#instrument').selectOption('guitar');await ui('#session-mode').selectOption('practice');await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));assert.equal(await ui('#play-button').isDisabled(),true);assert.equal(await ui('#assess-button').isDisabled(),true);assert.equal(await ui('#guitar-frets').inputValue(),'12');
-  const [voiceResponse]=await Promise.all([nextResponse('/api/instrument-check'),ui('#practice-part').selectOption(voice.id)]);const voiceReport=await responseJson(voiceResponse);assert.equal(voiceReport.highest_midi,76);assert.ok(voiceReport.note_options.some(note=>note.midi===77&&!note.playable));await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));assert.equal(await ui('#play-button').isDisabled(),true);
+  await ui('#instrument').selectOption('guitar');await setSessionMode('practice');await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));assert.equal(await ui('#play-button').isDisabled(),true);assert.equal(await ui('#assess-button').isDisabled(),true);assert.equal(await ui('#guitar-frets').inputValue(),'12');
+  const [voiceResponse]=await Promise.all([nextResponse('/api/instrument-check'),selectPracticePart(voice.id)]);const voiceReport=await responseJson(voiceResponse);assert.equal(voiceReport.highest_midi,76);assert.ok(voiceReport.note_options.some(note=>note.midi===77&&!note.playable));await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));assert.equal(await ui('#play-button').isDisabled(),true);
   await ui('#guitar-frets').fill('13');assert.match(await ui('#practice-gate-reason').textContent(),/edited|validate|Apply/);const[rangeResponse,voiceTargetResponse]=await Promise.all([nextResponse('/api/instrument-check'),nextResponse('/api/practice-targets'),ui('#instrument-apply').click()]);const rangeReport=await responseJson(rangeResponse),voicePlan=await responseJson(voiceTargetResponse);assert.equal(rangeReport.highest_midi,77);assert.ok(rangeReport.note_options.every(note=>note.playable));await ui('#play-button:not([disabled])').waitFor();assert.equal(await ui('#guitar-frets').inputValue(),'13');assert.equal(await ui('#practice-part').inputValue(),voice.id);assert.match(await ui('#instrument-diagnostics').textContent(),/fingering|pitch|duration|technique/i);assert.deepEqual(await exportScore(),edition,'An explicit playable voice range does not transpose, fold or remove any original part');
-  await hideNotation();await page.waitForFunction(()=>document.querySelector('#guitar-guidance-state').textContent.includes('next onset'));assert.equal(await page.locator('dialog[open]').count(),0);assert.equal(await page.locator('#guitar-guidance').isVisible(),true);assert.equal(await page.locator('#stage-cue').isVisible(),true);const firstVoice=voicePlan.timeline.notes[0];assert.ok(firstVoice.start_ms>4000);assert.equal(await page.locator('.guitar-target').count(),voicePlan.timeline.notes.filter(note=>note.start_ms===firstVoice.start_ms).length,'The complete next onset remains available through a long rest; its true countdown is preserved');assert.ok((await page.locator('#guitar-guidance-state').textContent()).includes((firstVoice.start_ms/1000).toFixed(1)+'s'));assert.equal(voicePlan.source_note_count,voicePlan.target_count);assert.ok(voicePlan.groups.every(group=>group.part_ids.every(id=>id===voice.id)));await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-cc0-d768-guitar-voice.png'),fullPage:true});await ui('#practice-part').selectOption('');await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));assert.equal(await ui('#play-button').isDisabled(),true);await ui('#session-mode').selectOption('listen');assert.equal(await ui('#play-button').isEnabled(),true);assert.deepEqual(await exportScore(),edition);
+  await hideNotation();await page.waitForFunction(()=>document.querySelector('#guitar-guidance-state').textContent.includes('next onset'));assert.equal(await page.locator('dialog[open]').count(),0);assert.equal(await page.locator('#guitar-guidance').isVisible(),true);assert.equal(await page.locator('#stage-cue').isVisible(),true);const firstVoice=voicePlan.timeline.notes[0];assert.ok(firstVoice.start_ms>4000);assert.equal(await page.locator('.guitar-target').count(),voicePlan.timeline.notes.filter(note=>note.start_ms===firstVoice.start_ms).length,'The complete next onset remains available through a long rest; its true countdown is preserved');assert.ok((await page.locator('#guitar-guidance-state').textContent()).includes((firstVoice.start_ms/1000).toFixed(1)+'s'));assert.equal(voicePlan.source_note_count,voicePlan.target_count);assert.ok(voicePlan.groups.every(group=>group.part_ids.every(id=>id===voice.id)));await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-cc0-d768-guitar-voice.png'),fullPage:true});await selectPracticePart('');await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));assert.equal(await ui('#play-button').isDisabled(),true);await setSessionMode('listen');assert.equal(await ui('#play-button').isEnabled(),true);assert.deepEqual(await exportScore(),edition);
 });
 
 test('real Rust pitch feedback exposes independent missed targets and an extra played pitch without changing the score',testOptions,async()=>{
   assert.ok(initialCompilation.timeline.notes.every(note=>note.midi!==90));
-  await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#sound-button').click();await ui('#play-button:not([disabled])').waitFor();await ui('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>0);await ui('#keyboard .piano-key[data-midi="90"]').click();const[response]=await Promise.all([nextResponse('/api/assess'),ui('#assess-button').click()]);const assessment=await responseJson(response);await ui('#feedback-results').waitFor();assert.ok(Array.isArray(assessment.pitch_breakdown));assert.equal(assessment.hits.length,0);assert.equal(assessment.extras.length,1);assert.equal(assessment.extras[0].midi,90);assert.equal(assessment.misses.length,initialCompilation.timeline.notes.length);const extra=assessment.pitch_breakdown.find(row=>row.midi===90);assert.deepEqual(extra,{midi:90,expected:0,matched:0,missed:0,extra:1,mean_abs_error_ms:null,timing_bias_ms:null});assert.equal(await ui('#pitch-breakdown').getAttribute('open'),null);await ui('#pitch-breakdown-summary').click();assert.equal(await ui('#pitch-breakdown-body tr').count(),assessment.pitch_breakdown.length);
+  await setSessionMode('practice');await ui('#count-in').uncheck();await ui('#sound-button').click();await ui('#play-button:not([disabled])').waitFor();await ui('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>0);await ui('#keyboard .piano-key[data-midi="90"]').click();const[response]=await Promise.all([nextResponse('/api/assess'),ui('#assess-button').click()]);const assessment=await responseJson(response);await ui('#feedback-results').waitFor();assert.ok(Array.isArray(assessment.pitch_breakdown));assert.equal(assessment.hits.length,0);assert.equal(assessment.extras.length,1);assert.equal(assessment.extras[0].midi,90);assert.equal(assessment.misses.length,initialCompilation.timeline.notes.length);const extra=assessment.pitch_breakdown.find(row=>row.midi===90);assert.deepEqual(extra,{midi:90,expected:0,matched:0,missed:0,extra:1,mean_abs_error_ms:null,timing_bias_ms:null});assert.equal(await ui('#pitch-breakdown').getAttribute('open'),null);await ui('#pitch-breakdown-summary').click();assert.equal(await ui('#pitch-breakdown-body tr').count(),assessment.pitch_breakdown.length);
   for(const row of assessment.pitch_breakdown){const cells=await ui(`[data-pitch-midi="${row.midi}"] td`).allTextContents();assert.deepEqual(cells.slice(0,4),[row.expected,row.matched,row.missed,row.extra].map(String));assert.deepEqual(cells.slice(4),['—','—','No matched attacks']);}
   assert.match(await ui('#pitch-breakdown-note').textContent(),/independent unmatched attacks/);assert.match(await ui('#pitch-breakdown-note').textContent(),/manual offset.*small sample.*latency/);assert.deepEqual(await exportScore(),initialCompilation.score);const takePromise=page.waitForEvent('download');await ui('#export-takes').click();const take=JSON.parse(await readFile(await(await takePromise).path(),'utf8'));assert.deepEqual(take.passes[0].assessment.pitch_breakdown,assessment.pitch_breakdown);await page.screenshot({path:join(artifactDirectory,'worldmusichub-live-pitch-feedback.png'),fullPage:true});await writeFile(join(artifactDirectory,'worldmusichub-live-pitch-feedback.json'),JSON.stringify({score_id:initialCompilation.score.id,pitch_breakdown:assessment.pitch_breakdown,canonical_score_unchanged:true},null,2));
 });
@@ -1444,7 +1444,7 @@ for (const fixtureName of ['original-duet', 'original-duet-standard-header']) {
 test('real lobby preview leaves the active source and clock intact until an explicit new Start',testOptions,async()=>{
   const catalog=await rustApi('/api/catalog'),candidate=catalog.find(score=>score.id!==initialCompilation.score.id&&score.provenance.kind==='original_exercise');assert.ok(candidate);
   await ui('#count-in').uncheck();await ui('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>0);await page.locator('#back-to-library').click();const paused=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;assert.ok(paused>0);assert.equal(await page.locator('#workspace').isVisible(),false);assert.match(await page.locator('#play-button').textContent(),/Play/);
-  const before=requests.filter(request=>request.path==='/api/compile').length;const[previewResponse]=await Promise.all([nextResponse('/api/compile'),page.locator(`[data-score-id="${candidate.id}"]`).click()]);const preview=await responseJson(previewResponse);assert.deepEqual(preview.score,candidate);await page.locator('#start-listen:not([disabled])').waitFor();assert.equal(await page.locator('#preview-title').textContent(),candidate.title);assert.equal(await page.locator('#score-title').textContent(),initialCompilation.score.title);assert.deepEqual(await exportScore(),initialCompilation.score);assert.equal(requests.filter(request=>request.path==='/api/compile').length,before+1,'Browsing performs preview validation only');
+  const before=requests.filter(request=>request.path==='/api/compile').length;const[previewResponse]=await Promise.all([nextResponse('/api/compile'),page.locator(`[data-score-id="${candidate.id}"]`).click()]);const preview=await responseJson(previewResponse);assert.deepEqual(preview.score,candidate);await page.locator('#start-performance:not([disabled])').waitFor();assert.equal(await page.locator('#preview-title').textContent(),candidate.title);assert.equal(await page.locator('#score-title').textContent(),initialCompilation.score.title);assert.deepEqual(await exportScore(),initialCompilation.score);assert.equal(requests.filter(request=>request.path==='/api/compile').length,before+1,'Browsing performs preview validation only');
   await closeShellPanels();await page.locator('#resume-session').click();assert.equal(await page.locator('#stage-title').textContent(),initialCompilation.score.title);await page.waitForTimeout(200);assert.equal((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,paused);assert.match(await page.locator('#play-button').textContent(),/Play/);await page.locator('#back-to-library').click();
   const[activationResponse]=await Promise.all([nextResponse('/api/compile'),startPreview({notation:false})]);assert.deepEqual((await responseJson(activationResponse)).score,candidate);assert.equal(await page.locator('#stage-title').textContent(),candidate.title);assert.equal(requests.filter(request=>request.path==='/api/compile').length,before+2,'Start recompiles through the canonical activation path');assert.deepEqual(await exportScore(),candidate);await closeShellPanels();await assertStoppedAtZero();
 });
@@ -1521,7 +1521,7 @@ async function pausedTakeSnapshot() {
 async function compactGeometry() {
   return page.evaluate(()=>{
     const rect=selector=>{const element=document.querySelector(selector),box=element.getBoundingClientRect();return{x:box.x,y:box.y,width:box.width,height:box.height,right:box.right,bottom:box.bottom,clientHeight:element.clientHeight,scrollHeight:element.scrollHeight}};
-    return{viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},lobby:rect('#song-lobby'),preview:rect('.song-preview'),identity:rect('.preview-identity'),title:rect('#preview-title'),credits:rect('#preview-meta'),music:rect('#preview-music-meta'),copy:{...rect('.preview-copy'),overflow:getComputedStyle(document.querySelector('.preview-copy')).overflowY,scrollTop:document.querySelector('.preview-copy').scrollTop},footer:rect('.preview-footer'),gate:rect('#preview-gate'),listen:rect('#start-listen'),practice:rect('#start-practice'),stage:rect('#workspace'),hud:rect('.stage-hud'),play:rect('.play-panel'),field:rect('#falling-notes'),keyboard:rect('#keyboard'),transport:rect('.transport'),hudItems:[...document.querySelectorAll('.stage-hud>button,.stage-hud>.stage-heading,.stage-hud nav>.button')].map(element=>{const box=element.getBoundingClientRect();return{id:element.id||element.className,x:box.x,right:box.right,y:box.y,bottom:box.bottom,centerY:box.y+box.height/2}})};
+    return{viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},lobby:rect('#song-lobby'),preview:rect('.song-preview'),identity:rect('.preview-identity'),title:rect('#preview-title'),credits:rect('#preview-meta'),music:rect('#preview-music-meta'),copy:{...rect('.preview-copy'),overflow:getComputedStyle(document.querySelector('.preview-copy')).overflowY,scrollTop:document.querySelector('.preview-copy').scrollTop},footer:rect('.preview-footer'),gate:rect('#preview-gate'),start:rect('#start-performance'),mod:rect('#configure-song-mod'),stage:rect('#workspace'),hud:rect('.stage-hud'),play:rect('.play-panel'),field:rect('#falling-notes'),keyboard:rect('#keyboard'),transport:rect('.transport'),hudItems:[...document.querySelectorAll('.stage-hud>button,.stage-hud>.stage-heading,.stage-hud nav>.button')].map(element=>{const box=element.getBoundingClientRect();return{id:element.id||element.className,x:box.x,right:box.right,y:box.y,bottom:box.bottom,centerY:box.y+box.height/2}})};
   });
 }
 
@@ -1536,7 +1536,7 @@ function assertInsideViewport(rect,viewport,label) {
 function assertPinnedPreview(geometry,viewport) {
   assertBoundedDocument(geometry);
   assert.equal(geometry.copy.overflow,'auto');
-  for(const [name,label] of Object.entries({identity:'Selected score identity',title:'Selected title',credits:'Composer and source',music:'Opening musical metadata',footer:'Start footer',gate:'Compatibility reason',listen:'Listen Start',practice:'Practice Start'}))assertInsideViewport(geometry[name],viewport,label);
+  for(const [name,label] of Object.entries({identity:'Selected score identity',title:'Selected title',credits:'Composer and source',music:'Opening musical metadata',footer:'Start footer',gate:'Compatibility reason',start:'Start performance',mod:'Mod settings'}))assertInsideViewport(geometry[name],viewport,label);
   assert.ok(geometry.identity.bottom<=geometry.copy.y+1,'Selected score identity stays above the scrollable details');
   assert.ok(geometry.footer.y>=geometry.copy.bottom-1,'Long preview text must scroll above the Start footer');
 }
@@ -1544,14 +1544,14 @@ function assertPinnedPreview(geometry,viewport) {
 for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:844,height:390},{width:390,height:844}]){
   test(`real D768 lobby and compact performance fit ${viewport.width} by ${viewport.height} with visible tools and exact source`,testOptions,async()=>{
     const edition=JSON.parse(await readFile(join(root,'catalog/editions/cc0-schubert-wandrers-nachtlied-d768/score.json'),'utf8'));
-    await hideNotation();await page.setViewportSize(viewport);await ui('#theme-mode').selectOption('light');await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();
+    await hideNotation();await page.setViewportSize(viewport);await ui('#theme-mode').selectOption('light');await setSessionMode('practice');await ui('#count-in').uncheck();await closeShellPanels();
     await page.locator('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>0);await page.locator('#stage-title').click();await page.keyboard.press('a');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#back-to-library').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
     const activeTake=await pausedTakeSnapshot(),takeBefore=await exportTakeData();assert.ok(activeTake.position>0);assert.ok(activeTake.pass);assert.equal(takeBefore.passes.length,1);assert.equal(takeBefore.passes[0].inputs.length,1);
     async function selectPreview(id,title) {
       const [response]=await Promise.all([nextResponse('/api/compile'),ui(`[data-score-id="${id}"]`).click()]);
       const compiled=await responseJson(response);assert.equal(compiled.score.id,id);
-      await page.waitForFunction(expected=>document.querySelector('#preview-title').textContent===expected&&!document.querySelector('#start-listen').disabled,title);
-      if(id===edition.id)await page.waitForFunction(()=>document.querySelector('#preview-gate').textContent.includes('Selected notes outside this instrument range: 18.')&&document.querySelector('#preview-gate').classList.contains('preview-blocked')&&document.querySelector('#start-practice').disabled);
+      await page.waitForFunction(expected=>document.querySelector('#preview-title').textContent===expected&&!document.querySelector('#configure-song-mod').disabled,title);
+      if(id===edition.id){await configureSongMod(page,{performers:'all'});await page.waitForFunction(()=>document.querySelector('#preview-gate').textContent.includes('Selected notes outside this instrument range: 18.')&&document.querySelector('#preview-gate').classList.contains('preview-blocked')&&document.querySelector('#start-performance').disabled);}
       return compiled;
     }
     const preview=await selectPreview(edition.id,edition.title);assert.deepEqual(preview.score,edition);
@@ -1564,7 +1564,7 @@ for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:8
     if(viewport.width<651)await page.locator('.preview-footer').scrollIntoViewIfNeeded();
     const expandedLobby=await compactGeometry();assertPinnedPreview(expandedLobby,viewport);assert.ok(expandedLobby.copy.scrollHeight>expandedLobby.copy.clientHeight,'Expanded source notices must exercise the preview detail scroller');await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby-notices`);
     await page.mouse.move(expandedLobby.copy.x+expandedLobby.copy.width/2,expandedLobby.copy.y+expandedLobby.copy.height/2);await page.mouse.wheel(0,expandedLobby.copy.scrollHeight);await page.waitForFunction(()=>{const copy=document.querySelector('.preview-copy');return copy.scrollTop>0&&copy.scrollTop+copy.clientHeight>=copy.scrollHeight-1});
-    const scrolledLobby=await compactGeometry();assertPinnedPreview(scrolledLobby,viewport);for(const name of ['identity','title','credits','music','footer','gate','listen','practice'])assert.deepEqual(scrolledLobby[name],expandedLobby[name],`${name} remains anchored while source details scroll`);assert.equal(await page.locator('#preview-music-meta').textContent(),musicMeta);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby-notices-scrolled`);
+    const scrolledLobby=await compactGeometry();assertPinnedPreview(scrolledLobby,viewport);for(const name of ['identity','title','credits','music','footer','gate','start','mod'])assert.deepEqual(scrolledLobby[name],expandedLobby[name],`${name} remains anchored while source details scroll`);assert.equal(await page.locator('#preview-music-meta').textContent(),musicMeta);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby-notices-scrolled`);
     const catalog=await rustApi('/api/catalog/index'),candidate=catalog.items.find(item=>item.id!==edition.id&&item.id!==initialCompilation.score.id);assert.ok(candidate);
     await selectPreview(candidate.id,candidate.title);assert.equal(await page.locator('#preview-notices').evaluate(element=>element.open),false);assert.equal(await page.locator('.preview-copy').evaluate(element=>element.scrollTop),0);assert.deepEqual(await pausedTakeSnapshot(),activeTake,'Browsing another score preserves the paused take');
     await selectPreview(edition.id,edition.title);assert.equal(await page.locator('#preview-notices').evaluate(element=>element.open),false);assert.equal(await page.locator('.preview-copy').evaluate(element=>element.scrollTop),0);assert.equal(await page.locator('#preview-music-meta').textContent(),musicMeta);assert.deepEqual(await pausedTakeSnapshot(),activeTake,'Returning to D768 preserves the paused take');assert.deepEqual(await exportTakeData(),takeBefore,'Preview details, scrolling and catalog swaps preserve every captured input and clock segment');
@@ -1594,7 +1594,7 @@ for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:8
 }
 
 test('real Rust HUD shows a checked pass snapshot and hides it across resume and the full delayed-input tail',testOptions,async()=>{
-  await hideNotation();assert.ok(initialCompilation.timeline.notes.every(note=>note.midi!==90));await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('.practice-options>summary').click();await ui('#latency-offset').fill('500');await ui('#latency-offset').dispatchEvent('change');await closeShellPanels();
+  await hideNotation();assert.ok(initialCompilation.timeline.notes.every(note=>note.midi!==90));await setSessionMode('practice');await ui('#count-in').uncheck();await ui('.practice-options>summary').click();await ui('#latency-offset').fill('500');await ui('#latency-offset').dispatchEvent('change');await closeShellPanels();
   assert.equal(await page.locator('#hud-result').isVisible(),false);await page.locator('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>600);await page.locator('#keyboard .piano-key[data-midi="90"]').click();await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1'&&document.querySelector('.performance-status').dataset.phase==='capturing');
   const captured=await page.locator('.performance-status').evaluate(element=>({pass:element.dataset.passId,revision:element.dataset.revision}));assert.ok(captured.pass);assert.equal(await page.locator('#hud-result').isVisible(),false);
   const assessedResponse=nextResponse('/api/assess');await ui('#assess-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase==='grace');assert.equal(await page.locator('#hud-result').isVisible(),false);await closeShellPanels();const response=await assessedResponse,assessment=await responseJson(response);assert.equal(assessment.hits.length,0);assert.equal(assessment.extras.length,1);assert.equal(assessment.extras[0].midi,90);assert.equal(assessment.misses.length,initialCompilation.timeline.notes.length);assert.equal(response.request().postDataJSON().inputs.length,1);
@@ -1645,7 +1645,7 @@ function assertSimultaneousPiano(geometry){
 }
 for(const viewport of [{width:1280,height:720},{width:844,height:390}]){
   test(`real game, staff and current piano keybed stay visible together at ${viewport.width} by ${viewport.height}`,{timeout:60_000},async()=>{
-    await hideNotation();await page.setViewportSize(viewport);await page.emulateMedia({reducedMotion:'reduce'});await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();
+    await hideNotation();await page.setViewportSize(viewport);await page.emulateMedia({reducedMotion:'reduce'});await setSessionMode('practice');await ui('#count-in').uncheck();await closeShellPanels();
     await page.locator('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>0);await page.locator('#stage-title').click();await page.keyboard.press('a');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');const take=await exportTakeData(),position=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;
     const toggle=page.locator('#notation-toggle');await toggle.focus();await page.keyboard.press('Space');await waitForEngraving();assert.equal(await page.evaluate(()=>document.activeElement?.id),'notation-toggle','Opening notation does not steal keyboard focus');assert.equal(await toggle.getAttribute('aria-expanded'),'true');
     const geometry=await simultaneousStageGeometry();assertSimultaneousPiano(geometry);assert.equal(await page.locator('#falling-notes').isVisible(),true);assert.equal(await page.locator('#piano-stage').isVisible(),true);assert.equal(await page.locator('#keyboard .piano-key').count(),61);const notation=await viewportSnapshot(`simultaneous-${viewport.width}x${viewport.height}-staff`,{requireVisibleNoteheads:true});
@@ -1658,7 +1658,7 @@ for(const viewport of [{width:1280,height:720},{width:844,height:390}]){
 }
 
 test('real short-landscape guitar keeps a complete labelled row and transport beside notation',testOptions,async()=>{
-  await hideNotation();await page.setViewportSize({width:844,height:390});await page.emulateMedia({reducedMotion:'reduce'});await ui('#instrument').selectOption('guitar');await ui('#session-mode').selectOption('practice');await ui('#play-button:not([disabled])').waitFor();await closeShellPanels();await page.locator('#notation-toggle').click();await waitForEngraving();
+  await hideNotation();await page.setViewportSize({width:844,height:390});await page.emulateMedia({reducedMotion:'reduce'});await ui('#instrument').selectOption('guitar');await setSessionMode('practice');await ui('#play-button:not([disabled])').waitFor();await closeShellPanels();await page.locator('#notation-toggle').click();await waitForEngraving();
   const geometry=await page.evaluate(()=>{const rect=selector=>{const e=document.querySelector(selector),r=e.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height,clientHeight:e.clientHeight,scrollHeight:e.scrollHeight}};return{viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},stage:rect('#workspace'),play:rect('.play-panel'),field:rect('.performance-field'),dock:rect('#notation-dock'),guidance:rect('#guitar-guidance'),scroll:rect('.guitar-scroll'),transport:rect('.transport')}});
   assertBoundedDocument(geometry);for(const name of ['stage','play','field','dock','guidance','scroll','transport'])assertInsideViewport(geometry[name],geometry.viewport,name);assert.ok(geometry.play.right<=geometry.dock.x+1);assert.ok(geometry.scroll.height>=56,'The fret labels and a full playable row remain visible while notation is open');assert.ok(geometry.guidance.bottom<=geometry.scroll.y+1);assert.ok(geometry.scroll.bottom<=geometry.transport.y+1);assert.ok(geometry.stage.scrollHeight<=geometry.stage.clientHeight+1);assert.ok(geometry.play.scrollHeight<=geometry.play.clientHeight+1);
   const firstVisible=await guitarFretVisibility('.fret-button[data-string="0"][data-fret="0"]');assertWholeGuitarFret(firstVisible,'First guitar row beside notation');const notation=await viewportSnapshot('simultaneous-844x390-guitar',{requireVisibleNoteheads:true});
@@ -1689,7 +1689,7 @@ function assertWholeGuitarFret(visibility,label) {
 }
 
 test('real Rust guitar guide keeps fractional and repeated tie targets separate, and freezes countdowns through pause',testOptions,async()=>{
-  await hideNotation();await ui('#instrument').selectOption('guitar');await ui('#session-mode').selectOption('practice');await ui('#count-in').check();await ui('#play-button:not([disabled])').waitFor();
+  await hideNotation();await ui('#instrument').selectOption('guitar');await setSessionMode('practice');await ui('#count-in').check();await ui('#play-button:not([disabled])').waitFor();
   const score=structuredClone(fixture),seed=score.parts[0].notes[0];score.id='guitar-expanded-time';score.title='Original guitar timing and unison study';
   score.source={format:'original-test-text',filename:'guitar-source.txt',content:'Original fractional, repeated, tied guitar study.\r\nKeep every source event.'};
   score.tempo=[{at:{numerator:0,denominator:1},bpm:120},{at:{numerator:1,denominator:1},bpm:80}];score.repeats=[{from:{numerator:0,denominator:1},to:{numerator:4,denominator:1},times:2}];
@@ -1710,7 +1710,7 @@ test('real Rust guitar guide keeps fractional and repeated tie targets separate,
 });
 
 test('real guitar string conflicts stay blocked while the guide retains every unplayable target',testOptions,async()=>{
-  await hideNotation();await ui('#instrument').selectOption('guitar');await ui('#session-mode').selectOption('practice');await ui('#play-button:not([disabled])').waitFor();
+  await hideNotation();await ui('#instrument').selectOption('guitar');await setSessionMode('practice');await ui('#play-button:not([disabled])').waitFor();
   const score=structuredClone(fixture),seed=score.parts[0].notes[0];score.id='guitar-conflicting-strings';score.title='Original one-string collision';score.parts[0].notes=['E','F'].map((step,index)=>({...structuredClone(seed),id:`conflict-${index}`,pitch:{step,alter:0,octave:2},voice:String(index+1)}));
   const[checkResponse,targetResponse]=await Promise.all([nextResponse('/api/instrument-check'),nextResponse('/api/practice-targets'),ui('#score-file').setInputFiles({name:'guitar-conflicting-strings.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))})]);
   const report=await responseJson(checkResponse),plan=await responseJson(targetResponse);await page.waitForFunction(title=>document.querySelector('#score-title').textContent===title&&document.querySelector('#practice-gate-reason').textContent.includes('simultaneous'),score.title);await hideNotation();
@@ -1720,7 +1720,7 @@ test('real guitar string conflicts stay blocked while the guide retains every un
 
 for(const viewport of [{width:1280,height:720},{width:844,height:390},{width:390,height:844}]){
   test(`real unobscured guitar stage keeps guidance, shared cues and all frets reachable at ${viewport.width} by ${viewport.height}`,testOptions,async()=>{
-    await hideNotation();await page.setViewportSize(viewport);await page.emulateMedia({reducedMotion:'reduce'});await ui('#instrument').selectOption('guitar');await ui('#session-mode').selectOption('practice');await ui('#play-button:not([disabled])').waitFor();await ui('#guitar-frets').fill('36');
+    await hideNotation();await page.setViewportSize(viewport);await page.emulateMedia({reducedMotion:'reduce'});await ui('#instrument').selectOption('guitar');await setSessionMode('practice');await ui('#play-button:not([disabled])').waitFor();await ui('#guitar-frets').fill('36');
     const[targetResponse]=await Promise.all([nextResponse('/api/practice-targets'),ui('#instrument-apply').click()]);const plan=await responseJson(targetResponse);assert.equal(targetResponse.request().postDataJSON().profile.frets,36);await ui('#play-button:not([disabled])').waitFor();await closeShellPanels();
     await page.waitForFunction(()=>document.querySelectorAll('.guitar-target').length>0);assertGuitarGuidancePlan(await guitarGuidanceCards(),plan);assert.equal(await page.locator('.fret-button').count(),222);assert.equal(await page.locator('#stage-cue-main').textContent(),'READY');assert.equal(await page.locator('dialog[open]').count(),0);
     const geometry=await page.evaluate(()=>{
@@ -1792,7 +1792,7 @@ test('complete Beethoven edition renders all 18 measures and keeps every source 
   await page.setViewportSize({width:960,height:720});await waitForEngraving();
   await viewportSnapshot('cc0-beethoven-last-page-960x720',{requireVisibleNoteheads:true});
   await page.setViewportSize({width:1440,height:1100});await waitForEngraving();
-  await ui('#session-mode').selectOption('practice');
+  await setSessionMode('practice');
   await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));
   assert.equal(await ui('#key-count').inputValue(),'61');assert.equal(await ui('#play-button').isDisabled(),true);
   assert.equal(await ui('#assess-button').isDisabled(),true);
@@ -1809,10 +1809,10 @@ test('complete Beethoven edition renders all 18 measures and keeps every source 
   }
   assert.equal(await ui('#notation-scope').isDisabled(),true,'Solo notation follows the actual human selection');
   assert.equal(await ui('#notation-scope').inputValue(),'current');
-  await ui('#practice-part').selectOption(voice.id);await ui('#play-button:not([disabled])').waitFor();await readySelectedPart(voice.id);
-  await ui('#practice-part').selectOption(piano.id);await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));await readySelectedPart(piano.id);
+  await selectPracticePart(voice.id);await ui('#play-button:not([disabled])').waitFor();await readySelectedPart(voice.id);
+  await selectPracticePart(piano.id);await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));await readySelectedPart(piano.id);
   assert.equal(await ui('#play-button').isDisabled(),true);
-  const [blockedResponse]=await Promise.all([nextTargetResponse({kind:'piano',key_count:61,lowest_midi:null},compiled.timeline),ui('#practice-part').selectOption('')]);
+  const [blockedResponse]=await Promise.all([nextTargetResponse({kind:'piano',key_count:61,lowest_midi:null},compiled.timeline),selectPracticePart('')]);
   const blockedPlan=await responseJson(blockedResponse);assert.equal(blockedPlan.playable,false);
   assert.equal(await ui('#notation-scope').isDisabled(),true);assert.equal(await ui('#notation-scope').inputValue(),'current');
   await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));await readySelectedPart('');
@@ -1874,7 +1874,7 @@ test('complete Beethoven edition renders all 18 measures and keeps every source 
     assert.deepEqual(plan.groups.flatMap(group=>group.source_note_ids).sort(),pitched.map(note=>note.id).sort());
     plans.push({keys,source_attack_count:plan.source_note_count,physical_target_count:plan.target_count,playable:plan.playable});
   }
-  await ui('#session-mode').selectOption('listen');await ui('.practice-options>summary').click();
+  await setSessionMode('listen');await ui('.practice-options>summary').click();
   await ui('#loop-from').fill('64');await ui('#loop-to').fill('68');
   const [windowResponse]=await Promise.all([nextResponse('/api/practice-window'),ui('#loop-apply').click()]);
   const window=await responseJson(windowResponse);await page.waitForFunction(()=>document.querySelector('#loop-status').textContent.includes('ready'));
@@ -1937,10 +1937,10 @@ test('complete Beethoven browser library restore retains all originals and guita
     const bytes=Buffer.from(file.content,file.encoding==='base64'?'base64':'utf8');
     assert.equal(bytes.length,file.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256);
   }
-  await ui('#instrument').selectOption('guitar');await ui('#session-mode').selectOption('practice');
+  await ui('#instrument').selectOption('guitar');await setSessionMode('practice');
   await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));
   assert.equal(await ui('#play-button').isDisabled(),true);assert.equal(await ui('#assess-button').isDisabled(),true);
-  const [voiceResponse]=await Promise.all([nextResponse('/api/instrument-check'),ui('#practice-part').selectOption('P1')]);
+  const [voiceResponse]=await Promise.all([nextResponse('/api/instrument-check'),selectPracticePart('P1')]);
   const voiceReport=await responseJson(voiceResponse);assert.equal(voiceReport.note_options.filter(note=>!note.playable).length,6);
   assert.equal(await ui('#guitar-frets').inputValue(),'12');assert.equal(await ui('#play-button').isDisabled(),true);
   await ui('#guitar-frets').fill('15');assert.match(await ui('#practice-gate-reason').textContent(),/edited|validate|Apply/);
@@ -1952,10 +1952,10 @@ test('complete Beethoven browser library restore retains all originals and guita
   assert.match(await ui('#instrument-diagnostics').textContent(),/fingering|pitch|duration|technique/i);
   assert.deepEqual(await exportScore(),edition);
   await hideNotation();await ui('#guitar-guidance').waitFor();await screenshot('cc0-beethoven-guitar-voice');
-  const [fullResponse]=await Promise.all([nextResponse('/api/practice-targets'),ui('#practice-part').selectOption('')]);
+  const [fullResponse]=await Promise.all([nextResponse('/api/practice-targets'),selectPracticePart('')]);
   const full=await responseJson(fullResponse);assert.equal(full.playable,false);assert.equal(full.target_count,198);
   await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));
-  assert.equal(await ui('#play-button').isDisabled(),true);await ui('#session-mode').selectOption('listen');
+  assert.equal(await ui('#play-button').isDisabled(),true);await setSessionMode('listen');
   assert.equal(await ui('#play-button').isEnabled(),true);assert.deepEqual(await exportScore(),edition);
   await writeFile(join(artifactDirectory,'worldmusichub-live-cc0-beethoven-library-guitar.json'),JSON.stringify({score_id:edition.id,full_source_archive_unchanged:true,library_restore_equal:true,voice_guitar15:{source_attack_count:plan.source_note_count,physical_target_count:plan.target_count,playable:plan.playable},full_guitar15:{source_attack_count:full.source_note_count,physical_target_count:full.target_count,playable:full.playable}},null,2));
 });
@@ -1975,7 +1975,7 @@ for(const viewport of [{width:1280,height:720},{width:844,height:390}]){
   await page.locator('#score-tools-button').click();await page.locator('#source-files-button').click();assert.equal(await page.locator('#source-archive-dialog').evaluate(el=>el.matches(':modal')),true);await checkReachable('#source-archive-close');await page.locator('#source-archive-close').click();await closeShellPanels();
   await page.locator('#back-to-library').click();assert.equal(await page.locator('.shell-header #fullscreen-button').count(),1);await checkReachable('#fullscreen-button');await page.locator('#resume-session').click();assert.equal(await page.locator('.stage-hud #fullscreen-button').count(),1);
   await page.locator('#notation-toggle').click();await waitForEngraving();const notation=await viewportSnapshot(`fullscreen-${viewport.width}x${viewport.height}-notation`,{requireVisibleNoteheads:true});await hideNotation();
-  await ui('#instrument').selectOption('guitar');await ui('#session-mode').selectOption('practice');await ui('#play-button:not([disabled])').waitFor();await closeShellPanels();
+  await ui('#instrument').selectOption('guitar');await setSessionMode('practice');await ui('#play-button:not([disabled])').waitFor();await closeShellPanels();
   const geometry=await page.evaluate(()=>{const rect=selector=>{const el=document.querySelector(selector),r=el.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom,clientHeight:el.clientHeight,scrollHeight:el.scrollHeight}};return{viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},stage:rect('#workspace'),hud:rect('.stage-hud'),transport:rect('.transport'),scroll:rect('.guitar-scroll'),icon:rect('#fullscreen-button')}});
   assertBoundedDocument(geometry);for(const selector of ['stage','hud','transport','scroll','icon'])assertInsideViewport(geometry[selector],geometry.viewport,selector);assert.ok(geometry.scroll.height>=56,'Fullscreen tools cannot consume the complete labelled guitar row');assert.ok(geometry.scroll.bottom<=geometry.transport.y+1);assert.ok(geometry.stage.scrollHeight<=geometry.stage.clientHeight+1);assertWholeGuitarFret(await guitarFretVisibility('.fret-button[data-string="0"][data-fret="0"]'),'Fullscreen first guitar row');await viewportSnapshot(`fullscreen-${viewport.width}x${viewport.height}-guitar`);
   await button.click();await page.waitForFunction(()=>document.fullscreenElement===null);assert.equal(await button.getAttribute('aria-label'),'Enter fullscreen');await assertStoppedAtZero();
@@ -1990,7 +1990,7 @@ for(const viewport of [{width:1280,height:720},{width:844,height:390}]){
 }
 
 test('real fullscreen does not restart a paused take or erase genuine focus lifecycle evidence',testOptions,async()=>{
- await hideNotation();await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();await page.locator('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>100);await page.locator('#stage-title').click();await page.keyboard.press('a');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
+ await hideNotation();await setSessionMode('practice');await ui('#count-in').uncheck();await closeShellPanels();await page.locator('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>100);await page.locator('#stage-title').click();await page.keyboard.press('a');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
  const before=await exportTakeData(),snapshot=await pausedTakeSnapshot();assert.equal(before.passes.length,1);assert.equal(before.passes[0].inputs.length,1);
  await page.evaluate(()=>{window.fullscreenLifecycle=[];addEventListener('blur',()=>fullscreenLifecycle.push('blur'));document.addEventListener('visibilitychange',()=>{if(document.hidden)fullscreenLifecycle.push('hidden')})});
  await page.locator('#fullscreen-button').click();await page.waitForFunction(()=>document.fullscreenElement===document.documentElement);await page.locator('#fullscreen-button').click();await page.waitForFunction(()=>document.fullscreenElement===null);
@@ -2036,7 +2036,7 @@ test('real settings select one MIDI device, persist unavailable identity and kee
 });
 
 test('real MIDI key test and delayed test callbacks never enter an existing practice take',testOptions,async()=>{
- await installSelectableMidiInputs();await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();await page.locator('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>100);
+ await installSelectableMidiInputs();await setSessionMode('practice');await ui('#count-in').uncheck();await closeShellPanels();await page.locator('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>100);
  await page.evaluate(()=>{const t=performance.now();midiOne.onmidimessage({data:[0x90,60,92],timeStamp:t});midiOne.onmidimessage({data:[0x80,60,31],timeStamp:t})});
  await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
  const before=await exportTakeData();assert.equal(before.passes.length,1);assert.equal(before.passes[0].inputs.length,1);
@@ -2065,7 +2065,7 @@ test('short-landscape following reveals later systems with non-color cues and pr
   score.measures=Array.from({length:6},(_,index)=>({number:7,at:beat(index*4),length:beat(4)}));
   score.parts[0].notes=Array.from({length:6},(_,index)=>({...structuredClone(seed),id:`reveal-note-${index}`,at:beat(index*4),duration:beat(4),pitch:{step:'C',alter:0,octave:4},tie_start:false,tie_stop:false}));
   await ui('#score-file').setInputFiles({name:'original-pane-reveal-study.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await waitForEngraving();
-  await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#reset-button').click();await closeShellPanels();
+  await setSessionMode('practice');await ui('#count-in').uncheck();await ui('#reset-button').click();await closeShellPanels();
   await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.status==='ready');
   const stageBefore=await page.evaluate(()=>{const box=document.querySelector('.transport').getBoundingClientRect();return{windowX:scrollX,windowY:scrollY,transport:{x:box.x,y:box.y,width:box.width,height:box.height}}});
   await ui('#engraving-follow').check();await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page);await page.locator('#stage-title').click();await page.keyboard.press('a');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');
@@ -2090,14 +2090,14 @@ test('short-landscape following reveals later systems with non-color cues and pr
 });
 
 test('real whole-phrase guitar route honors editable locks, exposes conflicts and preserves a paused take', {timeout:60_000}, async()=>{
-  await page.setViewportSize({width:1280,height:720});await hideNotation();await ui('#instrument').selectOption('guitar');await ui('#session-mode').selectOption('listen');await ui('#count-in').uncheck();
+  await page.setViewportSize({width:1280,height:720});await hideNotation();await ui('#instrument').selectOption('guitar');await setSessionMode('listen');await ui('#count-in').uncheck();
   await ui('#guitar-frets').fill('5');await ui('#instrument-apply').click();await ui('#play-button:not([disabled])').waitFor();
   const score=structuredClone(fixture),beat=n=>({numerator:n,denominator:1}),seed=score.parts[0].notes[0];
   score.id='original-whole-phrase-route';score.title='Original held E guitar route';score.measures=[{number:1,at:beat(0),length:beat(4)},{number:2,at:beat(4),length:beat(4)}];
   score.parts[0].notes=[{...structuredClone(seed),id:'held-e',at:beat(0),duration:beat(8),pitch:{step:'E',alter:0,octave:4}},{...structuredClone(seed),id:'later-g',at:beat(4),duration:beat(4),pitch:{step:'G',alter:0,octave:4},voice:'2'}];
   const watchPlan=predicate=>page.waitForResponse(response=>new URL(response.url()).pathname==='/api/fingering/guitar'&&response.request().method()==='POST'&&response.request().postDataJSON().score.id===score.id&&predicate(response.request().postDataJSON()),{timeout:15_000});
   const initialResponse=watchPlan(body=>body.locks.length===0);
-  await ui('#score-file').setInputFiles({name:'original-whole-phrase-route.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await hideNotation();await ui('#session-mode').selectOption('practice');await ui('#play-button:not([disabled])').waitFor();await closeShellPanels();
+  await ui('#score-file').setInputFiles({name:'original-whole-phrase-route.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await hideNotation();await setSessionMode('practice');await ui('#play-button:not([disabled])').waitFor();await closeShellPanels();
   const initial=await responseJson(await initialResponse);assert.equal(initial.status,'ready');assert.equal(initial.assignments.length,2);
   const held=initial.assignments.find(choice=>choice.source_note_ids.includes('held-e')),later=initial.assignments.find(choice=>choice.source_note_ids.includes('later-g'));
   assert.equal(held.string,2);assert.equal(held.fret,5,'Whole-phrase lookahead must reserve the high E string for the later G');assert.equal(later.string,1);assert.equal(later.fret,3);
@@ -2132,7 +2132,7 @@ test('real piano hands preserve merged ties and repeat targets through editable 
   const exported=await rustApi('/api/export/musicxml',score);assert.equal(new Set(exported.note_id_map.segments.map(segment=>segment.source_note_id)).size,5,'Every authored source note must have a valid engraving lane before UI acceptance');
   const watchPlan=predicate=>page.waitForResponse(response=>new URL(response.url()).pathname==='/api/fingering/piano'&&response.request().method()==='POST'&&response.request().postDataJSON().score.id===score.id&&predicate(response.request().postDataJSON()),{timeout:15_000});
   const initialResponse=watchPlan(body=>body.locks.length===0);
-  await ui('#score-file').setInputFiles({name:'original-piano-fingering.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await hideNotation();await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#play-button:not([disabled])').waitFor();await closeShellPanels();
+  await ui('#score-file').setInputFiles({name:'original-piano-fingering.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await hideNotation();await setSessionMode('practice');await ui('#count-in').uncheck();await ui('#play-button:not([disabled])').waitFor();await closeShellPanels();
   const initial=await responseJson(await initialResponse);assert.equal(initial.status,'ready');assert.equal(initial.profile.lowest_midi,null,'Existing preset keyboards remain supported');assert.equal(initial.source_occurrence_count,8);assert.equal(initial.physical_target_count,6);
   const compiled=await rustApi('/api/compile',score),physical=await rustApi('/api/practice-targets',{timeline:compiled.timeline,profile:initial.profile});assert.deepEqual(initial.targets.map(target=>target.target_id),physical.timeline.notes.map(note=>note.id));
   const merged=initial.targets.filter(target=>target.source_note_ids.includes('tie-end'));assert.equal(merged.length,2);assert.ok(merged.every(target=>['tie-start','tie-end','unison'].every(id=>target.source_note_ids.includes(id))));assert.notEqual(merged[0].target_id,merged[1].target_id);
@@ -2214,7 +2214,7 @@ test('real guitar current and next six-note recommendations are entirely visible
   const planResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/fingering/guitar'&&response.request().postDataJSON()?.score?.id===score.id);
   await ui('#score-file').setInputFiles({name:'original-guitar-chords.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);
   const plan=await responseJson(await planResponse);assert.equal(plan.status,'ready');assert.equal(plan.assignments.length,18);
-  await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#play-button:not([disabled])').waitFor();await closeShellPanels();
+  await setSessionMode('practice');await ui('#count-in').uncheck();await ui('#play-button:not([disabled])').waitFor();await closeShellPanels();
   await page.locator('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>0);await page.locator('#play-button').click();
   await page.waitForFunction(()=>document.querySelector('#guitar-live-route')?.dataset.currentCount==='6'&&document.querySelector('#guitar-live-route')?.dataset.nextCount==='6');
   const take=await exportTakeData(),position=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;assert.ok(position<1500);
@@ -2239,7 +2239,7 @@ async function prepareKeyboardBrowserPractice(id) {
   await ui('#score-file').setInputFiles({name:`${id}.json`,mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});
   await readyForTitle(score.title);
   await hideNotation();
-  await ui('#session-mode').selectOption('practice');
+  await setSessionMode('practice');
   await ui('#count-in').uncheck();
   await ui('#play-button:not([disabled])').waitFor();
   await closeShellPanels();
@@ -2432,7 +2432,7 @@ test('real IME and form-focus boundaries release physical notes without inventin
 });
 
 test('real Sound Off scored Start and Play capture silently without creating an AudioContext',testOptions,async()=>{
-  await page.addInitScript(observeRealAudio);await page.reload({waitUntil:'domcontentloaded'});await waitForPlaybackClock(page);await page.locator('#home-single-player').click();await page.locator('#start-practice:not([disabled])').waitFor();
+  await page.addInitScript(observeRealAudio);await page.reload({waitUntil:'domcontentloaded'});await waitForPlaybackClock(page);await page.locator('#home-single-player').click();await page.locator('#start-performance:not([disabled])').waitFor();
   assert.deepEqual(await page.evaluate(()=>audioObservation),{construct:0,resume:0,oscillator:0,start:0,stop:0});
   // Free practice exposes the shared Sound switch before any scored activation.
   // No free recording is started; every sound change is a visible user action.
@@ -2445,7 +2445,7 @@ test('real Sound Off scored Start and Play capture silently without creating an 
 });
 
 test('real delayed audio resume cannot start a scored transport after Settings cancels its play ticket',testOptions,async()=>{
-  await page.addInitScript(observeRealAudio);await reloadStage();await hideNotation();await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();
+  await page.addInitScript(observeRealAudio);await reloadStage();await hideNotation();await setSessionMode('practice');await ui('#count-in').uncheck();await closeShellPanels();
   await page.evaluate(async()=>{
     if(audioObservedContexts.length!==1)throw new Error('Expected one real initialized audio context');
     await audioObservedContexts[0].suspend();
@@ -2500,7 +2500,7 @@ test('real no-score Free practice survives an unavailable catalog and saves the 
     await page.reload({waitUntil:'domcontentloaded'});await waitForPlaybackClock(page);const health=await responseJson(await healthResponse);
     assert.equal(health.name,'WorldMusicHub');assert.equal(health.engine,'rust');assert.equal(health.score_format_version,1);assert.equal(health.network,'loopback-only');
     await page.waitForFunction(()=>document.querySelector('#catalog-status').textContent.includes('metadata is unavailable')&&document.querySelector('[data-score-storage]').getAttribute('aria-busy')==='false');
-    assert.equal(await page.locator('#resume-session').isVisible(),false);assert.equal(await page.locator('#score-tools-button').isDisabled(),true);assert.equal(await page.locator('#start-listen').isDisabled(),true);assert.ok(failedResources.some(failure=>failure.path==='/api/catalog/index'));
+    assert.equal(await page.locator('#resume-session').isVisible(),false);assert.equal(await page.locator('#score-tools-button').isDisabled(),true);assert.equal(await page.locator('#start-performance').isDisabled(),true);assert.ok(failedResources.some(failure=>failure.path==='/api/catalog/index'));
     await enterSilentFreePractice();const configuredKeys=Number(await page.locator('#key-count').inputValue());assert.equal(configuredKeys,61);assert.equal(await page.locator('#free-practice-keys [data-midi]').count(),configuredKeys);assert.deepEqual(await page.locator('#free-practice-keys [data-midi]').evaluateAll(keys=>[Number(keys[0].dataset.midi),Number(keys.at(-1).dataset.midi)]),[36,96]);assert.equal(await page.locator('#free-practice-keys [data-code]').count(),47);assert.equal(await page.locator('#free-practice-keys [data-code="KeyR"]').getAttribute('data-midi'),'60');assert.equal(await page.locator('#free-practice-keys [data-code="KeyI"]').getAttribute('data-midi'),'64');
     await page.locator('#free-start').click();await page.locator('#free-practice-title').focus();await page.keyboard.press('r');
     await page.locator('#free-pause').click();await page.locator('#free-practice-title').focus();await page.keyboard.press('i');
@@ -2555,7 +2555,7 @@ test('real explicit guitar phrase uses Rust inventory then filtered locks withou
   const score=guitarPhraseBrowserScore(),watch=predicate=>page.waitForResponse(response=>new URL(response.url()).pathname==='/api/fingering/guitar'&&response.request().method()==='POST'&&response.request().postDataJSON()?.score?.id===score.id&&predicate(response.request().postDataJSON()));
   const initialPlan=watch(body=>!body.planning_scope&&body.locks.length===0);await ui('#score-file').setInputFiles({name:'original-guitar-phrase.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);assert.equal((await responseJson(await initialPlan)).status,'ready');
   const compiled=await rustApi('/api/compile',score),source=id=>compiled.timeline.notes.find(note=>note.source_note_ids.includes(id));assert.equal(compiled.timeline.duration_ms,8000);
-  await ui('#session-mode').selectOption('practice');await ui('.practice-options>summary').click();await ui('#loop-from').fill('0');await ui('#loop-to').fill('8');await ui('#loop-apply').click();await page.waitForFunction(()=>document.querySelector('#loop-enabled').checked);await closeShellPanels();await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page);await page.locator('#stage-title').click();await page.keyboard.press('r');await page.locator('#play-button').click();
+  await setSessionMode('practice');await ui('.practice-options>summary').click();await ui('#loop-from').fill('0');await ui('#loop-to').fill('8');await ui('#loop-apply').click();await page.waitForFunction(()=>document.querySelector('#loop-enabled').checked);await closeShellPanels();await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page);await page.locator('#stage-title').click();await page.keyboard.press('r');await page.locator('#play-button').click();
   const before=await exportTakeData(),snapshot=await pausedTakeSnapshot(),loop=await page.locator('#loop-from,#loop-to,#loop-enabled').evaluateAll(elements=>elements.map(element=>({id:element.id,value:element.value,checked:element.checked})));
   await page.locator('#guitar-plan-controls>summary').click();
   const locks=[{source_note_id:'entry-e',string:2,fret:5,finger:3},{source_note_id:'outside-after',string:1,fret:5,finger:3}];
@@ -2574,14 +2574,14 @@ test('real explicit guitar phrase uses Rust inventory then filtered locks withou
   await writeFile(join(artifactDirectory,'worldmusichub-live-guitar-explicit-phrase.json'),JSON.stringify({inventory,plan,requests:[inventoryBody,planBody],outside_lock_retained:true,entry_tail_unchanged:true,paused_take_unchanged:true,canonical_score_unchanged:true,loop_unchanged:true},null,2));
 });
 
-registerBeginnerBrowserRegressions({test,getPage:()=>page,ui,readyForTitle,exportScore,exportTakeData,closeShellPanels,artifactDirectory});
-registerStaffRegisterBrowserRegressions({test,getPage:()=>page,ui,readyForTitle,exportScore,closeShellPanels,actualMarkerVisibility,artifactDirectory});
-registerAboveKeyboardBrowserRegressions({test,getPage:()=>page,ui,readyForTitle,exportScore,exportTakeData,closeShellPanels,waitForEngraving,actualMarkerVisibility,simultaneousStageGeometry,assertSimultaneousPiano,artifactDirectory});
-registerReferenceListeningBrowserRegressions({test,getPage:()=>page,ui,readyForTitle,exportScore,exportTakeData,closeShellPanels,artifactDirectory});
+registerBeginnerBrowserRegressions({test,getPage:()=>page,ui,setSessionMode,readyForTitle,exportScore,exportTakeData,closeShellPanels,artifactDirectory});
+registerStaffRegisterBrowserRegressions({test,getPage:()=>page,ui,setSessionMode,readyForTitle,exportScore,closeShellPanels,actualMarkerVisibility,artifactDirectory});
+registerAboveKeyboardBrowserRegressions({test,getPage:()=>page,ui,setSessionMode,readyForTitle,exportScore,exportTakeData,closeShellPanels,waitForEngraving,actualMarkerVisibility,simultaneousStageGeometry,assertSimultaneousPiano,artifactDirectory});
+registerReferenceListeningBrowserRegressions({test,getPage:()=>page,ui,setSessionMode,readyForTitle,exportScore,exportTakeData,closeShellPanels,artifactDirectory});
 registerFreePianoBrowserRegressions({test,getPage:()=>page,closeShellPanels,artifactDirectory});
 
 registerLocaleBrowserRegressions({test,getPage:()=>page,ui,closeShellPanels,waitForEngraving,readyForTitle,exportScore,getRequests:getRequestsForLocale});
 
 registerGameLobbyBrowserRegressions({test,getPage:()=>page,ui,closeShellPanels,exportScore,exportTakeData,artifactDirectory});
 
-registerSharedPianoStageBrowserRegressions({test,getPage:()=>page,ui,readyForTitle,closeShellPanels,artifactDirectory,exportScore,exportTakeData,waitForEngraving});
+registerSharedPianoStageBrowserRegressions({test,getPage:()=>page,ui,setSessionMode,readyForTitle,closeShellPanels,artifactDirectory,exportScore,exportTakeData,waitForEngraving});

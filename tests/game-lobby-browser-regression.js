@@ -1,3 +1,4 @@
+import {configureSongMod, openSongMod, startSongModPerformance} from '../scripts/hosted-song-mod-controls.mjs';
 import {readPlaybackClock, installPlaybackClockReader, waitForPlaybackClock} from './browser-playback-clock.js';
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
@@ -26,12 +27,12 @@ export function registerGameLobbyBrowserRegressions({test,getPage,ui,closeShellP
       assert.equal(home.screen,'home');assert.ok(home.scrollWidth<=viewport.width+1);assert.equal(home.audio.construct,0);
       for(const control of [...home.modes,home.free]) {assert.ok(control.width>=44&&control.height>=40);assert.ok(control.bottom<=viewport.height+1);assert.ok(control.right<=viewport.width+1);}
       await page.screenshot({path:join(artifactDirectory,`worldmusichub-game-home-${viewport.width}x${viewport.height}.png`),fullPage:true});
-      await page.locator('#home-single-player').click();await page.locator('#lobby-preview-play:not([disabled])').waitFor();
+      await page.locator('#home-single-player').click();await page.locator('#lobby-preview-play:not([disabled])').waitFor();await configureSongMod(page,{performers:'none'});
       const visibleLabels={
         '#lobby-preview-heading':'曲目试听',
         '.lobby-preview-sound span':'试听声音',
         '.lobby-preview-volume span':'试听音量',
-        '.lobby-preview-scope':'原谱合成试听 · 最多 30 秒 · 不计入演奏记录',
+        '.lobby-preview-scope':'乐谱正弦音参考 · 最多 30 秒 · 不计入演奏记录',
         '.lobby-options label>span':'演奏乐器',
         '#lobby-edition>span':'当前谱面',
         '#lobby-edition>strong':'原谱',
@@ -44,19 +45,23 @@ export function registerGameLobbyBrowserRegressions({test,getPage,ui,closeShellP
       }
       const instrument=page.locator('#lobby-instrument');await instrument.scrollIntoViewIfNeeded();
       assert.equal(await instrument.evaluate(element=>element.selectedOptions[0]?.textContent),'钢琴音色');
-      const part=page.locator('#preview-part');await page.locator('#preview-part-label').scrollIntoViewIfNeeded();
-      assert.equal(await part.evaluate(element=>element.selectedOptions[0]?.textContent),'所有声部');
-      assert.equal(await page.locator('#preview-part-label').evaluate(element=>[...element.childNodes].filter(node=>node.nodeType===Node.TEXT_NODE).map(node=>node.textContent).join('').trim()),'目标声部');
-      assert.equal(await page.locator('#preview-part-label').evaluate(element=>{const r=element.getBoundingClientRect(),pane=element.closest('.preview-copy').getBoundingClientRect();return r.height>0&&r.top>=pane.top-1&&r.bottom<=pane.bottom+1;}),true);
+      const mod=await openSongMod(page);assert.ok(mod.parts.length>0);
+      assert.equal(await page.locator('#song-mod-title').innerText(),'歌曲 Mod');
+      assert.equal(await page.locator('#song-mod-all-human').innerText(),'全部真人');
+      assert.equal(await page.locator('#song-mod-all-machine').innerText(),'全部机器 · 聆听');
+      const performer=page.locator('#song-mod-dialog [data-mod-performer]').first();await performer.scrollIntoViewIfNeeded();
+      assert.equal(await performer.evaluate(element=>element.selectedOptions[0]?.textContent),'机器');
+      assert.equal(await performer.evaluate(element=>{const r=element.getBoundingClientRect(),pane=element.closest('dialog').getBoundingClientRect();return r.height>0&&r.top>=pane.top-1&&r.bottom<=pane.bottom+1;}),true);
+      await page.locator('#song-mod-cancel').click();
       await page.locator('#lobby-preview-heading').scrollIntoViewIfNeeded();
       const lobby=await page.evaluate(()=>{
         const rect=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right};};
-        return {library:rect('.song-browser'),preview:rect('.song-preview'),start:rect('#start-practice'),audition:rect('#lobby-preview-play'),
+        return {library:rect('.song-browser'),preview:rect('.song-preview'),start:rect('#start-performance'),mod:rect('#configure-song-mod'),audition:rect('#lobby-preview-play'),
           scrollWidth:document.documentElement.scrollWidth,screen:document.body.dataset.screen};
       });
       assert.equal(lobby.screen,'library');assert.ok(Math.abs(lobby.library.width-lobby.preview.width)<2,'The entire library pane takes half the available lobby');
       assert.ok(lobby.library.height>viewport.height*.65);assert.ok(lobby.preview.x>=lobby.library.right);
-      assert.ok(lobby.start.bottom<=viewport.height+1);assert.ok(lobby.audition.bottom<=viewport.height+1);assert.ok(lobby.scrollWidth<=viewport.width+1);
+      assert.ok(lobby.start.width>0&&lobby.start.height>0);assert.ok(lobby.start.bottom<=viewport.height+1);assert.ok(lobby.mod.width>0&&lobby.mod.height>0&&lobby.mod.bottom<=viewport.height+1);assert.ok(lobby.audition.bottom<=viewport.height+1);assert.ok(lobby.scrollWidth<=viewport.width+1);
       await page.locator('#lobby-preview-play').click();
       await page.waitForFunction(()=>document.querySelector('#lobby-preview-status').dataset.state==='playing'&&window.audioObservation.start>0);
       const audio=await page.evaluate(()=>({...window.audioObservation,states:window.audioObservedContexts.map(context=>context.state)}));
@@ -64,7 +69,7 @@ export function registerGameLobbyBrowserRegressions({test,getPage,ui,closeShellP
       await page.screenshot({path:join(artifactDirectory,`worldmusichub-game-lobby-${viewport.width}x${viewport.height}.png`),fullPage:true});
       await page.locator('#lobby-preview-play').click();
       await page.locator('#settings-button').click();await page.locator('#count-in').uncheck();await closeShellPanels();
-      await page.locator('#start-practice').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase==='capturing');await page.locator('#back-to-library').click();
+      await startSongModPerformance(page,{performers:'all'});await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase==='capturing');await page.locator('#back-to-library').click();
       await page.waitForFunction(()=>!['capturing','grace'].includes(document.querySelector('.performance-status').dataset.phase));
       const beforeScore=await exportScore(),beforeTakes=await exportTakeData();await closeShellPanels();
       if(await page.locator('#workspace').isVisible())await page.locator('#back-to-library').click();

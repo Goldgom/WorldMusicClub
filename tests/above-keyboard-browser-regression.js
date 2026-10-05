@@ -18,13 +18,13 @@ export function originalAboveKeyboardScore() {
 
 // Registration only. The authorized hosted full-app runner owns its browser and
 // real Rust server; importing/syntax-checking this file launches neither.
-export function registerAboveKeyboardBrowserRegressions({test,getPage,ui,readyForTitle,exportScore,exportTakeData,closeShellPanels,waitForEngraving,actualMarkerVisibility,simultaneousStageGeometry,assertSimultaneousPiano,artifactDirectory}) {
+export function registerAboveKeyboardBrowserRegressions({test,getPage,ui,setSessionMode,readyForTitle,exportScore,exportTakeData,closeShellPanels,waitForEngraving,actualMarkerVisibility,simultaneousStageGeometry,assertSimultaneousPiano,artifactDirectory}) {
   test('original grand staff and Jianpu follow inside falling-lane background with exact cues and visible paint',{timeout:90_000},async()=>{
     const page=getPage(),score=originalAboveKeyboardScore(),evidence=[];
     const settle=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))));
     const dismissNotice=async()=>{await closeShellPanels();if(await page.locator('#notice-dismiss').isVisible())await page.locator('#notice-dismiss').click();await settle();};
     await page.setViewportSize({width:1280,height:720});
-    await ui('#instrument').selectOption('piano');await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();
+    await ui('#instrument').selectOption('piano');await setSessionMode('practice');await ui('#count-in').uncheck();
     await ui('#score-file').setInputFiles({name:`${score.id}.json`,mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);
     await ui('#engraved-button').click();await waitForEngraving();
     await ui('#engraving-page-size').selectOption('8');

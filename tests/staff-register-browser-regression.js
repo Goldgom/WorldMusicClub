@@ -6,7 +6,7 @@ import {notationLayout} from '../web/music.js';
 
 // Registration only. The hosted full-app suite owns the real browser and Rust
 // server. Importing or syntax-checking this module launches neither.
-export function registerStaffRegisterBrowserRegressions({test, getPage, ui, readyForTitle, exportScore, closeShellPanels, actualMarkerVisibility, artifactDirectory}) {
+export function registerStaffRegisterBrowserRegressions({test, getPage, ui,setSessionMode, readyForTitle, exportScore, closeShellPanels, actualMarkerVisibility, artifactDirectory}) {
   test('real basic staff preserves painted page-edge heads flags accidentals and rests', {timeout: 60_000}, async () => {
     const page = getPage(), evidence = [];
     await ui('#staff-button').click();
@@ -91,7 +91,7 @@ export function registerStaffRegisterBrowserRegressions({test, getPage, ui, read
       if (register === 'low') {
         await page.setViewportSize({width: 844, height: 390});
         await ui('#theme-mode').selectOption('dark');
-        await ui('#session-mode').selectOption('listen');
+        await setSessionMode('listen');
         await ui('#count-in').uncheck();
         await ui('#engraving-follow').check();
         await closeShellPanels();

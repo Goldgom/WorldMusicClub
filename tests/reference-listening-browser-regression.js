@@ -7,7 +7,7 @@ import {originalReferenceMidiFixture} from './reference-listening-fixture.js';
 
 // Registration only. The full-app suite owns the actual browser, real Rust
 // executable, page and teardown. Importing this module starts no process.
-export function registerReferenceListeningBrowserRegressions({test,getPage,ui,readyForTitle,
+export function registerReferenceListeningBrowserRegressions({test,getPage,ui,setSessionMode,readyForTitle,
   exportScore,exportTakeData,closeShellPanels,artifactDirectory}) {
   test('real complete MIDI reference listener preserves every source event and the paused scored take through transport, mute and locale changes',
     {timeout:60_000},async()=>{
@@ -39,7 +39,7 @@ export function registerReferenceListeningBrowserRegressions({test,getPage,ui,re
       if (await page.locator('#notation-dock').isVisible()) await page.locator('#notation-toggle').click();
       await ui('#score-file').setInputFiles({name:'original-reference-score.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});
       await readyForTitle(score.title);
-      await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();
+      await setSessionMode('practice');await ui('#count-in').uncheck();await closeShellPanels();
       if (await page.locator('#sound-button').getAttribute('aria-pressed') === 'false') await page.locator('#sound-button').click();
       await page.locator('#play-button').click();
       await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>0);
