@@ -1,3 +1,4 @@
+import {waitForSongMod} from './hosted-song-mod-controls.mjs';
 // Standalone hosted regression. Never execute this to bypass a local-browser
 // denial. Browser-backed storage and a mocked native UI contract are distinct
 // from Windows native filesystem acceptance.
@@ -17,7 +18,7 @@ if(!/^[0-9a-f]{40}$/.test(process.env.WMH_SOURCE_SHA||'')||process.env.WMH_SOURC
 const output=path.resolve(process.env.WMH_ARTIFACT_DIR||path.join(root,'test-results/score-storage'));
 await mkdir(output,{recursive:true});
 const report={source_sha:head,kind:'hosted-browser-and-native-ui-contract',native_filesystem_acceptance:false,cases:[],source_hashes:{},ok:false};
-for(const name of ['web/app.js','web/score-preview.js','web/native-score-storage.js','web/score-storage-model.js','web/score-storage-view.js','web/score-storage-view.css'])report.source_hashes[name]=createHash('sha256').update(await readFile(path.join(root,name))).digest('hex');
+for(const name of ['web/app.js','web/song-mod.js','web/song-mod-view.js','scripts/hosted-song-mod-controls.mjs','web/score-preview.js','web/native-score-storage.js','web/score-storage-model.js','web/score-storage-view.js','web/score-storage-view.css'])report.source_hashes[name]=createHash('sha256').update(await readFile(path.join(root,name))).digest('hex');
 const original={...structuredClone(fixture),id:'authored-storage-hosted-exercise',title:'Original storage regression',source:{format:'authored-storage-source-v1',filename:'original-source.txt',content:'\uFEFFOriginal authored source\r\nAAEC/w==\r\n'}};
 const raw=`\n${JSON.stringify(original,null,2)}\n`;
 let server,browser,serverLog='';
@@ -38,7 +39,7 @@ try{
  const identity=await saved.getAttribute('data-library-key');assert.ok(identity.startsWith('browser:'));
  await page.reload();await page.locator('#home-single-player').click();
  const restored=page.locator(`[data-library-key="${identity}"]`);await restored.waitFor();await restored.click();
- await page.waitForFunction(title=>document.querySelector('#preview-title').textContent===title&&!document.querySelector('#start-listen').disabled,original.title);
+ await page.waitForFunction(title=>document.querySelector('#preview-title').textContent===title,original.title);await waitForSongMod(page);
  await page.locator('#settings-button').click();
  assert.match(await page.locator('[data-score-storage]').textContent(),/IndexedDB/);
  assert.equal(await page.locator('[data-storage-action="choose"]').isDisabled(),true);

@@ -1,3 +1,4 @@
+import {waitForSongMod,startSongModPerformance,resetSongModPerformance} from './hosted-song-mod-controls.mjs';
 import {installPlaybackClockReader, waitForPlaybackClock} from '../tests/browser-playback-clock.js';
 // Hosted Chromium and the exact-source native stdio driver only. No local launch.
 import assert from 'node:assert/strict';
@@ -47,14 +48,13 @@ try{
   throw Error('Hosted route must not intercept a shipped asset');
  });
  page=await context.newPage();await installPlaybackClockReader(page);page.setDefaultTimeout(30000);page.on('pageerror',error=>report.pageErrors.push(String(error.stack||error)));await page.goto(origin);await waitForPlaybackClock(page);report.locale=await page.evaluate(()=>document.documentElement.lang);assert.equal(report.locale,'zh-CN');
- await action('Enter library',()=>page.locator('#home-single-player').click());await action('Choose original dense source',()=>page.locator(`#catalog [data-library-key="native:${prepared.manifest.key}"]`).click());await page.waitForFunction(()=>!document.getElementById('open-score').disabled);
- await action('Open paused native score',()=>page.locator('#open-score').click());await controls(true);if(await page.locator('#engraved-button').getAttribute('aria-pressed')!=='true')await action('Choose actual staff',()=>page.locator('#engraved-button').click());await controls(false);
+ await action('Enter library',()=>page.locator('#home-single-player').click());await action('Choose original dense source',()=>page.locator(`#catalog [data-library-key="native:${prepared.manifest.key}"]`).click());await waitForSongMod(page);
+ await action('Start all-machine performance',()=>startSongModPerformance(page,{performers:'none',layout:'complete'}));await action('Reset to paused native score',()=>resetSongModPerformance(page));await controls(true);if(await page.locator('#engraved-button').getAttribute('aria-pressed')!=='true')await action('Choose actual staff',()=>page.locator('#engraved-button').click());await controls(false);
  await page.waitForFunction(()=>document.getElementById('workspace').dataset.notationRenderStatus==='ready'&&document.querySelector('#engraved-staff .vf-notehead'));
  await page.evaluate(async()=>{
   const tools=globalThis.__wmhDenseObserverTools;if(typeof tools?.install!=='function'||typeof tools?.observeAudio!=='function')throw Error('Dense observer bootstrap namespace is unavailable');
   const audio=tools.observeAudio();try{globalThis.__denseRendition=await tools.install({audioProbe:audio});}catch(error){audio.restore();throw error;}finally{delete globalThis.__wmhDenseObserverTools;}
  });traceInstalled=true;
- await action('Open settings',()=>page.locator('#settings-button').click());await action('Choose Listen',()=>page.locator('#session-mode').selectOption('listen'));await action('Close settings',()=>page.locator('[data-close-panel="settings"]').click());
  await controls(true);await action('Choose All four parts',()=>page.locator('#notation-scope').selectOption('all'));if(await page.locator('#engraving-page-size').inputValue()!=='8')await action('Choose native eight-bar page',()=>page.locator('#engraving-page-size').selectOption('8'));if(!await page.locator('#engraving-follow').isChecked())await action('Enable native page following',()=>page.locator('#engraving-follow').check());await controls(false);
  await page.waitForFunction(()=>document.getElementById('workspace').dataset.notationRenderStatus==='ready'&&JSON.parse(document.getElementById('workspace').dataset.renderedNotationParts||'[]').length===4&&document.querySelectorAll('#engraved-staff .vf-notehead').length>=2048);
  if(await page.locator('#sound-button').getAttribute('aria-pressed')==='true')await action('Enable disclosed synthesized audio',()=>page.locator('#sound-button').click());

@@ -1,3 +1,4 @@
+import {waitForSongMod,startSongModPerformance} from './hosted-song-mod-controls.mjs';
 // Separate, opt-in hosted acceptance. Never run locally to bypass a browser denial.
 // Real Chromium + production loopback assets + socket-free exact-source native stdio.
 import assert from 'node:assert/strict';
@@ -28,7 +29,7 @@ const fixture = originalPackManagementFixtures(); await writeOriginalFixtures(jo
 const report = {version: 1, kind: 'original-pack-management-hosted-real-native-stdio', source_sha: sourceSha, source_tree: git('rev-parse', 'HEAD^{tree}'), driver_sha256: sha256(await readFile(binary)), viewport: {width: 1280, height: 720}, locale: 'zh-CN', fixture: fixtureManifest(fixture), source_hashes: {}, api: [], actions: [], screenshots: [], downloads: [], page_errors: [], cases: [], process_ids: [], ok: false, claims: {browser: true, native_filesystem: true, native_window: false, physical_audio: false, user_library: false, private_music: false, destructive_management: false}};
 report.hosted_origin = null; report.native_protocol_origin = NATIVE_PROTOCOL_ORIGIN;
 report.host = {origin: null, hosted_origin: null, native_protocol_origin: NATIVE_PROTOCOL_ORIGIN, asset_server: {}, processes: []};
-for (const filename of ['scripts/hosted-pack-management-check.mjs', 'scripts/pack-management-acceptance-fixtures.mjs', 'scripts/hosted-worklet-assets.mjs', 'scripts/management-hosted-runtime.mjs', 'web/app.js', 'web/library-management-contract.js', 'web/library-management-model.js', 'web/library-management-view.js', 'web/library-management.css', 'tests/vsq-native-driver-fixtures.js']) report.source_hashes[filename] = sha256(await readFile(join(root, filename)));
+for (const filename of ['scripts/hosted-pack-management-check.mjs', 'scripts/pack-management-acceptance-fixtures.mjs', 'scripts/hosted-worklet-assets.mjs', 'scripts/management-hosted-runtime.mjs', 'web/app.js','web/song-mod.js','web/song-mod-view.js','scripts/hosted-song-mod-controls.mjs', 'web/library-management-contract.js', 'web/library-management-model.js', 'web/library-management-view.js', 'web/library-management.css', 'tests/vsq-native-driver-fixtures.js']) report.source_hashes[filename] = sha256(await readFile(join(root, filename)));
 let driver, browser, context, page, assetServer, origin, nativeBridge, processHost, sessionClosePromise, phase = 'import', cancelled = false, timeout;
 const committed = new Map();
 const recordCase = (name, details = {}) => report.cases.push({name, ...details, ok: true});
@@ -162,7 +163,7 @@ async function launch() {
   page = await context.newPage(); ownedPage = page; page.setDefaultTimeout(15000); page.setDefaultNavigationTimeout(15000);
   page.on('pageerror', error => report.page_errors.push(String(error.stack || error)));
   await page.goto(origin); assert.equal(await page.locator('html').getAttribute('lang'), 'zh-CN');
-  await page.locator('#home-single-player').click(); await page.waitForFunction(() => !document.querySelector('#start-listen').disabled);
+  await page.locator('#home-single-player').click(); await waitForSongMod(page);
 }
 async function importFiles(inputs, label) {
   await action(label, async () => {
@@ -198,10 +199,10 @@ async function run() {
   const sharedEntry = primaryReceipt.items.find(item => item.entry?.score_id === fixture.shared.id).entry;
   await action('Create a paused ORIGINAL practice take', async () => {
     await page.locator(`#catalog [data-library-key="native:${sharedEntry.key}"]`).click();
-    await page.waitForFunction(() => !document.querySelector('#start-listen').disabled);
-    await page.locator('#start-listen').click(); await page.waitForFunction(() => document.body.dataset.screen === 'stage' && /暂停/.test(document.querySelector('#play-button').textContent));
+    await waitForSongMod(page);
+    await startSongModPerformance(page,{performers:'none'}); await page.waitForFunction(() => document.body.dataset.screen === 'stage' && /暂停/.test(document.querySelector('#play-button').textContent));
     await page.locator('#settings-button').click(); await page.locator('#count-in').uncheck(); await page.locator('[data-close-panel="settings"]').click(); await page.locator('#back-to-library').click();
-    await page.locator('#start-practice').click(); await page.waitForFunction(() => document.body.dataset.screen === 'stage' && /暂停/.test(document.querySelector('#play-button').textContent));
+    await startSongModPerformance(page,{performers:'all'}); await page.waitForFunction(() => document.body.dataset.screen === 'stage' && /暂停/.test(document.querySelector('#play-button').textContent));
     await page.locator('#keyboard [data-midi="60"]').click(); await page.locator('#back-to-library').click();
   });
   const before = await captureScoreAndTake('before');

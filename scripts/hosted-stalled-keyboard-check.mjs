@@ -1,3 +1,4 @@
+import {configureSongMod} from './hosted-song-mod-controls.mjs';
 // Standalone focused hosted regression. Do not run to bypass a local launch
 // denial. The unmodified Rust executable serves assets and assesses real inputs.
 import assert from 'node:assert/strict';
@@ -30,7 +31,7 @@ try{
   assetServer=await startHostedAssetServer({root,sourceSha,binary:resolve(root,process.env.WMH_SERVER_BINARY||'target/debug/practice-server'),evidence:report.asset_server});report.origin=assetServer.origin;
   // Bind all scored-input implementation bytes served by the real executable,
   // in addition to the shared helper's checked Worklet import closure.
-  for(const name of ['app.js','keyboard-input.js','midi-messages.js','practice-recorder.js','input-evidence.js','transport.js']){
+  for(const name of ['app.js','song-mod.js','song-mod-view.js','keyboard-input.js','midi-messages.js','practice-recorder.js','input-evidence.js','transport.js']){
     const expected=await readFile(join(root,'web',name));const response=await fetch(`${report.origin}/${name}`,{redirect:'error',signal:AbortSignal.timeout(10000)});assert.equal(response.status,200);const bytes=await boundedHostedResponse(response);assert.equal(digest(bytes),digest(expected));report.assets.push({name,bytes:bytes.length,sha256:digest(bytes),status:200});
   }
   const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});report.browser_version=browser.version();context=await browser.newContext({viewport:{width:1280,height:900},acceptDownloads:true});page=await context.newPage();page.setDefaultTimeout(15000);
@@ -55,7 +56,8 @@ try{
   await control('score-file').setInputFiles({name:'original-stalled-keyboard.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(report.fixture))});
   await page.waitForFunction(title=>document.getElementById('score-title').textContent===title&&!document.getElementById('play-button').disabled,report.fixture.title);
   await closePanels();if(await control('song-lobby').isVisible())await control('resume-session').click();
-  await control('settings-button').click();await control('session-mode').selectOption('practice');assert.equal(await control('latency-offset').inputValue(),'0');
+  await configureSongMod(page,{origin:'stage',restore:true,performers:'all',layout:'solo',showOtherParts:true});
+  await control('settings-button').click();assert.equal(await control('latency-offset').inputValue(),'0');
   // Performance controls reparent count-in into the settings dialog. Exercise
   // it while that real panel is open, before returning to stage controls.
   assert.equal(await control('count-in').isVisible(),true);await control('count-in').uncheck();await closePanels();

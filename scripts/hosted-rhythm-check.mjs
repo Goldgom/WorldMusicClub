@@ -1,3 +1,4 @@
+import {waitForSongMod,startSongModPerformance} from './hosted-song-mod-controls.mjs';
 import {installPlaybackClockReader, waitForPlaybackClock} from '../tests/browser-playback-clock.js';
 // Author/run only on an authorized hosted browser runner. This file is excluded
 // from npm test and must never be used to bypass a local browser launch denial.
@@ -145,7 +146,7 @@ try {
   };
   assert.match(provenance.sourceCommit ?? '', /^[a-f0-9]{40}$/, 'A source commit is required');
   assert.equal(provenance.checkoutCommit, provenance.workflowCommit, 'Report must identify the exact checkout that built the server');
-  for (const name of ['package.json','package-lock.json','.github/workflows/rhythm-interaction-preview.yml','.github/workflows/check.yml','.github/workflows/windows-release.yml','scripts/hosted-rhythm-check.mjs','web/app.js','web/style.css','web/music.js','web/performance-view.js','web/stage-notation-layout.js','web/piano-stage-view.js','web/piano-stage.css','web/rhythm-shell.js','web/rhythm-shell.css','web/game-shell.js','web/index.html','web/i18n.js','web/locales/en.js','web/locales/zh-CN.js','web/locales/rhythm-en.js','web/locales/rhythm-zh-CN.js','web/locales/rhythm-schema.js']) {
+  for (const name of ['package.json','package-lock.json','.github/workflows/rhythm-interaction-preview.yml','.github/workflows/check.yml','.github/workflows/windows-release.yml','scripts/hosted-rhythm-check.mjs','web/app.js','web/song-mod.js','web/song-mod-view.js','scripts/hosted-song-mod-controls.mjs','web/style.css','web/music.js','web/performance-view.js','web/stage-notation-layout.js','web/piano-stage-view.js','web/piano-stage.css','web/rhythm-shell.js','web/rhythm-shell.css','web/game-shell.js','web/index.html','web/i18n.js','web/locales/en.js','web/locales/zh-CN.js','web/locales/rhythm-en.js','web/locales/rhythm-zh-CN.js','web/locales/rhythm-schema.js']) {
     sourceHashes[name] = createHash('sha256').update(await readFile(path.join(root,name))).digest('hex');
   }
   provenance.serverBinarySha256 = createHash('sha256').update(await readFile(binary)).digest('hex');
@@ -183,7 +184,7 @@ try {
       }, entry);
       await page.goto(origin);await waitForPlaybackClock(page); await page.evaluate(() => document.fonts.ready);
       if (await page.locator('#game-home').isVisible()) await page.locator('#home-single-player').click();
-      await page.waitForFunction(() => !document.querySelector('#start-listen').disabled);
+      await waitForSongMod(page);
       assert.equal(await page.locator('html').getAttribute('lang'), entry.locale);
       assert.equal(await page.locator('.rhythm-shell').count(), 1);
       assert.equal(await page.locator('html').getAttribute('data-theme'), entry.theme);
@@ -193,7 +194,7 @@ try {
       await page.locator('#start-free-practice').click();
       await page.locator('#free-sound').click(); await page.locator('#free-exit').click();
       if (await page.locator('#game-home').isVisible()) await page.locator('#home-single-player').click();
-      await page.locator('#start-listen').click();
+      await startSongModPerformance(page,{performers:'none'});
       await page.waitForFunction(() => document.body.dataset.screen === 'stage' && globalThis.__wmhReadPlaybackClock().positionMs > 0);
       if (entry.width >= 1280 && entry.height >= 720) assert.equal(await page.locator('#notation-lane-overlay').isVisible(),true,'The first desktop piano entry shows its background score without an extra toggle');
       // Exercise the real hover layer before Pause, including its portrait
