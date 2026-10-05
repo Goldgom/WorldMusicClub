@@ -19,6 +19,9 @@ export const CATALOG_EVIDENCE_LIMITS = Object.freeze({report: 1024 * 1024, file:
 export const CATALOG_SOURCE_FILES = Object.freeze([
   'scripts/prepare-library-catalog-acceptance.mjs', 'scripts/verify-library-catalog-acceptance.mjs', 'scripts/verify-library-catalog-organization.mjs', 'scripts/catalog-native-geometry.mjs',
   'crates/desktop-shell/library-catalog-acceptance.js',
+  'web/performance-view.js',
+  'web/piano-stage-view.js',
+  'web/piano-layout-budget.js',
   'web/app.js', 'web/native-score-storage.js', 'web/library-selected-export.js', 'web/bulk-import.js', 'web/library-management-view.js', 'web/locales/library-management-en.js', 'web/locales/library-management-zh-CN.js', 'web/locales/library-management-schema.js', 'web/library-catalog-contract.js', 'web/library-catalog-model.js', 'web/library-catalog-view.js', 'web/library-operation-store.js', 'web/library-management.css',
   'crates/desktop-shell/src/lib.rs', 'crates/desktop-shell/src/acceptance.rs', 'crates/desktop-shell/src/catalog_product.rs', 'crates/desktop-shell/src/catalog_journal.rs', 'crates/desktop-shell/src/catalog.rs',
   'crates/desktop-shell/src/windows.rs', 'crates/desktop-shell/acceptance-wait.js', 'crates/desktop-shell/reference-acceptance.js',

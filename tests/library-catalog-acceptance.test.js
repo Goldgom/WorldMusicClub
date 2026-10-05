@@ -56,6 +56,11 @@ test('original streaming ZIP bytes are independent of the host ZipInfo platform 
 
 test('source binding rejects old, unbound and independently changed evidence', () => {
   const expected = sourceBinding(); assert.doesNotThrow(() => validateCatalogSourceBinding(expected, expected));
+  for (const file of ['web/performance-view.js', 'web/piano-stage-view.js', 'web/piano-layout-budget.js']) {
+    assert.equal(CATALOG_SOURCE_FILES.filter(name => name === file).length, 1, 'Every production piano budget module must be bound exactly once');
+    const missing = structuredClone(expected); delete missing.source_hashes[file]; assert.throws(() => validateCatalogSourceBinding(missing, expected));
+    const changed = structuredClone(expected); changed.source_hashes[file] = sha256('changed piano budget module'); assert.throws(() => validateCatalogSourceBinding(changed, expected));
+  }
   for (const edit of [v => delete v.source_hashes, v => v.source_sha = 'c'.repeat(40), v => v.source_tree = 'c'.repeat(40), v => delete v.source_hashes[CATALOG_SOURCE_FILES[0]], v => v.source_hashes[CATALOG_SOURCE_FILES[1]] = sha256('changed module')]) {
     const value = structuredClone(expected); edit(value); assert.throws(() => validateCatalogSourceBinding(value, expected));
   }
