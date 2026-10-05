@@ -606,6 +606,7 @@ jobs:
             desktop-acceptance/*.json
             desktop-acceptance/*.png
             desktop-acceptance/*.log
+            desktop-acceptance/downloads/*
             desktop-song-folder/*.json
             desktop-song-folder/*.png
             desktop-song-folder/*.log

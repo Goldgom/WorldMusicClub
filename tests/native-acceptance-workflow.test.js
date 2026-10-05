@@ -461,3 +461,12 @@ test('complete-practice stays mandatory in normal validation, package source bin
   const quick = readFileSync(new URL('../scripts/quick-development-checks.mjs', import.meta.url), 'utf8');
   assert.match(quick, /real browser and screenshots/); assert.match(quick, /Windows Rust\/native input/); assert.match(quick, /accepted:false/);
 });
+
+
+test('failed packaging still retains original desktop downloads without profile directories', () => {
+  const upload = steps(jobBlock('native-feature-acceptance')).find(step => step.includes('name: native-feature-evidence-'));
+  assert.ok(upload); assert.equal(gateRuns(upload, {failed: true}), true);
+  const paths = [...upload.matchAll(/^            (.+)$/gm)].map(match => match[1]).filter(path => path.startsWith('desktop-acceptance/'));
+  assert.deepEqual(paths, ['desktop-acceptance/*.json', 'desktop-acceptance/*.png', 'desktop-acceptance/*.log', 'desktop-acceptance/downloads/*']);
+  assert.doesNotMatch(paths.join('\n'), /webview|profile|\*\*/);
+});
