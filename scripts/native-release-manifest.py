@@ -29,6 +29,9 @@ _new_music_spec = importlib.util.spec_from_file_location('native_new_music_evide
 _new_music = importlib.util.module_from_spec(_new_music_spec)
 _new_music_spec.loader.exec_module(_new_music)
 NEW_MUSIC_EVIDENCE = _new_music.EVIDENCE
+_catalog_spec = importlib.util.spec_from_file_location('native_library_catalog_evidence', ROOT / 'scripts/native-library-catalog-evidence.py')
+_catalog = importlib.util.module_from_spec(_catalog_spec)
+_catalog_spec.loader.exec_module(_catalog)
 FOLDER = 'WorldMusicClub-Native'
 EXE = 'WorldMusicClub-Native.exe'
 INFO, SUMS = 'BUILD-INFO.json', 'SHA256.txt'
@@ -495,6 +498,7 @@ def create_manifest(directory, metadata):
                 *[f'evidence/{name}' for name in PITCH_BEND_EVIDENCE],
                 *[f'evidence/{name}' for name in SONG_AUTHORING_EVIDENCE],
                 *[f'evidence/{name}' for name in NEW_MUSIC_EVIDENCE],
+                *[_catalog.PREFIX + name for name in _catalog.REQUIRED],
                 *[f'evidence/renderer-{phase}.json' for phase in PHASES]]
     for name in required:
         require((directory / name).is_file(), f'Native package is missing {name}')
@@ -505,6 +509,8 @@ def create_manifest(directory, metadata):
     verify_packaged_pitch_bend_evidence(lambda name: (directory / name).read_bytes(), metadata)
     verify_packaged_song_authoring_evidence(lambda name: (directory / name).read_bytes(), metadata)
     _new_music.verify_packaged(lambda name: (directory / name).read_bytes(), metadata)
+    _catalog.verify_packaged(lambda name: (directory / name).read_bytes() if name == EXE else _catalog.read_file(directory, name), metadata,
+                             (path.relative_to(directory).as_posix() for path in directory.rglob('*') if path.is_file()))
     verify_packaged_profiles(lambda name: _pitch.read_evidence(directory / name, 2 * 1024 * 1024)
                              if name != EXE else (directory / name).read_bytes(), metadata)
     require(not any((directory / name).exists() for name in ['WorldMusicClub.exe', 'WorldMusicHub.exe']),
@@ -572,6 +578,8 @@ def verify_archive(archive):
             require(name in info['files'], f'Native package is missing {name}')
         for name in [*SONG_FOLDER_EVIDENCE, *PERFORMANCE_SONG_EVIDENCE, *PITCH_BEND_EVIDENCE, *SONG_AUTHORING_EVIDENCE, *NEW_MUSIC_EVIDENCE]:
             require(f'evidence/{name}' in info['files'], f'Native package is missing evidence/{name}')
+        for name in _catalog.REQUIRED:
+            require(_catalog.PREFIX + name in info['files'], f'Native package is missing {_catalog.PREFIX}{name}')
         verify_pitch_bend_inventory(info['files'])
         verify_song_authoring_inventory(info['files'])
         _new_music.verify_inventory(info['files'])
@@ -586,6 +594,7 @@ def verify_archive(archive):
         verify_packaged_pitch_bend_evidence(lambda name: package.read(prefix + name), info)
         verify_packaged_song_authoring_evidence(lambda name: package.read(prefix + name), info)
         _new_music.verify_packaged(lambda name: package.read(prefix + name), info)
+        _catalog.verify_packaged(lambda name: package.read(prefix + name), info, info['files'])
         verify_packaged_profiles(lambda name: package.read(prefix + name), info)
         sums[INFO] = sha(package.read(prefix + INFO))
         require(package.read(prefix + SUMS).decode() == ''.join(f'{sums[name]}  {name}\n' for name in sorted(sums)), 'Native checksum file differs')
@@ -648,6 +657,7 @@ def main():
     create.add_argument('--song-authoring', required=True, type=Path)
     create.add_argument('--vsq-authoring', required=True, type=Path)
     create.add_argument('--basic-key', required=True, type=Path)
+    create.add_argument('--catalog-evidence', required=True, type=Path)
     archive = commands.add_parser('archive')
     archive.add_argument('directory', type=Path)
     archive.add_argument('archive', type=Path)
@@ -663,6 +673,7 @@ def main():
         metadata['acceptance'].update(accepted_song_authoring_evidence(args.song_authoring, args.directory / EXE, args.commit, metadata['git_tree']))
         for scope, directory in [('vsq-authoring', args.vsq_authoring), ('basic-key', args.basic_key)]:
             metadata['acceptance'].update(_new_music.accepted(scope, directory, args.directory / EXE, args.commit, metadata['git_tree']))
+        metadata['acceptance'].update(_catalog.accepted(args.catalog_evidence, args.directory / EXE, args.commit, metadata['git_tree']))
         # The source-bound gate above verified this separate proof. Keep it in
         # the package inventory without changing the dependency-cache workflow.
         (args.directory / 'evidence/native-reference-files.json').write_bytes((args.acceptance / 'native-reference-files.json').read_bytes())
@@ -677,6 +688,7 @@ def main():
         for scope, directory in [('vsq-authoring', args.vsq_authoring), ('basic-key', args.basic_key)]:
             for name in _new_music.names(scope):
                 (args.directory / 'evidence' / name).write_bytes((directory / name).read_bytes())
+        _catalog.copy_evidence(args.catalog_evidence, args.directory, args.directory / EXE, metadata)
         info = create_manifest(args.directory, metadata)
     elif args.command == 'archive':
         info = create_archive(args.directory, args.archive)

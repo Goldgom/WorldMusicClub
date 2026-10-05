@@ -7,6 +7,10 @@ import test from 'node:test';
 
 const workflow = readFileSync(new URL('../.github/workflows/windows-desktop-acceptance.yml', import.meta.url), 'utf8');
 const jobIds = ['bulk-import-browser', 'native-feature-acceptance'];
+const managementOutputs = {
+  'bulk-import-browser': ['management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify'],
+  'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify'],
+};
 // These contracts intentionally inspect the workflow's literal job/step blocks;
 // the behavioral cases execute its actual summary program, not a test copy.
 function jobBlock(id) {
@@ -24,7 +28,8 @@ assert.ok(program, 'The tested inline summary program must be the workflow entry
 const sha = 'a'.repeat(40), tree = 'b'.repeat(40), run = '123456';
 function passingNeeds() {
   return Object.fromEntries(jobIds.map(id => [id, {
-    result: 'success', outputs: { source_sha: sha, source_tree: tree, run_id: run },
+    result: 'success', outputs: { source_sha: sha, source_tree: tree, run_id: run,
+      ...Object.fromEntries(managementOutputs[id].map(name => [name, 'success'])) },
   }]));
 }
 function check(needs, extraEnv = {}) {
@@ -72,9 +77,16 @@ const independentGates = [
       dense_browser_setup: 'npx playwright install --with-deps chromium' } },
   { job: jobIds[1], basic: '-Scenario basic-key', target: '-Scenario vsq-authoring',
     prerequisites: { native_build: 'cargo build -p worldmusichub-desktop --release --locked' } },
+  ...['npm run test:pack-management-hosted', 'npm run test:library-catalog-hosted'].map(target => ({
+    job: jobIds[0], basic: 'node scripts/hosted-basic-key-check.mjs', target,
+    prerequisites: { dense_native_driver: 'cargo build -p worldmusichub-desktop --example native_import_driver --locked',
+      dense_browser_setup: 'npx playwright install --with-deps chromium' },
+  })),
+  { job: jobIds[1], basic: '-Scenario basic-key', target: '-Scenario library-catalog',
+    prerequisites: { native_build: 'cargo build -p worldmusichub-desktop --release --locked' } },
 ];
 
-test('a failed basic-key gate cannot suppress independent VSQ authoring and twelve-part checks', () => {
+test('a failed basic-key gate cannot suppress independent VSQ, twelve-part and management checks', () => {
   for (const { job, basic, target, prerequisites } of independentGates) {
     const jobSteps = steps(jobBlock(job)), basicIndex = jobSteps.findIndex(step => step.includes(basic));
     const targetIndex = jobSteps.findIndex(step => step.includes(target)), gate = jobSteps[targetIndex];
@@ -201,6 +213,42 @@ test('missing jobs/outputs and stale source, tree or run fail even with successf
   }
   assert.equal(check(passingNeeds(), { ACCEPTANCE_SHA: '' }).status, 1);
   assert.equal(check(passingNeeds(), { ACCEPTANCE_RUN_ID: '' }).status, 1);
+});
+
+test('the exact-source summary requires every management run and recheck even when both jobs report success', () => {
+  for (const [id, names] of Object.entries(managementOutputs)) {
+    const block = jobBlock(id), jobSteps = steps(block);
+    for (const name of names) {
+      assert.ok(block.includes(`${name}: \${{ steps.${name}.outcome }}`), `${name}: export actual step outcome`);
+      assert.equal(jobSteps.filter(step => step.includes(`id: ${name}\n`)).length, 1);
+      for (const outcome of ['failure', 'cancelled', 'skipped', '', undefined]) {
+        const needs = passingNeeds();
+        needs[id].outputs[name] = outcome;
+        const result = check(needs);
+        assert.equal(result.status, 1, `${id}/${name}=${outcome || 'missing'}`);
+        assert.ok(result.summary.includes(`${id}/${name}: ${outcome || 'missing'} (success required)`));
+      }
+    }
+  }
+});
+
+test('catalog rechecks collect retained evidence after an unrelated failure but require their own successful scenario', () => {
+  for (const [id, scenario, verifier] of [
+    [jobIds[0], 'management_catalog_browser', 'management_catalog_browser_verify'],
+    [jobIds[1], 'management_catalog_windows', 'management_catalog_windows_verify'],
+  ]) {
+    const jobSteps = steps(jobBlock(id));
+    const scenarioIndex = jobSteps.findIndex(step => step.includes(`id: ${scenario}\n`));
+    const verifyIndex = jobSteps.findIndex(step => step.includes(`id: ${verifier}\n`));
+    const gate = jobSteps[verifyIndex];
+    assert.ok(scenarioIndex >= 0 && verifyIndex > scenarioIndex);
+    assert.doesNotMatch(gate, /^        continue-on-error:/m);
+    assert.equal(gateRuns(gate, { failed: true, outcomes: { [scenario]: 'success' } }), true);
+    assert.equal(gateRuns(gate, { cancelled: true, outcomes: { [scenario]: 'success' } }), false);
+    for (const outcome of ['failure', 'skipped', 'cancelled', undefined]) {
+      assert.equal(gateRuns(gate, { failed: true, outcomes: { [scenario]: outcome } }), false);
+    }
+  }
 });
 
 test('all real checks fail closed and failure evidence survives independently', () => {

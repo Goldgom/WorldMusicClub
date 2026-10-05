@@ -8,11 +8,14 @@ permissions:
 jobs:
   bulk-import-browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     outputs:
       source_sha: ${{ steps.acceptance_source.outputs.source_sha }}
       source_tree: ${{ steps.acceptance_source.outputs.source_tree }}
       run_id: ${{ github.run_id }}
+      management_pack_browser: ${{ steps.management_pack_browser.outcome }}
+      management_catalog_browser: ${{ steps.management_catalog_browser.outcome }}
+      management_catalog_browser_verify: ${{ steps.management_catalog_browser_verify.outcome }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -173,6 +176,51 @@ jobs:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
           WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
         run: node scripts/hosted-dense-rendition-check.mjs
+      - name: Original pack picker, duplicates, paging and selected exports
+        id: management_pack_browser
+        # Independent original fixtures and storage; earlier failures stay failed.
+        if: ${{ !cancelled() && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
+        timeout-minutes: 6
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_ARTIFACT_DIR: ${{ runner.temp }}/library-management-browser/packs
+        run: |
+          test ! -e "$WMH_ARTIFACT_DIR"
+          npm run test:pack-management-hosted
+      - name: Three original catalog processes with one persisted browser profile
+        id: management_catalog_browser
+        if: ${{ !cancelled() && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
+        timeout-minutes: 15
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_ARTIFACT_DIR: ${{ runner.temp }}/library-management-browser/catalog
+        run: |
+          test ! -e "$WMH_ARTIFACT_DIR"
+          npm run test:library-catalog-hosted
+      - name: Reverify hosted catalog source, native driver and retained bytes
+        id: management_catalog_browser_verify
+        if: ${{ !cancelled() && steps.management_catalog_browser.outcome == 'success' }}
+        env:
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: |
+          export WMH_SOURCE_TREE="$(git rev-parse 'HEAD^{tree}')"
+          node scripts/verify-library-catalog-acceptance.mjs --check "$RUNNER_TEMP/library-management-browser/catalog"
+      - name: Retain original management browser proof and exact driver
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: library-management-browser-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/library-management-browser/**
+            !${{ runner.temp }}/library-management-browser/**/webview-catalog-profile/**
+            target/debug/examples/native_import_driver
+          include-hidden-files: true
+          if-no-files-found: warn
       - name: Retain original dense rendition timing and source evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -245,11 +293,13 @@ jobs:
   native-feature-acceptance:
     # Independent runners retain Windows diagnostics when browser checks fail.
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     outputs:
       source_sha: ${{ steps.acceptance_source.outputs.source_sha }}
       source_tree: ${{ steps.acceptance_source.outputs.source_tree }}
       run_id: ${{ github.run_id }}
+      management_catalog_windows: ${{ steps.management_catalog_windows.outcome }}
+      management_catalog_windows_verify: ${{ steps.management_catalog_windows_verify.outcome }}
     env:
       RUSTFLAGS: '-C target-feature=+crt-static'
       CARGO_INCREMENTAL: '0'
@@ -287,7 +337,7 @@ jobs:
       - name: Parse the exact native acceptance script
         shell: pwsh
         run: |
-          foreach ($script in @('scripts/windows-desktop-acceptance.ps1','scripts/windows-desktop-profile.ps1','scripts/windows-native-portable-smoke.ps1')) {
+          foreach ($script in @('scripts/windows-desktop-acceptance.ps1','scripts/windows-desktop-profile.ps1','scripts/windows-desktop-catalog-snapshot.ps1','scripts/windows-native-portable-smoke.ps1')) {
             $tokens=$null; $errors=$null
             [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$tokens,[ref]$errors)
             if ($errors.Count) { $errors | Format-List; throw "PowerShell syntax errors in $script" }
@@ -377,6 +427,38 @@ jobs:
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-vsq-authoring -Scenario vsq-authoring
+      - name: Native original catalog controls and three-process recovery
+        id: management_catalog_windows
+        # The exact packaged EXE, with an independent original library and profile.
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -cne $env:GITHUB_SHA) { throw 'Unexpected catalog build source' }
+          if (git status --porcelain --untracked-files=normal) { throw 'Catalog acceptance source is dirty' }
+          ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory "$env:RUNNER_TEMP/library-management-windows" -Scenario library-catalog
+      - name: Reverify native catalog source, executable and retained bytes
+        id: management_catalog_windows_verify
+        if: ${{ !cancelled() && steps.management_catalog_windows.outcome == 'success' }}
+        shell: pwsh
+        env:
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_LIBRARY_CATALOG_EXECUTABLE: ${{ github.workspace }}/target/release/worldmusichub-desktop.exe
+        run: |
+          $env:WMH_SOURCE_TREE=git rev-parse 'HEAD^{tree}'
+          node scripts/verify-library-catalog-acceptance.mjs --check "$env:RUNNER_TEMP/library-management-windows"
+          if ($LASTEXITCODE -ne 0) { throw 'Native catalog exact-source proof failed' }
+      - name: Retain original native catalog proof and exact EXE
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: library-management-windows-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/library-management-windows/**
+            !${{ runner.temp }}/library-management-windows/webview-catalog-profile/**
+            target/release/worldmusichub-desktop.exe
+          include-hidden-files: true
+          if-no-files-found: warn
       # Default success() keeps candidate packaging behind every native gate.
       # This job cannot establish browser or whole-checkpoint acceptance.
       - name: Package native candidate with exact provenance and notices
@@ -439,7 +521,7 @@ jobs:
           Copy-Item desktop-bulk-import/native-bulk-import.json,desktop-bulk-import/native-bulk-import-files.json,desktop-bulk-import/renderer-bulk-*.json,desktop-bulk-import/profile-bulk-*.json "$folder/evidence/"
           Copy-Item desktop-clean-song/native-clean-song.json,desktop-clean-song/native-clean-song-files.json,desktop-clean-song/renderer-clean-*.json,desktop-clean-song/profile-clean-*.json "$folder/evidence/"
           Copy-Item desktop-vsq-song/native-vsq-song.json,desktop-vsq-song/native-vsq-song-files.json,desktop-vsq-song/renderer-vsq-*.json,desktop-vsq-song/profile-vsq-*.json "$folder/evidence/"
-          python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder --performance-song desktop-performance-song --pitch-bend desktop-pitch-bend --song-authoring desktop-authoring --vsq-authoring desktop-vsq-authoring --basic-key desktop-basic-key
+          python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder --performance-song desktop-performance-song --pitch-bend desktop-pitch-bend --song-authoring desktop-authoring --vsq-authoring desktop-vsq-authoring --basic-key desktop-basic-key --catalog-evidence "$env:RUNNER_TEMP/library-management-windows"
           if ($LASTEXITCODE -ne 0) { throw 'Native provenance/acceptance inventory failed' }
           $zip="dist/WorldMusicClub-Native-Windows-x64-commit-$count.zip"
           python scripts/native-release-manifest.py archive $folder $zip
@@ -574,6 +656,10 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs');
           const jobs = ['bulk-import-browser', 'native-feature-acceptance'];
+          const managementSteps = {
+            'bulk-import-browser': ['management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify'],
+            'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify'],
+          };
           const needs = JSON.parse(process.env.ACCEPTANCE_NEEDS);
           const sha = process.env.ACCEPTANCE_SHA;
           const run = process.env.ACCEPTANCE_RUN_ID;
@@ -589,6 +675,11 @@ jobs:
               errors.push(`${job}: ${result} (success required)`);
             } else if (outputs.source_sha !== sha || outputs.run_id !== run || !/^[0-9a-f]{40}$/.test(outputs.source_tree || '')) {
               errors.push(`${job}: source/run identity is missing or differs`);
+            }
+            for (const step of managementSteps[job]) {
+              const outcome = outputs[step] || 'missing';
+              lines.push(`${job}/${step}: ${outcome}`);
+              if (outcome !== 'success') errors.push(`${job}/${step}: ${outcome} (success required)`);
             }
           }
           if (needs[jobs[0]]?.outputs?.source_tree !== needs[jobs[1]]?.outputs?.source_tree) {

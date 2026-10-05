@@ -60,6 +60,7 @@ class NativeReleaseTests(unittest.TestCase):
         performance_song = self.performance_song_evidence(directory, directory / native.EXE, directory / 'evidence')
         song_authoring = self.song_authoring_evidence(directory, directory / native.EXE, directory / 'evidence')
         new_music = {scope: self.new_music_evidence(scope, directory, directory / native.EXE, directory / 'evidence') for scope in native._new_music.SCOPES}
+        catalog = self.catalog_evidence(directory / 'evidence/library-catalog', directory / native.EXE)
         # The portable-package unit fixture has synthetic GUI observations.
         # Only Node's GUI/disk re-derivation is mocked; source/EXE/claims, exact
         # focused manifest and all packaged hash bindings remain enforced.
@@ -70,6 +71,7 @@ class NativeReleaseTests(unittest.TestCase):
             acceptance.update(native.accepted_song_authoring_evidence(song_authoring, directory / native.EXE, 'b' * 40, 'c' * 40))
             for scope, evidence in new_music.items():
                 acceptance.update(native._new_music.accepted(scope, evidence, directory / native.EXE, 'b' * 40, 'c' * 40))
+            acceptance.update(native._catalog.accepted(catalog, directory / native.EXE, 'b' * 40, 'c' * 40))
         return {'name': native.FOLDER, 'executable': native.EXE, 'cargo_lock_sha256': 'a' * 64,
                 'git_commit': 'b' * 40, 'git_tree': 'c' * 40, 'commit_count': 164, 'acceptance': acceptance}
 
@@ -343,6 +345,246 @@ class NativeReleaseTests(unittest.TestCase):
             write_json(directory / spec['manifest'], manifest)
         return directory
 
+    def catalog_evidence(self, directory, exe):
+        # Synthetic host observations exercise package bindings only. Retained
+        # journal bytes come from the committed ORIGINAL protocol fixture; this
+        # fixture never claims to pass the independent browser/Windows verifier.
+        catalog = native._catalog
+        report = {'version': 1, 'ok': True, 'scenario': 'library-catalog',
+                  'source_sha': 'b' * 40, 'source_tree': 'c' * 40,
+                  'executable_sha256': native.sha(exe.read_bytes()), 'executable_bytes': exe.stat().st_size,
+                  'run_id': 'synthetic-catalog-package-contract', 'profile_reused': True,
+                  'directory': 'C:/original-catalog/Scores', 'phases': []}
+        for index, phase in enumerate(catalog.PHASES):
+            row = {'phase': phase, 'process_id': index + 100, 'launched_new_process': True,
+                   'renderer_ok': True, 'normal_close': True, 'renderer_origin': 'https://wmh.localhost',
+                   'executable_tcp_listeners': 0, 'profile_directory': 'C:/original-catalog/webview-catalog-profile',
+                   'profile_fresh': index == 0, 'profile_reused': index != 0, 'profile_absent_before_launch': index == 0}
+            report['phases'].append(row)
+            write_json(directory / f'profile-{phase}.json', {
+                'version': 1, 'phase': phase, 'process_id': row['process_id'], 'profile_directory': row['profile_directory'],
+                'library_directory': report['directory'], 'fresh_required': index == 0, 'created_new': index == 0})
+            for kind in ['renderer', 'trace']:
+                write_json(directory / f'{kind}-{phase}.json', {'version': 1, 'phase': phase, 'synthetic': True})
+        write_json(directory / catalog.HOST, report)
+        for name in ['catalog-config.json', 'fixtures/catalog-fixtures.json']:
+            write_json(directory / name, {'synthetic': True})
+        retained = []
+        journal = native.read_json(ROOT / 'tests/fixtures/library-catalog/original-native-journal.json')
+        for row in journal['files']:
+            for name in [row['path'], row['path'].replace('catalog/', 'catalog-backups/', 1)]:
+                path = directory / 'Scores' / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                data = row['utf8'].encode('utf-8')
+                path.write_bytes(data)
+                retained.append({'path': name, 'bytes': len(data), 'sha256': native.sha(data)})
+        original = (ROOT / 'tests/fixtures/original-reference-overlap.mid').read_bytes()
+        for name in ['imports/pack-original/source.bin', 'import-backups/pack-original/source.bin']:
+            path = directory / 'Scores' / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(original)
+            retained.append({'path': name, 'bytes': len(original), 'sha256': native.sha(original)})
+        for phase in ['catalog-before', *catalog.PHASES]:
+            write_json(directory / f'snapshot-{phase}.json', {'version': 1, 'files': retained})
+        files = []
+        for name in catalog.REQUIRED:
+            if name == catalog.PROOF:
+                continue
+            data = (directory / name).read_bytes()
+            files.append({'path': name, 'bytes': len(data), 'sha256': native.sha(data)})
+        write_json(directory / catalog.PROOF, {
+            'version': 1, 'ok': True, 'scenario': 'library-catalog', 'source_sha': report['source_sha'],
+            'source_tree': report['source_tree'], 'executable_sha256': report['executable_sha256'],
+            'run_id': report['run_id'], 'phases': catalog.PHASES, 'claims': catalog.CLAIMS, 'files': files})
+        return directory
+
+    def test_catalog_requires_separate_cli_evidence_and_independent_exact_executable_check(self):
+        arguments = ['native-release-manifest', 'create', 'unused', '--commit', 'b' * 40, '--count', '402']
+        for flag in ['startup', 'acceptance', 'song-folder', 'performance-song', 'pitch-bend', 'song-authoring', 'vsq-authoring', 'basic-key']:
+            arguments += ['--' + flag, 'unused']
+        with patch('sys.argv', arguments), contextlib.redirect_stderr(io.StringIO()) as error, self.assertRaises(SystemExit):
+            native.main()
+        self.assertIn('--catalog-evidence', error.getvalue())
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            exe = root / native.EXE
+            exe.write_bytes(executable())
+            directory = self.catalog_evidence(root / 'original-catalog', exe)
+            with patch.object(native.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')) as checked:
+                fields = native._catalog.accepted(directory, exe, 'b' * 40, 'c' * 40)
+            args, kwargs = checked.call_args
+            self.assertEqual(Path(args[0][1]).name, 'verify-library-catalog-acceptance.mjs')
+            self.assertEqual(args[0][-2:], ['--check', str(directory)])
+            self.assertEqual(kwargs['env']['WMH_LIBRARY_CATALOG_EXECUTABLE'], str(exe.resolve()))
+            self.assertEqual(kwargs['env']['WMH_SOURCE_SHA'], 'b' * 40)
+            self.assertEqual(kwargs['env']['WMH_SOURCE_TREE'], 'c' * 40)
+            self.assertEqual(kwargs['encoding'], 'utf-8')
+            self.assertEqual(kwargs['timeout'], 60)
+            self.assertFalse(fields['native_library_catalog_claims']['full_acceptance'])
+            self.assertNotIn('executable_bytes', native.read_json(directory / native._catalog.PROOF))
+            with patch.object(native.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'original journal changed')):
+                with self.assertRaisesRegex(ValueError, 'Independent catalog evidence failed: original journal changed'):
+                    native._catalog.accepted(directory, exe, 'b' * 40, 'c' * 40)
+            # No synthetic host fixture may become native acceptance through
+            # this adapter: the real existing verifier rejects it read-only.
+            with self.assertRaisesRegex(ValueError, 'Verifier checkout differs from authorized source SHA'):
+                native._catalog.accepted(directory, exe, 'b' * 40, 'c' * 40)
+
+    def test_catalog_envelopes_phases_and_same_profile_fail_closed_before_node(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            exe = root / native.EXE
+            exe.write_bytes(executable())
+            directory = self.catalog_evidence(root / 'catalog', exe)
+            edits = [
+                (native._catalog.HOST, lambda row: row.update(source_sha='d' * 40)),
+                (native._catalog.PROOF, lambda row: row.update(source_tree='d' * 40)),
+                (native._catalog.PROOF, lambda row: row.update(executable_sha256='d' * 64)),
+                (native._catalog.HOST, lambda row: row.update(executable_bytes=1)),
+                (native._catalog.PROOF, lambda row: row['phases'].pop()),
+                (native._catalog.HOST, lambda row: row['phases'].reverse()),
+                (native._catalog.HOST, lambda row: row['phases'][1].update(process_id=row['phases'][0]['process_id'])),
+                (native._catalog.HOST, lambda row: row['phases'][1].update(profile_fresh=True)),
+                (native._catalog.HOST, lambda row: row.update(profile_reused=False)),
+                (native._catalog.HOST, lambda row: row['phases'][1].update(profile_directory='C:/foreign/webview-catalog-profile')),
+                (native._catalog.PROOF, lambda row: row['claims'].update(full_acceptance=True)),
+                ('profile-catalog-restart.json', lambda row: row.update(created_new=True)),
+            ]
+            for name, edit in edits:
+                path = directory / name
+                original = path.read_bytes()
+                changed = json.loads(original)
+                edit(changed)
+                write_json(path, changed)
+                with self.subTest(name=name, changed=changed), patch.object(native.subprocess, 'run') as checked:
+                    with self.assertRaises(ValueError):
+                        native._catalog.accepted(directory, exe, 'b' * 40, 'c' * 40)
+                    checked.assert_not_called()
+                path.write_bytes(original)
+
+    def test_catalog_archive_retains_original_journal_and_rejects_rehashed_tampering(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / native.FOLDER
+            metadata = self.package(directory)
+            original = native.create_manifest(directory, metadata)
+            archive = root / 'catalog.zip'
+            native.create_archive(directory, archive)
+            catalog = directory / native._catalog.PREFIX
+            targets = [native._catalog.PROOF, native._catalog.HOST, 'profile-catalog-restart.json',
+                       'renderer-catalog-seed.json', 'snapshot-catalog-final.json',
+                       'Scores/imports/pack-original/source.bin', 'Scores/import-backups/pack-original/source.bin',
+                       *[path.relative_to(catalog).as_posix() for path in (catalog / 'Scores/catalog').rglob('*.json')],
+                       *[path.relative_to(catalog).as_posix() for path in (catalog / 'Scores/catalog-backups').rglob('*.json')]]
+            with zipfile.ZipFile(archive) as packaged:
+                for name in targets:
+                    self.assertEqual(packaged.read(native.FOLDER + '/' + native._catalog.PREFIX + name), (catalog / name).read_bytes())
+            for name in targets:
+                path = catalog / name
+                data = path.read_bytes()
+                path.write_bytes(data + b' ')
+                self.rewrite_package_inventory(directory, original)
+                with self.subTest(tampered=name), self.assertRaises(ValueError):
+                    native.create_archive(directory, root / 'changed.zip')
+                path.write_bytes(data)
+            for name in [native._catalog.PROOF, native._catalog.HOST, 'profile-catalog-final.json', 'Scores/imports/pack-original/source.bin']:
+                path = catalog / name
+                data = path.read_bytes()
+                path.unlink()
+                self.rewrite_package_inventory(directory, original)
+                with self.subTest(missing=name), self.assertRaises((ValueError, KeyError)):
+                    native.create_archive(directory, root / 'missing.zip')
+                path.write_bytes(data)
+            for name in ['webview-catalog-profile/secret', 'Scores/.catalog-staging/unfinished/state.json', 'unbound.json']:
+                path = catalog / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'unrequested')
+                self.rewrite_package_inventory(directory, original)
+                with self.subTest(extra=name), self.assertRaisesRegex(ValueError, 'catalog package evidence inventory'):
+                    native.create_archive(directory, root / 'extra.zip')
+                path.unlink()
+            for name in ['evidence/native-library-catalog-extra.json', 'evidence/webview-catalog-profile/Default/Cookies',
+                         'evidence/Library-Catalog/library-catalog-proof.json', 'evidence/library-catalog./library-catalog-proof.json',
+                         'evidence/native-action-catalog-seed-1.png', 'evidence/native-catalog-final.png',
+                         'evidence/catalog-config.json', 'evidence/fixtures/catalog-fixtures.json',
+                         'evidence/fixtures/catalog-original-legacy.zip']:
+                path = directory / name
+                # Case-insensitive hosts alias the canonical file already;
+                # exercising that archive name must not overwrite the fixture.
+                if path.exists():
+                    continue
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'unbound alias')
+                self.rewrite_package_inventory(directory, original)
+                with self.subTest(misplaced=name), self.assertRaisesRegex(ValueError, 'catalog package evidence inventory'):
+                    native.create_archive(directory, root / 'misplaced.zip')
+                path.unlink()
+            self.rewrite_package_inventory(directory, original)
+            self.assertTrue(native.create_archive(directory, archive)['acceptance']['native_library_catalog_validated'])
+
+    def test_catalog_archive_rechecks_phase_source_and_executable_even_when_proof_rebound(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / native.FOLDER
+            metadata = self.package(directory)
+            original = native.create_manifest(directory, metadata)
+            catalog = directory / native._catalog.PREFIX
+            host_path, proof_path = catalog / native._catalog.HOST, catalog / native._catalog.PROOF
+            host_bytes, proof_bytes = host_path.read_bytes(), proof_path.read_bytes()
+            for edit in [lambda row: row.update(source_sha='d' * 40), lambda row: row.update(source_tree='d' * 40),
+                         lambda row: row.update(executable_sha256='d' * 64), lambda row: row['phases'].reverse(),
+                         lambda row: row['phases'][1].update(profile_reused=False)]:
+                host, proof = json.loads(host_bytes), json.loads(proof_bytes)
+                edit(host)
+                write_json(host_path, host)
+                bound = next(row for row in proof['files'] if row['path'] == native._catalog.HOST)
+                bound.update(bytes=host_path.stat().st_size, sha256=native.sha(host_path.read_bytes()))
+                write_json(proof_path, proof)
+                changed = json.loads(json.dumps(original))
+                fields = changed['acceptance']
+                fields['native_library_catalog_proof_sha256'] = native.sha(proof_path.read_bytes())
+                for name in [native._catalog.HOST, native._catalog.PROOF]:
+                    fields['native_library_catalog_files_sha256'][name] = native.sha((catalog / name).read_bytes())
+                self.rewrite_package_inventory(directory, changed)
+                with self.subTest(host=host), self.assertRaises(ValueError):
+                    native.create_archive(directory, root / 'rebound.zip')
+            host_path.write_bytes(host_bytes)
+            proof_path.write_bytes(proof_bytes)
+
+    def test_catalog_failure_prevents_copy_or_candidate_inventory_and_links_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / native.FOLDER
+            metadata = self.package(directory)
+            catalog = directory / native._catalog.PREFIX
+            before = {path.relative_to(directory).as_posix(): path.read_bytes() for path in directory.rglob('*') if path.is_file()}
+            arguments = ['native-release-manifest', 'create', str(directory), '--commit', 'b' * 40, '--count', '402']
+            for flag in ['startup', 'acceptance', 'song-folder', 'performance-song', 'pitch-bend', 'song-authoring', 'vsq-authoring', 'basic-key']:
+                arguments += ['--' + flag, 'unused']
+            arguments += ['--catalog-evidence', str(catalog)]
+            with contextlib.ExitStack() as mocks:
+                mocks.enter_context(patch('sys.argv', arguments))
+                mocks.enter_context(patch.object(native, 'source_metadata', return_value=dict(metadata)))
+                for method in ['accepted_evidence', 'accepted_song_folder_evidence', 'accepted_performance_song_evidence',
+                               'accepted_pitch_bend_evidence', 'accepted_song_authoring_evidence']:
+                    mocks.enter_context(patch.object(native, method, return_value={}))
+                mocks.enter_context(patch.object(native._new_music, 'accepted', return_value={}))
+                mocks.enter_context(patch.object(native.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'catalog failed')))
+                with self.assertRaisesRegex(ValueError, 'catalog failed'):
+                    native.main()
+            self.assertEqual(before, {path.relative_to(directory).as_posix(): path.read_bytes() for path in directory.rglob('*') if path.is_file()})
+            target = catalog / 'Scores/imports/pack-original/source.bin'
+            data = target.read_bytes()
+            source = root / 'foreign-source.bin'
+            source.write_bytes(data)
+            target.unlink()
+            try:
+                target.symlink_to(source)
+            except OSError:
+                return  # Windows hosts without symlink permission retain the other assertions.
+            with self.assertRaisesRegex(ValueError, 'Linked catalog evidence'):
+                native._catalog.accepted(catalog, directory / native.EXE, 'b' * 40, 'c' * 40)
+
     def test_new_music_gates_rederive_ui_and_bind_exact_source_executable_and_scope(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -420,11 +662,11 @@ class NativeReleaseTests(unittest.TestCase):
             root = Path(temporary)
             directory = root / native.FOLDER
             metadata = self.package(directory)
-            before = {path.name: path.read_bytes() for path in (directory / 'evidence').iterdir()}
+            before = {path.relative_to(directory).as_posix(): path.read_bytes() for path in (directory / 'evidence').rglob('*') if path.is_file()}
             arguments = ['native-release-manifest', 'create', str(directory), '--commit', 'b' * 40,
                          '--count', '264', '--startup', 'unused', '--acceptance', 'unused',
                          '--song-folder', 'unused', '--performance-song', 'unused', '--pitch-bend', 'unused',
-                         '--song-authoring', 'unused', '--vsq-authoring', 'unused', '--basic-key', 'unused']
+                         '--song-authoring', 'unused', '--vsq-authoring', 'unused', '--basic-key', 'unused', '--catalog-evidence', 'unused']
             with patch('sys.argv', arguments), patch.object(native, 'source_metadata', return_value=dict(metadata)), \
                     patch.object(native, 'accepted_evidence', return_value={}), \
                     patch.object(native, 'accepted_song_folder_evidence', return_value={}), \
@@ -436,7 +678,7 @@ class NativeReleaseTests(unittest.TestCase):
                     native.main()
             self.assertFalse((directory / native.INFO).exists())
             self.assertFalse((directory / native.SUMS).exists())
-            self.assertEqual(before, {path.name: path.read_bytes() for path in (directory / 'evidence').iterdir()})
+            self.assertEqual(before, {path.relative_to(directory).as_posix(): path.read_bytes() for path in (directory / 'evidence').rglob('*') if path.is_file()})
 
     def rewrite_package_inventory(self, directory, info):
         """Simulate regenerated generic ZIP checksums, never feature acceptance."""
@@ -716,10 +958,10 @@ class NativeReleaseTests(unittest.TestCase):
             pitch = self.pitch_bend_evidence(root, directory / native.EXE)
             manifest_path = pitch / 'pitch-bend-manifest.json'
             original = native.read_json(manifest_path)
-            before = {path.name: path.read_bytes() for path in (directory / 'evidence').iterdir()}
+            before = {path.relative_to(directory).as_posix(): path.read_bytes() for path in (directory / 'evidence').rglob('*') if path.is_file()}
             arguments = ['native-release-manifest', 'create', str(directory), '--commit', 'b' * 40,
                          '--count', '164', '--startup', 'unused-startup', '--acceptance', 'unused-acceptance',
-                         '--song-folder', 'unused-folder', '--performance-song', 'unused-performance', '--pitch-bend', str(pitch), '--song-authoring', 'unused-authoring', '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key']
+                         '--song-folder', 'unused-folder', '--performance-song', 'unused-performance', '--pitch-bend', str(pitch), '--song-authoring', 'unused-authoring', '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key', '--catalog-evidence', 'unused-catalog']
             for failure in ['independent original inventory failure', 'focused manifest differs']:
                 write_json(manifest_path, {**original, 'release_ready': True} if failure == 'focused manifest differs' else original)
                 result = subprocess.CompletedProcess([], 0 if failure == 'focused manifest differs' else 1, '', failure)
@@ -732,7 +974,7 @@ class NativeReleaseTests(unittest.TestCase):
                     native.main()
                 self.assertFalse((directory / native.INFO).exists())
                 self.assertFalse((directory / native.SUMS).exists())
-                self.assertEqual(before, {path.name: path.read_bytes() for path in (directory / 'evidence').iterdir()})
+                self.assertEqual(before, {path.relative_to(directory).as_posix(): path.read_bytes() for path in (directory / 'evidence').rglob('*') if path.is_file()})
 
     def test_pitch_package_rejects_mutated_evidence_despite_regenerated_zip_checksums(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -929,10 +1171,10 @@ class NativeReleaseTests(unittest.TestCase):
             original = native.read_json(manifest_path)
             profile_path = authoring / 'profile-authoring-seed.json'
             profile = native.read_json(profile_path)
-            before = {path.name: path.read_bytes() for path in (directory / 'evidence').iterdir()}
+            before = {path.relative_to(directory).as_posix(): path.read_bytes() for path in (directory / 'evidence').rglob('*') if path.is_file()}
             arguments = ['native-release-manifest', 'create', str(directory), '--commit', 'b' * 40,
                          '--count', '164', '--startup', 'unused-startup', '--acceptance', 'unused-acceptance',
-                         '--song-folder', 'unused-folder', '--performance-song', 'unused-performance', '--pitch-bend', 'unused-pitch', '--song-authoring', str(authoring), '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key']
+                         '--song-folder', 'unused-folder', '--performance-song', 'unused-performance', '--pitch-bend', 'unused-pitch', '--song-authoring', str(authoring), '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key', '--catalog-evidence', 'unused-catalog']
             for failure in ['independent original inventory failure', 'focused manifest differs', 'profile host']:
                 write_json(manifest_path, {**original, 'release_ready': True} if failure == 'focused manifest differs' else original)
                 write_json(profile_path, {**profile, 'created_new': False} if failure == 'profile host' else profile)
@@ -949,7 +1191,7 @@ class NativeReleaseTests(unittest.TestCase):
                     verifier.assert_not_called()
                 self.assertFalse((directory / native.INFO).exists())
                 self.assertFalse((directory / native.SUMS).exists())
-                self.assertEqual(before, {path.name: path.read_bytes() for path in (directory / 'evidence').iterdir()})
+                self.assertEqual(before, {path.relative_to(directory).as_posix(): path.read_bytes() for path in (directory / 'evidence').rglob('*') if path.is_file()})
 
     def test_authoring_package_rejects_mutated_evidence_despite_regenerated_zip_checksums(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -1282,7 +1524,7 @@ class NativeReleaseTests(unittest.TestCase):
             arguments = ['native-release-manifest', 'create', str(directory), '--commit', 'b' * 40,
                          '--count', '164', '--startup', str(startup), '--acceptance', str(acceptance),
                          '--song-folder', str(song_folder), '--performance-song', str(root / 'unused-performance'),
-                         '--pitch-bend', str(root / 'unused-pitch'), '--song-authoring', 'unused-authoring', '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key']
+                         '--pitch-bend', str(root / 'unused-pitch'), '--song-authoring', 'unused-authoring', '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key', '--catalog-evidence', 'unused-catalog']
             with patch('sys.argv', arguments), patch.object(native, 'source_metadata', return_value=metadata), \
                     patch.object(native.subprocess, 'run', side_effect=verify_evidence), \
                     self.assertRaisesRegex(ValueError, 'folder file was altered'):
@@ -1297,11 +1539,11 @@ class NativeReleaseTests(unittest.TestCase):
             directory = root / native.FOLDER
             metadata = {**self.package(directory), 'git_tree': 'c' * 40}
             performance_song = self.performance_song_evidence(root, directory / native.EXE)
-            before = {path.name: path.read_bytes() for path in (directory / 'evidence').iterdir()}
+            before = {path.relative_to(directory).as_posix(): path.read_bytes() for path in (directory / 'evidence').rglob('*') if path.is_file()}
             arguments = ['native-release-manifest', 'create', str(directory), '--commit', 'b' * 40,
                          '--count', '164', '--startup', 'unused-startup', '--acceptance', 'unused-acceptance',
                          '--song-folder', 'unused-folder', '--performance-song', str(performance_song),
-                         '--pitch-bend', str(root / 'unused-pitch'), '--song-authoring', 'unused-authoring', '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key']
+                         '--pitch-bend', str(root / 'unused-pitch'), '--song-authoring', 'unused-authoring', '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key', '--catalog-evidence', 'unused-catalog']
             with patch('sys.argv', arguments), patch.object(native, 'source_metadata', return_value=metadata), \
                     patch.object(native, 'accepted_evidence', return_value={}), \
                     patch.object(native, 'accepted_song_folder_evidence', return_value={}), \
@@ -1310,7 +1552,7 @@ class NativeReleaseTests(unittest.TestCase):
                 native.main()
             self.assertFalse((directory / native.INFO).exists())
             self.assertFalse((directory / native.SUMS).exists())
-            self.assertEqual(before, {path.name: path.read_bytes() for path in (directory / 'evidence').iterdir()})
+            self.assertEqual(before, {path.relative_to(directory).as_posix(): path.read_bytes() for path in (directory / 'evidence').rglob('*') if path.is_file()})
 
     def test_distinct_native_zip_preserves_inventory_and_detects_altered_bytes(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -1502,7 +1744,7 @@ class NativeReleaseTests(unittest.TestCase):
                 self.assertEqual(args[-2], '--check')
                 self.assertEqual(kwargs.get('encoding'), 'utf-8')
                 return subprocess.CompletedProcess(args, 0, '', '')
-            if len(args) > 1 and Path(args[1]).name in ['verify-native-song-authoring-evidence.mjs', 'verify-native-vsq-authoring-evidence.mjs', 'verify-basic-key-evidence.mjs']:
+            if len(args) > 1 and Path(args[1]).name in ['verify-native-song-authoring-evidence.mjs', 'verify-native-vsq-authoring-evidence.mjs', 'verify-basic-key-evidence.mjs', 'verify-library-catalog-acceptance.mjs']:
                 self.assertEqual(args[-2], '--check')
                 self.assertEqual(kwargs.get('encoding'), 'utf-8')
                 return subprocess.CompletedProcess(args, 0, '', '')
@@ -1587,7 +1829,7 @@ class NativeReleaseTests(unittest.TestCase):
                     ['create', str(directory), '--commit', 'b' * 40, '--count', '169',
                      '--startup', str(startup), '--acceptance', str(acceptance), '--song-folder', str(song_folder),
                      '--performance-song', str(performance_song), '--pitch-bend', str(pitch_bend),
-                     '--song-authoring', str(song_authoring), '--vsq-authoring', str(directory / 'evidence'), '--basic-key', str(directory / 'evidence')],
+                     '--song-authoring', str(song_authoring), '--vsq-authoring', str(directory / 'evidence'), '--basic-key', str(directory / 'evidence'), '--catalog-evidence', str(directory / 'evidence/library-catalog')],
                     ['archive', str(directory), str(archive)], ['verify', str(archive)]]:
                     with patch('sys.argv', ['native-release-manifest', *arguments]), contextlib.redirect_stdout(io.StringIO()):
                         native.main()
