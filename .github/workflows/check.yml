@@ -14,6 +14,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           components: rustfmt, clippy
@@ -43,13 +45,16 @@ jobs:
       - name: Install locked evidence verifier dependencies
         run: npm ci --ignore-scripts --omit=optional
       - run: python -m unittest discover -s tests -p 'test_*.py'
-  frontend:
+  frontend-checks:
     runs-on: ubuntu-latest
-    # A stalled dependency download must reach a terminal result, not occupy
-    # the runner for GitHub's default six-hour job allowance.
+    # Keep dependency stalls bounded without sharing a timeout with real suites.
     timeout-minutes: 30
+    outputs:
+      evidence_id: ${{ steps.browser_evidence.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
@@ -68,17 +73,54 @@ jobs:
         if: ${{ !cancelled() && steps.npm_dependencies.outcome == 'success' && steps.engraving_assets.outcome == 'success' }}
         timeout-minutes: 10
         run: npx playwright install --with-deps chromium
+      # A failed suite must not hide evidence from another prepared suite.
+      # No continue-on-error: any failed step still makes this job fail.
+      - name: Check mocked browser behavior
+        if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' }}
+        run: npm run test:browser
+      - name: Retain browser inputs for the aggregate
+        id: browser_evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: browser-evidence-inputs-mocked
+          path: |
+            /tmp/worldmusichub-*.png
+            /tmp/worldmusichub-omr-*.json
+            /tmp/worldmusichub-live-*.json
+            /tmp/worldmusichub-binding-*.json
+          if-no-files-found: ignore
+          compression-level: 0
+  frontend-real:
+    runs-on: ubuntu-latest
+    # Independent runner/time budget: Node and mocked tests cannot starve these suites.
+    timeout-minutes: 30
+    outputs:
+      evidence_id: ${{ steps.browser_evidence.outputs.artifact-id }}
+      rhythm_id: ${{ steps.rhythm_evidence.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - id: npm_dependencies
+        run: npm ci --ignore-scripts --omit=optional
+      - id: engraving_assets
+        run: npm run prepare:engraving
+      - id: browser_setup
+        if: ${{ !cancelled() && steps.npm_dependencies.outcome == 'success' && steps.engraving_assets.outcome == 'success' }}
+        timeout-minutes: 10
+        run: npx playwright install --with-deps chromium
       - id: rust_toolchain
         if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' }}
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
       - id: rust_server
         if: ${{ !cancelled() && steps.rust_toolchain.outcome == 'success' }}
         run: cargo build -p practice-server --locked
-      # A failed suite must not hide evidence from another prepared suite.
-      # No continue-on-error: any failed step still makes this job fail.
-      - name: Check mocked browser behavior
-        if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' }}
-        run: npm run test:browser
+      # Independent prepared suites still run after an earlier suite fails.
       - name: Check real Rust-backed application
         if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
         run: npm run test:full-app
@@ -106,19 +148,101 @@ jobs:
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_ARTIFACT_DIR: ${{ runner.temp }}/worldmusichub-rhythm
-          WMH_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_SOURCE_REF: ${{ github.head_ref || github.ref_name }}
           WMH_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node scripts/hosted-rhythm-check.mjs
+      - name: Retain browser inputs for the aggregate
+        id: browser_evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: browser-evidence-inputs-real
+          path: |
+            /tmp/worldmusichub-*.png
+            /tmp/worldmusichub-omr-*.json
+            /tmp/worldmusichub-live-*.json
+            /tmp/worldmusichub-binding-*.json
+          if-no-files-found: ignore
+          compression-level: 0
+      - name: Retain rhythm inputs for the aggregate
+        id: rhythm_evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: browser-evidence-inputs-rhythm
+          path: ${{ runner.temp }}/worldmusichub-rhythm/
+          if-no-files-found: ignore
+          compression-level: 0
+  # Keep the original required-check name and complete evidence inventory.
+  # A failed, skipped or cancelled producer can never make frontend succeed.
+  frontend:
+    needs: [frontend-checks, frontend-real]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Retrieve mocked browser inputs
+        if: ${{ always() && needs.frontend-checks.outputs.evidence_id != '' }}
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8
+        with:
+          artifact-ids: ${{ needs.frontend-checks.outputs.evidence_id }}
+          path: ${{ runner.temp }}/worldmusichub-browser-inputs/mocked
+          digest-mismatch: error
+      - name: Retrieve real browser inputs
+        if: ${{ always() && needs.frontend-real.outputs.evidence_id != '' }}
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8
+        with:
+          artifact-ids: ${{ needs.frontend-real.outputs.evidence_id }}
+          path: ${{ runner.temp }}/worldmusichub-browser-inputs/real
+          digest-mismatch: error
+      - name: Retrieve rhythm inputs
+        if: ${{ always() && needs.frontend-real.outputs.rhythm_id != '' }}
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8
+        with:
+          artifact-ids: ${{ needs.frontend-real.outputs.rhythm_id }}
+          path: ${{ runner.temp }}/worldmusichub-rhythm
+          digest-mismatch: error
+      - name: Restore original browser evidence paths without overwriting
+        id: restore_browser_evidence
+        if: always()
+        env:
+          WMH_BROWSER_INPUTS: ${{ runner.temp }}/worldmusichub-browser-inputs
+          WMH_BROWSER_TEMP: /tmp
+        run: |
+          python3 - <<'PY'
+          import fnmatch
+          import os
+          from pathlib import Path
+          import shutil
+
+          roots = Path(os.environ['WMH_BROWSER_INPUTS'])
+          target = Path(os.environ['WMH_BROWSER_TEMP'])
+          patterns = ('worldmusichub-*.png', 'worldmusichub-omr-*.json',
+                      'worldmusichub-live-*.json', 'worldmusichub-binding-*.json')
+          for name in ('mocked', 'real'):
+              root = roots / name
+              if not root.exists():
+                  continue  # A failed producer may have no screenshots yet.
+              for source in sorted(root.iterdir()):
+                  if (source.is_symlink() or not source.is_file()
+                          or not any(fnmatch.fnmatchcase(source.name, pattern) for pattern in patterns)):
+                      raise ValueError(f'Unexpected browser evidence: {source}')
+                  with source.open('rb') as reader, (target / source.name).open('xb') as writer:
+                      shutil.copyfileobj(reader, writer)
+          PY
       # Additive, bounded copies of the same evidence. The complete artifact
       # below remains unchanged; each part has a full source/hash inventory.
       - name: Partition browser evidence for bounded retrieval
-        if: ${{ always() && steps.browser_setup.outcome == 'success' }}
+        if: ${{ always() && steps.restore_browser_evidence.outcome == 'success' }}
         run: >-
           python3 scripts/partition-browser-evidence.py
           /tmp "${{ runner.temp }}/worldmusichub-rhythm"
           "${{ runner.temp }}/worldmusichub-browser-parts"
-          --source-sha "${{ github.event.pull_request.head.sha || github.sha }}"
+          --source-sha "${{ github.sha }}"
           --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
       - name: Preserve bounded browser evidence 1
         if: always()
@@ -180,3 +304,11 @@ jobs:
             /tmp/worldmusichub-binding-*.json
             ${{ runner.temp }}/worldmusichub-rhythm/
           if-no-files-found: ignore
+      - name: Require every frontend suite
+        if: always()
+        env:
+          CHECKS_RESULT: ${{ needs.frontend-checks.result }}
+          REAL_RESULT: ${{ needs.frontend-real.result }}
+        run: |
+          test "$CHECKS_RESULT" = success
+          test "$REAL_RESULT" = success
