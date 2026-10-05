@@ -37,13 +37,38 @@ function validatePlan(run,r,{human,listen=false,selected=null,transformed=false}
  return p;
 }
 export function validateCanonicalFrameLedger(run,{natural=false,pcm=false}={}){
- const p=run.plan,t=run.terminals[0].record,raw=run.rawTerminals[0].record;assert.deepEqual(t.ledger,raw.ledger);for(const k of ['sourceFingerprint','compiledFingerprint','selectionFingerprint','planFingerprint'])assert.equal(t[k],p[k]);assert.equal(t.sampleRate,p.sampleRate);assert.equal(t.planGeneration,run.planGeneration);assert.equal(t.skipped,0);if(natural)assert.equal(t.type,'ended');
- const pauses=t.pauseSpans||[];assert.equal(pauses.length,t.pauseCount*2);const offset=frame=>{let result=frame;for(let i=0;i<pauses.length;i+=2)if(pauses[i]<=result&&pauses[i+1]>=0)result+=pauses[i+1]-pauses[i];return result;};
- const initial=run.started.anchorFrame,starts=t.ledger.actualStarts,ends=t.ledger.actualEnds;assert.equal(starts.length,ends.length);
- if(p.rangeMode){assert.equal(t.ledgerLayout,'range-pass-major');assert.equal(t.ledgerCapacity,p.recordCapacity);assert.equal(t.unusedLedgerEmpty,true);assert.equal(starts.length,t.recordCount);const firstEnd=p.initialCountInFrames+p.rangeEndFrame-p.initialPositionFrame,cycle=p.countInFrames+p.rangeEndFrame-p.rangeStartFrame;
-  for(let i=0;i<starts.length;i++){const first=i<p.firstGateCount,pass=first?0:1+Math.floor((i-p.firstGateCount)/p.rangeGateCount),idx=first?p.firstRangeOrder[i]:p.rangeOrder[(i-p.firstGateCount)%p.rangeGateCount],n=p.notes[idx],origin=first?p.initialPositionFrame:p.rangeStartFrame,base=initial+(first?p.initialCountInFrames:firstEnd+(pass-1)*cycle+p.countInFrames),expectedStart=offset(base+Math.max(origin,n[1])-origin),expectedEnd=offset(base+Math.min(p.rangeEndFrame,n[2])-origin);assert.equal(starts[i],expectedStart,'Every actual range attack must retain its source frame');if(ends[i]!==-1)assert.equal(ends[i],t.type==='canceled'?Math.min(expectedEnd,t.frame):expectedEnd,'Every range release must match gate or explicit cancellation');}
- }else{assert.equal(starts.length,p.count);for(let i=0;i<p.count;i++){const n=p.notes[i];if(starts[i]===-1){assert.equal(natural,false);continue;}assert.equal(starts[i],offset(initial+Math.max(n[1],run.positionFrame)-run.positionFrame));if(ends[i]!==-1)assert.equal(ends[i],t.type==='canceled'?Math.min(offset(initial+n[2]-run.positionFrame),t.frame):offset(initial+n[2]-run.positionFrame));}}
- if(natural){assert.equal(t.started,p.count);assert.equal(t.ended,p.count);assert.ok(ends.every(n=>n>=0));}if(pcm&&p.count){assert.ok(run.pcm.blocks.some(b=>b.peak>1e-6&&b.rms>1e-8),'Original source must produce positive actual PCM');assert.equal(run.pcm.graphToDestination?.at(-1)?.type,'AudioDestinationNode');}
+ const p=run.plan,t=run.terminals[0].record,raw=run.rawTerminals[0].record;
+ for(const key of ['ledger','ledgerCapacity','unusedLedgerSentinel','unusedLedgerEmpty','recordCount','pauseSpans','type','state','reason','frame','started','ended','skipped'])assert.deepEqual(t[key],raw[key],`Raw native ${key} must match the forwarded completion`);
+ for(const k of ['sourceFingerprint','compiledFingerprint','selectionFingerprint','planFingerprint'])assert.equal(t[k],p[k]);
+ assert.equal(t.sampleRate,p.sampleRate);assert.equal(t.planGeneration,run.planGeneration);assert.equal(t.active,0);
+ assert.ok(['ended','canceled'].includes(t.type));assert.equal(t.state,t.type);if(natural)assert.equal(t.type,'ended');if(t.type==='canceled')assert.equal(t.reason,'dispose','Only the actual app disposal may truncate a source gate');
+ // These indices are recomputed from the complete source gates, which the
+ // caller separately binds to fixed musical content and consumed Rust output.
+ const order=p.notes.map((_,i)=>i).filter(i=>!p.rangeMode||p.notes[i][2]>p.rangeStartFrame&&p.notes[i][1]<p.rangeEndFrame);
+ const first=order.filter(i=>p.rangeMode?p.initialPositionFrame<p.rangeEndFrame&&p.notes[i][2]>p.initialPositionFrame:p.notes[i][2]>run.positionFrame);
+ if(p.rangeMode){assert.deepEqual(p.rangeOrder,order);assert.deepEqual(p.firstRangeOrder,first);assert.equal(p.rangeGateCount,order.length);assert.equal(p.firstGateCount,first.length);}
+ assert.equal(t.skipped,p.count-first.length,'Only exact declared first-window exclusions may be skipped');
+ const pauses=t.pauseSpans||[];assert.equal(pauses.length,t.pauseCount*2);
+ for(let i=0;i<pauses.length;i+=2){assert.ok(Number.isSafeInteger(pauses[i])&&pauses[i]>=run.started.anchorFrame);assert.ok(pauses[i+1]===-1||Number.isSafeInteger(pauses[i+1])&&pauses[i+1]>=pauses[i]);if(i)assert.ok(pauses[i-1]>=0&&pauses[i]>=pauses[i-1]);if(pauses[i+1]===-1){assert.equal(i,pauses.length-2);assert.equal(t.type,'canceled');assert.ok(t.frame>=pauses[i]);}}
+ const offset=frame=>{let result=frame;for(let i=0;i<pauses.length;i+=2)if(pauses[i]<=result){if(pauses[i+1]<0)return Infinity;result+=pauses[i+1]-pauses[i];}return result;};
+ const initial=run.started.anchorFrame,starts=t.ledger.actualStarts,ends=t.ledger.actualEnds,expected=[];assert.equal(starts.length,ends.length);
+ if(p.rangeMode){
+  assert.equal(t.ledgerLayout,'range-pass-major');assert.equal(t.ledgerCapacity,p.recordCapacity);assert.equal(t.unusedLedgerSentinel,0);assert.equal(t.unusedLedgerEmpty,true);assert.equal(starts.length,t.recordCount);
+  const firstEnd=p.initialCountInFrames+p.rangeEndFrame-p.initialPositionFrame,cycle=p.countInFrames+p.rangeEndFrame-p.rangeStartFrame;
+  for(let pass=0;pass<p.maxPasses;pass++){
+   const origin=pass===0?p.initialPositionFrame:p.rangeStartFrame,base=initial+(pass===0?p.initialCountInFrames:firstEnd+(pass-1)*cycle+p.countInFrames);
+   if(offset(base)>=t.frame)break;
+   for(const idx of pass===0?first:order){const n=p.notes[idx],start=offset(base+Math.max(origin,n[1])-origin),end=offset(base+Math.min(p.rangeEndFrame,n[2])-origin);if(start<t.frame)expected.push({start,end:t.type==='canceled'?Math.min(end,t.frame):end});}
+  }
+  assert.equal(starts.length,expected.length,'Every in-window onset before cancellation must appear once');
+  for(let i=0;i<expected.length;i++){assert.equal(starts[i],expected[i].start,'Exact clipped source attack');assert.equal(ends[i],expected[i].end,'Exact source end or held cancellation frame');}
+ }else{
+  assert.equal(starts.length,p.count);
+  for(let i=0;i<p.count;i++){const n=p.notes[i],start=offset(initial+Math.max(n[1],run.positionFrame)-run.positionFrame),end=offset(initial+n[2]-run.positionFrame),audible=first.includes(i)&&start<t.frame;if(!audible){assert.equal(starts[i],-1);assert.equal(ends[i],-1);continue;}expected.push(i);assert.equal(starts[i],start);assert.equal(ends[i],t.type==='canceled'?Math.min(end,t.frame):end);}
+ }
+ assert.equal(t.started,expected.length);assert.equal(t.ended,expected.length);
+ if(natural){const total=p.rangeMode?first.length+(p.maxPasses-1)*order.length:first.length;assert.equal(expected.length,total);}
+ if(pcm&&p.count){assert.ok(run.pcm.blocks.some(b=>b.peak>1e-6&&b.rms>1e-8),'Original source must produce positive actual PCM');assert.equal(run.pcm.graphToDestination?.at(-1)?.type,'AudioDestinationNode');}
  return t;
 }
 function layout(l){assert.ok(l.width>=900&&l.width<=1280&&l.height>=640&&l.height<=720);assert.ok(l.documentWidth<=l.width+1);assert.ok(l.dpr>0);}
