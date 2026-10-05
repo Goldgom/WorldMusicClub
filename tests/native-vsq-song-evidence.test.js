@@ -165,16 +165,47 @@ test('browser console aggregates repeated exact source identities with complete 
  assert.equal(e.total_events,76);assert.equal(e.expected_events,76);assert.equal(e.unexpected_events,0);assert.equal(e.overflow.count,0);assert.equal(e.groups.length,38);assert.equal(e.pending_responses.length,38);
  for(const [index,row]of e.groups.entries()){assert.equal(row.count,2);assert.equal(row.type,'error');assert.equal(row.text,browserPending404);assert.deepEqual(row.location,{url:f.url(index+1),lineNumber:0,columnNumber:0});assert.equal(row.classification,'owned-pending-result');assert.equal(row.first.index,index*2+1);assert.equal(row.last.index,index*2+2);assert.ok(row.first.atMs<row.last.atMs);assert.equal(e.pending_responses[index].fulfilled,2);}
 });
-test('VSQ Mod diagnostics cover every owned action through the existing 80-action contract',async()=>{
- const f=await consoleFixture({maxActionSequence:80});
- for(let sequence=1;sequence<=80;sequence++){f.pending(sequence).finish(true);f.observer.observe(f.message(f.url(sequence)));}
- f.observer.assertComplete();assert.equal(f.observer.evidence.max_action_sequence,80);assert.equal(f.observer.evidence.expected_events,80);assert.equal(f.observer.evidence.groups.length,80);assert.equal(f.observer.evidence.pending_responses.length,80);assert.equal(f.observer.evidence.overflow.count,0);
- for(const sequence of [0,81,1.5])assert.throws(()=>f.pending(sequence),/declared action sequence budget/);
- const owned=await consoleFixture({maxActionSequence:80}),actionPending=true,activeAction={sequence:65};
- owned.observer.pendingResponse({sequence:65,url:owned.url(65),method:'GET',owned:actionPending&&activeAction.sequence===65,status:404,body:{error:'pending'}}).finish(true);owned.observer.assertComplete();assert.equal(owned.observer.evidence.pending_responses[0].sequence,65);
- activeAction.sequence=64;assert.throws(()=>owned.observer.pendingResponse({sequence:65,url:owned.url(65),method:'GET',owned:actionPending&&activeAction.sequence===65,status:404,body:{error:'pending'}}),/must belong to its active action/);
- for(const altered of [{owned:false},{url:f.url(65)+'?unknown=1'},{method:'POST'},{status:500},{body:{error:'different'}}])assert.throws(()=>f.observer.pendingResponse({sequence:65,url:f.url(65),method:'GET',owned:true,status:404,body:{error:'pending'},...altered}));
- await assert.rejects(consoleFixture({maxActionSequence:Infinity}),/Unsupported hosted action sequence budget/);
+test('hosted diagnostics cover exactly each declared 64, 75 or 80-action contract',async()=>{
+ for(const maxActionSequence of [64,75,80]){
+  const f=await consoleFixture({maxActionSequence});
+  for(let sequence=1;sequence<=maxActionSequence;sequence++){f.pending(sequence).finish(true);f.observer.observe(f.message(f.url(sequence)));}
+  f.observer.assertComplete();assert.equal(f.observer.evidence.max_action_sequence,maxActionSequence);assert.equal(f.observer.evidence.expected_events,maxActionSequence);assert.equal(f.observer.evidence.groups.length,maxActionSequence);assert.equal(f.observer.evidence.pending_responses.length,maxActionSequence);assert.equal(f.observer.evidence.overflow.count,0);
+  for(const sequence of [0,maxActionSequence+1,1.5])assert.throws(()=>f.pending(sequence),{message:`VSQ pending response exceeds its declared action sequence budget (received ${sequence}, maximum ${maxActionSequence})`});
+  const owned=await consoleFixture({maxActionSequence}),actionPending=true,activeAction={sequence:maxActionSequence};
+  owned.observer.pendingResponse({sequence:maxActionSequence,url:owned.url(maxActionSequence),method:'GET',owned:actionPending&&activeAction.sequence===maxActionSequence,status:404,body:{error:'pending'}}).finish(true);owned.observer.assertComplete();assert.equal(owned.observer.evidence.pending_responses[0].sequence,maxActionSequence);
+  activeAction.sequence--;assert.throws(()=>owned.observer.pendingResponse({sequence:maxActionSequence,url:owned.url(maxActionSequence),method:'GET',owned:actionPending&&activeAction.sequence===maxActionSequence,status:404,body:{error:'pending'}}),/must belong to its active action/);
+  for(const altered of [{owned:false},{url:f.url(maxActionSequence)+'?unknown=1'},{method:'POST'},{status:500},{body:{error:'different'}}])assert.throws(()=>f.observer.pendingResponse({sequence:maxActionSequence,url:f.url(maxActionSequence),method:'GET',owned:true,status:404,body:{error:'pending'},...altered}));
+ }
+ for(const maxActionSequence of [0,65,72,74,76,79,81,Infinity,'75'])await assert.rejects(consoleFixture({maxActionSequence}),/Unsupported hosted action sequence budget/);
+});
+test('every hosted console caller matches its renderer phase budget and active action ownership',async()=>{
+ const {createVsqHostedConsole}=await import('../scripts/vsq-hosted-console.mjs'),{createAuthoringHostedConsole}=await import('../scripts/song-authoring-hosted-console.mjs');
+ const cases=[
+  ['performance-song','performance-song',[['performance-seed',75],['performance-controls',75],['performance-restart',75]]],
+  ['pitch-bend','pitch-bend',[['pitch-bend-seed',75],['pitch-bend-restart',75]]],
+  ['basic-key','basic-key',[['basic-key-seed',80],['basic-key-restart',80]]],
+  ['canonical-practice','canonical-practice',[['canonical-practice-seed',80],['canonical-practice-controls',64],['canonical-practice-restart',64]]],
+  ['song-authoring','song-authoring',[['authoring-seed',80],['authoring-restart',80]]],
+  ['vsq-authoring','vsq-authoring',[['vsq-authoring-seed',80],['vsq-authoring-restart',80]]],
+  ['vsq-song','vsq-song',[['vsq-seed',80],['vsq-restart',80]]],
+  ['complete-practice','complete-practice',[['complete-practice-seed',64],['complete-practice-restart',64]]],
+ ];
+ for(const [caller,renderer,phases] of cases){
+  const source=await readFile(new URL(`../scripts/hosted-${caller}-check.mjs`,import.meta.url),'utf8'),rendererSource=await readFile(new URL(`../crates/desktop-shell/${renderer}-acceptance.js`,import.meta.url),'utf8');
+  const setup=source.match(/consoleObserver=(create(?:Vsq|Authoring)HostedConsole\(\{[^;]+?\}\));/)?.[1],limit=rendererSource.match(/assert\(sequence<([^,]+),'/)?.[1],ownership=source.match(/owned:([^,]+),status:404/)?.[1];
+  assert.ok(setup&&limit&&ownership,`${caller} must expose its bounded console and active action contract`);
+  assert.match(ownership,/^actionPending&&(phaseReport|host)\.actions\.at\(-1\)\?\.sequence===sequence$/);
+  for(const [phase,expected] of phases){
+   const origin='https://wmh.localhost',observer=runInNewContext(setup,{origin,phase,createVsqHostedConsole,createAuthoringHostedConsole}),evidence=observer.evidence.base||observer.evidence;
+   assert.equal(runInNewContext(limit,{phase}),expected,`${phase} renderer contract changed`);assert.equal(evidence.max_action_sequence,expected,`${phase} console disagrees with its renderer`);
+   const context={sequence:expected,actionPending:true,phaseReport:{actions:[{sequence:expected}]},host:{actions:[{sequence:expected}]}};
+   const pending=()=>observer.pendingResponse({sequence:context.sequence,url:`${origin}/__desktop_smoke/result/${context.sequence}`,method:'GET',owned:runInNewContext(ownership,context),status:404,body:{error:'pending'}});
+   pending().finish(true);observer.observe({type:()=> 'error',text:()=>browserPending404,location:()=>({url:`${origin}/__desktop_smoke/result/${expected}`,lineNumber:0,columnNumber:0})});observer.assertComplete();assert.equal(evidence.expected_events,1);
+   context.actionPending=false;assert.throws(pending,/must belong to its active action/);context.actionPending=true;
+   context.phaseReport.actions.push({sequence:expected-1});context.host.actions.push({sequence:expected-1});assert.throws(pending,/must belong to its active action/);
+   context.sequence=expected+1;context.phaseReport.actions.push({sequence:expected+1});context.host.actions.push({sequence:expected+1});assert.throws(pending,/declared action sequence budget/);
+  }
+ }
 });
 test('console repetition never consumes the distinct-identity budget and source field ordering does not split identity',async()=>{
  const f=await consoleFixture();for(let i=0;i<500;i++){f.pending().finish(true);f.observer.observe(i%2?{...f.message(),location:()=>({columnNumber:0,url:f.url(1),lineNumber:0})}:f.message());}f.observer.assertComplete();assert.equal(f.observer.evidence.groups.length,1);assert.equal(f.observer.evidence.groups[0].count,500);assert.equal(f.observer.evidence.total_events,500);assert.equal(f.observer.evidence.overflow.count,0);

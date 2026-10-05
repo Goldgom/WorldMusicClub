@@ -5,9 +5,9 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 const PENDING_TEXT='Failed to load resource: the server responded with a status of 404 (Not Found)';
 export function createVsqHostedConsole({origin,maxActionSequence=64,now=()=>performance.timeOrigin+performance.now()}={}) {
- // The VSQ Mod flow has an existing 80-action renderer/verifier contract.
- // Other hosted protocols retain their original 64-action diagnostic budget.
- assert.ok([64,80].includes(maxActionSequence),'Unsupported hosted action sequence budget');
+ // Callers opt into their existing renderer/Rust/Windows contract: 75 for
+ // performance/pitch-bend, 80 for the named Mod flows; the default stays 64.
+ assert.ok([64,75,80].includes(maxActionSequence),'Unsupported hosted action sequence budget');
  const evidence={version:1,max_action_sequence:maxActionSequence,total_events:0,groups:[],pending_responses:[],expected_events:0,unexpected_events:0,informational_events:0,overflow:{count:0,first:null,last:null}};
  const groups=new Map(),responses=new Map();let responseIndex=0;
  const event=()=>({index:++evidence.total_events,atMs:now()});
@@ -21,7 +21,7 @@ export function createVsqHostedConsole({origin,maxActionSequence=64,now=()=>perf
   if(evidence.groups.filter(row=>row.bucket===bucket).length>=limit){rejected(observation,`${bucket} distinct identity bound exceeded`,identity);return;}
   row={type,text,location:{...location},bucket,count:1,first:observation,last:observation,classification:'unconfirmed'};groups.set(identity,row);evidence.groups.push(row);
  },pendingResponse({sequence,url,method,owned,status,body}){
-  assert.ok(Number.isSafeInteger(sequence)&&sequence>0&&sequence<=maxActionSequence,'VSQ pending response exceeds its declared action sequence budget');assert.equal(owned,true,'VSQ pending response must belong to its active action');assert.equal(url,`${origin}/__desktop_smoke/result/${sequence}`);assert.equal(method,'GET');assert.equal(status,404);assert.deepEqual(body,{error:'pending'});
+  assert.ok(Number.isSafeInteger(sequence)&&sequence>0&&sequence<=maxActionSequence,`VSQ pending response exceeds its declared action sequence budget (received ${sequence}, maximum ${maxActionSequence})`);assert.equal(owned,true,'VSQ pending response must belong to its active action');assert.equal(url,`${origin}/__desktop_smoke/result/${sequence}`);assert.equal(method,'GET');assert.equal(status,404);assert.deepEqual(body,{error:'pending'});
   const observation={index:++responseIndex,atMs:now()};let row=responses.get(url);
   if(!row){row={sequence,url,method,status,body:{...body},issued:0,fulfilled:0,failed:0,first:observation,last:observation};responses.set(url,row);evidence.pending_responses.push(row);}
   row.issued++;row.last=observation;let settled=false;

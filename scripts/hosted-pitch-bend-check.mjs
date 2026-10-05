@@ -23,7 +23,7 @@ await mkdir(path.join(output,'downloads'),{recursive:true});await preparePitchBe
 try {
  const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});
  for(const phase of PITCH_BEND_PHASES){
-  const phaseReport={phase,ok:false,actions:[],results:[],page_errors:[],api_trace:[],console:null},downloads=[],results=new Map();report.phases.push(phaseReport);consoleObserver=createVsqHostedConsole({origin});phaseReport.console=consoleObserver.evidence;let renderer=null,actionFailure=null,actionPending=false;
+  const phaseReport={phase,ok:false,actions:[],results:[],page_errors:[],api_trace:[],console:null},downloads=[],results=new Map();report.phases.push(phaseReport);consoleObserver=createVsqHostedConsole({origin,maxActionSequence:75});phaseReport.console=consoleObserver.evidence;let renderer=null,actionFailure=null,actionPending=false;
   driver=startVsqNativeDriver({binary,directory:path.join(output,'Scores'),cwd:root});phaseReport.process_id=driver.pid;context=await browser.newContext({viewport:{width:1280,height:viewportHeight},acceptDownloads:true});
   const scripts=await Promise.all(['acceptance-wait.js','reference-acceptance.js','vsq-song-acceptance.js','performance-song-acceptance.js','pitch-bend-acceptance.js'].map(name=>readFile(path.join(root,'crates/desktop-shell',name),'utf8')));assert.equal(scripts[2].split('(() => {').length,2,'Shared observer boundary changed');scripts[2]=scripts[2].split('(() => {')[0];assert.equal(scripts[3].split('(() => {').length,2,'Performance helper boundary changed');scripts[3]=scripts[3].split('(() => {')[0];await context.addInitScript(`globalThis.__WMH_ACCEPTANCE_PHASE__=${JSON.stringify(phase)};\n${scripts.join('\n')}`);
   async function action(a){try{

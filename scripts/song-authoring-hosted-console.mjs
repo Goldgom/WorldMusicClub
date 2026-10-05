@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import {createVsqHostedConsole} from './vsq-hosted-console.mjs';
 export function createAuthoringHostedConsole({origin}={}){
- const base=createVsqHostedConsole({origin}),rejected=[],events=[];
+ const base=createVsqHostedConsole({origin,maxActionSequence:80}),rejected=[],events=[];
  const evidence={version:1,base:base.evidence,rejected_responses:rejected,rejected_console_events:events};
  return{evidence,pendingResponse:value=>base.pendingResponse(value),rejectedResponse(value){
   assert.equal(value.path,'/api/clean-song/draft');assert.equal(value.method,'POST');assert.equal(value.status,422);assert.equal(value.source_name,'authoring-original-blocked.mid');assert.equal(value.state,'rejected');assert.match(value.source_sha256,/^[a-f0-9]{64}$/);assert.equal(rejected.length,0,'Only one original blocked draft is expected');rejected.push({...value,fulfilled:false});return{finish(ok){assert.equal(ok,true);rejected.at(-1).fulfilled=true;}};
