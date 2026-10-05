@@ -294,9 +294,17 @@ test('authored VSQ audio evidence keeps full native source identities and ration
 
 test('authored VSQ rejects legacy schedules, changed native ledgers, silent or disconnected output and incomplete disposal',()=>{
  const mutations=[
+  r=>delete r.listenSetup,r=>r.listenSetup.thread=[],r=>r.listenSetup.thread[0].started=null,
+  r=>r.listenSetup.thread[0].messages[0].isTrusted=false,r=>r.listenSetup.thread[0].terminals[0].record.ledger.actualEnds[0]--,
+  r=>r.listenSetup.thread[0].timbre.sha256='0'.repeat(64),r=>r.listenSetup.thread[0].pcm.blocks.forEach(row=>{row.peak=0;row.rms=0;}),
+  r=>r.listenSetup.thread[0].lifecycle.disposed=false,r=>r.listenSetup.admission.audio.worklet.started=0,
+  r=>r.listenSetup.admission.renderer='ready',r=>r.listenSetup.admission.positionMs=0,
+  r=>r.listenSetup.afterResetAudio.worklet.pendingReceivers=1,r=>r.audioBeforePlay.worklet.ownedNodes[0].connected=true,
+  r=>r.audioBeforePlay.worklet.initializations.push({settled:false}),r=>r.listenSetupEvents[1].trusted=false,
+  r=>r.listenSetup.resetAction=r.playAction,r=>r.listenSetupEvents[0].sequence--,
   r=>delete r.listenThread,r=>r.listenThread=[],r=>r.listenThread.push(structuredClone(r.listenThread[0])),
   r=>r.listenAudio.sourceStarts=2,r=>r.listenAudio.oscillatorStarts=2,r=>r.listenAudio.worklet.activeReceivers=0,
-  r=>r.audioBeforePlay.worklet.receivers=1,r=>r.beforeChoice.audio.worklet.pendingReceivers=1,
+  r=>r.audioBeforeListen.worklet.receivers=1,r=>r.beforeChoice.audio.worklet.pendingReceivers=1,
   r=>r.afterChoice.audio.worklet.initializations.push({settled:false}),
   r=>r.listenThread[0].plan.notes.pop(),r=>r.listenThread[0].plan.sourceNotes--,
   r=>r.listenThread[0].plan.notes[0][0]='vsq-t9-ID#0000',r=>r.listenThread[0].plan.notes[0][1]='invented-source-event',

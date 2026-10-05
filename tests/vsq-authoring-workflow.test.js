@@ -309,3 +309,35 @@ test('hosted VSQ authoring builds the exact-source real asset server before Work
   const checkout=steps.find(step=>step.uses?.startsWith('actions/checkout@'));assert.equal(checkout.with.ref,'${{ github.sha }}');
  }
 });
+
+test('explicit Listen setup waits for actual receiver start, natural terminal and disposal before Reset',async()=>{
+ const renderer=read('crates/desktop-shell/vsq-authoring-acceptance.js'),context=vm.createContext({});
+ new vm.Script(renderer.split('(() => {')[0]).runInContext(context);
+ async function run(blocker){
+  const actions=[],polls=[],endMs=2166.671,nodes=Object.fromEntries(['start-listen','reset-button','session-mode','clean-song-stage','progress','play-button'].map(id=>[id,{id,disabled:false,dataset:{},value:''}]));
+  const document={body:{dataset:{screen:'library'}},getElementById:id=>nodes[id]};nodes['session-mode'].value='listen';nodes.progress.value='0';nodes['clean-song-stage'].dataset.rendererState='ready';
+  let started=0,terminal=false,disposed=false;
+  const audio=()=>({worklet:{started,activeReceivers:started&&!disposed?1:0}}),thread={receiverId:1,terminal:'retained exact native terminal'};
+  const receiver={count:()=>0,assertHealthy(){if(blocker==='audio_canceled')throw Error('audio_canceled');},settledSince:index=>{assert.equal(index,0);return terminal;},snapshot:()=>[thread]};
+  const native=async(kind,node)=>{assert.equal(kind,'click');actions.push(node.id);if(node.id==='start-listen')document.body.dataset.screen='stage';else{assert.equal(terminal,true);assert.equal(disposed,true);nodes.progress.value='0';nodes['clean-song-stage'].dataset.rendererState='ready';}return actions.length;};
+  const until=async(fn,label,ms)=>{
+   polls.push(label);
+   if(label==='explicit Listen receiver admitted'){
+    assert.equal(ms,10000);assert.equal(fn(),false,'Visible stage and enabled Play are insufficient');
+    started=1;nodes['clean-song-stage'].dataset.rendererState='playing';assert.equal(fn(),false,'Started ACK still needs the advancing transport');
+    if(blocker==='starting')throw Error('receiver admission timed out');nodes.progress.value='100';
+   }else if(label==='explicit Listen natural completion'){
+    assert.equal(ms,7000);assert.equal(fn(),false);nodes.progress.value=String(endMs);assert.equal(fn(),false,'Clock completion cannot replace the actual processor terminal');
+    if(blocker==='terminal')throw Error('native terminal timed out');terminal=true;
+   }
+   assert.equal(fn(),true,label);
+  };
+  const silence=async label=>{assert.equal(terminal,true);if(blocker==='disposal')throw Error('receiver disposal timed out');disposed=true;polls.push(label);return audio();};
+  const task=context.prepareVsqAuthoringListen({document,native,until,receiver,audio,silence,endMs});
+  if(blocker){await assert.rejects(task,/timed out|audio_canceled/);assert.deepEqual(actions,['start-listen'],'Failed setup must never Reset a pending or failed receiver');return;}
+  const result=await task;assert.deepEqual(actions,['start-listen','reset-button']);assert.equal(result.admission.positionMs,100);assert.equal(result.admission.audio.worklet.started,1);assert.equal(result.afterResetAudio.worklet.activeReceivers,0);assert.equal(result.thread[0],thread);
+  assert.deepEqual(polls,['explicit Listen receiver admitted','explicit Listen natural completion','explicit Listen receiver disposal','admitted listen reset','listen setup reset disposal']);
+ }
+ await run();for(const blocker of ['starting','terminal','disposal','audio_canceled'])await run(blocker);
+ assert.match(renderer,/report\.audioBeforeListen=silent\(\)/);assert.match(renderer,/report\.audioBeforePlay=await silence\('post-reset quiet baseline'\)/);
+});
