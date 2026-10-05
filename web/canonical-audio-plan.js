@@ -5,8 +5,9 @@ import {BasicKeyAudioError,basicKeySampleRate} from './basic-key-audio-plan.js';
 export const CANONICAL_AUDIO_PROFILE='wmh-canonical-compiled-audio-v1';
 export const CANONICAL_AUDIO_PROTOCOL='wmh-canonical-audio-v1';
 export const CANONICAL_AUDIO_POLICY='wmh-canonical-sine-ms-v1';
+export const CANONICAL_LOOP_POLICY='wmh-canonical-clip-rearticulate-v1';
 export const CANONICAL_AUDIO_IDENTITY='canonical-occurrence-index';
-export const CANONICAL_AUDIO_LIMITS=Object.freeze({maxNotes:100000,maxSourceNotes:100000,maxReferences:1000000,maxParts:128,maxBytes:16*1024*1024,maxProfileBytes:32*1024*1024,maxEncodingBytes:64*1024*1024,maxVoices:128,maxGeneration:0x7fffffff,maxFrame:2**48,maxAuditRows:256,maxPauses:4096});
+export const CANONICAL_AUDIO_LIMITS=Object.freeze({maxNotes:100000,maxSourceNotes:100000,maxReferences:1000000,maxParts:128,maxBytes:16*1024*1024,maxProfileBytes:32*1024*1024,maxEncodingBytes:64*1024*1024,maxVoices:128,maxGeneration:0x7fffffff,maxFrame:2**48,maxAuditRows:256,maxPauses:4096,maxPasses:4096,maxGateRecords:500000});
 const L=CANONICAL_AUDIO_LIMITS, admitted=new WeakSet();
 const int=(n,a,b)=>Number.isSafeInteger(n)&&n>=a&&n<=b;
 const hash=s=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
@@ -27,7 +28,7 @@ export function canonicalGateFrames(startMs,durationMs,sampleRate){
 
 /** Verify the separate Rust evidence against the selected canonical Compilation.
  * This never compiles notation or calls the physical-input target deduper. */
-export function buildCanonicalAudioPlan(compilation,profile,{sampleRate,mode='practice',practiceSelection,acceptedPolicyId}={}){
+export function buildCanonicalAudioPlan(compilation,profile,{sampleRate,mode='practice',practiceSelection,acceptedPolicyId,audiblePartIds,range,countInMs,loop=false,resumePositionMs}={}){
   basicKeySampleRate(sampleRate);
   if(acceptedPolicyId!==CANONICAL_AUDIO_POLICY)fail('Accept the disclosed sine interpretation of compiled canonical notes before playback.','reference_policy_required');
   if(!compilation?.score||!Array.isArray(compilation.timeline?.notes)||!profile||profile.profile!==CANONICAL_AUDIO_PROFILE||profile.policy_id!==CANONICAL_AUDIO_POLICY||!hash(profile.source_fingerprint)||!hash(profile.compiled_fingerprint))fail('A canonical compilation and matching Rust audio profile are required.');
@@ -44,7 +45,9 @@ export function buildCanonicalAudioPlan(compilation,profile,{sampleRate,mode='pr
   const {compiled_fingerprint,...unsigned}=profile;
   if(canonicalFingerprint(CANONICAL_AUDIO_PROFILE,unsigned)!==compiled_fingerprint)fail('The compiled canonical fingerprint is inconsistent.');
   const selection=mode==='practice'?resolvePracticeSelection(score.parts,practiceSelection):{kind:'listen',part_ids:[]};
-  const human=new Set(selection.part_ids),notes=[],mapping=[],seen=new Set();let refs=0,durationFrames=Math.ceil(profile.duration_ms*sampleRate/1000);
+  let audible=null;
+  if(audiblePartIds!==undefined){if(mode!=='listen'||!Array.isArray(audiblePartIds)||!audiblePartIds.length||new Set(audiblePartIds).size!==audiblePartIds.length||audiblePartIds.some(id=>!profile.part_ids.includes(id)))fail('The explicit Listen part mix is invalid.');audible=profile.part_ids.filter(id=>audiblePartIds.includes(id));}
+  const audibleSet=audible&&new Set(audible),human=new Set(selection.part_ids),notes=[],mapping=[],seen=new Set();let refs=0,durationFrames=Math.ceil(profile.duration_ms*sampleRate/1000);
   for(let i=0;i<profile.occurrences.length;i++){
     const o=profile.occurrences[i],n=timeline.notes[i];
     if(!o||!same(Object.keys(o).sort(),['id','part_index','source_indices','midi','velocity','start_ms','duration_ms'].sort())||!id(o.id)||seen.has(o.id)||o.id!==n.id||!int(o.part_index,0,profile.part_ids.length-1)||profile.part_ids[o.part_index]!==n.part_id||!Array.isArray(o.source_indices)||!o.source_indices.length||!Array.isArray(n.source_note_ids)||o.source_indices.length!==n.source_note_ids.length||!int(o.midi,0,127)||!int(o.velocity,0,127)||o.midi!==n.midi||o.velocity!==n.velocity||o.start_ms!==n.start_ms||o.duration_ms!==n.duration_ms)fail('A canonical occurrence no longer matches its compiler evidence.');
@@ -52,39 +55,64 @@ export function buildCanonicalAudioPlan(compilation,profile,{sampleRate,mode='pr
     if(refs>L.maxReferences||o.source_indices.some((s,j)=>!int(s,0,sourceIds.length-1)||sourceIds[s]!==n.source_note_ids[j])||n.source_note_id!==n.source_note_ids[0])fail('The canonical tie/repeat source references do not match.');
     const [start,end]=canonicalGateFrames(o.start_ms,o.duration_ms,sampleRate);durationFrames=Math.max(durationFrames,end);
     mapping.push(Object.freeze({id:o.id,partId:n.part_id,sourceIndices:Object.freeze([...o.source_indices])}));
-    if(!human.has(n.part_id)){
+    if(!human.has(n.part_id)&&(!audibleSet||audibleSet.has(n.part_id))){
       if(440*2**((o.midi-69)/12)>sampleRate*.45)fail('This sample rate cannot represent every retained canonical pitch.','unsupported_audio_sample_rate');
       notes.push(Object.freeze([i,start,end,o.midi,o.velocity]));
     }
   }
   if(refs!==profile.source_references||!int(durationFrames,0,L.maxFrame))fail('The canonical duration or source-reference count is inconsistent.');
   notes.sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
-  // Endpoint sorting enforces the complete sample-frame voice budget, including
-  // quantization overlap. No source key/part deduplication or voice stealing.
-  const edges=[];for(const n of notes){edges.push([n[1],1],[n[2],-1]);}edges.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);let voices=0;
+  const rangeMode=range!==undefined||countInMs!==undefined||loop!==false;
+  const loopEnabled=loop===true||loop?.enabled===true;
+  if(loop!==false&&loop!==true&&(!loop||typeof loop!=='object'||loop.enabled!==true))fail('The canonical loop option is invalid.');
+  const requestedPasses=loopEnabled?(loop.maxPasses??L.maxPasses):1;
+  if(!int(requestedPasses,1,L.maxPasses)||loopEnabled&&requestedPasses<2)fail('A loop requests 2–4096 complete passes.');
+  if(range!==undefined&&(!range||!Number.isFinite(range.startMs)||!Number.isFinite(range.endMs)||range.startMs<0||range.endMs<range.startMs||range.endMs>durationFrames*1000/sampleRate))fail('The canonical A/B range is invalid.');
+  const rangeStartFrame=range?Math.round(range.startMs*sampleRate/1000):0,rangeEndFrame=range?Math.round(range.endMs*sampleRate/1000):durationFrames;
+  const countInFrames=Math.round((countInMs??0)*sampleRate/1000);
+  if(!int(countInFrames,0,600*sampleRate)||!int(rangeStartFrame,0,durationFrames)||!int(rangeEndFrame,rangeStartFrame,durationFrames)||loopEnabled&&rangeEndFrame===rangeStartFrame)fail('The range or count-in frame budget is invalid.');
+  const rangeOrder=[];for(let i=0;i<notes.length;i++)if(notes[i][2]>rangeStartFrame&&notes[i][1]<rangeEndFrame)rangeOrder.push(i);
+  const explicitPosition=rangeMode&&resumePositionMs!=null;
+  const requestedPositionFrame=explicitPosition?Math.round(resumePositionMs*sampleRate/1000):rangeStartFrame-countInFrames;
+  if(!int(requestedPositionFrame,rangeStartFrame-countInFrames,rangeEndFrame))fail('A range resume must remain within its A/count-in through B bounds.');
+  const initialPositionFrame=Math.max(rangeStartFrame,requestedPositionFrame),initialCountInFrames=initialPositionFrame-requestedPositionFrame;
+  const firstRangeOrder=rangeOrder.filter(i=>notes[i][2]>initialPositionFrame),firstGateCount=firstRangeOrder.length,rangeGateCount=rangeOrder.length;
+  // Budget includes the full immutable wire, complete actual gate ledger,
+  // per-pass anchors and fixed pause spans. No repeated source-note copies.
+  const byRecords=rangeGateCount?1+Math.floor((L.maxGateRecords-firstGateCount)/rangeGateCount):L.maxPasses;
+  const byBytes=1+Math.floor((L.maxBytes-notes.length*CANONICAL_AUDIO_BYTES_PER_NOTE-L.maxPauses*16-rangeGateCount*4-firstGateCount*16-8)/(rangeGateCount*16+8));
+  const maxPasses=rangeMode?Math.min(requestedPasses,byRecords,byBytes):1,recordCapacity=rangeMode?firstGateCount+rangeGateCount*(maxPasses-1):0;
+  if(maxPasses<1||!int(initialCountInFrames+rangeEndFrame-initialPositionFrame+(maxPasses-1)*(countInFrames+rangeEndFrame-rangeStartFrame),0,L.maxFrame))fail('The complete range/pass ledger cannot fit its audio budget.','canonical_audio_budget');
+  // Validate the actual quantized range mix. Out-of-range source data stays in
+  // the full plan and fingerprint but never consumes a sounding voice.
+  const edges=[];for(const i of rangeMode?rangeOrder:notes.keys()){const n=notes[i];edges.push([rangeMode?Math.max(n[1],rangeStartFrame):n[1],1],[rangeMode?Math.min(n[2],rangeEndFrame):n[2],-1]);}edges.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);let voices=0;
   for(const [,delta]of edges){voices+=delta;if(voices>L.maxVoices)fail('Canonical playback exceeds 128 simultaneous voices; the whole plan is held.','voice_budget_exceeded');}
-  const plan={protocol:CANONICAL_AUDIO_PROTOCOL,policyId:CANONICAL_AUDIO_POLICY,identityKind:CANONICAL_AUDIO_IDENTITY,sourceFingerprint:profile.source_fingerprint,compiledFingerprint:profile.compiled_fingerprint,selectionFingerprint:canonicalFingerprint('wmh-canonical-human-selection-v1',{mode,selection}),sampleRate,durationFrames,sourceDurationMs:profile.duration_ms,sourceNotes:sourceIds.length,sourceReferences:refs,sourceOccurrences:mapping.length,count:notes.length,selection:Object.freeze({kind:selection.kind,part_ids:Object.freeze([...selection.part_ids])}),notes:Object.freeze(notes),mapping:Object.freeze(mapping),sourceIds:Object.freeze(sourceIds),partIds:Object.freeze([...profile.part_ids])};
+  const plan={protocol:CANONICAL_AUDIO_PROTOCOL,policyId:CANONICAL_AUDIO_POLICY,identityKind:CANONICAL_AUDIO_IDENTITY,sourceFingerprint:profile.source_fingerprint,compiledFingerprint:profile.compiled_fingerprint,selectionFingerprint:canonicalFingerprint('wmh-canonical-human-selection-v1',{mode,selection,audiblePartIds:audible}),sampleRate,durationFrames,rangeMode,rangePolicyId:rangeMode?CANONICAL_LOOP_POLICY:null,rangeStartFrame,rangeEndFrame,countInFrames,loopEnabled,requestedPasses,maxPasses,budgetLimited:maxPasses<requestedPasses,rangeGateCount,firstGateCount,initialPositionFrame,initialCountInFrames,recordCapacity,rangeOrder:Object.freeze(rangeOrder),firstRangeOrder:Object.freeze(firstRangeOrder),audiblePartIds:audible&&Object.freeze(audible),sourceDurationMs:profile.duration_ms,sourceNotes:sourceIds.length,sourceReferences:refs,sourceOccurrences:mapping.length,count:notes.length,selection:Object.freeze({kind:selection.kind,part_ids:Object.freeze([...selection.part_ids])}),notes:Object.freeze(notes),mapping:Object.freeze(mapping),sourceIds:Object.freeze(sourceIds),partIds:Object.freeze([...profile.part_ids])};
   const h=canonicalPlanHasher(plan);for(const n of notes)h.gate(...n);plan.planFingerprint=h.hex();
   Object.freeze(plan);admitted.add(plan);return plan;
 }
 export function validateCanonicalAudioPlan(plan){if(!admitted.has(plan))fail('Canonical plans must be built from matching immutable Rust compilation evidence.');return plan;}
-export function canonicalPlanHasher(p){return new CanonicalFingerprint('wmh-canonical-frame-plan-v1').value([p.protocol,p.policyId,p.identityKind,p.sourceFingerprint,p.compiledFingerprint,p.selectionFingerprint,p.sampleRate,p.durationFrames,p.sourceDurationMs,p.sourceNotes,p.sourceReferences,p.sourceOccurrences,p.count]);}
+export function canonicalPlanHasher(p){return new CanonicalFingerprint('wmh-canonical-frame-plan-v1').value([p.protocol,p.policyId,p.identityKind,p.sourceFingerprint,p.compiledFingerprint,p.selectionFingerprint,p.sampleRate,p.durationFrames,p.sourceDurationMs,p.sourceNotes,p.sourceReferences,p.sourceOccurrences,p.count,p.rangeMode,p.rangePolicyId,p.rangeStartFrame,p.rangeEndFrame,p.countInFrames,p.loopEnabled,p.requestedPasses,p.maxPasses,p.rangeGateCount,p.firstGateCount,p.initialPositionFrame,p.initialCountInFrames,p.recordCapacity]);}
 export function canonicalIdentity(plan,index){const n=plan.notes[index],m=plan.mapping[n[0]];return {occurrenceIndex:n[0],noteId:m.id,partId:m.partId,sourceNoteIds:m.sourceIndices.map(i=>plan.sourceIds[i])};}
 const FIELDS=Object.freeze({occurrences:Uint32Array,starts:Float64Array,ends:Float64Array,keys:Uint8Array,velocities:Uint8Array,roles:Uint8Array,idOrder:Uint32Array,playOrder:Uint32Array,seen:Uint8Array,steps:Float64Array,actualStarts:Float64Array,actualEnds:Float64Array});
 export const CANONICAL_AUDIO_BYTES_PER_NOTE=Object.values(FIELDS).reduce((n,T)=>n+T.BYTES_PER_ELEMENT,0);
+const transferFields=p=>({...FIELDS,...(p.rangeMode?{loopStarts:Float64Array,loopEnds:Float64Array,passFrames:Float64Array,rangeOrder:Uint32Array}:{})});
+const transferLength=(p,k)=>k==='rangeOrder'?p.rangeGateCount:k==='passFrames'?p.maxPasses:k==='loopStarts'||k==='loopEnds'?p.recordCapacity:p.count;
 export function createCanonicalAudioTransfer(input){
   const p=validateCanonicalAudioPlan(input),arrays={},buffers={};
   if(p.count*CANONICAL_AUDIO_BYTES_PER_NOTE>L.maxBytes)fail('Canonical transfer exceeds 16 MiB.','canonical_audio_budget');
-  for(const [k,T]of Object.entries(FIELDS)){arrays[k]=new T(p.count);buffers[k]=arrays[k].buffer;}
+  for(const [k,T]of Object.entries(transferFields(p))){arrays[k]=new T(transferLength(p,k));buffers[k]=arrays[k].buffer;}
   for(let i=0;i<p.count;i++){const n=p.notes[i];arrays.occurrences[i]=n[0];arrays.starts[i]=n[1];arrays.ends[i]=n[2];arrays.keys[i]=n[3];arrays.velocities[i]=n[4];}
   arrays.idOrder.set(Array.from({length:p.count},(_,i)=>i).sort((a,b)=>arrays.occurrences[a]-arrays.occurrences[b]));
-  const wire={buffers};for(const k of ['protocol','policyId','identityKind','sourceFingerprint','compiledFingerprint','selectionFingerprint','planFingerprint','sampleRate','durationFrames','sourceDurationMs','sourceNotes','sourceReferences','sourceOccurrences','count'])wire[k]=p[k];
+  const wire={buffers};for(const k of ['protocol','policyId','identityKind','sourceFingerprint','compiledFingerprint','selectionFingerprint','planFingerprint','sampleRate','durationFrames','sourceDurationMs','sourceNotes','sourceReferences','sourceOccurrences','count','rangeMode','rangePolicyId','rangeStartFrame','rangeEndFrame','countInFrames','loopEnabled','requestedPasses','maxPasses','rangeGateCount','firstGateCount','initialPositionFrame','initialCountInFrames','recordCapacity'])wire[k]=p[k];
+  if(Object.values(buffers).reduce((bytes,b)=>bytes+b.byteLength,0)+L.maxPauses*16>L.maxBytes)fail('The complete canonical transfer and pause storage exceed 16 MiB.','canonical_audio_budget');
   return {wire,transfer:Object.values(buffers)};
 }
 export function openCanonicalAudioTransfer(wire,sampleRate){
   if(!wire||wire.protocol!==CANONICAL_AUDIO_PROTOCOL||wire.policyId!==CANONICAL_AUDIO_POLICY||wire.identityKind!==CANONICAL_AUDIO_IDENTITY||!['sourceFingerprint','compiledFingerprint','selectionFingerprint','planFingerprint'].every(k=>hash(wire[k]))||wire.sampleRate!==sampleRate||!int(wire.sourceNotes,0,L.maxSourceNotes)||!int(wire.sourceOccurrences,0,L.maxNotes)||!int(wire.count,0,wire.sourceOccurrences)||!int(wire.sourceReferences,wire.sourceOccurrences,L.maxReferences)||!int(wire.durationFrames,0,L.maxFrame)||!Number.isFinite(wire.sourceDurationMs)||wire.sourceDurationMs<0||!wire.buffers)fail('The canonical transferable envelope is invalid.');
-  basicKeySampleRate(sampleRate);const arrays={},unique=new Set();let bytes=0;
-  for(const [k,T]of Object.entries(FIELDS)){const b=wire.buffers[k];if(!(b instanceof ArrayBuffer)||b.byteLength!==wire.count*T.BYTES_PER_ELEMENT||unique.has(b))fail('The canonical transfer buffers are invalid or aliased.');unique.add(b);bytes+=b.byteLength;arrays[k]=new T(b);}
+  if(wire.rangePolicyId!==(wire.rangeMode?CANONICAL_LOOP_POLICY:null)||typeof wire.rangeMode!=='boolean'||typeof wire.loopEnabled!=='boolean'||!int(wire.rangeStartFrame,0,wire.durationFrames)||!int(wire.rangeEndFrame,wire.rangeStartFrame,wire.durationFrames)||!int(wire.countInFrames,0,600*sampleRate)||!int(wire.requestedPasses,1,L.maxPasses)||!int(wire.maxPasses,1,wire.requestedPasses)||!int(wire.rangeGateCount,0,wire.count)||!int(wire.recordCapacity,0,L.maxGateRecords)||wire.recordCapacity!==(wire.rangeMode?wire.firstGateCount+wire.rangeGateCount*(wire.maxPasses-1):0)||!int(wire.firstGateCount,0,wire.rangeGateCount)||!int(wire.initialPositionFrame,wire.rangeStartFrame,wire.rangeEndFrame)||!int(wire.initialCountInFrames,0,wire.countInFrames)||wire.loopEnabled&&(!wire.rangeMode||wire.rangeStartFrame===wire.rangeEndFrame)||!wire.rangeMode&&(wire.maxPasses!==1||wire.countInFrames!==0))fail('The canonical range/pass envelope is invalid.');
+  basicKeySampleRate(sampleRate);const arrays={},unique=new Set();let bytes=L.maxPauses*16;
+  for(const [k,T]of Object.entries(transferFields(wire))){const b=wire.buffers[k];if(!(b instanceof ArrayBuffer)||b.byteLength!==transferLength(wire,k)*T.BYTES_PER_ELEMENT||unique.has(b))fail('The canonical transfer buffers are invalid or aliased.');unique.add(b);bytes+=b.byteLength;arrays[k]=new T(b);}
   if(bytes>L.maxBytes)fail('Canonical transfer exceeds 16 MiB.','canonical_audio_budget');
   return {...wire,buffers:undefined,...arrays};
 }

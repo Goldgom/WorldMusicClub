@@ -1,4 +1,4 @@
-# Canonical compiled audio: first whole-song slice
+# Canonical compiled audio and bounded A/B passes
 
 This is a source-preserving audio-thread reference interpretation for canonical
 JSON/MusicXML scores. It is not an original recording, General MIDI, a soundfont,
@@ -10,8 +10,8 @@ The user must accept `wmh-canonical-sine-ms-v1` before preparing it.
 This slice does not change app.js, the notation/follow implementation, instrument
 checks, physical target grouping, input dispatch, scoring, feedback, or recorder.
 It must not replace existing Solo loops, tempo copies, transposition or recorder
-passes until their integration is separately complete. A loop/range option is
-explicitly rejected; there is no Synth/rAF fallback.
+passes until their integration is separately complete. A/B passes use the same audio thread with the explicit clip-and-rearticulate
+policy described below; there is no Synth/rAF fallback.
 
 ## Rust evidence and host admission
 
@@ -59,8 +59,8 @@ resumePositionMs})` validates and transfers the full immutable plan before start
 `startPrepared({anchorTime})` requests a future anchor within 100 ms; its default
 lead is 50 ms. A negative initial source position provides a count-in to source
 zero. `sourcePositionMs()` follows the AudioContext/processor anchor, not drawing.
-A new preparation at positive source A is a seek: crossing notes restart with
-remaining gate lengths. It is not continuity-preserving pause.
+A new preparation at a positive source position is a seek: crossing notes
+restart with remaining gate lengths. It is not continuity-preserving pause.
 
 `pause()` is acknowledged at the audio quantum boundary. Existing voices retain
 phase, envelope age and identity while the processor emits zero. `resume()` shifts
@@ -93,8 +93,12 @@ behavior stay unchanged. Canonical plans cannot pass their wire validator.
 - Profile response: 32 MiB (also fits the native 32 MiB response ceiling)
 - Fingerprint encoding: 64 MiB and 64 nested levels; a request may hit this bound
   before its count bound
-- Numeric transferred storage: 56 bytes per machine occurrence, 5.6 MB at 100k;
-  hard wire bound 16 MiB, plus fixed 128 voice slots and 64 KiB pause-span storage
+- Numeric base transfer: 56 bytes per full machine occurrence, 5.6 MB at100k.
+  Range transfer additionally reserves 4 bytes per range gate for an index,
+  16 bytes per actual gate record, and 8 bytes per admitted pass anchor.
+  The 16 MiB bound includes these arrays and 64 KiB fixed pause-span storage.
+  The unchanged fixed128 DSP voice objects/slot/heap storage are separate;
+  no new note-sized active-stamp arrays exist
 - Simultaneous sample-frame voices: 128, including quantization overlap; admission
   rejects the whole plan instead of stealing/truncating voices
 - Audio sample rates: integer 8,000–384,000 Hz; pitches above the disclosed 0.45
@@ -138,10 +142,85 @@ cargo run -p score-core --example canonical_audio_evidence --locked \
   < tests/fixtures/canonical-audio-source.json
 ```
 
-A/B clipping, nonzero-A count-in, audio-thread loop pass clocks/ledgers, and
-Recorder pass integration are a separate next increment. They must reuse this
-processor's full plan, source indices and continuous sample clock, with an
-explicit boundary articulation policy. The app must preserve existing Solo
-behavior while that work is incomplete. Exact hosted and native PCM/ledger,
-render-stall stress and trusted-input isolation are still the final acceptance
-gate; none was run in this local, non-GUI/non-server slice.
+A/B and first-partial-pass execution now have the additional original tests
+below. App/Recorder integration is a separate owner. Exact hosted and native
+PCM/ledger, render-stall stress and trusted-input isolation remain final acceptance
+gates; no browser, listener, native GUI or device was run in this local slice.
+
+## Bounded range, Listen mix and partial seek
+
+The stable optional preparation fields are:
+
+```
+audiblePartIds: ['opaque-part-id'] // Listen only; absent means all source parts
+range: {startMs: A, endMs: B}
+countInMs: 100
+loop: {enabled: true, maxPasses: 4096} // true also requests the default4096
+resumePositionMs: null // a new range starts at A with initial count-in
+```
+
+A/B and count-in are quantized to nearest sample frames and included in the frame
+fingerprint. `rangePolicyId` is `wmh-canonical-clip-rearticulate-v1`. Cross-A
+sustains rearticulate at A, and cross-B sustains end exactly at B with no tail.
+With zero count-in, the next pass attacks at that same B sample; no timer restart
+or scheduling gap is introduced. With count-in enabled, EVERY pass deliberately
+contains its configured silence before A, matching the existing canonical control.
+
+Explicit `resumePositionMs` within [A,B] binds a first partial pass at that source
+position with zero initial count-in. A position within [A-countIn,A) resumes
+only the remaining count-in, preserving interrupted Settings/dialog playback. Subsequent passes use A and the original
+count-in. `initialPositionFrame`, `initialCountInFrames`, `firstGateCount`,
+`rangeGateCount` and the complete finite record budget are fingerprinted. Pausing
+and resuming the same generation preserves the current pass and envelope with no
+extra count-in. Ordinary whole-song negative `resumePositionMs` count-in remains
+supported when no range options are supplied.
+
+The prepared plan and ready receipt expose `requestedPasses`, `maxPasses`,
+`budgetLimited`, `recordCapacity`, A/B and count-in frames. The UI must disclose a
+reduced budget before start. The record count is firstGateCount +
+(maxPasses-1)*rangeGateCount, at most500,000, and maxPasses is at most4096.
+Admission chooses only complete passes satisfying BOTH that record budget and the
+16 MiB transfer/pause budget. Zero-machine plans avoid division by zero and retain
+all admitted pass clocks. At the final B the processor ends with
+`reason: 'loop_budget_end'`, permitting an explicit restart. It never overwrites
+old records, expands indefinitely, cuts a partial final pass or silently promises
+unlimited looping. A single nonloop range ends with `range_end`.
+
+For100k machine gates in the range, the complete bound is5 passes/500k records:
+5,600,000 base bytes +400,000 range-index bytes +8,000,000 record bytes +40 pass
+anchor bytes +65,536 pause bytes =14,065,576 bytes. The full source gate arrays are
+not duplicated per pass. Immutable host first/range index lists are bounded by
+source count; they are not additional transferred arrays. Actual ledger slots are
+initialized when an attack really occurs, and only `recordCount` slots can be
+read, avoiding a large audio-thread clearing task. Shared preparation still
+performs at most256 work items per quantum.
+
+`sourceClockAtTime(audioContextTime, binding)` returns `positionMs` (also
+`sourcePositionMs`), zero-based `passIndex`, `absoluteFrame`, `sampleRate`,
+`initialAnchorFrame`, `cycleStartFrame`, `passStartFrame`, `nextBoundaryFrame`,
+A/B frames, `phase`, `inCountIn`, `paused`, `ended`, `generation`,
+`planFingerprint` and, on the player, `playerEpoch`. Audio timestamps quantize to
+nearest sample. Range count-in already belongs to the upcoming pass, including
+pass0 initially. At B the source position becomes A-countIn before the upcoming
+musical attack. `cycleStartFrame` is the recorder boundary, while
+`passStartFrame` is the musical attack (they coincide for a partial first pass).
+
+`onPass` receives actual `pass_started` observations at the musical attack, with
+both cycle and attack anchors. It is not input generation. Host drawing stalls
+cannot schedule loops; a late receipt must not invent an unobserved recorder take.
+Use the original input event's audio timestamp, never its delayed receive time or
+rAF wrap count. Acknowledged pause intervals normalize historical timestamps
+independently. Inputs during pauses are marked paused. Bind input timestamps to
+playerEpoch/planFingerprint as well as generation: a newly created receiver can
+restart its generation counter. Mismatched bindings return null. `lastStopClock`
+retains the last available source-clock snapshot for stop/device interruption.
+
+Range terminal/audit ledgers are `range-pass-major`: the first partial pass has
+firstGateCount records, then each full pass has rangeGateCount. Audits resolve
+recordIndex to passIndex, noteIndex, original occurrenceIndex, part and all source
+IDs. All actual start/end frames remain distinct. The original fixture test renders
+48 source seconds as192×250ms zero-count-in passes with all host callbacks held,
+then checks384 gate starts/ends,192 pass anchors and every join without a missing
+sample. Separate tests cover repeated count-in silence, paused held envelopes,
+first-partial seeks, all-human clocks, stale input bindings and reduced budgets.
+These are production-processor block tests, not device acceptance.

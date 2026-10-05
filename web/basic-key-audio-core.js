@@ -70,6 +70,7 @@ export class BasicKeyAudioCore {
         this.startedCount = 0; this.endedCount = 0; this.skippedCount = 0; this.cursor = 0; this.eligibleCount = 0; this.validated = false;
         const plan = (this.profile?.openTransfer || openBasicKeyAudioTransfer)(message.wire, this.sampleRate);
         if (!integer(message.positionFrame, -600 * this.sampleRate, plan.durationFrames)) reject('invalid_audio_command', 'The prepared source position exceeds the rendition or ten-minute count-in bound.');
+        this.profile?.validatePosition?.(plan, message.positionFrame);
         this.profileValidation = this.profile?.beginValidation?.(plan);
         this.plan = plan; this.positionFrame = message.positionFrame; this.anchorFrame = null;
         this.order = plan.playOrder; this.actualStarts = plan.actualStarts; this.actualEnds = plan.actualEnds; this.steps = plan.steps;
@@ -135,6 +136,7 @@ export class BasicKeyAudioCore {
       if (ordered >= p.count || p.seen[ordered]) reject('invalid_audio_plan', 'The source-coordinate permutation is not complete and unique.');
       p.seen[ordered] = 1;
       if (index > 0 && (this.profile?.compareIdentity || compareAudioTransferIdentity)(p, p.idOrder[index - 1], ordered) >= 0) reject('invalid_audio_plan', 'Stable source coordinates are duplicated or out of order.');
+      if (this.profile?.audibleGate?.(p, index) === false) { this.skippedCount++; continue; }
       while (this.heapLength && this.endHeap[0] <= start) {
         const tail = this.endHeap[--this.heapLength]; let at = 0;
         while (at * 2 + 1 < this.heapLength) { let child = at * 2 + 1; if (child + 1 < this.heapLength && this.endHeap[child + 1] < this.endHeap[child]) child++; if (this.endHeap[child] >= tail) break; this.endHeap[at] = this.endHeap[child]; at = child; }

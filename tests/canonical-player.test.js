@@ -60,10 +60,10 @@ test('player races song switch against module preparation and never exposes a st
  const player=new CanonicalPlayer({receiverFactory:async()=>{await wait;return created=await create(h);}});player.select(f.compilation,f.profile);
  const pending=player.prepare({...options,context:h.context,output:h.output});player.select(f.compilation,f.profile);release();assert.equal(await pending,null);await settle();assert.equal(player.receiver,null);assert.equal(player.running,false);assert.equal(created.disposed,true);
 });
-test('player requires newly bound tempo/pitch copies and rejects unsupported loops explicitly',async()=>{
+test('player requires newly bound tempo/pitch copies and rejects malformed loop options explicitly',async()=>{
  const h=basicKeyAudioHarness(),f=fixture(),player=new CanonicalPlayer({receiverFactory:()=>create(h)});player.select(f.compilation,f.profile);
  try{
-  await assert.rejects(player.prepare({...options,context:h.context,output:h.output,loop:{from:0,to:1000}}),{code:'canonical_audio_loop_unavailable'});
+  await assert.rejects(player.prepare({...options,context:h.context,output:h.output,loop:{from:0,to:1000}}),{code:'invalid_canonical_audio_plan'});
   f.compilation.score.tempo[0].bpm=130;await assert.rejects(player.prepare({...options,context:h.context,output:h.output}),{code:'invalid_canonical_audio_plan'});
   const fresh=fixture();player.select(fresh.compilation,fresh.profile);await player.prepare({...options,context:h.context,output:h.output});await player.startPrepared();assert.equal(player.running,true);await player.pause();assert.equal(player.running,false);await player.resume();assert.equal(player.running,true);player.stop();await settle();assert.equal(player.sourcePositionMs(),null);
  }finally{player.stop();await settle();}
