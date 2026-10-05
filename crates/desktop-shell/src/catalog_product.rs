@@ -775,13 +775,26 @@ fn summary(catalog: &Catalog, preview: &Preview) -> Value {
                 row["name"] = json!(name);
             }
         }
-        row["selected_song_count"] = json!(edges
-            .iter()
-            .filter(|m| m.pack == *id && selected.contains(&m.song))
-            .count());
+        row["selected_song_count"] = json!(match &preview.request.action {
+            Action::AddMemberships { pack_id, song_ids } if pack_id == id => song_ids.len(),
+            _ => edges
+                .iter()
+                .filter(|m| m.pack == *id && selected.contains(&m.song))
+                .count(),
+        });
         affected.push(row)
     }
-    json!({"selected_count":ids.len(),"changed_song_count":effects.trashed_songs.len()+effects.restored_songs.len()+effects.adopted_songs.len(),"created_pack_count":effects.created_packs.len(),"renamed_pack_count":effects.renamed_packs.len(),"added_membership_count":effects.added_memberships.len(),"unchanged_membership_count":effects.noops.iter().filter(|n|n.reason == catalog::NoopReason::AlreadyPresent).count(),"removed_membership_count":effects.removed_memberships.len(),"restored_membership_count":effects.added_memberships.len(),"shared_song_count":shared,"affected_packs":affected,"reclaimed_bytes":0})
+    let mut value = json!({"selected_count":ids.len(),"changed_song_count":effects.trashed_songs.len()+effects.restored_songs.len()+effects.adopted_songs.len(),"created_pack_count":effects.created_packs.len(),"renamed_pack_count":effects.renamed_packs.len(),"added_membership_count":effects.added_memberships.len(),"unchanged_membership_count":effects.noops.iter().filter(|n|n.reason == catalog::NoopReason::AlreadyPresent).count(),"removed_membership_count":effects.removed_memberships.len(),"restored_membership_count":effects.added_memberships.len(),"shared_song_count":shared,"affected_packs":affected,"reclaimed_bytes":0});
+    // Keep the exact reviewed destination visible even for an all-noop add or rename.
+    match &preview.request.action {
+        Action::CreatePack { pack_id, name } | Action::RenamePack { pack_id, name } => {
+            value["target_pack"] =
+                json!({"collection_id":pack_id,"kind":"custom","import_pack_id":null,"name":name});
+        }
+        Action::AddMemberships { pack_id, .. } => value["target_pack"] = pack_ref(catalog, pack_id),
+        _ => (),
+    }
+    value
 }
 fn preview(library: &NativeLibrary, request: Selection) -> Result<Value> {
     bind(library, &request.library_id)?;

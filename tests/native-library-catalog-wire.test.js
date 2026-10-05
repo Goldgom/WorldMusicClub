@@ -34,6 +34,7 @@ test('all 24 original native wire responses pass the production adapter unchange
     assert.deepEqual(result, call.response, call.path);
     assert.equal(sent.path, call.path); assert.equal(sent.options.method, call.method); assert.equal(sent.options.credentials, 'same-origin'); assert.equal(sent.options.redirect, 'error');
     const expected = call.path.endsWith('/catalog/query') ? catalogQuery(call.request) : call.path.endsWith('/manage/query') ? managementRequest(call.request) : call.request;
+    if (call.path.endsWith('/catalog/query') && expected.collection_id === null) delete expected.collection_id;
     assert.deepEqual(sent.body, expected, 'Only documented read-query defaults may be expanded; mutating request objects stay exactly equal');
     if (['/api/library/catalog/initialize', '/api/library/catalog/commit'].includes(call.path)) assert.equal(sent.options.signal, undefined);
     adapter.close();

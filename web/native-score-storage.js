@@ -69,7 +69,12 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
  }
  function requireCatalog(){if(!info.capabilities.manageCatalog)throw issue('catalog_unavailable','Recoverable removal requires a native app with catalog support.');}
  async function catalogStatus({signal}={}){requireCatalog();return checkedCatalogStatus(await request('/api/library/catalog/status',{signal}));}
- async function queryCatalog(options={}){requireCatalog();const {signal,libraryId,...input}=options,body=catalogQuery(input);return checkedCatalogQuery(await request('/api/library/catalog/query',{body,signal}),body,libraryId);}
+ async function queryCatalog(options={}){
+  requireCatalog();const {signal,libraryId,...input}=options,normalized=catalogQuery(input),body={...normalized};
+  // Older v1 native hosts reject unknown fields, so an unfiltered query keeps its original wire shape.
+  if(body.collection_id===null)delete body.collection_id;
+  return checkedCatalogQuery(await request('/api/library/catalog/query',{body,signal}),normalized,libraryId);
+ }
  async function previewCatalogInitialize({libraryId,signal}={}){requireCatalog();return checkedInitializePreview(await request('/api/library/catalog/initialize/preview',{body:{},signal}),libraryId);}
  async function previewCatalog(options={}){requireCatalog();const {signal,...input}=options,body=catalogPreviewRequest(input);return checkedCatalogPreview(await request('/api/library/catalog/preview',{body,signal}),body);}
  async function previewCatalogSync({signal,...body}={}){requireCatalog();return checkedCatalogSync(await request('/api/library/catalog/sync/preview',{body,signal}),body);}

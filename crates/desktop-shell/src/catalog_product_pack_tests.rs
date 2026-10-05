@@ -108,6 +108,11 @@ fn user_packs_share_exact_editions_preserve_empty_packs_and_recover_after_restar
     assert_eq!(add["summary"]["added_membership_count"], 2);
     assert_eq!(add["summary"]["changed_song_count"], 0);
     assert_eq!(add["summary"]["unchanged_membership_count"], 0);
+    assert_eq!(
+        add["summary"]["affected_packs"][0]["selected_song_count"],
+        2
+    );
+    assert_eq!(add["summary"]["target_pack"]["name"], "我的练习曲包");
     ok(&library, "commit", commit_body(&add));
     let members = in_pack(&library, "active", &first);
     assert_eq!(members["total"], 2);
@@ -133,6 +138,8 @@ fn user_packs_share_exact_editions_preserve_empty_packs_and_recover_after_restar
     );
     assert_eq!(duplicate["summary"]["added_membership_count"], 0);
     assert_eq!(duplicate["summary"]["unchanged_membership_count"], 2);
+    assert_eq!(duplicate["summary"]["target_pack"]["collection_id"], first);
+    assert_eq!(duplicate["summary"]["target_pack"]["name"], "我的练习曲包");
     assert_eq!(duplicate["preview"]["effects"]["affected_packs"], json!([]));
     ok(&library, "commit", commit_body(&duplicate));
     assert_eq!(

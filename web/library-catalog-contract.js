@@ -2,6 +2,8 @@
 const hash = /^[0-9a-f]{64}$/, library = /^library-[0-9a-f]{64}$/, operation = /^operation-[0-9a-f]{32}$/, collection = /^collection-[0-9a-f]{32}$/, imported = /^import-[0-9a-f]{64}$/, edition = /^(legacy|clean):song-[0-9a-f]{64}$/;
 const uint = value => Number.isSafeInteger(value) && value >= 0;
 const text = value => typeof value === 'string' && new TextEncoder().encode(value).length <= 8192;
+const packName = value => typeof value === 'string' && value.length > 0 && value === value.trim() && new TextEncoder().encode(value).length <= 256 && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
+const organization = type => ['create_pack', 'rename_pack', 'add_memberships'].includes(type);
 const unique = values => new Set(values).size === values.length;
 const ids = (value, pattern, max = 1024) => Array.isArray(value) && value.length <= max && value.every(id => typeof id === 'string' && pattern.test(id)) && unique(value);
 const fail = () => { throw Object.assign(new Error('The native catalog response is invalid or does not match the reviewed operation.'), {code: 'catalog_invalid_response'}); };
@@ -24,21 +26,30 @@ export function checkedCatalogStatus(value) {
   return value;
 }
 export function catalogQuery(input = {}) {
-  const value = {view: 'active', search: '', limit: 40, cursor: null, refresh: false, ...input};
-  if (Object.keys(input).some(key => !['view', 'search', 'limit', 'cursor', 'refresh'].includes(key)) || !['active', 'trash'].includes(value.view) || typeof value.search !== 'string' || new TextEncoder().encode(value.search).length > 256 || !Number.isInteger(value.limit) || value.limit < 1 || value.limit > 100 || (value.cursor !== null && (typeof value.cursor !== 'string' || !value.cursor || value.cursor.length > 2048)) || typeof value.refresh !== 'boolean' || (value.refresh && value.cursor !== null)) throw Object.assign(new Error('Choose a valid catalog view and search.'), {code: 'catalog_invalid_request'});
+  const value = {view: 'active', collection_id: null, search: '', limit: 40, cursor: null, refresh: false, ...input};
+  if (!keys(input, ['view', 'collection_id', 'search', 'limit', 'cursor', 'refresh']) || !['active', 'trash', 'packs'].includes(value.view) || (value.collection_id !== null && (typeof value.collection_id !== 'string' || !collection.test(value.collection_id))) || (value.view === 'packs' && value.collection_id !== null) || typeof value.search !== 'string' || new TextEncoder().encode(value.search).length > 256 || !Number.isInteger(value.limit) || value.limit < 1 || value.limit > 100 || (value.cursor !== null && (typeof value.cursor !== 'string' || !value.cursor || value.cursor.length > 2048)) || typeof value.refresh !== 'boolean' || (value.refresh && value.cursor !== null)) throw Object.assign(new Error('Choose a valid catalog view and search.'), {code: 'catalog_invalid_request'});
   return value;
 }
-function pack(value) { require(value && collection.test(value.collection_id) && imported.test(value.import_pack_id) && text(value.name)); }
+function pack(value, {legacy = true, extra = []} = {}) {
+  require(keys(value, ['collection_id', 'kind', 'import_pack_id', 'name', ...extra]) && typeof value.collection_id === 'string' && collection.test(value.collection_id) && text(value.name));
+  if (value.kind === 'custom') require(value.import_pack_id === null && packName(value.name));
+  else require((value.kind === 'imported' || legacy && value.kind === undefined) && typeof value.import_pack_id === 'string' && imported.test(value.import_pack_id));
+}
 export function checkedCatalogQuery(value, request, libraryId) {
-  checkedCatalogEnvelope(value, libraryId); require(value.view === request.view && uint(value.generation) && hash.test(value.catalog_digest) && hash.test(value.snapshot_id)); counts(value.counts);
+  checkedCatalogEnvelope(value, libraryId); require(value.view === request.view && (value.collection_id ?? null) === (request.collection_id ?? null) && (request.view !== 'packs' || value.collection_id === null) && uint(value.generation) && hash.test(value.catalog_digest) && hash.test(value.snapshot_id)); counts(value.counts);
   require(value.freshness?.kind === 'advisory_snapshot' && value.freshness.change_detection === 'explicit_refresh' && uint(value.freshness.verified_at_unix_ms) && Number.isFinite(new Date(value.freshness.verified_at_unix_ms).getTime()) && typeof value.freshness.cached === 'boolean');
   require(uint(value.total) && Array.isArray(value.rows) && value.rows.length <= request.limit && value.rows.length <= value.total && (value.next_cursor === null || typeof value.next_cursor === 'string' && value.next_cursor.length > 0 && value.next_cursor.length <= 2048));
   for (const row of value.rows) {
+    if (request.view === 'packs') {
+      pack(row, {legacy: false, extra: ['active_song_count', 'available_song_count', 'shared_song_count']});
+      require(['active_song_count', 'available_song_count', 'shared_song_count'].every(key => uint(row[key])) && row.available_song_count <= row.active_song_count && row.shared_song_count <= row.active_song_count);
+      continue;
+    }
     require(row && edition.test(row.edition_id) && row.edition_id === `${row.storage_kind}:${row.key}` && ['title', 'composer', 'score_id', 'profile'].every(key => text(row[key])) && typeof row.catalog_managed === 'boolean' && typeof row.physical_available === 'boolean' && (row.trashed_by === null || operation.test(row.trashed_by)) && Array.isArray(row.packs) && row.packs.length <= 256 && row.pack_count === row.packs.length);
-    row.packs.forEach(pack); require(unique(row.packs.map(item => item.collection_id)));
+    row.packs.forEach(item => pack(item)); require(unique(row.packs.map(item => item.collection_id)) && (!request.collection_id || row.packs.some(item => item.collection_id === request.collection_id)));
     require(request.view === 'trash' ? row.catalog_managed && operation.test(row.trashed_by) : row.trashed_by === null);
   }
-  require(unique(value.rows.map(row => row.edition_id))); return value;
+  require(unique(value.rows.map(row => request.view === 'packs' ? row.collection_id : row.edition_id))); return value;
 }
 export function checkedInitializePreview(value, libraryId) {
   checkedCatalogEnvelope(value, libraryId); const p = value.preview;
@@ -47,46 +58,87 @@ export function checkedInitializePreview(value, libraryId) {
   return value;
 }
 export function catalogPreviewRequest(value) {
-  require(keys(value, ['action', 'edition_ids', 'trash_operation_id', 'expected_generation', 'catalog_digest', 'library_id']) && ['trash_songs', 'restore_songs'].includes(value.action) && ids(value.edition_ids, edition) && value.edition_ids.length > 0 && uint(value.expected_generation) && hash.test(value.catalog_digest) && library.test(value.library_id) && (value.action === 'trash_songs' ? value.trash_operation_id === null : operation.test(value.trash_operation_id)));
+  require(keys(value, ['action', 'edition_ids', 'trash_operation_id', 'collection_id', 'name', 'expected_generation', 'catalog_digest', 'library_id']) && ['trash_songs', 'restore_songs', 'create_pack', 'rename_pack', 'add_memberships'].includes(value.action) && ids(value.edition_ids, edition) && uint(value.expected_generation) && hash.test(value.catalog_digest) && library.test(value.library_id));
+  const target = value.collection_id ?? null, name = value.name ?? null, trash = value.trash_operation_id ?? null;
+  if (value.action === 'create_pack' || value.action === 'rename_pack') require(value.edition_ids.length === 0 && packName(name) && trash === null && (value.action === 'create_pack' ? target === null : typeof target === 'string' && collection.test(target)));
+  else if (value.action === 'add_memberships') require(value.edition_ids.length > 0 && typeof target === 'string' && collection.test(target) && name === null && trash === null);
+  else require(value.edition_ids.length > 0 && target === null && name === null && (value.action === 'trash_songs' ? trash === null : operation.test(trash)));
+  // Keep historical request bodies byte-for-byte compatible; omitted new fields mean null.
   return structuredClone(value);
 }
 function core(value) {
   const r = value?.request, action = r?.action, e = value?.effects;
   require(keys(value, ['request', 'request_digest', 'base_digest', 'next_generation', 'effects', 'plan_digest']) && keys(r, ['schema_version', 'operation_id', 'expected_generation', 'at_unix_ms', 'action']) && r?.schema_version === 1 && operation.test(r.operation_id) && uint(r.expected_generation) && uint(r.at_unix_ms) && uint(value.next_generation) && value.next_generation === r.expected_generation + 1 && ['request_digest', 'base_digest', 'plan_digest'].every(key => hash.test(value[key])));
   if (action?.type === 'trash_songs') require(keys(action, ['type', 'song_ids']) && ids(action.song_ids, edition) && action.song_ids.length > 0);
+  else if (action?.type === 'create_pack' || action?.type === 'rename_pack') require(keys(action, ['type', 'pack_id', 'name']) && typeof action.pack_id === 'string' && collection.test(action.pack_id) && packName(action.name));
+  else if (action?.type === 'add_memberships') require(keys(action, ['type', 'pack_id', 'song_ids']) && typeof action.pack_id === 'string' && collection.test(action.pack_id) && ids(action.song_ids, edition) && action.song_ids.length > 0);
   else if (action?.type === 'adopt_inventory') require(keys(action, ['type', 'inventory']) && action.inventory && typeof action.inventory === 'object' && new TextEncoder().encode(JSON.stringify(action.inventory)).length <= 256 * 1024);
-  else { require(keys(action, ['type', 'trash_operation_id', 'entities', 'memberships']) && action?.type === 'restore' && operation.test(action.trash_operation_id) && Array.isArray(action.entities) && action.entities.length > 0 && action.entities.length <= 1024 && action.entities.every(row => row.kind === 'song' && edition.test(row.id)) && unique(action.entities.map(row => row.id)) && Array.isArray(action.memberships) && action.memberships.length === 0); }
-  require(keys(e, ['created_packs', 'renamed_packs', 'added_memberships', 'removed_memberships', 'trashed_songs', 'trashed_packs', 'restored_songs', 'restored_packs', 'noops', 'blocked_memberships', 'affected_packs', 'newly_unfiled_songs', 'retained_payload_bytes', 'retained_source_bytes', 'reclaimed_bytes', 'adopted_songs', 'adopted_packs', 'adopted_sources']) && ['created_packs', 'renamed_packs', 'trashed_packs', 'restored_packs'].every(key => Array.isArray(e[key]) && e[key].length === 0));
+  else { require(keys(action, ['type', 'trash_operation_id', 'entities', 'memberships']) && action?.type === 'restore' && operation.test(action.trash_operation_id) && Array.isArray(action.entities) && action.entities.length > 0 && action.entities.length <= 1024 && action.entities.every(row => keys(row, ['kind', 'id']) && row.kind === 'song' && edition.test(row.id)) && unique(action.entities.map(row => row.id)) && Array.isArray(action.memberships) && action.memberships.length === 0); }
+  require(keys(e, ['created_packs', 'renamed_packs', 'added_memberships', 'removed_memberships', 'trashed_songs', 'trashed_packs', 'restored_songs', 'restored_packs', 'noops', 'blocked_memberships', 'affected_packs', 'newly_unfiled_songs', 'retained_payload_bytes', 'retained_source_bytes', 'reclaimed_bytes', 'adopted_songs', 'adopted_packs', 'adopted_sources']) && ['trashed_packs', 'restored_packs'].every(key => Array.isArray(e[key]) && e[key].length === 0));
+  for (const key of ['created_packs', 'renamed_packs']) require(ids(e[key], collection, 256));
   for (const key of ['trashed_songs', 'restored_songs', 'newly_unfiled_songs']) require(ids(e[key], edition));
   require(ids(e.affected_packs, collection, 256));
-  for (const key of ['added_memberships', 'removed_memberships']) require(Array.isArray(e[key]) && e[key].length <= 1024 && e[key].every(row => collection.test(row.pack) && edition.test(row.song)) && unique(e[key].map(row => `${row.pack}:${row.song}`)));
+  for (const key of ['added_memberships', 'removed_memberships']) require(Array.isArray(e[key]) && e[key].length <= 1024 && e[key].every(row => keys(row, ['pack', 'song']) && collection.test(row.pack) && edition.test(row.song)) && unique(e[key].map(row => `${row.pack}:${row.song}`)));
   for (const key of ['noops', 'blocked_memberships']) require(Array.isArray(e[key]) && e[key].length <= 1024);
-  const entity = value => value && (value.kind === 'song' ? edition.test(value.id) : value.kind === 'pack' && collection.test(value.id));
-  const membership = value => value && collection.test(value.pack) && edition.test(value.song);
-  require(e.blocked_memberships.every(row => membership(row.membership) && Array.isArray(row.dependencies) && row.dependencies.length > 0 && row.dependencies.every(entity)));
-  require(e.noops.every(row => ['already_present', 'already_absent', 'same_pack', 'unchanged_name', 'already_restored'].includes(row.reason) && (row.target?.kind === 'entity' ? entity(row.target.id) : row.target?.kind === 'membership' && membership(row.target.id))));
+  const entity = value => keys(value, ['kind', 'id']) && (value.kind === 'song' ? edition.test(value.id) : value.kind === 'pack' && collection.test(value.id));
+  const membership = value => keys(value, ['pack', 'song']) && collection.test(value.pack) && edition.test(value.song);
+  require(e.blocked_memberships.every(row => keys(row, ['membership', 'dependencies']) && membership(row.membership) && Array.isArray(row.dependencies) && row.dependencies.length > 0 && row.dependencies.every(entity)));
+  require(e.noops.every(row => keys(row, ['target', 'reason']) && keys(row.target, ['kind', 'id']) && ['already_present', 'already_absent', 'same_pack', 'unchanged_name', 'already_restored'].includes(row.reason) && (row.target.kind === 'entity' ? entity(row.target.id) : row.target.kind === 'membership' && membership(row.target.id))));
   require(uint(e.retained_payload_bytes) && uint(e.retained_source_bytes) && e.reclaimed_bytes === 0);
   for (const [key, pattern] of [['adopted_songs', edition], ['adopted_packs', collection], ['adopted_sources', /^pack-[0-9a-f]{64}$/]]) if (e[key] !== undefined) require(ids(e[key], pattern));
-  const selected = action.type === 'trash_songs' ? action.song_ids : action.type === 'adopt_inventory' ? e.adopted_songs || [] : action.entities.map(row => row.id);
+  const selected = action.type === 'trash_songs' || action.type === 'add_memberships' ? action.song_ids : action.type === 'adopt_inventory' ? e.adopted_songs || [] : action.type === 'restore' ? action.entities.map(row => row.id) : [];
   require([...e.trashed_songs, ...e.restored_songs, ...e.added_memberships.map(row => row.song), ...e.removed_memberships.map(row => row.song)].every(id => selected.includes(id)));
   require(action.type === 'trash_songs' ? !e.restored_songs.length && !e.added_memberships.length : !e.trashed_songs.length && !e.removed_memberships.length);
+  if (organization(action.type)) {
+    require(['trashed_songs', 'restored_songs', 'removed_memberships', 'blocked_memberships', 'newly_unfiled_songs', 'adopted_songs', 'adopted_packs', 'adopted_sources'].every(key => !(e[key] || []).length));
+    if (action.type === 'create_pack') require(sameCatalogValue(e.created_packs, [action.pack_id]) && !e.renamed_packs.length && !e.added_memberships.length && !e.noops.length && sameCatalogValue(e.affected_packs, [action.pack_id]));
+    else if (action.type === 'rename_pack') {
+      require(!e.created_packs.length && !e.added_memberships.length);
+      if (e.renamed_packs.length) require(sameCatalogValue(e.renamed_packs, [action.pack_id]) && !e.noops.length && sameCatalogValue(e.affected_packs, [action.pack_id]));
+      else require(!e.affected_packs.length && sameCatalogValue(e.noops, [{target: {kind: 'entity', id: {kind: 'pack', id: action.pack_id}}, reason: 'unchanged_name'}]));
+    } else {
+      require(!e.created_packs.length && !e.renamed_packs.length && e.added_memberships.every(row => row.pack === action.pack_id));
+      require(e.noops.every(row => row.reason === 'already_present' && row.target.kind === 'membership' && row.target.id.pack === action.pack_id));
+      const accounted = [...e.added_memberships.map(row => row.song), ...e.noops.map(row => row.target.id.song)];
+      require(unique(accounted) && sameCatalogValue(accounted.sort(), [...selected].sort()) && sameCatalogValue(e.affected_packs, e.added_memberships.length ? [action.pack_id] : []));
+    }
+  } else require(!e.created_packs.length && !e.renamed_packs.length);
   return value;
 }
-export function checkedCatalogPreview(value, request) {
-  checkedCatalogEnvelope(value, request.library_id); const p = core(value.preview), action = p.request.action, s = value.summary;
-  require(p.request.expected_generation === request.expected_generation && p.base_digest === request.catalog_digest);
-  require(request.action === 'trash_songs' ? action.type === 'trash_songs' && sameCatalogValue(action.song_ids, request.edition_ids) : action.type === 'restore' && action.trash_operation_id === request.trash_operation_id && sameCatalogValue(action.entities.map(row => row.id), request.edition_ids));
-  require(s && ['selected_count', 'changed_song_count', 'removed_membership_count', 'restored_membership_count', 'shared_song_count'].every(key => uint(s[key])) && s.selected_count === request.edition_ids.length && s.changed_song_count === p.effects.trashed_songs.length + p.effects.restored_songs.length && s.removed_membership_count === p.effects.removed_memberships.length && s.restored_membership_count === p.effects.added_memberships.length && s.shared_song_count <= s.selected_count && s.reclaimed_bytes === 0 && Array.isArray(s.affected_packs));
-  s.affected_packs.forEach(row => { pack(row); require(uint(row.selected_song_count)); });
+function summary(s, p, selectedCount) {
+  const e = p.effects, action = p.request.action, organizing = organization(action.type);
+  require(keys(s, ['selected_count', 'changed_song_count', 'created_pack_count', 'renamed_pack_count', 'added_membership_count', 'unchanged_membership_count', 'removed_membership_count', 'restored_membership_count', 'shared_song_count', 'affected_packs', 'target_pack', 'reclaimed_bytes', 'remaining_song_count', 'remaining_source_count']) && ['selected_count', 'changed_song_count', 'removed_membership_count', 'restored_membership_count', 'shared_song_count'].every(key => uint(s[key])) && s.selected_count === selectedCount && s.changed_song_count === e.trashed_songs.length + e.restored_songs.length + (e.adopted_songs || []).length && s.removed_membership_count === e.removed_memberships.length && s.restored_membership_count === e.added_memberships.length && s.shared_song_count <= selectedCount && s.reclaimed_bytes === 0 && Array.isArray(s.affected_packs));
+  if (organizing) {
+    pack(s.target_pack, {legacy: false});
+    require(s.target_pack.kind === 'custom' && s.target_pack.collection_id === action.pack_id && (action.type === 'add_memberships' || s.target_pack.name === action.name));
+  } else require(s.target_pack === undefined);
+  const expected = {created_pack_count: e.created_packs.length, renamed_pack_count: e.renamed_packs.length, added_membership_count: e.added_memberships.length, unchanged_membership_count: e.noops.filter(row => row.reason === 'already_present').length};
+  for (const [key, count] of Object.entries(expected)) if (organizing || s[key] !== undefined) require(s[key] === count);
+  s.affected_packs.forEach(row => {
+    pack(row, {legacy: !organizing, extra: ['selected_song_count']}); require(uint(row.selected_song_count) && row.selected_song_count <= selectedCount);
+    if (organizing) {
+      require(row.kind === 'custom' && row.collection_id === action.pack_id);
+      require(row.name === s.target_pack.name);
+      if (action.type === 'add_memberships') require(row.selected_song_count === selectedCount);
+      else require(row.name === action.name && row.selected_song_count === 0);
+    }
+  });
   for (const key of ['remaining_song_count', 'remaining_source_count']) if (s[key] !== undefined) require(uint(s[key]));
-  require(sameCatalogValue(s.affected_packs.map(row => row.collection_id).sort(), [...p.effects.affected_packs].sort())); return value;
+  require(sameCatalogValue(s.affected_packs.map(row => row.collection_id).sort(), [...e.affected_packs].sort()));
+}
+export function checkedCatalogPreview(value, request) {
+  catalogPreviewRequest(request);
+  checkedCatalogEnvelope(value, request.library_id); const p = core(value.preview), action = p.request.action;
+  require(p.request.expected_generation === request.expected_generation && p.base_digest === request.catalog_digest);
+  if (request.action === 'create_pack' || request.action === 'rename_pack') require(action.type === request.action && action.name === request.name && (request.action === 'create_pack' || action.pack_id === request.collection_id));
+  else if (request.action === 'add_memberships') require(action.type === request.action && action.pack_id === request.collection_id && sameCatalogValue(action.song_ids, request.edition_ids));
+  else require(request.action === 'trash_songs' ? action.type === 'trash_songs' && sameCatalogValue(action.song_ids, request.edition_ids) : action.type === 'restore' && action.trash_operation_id === request.trash_operation_id && sameCatalogValue(action.entities.map(row => row.id), request.edition_ids));
+  summary(value.summary, p, request.edition_ids.length); return value;
 }
 export function checkedCatalogSync(value, request) {
-  checkedCatalogEnvelope(value, request.library_id); const p = core(value.preview), s = value.summary, adopted = p.effects.adopted_songs || [];
-  require(p.request.action.type === 'adopt_inventory' && p.request.expected_generation === request.expected_generation && p.base_digest === request.catalog_digest && s && ['selected_count', 'changed_song_count', 'removed_membership_count', 'restored_membership_count', 'shared_song_count'].every(key => uint(s[key])) && s.selected_count === adopted.length && s.changed_song_count === adopted.length && s.removed_membership_count === p.effects.removed_memberships.length && s.restored_membership_count === p.effects.added_memberships.length && s.shared_song_count <= s.selected_count && s.reclaimed_bytes === 0 && Array.isArray(s.affected_packs));
-  s.affected_packs.forEach(row => { pack(row); require(uint(row.selected_song_count)); });
-  for (const key of ['remaining_song_count', 'remaining_source_count']) if (s[key] !== undefined) require(uint(s[key]));
-  require(sameCatalogValue(s.affected_packs.map(row => row.collection_id).sort(), [...p.effects.affected_packs].sort())); return value;
+  checkedCatalogEnvelope(value, request.library_id); const p = core(value.preview), adopted = p.effects.adopted_songs || [];
+  require(p.request.action.type === 'adopt_inventory' && p.request.expected_generation === request.expected_generation && p.base_digest === request.catalog_digest);
+  summary(value.summary, p, adopted.length); return value;
 }
 export function checkedCatalogResult(value, record, {lookup = false} = {}) {
   checkedCatalogEnvelope(value, record.library_id);
@@ -96,18 +148,25 @@ export function checkedCatalogResult(value, record, {lookup = false} = {}) {
     if (record.kind === 'initialize') {
       if (lookup) require(value.kind === 'initialize' && value.seed_digest === record.preview.seed_digest);
       else { require(value.state === 'ready' && typeof value.replayed === 'boolean'); counts(value.counts); }
-    } else require(value.receipt && sameCatalogValue(core(value.receipt.preview), record.preview));
+    } else {
+      require(value.receipt && sameCatalogValue(core(value.receipt.preview), record.preview));
+      const p = value.receipt.preview, kind = {restore: 'restore_songs', adopt_inventory: 'sync_imports'}[p.request.action.type] || p.request.action.type;
+      require(kind === record.kind && p.request.operation_id === record.operation_id && value.generation >= p.next_generation);
+    }
   }
   return value;
 }
 export function checkedRecoveryRecord(record, libraryId) {
-  require(record?.library_id === libraryId && library.test(libraryId) && operation.test(record.operation_id) && ['initialize', 'trash_songs', 'restore_songs', 'sync_imports'].includes(record.kind) && ['submitted', 'uncertain', 'not_committed', 'committed'].includes(record.phase));
+  require(record?.library_id === libraryId && library.test(libraryId) && operation.test(record.operation_id) && ['initialize', 'trash_songs', 'restore_songs', 'sync_imports', 'create_pack', 'rename_pack', 'add_memberships'].includes(record.kind) && ['submitted', 'uncertain', 'not_committed', 'committed'].includes(record.phase));
   if (record.kind === 'initialize') { checkedInitializePreview({format: 'worldmusichub-catalog', version: 1, native_only: true, library_id: libraryId, preview: record.preview}, libraryId); require(record.preview.operation_id === record.operation_id); }
   else { core(record.preview); require(record.preview.request.operation_id === record.operation_id); }
-  require(Array.isArray(record.selected) && record.selected.length <= 1024 && record.selected.every(row => edition.test(row.edition_id) && text(row.title)) && unique(record.selected.map(row => row.edition_id)) && (record.dismissed === undefined || typeof record.dismissed === 'boolean'));
+  require(Array.isArray(record.selected) && record.selected.length <= 1024 && record.selected.every(row => row && edition.test(row.edition_id) && text(row.title)) && unique(record.selected.map(row => row.edition_id)) && (record.dismissed === undefined || typeof record.dismissed === 'boolean'));
   const wrapped = {format: 'worldmusichub-catalog', version: 1, native_only: true, library_id: libraryId, preview: record.preview, summary: record.summary};
   if (record.kind === 'initialize') require(record.selected.length === 0);
   else if (record.kind === 'sync_imports') { checkedCatalogSync(wrapped, {library_id: libraryId, expected_generation: record.preview.request.expected_generation, catalog_digest: record.preview.base_digest}); require(sameCatalogValue(record.selected.map(row => row.edition_id), record.preview.effects.adopted_songs || [])); }
-  else checkedCatalogPreview(wrapped, {library_id: libraryId, expected_generation: record.preview.request.expected_generation, catalog_digest: record.preview.base_digest, action: record.kind, edition_ids: record.selected.map(row => row.edition_id), trash_operation_id: record.kind === 'restore_songs' ? record.preview.request.action.trash_operation_id : null});
+  else {
+    const action = record.preview.request.action;
+    checkedCatalogPreview(wrapped, {library_id: libraryId, expected_generation: record.preview.request.expected_generation, catalog_digest: record.preview.base_digest, action: record.kind, edition_ids: record.selected.map(row => row.edition_id), trash_operation_id: record.kind === 'restore_songs' ? action.trash_operation_id : null, collection_id: ['rename_pack', 'add_memberships'].includes(record.kind) ? action.pack_id : null, name: ['create_pack', 'rename_pack'].includes(record.kind) ? action.name : null});
+  }
   return record;
 }

@@ -6,7 +6,7 @@ export class LibraryCatalogModel {
   constructor({getStorage, getProtectedSong = () => null, operationStore = new LibraryOperationStore(), onCommitted = async () => {}, onObserverError = error => globalThis.reportError?.(error)} = {}) {
     Object.assign(this, {getStorage, getProtectedSong, operationStore, onCommitted, onObserverError});
     this.listeners = new Set(); this.selected = new Map(); this.cursors = [null]; this.readVersion = 0; this.invalidationVersion = 0;
-    this.state = {phase: 'idle', status: null, query: catalogQuery(), response: null, page: 0, stale: false, preview: null, operation: null, result: null, error: null, operationError: null, refreshError: false};
+    this.state = {phase: 'idle', status: null, query: catalogQuery(), response: null, packs: null, page: 0, stale: false, preview: null, operation: null, result: null, error: null, operationError: null, refreshError: false};
   }
   snapshot() { return structuredClone({...this.state, selected: [...this.selected.values()]}); }
   subscribe(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
@@ -22,7 +22,7 @@ export class LibraryCatalogModel {
   }
   startRead(phase = 'loading') {
     this.controller?.abort(); const controller = new AbortController(), version = ++this.readVersion;
-    this.controller = controller; this.publish({phase, error: null});
+    this.controller = controller; this.publish({phase, error: null, preview: null});
     return {signal: controller.signal, owns: () => version === this.readVersion && !this.destroyed && this.opened};
   }
   async open() {
@@ -43,21 +43,36 @@ export class LibraryCatalogModel {
     this.publish({preview: null, phase: this.writing ? 'submitting' : 'idle'});
   }
   destroy() { this.close(); this.destroyed = true; this.listeners.clear(); }
+  supportsOrganization() { return ['create_pack', 'rename_pack', 'add_memberships'].every(action => this.state.status?.supported_operations?.includes(action)); }
+  async readPacks(storage, response, signal) {
+    const packs = [], seenCursors = new Set(); let cursor = null;
+    do {
+      const page = await storage.queryCatalog({view: 'packs', collection_id: null, search: '', limit: 100, cursor, refresh: false, libraryId: response.library_id, signal});
+      if (['library_id', 'generation', 'catalog_digest', 'snapshot_id'].some(key => page[key] !== response[key])) throw Object.assign(new Error('Pack and song metadata do not share a verified snapshot. Refresh before continuing.'), {code: 'catalog_stale'});
+      packs.push(...page.rows);
+      if (packs.length > 256 || new Set(packs.map(row => row.collection_id)).size !== packs.length || (page.next_cursor && seenCursors.has(page.next_cursor))) throw Object.assign(new Error('The pack list exceeded its verified bounds.'), {code: 'catalog_invalid_response'});
+      cursor = page.next_cursor; if (cursor) seenCursors.add(cursor);
+      if (!cursor && packs.length !== page.total) throw Object.assign(new Error('The pack list was incomplete.'), {code: 'catalog_invalid_response'});
+    } while (cursor);
+    return packs;
+  }
   async read({refresh = false, page = this.state.page} = {}) {
     if (!this.opened || this.destroyed) return false;
     const read = this.startRead(), invalidation = this.invalidationVersion;
     try {
       const storage = await this.storage(), response = await storage.queryCatalog({...this.state.query, refresh, cursor: this.cursors[page], libraryId: this.state.status.library_id, signal: read.signal});
       if (!read.owns()) return false;
+      const packs = this.supportsOrganization() ? await this.readPacks(storage, response, read.signal) : null;
+      if (!read.owns()) return false;
       if (page > 0 && response.snapshot_id !== this.state.response?.snapshot_id) throw Object.assign(new Error('The catalog snapshot changed. Refresh and review the exact selection again.'), {code: 'catalog_stale'});
       if (this.state.response && response.snapshot_id !== this.state.response.snapshot_id) this.selected.clear();
-      this.publish({phase: 'ready', response, page, stale: invalidation !== this.invalidationVersion || (!refresh && this.state.stale)}); return true;
-    } catch (error) { if (read.owns()) this.publish({phase: 'error', error: failure(error), stale: true}); return false; }
+      this.publish({phase: 'ready', response, packs, page, stale: invalidation !== this.invalidationVersion || (!refresh && this.state.stale)}); return true;
+    } catch (error) { if (read.owns()) { this.selected.clear(); this.publish({phase: 'error', response: null, packs: null, preview: null, error: failure(error), stale: true}); } return false; }
   }
   refresh() { this.cursors = [null]; this.selected.clear(); this.publish({preview: null}); return this.read({refresh: true, page: 0}); }
   setView(patch) {
     let query; try { query = catalogQuery({...this.state.query, ...patch, cursor: null, refresh: false}); } catch (error) { this.publish({error: failure(error)}); return Promise.resolve(false); }
-    this.selected.clear(); this.cursors = [null]; this.publish({query, page: 0, response: null, preview: null}); return this.read({page: 0});
+    this.selected.clear(); this.cursors = [null]; this.publish({query, page: 0, response: null, packs: null, preview: null}); return this.read({page: 0});
   }
   next() { if (!this.state.response?.next_cursor || this.state.phase === 'loading' || this.state.stale) return Promise.resolve(false); const page = this.state.page + 1; this.cursors[page] = this.state.response.next_cursor; return this.read({page}); }
   previous() { return this.state.page > 0 && this.state.phase !== 'loading' && !this.state.stale ? this.read({page: this.state.page - 1}) : Promise.resolve(false); }
@@ -70,29 +85,28 @@ export class LibraryCatalogModel {
   recordProtected(record) { return record?.kind === 'trash_songs' && record.preview.request.action.song_ids.includes(this.protectedEdition(record.library_id || this.state.status?.library_id)); }
   protectionError() { return {code: 'catalog_current_song', message: 'This current complete song still needs native notation pages. Select another song before moving this edition to Trash.'}; }
   sessionChanged() { this.publish(); }
-  selectable(row) { return !this.selectionProtected([row]) && row.catalog_managed && row.physical_available && (!this.selected.size || this.state.query.view !== 'trash' || [...this.selected.values()][0].trashed_by === row.trashed_by); }
+  selectable(row) { return this.state.query.view !== 'packs' && row.catalog_managed && row.physical_available && (!this.selected.size || this.state.query.view !== 'trash' || [...this.selected.values()][0].trashed_by === row.trashed_by); }
   toggle(row, checked) {
     if (this.state.phase !== 'ready' || this.state.stale || this.pending() || this.writing) return;
     const found = this.state.response?.rows.find(item => item.edition_id === row.edition_id);
-    if(found && checked && this.selectionProtected([found])){this.publish({preview:null,error:this.protectionError()});return;}
     if (!found || checked && !this.selectable(found)) return;
     if (checked) this.selected.set(found.edition_id, structuredClone(found)); else this.selected.delete(found.edition_id);
     this.publish({preview: null, error: null});
   }
   selectPage(checked) {
     // A Trash page may contain different operations. Never choose one silently.
-    if (this.state.query.view === 'trash') return;
+    if (this.state.query.view !== 'active') return;
     if (this.state.phase !== 'ready' || this.state.stale || this.pending() || this.writing) return;
     for (const row of this.state.response?.rows || []) if (this.selectable(row)) { if (checked) this.selected.set(row.edition_id, structuredClone(row)); else this.selected.delete(row.edition_id); }
     this.publish({preview: null, error: null});
   }
   clearSelection() { this.selected.clear(); this.publish({preview: null}); }
   invalidate() { if (this.state.phase === 'previewing') this.cancelPreview(); this.invalidationVersion++; this.selected.clear(); this.publish({stale: true, preview: null}); }
-  cancelPreview() { this.readVersion++; this.controller?.abort(); this.publish({preview: null, phase: this.state.status?.state === 'uninitialized' ? 'uninitialized' : this.state.response ? 'ready' : 'idle'}); }
+  cancelPreview() { if (!this.state.preview && this.state.phase !== 'previewing') return; this.readVersion++; this.controller?.abort(); this.publish({preview: null, phase: this.state.status?.state === 'uninitialized' ? 'uninitialized' : this.state.response ? 'ready' : 'idle'}); }
   async previewInitialize() {
     if (this.pending() || this.writing || this.state.status?.state !== 'uninitialized') return;
     const read = this.startRead('previewing');
-    try { const value = await (await this.storage()).previewCatalogInitialize({libraryId: this.state.status.library_id, signal: read.signal}); if (read.owns()) this.publish({phase: 'uninitialized', preview: {kind: 'initialize', preview: value.preview, selected: []}}); }
+    try { const value = await (await this.storage()).previewCatalogInitialize({libraryId: this.state.status.library_id, signal: read.signal}); if (read.owns()) this.publish({phase: 'uninitialized', stale: false, preview: {kind: 'initialize', preview: value.preview, selected: []}}); }
     catch (error) { if (read.owns()) this.publish({phase: 'uninitialized', error: failure(error)}); }
   }
   async previewSelection() {
@@ -103,6 +117,23 @@ export class LibraryCatalogModel {
     const read = this.startRead('previewing');
     try { const value = await (await this.storage()).previewCatalog({...request, signal: read.signal}); if (read.owns()) { const preview = {kind, preview: value.preview, summary: value.summary, selected}; if(this.recordProtected(preview))this.publish({phase: 'ready', preview: null, error: this.protectionError()});else this.publish({phase: 'ready', preview}); } }
     catch (error) { if (read.owns()) this.publish({phase: 'ready', preview: null, error: failure(error), stale: this.state.stale || ['catalog_stale', 'catalog_conflict'].includes(error.code)}); }
+  }
+  async previewOrganization(kind, {name = null, collectionId = null} = {}) {
+    if (!['create_pack', 'rename_pack', 'add_memberships'].includes(kind) || !this.supportsOrganization() || this.state.phase !== 'ready' || this.state.stale || this.pending() || this.writing || !this.state.packs) return;
+    const target = this.state.packs.find(pack => pack.collection_id === collectionId);
+    if (kind !== 'create_pack' && target?.kind !== 'custom') { this.publish({preview: null, error: {code: 'catalog_invalid_request', message: 'Choose a verified custom pack.'}}); return; }
+    if (kind !== 'add_memberships') {
+      name = typeof name === 'string' ? name.trim() : '';
+      if (!name || new TextEncoder().encode(name).length > 256 || /[\u0000-\u001f\u007f-\u009f]/u.test(name)) { this.publish({preview: null, error: {code: 'catalog_pack_name', message: 'Use a nonempty pack name of at most 256 UTF-8 bytes, without control characters.'}}); return; }
+    }
+    const selected = kind === 'add_memberships' ? structuredClone([...this.selected.values()]) : [];
+    if (kind === 'add_memberships' && (this.state.query.view !== 'active' || !selected.length || selected.some(row => !this.selectable(row)))) return;
+    const response = this.state.response, request = {action: kind, edition_ids: selected.map(row => row.edition_id), collection_id: kind === 'create_pack' ? null : collectionId, name: kind === 'add_memberships' ? null : typeof name === 'string' ? name.trim() : name, trash_operation_id: null, expected_generation: response.generation, catalog_digest: response.catalog_digest, library_id: response.library_id};
+    const read = this.startRead('previewing');
+    try {
+      const value = await (await this.storage()).previewCatalog({...request, signal: read.signal});
+      if (read.owns()) this.publish({phase: 'ready', preview: {kind, preview: value.preview, summary: value.summary, selected}});
+    } catch (error) { if (read.owns()) this.publish({phase: 'ready', preview: null, error: failure(error), stale: this.state.stale || ['catalog_stale', 'catalog_conflict'].includes(error.code)}); }
   }
   async previewSync() {
     if (this.state.phase !== 'ready' || this.state.stale || this.pending() || this.writing || !this.state.status?.supported_operations?.includes('sync_inventory')) return;
@@ -120,7 +151,7 @@ export class LibraryCatalogModel {
     catch (error) { this.publish({operationError: failure(error)}); }
   }
   async commit() {
-    if (!this.state.preview || this.writing || this.pending()) return false;
+    if (!this.state.preview || this.writing || this.pending() || this.state.stale || !['ready', 'uninitialized'].includes(this.state.phase)) return false;
     const owner = this.state.preview;
     if (this.recordProtected(owner)) { this.publish({error: this.protectionError()}); return false; }
     let storage; try { storage = await this.storage(); } catch(error) { this.publish({error: failure(error)}); return false; }

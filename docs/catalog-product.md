@@ -94,7 +94,30 @@ be slow; this slice makes no responsiveness or Windows power-loss durability
 claim. Old binaries do not understand logical Trash and can display retained songs.
 Full repository/native/Windows acceptance is required before release promotion.
 
-## Development evidence
+## User-pack development evidence
+
+The bounded organization increment passes 48 scoped desktop catalog cases (one
+existing maximum-inventory measurement remains opt-in), 35 pure catalog cases,
+18 import-group cases, 157 library-management Node tests and 70 existing catalog
+acceptance-contract tests. Scoped desktop library/tests Clippy passes with warnings
+denied; affected Rust formatting and diff whitespace checks pass.
+
+Original product fixtures exercise empty custom packs, shared legacy/clean exact
+editions, duplicate-add noops preserving edge metadata, readonly imported targets,
+name/request bounds, edited/stale reviews, unavailable payload counts, reimport and
+inventory synchronization, fresh-process restore, and replay after later rename.
+Create, rename and add each receive independent journal interruption coverage
+before the backup decision, after that decision and before response, followed by
+a fresh process and same-ID retry. Original bytes and outside sentinels survive.
+
+The real Rust stdin/production Node DOM check adds six user-pack scenarios. The
+existing ten-case catalog flow and five-case Current Basic flow pass; the latter
+now actually creates a user pack and adds the paused current Basic edition before
+checking later native pages, active-score/take preservation and global Trash
+protection. These are development checks, not full workspace/browser/Windows
+release acceptance. The integrator must run those final exact-source gates.
+
+## Original selected-song development evidence
 
 The final focused development checks pass: 35 pure catalog tests, 11 native product
 cases (including subprocess restart/lock probes), 18 existing pack-group cases,

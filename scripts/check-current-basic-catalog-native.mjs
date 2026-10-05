@@ -36,6 +36,7 @@ async function review(suffix='preview') {await click(suffix);await app.until(()=
 async function confirm() {await click('confirm');await app.until(()=>app.$('management-catalog').dataset.phase==='ready'&&cat('review').hidden);}
 function box(id) {return app.document.querySelector(`[data-catalog-edition="${id}"]`);}
 function select(id) {const input=box(id);assert.ok(input);assert.equal(input.disabled,false);input.checked=true;app.emit(input,'change');}
+function assertSafeCurrentSelection(id) {select(id);assert.equal(cat('preview').disabled,true);assert.equal(cat('export-clean').disabled,false);box(id).checked=false;app.emit(box(id),'change');}
 async function retained() {const result={};async function walk(relative=''){for(const entry of await readdir(join(directory,relative),{withFileTypes:true})){if(!relative&&(entry.name.includes('catalog')||entry.name==='.library.lock'))continue;assert.equal(entry.isSymbolicLink(),false);const name=relative?`${relative}/${entry.name}`:entry.name;if(entry.isDirectory())await walk(name);else result[name]=digest(await readFile(join(directory,name)));}}await walk();return result;}
 async function externalTransition(edition, action, trashOperationId=null) {
   const external=startVsqNativeDriver({binary,directory});
@@ -60,16 +61,21 @@ try {
   await app.until(()=>report.api.some(row=>row.path==='/api/library/basic-keys/notation'&&row.status===200&&row.body.settings.measure_count===2));
   await app.click('results-button');await app.click('assess-button');advance(1000);await app.until(()=>practiceBaselineReady(app.document),'Original Basic assessment settles');app.$('results-dialog').close();
   await app.click('back-to-library');const beforeTakes=await app.exported('export-takes'), beforeAudio=app.audio();
-  await open();assert.equal(box(edition).disabled,true);getAppI18n(app.document).setLocale('zh-CN');assert.match(cat('rows').textContent,/请先选择并打开另一首歌/);
+  await open();assertSafeCurrentSelection(edition);getAppI18n(app.document).setLocale('zh-CN');assert.match(cat('rows').textContent,/请先打开另一首歌/);
   const commits=report.api.filter(row=>row.path==='/api/library/catalog/commit').length;
-  box(edition).checked=true;app.emit(box(edition),'change');await click('preview');assert.equal(cat('review').hidden,true);assert.equal(report.api.filter(row=>row.path==='/api/library/catalog/commit').length,commits);
+  box(edition).checked=true;app.emit(box(edition),'change');assert.equal(cat('preview').disabled,true);assert.equal(cat('export-clean').disabled,false);await click('preview');assert.equal(cat('review').hidden,true);assert.equal(report.api.filter(row=>row.path==='/api/library/catalog/commit').length,commits);
+  cat('create-name').value='Original current Basic user pack';app.emit(cat('create-name'),'input');app.emit(cat('create-form'),'submit');await app.until(()=>!cat('review').hidden);await confirm();
+  const currentPack=(await json('/api/library/catalog/query',{view:'packs',refresh:true,limit:100})).rows.find(row=>row.name==='Original current Basic user pack');assert.ok(currentPack);assert.equal(currentPack.kind,'custom');
+  select(edition);cat('add-target').value=currentPack.collection_id;app.emit(cat('add-target'),'change');await review('add-preview');await confirm();
+  const currentMembers=await json('/api/library/catalog/query',{view:'active',collection_id:currentPack.collection_id,refresh:true,limit:100});assert.deepEqual(currentMembers.rows.map(row=>row.edition_id),[edition]);
+  select(edition);assert.equal(cat('preview').disabled,true);assert.equal(cat('export-clean').disabled,false);
   await app.click('management-close');assert.deepEqual(await app.exported('export-takes'),beforeTakes);assert.deepEqual(app.audio(),beforeAudio);
   getAppI18n(app.document).setLocale('en');await app.click('resume-session');
   const requestCount=report.api.length;await app.click('engraving-next');
   await app.until(()=>report.api.slice(requestCount).some(row=>row.path==='/api/library/basic-keys/notation'&&row.status===200&&row.body.settings.first_measure>=2),'Later original native Basic page succeeds');
   assert.equal(report.api.slice(requestCount).some(row=>row.path==='/api/library/basic-keys/notation'&&row.status===409),false);
   assert.deepEqual(await app.exported('export-takes'),beforeTakes);assert.deepEqual(await retained(),originalFiles);
-  passed('paused-current-basic-is-unselectable-and-later-native-pages-and-takes-survive');
+  passed('paused-current-basic-adds-membership-blocks-trash-and-keeps-native-pages-and-takes');
   const firstPart=app.$('practice-part').value, alternate=[...app.$('practice-part').options].find(option=>!option.disabled&&option.value!==firstPart)?.value;
   assert.ok(alternate,'Original fixture supplies another supported Basic part');
   let handoffStart=report.api.length;app.$('practice-part').value=alternate;app.emit(app.$('practice-part'),'change');
@@ -77,12 +83,12 @@ try {
   assert.equal(app.$('engraving-basic-meter').disabled,false);app.$('engraving-basic-meter').value='3/4';app.emit(app.$('engraving-basic-meter'),'change');
   handoffStart=report.api.length;app.$('engraving-basic-view-mode').value='source';app.emit(app.$('engraving-basic-view-mode'),'change');
   await app.until(()=>report.api.slice(handoffStart).some(row=>row.path==='/api/library/basic-keys/notation'&&row.status===200&&row.body.settings.display_meter?.numerator===3&&!row.body.settings.rendition_policy_id),'Source inspection honors the custom display meter');
-  await app.click('back-to-library');await open();assert.equal(box(edition).disabled,true);await app.click('management-close');await app.click('resume-session');
+  await app.click('back-to-library');await open();assertSafeCurrentSelection(edition);await app.click('management-close');await app.click('resume-session');
   handoffStart=report.api.length;app.$('engraving-basic-view-mode').value='rendition';app.emit(app.$('engraving-basic-view-mode'),'change');
   await app.until(()=>report.api.slice(handoffStart).some(row=>row.path==='/api/library/basic-keys/notation'&&row.status===200&&row.body.settings.display_meter?.numerator===3&&row.body.settings.rendition_policy_id),'Playable rendition keeps its actual native source after the view change');
-  await app.click('back-to-library');await open();assert.equal(box(edition).disabled,true);await app.click('management-close');
+  await app.click('back-to-library');await open();assertSafeCurrentSelection(edition);await app.click('management-close');
   app.$('preview-part').value=firstPart;app.emit(app.$('preview-part'),'change');await app.until(()=>!app.$('start-practice').disabled);await app.click('start-practice');await app.until(()=>/Pause/.test(app.$('play-button').textContent));await app.click('back-to-library');
-  await open();assert.equal(box(edition).disabled,true);await app.click('management-close');await app.click('resume-session');
+  await open();assertSafeCurrentSelection(edition);await app.click('management-close');await app.click('resume-session');
   assert.deepEqual(await retained(),originalFiles);passed('normal-part-preview-meter-and-rendition-handoffs-keep-exact-adapter-protection');
 
   await app.click('back-to-library');app.savedButton(legacyKey).click();await app.until(()=>app.$('song-lobby').dataset.previewId===`native:${legacyKey}`&&!app.$('start-practice').disabled);app.$('count-in').checked=false;
@@ -104,7 +110,7 @@ try {
   await app.click('settings-button');app.storageAction('rescan').click();await app.until(()=>!app.savedButton(basicKey)&&app.$('start-practice').disabled);app.$('settings-dialog').close();
   assert.equal(app.$('stage-title').textContent,stageTitle);assert.deepEqual(await app.exported('export-takes'),takes);assert.deepEqual(await retained(),originalFiles);
   passed('external-rescan-invalidates-only-the-stale-preview-and-keeps-the-admitted-session');
-  report.source_hashes={};for(const path of ['web/app.js','web/native-score-storage.js','web/library-catalog-model.js','web/library-catalog-view.js','web/library-management-view.js','scripts/check-current-basic-catalog-native.mjs'])report.source_hashes[path]=digest(await readFile(new URL(`../${path}`,import.meta.url)));
+  report.source_hashes={};for(const path of ['web/app.js','web/native-score-storage.js','web/library-catalog-model.js','web/library-catalog-view.js','web/library-management-view.js','web/library-selected-export.js','scripts/check-current-basic-catalog-native.mjs'])report.source_hashes[path]=digest(await readFile(new URL(`../${path}`,import.meta.url)));
   report.ok=true;
 } catch(error) {if(app)report.failure_state={summary:app.$('result-summary').dataset,assessDisabled:app.$('assess-button').disabled,feedback:app.$('feedback-results').textContent,notice:app.$('preview-status').textContent};report.error=error.stack||String(error);process.exitCode=1;}
 finally {try{await app?.close();await driver?.close();assert.deepEqual(await readFile(join(root,'outside-sentinel')),sentinel);}finally{await rm(root,{recursive:true,force:true});if(process.env.WMH_CURRENT_BASIC_REPORT){await mkdir(dirname(process.env.WMH_CURRENT_BASIC_REPORT),{recursive:true});await writeFile(process.env.WMH_CURRENT_BASIC_REPORT,JSON.stringify(report,null,2)+'\n');}console.log(JSON.stringify({...report,api:report.api.length},null,2));}}

@@ -1,6 +1,7 @@
 import {setupLibraryCatalogView} from './library-catalog-view.js';
 import {LibraryManagementModel} from './library-management-model.js';
 import {createBulkImportTransport} from './bulk-import.js';
+import {exportSelectedLibraryEditions, selectedExportFilename} from './library-selected-export.js';
 
 const errorKeys = {
   library_management_unavailable: 'unavailable', library_management_invalid_response: 'invalid',
@@ -29,7 +30,7 @@ export function setupLibraryManagementView({document = globalThis.document, i18n
   const $ = id => document.getElementById(`management-${id}`);
   let state = model.snapshot(), exporting = false, exportState = null, exportError = null, rowsSignature = null, packName = '', opener = null, destroyed = false, exportGeneration = 0, exportController = null;
   let catalogActive = false;
-  const catalogView = setupLibraryCatalogView({document, i18n, getStorage, getProtectedSong, onCommitted: async () => { cancelExport(); model.invalidate(); await onCommitted(); }});
+  const catalogView = setupLibraryCatalogView({document, i18n, getStorage, getProtectedSong, transport, download, onCommitted: async () => { cancelExport(); model.invalidate(); await onCommitted(); }});
   $('browser').before(catalogView.element);
   const catalogButton = make('button', 'button secondary'); catalogButton.id = 'management-catalog-button'; catalogButton.type = 'button'; catalogButton.hidden = true;
   catalogButton.addEventListener('click', () => { catalogActive = true; cancelExport(); model.close(); $('browser').hidden = true; catalogButton.setAttribute('aria-pressed', 'true'); catalogView.open(); });
@@ -171,9 +172,8 @@ export function setupLibraryManagementView({document = globalThis.document, i18n
     const ownsResult = () => !destroyed && request === exportGeneration && !controller.signal.aborted && dialog.open;
     exporting = true; exportError = null; exportState = null; render();
     try {
-      const entries = rows.map(row => ({storageKind: 'native', storageKey: row.key, ...(kind === 'clean' ? {clean_package: {}} : {})}));
-      const blob = await transport.exportPack(entries, {signal: controller.signal});
-      if (ownsResult()) { await download(document, blob, kind === 'clean' ? 'worldmusicclub-complete-songs.zip' : 'worldmusicclub-legacy-scores.zip'); if (ownsResult()) exportState = 'exported'; }
+      const blob = await exportSelectedLibraryEditions(transport, rows, kind, {signal: controller.signal});
+      if (ownsResult()) { await download(document, blob, selectedExportFilename(kind)); if (ownsResult()) exportState = 'exported'; }
     } catch (error) { if (ownsResult()) exportError = {code: error.code, message: error.message}; }
     finally { if (request === exportGeneration) { exportController = null; exporting = false; render(); } }
   }

@@ -1,10 +1,29 @@
 # Recoverable song management UI
 
-The existing native management dialog offers **Remove and restore songs** only
+The existing native management dialog offers **Manage user packs and Trash** only
 when health advertises `library_catalog_version: 1`. Its catalog v1 adapter is
 separate from query v1: existing imported groups and duplicate evidence keep their
-strict `import-*` identities. Catalog references explicitly show both collection
-and imported-group IDs. No browser-store fallback or pack mutation is exposed.
+strict `import-*` identities. Catalog references carry a typed kind, collection ID and nullable imported-group
+ID. Custom packs never use fabricated import IDs. No browser-store fallback is
+exposed. The create/rename/add controls additionally require the corresponding
+explicit native supported_operations capabilities. Unfiltered query requests omit
+the new optional collection_id field, preserving old-host v1 request compatibility.
+
+The user-pack view lists imported and custom packs, including empty custom packs.
+Only custom packs are rename/add destinations; source groups remain read-only.
+Filtering opens exact active members, with separate active, available and shared
+counts. Missing payloads remain counted but unselectable. Every combined read
+checks the library, generation, digest and snapshot across all pack pages before
+enabling controls; partial or inconsistent reads clear actionable rows.
+
+Create, rename and add each require their own preview and explicit confirmation.
+Creation and later addition are separate transactions, so cancelling addition can
+leave an empty pack. The preview names the exact target, including all-noop adds,
+and distinguishes changed names, new memberships and already-present memberships.
+A 256 UTF-8 byte name bound is enforced by the host and adapter. Changing a name
+or target cancels an earlier preview. Selected export uses the existing separate
+legacy-score and clean-song formats, preserving their original scope. No move,
+unlink, pack Trash, cascade, permanent deletion or historical Undo is exposed.
 
 Opening the panel reads status. A never-managed library needs a separately
 reviewed initialization with exact native operation ID, inventory/seed digests,
@@ -61,7 +80,8 @@ restore makes the same save a normal duplicate again. ZIP reimports continue to
 record physical duplicate receipts while preserving the original Trash state.
 
 The current native Basic complete song requires later pages from the saved source.
-Its exact clean edition cannot be selected for Trash while it is loaded for
+Its exact clean edition remains selectable for membership addition and export,
+but its global Trash action is blocked while it is loaded for
 Listen, Practice or inspection, including while paused in the library. Ownership
 matches the actual storage adapter that admitted the object and its complete
 storage-qualified key, not the title or score ID. Choose and explicitly open
@@ -151,7 +171,7 @@ remain those in [catalog-product.md](catalog-product.md) and
 package and an original legacy pack in a fresh owned temporary library. Supply
 `WMH_NATIVE_IMPORT_DRIVER`, its actual `WMH_CATALOG_DRIVER_BUILD_SHA`, and optional
 `WMH_CURRENT_BASIC_REPORT`. The real Rust dispatcher, production adapter and app
-DOM exercise paused practice, the disabled exact-current Trash row, a later
+DOM exercise paused practice, safe selection with disabled global Trash, a later
 successful native page, explicit switching to another song, Trash/restore, and
 normal practice/preview part changes, custom display meter and source/rendition
 view changes retaining the same protection, plus separate native processes
@@ -162,7 +182,19 @@ audio/DOM fixtures do not establish physical audio, browser or Windows acceptanc
 For the later actual-window check, import the ORIGINAL
 `basic-key-original.zip`, start Practice, pause, choose a two-measure notation
 window, then use **曲库 → 曲包与查重 → 移入回收站与恢复**. The current edition must
-be disabled with the explanation to open another song. Close the dialog, use
+remain selectable for Add/export while the global Trash button is disabled, with
+the explanation to open another song before Trash. Close the dialog, use
 **返回演奏**, and advance to a new page. After explicitly opening another song,
 the first edition may be selected for a fresh reviewed Trash operation. Retain
 the original take export and source hashes; do not use a real user library.
+
+## User-pack native development check
+
+`node scripts/check-user-pack-catalog-native.mjs` uses the same exact-source
+`WMH_NATIVE_IMPORT_DRIVER` and optional `WMH_USER_PACK_REPORT` output path. It
+checks cancelled creation, visible empty packs, rename, exact mixed-edition add,
+a lost reply after real commit, fresh-process operation reconciliation, duplicate
+add noops, filtered selected exports, partial pack-list failure and unchanged
+original/source/backup/media hashes. It also compares the admitted score and
+serialized takes before and after organization in the same process. This remains
+Node DOM development evidence; actual hosted and Windows acceptance is separate.

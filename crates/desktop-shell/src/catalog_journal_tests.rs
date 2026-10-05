@@ -884,6 +884,76 @@ fn restore_is_a_durable_forward_transition_and_keeps_later_pack_edits() {
     f.restart(3, 0);
     assert!(commit(&f.library(), &restore).unwrap().replayed);
 }
+
+#[test]
+fn custom_pack_create_rename_and_add_recover_across_the_commit_decision() {
+    for action_kind in ["create", "rename", "add"] {
+        for boundary in [
+            Boundary::BeforeBackupRename,
+            Boundary::AfterBackupRename,
+            Boundary::BeforeResponse,
+        ] {
+            let f = Fixture::new();
+            let mut current = f.boot().catalog;
+            if action_kind == "add" {
+                current = commit(
+                    &f.library(),
+                    &plan(
+                        &current,
+                        1,
+                        Action::CreatePack {
+                            pack_id: pack(3),
+                            name: "Original empty custom pack".into(),
+                        },
+                    ),
+                )
+                .unwrap()
+                .catalog;
+            }
+            let action = match action_kind {
+                "create" => Action::CreatePack {
+                    pack_id: pack(3),
+                    name: "Original created pack".into(),
+                },
+                "rename" => Action::RenamePack {
+                    pack_id: pack(1),
+                    name: "Original renamed pack".into(),
+                },
+                _ => Action::AddMemberships {
+                    pack_id: pack(3),
+                    song_ids: vec![song(1), song(2)],
+                },
+            };
+            let preview = plan(&current, 2, action);
+            let expected = current.apply(&preview).unwrap().catalog;
+            let committed = boundary != Boundary::BeforeBackupRename;
+            let error = commit_with(&f.library(), &preview, &mut fail_at(boundary, 1)).unwrap_err();
+            assert_eq!(
+                error.outcome,
+                if committed {
+                    Outcome::CommitUncertain
+                } else {
+                    Outcome::NotCommitted
+                }
+            );
+            let generation = current.snapshot().generation + u64::from(committed);
+            f.restart(generation, 0);
+            let recovered = load(&f.library()).unwrap().unwrap();
+            assert_eq!(
+                recovered.catalog,
+                if committed { expected.clone() } else { current }
+            );
+            let receipt = lookup(&f.library(), &preview.request.operation_id).unwrap();
+            assert_eq!(receipt.is_some(), committed);
+            let retry = commit(&f.library(), &preview).unwrap();
+            assert_eq!(retry.replayed, committed);
+            assert_eq!(retry.catalog, expected);
+            assert_eq!(retry.receipt.preview, preview);
+            f.restart(expected.snapshot().generation, 0);
+            f.unchanged();
+        }
+    }
+}
 #[test]
 fn missing_primary_without_a_matching_stage_is_rebuilt_from_verified_backup() {
     let f = Fixture::new();

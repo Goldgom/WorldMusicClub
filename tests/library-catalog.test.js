@@ -140,12 +140,13 @@ test('current native complete edition is protected by adapter ownership and exac
   let owner = current;
   adapter.ownsCleanSong = song => song === owner;
   model.getProtectedSong = () => current;
-  assert.equal(model.selectable(server.rows[1]), false);
+  assert.equal(model.selectable(server.rows[1]), true, 'Current complete edition allows safe membership selection and export');
   assert.equal(model.selectable(server.rows[0]), true, 'Legacy edition remains removable');
   assert.equal(model.selectable({...server.rows[1], key: server.rows[0].key, edition_id: `clean:${server.rows[0].key}`}), true, 'Same title or score ID never protects another edition');
   assert.equal(model.selectable({...server.rows[1], storage_kind: 'legacy', edition_id: `legacy:${server.rows[1].key}`}), true);
-  model.toggle(server.rows[1], true); assert.equal(model.selected.size, 0);
-  model.selectPage(true); assert.ok(!model.selected.has(server.rows[1].edition_id));
+  model.toggle(server.rows[1], true); assert.equal(model.selected.size, 1);
+  model.selectPage(true); assert.ok(model.selected.has(server.rows[1].edition_id));
+  await model.previewSelection(); assert.equal(model.snapshot().preview, null); assert.equal(model.snapshot().error.code, 'catalog_current_song');
   owner = null; assert.equal(model.selectable(server.rows[1]), true, 'Identical key admitted by another adapter is not this library owner');
   owner = current; assert.equal(model.protectedEdition(`library-${'f'.repeat(64)}`), null, 'A different native library ID cannot share protection');
   await model.setView({view: 'trash'});

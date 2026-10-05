@@ -224,7 +224,8 @@
     "created_pack_count": "uint",
     "renamed_pack_count": "uint",
     "added_membership_count": "uint",
-    "unchanged_membership_count": "uint, already-present membership noops"
+    "unchanged_membership_count": "uint, already-present membership noops",
+    "target_pack": "pack_ref, present for create/rename/add including noops; desired name for create/rename"
   },
   "error": {
     "code": "catalog_invalid_request | catalog_not_initialized | catalog_already_initialized | catalog_stale | catalog_conflict | catalog_in_trash | catalog_not_found | catalog_recovery_required | catalog_capacity | library_busy | library_io | catalog_random_unavailable | catalog_readonly_pack",
@@ -248,7 +249,8 @@
     "Sync adopts at most32 new source groups and32 new editions per explicitly reviewed batch, bounded to1024 affected memberships. New editions wait until all proved source dependencies are admitted. Summary remaining_song_count/remaining_source_count are present only for sync. Refresh and explicitly preview/confirm the next batch until both are zero; never automatically commit the remainder.",
     "Create and add are separately reviewed transactions, never an implied atomic combined request. Create IDs are host allocated with operating-system randomness and collision checks against every retained pack. Duplicate add preserves original edge metadata and reports noops.",
     "The pack projection shares snapshot_id with active/trash. Count all active members, including unavailable physical editions; available_song_count alone counts present verified payloads. Empty custom packs remain visible. Read-only import-group counts are not organizational counts.",
-    "Persisted catalog/journal remain v1 without migration because custom actions and PackKind already exist in that core. New UI gates on supported_operations; historical source references and receipt bytes remain unchanged. Older renderers may reject custom refs (null import_pack_id), fail closed and require a newer app. Do not reset, reseed or rewrite a managed catalog to downgrade."
+    "Persisted catalog/journal remain v1 without migration because custom actions and PackKind already exist in that core. New UI gates on supported_operations; historical source references and receipt bytes remain unchanged. Older renderers may reject custom refs (null import_pack_id), fail closed and require a newer app. Do not reset, reseed or rewrite a managed catalog to downgrade.",
+    "Omit collection_id from query wire bodies when null so older v1 hosts with deny_unknown_fields still accept unfiltered reads. Send an explicit collection_id only when the new organization capabilities are advertised."
   ],
   "pack_ref": {
     "collection_id": "collection-32hex",
