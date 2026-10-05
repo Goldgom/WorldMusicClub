@@ -27,8 +27,10 @@ export class ScorePreview {
       const candidate={status:'ready',identity,part,practiceSelection,practiceLayout,showOthers,...(overrides?.songMod?{songMod:overrides.songMod}:{}),cleanSong,score:compiled.score,compiled,compatibility:{status:'pending',reason:'Checking selected pitches with your instrument…'}};
       if(isBasicKeysSong(cleanSong)&&!hasBasicKeyRendition(cleanSong)&&practiceSelection.part_ids.some(id=>!basicKeysParts(cleanSong).some(item=>item.id===id&&item.practice_available))){this.publish({...candidate,compatibility:{status:'blocked',reason:'This retained part has no supported positive-duration melodic MIDI-key targets.'}});return valid();}
       this.publish(candidate);
-      try {const compatibility=await this.check(compiled,practiceSelection,controller.signal);if(valid())this.publish({...candidate,compatibility});}
-      catch(error){if(valid())this.publish({...candidate,compatibility:{status:'error',reason:`Practice compatibility could not be verified: ${error.message}`}});}
+      // Same-version view and playback-mix edits may update the candidate while
+      // its target check runs. Ownership changes cancel this version instead.
+      try {const compatibility=await this.check(compiled,practiceSelection,controller.signal);if(valid())this.publish({...this.value,compatibility});}
+      catch(error){if(valid())this.publish({...this.value,compatibility:{status:'error',reason:`Practice compatibility could not be verified: ${error.message}`}});}
       return valid();
     } catch(error) {
       if(valid())this.publish({status:'error',identity,part,score:null,compiled:null,message:error.message,errorCode:error.code,compatibility:{status:'error',reason:'Preview unavailable. Try this selection again.'}});

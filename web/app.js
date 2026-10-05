@@ -514,6 +514,14 @@ async function applySongMod({origin,context,mod,isCurrent=()=>true,commit=()=>tr
     preview.cancel();preview.publish({...preview.value,...options,songMod:mod,compatibility});
   }else{
     state.songMod=mod;state.hiddenPartIds=new Set(options.hiddenPartIds);cleanMutedParts.clear();cleanSoloParts.clear();for(const id of options.mutedPartIds)cleanMutedParts.add(id);
+    // A stage edit also owns the same source's library choices. Keep its full
+    // preview check, rather than a possibly loop-limited stage check, and leave
+    // another browsed song or source revision alone.
+    const candidate=preview.value,identity=candidate.status==='ready'&&candidate.compiled&&candidate.score?songMods.identity(candidate):null;
+    if(identity&&identity.songId===mod.songId&&identity.sourceRevision.kind===mod.sourceRevision.kind&&identity.sourceRevision.value===mod.sourceRevision.value){
+      if(changes.requiresReset||candidate.compatibility.status!=='pending')preview.cancel();
+      preview.publish({...candidate,...options,songMod:mod,compatibility:changes.requiresReset?compatibility:candidate.compatibility});
+    }
     if(changes.requiresReset){state.mode=options.mode;$('session-mode').value=options.mode;await applyHumanSelection(options.practiceSelection,{layout:options.practiceLayout,showOthers:options.showOthers});}
     else{
       // The paused recorder and source position survive output/display edits.

@@ -164,3 +164,39 @@ test('multipart All-human Mod does not invent a selected part for octave adaptat
  try{const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('start-performance').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('configure-song-mod');await app.click('song-mod-all-human');await apply(app);if(app.$('sound-button').getAttribute('aria-pressed')!=='true')await app.click('sound-button');await app.click('start-performance');await app.until(()=>app.document.body.dataset.screen==='stage');await app.click('adaptation-button');assert.equal(app.$('adaptation-scope').options[1].disabled,true);assert.equal(app.$('adaptation-scope').value,'all');assert.equal(server.requests.filter(request=>request.path==='/api/adaptation/preview').length,0);const take=await app.exported('export-takes');assert.equal(take.practice_selection.kind,'all');assert.equal(take.practice_part,null);assert.equal(take.practice_selection.part_ids.length,2);
  }finally{await app.close();}
 });
+
+async function canonicalRangeFixture({alternate=false,sameSongId=false}={}){
+ const score=originalMultipartNotation({partCount:2,measures:4});for(const note of score.parts[1].notes)if(note.pitch)note.pitch.octave=7;
+ const other=structuredClone(score);other.id=sameSongId?score.id:'another-original-score';other.title='Another retained source revision';
+ const server=await nativeScoreServer({scores:alternate?[score,other]:[score]});
+ server.setRoute(async({path,body,defaultReply})=>{if(path!=='/api/instrument-check')return;const report=await defaultReply().json();report.note_options=body.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:note.midi<=96,positions:[]}));return nativeResponse(report);});
+ const app=await nativeStorageApp(server,{now:()=>1000}),keys=[...server.records.keys()];await app.until(()=>Boolean(app.savedButton(keys[0])));await app.click('home-single-player');app.savedButton(keys[0]).click();await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('configure-song-mod');await app.click('song-mod-all-machine');await apply(app);await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');return{app,server,score,other,keys};
+}
+
+test('stage human ownership changes refresh the same source preview before returning to Start',async()=>{
+ const {app,score}=await canonicalRangeFixture();
+ try{
+  assert.match(app.$('preview-gate').textContent,/outside this instrument range/);await app.click('edit-song-mod');set(app,'performer',score.parts[0].id,'human');await apply(app);await app.until(()=>!app.$('play-button').disabled);
+  await app.click('back-to-library');assert.match(app.$('song-mod-preview-summary').textContent,/1 human · 1 machine/);assert.equal(app.$('start-performance').disabled,false);assert.doesNotMatch(app.$('preview-gate').textContent,/outside this instrument range/);
+  await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');const take=await app.exported('export-takes');assert.deepEqual(take.practice_selection.part_ids,[score.parts[0].id]);assert.ok(take.passes[0].timeline.notes.every(note=>note.part_id===score.parts[0].id));
+ }finally{await app.close();}
+});
+
+for(const sameSongId of [false,true])test(`stage Mod changes preserve a separately browsed ${sameSongId?'revision of the same song':'song'}`,async()=>{
+ const {app,score,other,keys}=await canonicalRangeFixture({alternate:true,sameSongId});
+ try{
+  await app.click('back-to-library');app.savedButton(keys[1]).click();await app.until(()=>app.$('preview-title').textContent===other.title&&!app.$('configure-song-mod').disabled&&app.$('preview-gate').textContent.includes('outside this instrument range'));
+  await app.click('resume-session');await app.click('edit-song-mod');set(app,'performer',score.parts[0].id,'human');await apply(app);await app.until(()=>!app.$('play-button').disabled);await app.click('back-to-library');
+  assert.equal(app.$('preview-title').textContent,other.title);assert.match(app.$('song-mod-preview-summary').textContent,/2 human · 0 machine/);assert.equal(app.$('start-performance').disabled,true);await app.click('configure-song-mod');assert.ok(other.parts.every(part=>control(app,'performer',part.id).value==='human'));
+ }finally{await app.close();}
+});
+
+test('stage display edits leave an in-flight same-source preview check able to settle',async()=>{
+ const {app,server,score,keys}=await canonicalRangeFixture();let release;
+ try{
+  await app.click('edit-song-mod');set(app,'performer',score.parts[0].id,'human');await apply(app);await app.until(()=>!app.$('play-button').disabled);
+  server.setRoute(({path,defaultReply})=>path==='/api/instrument-check'?new Promise(resolve=>{release=()=>resolve(defaultReply());}):undefined);
+  await app.click('back-to-library');app.savedButton(keys[0]).click();await app.until(()=>Boolean(release));await app.click('resume-session');await app.click('edit-song-mod');set(app,'visible',score.parts[1].id,false);await apply(app);await app.click('back-to-library');assert.equal(app.$('start-performance').disabled,true);
+  release();await app.until(()=>!app.$('start-performance').disabled);await app.click('configure-song-mod');assert.equal(control(app,'visible',score.parts[1].id).checked,false);
+ }finally{release?.();await app.close();}
+});
