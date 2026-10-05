@@ -252,11 +252,11 @@
   "$defs": {
     "Color": {
       "type": "string",
-      "pattern": "^#[0-9A-Fa-f]{6}$"
+      "pattern": "^#[0-9A-Fa-f]{6}(?![\\s\\S])"
     },
     "Identifier": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+      "pattern": "^[a-z][a-z0-9-]{0,63}(?![\\s\\S])"
     },
     "NoteStyle": {
       "type": "object",
@@ -304,7 +304,7 @@
         "path": {
           "type": "string",
           "maxLength": 160,
-          "pattern": "^assets/(?:[a-z0-9][a-z0-9_-]*/)*[a-z0-9][a-z0-9_-]*\\.png$"
+          "pattern": "^assets/(?:[a-z0-9][a-z0-9_-]*/)*[a-z0-9][a-z0-9_-]*\\.png(?![\\s\\S])"
         },
         "media_type": {
           "const": "image/png"

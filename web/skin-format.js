@@ -5,9 +5,9 @@ export const SKIN_LIMITS = Object.freeze({manifest_bytes: 65_536, assets: 4,
 export const SKIN_FEATURES = Object.freeze(['background_image', 'marker_shapes', 'note_patterns', 'layout_bands']);
 const MARKERS = ['circle', 'diamond', 'square', 'triangle'];
 const textEncoder = new TextEncoder();
-const idPattern = /^[a-z][a-z0-9-]{0,63}$/;
-const pathPattern = /^assets\/(?:[a-z0-9][a-z0-9_-]*\/)*[a-z0-9][a-z0-9_-]*\.png$/;
-const colorPattern = /^#[0-9A-Fa-f]{6}$/;
+const idPattern = /^[a-z][a-z0-9-]{0,63}(?![\s\S])/;
+const pathPattern = /^assets\/(?:[a-z0-9][a-z0-9_-]*\/)*[a-z0-9][a-z0-9_-]*\.png(?![\s\S])/;
+const colorPattern = /^#[0-9A-Fa-f]{6}(?![\s\S])/;
 
 export class SkinValidationError extends Error {
   constructor(code, path, message) { super(`${path}: ${message}`); this.name = 'SkinValidationError'; this.code = code; this.path = path; }
@@ -259,22 +259,27 @@ async function verifyPixels(image, path) {
 // Missing/invalid optional images cannot replace the validated solid-color surfaces.
 export async function validateSkinResources(skin, resources = new Map()) {
   validateSkinManifest(skin);
+  skin = deepFreeze(structuredClone(skin));
   if (!(resources instanceof Map)) fail('skin_structure', '$.resources', 'expected a Map of package-relative paths to Uint8Array bytes');
   const declared = new Set(skin.assets.map(asset => asset.path));
   if (resources.size > SKIN_LIMITS.assets) fail('skin_bounds', '$.resources', 'too many supplied resources');
   let actualBytes = 0;
+  const snapshots = new Map();
   for (const [path, bytes] of resources) {
     if (!safeSkinAssetPath(path) || !declared.has(path)) fail('skin_asset_path', path, 'undeclared or unsafe resource');
     if (!(bytes instanceof Uint8Array) || bytes.length > SKIN_LIMITS.asset_bytes) fail('skin_asset_bytes', path, 'invalid or oversized supplied resource');
     actualBytes += bytes.length;
+    // Snapshot every resource before the first asynchronous decoder read. Hosts
+    // may replace a Map entry or mutate a caller-owned buffer while we await.
+    // Uint8Array construction also copies Node Buffer input; Buffer.slice() aliases.
+    snapshots.set(path, new Uint8Array(bytes));
   }
   if (actualBytes > SKIN_LIMITS.total_bytes) fail('skin_bounds', '$.resources', 'actual resource budget exceeded');
   const assets = new Map(), diagnostics = [];
   for (const asset of skin.assets) {
-    if (!resources.has(asset.path)) { diagnostics.push({code: 'skin_asset_missing', path: asset.path, fallback: 'solid_background'}); continue; }
+    if (!snapshots.has(asset.path)) { diagnostics.push({code: 'skin_asset_missing', path: asset.path, fallback: 'solid_background'}); continue; }
     try {
-      // Take ownership of a snapshot; caller mutations cannot invalidate checked bytes.
-      const bytes = resources.get(asset.path).slice();
+      const bytes = snapshots.get(asset.path);
       const image = inspectSkinPng(bytes, asset); await verifyPixels(image, asset.path);
       assets.set(asset.id, bytes);
     } catch (error) {

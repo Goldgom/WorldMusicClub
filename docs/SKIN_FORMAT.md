@@ -163,9 +163,11 @@ must still fail safely; successful validation is not evidence of GUI rendering.
 RGBA is allowed only in decorative image pixels, not palette colors.
 
 The pure resource reader takes an in-memory `Map<path, Uint8Array>` and never
-opens files. It snapshots accepted bytes. The CLI additionally refuses symlinks,
-non-regular files and real paths outside the package, and bounds file reads
-before allocation/decompression. Use a stable, private staging directory: the
+opens files. It snapshots the manifest and all bounded input bytes before the
+first asynchronous decoder read. The CLI canonicalizes the explicitly selected
+root with `realpath` (that selected root may itself be a symlink), then refuses
+symlinks within that canonical root, non-regular files and real paths outside it.
+It bounds file reads before allocation/decompression. Use a stable, private staging directory: the
 CLI is not a sandbox against another process racing ancestor-directory swaps.
 A future archive importer must independently cap compressed/expanded entries,
 reject duplicates/symlinks/traversal and stage atomically before calling this API.

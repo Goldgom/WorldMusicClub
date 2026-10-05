@@ -65,11 +65,21 @@ test('manifest decoding rejects duplicate keys, malformed UTF-8, deep JSON and o
   assert.throws(() => { frozen.notes.human.marker = 'circle'; }, TypeError);
 });
 
+test('schema and reader reject trailing line terminators in identifiers, paths and colors', () => {
+  for (const suffix of ['\n', '\r', '\r\n', '\u2028', '\u2029']) {
+    for (const edit of [s => { s.id += suffix; }, s => { s.assets[0].id += suffix; },
+      s => { s.assets[0].path += suffix; }, s => { s.palette.foreground += suffix; }]) {
+      const skin = mutate(edit); assert.equal(validateSchema(skin), false); rejects(skin);
+    }
+  }
+});
+
 test('all package paths are local, canonical, portable and non-executable', () => {
   for (const path of ['../a.png', 'assets/../a.png', '/assets/a.png', 'C:/a.png', 'assets\\a.png',
     'https://example.com/a.png', 'data:image/png;base64,x', '//host/a.png', 'assets/%2e%2e/a.png',
     'assets/a.png?x', 'assets/a.png#x', 'assets//a.png', 'assets/.a.png', 'assets/a.svg',
-    'assets/a.PNG', 'assets/con.png', 'assets/com1/a.png', 'assets/x/aux.png', 'assets/é.png', 'assets/a\u0000.png']) {
+    'assets/a.PNG', 'assets/con.png', 'assets/com1/a.png', 'assets/x/aux.png', 'assets/é.png', 'assets/a\u0000.png',
+    'assets/a.png\n', 'assets/a.png\r', 'assets/a.png\u2028']) {
     assert.equal(safeSkinAssetPath(path), false, path);
     rejects(mutate(s => { s.assets[0].path = path; }), 'skin_asset_path');
   }
@@ -82,7 +92,7 @@ test('all package paths are local, canonical, portable and non-executable', () =
 test('readable colors and two independent performer cues are mandatory', () => {
   assert.equal(contrastRatio('#000000', '#FFFFFF'), 21);
   assert.equal(contrastRatio('#ffffff', '#ffffff'), 1);
-  for (const value of ['red', '#123', '#11111100', 'rgb(1,2,3)', 'url(x)']) rejects(mutate(s => { s.palette.foreground = value; }), 'skin_color');
+  for (const value of ['red', '#123', '#11111100', 'rgb(1,2,3)', 'url(x)', '#FFFFFF\n', '#FFFFFF\r', '#FFFFFF\u2028']) rejects(mutate(s => { s.palette.foreground = value; }), 'skin_color');
   for (const change of [s => { s.palette.foreground = s.palette.surface; }, s => { s.palette.muted = s.palette.background; },
     s => { s.notes.human.fill = s.palette.surface; }, s => { s.notes.machine.foreground = s.notes.machine.fill; },
     s => { s.notes.human.outline = s.notes.human.fill; }, s => { s.keyboard.white_foreground = s.keyboard.white; },
@@ -179,6 +189,28 @@ test('format resolution never mutates authored manifest or input resource bytes'
   const before = structuredClone(sample), bytes = Buffer.from(originalPng);
   await resolveSkin(encode(sample), {features: SKIN_FEATURES, resources: resources()});
   assert.deepEqual(sample, before); assert.deepEqual(originalPng, bytes);
+});
+
+test('resource validation owns all manifest and byte snapshots before asynchronous decompression', async () => {
+  const skin = mutate(s => { s.assets.push({...s.assets[0], id: 'copy', path: 'assets/copy.png'}); });
+  const later = Buffer.from(originalPng);
+  const input = new Map([[skin.assets[0].path, originalPng], ['assets/copy.png', later]]);
+  const pending = validateSkinResources(skin, input);
+  // Simulate a UI replacing imported data while its first resource is decoding.
+  skin.assets[1].path = '../outside.png'; skin.assets[1].width = 100000;
+  input.set('assets/copy.png', new Uint8Array(SKIN_LIMITS.asset_bytes + 1)); later.fill(0);
+  const result = await pending;
+  assert.deepEqual(result.diagnostics, []); assert.equal(result.assets.size, 2);
+  assert.deepEqual(result.assets.get('copy'), new Uint8Array(originalPng));
+});
+
+test('missing bounded decoder reports a resource fallback without returning image bytes', async () => {
+  const decoder = globalThis.DecompressionStream;
+  try {
+    globalThis.DecompressionStream = undefined;
+    const result = await validateSkinResources(sample, resources());
+    assert.equal(result.assets.size, 0); assert.equal(result.diagnostics[0].code, 'skin_decoder_unavailable');
+  } finally { globalThis.DecompressionStream = decoder; }
 });
 
 test('directory validator rejects symlinks, escaping resources and bounded-file violations', async t => {
