@@ -222,7 +222,9 @@ function catalogAcceptanceEqual(left, right) {
       else assert(report.profile.marker_before === config.run_id, 'Restart must reuse the same actual browser profile');
       report.profile.marker_after = localStorage.getItem(markerKey);
       await menu.enterLibrary(); const {getAppI18n} = await import('/app-locale.js'); getAppI18n(document).setLocale('zh-CN'); report.layout = {width: innerWidth, height: innerHeight, locale: document.documentElement.lang};
-      assert(innerWidth === 1280 && innerHeight === 720 && report.layout.locale === 'zh-CN', 'Catalog acceptance needs exact1280x720 Chinese UI');
+      report.geometry = {width: innerWidth, height: innerHeight, document_client: {width: document.documentElement.clientWidth, height: document.documentElement.clientHeight}, device_pixel_ratio: devicePixelRatio, visual_viewport: globalThis.visualViewport ? {width: visualViewport.width, height: visualViewport.height, scale: visualViewport.scale, offset_left: visualViewport.offsetLeft, offset_top: visualViewport.offsetTop} : null};
+      const nativeFit = config.viewport_contract?.kind === 'native-work-area';
+      assert(report.layout.locale === 'zh-CN' && (nativeFit ? innerWidth >= 900 && innerHeight >= 640 && innerWidth <= 1280 && innerHeight <= 720 : innerWidth === 1280 && innerHeight === 720), nativeFit ? 'Native catalog needs a visible Chinese viewport from900x640 through requested1280x720' : 'Hosted catalog acceptance needs exact1280x720 Chinese UI');
       const health = await json('/api/health'); assert(health.network === 'native-protocol-no-listener' && health.library_catalog_version === 1, 'Actual native catalog capability required');
       if (phase === 'catalog-seed') await runSeed(); else if (phase === 'catalog-restart') await runRestart(); else await runFinal();
       assert(report.opened_score_databases.length === 0 && report.errors.length === 0, 'Catalog opened fallback score storage or reported an uncaught error'); report.ok = true;

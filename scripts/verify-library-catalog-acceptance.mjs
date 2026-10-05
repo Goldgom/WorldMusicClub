@@ -10,15 +10,17 @@ import {checkedCatalogStatus, checkedCatalogQuery, checkedInitializePreview, che
 import {validatePerformanceRecord} from '../web/performance-library.js';
 import {checkedManagementResponse, managementRequest} from '../web/library-management-contract.js';
 import {assertSettledPracticeExport} from './pack-management-acceptance-fixtures.mjs';
+import {CATALOG_REQUESTED_VIEWPORT, CATALOG_MINIMUM_VIEWPORT, CATALOG_NATIVE_VIEWPORT_CONTRACT, CATALOG_HOSTED_VIEWPORT_CONTRACT, validateCatalogNativeGeometry, validateCatalogNativeCaptureStable, validateCatalogNativeClick, validateCatalogPhaseSequence} from './catalog-native-geometry.mjs';
+export {validateCatalogPhaseSequence} from './catalog-native-geometry.mjs';
 
 export const CATALOG_EVIDENCE_LIMITS = Object.freeze({report: 1024 * 1024, file: 16 * 1024 * 1024, files: 512, total: 32 * 1024 * 1024, actions: 64, api: 180});
 export const CATALOG_SOURCE_FILES = Object.freeze([
-  'scripts/prepare-library-catalog-acceptance.mjs', 'scripts/verify-library-catalog-acceptance.mjs',
+  'scripts/prepare-library-catalog-acceptance.mjs', 'scripts/verify-library-catalog-acceptance.mjs', 'scripts/catalog-native-geometry.mjs',
   'crates/desktop-shell/library-catalog-acceptance.js',
   'web/app.js', 'web/native-score-storage.js', 'web/library-catalog-contract.js', 'web/library-catalog-model.js', 'web/library-catalog-view.js', 'web/library-operation-store.js', 'web/library-management.css',
   'crates/desktop-shell/src/lib.rs', 'crates/desktop-shell/src/acceptance.rs', 'crates/desktop-shell/src/catalog_product.rs', 'crates/desktop-shell/src/catalog_journal.rs', 'crates/desktop-shell/src/catalog.rs',
   'crates/desktop-shell/src/windows.rs', 'crates/desktop-shell/acceptance-wait.js', 'crates/desktop-shell/reference-acceptance.js',
-  'scripts/windows-desktop-acceptance.ps1', 'scripts/windows-desktop-profile.ps1', 'scripts/windows-desktop-catalog-snapshot.ps1', 'scripts/windows-desktop-native.cs', 'scripts/windows-desktop-evidence.ps1',
+  'scripts/windows-desktop-acceptance.ps1', 'scripts/windows-desktop-profile.ps1', 'scripts/windows-desktop-catalog-snapshot.ps1', 'scripts/windows-desktop-geometry.ps1', 'scripts/windows-desktop-native.cs', 'scripts/windows-desktop-evidence.ps1',
   'scripts/hosted-library-catalog-check.mjs', 'scripts/song-authoring-hosted-chooser.mjs',
 ]);
 export const CATALOG_REQUIRED_CHECKS = Object.freeze({
@@ -67,11 +69,22 @@ export function validateCatalogSourceBinding(value, expected) {
   for (const [file, digest] of Object.entries(value.source_hashes)) { assert.ok(ordinary(file) && hash(digest)); if (expected.source_hashes[file]) assert.equal(digest, expected.source_hashes[file]); }
 }
 
-export function validateCatalogScreenshot(bytes, observation) {
-  assert.deepEqual(validateCleanScreenshot(bytes), {width: 1280, height: 720}, 'Catalog screenshot must have exact 1280×720 pixels');
+export function validateCatalogScreenshot(bytes, observation, native = undefined) {
+  let dimensions = CATALOG_REQUESTED_VIEWPORT;
+  if (native !== undefined) {
+    assert.ok(object(native), 'Independent native screenshot geometry is required');
+    assert.ok(object(observation), 'Native screenshot metadata is required');
+    assert.equal(observation.phase, native.phase, 'Native screenshot belongs to another phase');
+    assert.ok(typeof observation.file === 'string' && /^native-(?:action-)?catalog-(?:seed|restart|final)(?:-[1-9][0-9]*)?\.png$/.test(observation.file), 'Native screenshot filename is invalid');
+    const {width, height} = validateCatalogNativeGeometry(native.geometry, {...native, stage: observation.file.slice(0, -4)});
+    dimensions = {width, height};
+    assert.equal(observation.geometry_file, `geometry-${observation.file.slice(0, -4)}.json`, 'Native screenshot lacks its own independent geometry measurement');
+    assert.deepEqual({width: observation.width, height: observation.height}, dimensions, 'Native screenshot metadata differs from independent client pixels');
+  }
+  assert.deepEqual(validateCleanScreenshot(bytes), dimensions, native === undefined ? 'Catalog screenshot must have exact 1280×720 pixels' : 'Native screenshot pixels differ from independent Win32 client pixels');
   assert.ok(object(observation) && observation.bytes === bytes.length && observation.sha256 === sha256(bytes), 'Catalog screenshot hash/size differs');
   assert.equal(observation.locale, 'zh-CN', 'Catalog screenshot must bind its Chinese layout observation');
-  return {bytes: bytes.length, sha256: sha256(bytes), width: 1280, height: 720};
+  return {bytes: bytes.length, sha256: sha256(bytes), ...dimensions};
 }
 
 export function validateCatalogApiEvidence(rows) {
@@ -181,14 +194,13 @@ export async function catalogLibraryInventory(directory) {
   await walk(directory); return rows.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export function validateCatalogProtocolPhases(reports, {sourceBinding, runId, fixture = originalCatalogAcceptanceFixtures()} = {}) {
-  assert.deepEqual(reports.map(row => row.phase), CATALOG_ACCEPTANCE_PHASES, 'Catalog renderer phases are missing, reordered or duplicated');
+export function validateCatalogProtocolPhases(reports, {sourceBinding, runId, fixture = originalCatalogAcceptanceFixtures(), nativeGeometries, nativeProcesses} = {}) {
+  validateCatalogPhaseSequence(reports, {nativeGeometries, nativeProcesses});
   assert.ok(typeof runId === 'string' && runId.length >= 16 && runId.length <= 128, 'Catalog run identity required');
   const allApi = [];
   for (const report of reports) {
     assert.equal(report.version, 1); assert.equal(report.scenario, 'library-catalog'); assert.equal(report.ok, true);
     assert.equal(report.run_id, runId); assert.equal(report.origin, 'https://wmh.localhost');
-    assert.deepEqual(report.layout, {width: 1280, height: 720, locale: 'zh-CN'});
     assert.deepEqual(report.errors, []); validateCatalogSourceBinding(report.source_binding, sourceBinding);
     assert.deepEqual(report.opened_score_databases, [], 'Native acceptance opened browser score fallback storage');
     assert.deepEqual(report.claims, {synthetic_clock: false, mock_success: false, private_music: false});
@@ -431,10 +443,19 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
   const configBytes = await read('catalog-config.json'), config = parse(configBytes);
   assert.equal(host.config_sha256, sha256(configBytes)); assert.equal(config.version, 1); assert.equal(config.run_id, host.run_id);
   validateCatalogSourceBinding(config.source_binding, sourceBinding);
+  assert.deepEqual(config.viewport_contract, native ? CATALOG_NATIVE_VIEWPORT_CONTRACT : CATALOG_HOSTED_VIEWPORT_CONTRACT, 'Catalog configuration must bind the exact viewport contract');
+  if (native) {
+    assert.deepEqual(host.requested_viewport, CATALOG_REQUESTED_VIEWPORT);
+    assert.deepEqual(host.minimum_viewport, CATALOG_MINIMUM_VIEWPORT);
+    if (host.viewport !== undefined) assert.deepEqual(host.viewport, CATALOG_REQUESTED_VIEWPORT);
+    assert.ok(Array.isArray(host.screenshots) && host.screenshots.length > 0 && host.screenshots.length <= CATALOG_ACCEPTANCE_PHASES.length * (CATALOG_EVIDENCE_LIMITS.actions + 1), 'Bounded native screenshot manifest is required');
+    assert.equal(new Set(host.screenshots.map(image => image.file)).size, host.screenshots.length, 'Duplicate native screenshot manifest entries');
+    assert.ok(host.screenshots.every(image => CATALOG_ACCEPTANCE_PHASES.includes(image.phase)), 'Native screenshot has an unknown phase');
+  } else assert.deepEqual(host.viewport, CATALOG_REQUESTED_VIEWPORT, 'Hosted catalog viewport must remain exactly 1280×720');
   const fixture = originalCatalogAcceptanceFixtures(); assert.deepEqual(config.fixture, fixture.manifest);
   assert.deepEqual(await json('fixtures/catalog-fixtures.json'), fixture.manifest);
   for (const input of fixture.inputs) assert.deepEqual(await read(`fixtures/${input.filename}`), input.bytes);
-  const reports = [], profileDirectories = new Set();
+  const reports = [], profileDirectories = new Set(), nativeGeometries = [];
   for (const [index, phase] of CATALOG_ACCEPTANCE_PHASES.entries()) {
     const row = host.phases[index], report = await json(`renderer-${phase}.json`); reports.push(report);
     assert.ok(uint(row.process_id) && row.process_id > 0); assert.equal(row.launched_new_process, true); assert.equal(row.renderer_ok, true); assert.equal(row.normal_close, true);
@@ -446,17 +467,35 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
     assert.deepEqual(profile, {version: 1, phase, process_id: row.process_id, profile_directory: row.profile_directory, library_directory: host.directory, fresh_required: index === 0, created_new: index === 0});
     const wanted = Array.from({length: row.actions}, (_, i) => [`action-${phase}-${i + 1}.json`, `result-${phase}-${i + 1}.json`]).flat().sort();
     assert.deepEqual(allNames.filter(name => name.startsWith(`action-${phase}-`) || name.startsWith(`result-${phase}-`)).sort(), wanted, 'Host action/result files must exactly match actual sequential count');
+    let phaseGeometry;
+    if (native) {
+      assert.equal(row.geometry_file, `geometry-native-${phase}.json`, 'Native phase geometry filename differs');
+      phaseGeometry = await json(row.geometry_file, 16384);
+      validateCatalogNativeGeometry(phaseGeometry, {phase, processId: row.process_id, renderer: report.geometry, layout: report.layout, stage: `native-${phase}`});
+      nativeGeometries.push(phaseGeometry);
+      const expectedImages = [...report.actions.map(action => `native-action-${phase}-${action.sequence}.png`), `native-${phase}.png`].sort();
+      assert.deepEqual(host.screenshots.filter(image => image.phase === phase).map(image => image.file).sort(), expectedImages, 'Native captures must cover every action and phase exactly once');
+    }
+    const nativeScreenshot = async (image, geometry, extra = {}) => validateCatalogScreenshot(await read(image.file), image, {geometry, phase, processId: row.process_id, renderer: report.geometry, layout: report.layout, ...extra});
     const sentActions = [];
     for (const action of report.actions) {
       const sent = await json(`action-${phase}-${action.sequence}.json`, 65536), result = await json(`result-${phase}-${action.sequence}.json`, 262144);
       sentActions.push(sent);
       assert.equal(sent.version, 1); assert.equal(sent.sequence, action.sequence); assert.equal(sent.kind, action.kind); assert.equal(result.ok, true);
+      let captureGeometry;
+      if (native) {
+        const image = host.screenshots.find(item => item.file === `native-action-${phase}-${action.sequence}.png`);
+        assert.equal(image.phase, phase); assert.equal(image.action, action.sequence);
+        assert.equal(image.geometry_file, `geometry-native-action-${phase}-${action.sequence}.json`, 'Native action screenshot geometry filename differs');
+        captureGeometry = await json(image.geometry_file, 16384);
+        await nativeScreenshot(image, captureGeometry, {capture: true, reportedViewport: [sent.width, sent.height]});
+        validateCatalogNativeCaptureStable(captureGeometry, phaseGeometry);
+      }
       if (action.kind === 'catalog-snapshot-before') continue;
-      assert.ok([sent.x, sent.y, sent.width, sent.height].every(Number.isFinite)); assert.equal(sent.width, 1280); assert.equal(sent.height, 720);
+      assert.ok([sent.x, sent.y, sent.width, sent.height].every(Number.isFinite)); assert.equal(sent.width, native ? report.layout.width : 1280); assert.equal(sent.height, native ? report.layout.height : 720);
       assert.ok(sent.x >= 0 && sent.x < sent.width && sent.y >= 0 && sent.y < sent.height);
       if (native) {
-        const point = result.client_click; assert.ok(point && uint(point.app_hwnd) && point.app_hwnd > 0 && point.foreground === point.app_hwnd && point.hit_hwnd > 0, 'Native action lacks foreground/hit ownership');
-        assert.deepEqual(point.actual, point.requested); assert.deepEqual(point.viewport, [1280, 720]);
+        const point = result.client_click; validateCatalogNativeClick(point, sent, captureGeometry);
         if (action.kind === 'picker') {
           const owned = result.owned_dialog, completed = result.picker_completion;
           assert.ok(owned?.class === '#32770' && owned.process_id === row.process_id && owned.app_process_id === row.process_id && owned.root_owner_hwnd === owned.app_hwnd && owned.app_hwnd === point.app_hwnd);
@@ -492,15 +531,18 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
     for (const [name, sequence] of Object.entries(report.screenshots)) {
       assert.ok(uint(sequence) && sequence > 0 && sequence <= row.actions && report.actions[sequence - 1].kind === 'click', `Screenshot ${name} lacks host click checkpoint`);
       const image = host.screenshots.find(item => item.phase === phase && item.action === sequence && item.file === `${native ? 'native' : 'browser'}-action-${phase}-${sequence}.png`); assert.ok(image, 'Catalog screenshot hash manifest missing');
-      validateCatalogScreenshot(await read(image.file), image);
+      if (!native) validateCatalogScreenshot(await read(image.file), image);
     }
     const finalImage = host.screenshots.find(item => item.phase === phase && item.action === undefined && item.file === `${native ? 'native' : 'browser'}-${phase}.png`); assert.ok(finalImage, 'Catalog phase final screenshot absent');
-    validateCatalogScreenshot(await read(finalImage.file), finalImage);
+    if (native) {
+      assert.equal(finalImage.geometry_file, row.geometry_file, 'Final native capture must bind its phase geometry');
+      await nativeScreenshot(finalImage, phaseGeometry);
+    } else validateCatalogScreenshot(await read(finalImage.file), finalImage);
   }
   assert.equal(profileDirectories.size, 1, 'Recovery phases used different browser profile directories');
   assert.ok(typeof host.directory === 'string' && host.directory.replaceAll('\\', '/').endsWith('/Scores'));
   assert.equal([...profileDirectories][0].replaceAll('\\', '/'), `${host.directory.replaceAll('\\', '/').slice(0, -7)}/webview-catalog-profile`);
-  const operations = validateCatalogProtocolPhases(reports, {sourceBinding, runId: host.run_id, fixture});
+  const operations = validateCatalogProtocolPhases(reports, {sourceBinding, runId: host.run_id, fixture, ...(native ? {nativeGeometries, nativeProcesses: host.phases.map(row => row.process_id)} : {})});
   const [seed, restart, final] = reports;
   assert.equal(seed.api_trace.filter(row => row.path === '/api/library/list' && row.status === 200)[0]?.response.entries.length, 0, 'Seed must prove a genuinely empty native library');
   for (const report of reports) {

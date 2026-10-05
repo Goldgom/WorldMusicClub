@@ -188,3 +188,16 @@ test('full management uploads preserve failed original evidence and hidden journ
     assert.deepEqual(upload.with.path.trim().split('\n'), paths);
   }
 });
+
+
+test('focused and full Native Linux gates run the original current-Basic Rust/DOM proof and retain its report',()=>{
+  const full=spawnSync(python,['scripts/check-authoring-workflow.py','.github/workflows/windows-desktop-acceptance.yml','--json'],{cwd:root,encoding:'utf8',timeout:10000});assert.equal(full.status,0,full.stderr);
+  for(const [job,report] of [[workflow.jobs['management-browser'],'${{ runner.temp }}/library-management-native/current-basic.json'],[JSON.parse(full.stdout).jobs['bulk-import-browser'],'${{ runner.temp }}/library-management-browser/current-basic-native.json']]){
+    const steps=job.steps,run=steps.find(row=>row.run?.includes('npm run test:current-basic-catalog-native'));assert.ok(run);
+    assert.equal(run.env.WMH_CURRENT_BASIC_REPORT,report);assert.equal(run.env.WMH_CATALOG_DRIVER_BUILD_SHA,'${{ github.sha }}');
+    assert.equal(run.env.WMH_NATIVE_IMPORT_DRIVER,'${{ github.workspace }}/target/debug/examples/native_import_driver');
+    const build=steps.findIndex(row=>row.run==='cargo build -p worldmusichub-desktop --example native_import_driver --locked');assert.ok(build>=0&&build<steps.indexOf(run));
+    const root=report.slice(0,report.lastIndexOf('/'));
+    assert.ok(steps.some(row=>row.if==='always()'&&row.uses?.startsWith('actions/upload-artifact@')&&row.with.path.includes(root+'/**')));
+  }
+});

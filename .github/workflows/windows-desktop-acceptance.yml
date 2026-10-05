@@ -47,6 +47,13 @@ jobs:
       - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js tests/authoring-final-gate.test.js
       - id: dense_native_driver
         run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - name: Original current Basic catalog protection through Rust stdin and app DOM
+        timeout-minutes: 6
+        env:
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_CATALOG_DRIVER_BUILD_SHA: ${{ github.sha }}
+          WMH_CURRENT_BASIC_REPORT: ${{ runner.temp }}/library-management-browser/current-basic-native.json
+        run: npm run test:current-basic-catalog-native
       - run: cargo build -p score-core --bin clean-song-batch --locked
       - id: notation_server
         run: cargo build -p practice-server --locked
@@ -337,7 +344,7 @@ jobs:
       - name: Parse the exact native acceptance script
         shell: pwsh
         run: |
-          foreach ($script in @('scripts/windows-desktop-acceptance.ps1','scripts/windows-desktop-profile.ps1','scripts/windows-desktop-catalog-snapshot.ps1','scripts/windows-native-portable-smoke.ps1')) {
+          foreach ($script in @('scripts/windows-desktop-acceptance.ps1','scripts/windows-desktop-profile.ps1','scripts/windows-desktop-catalog-snapshot.ps1','scripts/windows-desktop-geometry.ps1','scripts/windows-native-portable-smoke.ps1')) {
             $tokens=$null; $errors=$null
             [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$tokens,[ref]$errors)
             if ($errors.Count) { $errors | Format-List; throw "PowerShell syntax errors in $script" }

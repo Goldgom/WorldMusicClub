@@ -21,7 +21,8 @@ three active editions, zero in Trash and all four original memberships.
 The verifier rejects missing/reordered phases, absent source binding, source
 files not contained in the reported Git commit, changed module hashes, a missing
 independent executable/driver, unmatched host actions/results, synthetic click
-observations, malformed PNGs, wrong 1280×720 Chinese layout, mutated request or
+observations, malformed PNGs, wrong hosted 1280×720 Chinese layout or inconsistent native
+client/CSS/DPI/work-area measurements, mutated request or
 response bytes, changed operation ownership, and changed prior retained files.
 Hosted Chromium additionally preserves every actual native dispatch and raw
 response body outside the renderer report. Native Windows preserves the actual
@@ -108,10 +109,34 @@ with an exact-source packaged EXE and a fresh output directory:
 ```
 
 The host uses actual Windows controls, foreground/hit ownership and owned native
-file dialogs. Only these catalog phases request a 1280×720 client area. The
-screenshots contain the actual client pixels; a different DPI/client size fails
-rather than silently resizing the image. Picker diagnostics retain whole-dialog
-captures. All other scenarios keep their existing window/profile behavior.
+file dialogs. Catalog phases still request a 1280×720 logical client, while the
+existing 900×640 minimum, `prevent_overflow()` and centering remain enabled. The
+observed Windows runner work area was 1024×720; already accepted native click
+evidence had a 1024×689 client at screen origin (0,31), matching the later catalog
+renderer size. Requiring a physical 1280×720 client on that work area prevented
+any catalog action and hid the original failure before a screenshot was saved.
+
+Hosted Chromium keeps the exact 1280×720 contract. Native acceptance instead
+requires a real Chinese CSS viewport and document client between 900×640 and
+the requested 1280×720. Every capture records independent owned-window client,
+screen origin, outer window, monitor/work area, DPI, monitor scale and DPI
+awareness. The renderer independently records inner dimensions, document client,
+`devicePixelRatio` and VisualViewport. The PNG must exactly match the measured
+client pixels, and the CSS-to-pixel mapping must match the measured DPR/window
+DPI/monitor scale, allowing only integer layout rounding. Root scrollbar width
+is observed through document-client/VisualViewport measurements, not excused by
+an arbitrary pixel tolerance. Zoomed, shifted, missing or inconsistent geometry
+fails. The complete client must fit the monitor work area; invisible outer-frame
+borders need not fit. CSS/client dimensions and DPR stay stable across all three
+processes, and every action retains its actual foreground, target-hit and
+CSS-to-native click checks. Screenshots are never resized or synthesized.
+
+A failed renderer report is retained before capture. Failure diagnostics preserve
+the first error plus separate measurement/capture errors, measured rectangles and
+a raw owned-client PNG at its actual size when available. These files are marked
+`diagnostic-only` and cannot enter accepted screenshot evidence. Picker diagnostics
+still capture the whole owned dialog. Other scenarios keep their existing capture
+and window/profile behavior. No DPI, screen resolution or OS setting is changed.
 The catalog seed reserves a new profile; both restart phases require the same
 existing ordinary profile and matching earlier process records. The renderer
 also checks its real persisted run marker and exact recovery record before
@@ -148,13 +173,33 @@ confirmation; cancel sends no catalog write. Each Trash/restore selection gets
 its own exact impact preview and confirmation. The hosted/native scripts exercise
 these controls through the shared application UI. A successful run must preserve
 the source archives, clean media, practice/free-recording data and shared references
-identified by the verifier, and its actual 1280×720 Chinese screenshots still need
-visual review. Membership move/remove and pack removal remain open API/UI work.
+identified by the verifier. Hosted 1280×720 and native actual-size Chinese
+screenshots still need visual review of readable, reachable controls. Membership move/remove and pack removal remain open API/UI work.
 
 Artifacts include the exact native driver or EXE, reports, screenshots and the
 newly authored fixture library. Browser/WebView profile directories are excluded.
-The first Windows run must also verify 100% DPI and sufficient monitor work area
-for the required 1280×720 physical client and CSS viewport. Screenshots must not
-be resized to hide a mismatch. The historical prior-311 fixture provenance above
+The first Windows run must provide consistent independent client/CSS/DPI
+measurements and enough visible work area for the minimum client. An unmeasured
+DPI assumption or a resized image cannot satisfy this contract. The historical prior-311 fixture provenance above
 remains replay evidence only; only a new complete run proves this source's
 actual-window behavior.
+
+## Measurement references and current-song protection
+
+[GetWindowRect](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindowrect)
+can be DPI-virtualized and can include invisible resize borders. The host records
+caller/window awareness and DWM frame bounds separately instead of mistaking
+those borders for clipped controls.
+[GetDpiForWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getdpiforwindow)
+reports monitor DPI for a per-monitor-aware target; that provenance is explicit
+in diagnostics.
+[GetScaleFactorForMonitor](https://learn.microsoft.com/en-us/windows/win32/api/shellscalingapi/nf-shellscalingapi-getscalefactorformonitor)
+is recorded with its success HRESULT and checked against renderer DPR. No DPI
+awareness setter is used to conceal a mismatch.
+
+Both focused management and full Native Linux jobs now run
+`npm run test:current-basic-catalog-native` after building their exact-source
+Rust driver. Its five original-fixture cases cover current Basic Trash protection
+and normal source handoffs in the production app DOM with real Rust stdin. The
+JSON report is retained with its actual driver build SHA. It explicitly remains
+Node DOM evidence, not a rendered Basic protection or physical-audio claim.

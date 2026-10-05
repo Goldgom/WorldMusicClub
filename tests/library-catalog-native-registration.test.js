@@ -66,7 +66,11 @@ test('catalog application screenshots capture exactly the actual client pixels w
   assert.match(capture,/\$printFlags=2/);
   assert.match(capture,/if\(\$ClientOnly\) \{\s*if\(\$Scenario -cne 'library-catalog'\)\{throw/);
   assert.match(capture,/GetClientRect\(\$Handle,\[ref\]\$rectangle\)/);
-  assert.match(capture,/if\(\(\$rectangle.Right-\$rectangle.Left\) -ne 1280 -or \(\$rectangle.Bottom-\$rectangle.Top\) -ne 720\)\{throw/);
+  assert.match(capture,/actual client pixels exceed the finite capture bound/);
+  assert.match(capture,/geometry_file=\$catalogCaptureGeometryFile/);
+  assert.match(capture,/Get-NativeWindowGeometry \$App/);
+  assert.ok(capture.indexOf('Get-NativeWindowGeometry')<capture.lastIndexOf('Capture-Handle $App.MainWindowHandle'));
+  assert.doesNotMatch(capture,/-ne 1280|-ne 720/);
   assert.match(capture,/\$printFlags=3\s*\} elseif\(-not \[NativeAcceptance\]::GetWindowRect\(\$Handle,\[ref\]\$rectangle\)\)/);
   assert.match(capture,/System.Drawing.Bitmap\(\(\$rectangle.Right-\$rectangle.Left\),\(\$rectangle.Bottom-\$rectangle.Top\)\)/);
   assert.match(capture,/PrintWindow\(\$Handle,\$device,\$printFlags\)/);
@@ -89,4 +93,25 @@ test('native source allowlist import cannot accidentally invoke the verifier CLI
   assert.ok(Array.isArray(files)&&files.length>=15&&files.length<=40);
   assert.ok(files.includes('scripts/verify-library-catalog-acceptance.mjs'));
   assert.ok(files.includes('scripts/windows-desktop-acceptance.ps1'));
+});
+
+
+test('native geometry failures preserve renderer error and raw actual pixels as separate diagnostics',()=>{
+  const geometry=read('scripts/windows-desktop-geometry.ps1'), renderer=read('crates/desktop-shell/library-catalog-acceptance.js');
+  assert.match(geometry,/owner -ne \$App.Id -or \$root -ne \$window/);
+  for(const name of ['GetClientRect','GetWindowRect','ClientToScreen','GetMonitorInfo','GetDpiForWindow','GetScaleFactorForMonitor','GetWindowDpiAwarenessContext','GetThreadDpiAwarenessContext'])assert.ok(geometry.includes(name),name);
+  assert.match(geometry,/System.Drawing.Bitmap\(\$width,\$height\)/);
+  assert.match(geometry,/kind='diagnostic-only';accepted=\$false/);
+  assert.match(geometry,/PrintWindow\(\$window,\$device,3\)/);
+  assert.doesNotMatch(geometry,/SetProcessDpi|SetThreadDpi|SetWindowPos|ChangeDisplaySettings|DrawImage|ScaleTransform|Resize/);
+  assert.match(host,/\$firstError=\$_;\$failure=\$firstError.Exception.Message/);
+  assert.match(host,/New-NativeFailureDiagnostics \$phase \$failure/);
+  assert.match(host,/throw \$firstError/);
+  const receipt=host.indexOf('$catalogRendererGeometry=$report.geometry;');
+  assert.ok(receipt>0&&host.indexOf('if(-not $report.ok)',receipt)<host.indexOf('Capture-Window $app "native-$phase"',receipt),'Original renderer error is checked before success capture');
+  assert.match(renderer,/document_client: \{width: document.documentElement.clientWidth, height: document.documentElement.clientHeight\}/);
+  assert.match(renderer,/device_pixel_ratio: devicePixelRatio/);
+  assert.match(renderer,/innerWidth >= 900 && innerHeight >= 640 && innerWidth <= 1280 && innerHeight <= 720/);
+  assert.match(renderer,/innerWidth === 1280 && innerHeight === 720/);
+  assert.ok(read('tests/windows-desktop-contract.ps1').includes('windows-desktop-geometry-contract.ps1'));
 });

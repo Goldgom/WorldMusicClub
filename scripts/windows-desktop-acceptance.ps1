@@ -56,6 +56,8 @@ Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing
 Add-Type -Path (Join-Path $PSScriptRoot 'windows-desktop-native.cs')
 . (Join-Path $PSScriptRoot 'windows-desktop-profile.ps1')
 . (Join-Path $PSScriptRoot 'windows-desktop-catalog-snapshot.ps1')
+. (Join-Path $PSScriptRoot 'windows-desktop-geometry.ps1')
+$catalogRendererGeometry=$null;$catalogReportedViewport=$null;$catalogCaptureGeometryFile=$null
 function Save-Json($Value,[string]$Path) {
   $temporary="$Path.tmp"
   $Value | ConvertTo-Json -Depth 16 | Set-Content -Encoding utf8 $temporary
@@ -66,7 +68,7 @@ function Capture-Handle([IntPtr]$Handle,[string]$Name,[switch]$ClientOnly) {
   if($ClientOnly) {
     if($Scenario -cne 'library-catalog'){throw 'Client-only acceptance capture requires the catalog scenario'}
     if(-not [NativeAcceptance]::GetClientRect($Handle,[ref]$rectangle)){throw 'Cannot read catalog native client bounds'}
-    if(($rectangle.Right-$rectangle.Left) -ne 1280 -or ($rectangle.Bottom-$rectangle.Top) -ne 720){throw 'Catalog native client pixels must be exactly 1280x720; DPI scaling or window resizing changed the capture size'}
+    if(($rectangle.Right-$rectangle.Left) -le 0 -or ($rectangle.Bottom-$rectangle.Top) -le 0 -or ($rectangle.Right-$rectangle.Left) -gt 8192 -or ($rectangle.Bottom-$rectangle.Top) -gt 8192 -or [int64]($rectangle.Right-$rectangle.Left)*($rectangle.Bottom-$rectangle.Top) -gt 16777216){throw 'Catalog actual client pixels exceed the finite capture bound'}
     # PW_CLIENTONLY | PW_RENDERFULLCONTENT. Keep the actual client pixels;
     # never resize or synthesize an image to satisfy the acceptance dimensions.
     $printFlags=3
@@ -80,14 +82,21 @@ function Capture-Handle([IntPtr]$Handle,[string]$Name,[switch]$ClientOnly) {
     if($Scenario -eq 'library-catalog') {
       $capture=Get-Item -LiteralPath (Join-Path $OutputDirectory "$Name.png") -Force
       if($capture.Length -le 0 -or $capture.Length -gt 16MB -or ($capture.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Catalog screenshot must be a bounded ordinary PNG'}
-      $row=[ordered]@{file="$Name.png";bytes=$capture.Length;sha256=(Get-FileHash -LiteralPath $capture.FullName -Algorithm SHA256).Hash.ToLowerInvariant();phase=$env:WMH_DESKTOP_ACCEPTANCE_PHASE;locale='zh-CN';width=$bitmap.Width;height=$bitmap.Height}
+      $row=[ordered]@{file="$Name.png";bytes=$capture.Length;sha256=(Get-FileHash -LiteralPath $capture.FullName -Algorithm SHA256).Hash.ToLowerInvariant();phase=$env:WMH_DESKTOP_ACCEPTANCE_PHASE;locale='zh-CN';width=$bitmap.Width;height=$bitmap.Height;geometry_file=$catalogCaptureGeometryFile}
       if($Name -cmatch '^native-action-catalog-(seed|restart|final)-([1-9]|[1-5][0-9]|6[0-4])$'){$row.action=[int]$Matches[2]}
       $native.screenshots+=,$row
     }
   }
   finally { $bitmap.Dispose() }
 }
-function Capture-Window($App,[string]$Name) { Capture-Handle $App.MainWindowHandle $Name -ClientOnly:($Scenario -ceq 'library-catalog') }
+function Capture-Window($App,[string]$Name) {
+  if($Scenario -ceq 'library-catalog') {
+    $script:catalogCaptureGeometryFile="geometry-$Name.json"
+    $geometry=Get-NativeWindowGeometry $App $env:WMH_DESKTOP_ACCEPTANCE_PHASE $Name $catalogRendererGeometry $catalogReportedViewport
+    Save-Json $geometry (Join-Path $OutputDirectory $catalogCaptureGeometryFile)
+  }
+  Capture-Handle $App.MainWindowHandle $Name -ClientOnly:($Scenario -ceq 'library-catalog')
+}
 function Find-Control($Root,[string]$Id) {
   $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,$Id)
   return $Root.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$condition)
@@ -410,7 +419,7 @@ $phases=if($Scenario -eq 'library-catalog'){@('catalog-seed','catalog-restart','
 if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','library-catalog')){$native.profile_reused=$false;$native.scenario=$Scenario;$native.directory=Join-Path $OutputDirectory 'Scores'}
 try {
 if($Scenario -eq 'library-catalog') {
-  $native.profile_reused=$true;$native.screenshots=@()
+  $native.profile_reused=$true;$native.screenshots=@();$native.requested_viewport=[ordered]@{width=1280;height=720};$native.minimum_viewport=[ordered]@{width=900;height=640}
   $sourceNames=& node --input-type=module -e 'import {pathToFileURL} from "node:url"; const module=await import(pathToFileURL(process.argv[2])); console.log(JSON.stringify(module.CATALOG_SOURCE_FILES));' -- catalog-source-list (Join-Path $PSScriptRoot 'verify-library-catalog-acceptance.mjs')
   if($LASTEXITCODE -ne 0){throw 'Cannot read catalog acceptance source allowlist'}
   $sourceNames=ConvertFrom-Json -InputObject $sourceNames
@@ -423,7 +432,7 @@ if($Scenario -eq 'library-catalog') {
     $native.source_hashes[$name]=(Get-FileHash -LiteralPath $sourceFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
   }
   $native.run_id=[guid]::NewGuid().ToString('D')
-  $config=[ordered]@{version=1;run_id=$native.run_id;source_binding=[ordered]@{source_sha=$native.source_sha;source_tree=$native.source_tree;source_hashes=$native.source_hashes};fixture=(Read-AcceptanceJsonSnapshot -Path (Join-Path $Fixtures 'catalog-fixtures.json') -MaximumBytes 128KB)}
+  $config=[ordered]@{version=1;viewport_contract=[ordered]@{kind='native-work-area';requested=$native.requested_viewport;minimum=$native.minimum_viewport};run_id=$native.run_id;source_binding=[ordered]@{source_sha=$native.source_sha;source_tree=$native.source_tree;source_hashes=$native.source_hashes};fixture=(Read-AcceptanceJsonSnapshot -Path (Join-Path $Fixtures 'catalog-fixtures.json') -MaximumBytes 128KB)}
   $configPath=Join-Path $OutputDirectory 'catalog-config.json'
   Save-Json $config $configPath
   if((Get-Item -LiteralPath $configPath).Length -gt 128KB){throw 'Catalog configuration exceeds 128 KiB'}
@@ -446,6 +455,7 @@ if($Scenario -eq 'library-catalog') {
         $blockedStage=$true;[IO.File]::WriteAllText($stage,'Isolated acceptance write blocker')
       }
     }
+    $catalogRendererGeometry=$null;$catalogReportedViewport=$null;$report=$null
     $env:WMH_DESKTOP_ACCEPTANCE_PHASE=$phase
     $app=Start-Process -FilePath $Executable -PassThru -RedirectStandardError (Join-Path $OutputDirectory "stderr-$phase.log")
     $phaseStart=[DateTime]::UtcNow;$deadline=$phaseStart.AddSeconds(240);$sequence=1;$reportDeliveryWatch=$null
@@ -469,6 +479,7 @@ if($Scenario -eq 'library-catalog') {
       $action=Read-AcceptanceJsonSnapshot -Path $actionFile -MaximumBytes 64KB -AllowPending
       if($null -ne $action) {
         if($action.sequence -ne $sequence -or $sequence -gt 64){throw 'Out-of-order or over-limit native action'}
+        $catalogReportedViewport=@($action.width,$action.height)
         $result=@{ok=$false}
         try{Native-Action $app $action $result;if($Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','library-catalog')){Capture-Window $app "native-action-$phase-$sequence"};$result.ok=$true}catch{$result.error=$_.Exception.Message}
         Save-Json $result (Join-Path $OutputDirectory "result-$phase-$sequence.json")
@@ -481,6 +492,11 @@ if($Scenario -eq 'library-catalog') {
       Start-Sleep -Milliseconds 100
     }
     $app.Refresh()
+    if($Scenario -ceq 'library-catalog') {
+      $catalogRendererGeometry=$report.geometry;$catalogReportedViewport=@($report.layout.width,$report.layout.height)
+      # Preserve the first renderer failure; strict success capture must not mask it.
+      if(-not $report.ok){throw "Native $phase failed: $($report.error)"}
+    }
     Assert-AcceptanceProfileEvidence $OutputDirectory $profileSelection $app.Id
     Capture-Window $app "native-$phase"
     # One existing EXE-owned listener sample, not a network/security audit.
@@ -488,7 +504,7 @@ if($Scenario -eq 'library-catalog') {
     $item=[ordered]@{phase=$phase;process_id=$app.Id;renderer_ok=$report.ok;renderer_origin=$report.origin;actions=$sequence-1;elapsed_seconds=([DateTime]::UtcNow-$phaseStart).TotalSeconds;executable_tcp_listeners=$listeners.Count;normal_close=$false}
     $item.profile_directory=$profileSelection.profile_directory;$item.profile_absent_before_launch=$profileSelection.profile_absent_before_launch
     if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','library-catalog')){$item.launched_new_process=$true;$item.profile_fresh=$true;$item.profile_reused=$false}
-    if($Scenario -eq 'library-catalog'){$item.profile_fresh=$profileSelection.fresh_required;$item.profile_reused=$profileSelection.existing_required}
+    if($Scenario -eq 'library-catalog'){$item.profile_fresh=$profileSelection.fresh_required;$item.profile_reused=$profileSelection.existing_required;$item.geometry_file=$catalogCaptureGeometryFile}
     $native.phases+=,$item;Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
     if(-not $report.ok){throw "Native $phase failed: $($report.error)"}
     if($report.origin -ne 'https://wmh.localhost'){throw 'Origin/profile continuity changed'}
@@ -533,10 +549,23 @@ if($Scenario -eq 'library-catalog') {
     Write-Output 'Native file import/export, exact backups, same-profile restart, keyboard/free/history, navigation and normal/active close gates passed.'
   }
 } catch {
-  $failure=$_.Exception.Message
+  $firstError=$_;$failure=$firstError.Exception.Message
   $native.failure_details=[ordered]@{phase=$phase;profile_directory=$profileSelection.profile_directory;exception_type=$_.Exception.GetType().FullName;hresult=$_.Exception.HResult;error_id=$_.FullyQualifiedErrorId;category=[string]$_.CategoryInfo;position=$_.InvocationInfo.PositionMessage}
-  if($null -ne $app -and -not $app.HasExited){try{Capture-Window $app "native-failure-$phase"}catch{}}
-  $native.ok=$false;$native.error=$failure;Save-Json $native (Join-Path $OutputDirectory $nativeReportName);throw
+  if($Scenario -ceq 'library-catalog') {
+    $native.failure_details.renderer_error=$report.error;$native.failure_details.renderer_layout=$report.layout;$native.failure_details.renderer_geometry=$report.geometry
+    $diagnostics=New-NativeFailureDiagnostics $phase $failure {
+      if($null -eq $app -or $app.HasExited){throw 'No live owned app remains for failure geometry'}
+      Get-NativeWindowGeometry $app $phase 'failure' $report.geometry $catalogReportedViewport
+    } {
+      if($null -eq $app -or $app.HasExited){throw 'No live owned app remains for failure capture'}
+      Capture-NativeFailurePixels $app $OutputDirectory "native-failure-$phase-raw"
+    }
+    $native.failure_details.diagnostic_file="diagnostic-$phase.json"
+    try {Save-Json $diagnostics (Join-Path $OutputDirectory "diagnostic-$phase.json")} catch {$native.failure_details.diagnostic_write_error=$_.Exception.Message}
+  } elseif($null -ne $app -and -not $app.HasExited){try{Capture-Window $app "native-failure-$phase"}catch{}}
+  $native.ok=$false;$native.error=$failure
+  try {Save-Json $native (Join-Path $OutputDirectory $nativeReportName)} catch {[Console]::Error.WriteLine("Could not persist failure report: $($_.Exception.Message)")}
+  throw $firstError
 } finally {
   if($null -ne $app -and -not $app.HasExited){Stop-Process -Id $app.Id}
   if($blockedStage) {
