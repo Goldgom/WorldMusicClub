@@ -29,8 +29,18 @@ export function assertCanonicalPreviewOutput(run,compilation,profile) {
   const start=Math.min(...timeline.notes.map(note=>note.start_ms));assert.equal(plan.rangeMode,true);assert.equal(plan.rangeStartFrame,Math.round(start*rate/1000));assert.equal(plan.rangeEndFrame,Math.round(Math.min(timeline.duration_ms,start+30000)*rate/1000));
   assert.deepEqual(run.node,{actualAudioWorkletNode:true,contextMatches:true,numberOfInputs:0,numberOfOutputs:1});
   assert.equal(run.prepared.planFingerprint,plan.planFingerprint);assert.equal(run.started.planFingerprint,plan.planFingerprint);assert.equal(run.started.connected,true);assert.equal(run.started.outputContextMatches,true);
-  const graph=path=>{assert.ok(path?.length>=3,'Preview needs a real connected output path');assert.equal(path[0].type,'AudioWorkletNode');assert.equal(path.at(-1).type,'AudioDestinationNode');for(const node of path)if(node.gain!==null)assert.ok(Number.isFinite(node.gain)&&node.gain>0,'Preview output gains must remain audible');};
-  graph(run.started.graphToDestination);graph(run.pcm.graphToDestination);
+  const graph=(path,{admission=false}={})=>{
+    assert.ok(path?.length>=3,'Preview needs a real connected output path');assert.equal(path[0].type,'AudioWorkletNode');assert.equal(path.at(-1).type,'AudioDestinationNode');
+    for(const [index,node]of path.entries())if(node.gain!==null){
+      // The receiver's own immediate gate starts closed and is scheduled to
+      // open at the future anchor. This exception never applies downstream or
+      // to the later graph sampled alongside nonzero output PCM.
+      const scheduledGate=admission&&index===1&&node.type==='GainNode'&&node.gain===0&&path[2]?.type==='GainNode'&&path.length>=4&&Number.isFinite(run.started.observedAudioTime)&&run.started.observedAudioTime<run.started.anchorTime&&run.started.anchorTime-run.started.observedAudioTime<=.1;
+      assert.ok(Number.isFinite(node.gain)&&(node.gain>0||scheduledGate),'Preview output gains must remain audible');
+    }
+  };
+  assert.ok(Number.isFinite(run.started.outputGain)&&run.started.outputGain>0,'The preview mixer output must be audible at admission');
+  graph(run.started.graphToDestination,{admission:true});graph(run.pcm.graphToDestination);
   for(const type of ['ready','started'])assert.equal(run.messages.filter(message=>message.type===type).length,1);
   assert.ok(run.messages.every(message=>message.isTrusted===true&&message.portMatches===true),'Preview receipts must come from the actual native MessagePort');
   assert.equal(run.pcm.method,'passive-output-analyser');assert.equal(run.pcm.fftSize,256);assert.ok(run.pcm.blocks.length>0&&run.pcm.blocks.length<=64);
@@ -43,4 +53,12 @@ export function assertCanonicalPreviewStopped(evidence,index,{pcm=false}={}) {
   assert.ok(run.rawTerminals.length>0&&run.rawTerminals.every(row=>row.isTrusted===true&&row.portMatches===true&&row.ledgerType==='Float64Array'),'Stop requires the actual native cancellation ledger');
   assert.equal(run.terminals[0].record.type,'canceled','The explicit Stop must cancel the audition');
   validateCanonicalFrameLedger(run,{pcm,runName:'browser lobby audition'});
+}
+
+// Persist a bounded snapshot before an assertion so a hosted failure retains
+// the admission-time gate, later PCM graph and native lifecycle diagnostics.
+export function canonicalPreviewAudioCheckpoint(evidence,index,context={}) {
+  const run=evidence.runs[index];
+  const terminal=row=>({callback:row.callback,isTrusted:row.isTrusted,portMatches:row.portMatches,ledgerType:row.ledgerType,record:Object.fromEntries(['type','state','reason','generation','planGeneration','frame','anchorFrame','sampleRate','active','started','ended'].map(key=>[key,row.record?.[key]]))});
+  return {version:1,...context,runIndex:index,runCount:evidence.runs.length,status:{...evidence.status,graphHistory:undefined},run:run&&{receiverId:run.receiverId,planGeneration:run.planGeneration,positionFrame:run.positionFrame,plan:Object.fromEntries(['protocol','policyId','sampleRate','count','sourceFingerprint','compiledFingerprint','planFingerprint'].map(key=>[key,run.plan[key]])),node:run.node,prepared:run.prepared,started:run.started,lifecycle:run.lifecycle,messages:run.messages.slice(-16),pcm:{...run.pcm,blocks:run.pcm.blocks.slice(0,64)},terminals:run.terminals.slice(0,4).map(terminal),rawTerminals:run.rawTerminals.slice(0,4).map(terminal)}};
 }

@@ -33,7 +33,11 @@ export function registerAboveKeyboardBrowserRegressions({test,getPage,ui,setSess
     await page.waitForFunction(()=>document.querySelector('#notation-lane-overlay')?.closest('.piano-lanes-shared'));
     const initial=await simultaneousStageGeometry();assertSimultaneousPiano(initial);assertLaneOverlay(await readLaneOverlayGeometry(page));
     await page.locator('#play-button').click();
+    // Play awaits native audio preparation. Only a running source clock and
+    // an admitted recording pass authorize this test's real performance key.
+    await page.waitForFunction(()=>{const clock=globalThis.__wmhReadPlaybackClock();return clock.running&&clock.positionMs>0&&document.querySelector('.performance-status').dataset.phase==='capturing';});
     await page.locator('#stage-title').click();await page.keyboard.press('a');
+    await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');
     await page.waitForFunction(()=>Number(document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex)>=8);
     await page.locator('#play-button').click();await waitForEngraving();
     const expected=await page.locator('.engraving-expected-cue:not([hidden])').count();assert.equal(expected,2,'Both original staff voices retain exact current-note cues');
