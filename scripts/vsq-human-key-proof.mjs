@@ -1,11 +1,13 @@
+import {validateLiveToneEvidence} from './live-tone-proof.mjs';
 import assert from 'node:assert/strict';
 
 export function validateVsqNativeKey(result,host) {
  assert.equal(result.client_click,undefined,'Timed VSQ key must not click');const key=result.native_key;
  assert.ok(Number.isSafeInteger(key?.app_hwnd)&&key.app_hwnd>0);assert.equal(key.foreground,key.app_hwnd);assert.equal(key.app_process_id,host.process_id);assert.equal(key.app_enabled,true);
- assert.equal(key.code,'KeyU');assert.equal(key.virtual_key,0x55);assert.equal(key.focus_reacquired,false);assert.equal(key.pointer_clicked,false);return key;
+ assert.equal(key.code,'KeyU');assert.equal(key.virtual_key,0x55);assert.equal(key.hold_ms,40);assert.equal(key.focus_reacquired,false);assert.equal(key.pointer_clicked,false);return key;
 }
 export function validateVsqHumanScore(report,fixture) {
+ validateLiveToneEvidence(report.humanLiveAudio,{keyCode:'KeyU',midi:63,transport:report.transportAdmission});
  const p=report.keyPreparation;assert.ok(p,'VSQ count-in focus evidence required');assert.equal(p.focused,true);assert.equal(p.activeElement,'stage-title');assert.equal(p.readyCue,'countdown');assert.equal(p.readyPositionMs,0);assert.equal(p.mapping,'U');
  for(const key of ['readyWallMs','dispatchWallMs','dispatchPositionMs','countInMs'])assert.ok(Number.isFinite(p[key])&&p[key]>=0);assert.equal(p.countInMs,4*60000/fixture.runtime.compilation.score.tempo[0].bpm);assert.ok(Number.isFinite(p.timeOrigin)&&p.timeOrigin>0);assert.ok(p.readyWallMs<p.dispatchWallMs);assert.ok(p.dispatchPositionMs>0&&p.dispatchPositionMs<120);assert.ok(Number.isSafeInteger(p.playAction)&&p.playAction>0&&p.keyAction===p.playAction+1&&p.keyAction<=report.actions);
  const rows=report.transportAdmission.rows,ready=rows.findIndex(row=>row.kind==='key-focus-ready'),onset=rows.findIndex(row=>row.event?.type==='keydown'&&row.event.code==='KeyU');assert.ok(ready>=0&&onset>ready);assert.equal(rows[ready].state.cue,'countdown');
