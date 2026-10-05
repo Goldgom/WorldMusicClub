@@ -110,3 +110,14 @@ test('performance presentation moves existing controls once and scopes checked v
   context.recorder.active.inputs.push({});context.recorder.active.revision=2;view.update();assert.equal(document.getElementById('hud-result').hidden,true);assert.equal(document.getElementById('hud-accuracy').textContent,'—');assert.equal(document.getElementById('hud-captured').textContent,'2');assert.equal(document.querySelector('.performance-status').dataset.phase,'pending');
  }finally{for(const[key,descriptor]of originals)if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key]}
 });
+
+test('complete practice shares a flexible toolbar row without shrinking fixed actions or wrapping its summary',async()=>{
+ // This checks responsive CSS ownership. Actual text metrics and two-row fit
+ // remain part of the real hosted/native toolbar geometry and screenshots.
+ const css=await readFile(new URL('../web/clean-song.css',import.meta.url),'utf8'),{document}=parseHTML(`<style>${css}</style>`),rules=[...document.querySelector('style').sheet.cssRules];
+ const controls=rules.findLast(rule=>rule.selectorText==='.performance-layout .stage-hud>.complete-practice-controls'),[grow,shrink,basis]=controls.style.flex.split(' ');assert.equal(grow,'1');assert.equal(shrink,'1');assert.match(basis,/^\d+rem$/);assert.ok(parseInt(basis)>=18&&parseInt(basis)<=22,'The row basis must leave room for navigation on laptop widths');assert.equal(controls.style['min-width'],'0');
+ const fixed=rules.findLast(rule=>rule.selectorText==='.performance-layout .complete-practice-controls>.button,.performance-layout .complete-practice-controls>label');assert.equal(fixed.style.flex,'none');assert.equal(fixed.style['white-space'],'nowrap');
+ const summary=rules.findLast(rule=>rule.selectorText==='.performance-layout .complete-practice-controls>p');assert.equal(summary.style['min-width'],'0');assert.equal(summary.style['white-space'],'nowrap');assert.equal(summary.style['text-overflow'],'ellipsis');
+ const laptop=rules.find(rule=>rule.media?.mediaText==='(min-width:651px) and (max-width:1050px)');assert.ok(laptop);assert.ok([...laptop.cssRules].some(rule=>rule.selectorText.includes('nav .button')&&rule.style['font-size']==='11px'&&rule.style['padding-left']==='7px'));
+ const mobile=rules.find(rule=>rule.media?.mediaText==='(max-width:650px)');assert.equal([...mobile.cssRules].find(rule=>rule.selectorText==='.performance-layout .stage-hud>.complete-practice-controls').style['flex-basis'],'100%');
+});

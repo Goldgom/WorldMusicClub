@@ -13,9 +13,17 @@
 .performance-layout .stage-hud:has(.complete-practice-controls:not([hidden]))>nav{flex:0 0 auto}
 .performance-layout .stage-hud:has(.complete-practice-controls:not([hidden]))>.button,.performance-layout .stage-hud:has(.complete-practice-controls:not([hidden])) nav .button{flex:none;white-space:nowrap}
 .performance-layout .stage-hud:has(.complete-practice-controls:not([hidden])) nav #library-button{max-width:none;white-space:nowrap}
-.performance-layout .stage-hud>.complete-practice-controls{order:10;flex:1 0 100%;min-width:0;padding:0;flex-wrap:nowrap;gap:8px}
+.performance-layout .stage-hud>.complete-practice-controls{order:10;flex:1 1 20rem;min-width:0;padding:0;flex-wrap:nowrap;gap:8px}
 .performance-layout .complete-practice-controls>.button,.performance-layout .complete-practice-controls>label{flex:none;white-space:nowrap}
 .performance-layout .complete-practice-controls>p{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
-@media(max-width:650px){.performance-layout .stage-hud:has(.complete-practice-controls:not([hidden])) .stage-heading{min-width:10rem}.performance-layout .stage-hud>.complete-practice-controls{flex-wrap:wrap}.performance-layout .complete-practice-controls>p{flex-basis:100%}}
+@media(max-width:650px){.performance-layout .stage-hud:has(.complete-practice-controls:not([hidden])) .stage-heading{min-width:10rem}.performance-layout .stage-hud>.complete-practice-controls{flex-basis:100%;flex-wrap:wrap}.performance-layout .complete-practice-controls>p{flex-basis:100%}}
 .performance-layout .stage-hud:has(.complete-practice-controls:not([hidden]))>#song-parts-tools{flex:0 1 10rem;min-width:6rem;max-width:10rem}
 .performance-layout .stage-hud:has(.complete-practice-controls:not([hidden])) #song-parts-summary{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* On laptop widths the fixed actions still read in full; the summary yields
+   the remaining width so navigation and practice share their second row. */
+@media(min-width:651px) and (max-width:1050px){
+ .performance-layout .stage-hud:has(.complete-practice-controls:not([hidden]))>nav{gap:3px}
+ .performance-layout .stage-hud:has(.complete-practice-controls:not([hidden])) :is(nav .button,.complete-practice-controls>.button){font-size:11px;padding-left:7px;padding-right:7px}
+ .performance-layout .complete-practice-controls>label{font-size:11px}
+}
