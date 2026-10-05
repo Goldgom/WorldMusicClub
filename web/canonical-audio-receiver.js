@@ -64,7 +64,10 @@ export class CanonicalAudioReceiver extends BasicKeyAudioReceiver {
       }
       if(message.type==='paused'){
         if(this.state!=='pausing'||!Number.isSafeInteger(message.sourcePositionFrame)){this.fail(error('invalid_audio_command','Unexpected canonical pause acknowledgement.'));return;}
-        this.state='paused';this.pausedSourceFrame=message.sourcePositionFrame;this.clockPauses.push({start:message.frame,end:null});this.outputGate.gain.setValueAtTime(0,this.context.currentTime);
+        const span=this.clockPauses.at(-1);
+        if(message.resumedLeadCanceled){if(!span||span.start!==message.pauseFrame||span.end==null||span.end<message.frame){this.fail(error('invalid_audio_command','The canceled resume lead does not match its existing pause interval.'));return;}span.end=null;}
+        else {if(span&&(span.end==null||span.end>message.frame)){this.fail(error('invalid_audio_command','Canonical pause intervals must not overlap.'));return;}this.clockPauses.push({start:message.pauseFrame??message.frame,end:null});}
+        this.state='paused';this.pausedSourceFrame=message.sourcePositionFrame;this.outputGate.gain.cancelScheduledValues(this.context.currentTime);this.outputGate.gain.setValueAtTime(0,this.context.currentTime);
         this.takePending(message.requestId)?.resolve(message);this.onPaused(message);return;
       }
       if(message.type==='resumed'){

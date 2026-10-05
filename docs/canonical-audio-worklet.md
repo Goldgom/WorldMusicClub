@@ -114,6 +114,10 @@ with at most 256 work items per quantum. No gate starts before the final ready
 acknowledgement. Full 100k preparation takes 782 quanta at 128-frame blocks/48kHz.
 This is an algorithmic work bound, not evidence of meeting a device deadline.
 Cancel/replace is admitted between quanta, immediately fencing the old generation.
+Host fingerprinting and full-source validation still run synchronously before
+admission; the chunk bound applies to processor preparation, not to main-thread
+input/UI responsiveness during maximum-size host preparation. That remains a
+separate browser/device stress concern.
 
 A development run on 2026-10-05 measured 100k transfer attachment at ~0.095 ms and
 maximum prepare quantum at ~1.85 ms. These Node measurements are not portable
@@ -224,3 +228,23 @@ then checks384 gate starts/ends,192 pass anchors and every join without a missin
 sample. Separate tests cover repeated count-in silence, paused held envelopes,
 first-partial seeks, all-human clocks, stale input bindings and reduced budgets.
 These are production-processor block tests, not device acceptance.
+
+## Lifecycle edge invariants
+
+Seeking exactly B creates an empty first partial interval, even if written notes
+sustain beyond B. A nonloop range ends at its start anchor; a loop then enters
+its next A/count-in cycle. No zero-length gate is synthesized.
+
+Re-pausing before a future resume anchor has rendered any sample reopens the
+existing pause span and rolls back that unused anchor/envelope shift. The next
+resume books a single complete pause interval. It neither overlaps pause spans
+nor rewinds the source. Stale start commands cannot reinitialize a newer active
+cursor or pass; only an accepted current-generation ready-to-running transition
+initializes playback.
+
+Terminal `passCount` counts entered cycles, while `observedPassCount` counts
+musical `pass_started` observations. `passFrames` is indexed by zero-based pass
+and is -1 when that musical start was not observed, including canceled count-in
+or an empty first interval at B. These sentinels are initialized within bounded
+scratch preparation (still at most256 work items per quantum). Consumers must
+not invent a take from an entered count-in cycle or an unobserved pass frame.

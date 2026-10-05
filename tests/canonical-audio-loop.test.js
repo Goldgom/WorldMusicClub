@@ -94,3 +94,32 @@ test('new generation during range count-in resumes only the remaining count-in',
  const harness=basicKeyAudioHarness(),r=await CanonicalAudioReceiver.create(harness.context,harness.output,{nodeFactory:()=>harness.nodeFactory({Core:CanonicalAudioCore})});try{await r.prepare(p,{positionMs:210});const started=await r.start();assert.equal(r.sourcePositionMs(),210);const clock=r.sourceClockAtTime((started.anchorFrame+20*48)/48000);assert.equal(clock.positionMs,230);assert.equal(clock.inCountIn,true);assert.equal(clock.passIndex,0);}finally{r.dispose();await Promise.resolve();}
  assert.throws(()=>plan({resumePositionMs:149.9}));
 });
+test('seek exactly B admits an empty first interval even when source sustains cross B',()=>{
+ for(const loop of [false,{enabled:true,maxPasses:2}]){
+  const p=plan({resumePositionMs:500,loop}),h=rig(p);assert.equal(p.firstGateCount,0);assert.equal(p.firstRangeOrder.length,0);
+  while(h.core.state==='running')h.block();const e=h.messages.find(m=>m.type==='ended');assert.ok(e,JSON.stringify(h.messages.at(-1)));assert.equal(e.recordCount,loop?2:0);assert.equal(e.frame,h.anchor+(loop?350*48:0));
+  if(loop){assert.equal(e.ledger.actualStarts[0],h.anchor+100*48);assert.equal(e.ledger.actualEnds[0],h.anchor+350*48);assert.equal(e.passFrames[0],-1);assert.equal(e.passFrames[1],h.anchor+100*48);assert.equal(e.observedPassCount,1);}
+ }
+});
+test('re-pausing during a future resume lead reopens one interval without rewinding held playback',async()=>{
+ const h=basicKeyAudioHarness(),r=await CanonicalAudioReceiver.create(h.context,h.output,{nodeFactory:()=>h.nodeFactory({Core:CanonicalAudioCore})}),p=plan({countInMs:0,loop:{enabled:true,maxPasses:3}});
+ try{
+  await r.prepare(p);const start=await r.start();for(let i=0;i<40;i++)h.renderBlock();const firstPause=await r.pause(),position=r.sourcePositionMs(),phase=h.nodes[0].core.voiceSlots[h.nodes[0].core.activeSlots[0]].phase;
+  await r.resume();const secondPause=await r.pause();assert.equal(secondPause.resumedLeadCanceled,true);assert.equal(secondPause.pauseFrame,firstPause.frame);assert.equal(r.clockPauses.length,1);assert.equal(r.sourcePositionMs(),position);
+  for(let i=0;i<10;i++)assert.ok(h.renderBlock()[0].every(v=>v===0));assert.equal(h.nodes[0].core.voiceSlots[h.nodes[0].core.activeSlots[0]].phase,phase);
+  const resumed=await r.resume(),shift=resumed.resumeFrame-firstPause.frame;assert.equal(r.sourceClockAtTime(resumed.resumeTime).positionMs,position);
+  while(h.nodes[0].core.state==='running')h.renderBlock();h.deliverMain();const e=r.lastCompletion;assert.deepEqual([...e.pauseSpans],[firstPause.frame,resumed.resumeFrame]);assert.equal(e.ledger.actualEnds[0],start.anchorFrame+12000+shift);assert.equal(e.frame,start.anchorFrame+36000+shift);assert.equal(e.totalPausedFrames,shift);
+ }finally{r.dispose();await Promise.resolve();}
+});
+test('stale start cannot reset cursor or pass state in a newer active generation',()=>{
+ const p=plan({countInMs:0,loop:{enabled:true,maxPasses:3}}),h=rig(p),packed=createCanonicalAudioTransfer(p);
+ h.core.handleMessage({type:'prepare',generation:2,positionFrame:p.initialPositionFrame-p.initialCountInFrames,wire:packed.wire},h.frame);while(h.core.state==='preparing')h.block();h.core.handleMessage({type:'start',generation:2,anchorFrame:h.frame+100},h.frame);for(let i=0;i<10;i++)h.block();
+ const cursor=h.core.cursor,pass=h.core.rangePassIndex,anchor=h.core.initialAnchorFrame;h.core.handleMessage({type:'start',generation:1,anchorFrame:h.frame+100},h.frame);assert.equal(h.messages.at(-1).type,'stale');assert.equal(h.core.cursor,cursor);assert.equal(h.core.rangePassIndex,pass);assert.equal(h.core.initialAnchorFrame,anchor);
+ while(h.core.state==='running')h.block();assert.equal(h.core.state,'ended');assert.equal(h.messages.at(-1).planGeneration,2);assert.equal(h.messages.at(-1).recordCount,6);
+});
+test('canceled count-in reports entered cycles separately from observed musical passes',()=>{
+ for(const inSecondCycle of [false,true]){
+  const p=plan({loop:{enabled:true,maxPasses:3}}),h=rig(p),first=h.anchor+p.initialCountInFrames,stopAt=inSecondCycle?first+12000+128:h.anchor+128;
+  while(h.frame<stopAt)h.block();h.command('cancel',{generation:2});const e=h.messages.findLast(m=>m.type==='canceled');assert.equal(e.passCount,inSecondCycle?2:1);assert.equal(e.observedPassCount,inSecondCycle?1:0);assert.equal(e.passFrames[inSecondCycle?1:0],-1);assert.equal(e.recordCount,inSecondCycle?2:0);
+ }
+});

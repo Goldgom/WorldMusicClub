@@ -76,7 +76,7 @@ export function buildCanonicalAudioPlan(compilation,profile,{sampleRate,mode='pr
   const requestedPositionFrame=explicitPosition?Math.round(resumePositionMs*sampleRate/1000):rangeStartFrame-countInFrames;
   if(!int(requestedPositionFrame,rangeStartFrame-countInFrames,rangeEndFrame))fail('A range resume must remain within its A/count-in through B bounds.');
   const initialPositionFrame=Math.max(rangeStartFrame,requestedPositionFrame),initialCountInFrames=initialPositionFrame-requestedPositionFrame;
-  const firstRangeOrder=rangeOrder.filter(i=>notes[i][2]>initialPositionFrame),firstGateCount=firstRangeOrder.length,rangeGateCount=rangeOrder.length;
+  const firstRangeOrder=rangeOrder.filter(i=>initialPositionFrame<rangeEndFrame&&notes[i][2]>initialPositionFrame),firstGateCount=firstRangeOrder.length,rangeGateCount=rangeOrder.length;
   // Budget includes the full immutable wire, complete actual gate ledger,
   // per-pass anchors and fixed pause spans. No repeated source-note copies.
   const byRecords=rangeGateCount?1+Math.floor((L.maxGateRecords-firstGateCount)/rangeGateCount):L.maxPasses;

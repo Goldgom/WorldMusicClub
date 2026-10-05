@@ -116,13 +116,14 @@ export class BasicKeyAudioCore {
         if (!Number.isFinite(value) || Math.abs(value) > 1.001) reject('invalid_audio_plan', 'A procedural triangle table exceeds its finite unit-amplitude bound.');
         continue;
       }
-      if (this.prepareCursor === p.count) {
+      const phaseLength = this.preparePhase === 0 ? Math.max(p.count, this.profile?.scratchCount?.(p) || 0) : p.count;
+      if (this.prepareCursor === phaseLength) {
         if (this.preparePhase === 0) { this.preparePhase = 1; this.prepareCursor = 0; continue; }
         this.profile?.finishValidation?.(p, this.profileValidation);
         this.validated = true; this.state = 'ready'; this.emit({type: 'ready', requestId: this.prepareRequestId, ...this.snapshot(frame + blockLength)}); break;
       }
       const index = this.prepareCursor++; worked++;
-      if (this.preparePhase === 0) { p.seen[index] = 0; this.actualStarts[index] = -1; this.actualEnds[index] = -1; continue; }
+      if (this.preparePhase === 0) { if (index < p.count) { p.seen[index] = 0; this.actualStarts[index] = -1; this.actualEnds[index] = -1; } this.profile?.initializeScratch?.(p, index); continue; }
       const start = p.starts[index], end = p.ends[index], key = p.keys[index], velocity = p.velocities[index], role = p.roles[index];
       const vsq = p.identityKind === VSQ_AUDIO_IDENTITY;
       const digits = p.authoredIdDigits?.[index];
@@ -146,7 +147,7 @@ export class BasicKeyAudioCore {
       let at = this.heapLength++;
       while (at > 0) { const parent = (at - 1) >> 1; if (this.endHeap[parent] <= end) break; this.endHeap[at] = this.endHeap[parent]; at = parent; }
       this.endHeap[at] = end;
-      if (end > this.positionFrame) this.order[this.eligibleCount++] = index; else this.skippedCount++;
+      if (this.profile?.eligibleGate ? this.profile.eligibleGate(p, index, this.positionFrame) : end > this.positionFrame) this.order[this.eligibleCount++] = index; else this.skippedCount++;
     }
     this.lastPrepareWork = worked;
   }

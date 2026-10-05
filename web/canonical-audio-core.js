@@ -9,9 +9,12 @@ const profile=Object.freeze({
   identity:(p,i)=>({occurrenceIndex:p.occurrences[i]}),compareIdentity:(p,a,b)=>p.occurrences[a]-p.occurrences[b],
   validIdentity:(p,i)=>int(p.occurrences[i],0,p.sourceOccurrences-1)&&p.roles[i]===0,
   validatePosition(p,position){if(p.rangeMode&&position!==p.initialPositionFrame-p.initialCountInFrames)reject('invalid_audio_command','The range position differs from its fingerprinted A/count-in.');},
+  scratchCount:p=>p.rangeMode?p.maxPasses:0,
+  initializeScratch(p,index){if(p.rangeMode&&index<p.maxPasses)p.passFrames[index]=-1;},
+  eligibleGate:(p,i,position)=>p.rangeMode?p.initialPositionFrame<p.rangeEndFrame&&p.ends[i]>p.initialPositionFrame:p.ends[i]>position,
   beginValidation(p){const h=canonicalPlanHasher(p);h.rangeCount=0;h.firstCount=0;return h;},
   audibleGate:(p,i)=>!p.rangeMode||p.ends[i]>p.rangeStartFrame&&p.starts[i]<p.rangeEndFrame,
-  validateRow(p,i,h){h.gate(p.occurrences[i],p.starts[i],p.ends[i],p.keys[i],p.velocities[i]);if(p.ends[i]>p.rangeStartFrame&&p.starts[i]<p.rangeEndFrame){if(p.rangeMode)p.rangeOrder[h.rangeCount]=i;h.rangeCount++;if(p.ends[i]>p.initialPositionFrame)h.firstCount++;}},
+  validateRow(p,i,h){h.gate(p.occurrences[i],p.starts[i],p.ends[i],p.keys[i],p.velocities[i]);if(p.ends[i]>p.rangeStartFrame&&p.starts[i]<p.rangeEndFrame){if(p.rangeMode)p.rangeOrder[h.rangeCount]=i;h.rangeCount++;if(p.initialPositionFrame<p.rangeEndFrame&&p.ends[i]>p.initialPositionFrame)h.firstCount++;}},
   finishValidation(p,h){if(h.hex()!==p.planFingerprint||h.rangeCount!==p.rangeGateCount||h.firstCount!==p.firstGateCount)reject('canonical_audio_fingerprint','Transferred gates do not match the prepared frame-plan fingerprint.');},
 });
 
@@ -40,14 +43,14 @@ export class CanonicalAudioCore extends BasicKeyAudioCore {
       const p=this.plan,ledger=this.rangeLedgerTransferred?null:{actualStarts:p.loopStarts,actualEnds:p.loopEnds};
       const transfer=ledger?[p.loopStarts.buffer,p.loopEnds.buffer,p.passFrames.buffer,spans.buffer]:[spans.buffer];
       this.rangeLedgerTransferred=true;this.actualStarts=null;this.actualEnds=null;
-      this.emit({type,...extra,...this.snapshot(frame),ledger,pauseSpans:spans,initialAnchorFrame:this.initialAnchorFrame??null,ledgerLayout:'range-pass-major',recordCount:this.startedCount,passCount:(this.rangePassIndex??-1)+1,completedPasses:this.state==='ended'?this.plan.maxPasses:Math.max(0,this.rangePassIndex??0),passFrames:ledger?p.passFrames:null},transfer);return;
+      this.emit({type,...extra,...this.snapshot(frame),ledger,pauseSpans:spans,initialAnchorFrame:this.initialAnchorFrame??null,ledgerLayout:'range-pass-major',recordCount:this.startedCount,passCount:this.rangeCycleCount??0,observedPassCount:this.observedPassCount??0,completedPasses:this.state==='ended'?this.plan.maxPasses:Math.max(0,(this.rangeCycleCount??0)-1),passFrames:ledger?p.passFrames:null},transfer);return;
     }
     super.emitCompletion(type,frame,{...extra,pauseSpans:spans,initialAnchorFrame:this.initialAnchorFrame??null});
   }
   handleMessage(message,frame){
     if(message?.type==='prepare'&&int(message.generation,this.generation+1,LIMITS.maxGeneration)){
       // Replaced completion must observe the old generation's pause ledger.
-      super.handleMessage(message,frame);this.pauseCount=0;this.totalPausedFrames=0;this.initialAnchorFrame=null;this.pausedPositionFrame=null;this.pauseFrame=null;this.resumeFrame=null;this.rangePassIndex=-1;this.rangeLedgerTransferred=false;return;
+      super.handleMessage(message,frame);this.pauseCount=0;this.totalPausedFrames=0;this.initialAnchorFrame=null;this.pausedPositionFrame=null;this.pauseFrame=null;this.resumeFrame=null;this.rangePassIndex=-1;this.rangeLedgerTransferred=false;this.rangeCycleCount=0;this.observedPassCount=0;return;
     }
     if(message?.type==='audit'&&this.plan?.rangeMode&&message.generation===this.generation){
       try{
@@ -65,13 +68,23 @@ export class CanonicalAudioCore extends BasicKeyAudioCore {
         if(message.generation!==this.generation)reject('invalid_audio_command','Canonical pause generation was not prepared.');
         if(message.type==='pause'){
           if(this.state!=='running')reject('invalid_audio_command','Only running canonical playback can pause.');
+          // No sample has resumed while resumeFrame remains in the future.
+          // Reopen the existing pause rather than booking its lead twice.
+          if(this.resumeFrame!=null&&frame<=this.resumeFrame){
+            const index=this.pauseCount-1,start=this.pauseSpans[index*2],end=this.pauseSpans[index*2+1],shift=end-start;
+            this.anchorFrame-=shift;this.totalPausedFrames-=shift;
+            for(let i=0;i<this.activeCount;i++){const voice=this.voiceSlots[this.activeSlots[i]];voice.start-=shift;voice.end-=shift;}
+            if(this.plan.rangeMode){this.rangePassAnchor-=shift;this.rangeCycleAnchor-=shift;this.rangeBoundary-=shift;}
+            this.pauseSpans[index*2+1]=-1;this.pauseFrame=start;this.resumeFrame=null;this.state='paused';
+            this.emit({type:'paused',requestId:message.requestId,pauseFrame:start,resumedLeadCanceled:true,...this.snapshot(frame)});return;
+          }
           if(this.pauseCount>=LIMITS.maxPauses)reject('canonical_audio_budget','The 4096-pause ledger bound was reached; stop and prepare a new generation.');
           // Messages are admitted at a quantum boundary. Expire gates ending
           // exactly here, then freeze all remaining voices without releasing.
           for(let i=this.activeCount-1;i>=0;i--)if(this.voiceSlots[this.activeSlots[i]].end<=frame)this.finishVoice(i,frame,'gate');
           this.pausedPositionFrame=this.sourcePosition(frame);this.pausedPassIndex=this.plan.rangeMode?this.rangeClock(frame).passIndex:0;this.pauseFrame=frame;this.state='paused';
           this.pauseSpans[this.pauseCount*2]=frame;this.pauseSpans[this.pauseCount*2+1]=-1;this.pauseCount++;
-          this.emit({type:'paused',requestId:message.requestId,...this.snapshot(frame)});return;
+          this.emit({type:'paused',requestId:message.requestId,pauseFrame:frame,resumedLeadCanceled:false,...this.snapshot(frame)});return;
         }
         if(this.state!=='paused')reject('invalid_audio_command','Only paused canonical playback can resume.');
         const anchor=message.anchorFrame;
@@ -89,8 +102,9 @@ export class CanonicalAudioCore extends BasicKeyAudioCore {
     if(message?.type==='start'&&this.plan?.rangeMode&&message.generation===this.generation){
       const p=this.plan;if(!int(message.anchorFrame+rangeDuration(p),0,LIMITS.maxFrame)){this.fail(new BasicKeyAudioError('invalid_audio_command','The complete loop exceeds the anchored frame budget.'),frame,message.requestId);return;}
     }
+    const acceptedStart=message?.type==='start'&&message.generation===this.generation&&this.state==='ready';
     super.handleMessage(message,frame);
-    if(message?.type==='start'&&this.state==='running'){this.initialAnchorFrame=this.anchorFrame;if(this.plan.rangeMode){this.rangePassIndex=0;this.rangeCycleAnchor=this.anchorFrame;this.rangePassAnchor=this.anchorFrame+this.plan.initialCountInFrames;this.rangeBoundary=this.rangePassAnchor+this.plan.rangeEndFrame-this.plan.initialPositionFrame;this.rangePassOpened=false;this.cursor=0;}}
+    if(acceptedStart&&message?.type==='start'&&this.state==='running'){this.initialAnchorFrame=this.anchorFrame;if(this.plan.rangeMode){this.rangePassIndex=0;this.rangeCycleCount=0;this.observedPassCount=0;this.rangeCycleAnchor=this.anchorFrame;this.rangePassAnchor=this.anchorFrame+this.plan.initialCountInFrames;this.rangeBoundary=this.rangePassAnchor+this.plan.rangeEndFrame-this.plan.initialPositionFrame;this.rangePassOpened=false;this.cursor=0;}}
   }
   process(channels,firstFrame){
     // The shared sample loop must not advance held phases in the lead to resume.
@@ -125,17 +139,18 @@ export class CanonicalAudioCore extends BasicKeyAudioCore {
         const frame=firstFrame+offset;
         for(let i=this.activeCount-1;i>=0;i--)if(this.voiceSlots[this.activeSlots[i]].end<=frame)this.finishVoice(i,frame,'gate');
         if(frame<this.anchorFrame)continue;
+        if(!this.rangeCycleCount)this.rangeCycleCount=1;
         if(frame>=terminal){
           if(this.activeCount||this.rangePassIndex>=0&&this.cursor!==this.eligibleCount)reject('audio_processor_error','The range terminal disagrees with the complete pass ledger.');
           this.state='ended';this.emitCompletion('ended',frame,{reason:p.loopEnabled?'loop_budget_end':'range_end'});break;
         }
         if(frame===this.rangeBoundary){
           if(this.activeCount||this.cursor!==this.eligibleCount)reject('audio_processor_error','A loop boundary disagrees with its complete gate plan.');
-          this.rangePassIndex++;this.rangeCycleAnchor=frame;this.rangePassAnchor=frame+p.countInFrames;this.rangeBoundary=this.rangePassAnchor+passLength;this.rangePassOpened=false;this.order=p.rangeOrder;this.eligibleCount=p.rangeGateCount;this.cursor=0;
+          this.rangePassIndex++;this.rangeCycleCount++;this.rangeCycleAnchor=frame;this.rangePassAnchor=frame+p.countInFrames;this.rangeBoundary=this.rangePassAnchor+passLength;this.rangePassOpened=false;this.order=p.rangeOrder;this.eligibleCount=p.rangeGateCount;this.cursor=0;
         }
         if(frame<this.rangePassAnchor)continue;
         if(!this.rangePassOpened){
-          this.rangePassOpened=true;p.passFrames[this.rangePassIndex]=frame;
+          this.rangePassOpened=true;this.observedPassCount++;p.passFrames[this.rangePassIndex]=frame;
           this.emit({type:'pass_started',...this.snapshot(frame),passIndex:this.rangePassIndex,frame,cycleStartFrame:this.rangeCycleAnchor,passStartFrame:frame,nextBoundaryFrame:this.rangeBoundary});
         }
         const origin=this.rangePassIndex===0?p.initialPositionFrame:p.rangeStartFrame;
