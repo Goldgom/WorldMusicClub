@@ -1419,7 +1419,7 @@ const libraryView = setupScoreLibrary({getScore:()=>state.cleanSong?null:state.s
 const legacyLibraryButton=$('library-button');legacyLibraryButton.removeAttribute('data-i18n');
 bindText(legacyLibraryButton,()=>i18n.locale==='en'?(scoreStorage?.snapshot().kind==='native'?'Legacy browser archives':'Browser archives'):(scoreStorage?.snapshot().kind==='native'?'旧版浏览器收藏':'浏览器收藏管理'));
 scoreStorage=new ScoreStorageModel({openStorage:()=>openScoreStorage({origin:location.origin,validateScore:(score,signal)=>api('/api/compile',score,signal)})});
-const libraryManagement=setupLibraryManagementView({document,i18n,getStorage:()=>scoreStorage.storage()});
+const libraryManagement=setupLibraryManagementView({document,i18n,getStorage:()=>scoreStorage.storage(),onCommitted:async()=>{if(!await scoreStorage.rescan())throw new Error('Saved-song inventory refresh failed.');}});
 window.addEventListener('pagehide',()=>libraryManagement.destroy());
 bulkImportView=setupBulkImportView({document,i18n,getStorageKind:async()=>(await scoreStorage.storage()).info.kind,
   onOpen:()=>{scoreSaveNavigation++;state.loadIntent++;state.compileController?.abort();referenceListening?.close();performanceListening?.stop({revokePolicy:true});cancelPendingStart();},pausePlayback,

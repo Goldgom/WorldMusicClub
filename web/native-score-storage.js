@@ -1,3 +1,4 @@
+import {catalogQuery, catalogPreviewRequest, checkedCatalogStatus, checkedCatalogQuery, checkedInitializePreview, checkedCatalogPreview, checkedCatalogSync, checkedCatalogResult} from './library-catalog-contract.js';
 import {managementRequest,checkedManagementResponse} from './library-management-contract.js';
 import {isBasicKeysSong,isBasicKeysSummary,BASIC_KEYS_PROFILE,prepareCleanSong,prepareVsqPractice,preparePerformanceSong,isVsqSong,isPerformanceSong,isPerformanceSummary,VSQ_PROFILE,PERFORMANCE_PROFILE} from './clean-song-package.js';
 import {openScoreLibrary,LIBRARY_LIMITS,libraryError} from './local-library.js';
@@ -40,7 +41,7 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
   catch(cause){if(cause?.name==='AbortError'&&!writing)throw cause;throw issue(writing?'library_commit_uncertain':'library_transport',writing?'The save response was lost. Refresh to confirm whether this score was saved.':'The local app could not be reached.',{persistence:writing?'unknown':'not-saved',cause})}
   if(response.redirected||(response.url&&new URL(response.url,origin).origin!==expectedOrigin))throw issue('library_environment_unknown','A library response left the app origin.',{persistence:writing?'unknown':'not-saved'});
   let value;try{value=await response.json()}catch(cause){throw issue('library_invalid_response','The app returned an unreadable storage response.',{persistence:writing?'unknown':'not-saved',cause})}
-  if(!response.ok)throw issue(typeof value?.code==='string'?value.code:'library_request_failed',typeof value?.error==='string'?value.error:'The storage operation failed.',{status:response.status,existing:value?.existing,persistence:value?.code==='library_commit_uncertain'?'unknown':'not-saved'});
+  if(!response.ok){const error=issue(typeof value?.code==='string'?value.code:'library_request_failed',typeof value?.error==='string'?value.error:'The storage operation failed.',{status:response.status,existing:value?.existing,persistence:path.startsWith('/api/library/catalog/')&&writing?value?.outcome==='not_committed'?'not-saved':'unknown':value?.code==='library_commit_uncertain'?'unknown':'not-saved'});if(writing){error.outcome=value?.outcome||'uncertain';error.operation_id=value?.operation_id;}throw error;}
   return value;
  }
  const health=await request('/api/health');
@@ -53,7 +54,7 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
   signal?.throwIfAborted();const result=validateScore?await validateScore(structuredClone(score),signal):await request('/api/compile',{body:score,signal});signal?.throwIfAborted();
   if(result!==true&&(!result?.score||!Array.isArray(result?.timeline?.notes)))throw issue('library_validation_required','Rust validation did not confirm this complete canonical score.');
  };
- const info=Object.freeze({kind,storage:kind==='native'?'native-filesystem':'indexeddb',origin:expectedOrigin,capabilities:Object.freeze({rescan:true,backup:true,chooseDirectory:false,openFolder:false,manageQuery:kind==='native'&&health.library_management_query_version===1})});
+ const info=Object.freeze({kind,storage:kind==='native'?'native-filesystem':'indexeddb',origin:expectedOrigin,capabilities:Object.freeze({rescan:true,backup:true,chooseDirectory:false,openFolder:false,manageQuery:kind==='native'&&health.library_management_query_version===1,manageCatalog:kind==='native'&&health.library_catalog_version===1})});
  async function list({signal}={}){
   if(kind==='browser'){const rows=await browser.list();signal?.throwIfAborted();return{...info,directory:null,entries:rows.map(row=>entry(kind,row)),issues:[]}}
   const value=await request('/api/library/list',{signal});
@@ -66,6 +67,19 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
   const {signal,...input}=options,body=managementRequest(input);
   return checkedManagementResponse(await request('/api/library/manage/query',{body,signal}),body);
  }
+ function requireCatalog(){if(!info.capabilities.manageCatalog)throw issue('catalog_unavailable','Recoverable removal requires a native app with catalog support.');}
+ async function catalogStatus({signal}={}){requireCatalog();return checkedCatalogStatus(await request('/api/library/catalog/status',{signal}));}
+ async function queryCatalog(options={}){requireCatalog();const {signal,libraryId,...input}=options,body=catalogQuery(input);return checkedCatalogQuery(await request('/api/library/catalog/query',{body,signal}),body,libraryId);}
+ async function previewCatalogInitialize({libraryId,signal}={}){requireCatalog();return checkedInitializePreview(await request('/api/library/catalog/initialize/preview',{body:{},signal}),libraryId);}
+ async function previewCatalog(options={}){requireCatalog();const {signal,...input}=options,body=catalogPreviewRequest(input);return checkedCatalogPreview(await request('/api/library/catalog/preview',{body,signal}),body);}
+ async function previewCatalogSync({signal,...body}={}){requireCatalog();return checkedCatalogSync(await request('/api/library/catalog/sync/preview',{body,signal}),body);}
+ async function commitCatalog(record){
+  requireCatalog();const path=record.kind==='initialize'?'/api/library/catalog/initialize':'/api/library/catalog/commit';
+  // No AbortSignal: a dialog only owns the read. A submitted native write survives closing.
+  try{return checkedCatalogResult(await request(path,{body:{preview:record.preview,library_id:record.library_id},writing:true}),record);}
+  catch(error){if(error.outcome!=='not_committed'||error.operation_id!==record.operation_id){error.outcome='uncertain';error.persistence='unknown';}throw error;}
+ }
+ async function catalogOperation(record,{signal}={}){requireCatalog();return checkedCatalogResult(await request('/api/library/catalog/operation',{body:{operation_id:record.operation_id,library_id:record.library_id},signal}),record,{lookup:true});}
  async function save(score,{label=null,allowConflictingId=false,signal,scoreJson}={}){
   // Capture before the first await; a later edit cannot alter the saved import.
   const captured=snapshot(score);
@@ -173,5 +187,5 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
   for(const job of assetReads.splice(0)){job.detach();job.reject(issue('library_storage_closed','The local library is closed.'));}
   browser?.close();
  }
- return{info,list,save,load,loadAsset,chooseVsqPractice,exportBackup,queryManagement,close};
+ return{info,list,save,load,loadAsset,chooseVsqPractice,exportBackup,queryManagement,catalogStatus,queryCatalog,previewCatalogInitialize,previewCatalog,previewCatalogSync,commitCatalog,catalogOperation,close};
 }

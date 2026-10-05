@@ -1,3 +1,4 @@
+import {setupLibraryCatalogView} from './library-catalog-view.js';
 import {LibraryManagementModel} from './library-management-model.js';
 import {createBulkImportTransport} from './bulk-import.js';
 
@@ -9,7 +10,7 @@ const errorKeys = {
 };
 const editionPageSize = 20;
 /** This view has no playback, navigation, score-loading or recording callbacks. */
-export function setupLibraryManagementView({document = globalThis.document, i18n, getStorage, model = new LibraryManagementModel({getStorage}), transport = createBulkImportTransport(), download = downloadPack} = {}) {
+export function setupLibraryManagementView({document = globalThis.document, i18n, getStorage, onCommitted = async () => {}, model = new LibraryManagementModel({getStorage}), transport = createBulkImportTransport(), download = downloadPack} = {}) {
   const make = (tag, className) => { const node = document.createElement(tag); if (className) node.className = className; return node; };
   const t = (key, params = {}) => i18n.t(`management.${key}`, params);
   const dialog = make('dialog', 'shell-dialog library-management-dialog');
@@ -17,25 +18,31 @@ export function setupLibraryManagementView({document = globalThis.document, i18n
   dialog.innerHTML = `<div class="shell-dialog-heading"><h2 id="management-title" tabindex="-1" data-management-text="title"></h2><button id="management-close" type="button" class="button ghost" data-management-text="close"></button></div>
     <div class="library-management-body"><p data-management-text="intro"></p>
     <nav id="management-views" class="management-actions"></nav>
-    <form id="management-search-form" class="management-search"><label for="management-search" data-management-text="search"></label><input id="management-search" type="search" maxlength="256"><button type="submit" class="button secondary" data-management-text="submit"></button><button id="management-refresh" type="button" class="button secondary" data-management-text="refresh"></button></form>
+    <div id="management-browser"><form id="management-search-form" class="management-search"><label for="management-search" data-management-text="search"></label><input id="management-search" type="search" maxlength="256"><button type="submit" class="button secondary" data-management-text="submit"></button><button id="management-refresh" type="button" class="button secondary" data-management-text="refresh"></button></form>
     <p id="management-context" hidden></p><label id="management-category-label" for="management-category" hidden><span data-management-text="category"></span><select id="management-category"></select></label>
     <p id="management-help"></p><p data-management-text="refreshHelp" class="muted"></p><p id="management-summary"></p><p id="management-freshness" class="muted"></p>
     <p id="management-status" role="status" aria-live="polite" aria-atomic="true"></p><div id="management-error" role="alert" hidden></div>
     <section id="management-selection" hidden><label><input id="management-select-page" type="checkbox"><span data-management-text="selectPage"></span></label><p id="management-selected"></p><div class="management-actions"><button id="management-clear" type="button" class="button ghost" data-management-text="clear"></button><button id="management-clear-hidden" type="button" class="button ghost" data-management-text="clearHidden"></button><button id="management-export-legacy" type="button" class="button secondary"></button><button id="management-export-clean" type="button" class="button secondary"></button></div><p data-management-text="exportHelp"></p></section>
     <ul id="management-rows" class="management-rows" tabindex="-1"></ul><p id="management-empty" data-management-text="empty" hidden></p>
-    <div class="management-actions management-pagination"><button id="management-previous" type="button" class="button secondary" data-management-text="previous"></button><p id="management-page"></p><button id="management-next" type="button" class="button secondary" data-management-text="next"></button></div></div>`;
+    <div class="management-actions management-pagination"><button id="management-previous" type="button" class="button secondary" data-management-text="previous"></button><p id="management-page"></p><button id="management-next" type="button" class="button secondary" data-management-text="next"></button></div></div></div>`;
   document.body.append(dialog);
   const $ = id => document.getElementById(`management-${id}`);
   let state = model.snapshot(), exporting = false, exportState = null, exportError = null, rowsSignature = null, packName = '', opener = null, destroyed = false, exportGeneration = 0, exportController = null;
+  let catalogActive = false;
+  const catalogView = setupLibraryCatalogView({document, i18n, getStorage, onCommitted: async () => { model.invalidate(); await onCommitted(); }});
+  $('browser').before(catalogView.element);
+  const catalogButton = make('button', 'button secondary'); catalogButton.id = 'management-catalog-button'; catalogButton.type = 'button'; catalogButton.hidden = true;
+  catalogButton.addEventListener('click', () => { catalogActive = true; cancelExport(); model.close(); $('browser').hidden = true; catalogButton.setAttribute('aria-pressed', 'true'); catalogView.open(); });
   const viewButtons = new Map();
   for (const view of ['packs', 'songs', 'unfiled', 'duplicates', 'issues']) {
     const button = make('button', 'button secondary'); button.type = 'button'; button.dataset.managementView = view;
     button.addEventListener('click', () => {
-      packName = ''; $('search').value = ''; exportError = null; exportState = null;
+      catalogActive = false; catalogView.close(); $('browser').hidden = false; catalogButton.setAttribute('aria-pressed', 'false'); packName = ''; $('search').value = ''; exportError = null; exportState = null;
       void changeView({view: view === 'unfiled' ? 'songs' : view, unfiled: view === 'unfiled', pack_id: null, search: '', duplicate_kind: view === 'duplicates' ? $('category').value : null});
     });
     $('views').append(button); viewButtons.set(view, button);
   }
+  $('views').append(catalogButton);
   for (const kind of ['exact_content', 'same_id', 'same_title']) { const option = make('option'); option.value = kind; $('category').append(option); }
   const entry = make('button', 'button secondary'); entry.type = 'button'; entry.id = 'library-management-button'; entry.setAttribute('aria-haspopup', 'dialog'); entry.setAttribute('aria-controls', dialog.id);
   document.querySelector('#song-lobby .lobby-heading')?.append(entry);
@@ -126,11 +133,11 @@ export function setupLibraryManagementView({document = globalThis.document, i18n
   function render() {
     if (destroyed) return;
     for (const node of dialog.querySelectorAll('[data-management-text]')) node.textContent = t(node.dataset.managementText);
-    entry.textContent = t('open'); $('views').setAttribute('aria-label', t('viewAria')); $('search').placeholder = t('searchHint');
+    catalogButton.textContent = t('catalog.open'); entry.textContent = t('open'); $('views').setAttribute('aria-label', t('viewAria')); $('search').placeholder = t('searchHint');
     const busy = state.phase === 'loading', enabled = state.phase === 'ready' && !state.stale && !exporting;
     dialog.setAttribute('aria-busy', String(busy)); dialog.dataset.phase = state.phase;
     for (const [view, button] of viewButtons) {
-      button.textContent = t(view); button.setAttribute('aria-pressed', String(view === 'unfiled' ? state.query.unfiled : state.query.view === view && !state.query.unfiled && !state.query.pack_id));
+      button.textContent = t(view); button.setAttribute('aria-pressed', String(!catalogActive && (view === 'unfiled' ? state.query.unfiled : state.query.view === view && !state.query.unfiled && !state.query.pack_id)));
     }
     for (const option of $('category').options) option.textContent = t(option.value);
     $('category-label').hidden = state.query.view !== 'duplicates';
@@ -170,11 +177,11 @@ export function setupLibraryManagementView({document = globalThis.document, i18n
     } catch (error) { if (ownsResult()) exportError = {code: error.code, message: error.message}; }
     finally { if (request === exportGeneration) { exportController = null; exporting = false; render(); } }
   }
-  function open() { if (dialog.open) return; cancelExport(); opener = document.activeElement || entry; exportState = null; exportError = null; dialog.showModal(); $('title').focus(); void model.refresh(); }
-  function close() { cancelExport(); model.close(); if (dialog.open) dialog.close(); }
+  function open() { if (dialog.open) return; cancelExport(); opener = document.activeElement || entry; exportState = null; exportError = null; dialog.showModal(); $('title').focus(); if (catalogActive) catalogView.open(); else void model.refresh(); void getStorage().then(storage => { if (!destroyed) catalogButton.hidden = !storage.info.capabilities.manageCatalog; }).catch(() => {}); }
+  function close() { cancelExport(); catalogView.close(); model.close(); if (dialog.open) dialog.close(); }
   entry.addEventListener('click', open); $('close').addEventListener('click', close);
   dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
-  dialog.addEventListener('close', () => { if (destroyed || dialog.open) return; cancelExport(); model.close(); if (opener?.isConnected) opener.focus(); });
+  dialog.addEventListener('close', () => { if (destroyed || dialog.open) return; cancelExport(); catalogView.close(); model.close(); if (opener?.isConnected) opener.focus(); });
   $('search-form').addEventListener('submit', event => { event.preventDefault(); exportError = null; exportState = null; void changeView({search: $('search').value}); });
   $('category').addEventListener('change', () => { exportError = null; exportState = null; void changeView({duplicate_kind: $('category').value}); });
   $('refresh').addEventListener('click', () => { if (exporting) return; cancelExport(); void model.refresh(); });
@@ -183,7 +190,7 @@ export function setupLibraryManagementView({document = globalThis.document, i18n
   $('clear').addEventListener('click', () => model.clearSelection()); $('clear-hidden').addEventListener('click', () => model.clearSelection({hiddenOnly: true}));
   for (const kind of ['legacy', 'clean']) $(`export-${kind}`).addEventListener('click', () => void exportSelection(kind));
   const unsubscribe = model.subscribe(next => { state = next; render(); }), unlocale = i18n.subscribe(render); render();
-  return {open, close, model, dialog, invalidate: () => { cancelExport(); model.invalidate(); }, destroy() { cancelExport(); destroyed = true; unsubscribe(); unlocale(); model.destroy(); dialog.remove(); entry.remove(); }};
+  return {open, close, model, dialog, catalog: catalogView, invalidate: () => { cancelExport(); model.invalidate(); catalogView.invalidate(); }, destroy() { cancelExport(); destroyed = true; unsubscribe(); unlocale(); model.destroy(); catalogView.destroy(); dialog.remove(); entry.remove(); }};
 }
 function downloadPack(document, blob, filename) {
   const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
