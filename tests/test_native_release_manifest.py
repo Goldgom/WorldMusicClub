@@ -1,5 +1,6 @@
 """Synthetic provenance failures are not claims of Windows acceptance."""
 import contextlib
+from functools import lru_cache
 import importlib.util
 import io
 import json
@@ -29,6 +30,17 @@ def executable():
     data[60:64] = (64).to_bytes(4, 'little')
     data[64:70] = b'PE\x00\x00\x64\x86'
     return bytes(data)
+
+
+@lru_cache(maxsize=1)
+def canonical_original_fixture():
+    # Original mechanical score bytes, without any actual-window acceptance claim.
+    module = (ROOT / 'scripts/prepare-canonical-practice-fixtures.mjs').as_uri()
+    program = ('import {canonicalPracticeFixture} from ' + json.dumps(module)
+               + '; const f=canonicalPracticeFixture(); console.log(JSON.stringify({manifest:f.manifest,'
+               + 'files:Object.fromEntries([...f.files].map(([name,bytes])=>[name,bytes.toString()]))}));')
+    return json.loads(subprocess.check_output(['node', '--input-type=module', '-e', program],
+                                             cwd=ROOT, text=True, encoding='utf-8', timeout=30))
 
 
 class NativeReleaseTests(unittest.TestCase):
@@ -61,6 +73,7 @@ class NativeReleaseTests(unittest.TestCase):
         song_authoring = self.song_authoring_evidence(directory, directory / native.EXE, directory / 'evidence')
         new_music = {scope: self.new_music_evidence(scope, directory, directory / native.EXE, directory / 'evidence') for scope in native._new_music.SCOPES}
         catalog = self.catalog_evidence(directory / 'evidence/library-catalog', directory / native.EXE)
+        canonical = self.canonical_evidence(directory / native._canonical.PREFIX, directory / native.EXE)
         # The portable-package unit fixture has synthetic GUI observations.
         # Only Node's GUI/disk re-derivation is mocked; source/EXE/claims, exact
         # focused manifest and all packaged hash bindings remain enforced.
@@ -72,6 +85,7 @@ class NativeReleaseTests(unittest.TestCase):
             for scope, evidence in new_music.items():
                 acceptance.update(native._new_music.accepted(scope, evidence, directory / native.EXE, 'b' * 40, 'c' * 40))
             acceptance.update(native._catalog.accepted(catalog, directory / native.EXE, 'b' * 40, 'c' * 40))
+            acceptance.update(native._canonical.accepted(canonical, directory / native.EXE, 'b' * 40, 'c' * 40))
         return {'name': native.FOLDER, 'executable': native.EXE, 'cargo_lock_sha256': 'a' * 64,
                 'git_commit': 'b' * 40, 'git_tree': 'c' * 40, 'commit_count': 164, 'acceptance': acceptance}
 
@@ -345,6 +359,72 @@ class NativeReleaseTests(unittest.TestCase):
             write_json(directory / spec['manifest'], manifest)
         return directory
 
+    def canonical_evidence(self, directory, exe):
+        # Pure package protocol fixture. GUI/audio observations are synthetic;
+        # passing these Python checks never means actual-app/native acceptance.
+        canonical = native._canonical
+        original = canonical_original_fixture()
+        source_hashes = {name: 'e' * 64 for name in canonical.source_files()}
+        report = {'version': 1, 'ok': True, 'scenario': 'canonical-practice',
+                  'source_sha': 'b' * 40, 'source_tree': 'c' * 40, 'source_hashes': source_hashes,
+                  'executable_sha256': native.sha(exe.read_bytes()), 'executable_bytes': exe.stat().st_size,
+                  'profile_reused': True, 'directory': 'C:/original-canonical/Scores', 'phases': []}
+        write_json(directory / 'fixtures/canonical-practice-fixtures.json', original['manifest'])
+        for name, contents in original['files'].items():
+            (directory / 'fixtures' / name).write_bytes(contents.encode('utf-8'))
+        json_key, xml_key = 'original-canonical-json', 'original-canonical-xml'
+        json_raw = original['files']['canonical-practice-original.json']
+        xml_score = json.loads(json_raw)
+        xml_score['source'] = {'format': 'musicxml', 'content': original['files']['canonical-practice-original.musicxml']}
+        xml_raw = json.dumps(xml_score)
+        opened = {json_key: {'score_json': json_raw, 'entry': {'key': json_key, 'synthetic': True}},
+                  xml_key: {'score_json': xml_raw, 'entry': {'key': xml_key, 'synthetic': True}}}
+        retained = []
+        for key, value in opened.items():
+            for area in ['songs', 'backups']:
+                base = directory / 'Scores' / area / key
+                base.mkdir(parents=True, exist_ok=True)
+                (base / 'score.json').write_bytes(value['score_json'].encode('utf-8'))
+                write_json(base / 'metadata.json', value['entry'])
+                if key == xml_key:
+                    (base / 'source.payload').write_bytes(original['files']['canonical-practice-original.musicxml'].encode('utf-8'))
+                for path in sorted(base.iterdir()):
+                    retained.append({'path': path.relative_to(directory / 'Scores').as_posix(),
+                                     'bytes': path.stat().st_size, 'sha256': native.sha(path.read_bytes())})
+        for index, phase in enumerate(canonical.PHASES):
+            row = {'phase': phase, 'process_id': index + 200, 'launched_new_process': True,
+                   'renderer_ok': True, 'normal_close': True, 'renderer_origin': 'https://wmh.localhost',
+                   'executable_tcp_listeners': 0, 'actions': 1,
+                   'profile_directory': 'C:/original-canonical/webview-profiles/canonical-practice-seed',
+                   'profile_fresh': index == 0, 'profile_reused': index != 0, 'profile_absent_before_launch': index == 0}
+            report['phases'].append(row)
+            write_json(directory / f'profile-{phase}.json', {
+                'version': 1, 'phase': phase, 'process_id': row['process_id'], 'profile_directory': row['profile_directory'],
+                'library_directory': report['directory'], 'fresh_required': index == 0, 'created_new': index == 0})
+            renderer = {'version': 1, 'phase': phase, 'ok': True, 'origin': row['renderer_origin'],
+                        'synthetic': True, 'actions': 1, 'screenshots': {'sample': 1},
+                        'files': {'take': f'{phase}-1.json'}, 'key': json_key, 'opened': opened[json_key]}
+            if index == 2:
+                renderer.update(xmlKey=xml_key, xmlOpened=opened[xml_key])
+            write_json(directory / f'renderer-{phase}.json', renderer)
+            write_json(directory / f'snapshot-{phase}.json', {
+                'version': 1, 'files': [item for item in retained if index == 2 or json_key in item['path']]})
+            for name in [f'trace-{phase}.json', f'action-{phase}-1.json', f'result-{phase}-1.json',
+                         f'geometry-native-action-{phase}-1.json', f'geometry-native-{phase}.json',
+                         f'downloads/{phase}-1.json']:
+                write_json(directory / name, {'synthetic': True, 'sequence': 1})
+            for name in [f'native-action-{phase}-1.png', f'native-{phase}.png']:
+                (directory / name).write_bytes(b'PNG pure-data fixture; not an actual screenshot')
+        write_json(directory / canonical.HOST, report)
+        files = [{'path': path.relative_to(directory).as_posix(), 'bytes': path.stat().st_size,
+                  'sha256': native.sha(path.read_bytes())} for path in sorted(directory.rglob('*'))
+                 if path.is_file() and path.name != canonical.PROOF]
+        write_json(directory / canonical.PROOF, {
+            **{key: report[key] for key in ['version', 'ok', 'scenario', 'source_sha', 'source_tree',
+                                          'source_hashes', 'executable_sha256', 'executable_bytes']},
+            'phases': canonical.PHASES, 'claims': canonical.CLAIMS, 'files': files})
+        return directory
+
     def catalog_evidence(self, directory, exe):
         # Synthetic host observations exercise package bindings only. Retained
         # journal bytes come from the committed ORIGINAL protocol fixture; this
@@ -397,6 +477,309 @@ class NativeReleaseTests(unittest.TestCase):
             'source_tree': report['source_tree'], 'executable_sha256': report['executable_sha256'],
             'run_id': report['run_id'], 'phases': catalog.PHASES, 'claims': catalog.CLAIMS, 'files': files})
         return directory
+
+    def test_canonical_requires_separate_cli_and_independent_exact_source_executable_check(self):
+        arguments = ['native-release-manifest', 'create', 'unused', '--commit', 'b' * 40, '--count', '453']
+        for flag in ['startup', 'acceptance', 'song-folder', 'performance-song', 'pitch-bend',
+                     'song-authoring', 'vsq-authoring', 'basic-key', 'catalog-evidence']:
+            arguments += ['--' + flag, 'unused']
+        with patch('sys.argv', arguments), contextlib.redirect_stderr(io.StringIO()) as error, self.assertRaises(SystemExit):
+            native.main()
+        self.assertIn('--canonical-practice', error.getvalue())
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            exe = root / native.EXE
+            exe.write_bytes(executable())
+            directory = self.canonical_evidence(root / 'canonical', exe)
+            with patch.object(native.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')) as checked:
+                fields = native._canonical.accepted(directory, exe, 'b' * 40, 'c' * 40)
+            args, kwargs = checked.call_args
+            self.assertEqual(Path(args[0][1]).name, 'verify-canonical-practice-evidence.mjs')
+            self.assertEqual(args[0][-2:], ['--check', str(directory)])
+            self.assertEqual(kwargs['env']['WMH_CANONICAL_PRACTICE_EXECUTABLE'], str(exe.resolve()))
+            self.assertEqual(kwargs['env']['WMH_SOURCE_SHA'], 'b' * 40)
+            self.assertEqual(kwargs['env']['WMH_SOURCE_TREE'], 'c' * 40)
+            self.assertEqual(kwargs['encoding'], 'utf-8')
+            self.assertEqual(kwargs['timeout'], 60)
+            self.assertEqual(fields['native_canonical_practice_claims'], native._canonical.CLAIMS)
+            self.assertFalse(fields['native_canonical_practice_claims']['full_acceptance'])
+            self.assertEqual(set(fields['native_canonical_practice_source_hashes']), set(native._canonical.source_files()))
+            with patch.object(native.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'source gate failed')):
+                with self.assertRaisesRegex(ValueError, 'Independent canonical evidence failed: source gate failed'):
+                    native._canonical.accepted(directory, exe, 'b' * 40, 'c' * 40)
+            # The original bytes do not make synthetic process/window reports
+            # actual acceptance: the real independent verifier must reject them.
+            with self.assertRaisesRegex(ValueError, 'Independent canonical evidence failed'):
+                native._canonical.accepted(directory, exe, 'b' * 40, 'c' * 40)
+
+    def test_canonical_envelopes_profiles_scope_and_source_hashes_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            exe = root / native.EXE
+            exe.write_bytes(executable())
+            directory = self.canonical_evidence(root / 'canonical', exe)
+            canonical = native._canonical
+            changes = [
+                (canonical.HOST, lambda row: row.update(source_sha='d' * 40)),
+                (canonical.PROOF, lambda row: row.update(source_tree='d' * 40)),
+                (canonical.PROOF, lambda row: row.update(executable_sha256='d' * 64)),
+                (canonical.HOST, lambda row: row.update(executable_bytes=True)),
+                (canonical.PROOF, lambda row: row.update(executable_bytes=1)),
+                (canonical.PROOF, lambda row: row.update(scenario='complete-practice')),
+                (canonical.PROOF, lambda row: row['phases'].pop()),
+                (canonical.HOST, lambda row: row['phases'].reverse()),
+                (canonical.HOST, lambda row: row['phases'][1].update(process_id=row['phases'][0]['process_id'])),
+                (canonical.HOST, lambda row: row['phases'][1].update(normal_close=False)),
+                (canonical.HOST, lambda row: row['phases'][1].update(executable_tcp_listeners=1)),
+                (canonical.HOST, lambda row: row['phases'][1].update(profile_fresh=True)),
+                (canonical.HOST, lambda row: row.update(profile_reused=False)),
+                (canonical.HOST, lambda row: row['phases'][1].update(profile_directory='C:/foreign/webview-profiles/canonical-practice-seed')),
+                (canonical.HOST, lambda row: row['source_hashes'].update({canonical.source_files()[0]: 'f' * 64})),
+                (canonical.PROOF, lambda row: row['source_hashes'].pop(canonical.source_files()[0])),
+                (canonical.PROOF, lambda row: row['source_hashes'].update({'unbounded.js': 'f' * 64})),
+                (canonical.PROOF, lambda row: row['claims'].update(full_acceptance=True)),
+                (canonical.PROOF, lambda row: row['claims'].update(actual_app=1)),
+                ('profile-canonical-practice-controls.json', lambda row: row.update(created_new=True)),
+                ('renderer-canonical-practice-restart.json', lambda row: row.update(actions=2)),
+            ]
+            for name, edit in changes:
+                path = directory / name
+                original = path.read_bytes()
+                changed = json.loads(original)
+                edit(changed)
+                write_json(path, changed)
+                with self.subTest(name=name, edit=edit), patch.object(native.subprocess, 'run') as checked:
+                    with self.assertRaises(ValueError):
+                        canonical.accepted(directory, exe, 'b' * 40, 'c' * 40)
+                    checked.assert_not_called()
+                path.write_bytes(original)
+
+    def test_canonical_inventory_deduplicates_identical_bindings_and_rejects_conflicts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            exe = root / native.EXE
+            exe.write_bytes(executable())
+            directory = self.canonical_evidence(root / 'canonical', exe)
+            canonical = native._canonical
+            path = directory / canonical.PROOF
+            proof = native.read_json(path)
+            proof['files'].append(dict(proof['files'][0]))
+            write_json(path, proof)
+            fields, retained = canonical.validate(lambda name: canonical.read_file(directory, name), exe.read_bytes(), 'b' * 40, 'c' * 40)
+            self.assertEqual(len(retained), len(proof['files']))
+            destination = root / 'copy'
+            canonical.copy_evidence(directory, destination, exe, {
+                'git_commit': 'b' * 40, 'git_tree': 'c' * 40, 'acceptance': fields})
+            self.assertEqual(set(retained), {item.relative_to(destination / canonical.PREFIX).as_posix()
+                                            for item in (destination / canonical.PREFIX).rglob('*') if item.is_file()})
+            proof['files'][-1]['sha256'] = '0' * 64
+            write_json(path, proof)
+            with self.assertRaisesRegex(ValueError, 'Conflicting canonical file bindings'):
+                canonical.validate(lambda name: canonical.read_file(directory, name), exe.read_bytes(), 'b' * 40, 'c' * 40)
+            for unsafe in ['../escape.json', '/escape.json', 'Scores/../escape.json', 'Scores/CON.json',
+                           'webview-profiles/canonical-practice-seed/Default/Cookies', 'fixtures/original.json.',
+                           'fixtures\\original.json', 'fixtures/a:b.json']:
+                changed = json.loads(path.read_bytes())
+                changed['files'][-1] = {'path': unsafe, 'bytes': 1, 'sha256': '0' * 64}
+                write_json(path, changed)
+                with self.subTest(unsafe=unsafe), self.assertRaisesRegex(ValueError, 'Canonical file binding is invalid'):
+                    canonical.validate(lambda name: canonical.read_file(directory, name), exe.read_bytes(), 'b' * 40, 'c' * 40)
+
+    def test_canonical_archive_retains_whole_gate_and_rejects_generic_rehashed_tampering(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / native.FOLDER
+            metadata = self.package(directory)
+            original = native.create_manifest(directory, metadata)
+            archive = root / 'canonical.zip'
+            native.create_archive(directory, archive)
+            canonical = directory / native._canonical.PREFIX
+            with zipfile.ZipFile(archive) as packaged:
+                for path in canonical.rglob('*'):
+                    if path.is_file():
+                        name = path.relative_to(directory).as_posix()
+                        self.assertEqual(packaged.read(native.FOLDER + '/' + name), path.read_bytes())
+            targets = [native._canonical.PROOF, native._canonical.HOST, 'profile-canonical-practice-controls.json',
+                       'renderer-canonical-practice-seed.json', 'action-canonical-practice-seed-1.json',
+                       'result-canonical-practice-seed-1.json', 'trace-canonical-practice-restart.json',
+                       'snapshot-canonical-practice-restart.json', 'native-canonical-practice-restart.png',
+                       'geometry-native-canonical-practice-restart.json', 'native-action-canonical-practice-seed-1.png',
+                       'geometry-native-action-canonical-practice-seed-1.json',
+                       'fixtures/canonical-practice-original.musicxml', 'downloads/canonical-practice-seed-1.json',
+                       'Scores/songs/original-canonical-json/metadata.json', 'Scores/backups/original-canonical-xml/source.payload']
+            for name in targets:
+                path = canonical / name
+                before = path.read_bytes()
+                path.write_bytes(before + b' ')
+                self.rewrite_package_inventory(directory, original)
+                with self.subTest(tampered=name), self.assertRaises(ValueError):
+                    native.create_archive(directory, archive)
+                path.write_bytes(before)
+            for name in ['unbound.json', 'webview-profiles/canonical-practice-seed/Default/Cookies', 'Scores/extra.json']:
+                path = canonical / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'unbound')
+                self.rewrite_package_inventory(directory, original)
+                with self.subTest(extra=name), self.assertRaisesRegex(ValueError, 'canonical package evidence inventory'):
+                    native.create_archive(directory, archive)
+                path.unlink()
+                parent = path.parent
+                while parent != directory and not any(parent.iterdir()):
+                    parent.rmdir()
+                    parent = parent.parent
+            for name in ['evidence/Canonical-Practice/canonical-practice-proof.json',
+                         'evidence/canonical-practice./unbound.json', 'docs/native-canonical-practice.json',
+                         'evidence/native-action-canonical-practice-restart-1.png',
+                         'evidence/geometry-native-canonical-practice-restart.json']:
+                path = directory / name
+                if path.exists():
+                    continue  # Case-insensitive hosts alias the existing canonical file.
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'unbound')
+                self.rewrite_package_inventory(directory, original)
+                with self.subTest(alias=name), self.assertRaisesRegex(ValueError, 'canonical package evidence inventory'):
+                    native.create_archive(directory, archive)
+                path.unlink()
+                parent = path.parent
+                while parent != directory and not any(parent.iterdir()):
+                    parent.rmdir()
+                    parent = parent.parent
+            doc = directory / 'docs/canonical-practice-acceptance.md'
+            doc.parent.mkdir(exist_ok=True)
+            shutil.copyfile(ROOT / 'docs/canonical-practice-acceptance.md', doc)
+            self.assertTrue(native.create_manifest(directory, metadata)['acceptance']['native_canonical_practice_validated'])
+
+    def test_canonical_missing_gate_files_and_acceptance_fields_cannot_be_rehashed_away(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / native.FOLDER
+            metadata = self.package(directory)
+            original = native.create_manifest(directory, metadata)
+            canonical = directory / native._canonical.PREFIX
+            for name in [*native._canonical.REQUIRED, 'action-canonical-practice-controls-1.json',
+                         'Scores/backups/original-canonical-xml/metadata.json',
+                         'Scores/backups/original-canonical-xml/source.payload']:
+                path = canonical / name
+                before = path.read_bytes()
+                path.unlink()
+                self.rewrite_package_inventory(directory, original)
+                with self.subTest(missing=name), self.assertRaises((ValueError, KeyError)):
+                    native.create_archive(directory, root / 'missing.zip')
+                path.write_bytes(before)
+            for key in [key for key in metadata['acceptance'] if key.startswith('native_canonical_practice_')]:
+                changed = json.loads(json.dumps(metadata))
+                del changed['acceptance'][key]
+                with self.subTest(field=key), self.assertRaisesRegex(ValueError, 'BUILD-INFO must bind exact canonical'):
+                    native.create_manifest(directory, changed)
+                self.rewrite_package_inventory(directory, {**original, 'acceptance': changed['acceptance']})
+                with self.subTest(archive_field=key), self.assertRaisesRegex(ValueError, 'BUILD-INFO must bind exact canonical'):
+                    native.create_archive(directory, root / 'missing-field.zip')
+
+    def test_canonical_rebound_archive_still_requires_source_processes_and_whole_inventory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / native.FOLDER
+            metadata = self.package(directory)
+            original = native.create_manifest(directory, metadata)
+            adapter = native._canonical
+            canonical = directory / adapter.PREFIX
+            originals = {path.relative_to(canonical).as_posix(): path.read_bytes()
+                         for path in canonical.rglob('*') if path.is_file()}
+            changes = [
+                (adapter.HOST, lambda row: row.update(source_sha='d' * 40)),
+                (adapter.HOST, lambda row: row.update(source_tree='d' * 40)),
+                (adapter.HOST, lambda row: row.update(executable_sha256='d' * 64)),
+                (adapter.HOST, lambda row: row.update(executable_bytes=1)),
+                (adapter.HOST, lambda row: row['phases'][1].update(process_id=row['phases'][0]['process_id'])),
+                (adapter.HOST, lambda row: row['phases'][1].update(profile_reused=False)),
+                (adapter.HOST, lambda row: row['phases'][2].update(normal_close=False)),
+                (adapter.HOST, lambda row: row['phases'].reverse()),
+                (adapter.PROOF, lambda row: row['source_hashes'].pop(adapter.source_files()[0])),
+                (adapter.PROOF, lambda row: row['claims'].update(native_window=1)),
+                (adapter.PROOF, lambda row: row['files'].pop()),
+                ('snapshot-canonical-practice-restart.json', lambda row: row['files'].pop()),
+                ('Scores/backups/original-canonical-xml/metadata.json', lambda row: row.update(key='different')),
+            ]
+            for name, edit in changes:
+                for path, data in originals.items():
+                    (canonical / path).write_bytes(data)
+                changed = json.loads(originals[name])
+                edit(changed)
+                write_json(canonical / name, changed)
+                proof = native.read_json(canonical / adapter.PROOF)
+                for row in proof['files']:
+                    data = (canonical / row['path']).read_bytes()
+                    row.update(bytes=len(data), sha256=native.sha(data))
+                write_json(canonical / adapter.PROOF, proof)
+                info = json.loads(json.dumps(original))
+                info['acceptance'].update({
+                    'native_canonical_practice_proof_sha256': native.sha((canonical / adapter.PROOF).read_bytes()),
+                    'native_canonical_practice_files_sha256': {
+                        path: native.sha((canonical / path).read_bytes()) for path in sorted(originals)},
+                    'native_canonical_practice_claims': proof['claims'],
+                    'native_canonical_practice_source_hashes': proof['source_hashes']})
+                self.rewrite_package_inventory(directory, info)
+                with self.subTest(rebound=name, edit=edit), self.assertRaises(ValueError):
+                    native.create_archive(directory, root / 'rebound.zip')
+
+    def test_canonical_archive_rejects_symlinks_and_even_empty_profile_directories(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            archive = root / 'linked.zip'
+            entry = zipfile.ZipInfo(native.FOLDER + '/evidence/canonical-practice/fixture')
+            entry.create_system = 3
+            entry.external_attr = (native.stat.S_IFLNK | 0o777) << 16
+            with zipfile.ZipFile(archive, 'w') as package:
+                package.writestr(entry, '../private')
+            with self.assertRaisesRegex(ValueError, 'Native ZIP cannot contain symbolic links'):
+                native.verify_archive(archive)
+            directory = root / native.FOLDER
+            metadata = self.package(directory)
+            native.create_manifest(directory, metadata)
+            native.create_archive(directory, archive)
+            with zipfile.ZipFile(archive, 'a') as package:
+                package.writestr(native.FOLDER + '/evidence/canonical-practice/webview-profiles/Default/', b'')
+            with self.assertRaisesRegex(ValueError, 'canonical package evidence inventory'):
+                native.verify_archive(archive)
+            profile = directory / 'evidence/canonical-practice/webview-profiles/Default'
+            profile.mkdir(parents=True)
+            with self.assertRaisesRegex(ValueError, 'canonical package evidence inventory'):
+                native.create_manifest(directory, metadata)
+
+    def test_canonical_failure_prevents_copy_and_linked_original_bytes_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / native.FOLDER
+            metadata = self.package(directory)
+            canonical = directory / native._canonical.PREFIX
+            before = {path.relative_to(directory).as_posix(): path.read_bytes() for path in directory.rglob('*') if path.is_file()}
+            arguments = ['native-release-manifest', 'create', str(directory), '--commit', 'b' * 40, '--count', '453']
+            for flag in ['startup', 'acceptance', 'song-folder', 'performance-song', 'pitch-bend', 'song-authoring',
+                         'vsq-authoring', 'basic-key', 'catalog-evidence']:
+                arguments += ['--' + flag, 'unused']
+            arguments += ['--canonical-practice', str(canonical)]
+            with contextlib.ExitStack() as mocks:
+                mocks.enter_context(patch('sys.argv', arguments))
+                mocks.enter_context(patch.object(native, 'source_metadata', return_value=dict(metadata)))
+                for method in ['accepted_evidence', 'accepted_song_folder_evidence', 'accepted_performance_song_evidence',
+                               'accepted_pitch_bend_evidence', 'accepted_song_authoring_evidence']:
+                    mocks.enter_context(patch.object(native, method, return_value={}))
+                mocks.enter_context(patch.object(native._new_music, 'accepted', return_value={}))
+                mocks.enter_context(patch.object(native._catalog, 'accepted', return_value={}))
+                mocks.enter_context(patch.object(native.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'canonical failed')))
+                with self.assertRaisesRegex(ValueError, 'canonical failed'):
+                    native.main()
+            self.assertEqual(before, {path.relative_to(directory).as_posix(): path.read_bytes() for path in directory.rglob('*') if path.is_file()})
+            target = canonical / 'Scores/backups/original-canonical-xml/source.payload'
+            foreign = root / 'foreign.musicxml'
+            foreign.write_bytes(target.read_bytes())
+            target.unlink()
+            try:
+                target.symlink_to(foreign)
+            except OSError:
+                return
+            with self.assertRaisesRegex(ValueError, 'Linked canonical evidence'):
+                native._canonical.accepted(canonical, directory / native.EXE, 'b' * 40, 'c' * 40)
 
     def test_catalog_requires_separate_cli_evidence_and_independent_exact_executable_check(self):
         arguments = ['native-release-manifest', 'create', 'unused', '--commit', 'b' * 40, '--count', '402']
@@ -611,7 +994,7 @@ class NativeReleaseTests(unittest.TestCase):
             arguments = ['native-release-manifest', 'create', str(directory), '--commit', 'b' * 40, '--count', '402']
             for flag in ['startup', 'acceptance', 'song-folder', 'performance-song', 'pitch-bend', 'song-authoring', 'vsq-authoring', 'basic-key']:
                 arguments += ['--' + flag, 'unused']
-            arguments += ['--catalog-evidence', str(catalog)]
+            arguments += ['--catalog-evidence', str(catalog), '--canonical-practice', 'unused-canonical']
             with contextlib.ExitStack() as mocks:
                 mocks.enter_context(patch('sys.argv', arguments))
                 mocks.enter_context(patch.object(native, 'source_metadata', return_value=dict(metadata)))
@@ -716,7 +1099,7 @@ class NativeReleaseTests(unittest.TestCase):
             arguments = ['native-release-manifest', 'create', str(directory), '--commit', 'b' * 40,
                          '--count', '264', '--startup', 'unused', '--acceptance', 'unused',
                          '--song-folder', 'unused', '--performance-song', 'unused', '--pitch-bend', 'unused',
-                         '--song-authoring', 'unused', '--vsq-authoring', 'unused', '--basic-key', 'unused', '--catalog-evidence', 'unused']
+                         '--song-authoring', 'unused', '--vsq-authoring', 'unused', '--basic-key', 'unused', '--catalog-evidence', 'unused', '--canonical-practice', 'unused-canonical']
             with patch('sys.argv', arguments), patch.object(native, 'source_metadata', return_value=dict(metadata)), \
                     patch.object(native, 'accepted_evidence', return_value={}), \
                     patch.object(native, 'accepted_song_folder_evidence', return_value={}), \
@@ -1011,7 +1394,7 @@ class NativeReleaseTests(unittest.TestCase):
             before = {path.relative_to(directory).as_posix(): path.read_bytes() for path in (directory / 'evidence').rglob('*') if path.is_file()}
             arguments = ['native-release-manifest', 'create', str(directory), '--commit', 'b' * 40,
                          '--count', '164', '--startup', 'unused-startup', '--acceptance', 'unused-acceptance',
-                         '--song-folder', 'unused-folder', '--performance-song', 'unused-performance', '--pitch-bend', str(pitch), '--song-authoring', 'unused-authoring', '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key', '--catalog-evidence', 'unused-catalog']
+                         '--song-folder', 'unused-folder', '--performance-song', 'unused-performance', '--pitch-bend', str(pitch), '--song-authoring', 'unused-authoring', '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key', '--catalog-evidence', 'unused-catalog', '--canonical-practice', 'unused-canonical']
             for failure in ['independent original inventory failure', 'focused manifest differs']:
                 write_json(manifest_path, {**original, 'release_ready': True} if failure == 'focused manifest differs' else original)
                 result = subprocess.CompletedProcess([], 0 if failure == 'focused manifest differs' else 1, '', failure)
@@ -1224,7 +1607,7 @@ class NativeReleaseTests(unittest.TestCase):
             before = {path.relative_to(directory).as_posix(): path.read_bytes() for path in (directory / 'evidence').rglob('*') if path.is_file()}
             arguments = ['native-release-manifest', 'create', str(directory), '--commit', 'b' * 40,
                          '--count', '164', '--startup', 'unused-startup', '--acceptance', 'unused-acceptance',
-                         '--song-folder', 'unused-folder', '--performance-song', 'unused-performance', '--pitch-bend', 'unused-pitch', '--song-authoring', str(authoring), '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key', '--catalog-evidence', 'unused-catalog']
+                         '--song-folder', 'unused-folder', '--performance-song', 'unused-performance', '--pitch-bend', 'unused-pitch', '--song-authoring', str(authoring), '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key', '--catalog-evidence', 'unused-catalog', '--canonical-practice', 'unused-canonical']
             for failure in ['independent original inventory failure', 'focused manifest differs', 'profile host']:
                 write_json(manifest_path, {**original, 'release_ready': True} if failure == 'focused manifest differs' else original)
                 write_json(profile_path, {**profile, 'created_new': False} if failure == 'profile host' else profile)
@@ -1574,7 +1957,7 @@ class NativeReleaseTests(unittest.TestCase):
             arguments = ['native-release-manifest', 'create', str(directory), '--commit', 'b' * 40,
                          '--count', '164', '--startup', str(startup), '--acceptance', str(acceptance),
                          '--song-folder', str(song_folder), '--performance-song', str(root / 'unused-performance'),
-                         '--pitch-bend', str(root / 'unused-pitch'), '--song-authoring', 'unused-authoring', '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key', '--catalog-evidence', 'unused-catalog']
+                         '--pitch-bend', str(root / 'unused-pitch'), '--song-authoring', 'unused-authoring', '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key', '--catalog-evidence', 'unused-catalog', '--canonical-practice', 'unused-canonical']
             with patch('sys.argv', arguments), patch.object(native, 'source_metadata', return_value=metadata), \
                     patch.object(native.subprocess, 'run', side_effect=verify_evidence), \
                     self.assertRaisesRegex(ValueError, 'folder file was altered'):
@@ -1593,7 +1976,7 @@ class NativeReleaseTests(unittest.TestCase):
             arguments = ['native-release-manifest', 'create', str(directory), '--commit', 'b' * 40,
                          '--count', '164', '--startup', 'unused-startup', '--acceptance', 'unused-acceptance',
                          '--song-folder', 'unused-folder', '--performance-song', str(performance_song),
-                         '--pitch-bend', str(root / 'unused-pitch'), '--song-authoring', 'unused-authoring', '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key', '--catalog-evidence', 'unused-catalog']
+                         '--pitch-bend', str(root / 'unused-pitch'), '--song-authoring', 'unused-authoring', '--vsq-authoring', 'unused-vsq-authoring', '--basic-key', 'unused-basic-key', '--catalog-evidence', 'unused-catalog', '--canonical-practice', 'unused-canonical']
             with patch('sys.argv', arguments), patch.object(native, 'source_metadata', return_value=metadata), \
                     patch.object(native, 'accepted_evidence', return_value={}), \
                     patch.object(native, 'accepted_song_folder_evidence', return_value={}), \
@@ -1794,7 +2177,7 @@ class NativeReleaseTests(unittest.TestCase):
                 self.assertEqual(args[-2], '--check')
                 self.assertEqual(kwargs.get('encoding'), 'utf-8')
                 return subprocess.CompletedProcess(args, 0, '', '')
-            if len(args) > 1 and Path(args[1]).name in ['verify-native-song-authoring-evidence.mjs', 'verify-native-vsq-authoring-evidence.mjs', 'verify-basic-key-evidence.mjs', 'verify-library-catalog-acceptance.mjs']:
+            if len(args) > 1 and Path(args[1]).name in ['verify-native-song-authoring-evidence.mjs', 'verify-native-vsq-authoring-evidence.mjs', 'verify-basic-key-evidence.mjs', 'verify-library-catalog-acceptance.mjs', 'verify-canonical-practice-evidence.mjs']:
                 self.assertEqual(args[-2], '--check')
                 self.assertEqual(kwargs.get('encoding'), 'utf-8')
                 return subprocess.CompletedProcess(args, 0, '', '')
@@ -1879,7 +2262,7 @@ class NativeReleaseTests(unittest.TestCase):
                     ['create', str(directory), '--commit', 'b' * 40, '--count', '169',
                      '--startup', str(startup), '--acceptance', str(acceptance), '--song-folder', str(song_folder),
                      '--performance-song', str(performance_song), '--pitch-bend', str(pitch_bend),
-                     '--song-authoring', str(song_authoring), '--vsq-authoring', str(directory / 'evidence'), '--basic-key', str(directory / 'evidence'), '--catalog-evidence', str(directory / 'evidence/library-catalog')],
+                     '--song-authoring', str(song_authoring), '--vsq-authoring', str(directory / 'evidence'), '--basic-key', str(directory / 'evidence'), '--catalog-evidence', str(directory / 'evidence/library-catalog'), '--canonical-practice', str(directory / native._canonical.PREFIX)],
                     ['archive', str(directory), str(archive)], ['verify', str(archive)]]:
                     with patch('sys.argv', ['native-release-manifest', *arguments]), contextlib.redirect_stdout(io.StringIO()):
                         native.main()

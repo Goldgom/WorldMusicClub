@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath
 import platform
 import re
 import subprocess
+import stat
 import tomllib
 import zipfile
 
@@ -32,6 +33,9 @@ NEW_MUSIC_EVIDENCE = _new_music.EVIDENCE
 _catalog_spec = importlib.util.spec_from_file_location('native_library_catalog_evidence', ROOT / 'scripts/native-library-catalog-evidence.py')
 _catalog = importlib.util.module_from_spec(_catalog_spec)
 _catalog_spec.loader.exec_module(_catalog)
+_canonical_spec = importlib.util.spec_from_file_location('native_canonical_practice_evidence', ROOT / 'scripts/native-canonical-practice-evidence.py')
+_canonical = importlib.util.module_from_spec(_canonical_spec)
+_canonical_spec.loader.exec_module(_canonical)
 FOLDER = 'WorldMusicClub-Native'
 EXE = 'WorldMusicClub-Native.exe'
 INFO, SUMS = 'BUILD-INFO.json', 'SHA256.txt'
@@ -499,6 +503,7 @@ def create_manifest(directory, metadata):
                 *[f'evidence/{name}' for name in SONG_AUTHORING_EVIDENCE],
                 *[f'evidence/{name}' for name in NEW_MUSIC_EVIDENCE],
                 *[_catalog.PREFIX + name for name in _catalog.REQUIRED],
+                *[_canonical.PREFIX + name for name in _canonical.REQUIRED],
                 *[f'evidence/renderer-{phase}.json' for phase in PHASES]]
     for name in required:
         require((directory / name).is_file(), f'Native package is missing {name}')
@@ -511,6 +516,9 @@ def create_manifest(directory, metadata):
     _new_music.verify_packaged(lambda name: (directory / name).read_bytes(), metadata)
     _catalog.verify_packaged(lambda name: (directory / name).read_bytes() if name == EXE else _catalog.read_file(directory, name), metadata,
                              (path.relative_to(directory).as_posix() for path in directory.rglob('*') if path.is_file()))
+    _canonical.verify_packaged(lambda name: (directory / name).read_bytes() if name == EXE else _canonical.read_file(directory, name), metadata,
+                               (path.relative_to(directory).as_posix() + ('/' if path.is_dir() else '')
+                                for path in directory.rglob('*')))
     verify_packaged_profiles(lambda name: _pitch.read_evidence(directory / name, 2 * 1024 * 1024)
                              if name != EXE else (directory / name).read_bytes(), metadata)
     require(not any((directory / name).exists() for name in ['WorldMusicClub.exe', 'WorldMusicHub.exe']),
@@ -569,6 +577,8 @@ def create_manifest(directory, metadata):
 def verify_archive(archive):
     archive = Path(archive)
     with zipfile.ZipFile(archive) as package:
+        require(not any(stat.S_ISLNK(row.external_attr >> 16) for row in package.infolist()),
+                'Native ZIP cannot contain symbolic links')
         names = [row.filename for row in package.infolist() if not row.is_dir()]
         require(len(names) == len(set(names)), 'Duplicate ZIP paths')
         prefix = FOLDER + '/'
@@ -580,6 +590,8 @@ def verify_archive(archive):
             require(f'evidence/{name}' in info['files'], f'Native package is missing evidence/{name}')
         for name in _catalog.REQUIRED:
             require(_catalog.PREFIX + name in info['files'], f'Native package is missing {_catalog.PREFIX}{name}')
+        for name in _canonical.REQUIRED:
+            require(_canonical.PREFIX + name in info['files'], f'Native package is missing {_canonical.PREFIX}{name}')
         verify_pitch_bend_inventory(info['files'])
         verify_song_authoring_inventory(info['files'])
         _new_music.verify_inventory(info['files'])
@@ -595,6 +607,9 @@ def verify_archive(archive):
         verify_packaged_song_authoring_evidence(lambda name: package.read(prefix + name), info)
         _new_music.verify_packaged(lambda name: package.read(prefix + name), info)
         _catalog.verify_packaged(lambda name: package.read(prefix + name), info, info['files'])
+        _canonical.verify_packaged(lambda name: package.read(prefix + name), info,
+                                   [*info['files'], *[row.filename[len(prefix):] for row in package.infolist()
+                                                     if row.is_dir() and row.filename.startswith(prefix)]])
         verify_packaged_profiles(lambda name: package.read(prefix + name), info)
         sums[INFO] = sha(package.read(prefix + INFO))
         require(package.read(prefix + SUMS).decode() == ''.join(f'{sums[name]}  {name}\n' for name in sorted(sums)), 'Native checksum file differs')
@@ -658,6 +673,7 @@ def main():
     create.add_argument('--vsq-authoring', required=True, type=Path)
     create.add_argument('--basic-key', required=True, type=Path)
     create.add_argument('--catalog-evidence', required=True, type=Path)
+    create.add_argument('--canonical-practice', required=True, type=Path)
     archive = commands.add_parser('archive')
     archive.add_argument('directory', type=Path)
     archive.add_argument('archive', type=Path)
@@ -674,6 +690,7 @@ def main():
         for scope, directory in [('vsq-authoring', args.vsq_authoring), ('basic-key', args.basic_key)]:
             metadata['acceptance'].update(_new_music.accepted(scope, directory, args.directory / EXE, args.commit, metadata['git_tree']))
         metadata['acceptance'].update(_catalog.accepted(args.catalog_evidence, args.directory / EXE, args.commit, metadata['git_tree']))
+        metadata['acceptance'].update(_canonical.accepted(args.canonical_practice, args.directory / EXE, args.commit, metadata['git_tree']))
         # The source-bound gate above verified this separate proof. Keep it in
         # the package inventory without changing the dependency-cache workflow.
         (args.directory / 'evidence/native-reference-files.json').write_bytes((args.acceptance / 'native-reference-files.json').read_bytes())
@@ -689,6 +706,7 @@ def main():
             for name in _new_music.names(scope):
                 (args.directory / 'evidence' / name).write_bytes((directory / name).read_bytes())
         _catalog.copy_evidence(args.catalog_evidence, args.directory, args.directory / EXE, metadata)
+        _canonical.copy_evidence(args.canonical_practice, args.directory, args.directory / EXE, metadata)
         info = create_manifest(args.directory, metadata)
     elif args.command == 'archive':
         info = create_archive(args.directory, args.archive)
