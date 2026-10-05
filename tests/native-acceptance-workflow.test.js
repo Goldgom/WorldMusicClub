@@ -79,7 +79,7 @@ test('a failed basic-key gate cannot suppress independent VSQ authoring and twel
     const jobSteps = steps(jobBlock(job)), basicIndex = jobSteps.findIndex(step => step.includes(basic));
     const targetIndex = jobSteps.findIndex(step => step.includes(target)), gate = jobSteps[targetIndex];
     assert.ok(basicIndex >= 0 && targetIndex > basicIndex, target);
-    assert.doesNotMatch(jobSteps[basicIndex], /^        (?:if|continue-on-error):/m);
+    assert.doesNotMatch(jobSteps[basicIndex], /^        continue-on-error:/m);
     assert.doesNotMatch(gate, /^        continue-on-error:/m);
     const outcomes = Object.fromEntries(Object.keys(prerequisites).map(id => [id, 'success']));
     const actual = [...gate.matchAll(/steps\.([a-z_]+)\.outcome/g)].map(match => match[1]);
@@ -238,9 +238,10 @@ test('complete performance uses the exact built driver, both viewport gates and 
   const protocolIndex = browserSteps.findIndex(step => step.includes('run: node scripts/check-performance-song-native.mjs'));
   const hostedIndex = browserSteps.findIndex(step => step.includes('node scripts/hosted-performance-song-check.mjs'));
   assert.ok(buildIndex >= 0 && protocolIndex > buildIndex && hostedIndex > protocolIndex);
+  assert.doesNotMatch(browserSteps[protocolIndex], /^        (?:if|continue-on-error):/m);
   for (const step of [browserSteps[protocolIndex], browserSteps[hostedIndex]]) {
     assert.match(step, /WMH_NATIVE_IMPORT_DRIVER: \$\{\{ github\.workspace \}\}\/target\/debug\/examples\/native_import_driver/);
-    assert.doesNotMatch(step, /^        (?:if|continue-on-error):/m);
+    assert.doesNotMatch(step, /^        continue-on-error:/m);
   }
   assert.match(browserSteps[hostedIndex], /WMH_HOSTED_BROWSER: '1'/);
   assert.match(browserSteps[hostedIndex], /WMH_SOURCE_SHA: \$\{\{ github\.sha \}\}/);
@@ -293,9 +294,10 @@ test('pitch browser heights and actual Windows scenario are mandatory before the
   const protocolIndex = browserSteps.findIndex(step => step.includes('run: node scripts/check-pitch-bend-native.mjs'));
   const hostedIndex = browserSteps.findIndex(step => step.includes('node scripts/hosted-pitch-bend-check.mjs'));
   assert.ok(buildIndex >= 0 && protocolIndex > buildIndex && hostedIndex > protocolIndex);
+  assert.doesNotMatch(browserSteps[protocolIndex], /^        (?:if|continue-on-error):/m);
   for (const step of [browserSteps[protocolIndex], browserSteps[hostedIndex]]) {
     assert.match(step, /WMH_NATIVE_IMPORT_DRIVER: \$\{\{ github\.workspace \}\}\/target\/debug\/examples\/native_import_driver/);
-    assert.doesNotMatch(step, /^        (?:if|continue-on-error):/m);
+    assert.doesNotMatch(step, /^        continue-on-error:/m);
   }
   assert.match(browserSteps[hostedIndex], /WMH_HOSTED_BROWSER: '1'/);
   assert.match(browserSteps[hostedIndex], /WMH_SOURCE_SHA: \$\{\{ github\.sha \}\}/);
@@ -358,4 +360,24 @@ test('all fresh native scenarios retain small profile proofs and exclude retaine
   assert.match(native, /Assert-AcceptanceProfileEvidence \$OutputDirectory \$profileSelection \$app.Id/);
   assert.doesNotMatch(native, /Rotate-SongFolderProfile|prior-profile/);
   assert.match(native, /\$app\.WaitForExit\(10000\)/);
+});
+
+
+test('one failed picker cannot hide later independent song browser evidence', () => {
+  const jobSteps=steps(jobBlock(jobIds[0]));
+  const predecessor=jobSteps.findIndex(step=>step.includes('npm run test:bulk-import-hosted'));
+  const inputs={notation_server:'success',dense_native_driver:'success',dense_browser_setup:'success'};
+  for(const name of ['vsq-song','performance-song','pitch-bend','song-authoring','basic-key']) {
+    const index=jobSteps.findIndex(step=>step.includes(`node scripts/hosted-${name}-check.mjs`)),gate=jobSteps[index];
+    assert.ok(index>predecessor);assert.doesNotMatch(gate,/^        continue-on-error:/m);
+    assert.deepEqual([...gate.matchAll(/steps\.([a-z_]+)\.outcome/g)].map(row=>row[1]).sort(),Object.keys(inputs).sort());
+    assert.equal(gateRuns(gate,{failed:true,outcomes:inputs}),true);
+    assert.equal(gateRuns(gate,{cancelled:true,outcomes:inputs}),false);
+    for(const key of Object.keys(inputs))for(const outcome of ['failure','skipped','cancelled',undefined])
+      assert.equal(gateRuns(gate,{failed:true,outcomes:{...inputs,[key]:outcome}}),false);
+    for(const mutation of [gate.replace(/^        if: .+\n/m,''),gate.replace('!cancelled()','success()')])
+      assert.equal(gateRuns(mutation,{failed:true,outcomes:inputs}),false);
+  }
+  const failed=passingNeeds();failed['bulk-import-browser'].result='failure';
+  const result=check(failed);assert.notEqual(result.status,0);
 });

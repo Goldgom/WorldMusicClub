@@ -94,6 +94,8 @@ jobs:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
         run: npm run test:bulk-import-hosted
       - name: VSQ chooser, explicit practice, native following, exact export and restart
+        # Own fixture, storage directory and processes; preserve any earlier failure.
+        if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
@@ -102,6 +104,8 @@ jobs:
           WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-vsq-song-check.mjs
           WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-vsq-song-check.mjs
       - name: Complete performance chooser, explicit reference controls, exact export and restart
+        # Own fixture, storage directory and processes; preserve any earlier failure.
+        if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
@@ -110,6 +114,8 @@ jobs:
           WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-performance-song-check.mjs
           WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-performance-song-check.mjs
       - name: Original pitch policy, exact receiver clocks, pause/resume and unchanged take
+        # Own fixture, storage directory and processes; preserve any earlier failure.
+        if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
@@ -118,6 +124,8 @@ jobs:
           WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-pitch-bend-check.mjs
           WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-pitch-bend-check.mjs
       - name: Original authoring picker, complete review, save and restart at all sizes
+        # Own fixture, storage directory and processes; preserve any earlier failure.
+        if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
@@ -127,6 +135,8 @@ jobs:
           WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-song-authoring-check.mjs
           WMH_VIEWPORT_WIDTH=1920 WMH_VIEWPORT_HEIGHT=1080 node scripts/hosted-song-authoring-check.mjs
       - name: Original basic-key real keyboard, Chinese inventory, exact export and restart
+        # Own fixture, storage directory and processes; preserve any earlier failure.
+        if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
