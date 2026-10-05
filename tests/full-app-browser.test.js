@@ -1,4 +1,5 @@
 import {browserSongModControls} from './browser-song-mod-controls.js';
+import {originalPaneRevealStudy,choosePaneRevealTarget,paneRevealSourceIdsAt} from './pane-reveal-fixture.js';
 import {configureSongMod, openSongMod} from '../scripts/hosted-song-mod-controls.mjs';
 import {readPlaybackClock, installPlaybackClockReader, waitForPlaybackClock, waitForPlaybackClockAdvance} from './browser-playback-clock.js';
 import {registerGameLobbyBrowserRegressions} from './game-lobby-browser-regression.js';
@@ -2076,21 +2077,26 @@ test('real MIDI key test and delayed test callbacks never enter an existing prac
 
 test('short-landscape following reveals later systems with non-color cues and preserves a paused take during manual scrolling', {timeout:60_000}, async()=>{
   await page.setViewportSize({width:844,height:390});await page.emulateMedia({reducedMotion:'reduce'});
-  const score=structuredClone(fixture),beat=n=>({numerator:n,denominator:1}),seed=score.parts[0].notes[0];
-  score.id='original-pane-reveal-study';score.title='Original pane reveal study';score.tempo=[{at:beat(0),bpm:120}];score.repeats=[];
-  score.measures=Array.from({length:6},(_,index)=>({number:7,at:beat(index*4),length:beat(4)}));
-  score.parts[0].notes=Array.from({length:6},(_,index)=>({...structuredClone(seed),id:`reveal-note-${index}`,at:beat(index*4),duration:beat(4),pitch:{step:'C',alter:0,octave:4},tie_start:false,tie_stop:false}));
+  const score=originalPaneRevealStudy(),compiled=await rustApi('/api/compile',score);assert.deepEqual(compiled.score,score);assert.equal(compiled.timeline.notes.length,192);
   await ui('#score-file').setInputFiles({name:'original-pane-reveal-study.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await waitForEngraving();
   await setSessionMode('practice');await ui('#count-in').uncheck();await ui('#reset-button').click();await closeShellPanels();
   await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.status==='ready');
+  await page.evaluate(async()=>{await document.fonts.ready;for(let frame=0;frame<4;frame++)await new Promise(resolve=>requestAnimationFrame(resolve));});
+  const initialGeometry=await page.evaluate(()=>{const overlay=document.querySelector('#notation-lane-overlay'),box=overlay.getBoundingClientRect();return{viewport:{top:box.top,bottom:box.bottom,height:box.height},scrollTop:overlay.scrollTop,markers:[...document.querySelectorAll('.engraving-expected-cue')].map(node=>({sourceNoteId:node.dataset.sourceNoteId,measure:Number(node.dataset.sourceMeasureIndex),top:node.parentElement.getBoundingClientRect().top+parseFloat(node.style.top),height:parseFloat(node.style.height)}))};});
+  const target=choosePaneRevealTarget(compiled,initialGeometry);
+  await writeFile(join(artifactDirectory,'worldmusichub-compact-pane-reveal-precheck.json'),JSON.stringify({phase:'before-play',initialGeometry,target},null,2));
+  assert.ok(target,`The original notation must provide a verified later offscreen cue: ${JSON.stringify(initialGeometry)}`);
   const stageBefore=await page.evaluate(()=>{const box=document.querySelector('.transport').getBoundingClientRect();return{windowX:scrollX,windowY:scrollY,transport:{x:box.x,y:box.y,width:box.width,height:box.height}}});
   await ui('#engraving-follow').check();await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page);await page.locator('#stage-title').click();await page.keyboard.press('a');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');
-  await page.waitForFunction(()=>Number(document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex)>=3);await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
+  await page.waitForFunction(startMs=>globalThis.__wmhReadPlaybackClock().positionMs>=startMs,target.startMs);await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
+  const position=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,expectedIds=paneRevealSourceIdsAt(compiled,position);assert.equal(expectedIds.length,1,'The paused Rust interval owns one exact source note');
+  await page.waitForFunction(ids=>JSON.stringify([...document.querySelectorAll('.engraving-expected-cue:not([hidden])')].map(node=>node.dataset.sourceNoteId).sort())===JSON.stringify(ids),expectedIds);
   const cueVisible=()=>{const cue=document.querySelector('.engraving-expected-cue:not([hidden])'),dock=document.querySelector('#notation-lane-overlay');if(!cue)return false;const head=cue.getBoundingClientRect(),pane=dock.getBoundingClientRect();return head.width>0&&head.height>0&&head.left>=pane.left&&head.right<=pane.right&&head.top>=pane.top&&head.bottom<=pane.bottom};
   await page.waitForFunction(cueVisible);
   const current=await page.evaluate(()=>({ids:[...document.querySelectorAll('.engraving-expected-cue:not([hidden])')].map(node=>node.dataset.sourceNoteId),measure:Number(document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex),scrollTop:document.querySelector('#notation-lane-overlay').scrollTop,range:document.querySelector('#engraving-range').textContent,focus:document.activeElement?.id}));
-  assert.deepEqual(current.ids,[`reveal-note-${current.measure}`]);assert.ok(current.measure>=3&&current.scrollTop>0);assert.match(current.range,/Measures 1–6/);assert.equal(current.focus,'play-button','Revealing a glyph does not move focus');
-  const take=await exportTakeData(),position=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;assert.equal(take.passes[0].inputs.length,1);
+  await writeFile(join(artifactDirectory,'worldmusichub-compact-pane-reveal-precheck.json'),JSON.stringify({phase:'paused',initialGeometry,target,position,expectedIds,current},null,2));
+  assert.deepEqual(current.ids.sort(),expectedIds);assert.ok(current.measure>=3&&current.measure>=target.measure&&current.scrollTop>0);assert.match(current.range,/Measures 1–6/);assert.equal(current.focus,'play-button','Revealing a glyph does not move focus');
+  const take=await exportTakeData();assert.equal((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,position);assert.equal(take.passes[0].inputs.length,1);
   const dock=page.locator('#notation-lane-overlay');await revealControl(page.locator('#notation-pan-up'));
   const scrollSteps=await dock.evaluate(element=>Math.ceil(element.scrollTop/(element.clientHeight*.65))+1);
   for(let step=0;step<scrollSteps;step++)await page.locator('#notation-pan-up').click();
@@ -2102,7 +2108,7 @@ test('short-landscape following reveals later systems with non-color cues and pr
   await ui('#engraving-follow').check();await page.waitForFunction(cueVisible);await screenshot('verified-pane-reveal-844x390');
   const stageAfter=await page.evaluate(()=>{const box=document.querySelector('.transport').getBoundingClientRect();return{windowX:scrollX,windowY:scrollY,transport:{x:box.x,y:box.y,width:box.width,height:box.height}}});assert.deepEqual(stageAfter,stageBefore,'Owned pane reveal never scrolls or moves the stage and transport');
   await page.setViewportSize({width:1000,height:500});await page.waitForFunction(cueVisible);assert.deepEqual(await exportTakeData(),take,'Follow, manual scroll, re-enable and resize preserve every paused input and clock segment');assert.equal((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,position);assert.deepEqual(await exportScore(),score);
-  await writeFile(join(artifactDirectory,'worldmusichub-live-verified-pane-reveal.json'),JSON.stringify({current,stageBefore,stageAfter,paused_take_unchanged:true,reduced_motion:true,manual_scroll_suspended:true},null,2));
+  await writeFile(join(artifactDirectory,'worldmusichub-live-verified-pane-reveal.json'),JSON.stringify({initialGeometry,target,expectedIds,position,current,stageBefore,stageAfter,paused_take_unchanged:true,reduced_motion:true,manual_scroll_suspended:true},null,2));
 });
 
 test('real whole-phrase guitar route honors editable locks, exposes conflicts and preserves a paused take', {timeout:60_000}, async()=>{
