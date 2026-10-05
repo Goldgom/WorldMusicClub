@@ -29,9 +29,13 @@ export function validateCanonicalHostedCase(row,{seconds,practice,stall}) {
   for(const type of ['started','ended'])assert.ok(row.messages.some(m=>m.type===type&&m.trusted&&m.nativeMessage&&m.nativePort),`Genuine ${type} processor receipt`);
   assert.equal(row.graph.nativeNode,true);assert.equal(row.graph.nativeContext,true);assert.equal(row.graph.connectedToDestination,true);
   const active=row.pcm.filter(b=>b.firstFrame>=row.anchorFrame&&b.firstFrame+b.frames<=row.anchorFrame+seconds*row.sampleRate);
-  assert.ok(active.length>seconds*row.sampleRate/4096-3);for(const b of active){assert.ok(b.trusted&&b.nativeMessage);assert.ok(b.energy>1e-10&&b.nonzeroSamples>0&&b.peak>1e-6);}
+  assert.ok(active.length>seconds*row.sampleRate/4096-3);
+  assert.ok(active[0].firstFrame-row.anchorFrame<4096,'First complete PCM bin must reach the source start');
+  const sourceEnd=row.anchorFrame+seconds*row.sampleRate,last=active.at(-1);
+  assert.ok(sourceEnd-last.firstFrame-last.frames<4096,'Last complete PCM bin must reach the source end');
+  for(const b of active){assert.ok(b.trusted&&b.nativeMessage);assert.ok(Number.isSafeInteger(b.firstFrame));assert.equal(b.frames,4096);assert.ok(b.energy>1e-10&&b.peak>1e-6);assert.ok(Number.isInteger(b.nonzeroSamples)&&b.nonzeroSamples>=b.frames-8&&b.nonzeroSamples<=b.frames,'Continuous exercise must contain audio throughout each PCM bin');assert.ok(Number.isInteger(b.maxZeroRun)&&b.maxZeroRun<=8,'Unexpected contiguous silence in the continuous original exercise');}
   for(let i=1;i<active.length;i++)assert.equal(active[i].firstFrame,active[i-1].firstFrame+active[i-1].frames,'PCM bins must be continuous through host stalls');
-  if(stall){assert.equal(row.stalls.length,2);for(const s of row.stalls)assert.ok(s.wallEnd-s.wallStart>=1100&&s.audioEnd>s.audioStart);}
+  if(stall){assert.equal(row.stalls.length,2);for(const s of row.stalls){const wallMs=s.wallEnd-s.wallStart,audioMs=(s.audioEnd-s.audioStart)*1000;assert.ok(wallMs>=1100);assert.ok(s.audioStart>=row.anchorFrame/row.sampleRate&&s.audioEnd<=sourceEnd/row.sampleRate,'Host stall must occur within active source playback');assert.ok(Math.abs(audioMs-wallMs)<=50,'Audio clock must advance with wall time through each deliberate stall (50ms measurement tolerance)');}}
   else assert.deepEqual(row.stalls,[]);
   assert.equal(row.assessmentRequests,0);assert.equal(row.physicalListening,false);
   return {machineNotes:expectedCount,pcmBins:active.length,exactFrameGates:true};
