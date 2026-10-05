@@ -3,6 +3,12 @@ export const LIVE_TONE_PROTOCOL = 'wmh-live-tone-v1';
 export const LIVE_TONE_LIMITS = Object.freeze({maxNotes: 64, maxClicks: 8, maxPending: 128, maxReceipts: 256, maxIdLength: 256, maxToken: 0x7fffffff, maxFrame: 2 ** 48 - 1, maxDelayMs: 600000, maxDurationMs: 3600000, triangleSize: 1024});
 const L = LIVE_TONE_LIMITS, TAU = 2 * Math.PI;
 const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
+function exponentialLevel(start, end, fraction) {
+  const ratio = end / start;
+  // Keep the ordinary recipe unchanged. Positive subnormal peaks can make
+  // the ratio overflow even though the interpolated gain remains finite.
+  return Number.isFinite(ratio) ? start * Math.exp(Math.log(ratio) * fraction) : Math.exp(Math.log(start) + (Math.log(end) - Math.log(start)) * fraction);
+}
 export class LiveToneError extends Error {
   constructor(code, message, details = {}) { super(message); this.name = 'LiveToneError'; this.code = code; this.details = details; }
 }
@@ -176,18 +182,20 @@ export class LiveToneCore {
     } catch (reason) { this.fail(reason, frame, integer(requestId, 1, L.maxToken) ? requestId : undefined); }
   }
   baseEnvelope(voice, age) {
+    if (voice.peak === 0) return 0;
     const seconds = age / this.sampleRate;
     if (voice.kind === 'click') {
       if (seconds < .002) return voice.peak * seconds / .002;
-      return voice.peak * Math.exp(Math.log(.0001 / voice.peak) * Math.min(1, (seconds - .002) / .033));
+      return exponentialLevel(voice.peak, .0001, Math.min(1, (seconds - .002) / .033));
     }
     if (seconds < .008) return voice.peak * seconds / .008;
-    if (seconds < .18) return voice.peak * Math.exp(Math.log(voice.sustain / voice.peak) * (seconds - .008) / .172);
+    if (seconds < .18) return exponentialLevel(voice.peak, voice.sustain, (seconds - .008) / .172);
     return voice.sustain;
   }
   sample(voice, frame) {
     let envelope;
-    if (frame >= voice.gate) envelope = .0001 + (this.baseEnvelope(voice, voice.gate - voice.start) - .0001) * Math.exp(-(frame - voice.gate) / (.02 * this.sampleRate));
+    if (voice.peak === 0) envelope = 0; // Underflow is silent, including scheduled/release tails.
+    else if (frame >= voice.gate) envelope = .0001 + (this.baseEnvelope(voice, voice.gate - voice.start) - .0001) * Math.exp(-(frame - voice.gate) / (.02 * this.sampleRate));
     else envelope = this.baseEnvelope(voice, frame - voice.start);
     if (voice.releaseFrame !== null) envelope *= (voice.releaseEnd - frame) / (voice.releaseEnd - voice.releaseFrame);
     let wave;

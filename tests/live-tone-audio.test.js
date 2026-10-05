@@ -211,3 +211,19 @@ test('bounded host metadata eviction cannot strand a still-held DSP voice while 
   receiver.release('held'); await h.flush(); h.render(700); await h.flush(); assert.equal(h.nodes[0].core.activeNotes, 0);
   h.nodes[0].port.onmessage = receive; receiver.dispose();
 });
+
+test('fractional underflow and positive subnormal note/click levels stay finite through decay and all tails', () => {
+  for (const value of [Number.MIN_VALUE, 1e-320, 1e-210, 1e-200]) {
+    for (const scheduled of [false, true]) {
+      const h = coreHarness(); const note = h.play({velocity: value, duration: scheduled ? 20 : null});
+      const output = h.render(12000); assert.ok(output.every(Number.isFinite), `finite note PCM at velocity ${value}`);
+      if (.28 * (value / 127) ** 1.5 === 0) assert.ok(output.every(v => v === 0), 'a computed zero peak stays silent even during the scheduled target tail');
+      if (!scheduled) { h.command('release', {id: 'key', token: note.token}); assert.ok(h.render(700).every(Number.isFinite)); }
+      const ended = h.events.find(e => e.type === 'ended'); assert.ok(Number.isFinite(ended.pcmPeak)); assert.ok(Number.isFinite(ended.pcmEnergy));
+    }
+    const click = coreHarness(); click.click({level: value}); const output = click.render(2400);
+    assert.ok(output.every(Number.isFinite), `finite click PCM at level ${value}`);
+    if (value * .22 === 0) assert.ok(output.every(v => v === 0));
+    const ended = click.events.find(e => e.type === 'ended'); assert.ok(Number.isFinite(ended.pcmPeak)); assert.ok(Number.isFinite(ended.pcmEnergy));
+  }
+});
