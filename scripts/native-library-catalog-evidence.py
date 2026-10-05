@@ -178,10 +178,19 @@ def verify_packaged(read, metadata, paths, executable='WorldMusicClub-Native.exe
     fields, raw = validate(lambda name: read(PREFIX + name), read(executable), metadata.get('git_commit'), metadata.get('git_tree'))
     # Recognize misplaced and case-aliased copies too; Windows extraction must
     # not overlay an accepted report with an unbound alternative or profile.
-    reserved = ('library-catalog', 'native-library-catalog', 'renderer-catalog-', 'profile-catalog-',
-                'snapshot-catalog-', 'trace-catalog-', 'action-catalog-', 'result-catalog-', 'webview-catalog-profile',
-                'native-action-catalog-', 'native-catalog-', 'browser-action-catalog-', 'browser-catalog-',
-                'host-api-catalog-', 'catalog-config', 'catalog-fixtures', 'catalog-original-')
-    actual = {name for name in paths if any(part.lower().startswith(reserved) for part in name.split('/'))}
+    directories = ('library-catalog', 'webview-catalog-profile')
+    reports = ('library-catalog-proof', 'webview-catalog-profile', 'native-library-catalog', 'renderer-catalog-', 'profile-catalog-',
+               'snapshot-catalog-', 'trace-catalog-', 'action-catalog-', 'result-catalog-',
+               'native-action-catalog-', 'native-catalog-', 'browser-action-catalog-', 'browser-catalog-',
+               'host-api-catalog-', 'catalog-config', 'catalog-fixtures', 'catalog-original-',
+               'geometry-native-action-catalog-', 'geometry-native-catalog-',
+               'owned-picker-before-open-catalog-', 'owned-picker-failure-catalog-', 'owned-popup-failure-catalog-',
+               'diagnostic-catalog-', 'native-failure-catalog-')
+    # Reserve complete evidence directory namespaces (including aliases), but
+    # classify files by actual report families. Ordinary product documentation
+    # such as docs/library-catalog-ui.md is part of the generic package inventory.
+    actual = {name for name in paths
+              if any(part.lower().startswith(directories) for part in name.split('/')[:-1])
+              or any(part.lower().startswith(reports) for part in name.split('/'))}
     require(actual == {PREFIX + name for name in raw}, 'Exact catalog package evidence inventory is required')
     require_fields(metadata, fields)

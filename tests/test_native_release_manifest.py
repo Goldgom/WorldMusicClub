@@ -522,6 +522,56 @@ class NativeReleaseTests(unittest.TestCase):
             self.rewrite_package_inventory(directory, original)
             self.assertTrue(native.create_archive(directory, archive)['acceptance']['native_library_catalog_validated'])
 
+    def test_catalog_package_keeps_copied_product_docs_separate_from_exact_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / native.FOLDER
+            metadata = self.package(directory)
+            # Mirror the real workflow's recursive docs copy. These are product
+            # documents, not catalog reports, even when their names share a prefix.
+            shutil.copytree(ROOT / 'docs', directory / 'docs')
+            originals = {path.relative_to(directory).as_posix(): path.read_bytes()
+                         for path in (directory / 'docs').rglob('*') if path.is_file()}
+            self.assertIn('docs/library-catalog-ui.md', originals)
+            self.assertIn('docs/library-catalog-acceptance-evidence.md', originals)
+            info = native.create_manifest(directory, metadata)
+            archive = root / 'with-real-product-docs.zip'
+            native.create_archive(directory, archive)
+            checked = native.verify_archive(archive)
+            self.assertEqual(info, checked)
+            self.assertTrue(checked['acceptance']['native_library_catalog_validated'])
+            with zipfile.ZipFile(archive) as packaged:
+                for name, data in originals.items():
+                    self.assertEqual(packaged.read(native.FOLDER + '/' + name), data)
+                    self.assertEqual(checked['files'][name]['sha256'], native.sha(data))
+            # Product documents are still hash-bound by the full ZIP inventory.
+            document = directory / 'docs/library-catalog-ui.md'
+            data = document.read_bytes()
+            document.write_bytes(data + b'changed')
+            with self.assertRaisesRegex(ValueError, 'Native ZIP checksum differs'):
+                native.create_archive(directory, root / 'changed-document.zip')
+            document.write_bytes(data)
+            for name in ['docs/library-catalog-proof.json', 'docs/native-library-catalog.json',
+                         'docs/Library-Catalog/unbound.txt', 'evidence/library-catalog./unbound.txt',
+                         'evidence/library-catalog/unbound.md', 'evidence/library-catalog/unbound.json',
+                         'docs/webview-catalog-profile.json',
+                         'docs/geometry-native-action-catalog-seed-1.json',
+                         'docs/owned-picker-before-open-catalog-seed-1.png',
+                         'docs/native-failure-catalog-seed-raw.png']:
+                path = directory / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'original negative fixture')
+                with self.subTest(unbound=name), self.assertRaisesRegex(ValueError, 'catalog package evidence inventory'):
+                    native.create_manifest(directory, metadata)
+                # Even regenerated generic ZIP hashes cannot authorize a second
+                # catalog report, client geometry or diagnostic outside its proof.
+                self.rewrite_package_inventory(directory, info)
+                with self.subTest(rehashed=name), self.assertRaisesRegex(ValueError, 'catalog package evidence inventory'):
+                    native.create_archive(directory, root / 'unbound-evidence.zip')
+                path.unlink()
+            self.rewrite_package_inventory(directory, info)
+            self.assertEqual(native.create_archive(directory, archive), native.verify_archive(archive))
+
     def test_catalog_archive_rechecks_phase_source_and_executable_even_when_proof_rebound(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
