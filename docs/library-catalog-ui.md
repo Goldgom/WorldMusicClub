@@ -85,3 +85,37 @@ The restore response is a native same-ID replay after a real subprocess restore
 in the producer test. DOM transport replays those actual outputs; it does not
 launch a native executable or independently prove process recovery. The original
 backend restart tests and renderer replay tests are distinct evidence layers.
+
+## Live socket-free native integration
+
+`npm run test:library-catalog-native` runs the production app modules in the Node
+DOM fixture against a freshly built `native_import_driver`. Every API reply comes
+from the real Rust dispatcher over bounded stdin/stdout. It creates a fresh owned
+temporary library, uses only original legacy/clean/media fixtures, checks an
+outside sentinel, and removes that fixture library afterward.
+
+```sh
+cargo build -p worldmusichub-desktop --example native_import_driver --locked
+WMH_NATIVE_IMPORT_DRIVER=/absolute/target/debug/examples/native_import_driver \
+WMH_CATALOG_REPORT=/absolute/output/catalog-native.json \
+npm run test:library-catalog-native
+```
+
+The check covers initialization review/cancel/confirm, exact mixed selection with
+shared memberships, a transport failure after actual durable Trash, a fresh Rust
+process and renderer recovering the original operation ID, selected restoration,
+and explicit adoption after a new import. A separate failure before native
+dispatch proves the uncommitted lookup and explicit retry of the identical saved
+preview. Exact reimports stay deduplicated and cannot escape Trash. Hashes verify
+all pre-existing source/payload/backup/history/media files; the production media
+adapter can still read a previously admitted asset after the song is trashed.
+The current lobby identity and mocked audio remain untouched. A second process
+restart checks the final state and retained files. Reports include source and
+driver hashes, fixture hashes, and actual catalog request/response records.
+
+This check exercises a Node DOM and mocked audio, not a rendered browser or a
+native window. It does not prove physical playback, Windows packaging or crash
+durability on Windows. Full workspace/all-targets and browser/Windows release
+acceptance remain required before promotion. Product scope and capacity limits
+remain those in [catalog-product.md](catalog-product.md) and
+[catalog-transition-core.md](catalog-transition-core.md).

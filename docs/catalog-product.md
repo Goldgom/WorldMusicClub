@@ -101,3 +101,10 @@ It includes unchanged request/response pairs and a genuine same-ID Restore repla
 after a new process committed the restoration. Timestamps and random IDs change
 between regenerations; retain its SHA-256 and source hashes with renderer evidence.
 No GUI, browser, HTTP listener, default library or user corpus is used by these tests.
+
+The combined backend/renderer tree additionally passed all 95 desktop library
+tests (one opt-in measurement ignored), the 94 integration tests listed above,
+and all 1,753 ordinary Node tests. The live socket-free production-adapter/DOM
+check is documented in [library-catalog-ui.md](library-catalog-ui.md). It adds
+end-to-end transport-loss and fresh-process recovery evidence without broadening
+the supported operation scope or claiming browser/Windows release acceptance.

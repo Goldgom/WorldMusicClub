@@ -19,7 +19,8 @@
     "test:clean-song": "node --test tests/notation-page-prefetch.test.js tests/frontend-notation-scope-app.test.js tests/basic-key-rendition-notation.test.js tests/basic-key-player.test.js tests/frontend-basic-key-playback.test.js tests/clean-song-fingering.test.js tests/clean-performance-player.test.js tests/complete-performance-package.test.js tests/frontend-complete-performance-listening.test.js tests/frontend-complete-range-setup.test.js tests/vsq-navigation.test.js tests/vsq-clean-consumer.test.js tests/clean-song-package.test.js tests/clean-song-media.test.js tests/clean-song-player.test.js tests/frontend-clean-song-app.test.js tests/basic-keys-consumer.test.js tests/frontend-engraved-view.test.js tests/frontend-notation-follow.test.js",
     "test:vsq-song-native": "node scripts/check-vsq-song-native.mjs",
     "test:vsq-song-hosted": "node scripts/hosted-vsq-song-check.mjs",
-    "test:library-management": "node --test tests/native-library-catalog-wire.test.js tests/library-operation-store.test.js tests/library-catalog.test.js tests/frontend-library-catalog.test.js tests/library-management.test.js tests/frontend-library-management.test.js tests/native-score-storage.test.js tests/frontend-native-storage-app.test.js tests/frontend-bulk-import.test.js tests/i18n.test.js tests/pack-management-acceptance.test.js"
+    "test:library-management": "node --test tests/native-library-catalog-wire.test.js tests/library-operation-store.test.js tests/library-catalog.test.js tests/frontend-library-catalog.test.js tests/library-management.test.js tests/frontend-library-management.test.js tests/native-score-storage.test.js tests/frontend-native-storage-app.test.js tests/frontend-bulk-import.test.js tests/i18n.test.js tests/pack-management-acceptance.test.js",
+    "test:library-catalog-native": "node scripts/check-library-catalog-native.mjs"
   },
   "devDependencies": {
     "ajv": "^8.20.0",
