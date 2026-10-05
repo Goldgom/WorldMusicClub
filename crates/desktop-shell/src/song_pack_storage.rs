@@ -504,7 +504,260 @@ fn known_fields(value: &Value, names: &[&str]) -> Result<()> {
     }
     Ok(())
 }
-fn parse_projection_report(bytes: &[u8], source: &Source) -> Result<Report> {
+// Receipt item paths are display/provenance identities from the importer, not
+// clean-package asset paths. Validate against the retained input's actual family
+// and inventory, then normalize upload filenames out of logical identities.
+struct ReceiptContext<'a> {
+    original: &'a [u8],
+    zip: bool,
+    mxl: bool,
+    inventory: std::collections::BTreeMap<String, (u64, String)>,
+    backup_entries: std::collections::BTreeMap<String, Option<usize>>,
+    backup_envelopes: std::collections::BTreeSet<String>,
+}
+fn valid_upload_filename(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 1024 && !name.chars().any(char::is_control)
+}
+impl<'a> ReceiptContext<'a> {
+    fn new(
+        folder: &Path,
+        source: &Source,
+        original: &'a [u8],
+        scan_bytes: &mut usize,
+    ) -> Result<Self> {
+        let inventory_path = folder.join("inventory.json");
+        check_node(&inventory_path, false)?;
+        let inventory_bytes = fs::metadata(&inventory_path).map_err(io_error)?.len();
+        if inventory_bytes > MAX_REPORT_BYTES as u64
+            || inventory_bytes as usize > (128 * 1024 * 1024usize).saturating_sub(*scan_bytes)
+        {
+            return Err(fail(413, "library_query_limit", "Receipt and retained inventory metadata verification exceeds 128 MiB; no partial snapshot was published"));
+        }
+        *scan_bytes += inventory_bytes as usize;
+        let raw = serde_json::from_slice::<super::UniqueMetadata>(&read_bounded(
+            &folder.join("inventory.json"),
+            MAX_REPORT_BYTES,
+        )?)
+        .map_err(|e| invalid(format!("Invalid retained inventory: {e}")))?
+        .0;
+        known_fields(&raw, &["files", "expanded_bytes"])?;
+        if let Some(files) = raw["files"].as_array() {
+            for file in files {
+                known_fields(file, &["path", "bytes", "sha256"])?;
+            }
+        }
+        let retained: super::Inventory =
+            serde_json::from_value(raw).map_err(|e| invalid(e.to_string()))?;
+        if retained.files.len() > super::MAX_ZIP_ENTRIES
+            || retained.expanded_bytes > super::MAX_EXPANDED_BYTES
+        {
+            return Err(invalid("Retained inventory exceeds importer bounds"));
+        }
+        let zip = original.starts_with(b"PK");
+        let mut inventory = std::collections::BTreeMap::new();
+        let mut total = 0u64;
+        for file in retained.files {
+            if zip {
+                super::zip_guard::safe_path(&file.path, false).map_err(invalid)?;
+            } else if file.path != source.filename {
+                return Err(invalid(
+                    "Standalone retained inventory does not match its upload label",
+                ));
+            }
+            if !hex_digest(&file.sha256)
+                || file.bytes > super::MAX_ENTRY_BYTES as u64
+                || inventory
+                    .insert(file.path, (file.bytes, file.sha256))
+                    .is_some()
+            {
+                return Err(invalid("Retained inventory identities are inconsistent"));
+            }
+            total = total
+                .checked_add(file.bytes)
+                .ok_or_else(|| invalid("Retained inventory sizes overflow"))?;
+        }
+        if total != retained.expanded_bytes {
+            return Err(invalid("Retained inventory total is inconsistent"));
+        }
+        if zip {
+            let count = super::zip_guard::preflight(original).map_err(invalid)?;
+            let mut archive = zip::ZipArchive::new(std::io::Cursor::new(original))
+                .map_err(|e| invalid(e.to_string()))?;
+            if archive.len() != count {
+                return Err(invalid(
+                    "Retained ZIP count disagrees with its bounded directory",
+                ));
+            }
+            let mut actual = std::collections::BTreeMap::new();
+            for index in 0..count {
+                let file = archive
+                    .by_index(index)
+                    .map_err(|e| invalid(e.to_string()))?;
+                if !file.is_dir() {
+                    actual.insert(file.name().to_owned(), file.size());
+                }
+            }
+            if actual.len() != inventory.len()
+                || inventory
+                    .iter()
+                    .any(|(path, (bytes, _))| actual.get(path) != Some(bytes))
+            {
+                return Err(invalid(
+                    "Retained inventory does not match the original ZIP directory",
+                ));
+            }
+        } else if inventory.len() != 1
+            || inventory.get(&source.filename)
+                != Some(&(source.bytes as u64, source.sha256.clone()))
+        {
+            return Err(invalid(
+                "Standalone retained inventory identity is inconsistent",
+            ));
+        }
+        Ok(Self {
+            original,
+            zip,
+            mxl: inventory.contains_key("META-INF/container.xml"),
+            inventory,
+            backup_entries: std::collections::BTreeMap::new(),
+            backup_envelopes: std::collections::BTreeSet::new(),
+        })
+    }
+    fn backup_count(&mut self, base: &str, scan_bytes: &mut usize) -> Result<Option<usize>> {
+        let cache_key = if self.zip { base } else { "standalone" };
+        if let Some(count) = self.backup_entries.get(cache_key) {
+            return Ok(*count);
+        }
+        let bytes;
+        let raw = if self.zip {
+            let Some((size, hash)) = self.inventory.get(base) else {
+                return Ok(None);
+            };
+            if *size > super::MAX_BACKUP_BYTES as u64
+                || *size as usize > (128 * 1024 * 1024usize).saturating_sub(*scan_bytes)
+            {
+                return Err(fail(413,"library_query_limit","Receipt and backup-entry metadata verification exceeds 128 MiB; no partial snapshot was published"));
+            }
+            *scan_bytes += *size as usize;
+            let mut archive = zip::ZipArchive::new(std::io::Cursor::new(self.original))
+                .map_err(|e| invalid(e.to_string()))?;
+            bytes = super::read_zip(&mut archive, base, super::MAX_BACKUP_BYTES)?;
+            if digest(&bytes) != *hash {
+                return Err(invalid(
+                    "Backup item digest disagrees with the retained inventory",
+                ));
+            }
+            bytes.as_slice()
+        } else {
+            self.original
+        };
+        // Only inspect the original backup envelope. Do not reconvert music or
+        // use a fresh converter's candidates as historical membership evidence.
+        let value: Value = match serde_json::from_slice(raw) {
+            Ok(value) => value,
+            Err(_) => {
+                self.backup_entries.insert(cache_key.to_owned(), None);
+                return Ok(None);
+            }
+        };
+        if value["format"] == "worldmusichub-library-backup" {
+            self.backup_envelopes.insert(cache_key.to_owned());
+        }
+        let count = if value["format"] == "worldmusichub-library-backup" && value["version"] == 1 {
+            value["entries"]
+                .as_array()
+                .map(Vec::len)
+                .filter(|n| *n <= super::MAX_SONGS)
+        } else {
+            None
+        };
+        self.backup_entries.insert(cache_key.to_owned(), count);
+        Ok(count)
+    }
+    fn item_identity(
+        &mut self,
+        report: &Report,
+        item: &super::Item,
+        scan_bytes: &mut usize,
+    ) -> Result<String> {
+        if self.mxl
+            && item.path == report.source.filename
+            && report.items.len() == 1
+            && item.index == 0
+        {
+            return Ok("mxl:single".into());
+        }
+        if self.zip && self.inventory.contains_key(&item.path) {
+            super::zip_guard::safe_path(&item.path, false).map_err(invalid)?;
+            if matches!(item.status.as_str(), "saved" | "duplicate") {
+                self.backup_count(&item.path, scan_bytes)?;
+                if self.backup_envelopes.contains(&item.path) {
+                    return Err(invalid(
+                        "Successful library-backup items must identify an original entry index",
+                    ));
+                }
+            }
+            return Ok(format!("zip:{}", item.path));
+        }
+        if let Some((base, index)) = item.path.rsplit_once("#entries/") {
+            if (self.zip && self.inventory.contains_key(base))
+                || (!self.zip && base == report.source.filename)
+            {
+                let number = index
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|number| number.to_string() == index);
+                if let Some(number) = number {
+                    if (self.zip || item.index == number)
+                        && self
+                            .backup_count(base, scan_bytes)?
+                            .is_some_and(|count| number < count)
+                    {
+                        return Ok(if self.zip {
+                            format!("zip:{base}#entries/{number}")
+                        } else {
+                            format!("standalone:backup-entry:{number}")
+                        });
+                    }
+                }
+            }
+        }
+        if item.path == report.source.filename && report.items.len() == 1 && item.index == 0 {
+            if !self.zip {
+                if matches!(item.status.as_str(), "saved" | "duplicate") {
+                    self.backup_count(&item.path, scan_bytes)?;
+                    if self.backup_envelopes.contains("standalone") {
+                        return Err(invalid(
+                            "Successful library-backup items must identify an original entry index",
+                        ));
+                    }
+                }
+                return Ok("standalone:single".into());
+            }
+            if self.mxl {
+                return Ok("mxl:single".into());
+            }
+            // Importer fallback diagnostics can identify the outer ZIP instead
+            // of an inner member; this path can never establish song membership.
+            if !matches!(item.status.as_str(), "saved" | "duplicate") {
+                return Ok("zip:outer-diagnostic".into());
+            }
+        }
+        Err(invalid(
+            "Receipt item path does not identify an item in the retained input",
+        ))
+    }
+}
+struct ProjectionReport {
+    report: Report,
+    identities: Vec<String>,
+}
+fn parse_projection_report(
+    bytes: &[u8],
+    source: &Source,
+    context: &mut ReceiptContext<'_>,
+    scan_bytes: &mut usize,
+) -> Result<ProjectionReport> {
     let value = serde_json::from_slice::<super::UniqueMetadata>(bytes)
         .map_err(|e| invalid(format!("Invalid receipt JSON: {e}")))?
         .0;
@@ -558,7 +811,7 @@ fn parse_projection_report(bytes: &[u8], source: &Source) -> Result<Report> {
         || report.source.sha256 != source.sha256
         || report.source.bytes != source.bytes
         || !report.source.retained
-        || report.source.filename.len() > 4096
+        || !valid_upload_filename(&report.source.filename)
         || report.items.len() > super::MAX_SONGS
         || report.inventory.files.len() > super::MAX_ZIP_ENTRIES
         || report.inventory.expanded_bytes > super::MAX_EXPANDED_BYTES
@@ -569,7 +822,13 @@ fn parse_projection_report(bytes: &[u8], source: &Source) -> Result<Report> {
     }
     let mut paths = std::collections::BTreeSet::new();
     for file in &report.inventory.files {
-        crate::native_library::clean_package::safe_path(&file.path)?;
+        if context.zip {
+            super::zip_guard::safe_path(&file.path, false).map_err(invalid)?;
+        } else if file.path != report.source.filename {
+            return Err(invalid(
+                "Standalone receipt inventory does not match its upload label",
+            ));
+        }
         if !paths.insert(file.path.as_str())
             || !hex_digest(&file.sha256)
             || file.bytes > super::MAX_ENTRY_BYTES as u64
@@ -579,14 +838,47 @@ fn parse_projection_report(bytes: &[u8], source: &Source) -> Result<Report> {
             ));
         }
     }
+    let report_inventory: std::collections::BTreeMap<_, _> = report
+        .inventory
+        .files
+        .iter()
+        .map(|file| (file.path.clone(), (file.bytes, file.sha256.clone())))
+        .collect();
+    if report.inventory.expanded_bytes
+        != report_inventory
+            .values()
+            .map(|(bytes, _)| *bytes)
+            .sum::<u64>()
+    {
+        return Err(invalid(
+            "Receipt expanded size disagrees with its validated inventory",
+        ));
+    }
+    if context.zip {
+        if report_inventory != context.inventory {
+            return Err(invalid(
+                "Receipt inventory disagrees with the retained ZIP inventory",
+            ));
+        }
+    } else if report_inventory.len() != 1
+        || report_inventory.get(&report.source.filename)
+            != Some(&(source.bytes as u64, source.sha256.clone()))
+    {
+        return Err(invalid(
+            "Standalone receipt inventory content identity is inconsistent",
+        ));
+    }
+    let mut identities = Vec::new();
     let mut indexes = std::collections::BTreeSet::new();
     let mut item_paths = std::collections::BTreeSet::new();
     for item in &report.items {
-        crate::native_library::clean_package::safe_path(&item.path)?;
+        identities.push(context.item_identity(&report, item, scan_bytes)?);
         if item.index >= super::MAX_SONGS
             || !indexes.insert(item.index)
             || !item_paths.insert(item.path.as_str())
-            || !paths.contains(item.path.as_str())
+            || item.code.is_empty()
+            || item.code.len() > 256
+            || item.message.len() > 8192
             || !matches!(
                 item.status.as_str(),
                 "saved" | "duplicate" | "conflict" | "ready" | "error" | "retained_nonplayable"
@@ -597,13 +889,17 @@ fn parse_projection_report(bytes: &[u8], source: &Source) -> Result<Report> {
             ));
         }
     }
-    Ok(report)
+    Ok(ProjectionReport { report, identities })
+}
+struct VerifiedProjectionSource {
+    source: Source,
+    bytes: Vec<u8>,
 }
 fn verified_projection_source(
     folder: &Path,
     key: &str,
     scanned_source_bytes: &mut u64,
-) -> Result<Source> {
+) -> Result<VerifiedProjectionSource> {
     check_node(folder, true)?;
     let raw = serde_json::from_slice::<super::UniqueMetadata>(&read_bounded(
         &folder.join("source.json"),
@@ -629,7 +925,7 @@ fn verified_projection_source(
         return Err(fail(413, "library_query_limit", "Retained original verification exceeds 2 GiB across both copies; no incomplete snapshot was published"));
     }
     *scanned_source_bytes += source.bytes as u64;
-    if source.filename.len() > 4096 {
+    if !valid_upload_filename(&source.filename) {
         return Err(invalid("Retained filename exceeds metadata bound"));
     }
     let original = read_bounded(&folder.join("source.bin"), MAX_PACK_BYTES)?;
@@ -640,7 +936,10 @@ fn verified_projection_source(
             "Retained original checksum mismatch; no membership was inferred",
         ));
     }
-    Ok(source)
+    Ok(VerifiedProjectionSource {
+        source,
+        bytes: original,
+    })
 }
 
 pub(crate) fn project_receipts_locked(
@@ -700,7 +999,7 @@ pub(crate) fn project_receipts_locked(
             Err(error) => return Err(io_error(error)),
         };
         let source_folder = if primary_present { &primary } else { &backup };
-        let source =
+        let retained =
             match verified_projection_source(source_folder, &key, &mut scanned_source_bytes) {
                 Ok(source) => source,
                 Err(error) if error.code == "library_query_limit" => return Err(error),
@@ -711,6 +1010,7 @@ pub(crate) fn project_receipts_locked(
                     continue;
                 }
             };
+        let source = &retained.source;
         let pack_id = format!("import-{}", source.sha256);
         let mut pack = Pack {
             pack_id: pack_id.clone(),
@@ -732,7 +1032,12 @@ pub(crate) fn project_receipts_locked(
         }
         let backup_valid =
             match verified_projection_source(&backup, &key, &mut scanned_source_bytes) {
-                Ok(other) if other.bytes == source.bytes && other.sha256 == source.sha256 => true,
+                Ok(other)
+                    if other.source.bytes == source.bytes
+                        && other.source.sha256 == source.sha256 =>
+                {
+                    true
+                }
                 Ok(_) => {
                     output.issues.push(QueryIssue::new(
                         "pack_backup_invalid",
@@ -751,6 +1056,22 @@ pub(crate) fn project_receipts_locked(
                         None,
                     ));
                     false
+                }
+            };
+        let mut context =
+            match ReceiptContext::new(&primary, source, &retained.bytes, &mut scanned_bytes) {
+                Ok(context) => context,
+                Err(error) if error.code == "library_query_limit" => return Err(error),
+                Err(error) => {
+                    output.issues.push(QueryIssue::new(
+                        "pack_inventory_invalid",
+                        error.error,
+                        Some(&key),
+                        None,
+                    ));
+                    pack.provenance = "unresolved";
+                    output.packs.push(pack);
+                    continue;
                 }
             };
         let mut names: BTreeMap<String, (Option<PathBuf>, Option<PathBuf>)> = BTreeMap::new();
@@ -777,7 +1098,7 @@ pub(crate) fn project_receipts_locked(
                 }
             }
         }
-        let mut latest_items: BTreeMap<String, String> = BTreeMap::new();
+        let mut latest_items: BTreeMap<String, (String, String, String, String)> = BTreeMap::new();
         let mut linked_paths = BTreeSet::new();
         for (name, (first, second)) in names {
             let read = |path: &Path, scanned_bytes: &mut usize| -> Result<Vec<u8>> {
@@ -791,7 +1112,7 @@ pub(crate) fn project_receipts_locked(
                 *scanned_bytes += len as usize;
                 read_bounded(path, MAX_REPORT_BYTES)
             };
-            let parsed = (|| -> Result<Report> {
+            let parsed = (|| -> Result<ProjectionReport> {
                 let bytes = read(
                     first.as_ref().or(second.as_ref()).expect("receipt copy"),
                     &mut scanned_bytes,
@@ -802,7 +1123,7 @@ pub(crate) fn project_receipts_locked(
                         return Err(invalid("Independent copies of this receipt disagree"));
                     }
                 }
-                parse_projection_report(&bytes, &source)
+                parse_projection_report(&bytes, source, &mut context, &mut scanned_bytes)
             })();
             let report = match parsed {
                 Ok(report) => report,
@@ -826,8 +1147,16 @@ pub(crate) fn project_receipts_locked(
                 ));
             }
             pack.receipt_count += 1;
-            for item in report.items {
-                latest_items.insert(item.path.clone(), item.status.clone());
+            for (item, identity) in report.report.items.into_iter().zip(report.identities) {
+                latest_items.insert(
+                    identity.clone(),
+                    (
+                        item.path.clone(),
+                        item.status.clone(),
+                        item.code.clone(),
+                        item.message.clone(),
+                    ),
+                );
                 if !matches!(item.status.as_str(), "saved" | "duplicate") {
                     continue;
                 }
@@ -851,10 +1180,10 @@ pub(crate) fn project_receipts_locked(
                     ));
                     continue;
                 }
-                linked_paths.insert(item.path.clone());
+                linked_paths.insert(identity.clone());
                 let counts = output.references.entry((pack_id.clone(), id)).or_default();
                 counts.receipts += 1;
-                if counts.source_items.insert(item.path) {
+                if counts.source_items.insert(identity) {
                     logical_reference_count += 1;
                 }
                 if logical_reference_count > MAX_PROJECTED_REFERENCES {
@@ -872,16 +1201,25 @@ pub(crate) fn project_receipts_locked(
                 ));
             }
         }
-        for (path, status) in latest_items {
-            if linked_paths.contains(&path) {
+        for (identity, (path, status, code, message)) in latest_items {
+            let linked = linked_paths.contains(&identity);
+            if linked && matches!(status.as_str(), "saved" | "duplicate" | "ready") {
                 continue;
             }
             if status == "retained_nonplayable" {
-                pack.retained_only_count += 1;
+                if !linked {
+                    pack.retained_only_count += 1;
+                }
+                output.issues.push(QueryIssue::new(
+                    code,
+                    format!("Source item {path}: {message}"),
+                    Some(&key),
+                    None,
+                ));
             } else {
                 output.issues.push(QueryIssue::new(
-                    "pack_item_unresolved",
-                    format!("Source item {path} remains {status}; no membership was inferred"),
+                    code,
+                    format!("Source item {path} remains {status}: {message}"),
                     Some(&key),
                     None,
                 ));

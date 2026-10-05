@@ -333,7 +333,16 @@ fn stable_pagination_filters_and_refresh_reject_stale_cursor() {
 }
 #[test]
 fn malformed_receipt_identity_path_and_unknown_version_never_infer_membership() {
-    for corruption in ["source", "path", "entry", "version", "unknown", "mode"] {
+    for corruption in [
+        "source",
+        "path",
+        "entry",
+        "entry_key",
+        "version",
+        "unknown",
+        "mode",
+        "diagnostic",
+    ] {
         let sandbox = Sandbox::new();
         let library = sandbox.library();
         let report = song_pack::import(
@@ -355,6 +364,7 @@ fn malformed_receipt_identity_path_and_unknown_version_never_infer_membership() 
                 "entry_key" => receipt["items"][0]["entry"]["key"] = json!("../../untrusted"),
                 "version" => receipt["version"] = json!(999),
                 "mode" => receipt["mode"] = json!("preview"),
+                "diagnostic" => receipt["items"][0]["message"] = json!("x".repeat(8193)),
                 _ => receipt["unknown_catalog_identity"] = json!(true),
             },
         );
@@ -412,22 +422,64 @@ fn disagreeing_receipts_and_backup_only_sources_are_visible_not_guessed() {
         .iter()
         .any(|row| row["code"] == "pack_backup_only"));
 }
+fn source_only_archive() -> Vec<u8> {
+    let source = b"original invalid midi payload".to_vec();
+    use sha2::{Digest, Sha256};
+    let meta = json!({"format":"private-complete-midi-source-folder","version":1,"title":"Original source only","source_files":[{"path":"source/original.mid","bytes":source.len(),"sha256":format!("{:x}",Sha256::digest(&source))}],"imports":{"canonical_score":null,"canonical_error":"No notation"}});
+    archive(vec![
+        ("song/metadata.json", serde_json::to_vec(&meta).unwrap()),
+        ("song/source/original.mid", source),
+    ])
+}
+
 #[test]
 fn retained_only_and_no_receipt_archives_remain_source_details() {
     let sandbox = Sandbox::new();
     let library = sandbox.library();
-    let source = b"original invalid midi payload".to_vec();
-    use sha2::{Digest, Sha256};
-    let meta = json!({"format":"private-complete-midi-source-folder","version":1,"title":"Original source only","source_files":[{"path":"source/original.mid","bytes":source.len(),"sha256":format!("{:x}",Sha256::digest(&source))}],"imports":{"canonical_score":null,"canonical_error":"No notation"}});
-    let bytes = archive(vec![
-        ("song/metadata.json", serde_json::to_vec(&meta).unwrap()),
-        ("song/source/original.mid", source),
-    ]);
+    let bytes = source_only_archive();
     let report = song_pack::import(&library, "source-only.zip", &bytes, true, false, None).unwrap();
     assert_eq!(report.summary["retained_nonplayable"], 1);
     let groups = query(&library, json!({"view":"packs"}));
     assert_eq!(groups["rows"][0]["song_count"], 0);
     assert_eq!(groups["rows"][0]["retained_only_count"], 1);
+    assert_eq!(groups["rows"][0]["issue_count"], 1);
+    assert_eq!(groups["summary"]["issues"], 1);
+    let issues = query(
+        &library,
+        json!({"view":"issues", "pack_id":format!("import-{}",report.source.sha256)}),
+    );
+    assert_eq!(issues["total"], 1);
+    assert_eq!(issues["rows"][0]["archive_key"], report.source.archive_key);
+    assert_eq!(issues["rows"][0]["code"], report.items[0].code);
+    assert_eq!(
+        issues["rows"][0]["message"],
+        format!(
+            "Source item {}: {}",
+            report.items[0].path, report.items[0].message
+        )
+    );
+    assert!(issues["rows"][0]["song_key"].is_null());
+    assert_eq!(
+        query(
+            &library,
+            json!({"view":"songs", "pack_id":format!("import-{}",report.source.sha256)})
+        )["total"],
+        0
+    );
+    // Repeating the unsupported source preserves only its latest diagnosis, not
+    // duplicate Issues or synthetic playable rows.
+    song_pack::import(&library, "source-only.zip", &bytes, true, false, None).unwrap();
+    for area in ["imports", "import-backups"] {
+        let first = receipt_paths(&sandbox, &report.source.archive_key, area).remove(0);
+        let mut older: Value = serde_json::from_slice(&fs::read(&first).unwrap()).unwrap();
+        older["items"][0]["message"] = json!("Earlier original unsupported-source diagnostic");
+        fs::write(first, serde_json::to_vec(&older).unwrap()).unwrap();
+    }
+    let retried = query(&library, json!({"view":"issues","refresh":true}));
+    assert_eq!(retried["total"], 1);
+    assert_eq!(retried["rows"][0]["message"], issues["rows"][0]["message"]);
+    assert_eq!(retried["summary"]["songs"], 0);
+
     for area in ["imports", "import-backups"] {
         for (i, path) in receipt_paths(&sandbox, &report.source.archive_key, area)
             .into_iter()
@@ -774,5 +826,482 @@ fn query_contract_samples_preserve_native_identity_and_pack_issue_filter() {
             serde_json::to_vec_pretty(&Value::Object(samples)).unwrap(),
         )
         .unwrap();
+    }
+}
+
+#[test]
+fn query_recovery_contract_samples_keep_unresolved_sources_visible() {
+    let sandbox = Sandbox::new();
+    let library = sandbox.library();
+    for (name, path, extra) in [
+        ("Original playable A.zip", "one.wmhscore.json", false),
+        ("Original playable B.zip", "same.wmhscore.json", true),
+    ] {
+        song_pack::import(
+            &library,
+            name,
+            &pack(
+                &[(path, "original-recovery-one", "Original recovery song")],
+                extra,
+            ),
+            true,
+            false,
+            None,
+        )
+        .unwrap();
+    }
+    let unsupported = song_pack::import(
+        &library,
+        "Original unsupported source.zip",
+        &source_only_archive(),
+        true,
+        false,
+        None,
+    )
+    .unwrap();
+    let unresolved = song_pack::import(
+        &library,
+        "Original unresolved source.zip",
+        &pack(
+            &[(
+                "unresolved.wmhscore.json",
+                "original-unresolved",
+                "Original unresolved song",
+            )],
+            false,
+        ),
+        true,
+        false,
+        None,
+    )
+    .unwrap();
+    for area in ["imports", "import-backups"] {
+        for (index, path) in receipt_paths(&sandbox, &unresolved.source.archive_key, area)
+            .into_iter()
+            .enumerate()
+        {
+            fs::rename(
+                path,
+                sandbox
+                    .sentinel
+                    .parent()
+                    .unwrap()
+                    .join(format!("unresolved-{area}-{index}-aside")),
+            )
+            .unwrap();
+        }
+    }
+    let groups = query(&library, json!({"view":"packs"}));
+    assert_eq!(groups["total"], 4);
+    let rows = groups["rows"].as_array().unwrap();
+    let unsupported_row = rows
+        .iter()
+        .find(|row| row["archive_key"] == unsupported.source.archive_key)
+        .unwrap();
+    assert_eq!(unsupported_row["song_count"], 0);
+    assert_eq!(unsupported_row["retained_only_count"], 1);
+    assert_eq!(unsupported_row["issue_count"], 1);
+    let unresolved_row = rows
+        .iter()
+        .find(|row| row["archive_key"] == unresolved.source.archive_key)
+        .unwrap();
+    assert_eq!(unresolved_row["provenance"], "unresolved");
+    assert_eq!(unresolved_row["song_count"], 0);
+    assert_eq!(unresolved_row["issue_count"], 1);
+    let unsupported_issues = query(
+        &library,
+        json!({"view":"issues","pack_id":unsupported_row["pack_id"]}),
+    );
+    assert_eq!(
+        unsupported_issues["rows"][0]["code"],
+        unsupported.items[0].code
+    );
+    assert_eq!(
+        unsupported_issues["rows"][0]["message"],
+        format!(
+            "Source item {}: {}",
+            unsupported.items[0].path, unsupported.items[0].message
+        )
+    );
+    let unresolved_issues = query(
+        &library,
+        json!({"view":"issues","pack_id":unresolved_row["pack_id"]}),
+    );
+    assert_eq!(unresolved_issues["total"], 1);
+    assert_eq!(unresolved_issues["rows"][0]["code"], "pack_report_pending");
+    let mut samples = serde_json::Map::new();
+    for view in ["packs", "songs", "duplicates", "issues"] {
+        let response = query(&library, json!({"view":view}));
+        assert!(response["total"].as_u64().unwrap() > 0);
+        samples.insert(view.into(), response);
+    }
+    samples.insert(
+        "unsupported_songs".into(),
+        query(
+            &library,
+            json!({"view":"songs","pack_id":unsupported_row["pack_id"]}),
+        ),
+    );
+    samples.insert(
+        "unresolved_songs".into(),
+        query(
+            &library,
+            json!({"view":"songs","pack_id":unresolved_row["pack_id"]}),
+        ),
+    );
+    samples.insert("unsupported_issues".into(), unsupported_issues);
+    samples.insert("unresolved_issues".into(), unresolved_issues);
+    if let Some(path) = std::env::var_os("WMC_PACK_GROUP_RECOVERY_CONTRACT_OUT") {
+        fs::write(
+            path,
+            serde_json::to_vec_pretty(&Value::Object(samples)).unwrap(),
+        )
+        .unwrap();
+    }
+}
+
+#[path = "../../../tests/support/vsq_authoring.rs"]
+mod original_vsq_fixture;
+
+fn original_backup() -> Vec<u8> {
+    serde_json::to_vec(&json!({"format":"worldmusichub-library-backup","version":1,"entries":[
+        {"score":serde_json::from_str::<Value>(&score("backup-original-one","Original backup one")).unwrap(),"label":"Original one"},
+        {"score":serde_json::from_str::<Value>(&score("backup-original-two","Original backup two")).unwrap(),"label":"Original two"}
+    ]})).unwrap()
+}
+#[test]
+fn importer_query_compatibility_matrix_preserves_real_input_identities_and_renames() {
+    // Existing checked-in fixtures below are original authored public exercises;
+    // all generated/imported archives and libraries are test-owned temporary data.
+    let canonical = score("original-matrix-score", "Original matrix score").into_bytes();
+    let midi = include_bytes!("../../../tests/fixtures/midi-original-ppq.mid").to_vec();
+    let xml = include_bytes!("../../../tests/fixtures/original-duet.musicxml").to_vec();
+    let mxl = include_bytes!("../../../tests/fixtures/original-duet.mxl").to_vec();
+    let mxl_inner = {
+        let archive = zip::ZipArchive::new(Cursor::new(&mxl)).unwrap();
+        let name = archive
+            .file_names()
+            .find(|name| name.ends_with(".xml") && *name != "META-INF/container.xml")
+            .unwrap_or("score.musicxml")
+            .to_owned();
+        name
+    };
+    let native_backup = serde_json::to_vec(&json!({"format":"worldmusichub-native-score-backup","version":1,"entry":{"label":"Original native backup"},"score_json":String::from_utf8(canonical.clone()).unwrap()})).unwrap();
+    let clean = archive(vec![
+        (
+            "metadata.json",
+            include_bytes!("../../../tests/fixtures/clean-song-v2/metadata.json").to_vec(),
+        ),
+        (
+            "score.json",
+            include_bytes!("../../../tests/fixtures/clean-song-v2/score.json").to_vec(),
+        ),
+    ]);
+    let clean_vsq = archive(vec![
+        (
+            "metadata.json",
+            include_bytes!("../../../tests/fixtures/vsq-clean-v1/metadata.json").to_vec(),
+        ),
+        (
+            "score.json",
+            include_bytes!("../../../tests/fixtures/vsq-clean-v1/score.json").to_vec(),
+        ),
+    ]);
+    let clean_basic = archive(vec![
+        (
+            "metadata.json",
+            include_bytes!("../../../tests/fixtures/basic-key-acceptance/metadata.json").to_vec(),
+        ),
+        (
+            "score.json",
+            include_bytes!("../../../tests/fixtures/basic-key-acceptance/score.json").to_vec(),
+        ),
+    ]);
+    let unified = archive(vec![
+        ("manifest.json",serde_json::to_vec(&json!({"format":"worldmusichub-song-pack","version":1,"songs":[{"folder":"songs/原始 练习"}]})).unwrap()),
+        ("songs/原始 练习/metadata.json",serde_json::to_vec(&json!({"format":"worldmusichub-song","version":1,"title":"Original","score":"score.json","sources":[],"media":{}})).unwrap()),
+        ("songs/原始 练习/score.json",canonical.clone()),
+    ]);
+    let cases: Vec<(&str, String, String, Vec<u8>, usize)> = vec![
+        (
+            "canonical",
+            "My Song.wmhscore.json".into(),
+            "练习 renamed.wmhscore.json".into(),
+            canonical.clone(),
+            1,
+        ),
+        (
+            "standalone-display-label",
+            "../display only.json".into(),
+            "C:\\display-only.json".into(),
+            canonical.clone(),
+            1,
+        ),
+        (
+            "midi",
+            "练习.mid".into(),
+            "Original renamed.mid".into(),
+            midi,
+            1,
+        ),
+        (
+            "xml",
+            "Original Music.musicxml".into(),
+            "练习.xml".into(),
+            xml,
+            1,
+        ),
+        ("mxl", mxl_inner, "练习 renamed.mxl".into(), mxl, 1),
+        (
+            "jianpu",
+            "原创 简谱.jianpu".into(),
+            "Original renamed.jianpu".into(),
+            b"1=C4\nmeter=4/4\n1 3 5 0 |".to_vec(),
+            1,
+        ),
+        (
+            "library-backup",
+            "My Backup.json".into(),
+            "原始备份.json".into(),
+            original_backup(),
+            2,
+        ),
+        (
+            "native-backup",
+            "Native backup.json".into(),
+            "原始 native.json".into(),
+            native_backup,
+            1,
+        ),
+        (
+            "ordinary-zip",
+            "原始.zip".into(),
+            "renamed.zip".into(),
+            archive(vec![(
+                "songs/练习/My Song.wmhscore.json",
+                canonical.clone(),
+            )]),
+            1,
+        ),
+        (
+            "deep-zip",
+            "Deep.zip".into(),
+            "Deep renamed.zip".into(),
+            archive(vec![("a/b/c/d/e/f/g/h/i/j/练习.wmhscore.json", canonical)]),
+            1,
+        ),
+        (
+            "zip-backup",
+            "Backup pack.zip".into(),
+            "Backup renamed.zip".into(),
+            archive(vec![("原始 备份/backup.json", original_backup())]),
+            2,
+        ),
+        (
+            "unified-v1",
+            "Unified.zip".into(),
+            "Unified renamed.zip".into(),
+            unified,
+            1,
+        ),
+        (
+            "clean-v2",
+            "Clean v2.zip".into(),
+            "原始 clean.zip".into(),
+            clean,
+            1,
+        ),
+        (
+            "clean-vsq",
+            "VSQ clean.zip".into(),
+            "VSQ 原始.zip".into(),
+            clean_vsq,
+            1,
+        ),
+        (
+            "clean-basic",
+            "Basic keys.zip".into(),
+            "Basic renamed.zip".into(),
+            clean_basic,
+            1,
+        ),
+        (
+            "raw-vsq-source-only",
+            "Original.vsq".into(),
+            "原始 renamed.vsq".into(),
+            original_vsq_fixture::source(),
+            0,
+        ),
+        (
+            "unknown-zip-source-only",
+            "Only originals.zip".into(),
+            "原始 only.zip".into(),
+            archive(vec![(
+                "原始/source.txt",
+                b"Original inert source text".to_vec(),
+            )]),
+            0,
+        ),
+    ];
+    for (family, filename, renamed, bytes, expected) in cases {
+        let sandbox = Sandbox::new();
+        let library = sandbox.library();
+        let first = song_pack::import(&library, &filename, &bytes, true, false, None).unwrap();
+        assert_eq!(
+            first.summary["saved"], expected,
+            "producer {family}: {:?}",
+            first.items
+        );
+        let second = song_pack::import(&library, &renamed, &bytes, true, false, None).unwrap();
+        assert_eq!(second.source.archive_key, first.source.archive_key);
+        let groups = query(&library, json!({"view":"packs"}));
+        assert_eq!(groups["total"], 1, "{family}");
+        assert_eq!(
+            groups["rows"][0]["song_count"], expected,
+            "{family}: {groups}"
+        );
+        assert_eq!(groups["rows"][0]["receipt_count"], 2, "{family}");
+        assert_eq!(groups["rows"][0]["name"], filename, "{family}");
+        assert_eq!(groups["summary"]["unfiled_songs"], 0, "{family}");
+        if expected > 0 {
+            assert_eq!(groups["rows"][0]["issue_count"], 0, "{family}: {groups}");
+            let songs = query(&library, json!({"view":"songs"}));
+            for row in songs["rows"].as_array().unwrap() {
+                assert_eq!(row["pack_count"], 1, "{family}");
+                assert_eq!(
+                    row["source_reference_count"], 1,
+                    "same-byte rename inflated {family}"
+                );
+                assert_eq!(row["receipt_reference_count"], 2, "{family}");
+            }
+            assert_eq!(
+                query(
+                    &library,
+                    json!({"view":"duplicates","duplicate_kind":"exact_content"})
+                )["total"],
+                0,
+                "same-byte rename fabricated duplicate {family}"
+            );
+        } else {
+            assert_eq!(groups["rows"][0]["retained_only_count"], 1, "{family}");
+            let issues = query(&library, json!({"view":"issues"}));
+            assert_eq!(issues["total"], 1, "{family}");
+            assert_eq!(issues["rows"][0]["code"], second.items[0].code, "{family}");
+            assert!(
+                issues["rows"][0]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains(&second.items[0].message),
+                "{family}"
+            );
+        }
+    }
+}
+
+#[test]
+fn forged_virtual_or_outer_paths_cannot_borrow_verified_song_membership() {
+    for (filename, bytes, path) in [
+        ("backup.json", original_backup(), "backup.json"),
+        (
+            "backup.zip",
+            archive(vec![("backup.json", original_backup())]),
+            "backup.json",
+        ),
+        ("backup.json", original_backup(), "backup.json#entries/999"),
+        ("backup.json", original_backup(), "backup.json#entries/00"),
+        (
+            "backup.zip",
+            archive(vec![("backup.json", original_backup())]),
+            "other.json#entries/0",
+        ),
+        (
+            "regular.zip",
+            pack(
+                &[("one.wmhscore.json", "original-forgery", "Original")],
+                false,
+            ),
+            "regular.zip",
+        ),
+        (
+            "regular.zip",
+            pack(
+                &[("one.wmhscore.json", "original-forgery", "Original")],
+                false,
+            ),
+            "../one.wmhscore.json",
+        ),
+        (
+            "single.json",
+            score("original-forgery", "Original").into_bytes(),
+            "not-the-upload.json",
+        ),
+    ] {
+        let sandbox = Sandbox::new();
+        let library = sandbox.library();
+        let report = song_pack::import(&library, filename, &bytes, true, false, None).unwrap();
+        rewrite_receipts(&sandbox, &report.source.archive_key, |receipt| {
+            receipt["items"].as_array_mut().unwrap().truncate(1);
+            receipt["items"][0]["path"] = json!(path)
+        });
+        let groups = query(&library, json!({"view":"packs"}));
+        assert_eq!(groups["rows"][0]["song_count"], 0, "{path}");
+        assert_eq!(groups["rows"][0]["provenance"], "unresolved", "{path}");
+        assert!(groups["summary"]["issues"].as_u64().unwrap() > 0, "{path}");
+    }
+}
+
+#[test]
+fn latest_failed_reimport_diagnostics_do_not_erase_previously_proved_membership() {
+    for status in [
+        "error",
+        "conflict",
+        "retained_nonplayable",
+        "ready",
+        "duplicate",
+    ] {
+        let sandbox = Sandbox::new();
+        let library = sandbox.library();
+        let bytes = pack(
+            &[(
+                "original.wmhscore.json",
+                "original-reimport",
+                "Original reimport",
+            )],
+            false,
+        );
+        let saved = song_pack::import(&library, "original.zip", &bytes, true, false, None).unwrap();
+        song_pack::import(&library, "original.zip", &bytes, true, false, None).unwrap();
+        for area in ["imports", "import-backups"] {
+            let latest = receipt_paths(&sandbox, &saved.source.archive_key, area)
+                .pop()
+                .unwrap();
+            let mut receipt: Value = serde_json::from_slice(&fs::read(&latest).unwrap()).unwrap();
+            receipt["items"][0]["status"] = json!(status);
+            receipt["items"][0]["code"] = json!("original_latest_diagnostic");
+            receipt["items"][0]["message"] =
+                json!("Original latest converter diagnostic retained verbatim");
+            fs::write(latest, serde_json::to_vec(&receipt).unwrap()).unwrap();
+        }
+        let groups = query(&library, json!({"view":"packs"}));
+        assert_eq!(groups["rows"][0]["song_count"], 1, "{status}");
+        assert_eq!(groups["summary"]["unfiled_songs"], 0, "{status}");
+        let issues = query(
+            &library,
+            json!({"view":"issues","pack_id":groups["rows"][0]["pack_id"]}),
+        );
+        if matches!(status, "error" | "conflict" | "retained_nonplayable") {
+            assert_eq!(issues["total"], 1, "{status}");
+            assert_eq!(issues["rows"][0]["code"], "original_latest_diagnostic");
+            assert!(issues["rows"][0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("Original latest converter diagnostic retained verbatim"));
+            assert!(issues["rows"][0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("original.wmhscore.json"));
+        } else {
+            assert_eq!(issues["total"], 0, "{status}");
+        }
     }
 }

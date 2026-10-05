@@ -31,8 +31,12 @@ request/response contract and row examples are in
   issue; disagreeing copies or invalid metadata do not contribute. Saved retries
   are unioned, so a later partial receipt cannot erase an earlier successful edge.
 - `receipt_reference_count` counts accepted historical receipt items.
-  `source_reference_count` deduplicates `(archive identity, item path, edition)`.
-  Retrying one source item does not manufacture duplicate songs.
+  `source_reference_count` deduplicates `(archive identity, logical source item,
+  edition)`. Standalone and MXL inputs each have one logical item, independent of
+  upload filename; a standalone library-backup item uses its original entry index.
+  ZIP members use exact inner paths, and nested library-backup entries add their
+  verified entry index. Real distinct ZIP paths are never collapsed by title.
+  Renaming or retrying the same uploaded bytes does not manufacture duplicates.
 - V1 receipts are unsigned historical evidence. `validated_receipts` means bounded
   schema/identity/path checks against verified songs and retained-source bytes;
   it is not cryptographic attestation of authorship or import history.
@@ -40,6 +44,21 @@ request/response contract and row examples are in
   Issues and leave unmatched songs Unfiled. A backup-only original appears as an
   unresolved source group; no primary source is silently recreated. No original,
   source backup, receipt or music payload is rewritten by this projection.
+- Import receipts follow the actual importer grammar. ZIP paths may contain
+  Unicode, spaces and more than eight components while retaining traversal,
+  absolute-path, backslash, drive-letter, control-character and length checks.
+  Standalone filenames are inert 1–1024-byte upload labels, not paths. A backup's
+  virtual `#entries/N` must name a real entry in its retained backup envelope.
+  MXL receipts may identify the uploaded container instead of an inner member.
+  Clean-package asset path rules are unchanged. No input is reconverted to infer
+  what a historical importer saved.
+- Every unlinked source-only item produces an Issue with the latest bounded
+  original diagnostic code and message plus its displayed item path. It remains
+  absent from song memberships. Later error/conflict/source-only diagnostics also
+  remain visible when an older successful receipt proves an existing membership;
+  they do not erase that link. A routine duplicate or unselected ready retry does
+  not manufacture a failure. Diagnostic codes are limited to 256 bytes and
+  messages to 8192 bytes; out-of-bounds receipts are rejected, not clipped silently.
 
 Duplicate categories are independent review hints and can overlap:
 
@@ -85,7 +104,7 @@ Bounds fail closed without changing the library or publishing a partial snapshot
 - 4 KiB request, 256 UTF-8 byte search, page limit 1–100 (default 40)
 - 128 retained archive identities; existing 1024-file per-archive bounds
 - 1024 verified editions; 16,384 memberships/logical source references
-- 32 MiB maximum receipt and 128 MiB aggregate receipt reads, including both copies
+- 32 MiB maximum receipt; 128 MiB aggregate receipt, retained-inventory and ZIP backup-envelope metadata reads, including both receipt copies
 - 2 GiB aggregate original-source verification across both copies
 - 4096 projection issues, 32 MiB serialized snapshot
 - 4 MiB response page, including a 16 KiB envelope reserve
@@ -123,3 +142,33 @@ The query contract sample test can emit only its newly authored responses when
 `WMC_PACK_GROUP_CONTRACT_OUT` names an explicit developer-owned output file. This
 supports frontend validation against real Rust responses without a browser,
 server, default-library access or private fixture.
+
+### Receipt compatibility correction
+
+The follow-up correctness checks passed 18 pack-group tests and the 26 existing
+importer regressions, plus scoped clippy and formatting. The new producer-to-query
+matrix imports actual authored inputs before querying: standalone canonical JSON,
+inert display filenames, MIDI, MusicXML, MXL, jianpu, browser-library backup JSON,
+native backup JSON, Unicode/space and deep-path ordinary ZIPs, zipped backups,
+unified V1 packs, clean canonical/VSQ/basic-key packages, raw unsupported VSQ, and
+source-only ZIPs. A separate authored complete-performance test covers that clean
+profile. Each family is retried under a different upload filename. Invalid virtual
+indices and forged outer/member paths remain excluded. Owned historical receipt
+mutations test a newer converter failure following an older successful import.
+
+The recovery fixture is produced by
+`crates/desktop-shell/tests/pack_groups.rs::query_recovery_contract_samples_keep_unresolved_sources_visible`:
+
+```
+WMC_PACK_GROUP_RECOVERY_CONTRACT_OUT=/absolute/developer-owned/recovery-responses.json \
+cargo test -p worldmusichub-desktop --test pack_groups \
+  query_recovery_contract_samples_keep_unresolved_sources_visible --locked --offline
+```
+
+It emits unchanged native responses for Packs, Songs, Duplicates and Issues, plus
+actual pack-filtered source-only/unresolved Issue and empty Song pages. The fixture
+uses only `score()`, `pack()` and `source_only_archive()` in the same test source:
+new C/D/E jianpu notes, inert authored text and deliberately invalid authored MIDI
+bytes in fresh temporary libraries. No user's source, title, filename or library
+is an input. Snapshot timestamps are real and may differ between regenerations;
+check the recorded artifact SHA-256 alongside the generating source revision.
