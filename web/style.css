@@ -54,4 +54,14 @@ body{font-size:14px}.sidebar{background:var(--surface)}.topbar h1{color:var(--pa
 .result-summary{border-top:1px solid var(--border);margin-top:20px;padding-top:18px}.result-summary-heading{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 18px}.result-summary h3{font-size:18px;margin:0}.result-summary h4{font-size:14px;margin:20px 0 4px}.result-summary p{color:var(--muted);font-size:12px;line-height:1.65;margin:7px 0}.result-summary .result-summary-status{color:var(--ink);font-weight:650}.result-grade-grid,.result-onset-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0}.result-onset-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.result-grade-grid>div,.result-onset-grid>div{border:1px solid var(--border);background:var(--paper);border-radius:10px;padding:12px;min-width:0}.result-summary dt{font-size:12px;color:var(--muted);line-height:1.5;overflow-wrap:anywhere}.result-summary dd{margin:7px 0 0;color:var(--ink);font-size:26px;font-weight:650;font-variant-numeric:tabular-nums}.result-summary-help{margin-top:14px}.result-summary-help summary{cursor:pointer;font-size:13px;font-weight:600;line-height:1.5}@media(max-width:500px){.result-grade-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.result-onset-grid{grid-template-columns:1fr}.result-summary dd{font-size:23px}}
 
 /* Native range semantics support touch, pointer and keyboard seeking. */
-#progress{display:block;width:100%;height:24px;margin:0;padding:0;border:0;background:transparent;accent-color:var(--green);cursor:pointer}#progress:disabled{cursor:not-allowed;opacity:.55}#progress:focus-visible{outline:2px solid var(--green);outline-offset:2px;border-radius:4px}.progress-help{margin:2px 0 0;font-size:10px;line-height:1.35;color:var(--muted)}
+/* The native seek target keeps its full height. Its guidance is available on
+   hover/focus and through aria-describedby/title, without adding a permanent
+   paragraph below the transport or taking space from the shared instrument. */
+.progress-area{position:relative}
+.progress-area:has(#progress) .progress-label{margin-bottom:0}
+#progress{display:block;width:100%;height:24px;margin:0;padding:0;border:0;background:transparent;accent-color:var(--green);cursor:pointer}
+#progress:disabled{cursor:not-allowed;opacity:.55}
+#progress:focus-visible{outline:2px solid var(--green);outline-offset:2px;border-radius:4px}
+.progress-help{position:absolute;z-index:10;right:0;bottom:100%;width:min(320px,calc(100vw - 40px));margin:0;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--paper);color:var(--ink);font-size:12px;line-height:1.45;box-shadow:0 4px 16px #0003;opacity:0;pointer-events:none}
+.piano-compact-transport .progress-help{left:0;right:auto}
+.progress-area:hover .progress-help,.progress-area:has(#progress:focus-visible) .progress-help{opacity:1;pointer-events:auto}

@@ -137,7 +137,7 @@
   .performance-layout #workspace.with-notation #reset-button{width:34px;min-width:34px}
   .performance-layout #workspace.with-notation .transport #sound-button{font-size:11px;min-height:34px}
   .performance-layout #workspace.with-notation .transport .progress-area{min-width:0;margin:0}
-  .performance-layout #workspace.with-notation .progress-label{font-size:11px;line-height:1.35;gap:2px;margin-bottom:4px}
+  .performance-layout #workspace.with-notation .progress-label{font-size:11px;line-height:1.35;gap:2px;margin-bottom:0}
   .performance-layout #workspace.with-notation .progress-label>span{min-width:0;overflow-wrap:anywhere}
   .performance-layout #workspace.with-notation .play-panel[data-instrument=guitar] .performance-hint{display:none}
   .performance-layout #workspace.with-notation #guitar-guidance{max-height:96px;overflow:auto;overscroll-behavior:contain}
