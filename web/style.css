@@ -64,4 +64,5 @@ body{font-size:14px}.sidebar{background:var(--surface)}.topbar h1{color:var(--pa
 #progress:focus-visible{outline:2px solid var(--green);outline-offset:2px;border-radius:4px}
 .progress-help{position:absolute;z-index:10;right:0;bottom:100%;width:min(320px,calc(100vw - 40px));margin:0;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--paper);color:var(--ink);font-size:12px;line-height:1.45;box-shadow:0 4px 16px #0003;opacity:0;pointer-events:none}
 .piano-compact-transport .progress-help{left:0;right:auto}
-.progress-area:hover .progress-help,.progress-area:has(#progress:focus-visible) .progress-help{opacity:1;pointer-events:auto}
+/* Informational text must never intercept Pause or the instrument beneath it. */
+.progress-area:hover .progress-help,.progress-area:has(#progress:focus-visible) .progress-help{opacity:1}

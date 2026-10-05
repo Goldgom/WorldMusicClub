@@ -145,7 +145,7 @@ try {
   };
   assert.match(provenance.sourceCommit ?? '', /^[a-f0-9]{40}$/, 'A source commit is required');
   assert.equal(provenance.checkoutCommit, provenance.workflowCommit, 'Report must identify the exact checkout that built the server');
-  for (const name of ['package.json','package-lock.json','.github/workflows/check.yml','.github/workflows/windows-release.yml','scripts/hosted-rhythm-check.mjs','web/app.js','web/music.js','web/performance-view.js','web/stage-notation-layout.js','web/piano-stage-view.js','web/piano-stage.css','web/rhythm-shell.js','web/rhythm-shell.css','web/game-shell.js','web/index.html','web/i18n.js','web/locales/en.js','web/locales/zh-CN.js','web/locales/rhythm-en.js','web/locales/rhythm-zh-CN.js','web/locales/rhythm-schema.js']) {
+  for (const name of ['package.json','package-lock.json','.github/workflows/rhythm-interaction-preview.yml','.github/workflows/check.yml','.github/workflows/windows-release.yml','scripts/hosted-rhythm-check.mjs','web/app.js','web/style.css','web/music.js','web/performance-view.js','web/stage-notation-layout.js','web/piano-stage-view.js','web/piano-stage.css','web/rhythm-shell.js','web/rhythm-shell.css','web/game-shell.js','web/index.html','web/i18n.js','web/locales/en.js','web/locales/zh-CN.js','web/locales/rhythm-en.js','web/locales/rhythm-zh-CN.js','web/locales/rhythm-schema.js']) {
     sourceHashes[name] = createHash('sha256').update(await readFile(path.join(root,name))).digest('hex');
   }
   provenance.serverBinarySha256 = createHash('sha256').update(await readFile(binary)).digest('hex');
@@ -196,6 +196,17 @@ try {
       await page.locator('#start-listen').click();
       await page.waitForFunction(() => document.body.dataset.screen === 'stage' && globalThis.__wmhReadPlaybackClock().positionMs > 0);
       if (entry.width >= 1280 && entry.height >= 720) assert.equal(await page.locator('#notation-lane-overlay').isVisible(),true,'The first desktop piano entry shows its background score without an extra toggle');
+      // Exercise the real hover layer before Pause, including its portrait
+      // overlap. Informational help must never own this transport pointer hit.
+      await page.locator('#progress').hover();
+      await page.waitForFunction(() => Number(getComputedStyle(document.getElementById('progress-help')).opacity) === 1);
+      const seekHelp = await page.evaluate(() => {
+        const help=document.getElementById('progress-help'),range=document.getElementById('progress'),play=document.getElementById('play-button'),r=play.getBoundingClientRect(),h=help.getBoundingClientRect();
+        const x=r.x+r.width/2,y=r.y+r.height/2,hit=document.elementFromPoint(x,y);
+        return {visible:Number(getComputedStyle(help).opacity)===1,pointerEvents:getComputedStyle(help).pointerEvents,guidance:help.textContent,describedBy:range.getAttribute('aria-describedby'),coversPausePoint:x>=h.x&&x<=h.right&&y>=h.y&&y<=h.bottom,pauseReceivesHit:hit===play||play.contains(hit),hitId:hit?.id||null};
+      });
+      assert.equal(seekHelp.visible,true);assert.ok(seekHelp.guidance.trim()&&seekHelp.describedBy?.split(/\s+/).includes('progress-help'),'Seek help remains available to assistive reading');
+      assert.equal(seekHelp.pauseReceivesHit,true,`Visible seek guidance blocks Pause: ${JSON.stringify(seekHelp)}`);
       await page.locator('#play-button').click();
       const reducedMotionPause = await checkReducedMotionPause(page, entry);
       const compactHeader = await checkCompactHeader(page, entry, 'piano');
@@ -263,7 +274,7 @@ try {
       await page.locator('#settings-dialog [data-close-panel]').click();
       await page.waitForFunction(() => !document.querySelector('#piano-stage').hidden && document.querySelector('#stage-cue').dataset.cueState === 'ready');
       assert.equal(await page.locator('#stage-cue').isVisible(), true, 'Ready piano is not suppressed by the paused-only rule');
-      results.push({...entry,status:failures.length === caseFailuresBefore ? 'passed' : 'failed',compactHeader,notationHeader,staffGeometry,jianpuGeometry,reducedMotionPause,readyPianoCueVisible:true,guitarCueVisible:true,geometry,fret,recordedOnsets:2,responses});
+      results.push({...entry,status:failures.length === caseFailuresBefore ? 'passed' : 'failed',seekHelp,compactHeader,notationHeader,staffGeometry,jianpuGeometry,reducedMotionPause,readyPianoCueVisible:true,guitarCueVisible:true,geometry,fret,recordedOnsets:2,responses});
     } catch (error) {
       failures.push({case:entry.name,error:error.stack ?? error.message});
       results.push({...entry,status:'failed',responses});
