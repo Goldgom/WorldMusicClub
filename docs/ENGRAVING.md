@@ -77,9 +77,9 @@ inside that callback would run the next Promise continuation before paint.
 This prevents all four parts of a dense page from forming one uninterrupted
 Promise chain. Each foreground renderer owns at most one pending frame or timer,
 and a newer score/scope or abort cancels it even before parsing starts. Hidden
-tabs defer visual preparation until frames resume. There is no speculative
-renderer cache, worker, audio-start dependency, or source-clock change. The
-existing current-page and one-next-page native JSON cache bounds are unchanged.
+tabs defer visual preparation until frames resume. This scheduler owns no
+worker or audio-start dependency and never changes the source clock. The
+current-page and one-next-page native JSON cache bounds are unchanged.
 
 This does not make an individual OSMD call interruptible, reduce note/part
 coverage, or guarantee a millisecond frame budget. Source checks/graph update,
@@ -91,6 +91,53 @@ guards; they do not establish real paint speed. Hosted dense-score acceptance
 must measure animation callback-to-callback gaps at both page changes as well
 as individual callback durations, exact note/part coverage, source IDs, ties,
 key changes, scope changes, seek/restart, and unchanged audio event counts.
+
+For native version-2 rendition pages, the app can additionally prepare one
+upcoming visual batch from that existing next-page JSON. Preparation starts
+only after the published transport clock reports `playing`, uses the same
+cooperative adapter and exact native identities, and never updates the current
+page, status, expected-note cues or scrolling. One inert, accessibility-hidden,
+offscreen root keeps glyph layout measurable outside the live notation fit
+observer. At the matching automatic boundary, all its existing owned part
+mounts move together into the live surface, and cue geometry is refreshed at
+the new location. No cloned SVG, replacement note identity or guessed highlight
+is used. No OSMD load, graph update or SVG render is repeated for that adoption.
+
+The slot owns partial construction as well as completed renderers. Source,
+scope, part-page, page-size, meter, source-inspection, width, theme/layout,
+seek/reset, pause, hidden view and obsolete generation changes dispose it.
+A failed staged renderer cannot invalidate current paint or masquerade as a
+ready future page. Overshot or backwards-seek pages are discarded before
+publication. A miss or refused speculative budget uses the existing complete
+cooperative foreground path. The current page can remain visible while a
+pending prepared batch finishes; its old cues are cleared and status is
+explicitly pending. Completed foreground render controllers no longer abort
+their owned SVG merely because a new page request begins. A retained quiet-page
+status message also captures its own page rather than a later cleared pointer.
+
+Bounds come from production guards, not from a dense fixture's note count:
+
+- Rust admits at most 2,048 receiver records per native part page; the frontend
+  additionally limits a four-part batch to 2,048 total interpreted targets
+- Speculation further requires at most 4,096 written segments, 2 MiB aggregate
+  UTF-8 MusicXML, and 2 MiB aggregate note-map JSON for the whole upcoming batch
+- The unchanged adapter separately admits at most 8,192 source XML notes and
+  50,000 source elements per renderer; its projected model must fit 2,000
+  notes, including generated rests and complete tie context, and 64 context
+  measures/fragments. Projected XML also keeps its existing element/byte caps
+- At most four current plus four upcoming renderers exist, including partially
+  built parts: at most 16,000 admitted model notes/rests in total. JSON pages and
+  original song objects are referenced, not copied into another source cache
+
+These structural and input-byte limits are not a fixed JavaScript/DOM heap-size
+claim: renderer objects and proof snapshots have additional allocation cost.
+Over-budget speculation drops no notes or parts; only pre-rendering is skipped.
+An individual OSMD call, adoption's geometry refresh, fit, and resize can still
+block a frame. The original 48-second hosted dense scene must establish actual
+pending-to-ready page latency and frame gaps, as well as exact note/audio counts.
+Local DOM doubles establish ownership, cancellation and native page identity;
+they do not establish paint, fit, tie curves, browser performance or package
+acceptance.
 
 The promise resolves with `{ok, status, message, metadata, dispose, resize, setExpectedWrittenNotes, clearExpectedWrittenNotes, mappingStatus}`:
 
