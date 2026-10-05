@@ -7,15 +7,16 @@ export function basicKeyAudioHarness({sampleRate = 48000, autoMessages = true} =
   const toCore = [], toMain = [], listeners = new Set(), nodes = [];
   const context = {sampleRate, state: 'running', currentTime: 0, loaded: [], createGain() { return {gain: {value: 0, cancelScheduledValues() {}, setValueAtTime(value) { this.value = value; }}, connect() {}, disconnect() {}}; }, audioWorklet: {async addModule(url) { context.loaded.push(url); }}, addEventListener(type, listener) { listeners.add(listener); }, removeEventListener(type, listener) { listeners.delete(listener); }};
   let frame = 0;
-  const nodeFactory = () => {
-    const node = {connected: false, closed: false, connect() { this.connected = true; }, disconnect() { this.connected = false; }, port: {onmessage: null, start() {}, close() { node.closed = true; }, postMessage(message, transfer = []) { toCore.push([node, structuredClone(message, {transfer})]); if (autoMessages) queueMicrotask(deliverCore); }}};
-    node.core = new BasicKeyAudioCore(sampleRate, {emit: (message, transfer = []) => { toMain.push([node, structuredClone(message, {transfer})]); if (autoMessages) queueMicrotask(deliverMain); }});
+  const nodeFactory = ({Core = BasicKeyAudioCore, automatic = autoMessages} = {}) => {
+    const node = {connected: false, closed: false, connect() { this.connected = true; }, disconnect() { this.connected = false; }, port: {onmessage: null, start() {}, close() { node.closed = true; }, postMessage(message, transfer = []) { toCore.push([node, structuredClone(message, {transfer})]); if (automatic) queueMicrotask(() => deliverCore(node)); }}};
+    node.core = new Core(sampleRate, {emit: (message, transfer = []) => { toMain.push([node, structuredClone(message, {transfer})]); if (automatic) queueMicrotask(() => deliverMain(node)); }});
     nodes.push(node); return node;
   };
-  function deliverCore() { for (const [node, message] of toCore.splice(0)) node.core.handleMessage(message, frame); if (autoMessages && nodes.some(node => node.core.state === 'preparing')) queueMicrotask(prepareBlock); }
+  function drain(queue, selected) { const result = []; for (let i = 0; i < queue.length;) { if (!selected || queue[i][0] === selected) result.push(...queue.splice(i, 1)); else i++; } return result; }
+  function deliverCore(selected = null) { for (const [node, message] of drain(toCore, selected)) node.core.handleMessage(message, frame); if (autoMessages && nodes.some(node => node.core.state === 'preparing')) queueMicrotask(prepareBlock); }
   function prepareBlock() { if (!nodes.some(node => node.core.state === 'preparing')) return; renderBlock(); if (nodes.some(node => node.core.state === 'preparing')) queueMicrotask(prepareBlock); }
   function finishPreparation() { while (nodes.some(node => node.core.state === 'preparing')) renderBlock(); }
-  function deliverMain() { for (const [node, message] of toMain.splice(0)) if (!node.closed) node.port.onmessage?.({data: message}); }
+  function deliverMain(selected = null) { for (const [node, message] of drain(toMain, selected)) if (!node.closed) node.port.onmessage?.({data: message}); }
   function renderBlock(size = 128) {
     const result = [];
     for (const node of nodes) { const channel = new Float32Array(size); node.core.process([channel], frame); result.push(channel); }

@@ -6,7 +6,7 @@ import {nativeScoreServer,nativeStorageApp,nativeResponse,authoredScore} from '.
 import {getAppI18n} from '../web/app-locale.js';
 import {keyboardGeometry} from '../web/music.js';
 
-async function setup({notation=false,originalAcceptance=false,audioWorklet=true,audioMessages=true,advanceAudio=true}={}){
+async function setup({notation=false,originalAcceptance=false,audioWorklet=true,audioMessages=true,liveAudioMessages=true,advanceAudio=true}={}){
  const oracle=originalAcceptance?JSON.parse(readFileSync(new URL('./fixtures/basic-key-acceptance/rendition-native.json',import.meta.url),'utf8')):null;
  const opened=oracle?.open||basicKeyRenditionFixture(),descriptor=opened.clean_package,score=JSON.parse(descriptor.score_json).notation,server=await nativeScoreServer(),key=`song-${descriptor.content_sha256}`;
  const summary={version:2,content_sha256:descriptor.content_sha256,profile:descriptor.profile,capabilities:descriptor.capabilities,coverage:descriptor.coverage,notation_available:true,media:[]};
@@ -14,7 +14,7 @@ async function setup({notation=false,originalAcceptance=false,audioWorklet=true,
  const third=notation?JSON.parse(readFileSync(new URL('./fixtures/basic-key-rendition-third-part.json',import.meta.url),'utf8')):null;
  const pages=notation?JSON.parse(readFileSync(new URL('./fixtures/basic-key-rendition-notation-page.json',import.meta.url),'utf8')):null;
  server.setRoute(({path,body})=>{if(path==='/api/library/basic-keys/notation'&&oracle){const row=oracle.pages.find(row=>['part_id','first_measure','measure_count','position_ms','rendition_policy_id'].every(key=>row.request.settings[key]===body.settings[key])&&JSON.stringify(row.request.settings.display_meter)===JSON.stringify(body.settings.display_meter));assert.ok(row,`Missing original native page: ${JSON.stringify(body)}`);assert.deepEqual(body,row.request);return nativeResponse(row.response);}if(path==='/api/library/basic-keys/notation'&&pages){assert.equal(body.source.content_sha256,descriptor.content_sha256);if(!body.settings.rendition_policy_id)return nativeResponse(pages.legacy);assert.equal(body.settings.rendition_policy_id,'wmh-basic-key-rendition-fifo-v1');return nativeResponse(body.settings.part_id===score.parts[1].id?pages.percussion.response:body.settings.part_id===score.parts[2].id?third.response:pages.melodic.response);}if(path==='/api/instrument-check'){const keys=keyboardGeometry(body.profile.key_count,body.profile.lowest_midi),low=keys[0].midi,high=keys.at(-1).midi;return nativeResponse({lowest_midi:low,highest_midi:high,note_options:body.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:note.midi>=low&&note.midi<=high,positions:[]})),diagnostics:[],changed_source_notes:false});}});
- let clock=1000;const app=await nativeStorageApp(server,{now:()=>clock,audioWorklet,audioMessages});await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready'&&!app.$('start-practice').disabled);return{app,server,key,descriptor,score,time:value=>{clock=value;if(advanceAudio)app.renderAudioTo((value-1000)/1000);}};
+ let clock=1000;const app=await nativeStorageApp(server,{now:()=>clock,audioWorklet,audioMessages,liveAudioMessages});await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready'&&!app.$('start-practice').disabled);return{app,server,key,descriptor,score,time:value=>{clock=value;if(advanceAudio)app.renderAudioTo((value-1000)/1000);}};
 }
 // These are retained plan gates, not OscillatorNode counts or actual rendered voices.
 const admittedGates=app=>app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected).flatMap(node=>[...node.core.plan.ends].flatMap((end,index)=>end>node.core.positionFrame?[{kind:node.core.plan.roles[index]?'percussion_selector':'melodic_key'}]:[]));
@@ -141,7 +141,7 @@ test('a late start acknowledgement cancels audio without backdating transport or
 for(const state of ['suspended','closed'])test(`an audio context becoming ${state} stops playback and never resumes on a state notification`,async()=>{
  const {app}=await setup();try{
   await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');app.setAudioState(state);await app.tick();
-  assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');assert.match(app.$('notice-message').textContent,/clean_clock_unavailable/);
+  assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');assert.match(app.$('notice-message').textContent,/live_audio_interrupted/);
   app.setAudioState('running');await app.tick();assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');
  }finally{await app.close();}
 });
@@ -180,9 +180,94 @@ for(const interruption of ['pause','blur','mute'])test(`Practice ${interruption}
 
 test('a real startup rejection remains visible in both locales without misreporting browser support',async()=>{
  const {app}=await setup();try{
-  app.setAudioModule(()=>Promise.reject(Object.assign(new Error('Original loader failure for startup diagnosis'),{name:'AbortError'})));await app.click('start-listen');await app.until(()=>app.$('notice-message').textContent.includes('Original loader failure'));
+  app.setAudioModule(url=>String(url).includes('basic-key-audio-processor')?Promise.reject(Object.assign(new Error('Original loader failure for startup diagnosis'),{name:'AbortError'})):Promise.resolve());await app.click('start-listen');await app.until(()=>app.$('notice-message').textContent.includes('Original loader failure'));
   for(const locale of ['en','zh-CN']){getAppI18n(app.document).setLocale(locale);const message=app.$('notice-message').textContent;assert.match(message,/AbortError.*Original loader failure/);assert.match(message,/basic-key-audio-processor\.js/);assert.doesNotMatch(message,/requires AudioWorklet|需要浏览器支持 AudioWorklet/);}
   assert.match(app.$('notice-message').textContent,/阶段：音频模块加载/);assert.doesNotMatch(app.$('notice-message').textContent,/The basic-key audio processor could not be loaded/);
   assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('progress').value,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'ready');assert.equal(app.$('export-takes').disabled,true);
+ }finally{await app.close();}
+});
+
+const liveNode=app=>app.audioNodes.find(node=>node.kind==='live-audio-worklet');
+
+test('live readiness precedes source preparation and a key released while waiting never sounds later',async()=>{
+ const {app}=await setup({liveAudioMessages:false});try{
+  await app.click('start-practice');await app.until(()=>liveNode(app)&&app.audioHarnesses[0].toCore.some(([node,message])=>node===liveNode(app)&&message.type==='initialize'));
+  const live=liveNode(app),audio=app.audioHarnesses[0];assert.equal(app.audioNodes.some(node=>node.kind==='audio-worklet'),false);assert.equal(app.$('export-takes').disabled,true);
+  const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:990,button:0});app.emit(key,'pointerup',{pointerId:990});
+  audio.deliverCore(live);audio.deliverMain(live);await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
+  assert.equal(live.core.started,0);assert.equal(live.core.activeNotes,0);assert.equal(app.plays.filter(([id])=>String(id).startsWith('manual:')).length,0);
+  const source=connectedReceivers(app)[0];assert.equal(source.core.anchorFrame-Math.floor(audio.context.currentTime*audio.context.sampleRate),.05*audio.context.sampleRate);
+  assert.ok(app.audioGraphEvents.findIndex(row=>row[0]==='create'&&row[1]==='live-audio-worklet')<app.audioGraphEvents.findIndex(row=>row[0]==='create'&&row[1]==='audio-worklet'));
+  // Restore acknowledgements before page lifecycle cleanup; the production
+  // receiver remains connected and silent after an ordinary pause.
+  await app.click('play-button');audio.deliverCore(live);audio.deliverMain(live);
+ }finally{const live=liveNode(app),audio=app.audioHarnesses[0];await app.close();audio?.deliverCore(live);audio?.deliverMain(live);}
+});
+
+test('real PC and pointer input share persistent sound without changing the running source graph or scoring clock',async()=>{
+ const {app,time,descriptor}=await setup();try{
+  await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
+  const live=liveNode(app),source=connectedReceivers(app)[0],sourcePlan=source.core.plan,anchor=source.core.anchorFrame,graph=structuredClone(app.audioGraphEvents),score=descriptor.score_json;
+  time(1100);app.emit(app.$('stage-title'),'keydown',{code:'KeyR',key:'r'});await app.tick();time(1140);app.emit(app.$('stage-title'),'keyup',{code:'KeyR',key:'r'});await app.tick();time(1160);await app.tick();
+  await app.click('keyboard-semitone-up');time(1180);app.emit(app.$('stage-title'),'keydown',{code:'KeyR',key:'r'});await app.tick();time(1220);app.emit(app.$('stage-title'),'keyup',{code:'KeyR',key:'r'});await app.tick();time(1240);await app.tick();
+  const key=app.document.querySelector('#keyboard [data-midi="67"]');time(1260);app.emit(key,'pointerdown',{pointerId:44,button:0});await app.tick();time(1300);app.emit(key,'pointerup',{pointerId:44});await app.tick();time(1320);await app.tick();
+  const receipts=live.core.snapshot(app.audioHarnesses[0].frame).receipts.filter(row=>row.type==='ended');
+  assert.deepEqual(receipts.map(row=>row.midi),[60,61,67]);assert.ok(receipts.every(row=>row.nonzeroSamples>0&&row.pcmEnergy>0&&row.actualEndFrame>row.actualStartFrame));
+  assert.deepEqual(app.audioGraphEvents,graph);assert.equal(source.core.plan,sourcePlan);assert.equal(source.core.anchorFrame,anchor);assert.equal(descriptor.score_json,score);assert.equal(app.audioNodes.some(node=>node.kind==='oscillator'),false);
+  await app.click('play-button');const take=await app.exported('export-takes');assert.deepEqual(take.passes[0].inputs.map(row=>row.midi),[60,61,67]);assert.deepEqual(take.passes[0].inputs.map(row=>row.at_ms),[50,130,210]);assert.equal(take.passes[0].clock_segments[0].wallStart,1050);assert.equal(take.passes[0].clock_segments[0].positionStart,0);
+  assert.equal(live.connected,true);assert.equal(live.core.activeNotes,0);assert.equal(live.core.activeClicks,0);
+ }finally{await app.close();}
+});
+
+test('live processor failure stops complete sound visibly and never admits legacy input fallback',async()=>{
+ const {app,time,descriptor}=await setup();try{
+  app.setAudioModule(url=>String(url).includes('live-tone-audio-processor')?Promise.reject(Object.assign(new Error('Live processor test rejection'),{name:'AbortError'})):Promise.resolve());
+  await app.click('start-practice');await app.until(()=>app.$('notice-message').textContent.includes('Live processor test rejection'));
+  for(const locale of ['en','zh-CN']){getAppI18n(app.document).setLocale(locale);assert.match(app.$('notice-message').textContent,/AbortError.*Live processor test rejection/);assert.match(app.$('notice-message').textContent,/live-tone-audio-processor\.js/);assert.match(app.$('notice-message').textContent,locale==='en'?/Reopen the app/:/重新打开应用/);assert.doesNotMatch(app.$('notice-message').textContent,/requires AudioWorklet|需要浏览器支持 AudioWorklet/);}
+  assert.equal(app.audioNodes.some(node=>node.kind==='audio-worklet'),false);assert.equal(app.$('export-takes').disabled,true);assert.notEqual(app.$('clean-song-stage').dataset.rendererState,'playing');
+  const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:51,button:0});await app.tick();app.emit(key,'pointerup',{pointerId:51});
+  assert.equal(app.audioNodes.some(node=>node.kind==='oscillator'),false);assert.equal(connectedReceivers(app).length,0);
+  await app.click('sound-button');await app.click('play-button');assert.equal(app.$('clean-song-stage').dataset.rendererState,'playing');time(1100);app.emit(key,'pointerdown',{pointerId:52,button:0});app.emit(key,'pointerup',{pointerId:52});await app.tick();await app.click('play-button');
+  const take=await app.exported('export-takes');assert.equal(take.passes.length,1);assert.equal(take.passes[0].inputs[0].midi,60);assert.equal(app.audioNodes.some(node=>node.kind==='oscillator'),false);assert.equal(descriptor.score_json,basicKeyRenditionFixture().clean_package.score_json);
+ }finally{await app.close();}
+});
+
+test('explicit resume keeps the live node, clears held contacts and preserves source preparation before the unchanged lead',async()=>{
+ const {app,time}=await setup();try{
+  await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');const live=liveNode(app);
+  time(1100);app.emit(app.$('stage-title'),'keydown',{code:'KeyR',key:'r'});await app.tick();time(1140);app.setAudioState('suspended');await app.tick();
+  assert.equal(live.connected,true);assert.equal(live.core.activeNotes,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');
+  app.setAudioState('running');await app.tick();assert.equal(live.core.state,'suspended');assert.equal(connectedReceivers(app).length,0);
+  app.emit(app.$('stage-title'),'keyup',{code:'KeyR',key:'r'});await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
+  assert.equal(liveNode(app),live);assert.equal(app.audioNodes.filter(node=>node.kind==='live-audio-worklet').length,1);assert.equal(live.core.state,'ready');assert.equal(live.core.activeNotes,0);
+  const source=connectedReceivers(app)[0],audio=app.audioHarnesses[0];assert.equal(source.core.anchorFrame-audio.frame,.05*audio.context.sampleRate);
+ }finally{await app.close();}
+});
+
+test('the prepared live graph survives free navigation, MIDI panic, IME, dialogs and replay exclusion without contaminating the score',async()=>{
+ const {app,time}=await setup();try{
+  await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');time(1100);await app.click('play-button');const scoreTake=await app.exported('export-takes'),live=liveNode(app);
+  await app.click('back-to-library');await app.click('start-free-practice');await app.click('free-connect-midi');await app.until(()=>app.midiDevice.onmidimessage,'MIDI connected');app.$('settings-dialog').close();
+  const graph=structuredClone(app.audioGraphEvents);time(1200);await app.click('free-start');
+  time(1240);app.midi([0x90,69,104]);await app.tick();time(1280);app.midi([0xb0,123,0]);await app.tick();assert.equal(live.core.activeNotes,0);
+  time(1300);app.emit(app.$('free-practice-title'),'keydown',{code:'KeyR',key:'r'});await app.tick();time(1340);app.emit(app.document,'compositionstart');await app.tick();assert.equal(live.core.activeNotes,0);app.emit(app.document,'compositionend');app.emit(app.$('free-practice-title'),'keyup',{code:'KeyR',key:'r'});
+  const before=live.core.started;await app.click('settings-button');app.midi([0x90,65,90]);app.midi([0x80,65,0]);await app.tick();assert.equal(live.core.started,before);app.$('settings-dialog').close();
+  await app.click('free-resume');time(1380);app.emit(app.$('free-practice-title'),'keydown',{code:'KeyR',key:'r'});await app.tick();time(1420);app.emit(app.window,'blur');await app.tick();assert.equal(live.core.activeNotes,0);app.emit(app.window,'focus');app.emit(app.$('free-practice-title'),'keyup',{code:'KeyR',key:'r'});
+  time(1460);await app.click('free-stop');const draft=await app.exported('free-export-draft');await app.click('free-save');await app.until(()=>app.$('free-practice-screen').getAttribute('aria-busy')!=='true','Free save finished');await app.click('free-preview');await app.until(()=>!app.$('free-preview-stop').disabled,'Free replay running');
+  const manualCount=app.plays.filter(([id])=>String(id).startsWith('manual:')).length;
+  app.emit(app.$('free-practice-title'),'keydown',{code:'KeyR',key:'r'});app.emit(app.$('free-practice-title'),'keyup',{code:'KeyR',key:'r'});app.midi([0x90,72,100]);app.midi([0x80,72,0]);await app.tick();
+  assert.equal(app.plays.filter(([id])=>String(id).startsWith('manual:')).length,manualCount);await app.click('free-preview-stop');assert.equal(live.core.activeNotes,0);
+  assert.deepEqual(await app.exported('free-export-draft'),draft);assert.deepEqual(await app.exported('export-takes'),scoreTake);assert.deepEqual(app.audioGraphEvents,graph);assert.equal(liveNode(app),live);assert.equal(app.audioNodes.some(node=>node.kind==='oscillator'),false);
+ }finally{await app.close();}
+});
+
+test('terminal live processor failure pauses the source and leaves the persistent graph closed to new sounds',async()=>{
+ const {app,time}=await setup();try{
+  await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');const live=liveNode(app),liveConnections=app.audioGraphEvents.filter(row=>row[1]==='live-audio-worklet');
+  time(1100);app.emit(app.$('stage-title'),'keydown',{code:'KeyR',key:'r'});await app.tick();time(1140);live.onprocessorerror();await app.tick();
+  assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');assert.match(app.$('notice-message').textContent,/live_audio_processor_error/);assert.match(app.$('notice-message').textContent,/Reopen the app/);getAppI18n(app.document).setLocale('zh-CN');assert.match(app.$('notice-message').textContent,/重新打开应用/);assert.equal(connectedReceivers(app).length,0);assert.equal(live.connected,true);assert.equal(live.core.activeNotes,0);
+  app.emit(app.$('stage-title'),'keyup',{code:'KeyR',key:'r'});app.emit(app.$('stage-title'),'keydown',{code:'KeyT',key:'t'});await app.tick();app.emit(app.$('stage-title'),'keyup',{code:'KeyT',key:'t'});
+  assert.equal(app.audioNodes.some(node=>node.kind==='oscillator'),false);assert.deepEqual(app.audioGraphEvents.filter(row=>row[1]==='live-audio-worklet'),liveConnections);
+  const take=await app.exported('export-takes');assert.equal(take.passes.length,1);assert.equal(take.passes[0].inputs[0].midi,60);assert.equal(take.passes[0].clock_segments[0].wallStart,1050);
  }finally{await app.close();}
 });

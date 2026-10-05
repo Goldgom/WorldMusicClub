@@ -1,4 +1,5 @@
 import {basicKeyAudioHarness} from './basic-key-audio-harness.js';
+import {LiveToneCore, LIVE_TONE_PROTOCOL} from '../web/live-tone-core.js';
 import {waitForTestCondition} from './async-test-wait.js';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -53,9 +54,11 @@ export async function nativeScoreServer({scores=[],directory='C:\\Test-only\\Wor
 }
 
 /** Real app import, mocked DOM/audio/native transport and isolated browser storage. */
-export async function nativeStorageApp(server,{now,audioSampleRate=8000,audioWorklet=true,audioMessages=true}={}) {
+export async function nativeStorageApp(server,{now,audioSampleRate=8000,audioWorklet=true,audioMessages=true,liveAudioMessages=true}={}) {
   const {document,window}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8'));
-  const audioNodes=[],audioHarnesses=[],audioDevices=[];const downloads=[],plays=[],values=new Map(),factory=new IDBFactory(),openedDatabases=[];
+  const audioNodes=[],audioHarnesses=[],audioDevices=[],audioGraphEvents=[];const downloads=[],plays=[],values=new Map(),factory=new IDBFactory(),openedDatabases=[];
+  const midiDevice={id:'test-device',name:'Test MIDI',state:'connected',connection:'open',onmidimessage:null};
+  const midiAccess={inputs:new Map([[midiDevice.id,midiDevice]]),onstatechange:null};
   let unlockImpl=null,audioModuleImpl=null,audioContexts=0,unlockCalls=0,frameId=0;const frames=new Map();
   const originalOpen=factory.open.bind(factory);
   factory.open=(name,...args)=>{openedDatabases.push(name);return originalOpen(name,...args);};
@@ -67,7 +70,7 @@ export async function nativeStorageApp(server,{now,audioSampleRate=8000,audioWor
   const paint=new Proxy({createLinearGradient:()=>({addColorStop(){}})},{get:(target,key)=>target[key]||(()=>{})});
   window.HTMLCanvasElement.prototype.getContext=()=>paint;
   const parameter=()=>({value:0,events:[],setValueAtTime(value,at){this.value=value;this.events.push({value,at});},setTargetAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){},cancelScheduledValues(){}});
-  const audioNode=(kind,props={})=>{const node={kind,disconnected:false,connect(){},disconnect(){this.disconnected=true;},...props};audioNodes.push(node);return node;};
+  const audioNode=(kind,props={})=>{audioGraphEvents.push(['create',kind]);const node={kind,disconnected:false,connect(){audioGraphEvents.push(['connect',kind]);},disconnect(){this.disconnected=true;audioGraphEvents.push(['disconnect',kind]);},...props};audioNodes.push(node);return node;};
   class Audio {
     constructor(){audioContexts++;audioDevices.push(this);this.createdWall=performance.now();this.state='running';this.sampleRate=audioSampleRate;this.destination={};this.harness=basicKeyAudioHarness({sampleRate:audioSampleRate,autoMessages:audioMessages});audioHarnesses.push(this.harness);if(audioWorklet)this.audioWorklet={addModule:url=>audioModuleImpl?audioModuleImpl(url):this.harness.context.audioWorklet.addModule(url)};}
     get currentTime(){return this.harness.context.currentTime;}
@@ -86,9 +89,10 @@ export async function nativeStorageApp(server,{now,audioSampleRate=8000,audioWor
   Synth.prototype.unlock=function(...args){unlockCalls++;return unlockImpl?unlockImpl():originalUnlock.apply(this,args);};
   Synth.prototype.play=function(...args){plays.push(args);return originalPlay.apply(this,args);};
   URL.createObjectURL=blob=>{downloads.push(blob);return 'blob:node-native-storage';};
-  const installed={window,document,indexedDB:factory,navigator:{},location:{origin},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},matchMedia:()=>({matches:false,addEventListener(){}}),MutationObserver:class{observe(){}disconnect(){}},requestAnimationFrame:callback=>{frames.set(++frameId,callback);return frameId;},cancelAnimationFrame:id=>frames.delete(id),AudioContext:Audio,AudioWorkletNode:audioWorklet?class{constructor(context){
-    const harness=context.harness,node=harness.nodeFactory(),post=node.port.postMessage,emit=node.core.emit;
-    node.kind='audio-worklet';
+  const installed={window,document,indexedDB:factory,navigator:{requestMIDIAccess:async()=>midiAccess},location:{origin},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},matchMedia:()=>({matches:false,addEventListener(){}}),MutationObserver:class{observe(){}disconnect(){}},requestAnimationFrame:callback=>{frames.set(++frameId,callback);return frameId;},cancelAnimationFrame:id=>frames.delete(id),AudioContext:Audio,AudioWorkletNode:audioWorklet?class{constructor(context,name){
+    const live=name===LIVE_TONE_PROTOCOL,harness=context.harness,node=harness.nodeFactory(live?{Core:LiveToneCore,automatic:liveAudioMessages}:undefined),post=node.port.postMessage,emit=node.core.emit;
+    node.kind=live?'live-audio-worklet':'audio-worklet';audioGraphEvents.push(['create',node.kind]);
+    for(const method of ['connect','disconnect']){const original=node[method];node[method]=function(...args){audioGraphEvents.push([method,node.kind]);return original.apply(this,args);};}
     node.port.postMessage=function(message,...args){if(message.type==='start')harness.wallAudioOffset=context.currentTime-(performance.now()-context.createdWall)/1000;return post.call(this,message,...args);};
     node.core.emit=(message,...args)=>{emit(message,...args);const delivered=harness.toMain.at(-1)?.[1];if(delivered?.ledger)node.lastCompletion=delivered;};
     audioNodes.push(node);return node;
@@ -118,6 +122,7 @@ export async function nativeStorageApp(server,{now,audioSampleRate=8000,audioWor
   }
   try{await import(`../web/app.js?native-storage-integration-${++sequence}`);getAppI18n(document).setLocale('en');await tick();}
   catch(error){await close();throw error;}
-  return{document,window,$,audioNodes,audioHarnesses,setAudioState(state){for(const audio of audioDevices){audio.state=state;audio.harness.setState(state);}},renderAudioTo(seconds){for(const harness of audioHarnesses){const target=Math.floor((seconds+(harness.wallAudioOffset||0))*harness.context.sampleRate);while(harness.frame<target)harness.renderBlock(Math.min(128,target-harness.frame));} },downloads,plays,openedDatabases,factory,requests:server.requests,tick,until,emit,click,exported,storageAction,savedButton,storageStatus,importFile,close,
+  return{document,window,$,audioNodes,audioHarnesses,audioGraphEvents,setAudioState(state){for(const audio of audioDevices){audio.state=state;audio.harness.setState(state);}},renderAudioTo(seconds){for(const harness of audioHarnesses){const target=Math.floor((seconds+(harness.wallAudioOffset||0))*harness.context.sampleRate);while(harness.frame<target)harness.renderBlock(Math.min(128,target-harness.frame));} },downloads,plays,openedDatabases,factory,requests:server.requests,tick,until,emit,click,exported,storageAction,savedButton,storageStatus,importFile,close,
+    midiDevice,midi:(data,time=performance.now())=>midiDevice.onmidimessage?.({data,timeStamp:time}),
     frame(){const work=[...frames.values()];frames.clear();for(const callback of work)callback(performance.now());},audio:()=>({contexts:audioContexts,unlocks:unlockCalls}),setUnlock:fn=>{unlockImpl=fn;},setAudioModule:fn=>{audioModuleImpl=fn;}};
 }

@@ -124,7 +124,8 @@ const renderResultsSummary=setupResultsSummary(document,{i18n});
 const renderGuitarGuidance=setupGuitarGuidance(document);
 setupThemes();
 const transport = new Transport();
-const synth = new Synth();
+const synth = new Synth({onError:error=>{pausePlayback();notice(()=>liveAudioErrorText(error),true);}});
+function liveAudioErrorText(error) { return cleanErrorText(i18n.locale,{code:error?.code,message:error?.message,details:error?.details,liveAudioTerminal:synth.liveError===error}); }
 let cleanView=null,previewMedia=null,activeMedia=null,previewMediaKey=null,activeMediaKey=null;
 const cleanMutedParts=new Set(),cleanSoloParts=new Set();
 const cleanPlayer=new CleanSongPlayer({getPositionMs:()=>transport.time(performance.now()),onError:error=>{pausePlayback();notice(()=>cleanErrorText(i18n.locale,error),true);}});
@@ -779,7 +780,7 @@ async function pressNote(source, midi, velocity = 90, eventTime = null, options 
   try{
     await synth.unlock();
     if(!synth.muted && heldAudioTokens.get(source)===audioToken && state.held.get(source)===midi && (!freeLive || (freeSession.liveOwner()===audioToken.liveOwner && freeLiveInputAllowed(route,captureTime,options))))synth.play(`manual:${source}`,midi,null,0,state.instrument,velocity);
-  }catch(error){notice(route.kind==='free'?()=>i18n.t('error.audioUnavailable'):()=>errorDetail(error),true);}
+  }catch(error){notice(synth.liveError===error?()=>liveAudioErrorText(error):route.kind==='free'?()=>i18n.t('error.audioUnavailable'):()=>errorDetail(error),true);}
 }
 function releaseMatching(prefix, eventTime = null, options = {}) {
   const time=eventTimeEvidence(eventTime),routes=new Set();
@@ -862,6 +863,10 @@ async function togglePlayback() {
     const options={context:synth.context,output:synth.output,mode,targetPart,mutedParts:[...cleanMutedParts],soloParts:[...cleanSoloParts],instrument,resumePositionMs:transport.position-(audioThread&&!transport.hasStarted?countIn:0),acceptedPolicyId:song?inspectCleanRendition(song).rendition:null};
     let now;
     if(audioThread){
+      // Admit the fixed live-input graph before building the source plan or
+      // choosing its 50 ms anchor. Human keys and clicks then use only messages.
+      await synth.prepareLiveAudio();
+      if(!current())return;
       const prepared=await cleanPlayer.prepare(options);
       if(!prepared||!current())return;
       // All plan building, transfer and renderer preparation precede this lead.
@@ -883,7 +888,7 @@ async function togglePlayback() {
     updateButtons();
   }catch(error){
     if(ticket!==state.playTicket)return;
-    pausePlayback();notice(()=>song?cleanErrorText(i18n.locale,error):errorDetail(error),true);
+    pausePlayback();notice(()=>song?liveAudioErrorText(error):errorDetail(error),true);
   }finally{
     if(ticket===state.playTicket&&state.playPending){state.playPending=false;cleanPlayer.stop();updateButtons();}
   }

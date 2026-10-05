@@ -42,10 +42,15 @@ export class Transport {
 }
 
 export class Synth {
-  constructor() { this.context = null; this.voices = new Map(); this.releasingVoices = new Set(); this.clickVoices = new Map(); this.muted = false; this.output = null; this.droppedVoices = 0; }
+  constructor({liveToneFactory = (context, output, options) => import('./live-tone-receiver.js').then(({LiveToneReceiver}) => LiveToneReceiver.create(context, output, options)), onError = () => {}, onEvent = () => {}} = {}) {
+    this.context = null; this.voices = new Map(); this.releasingVoices = new Set(); this.clickVoices = new Map(); this.muted = false; this.output = null; this.droppedVoices = 0;
+    this.liveToneFactory = liveToneFactory; this.onError = onError; this.onEvent = onEvent;
+    this.liveReceiver = null; this.livePreparation = null; this.liveRequired = false; this.liveError = null; this.disposed = false;
+  }
   async unlock() {
     const Audio = globalThis.AudioContext || globalThis.webkitAudioContext;
-    if (!Audio) throw new Error('Audio is unavailable in this browser. Try a current Chrome, Edge, Firefox or Safari.');
+    if (!Audio && !this.context) throw new Error('Audio is unavailable in this browser. Try a current Chrome, Edge, Firefox or Safari.');
+    if (this.disposed) throw new Error('The audio output is closed.');
     this.context ||= new Audio();
     if (!this.output) {
       this.output = this.context.createGain(); this.output.gain.value = 0.7;
@@ -54,11 +59,82 @@ export class Synth {
       } else this.output.connect(this.context.destination);
     }
     if (this.context.state !== 'running') await this.context.resume();
+    // Once selected, live input cannot fall back to graph-changing oscillators.
+    // Waiting here also lets the app's contact token fence a key released while
+    // the persistent receiver was still preparing or recovering its device.
+    if (this.livePreparation) await this.livePreparation;
+    if (this.liveError) throw this.liveError;
+    if (this.liveResume) await this.liveResume;
+    if (this.liveReceiver?.state === 'interrupted') await this.resumeLiveAudio();
+  }
+  async resumeLiveAudio() {
+    if (this.liveResume) return this.liveResume;
+    const pending = Promise.resolve().then(() => this.liveReceiver.resume());
+    this.liveResume = pending;
+    try { return await pending; } finally { if (this.liveResume === pending) this.liveResume = null; }
+  }
+  async prepareLiveAudio() {
+    if (this.disposed) throw new Error('The audio output is closed.');
+    if (this.liveError) throw this.liveError;
+    if (this.livePreparation) return this.livePreparation;
+    if (this.liveReceiver) {
+      if (this.liveResume) await this.liveResume;
+      if (this.liveReceiver.state === 'interrupted') await this.resumeLiveAudio();
+      if (this.liveReceiver.state !== 'ready') throw Object.assign(new Error('The persistent live input receiver is not ready.'), {code: 'live_audio_unavailable'});
+      return this.liveReceiver;
+    }
+    if (!this.context || this.context.state !== 'running' || !this.output) throw Object.assign(new Error('Unlock the audio device before preparing live input.'), {code: 'live_audio_unavailable'});
+    // Retire every legacy connection before the source renderer builds a plan.
+    // In particular, pending click onended callbacks must not disconnect later.
+    this.silence(); this.liveRequired = true;
+    const context = this.context, output = this.output;
+    const pending = Promise.resolve().then(() => this.liveToneFactory(context, output, {
+      onError: error => this.liveFailed(error),
+      onEvent: event => this.liveEvent(event),
+    })).then(receiver => {
+      if (this.disposed || this.context !== context || this.output !== output) {
+        receiver.dispose();
+        throw Object.assign(new Error('Live input preparation was canceled.'), {code: 'live_audio_canceled'});
+      }
+      this.liveReceiver = receiver;
+      return receiver;
+    }).catch(error => { if (!this.disposed && error?.code !== 'live_audio_interrupted') this.liveError = error; throw error; });
+    this.livePreparation = pending;
+    try { return await pending; } finally { if (this.livePreparation === pending) this.livePreparation = null; }
+  }
+  liveFailed(error) {
+    // Device suspension is recoverable only through an explicit user unlock.
+    // Processor failures remain visible and may never switch to legacy audio.
+    if (error?.code !== 'live_audio_interrupted') this.liveError = error;
+    for (const voice of [...this.voices.values(), ...this.releasingVoices, ...this.clickVoices.values()]) voice.disposed = true;
+    this.voices.clear(); this.releasingVoices.clear(); this.clickVoices.clear();
+    this.onError(error);
+  }
+  liveEvent(event) {
+    if (event.type === 'ended') {
+      if (event.reason === 'stolen') this.droppedVoices++;
+      for (const voice of [...this.voices.values(), ...this.releasingVoices, ...this.clickVoices.values()]) {
+        if (voice.liveToken !== event.token) continue;
+        voice.disposed = true;
+        if (this.voices.get(voice.id) === voice) this.voices.delete(voice.id);
+        if (this.clickVoices.get(voice.id) === voice) this.clickVoices.delete(voice.id);
+        this.releasingVoices.delete(voice);
+      }
+    }
+    this.onEvent(event);
   }
   play(id, midi, duration = null, delay = 0, timbre = 'piano', velocity = 90) {
     if (!this.context || this.context.state !== 'running' || this.muted) return;
-    this.release(id);
     velocity = Number.isFinite(velocity) ? Math.max(0, Math.min(127, velocity)) : 90;
+    if (this.liveRequired) {
+      if (this.liveError) throw this.liveError;
+      if (this.liveReceiver?.state !== 'ready') return;
+      this.release(id);
+      const liveToken = this.liveReceiver.play(id, midi, duration, delay, timbre, velocity);
+      if (liveToken !== null) this.voices.set(id, {id, liveToken});
+      return liveToken;
+    }
+    this.release(id);
     if (velocity === 0) return;
     // Release tails count against the same budget; retire a tail before a held note.
     if (this.voices.size + this.releasingVoices.size >= 64) {
@@ -93,22 +169,48 @@ export class Synth {
   click(id, accent = false, delay = 0, level = 0.25) {
     if (!Number.isFinite(level) || !Number.isFinite(delay)) throw new Error('Click level and scheduling delay must be finite.');
     if (!this.context || this.context.state !== 'running' || this.muted || level <= 0) return;
+    if (this.liveRequired) {
+      if (this.liveError) throw this.liveError;
+      if (this.liveReceiver?.state !== 'ready') return;
+      const liveToken = this.liveReceiver.click(id, accent, Math.max(0, delay), Math.min(1, level));
+      if (liveToken !== null) this.clickVoices.set(id, {id, liveToken});
+      return liveToken;
+    }
+    const previous = this.clickVoices.get(id);
+    if (previous) this.cancelClick(previous);
     if (this.clickVoices.size >= 8) throw new Error('The click preview exceeded its safe voice budget. Choose a coarser pulse.');
     const start=this.context.currentTime+Math.max(0,delay)/1000;
     const gain=this.context.createGain(),oscillator=this.context.createOscillator();
     oscillator.type='sine';oscillator.frequency.value=accent?1568:1046;
     gain.gain.setValueAtTime(0,start);gain.gain.linearRampToValueAtTime(Math.min(1,level)*0.22,start+0.002);gain.gain.exponentialRampToValueAtTime(0.0001,start+0.035);
-    oscillator.connect(gain);gain.connect(this.output);const voice={oscillator,gain};this.clickVoices.set(id,voice);
-    oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();if(this.clickVoices.get(id)===voice)this.clickVoices.delete(id)};
+    oscillator.connect(gain);gain.connect(this.output);const voice={id,oscillator,gain};this.clickVoices.set(id,voice);
+    oscillator.onended=()=>this.disposeClick(voice);
     oscillator.start(start);oscillator.stop(start+0.045);
   }
   silenceClicks() {
-    for(const voice of this.clickVoices.values()){const now=this.context.currentTime;voice.gain.gain.cancelScheduledValues(now);voice.gain.gain.setValueAtTime(0,now);try{voice.oscillator.stop(now)}catch{/* already ended */}}
+    if (this.liveRequired) { if (this.liveReceiver?.state === 'ready') this.liveReceiver.silenceClicks(); for (const voice of this.clickVoices.values()) voice.disposed = true; this.clickVoices.clear(); return; }
+    for(const voice of this.clickVoices.values()) this.cancelClick(voice);
     this.clickVoices.clear();
+  }
+  cancelClick(voice) {
+    const now = this.context.currentTime;
+    voice.gain.gain.cancelScheduledValues(now); voice.gain.gain.setValueAtTime(0, now);
+    try { voice.oscillator.stop(now); } catch { /* Already ended. */ }
+    this.disposeClick(voice);
+  }
+  disposeClick(voice) {
+    if (voice.disposed) return;
+    voice.disposed = true; voice.oscillator.disconnect(); voice.gain.disconnect();
+    if (this.clickVoices.get(voice.id) === voice) this.clickVoices.delete(voice.id);
   }
   release(id) {
     const voice = this.voices.get(id);
     if (!voice) return;
+    if (this.liveRequired) {
+      if (this.liveReceiver?.state === 'ready') this.liveReceiver.release(id);
+      this.voices.delete(id); this.releasingVoices.add(voice);
+      return;
+    }
     const now = this.context.currentTime;
     // A cancelled future onset must never sound. Already-ended voices also need
     // no tail while their onended callback is waiting for the main thread.
@@ -135,13 +237,30 @@ export class Synth {
     this.disposeVoice(voice);
   }
   stop(id) {
+    if (this.liveRequired) {
+      if (this.liveReceiver?.state === 'ready') this.liveReceiver.stop(id);
+      const voice = this.voices.get(id); if (voice) voice.disposed = true;
+      this.voices.delete(id);
+      for (const tail of this.releasingVoices) if (tail.id === id) { tail.disposed = true; this.releasingVoices.delete(tail); }
+      return;
+    }
     const voice = this.voices.get(id);
     if (voice) this.cancelVoice(voice);
     for (const tail of this.releasingVoices) if (tail.id === id) this.cancelVoice(tail);
   }
   silence() {
+    if (this.liveRequired) {
+      if (this.liveReceiver?.state === 'ready') this.liveReceiver.silence();
+      for (const voice of [...this.voices.values(), ...this.releasingVoices, ...this.clickVoices.values()]) voice.disposed = true;
+      this.voices.clear(); this.releasingVoices.clear(); this.clickVoices.clear();
+      return;
+    }
     for (const voice of [...this.voices.values(), ...this.releasingVoices]) this.cancelVoice(voice);
     this.silenceClicks();
+  }
+  dispose() {
+    if (this.disposed) return;
+    this.silence(); this.disposed = true; this.liveReceiver?.dispose();
   }
 }
 
