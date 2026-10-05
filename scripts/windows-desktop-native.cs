@@ -64,6 +64,25 @@ public static class NativeAcceptance {
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int command);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h,IntPtr device,uint flags);
   public static void Key(byte key) { byte scan=(byte)MapVirtualKey(key,0); keybd_event(key,scan,0,UIntPtr.Zero); keybd_event(key,scan,2,UIntPtr.Zero); }
+  public static byte[] CanonicalNumericKeys(string phase,string kind) {
+    if(phase!="canonical-practice-seed" && phase!="canonical-practice-controls" && phase!="canonical-practice-restart")
+      throw new InvalidOperationException("Canonical numeric edits require a canonical acceptance phase");
+    switch(kind) {
+      case "canonical-range-start": return new byte[]{0x32};
+      case "canonical-range-end": return new byte[]{0x36};
+      case "canonical-tempo": return new byte[]{0x39,0x30};
+      default: throw new InvalidOperationException("Unknown closed canonical numeric action");
+    }
+  }
+  public static void CanonicalNumericEdit(string phase,string kind) {
+    byte[] digits=CanonicalNumericKeys(phase,kind);
+    byte controlScan=(byte)MapVirtualKey(0x11,0);
+    keybd_event(0x11,controlScan,0,UIntPtr.Zero);
+    try { Key(0x41); }
+    finally { keybd_event(0x11,controlScan,2,UIntPtr.Zero); }
+    foreach(byte digit in digits)Key(digit);
+    Key(0x09);
+  }
   public static void HeldPerformanceKey(byte key) {
     if(key!=0x32 && key!=0x55)throw new ArgumentOutOfRangeException("key","Only the closed C5 and D-sharp test keys may be held");
     byte scan=(byte)MapVirtualKey(key,0);keybd_event(key,scan,0,UIntPtr.Zero);
@@ -159,7 +178,7 @@ public static class NativeAcceptance {
       return "\""+first+"\" \""+second+"\"";
     }
     string directory;
-    if(Array.IndexOf(new[]{"original-duet.musicxml","original-duet.mxl","midi-original-ppq.mid","original-reference-overlap.mid","jianpu-original-steps.jianpu","malformed.json","folder-original.json","folder-conflict.json","原创曲包_日本語.zip","bulk-conflict.zip","bulk-backup.json","bulk-failure.zip","bulk-malformed.zip","bulk-standard-a.json","bulk-standard-b.json","clean-authored-song.zip","vsq-authored-song.zip","performance-authored-songs.zip","pitch-bend-authored-songs.zip","authoring-original-strict.mid","authoring-original-events.mid","authoring-original-blocked.mid","authoring-original.vsq","complete-practice-original.zip","basic-key-original.zip","basic-key-invalid-profile.zip","basic-key-forged-coverage.zip","catalog-original-legacy.zip","catalog-original-shared.zip","catalog-original-clean.zip"},name)>=0)
+    if(Array.IndexOf(new[]{"original-duet.musicxml","original-duet.mxl","midi-original-ppq.mid","original-reference-overlap.mid","jianpu-original-steps.jianpu","malformed.json","folder-original.json","folder-conflict.json","原创曲包_日本語.zip","bulk-conflict.zip","bulk-backup.json","bulk-failure.zip","bulk-malformed.zip","bulk-standard-a.json","bulk-standard-b.json","clean-authored-song.zip","vsq-authored-song.zip","performance-authored-songs.zip","pitch-bend-authored-songs.zip","authoring-original-strict.mid","authoring-original-events.mid","authoring-original-blocked.mid","authoring-original.vsq","complete-practice-original.zip","canonical-practice-original.json","canonical-practice-original.musicxml","basic-key-original.zip","basic-key-invalid-profile.zip","basic-key-forged-coverage.zip","catalog-original-legacy.zip","catalog-original-shared.zip","catalog-original-clean.zip"},name)>=0)
       directory=fixtures;
     else if(name!=null && Regex.IsMatch(name,@"\A(seed|restart|close-active|reopen)-(?:[1-9]|1[0-6])\.json\z",RegexOptions.CultureInvariant))
       directory=Path.Combine(output,"downloads");

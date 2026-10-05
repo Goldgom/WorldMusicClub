@@ -22,6 +22,11 @@ pub const PERFORMANCE_PHASES: [&str; 3] = [
 pub const PITCH_BEND_PHASES: [&str; 2] = ["pitch-bend-seed", "pitch-bend-restart"];
 pub const COMPLETE_PRACTICE_PHASES: [&str; 2] =
     ["complete-practice-seed", "complete-practice-restart"];
+pub const CANONICAL_PRACTICE_PHASES: [&str; 3] = [
+    "canonical-practice-seed",
+    "canonical-practice-controls",
+    "canonical-practice-restart",
+];
 pub const BASIC_KEY_PHASES: [&str; 2] = ["basic-key-seed", "basic-key-restart"];
 pub const AUTHORING_PHASES: [&str; 2] = ["authoring-seed", "authoring-restart"];
 pub const VSQ_AUTHORING_PHASES: [&str; 2] = ["vsq-authoring-seed", "vsq-authoring-restart"];
@@ -51,6 +56,7 @@ impl Acceptance {
             .chain(VSQ_AUTHORING_PHASES)
             .chain(BASIC_KEY_PHASES)
             .chain(COMPLETE_PRACTICE_PHASES)
+            .chain(CANONICAL_PRACTICE_PHASES)
             .chain(CATALOG_PHASES)
             .find(|candidate| *candidate == phase)
             .ok_or("Unknown acceptance phase")?;
@@ -71,6 +77,7 @@ impl Acceptance {
             || AUTHORING_PHASES.contains(&self.phase)
             || VSQ_AUTHORING_PHASES.contains(&self.phase)
             || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
+            || CANONICAL_PRACTICE_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
         {
             // Reuse the existing bounded observers, without starting the VSQ run.
@@ -81,6 +88,7 @@ impl Acceptance {
                 || AUTHORING_PHASES.contains(&self.phase)
                 || VSQ_AUTHORING_PHASES.contains(&self.phase)
                 || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
+                || CANONICAL_PRACTICE_PHASES.contains(&self.phase)
                 || BASIC_KEY_PHASES.contains(&self.phase)
             {
                 let (performance_helpers, _) = include_str!("../performance-song-acceptance.js")
@@ -88,7 +96,9 @@ impl Acceptance {
                     .expect("Performance observer prefix must precede its runner");
                 format!(
                     "{observers}\n{performance_helpers}\n{}",
-                    if COMPLETE_PRACTICE_PHASES.contains(&self.phase) {
+                    if CANONICAL_PRACTICE_PHASES.contains(&self.phase) {
+                        include_str!("../canonical-practice-acceptance.js").to_string()
+                    } else if COMPLETE_PRACTICE_PHASES.contains(&self.phase) {
                         include_str!("../complete-practice-acceptance.js").to_string()
                     } else if BASIC_KEY_PHASES.contains(&self.phase) {
                         include_str!("../basic-key-acceptance.js").to_string()
@@ -127,6 +137,7 @@ impl Acceptance {
                 || AUTHORING_PHASES.contains(&self.phase)
                 || VSQ_AUTHORING_PHASES.contains(&self.phase)
                 || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
+                || CANONICAL_PRACTICE_PHASES.contains(&self.phase)
                 || BASIC_KEY_PHASES.contains(&self.phase)
             {
                 &performance
@@ -159,6 +170,7 @@ impl Acceptance {
             || AUTHORING_PHASES.contains(&self.phase)
             || VSQ_AUTHORING_PHASES.contains(&self.phase)
             || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
+            || CANONICAL_PRACTICE_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase);
         self.directory.join(if song_folder {
@@ -174,6 +186,10 @@ impl Acceptance {
             self.directory.join("webview-catalog-profile")
         } else if PHASES.contains(&self.phase) {
             self.directory.join("webview-profile")
+        } else if CANONICAL_PRACTICE_PHASES.contains(&self.phase) {
+            self.directory
+                .join("webview-profiles")
+                .join("canonical-practice-seed")
         } else if COMPLETE_PRACTICE_PHASES.contains(&self.phase) {
             self.directory
                 .join("webview-profiles")
@@ -186,7 +202,10 @@ impl Acceptance {
         let profile = self.profile_directory();
         let catalog = CATALOG_PHASES.contains(&self.phase);
         let complete_restart = self.phase == "complete-practice-restart";
-        let existing_required = (catalog && self.phase != "catalog-seed") || complete_restart;
+        let canonical_restart = CANONICAL_PRACTICE_PHASES.contains(&self.phase)
+            && self.phase != "canonical-practice-seed";
+        let existing_required =
+            (catalog && self.phase != "catalog-seed") || complete_restart || canonical_restart;
         let fresh_required = !PHASES.contains(&self.phase) && !existing_required;
         let prepare = || -> std::io::Result<bool> {
             require_ordinary_directory(&self.directory)?;
@@ -194,7 +213,15 @@ impl Acceptance {
                 // A restart must never manufacture a replacement browser profile.
                 // Require the same ordinary path and bounded earlier host records.
                 require_ordinary_directory(&profile)?;
-                if complete_restart {
+                if canonical_restart {
+                    self.require_catalog_profile_evidence("canonical-practice-seed", true)?;
+                    if self.phase == "canonical-practice-restart" {
+                        self.require_catalog_profile_evidence(
+                            "canonical-practice-controls",
+                            false,
+                        )?;
+                    }
+                } else if complete_restart {
                     self.require_catalog_profile_evidence("complete-practice-seed", true)?;
                 } else {
                     self.require_catalog_profile_evidence("catalog-seed", true)?;
@@ -280,6 +307,7 @@ impl Acceptance {
             || AUTHORING_PHASES.contains(&self.phase)
             || VSQ_AUTHORING_PHASES.contains(&self.phase)
             || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
+            || CANONICAL_PRACTICE_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase)
         {
@@ -305,6 +333,7 @@ impl Acceptance {
             && !AUTHORING_PHASES.contains(&self.phase)
             && !VSQ_AUTHORING_PHASES.contains(&self.phase)
             && !COMPLETE_PRACTICE_PHASES.contains(&self.phase)
+            && !CANONICAL_PRACTICE_PHASES.contains(&self.phase)
             && !BASIC_KEY_PHASES.contains(&self.phase)
             && !CATALOG_PHASES.contains(&self.phase)
         {
@@ -394,6 +423,7 @@ impl Acceptance {
             || AUTHORING_PHASES.contains(&self.phase)
             || VSQ_AUTHORING_PHASES.contains(&self.phase)
             || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
+            || CANONICAL_PRACTICE_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase))
             && (name.to_lowercase().ends_with(".zip")
@@ -458,7 +488,7 @@ impl Acceptance {
             let Ok(value) = serde_json::from_slice::<Value>(request.body()) else {
                 return Some(error(400, "Invalid acceptance action"));
             };
-            if !valid_action(&value) {
+            if !valid_action_for_phase(&value, self.phase) {
                 return Some(error(400, "Invalid acceptance action"));
             }
             if value["kind"] == "catalog-snapshot-before" {
@@ -568,6 +598,7 @@ pub fn receive_report(
             || AUTHORING_PHASES.contains(&run.phase)
             || VSQ_AUTHORING_PHASES.contains(&run.phase)
             || COMPLETE_PRACTICE_PHASES.contains(&run.phase)
+            || CANONICAL_PRACTICE_PHASES.contains(&run.phase)
             || BASIC_KEY_PHASES.contains(&run.phase)
             || CATALOG_PHASES.contains(&run.phase)
     });
@@ -664,7 +695,11 @@ fn valid_progress(value: &Value) -> bool {
                 .as_u64()
                 .is_some_and(|status| (100..=599).contains(&status)))
 }
+#[cfg(test)]
 fn valid_action(value: &Value) -> bool {
+    valid_action_for_phase(value, "")
+}
+fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
     let Some(object) = value.as_object() else {
         return false;
     };
@@ -699,6 +734,13 @@ fn valid_action(value: &Value) -> bool {
         "click",
     ]
     .contains(&value["kind"].as_str().unwrap_or(""))
+        && !(CANONICAL_PRACTICE_PHASES.contains(&phase)
+            && [
+                "canonical-range-start",
+                "canonical-range-end",
+                "canonical-tempo",
+            ]
+            .contains(&value["kind"].as_str().unwrap_or("")))
     {
         return false;
     }
@@ -746,7 +788,13 @@ fn valid_action(value: &Value) -> bool {
             "authoring-original-blocked.mid",
             "authoring-original.vsq",
         ]
-        .contains(&file);
+        .contains(&file)
+            || (CANONICAL_PRACTICE_PHASES.contains(&phase)
+                && [
+                    "canonical-practice-original.json",
+                    "canonical-practice-original.musicxml",
+                ]
+                .contains(&file));
         let download = PHASES.iter().any(|phase| {
             file.strip_prefix(&format!("{phase}-"))
                 .and_then(|n| n.strip_suffix(".json"))
@@ -788,6 +836,177 @@ fn valid_action(value: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canonical_practice_registration_keeps_original_observers_and_report_bounds() {
+        let evidence = Evidence::new();
+        for phase in CANONICAL_PRACTICE_PHASES {
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            let script = run.script();
+            assert!(script.contains(include_str!("../canonical-practice-acceptance.js")));
+            assert!(script.contains(include_str!("../reference-acceptance.js")));
+            assert!(script.contains(include_str!("../live-tone-acceptance.js")));
+            assert!(script.contains("function createVsqJsonObserver"));
+            assert!(!script.contains(include_str!("../vsq-song-acceptance.js")));
+            assert!(!script.contains(include_str!("../complete-practice-acceptance.js")));
+            assert_eq!(run.library_directory(), evidence.0.join("Scores"));
+            assert_eq!(
+                run.profile_directory(),
+                evidence.0.join("webview-profiles/canonical-practice-seed")
+            );
+            assert_eq!(run.report_limit(), MAX_CLEAN_REPORT_BYTES);
+            let exact = report_request("POST", sized_report(Some(phase), MAX_CLEAN_REPORT_BYTES));
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &exact).status(),
+                200
+            );
+            let oversized = report_request(
+                "POST",
+                sized_report(Some(phase), MAX_CLEAN_REPORT_BYTES + 1),
+            );
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &oversized).status(),
+                400
+            );
+            let rejected =
+                read_ordinary_json(&evidence.0.join(run.report_name()), MAX_CLEAN_REPORT_BYTES)
+                    .unwrap();
+            assert_eq!(rejected["report_failure"]["code"], "report_size");
+            let wrong = report_request("POST", sized_report(Some("complete-practice-seed"), 512));
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &wrong).status(),
+                400
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_practice_profile_requires_exact_ordered_predecessors() {
+        let evidence = Evidence::new();
+        let seed = Acceptance::new(evidence.0.clone(), "canonical-practice-seed").unwrap();
+        let controls = Acceptance::new(evidence.0.clone(), "canonical-practice-controls").unwrap();
+        let restart = Acceptance::new(evidence.0.clone(), "canonical-practice-restart").unwrap();
+        assert!(controls.prepare_webview_profile().is_err());
+        assert!(restart.prepare_webview_profile().is_err());
+        let profile = seed.prepare_webview_profile().unwrap();
+        std::fs::write(profile.join("marker"), b"retain canonical preference cache").unwrap();
+        assert!(seed.prepare_webview_profile().is_err());
+        assert!(restart.prepare_webview_profile().is_err());
+        assert_eq!(controls.prepare_webview_profile().unwrap(), profile);
+        assert_eq!(restart.prepare_webview_profile().unwrap(), profile);
+        assert_eq!(
+            std::fs::read(profile.join("marker")).unwrap(),
+            b"retain canonical preference cache"
+        );
+        for (phase, fresh) in [
+            ("canonical-practice-seed", true),
+            ("canonical-practice-controls", false),
+        ] {
+            let path = evidence.0.join(format!("profile-{phase}.json"));
+            let original = read_ordinary_json(&path, 8192).unwrap();
+            assert_eq!(original["fresh_required"], fresh);
+            assert_eq!(original["created_new"], fresh);
+            for (field, invalid) in [
+                ("phase", json!("complete-practice-seed")),
+                ("process_id", json!(0)),
+                ("profile_directory", json!(evidence.0.join("other-profile"))),
+                ("library_directory", json!(evidence.0.join("other-Scores"))),
+                ("fresh_required", json!(!fresh)),
+                ("created_new", json!(!fresh)),
+            ] {
+                let mut altered = original.clone();
+                altered[field] = invalid;
+                std::fs::write(&path, serde_json::to_vec(&altered).unwrap()).unwrap();
+                assert!(
+                    restart.prepare_webview_profile().is_err(),
+                    "{phase}: {field}"
+                );
+            }
+            std::fs::remove_file(&path).unwrap();
+            assert!(restart.prepare_webview_profile().is_err());
+            std::fs::write(&path, serde_json::to_vec(&original).unwrap()).unwrap();
+        }
+        assert_eq!(restart.prepare_webview_profile().unwrap(), profile);
+    }
+
+    #[test]
+    fn canonical_practice_actions_and_picker_fixtures_are_phase_scoped_and_closed() {
+        let evidence = Evidence::new();
+        let canonical = CANONICAL_PRACTICE_PHASES;
+        let other_phases = PHASES
+            .into_iter()
+            .chain(FOLDER_PHASES)
+            .chain(BULK_PHASES)
+            .chain(CLEAN_PHASES)
+            .chain(VSQ_PHASES)
+            .chain(PERFORMANCE_PHASES)
+            .chain(PITCH_BEND_PHASES)
+            .chain(AUTHORING_PHASES)
+            .chain(VSQ_AUTHORING_PHASES)
+            .chain(BASIC_KEY_PHASES)
+            .chain(COMPLETE_PRACTICE_PHASES)
+            .chain(CATALOG_PHASES);
+        let actions = [
+            ("canonical-range-start", None),
+            ("canonical-range-end", None),
+            ("canonical-tempo", None),
+            ("picker", Some("canonical-practice-original.json")),
+            ("picker", Some("canonical-practice-original.musicxml")),
+        ];
+        for phase in canonical.into_iter().chain(other_phases) {
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            for (kind, file) in actions {
+                let mut action = json!({"version":1,"sequence":64,"kind":kind,"x":1,"y":1,"width":1280,"height":720});
+                if let Some(file) = file {
+                    action["file"] = json!(file);
+                }
+                let request = Request::builder()
+                    .method("POST")
+                    .uri("/__desktop_smoke/action")
+                    .body(serde_json::to_vec(&action).unwrap())
+                    .unwrap();
+                assert_eq!(
+                    run.handle(&request).unwrap().status(),
+                    if canonical.contains(&phase) { 200 } else { 400 },
+                    "{phase}: {kind}"
+                );
+                for (field, invalid) in [
+                    ("sequence", json!(65)),
+                    ("field", json!("loop-from")),
+                    ("value", json!("2")),
+                    ("keys", json!([17, 65, 50, 9])),
+                    ("text", json!("90")),
+                ] {
+                    let mut changed = action.clone();
+                    changed[field] = invalid;
+                    assert!(!valid_action_for_phase(&changed, phase), "{phase}: {field}");
+                }
+            }
+        }
+        for kind in [
+            "canonical-transpose",
+            "canonical-tempo90",
+            "canonical-range-any",
+            "CANONICAL-TEMPO",
+            "canonical-tempo\n",
+        ] {
+            let action =
+                json!({"version":1,"sequence":1,"kind":kind,"x":1,"y":1,"width":1280,"height":720});
+            assert!(!valid_action_for_phase(&action, canonical[0]), "{kind}");
+        }
+        for file in [
+            "../canonical-practice-original.json",
+            "canonical-practice-original.json.extra",
+            "canonical-practice-original.musicxml\n",
+            "CANONICAL-PRACTICE-ORIGINAL.JSON",
+            "canonical-practice-seed-1.json",
+        ] {
+            let action = json!({"version":1,"sequence":1,"kind":"picker","x":1,"y":1,"width":1280,"height":720,"file":file});
+            assert!(!valid_action_for_phase(&action, canonical[0]), "{file}");
+        }
+        let with_file = json!({"version":1,"sequence":1,"kind":"canonical-tempo","x":1,"y":1,"width":1280,"height":720,"file":"canonical-practice-original.json"});
+        assert!(!valid_action_for_phase(&with_file, canonical[0]));
+    }
 
     #[test]
     fn complete_practice_phases_keep_bounded_native_routing() {

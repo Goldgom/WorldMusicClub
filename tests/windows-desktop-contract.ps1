@@ -68,6 +68,37 @@ try {
   Assert-True ($completeRestart.profile_directory -ceq $completeSeed.profile_directory -and $completeRestart.existing_required -and -not $completeRestart.fresh_required -and -not $completeRestart.profile_absent_before_launch) 'complete restart retains its exact seed cache'
   Remove-Item -LiteralPath (Join-Path $profileRoot 'profile-complete-practice-seed.json')
   Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $completePhases[1] } 'complete restart rejects a cache without seed ownership proof'
+  $canonicalPhases=@('canonical-practice-seed','canonical-practice-controls','canonical-practice-restart')
+  foreach($phase in $canonicalPhases[1..2]){Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $phase } "canonical successor needs its seed profile: $phase"}
+  $canonicalSeed=Assert-AcceptanceProfileLaunch $profileRoot $canonicalPhases[0]
+  Assert-True ($canonicalSeed.profile_directory -ceq (Join-Path (Join-Path $profileRoot 'webview-profiles') 'canonical-practice-seed') -and $canonicalSeed.fresh_required) 'canonical seed uses its exact fresh owned profile'
+  New-Item -ItemType Directory $canonicalSeed.profile_directory | Out-Null
+  Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $canonicalPhases[0] } 'canonical seed cannot reuse an existing cache'
+  $canonicalMarker=Join-Path $canonicalSeed.profile_directory 'retained-canonical-cache'
+  [IO.File]::WriteAllText($canonicalMarker,'preserve preferences')
+  $canonicalSeedProof=[ordered]@{version=1;phase=$canonicalPhases[0];process_id=42;profile_directory=$canonicalSeed.profile_directory;library_directory=$canonicalSeed.library_directory;fresh_required=$true;created_new=$true}
+  $canonicalSeedPath=Join-Path $profileRoot 'profile-canonical-practice-seed.json'
+  $canonicalSeedProof | ConvertTo-Json | Set-Content -Encoding utf8 $canonicalSeedPath
+  $canonicalControls=Assert-AcceptanceProfileLaunch $profileRoot $canonicalPhases[1]
+  Assert-True ($canonicalControls.profile_directory -ceq $canonicalSeed.profile_directory -and $canonicalControls.existing_required -and -not $canonicalControls.fresh_required -and -not $canonicalControls.profile_absent_before_launch) 'canonical controls reuse the exact seed cache'
+  Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $canonicalPhases[2] } 'canonical restart cannot skip controls evidence'
+  $canonicalControlsProof=[ordered]@{version=1;phase=$canonicalPhases[1];process_id=43;profile_directory=$canonicalSeed.profile_directory;library_directory=$canonicalSeed.library_directory;fresh_required=$false;created_new=$false}
+  $canonicalControlsPath=Join-Path $profileRoot 'profile-canonical-practice-controls.json'
+  $canonicalControlsProof | ConvertTo-Json | Set-Content -Encoding utf8 $canonicalControlsPath
+  $canonicalRestart=Assert-AcceptanceProfileLaunch $profileRoot $canonicalPhases[2]
+  Assert-True ($canonicalRestart.profile_directory -ceq $canonicalSeed.profile_directory -and $canonicalRestart.existing_required -and -not $canonicalRestart.fresh_required -and -not $canonicalRestart.profile_absent_before_launch) 'canonical restart retains its exact seed/controls cache'
+  foreach($entry in @(@{proof=$canonicalSeedProof;path=$canonicalSeedPath},@{proof=$canonicalControlsProof;path=$canonicalControlsPath})) {
+    foreach($case in @(@{field='phase';value='complete-practice-seed'},@{field='process_id';value=0},@{field='profile_directory';value=(Join-Path $profileRoot 'other-profile')},@{field='library_directory';value=(Join-Path $profileRoot 'other-Scores')},@{field='fresh_required';value=(-not $entry.proof.fresh_required)},@{field='created_new';value=(-not $entry.proof.created_new)})) {
+      $old=$entry.proof[$case.field];$entry.proof[$case.field]=$case.value
+      $entry.proof | ConvertTo-Json | Set-Content -Encoding utf8 $entry.path
+      Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $canonicalPhases[2] } "canonical predecessor must match exact $($case.field)"
+      $entry.proof[$case.field]=$old
+    }
+    Remove-Item -LiteralPath $entry.path
+    Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $canonicalPhases[2] } 'canonical restart rejects missing predecessor proof'
+    $entry.proof | ConvertTo-Json | Set-Content -Encoding utf8 $entry.path
+  }
+  Assert-True ([IO.File]::ReadAllText($canonicalMarker) -ceq 'preserve preferences') 'canonical validation leaves cache bytes intact'
   foreach($phase in @('','VSQ-seed','vsq-any','../vsq-seed','vsq-seed/extra','vsq-seed\extra',"vsq-seed`n")){Assert-Rejected { Get-AcceptanceProfile $profileRoot $phase } 'unknown phase cannot select a path'}
   Assert-Rejected { Get-AcceptanceProfile 'relative-root' 'vsq-seed' } 'relative acceptance root'
   $fileRoot=Join-Path $profileRoot 'file-root';[IO.File]::WriteAllText($fileRoot,'not a directory')
@@ -75,6 +106,22 @@ try {
 } finally {
   if($null -ne $heldProfile){$heldProfile.Dispose()}
   Remove-Item -LiteralPath $profileRoot -Recurse -Force
+}
+# Closed numeric plans are pure to inspect. Never emit their native keystrokes
+# in these contract tests; the measured foreground click belongs to the GUI run.
+foreach($phase in @('canonical-practice-seed','canonical-practice-controls','canonical-practice-restart')) {
+  foreach($case in @(@{kind='canonical-range-start';keys=@(0x32)},@{kind='canonical-range-end';keys=@(0x36)},@{kind='canonical-tempo';keys=@(0x39,0x30)})) {
+    $keys=[NativeAcceptance]::CanonicalNumericKeys($phase,$case.kind)
+    Assert-True (($keys -join ',') -ceq ($case.keys -join ',')) "closed canonical virtual keys: $phase/$($case.kind)"
+  }
+  foreach($kind in @('canonical-transpose','canonical-range-start2','canonical-tempo90','CANONICAL-TEMPO',"canonical-tempo`n",'click','2','90','')) {
+    Assert-Rejected { [NativeAcceptance]::CanonicalNumericKeys($phase,$kind) } "unknown canonical numeric kind: $kind"
+  }
+}
+foreach($phase in @('seed','complete-practice-seed','catalog-seed','canonical-practice-any','CANONICAL-PRACTICE-SEED',"canonical-practice-seed`n",'')) {
+  foreach($kind in @('canonical-range-start','canonical-range-end','canonical-tempo')) {
+    Assert-Rejected { [NativeAcceptance]::CanonicalNumericKeys($phase,$kind) } "numeric edit forbidden outside canonical phases: $phase/$kind"
+  }
 }
 function New-ValidHost {
   $candidate=[NativeFileNameHost]::new()
@@ -237,7 +284,7 @@ $temporary=Join-Path ([System.IO.Path]::GetTempPath()) ('wmh picker 拼谱 '+[gu
 try {
   $fixtures=Join-Path $temporary 'fixtures';$downloads=Join-Path $temporary 'downloads'
   New-Item -ItemType Directory $fixtures,$downloads | Out-Null
-  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu','malformed.json','folder-original.json','folder-conflict.json','原创曲包_日本語.zip','bulk-conflict.zip','bulk-backup.json','bulk-failure.zip','bulk-malformed.zip','bulk-standard-a.json','bulk-standard-b.json','clean-authored-song.zip','vsq-authored-song.zip','performance-authored-songs.zip','pitch-bend-authored-songs.zip','authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid','authoring-original.vsq','complete-practice-original.zip','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip','catalog-original-legacy.zip','catalog-original-shared.zip','catalog-original-clean.zip')
+  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu','malformed.json','folder-original.json','folder-conflict.json','原创曲包_日本語.zip','bulk-conflict.zip','bulk-backup.json','bulk-failure.zip','bulk-malformed.zip','bulk-standard-a.json','bulk-standard-b.json','clean-authored-song.zip','vsq-authored-song.zip','performance-authored-songs.zip','pitch-bend-authored-songs.zip','authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid','authoring-original.vsq','complete-practice-original.zip','canonical-practice-original.json','canonical-practice-original.musicxml','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip','catalog-original-legacy.zip','catalog-original-shared.zip','catalog-original-clean.zip')
   foreach($name in $fixed) {
     $expected=Join-Path $fixtures $name;[System.IO.File]::WriteAllText($expected,'fixture')
     Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) -ceq $expected) "fixed path $name"
@@ -268,14 +315,14 @@ try {
   foreach($name in @('authoring','authoring-pair','authoring-multiple','authoring-original','authoring-original-pair.extra','authoring-original-pair.mid','authoring-original-blocked-pair','authoring-any-1.zip','authoring-seed-extra-1.zip','authoring-restart-extra-1.json','Authoring-seed-1.zip','authoring-seed-1.zip/','authoring-restart-1.json/')) {
     Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) } "unapproved authoring alias $name"
   }
-  foreach($name in @('authoring-original-pair','authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid','complete-practice-original.zip','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip')) {
+  foreach($name in @('authoring-original-pair','authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid','complete-practice-original.zip','canonical-practice-original.json','canonical-practice-original.musicxml','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip')) {
     foreach($invalid in @("../$name","..\$name","fixtures/$name","fixtures\$name",($name+'.extra'),($name+"`n"),($name+"`0"),$name.ToUpperInvariant(),(Join-Path $fixtures $name))) {
       Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$invalid) } "unapproved authoring path $invalid"
     }
   }
   $linkTarget=Join-Path $temporary 'original-link-target.mid'
   [System.IO.File]::WriteAllText($linkTarget,'original reparse contract fixture')
-  foreach($name in @('authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid','complete-practice-original.zip','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip')) {
+  foreach($name in @('authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid','complete-practice-original.zip','canonical-practice-original.json','canonical-practice-original.musicxml','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip')) {
     $path=Join-Path $fixtures $name
     [System.IO.File]::WriteAllText((Join-Path $downloads $name),'outside the fixture root')
     Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) -ceq $path) "authoring fixture remains rooted $name"
