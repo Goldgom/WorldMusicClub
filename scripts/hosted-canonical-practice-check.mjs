@@ -11,7 +11,7 @@ import {startVsqNativeDriver} from '../tests/vsq-native-driver-fixtures.js';
 import {prepareCanonicalPracticeFixtures,canonicalPracticeFixture,CANONICAL_PRACTICE_FILES,CANONICAL_PRACTICE_PHASES} from './prepare-canonical-practice-fixtures.mjs';
 import {validateCanonicalPracticeRenderer,validateCanonicalPracticeTakes} from './verify-canonical-practice-evidence.mjs';
 import {digest} from '../tests/clean-song-package-fixtures.js';
-import {canonicalPracticeSourceBinding} from './canonical-practice-source-evidence.mjs';
+import {decodeCanonicalRendererReportBytes,canonicalPracticeSourceBinding} from './canonical-practice-source-evidence.mjs';
 import {startHostedAssetServer,createHostedNativeBridge,validateHostedAssetEvidence} from './hosted-worklet-assets.mjs';
 if(process.env.GITHUB_ACTIONS!=='true'||process.env.WMH_HOSTED_BROWSER!=='1')throw Error('Only the authorized hosted browser runner may execute canonical-practice acceptance');
 const root=fileURLToPath(new URL('../',import.meta.url)),head=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
@@ -40,7 +40,7 @@ try {
    if(name.startsWith('/__desktop_smoke/')){
     if(name==='/__desktop_smoke/action'){const a=q.postDataJSON();await route.fulfill({status:200,json:{}});void action(a);return;}
     if(name==='/__desktop_smoke/state'){await route.fulfill({status:200,json:{phase,downloads}});return;}
-    if(name==='/__desktop_smoke/report'){renderer=q.postDataJSON();await writeFile(path.join(output,`renderer-${phase}.json`),JSON.stringify(renderer,null,2)+'\n');await route.fulfill({status:200,json:{}});return;}
+    if(name==='/__desktop_smoke/report'){const observed=decodeCanonicalRendererReportBytes(q.postDataBuffer());renderer=observed.renderer;await writeFile(path.join(output,`renderer-${phase}.json`),observed.bytes);await route.fulfill({status:200,json:{}});return;}
     const sequence=Number(name.slice('/__desktop_smoke/result/'.length)),result=results.get(sequence);if(result)await route.fulfill({status:200,json:result});else{const pending=consoleObserver.pendingResponse({sequence,url:q.url(),method:q.method(),owned:actionPending&&phaseReport.actions.at(-1)?.sequence===sequence,status:404,body:{error:'pending'}});try{await route.fulfill({status:404,json:{error:'pending'}});pending.finish(true);}catch(error){pending.finish(false);throw error;}}return;
    }
    if(name.startsWith('/api/')){try{await nativeBridge.run(q,async headers=>{assert.ok(phaseReport.api_trace.length<256,'Complete-practice hosted API trace bound');const row={path:name,status:null};phaseReport.api_trace.push(row);const response=await bounded(driver.fetcher(name+url.search,{method:q.method(),headers,body:q.postDataBuffer()||undefined}),`native response ${name}`),body=await response.bytes();row.status=response.status;try{await route.fulfill({status:response.status,contentType:response.contentType,body});}catch(error){if(!nativeBridge.closing)throw error;row.delivery='context-closed-during-cleanup';}});}catch(error){phaseReport.page_errors.push(String(error));try{await route.abort();}catch{}}return;}

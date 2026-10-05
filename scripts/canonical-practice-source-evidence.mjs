@@ -5,6 +5,15 @@ import {readFile,lstat} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
+// Match the renderer's existing compact-wire budget. Saving a pretty-printed
+// copy can exceed the verifier's file bound without adding any evidence.
+export const CANONICAL_RENDERER_REPORT_BYTES=1_000_000;
+export function decodeCanonicalRendererReportBytes(input){
+ assert.ok(input instanceof Uint8Array&&input.byteLength>0&&input.byteLength<CANONICAL_RENDERER_REPORT_BYTES,'Canonical renderer report exceeds its existing wire budget');
+ const bytes=Buffer.from(input),renderer=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+ assert.ok(renderer!==null&&typeof renderer==='object'&&!Array.isArray(renderer),'Canonical renderer report must be an object');
+ return {bytes,renderer};
+}
 export const CANONICAL_PRACTICE_SOURCE_FILES=Object.freeze([
  'Cargo.toml','Cargo.lock','package.json','package-lock.json',
  '.github/workflows/canonical-practice-preview.yml','.github/workflows/windows-desktop-acceptance.yml',
