@@ -24,21 +24,21 @@ test('live proof rejects fabricated, absent, untrusted, silent, unconnected and 
  for(const [index,change]of changes.entries()){const e=syntheticLiveToneEvidence();change(e);assert.throws(()=>verify(e),`Adversary ${index} was accepted`);}
 });
 
-function harness(){
+function harness({readyCheckpoint=false}={}){
  const listeners=new Map(),frames=new Map(),nativeCalls=[];let wall=0,nextFrame=0,token=0;
  class MessageEvent{constructor(data,port,{trusted=true}={}){Object.assign(this,{data,target:port,currentTarget:port,isTrusted:trusted});}}
- class MessagePort{constructor(){this.listeners=new Set();}addEventListener(type,fn){this.listeners.add(fn);}removeEventListener(type,fn){this.listeners.delete(fn);}emit(data,options){const event=options?.plain?{data,target:this,currentTarget:this,isTrusted:true}:new MessageEvent(data,this,options);for(const listener of this.listeners)listener(event);this.onmessage?.(event);}}
+ class MessagePort{constructor(){this.listeners=new Set();}addEventListener(type,fn){this.listeners.add(fn);}removeEventListener(type,fn){this.listeners.delete(fn);}emit(data,options){const event=options?.plain?{data,target:this,currentTarget:this,isTrusted:true}:new MessageEvent(data,this,options);if(options?.checkpoint){this.onmessage?.(event);return(async()=>{await Promise.resolve();await Promise.resolve();await Promise.resolve();for(const listener of this.listeners)listener(event);})();}for(const listener of this.listeners)listener(event);this.onmessage?.(event);}}
  class AudioNode{constructor(context){this.context=context;}connect(...args){nativeCalls.push(['connect',this,...args]);if(args[0]===null)throw this.context.sentinel;return args[0];}disconnect(...args){nativeCalls.push(['disconnect',this,...args]);return 'native-disconnected';}}
  class AudioDestinationNode extends AudioNode{}
  class GainNode extends AudioNode{constructor(context){super(context);this.gain={value:1};}}
  class AnalyserNode extends AudioNode{constructor(context){super(context);this.fftSize=16384;}getFloatTimeDomainData(values){values.fill(.125);}}
  class AudioWorkletNode extends AudioNode{constructor(context){super(context);this.port=new MessagePort();this.listeners=new Set();this.numberOfInputs=0;this.numberOfOutputs=1;}addEventListener(type,fn){this.listeners.add(fn);}removeEventListener(type,fn){this.listeners.delete(fn);}}
  const context={state:'running',sampleRate:48000,currentTime:0,sentinel:Error('original native failure'),createGain(){return new GainNode(this);},createAnalyser(){return new AnalyserNode(this);}};context.destination=new AudioDestinationNode(context);
- let lastPromise;
+ let lastPromise,lastReadyDelivery;
  class Receiver{
   static create(context,output,options){const owner=new Receiver(context,output,options);lastPromise=owner.request('initialize').then(()=>{owner.state='ready';return owner;});return lastPromise;}
-  constructor(context,output,{onEvent=()=>{}}={}){Object.assign(this,{context,output,onEvent,generation:1,state:'initializing',disposed:false});this.node=new AudioWorkletNode(context);this.outputGate=context.createGain();this.node.connect(this.outputGate);this.outputGate.connect(output);this.node.port.onmessage=event=>{if(['started','ended'].includes(event.data.type))this.onEvent(event.data);};}
-  request(type){if(type==='fail')throw context.sentinel;return Promise.resolve().then(()=>{this.node.port.emit({type:'ready',source:'live-tone',generation:1,sampleRate:48000,frame:0});return 'real-ack';});}
+  constructor(context,output,{onEvent=()=>{}}={}){Object.assign(this,{context,output,onEvent,generation:1,state:'initializing',disposed:false});this.node=new AudioWorkletNode(context);this.outputGate=context.createGain();this.node.connect(this.outputGate);this.outputGate.connect(output);this.node.port.onmessage=event=>{if(event.data.type==='ready')this.readyResolve?.('real-ack');if(['started','ended'].includes(event.data.type))this.onEvent(event.data);};}
+  request(type){if(type==='fail')throw context.sentinel;return new Promise(resolve=>{this.readyResolve=resolve;queueMicrotask(()=>{lastReadyDelivery=this.node.port.emit({type:'ready',source:'live-tone',generation:1,sampleRate:48000,frame:0},{checkpoint:readyCheckpoint});});});}
   play(...args){nativeCalls.push(['play',this,...args]);if(args[0]==='throw')throw context.sentinel;return ++token;}
  }
  const document={addEventListener(type,fn){listeners.set(type,fn);},removeEventListener(type,fn){if(listeners.get(type)===fn)listeners.delete(type);}};
@@ -46,9 +46,9 @@ function harness(){
  const time=value=>{wall=value;context.currentTime=value/1000;};
  const input=(type,value)=>{time(value);listeners.get(type)?.({type,code:'Digit2',isTrusted:true,repeat:false,timeStamp:value,target:{closest:()=>({id:'stage-title'})}});};
  const frame=value=>{time(value);const [id,fn]=frames.entries().next().value;frames.delete(id);fn();};
- return{Receiver,root,document,context,nativeCalls,frames,listeners,time,input,frame,get lastPromise(){return lastPromise;}};
+ return{Receiver,root,document,context,nativeCalls,frames,listeners,time,input,frame,get lastPromise(){return lastPromise;},get lastReadyDelivery(){return lastReadyDelivery;}};
 }
-async function initialized(f,options={}){const observer=await observe(f.document,{Receiver:f.Receiver,root:f.root,keyCode:'Digit2',midi:72,readSource:()=>({activeReceivers:f.context.currentTime>0?1:0,pendingReceivers:0,started:f.context.currentTime>0?1:0,errors:[],overflow:false})}),output=f.context.createGain();output.connect(f.context.destination);const promise=f.Receiver.create(f.context,output,options);assert.equal(promise,f.lastPromise,'Observer must return the exact original create promise');const owner=await promise;return{observer,owner};}
+async function initialized(f,options={}){const observer=await observe(f.document,{Receiver:f.Receiver,root:f.root,keyCode:'Digit2',midi:72,readSource:()=>({activeReceivers:f.context.currentTime>0?1:0,pendingReceivers:0,started:f.context.currentTime>0?1:0,errors:[],overflow:false})}),output=f.context.createGain();output.connect(f.context.destination);const promise=f.Receiver.create(f.context,output,options);assert.equal(promise,f.lastPromise,'Observer must return the exact original create promise');const owner=await promise;await f.lastReadyDelivery;return{observer,owner};}
 function receipt(type,id,token){return{type,source:'live-tone',generation:1,token,kind:'note',id,midi:72,key:72,sampleRate:48000,frame:type==='started'?9600:12096,requestedStartFrame:9600,actualStartFrame:9600,actualEndFrame:type==='started'?null:12096,pcmPeak:type==='started'?0:.125,pcmEnergy:type==='started'?0:38,nonzeroSamples:type==='started'?0:2495,renderedSamples:type==='started'?0:2496,firstNonzeroFrame:type==='started'?null:9601,lastRenderedFrame:type==='started'?null:12095,reason:type==='started'?'start':'release'};}
 function perform(f,owner,observer,{plain=false,mutate=false}={}){
  f.time(100);observer.begin();f.input('keydown',200);const id='manual:key:keyboard-2:3:Digit2',token=owner.play(id,72,null,0,'piano',90);f.time(201);owner.node.port.emit(receipt('started',id,token),{plain});f.frame(216);if(mutate)owner.outputGate.connect(f.context.createGain());f.input('keyup',240);f.time(252);owner.node.port.emit(receipt('ended',id,token));f.frame(256);assert.equal(observer.settled(),true);f.time(260);return serializable(observer.finish());
@@ -87,4 +87,15 @@ test('fixed output history tolerates a main-thread long frame without moving the
  // The actual observed output block is late; its fixed 16384-sample history
  // intersects the native voice interval. Neither timestamp is rewritten.
  f.frame(400);assert.equal(observer.settled(),true);f.time(401);const e=serializable(observer.finish());assert.equal(e.inputs[0].eventTime,200);assert.equal(e.receipts[1].record.actualEndFrame,12096);assert.equal(e.pcm.blocks[0].audioTime,.4);validateLiveToneEvidence(e,{keyCode:'Digit2',midi:72,transport:syntheticLiveToneTransport(e)});validateLiveToneCleanup(serializable(observer.restore()));
+});
+
+test('native handler microtasks may fix the ready owner tap before the passive ACK listener runs',async()=>{
+ for(const readyCheckpoint of [false,true]){const f=harness({readyCheckpoint}),{observer,owner}=await initialized(f),e=perform(f,owner,observer);const {created,ready,tapReady}=e.initialization;
+  assert.equal(created.sequence,1);assert.equal(tapReady.sequence<ready.sequence,readyCheckpoint);assert.equal(tapReady.receiver.state,'ready');assert.equal(tapReady.receiver.nodeId,e.ready.receiver.nodeId);assert.equal(tapReady.source.started,0);validateLiveToneEvidence(e,{keyCode:'Digit2',midi:72,transport:syntheticLiveToneTransport(e)});validateLiveToneCleanup(serializable(observer.restore()));
+ }
+});
+test('initialization partial order still rejects early/late or substituted tap and ACK evidence',()=>{
+ const reversed=syntheticLiveToneEvidence();reversed.initialization.ready.sequence=3;reversed.initialization.ready.wallMs=3;reversed.initialization.tapReady.sequence=2;reversed.initialization.tapReady.wallMs=2;verify(reversed);
+ const mutations=[e=>e.initialization.ready.sequence=e.initialization.created.sequence,e=>e.initialization.tapReady.sequence=e.initialization.created.sequence,e=>e.initialization.ready.sequence=e.ready.sequence,e=>e.initialization.tapReady.sequence=e.ready.sequence,e=>e.initialization.tapReady.sequence=e.initialization.ready.sequence,e=>e.initialization.tapReady.wallMs=e.ready.wallMs+1,e=>e.initialization.ready.wallMs=e.initialization.created.wallMs-1,e=>delete e.initialization.tapReady.receiver,e=>e.initialization.tapReady.receiver.state='initializing',e=>e.initialization.tapReady.receiver.generation++,e=>e.initialization.tapReady.receiver.nodeId++,e=>e.initialization.tapReady.receiver.gateId++,e=>e.initialization.tapReady.receiver.disposed=true,e=>e.initialization.tapReady.receiver.contextState='suspended',e=>e.initialization.tapReady.receiver.nativeNode=false,e=>e.initialization.tapReady.receiver.tapConnected=false,e=>e.initialization.tapReady.source.started=1,e=>e.initialization.tapReady.source.pendingReceivers=1,e=>e.initialization.ready.isTrusted=false,e=>e.initialization.ready.portMatches=false];
+ for(const mutate of mutations){const e=structuredClone(reversed);mutate(e);assert.throws(()=>verify(e));}
 });

@@ -32,7 +32,7 @@ async function observeLiveToneAudio(document,{Receiver,root=globalThis,readSourc
   const entry=entries.find(value=>value.node===owner.node);if(!entry)throw Error('Live-tone receiver does not own an observed native node');entry.owner=owner;
   // Retain a short output history across ordinary main-thread long frames.
   // Samples still must overlap this exact native token; no clock is inferred.
-  const analyser=owner.context.createAnalyser();analyser.fftSize=16384;owner.outputGate.connect(analyser);entry.analyser=analyser;entry.tapReady={...event(),source:source()};
+  const analyser=owner.context.createAnalyser();analyser.fftSize=16384;owner.outputGate.connect(analyser);entry.analyser=analyser;entry.tapReady={...event(),source:source(),receiver:describe(entry)};
  });},reason=>{if(active)error(reason);}]);else if(active)error('Live-tone create did not return its ready promise');return result;}
  Receiver.create=created;
  const source=()=>{const state=readSource();return{activeReceivers:state.activeReceivers,pendingReceivers:state.pendingReceivers,started:state.started,errors:copy(state.errors||[]),overflow:state.overflow};};
