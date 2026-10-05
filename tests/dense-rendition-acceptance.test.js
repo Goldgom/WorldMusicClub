@@ -1,3 +1,4 @@
+import {createPlaybackClock,readPlaybackClock} from '../web/playback-clock-view.js';
 import test from 'node:test';
 import {syntheticAudioThreadRun,syntheticAudioThreadStatus} from './audio-thread-proof-fixtures.js';
 import assert from 'node:assert/strict';
@@ -9,6 +10,12 @@ import {finishDenseReport} from '../scripts/dense-report-cleanup.mjs';
 import {DENSE_STREAM,originalDenseRenditionMidi,expectedDenseAttacks,denseDigest} from '../scripts/prepare-dense-rendition-fixture.mjs';
 import {observeDenseRenditionAudio,denseRenditionBootstrap} from '../scripts/dense-rendition-observer.mjs';
 import {denseTimingMetrics,validateDenseRenditionEvidence} from '../scripts/verify-dense-rendition-evidence.mjs';
+function clockProgress(positionMs,{durationMs=48000,...state}={}) {
+ const node={id:'progress',value:String(positionMs),max:String(durationMs),dataset:{},
+  getAttribute(name){return name==='data-playback-clock'?this.dataset.playbackClock:null;}};
+ node.dataset.playbackClock=JSON.stringify(createPlaybackClock({positionMs,durationMs,running:true,hasStarted:true,...state}));
+ return node;
+}
 const sourceSha='1732e837773757a00212a03374e9111a4e0f4662d920f45461ffb64f46247ba7';
 test('original dense MIDI has an independent complete one-based source inventory and bounded allocation',()=>{
  const bytes=originalDenseRenditionMidi();assert.equal(bytes.length,49380);assert.equal(denseDigest(bytes),sourceSha);assert.equal(bytes.toString('ascii',0,4),'MThd');assert.equal(bytes.readUInt16BE(8),1);assert.equal(bytes.readUInt16BE(10),5);assert.equal(bytes.readUInt16BE(12),96);
@@ -29,11 +36,11 @@ test('dense init namespace survives the real init-script closure boundary',()=>{
  const writes=[],realm=vm.createContext({localStorage:{setItem:(...args)=>writes.push(args)}});
  vm.runInContext(`(()=>{${denseRenditionBootstrap()}})();`,realm);
  assert.equal(vm.runInContext('typeof installDenseRenditionObserver',realm),'undefined','Local init names are intentionally not page globals');
- assert.equal(typeof realm.__wmhDenseObserverTools.install,'function');assert.equal(typeof realm.__wmhDenseObserverTools.observeAudio,'function');assert.equal(Object.isFrozen(realm.__wmhDenseObserverTools),true);
+ assert.equal(typeof realm.__wmhReadPlaybackClock,'function');assert.equal(typeof realm.__wmhDenseObserverTools.install,'function');assert.equal(typeof realm.__wmhDenseObserverTools.observeAudio,'function');assert.equal(Object.isFrozen(realm.__wmhDenseObserverTools),true);
  assert.deepEqual(writes,[['worldmusichub.locale.v1','zh-CN']]);delete realm.__wmhDenseObserverTools;assert.equal(realm.__wmhDenseObserverTools,undefined);
 });
 test('dense trace preserves renderer promises and frame callbacks without inventing main-thread audio pumps',async()=>{
- const nodes={progress:{value:10},'clean-song-stage':{dataset:{rendererState:'playing'}},workspace:{dataset:{scoreState:'active'},addEventListener(){},removeEventListener(){}},'engraving-range':{textContent:'Measures 9–16 / 24'},'hud-captured':{textContent:'0'},notice:{textContent:''}},calls=[],context={currentTime:1,state:'running',addEventListener(){},removeEventListener(){}},promise=Promise.resolve('loaded');
+ const nodes={progress:clockProgress(10),'clean-song-stage':{dataset:{rendererState:'playing'}},workspace:{dataset:{scoreState:'active'},addEventListener(){},removeEventListener(){}},'engraving-range':{textContent:'Measures 9–16 / 24'},'hud-captured':{textContent:'0'},notice:{textContent:''}},calls=[],context={currentTime:1,state:'running',addEventListener(){},removeEventListener(){}},promise=Promise.resolve('loaded');
  class Renderer{load(...args){calls.push(['load',this,args]);return promise;}updateGraphic(){return 'graphic';}render(...args){calls.push(['render',this,args]);return 'rendered';}}
  const frameCalls=[],requestFrame=function(callback){if(typeof callback!=='function')throw new TypeError('Original frame callback required');frameCalls.push({owner:this,callback});return 73;},realm=vm.createContext({document:{getElementById:id=>nodes[id]},performance,structuredClone,requestAnimationFrame:requestFrame,localStorage:{setItem(){}}});vm.runInContext(`(()=>{${denseRenditionBootstrap()}})();`,realm);
  const original=Renderer.prototype.load,observeReceiver=async(_,{onContext,onStart})=>{onContext(context);onStart();return{status:()=>({...syntheticAudioThreadStatus(),receivers:1}),snapshot:()=>[],count:()=>1,quiet:()=>true,restore:()=>({restored:true,overflow:false,errors:[],cleanupErrors:[]})};};
@@ -41,8 +48,34 @@ test('dense trace preserves renderer promises and frame callbacks without invent
  assert.throws(()=>realm.requestAnimationFrame(null),/Original frame callback required/);const frameOwner={},callbackOwner={},seen=[];assert.equal(realm.requestAnimationFrame.call(frameOwner,function animate(value){seen.push([this,value]);return 'painted';}),73);assert.equal(frameCalls[0].owner,frameOwner);assert.equal(frameCalls[0].callback.call(callbackOwner,123),'painted');assert.equal(seen[0][0],callbackOwner);assert.equal(seen[0][1],123);
  assert.equal(renderer.load('exact-doc'),promise);assert.equal(renderer.render('real-options'),'rendered');await promise;const value=trace.stop();assert.equal(value.frames.length,1);assert.equal(value.frames[0].callback,'animate');assert.ok(value.frames[0].durationMs>=0);assert.equal(realm.requestAnimationFrame,requestFrame);assert.equal(frameCalls[0].callback.call(callbackOwner,125),'painted');assert.equal(trace.snapshot().frames.length,1);assert.deepEqual([...value.pumps],[]);assert.deepEqual([...value.schedules],[]);assert.equal(value.cleanup.restored,true);assert.equal(Renderer.prototype.load,original);assert.equal(calls[0][1],renderer);assert.deepEqual(calls[0][2],['exact-doc']);
 });
+test('dense terminal proof requires the exact published clock, actual End and receiver cleanup',async()=>{
+ const durationMs=4083.3371666666667,progress=clockProgress(durationMs,{durationMs,running:false}),
+  nodes={progress,'clean-song-stage':{dataset:{rendererState:'ended'}},workspace:{dataset:{scoreState:'session'},addEventListener(){},removeEventListener(){}},'engraving-range':{textContent:''},'hud-captured':{textContent:'0'},notice:{textContent:''}};
+ progress.value='4083.33716666667';
+ let completed=1,quiet=true;
+ class Renderer{load(){}updateGraphic(){}render(){}}
+ const realm=vm.createContext({document:{getElementById:id=>nodes[id]},performance,structuredClone,localStorage:{setItem(){}}});
+ vm.runInContext(`(()=>{${denseRenditionBootstrap()}})();`,realm);
+ const observer=await realm.__wmhDenseObserverTools.install({library:{Renderer,observeReceiver:async()=>({
+  status:()=>({...syntheticAudioThreadStatus(),completed}),snapshot:()=>[],count:()=>1,quiet:()=>quiet,restore:()=>({restored:true,overflow:false,errors:[],cleanupErrors:[]})
+ })},audioProbe:{snapshot:()=>({}),restore:()=>true}});
+ const publish=state=>{progress.dataset.playbackClock=JSON.stringify(createPlaybackClock({positionMs:durationMs,durationMs,running:false,hasStarted:true,...state}));};
+ assert.notEqual(Number(progress.value),durationMs,'Native serialization differs from source time');
+ assert.equal(observer.status().current.position,durationMs);
+ assert.equal(readPlaybackClock(progress).positionMs,durationMs);
+ assert.throws(()=>observer.markEnded(),/Natural processor End/,'Seeking to the endpoint does not complete playback');
+ publish({running:true});assert.throws(()=>observer.markEnded(),/Natural processor End/,'The source may still be playing at the endpoint');
+ publish({completed:true,positionMs:durationMs-1,rangeEndMs:durationMs-1});assert.throws(()=>observer.markEnded(),/Natural processor End/,'A shorter completed range does not prove full-source End');
+ publish({completed:true});nodes['clean-song-stage'].dataset.rendererState='playing';assert.throws(()=>observer.markEnded(),/Natural processor End/);
+ nodes['clean-song-stage'].dataset.rendererState='ended';completed=0;assert.throws(()=>observer.markEnded(),/Natural processor End/);
+ completed=1;quiet=false;assert.throws(()=>observer.markEnded(),/Natural processor End/);
+ quiet=true;const end=observer.markEnded();assert.equal(end.position,durationMs);assert.equal(end.clock.completed,true);assert.equal(end.clock.phase,'ended');
+ const snapshot=progress.dataset.playbackClock;delete progress.dataset.playbackClock;
+ assert.throws(()=>observer.status(),/playback clock is missing or invalid/,'Native range values never replace missing source observations');
+ progress.dataset.playbackClock=snapshot;assert.equal(observer.stop().cleanup.restored,true);
+});
 test('dense frame diagnostics preserve cancellation and remain bounded without suppressing callbacks',async()=>{
- const nodes={progress:{value:1},'clean-song-stage':{dataset:{rendererState:'playing'}},workspace:{dataset:{scoreState:'session'},addEventListener(){},removeEventListener(){}},'engraving-range':{textContent:''},'hud-captured':{textContent:'0'},notice:{textContent:''}};
+ const nodes={progress:clockProgress(1),'clean-song-stage':{dataset:{rendererState:'playing'}},workspace:{dataset:{scoreState:'session'},addEventListener(){},removeEventListener(){}},'engraving-range':{textContent:''},'hud-captured':{textContent:'0'},notice:{textContent:''}};
  const callbacks=new Map();let next=0,painted=0;
  const requestAnimationFrame=callback=>{if(typeof callback!=='function')throw new TypeError('callback');callbacks.set(++next,callback);return next;},cancelAnimationFrame=id=>callbacks.delete(id);
  class Player{constructor(){this.running=true;this.noteCursor=0;this.context={currentTime:0,state:'running'};this.onError=()=>{};}pump(){}}
@@ -68,7 +101,7 @@ test('dense pending report is unaccepted, every cleanup runs and final validatio
 });
 function syntheticProof(){
  // Synthetic verifier records only; these never establish a browser/audio run.
- const expected=expectedDenseAttacks(sourceSha),trace={version:2,cleanup:{restored:true,stopped:true,players:1,contexts:1,errors:[],receiver:{restored:true,overflow:false,errors:[],cleanupErrors:[]}},errors:[],overflow:[],states:[{state:'running'}],longTasks:[{startTime:16000,duration:200}],counts:{pumps:0,schedules:0},pumps:[],schedules:[],frames:Array.from({length:200},(_,i)=>({durationMs:1,audioTime:i*.24,audioState:'running',renderer:'playing'})),listeningStarted:{audioTime:0,wall:0},current:{renderer:'ended',position:48000,captured:'0',audioState:'running',audioTime:48.1,wall:48100},audio:{created:0,overflow:false,sourceStarts:0,oscillatorStarts:0,activeSources:0,pendingSources:0},receiver:syntheticAudioThreadStatus(),audioThread:[syntheticAudioThreadRun(expected,{sourceSha256:sourceSha,durationMs:48000})],scope:[0,8,16].map(first=>({scope:'all',status:'ready',range:`第 ${first+1}–${first+8} 小节，共24小节`,renderer:first?'playing':'ready',parts:[2,3,4,5].map((track,i)=>`midi-t${track}-c${i+1}-r0`),sourceIds:expected.filter(n=>n.startMs>=first*2000&&n.startMs<(first+8)*2000).map(n=>n.id),svg:4,heads:2048,loadMs:30})),renders:[9,17].map(from=>({method:'render',renderer:'playing',range:`Measures ${from}–${from+7} / 24`,durationMs:200}))};trace.listeningEnded={...trace.current};return{ok:true,origin:'https://wmh.localhost',cleanup:{status:'complete',resources:['context','browser','driver'].map(name=>({name,status:'closed'})),errors:[],writeErrors:[]},locale:'zh-CN',fixture:{source_sha256:sourceSha,fixture:DENSE_STREAM,pages:Array(12).fill({})},trace,metrics:denseTimingMetrics(trace),assessmentRequests:0,results:{historyHidden:true,passOptions:[''],exportDisabled:true,assessmentDisabled:true},actions:Array.from({length:10},()=>({completed:true})),pageErrors:[],claims:{physical_audio:false,synthetic_clock:false,production_behavior_changed:false}};
+ const expected=expectedDenseAttacks(sourceSha),trace={version:2,cleanup:{restored:true,stopped:true,players:1,contexts:1,errors:[],receiver:{restored:true,overflow:false,errors:[],cleanupErrors:[]}},errors:[],overflow:[],states:[{state:'running'}],longTasks:[{startTime:16000,duration:200}],counts:{pumps:0,schedules:0},pumps:[],schedules:[],frames:Array.from({length:200},(_,i)=>({durationMs:1,audioTime:i*.24,audioState:'running',renderer:'playing'})),listeningStarted:{audioTime:0,wall:0},current:{renderer:'ended',position:48000,clock:createPlaybackClock({positionMs:48000,durationMs:48000,completed:true}),captured:'0',audioState:'running',audioTime:48.1,wall:48100},audio:{created:0,overflow:false,sourceStarts:0,oscillatorStarts:0,activeSources:0,pendingSources:0},receiver:syntheticAudioThreadStatus(),audioThread:[syntheticAudioThreadRun(expected,{sourceSha256:sourceSha,durationMs:48000})],scope:[0,8,16].map(first=>({scope:'all',status:'ready',range:`第 ${first+1}–${first+8} 小节，共24小节`,renderer:first?'playing':'ready',parts:[2,3,4,5].map((track,i)=>`midi-t${track}-c${i+1}-r0`),sourceIds:expected.filter(n=>n.startMs>=first*2000&&n.startMs<(first+8)*2000).map(n=>n.id),svg:4,heads:2048,loadMs:30})),renders:[9,17].map(from=>({method:'render',renderer:'playing',range:`Measures ${from}–${from+7} / 24`,durationMs:200}))};trace.listeningEnded={...trace.current,clock:{...trace.current.clock}};return{ok:true,origin:'https://wmh.localhost',cleanup:{status:'complete',resources:['context','browser','driver'].map(name=>({name,status:'closed'})),errors:[],writeErrors:[]},locale:'zh-CN',fixture:{source_sha256:sourceSha,fixture:DENSE_STREAM,pages:Array(12).fill({})},trace,metrics:denseTimingMetrics(trace),assessmentRequests:0,results:{historyHidden:true,passOptions:[''],exportDisabled:true,assessmentDisabled:true},actions:Array.from({length:10},()=>({completed:true})),pageErrors:[],claims:{physical_audio:false,synthetic_clock:false,production_behavior_changed:false}};
 }
 test('dense proof rejects lost processor onsets, stale generations, fake PCM, paused clocks and machine input',()=>{
  const good=syntheticProof();validateDenseRenditionEvidence(good);assert.equal(good.metrics.maxRenderMs,200,'Long measured rendering is reported without being hidden or relabeled');assert.equal(good.metrics.processorStarted,6144);
@@ -76,13 +109,33 @@ test('dense proof rejects lost processor onsets, stale generations, fake PCM, pa
  const failed={...good,ok:false,error:'native scheduling sentinel'};assert.throws(()=>validateDenseRenditionEvidence(failed),/native scheduling sentinel/);
  const legacy=structuredClone(good);legacy.trace.version=1;legacy.trace.audio={created:6144,sourceStarts:6144,oscillatorStarts:6144};delete legacy.trace.audioThread;assert.throws(()=>validateDenseRenditionEvidence(legacy),/Legacy main-thread/,'Old 314/317 oscillator traces cannot masquerade as worklet completion');
 });
+test('dense evidence rejects missing or forged End clocks and completed shorter loops',()=>{
+ const good=syntheticProof();validateDenseRenditionEvidence(good);
+ for(const label of ['listeningEnded','current'])for(const mutate of [
+  sample=>delete sample.clock,
+  sample=>sample.clock={version:1},
+  sample=>sample.clock.version=2,
+  sample=>sample.clock.positionMs='48000',
+  sample=>sample.clock.transportPositionMs=47999,
+  sample=>sample.clock.unverified=true,
+  sample=>sample.clock=createPlaybackClock({positionMs:48000,durationMs:48000,available:false}),
+  sample=>sample.clock=createPlaybackClock({positionMs:48000,durationMs:48000,hasStarted:true}),
+  sample=>sample.clock=createPlaybackClock({positionMs:48001,durationMs:48001,completed:true}),
+  sample=>sample.clock=createPlaybackClock({positionMs:48000,durationMs:48000,rangeStartMs:1,completed:true}),
+  sample=>{sample.position=47999;sample.clock=createPlaybackClock({positionMs:47999,durationMs:48000,rangeEndMs:47999,completed:true});},
+  sample=>sample.position=47999,
+ ]){
+  const changed=structuredClone(good);mutate(changed.trace[label]);
+  assert.throws(()=>validateDenseRenditionEvidence(changed),`${label}: corrupted source End must fail acceptance`);
+ }
+});
 test('dense CI uses the prepared exact-source driver, retains original evidence and refuses local launch',async()=>{
  for(const[name,job]of [['basic-key-preview.yml','basic-key-browser'],['windows-desktop-acceptance.yml','bulk-import-browser']]){const result=spawnSync('python',['scripts/check-authoring-workflow.py','--json',fileURLToPath(new URL(`../.github/workflows/${name}`,import.meta.url))],{encoding:'utf8'});assert.equal(result.status,0,result.stderr);const steps=JSON.parse(result.stdout).jobs[job].steps,run=steps.find(row=>row.run==='node scripts/hosted-dense-rendition-check.mjs');assert.ok(run);assert.equal(run['continue-on-error'],undefined);assert.equal(run.if,"${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}");assert.equal(steps.find(row=>row.id==='dense_native_driver').run,'cargo build -p worldmusichub-desktop --example native_import_driver --locked');assert.equal(steps.find(row=>row.id==='dense_browser_setup').run,'npx playwright install --with-deps chromium');assert.equal(run.env.WMH_SOURCE_SHA,'${{ github.sha }}');assert.equal(run.env.WMH_NATIVE_IMPORT_DRIVER,'${{ github.workspace }}/target/debug/examples/native_import_driver');const artifact=steps.find(row=>row.with?.name==='dense-rendition-browser-${{ github.sha }}');assert.equal(artifact.if,'always()');assert.ok(artifact.with.path.includes('fixture/*'));assert.ok(artifact.with.path.includes('ui-pages/*.json'));assert.ok(!artifact.with.path.includes('Scores'));}
  const script=fileURLToPath(new URL('../scripts/hosted-dense-rendition-check.mjs',import.meta.url)),refused=spawnSync(process.execPath,[script],{env:{...process.env,GITHUB_ACTIONS:'false',WMH_HOSTED_BROWSER:'0'},encoding:'utf8'});assert.equal(refused.status,1);assert.match(refused.stderr,/require the authorized hosted Actions runner/);const source=await readFile(script,'utf8');assert.doesNotMatch(source,/waitForTimeout|lookAheadMs\s*=|transport\.seek|progress[^\n]*\.value\s*=/);
 });
 
 test('dense observer attempts all cleanup after listener and receiver failures without replacing the product cause',async()=>{
- const calls=[],fail=name=>{calls.push(name);throw Error(`${name} cleanup failure`);},nodes={progress:{value:10},'clean-song-stage':{dataset:{rendererState:'paused'}},workspace:{dataset:{scoreState:'session'},addEventListener(){},removeEventListener(){fail('scope');}},'engraving-range':{textContent:'Measures 1–8 / 24'},'hud-captured':{textContent:'0'},notice:{textContent:'original product failure'}},context={currentTime:1,state:'running',addEventListener(){},removeEventListener(){fail('context');}};
+ const calls=[],fail=name=>{calls.push(name);throw Error(`${name} cleanup failure`);},nodes={progress:clockProgress(10,{running:false}),'clean-song-stage':{dataset:{rendererState:'paused'}},workspace:{dataset:{scoreState:'session'},addEventListener(){},removeEventListener(){fail('scope');}},'engraving-range':{textContent:'Measures 1–8 / 24'},'hud-captured':{textContent:'0'},notice:{textContent:'original product failure'}},context={currentTime:1,state:'running',addEventListener(){},removeEventListener(){fail('context');}};
  class Renderer{load(){}updateGraphic(){}render(){}}
  const originalMethods=[Renderer.prototype.load,Renderer.prototype.updateGraphic,Renderer.prototype.render],requestAnimationFrame=()=>1,realm=vm.createContext({document:{getElementById:id=>nodes[id]},performance,structuredClone,requestAnimationFrame,localStorage:{setItem(){}}});vm.runInContext(`(()=>{${denseRenditionBootstrap()}})();`,realm);
  const productError={code:'audio_processor_error',message:'original product failure'},observeReceiver=async(_,{onContext,onStart})=>{onContext(context);onStart();return{status:()=>({...syntheticAudioThreadStatus(),errors:[productError]}),snapshot:()=>[],count:()=>1,quiet:()=>true,restore:()=>fail('receiver')};};
@@ -93,7 +146,7 @@ test('dense observer attempts all cleanup after listener and receiver failures w
 
 
 test('dense startup failure exposes initialization phase and product notice before any prepared audio row exists',async()=>{
- const nodes={progress:{value:0},'clean-song-stage':{dataset:{rendererState:'ready'}},workspace:{dataset:{scoreState:'inspection'},addEventListener(){},removeEventListener(){}},'engraving-range':{textContent:'Measures 1–8'},'hud-captured':{textContent:'0'},notice:{textContent:'Actual startup module failure'}};
+ const nodes={progress:clockProgress(0,{running:false,hasStarted:false}),'clean-song-stage':{dataset:{rendererState:'ready'}},workspace:{dataset:{scoreState:'inspection'},addEventListener(){},removeEventListener(){}},'engraving-range':{textContent:'Measures 1–8'},'hud-captured':{textContent:'0'},notice:{textContent:'Actual startup module failure'}};
  class Receiver{static create(){return Promise.reject(Object.assign(new Error('Module import failed'),{code:'audio_worklet_unavailable',details:{phase:'module-load',causeName:'AbortError',causeMessage:'Underlying loader rejection'}}));}prepare(){}start(){}}
  class Renderer{load(){}updateGraphic(){}render(){}}
  const realm=vm.createContext({document:{getElementById:id=>nodes[id]},performance,structuredClone,Float32Array,localStorage:{setItem(){}}});vm.runInContext(`(()=>{${denseRenditionBootstrap()}})();`,realm);

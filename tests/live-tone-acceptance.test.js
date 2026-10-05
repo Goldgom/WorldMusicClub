@@ -79,7 +79,7 @@ test('renderer and hosted entry points install the passive helper before source 
  const files=await Promise.all(['crates/desktop-shell/basic-key-acceptance.js','crates/desktop-shell/vsq-song-acceptance.js','scripts/hosted-basic-key-check.mjs','scripts/hosted-vsq-song-check.mjs'].map(path=>readFile(new URL(`../${path}`,import.meta.url),'utf8')));
  for(const runner of files.slice(0,2)){assert.ok(runner.includes('live=await observeLiveToneAudio'));assert.ok(runner.includes('live.begin()'));assert.ok(runner.includes('report.humanLiveAudio=live.finish()'));assert.ok(runner.includes('liveToneCleanup'));}
  for(const [index,runner]of files.slice(2).entries()){assert.ok(runner.indexOf("'live-tone-acceptance.js'")<runner.indexOf(index===0?"'basic-key-acceptance.js'":"'vsq-song-acceptance.js'"));assert.ok(runner.includes(`page.keyboard.press('${index===0?'Digit2':'KeyU'}',{delay:40})`));}
- assert.ok(files[0].includes("value)>=350,'C5 source onset approaching'"));assert.ok(files[0].includes("value)<650,'Real input window missed"));assert.ok(files[1].includes("value)<120,'VSQ source onset window missed"));
+ assert.ok(files[0].includes("globalThis.__wmhReadPlaybackClock(document).positionMs>=350,'C5 source onset approaching'"));assert.ok(files[0].includes("globalThis.__wmhReadPlaybackClock(document).positionMs<650,'Real input window missed"));assert.ok(files[1].includes("globalThis.__wmhReadPlaybackClock(document).positionMs<120,'VSQ source onset window missed"));
  assert.doesNotMatch(source,/root\.AudioWorkletNode\s*=|globalThis\.AudioWorkletNode\s*=|new AudioWorkletNode/);
 });
 test('fixed output history tolerates a main-thread long frame without moving the real key or processor frames',async()=>{

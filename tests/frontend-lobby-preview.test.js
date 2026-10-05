@@ -1,3 +1,4 @@
+import {readPlaybackClock} from '../web/playback-clock-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {freePracticeApp,fixtureScoreServer} from './free-practice-app-fixtures.js';
@@ -33,14 +34,14 @@ test('real app audition creates independent sound, retains session/source export
   await app.until(()=>!app.$('start-listen').disabled);await app.click('home-single-player');app.$('count-in').checked=false;
   await app.click('start-listen');await app.until(()=>app.document.body.dataset.screen==='stage');await app.click('back-to-library');
   const beforeScore=await app.exported('export-button'),beforeTakes=await app.exported('export-takes');
-  const requests=app.requests.length,scoreTitle=app.$('score-title').textContent,progress=app.$('progress').value,sessionSound=app.$('sound-button').getAttribute('aria-pressed');
+  const requests=app.requests.length,scoreTitle=app.$('score-title').textContent,progress=readPlaybackClock(app.document).positionMs,sessionSound=app.$('sound-button').getAttribute('aria-pressed');
   await app.click('lobby-preview-play');await app.until(()=>app.$('lobby-preview-status').dataset.state==='playing');
   assert.ok(app.plays.some(args=>args[0].startsWith('lobby:')));assert.equal(app.audio().contexts,2,'Session and audition have different Synth contexts');
   const i18n=getAppI18n(app.document),control=app.$('lobby-preview-play');i18n.setLocale('en');assert.equal(app.$('lobby-preview-status').textContent,'Preview playing');assert.equal(app.$('lobby-preview-play'),control);
   app.$('lobby-preview-volume').value='23';app.emit(app.$('lobby-preview-volume'),'input');assert.equal(app.$('lobby-preview-volume').getAttribute('aria-valuetext'),'23%');
   await app.click('settings-button');assert.equal(app.$('lobby-preview-status').dataset.state,'stopped');app.$('settings-dialog').close();assert.equal(app.$('lobby-preview-status').dataset.state,'stopped');
   await app.click('lobby-preview-play');app.$('lobby-preview-sound').checked=false;app.emit(app.$('lobby-preview-sound'),'change');assert.equal(app.$('lobby-preview-status').dataset.state,'muted');assert.equal(app.$('lobby-preview-play').disabled,true);
-  assert.equal(app.$('sound-button').getAttribute('aria-pressed'),sessionSound);assert.equal(app.$('score-title').textContent,scoreTitle);assert.equal(app.$('progress').value,progress);assert.equal(app.requests.length,requests);
+  assert.equal(app.$('sound-button').getAttribute('aria-pressed'),sessionSound);assert.equal(app.$('score-title').textContent,scoreTitle);assert.equal(readPlaybackClock(app.document).positionMs,progress);assert.equal(app.requests.length,requests);
   assert.deepEqual(await app.exported('export-button'),beforeScore);assert.deepEqual(await app.exported('export-takes'),beforeTakes);
   app.$('lobby-preview-sound').checked=true;app.emit(app.$('lobby-preview-sound'),'change');await app.click('lobby-preview-play');await app.click('lobby-home');assert.equal(app.$('lobby-preview-status').dataset.state,'stopped');
   await app.click('home-single-player');assert.equal(app.$('lobby-preview-status').dataset.state,'stopped','Returning never resumes audition');

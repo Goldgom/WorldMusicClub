@@ -60,10 +60,10 @@ function createBulkChooserObserver({target,now=()=>performance.now(),defer=callb
  async function downloadNode(node){const before=(await json('/__desktop_smoke/state')).downloads.length;await native('click',node);let row;await until(async()=>{row=(await json('/__desktop_smoke/state')).downloads[before];return row?.complete},'native complete pack download');assert(row.success,'Native pack download failed');return row.file}
  async function exportSession(id,menuButton){closeDialogs();click(menuButton);const file=await downloadNode($(id));closeDialogs();return file}
  async function history(){closeDialogs();click('import-tools-button');click('bulk-import-history-button');$('bulk-import-history').open=true;await until(()=>document.querySelector('[data-import-archive]'),'retained original visible');return[...document.querySelectorAll('#bulk-import-history-list li')].find(row=>row.querySelector(':scope > span')?.textContent==='原创曲包_日本語.zip')?.querySelector('[data-import-archive]')}
- const stableSession=()=>({title:$('score-title').textContent,stage:$('stage-title').textContent,pass:document.querySelector('.performance-status')?.dataset.passId,revision:document.querySelector('.performance-status')?.dataset.revision,captured:$('hud-captured').textContent,position:$('progress').value});
+ const stableSession=()=>({title:$('score-title').textContent,stage:$('stage-title').textContent,pass:document.querySelector('.performance-status')?.dataset.passId,revision:document.querySelector('.performance-status')?.dataset.revision,captured:$('hud-captured').textContent,position:globalThis.__wmhReadPlaybackClock(document).positionMs});
  addEventListener('DOMContentLoaded',async()=>{
   const report={version:1,phase,ok:false,origin:location.origin,checks:[],importReports,openedScoreDatabases,errors,screenshots,chooserObservations:chooserObserver.records,files:{}};
-  try{
+  try{await prepareNativePlaybackClock();
    assert(localStorage.getItem('wmh.bulk.acceptance.marker')===null,'Bulk scenario requires a fresh WebView profile');report.profileMarkerAbsent=true;localStorage.setItem('wmh.bulk.acceptance.marker',phase);
    await menu.enterLibrary();const {getAppI18n}=await import('/app-locale.js');getAppI18n(document).setLocale('en');assert((await json('/api/health')).network==='native-protocol-no-listener','Bulk proof requires native protocol');
    if(phase==='bulk-seed'){

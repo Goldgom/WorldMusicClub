@@ -1,3 +1,4 @@
+import {readPlaybackClock} from '../web/playback-clock-view.js';
 import {addNativeProfileEvidence,assertNativeProfileEvidence} from './native-profile-evidence-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -43,7 +44,7 @@ test('performance setup admits the original preview through real app controls be
   assert.deepEqual(JSON.parse(JSON.stringify(setup)),{kind:'scripted-menu',controls:['sound-button','start-listen'],previewId:identity,title:preview});
   assert.deepEqual(f.clicks,['home-single-player','sound-button','start-listen']);
   assert.equal(f.menu.ready('stage','play-button'),true);assert.equal(f.app.$('resume-session').hidden,false);
-  assert.equal(f.app.$('stage-title').textContent,preview);assert.ok(Number(f.app.$('progress').max)>0);
+  assert.equal(f.app.$('stage-title').textContent,preview);assert.ok(readPlaybackClock(f.app.document).durationMs>0);
   assert.equal(f.app.$('hud-captured').textContent,'0');assert.deepEqual(f.app.audio(),{contexts:0,unlocks:0});
  }finally{await f.close();}
 });

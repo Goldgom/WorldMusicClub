@@ -1,3 +1,4 @@
+import {readPlaybackClock} from '../web/playback-clock-view.js';
 import {validateLiveToneCleanup,validateLiveToneInput} from './live-tone-proof.mjs';
 import {validateVsqNativeKey,validateVsqHumanScore} from './vsq-human-key-proof.mjs';
 import {validateVsqAudioThreadRuns} from './vsq-audio-thread-proof.mjs';
@@ -18,13 +19,17 @@ export const VSQ_REPORT_BYTES=1024*1024;
 export const VSQ_COMMON_CHECKS=Object.freeze(['stored-nonplayable-explicit-choice-no-autoaudio','listen-real-reference-native-following','pause-navigation-cleanup','human-target-machine-input-separation','reload-requires-choice','native-fingering-clock-locks-infeasible-stale']);
 const positive=n=>Number.isSafeInteger(n)&&n>0,sha=s=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s),sort=rows=>[...rows].sort((a,b)=>a.path.localeCompare(b.path));
 const silent=(audio,label)=>{assert.ok(audio&&audio.activeSources===0&&audio.pendingSources===0,`${label}: audio did not stop`);assert.equal(audio.worklet?.activeReceivers,0,label);assert.equal(audio.worklet?.pendingReceivers,0,label);assert.deepEqual(audio.worklet?.errors,[]);assert.equal(audio.worklet?.overflow,false);if(audio.worklet.receivers)validateAudioThreadStatus(audio.worklet,{quiet:true});};
+function validateReportedPlaybackClock(clock){return readPlaybackClock({getAttribute:()=>JSON.stringify(clock)});}
 function validateVsqFollowingFrame(row,response,target=null){
+ const clock=validateReportedPlaybackClock(row.clock);assert.equal(clock.available,true);assert.equal(row.positionMs,clock.positionMs);assert.equal(row.transportPositionMs,clock.transportPositionMs);assert.equal(row.durationMs,clock.durationMs);
+ assert.equal(clock.rangeStartMs,0);assert.equal(clock.rangeEndMs,response.runtime.end_ms);assert.equal(typeof row.rangeValue,'string','Raw native range serialization must remain separate evidence');
+
  assert.ok(Number.isFinite(row.positionMs)&&row.positionMs>=0&&row.positionMs<=response.runtime.end_ms,'VSQ following position is outside the native clock');
  assert.equal(row.durationMs,response.runtime.end_ms,'VSQ renderer duration changed native clock');
  assert.ok([null,'ready','countdown','paused','complete'].includes(row.cue),'VSQ following cue observation missing');
- const preRoll=row.cue==='countdown';if(preRoll){assert.equal(row.positionMs,0,'VSQ countdown must precede displayed clock advancement');assert.equal(row.renderer,'playing','VSQ countdown must belong to active scheduling');}
- const occurrence=!preRoll&&row.positionMs<response.runtime.end_ms?response.navigation.occurrences.find(o=>o.start_ms<=row.positionMs&&row.positionMs<o.end_ms):null;
- const expected=response.runtime.notes.filter(n=>(target===null||n.part_id===target)&&n.start_ms<=row.positionMs&&row.positionMs<n.end_ms).map(n=>n.note_id).sort();
+ const sourcePosition=clock.transportPositionMs,preRoll=sourcePosition<0;if(preRoll){assert.equal(row.positionMs,0,'VSQ pre-roll must precede displayed clock advancement');assert.equal(row.renderer,'playing','VSQ pre-roll must belong to active scheduling');assert.equal(clock.running,true);}if(row.cue==='countdown')assert.ok(preRoll,'VSQ countdown must retain its actual negative source clock');
+ const occurrence=sourcePosition>=0&&sourcePosition<response.runtime.end_ms?response.navigation.occurrences.find(o=>o.start_ms<=sourcePosition&&sourcePosition<o.end_ms):null;
+ const expected=response.runtime.notes.filter(n=>(target===null||n.part_id===target)&&n.start_ms<=sourcePosition&&sourcePosition<n.end_ms).map(n=>n.note_id).sort();
  assert.deepEqual([...row.ids].sort(),occurrence?expected:[],'VSQ written IDs disagree with exact native interval');assert.equal(row.measure,occurrence?String(occurrence.source_measure_index):'','VSQ written measure disagrees with native bounds');
  return{occurrence,expected};
 }
@@ -40,11 +45,11 @@ export function validateVsqFollowing(rows,response,{target=null}={}) {
  }
  assert.ok(sounding&&gap,'VSQ observation must include native note-on and note-off gap');
  if(response.navigation.written_end_ms<response.runtime.end_ms)assert.ok(tail,'VSQ source-declared tail must have no invented written measure');
- assert.equal(rows.at(-1).positionMs,response.runtime.end_ms,'VSQ observation did not reach native playback end');
+ assert.equal(rows.at(-1).positionMs,response.runtime.end_ms,'VSQ observation did not reach native playback end');assert.equal(rows.at(-1).clock.completed,true);assert.equal(rows.at(-1).clock.phase,'ended');
 }
 export function validateVsqFollowingCapture(capture,response){
  assert.deepEqual(Object.keys(capture||{}).sort(),['after','before'],'VSQ live screenshot boundaries absent');
- for(const sample of [capture.before,capture.after]){const row=sample.frame,{occurrence,expected}=validateVsqFollowingFrame(row,response);assert.ok(occurrence&&expected.length>0&&row.positionMs>0&&row.renderer==='playing'&&row.cue===null&&sample.audio?.worklet?.activeReceivers>0,'VSQ following screenshot missed the live native-note interval');}
+ for(const sample of [capture.before,capture.after]){const row=sample.frame,{occurrence,expected}=validateVsqFollowingFrame(row,response);assert.ok(occurrence&&expected.length>0&&row.positionMs>0&&row.renderer==='playing'&&row.clock.running&&row.clock.phase==='playing'&&row.cue===null&&sample.audio?.worklet?.activeReceivers>0,'VSQ following screenshot missed the live native-note interval');}
  assert.ok(capture.after.frame.positionMs>=capture.before.frame.positionMs,'VSQ live screenshot clock moved backwards');
 }
 export function validateVsqFollowingSurface(surface){
@@ -103,14 +108,15 @@ export function validateVsqSeekEvidence(report,response){
  assert.equal(seek?.version,1,'VSQ real seek observations absent');
  assert.ok(positive(seek.pointerAction)&&seek.playAction===seek.pointerAction+1&&seek.playAction<=report.actions,'VSQ seek must precede its separate native Play action');
  for(const [label,sample]of [['before',seek.before],['after',seek.after],['beforePlay',seek.beforePlay],['completed',seek.completed]]){
+  const clock=validateReportedPlaybackClock(sample?.clock);assert.equal(clock.available,true);assert.equal(clock.durationMs,endMs);assert.equal(clock.rangeStartMs,0);assert.equal(clock.rangeEndMs,endMs);assert.equal(sample.positionMs,clock.positionMs);assert.equal(sample.transportPositionMs,clock.transportPositionMs);assert.equal(typeof sample.control?.value,'string');
   validateVsqSeekControl(sample?.control,endMs);assert.equal(sample.captured,'0','Seek or its reference audio became score input');silent(sample.audio,`Seek ${label}`);
   assert.equal(sample.audio.sourceStarts,0);assert.equal(sample.audio.oscillatorStarts,0);
  }
  assert.equal(seek.before.positionMs,0);assert.ok(['ready','paused'].includes(seek.before.renderer));
  assert.ok(seek.after.positionMs>Math.max(...response.runtime.notes.map(note=>note.end_ms))&&seek.after.positionMs<endMs,'Real pointer must seek beyond every original note, within the source tail');
- assert.equal(seek.after.renderer,'paused');assert.equal(seek.beforePlay.renderer,'paused');assert.equal(seek.beforePlay.positionMs,seek.after.positionMs,'Seek moved before explicit Play');assert.equal(report.seekPositionMs,seek.beforePlay.positionMs);
+ assert.equal(seek.after.clock.phase,'paused');assert.equal(seek.after.clock.running,false);assert.equal(seek.beforePlay.clock.phase,'paused');assert.equal(seek.beforePlay.clock.running,false);assert.equal(seek.after.renderer,'paused');assert.equal(seek.beforePlay.renderer,'paused');assert.equal(seek.beforePlay.positionMs,seek.after.positionMs,'Seek moved before explicit Play');assert.equal(report.seekPositionMs,seek.beforePlay.positionMs);
  for(const sample of [seek.after,seek.beforePlay])for(const key of ['started','receivers'])assert.equal(sample.audio.worklet[key],seek.before.audio.worklet[key],'Seek created audio before explicit Play');
- assert.equal(seek.completed.positionMs,endMs,'Seeked playback did not reach the exact native end');assert.equal(seek.completed.renderer,'ended');for(const key of ['started','receivers'])assert.equal(seek.completed.audio.worklet[key],seek.before.audio.worklet[key]+1,'Only explicit Play may create the tail receiver');
+ assert.equal(seek.completed.positionMs,endMs,'Seeked playback did not reach the exact native end');assert.equal(seek.completed.renderer,'ended');assert.equal(seek.completed.clock.completed,true);assert.equal(seek.completed.clock.phase,'ended');for(const key of ['started','receivers'])assert.equal(seek.completed.audio.worklet[key],seek.before.audio.worklet[key]+1,'Only explicit Play may create the tail receiver');
  for(const index of [seek.eventStart,seek.eventEnd,seek.playEventStart,seek.playEventEnd])assert.ok(Number.isSafeInteger(index)&&index>=0&&index<=report.trusted.length,'VSQ seek event boundary invalid');
  assert.ok(seek.eventStart<seek.eventEnd&&seek.eventEnd===seek.playEventStart&&seek.playEventStart<seek.playEventEnd,'VSQ seek and explicit Play event boundaries overlap or omit events');
  const events=report.trusted.slice(seek.eventStart,seek.eventEnd);
@@ -134,7 +140,7 @@ export function validateVsqRenderer(report,fixture=vsqAcceptanceFixture(),{expec
  assert.equal(before.audio.worklet.receivers,0);assert.equal(after.audio.worklet.receivers,0);assert.equal(before.audio.sourceStarts,0);assert.equal(before.runtimeRequests,0);assert.equal(after.audio.sourceStarts,0);assert.equal(after.runtimeRequests,1);assert.equal(after.preview,'ready');assert.equal(after.listenDisabled,false);assert.equal(after.practiceDisabled,false);assert.equal(after.fullVocalDisabled,true);assert.equal(reload.runtimeRequests,1);
  assert.deepEqual(report.runtimeResponses,[{path:'/api/library/runtime',status:200,body:fixture.runtime}],'VSQ actual native runtime/navigation changed');assert.deepEqual(report.responseObservations,[...report.imports,...report.runtimeResponses].map(row=>({path:row.path,status:row.status,state:'consumed'})),'VSQ evidence must observe the actual fully consumed application bodies');
  assert.ok(Array.isArray(report.requests)&&report.requests.length<=128);assert.deepEqual(report.requests.filter(r=>r.path==='/api/library/runtime'),[{path:'/api/library/runtime',body:{key:fixture.key,profile:'wmh-vsq-clean-v1',choice:'base_notes_instrumental'}}],'VSQ must request only explicit base-note choice once');assert.equal(report.requests.filter(r=>r.path==='/api/notation-navigation'&&r.body?.id===fixture.metadata.id).length,0,'VSQ requested generic BPM navigation');
- validateVsqFingering(report,fixture);validateLiveToneCleanup(report.liveToneCleanup);validateVsqSeekControl(report.practiceSeek?.control,fixture.runtime.runtime.end_ms,true);assert.match(report.practiceSeek.control.guidance,/Listen/);assert.match(report.practiceSeek.control.guidance,/practice/i);
+ validateVsqFingering(report,fixture);validateLiveToneCleanup(report.liveToneCleanup);validateVsqSeekControl(report.practiceSeek?.control,fixture.runtime.runtime.end_ms,true);const practiceClock=validateReportedPlaybackClock(report.practiceSeek.clock);assert.equal(practiceClock.available,true);assert.equal(practiceClock.durationMs,fixture.runtime.runtime.end_ms);assert.match(report.practiceSeek.control.guidance,/Listen/);assert.match(report.practiceSeek.control.guidance,/practice/i);
  validateVsqFollowing(report.following,fixture.runtime);validateVsqFollowingSurface(report.followingSurface);validateVsqFollowingCapture(report.followingCapture,fixture.runtime);
  assert.equal(report.listenAudio.sourceStarts,0,'VSQ must use the audio thread');assert.equal(report.listenAudio.oscillatorStarts,0);assert.ok(report.listenAudio.worklet.activeReceivers>0,'VSQ listen did not start a real receiver');validateAudioThreadStatus(report.listenAudio.worklet);validateVsqAudioThreadRuns(report.listenThread,fixture.runtime);assert.equal(report.listenThread.length,1);validateVsqAudioThreadRuns(report.pauseThread,fixture.runtime,{complete:false,natural:false});assert.equal(report.pauseThread.length,1);assert.equal(report.pauseThread[0].terminals[0].record.type,'canceled');for(const label of ['listenStopped','pauseAudio','navigationAudio','machineStopped','finalAudio'])silent(report[label],label);assert.equal(report.pauseClock.before,report.pauseClock.after);assert.ok(report.pauseClock.before>0&&report.pauseClock.before<fixture.runtime.runtime.end_ms);
  assert.deepEqual(report.controls,{initial:'vsq-track-1',target:'vsq-track-2',other:'vsq-track-1',humanDisabled:true,humanMachineEnabled:false,otherRestored:true});assert.equal(report.machinePlaying.captured,'0');assert.ok(report.machinePlaying.positionMs>0&&report.machinePlaying.positionMs<fixture.runtime.runtime.end_ms&&report.machinePlaying.audio.worklet.activeReceivers>0,'VSQ practice machine did not advance');

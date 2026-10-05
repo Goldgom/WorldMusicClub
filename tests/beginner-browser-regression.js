@@ -1,3 +1,4 @@
+import {readPlaybackClock} from './browser-playback-clock.js';
 import assert from 'node:assert/strict';
 import {readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -352,7 +353,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
     await page.locator('#play-button').click();
     assertGlyph(await glyph(page,'#keyboard [data-midi="67"]'),{midi:67,tone:'1'});
     assertGlyph(await glyph(page,'#keyboard [data-midi="60"]'),{midi:60,tone:'4',below:'•'});
-    const currentPosition=await page.locator('#progress').evaluate(element=>Number(element.value));
+    const currentPosition=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;
     assert.ok(currentPosition>=4000,'The live guide uses the current written occurrence instead of the notation page start');
     assert.deepEqual(await exportScore(),score);
     const interior=structuredClone(score);interior.id='beginner-interior-change';interior.title='Original beginner interior key change';

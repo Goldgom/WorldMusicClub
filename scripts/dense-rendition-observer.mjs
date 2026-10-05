@@ -1,3 +1,4 @@
+import {readPlaybackClock} from '../web/playback-clock-view.js';
 import {readFileSync} from 'node:fs';
 const nativeObserver=readFileSync(new URL('../crates/desktop-shell/reference-acceptance.js',import.meta.url),'utf8');
 const observerStart=nativeObserver.indexOf('async function observeBasicKeyReceiver('),observerEnd=nativeObserver.indexOf('// End shared audio-thread observer.');
@@ -6,9 +7,9 @@ export const audioThreadObserverSource=nativeObserver.slice(observerStart,observ
 // Acceptance-only observers. Every production call keeps its receiver, arguments,
 // return value and errors. No clock, note, timer, lookahead or input is modified.
 export function denseRenditionBootstrap(){
- // Playwright wraps init scripts in an IIFE. Explicitly export only this
- // acceptance namespace; page.evaluate cannot see local function declarations.
- return `globalThis.__wmhDenseObserverTools=Object.freeze({observeAudio:${observeDenseRenditionAudio.toString()},observeReceiver:${audioThreadObserverSource},install:${installDenseRenditionObserver.toString()}});\nlocalStorage.setItem('worldmusichub.locale.v1','zh-CN');`;
+ // Playwright wraps init scripts in an IIFE. Explicitly export the shared
+ // clock reader and observer namespace; page.evaluate cannot see local names.
+ return `globalThis.__wmhReadPlaybackClock=(${readPlaybackClock.toString()});\nglobalThis.__wmhDenseObserverTools=Object.freeze({observeAudio:${observeDenseRenditionAudio.toString()},observeReceiver:${audioThreadObserverSource},install:${installDenseRenditionObserver.toString()}});\nlocalStorage.setItem('worldmusichub.locale.v1','zh-CN');`;
 }
 export function observeDenseRenditionAudio(root=globalThis){
  const prototypes=new Set([root.AudioContext?.prototype,root.webkitAudioContext?.prototype].filter(Boolean));if(!prototypes.size)throw Error('Real Web Audio is required');const live=new Set(),restores=[];let sourceStarts=0,oscillatorStarts=0,created=0,overflow=false;
@@ -30,7 +31,7 @@ export async function installDenseRenditionObserver({library,audioProbe}={}){
  const doc=globalThis.document,now=()=>performance.now(),get=id=>doc.getElementById(id),limits={pumps:4096,schedules:8192,renders:256,frames:4096,scope:128,states:128,errors:32,longTasks:256},data={version:2,pumps:[],schedules:[],renders:[],frames:[],scope:[],states:[],errors:[],longTasks:[],longTaskSupported:false,overflow:[],counts:{pumps:0,schedules:0,renders:0},listeningStarted:null,listeningEnded:null};
  let active=true,context=null;const contexts=new Map(),restores=[],painted=new Set();
  const push=(kind,row)=>{if(!active)return;if(data[kind].length<limits[kind])data[kind].push(row);else if(!data.overflow.includes(kind))data.overflow.push(kind);};
- const screen=()=>({wall:now(),position:Number(get('progress').value),renderer:get('clean-song-stage').dataset.rendererState,scoreState:get('workspace').dataset.scoreState,range:get('engraving-range').textContent,captured:get('hud-captured').textContent,notice:get('notice').textContent,audioTime:context?.currentTime??null,audioState:context?.state??null});
+ const screen=()=>{const clock=globalThis.__wmhReadPlaybackClock(doc);return{wall:now(),clock,position:clock.positionMs,renderer:get('clean-song-stage').dataset.rendererState,scoreState:get('workspace').dataset.scoreState,range:get('engraving-range').textContent,captured:get('hud-captured').textContent,notice:get('notice').textContent,audioTime:context?.currentTime??null,audioState:context?.state??null};};
  const errorRow=error=>({code:String(error?.code||error?.name||'error').slice(0,96),message:String(error?.message||error).slice(0,512),eventId:String(error?.detail?.eventId||'').slice(0,160),lateSeconds:Number.isFinite(error?.detail?.lateSeconds)?error.detail.lateSeconds:null,...screen()});
  const attachContext=value=>{context=value;if(contexts.has(value))return;const observe=()=>push('states',{wall:now(),audioTime:value.currentTime,state:value.state});contexts.set(value,observe);observe();value.addEventListener?.('statechange',observe);};
  const observeReceiver=library?.observeReceiver||globalThis.__wmhDenseObserverTools?.observeReceiver;
@@ -46,7 +47,7 @@ export async function installDenseRenditionObserver({library,audioProbe}={}){
   function observedFrame(...requestArgs){
    const callback=requestArgs[0];if(typeof callback!=='function')return Reflect.apply(requestFrame,this,requestArgs);
    requestArgs[0]=function(...args){const begin=now();try{return Reflect.apply(callback,this,args);}finally{
-    if(active&&data.listeningStarted!==null&&data.listeningEnded===null)try{push('frames',{wall:begin,durationMs:now()-begin,callback:callback.name||'anonymous',position:Number(get('progress')?.value),renderer:get('clean-song-stage')?.dataset?.rendererState,audioTime:context?.currentTime??null,audioState:context?.state??null});}
+    if(active&&data.listeningStarted!==null&&data.listeningEnded===null)try{push('frames',{wall:begin,durationMs:now()-begin,callback:callback.name||'anonymous',position:globalThis.__wmhReadPlaybackClock(doc).positionMs,renderer:get('clean-song-stage')?.dataset?.rendererState,audioTime:context?.currentTime??null,audioState:context?.state??null});}
     catch(error){push('errors',{code:'dense_frame_observer',message:String(error?.message||error).slice(0,512)});}
    }};
    return Reflect.apply(requestFrame,this,requestArgs);
@@ -59,7 +60,7 @@ export async function installDenseRenditionObserver({library,audioProbe}={}){
  get('workspace').addEventListener('notationscopecontext',scope);
  const receiverState=()=>receiver.status();
  const snapshot=()=>({...structuredClone(data),current:screen(),audio:audioProbe?.snapshot(),audioThread:receiver.snapshot(),receiver:receiverState()});
- return{markEnded(){const end=screen();if(end.renderer!=='ended'||!receiverState().completed||!receiver.quiet())throw Error('Natural processor End and disposal are not observable yet');data.listeningEnded=end;return structuredClone(end);},status:()=>({errors:[...structuredClone(data.errors),...receiverState().errors],overflow:[...data.overflow,...(receiverState().overflow?['audioThread']:[])],schedules:receiver.count(),completed:receiverState().completed,quiet:receiver.quiet(),current:screen()}),snapshot,stop(){
+ return{markEnded(){const end=screen();if(!end.clock.completed||end.clock.phase!=='ended'||end.position!==end.clock.durationMs||end.renderer!=='ended'||!receiverState().completed||!receiver.quiet())throw Error('Natural processor End and disposal are not observable yet');data.listeningEnded=end;return structuredClone(end);},status:()=>({errors:[...structuredClone(data.errors),...receiverState().errors],overflow:[...data.overflow,...(receiverState().overflow?['audioThread']:[])],schedules:receiver.count(),completed:receiverState().completed,quiet:receiver.quiet(),current:screen()}),snapshot,stop(){
   const cleanupErrors=[];let restored=true,final,receiverCleanup;
   const attempt=(name,run)=>{try{const result=run();if(result===false||result?.restored===false||result?.cleanupErrors?.length)throw Error(result?.cleanupErrors?.map(error=>error.message).join('; ')||'Observer restoration was incomplete');return result;}catch(error){restored=false;cleanupErrors.push({name,message:String(error?.message||error).slice(0,512)});}};
   final=attempt('snapshot',snapshot)||{...structuredClone(data)};active=false;

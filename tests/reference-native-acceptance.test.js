@@ -1,3 +1,5 @@
+import {readPlaybackClock} from '../web/playback-clock-view.js';
+import {setEvidencePlaybackClock} from './playback-clock-evidence-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -70,7 +72,7 @@ function transportFixture({clickDelivered=true,startOnPoll=0,keyDelivered=true,b
   const node=(id,kind='div')=>({id,localName:kind,dataset:{},disabled:false,value:'',textContent:'',checked:false,
     getAttribute(name){return this[name]??null;},dispatchEvent(){},closest(selector){if(selector==='[id]')return this;if(selector==='button'&&kind==='button')return this;if(selector==='[data-keyboard-performance]'&&id==='stage-title')return this;return null;}});
   const ids=Object.fromEntries(['session-mode','play-button','sound-button','count-in','stage-title','hud-captured','progress','stage-cue','settings-button','resume-session'].map(id=>[id,node(id,id.endsWith('button')?'button':'div')]));
-  ids['session-mode'].value='practice';ids['play-button'].textContent='▶ Play';ids['sound-button']['aria-pressed']='true';ids['hud-captured'].textContent='0';ids.progress.value=0;ids.progress.max=6000;ids['stage-cue'].dataset.cueState='ready';
+  ids['session-mode'].value='practice';ids['play-button'].textContent='▶ Play';ids['sound-button']['aria-pressed']='true';ids['hud-captured'].textContent='0';setEvidencePlaybackClock(ids.progress,0,{durationMs:6000});ids['stage-cue'].dataset.cueState='ready';
   const status=node('status');status.dataset={phase:'ready',passId:'',revision:''};
   const add=(map,type,listener)=>{if(!map.has(type))map.set(type,new Set());map.get(type).add(listener);};
   const document={body:{dataset:{screen:'stage'}},hidden:false,activeElement:ids['stage-title'],hasFocus:()=>true,
@@ -78,17 +80,17 @@ function transportFixture({clickDelivered=true,startOnPoll=0,keyDelivered=true,b
     addEventListener:(type,fn)=>add(listeners,type,fn),removeEventListener:(type,fn)=>listeners.get(type)?.delete(fn),
     defaultView:{addEventListener:(type,fn)=>add(windowListeners,type,fn),removeEventListener:(type,fn)=>windowListeners.get(type)?.delete(fn)}};
   const emit=(type,target,values={},map=listeners)=>{const event={type,target,timeStamp:++wall,isTrusted:true,...values};for(const listener of map.get(type)||[])listener(event);};
-  const running=()=>{status.dataset.phase='capturing';status.dataset.passId='1';status.dataset.revision='0';ids.progress.value=10;ids['play-button'].textContent='Ⅱ Pause';delete ids['stage-cue'].dataset.cueState;};
-  const exported=runInNewContext(`${source}\n({observeNativeReferenceTransport,prepareNativeReferenceScoredTake})`,{TextEncoder,performance:{now:()=>wall},queueMicrotask:fn=>deferred.push(fn),Event:class{}});
+  const running=()=>{status.dataset.phase='capturing';status.dataset.passId='1';status.dataset.revision='0';setEvidencePlaybackClock(ids.progress,10,{durationMs:6000,running:true});ids['play-button'].textContent='Ⅱ Pause';delete ids['stage-cue'].dataset.cueState;};
+  const exported=runInNewContext(`${source}\n({observeNativeReferenceTransport,prepareNativeReferenceScoredTake})`,{__wmhReadPlaybackClock:readPlaybackClock,TextEncoder,performance:{now:()=>wall},queueMicrotask:fn=>deferred.push(fn),Event:class{}});
   const options={document,click(){},closeDialogs(){},
     async native(kind,target){actions.push([kind,target.id]);
       if(kind==='click'){
         clicks++;if(clickDelivered)emit('click',target);
         if(clicks===1&&startOnPoll===0)running();
-        if(clicks===1&&blurBeforeStart){emit('blur',document.defaultView,{},windowListeners);status.dataset.phase='ready';ids.progress.value=0;}
+        if(clicks===1&&blurBeforeStart){emit('blur',document.defaultView,{},windowListeners);status.dataset.phase='ready';setEvidencePlaybackClock(ids.progress,0,{durationMs:6000});}
         if(clicks===2){status.dataset.phase='pending';ids['play-button'].textContent='▶ Play';ids['stage-cue'].dataset.cueState='paused';}
       }else if(kind==='key-r'){
-        assert.equal(status.dataset.phase,'capturing');assert.ok(Number(ids.progress.value)>0,'Native key is sequenced after observable clock admission');
+        assert.equal(status.dataset.phase,'capturing');assert.ok(readPlaybackClock(ids.progress).positionMs>0,'Native key is sequenced after observable clock admission');
         if(keyDelivered){emit('keydown',target,{code:'KeyR'});emit('keyup',target,{code:'KeyR'});}
         ids['hud-captured'].textContent='1';status.dataset.revision='1';
       }
@@ -180,7 +182,7 @@ test('functional transport diagnostics have finite rows and byte budget and stop
 test('waiting for a clock transition retains the causal click rather than logging every progress tick',()=>{
   const f=transportFixture(),trace=f.observeNativeReferenceTransport(f.document,{now:()=>1000,defer:fn=>f.deferred.push(fn)});
   f.emit('click',f.ids['play-button']);f.status.dataset.phase='capturing';f.status.dataset.passId='1';
-  for(let tick=1;tick<=150;tick++){f.ids.progress.value=tick;trace.changed('await-keyboard-capture');}
+  for(let tick=1;tick<=150;tick++){setEvidencePlaybackClock(f.ids.progress,tick,{durationMs:6000,running:true});trace.changed('await-keyboard-capture');}
   const result=trace.snapshot('keyboard-capture');trace.stop();
   assert.equal(result.omitted,0);assert.ok(result.rows.length<5);assert.ok(result.rows.some(row=>row.event?.type==='click'&&row.event.trusted));
   assert.equal(result.current.positionMs,150,'Latest clock remains available without evicting event receipt');

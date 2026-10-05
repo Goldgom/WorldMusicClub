@@ -1,3 +1,5 @@
+import {readPlaybackClock} from '../web/playback-clock-view.js';
+import {setEvidencePlaybackClock} from './playback-clock-evidence-fixtures.js';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {existsSync,mkdtempSync,readFileSync,rmSync} from 'node:fs';
@@ -311,23 +313,23 @@ test('hosted VSQ authoring builds the exact-source real asset server before Work
 });
 
 test('explicit Listen setup waits for actual receiver start, natural terminal and disposal before Reset',async()=>{
- const renderer=read('crates/desktop-shell/vsq-authoring-acceptance.js'),context=vm.createContext({});
+ const renderer=read('crates/desktop-shell/vsq-authoring-acceptance.js'),context=vm.createContext({__wmhReadPlaybackClock:readPlaybackClock,nativePlaybackEnded:(endMs,document)=>{const clock=readPlaybackClock(document);return clock.positionMs===endMs&&clock.completed&&clock.phase==='ended';}});
  new vm.Script(renderer.split('(() => {')[0]).runInContext(context);
  async function run(blocker){
   const actions=[],polls=[],endMs=2166.671,nodes=Object.fromEntries(['start-listen','reset-button','session-mode','clean-song-stage','progress','play-button'].map(id=>[id,{id,disabled:false,dataset:{},value:''}]));
-  const document={body:{dataset:{screen:'library'}},getElementById:id=>nodes[id]};nodes['session-mode'].value='listen';nodes.progress.value='0';nodes['clean-song-stage'].dataset.rendererState='ready';
+  const document={body:{dataset:{screen:'library'}},getElementById:id=>nodes[id]};nodes['session-mode'].value='listen';setEvidencePlaybackClock(nodes.progress,0,{durationMs:endMs});nodes['clean-song-stage'].dataset.rendererState='ready';
   let started=0,terminal=false,disposed=false;
   const audio=()=>({worklet:{started,activeReceivers:started&&!disposed?1:0}}),thread={receiverId:1,terminal:'retained exact native terminal'};
   const receiver={count:()=>0,assertHealthy(){if(blocker==='audio_canceled')throw Error('audio_canceled');},settledSince:index=>{assert.equal(index,0);return terminal;},snapshot:()=>[thread]};
-  const native=async(kind,node)=>{assert.equal(kind,'click');actions.push(node.id);if(node.id==='start-listen')document.body.dataset.screen='stage';else{assert.equal(terminal,true);assert.equal(disposed,true);nodes.progress.value='0';nodes['clean-song-stage'].dataset.rendererState='ready';}return actions.length;};
+  const native=async(kind,node)=>{assert.equal(kind,'click');actions.push(node.id);if(node.id==='start-listen')document.body.dataset.screen='stage';else{assert.equal(terminal,true);assert.equal(disposed,true);setEvidencePlaybackClock(nodes.progress,0,{durationMs:endMs});nodes['clean-song-stage'].dataset.rendererState='ready';}return actions.length;};
   const until=async(fn,label,ms)=>{
    polls.push(label);
    if(label==='explicit Listen receiver admitted'){
     assert.equal(ms,10000);assert.equal(fn(),false,'Visible stage and enabled Play are insufficient');
     started=1;nodes['clean-song-stage'].dataset.rendererState='playing';assert.equal(fn(),false,'Started ACK still needs the advancing transport');
-    if(blocker==='starting')throw Error('receiver admission timed out');nodes.progress.value='100';
+    if(blocker==='starting')throw Error('receiver admission timed out');setEvidencePlaybackClock(nodes.progress,100,{durationMs:endMs,running:true});
    }else if(label==='explicit Listen natural completion'){
-    assert.equal(ms,7000);assert.equal(fn(),false);nodes.progress.value=String(endMs);assert.equal(fn(),false,'Clock completion cannot replace the actual processor terminal');
+    assert.equal(ms,7000);assert.equal(fn(),false);setEvidencePlaybackClock(nodes.progress,endMs,{durationMs:endMs,completed:true});assert.equal(fn(),false,'Clock completion cannot replace the actual processor terminal');
     if(blocker==='terminal')throw Error('native terminal timed out');terminal=true;
    }
    assert.equal(fn(),true,label);

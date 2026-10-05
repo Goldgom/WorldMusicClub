@@ -1,5 +1,11 @@
 /* Process-owner hosted Windows acceptance only. All audio calls below forward to
  * the real native WebView AudioContext; no parser, audio, file input or API mock. */
+// Import the production's versioned DOM reader before any owned scenario.
+// Native range strings remain input evidence, never a source-clock fallback.
+async function prepareNativePlaybackClock(){globalThis.__wmhReadPlaybackClock=(await import('/playback-clock-view.js')).readPlaybackClock;}
+function nativePlaybackEnded(endMs,document=globalThis.document){const clock=globalThis.__wmhReadPlaybackClock(document);return clock.positionMs===endMs&&clock.completed&&clock.phase==='ended';}
+function nativePlaybackClockDiagnostic(document){try{const clock=globalThis.__wmhReadPlaybackClock(document);return{position:clock.positionMs,clock};}catch(error){return{position:null,clockError:String(error).slice(0,512)};}}
+
 const NATIVE_REFERENCE_FIXTURE=Object.freeze({name:'original-reference-overlap.mid',sha256:'c2d487c1044c31ab520afce4ffa06c0513ca7250ec129cf96d71f7a671a46f66',tracks:3,events:26,onsets:8});
 
 function observeNativeReferenceAudio(root=globalThis) {
@@ -38,14 +44,14 @@ function observeNativeReferenceTransport(document, {now=()=>performance.now(),de
     openDialogs:[...document.querySelectorAll('dialog[open]')].slice(0,4).map(node=>text(node.id)),
     playDisabled:Boolean($('play-button')?.disabled),playText:text($('play-button')?.textContent),
     phase:text(status?.dataset.phase),passId:text(status?.dataset.passId),revision:text(status?.dataset.revision),
-    captured:text($('hud-captured')?.textContent),positionMs:Number($('progress')?.value)||0,durationMs:Number($('progress')?.max)||0,
+    captured:text($('hud-captured')?.textContent),positionMs:globalThis.__wmhReadPlaybackClock(document).positionMs,transportPositionMs:globalThis.__wmhReadPlaybackClock(document).transportPositionMs,durationMs:globalThis.__wmhReadPlaybackClock(document).durationMs,
     cue:text($('stage-cue')?.dataset.cueState),soundMuted:$('sound-button')?.getAttribute('aria-pressed')==='true',
   };}
   function append(kind,detail={}){if(!active)return;const row={elapsedMs:Math.max(0,now()-started),kind,...detail,state:state()},bytes=encoder.encode(JSON.stringify(row)).length+1;
     while(rows.length&&(rows.length>=64||rowBytes+bytes>24*1024)){rowBytes-=encoder.encode(JSON.stringify(rows.shift())).length+1;omitted++;}
     if(rowBytes+bytes<=24*1024){rows.push(row);rowBytes+=bytes;}else omitted++;
   }
-  function changed(label,{checkpoint=false}={}){const current=state(),signature=JSON.stringify({...current,positionMs:undefined});if(checkpoint||signature!==lastState){lastState=signature;append(label);}return current;}
+  function changed(label,{checkpoint=false}={}){const current=state(),signature=JSON.stringify({...current,positionMs:undefined,transportPositionMs:undefined});if(checkpoint||signature!==lastState){lastState=signature;append(label);}return current;}
   function observe(event){
     const element=event.target?.closest?.('[id]'),target=text(element?.id||event.target?.localName||'window');
     const control=text(event.target?.closest?.('button')?.id),surface=text(event.target?.closest?.('[data-keyboard-performance]')?.id);
@@ -68,6 +74,7 @@ function observeNativeReferenceTransport(document, {now=()=>performance.now(),de
 }
 
 async function prepareNativeReferenceScoredTake({document,native,click,closeDialogs,until}) {
+  if(typeof globalThis.__wmhReadPlaybackClock!=='function')await prepareNativePlaybackClock();
   const $=id=>document.getElementById(id),trace=observeNativeReferenceTransport(document);
   let stage='prepare';
   try {
@@ -101,7 +108,7 @@ async function checkNativeReferenceListening({document,native,click,closeDialogs
   const state=value=>until(()=>$('reference-status').dataset.state===value,`reference ${value}`);
   const play=async()=>{await native('click',$('reference-play'));await state('playing');};
   const open=async()=>{closeDialogs();click('import-tools-button');await native('click',$('reference-listening-entry'));assert($('reference-listening-dialog').open,'actual Import entry did not open');};
-  const snapshot=()=>({title:$('score-title').textContent,stage:$('stage-title').textContent,mode:$('session-mode').value,clock:$('progress').value,captured:$('hud-captured').textContent,pass:document.querySelector('.performance-status').dataset.passId,revision:document.querySelector('.performance-status').dataset.revision});
+  const snapshot=()=>({title:$('score-title').textContent,stage:$('stage-title').textContent,mode:$('session-mode').value,clock:globalThis.__wmhReadPlaybackClock(document).positionMs,captured:$('hud-captured').textContent,pass:document.querySelector('.performance-status').dataset.passId,revision:document.querySelector('.performance-status').dataset.revision});
   async function scoreDownload(){closeDialogs();click('score-tools-button');const file=await download('export-button');closeDialogs();return file;}
   async function takeDownload(){closeDialogs();click('results-button');const file=await download('export-takes');closeDialogs();return file;}
   const transportAdmission=await prepareNativeReferenceScoredTake({document,native,click,closeDialogs,until});

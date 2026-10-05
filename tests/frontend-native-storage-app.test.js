@@ -1,3 +1,4 @@
+import {readPlaybackClock} from '../web/playback-clock-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fixture} from './frontend-fixtures.js';
@@ -162,13 +163,13 @@ test('auditioning a saved edition leaves the existing score and take exports int
     await enterLibrary(app);await activate(app,'practice');
     const key=app.$('keyboard').querySelector('[data-midi="60"]');app.emit(key,'pointerdown',{pointerId:1,button:0});app.emit(key,'pointerup',{pointerId:1,button:0});
     await app.click('back-to-library');
-    const beforeScore=await app.exported('export-button'),beforeTakes=await app.exported('export-takes'),title=app.$('score-title').textContent,progress=app.$('progress').value;
+    const beforeScore=await app.exported('export-button'),beforeTakes=await app.exported('export-takes'),title=app.$('score-title').textContent,progress=readPlaybackClock(app.document).positionMs;
     assert.equal(beforeTakes.passes.length,1);assert.equal(beforeTakes.passes[0].inputs.length,1,'The preservation check includes a real captured note');
     app.savedButton([...server.records.keys()][0]).click();await app.until(()=>app.$('preview-title').textContent===saved.title&&!app.$('lobby-preview-play').disabled);
     await app.click('lobby-preview-play');await app.until(()=>app.$('lobby-preview-status').dataset.state==='playing');
     assert.equal(app.audio().contexts,2,'Session and audition have independent audio contexts');
     await app.click('settings-button');assert.equal(app.$('lobby-preview-status').dataset.state,'stopped');app.$('settings-dialog').close();
-    assert.equal(app.$('score-title').textContent,title);assert.equal(app.$('progress').value,progress);
+    assert.equal(app.$('score-title').textContent,title);assert.equal(readPlaybackClock(app.document).positionMs,progress);
     assert.deepEqual(await app.exported('export-button'),beforeScore);assert.deepEqual(await app.exported('export-takes'),beforeTakes);assert.equal(saves(app).length,0);
   }finally{await app.close();}
 });

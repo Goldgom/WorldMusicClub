@@ -1,3 +1,4 @@
+import {installPlaybackClockReader,readPlaybackClock} from '../tests/browser-playback-clock.js';
 // Execute only on the explicitly authorized hosted runner. No local browser or
 // server launch is permitted. Fixtures below are authored here, never uploads
 // from the user's music collection. Screenshots are required evidence.
@@ -47,7 +48,7 @@ async function geometry(mode) {
       fit:overlay.dataset.notationFit,scale:Number(overlay.dataset.notationScale||1),glyphs,visibleGlyphs:visible.length,keyboardReachable:hit===key||key.contains(hit),
       renderedParts:document.getElementById('notation-scope-status')?.parentElement.dataset.renderedParts,totalParts:document.getElementById('notation-scope-status')?.parentElement.dataset.totalParts,
       renderStatus:document.getElementById('workspace').dataset.notationRenderStatus,renderedIds:JSON.parse(document.getElementById('workspace').dataset.renderedNotationParts||'[]'),range:document.getElementById('engraving-range').textContent,focusedIds:JSON.parse(document.getElementById('written-cursor-status').dataset.sourceNoteIds||'[]'),sourceMeasure:document.getElementById('written-cursor-status').dataset.sourceMeasureIndex,
-      scope:document.getElementById('notation-scope')?.value,status:document.getElementById('notation-scope-status')?.textContent,progress:document.getElementById('progress').value,
+      scope:document.getElementById('notation-scope')?.value,status:document.getElementById('notation-scope-status')?.textContent,progress:globalThis.__wmhReadPlaybackClock().positionMs,
       horizontalDocumentOverflow:document.documentElement.scrollWidth>innerWidth+1,sourceIds:[...surface.querySelectorAll('[data-note-id],[data-source-note-id]')].map(node=>node.dataset.noteId||node.dataset.sourceNoteId)};
   },mode);
 }
@@ -65,14 +66,14 @@ try {
   server=spawn(binary,['--no-open','--port',String(port)],{cwd:root,stdio:['ignore','pipe','pipe']});
   for(const stream of [server.stdout,server.stderr])stream.on('data',data=>{serverLog=(serverLog+data).slice(-65536);});
   const origin=`http://127.0.0.1:${port}`;let ready=false;for(let count=0;count<120;count++){try{if((await fetch(`${origin}/api/health`)).ok){ready=true;break;}}catch{}if(server.exitCode!==null)throw Error(serverLog);await new Promise(resolve=>setTimeout(resolve,100));}assert.ok(ready);
-  const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});const context=await browser.newContext({viewport:{width:1280,height:720}});page=await context.newPage();page.on('pageerror',error=>report.page_errors.push(error.message));page.on('response',response=>{if(new URL(response.url()).pathname==='/api/notation-navigation')navigationReads.push((async()=>{assert.equal(response.status(),200);const request=response.request().postDataJSON(),body=await response.json();assert.deepEqual(request,score);assert.equal(body.source_measure_count,24);report.navigation.push(body);})().catch(error=>report.page_errors.push(error.stack||String(error))));});
+  const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});const context=await browser.newContext({viewport:{width:1280,height:720}});page=await context.newPage();await installPlaybackClockReader(page);page.on('pageerror',error=>report.page_errors.push(error.message));page.on('response',response=>{if(new URL(response.url()).pathname==='/api/notation-navigation')navigationReads.push((async()=>{assert.equal(response.status(),200);const request=response.request().postDataJSON(),body=await response.json();assert.deepEqual(request,score);assert.equal(body.source_measure_count,24);report.navigation.push(body);})().catch(error=>report.page_errors.push(error.stack||String(error))));});
   await page.addInitScript(()=>localStorage.setItem('worldmusichub.locale.v1','en'));
   await page.goto(origin);await page.locator('#home-single-player').click();await page.locator('#score-file').setInputFiles({name:'original-multipart.wmhscore.json',mimeType:'application/json',buffer:Buffer.from(raw)});
   await page.waitForFunction(title=>document.getElementById('score-title').textContent===title,score.title);
   // Imported scores open directly; retain the real app navigation in either
   // supported lobby/direct-import flow rather than replacing page DOM.
   if(await page.locator('#start-listen').isVisible())await page.locator('#start-listen').click();
-  await page.waitForFunction(()=>document.body.dataset.screen==='stage');if(Number(await page.locator('#progress').evaluate(node=>node.value))>0)await page.locator('#play-button').click();
+  await page.waitForFunction(()=>document.body.dataset.screen==='stage');if((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs>0)await page.locator('#play-button').click();
   await controls(true);
   const originalPerformanceState=await performanceState();
   for(const [width,height]of [[1280,720],[1440,900],[1920,1080]])for(const mode of ['staff','jianpu']) {

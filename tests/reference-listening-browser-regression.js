@@ -1,3 +1,4 @@
+import {installPlaybackClockReader} from './browser-playback-clock.js';
 import assert from 'node:assert/strict';
 import {readFile,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -11,6 +12,7 @@ export function registerReferenceListeningBrowserRegressions({test,getPage,ui,re
   test('real complete MIDI reference listener preserves every source event and the paused scored take through transport, mute and locale changes',
     {timeout:60_000},async()=>{
       const page = getPage(), source = originalReferenceMidiFixture();
+      await installPlaybackClockReader(page);
       const score = keyboardBrowserScore('original-reference-beside-paused-take');
       const evidence = [], midiRequests = [], forbiddenRequests = [];
       const audio = () => page.evaluate(()=>({...window.audioObservation}));
@@ -19,7 +21,7 @@ export function registerReferenceListeningBrowserRegressions({test,getPage,ui,re
       const scoredState = () => page.evaluate(()=>({
         title:document.querySelector('#score-title').textContent,
         stageTitle:document.querySelector('#stage-title').textContent,
-        position:document.querySelector('#progress').value,
+        position:globalThis.__wmhReadPlaybackClock().positionMs,
         mode:document.querySelector('#session-mode').value,
         pass:document.querySelector('.performance-status').dataset.passId,
         revision:document.querySelector('.performance-status').dataset.revision,
@@ -40,7 +42,7 @@ export function registerReferenceListeningBrowserRegressions({test,getPage,ui,re
       await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await closeShellPanels();
       if (await page.locator('#sound-button').getAttribute('aria-pressed') === 'false') await page.locator('#sound-button').click();
       await page.locator('#play-button').click();
-      await page.waitForFunction(()=>Number(document.querySelector('#progress').value)>0);
+      await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>0);
       await page.locator('#stage-title').click();await page.keyboard.press('r');
       await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');
       await page.locator('#play-button').click();

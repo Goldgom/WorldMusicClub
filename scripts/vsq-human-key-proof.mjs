@@ -1,3 +1,4 @@
+import {readPlaybackClock} from '../web/playback-clock-view.js';
 import {validateLiveToneEvidence} from './live-tone-proof.mjs';
 import assert from 'node:assert/strict';
 
@@ -19,5 +20,6 @@ export function validateVsqHumanScore(report,fixture) {
  assert.equal(request.tolerance_ms,180);assert.deepEqual(request.timeline.notes,[expected]);assert.equal(request.inputs.length,1);assert.equal(request.inputs[0].midi,63);assert.ok(Math.abs(request.inputs[0].at_ms)<=180);
  assert.deepEqual(report.requests.filter(row=>row.path==='/api/assess').map(row=>row.body),report.assessmentRequests);assert.equal(report.requests[response.requestIndex]?.path,'/api/assess');assert.equal(response.path,'/api/assess');assert.equal(response.status,200);assert.deepEqual(report.assessmentObservations,[{path:'/api/assess',status:200,state:'consumed',requestIndex:response.requestIndex}]);
  const assessment=response.body;assert.equal(assessment.accuracy_percent,100);assert.deepEqual(assessment.misses,[]);assert.deepEqual(assessment.extras,[]);assert.equal(assessment.hits.length,1);const hit=assessment.hits[0];assert.equal(hit.note_id,expected.id);assert.equal(hit.midi,63);assert.equal(hit.expected_ms,0);assert.equal(hit.actual_ms,request.inputs[0].at_ms);assert.equal(hit.delta_ms,hit.actual_ms);assert.ok(Math.abs(hit.delta_ms)<=180);
- assert.deepEqual(report.completePractice,{accuracy:'100%',positionMs:fixture.runtime.runtime.end_ms,captured:'1'});return assessment;
+ const {clock:recordedClock,...completePractice}=report.completePractice,clock=readPlaybackClock({getAttribute:()=>JSON.stringify(recordedClock)});assert.equal(clock.available,true);assert.equal(clock.positionMs,fixture.runtime.runtime.end_ms);assert.equal(clock.durationMs,fixture.runtime.runtime.end_ms);assert.equal(clock.completed,true);assert.equal(clock.phase,'ended');
+ assert.deepEqual(completePractice,{accuracy:'100%',positionMs:fixture.runtime.runtime.end_ms,captured:'1'});return assessment;
 }

@@ -1,3 +1,4 @@
+import {installPlaybackClockReader} from '../tests/browser-playback-clock.js';
 // Author/run only on an authorized hosted browser runner. This file is excluded
 // from npm test and must never be used to bypass a local browser launch denial.
 import assert from 'node:assert/strict';
@@ -171,6 +172,7 @@ try {
     const responses = [], caseFailuresBefore = failures.length;
     try {
       page = await context.newPage();
+      await installPlaybackClockReader(page);
       page.setDefaultTimeout(15000);
       page.setDefaultNavigationTimeout(15000);
       page.on('pageerror', error => failures.push({case:entry.name,error:error.message}));
@@ -192,7 +194,7 @@ try {
       await page.locator('#free-sound').click(); await page.locator('#free-exit').click();
       if (await page.locator('#game-home').isVisible()) await page.locator('#home-single-player').click();
       await page.locator('#start-listen').click();
-      await page.waitForFunction(() => document.body.dataset.screen === 'stage' && document.querySelector('#progress').value > 0);
+      await page.waitForFunction(() => document.body.dataset.screen === 'stage' && globalThis.__wmhReadPlaybackClock().positionMs > 0);
       if (entry.width >= 1280 && entry.height >= 720) assert.equal(await page.locator('#notation-lane-overlay').isVisible(),true,'The first desktop piano entry shows its background score without an extra toggle');
       await page.locator('#play-button').click();
       const reducedMotionPause = await checkReducedMotionPause(page, entry);

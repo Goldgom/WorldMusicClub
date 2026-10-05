@@ -1,3 +1,5 @@
+import {readPlaybackClock} from '../web/playback-clock-view.js';
+import {evidenceClockNode,setEvidencePlaybackClock} from './playback-clock-evidence-fixtures.js';
 import {syntheticOwnedPickerGestures as syntheticPickerGestures,syntheticOwnedFilePicker} from './owned-file-picker-fixtures.js';
 import {syntheticLiveToneEvidence,liveToneCleanup} from './live-tone-evidence-fixtures.js';
 // These are verifier/fixture contracts, never evidence of a real UI or Windows run.
@@ -302,9 +304,9 @@ test('C5 proof rejects missing preparation, intervening clicks and native foregr
 });
 test('following observer records transport transitions without inventing clocks or extending short gates',async()=>{
  const source=await readFile(new URL('../crates/desktop-shell/basic-key-acceptance.js',import.meta.url),'utf8'),begin=source.indexOf('function observeBasicKeyFollowing('),end=source.indexOf('function runBasicKeyAcceptanceCleanup(',begin),queue=[],cancelled=[];
- const cursor={dataset:{sourceNoteIds:'["midi-t2-e1"]',sourceMeasureIndex:'0'}},progress={value:0},stage={dataset:{rendererState:'ready'}},document={getElementById:id=>({'written-cursor-status':cursor,progress,'clean-song-stage':stage})[id],querySelectorAll:()=>[{dataset:{noteId:'midi-t2-e1'}}]};
- const context=vm.createContext({requestAnimationFrame:callback=>(queue.push(callback),queue.length),cancelAnimationFrame:id=>cancelled.push(id)});vm.runInContext(source.slice(begin,end)+';globalThis.observe=observeBasicKeyFollowing;',context);const observer=context.observe(document);
- queue.shift()();stage.dataset.rendererState='playing';progress.value=1;queue.shift()();cursor.dataset.sourceNoteIds='[]';progress.value=250;queue.shift()();const result=observer.stop();assert.equal(result.stopped,true);assert.equal(result.overflow,false);assert.equal(cancelled.length,1);assert.deepEqual(Array.from(result.rows,row=>[row.position,row.renderer]),[[0,'ready'],[1,'playing'],[250,'playing']]);assert.equal(progress.value,250);assert.equal(cursor.dataset.sourceNoteIds,'[]');
+ const cursor={dataset:{sourceNoteIds:'["midi-t2-e1"]',sourceMeasureIndex:'0'}},progress=evidenceClockNode(0),stage={dataset:{rendererState:'ready'}},document={getElementById:id=>({'written-cursor-status':cursor,progress,'clean-song-stage':stage})[id],querySelectorAll:()=>[{dataset:{noteId:'midi-t2-e1'}}]};
+ const context=vm.createContext({__wmhReadPlaybackClock:readPlaybackClock,requestAnimationFrame:callback=>(queue.push(callback),queue.length),cancelAnimationFrame:id=>cancelled.push(id)});vm.runInContext(source.slice(begin,end)+';globalThis.observe=observeBasicKeyFollowing;',context);const observer=context.observe(document);
+ queue.shift()();stage.dataset.rendererState='playing';setEvidencePlaybackClock(progress,1,{running:true});queue.shift()();cursor.dataset.sourceNoteIds='[]';setEvidencePlaybackClock(progress,250,{running:true});queue.shift()();const result=observer.stop();assert.equal(result.stopped,true);assert.equal(result.overflow,false);assert.equal(cancelled.length,1);assert.deepEqual(Array.from(result.rows,row=>[row.position,row.renderer]),[[0,'ready'],[1,'playing'],[250,'playing']]);assert.equal(progress.value,'250');assert.equal(cursor.dataset.sourceNoteIds,'[]');
 });
 
 test('visible page identity ignores future prefetch and independent other-part completions',async()=>{

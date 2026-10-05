@@ -1,3 +1,4 @@
+import {readPlaybackClock} from '../web/playback-clock-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdir,mkdtemp,readFile,writeFile,rm,symlink} from 'node:fs/promises';
@@ -26,7 +27,7 @@ test('captured original Rust open response proves null notation through the summ
  assert.match(await read('scripts/check-song-authoring-native.mjs'),/validateAuthoringEventOnlyOpened\(opened\)/,'Real Rust stdio must exercise the same opened-package assertion before GUI acceptance');
 });
 const navigation=await read('crates/desktop-shell/acceptance-wait.js'),reference=await read('crates/desktop-shell/reference-acceptance.js'),performanceSetup=await read('crates/desktop-shell/performance-song-acceptance.js');
-const {createAcceptanceNavigation,prepareAuthoringNavigationPause,activatePerformanceOriginalScore}=vm.runInNewContext(`${navigation}\n${reference}\n${performanceSetup.split('(() => {')[0]}\n${renderer.split('(() => {')[0]}\n({createAcceptanceNavigation,prepareAuthoringNavigationPause,activatePerformanceOriginalScore})`,{AbortController,setTimeout,clearTimeout,performance,TextEncoder,queueMicrotask});
+const {createAcceptanceNavigation,prepareAuthoringNavigationPause,activatePerformanceOriginalScore}=vm.runInNewContext(`${navigation}\n${reference}\n${performanceSetup.split('(() => {')[0]}\n${renderer.split('(() => {')[0]}\n({createAcceptanceNavigation,prepareAuthoringNavigationPause,activatePerformanceOriginalScore})`,{__wmhReadPlaybackClock:readPlaybackClock,AbortController,setTimeout,clearTimeout,performance,TextEncoder,queueMicrotask});
 // Node DOM regression only: real app handlers and elapsed clock, fixture Rust
 // replies and untrusted DOM clicks. This cannot create native acceptance proof.
 async function navigationFixture({suppress=null}={}){
@@ -37,13 +38,13 @@ async function navigationFixture({suppress=null}={}){
  app.emit(app.window,'pageshow',{persisted:true});
  const click=id=>app.$(id).click(),until=(condition,label)=>waitForTestCondition(condition,{label,timeoutMs:(suppress==='start-listen'&&label==='native Start Listen is running')||(suppress==='back-to-library'&&label==='navigation genuinely paused')?200:5000}),menu=createAcceptanceNavigation({document:app.document,click,until});
  const native=async(kind,node)=>{assert.equal(kind,'click');actions.push(node.id);if(node.id!==suppress)node.click();return actions.length;};
- const snapshot=()=>({title:app.$('score-title').textContent,stage:app.$('stage-title').textContent,mode:app.$('session-mode').value,clock:app.$('progress').value,captured:app.$('hud-captured').textContent,cue:app.$('stage-cue').dataset.cueState,soundMuted:app.$('sound-button').getAttribute('aria-pressed')==='true',pressed:app.document.querySelectorAll('.pressed').length});
+ const snapshot=()=>({title:app.$('score-title').textContent,stage:app.$('stage-title').textContent,mode:app.$('session-mode').value,clock:readPlaybackClock(app.document).positionMs,captured:app.$('hud-captured').textContent,cue:app.$('stage-cue').dataset.cueState,soundMuted:app.$('sound-button').getAttribute('aria-pressed')==='true',pressed:app.document.querySelectorAll('.pressed').length});
  await menu.enterLibrary();
  return{app,click,until,menu,native,snapshot,actions,async close(){try{await app.close();}finally{for(const timer of timers)clearTimeout(timer);if(geometry)Object.defineProperty(prototype,'getBoundingClientRect',geometry);else delete prototype.getBoundingClientRect;}}};
 }
 test('real Start Listen handler starts transport and a second Play toggle pauses it',async()=>{
  const f=await navigationFixture();try{
-  await activatePerformanceOriginalScore({document:f.app.document,click:f.click,menu:f.menu});await f.until(()=>Number(f.app.$('progress').value)>0,'Start Listen clock advances');assert.notEqual(f.snapshot().cue,'paused');
+  await activatePerformanceOriginalScore({document:f.app.document,click:f.click,menu:f.menu});await f.until(()=>readPlaybackClock(f.app.document).positionMs>0,'Start Listen clock advances');assert.notEqual(f.snapshot().cue,'paused');
   await f.native('click',f.app.$('play-button'));assert.equal(f.snapshot().cue,'paused');assert.deepEqual(f.app.audio(),{contexts:0,unlocks:0});
  }finally{await f.close();}
 });

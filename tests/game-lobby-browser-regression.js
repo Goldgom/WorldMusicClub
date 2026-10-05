@@ -1,3 +1,4 @@
+import {readPlaybackClock} from './browser-playback-clock.js';
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -67,7 +68,7 @@ export function registerGameLobbyBrowserRegressions({test,getPage,ui,closeShellP
       await page.waitForFunction(()=>!['capturing','grace'].includes(document.querySelector('.performance-status').dataset.phase));
       const beforeScore=await exportScore(),beforeTakes=await exportTakeData();await closeShellPanels();
       if(await page.locator('#workspace').isVisible())await page.locator('#back-to-library').click();
-      const position=await page.locator('#progress').evaluate(element=>element.value);
+      const position=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;
       await page.locator('#lobby-preview-play').click();await page.waitForFunction(()=>document.querySelector('#lobby-preview-status').dataset.state==='playing');
       await page.locator('#lobby-preview-volume').focus();await page.locator('#lobby-preview-volume').press('Home');
       for(let step=0;step<26;step++)await page.locator('#lobby-preview-volume').press('ArrowRight');
@@ -76,7 +77,7 @@ export function registerGameLobbyBrowserRegressions({test,getPage,ui,closeShellP
       await page.locator('#lobby-preview-sound').check();assert.equal(await page.locator('#lobby-preview-status').getAttribute('data-state'),'stopped');
       await page.locator('#lobby-preview-play').click();await page.locator('#lobby-home').click();
       await page.locator('#home-single-player').click();assert.equal(await page.locator('#lobby-preview-status').getAttribute('data-state'),'stopped');
-      assert.equal(await page.locator('#progress').evaluate(element=>element.value),position);
+      assert.equal((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,position);
       assert.deepEqual(await exportScore(),beforeScore);assert.deepEqual(await exportTakeData(),beforeTakes);await closeShellPanels();
       evidence.push({viewport,home,lobby,audio,visibleLabels,canonicalScoreUnchanged:true,retainedTakeUnchanged:true,noAutomaticResume:true});
     }
