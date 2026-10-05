@@ -1280,7 +1280,10 @@ test('real written-note cursor separates tied continuations, short unisons, rest
   await ui('#score-file').setInputFiles({name:'original-written-cursor-study.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});
   await readyForTitle(score.title);await ui('#engraving-follow').uncheck();await ui('#jianpu-button').click();
   await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.status==='ready');
-  await ui('#session-mode').selectOption('practice');await ui('#play-button:not([disabled])').waitFor();
+  // Canonical scores use Listen for independent displayed-part inspection.
+  // Solo practice below must keep notation on its actual human part.
+  await ui('#session-mode').selectOption('listen');await ui('#play-button:not([disabled])').waitFor();
+  assert.equal(await ui('#notation-scope').isEnabled(),true,'Listen permits independent notation inspection');
   await ui('#count-in').uncheck();await ui('#reset-button').click();await closeShellPanels();
   const waitIds=expected=>page.waitForFunction(ids=>JSON.stringify(JSON.parse(document.querySelector('#written-cursor-status').dataset.sourceNoteIds||'[]').sort())===JSON.stringify(ids),[...expected].sort());
   const waitPainted=expected=>page.waitForFunction(ids=>JSON.stringify([...document.querySelectorAll('.score-note.active')].map(node=>node.dataset.noteId).sort())===JSON.stringify(ids),[...expected].sort());
@@ -1302,11 +1305,18 @@ test('real written-note cursor separates tied continuations, short unisons, rest
   assert.equal(await ui('#engraving-follow').isChecked(),false,'Current-note display does not enable page following');
   await screenshot('written-cursor-tie-jianpu');
   await ui('#practice-part').selectOption('counter');await ui('#notation-scope').selectOption('current');await ui('#play-button:not([disabled])').waitFor();await ui('#reset-button').click();await closeShellPanels();
-  await waitIds(['short-unison']);await waitPainted(['short-unison']);const selected=await snapshot();assert.deepEqual(selected.activeWritten,['short-unison']);assert.deepEqual(selected.expectedKeys,[60]);
+  await waitIds(['short-unison']);await waitPainted(['short-unison']);const selectedListening=await snapshot();assert.deepEqual(selectedListening.activeWritten,['short-unison']);assert.deepEqual(selectedListening.expectedKeys,[60]);
   await ui('#notation-part').selectOption('');await page.waitForFunction(()=>document.querySelectorAll('#notation .score-note.active').length===3);assert.deepEqual((await snapshot()).expectedKeys,[60]);assert.equal(await ui('#practice-part').inputValue(),'counter');await ui('#notation-part').selectOption('counter');
+  assert.equal(requests.some(request=>request.path==='/api/assess'),false,'Listen inspection never creates an assessment');
+  await ui('#session-mode').selectOption('practice');await ui('#play-button:not([disabled])').waitFor();await ui('#reset-button').click();await closeShellPanels();
+  await page.waitForFunction(()=>document.querySelector('#notation-scope').disabled&&document.querySelector('#notation-scope').value==='current'&&JSON.stringify(JSON.parse(document.querySelector('#workspace').dataset.renderedNotationParts||'[]'))==='["counter"]');
+  for(const selector of ['#notation-scope','#notation-scope-part','#notation-part'])assert.equal(await ui(selector).isDisabled(),true,'Solo cannot display other parts through notation selectors');
+  assert.match(await ui('#notation-scope-status').textContent(),/Solo practice shows only your human part/);
+  await waitIds(['short-unison']);await waitPainted(['short-unison']);const selected=await snapshot();assert.deepEqual(selected.activeWritten,['short-unison']);assert.deepEqual(selected.expectedKeys,[60]);assert.equal(selected.heldKeys,0);
+  assert.equal(await ui('#practice-part').inputValue(),'counter');assert.equal(await ui('#notation [data-note-id="tie-start"],#notation [data-note-id="short-D"]').count(),0,'Solo excludes the other source part from the displayed notation');
   await ui('#play-button').click();await waitIds(['repeated-C']);await ui('#play-button').click();const repeat=await snapshot();assert.deepEqual(repeat.activeWritten,['repeated-C']);assert.deepEqual(repeat.expectedKeys,[60]);
   assert.deepEqual(await exportScore(),score,'Display tracking never rewrites canonical music');
-  await writeFile(join(artifactDirectory,'worldmusichub-live-written-cursor.json'),JSON.stringify({initial,first,continuation,selected,repeat,source_retained:true,scope:'Real Rust navigation/timeline and browser; expected notes only, no physical input or sustain assessment'},null,2));
+  await writeFile(join(artifactDirectory,'worldmusichub-live-written-cursor.json'),JSON.stringify({initial,allParts,first,continuation,selectedListening,selected,repeat,source_retained:true,scope:'Real Rust navigation/timeline and browser; expected notes only, no physical input or sustain assessment'},null,2));
 });
 
 test('complete CC0 D768 edition retains every event and source while range gates, later pages and following remain explicit', {timeout:60_000},async()=>{
@@ -1794,14 +1804,16 @@ test('complete Beethoven edition renders all 18 measures and keeps every source 
     selectedPages.push({part:part||'all',range:await ui('#engraving-range').textContent(),svg_count:svgCount,fallback_hidden:true});
     await screenshot(`cc0-beethoven-final-page-${part||'all'}`);
   }
-  await ui('#notation-scope').selectOption('current');
+  assert.equal(await ui('#notation-scope').isDisabled(),true,'Solo notation follows the actual human selection');
+  assert.equal(await ui('#notation-scope').inputValue(),'current');
   await ui('#practice-part').selectOption(voice.id);await ui('#play-button:not([disabled])').waitFor();await readySelectedPart(voice.id);
   await ui('#practice-part').selectOption(piano.id);await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));await readySelectedPart(piano.id);
   assert.equal(await ui('#play-button').isDisabled(),true);
   const [blockedResponse]=await Promise.all([nextTargetResponse({kind:'piano',key_count:61,lowest_midi:null},compiled.timeline),ui('#practice-part').selectOption('')]);
   const blockedPlan=await responseJson(blockedResponse);assert.equal(blockedPlan.playable,false);
-  await ui('#notation-scope').selectOption('all');
+  assert.equal(await ui('#notation-scope').isDisabled(),true);assert.equal(await ui('#notation-scope').inputValue(),'current');
   await page.waitForFunction(()=>document.querySelector('#practice-gate-reason').textContent.includes('Selected notes outside this instrument range:'));await readySelectedPart('');
+  assert.deepEqual(await page.locator('#workspace').evaluate(node=>JSON.parse(node.dataset.renderedNotationParts)),edition.parts.map(part=>part.id),'Current displays every selected human part when the legacy All target is chosen');
   // A blocked setup cannot create a checked take. Inspect its available gate and
   // source mappings instead of waiting for an intentionally unavailable export.
   const blockedUi=await page.evaluate(()=>({
