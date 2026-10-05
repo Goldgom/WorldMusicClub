@@ -55,8 +55,11 @@ try{
   await control('score-file').setInputFiles({name:'original-stalled-keyboard.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(report.fixture))});
   await page.waitForFunction(title=>document.getElementById('score-title').textContent===title&&!document.getElementById('play-button').disabled,report.fixture.title);
   await closePanels();if(await control('song-lobby').isVisible())await control('resume-session').click();
-  await control('settings-button').click();await control('session-mode').selectOption('practice');assert.equal(await control('latency-offset').inputValue(),'0');await closePanels();
-  await control('count-in').uncheck();if(await control('sound-button').getAttribute('aria-pressed')!=='true')await control('sound-button').click();
+  await control('settings-button').click();await control('session-mode').selectOption('practice');assert.equal(await control('latency-offset').inputValue(),'0');
+  // Performance controls reparent count-in into the settings dialog. Exercise
+  // it while that real panel is open, before returning to stage controls.
+  assert.equal(await control('count-in').isVisible(),true);await control('count-in').uncheck();await closePanels();
+  if(await control('sound-button').getAttribute('aria-pressed')!=='true')await control('sound-button').click();
   if(await control('notation-toggle').getAttribute('aria-expanded')==='true')await control('notation-toggle').click();
   await page.evaluate(installStalledKeyboardObserver);observerInstalled=true;await control('play-button:not([disabled])').waitFor();
   await control('play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().running);
