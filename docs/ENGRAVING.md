@@ -99,8 +99,9 @@ cooperative adapter and exact native identities, and never updates the current
 page, status, expected-note cues or scrolling. One inert, accessibility-hidden,
 offscreen root keeps glyph layout measurable outside the live notation fit
 observer. At the matching automatic boundary, all its existing owned part
-mounts move together into the live surface, and cue geometry is refreshed at
-the new location. No cloned SVG, replacement note identity or guessed highlight
+mounts move together into the live surface, and cue geometry is invalidated for
+the new location. Only current cues are measured immediately; hidden future cues
+are measured before their first activation. No cloned SVG, replacement note identity or guessed highlight
 is used. No OSMD load, graph update or SVG render is repeated for that adoption.
 
 The slot owns partial construction as well as completed renderers. Source,
@@ -184,11 +185,24 @@ Every initial render or resize creates fresh bindings. Accepted expected members
 Automatic SVG fitting also refreshes the separate outline positions through
 `refreshExpectedCueGeometry()`, including while Follow is disabled and when a
 replacement page has the same fit dimensions. It reuses only already verified
-owned glyph nodes and never changes their identities. Ordinary per-note updates
-still perform no geometry reads. Follow bounds include the outline's three-pixel
+owned glyph nodes and never changes their identities. A geometry epoch invalidates
+hidden future cues without measuring them; only current cues are refreshed.
+The first activation of a stale cue reads its exact owned glyph before showing
+it. Every incoming read completes before any fill or cue style/visibility write.
+Unreadable, hidden or unowned cue geometry stays hidden, and optional measurement
+errors cannot escape into the playback update. Repeated updates and reactivation
+within the same epoch perform no cue geometry reads. Follow bounds include the outline's three-pixel
 margin so a fully visible glyph with a clipped outline is not reported as fully
 visible. Fit refresh does not scroll or change playback; the existing explicit
 Follow setting continues to own scrolling.
+
+The original 2,048-note four-part DOM regression checks zero mount/style/glyph
+reads at inactive adoption, current-only fitting, lazy future activation after
+repeated fits, exact source/measure identity, and disposal. This is a work-count
+proof with non-rendering doubles, not a browser timing claim. The existing real
+OSMD fit/current/future cue cases and original dense hosted scene still need to
+pass for the exact source. Compare animation callback start intervals separately
+from callback durations; neither is direct paint or physical audio latency.
 
 ## Safety and bounded support
 

@@ -4,6 +4,7 @@ import {DOMParser,parseHTML} from 'linkedom';
 import {fixture} from './frontend-fixtures.js';
 import {validateEngravingNoteMap,matchEngravingModel,createEngravingNoteBindings} from '../web/engraving-note-map.js';
 import {renderEngravedStaff} from '../web/engraving.js';
+import {createNotationRenderGroup} from '../web/notation-render-group.js';
 
 const clone=structuredClone,beat=n=>({numerator:n,denominator:1});
 function example(){
@@ -50,6 +51,25 @@ function graphics(renderer,mount,spec){
 }
 function bound(spec=example(),options={}){const env=mountEnvironment(),renderer=model(spec),paint=graphics(renderer,env.mount,spec),validation=checked(spec),changes=[];const output=createEngravingNoteBindings(renderer,env.mount,validation,{fromMeasure:1,toMeasure:2,partIds:['P1'],color:'#f7cf68',onChange:value=>changes.push(value),...options});return {...env,renderer,...paint,validation,output,changes,spec}}
 
+// Original exact 512-note page. No imported score, renderer output or user data.
+function denseCueExample(prefix){
+  const spec=example(),seed=spec.score.parts[0].notes[0],segments=[],measures=[];
+  spec.score.parts[0].notes=[];spec.score.measures=[];
+  for(let measure=0;measure<8;measure++){
+    spec.score.measures.push({number:measure+1,at:beat(measure*4),length:beat(4)});const notes=[];
+    for(let index=0;index<64;index++){
+      const id=`${prefix}-${measure*64+index}`,xmlId=`N${measure}_${index}`,at={numerator:measure*64+index,denominator:16},duration={numerator:1,denominator:16};
+      spec.score.parts[0].notes.push({...clone(seed),id,at,duration});
+      segments.push({xml_note_id:xmlId,source_note_id:id,part_id:'part',xml_part_id:'P1',source_measure_index:measure,measure_number:measure+1,staff:1,voice:'1',lane:1,xml_voice:'1',at,measure_at:{numerator:index,denominator:16},duration,pitch:clone(seed.pitch),tie_start:false,tie_stop:false,chord:false});
+      notes.push(`<note id="${xmlId}"><pitch><step>C</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><staff>1</staff></note>`);
+    }
+    measures.push(`<measure number="${measure+1}">${measure===0?'<attributes><divisions>16</divisions></attributes>':''}${notes.join('')}</measure>`);
+  }
+  spec.identity.noteMap.segments=segments;spec.identity.voiceIdMap=spec.identity.voiceIdMap.slice(0,1);
+  spec.xml=`<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Original dense cues</part-name></score-part></part-list><part id="P1">${measures.join('')}</part></score-partwise>`;
+  return spec;
+}
+
 test('complete note manifest preserves chords, unequal lengths, rests and split notes with repeated measure labels',()=>{
   const spec=example(),before=clone(spec),result=checked(spec);assert.equal(result.ok,true);assert.equal(result.segments.length,5);assert.deepEqual(spec,before);assert.equal(result.sources.size,4);
   const matched=matchEngravingModel(model(spec),result);assert.ok(matched.matches.every(entry=>entry.note));assert.equal(matched.matches.filter(entry=>entry.segment.source_note_id==='split').length,2);assert.deepEqual(matched.diagnostics,[]);
@@ -94,8 +114,9 @@ test('fit refresh keeps active and future cues on their exact owned glyphs witho
   assert.equal(cue.style.left,'37px');assert.equal(cue.style.top,'42px');assert.equal(cue.style.width,'12px');assert.equal(cue.style.height,'11.25px');assert.equal(cue.hidden,false);
   const bounds=env.output.expectedNoteBounds();assert.deepEqual(bounds.rects.map(({left,top,right,bottom})=>({left,top,right,bottom})),[{left:67,top:82,right:79,bottom:93.25}]);
   assert.equal(env.svg.innerHTML,painted,'Fit refresh changes only the separate cue, never musical SVG');
-  env.output.clearExpectedWrittenNotes();glyph.getBoundingClientRect=()=>{reads++;return{x:90,y:100,width:8,height:7};};env.output.refreshExpectedCueGeometry();assert.equal(cue.hidden,true);
-  reads=0;env.output.setExpectedWrittenNotes({sourceNoteIds:['long'],sourceMeasureIndex:0});assert.equal(reads,0);assert.equal(cue.style.left,'57px');assert.equal(cue.style.top,'57px');assert.equal(cue.hidden,false);
+  env.output.clearExpectedWrittenNotes();glyph.getBoundingClientRect=()=>{reads++;return{x:90,y:100,width:8,height:7};};reads=0;env.output.refreshExpectedCueGeometry();assert.equal(cue.hidden,true);assert.equal(reads,0,'A hidden future cue is invalidated without measuring it');
+  env.output.setExpectedWrittenNotes({sourceNoteIds:['long'],sourceMeasureIndex:0});assert.equal(reads,1,'The first activation remeasures its exact glyph before showing the cue');assert.equal(cue.style.left,'57px');assert.equal(cue.style.top,'57px');assert.equal(cue.hidden,false);
+  for(let frame=0;frame<20;frame++)env.output.setExpectedWrittenNotes({sourceNoteIds:['long'],sourceMeasureIndex:0});assert.equal(reads,1,'Repeated display updates reuse the current geometry epoch');
   glyph.remove();env.output.refreshExpectedCueGeometry();assert.equal(cue.hidden,true);env.output.dispose();assert.equal(env.output.refreshExpectedCueGeometry(),false);
 });
 
@@ -108,12 +129,66 @@ test('cue fitting batches every owned geometry read before style writes and keep
     const group=graphical.getNoteheadSVGs()[graphical.vfnoteIndex],original=group.getBoundingClientRect;
     group.getBoundingClientRect=()=>{reads++;assert.equal(first.style.left,expectedLeft,'No cue style may be written while glyph measurements are still being read');const box=original();return{...box,x:box.x+50};};
   }
-  env.output.refreshExpectedCueGeometry();assert.equal(reads,5);assert.notEqual(first.style.left,initialLeft);
+  env.output.refreshExpectedCueGeometry();assert.equal(reads,2,'Only the two active cues need fitting');assert.notEqual(first.style.left,initialLeft);
   expectedLeft=first.style.left;reads=0;env.output.expectedNoteBounds();assert.equal(reads,2);
   let visibilityWrites=0;
   for(const cue of cues){let proto=cue,descriptor;while(proto&&!descriptor){descriptor=Object.getOwnPropertyDescriptor(proto,'hidden');proto=Object.getPrototypeOf(proto);}assert.equal(typeof descriptor?.set,'function');Object.defineProperty(cue,'hidden',{configurable:true,get(){return descriptor.get.call(this)},set(value){visibilityWrites++;descriptor.set.call(this,value)}});}
   const before=env.mount.innerHTML;env.output.refreshExpectedCueGeometry();assert.equal(env.mount.innerHTML,before,'Stable refresh does not change styles or hidden attributes');assert.equal(visibilityWrites,0,'Unchanged visibility cannot retrigger the fit MutationObserver');
   env.output.dispose();
+});
+
+test('adopting and fitting 2048 exact owned cues measures only the current notes, then lazily refreshes future notes',()=>{
+  const pages=Array.from({length:4},(_,part)=>bound(denseCueExample(`original-part-${part}`),{toMeasure:8,cueColor:'#17251d'}));
+  const source=JSON.stringify(pages.map(page=>page.spec)),stats={mount:0,glyph:0,style:0};let shift=0;
+  for(const env of pages){
+    assert.equal(env.validation.ok,true);assert.equal(env.output.mappingStatus().verifiedGlyphCount,512);
+    const mountBox=env.mount.getBoundingClientRect,style=env.window.getComputedStyle;
+    env.mount.getBoundingClientRect=()=>{stats.mount++;return mountBox();};
+    env.window.getComputedStyle=node=>{stats.style++;return style(node);};
+    for(const graphical of env.graphical.values()){
+      const head=graphical.getNoteheadSVGs()[graphical.vfnoteIndex],box=head.getBoundingClientRect;
+      head.getBoundingClientRect=()=>{stats.glyph++;const value=box();return{...value,x:value.x+shift};};
+    }
+  }
+  const group=createNotationRenderGroup(pages.map(page=>({mount:page.mount,renderer:page.output,noteIds:new Set(page.spec.score.parts[0].notes.map(note=>note.id))})));
+  group.refreshExpectedCueGeometry();assert.deepEqual(stats,{mount:0,glyph:0,style:0},'An adopted page has no active cues and must not read all 2048 noteheads');
+  const first={sourceNoteIds:['original-part-0-0','original-part-2-0'],sourceMeasureIndex:0};
+  shift=100;assert.equal(group.setExpectedWrittenNotes(first),true);assert.equal(stats.glyph,2);assert.equal(stats.mount,2);
+  const cue=pages[0].mount.querySelector('[data-source-note-id="original-part-0-0"]');assert.equal(cue.hidden,false);assert.equal(cue.style.left,'112px');
+  const measured={...stats};for(let frame=0;frame<40;frame++)group.setExpectedWrittenNotes(first);assert.deepEqual(stats,measured,'Stable display frames do not repeat lazy reads');
+  shift=200;group.refreshExpectedCueGeometry();assert.equal(stats.glyph,4,'Fit reads only the two current heads');assert.equal(cue.style.left,'212px');
+  group.clearExpectedWrittenNotes();const cleared={...stats};shift=300;group.refreshExpectedCueGeometry();assert.deepEqual(stats,cleared,'Refitting a quiet page invalidates without measuring hidden cues');
+  group.setExpectedWrittenNotes({sourceNoteIds:['original-part-1-65','original-part-3-66'],sourceMeasureIndex:1});assert.equal(stats.glyph,6,'A later source measure reads only its two newly active heads');
+  const future=pages[1].mount.querySelector('[data-source-note-id="original-part-1-65"]');assert.equal(future.hidden,false);assert.equal(future.style.left,'312px');
+  group.setExpectedWrittenNotes(first);assert.equal(stats.glyph,8,'Previously measured cues are rechecked after the latest fit');assert.equal(cue.style.left,'312px');
+  assert.equal(group.mappingStatus().verifiedGlyphCount,2048);assert.equal(JSON.stringify(pages.map(page=>page.spec)),source,'Source score, exact times and IDs remain unchanged');
+  group.dispose();assert.ok(pages.every(page=>page.mount.querySelector('.engraving-expected-cues')===null));
+});
+
+test('lazy chord cue measurements finish before fills, visibility or presentation styles change',()=>{
+  const env=bound(example(),{cueColor:'#17251d'}),before=env.mount.innerHTML;let reads=0;
+  env.output.refreshExpectedCueGeometry();
+  const origin=env.mount.getBoundingClientRect;env.mount.getBoundingClientRect=()=>{assert.equal(env.mount.innerHTML,before);return origin();};
+  for(const xmlId of ['N1_1_1','N1_2_1']){const head=env.paths.get(xmlId).parentElement,box=head.getBoundingClientRect;head.getBoundingClientRect=()=>{reads++;assert.equal(env.mount.innerHTML,before,'Every incoming glyph is measured before changing any selected fill or cue');return{...box(),x:80+reads*10};};}
+  env.output.setExpectedWrittenNotes({sourceNoteIds:['short','long'],sourceMeasureIndex:0});assert.equal(reads,2);
+  assert.equal([...env.mount.querySelectorAll('.engraving-expected-cue')].filter(cue=>!cue.hidden).length,2);env.output.dispose();
+});
+
+test('unreadable or unowned lazy cue geometry stays hidden and cannot abort the expected-note update',()=>{
+  for(const failure of ['origin','style','box','hidden','replaced','reparented','empty']){
+    const env=bound(example(),{cueColor:'#17251d'}),path=env.paths.get('N1_1_1'),head=path.parentElement,cue=env.mount.querySelector('[data-xml-note-id="N1_1_1"]');
+    env.output.refreshExpectedCueGeometry();
+    if(failure==='origin')env.mount.getBoundingClientRect=()=>{throw Error('Unavailable mount geometry');};
+    if(failure==='style')env.window.getComputedStyle=()=>{throw Error('Unavailable glyph style');};
+    if(failure==='box')head.getBoundingClientRect=()=>{throw Error('Unavailable glyph box');};
+    if(failure==='hidden')path.style.display='none';
+    if(failure==='replaced')path.replaceWith(path.cloneNode(true));
+    if(failure==='reparented')env.svg.append(head);
+    if(failure==='empty')head.getBoundingClientRect=()=>({x:20,y:30,width:0,height:7});
+    const request={sourceNoteIds:['short'],sourceMeasureIndex:0};
+    for(let frame=0;frame<3;frame++){assert.doesNotThrow(()=>env.output.setExpectedWrittenNotes(request),failure);assert.equal(cue.hidden,true,failure);env.output.clearExpectedWrittenNotes();}
+    assert.equal(env.output.mappingStatus().verifiedGlyphCount,5,'Optional cue geometry does not rewrite admitted source/model ownership');env.output.dispose();
+  }
 });
 
 test('fresh bounds refuse replaced, reparented and hidden owned paths and hide their non-color cues',()=>{
