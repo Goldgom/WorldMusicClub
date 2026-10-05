@@ -1,0 +1,545 @@
+[
+  {
+    "request": {
+      "path": "/api/clean-song/draft",
+      "method": "POST",
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body_utf8": "{\"source_base64\": \"TVRoZAAAAAYAAQACAGBNVHJrAAAADACQPFpggDwAAP8vAE1UcmsAAAALAMEAALEHZGD/LwA=\", \"source_name\": \"original-active-and-empty.mid\", \"title\": \"Original active C4 and retained empty part\", \"intent\": \"basic_keys\"}"
+    },
+    "native_response": {
+      "body_base64": "eyJzdGF0ZSI6ImJhc2ljX2tleV9jYW5kaWRhdGUiLCJzb3VyY2UiOnsiZm9ybWF0IjoibWlkaSIsImJ5dGVzIjo1Mywic2hhMjU2IjoiZDM3MWFjNmE3OTBkYzE2MGM4ZWM5OWRlYjZhMjY3MTk3ZmM4ZjAyMzNkNjA0OWM1MDM4ZTNlYTZkMGJiYjM4NiJ9LCJzb3VyY2VfbmFtZSI6Im9yaWdpbmFsLWFjdGl2ZS1hbmQtZW1wdHkubWlkIiwidGl0bGUiOiJPcmlnaW5hbCBhY3RpdmUgQzQgYW5kIHJldGFpbmVkIGVtcHR5IHBhcnQiLCJpbnZlbnRvcnkiOnsic291cmNlX3RyYWNrcyI6Miwic291cmNlX2V2ZW50cyI6NiwicHBxIjo5Niwia2V5X2F0dGFja3MiOjEsImtleV9yZWxlYXNlcyI6MSwidHJhY2tzIjpbeyJzb3VyY2VfaW5kZXgiOjAsInRyYWNrX2lkIjoidHJhY2stMSIsIm5hbWUiOiJUcmFjayAxIiwic291cmNlX2V2ZW50X2NvdW50IjozLCJjaGFubmVscyI6W3siY2hhbm5lbCI6MCwic291cmNlX2V2ZW50X2NvdW50IjoyLCJrZXlfYXR0YWNrcyI6MSwia2V5X3JlbGVhc2VzIjoxfV0sImtleV9hdHRhY2tzIjoxLCJrZXlfcmVsZWFzZXMiOjEsImZpcnN0X2V2ZW50X2lkIjoibWlkaTpkMzcxYWM2YTc5MGRjMTYwYzhlYzk5ZGViNmEyNjcxOTdmYzhmMDIzM2Q2MDQ5YzUwMzhlM2VhNmQwYmJiMzg2OnQwOmUwIiwibGFzdF9ldmVudF9pZCI6Im1pZGk6ZDM3MWFjNmE3OTBkYzE2MGM4ZWM5OWRlYjZhMjY3MTk3ZmM4ZjAyMzNkNjA0OWM1MDM4ZTNlYTZkMGJiYjM4Njp0MDplMiIsImVuZCI6eyJudW1lcmF0b3IiOjEsImRlbm9taW5hdG9yIjoxfX0seyJzb3VyY2VfaW5kZXgiOjEsInRyYWNrX2lkIjoidHJhY2stMiIsIm5hbWUiOiJUcmFjayAyIiwic291cmNlX2V2ZW50X2NvdW50IjozLCJjaGFubmVscyI6W3siY2hhbm5lbCI6MSwic291cmNlX2V2ZW50X2NvdW50IjoyLCJrZXlfYXR0YWNrcyI6MCwia2V5X3JlbGVhc2VzIjowfV0sImtleV9hdHRhY2tzIjowLCJrZXlfcmVsZWFzZXMiOjAsImZpcnN0X2V2ZW50X2lkIjoibWlkaTpkMzcxYWM2YTc5MGRjMTYwYzhlYzk5ZGViNmEyNjcxOTdmYzhmMDIzM2Q2MDQ5YzUwMzhlM2VhNmQwYmJiMzg2OnQxOmUwIiwibGFzdF9ldmVudF9pZCI6Im1pZGk6ZDM3MWFjNmE3OTBkYzE2MGM4ZWM5OWRlYjZhMjY3MTk3ZmM4ZjAyMzNkNjA0OWM1MDM4ZTNlYTZkMGJiYjM4Njp0MTplMiIsImVuZCI6eyJudW1lcmF0b3IiOjEsImRlbm9taW5hdG9yIjoxfX1dLCJwYXJ0cyI6W3siaWQiOiJtaWRpLXQxLWMxLXIwIiwidHJhY2tfaWQiOiJ0cmFjay0xIiwiY2hhbm5lbCI6MCwibm90YXRpb25fYXZhaWxhYmxlIjp0cnVlfSx7ImlkIjoibWlkaS10Mi1jMi1yMCIsInRyYWNrX2lkIjoidHJhY2stMiIsImNoYW5uZWwiOjEsIm5vdGF0aW9uX2F2YWlsYWJsZSI6ZmFsc2V9XX0sImRpYWdub3N0aWNzIjpbeyJjb2RlIjoiYmFzaWNfa2V5X3Byb2plY3Rpb24iLCJtZXNzYWdlIjoiQWxsIDYgc291cmNlIGV2ZW50cyBhbmQgMSBrZXkgYXR0YWNrcyBhcmUgcmV0YWluZWQuIDEgcG9zaXRpdmUgZGV0ZXJtaW5lZCBub24tY2hhbm5lbC0xMCB0YXJnZXRzIGFyZSBhdmFpbGFibGU7IDAgYXR0YWNrcyBoYXZlIHVucmVzb2x2ZWQgZW5kcyBhbmQgMCBhdHRhY2tzIGhhdmUgZXhhY3RseSB6ZXJvIGxlbmd0aC4iLCJzb3VyY2VfZXZlbnRfaWQiOm51bGwsInRyYWNrX2luZGV4IjpudWxsLCJhY3Rpb24iOiJSZXZpZXcgbm9taW5hbCBNSURJIGtleSBudW1iZXJzIGFuZCBzb3VyY2UtY2xvY2sgcHJvdmVuYW5jZS4gVGltZWQgcHJhY3RpY2UgcmVxdWlyZXMgYW4gYXZhaWxhYmxlIGNsb2NrOyBzb3VyY2Ugc291bmQgYW5kIGFjb3VzdGljIHBpdGNoIGFyZSBub3QgaW5mZXJyZWQuIn1dLCJwYWNrYWdlIjp7Im1ldGFkYXRhX2pzb24iOiJ7XG4gIFwiZm9ybWF0XCI6IFwid29ybGRtdXNpY2h1Yi1zb25nXCIsXG4gIFwiaWRcIjogXCJtaWRpLWJhc2ljLWQzNzFhYzZhNzkwZGMxNjBjOGVjOTlkZWI2YTI2NzE5N2ZjOGYwMjMzZDYwNDljNTAzOGUzZWE2ZDBiYmIzODZcIixcbiAgXCJtZWRpYVwiOiBbXSxcbiAgXCJyaWdodHNcIjoge1xuICAgIFwiYXR0cmlidXRpb25cIjogXCJVc2VyLXN1cHBsaWVkIE1JREk7IHNvdXJjZSByaWdodHMgYXJlIHVudmVyaWZpZWRcIixcbiAgICBcImxpY2Vuc2VcIjogbnVsbCxcbiAgICBcInN0YXR1c1wiOiBcInVzZXJfc3VwcGxpZWRfdW52ZXJpZmllZFwiXG4gIH0sXG4gIFwic2NvcmVcIjoge1xuICAgIFwiYnl0ZXNcIjogMjUwOCxcbiAgICBcInBhdGhcIjogXCJzY29yZS5qc29uXCIsXG4gICAgXCJzaGEyNTZcIjogXCJlOWExMTVhMDI2OTgwNzE2ZTRkNWIzYTk1MWU5MTg5M2MxOWZhODMwNjE5NjU4NGIyNDIwOWZmNTRhMTM5N2NjXCJcbiAgfSxcbiAgXCJzb3VyY2VzXCI6IFtcbiAgICB7XG4gICAgICBcImJ5dGVzXCI6IDUzLFxuICAgICAgXCJmb3JtYXRcIjogXCJtaWRpXCIsXG4gICAgICBcInNoYTI1NlwiOiBcImQzNzFhYzZhNzkwZGMxNjBjOGVjOTlkZWI2YTI2NzE5N2ZjOGYwMjMzZDYwNDljNTAzOGUzZWE2ZDBiYmIzODZcIlxuICAgIH1cbiAgXSxcbiAgXCJ0aXRsZVwiOiBcIk9yaWdpbmFsIGFjdGl2ZSBDNCBhbmQgcmV0YWluZWQgZW1wdHkgcGFydFwiLFxuICBcInZlcnNpb25cIjogMlxufSIsInNjb3JlX2pzb24iOiJ7XCJmb3JtYXRcIjpcIndvcmxkbXVzaWNodWItY29tcGxldGUtc2NvcmVcIixcInZlcnNpb25cIjoxLFwic291cmNlXCI6e1wiZm9ybWF0XCI6XCJtaWRpXCIsXCJieXRlc1wiOjUzLFwic2hhMjU2XCI6XCJkMzcxYWM2YTc5MGRjMTYwYzhlYzk5ZGViNmEyNjcxOTdmYzhmMDIzM2Q2MDQ5YzUwMzhlM2VhNmQwYmJiMzg2XCJ9LFwibm90YXRpb25cIjp7XCJmb3JtYXRfbWV0YWRhdGFcIjp7XCJzY2hlbWFfcmV2aXNpb25cIjoyLFwicHJvZHVjZXJcIjpcIldvcmxkTXVzaWNIdWJcIixcInByb2R1Y2VyX3ZlcnNpb25cIjpcIjAuMi4wLWFscGhhLjFcIn0sXCJ2ZXJzaW9uXCI6MSxcImlkXCI6XCJtaWRpLWJhc2ljLWQzNzFhYzZhNzkwZGMxNjBjOGVjOTlkZWI2YTI2NzE5N2ZjOGYwMjMzZDYwNDljNTAzOGUzZWE2ZDBiYmIzODZcIixcInRpdGxlXCI6XCJPcmlnaW5hbCBhY3RpdmUgQzQgYW5kIHJldGFpbmVkIGVtcHR5IHBhcnRcIixcImNvbXBvc2VyXCI6XCJcIixcInByb3ZlbmFuY2VcIjp7XCJraW5kXCI6XCJ1c2VyX3N1cHBsaWVkX3VudmVyaWZpZWRcIixcImF0dHJpYnV0aW9uXCI6XCJVc2VyLXN1cHBsaWVkIE1JREk7IHNvdXJjZSByaWdodHMgdW52ZXJpZmllZDsgbm9taW5hbCBNSURJIGtleS1udW1iZXIgcHJvamVjdGlvblwiLFwic291cmNlX3VybFwiOm51bGwsXCJsaWNlbnNlXCI6bnVsbH0sXCJwYXJ0c1wiOlt7XCJpZFwiOlwibWlkaS10MS1jMS1yMFwiLFwibmFtZVwiOlwiVHJhY2sgMSAvIGNoIDFcIixcImluc3RydW1lbnRcIjpcIm1pZGkta2V5LW51bWJlclwiLFwibm90ZXNcIjpbe1wiaWRcIjpcIm1pZGktdDEtZTFcIixcImF0XCI6e1wibnVtZXJhdG9yXCI6MCxcImRlbm9taW5hdG9yXCI6MX0sXCJkdXJhdGlvblwiOntcIm51bWVyYXRvclwiOjEsXCJkZW5vbWluYXRvclwiOjF9LFwicGl0Y2hcIjp7XCJzdGVwXCI6XCJDXCIsXCJhbHRlclwiOjAsXCJvY3RhdmVcIjo0fSxcInZvaWNlXCI6XCIxXCIsXCJzdGFmZlwiOjEsXCJ2ZWxvY2l0eVwiOjkwLFwidGllX3N0YXJ0XCI6ZmFsc2UsXCJ0aWVfc3RvcFwiOmZhbHNlfV19LHtcImlkXCI6XCJtaWRpLXQyLWMyLXIwXCIsXCJuYW1lXCI6XCJUcmFjayAyIC8gY2ggMlwiLFwiaW5zdHJ1bWVudFwiOlwibWlkaS1rZXktbnVtYmVyXCIsXCJub3Rlc1wiOltdfV0sXCJ0ZW1wb1wiOltdLFwibWV0ZXJzXCI6W10sXCJrZXlzXCI6W10sXCJtZWFzdXJlc1wiOltdLFwicmVwZWF0c1wiOltdLFwic291cmNlXCI6bnVsbH0sXCJwZXJmb3JtYW5jZVwiOntcInByb2ZpbGVcIjpcIndtaC1iYXNpYy1rZXlzLW1pZGkxLXYxXCIsXCJzb3VyY2VfZm9ybWF0XCI6MSxcInBwcVwiOjk2LFwiZW5kX3RpY2tcIjo5NixcInRyYWNrc1wiOlt7XCJpZFwiOlwidHJhY2stMVwiLFwibmFtZVwiOlwiVHJhY2sgMVwiLFwic291cmNlX2luZGV4XCI6MCxcImVuZF90aWNrXCI6OTYsXCJldmVudHNcIjpbWzAsWzE0NCw2MCw5MF1dLFs5NixbMTI4LDYwLDBdXSxbMCxbMjU1LDQ3XV1dfSx7XCJpZFwiOlwidHJhY2stMlwiLFwibmFtZVwiOlwiVHJhY2sgMlwiLFwic291cmNlX2luZGV4XCI6MSxcImVuZF90aWNrXCI6OTYsXCJldmVudHNcIjpbWzAsWzE5MywwXV0sWzAsWzE3Nyw3LDEwMF1dLFs5NixbMjU1LDQ3XV1dfV0sXCJyb3V0ZXNcIjpbe1wicG9ydFwiOm51bGwsXCJkZXZpY2VfbmFtZV9ieXRlc1wiOm51bGx9XSxcInBhcnRzXCI6W3tcImlkXCI6XCJtaWRpLXQxLWMxLXIwXCIsXCJ0cmFja19pZFwiOlwidHJhY2stMVwiLFwiY2hhbm5lbFwiOjAsXCJyb3V0ZVwiOjAsXCJrZXlfc2VtYW50aWNzXCI6XCJtaWRpX2tleV9udW1iZXJcIn0se1wiaWRcIjpcIm1pZGktdDItYzItcjBcIixcInRyYWNrX2lkXCI6XCJ0cmFjay0yXCIsXCJjaGFubmVsXCI6MSxcInJvdXRlXCI6MCxcImtleV9zZW1hbnRpY3NcIjpcIm1pZGlfa2V5X251bWJlclwifV0sXCJ0aW1pbmdcIjp7XCJldmVudF9vcmRlclwiOlwidGlja190cmFja19pbmRleF9ldmVudF9pbmRleFwiLFwicmVsYXRpdmVfY2xvY2tfYXZhaWxhYmxlXCI6dHJ1ZSxcImVuZF9yZWxhdGl2ZV9taWNyb3NlY29uZHNcIjp7XCJudW1lcmF0b3JcIjpcIjUwMDAwMFwiLFwiZGVub21pbmF0b3JcIjoxfSxcInNtZl9kZWZhdWx0X3RlbXBvX3VzZWRcIjp0cnVlLFwic291cmNlX3RlbXBvX2V2ZW50c1wiOjAsXCJzb3VyY2VfbWV0ZXJfZXZlbnRzXCI6MCxcIm1ldGVyXCI6XCJ1bnNwZWNpZmllZFwiLFwibGVnYWN5X3J1bm5pbmdfc3RhdHVzX2V2ZW50c1wiOjAsXCJpbnZhbGlkX3Byb2dyYW1fZXZlbnRzXCI6MH19LFwiY292ZXJhZ2VcIjp7XCJzb3VyY2VfdHJhY2tzXCI6MixcInNvdXJjZV9ldmVudHNcIjo2LFwicmVwcmVzZW50ZWRfZXZlbnRzXCI6NixcImtleV9hdHRhY2tzXCI6MSxcImtleV9yZWxlYXNlc1wiOjEsXCJkZXRlcm1pbmVkX2VuZHNcIjoxLFwiemVyb19sZW5ndGhfYXR0YWNrc1wiOjAsXCJ1bnJlc29sdmVkX2VuZHNcIjowLFwidW5tYXRjaGVkX3JlbGVhc2VzXCI6MCxcIm5vdGF0aW9uX25vdGVzXCI6MSxcInByb2plY3RlZF9tZWxvZGljX3RhcmdldHNcIjoxLFwidW5yZXNvbHZlZF9yb3V0ZV9lbmRzXCI6MH0sXCJjYXBhYmlsaXRpZXNcIjp7XCJzb3VyY2VfZXZlbnRzXCI6XCJjb21wbGV0ZVwiLFwiYmFzaWNfa2V5c1wiOlwiY29tcGxldGVcIixcInNjb3JlX3Byb2plY3Rpb25cIjpcImNvbXBsZXRlX3Bvc2l0aXZlX2R1cmF0aW9uX2tleXNcIixcInNvdXJjZV9yZW5kaXRpb25cIjpcInJlcXVpcmVzX2V4cGxpY2l0X3JlY2VpdmVyX21hcHBpbmdcIixcImFjb3VzdGljX3BpdGNoXCI6XCJub3RfaW5mZXJyZWRfZnJvbV9rZXlfbnVtYmVyc1wifX0ifSwiZHJhZnRfc2hhMjU2IjoiZjE2ODYzNWVkMjFiYzg3NzA3NjZlZTg4Njg2YjQzZGY3ZGNiMDY4OTliZDQ4ZjY5YTFlNGYyZDViZWEyOGVlYyIsImJhc2ljX2tleV9jb3ZlcmFnZSI6eyJzb3VyY2VfdHJhY2tzIjoyLCJzb3VyY2VfZXZlbnRzIjo2LCJyZXByZXNlbnRlZF9ldmVudHMiOjYsImtleV9hdHRhY2tzIjoxLCJrZXlfcmVsZWFzZXMiOjEsImRldGVybWluZWRfZW5kcyI6MSwiemVyb19sZW5ndGhfYXR0YWNrcyI6MCwidW5yZXNvbHZlZF9lbmRzIjowLCJ1bm1hdGNoZWRfcmVsZWFzZXMiOjAsIm5vdGF0aW9uX25vdGVzIjoxLCJwcm9qZWN0ZWRfbWVsb2RpY190YXJnZXRzIjoxLCJ1bnJlc29sdmVkX3JvdXRlX2VuZHMiOjB9fQ==",
+      "content_type": "application/json; charset=utf-8",
+      "status": 200
+    },
+    "decoded_response": {
+      "state": "basic_key_candidate",
+      "source": {
+        "format": "midi",
+        "bytes": 53,
+        "sha256": "d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386"
+      },
+      "source_name": "original-active-and-empty.mid",
+      "title": "Original active C4 and retained empty part",
+      "inventory": {
+        "source_tracks": 2,
+        "source_events": 6,
+        "ppq": 96,
+        "key_attacks": 1,
+        "key_releases": 1,
+        "tracks": [
+          {
+            "source_index": 0,
+            "track_id": "track-1",
+            "name": "Track 1",
+            "source_event_count": 3,
+            "channels": [
+              {
+                "channel": 0,
+                "source_event_count": 2,
+                "key_attacks": 1,
+                "key_releases": 1
+              }
+            ],
+            "key_attacks": 1,
+            "key_releases": 1,
+            "first_event_id": "midi:d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386:t0:e0",
+            "last_event_id": "midi:d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386:t0:e2",
+            "end": {
+              "numerator": 1,
+              "denominator": 1
+            }
+          },
+          {
+            "source_index": 1,
+            "track_id": "track-2",
+            "name": "Track 2",
+            "source_event_count": 3,
+            "channels": [
+              {
+                "channel": 1,
+                "source_event_count": 2,
+                "key_attacks": 0,
+                "key_releases": 0
+              }
+            ],
+            "key_attacks": 0,
+            "key_releases": 0,
+            "first_event_id": "midi:d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386:t1:e0",
+            "last_event_id": "midi:d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386:t1:e2",
+            "end": {
+              "numerator": 1,
+              "denominator": 1
+            }
+          }
+        ],
+        "parts": [
+          {
+            "id": "midi-t1-c1-r0",
+            "track_id": "track-1",
+            "channel": 0,
+            "notation_available": true
+          },
+          {
+            "id": "midi-t2-c2-r0",
+            "track_id": "track-2",
+            "channel": 1,
+            "notation_available": false
+          }
+        ]
+      },
+      "diagnostics": [
+        {
+          "code": "basic_key_projection",
+          "message": "All 6 source events and 1 key attacks are retained. 1 positive determined non-channel-10 targets are available; 0 attacks have unresolved ends and 0 attacks have exactly zero length.",
+          "source_event_id": null,
+          "track_index": null,
+          "action": "Review nominal MIDI key numbers and source-clock provenance. Timed practice requires an available clock; source sound and acoustic pitch are not inferred."
+        }
+      ],
+      "package": {
+        "metadata_json": "{\n  \"format\": \"worldmusichub-song\",\n  \"id\": \"midi-basic-d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386\",\n  \"media\": [],\n  \"rights\": {\n    \"attribution\": \"User-supplied MIDI; source rights are unverified\",\n    \"license\": null,\n    \"status\": \"user_supplied_unverified\"\n  },\n  \"score\": {\n    \"bytes\": 2508,\n    \"path\": \"score.json\",\n    \"sha256\": \"e9a115a026980716e4d5b3a951e91893c19fa8306196584b24209ff54a1397cc\"\n  },\n  \"sources\": [\n    {\n      \"bytes\": 53,\n      \"format\": \"midi\",\n      \"sha256\": \"d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386\"\n    }\n  ],\n  \"title\": \"Original active C4 and retained empty part\",\n  \"version\": 2\n}",
+        "score_json": "{\"format\":\"worldmusichub-complete-score\",\"version\":1,\"source\":{\"format\":\"midi\",\"bytes\":53,\"sha256\":\"d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386\"},\"notation\":{\"format_metadata\":{\"schema_revision\":2,\"producer\":\"WorldMusicHub\",\"producer_version\":\"0.2.0-alpha.1\"},\"version\":1,\"id\":\"midi-basic-d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386\",\"title\":\"Original active C4 and retained empty part\",\"composer\":\"\",\"provenance\":{\"kind\":\"user_supplied_unverified\",\"attribution\":\"User-supplied MIDI; source rights unverified; nominal MIDI key-number projection\",\"source_url\":null,\"license\":null},\"parts\":[{\"id\":\"midi-t1-c1-r0\",\"name\":\"Track 1 / ch 1\",\"instrument\":\"midi-key-number\",\"notes\":[{\"id\":\"midi-t1-e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"C\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false}]},{\"id\":\"midi-t2-c2-r0\",\"name\":\"Track 2 / ch 2\",\"instrument\":\"midi-key-number\",\"notes\":[]}],\"tempo\":[],\"meters\":[],\"keys\":[],\"measures\":[],\"repeats\":[],\"source\":null},\"performance\":{\"profile\":\"wmh-basic-keys-midi1-v1\",\"source_format\":1,\"ppq\":96,\"end_tick\":96,\"tracks\":[{\"id\":\"track-1\",\"name\":\"Track 1\",\"source_index\":0,\"end_tick\":96,\"events\":[[0,[144,60,90]],[96,[128,60,0]],[0,[255,47]]]},{\"id\":\"track-2\",\"name\":\"Track 2\",\"source_index\":1,\"end_tick\":96,\"events\":[[0,[193,0]],[0,[177,7,100]],[96,[255,47]]]}],\"routes\":[{\"port\":null,\"device_name_bytes\":null}],\"parts\":[{\"id\":\"midi-t1-c1-r0\",\"track_id\":\"track-1\",\"channel\":0,\"route\":0,\"key_semantics\":\"midi_key_number\"},{\"id\":\"midi-t2-c2-r0\",\"track_id\":\"track-2\",\"channel\":1,\"route\":0,\"key_semantics\":\"midi_key_number\"}],\"timing\":{\"event_order\":\"tick_track_index_event_index\",\"relative_clock_available\":true,\"end_relative_microseconds\":{\"numerator\":\"500000\",\"denominator\":1},\"smf_default_tempo_used\":true,\"source_tempo_events\":0,\"source_meter_events\":0,\"meter\":\"unspecified\",\"legacy_running_status_events\":0,\"invalid_program_events\":0}},\"coverage\":{\"source_tracks\":2,\"source_events\":6,\"represented_events\":6,\"key_attacks\":1,\"key_releases\":1,\"determined_ends\":1,\"zero_length_attacks\":0,\"unresolved_ends\":0,\"unmatched_releases\":0,\"notation_notes\":1,\"projected_melodic_targets\":1,\"unresolved_route_ends\":0},\"capabilities\":{\"source_events\":\"complete\",\"basic_keys\":\"complete\",\"score_projection\":\"complete_positive_duration_keys\",\"source_rendition\":\"requires_explicit_receiver_mapping\",\"acoustic_pitch\":\"not_inferred_from_key_numbers\"}}"
+      },
+      "draft_sha256": "f168635ed21bc8770766ee88686b43df7dcb06899bd48f69a1e4f2d5bea28eec",
+      "basic_key_coverage": {
+        "source_tracks": 2,
+        "source_events": 6,
+        "represented_events": 6,
+        "key_attacks": 1,
+        "key_releases": 1,
+        "determined_ends": 1,
+        "zero_length_attacks": 0,
+        "unresolved_ends": 0,
+        "unmatched_releases": 0,
+        "notation_notes": 1,
+        "projected_melodic_targets": 1,
+        "unresolved_route_ends": 0
+      }
+    }
+  },
+  {
+    "request": {
+      "path": "/api/clean-song/draft/pack",
+      "method": "POST",
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body_utf8": "{\"source_base64\": \"TVRoZAAAAAYAAQACAGBNVHJrAAAADACQPFpggDwAAP8vAE1UcmsAAAALAMEAALEHZGD/LwA=\", \"source_name\": \"original-active-and-empty.mid\", \"title\": \"Original active C4 and retained empty part\", \"intent\": \"basic_keys\", \"expected_draft_sha256\": \"f168635ed21bc8770766ee88686b43df7dcb06899bd48f69a1e4f2d5bea28eec\"}"
+    },
+    "native_response": {
+      "body_base64": "eyJkcmFmdF9zaGEyNTYiOiJmMTY4NjM1ZWQyMWJjODc3MDc2NmVlODg2ODZiNDNkZjdkY2IwNjg5OWJkNDhmNjlhMWU0ZjJkNWJlYTI4ZWVjIiwiZmlsZW5hbWUiOiJ3b3JsZG11c2ljaHViLWQzNzFhYzZhNzkwZGMxNjAuemlwIiwiemlwX2Jhc2U2NCI6IlVFc0RCQlFBQUFBSUFBQUFJUUNnbFB3TmRBRUFBSmtDQUFCWkFBQUFjMjl1WjNNdmJXbGthUzFrTXpjeFlXTTJZVGM1TUdSak1UWXdZemhsWXprNVpHVmlObUV5TmpjeE9UZG1ZemhtTURJek0yUTJNRFE1WXpVd016aGxNMlZoTm1Rd1ltSmlNemcyTDIxbGRHRmtZWFJoTG1wemIyNmxrcnR1M0RBUVJYdDl4WUIxMWlCRmlSSTNaZEs0Q0Z5bE1neGpTSTUyR2VnRlB0WXdqUDMzZ05JYVdkY3B5Wm01OXd3dlB5b0FOaXhod3NTT3dONldNTG9wUjIvUDJSemlNcC9ZdDlMaFhhbE8zdm1Ed2VqdHdjbE9vRlhZYWU2c1VOejJaTFYyWkJUV3FoTzZHMncvOEZwS3AzaWpiY3RsVDVKUU9XNk1rYjNhWlNkeUh0a1JubCsyWS9DbmM0cnNDQjhWQUFERGxJSTNPZmxsTHZhL0k0VkR6T3M2ZW5MdzYvSG40M2VJU3c2V1lKOEVEQVI1dmxEd2d5ZTNlUUN3MFZ1YUk3RWp6SGtjYjVjeFljckZpK1ZJNGZWVDl2VnV2QUs0Ymx6UkxvSCtZWm4zUkdXeWJubC9VMXN4bll2VzF2bndKeTd6cDNrOFk5MnFVaU9OUXJUSWE2VjczZ2xGald1TlJOMEswcUxYMGdvOVlDKzVFbHExZldQcXB1WjZHTm9HaGRTZHRYYzgyOUlGNFhrejJibnV5RnE1dTMvSnRxUjNvL3JDOWQ5UmJwTFhDbUJQTWZrMGx0ZGlUOEdmL0l3am9FMytRdkNqQVp3ZEJFcm9aM0pBMDVyZVljV1E5dDl3b1JEM3FPdnEraGRRU3dNRUZBQUFBQWdBQUFBaEFPV1BRMjVPQkFBQXpBa0FBRllBQUFCemIyNW5jeTl0YVdScExXUXpOekZoWXpaaE56a3daR014TmpCak9HVmpPVGxrWldJMllUSTJOekU1TjJaak9HWXdNak16WkRZd05EbGpOVEF6T0dVelpXRTJaREJpWW1Jek9EWXZjMk52Y21VdWFuTnZicVZXUzVQYk5neitLeHFjcVZTU2QrMjFja3dQelNIVFN6czk3SGc0TkFuYnJQbFFTRXFKdStQLzNnRWxXYzV1K3ByNlpJTEU2OE1IUUM5dzhNR0tCQzE4OGNFbzIwY3RULzIrbE41MkJoT1dVZnFBd0dEQUVMVjMwTllNb3UrRFJHaGZGbTJybFFZRyswdkNDTzNqaWtFOGllWnhEUzJvMWFZV2NpMDIyMHJKZWwzSko1VGJyY0w5V2pUclRiM2RIT1RUb1dwV0s3V3VIcmJ5c1ZvOTRRckZXbFg3L1g3MXRJWXJBK2VUU05uOTdKTmJURUtKSkVnVTVRbXQ0QUVIUFFiWk1PaUNWNzNFQUMzOFJxbDlvdFIrNnZld1hQRmJVbEM5YTk1VnBURGRTYnlyeWVOOXZscE5HWlo3RWJVcy8zZEdESkpPQnFHRm40TSthaWRNSVdUU0F4WWZIZ3JoVkJFd0NlMVFGV2k3ZENrNkVSSXdvS0w0bUZNYXN4alFDVGRXNHF3ZFJkbEhERHoyWFdjMEt0NjdBWU0rYUZUQVFLUVU5TDRmWVlSZkk0WnlmbGg4K3ZqangvZkZXTmNpNk9NcHhXSlJmbDg0YjNPVTlLNDQ0NlYwdmQxaktMcmdmMGVaVGM2MDRIMHcwTHJlR0FaR1MzUVJ4K09WQWVVUm9YMSt1WU0wMWFXc3kxQUJBeWNzWWZKTEVQSmMxTVVQaFR3Vk5URFFMcWJRVzNRejA4b2xCRkx6bVhTdnJTS3BFamxmd1BVV2cwZytRRnN4VURpbWs4LzFsWUhxdzQxZGQwL3I3enp0ZEpLblRMbUVIYlR3Z1h5WVJEV3BHSGlaeElEUVBoQ0J2S2JLQUVVUmt6Z2Nzc0VCalpjNlhhRGRWc1FDNURGUmNkdURNQkZuaWU4bXdYVjNaZCtrMVpTeStRNVl6UWhXOCsvQjJsMTNEQkxhenRPQmdjV0VJVjh3T09ObCttZFJ4RDZNQ2d3Q2RpaHlBWGZMRUpoTGl5RTM1a1RITHZpRHpnei9ZazlUMjVEWmtpS3F5NkZlK0RMUGtKcEIxMzJHZHJ0bWdFN3hwT1Y1UENYSzhhN0MrVnpXYnhpejJOUk80ZGRja204dDRZQXVKL0Jjc2VmNjRZR3RLN2F0ZGp2MnZGMno1N3A1SWtFK1YreTVlWHhrRDV2ZGJxbkI2TGg1Zy80YngvWGZPOTZ1Yms3cXpZWnRXRjNkZ2xpOEV1SytuN25kZWFMSjJGY0tCeTJSVXhCOEdybTVETHQvYkxHY0FYK0ZvandKNTlCa3ZMTEgvTytNRng3UkNwZTBqSk1wVHNLSlMzL0p6RGMrbW5zZjlYL3lRU1RWVnJzamtTcUR5SDFRZVFRU3VIenlSYWp6OFhxc0FKSFZDQnFwWEJvdnoxd01RaHV4SjBxbTBPTlluOXNicTJYd0VhVjNLcjZhQXZCWTBRKytNd3lpUFhDRkI5R2J4SE1yOFQ2aW1oMU1qQmd2NXZwWE4zbHV1SHQ1RnRBSWQ3RkRPVTl0ZzBjaEx6ejB6bWwzcEdtUituaXZwdDBnakZhOEMvNFloRjJ1cmxmYUdBTUdjY3d0T2Njek5WTnppMlRXV09jT0R4alJKVlQzWXFxSVNHbFVyTWR6UUlNaUV2WHluRXdZTEcwc2pobkNtc0VmR0R3MzZJN3B0Q2hYREhvWE1Ib3ozTjVtbVJWSm5sRGRtYTJXdGMrbnFVVWpZdHc0cUxoRjQ1V1dQSWx3UkFxMC9zWjJKdG5zZ2FBUW5kaHJvNU1tU3pjNDVpenpjcVV2SHZxS29YRkZOSHdsejk5Q0JQUzg4NVpiM3Ztb001WG1aVExxMzBBTzZKU2VsQUorN25YQXlQRnJaN1RVaVFlVXFBY00zSXF1STdZekVOTDNNV25KcDVWRFlIRHREaGdDS240STN0NDFTb1RyOVU5UVN3TUVGQUFBQUFnQUFBQWhBRm95a0orUUFBQUF0UUFBQUEwQUFBQnRZVzVwWm1WemRDNXFjMjl1SFkzTERzSWdGRVQzZk1VTmF4dHBVVjYvWWx6QXZWU0piVEZnZGRIMDMwM1pURExKT1RNYkErQmpMclAvY0FmOGw4dEU4MW9UUHRmUTFidzh1cmZIRno4ZDJGRXJkM0JqQUFCYnkyWlBGTXRoTitBOEowb2RTZDE3VkY1YlFkZ3JnU2FpdFJTRDhvUFN2ZFVqbWxFTVVwSVNGNHRYSVUyVTBTc1NJUVJwRkcvck93TzR0Kzl2TERYbGhUc1kyUDRIVUVzQkFoUURGQUFBQUFnQUFBQWhBS0NVL0ExMEFRQUFtUUlBQUZrQUFBQUFBQUFBQUFBQUFLU0JBQUFBQUhOdmJtZHpMMjFwWkdrdFpETTNNV0ZqTm1FM09UQmtZekUyTUdNNFpXTTVPV1JsWWpaaE1qWTNNVGszWm1NNFpqQXlNek5rTmpBME9XTTFNRE00WlRObFlUWmtNR0ppWWpNNE5pOXRaWFJoWkdGMFlTNXFjMjl1VUVzQkFoUURGQUFBQUFnQUFBQWhBT1dQUTI1T0JBQUF6QWtBQUZZQUFBQUFBQUFBQUFBQUFLU0I2d0VBQUhOdmJtZHpMMjFwWkdrdFpETTNNV0ZqTm1FM09UQmtZekUyTUdNNFpXTTVPV1JsWWpaaE1qWTNNVGszWm1NNFpqQXlNek5rTmpBME9XTTFNRE00WlRObFlUWmtNR0ppWWpNNE5pOXpZMjl5WlM1cWMyOXVVRXNCQWhRREZBQUFBQWdBQUFBaEFGb3lrSitRQUFBQXRRQUFBQTBBQUFBQUFBQUFBQUFBQUtTQnJRWUFBRzFoYm1sbVpYTjBMbXB6YjI1UVN3VUdBQUFBQUFNQUF3QkdBUUFBYUFjQUFBQUEifQ==",
+      "content_type": "application/json; charset=utf-8",
+      "status": 200
+    },
+    "decoded_response": {
+      "draft_sha256": "f168635ed21bc8770766ee88686b43df7dcb06899bd48f69a1e4f2d5bea28eec",
+      "filename": "worldmusichub-d371ac6a790dc160.zip",
+      "zip_base64": "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"
+    }
+  },
+  {
+    "request": {
+      "path": "/api/library/import/commit",
+      "method": "POST",
+      "headers": {
+        "content-type": "application/zip",
+        "x-wmh-filename": "original-active-and-empty.zip"
+      },
+      "body_base64": "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"
+    },
+    "native_response": {
+      "body_base64": "eyJmb3JtYXQiOiJ3b3JsZG11c2ljaHViLWltcG9ydC1yZXBvcnQiLCJpbnZlbnRvcnkiOnsiZXhwYW5kZWRfYnl0ZXMiOjMzNTQsImZpbGVzIjpbeyJieXRlcyI6MTgxLCJwYXRoIjoibWFuaWZlc3QuanNvbiIsInNoYTI1NiI6IjU0NGI0MDlmODRkYTQ1YzA4MWMzNWYyMjkxZTI2ZDc5YzA3NTZhYWJiYmU5OWRlMjY5NGQ2ODM5YWRjYmNiOTcifSx7ImJ5dGVzIjo2NjUsInBhdGgiOiJzb25ncy9taWRpLWQzNzFhYzZhNzkwZGMxNjBjOGVjOTlkZWI2YTI2NzE5N2ZjOGYwMjMzZDYwNDljNTAzOGUzZWE2ZDBiYmIzODYvbWV0YWRhdGEuanNvbiIsInNoYTI1NiI6IjgyYTU0OThlNTk0ZTRmMWZiZDViZTIxY2I3NDZkZGYxZDAwNGU2ODFjOTRiMjU1YTMxY2Q3ZTE4NzhjYWEwZmQifSx7ImJ5dGVzIjoyNTA4LCJwYXRoIjoic29uZ3MvbWlkaS1kMzcxYWM2YTc5MGRjMTYwYzhlYzk5ZGViNmEyNjcxOTdmYzhmMDIzM2Q2MDQ5YzUwMzhlM2VhNmQwYmJiMzg2L3Njb3JlLmpzb24iLCJzaGEyNTYiOiJlOWExMTVhMDI2OTgwNzE2ZTRkNWIzYTk1MWU5MTg5M2MxOWZhODMwNjE5NjU4NGIyNDIwOWZmNTRhMTM5N2NjIn1dfSwiaXRlbXMiOlt7ImNsZWFuX3BhY2thZ2UiOnsiYnl0ZXMiOjMxNzMsImNhcGFiaWxpdGllcyI6eyJhY291c3RpY19waXRjaCI6Im5vdF9pbmZlcnJlZF9mcm9tX2tleV9udW1iZXJzIiwiYmFzaWNfa2V5cyI6ImNvbXBsZXRlIiwic2NvcmVfcHJvamVjdGlvbiI6ImNvbXBsZXRlX3Bvc2l0aXZlX2R1cmF0aW9uX2tleXMiLCJzb3VyY2VfZXZlbnRzIjoiY29tcGxldGUiLCJzb3VyY2VfcmVuZGl0aW9uIjoicmVxdWlyZXNfZXhwbGljaXRfcmVjZWl2ZXJfbWFwcGluZyJ9LCJjb250ZW50X3NoYTI1NiI6IjBhYzQwYWI2ZjgyOTA2ODFlZmM0MmQ2YWU4OWU5Mjk1N2M0NGEwOGI4NjI5MTZjNjc4YjkwNGJjZTRiZWVhZTMiLCJjb3ZlcmFnZSI6eyJkZXRlcm1pbmVkX2VuZHMiOjEsImtleV9hdHRhY2tzIjoxLCJrZXlfcmVsZWFzZXMiOjEsIm5vdGF0aW9uX25vdGVzIjoxLCJwcm9qZWN0ZWRfbWVsb2RpY190YXJnZXRzIjoxLCJyZXByZXNlbnRlZF9ldmVudHMiOjYsInNvdXJjZV9ldmVudHMiOjYsInNvdXJjZV90cmFja3MiOjIsInVubWF0Y2hlZF9yZWxlYXNlcyI6MCwidW5yZXNvbHZlZF9lbmRzIjowLCJ1bnJlc29sdmVkX3JvdXRlX2VuZHMiOjAsInplcm9fbGVuZ3RoX2F0dGFja3MiOjB9LCJtZWRpYSI6W10sIm5vdGF0aW9uX2F2YWlsYWJsZSI6dHJ1ZSwicHJvZmlsZSI6IndtaC1iYXNpYy1rZXlzLW1pZGkxLXYxIiwidmVyc2lvbiI6Mn0sImNvZGUiOiJsaWJyYXJ5X2R1cGxpY2F0ZSIsImVudHJ5Ijp7ImNsZWFuX3BhY2thZ2UiOnsiYnl0ZXMiOjMxNzMsImNhcGFiaWxpdGllcyI6eyJhY291c3RpY19waXRjaCI6Im5vdF9pbmZlcnJlZF9mcm9tX2tleV9udW1iZXJzIiwiYmFzaWNfa2V5cyI6ImNvbXBsZXRlIiwic2NvcmVfcHJvamVjdGlvbiI6ImNvbXBsZXRlX3Bvc2l0aXZlX2R1cmF0aW9uX2tleXMiLCJzb3VyY2VfZXZlbnRzIjoiY29tcGxldGUiLCJzb3VyY2VfcmVuZGl0aW9uIjoicmVxdWlyZXNfZXhwbGljaXRfcmVjZWl2ZXJfbWFwcGluZyJ9LCJjb250ZW50X3NoYTI1NiI6IjBhYzQwYWI2ZjgyOTA2ODFlZmM0MmQ2YWU4OWU5Mjk1N2M0NGEwOGI4NjI5MTZjNjc4YjkwNGJjZTRiZWVhZTMiLCJjb3ZlcmFnZSI6eyJkZXRlcm1pbmVkX2VuZHMiOjEsImtleV9hdHRhY2tzIjoxLCJrZXlfcmVsZWFzZXMiOjEsIm5vdGF0aW9uX25vdGVzIjoxLCJwcm9qZWN0ZWRfbWVsb2RpY190YXJnZXRzIjoxLCJyZXByZXNlbnRlZF9ldmVudHMiOjYsInNvdXJjZV9ldmVudHMiOjYsInNvdXJjZV90cmFja3MiOjIsInVubWF0Y2hlZF9yZWxlYXNlcyI6MCwidW5yZXNvbHZlZF9lbmRzIjowLCJ1bnJlc29sdmVkX3JvdXRlX2VuZHMiOjAsInplcm9fbGVuZ3RoX2F0dGFja3MiOjB9LCJtZWRpYSI6W10sIm5vdGF0aW9uX2F2YWlsYWJsZSI6dHJ1ZSwicHJvZmlsZSI6IndtaC1iYXNpYy1rZXlzLW1pZGkxLXYxIiwidmVyc2lvbiI6Mn0sImNvbXBvc2VyIjoiIiwiY29udGVudF9zaGEyNTYiOiIwYWM0MGFiNmY4MjkwNjgxZWZjNDJkNmFlODllOTI5NTdjNDRhMDhiODYyOTE2YzY3OGI5MDRiY2U0YmVlYWUzIiwia2V5Ijoic29uZy0wYWM0MGFiNmY4MjkwNjgxZWZjNDJkNmFlODllOTI5NTdjNDRhMDhiODYyOTE2YzY3OGI5MDRiY2U0YmVlYWUzIiwibGFiZWwiOiJPcmlnaW5hbCBhY3RpdmUgQzQgYW5kIHJldGFpbmVkIGVtcHR5IHBhcnQiLCJsaWJyYXJ5X2Zvcm1hdF92ZXJzaW9uIjoyLCJwcm92ZW5hbmNlIjp7ImF0dHJpYnV0aW9uIjoiVXNlci1zdXBwbGllZCBNSURJOyBzb3VyY2UgcmlnaHRzIHVudmVyaWZpZWQ7IG5vbWluYWwgTUlESSBrZXktbnVtYmVyIHByb2plY3Rpb24iLCJraW5kIjoidXNlcl9zdXBwbGllZF91bnZlcmlmaWVkIiwibGljZW5zZSI6bnVsbCwic291cmNlX3VybCI6bnVsbH0sInJldGFpbmVkX3NvdXJjZSI6bnVsbCwicmV2aXNpb24iOjEsInNhdmVkX2F0X3VuaXhfbXMiOjE3OTExOTM5OTYyMjksInNjb3JlX2J5dGVzIjo5MTgsInNjb3JlX2lkIjoibWlkaS1iYXNpYy1kMzcxYWM2YTc5MGRjMTYwYzhlYzk5ZGViNmEyNjcxOTdmYzhmMDIzM2Q2MDQ5YzUwMzhlM2VhNmQwYmJiMzg2Iiwic2NvcmVfc2hhMjU2IjoiMDZhYmEwNTlhYTQ1YzlmNzg1NzFjMzVjNWY4ZWMwYjk5MzcyNmMyZjAzMGEwN2ExZTAxYjAwMjAyMTMzZmU4MyIsInRpdGxlIjoiT3JpZ2luYWwgYWN0aXZlIEM0IGFuZCByZXRhaW5lZCBlbXB0eSBwYXJ0In0sImluZGV4IjowLCJtZXNzYWdlIjoiVGhpcyBleGFjdCBjYW5vbmljYWwgc2NvcmUgaXMgYWxyZWFkeSBzYXZlZCBFdmVyeSBzb3VyY2UgZXZlbnQgYW5kIGF0dGFjayByZW1haW5zIHVuY2hhbmdlZC4gQmFzaWMgc2luZS9wdWxzZSBhdWRpdGlvbiBhbmQgc2VsZWN0ZWQtcGFydCBub3RlLW9uIHRhcmdldHMgdXNlIHRoZSBzYW1lIGRlY2xhcmVkIEZJRk8vdGVtcG8gaW50ZXJwcmV0YXRpb24uIEluZmVycmVkIGVuZHMgYW5kIHplcm8gZ2F0ZXMgYXJlIGRpc2Nsb3NlZDsgcGVyY3Vzc2lvbiBzZWxlY3RvcnMgZG8gbm90IGlkZW50aWZ5IGFuIG9yaWdpbmFsIGtpdC4gT3JpZ2luYWwgc291cmNlLXNvdW5kIGZpZGVsaXR5IHJlbWFpbnMgdW5yZXNvbHZlZC4gRGV2aWNlIHJhbmdlLCByZWNlaXZlciBhbGxvY2F0aW9uIGFuZCBwYXJ0IHNlbGVjdGlvbiByZXF1aXJlIHRoZWlyIG93biBjaGVja3MuIiwicGF0aCI6InNvbmdzL21pZGktZDM3MWFjNmE3OTBkYzE2MGM4ZWM5OWRlYjZhMjY3MTk3ZmM4ZjAyMzNkNjA0OWM1MDM4ZTNlYTZkMGJiYjM4Ni9tZXRhZGF0YS5qc29uIiwicGxheWFibGUiOnRydWUsInN0YXR1cyI6ImR1cGxpY2F0ZSIsInRpdGxlIjoiT3JpZ2luYWwgYWN0aXZlIEM0IGFuZCByZXRhaW5lZCBlbXB0eSBwYXJ0In1dLCJtb2RlIjoiY29tbWl0Iiwic291cmNlIjp7ImFyY2hpdmVfa2V5IjoicGFjay04ZjM4ODU5MGExNmFkOTNmZTUzMGFhNmM0NTg1NzMzY2M2NDgzYjc5YTUwMTI1NGVmNzc0ODEzYTAyZmZmN2E0IiwiYnl0ZXMiOjIyNDQsImZpbGVuYW1lIjoib3JpZ2luYWwtYWN0aXZlLWFuZC1lbXB0eS56aXAiLCJyZXRhaW5lZCI6dHJ1ZSwic2hhMjU2IjoiOGYzODg1OTBhMTZhZDkzZmU1MzBhYTZjNDU4NTczM2NjNjQ4M2I3OWE1MDEyNTRlZjc3NDgxM2EwMmZmZjdhNCJ9LCJzdW1tYXJ5Ijp7ImNvbmZsaWN0IjowLCJkdXBsaWNhdGUiOjEsImVycm9yIjowLCJyZWFkeSI6MCwicmV0YWluZWRfbm9ucGxheWFibGUiOjAsInNhdmVkIjowLCJ0b3RhbCI6MX0sInZlcnNpb24iOjEsIndhcm5pbmdzIjpbIkNsZWFuIHYyIGZvbGRlcnMgY29udGFpbiBvbmx5IGNvbXBsZXRlIHNlbWFudGljIG11c2ljIGFuZCBkZWNsYXJlZCBydW50aW1lIGFzc2V0czsgb3JpZ2luYWwgaW5wdXQgaXMgcmV0YWluZWQgcHJpdmF0ZWx5IG9uIGNvbW1pdCJdfQ==",
+      "content_type": "application/json; charset=utf-8",
+      "status": 200
+    },
+    "decoded_response": {
+      "format": "worldmusichub-import-report",
+      "inventory": {
+        "expanded_bytes": 3354,
+        "files": [
+          {
+            "bytes": 181,
+            "path": "manifest.json",
+            "sha256": "544b409f84da45c081c35f2291e26d79c0756aabbbe99de2694d6839adcbcb97"
+          },
+          {
+            "bytes": 665,
+            "path": "songs/midi-d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386/metadata.json",
+            "sha256": "82a5498e594e4f1fbd5be21cb746ddf1d004e681c94b255a31cd7e1878caa0fd"
+          },
+          {
+            "bytes": 2508,
+            "path": "songs/midi-d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386/score.json",
+            "sha256": "e9a115a026980716e4d5b3a951e91893c19fa8306196584b24209ff54a1397cc"
+          }
+        ]
+      },
+      "items": [
+        {
+          "clean_package": {
+            "bytes": 3173,
+            "capabilities": {
+              "acoustic_pitch": "not_inferred_from_key_numbers",
+              "basic_keys": "complete",
+              "score_projection": "complete_positive_duration_keys",
+              "source_events": "complete",
+              "source_rendition": "requires_explicit_receiver_mapping"
+            },
+            "content_sha256": "0ac40ab6f8290681efc42d6ae89e92957c44a08b862916c678b904bce4beeae3",
+            "coverage": {
+              "determined_ends": 1,
+              "key_attacks": 1,
+              "key_releases": 1,
+              "notation_notes": 1,
+              "projected_melodic_targets": 1,
+              "represented_events": 6,
+              "source_events": 6,
+              "source_tracks": 2,
+              "unmatched_releases": 0,
+              "unresolved_ends": 0,
+              "unresolved_route_ends": 0,
+              "zero_length_attacks": 0
+            },
+            "media": [],
+            "notation_available": true,
+            "profile": "wmh-basic-keys-midi1-v1",
+            "version": 2
+          },
+          "code": "library_duplicate",
+          "entry": {
+            "clean_package": {
+              "bytes": 3173,
+              "capabilities": {
+                "acoustic_pitch": "not_inferred_from_key_numbers",
+                "basic_keys": "complete",
+                "score_projection": "complete_positive_duration_keys",
+                "source_events": "complete",
+                "source_rendition": "requires_explicit_receiver_mapping"
+              },
+              "content_sha256": "0ac40ab6f8290681efc42d6ae89e92957c44a08b862916c678b904bce4beeae3",
+              "coverage": {
+                "determined_ends": 1,
+                "key_attacks": 1,
+                "key_releases": 1,
+                "notation_notes": 1,
+                "projected_melodic_targets": 1,
+                "represented_events": 6,
+                "source_events": 6,
+                "source_tracks": 2,
+                "unmatched_releases": 0,
+                "unresolved_ends": 0,
+                "unresolved_route_ends": 0,
+                "zero_length_attacks": 0
+              },
+              "media": [],
+              "notation_available": true,
+              "profile": "wmh-basic-keys-midi1-v1",
+              "version": 2
+            },
+            "composer": "",
+            "content_sha256": "0ac40ab6f8290681efc42d6ae89e92957c44a08b862916c678b904bce4beeae3",
+            "key": "song-0ac40ab6f8290681efc42d6ae89e92957c44a08b862916c678b904bce4beeae3",
+            "label": "Original active C4 and retained empty part",
+            "library_format_version": 2,
+            "provenance": {
+              "attribution": "User-supplied MIDI; source rights unverified; nominal MIDI key-number projection",
+              "kind": "user_supplied_unverified",
+              "license": null,
+              "source_url": null
+            },
+            "retained_source": null,
+            "revision": 1,
+            "saved_at_unix_ms": 1791193996229,
+            "score_bytes": 918,
+            "score_id": "midi-basic-d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386",
+            "score_sha256": "06aba059aa45c9f78571c35c5f8ec0b993726c2f030a07a1e01b00202133fe83",
+            "title": "Original active C4 and retained empty part"
+          },
+          "index": 0,
+          "message": "This exact canonical score is already saved Every source event and attack remains unchanged. Basic sine/pulse audition and selected-part note-on targets use the same declared FIFO/tempo interpretation. Inferred ends and zero gates are disclosed; percussion selectors do not identify an original kit. Original source-sound fidelity remains unresolved. Device range, receiver allocation and part selection require their own checks.",
+          "path": "songs/midi-d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386/metadata.json",
+          "playable": true,
+          "status": "duplicate",
+          "title": "Original active C4 and retained empty part"
+        }
+      ],
+      "mode": "commit",
+      "source": {
+        "archive_key": "pack-8f388590a16ad93fe530aa6c4585733cc6483b79a501254ef774813a02fff7a4",
+        "bytes": 2244,
+        "filename": "original-active-and-empty.zip",
+        "retained": true,
+        "sha256": "8f388590a16ad93fe530aa6c4585733cc6483b79a501254ef774813a02fff7a4"
+      },
+      "summary": {
+        "conflict": 0,
+        "duplicate": 1,
+        "error": 0,
+        "ready": 0,
+        "retained_nonplayable": 0,
+        "saved": 0,
+        "total": 1
+      },
+      "version": 1,
+      "warnings": [
+        "Clean v2 folders contain only complete semantic music and declared runtime assets; original input is retained privately on commit"
+      ]
+    }
+  },
+  {
+    "request": {
+      "path": "/api/library/load",
+      "method": "POST",
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body_utf8": "{\"key\": \"song-0ac40ab6f8290681efc42d6ae89e92957c44a08b862916c678b904bce4beeae3\"}"
+    },
+    "native_response": {
+      "body_base64": "eyJjbGVhbl9wYWNrYWdlIjp7ImNhcGFiaWxpdGllcyI6eyJhY291c3RpY19waXRjaCI6Im5vdF9pbmZlcnJlZF9mcm9tX2tleV9udW1iZXJzIiwiYmFzaWNfa2V5cyI6ImNvbXBsZXRlIiwic2NvcmVfcHJvamVjdGlvbiI6ImNvbXBsZXRlX3Bvc2l0aXZlX2R1cmF0aW9uX2tleXMiLCJzb3VyY2VfZXZlbnRzIjoiY29tcGxldGUiLCJzb3VyY2VfcmVuZGl0aW9uIjoicmVxdWlyZXNfZXhwbGljaXRfcmVjZWl2ZXJfbWFwcGluZyJ9LCJjb250ZW50X3NoYTI1NiI6IjBhYzQwYWI2ZjgyOTA2ODFlZmM0MmQ2YWU4OWU5Mjk1N2M0NGEwOGI4NjI5MTZjNjc4YjkwNGJjZTRiZWVhZTMiLCJjb3ZlcmFnZSI6eyJkZXRlcm1pbmVkX2VuZHMiOjEsImtleV9hdHRhY2tzIjoxLCJrZXlfcmVsZWFzZXMiOjEsIm5vdGF0aW9uX25vdGVzIjoxLCJwcm9qZWN0ZWRfbWVsb2RpY190YXJnZXRzIjoxLCJyZXByZXNlbnRlZF9ldmVudHMiOjYsInNvdXJjZV9ldmVudHMiOjYsInNvdXJjZV90cmFja3MiOjIsInVubWF0Y2hlZF9yZWxlYXNlcyI6MCwidW5yZXNvbHZlZF9lbmRzIjowLCJ1bnJlc29sdmVkX3JvdXRlX2VuZHMiOjAsInplcm9fbGVuZ3RoX2F0dGFja3MiOjB9LCJtZWRpYSI6W10sIm1ldGFkYXRhX2pzb24iOiJ7XG4gIFwiZm9ybWF0XCI6IFwid29ybGRtdXNpY2h1Yi1zb25nXCIsXG4gIFwiaWRcIjogXCJtaWRpLWJhc2ljLWQzNzFhYzZhNzkwZGMxNjBjOGVjOTlkZWI2YTI2NzE5N2ZjOGYwMjMzZDYwNDljNTAzOGUzZWE2ZDBiYmIzODZcIixcbiAgXCJtZWRpYVwiOiBbXSxcbiAgXCJyaWdodHNcIjoge1xuICAgIFwiYXR0cmlidXRpb25cIjogXCJVc2VyLXN1cHBsaWVkIE1JREk7IHNvdXJjZSByaWdodHMgYXJlIHVudmVyaWZpZWRcIixcbiAgICBcImxpY2Vuc2VcIjogbnVsbCxcbiAgICBcInN0YXR1c1wiOiBcInVzZXJfc3VwcGxpZWRfdW52ZXJpZmllZFwiXG4gIH0sXG4gIFwic2NvcmVcIjoge1xuICAgIFwiYnl0ZXNcIjogMjUwOCxcbiAgICBcInBhdGhcIjogXCJzY29yZS5qc29uXCIsXG4gICAgXCJzaGEyNTZcIjogXCJlOWExMTVhMDI2OTgwNzE2ZTRkNWIzYTk1MWU5MTg5M2MxOWZhODMwNjE5NjU4NGIyNDIwOWZmNTRhMTM5N2NjXCJcbiAgfSxcbiAgXCJzb3VyY2VzXCI6IFtcbiAgICB7XG4gICAgICBcImJ5dGVzXCI6IDUzLFxuICAgICAgXCJmb3JtYXRcIjogXCJtaWRpXCIsXG4gICAgICBcInNoYTI1NlwiOiBcImQzNzFhYzZhNzkwZGMxNjBjOGVjOTlkZWI2YTI2NzE5N2ZjOGYwMjMzZDYwNDljNTAzOGUzZWE2ZDBiYmIzODZcIlxuICAgIH1cbiAgXSxcbiAgXCJ0aXRsZVwiOiBcIk9yaWdpbmFsIGFjdGl2ZSBDNCBhbmQgcmV0YWluZWQgZW1wdHkgcGFydFwiLFxuICBcInZlcnNpb25cIjogMlxufSIsIm5vdGF0aW9uX2F2YWlsYWJsZSI6dHJ1ZSwicHJvZmlsZSI6IndtaC1iYXNpYy1rZXlzLW1pZGkxLXYxIiwicnVudGltZSI6eyJjb21waWxhdGlvbiI6eyJkaWFnbm9zdGljcyI6W3siY29kZSI6ImJhc2ljX2tleV9yZW5kaXRpb25faW50ZXJwcmV0YXRpb24iLCJtZXNzYWdlIjoiQ29tcGxldGUgYmFzaWMta2V5IHJlbmRpdGlvbiB1c2VzIHRoZSBuYW1lZCBGSUZPIHZpcnR1YWwtcm91dGUvdGVtcG8gcG9saWN5IGFuZCB0aGUgc2FtZSBhbGwtYXR0YWNrIHByYWN0aWNlIHRpbWVsaW5lLiBQZXJjdXNzaW9uIGlzIGEgbmFtZWQgc2VsZWN0b3IgcHVsc2U7IGNoYW5uZWwgc3RvcHMgY2xvc2UgZ2F0ZXMgYW5kIG90aGVyIGVmZmVjdHMgcmVtYWluIHVuaW50ZXJwcmV0ZWQuIEluZmVycmVkIGVuZHMgYW5kIDIwbXMgemVybyBnYXRlcyBhcmUgcmVjZWl2ZXIgY2hvaWNlcywgbmV2ZXIgb3JpZ2luYWwgZHVyYXRpb25zIG9yIGhvbGQtc2NvcmluZyB0YXJnZXRzLiIsIm5vdGVfaWQiOm51bGwsInNldmVyaXR5Ijoid2FybmluZyJ9XSwidGltZWxpbmUiOnsiZHVyYXRpb25fbXMiOjUwMC4wLCJub3RlX2NvbHVtbnMiOlsiaWQiLCJwYXJ0X2lkIiwibWlkaSIsInZlbG9jaXR5Iiwic3RhcnRfbXMiLCJkdXJhdGlvbl9tcyJdLCJub3RlcyI6W1sibWlkaS10MS1lMSIsIm1pZGktdDEtYzEtcjAiLDYwLDkwLDAuMCw1MDAuMF1dfX0sInBhcnRzIjpbeyJhdHRhY2tzIjoxLCJpZCI6Im1pZGktdDEtYzEtcjAiLCJpbnN0YW50YW5lb3VzIjowLCJwZXJjdXNzaW9uIjpmYWxzZSwicG9zaXRpdmUiOjEsInJhbmdlIjpbNjAsNjBdLCJ1bnJlc29sdmVkIjowfSx7ImF0dGFja3MiOjAsImlkIjoibWlkaS10Mi1jMi1yMCIsImluc3RhbnRhbmVvdXMiOjAsInBlcmN1c3Npb24iOmZhbHNlLCJwb3NpdGl2ZSI6MCwicmFuZ2UiOm51bGwsInVucmVzb2x2ZWQiOjB9XSwicHJvZmlsZSI6IndtaC1iYXNpYy1rZXktcHJhY3RpY2UtdjIiLCJyZWZlcmVuY2VfYXVkaW8iOiJiYXNpY19zeW50aGVzaXplZCIsInJlbmRpdGlvbiI6eyJjb3ZlcmFnZSI6eyJjb250cm9sX2VuZGVkX3ZvaWNlcyI6MCwiZGVyaXZlZF92b2ljZXMiOjEsImludGVycHJldGVkX2NoYW5uZWxfc3RvcF9ldmVudHMiOjAsIm1heGltdW1fYWxsb2NhdGVkX3ZvaWNlcyI6MSwibWF4aW11bV9zaW11bHRhbmVvdXNfdm9pY2VzIjoxLCJtZWxvZGljX3RhcmdldHMiOjEsIm1ldGFkYXRhX2V2ZW50cyI6MiwicGFpcmVkX3JlbGVhc2VzIjoxLCJwZXJjdXNzaW9uX3NlbGVjdG9ycyI6MCwicHJhY3RpY2VfdGFyZ2V0cyI6MSwicm91dGluZ19ldmVudHMiOjAsInNvdXJjZV9hdHRhY2tzIjoxLCJzb3VyY2VfZW5kX2NsZWFudXBzIjowLCJzb3VyY2VfZXZlbnRzIjo2LCJzb3VyY2VfcHJvdmVkX2VuZHMiOjEsInNvdXJjZV9yZWxlYXNlcyI6MSwic291cmNlX3NpbGVuY2VfY29udHJvbGxlcl9ldmVudHMiOjAsInN5bnRoZXRpY19nYXRlcyI6MCwidGVtcG9fZXZlbnRzIjowLCJ1bmludGVycHJldGVkX2NvbnRyb2xsZXJfZXZlbnRzIjoxLCJ1bmludGVycHJldGVkX3BpdGNoX2JlbmRfZXZlbnRzIjowLCJ1bmludGVycHJldGVkX3ByZXNzdXJlX2V2ZW50cyI6MCwidW5pbnRlcnByZXRlZF9wcm9ncmFtX2V2ZW50cyI6MSwidW5pbnRlcnByZXRlZF9zeXNleF9ldmVudHMiOjAsInVubWF0Y2hlZF9yZWxlYXNlcyI6MCwiemVyb190ZW1wb19ldmVudHMiOjB9LCJkdXJhdGlvbl9tcyI6NTAwLjAsIm5vdGVfY29sdW1ucyI6WyJub3RlX2lkIiwiYXR0YWNrIiwicmVsZWFzZSIsInJvdXRlIiwiY2hhbm5lbCIsInJvbGUiLCJzdGFydCIsImVuZCIsInNvdXJjZV9lbmRfdGljayIsInJlY2VpdmVyX2VuZF90aWNrIiwic291cmNlX3JlbGVhc2Vfc3RhdHVzIiwiZW5kX3JlYXNvbiIsInN5bnRoZXRpY19nYXRlIl0sIm5vdGVzIjpbWyJtaWRpLXQxLWUxIixbMCwwXSxbMCwxXSwwLDAsIm1lbG9kaWNfa2V5IixbIjAiLDFdLFsiNTAwMDAwIiwxXSw5Niw5NiwidW5pcXVlX3JlbGVhc2UiLCJmaWZvX3JlbGVhc2UiLGZhbHNlXV0sInBvbGljeSI6eyJhbGxvY2F0aW9uX2xvb2thaGVhZF9tcyI6MTAwLCJjb250cm9scyI6IkNDMTIwIEFsbFNvdW5kT2ZmIGFuZCBDQzEyMyBBbGxOb3Rlc09mZiBlbmQgYWxsIGhlbGQgdm9pY2VzIG9uIHRoZWlyIHZpcnR1YWwgYnVzL2NoYW5uZWwgaW1tZWRpYXRlbHkgdW5kZXIgdGhpcyBiYXNpYyByZWNlaXZlciBwb2xpY3ksIHdpdGhvdXQgc3VzdGFpbi4gT3RoZXIgY29udHJvbGxlcnMsIHByb2dyYW0sIGJhbmssIGJlbmQsIHByZXNzdXJlIGFuZCBTeXNFeCByZW1haW4gY291bnRlZCBzb3VyY2UgZXZpZGVuY2UgYnV0IGRvIG5vdCBhbHRlciB0aGlzIHJlbmRpdGlvbi4gU291cmNlIG1peGVyL3NpbGVuY2UgY29udHJvbHMgYXJlIGRpc2Nsb3NlZDsgYWxsIGF0dGFja3MgYXVkaXRpb24gYnkgZGVmYXVsdC4iLCJldmVudF9vcmRlciI6InRpY2tfdHJhY2tfaW5kZXhfZXZlbnRfaW5kZXgiLCJpbnN0YW50YW5lb3VzIjoiT25seSBhIHplcm8tdGltZSByZWNlaXZlciBnYXRlIHJlY2VpdmVzIGEgMjBtcyBhdWRpdGlvbi90YXJnZXQgZ2F0ZS4gU291cmNlIHN0YXJ0L2VuZCBhbmQgY2hvc2VuIHJlbGVhc2UgcmVtYWluIHVuY2hhbmdlZC4gUG9zaXRpdmUgZ2F0ZXMgYXJlIG5ldmVyIGxlbmd0aGVuZWQsIHF1YW50aXplZCBvciBjbGFtcGVkLiIsIm1lbG9kaWNfc291bmQiOiJXTUggYmFzaWMgc2luZSB2MTogb25lIG5ldXRyYWwgc2luZSBhdCB0aGUgbm9taW5hbCBNSURJIGtleSBmcmVxdWVuY3kgZm9yIGV2ZXJ5IGtleSAwLi4xMjcsIHVzaW5nIHRoZSBwb3NpdGl2ZSBzb3VyY2UgYXR0YWNrIHZlbG9jaXR5LiBObyBvcmlnaW5hbC1pbnN0cnVtZW50LCBhY291c3RpYy1waXRjaCBvciBwaHlzaWNhbC1rZXlib2FyZCBwcm92ZW5hbmNlIGNsYWltLiIsIm1pc3NpbmdfcmVsZWFzZSI6IkEgaGVsZCB2b2ljZSB3aXRob3V0IGEgY2hvc2VuIHJlbGVhc2UgZW5kcyBhdCB0aGUgZ2xvYmFsIHNvdXJjZSBlbmQ7IGFuIGluZGl2aWR1YWwgdHJhY2sncyBFbmRPZlRyYWNrIGRvZXMgbm90IGNsZWFyIHNoYXJlZCBzdGF0ZS4gVGhpcyBpcyByZWNlaXZlciBjbGVhbnVwLCBub3QgYW4gb3JpZ2luYWwgZHVyYXRpb24uIiwibWl4aW5nIjoiTXV0ZS9zb2xvIGZpbHRlcnMgYXR0YWNrLW93bmVkIHZvaWNlcyBhZnRlciBjb21wbGV0ZS1zb3VyY2UgRklGTyBpbnRlcnByZXRhdGlvbi4gUmVsZWFzZSBldmVudHMgZnJvbSBtdXRlZCB0cmFja3Mgc3RpbGwgZGV0ZXJtaW5lIGdhdGVzLiBQcmFjdGljZSBwYXJ0IHNlbGVjdGlvbiBpcyBzZXBhcmF0ZSBmcm9tIGFjY29tcGFuaW1lbnQgYXVkaWJpbGl0eS4iLCJwZXJjdXNzaW9uX3NvdW5kIjoiV01IIGJhc2ljIHBlcmN1c3Npb24gcHVsc2UgdjE6IHRoZSBzYW1lIGRldGVybWluaXN0aWMgZHJ5IG5vaXNlIHB1bHNlIGF0IDE1MDBIeiBmb3IgZXZlcnkgY2hhbm5lbC0xMCBrZXkgc2VsZWN0b3IgMC4uMTI3LiBTZWxlY3RvcnMgcmVtYWluIGRpc3RpbmN0OyBubyBvcmlnaW5hbCBraXQgb3IgR00gbWFwIGlzIGluZmVycmVkLiIsInJlY2VpdmVyX2dhdGVfdGFpbF9tcyI6MCwicmVwZWF0ZWRfa2V5cyI6IkV2ZXJ5IHBvc2l0aXZlIE5vdGVPbiBjcmVhdGVzIGEgdm9pY2UuIE5vdGVPZmYgYW5kIHplcm8tdmVsb2NpdHkgTm90ZU9uIHJlbGVhc2UgdGhlIG9sZGVzdCBoZWxkIHZvaWNlIG9uIHRoZSBzYW1lIHZpcnR1YWwgYnVzL2NoYW5uZWwva2V5LCBpbmNsdWRpbmcgYWNyb3NzIHRyYWNrcy4gVW5tYXRjaGVkIHJlbGVhc2VzIGFyZSBhY2tub3dsZWRnZWQuIiwicm91dGVzIjoiRWFjaCBkaXN0aW5jdCBQb3J0L0RldmljZU5hbWUgZGVjbGFyYXRpb24gaXMgYSBzZXBhcmF0ZSB2aXJ0dWFsIGJ1czsgdGhlIGZ1bGx5IHVuc3BlY2lmaWVkIGRlY2xhcmF0aW9uIGlzIG9uZSBzaGFyZWQgZGVmYXVsdCBidXMuIE5vIHBoeXNpY2FsLWRldmljZSBhbGlhcyBpcyBpbmZlcnJlZC4gQ2hhbm5lbCBzdGF0ZSBpcyBzaGFyZWQgYWNyb3NzIHRyYWNrcyBvbiB0aGUgc2FtZSB2aXJ0dWFsIGJ1cy4iLCJzY29yaW5nIjoiVXNlIHRoaXMgc2FtZSBpbnRlcnByZXRlZCB0aW1lbGluZSBmb3Igc2VsZWN0ZWQtcGFydCBNSURJIG5vdGUtb24gdGFyZ2V0cy4gU2NvcmUgYXR0YWNrIHRpbWluZy9rZXkgb25seSwgbmV2ZXIgaW5mZXJyZWQgcmVsZWFzZXMsIGhvbGQgZHVyYXRpb24sIG9yaWdpbmFsIHRpbWJyZSBvciBraXQgaWRlbnRpdHkuIFByZWZlciBhIG1lbG9kaWMgcGFydDsgcGVyY3Vzc2lvbiBzZWxlY3RvciBwcmFjdGljZSBtdXN0IGJlIGV4cGxpY2l0bHkgc2VsZWN0ZWQuIERldmljZSByYW5nZSBpcyBkaWFnbm9zZWQgd2l0aG91dCBkcm9wcGluZywgZm9sZGluZyBvciBjbGFtcGluZyBrZXlzLiIsInRlbXBvIjoiU3RhcnQgYXQgNTAwMDAwIG1pY3Jvc2Vjb25kcyBwZXIgcXVhcnRlcjsgYXBwbHkgcG9zaXRpdmUgdGVtcG8gY2hhbmdlcyBpbiB0aWNrL3RyYWNrL2V2ZW50IG9yZGVyLiBMYXN0IHBvc2l0aXZlIHRlbXBvIGF0IGEgdGljayB3aW5zLiBBIHplcm8gdGVtcG8gaXMgcmV0YWluZWQgYW5kIGFja25vd2xlZGdlZCBidXQgaG9sZHMgdGhlIHByZXZpb3VzIHBvc2l0aXZlIHRlbXBvLiBUaGlzIGNob3NlbiBjbG9jayBpcyBub3QgYSBjbGFpbSB0aGF0IGNvbmZsaWN0aW5nIHNvdXJjZSB0ZW1wb3MgaGF2ZSBhbiBleGFjdCBvcmlnaW5hbCBvcmRlci4iLCJ0cmFuc3BvcnQiOiJTdG9wL3BhdXNlL3NlZWsgbXVzdCBjYW5jZWwgYWxsIGFjdGl2ZSBhbmQgc2NoZWR1bGVkIGF1ZGlvLiBSZXN1bWUgbWF5IHJlc3RhcnQgcmVtYWluaW5nIGRlcml2ZWQgZ2F0ZXMgd2l0aCBhIGZyZXNoIGJhc2ljIGVudmVsb3BlOyBwcmVzZXJ2ZSBJRHMgYW5kIHRoZSBjb21tb24gdHJhbnNwb3J0IGNsb2NrLiBOZXZlciBmZWVkIHN5bnRoZXNpemVkIGFjY29tcGFuaW1lbnQgaW50byB1c2VyIE1JREkgaW5wdXQuIiwidm9pY2VfbGltaXQiOjEyOH0sInBvbGljeV9pZCI6IndtaC1iYXNpYy1rZXktcmVuZGl0aW9uLWZpZm8tdjEiLCJzb3VyY2VfY2xvY2tfYXZhaWxhYmxlIjp0cnVlLCJzb3VyY2VfZHVyYXRpb25fbXMiOjUwMC4wLCJzb3VyY2Vfc2hhMjU2IjoiZDM3MWFjNmE3OTBkYzE2MGM4ZWM5OWRlYjZhMjY3MTk3ZmM4ZjAyMzNkNjA0OWM1MDM4ZTNlYTZkMGJiYjM4NiIsInVubWF0Y2hlZF9yZWxlYXNlcyI6W119LCJzb3VyY2VfcmVuZGl0aW9uIjoidW5yZXNvbHZlZCIsInNvdXJjZV9zaGEyNTYiOiJkMzcxYWM2YTc5MGRjMTYwYzhlYzk5ZGViNmEyNjcxOTdmYzhmMDIzM2Q2MDQ5YzUwMzhlM2VhNmQwYmJiMzg2In0sInNjb3JlX2pzb24iOiJ7XCJmb3JtYXRcIjpcIndvcmxkbXVzaWNodWItY29tcGxldGUtc2NvcmVcIixcInZlcnNpb25cIjoxLFwic291cmNlXCI6e1wiZm9ybWF0XCI6XCJtaWRpXCIsXCJieXRlc1wiOjUzLFwic2hhMjU2XCI6XCJkMzcxYWM2YTc5MGRjMTYwYzhlYzk5ZGViNmEyNjcxOTdmYzhmMDIzM2Q2MDQ5YzUwMzhlM2VhNmQwYmJiMzg2XCJ9LFwibm90YXRpb25cIjp7XCJmb3JtYXRfbWV0YWRhdGFcIjp7XCJzY2hlbWFfcmV2aXNpb25cIjoyLFwicHJvZHVjZXJcIjpcIldvcmxkTXVzaWNIdWJcIixcInByb2R1Y2VyX3ZlcnNpb25cIjpcIjAuMi4wLWFscGhhLjFcIn0sXCJ2ZXJzaW9uXCI6MSxcImlkXCI6XCJtaWRpLWJhc2ljLWQzNzFhYzZhNzkwZGMxNjBjOGVjOTlkZWI2YTI2NzE5N2ZjOGYwMjMzZDYwNDljNTAzOGUzZWE2ZDBiYmIzODZcIixcInRpdGxlXCI6XCJPcmlnaW5hbCBhY3RpdmUgQzQgYW5kIHJldGFpbmVkIGVtcHR5IHBhcnRcIixcImNvbXBvc2VyXCI6XCJcIixcInByb3ZlbmFuY2VcIjp7XCJraW5kXCI6XCJ1c2VyX3N1cHBsaWVkX3VudmVyaWZpZWRcIixcImF0dHJpYnV0aW9uXCI6XCJVc2VyLXN1cHBsaWVkIE1JREk7IHNvdXJjZSByaWdodHMgdW52ZXJpZmllZDsgbm9taW5hbCBNSURJIGtleS1udW1iZXIgcHJvamVjdGlvblwiLFwic291cmNlX3VybFwiOm51bGwsXCJsaWNlbnNlXCI6bnVsbH0sXCJwYXJ0c1wiOlt7XCJpZFwiOlwibWlkaS10MS1jMS1yMFwiLFwibmFtZVwiOlwiVHJhY2sgMSAvIGNoIDFcIixcImluc3RydW1lbnRcIjpcIm1pZGkta2V5LW51bWJlclwiLFwibm90ZXNcIjpbe1wiaWRcIjpcIm1pZGktdDEtZTFcIixcImF0XCI6e1wibnVtZXJhdG9yXCI6MCxcImRlbm9taW5hdG9yXCI6MX0sXCJkdXJhdGlvblwiOntcIm51bWVyYXRvclwiOjEsXCJkZW5vbWluYXRvclwiOjF9LFwicGl0Y2hcIjp7XCJzdGVwXCI6XCJDXCIsXCJhbHRlclwiOjAsXCJvY3RhdmVcIjo0fSxcInZvaWNlXCI6XCIxXCIsXCJzdGFmZlwiOjEsXCJ2ZWxvY2l0eVwiOjkwLFwidGllX3N0YXJ0XCI6ZmFsc2UsXCJ0aWVfc3RvcFwiOmZhbHNlfV19LHtcImlkXCI6XCJtaWRpLXQyLWMyLXIwXCIsXCJuYW1lXCI6XCJUcmFjayAyIC8gY2ggMlwiLFwiaW5zdHJ1bWVudFwiOlwibWlkaS1rZXktbnVtYmVyXCIsXCJub3Rlc1wiOltdfV0sXCJ0ZW1wb1wiOltdLFwibWV0ZXJzXCI6W10sXCJrZXlzXCI6W10sXCJtZWFzdXJlc1wiOltdLFwicmVwZWF0c1wiOltdLFwic291cmNlXCI6bnVsbH0sXCJwZXJmb3JtYW5jZVwiOntcInByb2ZpbGVcIjpcIndtaC1iYXNpYy1rZXlzLW1pZGkxLXYxXCIsXCJzb3VyY2VfZm9ybWF0XCI6MSxcInBwcVwiOjk2LFwiZW5kX3RpY2tcIjo5NixcInRyYWNrc1wiOlt7XCJpZFwiOlwidHJhY2stMVwiLFwibmFtZVwiOlwiVHJhY2sgMVwiLFwic291cmNlX2luZGV4XCI6MCxcImVuZF90aWNrXCI6OTYsXCJldmVudHNcIjpbWzAsWzE0NCw2MCw5MF1dLFs5NixbMTI4LDYwLDBdXSxbMCxbMjU1LDQ3XV1dfSx7XCJpZFwiOlwidHJhY2stMlwiLFwibmFtZVwiOlwiVHJhY2sgMlwiLFwic291cmNlX2luZGV4XCI6MSxcImVuZF90aWNrXCI6OTYsXCJldmVudHNcIjpbWzAsWzE5MywwXV0sWzAsWzE3Nyw3LDEwMF1dLFs5NixbMjU1LDQ3XV1dfV0sXCJyb3V0ZXNcIjpbe1wicG9ydFwiOm51bGwsXCJkZXZpY2VfbmFtZV9ieXRlc1wiOm51bGx9XSxcInBhcnRzXCI6W3tcImlkXCI6XCJtaWRpLXQxLWMxLXIwXCIsXCJ0cmFja19pZFwiOlwidHJhY2stMVwiLFwiY2hhbm5lbFwiOjAsXCJyb3V0ZVwiOjAsXCJrZXlfc2VtYW50aWNzXCI6XCJtaWRpX2tleV9udW1iZXJcIn0se1wiaWRcIjpcIm1pZGktdDItYzItcjBcIixcInRyYWNrX2lkXCI6XCJ0cmFjay0yXCIsXCJjaGFubmVsXCI6MSxcInJvdXRlXCI6MCxcImtleV9zZW1hbnRpY3NcIjpcIm1pZGlfa2V5X251bWJlclwifV0sXCJ0aW1pbmdcIjp7XCJldmVudF9vcmRlclwiOlwidGlja190cmFja19pbmRleF9ldmVudF9pbmRleFwiLFwicmVsYXRpdmVfY2xvY2tfYXZhaWxhYmxlXCI6dHJ1ZSxcImVuZF9yZWxhdGl2ZV9taWNyb3NlY29uZHNcIjp7XCJudW1lcmF0b3JcIjpcIjUwMDAwMFwiLFwiZGVub21pbmF0b3JcIjoxfSxcInNtZl9kZWZhdWx0X3RlbXBvX3VzZWRcIjp0cnVlLFwic291cmNlX3RlbXBvX2V2ZW50c1wiOjAsXCJzb3VyY2VfbWV0ZXJfZXZlbnRzXCI6MCxcIm1ldGVyXCI6XCJ1bnNwZWNpZmllZFwiLFwibGVnYWN5X3J1bm5pbmdfc3RhdHVzX2V2ZW50c1wiOjAsXCJpbnZhbGlkX3Byb2dyYW1fZXZlbnRzXCI6MH19LFwiY292ZXJhZ2VcIjp7XCJzb3VyY2VfdHJhY2tzXCI6MixcInNvdXJjZV9ldmVudHNcIjo2LFwicmVwcmVzZW50ZWRfZXZlbnRzXCI6NixcImtleV9hdHRhY2tzXCI6MSxcImtleV9yZWxlYXNlc1wiOjEsXCJkZXRlcm1pbmVkX2VuZHNcIjoxLFwiemVyb19sZW5ndGhfYXR0YWNrc1wiOjAsXCJ1bnJlc29sdmVkX2VuZHNcIjowLFwidW5tYXRjaGVkX3JlbGVhc2VzXCI6MCxcIm5vdGF0aW9uX25vdGVzXCI6MSxcInByb2plY3RlZF9tZWxvZGljX3RhcmdldHNcIjoxLFwidW5yZXNvbHZlZF9yb3V0ZV9lbmRzXCI6MH0sXCJjYXBhYmlsaXRpZXNcIjp7XCJzb3VyY2VfZXZlbnRzXCI6XCJjb21wbGV0ZVwiLFwiYmFzaWNfa2V5c1wiOlwiY29tcGxldGVcIixcInNjb3JlX3Byb2plY3Rpb25cIjpcImNvbXBsZXRlX3Bvc2l0aXZlX2R1cmF0aW9uX2tleXNcIixcInNvdXJjZV9yZW5kaXRpb25cIjpcInJlcXVpcmVzX2V4cGxpY2l0X3JlY2VpdmVyX21hcHBpbmdcIixcImFjb3VzdGljX3BpdGNoXCI6XCJub3RfaW5mZXJyZWRfZnJvbV9rZXlfbnVtYmVyc1wifX0iLCJ2ZXJzaW9uIjoyfSwiZW50cnkiOnsiY2xlYW5fcGFja2FnZSI6eyJieXRlcyI6MzE3MywiY2FwYWJpbGl0aWVzIjp7ImFjb3VzdGljX3BpdGNoIjoibm90X2luZmVycmVkX2Zyb21fa2V5X251bWJlcnMiLCJiYXNpY19rZXlzIjoiY29tcGxldGUiLCJzY29yZV9wcm9qZWN0aW9uIjoiY29tcGxldGVfcG9zaXRpdmVfZHVyYXRpb25fa2V5cyIsInNvdXJjZV9ldmVudHMiOiJjb21wbGV0ZSIsInNvdXJjZV9yZW5kaXRpb24iOiJyZXF1aXJlc19leHBsaWNpdF9yZWNlaXZlcl9tYXBwaW5nIn0sImNvbnRlbnRfc2hhMjU2IjoiMGFjNDBhYjZmODI5MDY4MWVmYzQyZDZhZTg5ZTkyOTU3YzQ0YTA4Yjg2MjkxNmM2NzhiOTA0YmNlNGJlZWFlMyIsImNvdmVyYWdlIjp7ImRldGVybWluZWRfZW5kcyI6MSwia2V5X2F0dGFja3MiOjEsImtleV9yZWxlYXNlcyI6MSwibm90YXRpb25fbm90ZXMiOjEsInByb2plY3RlZF9tZWxvZGljX3RhcmdldHMiOjEsInJlcHJlc2VudGVkX2V2ZW50cyI6Niwic291cmNlX2V2ZW50cyI6Niwic291cmNlX3RyYWNrcyI6MiwidW5tYXRjaGVkX3JlbGVhc2VzIjowLCJ1bnJlc29sdmVkX2VuZHMiOjAsInVucmVzb2x2ZWRfcm91dGVfZW5kcyI6MCwiemVyb19sZW5ndGhfYXR0YWNrcyI6MH0sIm1lZGlhIjpbXSwibm90YXRpb25fYXZhaWxhYmxlIjp0cnVlLCJwcm9maWxlIjoid21oLWJhc2ljLWtleXMtbWlkaTEtdjEiLCJ2ZXJzaW9uIjoyfSwiY29tcG9zZXIiOiIiLCJjb250ZW50X3NoYTI1NiI6IjBhYzQwYWI2ZjgyOTA2ODFlZmM0MmQ2YWU4OWU5Mjk1N2M0NGEwOGI4NjI5MTZjNjc4YjkwNGJjZTRiZWVhZTMiLCJrZXkiOiJzb25nLTBhYzQwYWI2ZjgyOTA2ODFlZmM0MmQ2YWU4OWU5Mjk1N2M0NGEwOGI4NjI5MTZjNjc4YjkwNGJjZTRiZWVhZTMiLCJsYWJlbCI6Ik9yaWdpbmFsIGFjdGl2ZSBDNCBhbmQgcmV0YWluZWQgZW1wdHkgcGFydCIsImxpYnJhcnlfZm9ybWF0X3ZlcnNpb24iOjIsInByb3ZlbmFuY2UiOnsiYXR0cmlidXRpb24iOiJVc2VyLXN1cHBsaWVkIE1JREk7IHNvdXJjZSByaWdodHMgdW52ZXJpZmllZDsgbm9taW5hbCBNSURJIGtleS1udW1iZXIgcHJvamVjdGlvbiIsImtpbmQiOiJ1c2VyX3N1cHBsaWVkX3VudmVyaWZpZWQiLCJsaWNlbnNlIjpudWxsLCJzb3VyY2VfdXJsIjpudWxsfSwicmV0YWluZWRfc291cmNlIjpudWxsLCJyZXZpc2lvbiI6MSwic2F2ZWRfYXRfdW5peF9tcyI6MTc5MTE5Mzk5NjIyOSwic2NvcmVfYnl0ZXMiOjkxOCwic2NvcmVfaWQiOiJtaWRpLWJhc2ljLWQzNzFhYzZhNzkwZGMxNjBjOGVjOTlkZWI2YTI2NzE5N2ZjOGYwMjMzZDYwNDljNTAzOGUzZWE2ZDBiYmIzODYiLCJzY29yZV9zaGEyNTYiOiIwNmFiYTA1OWFhNDVjOWY3ODU3MWMzNWM1ZjhlYzBiOTkzNzI2YzJmMDMwYTA3YTFlMDFiMDAyMDIxMzNmZTgzIiwidGl0bGUiOiJPcmlnaW5hbCBhY3RpdmUgQzQgYW5kIHJldGFpbmVkIGVtcHR5IHBhcnQifSwic2NvcmVfanNvbiI6bnVsbH0=",
+      "content_type": "application/json; charset=utf-8",
+      "status": 200
+    },
+    "decoded_response": {
+      "clean_package": {
+        "capabilities": {
+          "acoustic_pitch": "not_inferred_from_key_numbers",
+          "basic_keys": "complete",
+          "score_projection": "complete_positive_duration_keys",
+          "source_events": "complete",
+          "source_rendition": "requires_explicit_receiver_mapping"
+        },
+        "content_sha256": "0ac40ab6f8290681efc42d6ae89e92957c44a08b862916c678b904bce4beeae3",
+        "coverage": {
+          "determined_ends": 1,
+          "key_attacks": 1,
+          "key_releases": 1,
+          "notation_notes": 1,
+          "projected_melodic_targets": 1,
+          "represented_events": 6,
+          "source_events": 6,
+          "source_tracks": 2,
+          "unmatched_releases": 0,
+          "unresolved_ends": 0,
+          "unresolved_route_ends": 0,
+          "zero_length_attacks": 0
+        },
+        "media": [],
+        "metadata_json": "{\n  \"format\": \"worldmusichub-song\",\n  \"id\": \"midi-basic-d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386\",\n  \"media\": [],\n  \"rights\": {\n    \"attribution\": \"User-supplied MIDI; source rights are unverified\",\n    \"license\": null,\n    \"status\": \"user_supplied_unverified\"\n  },\n  \"score\": {\n    \"bytes\": 2508,\n    \"path\": \"score.json\",\n    \"sha256\": \"e9a115a026980716e4d5b3a951e91893c19fa8306196584b24209ff54a1397cc\"\n  },\n  \"sources\": [\n    {\n      \"bytes\": 53,\n      \"format\": \"midi\",\n      \"sha256\": \"d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386\"\n    }\n  ],\n  \"title\": \"Original active C4 and retained empty part\",\n  \"version\": 2\n}",
+        "notation_available": true,
+        "profile": "wmh-basic-keys-midi1-v1",
+        "runtime": {
+          "compilation": {
+            "diagnostics": [
+              {
+                "code": "basic_key_rendition_interpretation",
+                "message": "Complete basic-key rendition uses the named FIFO virtual-route/tempo policy and the same all-attack practice timeline. Percussion is a named selector pulse; channel stops close gates and other effects remain uninterpreted. Inferred ends and 20ms zero gates are receiver choices, never original durations or hold-scoring targets.",
+                "note_id": null,
+                "severity": "warning"
+              }
+            ],
+            "timeline": {
+              "duration_ms": 500.0,
+              "note_columns": [
+                "id",
+                "part_id",
+                "midi",
+                "velocity",
+                "start_ms",
+                "duration_ms"
+              ],
+              "notes": [
+                [
+                  "midi-t1-e1",
+                  "midi-t1-c1-r0",
+                  60,
+                  90,
+                  0.0,
+                  500.0
+                ]
+              ]
+            }
+          },
+          "parts": [
+            {
+              "attacks": 1,
+              "id": "midi-t1-c1-r0",
+              "instantaneous": 0,
+              "percussion": false,
+              "positive": 1,
+              "range": [
+                60,
+                60
+              ],
+              "unresolved": 0
+            },
+            {
+              "attacks": 0,
+              "id": "midi-t2-c2-r0",
+              "instantaneous": 0,
+              "percussion": false,
+              "positive": 0,
+              "range": null,
+              "unresolved": 0
+            }
+          ],
+          "profile": "wmh-basic-key-practice-v2",
+          "reference_audio": "basic_synthesized",
+          "rendition": {
+            "coverage": {
+              "control_ended_voices": 0,
+              "derived_voices": 1,
+              "interpreted_channel_stop_events": 0,
+              "maximum_allocated_voices": 1,
+              "maximum_simultaneous_voices": 1,
+              "melodic_targets": 1,
+              "metadata_events": 2,
+              "paired_releases": 1,
+              "percussion_selectors": 0,
+              "practice_targets": 1,
+              "routing_events": 0,
+              "source_attacks": 1,
+              "source_end_cleanups": 0,
+              "source_events": 6,
+              "source_proved_ends": 1,
+              "source_releases": 1,
+              "source_silence_controller_events": 0,
+              "synthetic_gates": 0,
+              "tempo_events": 0,
+              "uninterpreted_controller_events": 1,
+              "uninterpreted_pitch_bend_events": 0,
+              "uninterpreted_pressure_events": 0,
+              "uninterpreted_program_events": 1,
+              "uninterpreted_sysex_events": 0,
+              "unmatched_releases": 0,
+              "zero_tempo_events": 0
+            },
+            "duration_ms": 500.0,
+            "note_columns": [
+              "note_id",
+              "attack",
+              "release",
+              "route",
+              "channel",
+              "role",
+              "start",
+              "end",
+              "source_end_tick",
+              "receiver_end_tick",
+              "source_release_status",
+              "end_reason",
+              "synthetic_gate"
+            ],
+            "notes": [
+              [
+                "midi-t1-e1",
+                [
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  1
+                ],
+                0,
+                0,
+                "melodic_key",
+                [
+                  "0",
+                  1
+                ],
+                [
+                  "500000",
+                  1
+                ],
+                96,
+                96,
+                "unique_release",
+                "fifo_release",
+                false
+              ]
+            ],
+            "policy": {
+              "allocation_lookahead_ms": 100,
+              "controls": "CC120 AllSoundOff and CC123 AllNotesOff end all held voices on their virtual bus/channel immediately under this basic receiver policy, without sustain. Other controllers, program, bank, bend, pressure and SysEx remain counted source evidence but do not alter this rendition. Source mixer/silence controls are disclosed; all attacks audition by default.",
+              "event_order": "tick_track_index_event_index",
+              "instantaneous": "Only a zero-time receiver gate receives a 20ms audition/target gate. Source start/end and chosen release remain unchanged. Positive gates are never lengthened, quantized or clamped.",
+              "melodic_sound": "WMH basic sine v1: one neutral sine at the nominal MIDI key frequency for every key 0..127, using the positive source attack velocity. No original-instrument, acoustic-pitch or physical-keyboard provenance claim.",
+              "missing_release": "A held voice without a chosen release ends at the global source end; an individual track's EndOfTrack does not clear shared state. This is receiver cleanup, not an original duration.",
+              "mixing": "Mute/solo filters attack-owned voices after complete-source FIFO interpretation. Release events from muted tracks still determine gates. Practice part selection is separate from accompaniment audibility.",
+              "percussion_sound": "WMH basic percussion pulse v1: the same deterministic dry noise pulse at 1500Hz for every channel-10 key selector 0..127. Selectors remain distinct; no original kit or GM map is inferred.",
+              "receiver_gate_tail_ms": 0,
+              "repeated_keys": "Every positive NoteOn creates a voice. NoteOff and zero-velocity NoteOn release the oldest held voice on the same virtual bus/channel/key, including across tracks. Unmatched releases are acknowledged.",
+              "routes": "Each distinct Port/DeviceName declaration is a separate virtual bus; the fully unspecified declaration is one shared default bus. No physical-device alias is inferred. Channel state is shared across tracks on the same virtual bus.",
+              "scoring": "Use this same interpreted timeline for selected-part MIDI note-on targets. Score attack timing/key only, never inferred releases, hold duration, original timbre or kit identity. Prefer a melodic part; percussion selector practice must be explicitly selected. Device range is diagnosed without dropping, folding or clamping keys.",
+              "tempo": "Start at 500000 microseconds per quarter; apply positive tempo changes in tick/track/event order. Last positive tempo at a tick wins. A zero tempo is retained and acknowledged but holds the previous positive tempo. This chosen clock is not a claim that conflicting source tempos have an exact original order.",
+              "transport": "Stop/pause/seek must cancel all active and scheduled audio. Resume may restart remaining derived gates with a fresh basic envelope; preserve IDs and the common transport clock. Never feed synthesized accompaniment into user MIDI input.",
+              "voice_limit": 128
+            },
+            "policy_id": "wmh-basic-key-rendition-fifo-v1",
+            "source_clock_available": true,
+            "source_duration_ms": 500.0,
+            "source_sha256": "d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386",
+            "unmatched_releases": []
+          },
+          "source_rendition": "unresolved",
+          "source_sha256": "d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386"
+        },
+        "score_json": "{\"format\":\"worldmusichub-complete-score\",\"version\":1,\"source\":{\"format\":\"midi\",\"bytes\":53,\"sha256\":\"d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386\"},\"notation\":{\"format_metadata\":{\"schema_revision\":2,\"producer\":\"WorldMusicHub\",\"producer_version\":\"0.2.0-alpha.1\"},\"version\":1,\"id\":\"midi-basic-d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386\",\"title\":\"Original active C4 and retained empty part\",\"composer\":\"\",\"provenance\":{\"kind\":\"user_supplied_unverified\",\"attribution\":\"User-supplied MIDI; source rights unverified; nominal MIDI key-number projection\",\"source_url\":null,\"license\":null},\"parts\":[{\"id\":\"midi-t1-c1-r0\",\"name\":\"Track 1 / ch 1\",\"instrument\":\"midi-key-number\",\"notes\":[{\"id\":\"midi-t1-e1\",\"at\":{\"numerator\":0,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"C\",\"alter\":0,\"octave\":4},\"voice\":\"1\",\"staff\":1,\"velocity\":90,\"tie_start\":false,\"tie_stop\":false}]},{\"id\":\"midi-t2-c2-r0\",\"name\":\"Track 2 / ch 2\",\"instrument\":\"midi-key-number\",\"notes\":[]}],\"tempo\":[],\"meters\":[],\"keys\":[],\"measures\":[],\"repeats\":[],\"source\":null},\"performance\":{\"profile\":\"wmh-basic-keys-midi1-v1\",\"source_format\":1,\"ppq\":96,\"end_tick\":96,\"tracks\":[{\"id\":\"track-1\",\"name\":\"Track 1\",\"source_index\":0,\"end_tick\":96,\"events\":[[0,[144,60,90]],[96,[128,60,0]],[0,[255,47]]]},{\"id\":\"track-2\",\"name\":\"Track 2\",\"source_index\":1,\"end_tick\":96,\"events\":[[0,[193,0]],[0,[177,7,100]],[96,[255,47]]]}],\"routes\":[{\"port\":null,\"device_name_bytes\":null}],\"parts\":[{\"id\":\"midi-t1-c1-r0\",\"track_id\":\"track-1\",\"channel\":0,\"route\":0,\"key_semantics\":\"midi_key_number\"},{\"id\":\"midi-t2-c2-r0\",\"track_id\":\"track-2\",\"channel\":1,\"route\":0,\"key_semantics\":\"midi_key_number\"}],\"timing\":{\"event_order\":\"tick_track_index_event_index\",\"relative_clock_available\":true,\"end_relative_microseconds\":{\"numerator\":\"500000\",\"denominator\":1},\"smf_default_tempo_used\":true,\"source_tempo_events\":0,\"source_meter_events\":0,\"meter\":\"unspecified\",\"legacy_running_status_events\":0,\"invalid_program_events\":0}},\"coverage\":{\"source_tracks\":2,\"source_events\":6,\"represented_events\":6,\"key_attacks\":1,\"key_releases\":1,\"determined_ends\":1,\"zero_length_attacks\":0,\"unresolved_ends\":0,\"unmatched_releases\":0,\"notation_notes\":1,\"projected_melodic_targets\":1,\"unresolved_route_ends\":0},\"capabilities\":{\"source_events\":\"complete\",\"basic_keys\":\"complete\",\"score_projection\":\"complete_positive_duration_keys\",\"source_rendition\":\"requires_explicit_receiver_mapping\",\"acoustic_pitch\":\"not_inferred_from_key_numbers\"}}",
+        "version": 2
+      },
+      "entry": {
+        "clean_package": {
+          "bytes": 3173,
+          "capabilities": {
+            "acoustic_pitch": "not_inferred_from_key_numbers",
+            "basic_keys": "complete",
+            "score_projection": "complete_positive_duration_keys",
+            "source_events": "complete",
+            "source_rendition": "requires_explicit_receiver_mapping"
+          },
+          "content_sha256": "0ac40ab6f8290681efc42d6ae89e92957c44a08b862916c678b904bce4beeae3",
+          "coverage": {
+            "determined_ends": 1,
+            "key_attacks": 1,
+            "key_releases": 1,
+            "notation_notes": 1,
+            "projected_melodic_targets": 1,
+            "represented_events": 6,
+            "source_events": 6,
+            "source_tracks": 2,
+            "unmatched_releases": 0,
+            "unresolved_ends": 0,
+            "unresolved_route_ends": 0,
+            "zero_length_attacks": 0
+          },
+          "media": [],
+          "notation_available": true,
+          "profile": "wmh-basic-keys-midi1-v1",
+          "version": 2
+        },
+        "composer": "",
+        "content_sha256": "0ac40ab6f8290681efc42d6ae89e92957c44a08b862916c678b904bce4beeae3",
+        "key": "song-0ac40ab6f8290681efc42d6ae89e92957c44a08b862916c678b904bce4beeae3",
+        "label": "Original active C4 and retained empty part",
+        "library_format_version": 2,
+        "provenance": {
+          "attribution": "User-supplied MIDI; source rights unverified; nominal MIDI key-number projection",
+          "kind": "user_supplied_unverified",
+          "license": null,
+          "source_url": null
+        },
+        "retained_source": null,
+        "revision": 1,
+        "saved_at_unix_ms": 1791193996229,
+        "score_bytes": 918,
+        "score_id": "midi-basic-d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386",
+        "score_sha256": "06aba059aa45c9f78571c35c5f8ec0b993726c2f030a07a1e01b00202133fe83",
+        "title": "Original active C4 and retained empty part"
+      },
+      "score_json": null
+    }
+  }
+]

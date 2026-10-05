@@ -346,3 +346,17 @@ test('adapter rebuilds glyph bindings after resize, reapplies expected state, an
   for(let i=0;i<10;i++)output.setExpectedWrittenNotes({sourceNoteIds:i%2?['long']:['short'],sourceMeasureIndex:0});assert.equal(renderer.renders,1);const old=renderer.paint.paths.get('N1_2_1');output.setExpectedWrittenNotes({sourceNoteIds:['long'],sourceMeasureIndex:0});width=700;assert.equal(output.resize(),true);assert.equal(renderer.renders,2);assert.notEqual(renderer.paint.paths.get('N1_2_1'),old);assert.equal(old.getAttribute('fill'),'#abcdef');assert.equal(renderer.paint.paths.get('N1_2_1').getAttribute('fill'),'#925b12');assert.equal(changes.length,2);output.clearExpectedWrittenNotes();assert.equal(renderer.paint.paths.get('N1_2_1').getAttribute('fill'),'#abcdef');output.dispose();assert.equal(output.mappingStatus().verifiedGlyphCount,0);assert.equal(output.setExpectedWrittenNotes({sourceNoteIds:['long'],sourceMeasureIndex:0}),false);
   assert.equal(output.renderGeneration(),2);assert.ok(originalCues.every(cue=>!cue.isConnected));assert.equal(env.mount.querySelector('.engraving-expected-cues'),null);assert.deepEqual(output.expectedNoteBounds().rects,[]);
 });
+
+test('verified human-part roles preserve musical glyphs and prevent machine expected-note feedback',()=>{
+  const env=bound(example(),{cueColor:'#17251d'}),before=env.svg.innerHTML;
+  env.output.setPracticePartIds([]);
+  assert.ok([...env.svg.querySelectorAll('[data-practice-role]')].every(node=>node.getAttribute('data-practice-role')==='machine'));
+  env.output.setExpectedWrittenNotes({sourceNoteIds:['long','short'],sourceMeasureIndex:0});
+  assert.ok([...env.mount.querySelectorAll('.engraving-expected-cue')].every(node=>node.hidden));
+  assert.equal(env.paths.get('N1_2_1').getAttribute('fill'),'#abcdef');
+  env.output.setPracticePartIds(['part']);
+  env.output.setExpectedWrittenNotes({sourceNoteIds:['long'],sourceMeasureIndex:0});
+  assert.equal(env.paths.get('N1_2_1').getAttribute('fill'),'#f7cf68');
+  env.output.setPracticePartIds(null);assert.equal(env.svg.innerHTML,before);
+  env.output.dispose();assert.equal(env.svg.innerHTML,before);
+});

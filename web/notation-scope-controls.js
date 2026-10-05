@@ -23,7 +23,7 @@ export function setupNotationScopeControls({document,stage,dock,options,i18n}) {
     if(!context)return;
     const scope=resolveNotationScope(context),batch=planNotationPartBatch(scope.partIds,{firstPart:context.firstPart||0,maxParts:context.maxParts||4});
     select.value=scope.scope;part.hidden=scope.scope!=='part';part.value=context.selectedPartId||'';
-    paging.hidden=scope.scope!=='all'||batch.partPages<=1;previous.disabled=batch.previousPart===null;next.disabled=batch.nextPart===null;
+    paging.hidden=batch.partPages<=1;previous.disabled=batch.previousPart===null;next.disabled=batch.nextPart===null;
     const page=context.page||1,totalPages=context.totalPages||1;
     range.textContent=t('scopePartPage',{page:batch.partPage,count:batch.partPages});
     const rendered=new Set((context.renderedPartIds||[]).filter(id=>scope.partIds.includes(id))),label=scope.scope==='all'?t('allParts'):scope.scope==='current'?t('scopeCurrent'):t('scopeSelected');

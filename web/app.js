@@ -19,6 +19,10 @@ import {setupBeginnerView} from './beginner-view.js';
 import {setupSourceArchiveView} from './source-archive-view.js';
 import {setupGameShell} from './game-shell.js';
 import {setupNoticeView} from './notice-view.js';
+import {resolvePracticeSelection,humanPracticePartIds} from './practice-selection.js';
+import {setupCompletePracticeView} from './complete-practice-view.js';
+import {practiceStageNotes,markPracticeNotation,createPracticeDisplayCache} from './practice-stage-display.js';
+import {setupFallingNoteLabels} from './falling-note-labels.js';
 import {ScorePreview,filterCatalog} from './score-preview.js';
 import {openScoreStorage} from './native-score-storage.js';
 import {ScoreStorageModel,createImportPersistenceTicket,buildSongList,loadSongListItem} from './score-storage-model.js';
@@ -150,11 +154,13 @@ let routedScoreRecorder=null;
 let keyboardInput=null, keyboardInputView=null, cleaningAllInputs=false, keyboardComposing=false;
 let guitarFingering=null,guitarFingeringView=null;
 let pianoFingering=null, beginnerView=null;
+let completePracticeView=null,fallingNoteLabels=null;
+const practiceDisplayCache=createPracticeDisplayCache({getParts:basicKeysParts});
 let shell=null,preview=null,performanceView=null,startingPreview=false,previewRefreshQueued=false,startRequest=0,enteringPreview=false;
 const catalogCache=new CatalogScoreCache();
 const latencyPreference=readLatencyPreference();
 let catalogIndexController=null,catalogIndexRequest=0,catalogIndexFailed=false;
-const state = {inspection:false,cleanSong:null,catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reasonKey:'app.compatibilityWaiting'}, instrumentOutOfRange: null, instrumentConflict: false, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, playPending: false, noticeTimer: null, audioLimitWarned: false};
+const state = {inspection:false,cleanSong:null,catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceSelection:null, practiceLayout:'solo', showOtherParts:true, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reasonKey:'app.compatibilityWaiting'}, instrumentOutOfRange: null, instrumentConflict: false, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, playPending: false, noticeTimer: null, audioLimitWarned: false};
 
 function createRecorder() {
   return new PracticeRecorder({latencyMs:state.latency,onEvidenceLimit:()=>{
@@ -202,6 +208,7 @@ async function api(path, body, signal) {
   return result;
 }
 function updateButtons() {
+  refreshPracticeView();
   const ready = Boolean(state.compiled);
   state.finishing = state.recorder.pending || state.assessmentBusy;
   const activePass = state.recorder.active;
@@ -318,7 +325,7 @@ function seekPlayback(value) {
   bindText($('transport-status'),()=>t(completed?'app.complete':'app.seekPaused'));
   updateButtons();drawFrame();
 }
-async function compileScore(score, preserveTempo = false, expectedIntent = null, importDiagnostics = [], requestedPracticePart = undefined, requestedMode = undefined, requestedIdentity = undefined, cleanSong = null, inspection = false) {
+async function compileScore(score, preserveTempo = false, expectedIntent = null, importDiagnostics = [], requestedPracticePart = undefined, requestedMode = undefined, requestedIdentity = undefined, cleanSong = null, inspection = false, practiceOptions = null) {
   if(preserveTempo&&state.cleanSong){notice(()=>cleanErrorText(i18n.locale,{code:'clean_derived_runtime_required'}),true);return false;}
   if (preserveTempo) importDiagnostics = state.importDiagnostics;
   if (expectedIntent !== null && expectedIntent !== state.loadIntent) return false;
@@ -352,7 +359,8 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     state.compatibility={status:'blocked',reasonKey:'app.compatibilityPlanBlocked'};
     metronome?.cancelForScore();
     state.sourceNotes = new Map(state.score.parts.flatMap(part => part.notes.map(note => [note.id, {note, partId: part.id}])));
-    state.loop = null; state.loopRequest++; state.practicePart = previousPart !== null && state.score.parts.some(part => part.id === previousPart) ? previousPart : cleanSong?state.score.parts[0]?.id:null; rebuildPracticeScope(); $('loop-enabled').checked = false; bindText($('loop-status'), () => t('app.loopCleared'));
+    state.practiceLayout=practiceOptions?.practiceLayout||(preserveTempo?state.practiceLayout:'solo');state.showOtherParts=practiceOptions?.showOthers??(preserveTempo?state.showOtherParts:true);
+    state.loop = null; state.loopRequest++; state.practicePart = previousPart !== null && state.score.parts.some(part => part.id === previousPart) ? previousPart : cleanSong?state.score.parts[0]?.id:null; state.practiceSelection=resolvePracticeSelection(state.score.parts,practiceOptions?.practiceSelection??(preserveTempo?state.practiceSelection:null)??(state.practicePart===null?{kind:'all'}:{kind:'parts',part_ids:[state.practicePart]}));rebuildPracticeScope(); $('loop-enabled').checked = false; bindText($('loop-status'), () => t('app.loopCleared'));
     state.notationPage = 0; state.notationPart = hasBasicKeyRendition(cleanSong)?state.practicePart:cleanSong ? null : state.practicePart || state.score.parts[0].id;
     if (!preserveTempo) $('tempo').value = String(displayOpeningTempo(state.score,cleanSong));
     clearNotice();
@@ -360,7 +368,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     resetPlayback();
     renderScore(); sourceArchiveView?.scoreChanged(); libraryView.scoreChanged(); scoreStorageView?.render(); adaptationView?.scoreChanged(); transpositionView?.scoreChanged(); renderCatalog(); updateRangeWarning();
     bindText($('catalog-status'), () => t('app.currentSession', {title:state.score.title}));
-    const clockScore=state.score;await checkInstrument();if(state.score===clockScore){if(!state.cleanSong)metronome?.setScore();if(state.compiled)preview.adopt(state.compiled,previewCompatibility(state.compatibility),state.practicePart,requestedIdentity,state.cleanSong);syncCleanMedia();}
+    const clockScore=state.score;await checkInstrument();if(state.score===clockScore){if(!state.cleanSong)metronome?.setScore();if(state.compiled)preview.adopt(state.compiled,previewCompatibility(state.compatibility),state.practicePart,requestedIdentity,state.cleanSong,{practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts});syncCleanMedia();}
     return state.score===clockScore&&(expectedIntent===null||expectedIntent===state.loadIntent);
   } catch (error) {
     if (error.name === 'AbortError') return;
@@ -465,9 +473,33 @@ function renderScore() {
   updateButtons();
   drawFrame();
 }
+function humanPartIds(){if(!state.score||!state.practiceSelection)return new Set();return humanPracticePartIds(state.score?.parts||[],{mode:state.mode,practiceSelection:state.practiceSelection,targetPart:state.practicePart});}
+function refreshPracticeView(){$('practice-part')?.closest('label')?.toggleAttribute('hidden',state.mode==='practice'&&state.practiceLayout==='complete');completePracticeView?.update({previewAvailable:hasBasicKeyRendition(preview?.value.cleanSong)||isVsqSong(preview?.value.cleanSong)&&Boolean(preview?.value.cleanSong.runtime),previewReady:!startingPreview&&preview?.value.status==='ready'&&(hasBasicKeyRendition(preview.value.cleanSong)||isVsqSong(preview.value.cleanSong)),stageReady:Boolean(state.compiled)&&(hasBasicKeyRendition(state.cleanSong)||isVsqSong(state.cleanSong)),mode:state.mode,layout:state.practiceLayout,selection:state.practiceSelection,parts:state.score?.parts||[],showOthers:state.showOtherParts});}
+function markNotationRoles(){markPracticeNotation($('workspace'),{sourceNotes:state.sourceNotes,humanPartIds:humanPartIds(),mode:state.mode});}
+async function applyHumanSelection(selection,{layout='complete',showOthers=state.showOtherParts}={}){
+  if(!state.score)return;pausePlayback();state.practiceSelection=resolvePracticeSelection(state.score.parts,selection);state.practicePart=state.practiceSelection.part_ids[0]||null;state.practiceLayout=layout;state.showOtherParts=showOthers;$('practice-part').value=state.practicePart||'';rebuildPracticeScope();resetPlayback();engravedView.practicePartChanged();state.notationPart=engravedView.scopeInfo().partId;$('notation-part').value=state.notationPart||'';renderNotationPage();updateRangeWarning();refreshPracticeView();await checkInstrument();
+}
+async function applyCompletePracticeChoice({origin,context,selection,showOthers}) {
+  if(origin==='stage'){
+    if(context.score!==state.score)return;
+    state.mode='practice';$('session-mode').value='practice';
+    await applyHumanSelection(selection,{layout:'complete',showOthers});return;
+  }
+  const version=preview.version,navigation=scoreSaveNavigation;
+  const current=()=>context.score===preview.value.score&&context.identity===preview.value.identity&&context.previewVersion===version&&preview.version===version&&navigation===scoreSaveNavigation&&shell.screen()==='library'&&!document.hidden;
+  if(!current())return;
+  // This call is still on the Apply gesture stack. Native/browser audio must
+  // be unlocked before compatibility checks introduce an asynchronous gap.
+  if(!synth.muted)await synth.unlock();
+  if(!current())return;
+  const pending=preview.select(context.identity,async()=>context.cleanSong?{score:context.score,cleanSong:context.cleanSong}:context.score,{part:selection.part_ids?.[0]||context.score.parts[0]?.id,practiceSelection:selection,practiceLayout:'complete',showOthers});
+  const selectedVersion=preview.version,chosen=await pending;
+  if(!chosen||preview.version!==selectedVersion||navigation!==scoreSaveNavigation||shell.screen()!=='library'||document.hidden)return;
+  if(preview.canStart('practice'))await startPreview('practice');
+}
 function rebuildPracticeScope() {
   if (!state.compiled) return;
-  const scope = practiceScope(state.compiled.timeline, state.practicePart, state.loop);
+  const scope = practiceScope(state.compiled.timeline, state.practiceSelection??state.practicePart, state.loop);
   state.practiceTimeline = scope.selected; state.sourceTargetTimeline = scope.targets; state.targetTimeline = null; state.practicePlan = null; state.targetGroups = new Map(); state.physicalIndex = null;
   state.practiceIndex = new TimelineIndex(scope.selected.notes); state.practiceVersion++;
   state.instrumentOutOfRange = null; state.instrumentConflict = false;
@@ -477,7 +509,7 @@ function rebuildPracticeScope() {
 }
 function updatePracticeScopeLabel() {
   if (!state.score) return;
-  const name = () => state.practicePart === null ? t('app.allParts') : state.score.parts.find(part => part.id === state.practicePart)?.name || state.practicePart;
+  const name = () => state.practiceSelection?.kind==='all' ? t('app.allParts') : state.score.parts.filter(part=>state.practiceSelection?.part_ids.includes(part.id)).map(part=>part.name).join(' · ')||state.practicePart;
   const plan=state.practicePlan;
   bindText($('practice-scope'), () => plan ? t('app.practiceScope', {name:name(),targets:plan.target_count,events:plan.source_note_count,loop:state.loop?t('app.inLoop'):''}) : t('app.practiceScopePending', {name:name(),count:state.sourceTargetTimeline?.notes.length||0}));
   bindText($('physical-target-note'), () => !plan ? t('app.targetsPending') : state.instrument==='piano' ? t('app.pianoTargets') : t('app.guitarTargets'));
@@ -499,7 +531,7 @@ function renderNotationPage() {
       if(!state.engravingActive)engravedView.reportPaint(pages.filter(item=>(['ready','rendering_unavailable','onset_page','percussion_selectors'].includes(item.status)||item.status==='empty_page'&&item.measures?.length>0&&item.follow_end_ms>item.source_start_ms)).map(item=>item.part_id),engravedView.basicBatch()?.status||'ready');
       bindText($('notation-page'),()=>i18n.locale==='en'?`Rendition measures ${page.first_measure+1}–${page.first_measure+page.measure_count} / ${page.total_measures}`:`解释小节 ${page.first_measure+1}～${page.first_measure+page.measure_count} / ${page.total_measures}`);$('notation-prev').disabled=page.first_measure===0;$('notation-next').disabled=page.next_measure===null;
     }else{const status=shell.notationVisible()?engravedView.followPosition(Math.max(0,transport.time(performance.now()))):null;bindText($('notation-page'),()=>status?.status==='unavailable'?(i18n.locale==='en'?'The native rendition page is unavailable. Reopen Staff to retry.':'本机解释页面不可用。请重新打开五线谱重试。'):(i18n.locale==='en'?'Preparing the shared rendition page…':'正在准备共用解释页面…'));$('notation-prev').disabled=$('notation-next').disabled=true;}
-    bindText($('score-key'),()=>i18n.locale==='en'?'Basic interpretation v1':'基础解释 v1');state.lastHighlight='';return;
+    bindText($('score-key'),()=>i18n.locale==='en'?'Basic interpretation v1':'基础解释 v1');state.lastHighlight='';markNotationRoles();return;
   }
   const layout = notationLayout(Math.max(240, $('notation').clientWidth - 36));
   const previousBeat = state.notationPage * state.notationSpan;
@@ -515,7 +547,7 @@ function renderNotationPage() {
   bindText($('notation-page'), () => t('app.notationPage', {page:state.notationPage+1,count}));
   $('notation-prev').disabled = state.notationPage <= 0;
   $('notation-next').disabled = state.notationPage >= count - 1;
-  state.lastHighlight = '';
+  state.lastHighlight = '';markNotationRoles();
 }
 function updateRangeWarning() {
   renderCleanActive();
@@ -575,7 +607,7 @@ async function checkInstrument(profile = currentProfile(), apply = false) {
   }
   if (state.profileDirty && !apply) { state.compatibility = {status:'dirty',reasonKey:'app.compatibilityDirty'}; updateButtons(); return; }
   if (state.mode === 'practice' && transport.running) pausePlayback();
-  if(isBasicKeysSong(state.cleanSong)&&!basicKeysParts(state.cleanSong).some(part=>part.id===state.practicePart&&part.practice_available)){state.compatibility={status:'blocked',reasonKey:'app.compatibilityPlanBlocked'};state.targetTimeline=null;state.practicePlan=null;updateButtons();return;}
+  if(isBasicKeysSong(state.cleanSong)&&!hasBasicKeyRendition(state.cleanSong)&&state.practiceSelection.part_ids.some(id=>!basicKeysParts(state.cleanSong).some(part=>part.id===id&&part.practice_available))){state.compatibility={status:'blocked',reasonKey:'app.compatibilityPlanBlocked'};state.targetTimeline=null;state.practicePlan=null;updateButtons();return;}
   state.practicePlan=null;state.targetGroups=new Map();state.targetTimeline=null;state.physicalIndex=null;updatePracticeScopeLabel();renderTargetMappings();
   state.compatibility = {status:'pending',reasonKey:'app.compatibilityPreparing'}; updateButtons();
   const request = ++state.instrumentRequest; const compiled = state.compiled; const selection = state.practiceVersion; const sourceTargets=state.sourceTargetTimeline||compiled.timeline;
@@ -862,10 +894,10 @@ function releaseNote(source, eventTime = null, options = {}) {
 function highlightKeys(activeNotes = []) {
   const held = new Set(state.held.values());
   freeView?.setHeldNotes([...held]);
-  const active = new Set(activeNotes.map(n => n.midi));
-  document.querySelectorAll('[data-midi]').forEach(button => { const midi = Number(button.dataset.midi); button.classList.toggle('pressed', held.has(midi)); if(!button.classList.contains('fret-button'))button.classList.toggle('playing', active.has(midi)); button.setAttribute('aria-pressed', String(held.has(midi))); });
+  const active = new Set(activeNotes.filter(note=>note.practice_role!=='machine').map(n => n.midi)),machine=new Set(activeNotes.filter(note=>note.practice_role==='machine').map(note=>note.midi));
+  document.querySelectorAll('[data-midi]').forEach(button => { const midi = Number(button.dataset.midi); button.classList.toggle('pressed', held.has(midi)); if(!button.classList.contains('fret-button'))button.classList.toggle('playing', active.has(midi)); button.classList.toggle('accompaniment',!active.has(midi)&&machine.has(midi));button.setAttribute('aria-pressed', String(held.has(midi))); });
   for(const rail of document.querySelectorAll('#piano-stage .piano-rails-shared [data-pitch]'))rail.classList.toggle('held',held.has(Number(rail.dataset.pitch)));
-  highlightGuitarRoute(document,{notes:activeNotes,groups:state.mode==='practice'?state.targetGroups:new Map(),plan:guitarFingering?.state().plan,...guitarFingeringView?.options()});
+  highlightGuitarRoute(document,{notes:activeNotes.filter(note=>note.practice_role!=='machine'),groups:state.mode==='practice'?state.targetGroups:new Map(),plan:guitarFingering?.state().plan,...guitarFingeringView?.options()});
 }
 function connectPlayable(container) {
   container.addEventListener('pointerdown', event => {
@@ -891,8 +923,8 @@ async function togglePlayback() {
   const waiting=state.recorder.active;
   if(waiting&&(waiting.manualDeadline!==null||waiting.inFlight||(transport.completed&&state.recorder.pending))){notice(() => t('app.assessmentWaiting'));return}
   if (transport.completed) { if(state.mode==='practice') { transport.reset(); if(state.loop)transport.seek(state.loop.start_ms); state.lastHighlight=''; } else resetPlayback(); }
-  const generation=state.generation,ticket=++state.playTicket,song=state.cleanSong,score=state.score,mode=state.mode,targetPart=state.practicePart,instrument=state.instrument,muted=synth.muted;
-  const current=()=>generation===state.generation&&ticket===state.playTicket&&song===state.cleanSong&&score===state.score&&mode===state.mode&&targetPart===state.practicePart&&instrument===state.instrument&&muted===synth.muted&&!transport.running&&Boolean(state.compiled)&&shell.screen()==='stage'&&!document.hidden&&!document.querySelector('dialog[open]')&&(mode!=='practice'||state.compatibility.status==='ready');
+  const generation=state.generation,ticket=++state.playTicket,song=state.cleanSong,score=state.score,mode=state.mode,targetPart=state.practicePart,practiceSelection=state.practiceSelection,instrument=state.instrument,muted=synth.muted;
+  const current=()=>generation===state.generation&&ticket===state.playTicket&&song===state.cleanSong&&score===state.score&&mode===state.mode&&targetPart===state.practicePart&&practiceSelection===state.practiceSelection&&instrument===state.instrument&&muted===synth.muted&&!transport.running&&Boolean(state.compiled)&&shell.screen()==='stage'&&!document.hidden&&!document.querySelector('dialog[open]')&&(mode!=='practice'||state.compatibility.status==='ready');
   state.playPending=true;
   try {
     if(!muted)await synth.unlock();
@@ -900,7 +932,7 @@ async function togglePlayback() {
     const audioThread=!muted&&hasAudioThreadRendition(song),beatMs=60000/(Number($('tempo').value)||100),countIn=$('count-in').checked&&!isBasicKeysSong(song)?beatMs*4:0;
     // Count-in belongs to the same prepared source position as every audio gate,
     // transport frame and recorder timestamp; never subtract it after admission.
-    const options={context:synth.context,output:synth.output,mode,targetPart,mutedParts:[...cleanMutedParts],soloParts:[...cleanSoloParts],instrument,resumePositionMs:transport.position-(audioThread&&!transport.hasStarted?countIn:0),acceptedPolicyId:song?inspectCleanRendition(song).rendition:null};
+    const options={context:synth.context,output:synth.output,mode,targetPart,practiceSelection,mutedParts:[...cleanMutedParts],soloParts:[...cleanSoloParts],instrument,resumePositionMs:transport.position-(audioThread&&!transport.hasStarted?countIn:0),acceptedPolicyId:song?inspectCleanRendition(song).rendition:null};
     let now;
     if(audioThread){
       // Admit the fixed live-input graph before building the source plan or
@@ -937,7 +969,7 @@ function beginPracticePass(now, captureEnabled = true) {
   const recorder=state.recorder;let pass=recorder.active;
   if(pass&&pass.closedWall===null&&pass.captureEnabled&&captureEnabled) recorder.resume(now,transport.position);
   else {pass=recorder.begin({wallTime:now,position:transport.position,startMs:state.loop?.start_ms||0,endMs:state.loop?.end_ms||state.compiled.timeline.duration_ms,timeline:state.targetTimeline,label:state.loop?`Loop ${state.loopIteration}`:`Take ${recorder.passes.length+1}`,captureEnabled});passDisplayLabels.set(pass,{kind:state.loop?'loop':'take',number:state.loop?state.loopIteration:recorder.passes.length});}
-  if(!passInterpretations.has(pass)&&state.cleanSong){const song=state.cleanSong,rendition=song.runtime?.rendition;passInterpretations.set(pass,{package_content_sha256:song.identity,source_sha256:song.score.source.sha256,runtime_profile:song.runtime?.profile||song.profile,policy_id:rendition?.policy_id||(isVsqSong(song)?'wmh-vsq-base-note-reference-v1':null),practice_part:state.practicePart,source_target_ids:state.sourceTargetTimeline.notes.map(note=>note.id),scoring:'selected_part_key_and_onset_only',...(rendition?{policy:structuredClone(rendition.policy),source_clock_available:rendition.source_clock_available}:{})});}
+  if(!passInterpretations.has(pass)&&state.cleanSong){const song=state.cleanSong,rendition=song.runtime?.rendition;passInterpretations.set(pass,{package_content_sha256:song.identity,source_sha256:song.score.source.sha256,runtime_profile:song.runtime?.profile||song.profile,policy_id:rendition?.policy_id||(isVsqSong(song)?'wmh-vsq-base-note-reference-v1':null),practice_part:state.practicePart,practice_selection:structuredClone(state.practiceSelection),source_target_ids:state.sourceTargetTimeline.notes.map(note=>note.id),scoring:'selected_human_parts_key_and_onset_only',...(rendition?{policy:structuredClone(rendition.policy),source_clock_available:rendition.source_clock_available}:{})});}
   state.inputs=pass.inputs;refreshPassHistory();displayChosenPass();return pass;
 }
 
@@ -1044,7 +1076,7 @@ function assess() {
 }
 $('feedback-pass').addEventListener('change',displayChosenPass);
 $('retry-assessments').addEventListener('click',()=>{state.recorder.retryFailed();drainAssessments()});
-$('export-takes').addEventListener('click',()=>{const routing=midiController?.exportRoutingData(),exported=state.recorder.exportData();exported.passes=exported.passes.map((pass,index)=>({...pass,...(passInterpretations.has(state.recorder.passes[index])?{interpretation:passInterpretations.get(state.recorder.passes[index])}:{})}));const data={...exported,score_id:state.score?.id,practice_part:state.practicePart,target_plan:state.practicePlan,...(routing?{midi_routing:routing}:{}),keyboard_input_configuration:keyboardInput.exportConfigurationData()};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
+$('export-takes').addEventListener('click',()=>{const routing=midiController?.exportRoutingData(),exported=state.recorder.exportData();exported.passes=exported.passes.map((pass,index)=>({...pass,...(passInterpretations.has(state.recorder.passes[index])?{interpretation:passInterpretations.get(state.recorder.passes[index])}:{})}));const data={...exported,score_id:state.score?.id,practice_part:state.practicePart,practice_selection:structuredClone(state.practiceSelection),view_configuration:{practice_layout:state.practiceLayout,show_other_parts:state.showOtherParts,falling_note_labels:fallingNoteLabels?.enabled()===true},target_plan:state.practicePlan,...(routing?{midi_routing:routing}:{}),keyboard_input_configuration:keyboardInput.exportConfigurationData()};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
 function advanceLoopClock(now) {
   if(!state.loop||!transport.running)return;
   const beatMs=60000/(Number($('tempo').value)||100);
@@ -1110,14 +1142,15 @@ function drawFrame(displayOnly = false) {
   if(displayOnly!==true&&!isBasicKeysSong(state.cleanSong)&&(shell.notationVisible()||beginnerView?.enabled()&&state.numberedMode==='movable'))writtenCursor?.prepare();
   const written = position < segmentStart ? null : isBasicKeysSong(state.cleanSong)?basicKeyWrittenAt(state.cleanSong,engravedView.basicPages(),position,state.timelineIndex?.range(position)||[]):writtenCursor?.at(position);
   const soundingSources = new Set(active.flatMap(note=>mappedSourceIds(note,state.mode==='practice'?state.targetGroups.get(note.id):null)));
-  const currentWritten = (written?.entries || []).filter(entry=>entry.note.pitch||entry.role==='percussion_selector'?soundingSources.has(entry.sourceNoteId):state.practicePart===null||entry.partId===state.practicePart);
+  const humanIds=humanPartIds();
+  const currentWritten = (written?.entries || []).filter(entry=>(state.mode!=='practice'||humanIds.has(entry.partId))&&(entry.note.pitch||entry.role==='percussion_selector'?soundingSources.has(entry.sourceNoteId):true));
   const displayedWritten=displayedWrittenEntries(written);
-  if(shell.notationVisible()&&state.engravingActive&&written?.occurrence)engravedView.setExpectedWrittenNotes?.({sourceNoteIds:displayedWritten.map(entry=>entry.sourceNoteId),sourceMeasureIndex:written.occurrence.source_measure_index});
+  if(shell.notationVisible()&&state.engravingActive&&written?.occurrence)engravedView.setExpectedWrittenNotes?.({sourceNoteIds:displayedWritten.filter(entry=>state.mode!=='practice'||humanIds.has(entry.partId)).map(entry=>entry.sourceNoteId),sourceMeasureIndex:written.occurrence.source_measure_index});
   else engravedView.clearExpectedWrittenNotes?.({preserveRenditionRows:hasBasicKeyRendition(state.cleanSong)&&shell.notationVisible()});
   if(displayOnly!==true&&shell.notationVisible())notationFollowing?.tick(position < segmentStart ? -1 : position,transport.running,{...written,entries:displayedWritten,pageAnchor:writtenCursor?.pageAnchor(position,displayedPartId())});
   const signature = JSON.stringify([i18n.revision,written?.occurrence?.id || null,currentWritten.map(entry=>entry.sourceNoteId),displayedWritten.map(entry=>entry.sourceNoteId)]);
   if (signature !== state.lastHighlight) {
-    updateWrittenNoteHighlights(document,displayedWritten.map(entry=>entry.sourceNoteId));
+    updateWrittenNoteHighlights(document,displayedWritten.filter(entry=>state.mode!=='practice'||humanIds.has(entry.partId)).map(entry=>entry.sourceNoteId));
     state.lastHighlight = signature;
     if((writtenCursor?.state().status==='ready'||isBasicKeysSong(state.cleanSong)&&written?.occurrence)&&writtenCursorStatus){
       if(isBasicKeysSong(state.cleanSong)){writtenCursorStatus.dataset.status='ready';writtenCursorRetry.hidden=true;}
@@ -1128,7 +1161,11 @@ function drawFrame(displayOnly = false) {
       writtenCursorStatus.dataset.sourceMeasureIndex=written?.occurrence?String(written.occurrence.source_measure_index):'';
     }else if(isBasicKeysSong(state.cleanSong)&&writtenCursorStatus){writtenCursorStatus.dataset.sourceNoteIds='[]';writtenCursorStatus.dataset.sourceMeasureIndex='';writtenCursorStatus.dataset.status=position>=duration?'ended':'pending';bindText(writtenCursorStatus,()=>position>=duration?(i18n.locale==='en'?'End of the interpreted timeline':'解释时间线已结束'):(i18n.locale==='en'?'Following is waiting for a matching native page. Playback targets keep their original timeline.':'跟随正在等待匹配的本机页面。播放目标仍使用原时间线。'));}
   }
-  highlightKeys(active);
+  const displayRange=state.instrument==='piano'?[state.geometry[0].midi,state.geometry.at(-1).midi]:[Math.min(...state.guitar.tuning)+state.guitar.capo,Math.max(...state.guitar.tuning)+state.guitar.frets];
+  const {availableMidi,excludedMachinePartIds}=practiceDisplayCache(state);
+  const stageNotes=(humanNotes,sourceNotes)=>practiceStageNotes({humanNotes,sourceNotes:state.mode==='listen'&&!state.cleanSong?humanNotes:sourceNotes,availableMidi,excludedMachinePartIds,humanPartIds:humanIds,mode:state.mode,layout:state.practiceLayout,showOthers:state.showOtherParts,range:displayRange});
+  const activeDisplay=stageNotes(active,position<segmentStart?[]:state.timelineIndex?.range(position)||[]);
+  highlightKeys(activeDisplay);
   if (state.instrument === 'guitar') {
     if(displayOnly!==true)guitarFingering?.prepare();
     const guidance=renderGuitarGuidance({profile:currentProfile(),plan:guitarFingering?.state().plan,...guitarFingeringView?.options(),timeline:state.mode==='practice'?state.targetTimeline:state.cleanSong?timeline:state.practiceTimeline||timeline,groups:state.mode==='practice'?state.targetGroups:new Map(),parts:state.score?.parts||[],position,segmentStart,segmentEnd:state.loop?.end_ms||duration,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,mode:state.mode,loopIteration:state.loop?state.loopIteration:null});
@@ -1142,17 +1179,18 @@ function drawFrame(displayOnly = false) {
   // Shared DOM rails and notation remain behind this transparent note layer.
   const windowMs = 4000;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const fallingNotes=reducedMotion?active:playbackIndex?.range(position,position+windowMs)||[];
+  const fallingNotes=reducedMotion?activeDisplay:stageNotes(playbackIndex?.range(position,position+windowMs)||[],state.timelineIndex?.range(position,position+windowMs)||[]);
+  canvas.dataset.humanNoteIds=JSON.stringify(fallingNotes.filter(note=>note.practice_role==='human').map(note=>note.id));canvas.dataset.machineNoteIds=JSON.stringify(fallingNotes.filter(note=>note.practice_role==='machine').map(note=>note.id));canvas.dataset.noteLabels=String(fallingNoteLabels?.enabled()===true);
   for (const note of fallingNotes) {
     if (note.start_ms + note.duration_ms < position || note.start_ms > position + windowMs) continue;
     const key = state.geometry.find(k => k.midi === note.midi); if (!key) continue;
     const bottom = reducedMotion ? height : height - (note.start_ms - position) / windowMs * height;
     const noteHeight = reducedMotion ? 40 : Math.max(8, note.duration_ms / windowMs * height - 4);
     const x = key.x * width + 2; const y = bottom - noteHeight;
-    const color=note.start_ms<=position?FIELD_COLORS.scheduled:key.black?FIELD_COLORS.accidental:FIELD_COLORS.natural;
-    ctx.fillStyle=color;ctx.shadowColor=color+'66';ctx.shadowBlur=fallingNoteShadow(note,position,fallingNotes.length,reducedMotion);
-    ctx.beginPath(); ctx.roundRect(x, y, Math.max(2, key.width * width - 4), noteHeight, 5); ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#eaffff55';ctx.lineWidth=1;ctx.stroke();
-    if (noteHeight > 23 && key.width * width > 27) { ctx.fillStyle = FIELD_COLORS.noteText; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(midiName(note.midi), x + (key.width * width - 4) / 2, Math.min(height-13,Math.max(y+17,85))); }
+    const machine=note.practice_role==='machine',color=machine?'#8a91ac':note.start_ms<=position?FIELD_COLORS.scheduled:key.black?FIELD_COLORS.accidental:FIELD_COLORS.natural;
+    ctx.fillStyle=color;ctx.shadowColor=color+'66';ctx.shadowBlur=machine?0:fallingNoteShadow(note,position,fallingNotes.length,reducedMotion);
+    ctx.beginPath(); ctx.roundRect(x, y, Math.max(2, key.width * width - 4), noteHeight, 5); ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#eaffff55';ctx.lineWidth=machine?2:1;ctx.setLineDash(machine?[5,4]:[]);ctx.stroke();ctx.setLineDash([]);
+    if (fallingNoteLabels?.enabled() && noteHeight > 23 && key.width * width > 27) { ctx.fillStyle = FIELD_COLORS.noteText; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(midiName(note.midi), x + (key.width * width - 4) / 2, Math.min(height-13,Math.max(y+17,85))); }
   }
   if (reducedMotion && timeline) { ctx.fillStyle = '#d4e4f1'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(t('app.reducedMotion'), width / 2, Math.min(height-12,100)); }
   if (!timeline) { ctx.fillStyle = '#a9bba2'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(t('app.chooseExercise'), width / 2, height / 2); }
@@ -1194,7 +1232,7 @@ $('latency-offset').addEventListener('change', () => {
   if (!validLatency(value)) { $('latency-offset').value = String(state.latency); notice(() => t('app.latencyInvalid'), true); return; }
   state.latency = Number(value);const result=writeLatencyPreference(state.latency);bindText($('latency-storage-status'), () => result.saved?t('app.latencySaved'):errorDetail(result));$('latency-storage-status').hidden=false;resetPlayback();
 });
-$('practice-part').addEventListener('change', () => { state.practicePart = $('practice-part').value || (state.cleanSong?state.score.parts[0].id:null); rebuildPracticeScope(); resetPlayback(); engravedView.practicePartChanged();if(engravedView.scopeInfo().scope==='current'){state.notationPart=state.practicePart;$('notation-part').value=state.practicePart||'';renderNotationPage();} updateRangeWarning(); checkInstrument(); });
+$('practice-part').addEventListener('change', () => { const part=$('practice-part').value || (state.cleanSong?state.score.parts[0].id:null);applyHumanSelection({kind:part===null?'all':'parts',...(part===null?{}:{part_ids:[part]})},{layout:'solo'}); });
 function setNumberedMode(mode) { state.numberedMode = mode; $('jianpu-reference').value = mode; renderNotationPage(); beginnerView?.refresh(true); }
 $('jianpu-reference').addEventListener('change', () => setNumberedMode($('jianpu-reference').value));
 $('notation-part').addEventListener('change', () => { notationFollowing?.suspend();state.notationPart = $('notation-part').value || null;engravedView.selectPart(state.notationPart);renderNotationPage(); });
@@ -1358,6 +1396,7 @@ async function checkPreview(compiled,part,signal){
   return previewCompatibility(result,profile);
 }
 function renderPreview(){
+  refreshPracticeView();
   lobbyPreview?.select(preview.value.cleanSong?{status:'empty'}:preview.value);
   renderCleanPreview();
   const value=preview.value,changedIdentity=$('song-lobby').dataset.previewId!==(value.identity||'');$('song-lobby').dataset.previewStatus=value.status;$('song-lobby').dataset.previewId=value.identity||'';
@@ -1395,7 +1434,7 @@ function refreshPreview(){
   const candidate=preview.value;
   if(candidate.score){preview.cancel();preview.publish({...candidate,compatibility:{status:state.profileDirty?'dirty':'pending',reasonKey:state.profileDirty?'app.previewDirty':'app.previewRechecking'}});}
   if(previewRefreshQueued)return;previewRefreshQueued=true;
-  queueMicrotask(()=>{previewRefreshQueued=false;const value=preview.value;if(value.score)preview.select(value.identity,async()=>value.cleanSong?{score:value.score,cleanSong:value.cleanSong}:value.score,{part:value.part});});
+  queueMicrotask(()=>{previewRefreshQueued=false;const value=preview.value;if(value.score)preview.select(value.identity,async()=>value.cleanSong?{score:value.score,cleanSong:value.cleanSong}:value.score,{part:value.part,practiceSelection:value.practiceSelection,practiceLayout:value.practiceLayout,showOthers:value.showOthers});});
 }
 async function startPreview(mode){
   if(startingPreview||!preview.canStart(mode))return;
@@ -1405,7 +1444,7 @@ async function startPreview(mode){
     if(!synth.muted)await synth.unlock();if(request!==startRequest||version!==preview.version||candidate.score!==preview.value.score)return;
     if(candidate.identity?.startsWith('native:')){await (await scoreStorage.storage()).requireActive(candidate.identity);if(request!==startRequest||version!==preview.version||candidate!==preview.value)return;}
     const intent=++state.loadIntent;
-    const loaded=await compileScore(candidate.score,false,intent,candidate.compiled.diagnostics||[],candidate.part,mode,candidate.identity,candidate.cleanSong);
+    const loaded=await compileScore(candidate.score,false,intent,candidate.compiled.diagnostics||[],candidate.part,mode,candidate.identity,candidate.cleanSong,false,candidate);
     if(!loaded||request!==startRequest||intent!==state.loadIntent)return;
     enteringPreview=true;try{shell.show('stage')}finally{enteringPreview=false;}
     if(mode==='practice'&&state.compatibility.status!=='ready'){notice(compatibilityNotice(state.compatibility),true);return;}
@@ -1430,7 +1469,7 @@ async function openPreviewScore(){
   const request=++startRequest,version=preview.version;startingPreview=true;renderPreview();
   try{
     if(candidate.identity?.startsWith('native:')){await (await scoreStorage.storage()).requireActive(candidate.identity);if(request!==startRequest||version!==preview.version||candidate!==preview.value)return;}
-    if(state.cleanSong?.identity!==candidate.cleanSong.identity||state.cleanSong?.libraryKey!==candidate.cleanSong.libraryKey){const intent=++state.loadIntent;const loaded=await compileScore(candidate.score,false,intent,candidate.compiled?.diagnostics||[],candidate.part,'practice',candidate.identity,candidate.cleanSong,true);if(!loaded||request!==startRequest)return;}
+    if(state.cleanSong?.identity!==candidate.cleanSong.identity||state.cleanSong?.libraryKey!==candidate.cleanSong.libraryKey){const intent=++state.loadIntent;const loaded=await compileScore(candidate.score,false,intent,candidate.compiled?.diagnostics||[],candidate.part,'practice',candidate.identity,candidate.cleanSong,true,candidate);if(!loaded||request!==startRequest)return;}
     else{pausePlayback();state.inspection=true;updateButtons();}
     enteringPreview=true;try{shell.show('stage');if(!shell.notationVisible())$('notation-toggle').click();engravedView.show();}finally{enteringPreview=false;}
   }catch(error){notice(()=>t('app.startError',{detail:errorDetail(error)}),true);}
@@ -1439,7 +1478,7 @@ async function openPreviewScore(){
 $('open-score').addEventListener('click',()=>openPreviewScore());
 i18n.subscribe(()=>{redrawAppText();if(state.score&&!state.engravingActive)renderNotationPage();state.lastHighlight='';drawFrame(true);});
 $('start-listen').addEventListener('click',()=>startPreview('listen'));
-$('start-practice').addEventListener('click',()=>startPreview('practice'));
+$('start-practice').addEventListener('click',async()=>{const value=preview.value;if(value.practiceLayout==='complete'){if(!synth.muted)await synth.unlock();await preview.select(value.identity,async()=>value.cleanSong?{score:value.score,cleanSong:value.cleanSong}:value.score,{part:value.part,practiceLayout:'solo'});}await startPreview('practice');});
 $('preview-part').addEventListener('change',()=>{const value=preview.value;if(value.score)preview.select(value.identity,async()=>value.cleanSong?{score:value.score,cleanSong:value.cleanSong}:value.score,{part:$('preview-part').value||null});});
 for(const id of ['catalog-search','catalog-origin'])$(id).addEventListener(id==='catalog-search'?'input':'change',renderCatalog);
 for(const id of ['instrument','key-count','custom-key-count','custom-lowest','guitar-tuning','guitar-frets','guitar-capo'])$(id).addEventListener(['instrument','key-count'].includes(id)?'change':'input',refreshPreview);
@@ -1500,7 +1539,7 @@ setupScoreStorageLobbyStatus({model:scoreStorage,host:storageLobbyHost,document,
 let managementInventorySignature=null;
 scoreStorage.subscribe(snapshot=>{const signature=JSON.stringify(snapshot.entries.map(row=>row.libraryKey));if(managementInventorySignature!==null&&signature!==managementInventorySignature)libraryManagement.invalidate();managementInventorySignature=signature;const candidate=preview.value;if(snapshot.kind==='native'&&!snapshot.reading&&!snapshot.error&&candidate.identity?.startsWith('native:')&&candidate.status!=='error'&&!snapshot.entries.some(row=>row.libraryKey===candidate.identity)){preview.cancel();preview.publish({...candidate,status:'error',errorCode:'library_not_found',message:i18n.t('management.catalog.previewUnavailable')});}renderCatalog();const binding=displayBindings.get(legacyLibraryButton);if(binding?.text)legacyLibraryButton.textContent=binding.text()});
 $('score-library').addEventListener('close',()=>{if(scoreStorage.snapshot().kind==='browser')void scoreStorage.rescan()});
-const engravedView = setupEngravedView({i18n,onBasicPage:(page,batch)=>{if(hasBasicKeyRendition(state.cleanSong)){if(page){state.notationPart=batch?.scope==='all'?null:page.part_id;$('notation-part').value=state.notationPart||'';}if(!state.engravingActive)renderNotationPage();}},getScore:()=>state.score,getCleanSong:()=>state.cleanSong,getPracticePart:()=>state.practicePart,getMode:()=>state.mode,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),notice,onVisibility:active=>{
+const engravedView = setupEngravedView({i18n,onBasicPage:(page,batch)=>{if(hasBasicKeyRendition(state.cleanSong)){if(page){state.notationPart=batch?.scope==='all'?null:page.part_id;$('notation-part').value=state.notationPart||'';}if(!state.engravingActive)renderNotationPage();}},getScore:()=>state.score,getCleanSong:()=>state.cleanSong,getPracticePart:()=>state.practicePart,getPracticeSelection:()=>state.practiceSelection,getPracticeDisplay:()=>({layout:state.inspection?'inspection':state.practiceLayout,showOthers:state.inspection||state.showOtherParts}),getMode:()=>state.mode,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),notice,onVisibility:active=>{
   state.engravingActive=active;
   document.querySelector('.engraving-pages').hidden=!active;
   const displayOptions=document.querySelector('.notation-display-options');if(displayOptions)displayOptions.hidden=!active;
@@ -1571,7 +1610,7 @@ for(const dialog of document.querySelectorAll('dialog'))dialog.addEventListener(
 function renderCleanActive(){
   if(!cleanView)return;
   const range=state.instrument==='piano'?[state.geometry[0].midi,state.geometry.at(-1).midi]:[Math.min(...state.guitar.tuning)+state.guitar.capo,Math.max(...state.guitar.tuning)+state.guitar.frets];
-  cleanView.renderActive({song:state.cleanSong,score:state.score,timeline:state.compiled?.timeline,targetPart:state.practicePart,mode:state.mode,mutedParts:cleanMutedParts,soloParts:cleanSoloParts,soundEnabled:!synth.muted,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,range,instrument:state.instrument});
+  cleanView.renderActive({song:state.cleanSong,score:state.score,timeline:state.compiled?.timeline,targetPart:state.practicePart,practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,mode:state.mode,mutedParts:cleanMutedParts,soloParts:cleanSoloParts,soundEnabled:!synth.muted,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,range,instrument:state.instrument});
 }
 function renderCleanPreview(){
   if(!cleanView)return;const song=preview?.value.cleanSong||null;const deviceRange=state.instrument==='guitar'?[Math.min(...state.guitar.tuning)+state.guitar.capo,Math.max(...state.guitar.tuning)+state.guitar.frets]:[state.geometry[0].midi,state.geometry.at(-1).midi];cleanView.renderPreview(song,{...preview?.value,deviceProfile:currentProfile(),deviceRange});
@@ -1594,7 +1633,9 @@ function openCleanRangeSetup(){
   $('instrument-settings').open=true;
   $(state.instrument==='piano'?'custom-key-count':'guitar-tuning').focus();
 }
-cleanView=setupCleanSongView({document,i18n,onRangeSetup:openCleanRangeSetup,onVsqStart:chooseVsqAndStart,onVsqChoice:()=>preview.chooseVsqPractice(async(song,signal)=>(await scoreStorage.storage()).chooseVsqPractice(song,{signal})),onOpen:()=>pausePlayback(),onTarget:part=>{if(!state.cleanSong||transport.running)return;state.practicePart=part;$('practice-part').value=part;rebuildPracticeScope();resetPlayback();engravedView.practicePartChanged();if(engravedView.scopeInfo().scope==='current'){state.notationPart=part;$('notation-part').value=part;renderNotationPage();}void checkInstrument();},onMute:(part,muted)=>{if(transport.running)return;if(muted)cleanMutedParts.add(part);else cleanMutedParts.delete(part);resetPlayback();},onSolo:(part,solo)=>{if(transport.running)return;if(solo)cleanSoloParts.add(part);else cleanSoloParts.delete(part);resetPlayback();},onResetMix:()=>{if(transport.running)return;cleanMutedParts.clear();cleanSoloParts.clear();resetPlayback();},onRange:()=>{$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}});
+fallingNoteLabels=setupFallingNoteLabels({document,i18n,onChange:()=>drawFrame(true)});
+completePracticeView=setupCompletePracticeView({document,i18n,getContext:origin=>origin==='preview'?{...preview.value,selection:preview.value.practiceSelection,previewVersion:preview.version}:({score:state.score,compiled:state.compiled,selection:state.practiceSelection,showOthers:state.showOtherParts,hasTakes:transport.hasStarted||state.recorder.passes.length>0}),onOpen:()=>pausePlayback(),onDisplay:show=>{state.showOtherParts=show;engravedView.practicePartChanged();renderNotationPage();drawFrame(true);refreshPracticeView();},onApply:applyCompletePracticeChoice});
+cleanView=setupCleanSongView({document,i18n,onRangeSetup:openCleanRangeSetup,onVsqStart:chooseVsqAndStart,onVsqChoice:()=>preview.chooseVsqPractice(async(song,signal)=>(await scoreStorage.storage()).chooseVsqPractice(song,{signal})),onOpen:()=>pausePlayback(),onTarget:part=>{if(!state.cleanSong||transport.running)return;void applyHumanSelection({kind:'parts',part_ids:[part]},{layout:'solo'});},onMute:(part,muted)=>{if(transport.running)return;if(muted)cleanMutedParts.add(part);else cleanMutedParts.delete(part);resetPlayback();},onSolo:(part,solo)=>{if(transport.running)return;if(solo)cleanSoloParts.add(part);else cleanSoloParts.delete(part);resetPlayback();},onResetMix:()=>{if(transport.running)return;cleanMutedParts.clear();cleanSoloParts.clear();resetPlayback();},onRange:()=>{$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}});
 performanceListening=setupCompletePerformanceListening({document,i18n,synth,host:$('clean-song-preview'),isVisible:()=>shell.screen()==='library',allowed:()=>!document.hidden&&!document.querySelector('dialog[open]'),onBeforePlay:()=>pausePlayback(),onActiveChange:()=>syncInputRoute(),getSoundEnabled:()=>!synth.muted,onSoundChange:setSoundEnabled});
 const loadCleanAsset=async(key,handle,options)=>(await scoreStorage.storage()).loadAsset(key,handle,options);
 previewMedia=createCleanSongMedia({loadAsset:loadCleanAsset,cover:cleanView.cover,onStatus:value=>cleanView.renderPreviewMedia(value)});

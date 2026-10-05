@@ -398,7 +398,7 @@ function prepareCueGeometry(document,step){
 
 /** Bind only verified current-render glyphs. No update below invokes OSMD.render(). */
 export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasure,toMeasure,partIds,color,cueColor,onChange=()=>{}}){
-  const matched=matchEngravingModel(renderer,validated),entries=[],diagnostics=[],snapshots=new Map(),allowedByMeasure=new Map();let disposed=false,invalidated=false,current=new Set(),currentRequest=null,inputDiagnostic=null,cueLayer=null,cueEpoch=0,stopCuePreparation=null;
+  const matched=matchEngravingModel(renderer,validated),entries=[],diagnostics=[],snapshots=new Map(),allowedByMeasure=new Map();let disposed=false,invalidated=false,current=new Set(),currentRequest=null,inputDiagnostic=null,cueLayer=null,cueEpoch=0,stopCuePreparation=null,practiceHumans=null;
   for(const segment of validated.segments||[]){if(!allowedByMeasure.has(segment.source_measure_index))allowedByMeasure.set(segment.source_measure_index,new Set());allowedByMeasure.get(segment.source_measure_index).add(segment.source_note_id)}
   if(!matched.ok)diagnostics.push(...matched.diagnostics);
   else{const displayedIds=new Set(validated.segments.filter(segment=>partIds.includes(segment.xml_part_id)&&segment.source_measure_index>=fromMeasure-1&&segment.source_measure_index<=toMeasure-1).map(segment=>segment.xml_note_id));diagnostics.push(...matched.diagnostics.filter(item=>item.xmlNoteIds.some(id=>displayedIds.has(id))))}
@@ -504,6 +504,7 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
   function reject(){const alreadyRejected=Boolean(inputDiagnostic);clear(false);inputDiagnostic=diagnostic('engraving_expected_notes_invalid','Current written-note identities do not match this score and measure. Highlighting is cleared; playback is unchanged.');if(!alreadyRejected)notify();return false}
   return {
     mappingStatus:summary,
+    setPracticePartIds(ids){clear();const human=ids===null?null:new Set(ids);practiceHumans=human;for(const entry of entries)if(entry.status==='bound'){const group=entry.glyph.group;if(!mount.contains(group)||!group.isConnected)continue;if(human){group.setAttribute('data-practice-role',human.has(entry.segment.part_id)?'human':'machine');group.setAttribute('data-practice-part-id',entry.segment.part_id);}else{group.removeAttribute('data-practice-role');group.removeAttribute('data-practice-part-id');}}},
     refreshExpectedCueGeometry,
     expectedNoteBounds(){
       if(disposed||invalidated||!currentRequest)return {status:'unavailable',rects:[],unavailableSourceNoteIds:[]};
@@ -529,7 +530,7 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
       if(!validated.ok||!matched.ok){clear();return false}
       if(!Array.isArray(ids)||!integer(measure,0,validated.score.measures.length-1)||ids.some(id=>typeof id!=='string'||!validated.sources.has(id))||new Set(ids).size!==ids.length||ids.some(id=>!allowedByMeasure.get(measure)?.has(id)))return reject();
       if(inputDiagnostic){inputDiagnostic=null;notify()}
-      const wanted=new Set(ids),next=new Set(entries.filter(entry=>entry.status==='bound'&&entry.segment.source_measure_index===measure&&wanted.has(entry.segment.source_note_id)));
+      const wanted=new Set(ids),next=new Set(entries.filter(entry=>entry.status==='bound'&&(!practiceHumans||practiceHumans.has(entry.segment.part_id))&&entry.segment.source_measure_index===measure&&wanted.has(entry.segment.source_note_id)));
       if([...next].some(entry=>!mount.contains(entry.glyph.group)||!entry.glyph.group.isConnected)){clear(false);invalidated=true;const old=entries.filter(entry=>entry.status==='bound');for(const entry of old){entry.status='unavailable';entry.reason='engraving_glyph_stale'}diagnostics.push(diagnostic('engraving_glyph_stale','The rendered noteheads changed. Highlighting is cleared until the display is rebuilt.',old.map(entry=>entry.segment)));notify();return false}
       const stale=[...next].filter(entry=>entry.cue&&entry.cueEpoch!==cueEpoch);let origin=null;
       // Optional presentation geometry must not throw into the playback update.
@@ -542,6 +543,6 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
       for(const {entry,box}of measured)placeCue(entry,box,origin);
       return true;
     },
-    dispose(){if(disposed)return;stopCuePreparation?.();stopCuePreparation=null;clear();disposed=true;cueLayer?.remove();cueLayer=null;for(const entry of entries)if(entry.status==='bound'){entry.status='unavailable';entry.reason='engraving_view_disposed'}snapshots.clear()},
+    dispose(){if(disposed)return;for(const entry of entries)if(entry.status==='bound'){entry.glyph.group.removeAttribute('data-practice-role');entry.glyph.group.removeAttribute('data-practice-part-id');}stopCuePreparation?.();stopCuePreparation=null;clear();disposed=true;cueLayer?.remove();cueLayer=null;for(const entry of entries)if(entry.status==='bound'){entry.status='unavailable';entry.reason='engraving_view_disposed'}snapshots.clear()},
   };
 }

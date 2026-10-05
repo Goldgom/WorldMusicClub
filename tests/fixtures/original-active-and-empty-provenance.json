@@ -1,0 +1,42 @@
+{
+  "verified": true,
+  "native_call_paths": [
+    "/api/clean-song/draft",
+    "/api/clean-song/draft/pack",
+    "/api/library/import/commit",
+    "/api/library/load"
+  ],
+  "source_bytes": 53,
+  "source_sha256": "d371ac6a790dc160c8ec99deb6a267197fc8f0233d6049c5038e3ea6d0bbb386",
+  "source_git_blob": "834788d1d39216bb5f779065ac654febc546c8ec",
+  "fixture_bytes": 13356,
+  "fixture_sha256": "919759f0fb751baeea960da52b2df805914dfa0b9194647def72f3111926a5eb",
+  "fixture_git_blob": "eb42b492787961283d21e7c05d786350e44ccea8",
+  "all_native_fields_retained": true,
+  "version": 1,
+  "original_authored": true,
+  "license": "CC0-1.0",
+  "description": "Newly authored C4 attack/release and an empty program/volume-only part. No private song or third-party musical material is used.",
+  "source_file": "original-active-and-empty.mid",
+  "source_hex": "4d546864000000060001000200604d54726b0000000c00903c5a60803c0000ff2f004d54726b0000000b00c10000b1076460ff2f00",
+  "fixture_file": "original-active-and-empty-native-open.json",
+  "generator_file": "generate-original-empty-part.py",
+  "generator_sha256": "695a49111cc348a5d1aa8ad2157405ac858dcd567160d635a29504f3827d18f2",
+  "native_source_commit": "da3fe2b82fceaeed6686a111ef89739e49d379a0",
+  "native_driver_sha256": "739681ad2574d908c947c4f7f1624f9f769a2c5208b152292cdccf01c5be958c",
+  "native_protocol_trace": "original-active-and-empty-native-trace.json",
+  "native_protocol_trace_sha256": "514479d60a7dab7bffcdf4aa78b221ad4b4d87217c46edc26b31ee9a840e32bc",
+  "reconstruction": "Decode the final native response body_base64, parse its JSON, then serialize with json.dumps(indent=2) plus one newline. This reconstructs every fixture byte without replacing any production field.",
+  "first_save_time": "entry.saved_at_unix_ms is the real first import time in the isolated library. A new generation changes that timestamp; this program does not rewrite it.",
+  "rights_note": "The converter's generic user_supplied_unverified provenance is retained. Authorship and CC0 permission for these newly authored test bytes are documented here independently of production labels.",
+  "build_note": "The source commit is provided by the caller. Verify the driver's build binding separately; a command-line commit value alone does not attest executable provenance.",
+  "fixture_capture": "This fixture was captured from the stated native driver. The portable generator verifies its complete four-operation protocol trace and independently regenerated the same data; only the real first-save timestamp differed. No production field was rewritten.",
+  "independent_regeneration": {
+    "source_commit": "edac506a4ccdf0eed2f2fc0c6087693ef56dd866",
+    "driver_sha256": "58e8bcb759274669356098b71acacf2c37b6ce27f6ab15a007e546f494781cbf",
+    "fixture_sha256": "dfd83bf0e0b99fe43a452942c1369bf01275609c252cc0f54acbd6956272d0ca",
+    "exact_differing_fields": [
+      ".entry.saved_at_unix_ms"
+    ]
+  }
+}
