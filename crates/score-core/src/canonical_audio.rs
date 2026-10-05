@@ -311,4 +311,52 @@ mod tests {
             fingerprint("test", &serde_json::json!(["a", "b|c"])).unwrap()
         );
     }
+    fn capacity_score(count: usize, tied: bool, repeats: u8) -> Score {
+        let mut score = fixture();
+        score.parts.truncate(1);
+        let template = score.parts[0].notes[0].clone();
+        score.parts[0].notes = (0..count)
+            .map(|i| Note {
+                id: format!("capacity-{i}"),
+                at: Beat::new(i as i64, 1),
+                tie_start: tied && i + 1 < count,
+                tie_stop: tied && i > 0,
+                ..template.clone()
+            })
+            .collect();
+        score.repeats = if repeats > 1 {
+            vec![Repeat {
+                from: Beat::ZERO,
+                to: Beat::new(count as i64, 1),
+                times: repeats,
+            }]
+        } else {
+            vec![]
+        };
+        score
+    }
+    #[test]
+    fn canonical_audio_capacity_keeps_100k_sources_and_occurrences() {
+        let profile = compile_audio_profile(capacity_score(100_000, false, 1)).unwrap();
+        assert_eq!(profile.source_note_ids.len(), 100_000);
+        assert_eq!(profile.occurrences.len(), 100_000);
+        assert_eq!(profile.source_references, 100_000);
+        assert!(compile_audio_profile(capacity_score(100_001, false, 1))
+            .unwrap_err()
+            .contains("100,000-note"));
+    }
+    #[test]
+    fn canonical_audio_capacity_keeps_one_million_tie_repeat_references() {
+        let profile = compile_audio_profile(capacity_score(62_500, true, 16)).unwrap();
+        assert_eq!(profile.source_note_ids.len(), 62_500);
+        assert_eq!(profile.occurrences.len(), 16);
+        assert_eq!(profile.source_references, 1_000_000);
+        assert!(profile
+            .occurrences
+            .iter()
+            .all(|o| o.source_indices.len() == 62_500));
+        assert!(compile_audio_profile(capacity_score(62_501, true, 16))
+            .unwrap_err()
+            .contains("1,000,000"));
+    }
 }
