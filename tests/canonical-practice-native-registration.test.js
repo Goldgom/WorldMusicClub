@@ -69,3 +69,11 @@ test('canonical picker names remain exact original fixtures and inputs match act
   assert.match(contract,/canonical restart cannot skip controls evidence/);
   assert.match(contract,/canonical-practice-original.musicxml/);
 });
+
+
+test('canonical snapshots retain ordinary canonical archives and backups',()=>{
+  const snapshot=host.slice(host.indexOf('function Save-SongFolderSnapshot('),host.indexOf('$previousDirectory='));
+  const cleanScenarios=snapshot.match(/if\(\$Scenario -in @\(([^\n]+?)\)\)\{@\('clean-songs','clean-backups','imports','import-backups'\)\}/)[1];
+  assert.ok(!cleanScenarios.includes("'canonical-practice'"));
+  assert.match(snapshot,/elseif\(\$Scenario -eq 'bulk-import'\)\{@\('songs','backups','imports','import-backups'\)\}else\{@\('songs','backups'\)\}/);
+});

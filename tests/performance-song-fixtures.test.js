@@ -13,7 +13,11 @@ const pickerSources=Object.fromEntries(await Promise.all(Object.entries({rust:'.
 function assertPickerFixtureRegistries({rust,native,contract}){
   const quoted=(text,pattern)=>[...text.matchAll(pattern)].map(match=>match[1]);
   const aliases={'bulk-multiple':['bulk-standard-a.json','bulk-standard-b.json'],[AUTHORING_PAIR_ALIAS]:[AUTHORING_FIXTURE_FILENAMES.strict,AUTHORING_FIXTURE_FILENAMES.events]};
-  const admitted=quoted(rust.match(/let fixture = \[([\s\S]*?)\]\s*\.contains\(&file\)/)[1],/"([^"]+)"/g).sort();
+  const common=quoted(rust.match(/let fixture = \[([\s\S]*?)\]\s*\.contains\(&file\)/)[1],/"([^"]+)"/g);
+  const canonical=quoted(rust.match(/\|\| \(CANONICAL_PRACTICE_PHASES.contains\(&phase\)\s*&& \[([\s\S]*?)\]\s*\.contains\(&file\)\)/)[1],/"([^"]+)"/g);
+  assert.deepEqual(canonical,['canonical-practice-original.json','canonical-practice-original.musicxml']);
+  for(const file of canonical)assert.ok(!common.includes(file),'Canonical originals must remain phase-scoped');
+  const admitted=[...common,...canonical].sort();
   const files=quoted(native.match(/Array\.IndexOf\(new\[\]\{([^}]+)\},name\)/)[1],/"([^"]+)"/g).sort();
   const checkedFiles=quoted(contract.match(/\$fixed=@\(([^\r\n]+)\)/)[1],/'([^']+)'/g).sort();
   assert.equal(new Set(admitted).size,admitted.length);assert.equal(new Set(files).size,files.length);assert.ok(files.includes(PERFORMANCE_FIXTURE_FILENAME));

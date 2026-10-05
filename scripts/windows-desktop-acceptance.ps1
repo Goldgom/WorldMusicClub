@@ -422,7 +422,7 @@ function Save-SongFolderSnapshot([string]$Phase) {
     Save-Json (Get-CatalogAcceptanceSnapshot $root) (Join-Path $OutputDirectory "snapshot-$Phase.json")
     return
   }
-  foreach($area in $(if($Scenario -in @('clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice')){@('clean-songs','clean-backups','imports','import-backups')}elseif($Scenario -eq 'bulk-import'){@('songs','backups','imports','import-backups')}else{@('songs','backups')})) {
+  foreach($area in $(if($Scenario -in @('clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice')){@('clean-songs','clean-backups','imports','import-backups')}elseif($Scenario -eq 'bulk-import'){@('songs','backups','imports','import-backups')}else{@('songs','backups')})) {
     $directory=Join-Path $root $area
     if(-not (Test-Path -LiteralPath $directory -PathType Container)){throw 'Isolated score archive directory is missing'}
     foreach($file in (Get-ChildItem -LiteralPath $directory -Recurse -Force | Sort-Object FullName)) {
