@@ -1,3 +1,4 @@
+import {setupLibraryManagementView} from './library-management-view.js';
 import {basicKeyWrittenAt} from './basic-key-notation.js';
 import {renderBasicKeyPage} from './basic-key-numbered.js';
 import {isVsqSong,isPerformanceSong,isBasicKeysSong,basicKeysParts,hasBasicKeyRendition} from './clean-song-package.js';
@@ -1418,18 +1419,21 @@ const libraryView = setupScoreLibrary({getScore:()=>state.cleanSong?null:state.s
 const legacyLibraryButton=$('library-button');legacyLibraryButton.removeAttribute('data-i18n');
 bindText(legacyLibraryButton,()=>i18n.locale==='en'?(scoreStorage?.snapshot().kind==='native'?'Legacy browser archives':'Browser archives'):(scoreStorage?.snapshot().kind==='native'?'旧版浏览器收藏':'浏览器收藏管理'));
 scoreStorage=new ScoreStorageModel({openStorage:()=>openScoreStorage({origin:location.origin,validateScore:(score,signal)=>api('/api/compile',score,signal)})});
+const libraryManagement=setupLibraryManagementView({document,i18n,getStorage:()=>scoreStorage.storage()});
+window.addEventListener('pagehide',()=>libraryManagement.destroy());
 bulkImportView=setupBulkImportView({document,i18n,getStorageKind:async()=>(await scoreStorage.storage()).info.kind,
   onOpen:()=>{scoreSaveNavigation++;state.loadIntent++;state.compileController?.abort();referenceListening?.close();performanceListening?.stop({revokePolicy:true});cancelPendingStart();},pausePlayback,
-  onCommitted:async()=>{if(!await scoreStorage.rescan())throw new Error('Saved-song inventory refresh failed.');},
+  onCommitted:async()=>{libraryManagement.invalidate();if(!await scoreStorage.rescan())throw new Error('Saved-song inventory refresh failed.');},
   onBrowse:identity=>{shell.show('library');void selectSongScore(identity);},onDone:()=>shell.show('library'),getSavedEntries:()=>scoreStorage.snapshot().entries});
 $('bulk-import-history-button').addEventListener('click',()=>bulkImportView.open());
-songAuthoringView=setupSongAuthoringView({document,i18n,getStorageKind:async()=>(await scoreStorage.storage()).info.kind,onCommitted:async()=>{if(!await scoreStorage.rescan())throw new Error('Saved-song inventory refresh failed.');},onHome:()=>shell.show('home'),onLibrary:()=>shell.show('library'),onBrowse:identity=>{shell.show('library');void selectSongScore(identity);}});
+songAuthoringView=setupSongAuthoringView({document,i18n,getStorageKind:async()=>(await scoreStorage.storage()).info.kind,onCommitted:async()=>{libraryManagement.invalidate();if(!await scoreStorage.rescan())throw new Error('Saved-song inventory refresh failed.');},onHome:()=>shell.show('home'),onLibrary:()=>shell.show('library'),onBrowse:identity=>{shell.show('library');void selectSongScore(identity);}});
 window.addEventListener('pagehide',()=>songAuthoringView.destroy());
 scoreStorageView=setupScoreStorageView({model:scoreStorage,host:document.querySelector('#settings-dialog .shell-dialog-content'),document,i18n,getScore:()=>state.cleanSong?null:state.score,onSaveStart:beginExplicitScoreSave,onSaveResult:finishScoreSave});
 $('settings-dialog').addEventListener('close',()=>{scoreSaveNavigation++});
 const storageLobbyHost=document.createElement('div');$('catalog').before(storageLobbyHost);
 setupScoreStorageLobbyStatus({model:scoreStorage,host:storageLobbyHost,document,i18n,onConfigure:()=>shell.open('settings')});
-scoreStorage.subscribe(()=>{renderCatalog();const binding=displayBindings.get(legacyLibraryButton);if(binding?.text)legacyLibraryButton.textContent=binding.text()});
+let managementInventorySignature=null;
+scoreStorage.subscribe(snapshot=>{const signature=JSON.stringify(snapshot.entries.map(row=>row.libraryKey));if(managementInventorySignature!==null&&signature!==managementInventorySignature)libraryManagement.invalidate();managementInventorySignature=signature;renderCatalog();const binding=displayBindings.get(legacyLibraryButton);if(binding?.text)legacyLibraryButton.textContent=binding.text()});
 $('score-library').addEventListener('close',()=>{if(scoreStorage.snapshot().kind==='browser')void scoreStorage.rescan()});
 const engravedView = setupEngravedView({i18n,onBasicPage:(page,batch)=>{if(hasBasicKeyRendition(state.cleanSong)){if(page){state.notationPart=batch?.scope==='all'?null:page.part_id;$('notation-part').value=state.notationPart||'';}if(!state.engravingActive)renderNotationPage();}},getScore:()=>state.score,getCleanSong:()=>state.cleanSong,getPracticePart:()=>state.practicePart,getMode:()=>state.mode,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),notice,onVisibility:active=>{
   state.engravingActive=active;

@@ -1,3 +1,4 @@
+import {managementRequest,checkedManagementResponse} from './library-management-contract.js';
 import {isBasicKeysSong,isBasicKeysSummary,BASIC_KEYS_PROFILE,prepareCleanSong,prepareVsqPractice,preparePerformanceSong,isVsqSong,isPerformanceSong,isPerformanceSummary,VSQ_PROFILE,PERFORMANCE_PROFILE} from './clean-song-package.js';
 import {openScoreLibrary,LIBRARY_LIMITS,libraryError} from './local-library.js';
 
@@ -52,13 +53,18 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
   signal?.throwIfAborted();const result=validateScore?await validateScore(structuredClone(score),signal):await request('/api/compile',{body:score,signal});signal?.throwIfAborted();
   if(result!==true&&(!result?.score||!Array.isArray(result?.timeline?.notes)))throw issue('library_validation_required','Rust validation did not confirm this complete canonical score.');
  };
- const info=Object.freeze({kind,storage:kind==='native'?'native-filesystem':'indexeddb',origin:expectedOrigin,capabilities:Object.freeze({rescan:true,backup:true,chooseDirectory:false,openFolder:false})});
+ const info=Object.freeze({kind,storage:kind==='native'?'native-filesystem':'indexeddb',origin:expectedOrigin,capabilities:Object.freeze({rescan:true,backup:true,chooseDirectory:false,openFolder:false,manageQuery:kind==='native'&&health.library_management_query_version===1})});
  async function list({signal}={}){
   if(kind==='browser'){const rows=await browser.list();signal?.throwIfAborted();return{...info,directory:null,entries:rows.map(row=>entry(kind,row)),issues:[]}}
   const value=await request('/api/library/list',{signal});
   if(value?.storage!=='native-filesystem'||value.library_format_version!==1||typeof value.directory!=='string'||!value.directory||!Array.isArray(value.entries)||!Array.isArray(value.issues)||value.issues.some(item=>!item||typeof item.code!=='string'||typeof item.message!=='string'))throw issue('library_invalid_response','The native inventory response is incomplete.');
   const entries=value.entries.map(row=>entry(kind,row));if(new Set(entries.map(row=>row.libraryKey)).size!==entries.length)throw issue('library_invalid_response','The native inventory repeats a saved-copy identity.');
   return{...info,directory:value.directory,entries,issues:value.issues};
+ }
+ async function queryManagement(options={}){
+  if(!info.capabilities.manageQuery)throw issue('library_management_unavailable','Pack management requires a native app with metadata query support.');
+  const {signal,...input}=options,body=managementRequest(input);
+  return checkedManagementResponse(await request('/api/library/manage/query',{body,signal}),body);
  }
  async function save(score,{label=null,allowConflictingId=false,signal,scoreJson}={}){
   // Capture before the first await; a later edit cannot alter the saved import.
@@ -167,5 +173,5 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
   for(const job of assetReads.splice(0)){job.detach();job.reject(issue('library_storage_closed','The local library is closed.'));}
   browser?.close();
  }
- return{info,list,save,load,loadAsset,chooseVsqPractice,exportBackup,close};
+ return{info,list,save,load,loadAsset,chooseVsqPractice,exportBackup,queryManagement,close};
 }
