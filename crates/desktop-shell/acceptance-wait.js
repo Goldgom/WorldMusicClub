@@ -47,13 +47,14 @@ function createAcceptanceNavigation({document,until,click}) {
     await waitScreen('stage','back-to-library','stage library navigation');click('back-to-library');
     await waitScreen('library','lobby-home','returned native library');
   }
-  async function enterFree() {
+  async function enterFree({readyControl='free-start'}={}) {
+    if(!['free-start','free-exit'].includes(readyControl))throw Error('Unsupported free-practice acceptance readiness control');
     if(document.body.dataset.screen==='stage')await returnToLibrary();
     if(document.body.dataset.screen==='library') {
       await waitScreen('library','lobby-home','library home navigation');click('lobby-home');
     }
     await waitScreen('home','start-free-practice','visible native home free-practice entry');click('start-free-practice');
-    await until(()=>ready('free','free-start')&&$('free-practice-screen').getAttribute('aria-busy')==='false','native free-practice ready');
+    await until(()=>ready('free',readyControl)&&$('free-practice-screen').getAttribute('aria-busy')==='false','native free-practice ready');
   }
   async function exitFree() {
     await until(()=>ready('free','free-exit')&&$('free-practice-screen').getAttribute('aria-busy')==='false','native free-practice exit ready');click('free-exit');

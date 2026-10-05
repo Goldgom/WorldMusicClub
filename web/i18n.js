@@ -1,3 +1,4 @@
+import libraryManagementSchema from './locales/library-management-schema.js';
 import referenceListeningSchema from './locales/reference-listening-schema.js';
 import rhythmSchema from './locales/rhythm-schema.js';
 import preferencesRuntimeSchema from './locales/preferences-runtime-schema.js';
@@ -30,6 +31,7 @@ const parameterized = (params, plural) => Object.freeze({params: Object.freeze(p
 
 /** Explicit display contracts. A machine code/identifier is never inferred from prose. */
 export const MESSAGE_SCHEMA = Object.freeze({
+  ...libraryManagementSchema,
   ...referenceListeningSchema,
   ...rhythmSchema,
   ...preferencesRuntimeSchema,

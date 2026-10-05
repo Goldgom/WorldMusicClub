@@ -107,6 +107,18 @@ test('native navigation fails within its deadline if the menu click does not tra
   }finally{await f.close();}
 });
 
+test('explicit free-draft inspection readiness reenters without requiring or starting a new recording',async()=>{
+  const f=await menuFixture();try {
+    await f.menu.enterLibrary();await f.menu.enterFree();await f.app.click('free-start');
+    f.app.emit(f.app.$('free-practice-title'),'keydown',{code:'KeyR',key:'r'});f.app.emit(f.app.$('free-practice-title'),'keyup',{code:'KeyR',key:'r'});
+    await f.app.click('free-stop');const before=await f.app.exported('free-export-draft');assert.equal(f.app.$('free-start').disabled,true);
+    await f.menu.exitFree();f.clicks.length=0;await f.menu.enterFree({readyControl:'free-exit'});
+    assert.deepEqual(f.clicks,['lobby-home','start-free-practice']);assert.equal(f.menu.ready('free','free-exit'),true);assert.equal(f.app.$('free-start').disabled,true);
+    assert.deepEqual(await f.app.exported('free-export-draft'),before);
+    await assert.rejects(f.menu.enterFree({readyControl:'free-save'}),/Unsupported free-practice acceptance readiness control/);
+  }finally{await f.close();}
+});
+
 test('native free entry waits for operation readiness and Exit rejects an incorrect home destination',async()=>{
   const f=await menuFixture();try {
     const clicks=[],wait=createWait(),menu=createNavigation({document:f.app.document,until:(condition,label)=>wait.until(condition,label,1000),click:id=>{

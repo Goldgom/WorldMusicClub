@@ -2,9 +2,13 @@
 //! service; renderer requests never provide filesystem paths or process commands.
 pub mod acceptance;
 mod acceptance_publication;
+pub mod catalog;
+#[doc(hidden)]
+pub mod catalog_journal;
 mod native_basic_keys;
 mod native_fingering;
 pub mod native_library;
+pub use native_library::catalog_product;
 pub mod song_pack;
 use http::{Request, Response};
 use serde_json::{json, Value};
@@ -88,6 +92,14 @@ pub fn admission(request: &Request<Vec<u8>>) -> Option<Response<Vec<u8>>> {
         ));
     }
     if request.body().len() > song_pack::request_limit(path) {
+        if path == "/api/library/manage/query" {
+            return Some(operation_error(
+                path,
+                413,
+                "library_query_limit",
+                "Metadata query exceeds 4 KiB",
+            ));
+        }
         if song_pack::is_import_route(path) {
             return Some(operation_error(
                 path,
@@ -219,7 +231,7 @@ fn dispatch_inner(
     if request.method() == "GET" {
         return match path {
             "/api/health" => json_response(Ok(
-                json!({"name":"WorldMusicHub","display_name":"WorldMusicClub","version":env!("CARGO_PKG_VERSION"),"engine":"rust","network":"native-protocol-no-listener","score_format_version":1,"score_schema_revision":score_core::SCORE_SCHEMA_REVISION}),
+                json!({"name":"WorldMusicHub","display_name":"WorldMusicClub","version":env!("CARGO_PKG_VERSION"),"engine":"rust","network":"native-protocol-no-listener","score_format_version":1,"score_schema_revision":score_core::SCORE_SCHEMA_REVISION,"library_management_query_version":1,"library_catalog_version":1}),
             )),
             "/api/catalog" => json_response(
                 serde_json::to_value(score_core::catalog()).map_err(|e| e.to_string()),
