@@ -1,6 +1,6 @@
 import {getAppI18n} from './app-locale.js';
 import {midiName,keyboardGeometry} from './music.js';
-import {mountPianoStage,createPianoToolbar,renderPianoKeybed,renderPianoRails,pianoMinimumWidth} from './piano-stage-view.js';
+import {mountPianoStage,createPianoToolbar,updatePianoToolbarTitles,renderPianoKeybed,renderPianoRails,pianoMinimumWidth} from './piano-stage-view.js';
 import {PERFORMANCE_LIBRARY_LIMITS, describePerformance} from './performance-library.js';
 
 /** Separate accessible screen. Global MIDI/PC ownership and normalized clocks belong to the app. */
@@ -162,6 +162,7 @@ export function setupFreePracticeView({document,session,preview=null,i18n=getApp
     elements['free-discard'].disabled=busy||!value.hasUnsavedDraft||!discard.checked;discard.disabled=busy||!value.hasUnsavedDraft;
     savePanel.hidden=!value.hasDraft;saveState.textContent=value.hasDraft?i18n.t(`free.save.${value.saveStatus}`):'';
     elements['free-sound'].textContent=i18n.t(getSoundEnabled()?'settings.soundOn':'settings.soundOff');elements['free-sound'].setAttribute('aria-pressed',String(getSoundEnabled()));
+    updatePianoToolbarTitles(inputActions);
     recordCount.textContent=i18n.t('free.recordCount',{count:value.records.length});
     const listSignature=JSON.stringify([i18n.revision,value.records]);
     if(lastList!==listSignature){lastList=listSignature;const chosen=records.value;records.replaceChildren();

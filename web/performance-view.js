@@ -3,7 +3,7 @@ import {localizeStatic} from './locale-view.js';
 import {stageFeedbackView} from './hud-feedback.js';
 import {keyTonic} from './music.js';
 import {setupStageNotationLayout} from './stage-notation-layout.js';
-import {mountPianoStage,createPianoToolbar,renderPianoRails,observePianoNoticeBudget} from './piano-stage-view.js';
+import {mountPianoStage,createPianoToolbar,updatePianoToolbarTitles,renderPianoRails,observePianoNoticeBudget} from './piano-stage-view.js';
 import {createPianoBudgetUpdate} from './piano-layout-budget.js';
 import {observePianoViewportBudget} from './piano-viewport-budget.js';
 export const FIELD_COLORS=Object.freeze({background:'#142333',backgroundEnd:'#1d3b4b',natural:'#7be4ce',accidental:'#acb0f5',scheduled:'#f4ce78',noteText:'#112538'});
@@ -165,7 +165,7 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
   function update(){
     const context=getContext();if(play.dataset.instrument!==(context.instrument||'piano')){play.dataset.instrument=context.instrument||'piano';$('workspace').classList.toggle('piano-workspace',context.instrument!=='guitar');const sound=$('sound-button'),soundHost=context.instrument==='guitar'?document.querySelector('.transport'):pianoActions;if(sound.parentElement!==soundHost)soundHost.append(sound);arrangePianoAuxiliary();notationLayout.refresh();}renderFeedback(context);const cue=performanceCue(context,i18n);
     const cueState=!cue?null:context.running?'countdown':context.completed?'complete':context.hasStarted?'paused':'ready',signature=JSON.stringify([i18n.revision,cue,cueState]);
-    if(signature!==lastCue){lastCue=signature;const node=$('stage-cue');node.hidden=!cue;if(cueState)node.dataset.cueState=cueState;else node.removeAttribute('data-cue-state');$('stage-cue-main').textContent=cue?.main||'';$('stage-cue-detail').textContent=cue?.detail||'';}updateRange();
+    if(signature!==lastCue){lastCue=signature;const node=$('stage-cue');node.hidden=!cue;if(cueState)node.dataset.cueState=cueState;else node.removeAttribute('data-cue-state');$('stage-cue-main').textContent=cue?.main||'';$('stage-cue-detail').textContent=cue?.detail||'';}updateRange();updatePianoToolbarTitles(pianoActions);
   }
   function screenChanged(screen){if(screen==='stage'){hud.append(nav);header.hidden=true;}else if(screen==='free'){$('free-practice-screen').querySelector('.free-practice-heading').append(nav);header.hidden=true;}else{header.append(nav);header.hidden=false;}update();notationLayout.refresh();viewportBudget?.refresh();}
   const refreshLocale=()=>{localizeStatic(document,i18n);update();notationLayout.refresh();};

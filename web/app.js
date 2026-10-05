@@ -1385,7 +1385,7 @@ function setSoundEnabled(enabled){
   const resumeCanonical=!state.cleanSong&&transport.running;
   if(transport.running||state.playPending)pausePlayback();
   synth.muted=!enabled;if(enabled&&transport.running)synth.unlock().catch(error=>notice(()=>errorDetail(error),true));if(synth.muted){synth.silence();heldAudioTokens.clear();freePreview?.stop('muted');}
-  bindText($('sound-button'),()=>synth.muted?t('app.soundOff'):t('app.soundOn'));$('sound-button').setAttribute('aria-pressed',String(synth.muted));metronome?.updateMute();referenceListening?.soundChanged();performanceListening?.soundChanged();
+  bindText($('sound-button'),()=>synth.muted?t('app.soundOff'):t('app.soundOn'));bindAttribute($('sound-button'),'title',()=>synth.muted?t('app.soundOff'):t('app.soundOn'));$('sound-button').setAttribute('aria-pressed',String(synth.muted));metronome?.updateMute();referenceListening?.soundChanged();performanceListening?.soundChanged();
   updateButtons();
   try{freeSession?.configure('sound',enabled);}catch{/* Session reports configuration failures without losing retained input. */}freeView?.render();
   if(resumeCanonical)void togglePlayback();

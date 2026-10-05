@@ -204,6 +204,18 @@
  .game-shell #workspace .piano-workspace-heading>#notation-toggle,.game-shell #workspace .piano-workspace-heading>#rhythm-stage-free{flex:none;max-width:70px;white-space:normal}
  .game-shell #workspace #edit-song-mod{max-width:60px;white-space:normal}
 }
+
+/* Share compact input actions without letting their full translated labels
+   spill into the original score-background checkbox. The row stays 32px. */
+@media(max-height:600px) and (min-width:651px) and (max-width:800px){
+ .game-shell .piano-stage-shared .piano-stage-toolbar .piano-stage-actions>.button{position:relative;flex:0 0 36px;width:36px;min-width:36px;max-width:36px;height:32px;min-height:32px;padding:0;overflow:hidden;text-indent:-9999px;white-space:nowrap}
+ .game-shell .piano-stage-toolbar .piano-stage-actions>.button::before{content:'';position:absolute;inset:6px 8px;background:currentColor;mask:var(--piano-action-icon) center/contain no-repeat;pointer-events:none}
+ .game-shell .piano-stage-toolbar :is(#piano-connect-midi,#free-connect-midi){--piano-action-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 3v5m10-5v5M5 8h14v4a7 7 0 0 1-14 0zM12 19v3'/%3E%3C/svg%3E")}
+ .game-shell .piano-stage-toolbar :is(#piano-keyboard-settings,#free-keyboard-settings){--piano-action-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='5' width='20' height='14' rx='2'/%3E%3Cpath d='M6 9h1m4 0h1m4 0h1M6 13h1m4 0h1m4 0h1M7 16h10'/%3E%3C/svg%3E")}
+ .game-shell .piano-stage-toolbar :is(#sound-button,#free-sound){min-width:36px;--piano-action-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 9h4l5-5v16l-5-5H3zM16 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14'/%3E%3C/svg%3E")}
+ /* Normal's pressed value means muted; Free's means sound enabled. */
+ .game-shell .piano-stage-toolbar :is(#sound-button[aria-pressed=true],#free-sound[aria-pressed=false]){--piano-action-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 9h4l5-5v16l-5-5H3zM16 9l6 6m0-6-6 6'/%3E%3C/svg%3E")}
+}
 /* Guitar retains the original two-column reading surface, independently of the
    piano paint-root's DOM anchor. Instrument scrolling stays above transport. */
 @media(min-width:651px){

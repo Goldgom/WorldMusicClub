@@ -6,7 +6,13 @@ export const pianoMinimumWidth = geometry => Math.max(640, geometry.filter(key =
 
 export function createPianoToolbar({document, title, actions}) {
   const toolbar=document.createElement('div');toolbar.className='piano-stage-toolbar';toolbar.dataset.keyboardInput='off';
-  title.classList.add('piano-stage-title');actions.classList.add('piano-stage-actions');toolbar.append(title,actions);return toolbar;
+  title.classList.add('piano-stage-title');actions.classList.add('piano-stage-actions');toolbar.append(title,actions);updatePianoToolbarTitles(actions);return toolbar;
+}
+
+/** Compact icons decorate the original labelled actions; keep their current
+ * translated names and Sound state available to pointer users as well. */
+export function updatePianoToolbarTitles(actions){
+  for(const node of actions.querySelectorAll(':scope > button')){const label=node.textContent.trim();if(node.title!==label)node.title=label;}
 }
 
 export function mountPianoStage({document,stage,scroll,surface,keyboard,canvas=null,lane=null}) {

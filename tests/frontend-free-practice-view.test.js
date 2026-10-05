@@ -47,6 +47,16 @@ test('save failure retains draft, export action, title and explicit retry',async
 test('locale switching preserves controls, typed title, focus, session ownership and recorded values',async t=>{
  const ui=await setup(t);await ui.view.enter();await ui.click('free-start');const owner=ui.session.owner(),button=ui.$('free-pause'),key=ui.$('free-practice-keys').querySelector('button');ui.$('free-record-label').value='原始 title';button.focus();ui.i18n.setLocale('zh-CN');assert.equal(ui.$('free-pause'),button);assert.equal(ui.document.activeElement,button);assert.equal(ui.$('free-practice-keys').querySelector('button'),key);assert.equal(ui.$('free-record-label').value,'原始 title');assert.equal(ui.session.owner(),owner);assert.equal(ui.session.snapshot().state,'recording');assert.equal(ui.$('free-stop').textContent,'停止录制');assert.doesNotMatch(ui.$('free-practice-screen').textContent,/Preview saved|Start recording|Saved performances/);assert.deepEqual(ui.reports,[]);
 });
+test('shared toolbar tooltips track full translated labels and the existing Sound toggle state',async t=>{
+ const ui=await setup(t);await ui.view.enter();const ids=['free-connect-midi','free-keyboard-settings','free-sound'],nodes=ids.map(ui.$);
+ for(const locale of ['zh-CN','en']){
+  ui.i18n.setLocale(locale);
+  for(const enabled of [true,false]){
+   await ui.click('free-sound');assert.equal(ui.$('free-sound').getAttribute('aria-pressed'),String(enabled));
+   for(const [index,id]of ids.entries()){const node=ui.$(id);assert.equal(node,nodes[index]);assert.ok(node.textContent.trim());assert.equal(node.title,node.textContent.trim());}
+  }
+ }
+});
 test('focus loss pauses recording, releases only owned free contacts and cancels pending preview unlock',async t=>{
  const gate=deferred(),plays=[];const ui=await setup(t,{audio:{unlock:()=>gate.promise,play:(...args)=>plays.push(args),stop:()=>{}}});await ui.view.enter();await ui.click('free-start');const key=ui.$('free-practice-keys').querySelector('button');ui.at(20);ui.event(key,'pointerdown',{pointerId:7,button:0});ui.at(25);ui.window.dispatchEvent(new ui.window.Event('blur'));assert.equal(ui.session.snapshot().state,'paused');assert.equal(ui.inputs.at(-1).kind,'cleanup');assert.match(ui.inputs.at(-1).source,/^free-input:/);assert.equal(ui.inputs.at(-1).reason,'free_focus_loss');ui.at(30);await ui.click('free-stop');await ui.click('free-save');await ui.click('free-sound');ui.$('free-preview').click();await settle();assert.equal(ui.preview.snapshot().status,'preparing');ui.document.hidden=true;ui.document.dispatchEvent(new ui.window.Event('visibilitychange'));gate.resolve();await settle();assert.equal(plays.length,0);assert.equal(ui.preview.snapshot().status,'stopped');
 });

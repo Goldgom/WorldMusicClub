@@ -128,6 +128,7 @@ test('language redraw preserves recording, focusable controls, authored labels a
     const toolbarLabels=locale=>{
       const [title,midi,keyboard,background,opacity,options]=locale==='en'?['Piano','Connect MIDI','Edit key mapping','Score background','Opacity','Score options']:['钢琴','连接 MIDI','编辑按键映射','轨道背景乐谱','不透明度','读谱设置'];
       for(const [selector,expected]of [['#piano-stage .piano-stage-title',title],['#free-piano-stage .piano-stage-title',title],['#piano-connect-midi',midi],['#free-connect-midi',midi],['#piano-keyboard-settings',keyboard],['#free-keyboard-settings',keyboard],['[data-i18n="performance.scoreBackground"]',background],['[data-i18n="performance.scoreOpacity"]',opacity],['#notation-tools>summary',options]])assert.equal(app.document.querySelector(selector).textContent.trim(),expected,`${locale}: ${selector} has its actual translated label`);
+      for(const id of ['piano-connect-midi','free-connect-midi','piano-keyboard-settings','free-keyboard-settings','sound-button','free-sound'])assert.equal(app.$(id).title,app.$(id).textContent.trim(),`${locale}: ${id} retains its complete current tooltip`);
     };
     toolbarLabels('zh-CN');
     i18n.setLocale('en');toolbarLabels('en');
