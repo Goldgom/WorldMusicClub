@@ -74,10 +74,12 @@ into that response unchanged. Future integration needs an explicit migration and
 versioned adapter, preserving the source-origin map between retained archives,
 read-only groups and editable collections; this slice changes neither consumer.
 
-Before any deletion control is enabled, the host still needs the reviewed atomic
-backup-first persistence/recovery protocol, integrity chain, native library lock,
-secure ID generation, verified payload availability/integrity, durable operation
-lookup, tombstone-aware inventory/reimport, migration, and bounded transport.
+The isolated [native catalog journal](catalog-journal.md) now provides an
+experimental backup-first persistence/recovery protocol, integrity chain, existing
+native lock integration, and durable transition lookup. It has no runtime callers.
+Before any deletion control is enabled, the host still needs accepted native
+storage validation, secure ID generation, verified payload availability/integrity,
+tombstone-aware inventory/reimport, migration, and bounded transport.
 The host must distinguish a never-managed library from a damaged managed one and
 must never reseed/reset a managed catalog from song folders. A snapshot accepted
 by this core is structurally valid, not authenticated storage evidence. These

@@ -3,6 +3,8 @@
 pub mod acceptance;
 mod acceptance_publication;
 pub mod catalog;
+#[doc(hidden)]
+pub mod catalog_journal;
 mod native_basic_keys;
 mod native_fingering;
 pub mod native_library;
