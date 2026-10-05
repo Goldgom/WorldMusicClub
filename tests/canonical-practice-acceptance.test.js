@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import {canonicalPracticeFixture} from '../scripts/prepare-canonical-practice-fixtures.mjs';
@@ -16,11 +17,11 @@ import {vsqAcceptanceFixture} from '../scripts/prepare-vsq-song-fixtures.mjs';
 import {buildVsqAudioPlan} from '../web/vsq-audio-plan.js';
 import {prepareCleanSong,prepareVsqPractice} from '../web/clean-song-package.js';
 const compact=runInNewContext(readFileSync(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8').split('(() => {')[0]+'\ncompactCanonicalPracticeAudio;',{structuredClone});
-function run({range=false,pause=false,listen=false,partial=false,cancelHeld=false}={}){
- const f=canonicalPracticeFixture(),timeline={duration_ms:4000,notes:ORIGINAL_GATES.map(([part_id,midi,start_ms,duration_ms,source_note_ids])=>({id:source_note_ids[0],part_id,midi,start_ms,duration_ms,velocity:90,source_note_id:source_note_ids[0],source_note_ids,voice:'1',staff:1}))},compilation={score:f.score,timeline},profile=syntheticCanonicalProfile(compilation),p=buildCanonicalAudioPlan(compilation,profile,{sampleRate:8000,mode:listen?'listen':'practice',practiceSelection:{kind:'parts',part_ids:['P1','P2']},acceptedPolicyId:CANONICAL_AUDIO_POLICY,...(range?{range:{startMs:1000,endMs:3000},countInMs:2000,loop:{enabled:true,maxPasses:3},...(partial?{resumePositionMs:2000}:{})}:{})}),messages=[],core=new CanonicalAudioCore(p.sampleRate,{emit:(m,t=[])=>messages.push(structuredClone(m,{transfer:t}))}),wire=createCanonicalAudioTransfer(p);let frame=0,paused=false;
- const positionFrame=range?p.initialPositionFrame-p.initialCountInFrames:-16000;core.handleMessage({type:'prepare',generation:1,positionFrame,wire:wire.wire},frame);const block=()=>{core.process([new Float32Array(128)],frame);frame+=128;};while(core.state==='preparing')block();core.handleMessage({type:'start',generation:1,anchorFrame:frame+64},frame);
+function run({range=false,pause=false,listen=false,partial=false,cancelHeld=false,instrumentOverrides}={}){
+ const f=canonicalPracticeFixture(),timeline={duration_ms:4000,notes:ORIGINAL_GATES.map(([part_id,midi,start_ms,duration_ms,source_note_ids])=>({id:source_note_ids[0],part_id,midi,start_ms,duration_ms,velocity:90,source_note_id:source_note_ids[0],source_note_ids,voice:'1',staff:1}))},compilation={score:f.score,timeline},profile=syntheticCanonicalProfile(compilation),p=buildCanonicalAudioPlan(compilation,profile,{sampleRate:8000,mode:listen?'listen':'practice',practiceSelection:{kind:'parts',part_ids:['P1','P2']},acceptedPolicyId:CANONICAL_AUDIO_POLICY,instrumentOverrides,...(range?{range:{startMs:1000,endMs:3000},countInMs:2000,loop:{enabled:true,maxPasses:3},...(partial?{resumePositionMs:2000}:{})}:{})}),messages=[],core=new CanonicalAudioCore(p.sampleRate,{emit:(m,t=[])=>messages.push(structuredClone(m,{transfer:t}))}),wire=createCanonicalAudioTransfer(p);let frame=0,paused=false;
+ const pcmHash=createHash('sha256');const positionFrame=range?p.initialPositionFrame-p.initialCountInFrames:-16000;core.handleMessage({type:'prepare',generation:1,positionFrame,wire:wire.wire},frame);const block=()=>{const samples=new Float32Array(128);core.process([samples],frame);pcmHash.update(Buffer.from(samples.buffer));frame+=128;};while(core.state==='preparing')block();core.handleMessage({type:'start',generation:1,anchorFrame:frame+64},frame);
  while(core.state==='running'){if((pause||cancelHeld)&&!paused&&frame>(cancelHeld?1024:20000)){paused=true;core.handleMessage({type:'pause',generation:1},frame);for(let i=0;i<(cancelHeld?128:4);i++)block();if(cancelHeld){core.handleMessage({type:'cancel',generation:2,reason:'dispose'},frame);break;}core.handleMessage({type:'resume',generation:1,anchorFrame:frame+64},frame);}block();}
- const t=messages.find(m=>m.type===(cancelHeld?'canceled':'ended')),row={plan:p,planGeneration:1,positionFrame,started:messages.find(m=>m.type==='started'),terminals:[{record:{...t,ledger:{actualStarts:Array.from(t.ledger.actualStarts),actualEnds:Array.from(t.ledger.actualEnds)}}}],rawTerminals:[{record:{...t,ledger:{actualStarts:Array.from(t.ledger.actualStarts),actualEnds:Array.from(t.ledger.actualEnds)}}}]};return compact([row])[0];
+ const t=messages.find(m=>m.type===(cancelHeld?'canceled':'ended')),row={pcmHash:pcmHash.digest('hex'),plan:p,planGeneration:1,positionFrame,started:messages.find(m=>m.type==='started'),terminals:[{record:{...t,ledger:{actualStarts:Array.from(t.ledger.actualStarts),actualEnds:Array.from(t.ledger.actualEnds)}}}],rawTerminals:[{record:{...t,ledger:{actualStarts:Array.from(t.ledger.actualStarts),actualEnds:Array.from(t.ledger.actualEnds)}}}]};return compact([row])[0];
 }
 test('canonical acceptance uses exactly one original four-part score in two deterministic source formats',()=>{const a=canonicalPracticeFixture(),b=canonicalPracticeFixture();assert.deepEqual(a.manifest,b.manifest);assert.equal(a.manifest.rights.license,'CC0-1.0');validateCanonicalMusicalScore(a.score,a);assert.equal(a.files.size,2);assert.equal(a.manifest.source_note_ids.length,13);assert.equal(ORIGINAL_GATES.length,7);for(const change of [s=>s.parts.pop(),s=>s.parts[1].notes[1].tie_start=false,s=>s.parts[0].notes[1].duration.numerator=2,s=>s.parts[0].notes[1].id='forged']){const score=structuredClone(a.score);change(score);assert.throws(()=>validateCanonicalMusicalScore(score,a));}});
 for(const pause of [false,true])test(`canonical complete-frame evidence validates actual production pause=${pause} and rejects one-frame corruption`,()=>{const row=run({pause});validateCanonicalFrameLedger(row,{natural:true});for(const key of ['actualStarts','actualEnds']){const tampered=structuredClone(row);tampered.terminals[0].record.ledger[key][0]++;tampered.rawTerminals[0].record.ledger[key][0]++;assert.throws(()=>validateCanonicalFrameLedger(tampered,{natural:true}));}});
@@ -102,4 +103,14 @@ test('canonical PCM observer reserves its budget beyond all 64 actual 454 Window
   assert.equal(row.pcm.blocks.length,count,label);assert.ok(row.pcm.blocks.every(block=>block.peak===0&&block.rms===0));
   if(label==='corrected'){context.currentTime=observed.firstActualGateFrame/plan.sampleRate;frames.shift()();assert.equal(row.pcm.blocks.length,5);assert.equal(row.pcm.blocks[4].audioTime,context.currentTime);}
  }
+});
+
+// The live route retains actual native-port gates and PCM; this pure core
+// contract independently proves the declared timbre changes only synthesis.
+test('original Mod reed override and restore preserve exact gates and restore baseline PCM bytes',()=>{
+ const original=run(),override=run({instrumentOverrides:{P4:'reed'}}),restored=run({instrumentOverrides:{}});
+ for(const r of [original,override,restored])validateCanonicalFrameLedger(r,{natural:true});
+ assert.deepEqual(override.plan.notes,original.plan.notes);assert.deepEqual(override.terminals[0].record.ledger,original.terminals[0].record.ledger);
+ assert.equal(override.plan.sourceFingerprint,original.plan.sourceFingerprint);assert.equal(override.plan.compiledFingerprint,original.plan.compiledFingerprint);assert.notEqual(override.plan.planFingerprint,original.plan.planFingerprint);assert.notEqual(override.pcmHash,original.pcmHash);
+ assert.deepEqual(restored.plan,original.plan);assert.equal(restored.pcmHash,original.pcmHash);
 });

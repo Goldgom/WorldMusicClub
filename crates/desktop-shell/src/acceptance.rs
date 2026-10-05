@@ -474,7 +474,7 @@ impl Acceptance {
             let Ok(value) = value else {
                 return Some(error(400, "Invalid acceptance progress"));
             };
-            if !valid_progress(&value) {
+            if !valid_progress_for_phase(&value, self.phase) {
                 return Some(error(400, "Invalid acceptance progress"));
             }
             self.trace(json!({"source":"renderer","checkpoint":value}));
@@ -517,7 +517,7 @@ impl Acceptance {
             let Ok(sequence) = sequence.parse::<u64>() else {
                 return Some(error(400, "Invalid action sequence"));
             };
-            if !(1..=64).contains(&sequence) || request.method() != "GET" {
+            if !(1..=action_limit(self.phase)).contains(&sequence) || request.method() != "GET" {
                 return Some(error(400, "Invalid action sequence"));
             }
             let name = format!("result-{}-{sequence}.json", self.phase);
@@ -655,7 +655,31 @@ pub fn receive_report(
     }
     response(200, "application/json", b"{}".as_slice())
 }
+// Only these existing scenarios need extra visible Mod setup actions. The
+// native action vocabulary, owned coordinates and payload limits stay closed.
+fn action_limit(phase: &str) -> u64 {
+    if VSQ_PHASES.contains(&phase)
+        || BASIC_KEY_PHASES.contains(&phase)
+        || AUTHORING_PHASES.contains(&phase)
+        || VSQ_AUTHORING_PHASES.contains(&phase)
+        || phase == "canonical-practice-seed"
+    {
+        80
+    } else if PERFORMANCE_PHASES.contains(&phase)
+        || PITCH_BEND_PHASES.contains(&phase)
+        || BULK_PHASES.contains(&phase)
+        || FOLDER_PHASES.contains(&phase)
+    {
+        75
+    } else {
+        64
+    }
+}
+#[cfg(test)]
 fn valid_progress(value: &Value) -> bool {
+    valid_progress_for_phase(value, "")
+}
+fn valid_progress_for_phase(value: &Value, phase: &str) -> bool {
     let Some(object) = value.as_object() else {
         return false;
     };
@@ -665,7 +689,7 @@ fn valid_progress(value: &Value) -> bool {
         && value["version"] == 1
         && value["sequence"]
             .as_u64()
-            .is_some_and(|sequence| sequence <= 64)
+            .is_some_and(|sequence| sequence <= action_limit(phase))
         && [
             "api-start",
             "api-response",
@@ -714,7 +738,7 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
     }
     if !value["sequence"]
         .as_u64()
-        .is_some_and(|sequence| (1..=64).contains(&sequence))
+        .is_some_and(|sequence| (1..=action_limit(phase)).contains(&sequence))
     {
         return false;
     }
@@ -977,7 +1001,7 @@ mod tests {
                     "{phase}: {kind}"
                 );
                 for (field, invalid) in [
-                    ("sequence", json!(65)),
+                    ("sequence", json!(action_limit(phase) + 1)),
                     ("field", json!("loop-from")),
                     ("value", json!("2")),
                     ("keys", json!([17, 65, 50, 9])),
@@ -1807,7 +1831,7 @@ mod tests {
                     "{phase}-{suffix}"
                 );
             }
-            for sequence in [0, 65] {
+            for sequence in [0, action_limit(phase) + 1] {
                 let request = Request::builder()
                     .uri(format!(
                         "https://wmh.localhost/__desktop_smoke/result/{sequence}"
@@ -2540,7 +2564,7 @@ mod tests {
                 .script()
                 .contains("async function saveScore(label,library)"));
             assert_eq!(acceptance.report_name(), format!("renderer-{phase}.json"));
-            for sequence in [0, 65] {
+            for sequence in [0, action_limit(phase) + 1] {
                 let request = Request::builder()
                     .uri(format!(
                         "https://wmh.localhost/__desktop_smoke/result/{sequence}"
@@ -2584,6 +2608,38 @@ mod tests {
                     .unwrap(),
                 raw
             );
+        }
+    }
+    #[test]
+    fn mod_setup_has_only_named_finite_phase_budgets() {
+        for (phase, limit) in [
+            ("vsq-seed", 80),
+            ("basic-key-restart", 80),
+            ("authoring-seed", 80),
+            ("vsq-authoring-restart", 80),
+            ("canonical-practice-seed", 80),
+            ("performance-controls", 75),
+            ("pitch-bend-restart", 75),
+            ("bulk-seed", 75),
+            ("folder-restart", 75),
+            ("canonical-practice-controls", 64),
+            ("complete-practice-seed", 64),
+            ("catalog-seed", 64),
+            ("seed", 64),
+            ("unknown-mod-phase", 64),
+        ] {
+            assert_eq!(action_limit(phase), limit);
+            let mut action = json!({"version":1,"sequence":limit,"kind":"click","x":1,"y":1,"width":1280,"height":720});
+            assert!(valid_action_for_phase(&action, phase));
+            action["sequence"] = json!(limit + 1);
+            assert!(!valid_action_for_phase(&action, phase));
+            action["sequence"] = json!(limit);
+            action["kind"] = json!("set-mod");
+            assert!(!valid_action_for_phase(&action, phase));
+            let mut progress = json!({"version":1,"stage":"renderer-report-sent","sequence":limit});
+            assert!(valid_progress_for_phase(&progress, phase));
+            progress["sequence"] = json!(limit + 1);
+            assert!(!valid_progress_for_phase(&progress, phase));
         }
     }
     #[test]

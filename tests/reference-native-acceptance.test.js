@@ -18,7 +18,7 @@ test('native chooser fixture is exactly the new original three-track source with
   const [rust,helper,runner,contract]=await Promise.all(['../crates/desktop-shell/src/acceptance.rs','../scripts/windows-desktop-native.cs','../scripts/windows-desktop-acceptance.ps1','./windows-desktop-contract.ps1'].map(path=>readFile(new URL(path,import.meta.url),'utf8')));
   for(const text of [rust,helper,runner,contract])assert.ok(text.includes(f.name),'Native bridge, OS helper, fixture materialization and pure path contracts all name the same exact fixture');
   assert.match(rust,/include_str!\("\.\.\/reference-acceptance\.js"\)/);
-  assert.match(rust,/\(1\.\.=64\)/,'Action budget is not expanded');
+  assert.match(rust,/\(1\.\.=action_limit\(phase\)\)/,'Actions use the finite scenario budget');assert.match(rust,/fn action_limit\(phase: &str\)/);
   assert.match(rust,/rows\.len\(\) >= 16/,'Download budget is not expanded');
   assert.match(contract,/\.\.\/original-reference-overlap\.mid/,'Traversal is explicitly rejected by hosted pure path tests');
 });

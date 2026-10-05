@@ -191,7 +191,7 @@ export async function verifyNativeBulkImportEvidence(directory){
   await verifyNativeProfileEvidence(native,BULK_IMPORT_PHASES,json);
   const reports={},actionsByPhase={},screenshots={},archiveDirectory=recordedDirectory(native.directory);
   for(const phase of BULK_IMPORT_PHASES){
-    const host=native.phases.find(value=>value.phase===phase);assert(host.renderer_ok===true&&host.normal_close===true&&host.renderer_origin==='https://wmh.localhost'&&host.executable_tcp_listeners===0&&positive(host.process_id)&&host.launched_new_process===true&&positive(host.actions)&&host.actions<=64&&host.profile_fresh===true&&host.profile_reused===false,`Native ${phase} process evidence incomplete`);
+    const host=native.phases.find(value=>value.phase===phase);assert(host.renderer_ok===true&&host.normal_close===true&&host.renderer_origin==='https://wmh.localhost'&&host.executable_tcp_listeners===0&&positive(host.process_id)&&host.launched_new_process===true&&positive(host.actions)&&host.actions<=75&&host.profile_fresh===true&&host.profile_reused===false,`Native ${phase} process evidence incomplete`);
     const report=await json(`renderer-${phase}.json`,4*1024*1024);reports[phase]=report;
     assert(report.version===1&&report.ok===true&&report.phase===phase&&report.origin==='https://wmh.localhost'&&report.profileMarkerAbsent===true&&report.actions===host.actions,`Renderer ${phase} did not pass with matching native actions`);
     equal(report.openedScoreDatabases,[],`Renderer ${phase} opened browser score storage`);equal(report.errors,[],`Renderer ${phase} reported errors`);equal(recordedDirectory(report.directory),archiveDirectory,`Renderer ${phase} archive directory differs`);

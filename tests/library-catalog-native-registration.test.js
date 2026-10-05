@@ -46,7 +46,7 @@ test('catalog config and before snapshot remain bounded process-owner evidence r
   assert.match(rust,/if value\["kind"\] == "catalog-snapshot-before" \{\s*if self.phase != "catalog-seed"/);
   assert.match(rust,/if \*requested \{\s*return Some\(error\(400, "Catalog snapshot already requested"\)\)/);
   assert.match(host,/if\(\$Action.kind -ceq 'catalog-snapshot-before'\) \{[\s\S]*?Save-Json \(Get-CatalogAcceptanceSnapshot[\s\S]*?-BeforeBootstrap\) \$snapshot[\s\S]*?return\s*\}/);
-  assert.match(host,/\$sequence -gt 64/);
+  assert.match(host,/\$sequence -gt \$actionLimit/);
   assert.match(host,/\$reportLimit=if\(\$Scenario -eq 'bulk-import'\)\{4MB\}elseif\([^\n]*'library-catalog'[^\n]*\)\)\{1MB\}/);
   assert.match(host,/\$native.config_sha256=\(Get-FileHash -LiteralPath \$configPath -Algorithm SHA256\)/);
   for(const variable of ['WMH_SOURCE_SHA','WMH_SOURCE_TREE','WMH_LIBRARY_CATALOG_EXECUTABLE'])assert.ok(host.includes(`$env:${variable}=`));

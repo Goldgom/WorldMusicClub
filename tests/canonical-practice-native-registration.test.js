@@ -19,7 +19,7 @@ test('canonical native registration binds the exact fixture generator, ordered p
   assert.match(rust,/\.chain\(CANONICAL_PRACTICE_PHASES\)/);
   assert.match(rust,/if CANONICAL_PRACTICE_PHASES.contains\(&self.phase\) \{\s*include_str!\("\.\.\/canonical-practice-acceptance.js"\)/);
   for(const phase of phases)assert.ok(profile.includes(`'${phase}'`));
-  assert.match(host,/\$sequence -gt 64/);
+  assert.match(host,/\$sequence -gt \$actionLimit/);
   assert.match(host,/\$reportLimit=[^\n]*'canonical-practice'[^\n]*\{1MB\}/);
 });
 

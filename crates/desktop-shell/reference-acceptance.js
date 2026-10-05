@@ -77,10 +77,10 @@ function observeNativeReferenceTransport(document, {now=()=>performance.now(),de
     stop(){active=false;for(const cleanup of remove)cleanup();}};
 }
 
-async function prepareNativeReferenceScoredTake({document,native,click,closeDialogs,until}) {
+async function prepareNativeReferenceScoredTake({document,native,click,closeDialogs,until,onPrepared=()=>{}}) {
   await prepareNativePlaybackClock({document,until});
-  const $=id=>document.getElementById(id),trace=observeNativeReferenceTransport(document);
-  let stage='prepare';
+  const $=id=>document.getElementById(id);let trace=observeNativeReferenceTransport(document);
+  let stage='prepare';const setupActions=[];const setupClick=async id=>{const sequence=await native('click',typeof id==='string'?$(id):id);setupActions.push({sequence,id:typeof id==='string'?id:id.id||'settings-close'});};
   try {
     closeDialogs();if(document.body.dataset.screen!=='stage'){
       const resume=$('resume-session');
@@ -88,13 +88,17 @@ async function prepareNativeReferenceScoredTake({document,native,click,closeDial
       click('resume-session');
     }
     await until(()=>document.body.dataset.screen==='stage'&&!$('play-button').disabled,'resumed score stage');
-    if($('sound-button').getAttribute('aria-pressed')!=='true')click('sound-button');
-    if($('edit-song-mod')){click('edit-song-mod');click('song-mod-all-human');click('song-mod-apply');await until(()=>!$('song-mod-dialog').open&&$('session-mode').value==='practice','human Mod applied');}
-    else{$('session-mode').value='practice';$('session-mode').dispatchEvent(new Event('change',{bubbles:true}));}
-    click('settings-button');$('count-in').checked=false;closeDialogs();
+    if($('sound-button').getAttribute('aria-pressed')!=='true')await setupClick('sound-button');
+    if($('edit-song-mod')){await setupClick('edit-song-mod');await setupClick('song-mod-all-human');await setupClick('song-mod-apply');await until(()=>!$('song-mod-dialog').open&&$('session-mode').value==='practice','human Mod applied');}
+    else if($('session-mode').value!=='practice')throw Error('Visible Mod setup is required before scored transport');
+    if($('edit-song-mod')){await setupClick('settings-button');if($('count-in').checked)await setupClick('count-in');await setupClick($('settings-dialog').querySelector('[data-close-panel]'));}
+    else if($('count-in').checked)throw Error('Visible count-in setup is required before scored transport');
+    // Setup has its own action receipts. Begin the bounded performance trace
+    // only after all Mod/settings controls close, retaining its original budget.
+    trace.stop();trace=observeNativeReferenceTransport(document);
     // Readiness is a required evidence boundary even when an event callback
     // already sampled the same state; ordinary polling remains deduplicated.
-    await until(()=>!$('play-button').disabled,'score practice ready');const initialPosition=trace.changed('ready',{checkpoint:true}).positionMs;
+    await until(()=>!$('play-button').disabled,'score practice ready');onPrepared();const initialPosition=trace.changed('ready',{checkpoint:true}).positionMs;
     stage='transport-start';await native('click',$('play-button'));
     // The actual native key is never sent merely because the OS helper returned.
     // Require its trusted Play click and observable recorder/clock admission.
@@ -103,7 +107,7 @@ async function prepareNativeReferenceScoredTake({document,native,click,closeDial
     await until(()=>{const current=trace.changed('await-keyboard-capture'),events=trace.counts();return events.trustedKeyDowns===1&&events.trustedKeyUps===1&&current.passId===passId&&current.phase==='capturing'&&current.captured==='1';},'one actual Windows keyboard input');
     stage='transport-pause';await native('click',$('play-button'));
     await until(()=>{const current=trace.changed('await-transport-pause');return trace.counts().trustedPlayClicks===2&&current.passId===passId&&current.captured==='1'&&current.phase!=='capturing'&&current.cue==='paused';},'native scored transport paused');
-    return trace.snapshot('complete');
+    return {...trace.snapshot('complete'),setupActions};
   } catch(error) {trace.changed('failed');error.nativeReferenceTransport=trace.snapshot(stage);throw error;}
   finally {trace.stop();}
 }

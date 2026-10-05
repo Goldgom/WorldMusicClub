@@ -1,7 +1,7 @@
 /* Bulk evidence is lossless within the same finite bound as its verifier. */
 const BULK_ACCEPTANCE_REPORT_BYTES=4*1024*1024;
 async function postBulkAcceptanceReport({report,fetcher,waits}) {
- const sequence=Number.isInteger(report.actions)&&report.actions>=0&&report.actions<=64?report.actions:0;
+ const sequence=Number.isInteger(report.actions)&&report.actions>=0&&report.actions<=75?report.actions:0;
  const progress=stage=>waits.json(fetcher,'/__desktop_smoke/progress',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:1,stage,sequence})},2000).catch(()=>{});
  let bytes=null;
  try {
@@ -43,7 +43,7 @@ function createBulkChooserObserver({target,now=()=>performance.now(),defer=callb
  addEventListener('error',event=>errors.push(String(event.message)));addEventListener('unhandledrejection',event=>errors.push(String(event.reason)));
  const click=id=>{assert($(id)&&!$(id).disabled,`Unavailable control ${id}`);$(id).click()},closeDialogs=()=>{for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close()},menu=createAcceptanceNavigation({document,until,click});
  async function native(kind,node,file){
-  assert(node&&!node.disabled,'Native bulk control unavailable');node.scrollIntoView({block:'center',inline:'center'});node.focus();await delay(150);const bounds=node.getBoundingClientRect();assert(bounds.width>0&&bounds.height>0,'Native bulk target invisible');assert(sequence<64,'Bulk phase exceeded native action bound');
+  assert(node&&!node.disabled,'Native bulk control unavailable');node.scrollIntoView({block:'center',inline:'center'});node.focus();await delay(150);const bounds=node.getBoundingClientRect();assert(bounds.width>0&&bounds.height>0,'Native bulk target invisible');assert(sequence<75,'Bulk phase exceeded native action bound');
   const action={version:1,sequence:++sequence,kind,x:bounds.x+bounds.width/2,y:bounds.y+bounds.height/2,width:innerWidth,height:innerHeight,...(file?{file}:{})};
   const chooser=['picker','cancel-picker'].includes(kind);let completed=false;if(chooser)chooserObserver.begin(sequence,kind);
   try{await json('/__desktop_smoke/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action)});let result;await until(async signal=>{const response=await originalFetch(`/__desktop_smoke/result/${sequence}`,{signal});if(response.status===404)return false;result=await response.json();assert(response.ok,result.error||'Native bulk action failed');return true},`native bulk ${kind} ${sequence}`);assert(result.ok,result.error||'Native bulk action failed');completed=true;return sequence}finally{if(chooser)await chooserObserver.end(sequence,completed)}

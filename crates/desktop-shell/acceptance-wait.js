@@ -41,7 +41,7 @@ function createAcceptanceNavigation({document,until,click}) {
   async function enterLibrary() {
     await waitScreen('home','home-single-player','visible native home menu');
     click('home-single-player');
-    await until(()=>ready('library',$('configure-song-mod')?'configure-song-mod':'start-listen')&&$('song-lobby').dataset.previewStatus==='ready'&&$('catalog').querySelector('.catalog-item'),'visible native single-player catalog preview');
+    await until(()=>ready('library','configure-song-mod')&&$('song-lobby').dataset.previewStatus==='ready'&&$('catalog').querySelector('.catalog-item'),'visible native single-player catalog preview');
   }
   async function returnToLibrary() {
     await waitScreen('stage','back-to-library','stage library navigation');click('back-to-library');
@@ -70,7 +70,7 @@ function createAcceptanceSongMod({document,native,until}) {
   const $=id=>document.getElementById(id),history=[];
   const fields=()=>[...document.querySelectorAll('#song-mod-parts [data-mod-performer]')];
   const node=(kind,part)=>[...document.querySelectorAll(`#song-mod-parts [data-mod-${kind}]`)].find(n=>n.dataset[`mod${kind[0].toUpperCase()}${kind.slice(1)}`]===part);
-  const act=async(kind,target)=>{if(!target||target.disabled||target.closest('[hidden]'))throw Error('Visible Mod control unavailable');const sequence=await native(kind,target);history.push({sequence,kind,id:target.id||null,part:target.closest('.song-mod-part')?.dataset.partId||null,value:target.value??null});return sequence;};
+  const act=async(kind,target)=>{if(!target||target.disabled||target.closest('[hidden]'))throw Error('Visible Mod control unavailable');const sequence=await native(kind,target);history.push({sequence,kind,id:target.id||null,part:target.closest('.song-mod-part')?.dataset.partId||null,field:['performer','instrument','mute','visible'].find(field=>target.hasAttribute?.(`data-mod-${field}`))||null,value:target.value??null,checked:typeof target.checked==='boolean'?target.checked:null});return sequence;};
   async function open(){await act('click',$(document.body.dataset.screen==='stage'?'edit-song-mod':'configure-song-mod'));await until(()=>$('song-mod-dialog').open,'visible Song Mod dialog');}
   async function choose(humans,{layout,showOthers,visible,muted,instrument}={}) {
     if(!Array.isArray(humans)&&!['all','none'].includes(humans))throw Error('Explicit Mod human parts required');
@@ -83,8 +83,9 @@ function createAcceptanceSongMod({document,native,until}) {
   }
   async function apply(){const sequence=await act('click',$('song-mod-apply'));await until(()=>!$('song-mod-dialog').open,'Mod applied');return sequence;}
   async function configure(humans,options){await open();await choose(humans,options);return apply();}
-  async function start(humans,options){await configure(humans,options);const sequence=await act('click',$('start-performance'));await until(()=>document.body.dataset.screen==='stage','Start performance admitted');return sequence;}
+  async function startApplied(){const sequence=await act('click',$('start-performance'));await until(()=>document.body.dataset.screen==='stage','Start performance admitted');return sequence;}
+  async function start(humans,options){await configure(humans,options);return startApplied();}
   async function cancel(){return act('click',$('song-mod-cancel'));}
   async function restore(){return act('click',$('song-mod-restore'));}
-  return{open,choose,apply,configure,start,cancel,restore,history,fields};
+  return{open,choose,apply,configure,start,startApplied,cancel,restore,history,fields};
 }

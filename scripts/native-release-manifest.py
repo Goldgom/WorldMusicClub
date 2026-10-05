@@ -202,7 +202,7 @@ def accepted_song_folder_evidence(directory, executable, commit, tree):
                 and row.get('renderer_origin') == 'https://wmh.localhost'
                 and type(row.get('executable_tcp_listeners')) is int
                 and row['executable_tcp_listeners'] == 0
-                and type(row.get('actions')) is int and 1 <= row['actions'] <= 64,
+                and type(row.get('actions')) is int and 1 <= row['actions'] <= 75,
                 'Every native song-folder phase must render, close normally, have no EXE listener and bounded actions')
         require(row.get('launched_new_process') is True
                 and type(row.get('process_id')) is int and row['process_id'] > 0,

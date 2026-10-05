@@ -134,7 +134,7 @@ def validate(read, executable_bytes, commit, tree):
                 and row.get('launched_new_process') is True and row.get('renderer_ok') is True
                 and row.get('normal_close') is True and row.get('renderer_origin') == 'https://wmh.localhost'
                 and type(row.get('executable_tcp_listeners')) is int and row['executable_tcp_listeners'] == 0
-                and type(row.get('actions')) is int and 1 <= row['actions'] <= 64,
+                and type(row.get('actions')) is int and 1 <= row['actions'] <= (80 if phase == 'canonical-practice-seed' else 64),
                 'Each canonical phase must use a new closed native process without a listener')
         processes.add(row['process_id'])
         require(isinstance(row.get('profile_directory'), str), 'Canonical profile directory is missing')

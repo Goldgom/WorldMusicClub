@@ -56,7 +56,7 @@ function guitarDom(plan,notes,i18n){
 export function validateVsqFingering(report,fixture){
   const evidence=report.fingering;
   assert.ok(evidence&&evidence.version===1,'VSQ fingering evidence is missing');
-  assert.ok(integer(report.actions,1,64),'VSQ fingering native action bound');
+  assert.ok(integer(report.actions,1,80),'VSQ fingering native action bound');
   assert.ok(Array.isArray(report.requests)&&report.requests.length<=128,'VSQ fingering request bound');
   equal(report.opened?.score_json,fixture.opened.score_json,'opened notation');
   equal(report.opened?.clean_package,fixture.opened.clean_package,'opened saved package');

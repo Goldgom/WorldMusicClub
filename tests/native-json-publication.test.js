@@ -50,7 +50,7 @@ test('sharing repair preserves phase clocks, action ordering, source, profile an
   for (const invariant of [
     '$deadline=$phaseStart.AddSeconds(240)', '$reportDeliveryWatch.ElapsedMilliseconds -gt 30000',
     "$_.event.stage -eq 'renderer-report-rejected'", "'renderer-report-failed'",
-    "'reply-submitted' -and $_.event.status -ge 400", '$action.sequence -ne $sequence -or $sequence -gt 64',
+    "'reply-submitted' -and $_.event.status -ge 400", '$action.sequence -ne $sequence -or $sequence -gt $actionLimit',
     'source_sha=(git rev-parse HEAD)', "source_tree=(git rev-parse 'HEAD^{tree}')",
     'Assert-AcceptanceProfileLaunch $OutputDirectory $phase',
     'Assert-AcceptanceProfileEvidence $OutputDirectory $profileSelection $app.Id',

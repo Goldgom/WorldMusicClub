@@ -94,7 +94,7 @@ test('VSQ DOM evidence rejects stale, hidden, fabricated or mislabelled native r
 ]));
 
 test('VSQ critical UI actions require bounded native sequence and matching trusted gestures',()=>rejects([
-  ['too many actions',r=>r.actions=65],
+  ['too many actions',r=>r.actions=81],
   ['missing action',r=>r.fingering.actions.pop()],
   ['duplicate sequence',r=>r.fingering.actions[1].sequence=1],
   ['outside action count',r=>r.fingering.actions.at(-1).sequence=33],

@@ -43,16 +43,16 @@ test('hosted acceptance cannot run locally or against a dirty/different source a
  assert.match(hosted,/GITHUB_ACTIONS!=='true'\|\|process.env.WMH_HOSTED_BROWSER!=='1'/);
  assert.match(hosted,/git.*status.*--porcelain/s);assert.match(hosted,/assert.equal\(process.env.WMH_SOURCE_SHA,head/);
  assert.match(hosted,/validatePerformanceTakes\([^;]+renderer,fixture\)/);
- assert.match(hosted,/validatePerformanceExport/);assert.match(hosted,/assert.ok\(a.sequence<=64\)/);
+ assert.match(hosted,/validatePerformanceExport/);assert.match(hosted,/assert.ok\(a.sequence<=75\)/);
  assert.doesNotMatch(hosted,/setInputFiles|setContent|addScriptTag|localhost:\d|127\.0\.0\.1/);
 });
 
 test('both process-owned pitch phases keep existing phases and report/action budgets unchanged',()=>{
  assert.match(rust,/pub const PERFORMANCE_PHASES: \[&str; 3\] = \[\s*"performance-seed",\s*"performance-controls",\s*"performance-restart",\s*\]/);
  assert.match(rust,/PITCH_BEND_PHASES: \[&str; 2\] = \["pitch-bend-seed", "pitch-bend-restart"\]/);
- assert.match(rust,/MAX_CLEAN_REPORT_BYTES: usize = 1024 \* 1024/);assert.match(rust,/1\.\.=64/);
+ assert.match(rust,/MAX_CLEAN_REPORT_BYTES: usize = 1024 \* 1024/);assert.match(rust,/1\.\.=action_limit\(phase\)/);
  assert.match(native,/\$Scenario -eq 'pitch-bend'\)\{@\('pitch-bend-seed','pitch-bend-restart'\)\}/);
- assert.match(native,/\$sequence -gt 64/);assert.match(native,/Assert-AcceptanceProfileLaunch \$OutputDirectory \$phase/);
+ assert.match(native,/\$sequence -gt \$actionLimit/);assert.match(native,/Assert-AcceptanceProfileLaunch \$OutputDirectory \$phase/);
  assert.match(native,/Assert-AcceptanceProfileEvidence \$OutputDirectory \$profileSelection \$app.Id/);
  assert.doesNotMatch(native,/Rotate-SongFolderProfile|prior-profile/);
  assert.ok(picker.includes('"pitch-bend-authored-songs.zip"'));assert.ok(native.includes("'prepare-pitch-bend-fixtures.mjs'"));
@@ -64,7 +64,7 @@ test('pitch injection reuses helper prefixes with exactly one runner and preserv
  assert.doesNotThrow(()=>new vm.Script(injected));
  assert.equal((injected.match(/addEventListener\('DOMContentLoaded'/g)||[]).length,1);
  assert.match(renderer,/Reflect.apply\(original,this,args\)/);assert.match(renderer,/structuredClone\(r\)/);
- assert.match(renderer,/row.frequencies.length>=12/);assert.match(renderer,/sequence<64/);
+ assert.match(renderer,/row.frequencies.length>=12/);assert.match(renderer,/sequence<75/);
  assert.match(renderer,/preparePerformanceBaseline\(\{phase:phase==='pitch-bend-seed'\?'performance-seed':'performance-restart'/);
  assert.match(renderer,/humanActionStart:sequence/);assert.doesNotMatch(renderer,/delete .*input_evidence|filter.*blur|\.passes\s*=/);
 });

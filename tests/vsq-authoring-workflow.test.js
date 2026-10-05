@@ -210,9 +210,9 @@ test('new phases agree across Rust, native orchestration and every fresh-profile
   if(values.includes('authoring'))assert.ok(values.includes('vsq-authoring'),group);
  }
  for(const name of ['prepare-vsq-authoring-fixtures.mjs','native-vsq-authoring.json','verify-native-vsq-authoring-evidence.mjs'])assert.ok(native.includes(`'${name}'`));
- for(const check of ['Assert-AcceptanceProfileLaunch $OutputDirectory $phase','Assert-AcceptanceProfileEvidence $OutputDirectory $profileSelection $app.Id','Save-SongFolderSnapshot $phase','$app.CloseMainWindow()','$app.WaitForExit(10000)','$sequence -gt 64'])assert.ok(native.includes(check));
+ for(const check of ['Assert-AcceptanceProfileLaunch $OutputDirectory $phase','Assert-AcceptanceProfileEvidence $OutputDirectory $profileSelection $app.Id','Save-SongFolderSnapshot $phase','$app.CloseMainWindow()','$app.WaitForExit(10000)','$sequence -gt $actionLimit'])assert.ok(native.includes(check));
  assert.match(rust,/MAX_CLEAN_REPORT_BYTES: usize = 1024 \* 1024/);
- assert.match(rust,/\(1\.\.=64\)\.contains\(&sequence\)/);
+ assert.match(rust,/\(1\.\.=action_limit\(phase\)\)\.contains\(&sequence\)/);
  const final=read('.github/workflows/windows-desktop-acceptance.yml');assert.match(final,/hosted-vsq-authoring-check\.mjs/);assert.match(final,/-Scenario vsq-authoring/);assert.match(final,/--vsq-authoring desktop-vsq-authoring --basic-key desktop-basic-key/);
  assert.match(read('scripts/native-release-manifest.py'),/create.add_argument\('--vsq-authoring', required=True/);assert.match(read('scripts/native-release-manifest.py'),/_new_music.verify_packaged/);
 });
@@ -319,14 +319,14 @@ test('hosted VSQ authoring builds the exact-source real asset server before Work
 
 test('explicit Listen setup waits for actual receiver start, natural terminal and disposal before Reset',async()=>{
  const renderer=read('crates/desktop-shell/vsq-authoring-acceptance.js'),context=vm.createContext({__wmhReadPlaybackClock:readPlaybackClock,nativePlaybackEnded:(endMs,document)=>{const clock=readPlaybackClock(document);return clock.positionMs===endMs&&clock.completed&&clock.phase==='ended';}});
- new vm.Script(renderer.split('(() => {')[0]).runInContext(context);
+ new vm.Script(read('crates/desktop-shell/acceptance-wait.js')+'\n'+renderer.split('(() => {')[0]).runInContext(context);
  async function run(blocker){
-  const actions=[],polls=[],endMs=2166.671,nodes=Object.fromEntries(['start-listen','reset-button','session-mode','clean-song-stage','progress','play-button'].map(id=>[id,{id,disabled:false,dataset:{},value:''}]));
-  const document={body:{dataset:{screen:'library'}},getElementById:id=>nodes[id]};nodes['session-mode'].value='listen';setEvidencePlaybackClock(nodes.progress,0,{durationMs:endMs});nodes['clean-song-stage'].dataset.rendererState='ready';
+  const actions=[],polls=[],endMs=2166.671,nodes=Object.fromEntries(['configure-song-mod','song-mod-all-machine','song-mod-apply','song-mod-dialog','start-performance','reset-button','session-mode','clean-song-stage','progress','play-button'].map(id=>[id,{id,disabled:false,dataset:{},value:'',closest(){return null;}}]));
+  const document={body:{dataset:{screen:'library'}},getElementById:id=>nodes[id],querySelectorAll:()=>[]};nodes['session-mode'].value='listen';setEvidencePlaybackClock(nodes.progress,0,{durationMs:endMs});nodes['clean-song-stage'].dataset.rendererState='ready';
   let started=0,terminal=false,disposed=false;
   const audio=()=>({worklet:{started,activeReceivers:started&&!disposed?1:0}}),thread={receiverId:1,terminal:'retained exact native terminal'};
   const receiver={count:()=>0,assertHealthy(){if(blocker==='audio_canceled')throw Error('audio_canceled');},settledSince:index=>{assert.equal(index,0);return terminal;},snapshot:()=>[thread]};
-  const native=async(kind,node)=>{assert.equal(kind,'click');actions.push(node.id);if(node.id==='start-listen')document.body.dataset.screen='stage';else{assert.equal(terminal,true);assert.equal(disposed,true);setEvidencePlaybackClock(nodes.progress,0,{durationMs:endMs});nodes['clean-song-stage'].dataset.rendererState='ready';}return actions.length;};
+  const native=async(kind,node)=>{assert.equal(kind,'click');actions.push(node.id);if(node.id==='configure-song-mod')nodes['song-mod-dialog'].open=true;else if(node.id==='song-mod-apply')nodes['song-mod-dialog'].open=false;else if(node.id==='song-mod-all-machine'){}else if(node.id==='start-performance')document.body.dataset.screen='stage';else{assert.equal(terminal,true);assert.equal(disposed,true);setEvidencePlaybackClock(nodes.progress,0,{durationMs:endMs});nodes['clean-song-stage'].dataset.rendererState='ready';}return actions.length;};
   const until=async(fn,label,ms)=>{
    polls.push(label);
    if(label==='explicit Listen receiver admitted'){
@@ -341,9 +341,9 @@ test('explicit Listen setup waits for actual receiver start, natural terminal an
   };
   const silence=async label=>{assert.equal(terminal,true);if(blocker==='disposal')throw Error('receiver disposal timed out');disposed=true;polls.push(label);return audio();};
   const task=context.prepareVsqAuthoringListen({document,native,until,receiver,audio,silence,endMs});
-  if(blocker){await assert.rejects(task,/timed out|audio_canceled/);assert.deepEqual(actions,['start-listen'],'Failed setup must never Reset a pending or failed receiver');return;}
-  const result=await task;assert.deepEqual(actions,['start-listen','reset-button']);assert.equal(result.admission.positionMs,100);assert.equal(result.admission.audio.worklet.started,1);assert.equal(result.afterResetAudio.worklet.activeReceivers,0);assert.equal(result.thread[0],thread);
-  assert.deepEqual(polls,['explicit Listen receiver admitted','explicit Listen natural completion','explicit Listen receiver disposal','admitted listen reset','listen setup reset disposal']);
+  if(blocker){await assert.rejects(task,/timed out|audio_canceled/);assert.deepEqual(actions,['configure-song-mod','song-mod-all-machine','song-mod-apply','start-performance'],'Failed setup must never Reset a pending or failed receiver');return;}
+  const result=await task;assert.deepEqual(actions,['configure-song-mod','song-mod-all-machine','song-mod-apply','start-performance','reset-button']);assert.equal(result.admission.positionMs,100);assert.equal(result.admission.audio.worklet.started,1);assert.equal(result.afterResetAudio.worklet.activeReceivers,0);assert.equal(result.thread[0],thread);
+  assert.deepEqual(polls,['visible Song Mod dialog','Mod applied','explicit Listen receiver admitted','explicit Listen natural completion','explicit Listen receiver disposal','admitted listen reset','listen setup reset disposal']);
  }
  await run();for(const blocker of ['starting','terminal','disposal','audio_canceled'])await run(blocker);
  assert.match(renderer,/report\.audioBeforeListen=silent\(\)/);assert.match(renderer,/report\.audioBeforePlay=await silence\('post-reset quiet baseline'\)/);
