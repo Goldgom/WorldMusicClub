@@ -8,8 +8,8 @@ import test from 'node:test';
 const workflow = readFileSync(new URL('../.github/workflows/windows-desktop-acceptance.yml', import.meta.url), 'utf8');
 const jobIds = ['bulk-import-browser', 'native-feature-acceptance'];
 const managementOutputs = {
-  'bulk-import-browser': ['management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify'],
-  'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify'],
+  'bulk-import-browser': ['management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser'],
+  'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify'],
 };
 // These contracts intentionally inspect the workflow's literal job/step blocks;
 // the behavioral cases execute its actual summary program, not a test copy.
@@ -428,4 +428,36 @@ test('one failed picker cannot hide later independent song browser evidence', ()
   }
   const failed=passingNeeds();failed['bulk-import-browser'].result='failure';
   const result=check(failed);assert.notEqual(result.status,0);
+});
+
+test('complete-practice stays mandatory in normal validation, package source binding and final summary', () => {
+  const browser = steps(jobBlock(jobIds[0])), native = steps(jobBlock(jobIds[1]));
+  const protocol = browser.find(step => step.includes('id: complete_practice_protocol\n'));
+  const hosted = browser.find(step => step.includes('id: complete_practice_browser\n'));
+  const windows = native.find(step => step.includes('id: complete_practice_windows\n'));
+  const verify = native.find(step => step.includes('id: complete_practice_windows_verify\n'));
+  const pack = native.find(step => step.includes('id: native_package\n'));
+  for (const [step, prerequisites] of [[protocol, {dense_native_driver: 'success', complete_practice_converter: 'success'}], [hosted, {notation_server: 'success', dense_native_driver: 'success', dense_browser_setup: 'success'}], [windows, {native_build: 'success'}], [verify, {complete_practice_windows: 'success'}]]) {
+    assert.ok(step); assert.doesNotMatch(step, /continue-on-error/);
+    assert.equal(gateRuns(step, {failed: true, outcomes: prerequisites}), true, 'Unrelated earlier failure must not hide this isolated evidence');
+    assert.equal(gateRuns(step, {cancelled: true, outcomes: prerequisites}), false);
+    for (const prerequisite of Object.keys(prerequisites)) for (const outcome of ['failure', 'cancelled', 'skipped', undefined]) assert.equal(gateRuns(step, {outcomes: {...prerequisites, [prerequisite]: outcome}}), false);
+  }
+  assert.match(protocol, /WMH_SOURCE_SHA: \$\{\{ github.sha \}\}/); assert.match(protocol, /check-complete-practice-native.mjs/);
+  for (const size of ['WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=720', 'WMH_VIEWPORT_WIDTH=960 WMH_VIEWPORT_HEIGHT=640']) assert.ok(hosted.includes(`${size} node scripts/hosted-complete-practice-check.mjs`));
+  assert.match(windows, /-OutputDirectory desktop-complete-practice -Scenario complete-practice/);
+  assert.match(verify, /WMH_SOURCE_SHA: \$\{\{ github.sha \}\}/); assert.match(verify, /WMH_SOURCE_TREE=.*HEAD\^\{tree\}/); assert.match(verify, /WMH_COMPLETE_PRACTICE_EXECUTABLE:.*target\/release\/worldmusichub-desktop.exe/); assert.match(verify, /verify-complete-practice-evidence.mjs --check desktop-complete-practice/);
+  assert.ok(native.indexOf(windows) < native.indexOf(verify) && native.indexOf(verify) < native.indexOf(pack));
+  assert.ok(pack.indexOf('verify-complete-practice-evidence.mjs --check desktop-complete-practice') < pack.indexOf('native-release-manifest.py create'));
+  assert.match(pack, /WMH_COMPLETE_PRACTICE_EXECUTABLE=\(Resolve-Path 'target\/release\/worldmusichub-desktop.exe'\).Path/);
+  assert.match(pack, /Copy-Item desktop-complete-practice\/native-complete-practice.json,desktop-complete-practice\/complete-practice-proof.json/);
+  assert.equal(gateRuns(pack, {failed: true}), false); assert.doesNotMatch(pack, /^        (?:if|continue-on-error):/m);
+  for (const [jobSteps, paths] of [[browser, ['test-results/complete-practice/*/*.json', 'test-results/complete-practice/*/*.png', 'test-results/complete-practice/*/downloads/*.json']], [native, ['desktop-complete-practice/*.json', 'desktop-complete-practice/*.png', 'desktop-complete-practice/downloads/*.json']]]) {
+    const artifact = jobSteps.find(step => paths.every(path => step.includes(path)));
+    assert.ok(artifact); assert.match(artifact, /^        if: always\(\)$/m); assert.match(artifact, /actions\/upload-artifact@/);
+  }
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(pkg.scripts.test.split(/\s+/).filter(file => file === 'tests/complete-practice-acceptance.test.js').length, 1);
+  const quick = readFileSync(new URL('../scripts/quick-development-checks.mjs', import.meta.url), 'utf8');
+  assert.match(quick, /real browser and screenshots/); assert.match(quick, /Windows Rust\/native input/); assert.match(quick, /accepted:false/);
 });

@@ -16,6 +16,8 @@ jobs:
       management_pack_browser: ${{ steps.management_pack_browser.outcome }}
       management_catalog_browser: ${{ steps.management_catalog_browser.outcome }}
       management_catalog_browser_verify: ${{ steps.management_catalog_browser_verify.outcome }}
+      complete_practice_protocol: ${{ steps.complete_practice_protocol.outcome }}
+      complete_practice_browser: ${{ steps.complete_practice_browser.outcome }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -42,6 +44,7 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
+      - run: node --test tests/complete-practice-acceptance.test.js
       - run: npm run test:bulk-import
       - run: node --test tests/pitch-bend-import-baseline.test.js tests/native-pitch-bend-evidence.test.js tests/pitch-bend-acceptance-workflow.test.js
       - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js tests/authoring-final-gate.test.js
@@ -54,7 +57,8 @@ jobs:
           WMH_CATALOG_DRIVER_BUILD_SHA: ${{ github.sha }}
           WMH_CURRENT_BASIC_REPORT: ${{ runner.temp }}/library-management-browser/current-basic-native.json
         run: npm run test:current-basic-catalog-native
-      - run: cargo build -p score-core --bin clean-song-batch --locked
+      - id: complete_practice_converter
+        run: cargo build -p score-core --bin clean-song-batch --locked
       - id: notation_server
         run: cargo build -p practice-server --locked
       - name: Original basic-key CLI bytes and native receiver protocol
@@ -64,6 +68,15 @@ jobs:
           WMH_BASIC_KEY_CONVERTER: ${{ github.workspace }}/target/debug/clean-song-batch
           WMH_BASIC_KEY_REPORT: ${{ github.workspace }}/test-results/basic-key/native-protocol/report.json
         run: node scripts/check-basic-key-native.mjs
+      - name: Original complete-practice source bytes and Rust target union
+        id: complete_practice_protocol
+        if: ${{ !cancelled() && steps.dense_native_driver.outcome == 'success' && steps.complete_practice_converter.outcome == 'success' }}
+        env:
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_COMPLETE_PRACTICE_CONVERTER: ${{ github.workspace }}/target/debug/clean-song-batch
+          WMH_COMPLETE_PRACTICE_REPORT: ${{ github.workspace }}/test-results/complete-practice/native-protocol/report.json
+        run: node scripts/check-complete-practice-native.mjs
       - name: Complete clean media package through actual Rust protocol
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
@@ -155,6 +168,17 @@ jobs:
         run: |
           WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-basic-key-check.mjs
           WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-basic-key-check.mjs
+      - name: Original complete-practice trusted controls, targets, sound and labels
+        id: complete_practice_browser
+        if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
+        run: |
+          WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-complete-practice-check.mjs
+          WMH_VIEWPORT_WIDTH=960 WMH_VIEWPORT_HEIGHT=640 node scripts/hosted-complete-practice-check.mjs
       - name: Original VSQ authoring, whole inventory, explicit practice and restart
         # Own fixtures, Scores and fresh processes; no basic-key evidence input.
         if: ${{ !cancelled() && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
@@ -267,6 +291,12 @@ jobs:
           path: |
             test-results/vsq-authoring/**
             test-results/basic-key/**
+            test-results/complete-practice/*/*.json
+            test-results/complete-practice/*/*.png
+            test-results/complete-practice/*/downloads/*.json
+            test-results/complete-practice/*/fixtures/*
+            test-results/complete-practice/*/Scores/clean-songs/**
+            test-results/complete-practice/*/Scores/clean-backups/**
             test-results/bulk-import-dom.json
             test-results/bulk-import/**
             test-results/vsq-song/**
@@ -307,6 +337,8 @@ jobs:
       run_id: ${{ github.run_id }}
       management_catalog_windows: ${{ steps.management_catalog_windows.outcome }}
       management_catalog_windows_verify: ${{ steps.management_catalog_windows_verify.outcome }}
+      complete_practice_windows: ${{ steps.complete_practice_windows.outcome }}
+      complete_practice_windows_verify: ${{ steps.complete_practice_windows_verify.outcome }}
     env:
       RUSTFLAGS: '-C target-feature=+crt-static'
       CARGO_INCREMENTAL: '0'
@@ -338,6 +370,7 @@ jobs:
       - run: python scripts/check-authoring-workflow.py .github/workflows/windows-desktop-acceptance.yml
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
+      - run: node --test tests/complete-practice-acceptance.test.js
       - run: npm test
       - run: node --test tests/desktop-evidence.test.js tests/desktop-acceptance-wait.test.js tests/native-song-folder-evidence.test.js tests/native-bulk-import-evidence.test.js tests/native-clean-song-evidence.test.js tests/native-vsq-song-evidence.test.js tests/vsq-fingering-evidence.test.js tests/performance-song-fixtures.test.js tests/native-performance-song-evidence.test.js tests/pitch-bend-import-baseline.test.js tests/native-pitch-bend-evidence.test.js tests/pitch-bend-acceptance-workflow.test.js
       - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js tests/authoring-final-gate.test.js
@@ -429,6 +462,22 @@ jobs:
       - name: Native original basic-key inventory, keyboard and restart
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-basic-key -Scenario basic-key
+      - name: Native complete-practice trusted popup, key input, labels and measured viewport
+        id: complete_practice_windows
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
+        shell: pwsh
+        run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-complete-practice -Scenario complete-practice
+      - name: Reverify complete-practice source, executable and original evidence
+        id: complete_practice_windows_verify
+        if: ${{ !cancelled() && steps.complete_practice_windows.outcome == 'success' }}
+        shell: pwsh
+        env:
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_COMPLETE_PRACTICE_EXECUTABLE: ${{ github.workspace }}/target/release/worldmusichub-desktop.exe
+        run: |
+          $env:WMH_SOURCE_TREE=(git rev-parse 'HEAD^{tree}').Trim()
+          node scripts/verify-complete-practice-evidence.mjs --check desktop-complete-practice
+          if ($LASTEXITCODE -ne 0) { throw 'Complete-practice exact-source proof failed' }
       - name: Native original VSQ authoring and exact fresh-process restart
         # Generates its own fixtures and profile from the same checked build.
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
@@ -512,12 +561,16 @@ jobs:
           $env:WMH_BASIC_KEY_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
           node scripts/verify-basic-key-evidence.mjs --check desktop-basic-key
           if ($LASTEXITCODE -ne 0) { throw 'Basic-key evidence does not match exact packaged source and executable' }
+          $env:WMH_COMPLETE_PRACTICE_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
+          node scripts/verify-complete-practice-evidence.mjs --check desktop-complete-practice
+          if ($LASTEXITCODE -ne 0) { throw 'Complete-practice evidence does not match exact packaged source and executable' }
           $count=(git rev-list --count HEAD).Trim()
           $folder='dist/WorldMusicClub-Native'
           New-Item -ItemType Directory "$folder/licenses/engraving","$folder/evidence" -Force | Out-Null
           Copy-Item target/release/worldmusichub-desktop.exe "$folder/WorldMusicClub-Native.exe"
           Copy-Item LICENSE $folder
           Copy-Item desktop-basic-key/native-basic-key.json,desktop-basic-key/basic-key-proof.json,desktop-basic-key/renderer-basic-key-*.json,desktop-basic-key/profile-basic-key-*.json "$folder/evidence/"
+          Copy-Item desktop-complete-practice/native-complete-practice.json,desktop-complete-practice/complete-practice-proof.json,desktop-complete-practice/renderer-complete-practice-*.json,desktop-complete-practice/profile-complete-practice-*.json "$folder/evidence/"
           Copy-Item docs/WINDOWS_NATIVE.md "$folder/README.md"
           Copy-Item docs/WINDOWS_NATIVE.md "$folder/START-HERE.md"
           Copy-Item -Recurse docs,schema,schemas,catalog $folder
@@ -613,6 +666,13 @@ jobs:
             desktop-vsq-authoring/Scores/clean-backups/**
             desktop-vsq-authoring/Scores/imports/**
             desktop-vsq-authoring/Scores/import-backups/**
+            desktop-complete-practice/*.json
+            desktop-complete-practice/*.png
+            desktop-complete-practice/*.log
+            desktop-complete-practice/downloads/*.json
+            desktop-complete-practice/fixtures/*
+            desktop-complete-practice/Scores/clean-songs/**
+            desktop-complete-practice/Scores/clean-backups/**
             desktop-basic-key/*.json
             desktop-basic-key/*.png
             desktop-basic-key/*.log
@@ -664,8 +724,8 @@ jobs:
           const fs = require('node:fs');
           const jobs = ['bulk-import-browser', 'native-feature-acceptance'];
           const managementSteps = {
-            'bulk-import-browser': ['management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify'],
-            'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify'],
+            'bulk-import-browser': ['management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser'],
+            'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify'],
           };
           const needs = JSON.parse(process.env.ACCEPTANCE_NEEDS);
           const sha = process.env.ACCEPTANCE_SHA;
