@@ -6,6 +6,7 @@ const unique = values => new Set(values).size === values.length;
 const ids = (value, pattern, max = 1024) => Array.isArray(value) && value.length <= max && value.every(id => typeof id === 'string' && pattern.test(id)) && unique(value);
 const fail = () => { throw Object.assign(new Error('The native catalog response is invalid or does not match the reviewed operation.'), {code: 'catalog_invalid_response'}); };
 const require = value => { if (!value) fail(); };
+const keys = (value, allowed) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).every(key => allowed.includes(key));
 export function sameCatalogValue(a, b) {
   const ordered = value => Array.isArray(value) ? value.map(ordered) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, ordered(value[key])])) : value;
   return JSON.stringify(ordered(a)) === JSON.stringify(ordered(b));
@@ -46,19 +47,19 @@ export function checkedInitializePreview(value, libraryId) {
   return value;
 }
 export function catalogPreviewRequest(value) {
-  require(value && ['trash_songs', 'restore_songs'].includes(value.action) && ids(value.edition_ids, edition) && value.edition_ids.length > 0 && uint(value.expected_generation) && hash.test(value.catalog_digest) && library.test(value.library_id) && (value.action === 'trash_songs' ? value.trash_operation_id === null : operation.test(value.trash_operation_id)));
+  require(keys(value, ['action', 'edition_ids', 'trash_operation_id', 'expected_generation', 'catalog_digest', 'library_id']) && ['trash_songs', 'restore_songs'].includes(value.action) && ids(value.edition_ids, edition) && value.edition_ids.length > 0 && uint(value.expected_generation) && hash.test(value.catalog_digest) && library.test(value.library_id) && (value.action === 'trash_songs' ? value.trash_operation_id === null : operation.test(value.trash_operation_id)));
   return structuredClone(value);
 }
 function core(value) {
   const r = value?.request, action = r?.action, e = value?.effects;
-  require(r?.schema_version === 1 && operation.test(r.operation_id) && uint(r.expected_generation) && uint(r.at_unix_ms) && uint(value.next_generation) && value.next_generation === r.expected_generation + 1 && ['request_digest', 'base_digest', 'plan_digest'].every(key => hash.test(value[key])));
-  if (action?.type === 'trash_songs') require(ids(action.song_ids, edition) && action.song_ids.length > 0);
-  else if (action?.type === 'adopt_inventory') require(action.inventory && typeof action.inventory === 'object' && new TextEncoder().encode(JSON.stringify(action.inventory)).length <= 256 * 1024);
-  else { require(action?.type === 'restore' && operation.test(action.trash_operation_id) && Array.isArray(action.entities) && action.entities.length > 0 && action.entities.length <= 1024 && action.entities.every(row => row.kind === 'song' && edition.test(row.id)) && unique(action.entities.map(row => row.id)) && Array.isArray(action.memberships) && action.memberships.length === 0); }
-  require(e && ['created_packs', 'renamed_packs', 'trashed_packs', 'restored_packs'].every(key => Array.isArray(e[key]) && e[key].length === 0));
+  require(keys(value, ['request', 'request_digest', 'base_digest', 'next_generation', 'effects', 'plan_digest']) && keys(r, ['schema_version', 'operation_id', 'expected_generation', 'at_unix_ms', 'action']) && r?.schema_version === 1 && operation.test(r.operation_id) && uint(r.expected_generation) && uint(r.at_unix_ms) && uint(value.next_generation) && value.next_generation === r.expected_generation + 1 && ['request_digest', 'base_digest', 'plan_digest'].every(key => hash.test(value[key])));
+  if (action?.type === 'trash_songs') require(keys(action, ['type', 'song_ids']) && ids(action.song_ids, edition) && action.song_ids.length > 0);
+  else if (action?.type === 'adopt_inventory') require(keys(action, ['type', 'inventory']) && action.inventory && typeof action.inventory === 'object' && new TextEncoder().encode(JSON.stringify(action.inventory)).length <= 256 * 1024);
+  else { require(keys(action, ['type', 'trash_operation_id', 'entities', 'memberships']) && action?.type === 'restore' && operation.test(action.trash_operation_id) && Array.isArray(action.entities) && action.entities.length > 0 && action.entities.length <= 1024 && action.entities.every(row => row.kind === 'song' && edition.test(row.id)) && unique(action.entities.map(row => row.id)) && Array.isArray(action.memberships) && action.memberships.length === 0); }
+  require(keys(e, ['created_packs', 'renamed_packs', 'added_memberships', 'removed_memberships', 'trashed_songs', 'trashed_packs', 'restored_songs', 'restored_packs', 'noops', 'blocked_memberships', 'affected_packs', 'newly_unfiled_songs', 'retained_payload_bytes', 'retained_source_bytes', 'reclaimed_bytes', 'adopted_songs', 'adopted_packs', 'adopted_sources']) && ['created_packs', 'renamed_packs', 'trashed_packs', 'restored_packs'].every(key => Array.isArray(e[key]) && e[key].length === 0));
   for (const key of ['trashed_songs', 'restored_songs', 'newly_unfiled_songs']) require(ids(e[key], edition));
   require(ids(e.affected_packs, collection, 256));
-  for (const key of ['added_memberships', 'removed_memberships']) require(Array.isArray(e[key]) && e[key].length <= 1024 && e[key].every(row => collection.test(row.pack) && edition.test(row.song)));
+  for (const key of ['added_memberships', 'removed_memberships']) require(Array.isArray(e[key]) && e[key].length <= 1024 && e[key].every(row => collection.test(row.pack) && edition.test(row.song)) && unique(e[key].map(row => `${row.pack}:${row.song}`)));
   for (const key of ['noops', 'blocked_memberships']) require(Array.isArray(e[key]) && e[key].length <= 1024);
   const entity = value => value && (value.kind === 'song' ? edition.test(value.id) : value.kind === 'pack' && collection.test(value.id));
   const membership = value => value && collection.test(value.pack) && edition.test(value.song);

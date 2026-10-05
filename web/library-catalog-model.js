@@ -113,7 +113,10 @@ export class LibraryCatalogModel {
     const record = {...p, library_id: this.state.status.library_id, operation_id, phase: 'submitted'};
     try {
       const saved = this.operationStore.get(record.library_id);
-      if (saved && saved.operation_id !== operation_id && saved.phase !== 'committed' && !saved.dismissed) throw Object.assign(new Error('An earlier operation needs a status check before another write.'), {code: 'catalog_pending_operation'});
+      if (saved && saved.operation_id !== operation_id && saved.phase !== 'committed' && !saved.dismissed) {
+        this.publish({operation: checkedRecoveryRecord(saved, record.library_id), result: null, preview: null});
+        throw Object.assign(new Error('An earlier operation needs a status check before another write.'), {code: 'catalog_pending_operation'});
+      }
       this.operationStore.put(record);
     } catch (error) { this.publish({error: failure(error)}); return false; }
     return this.submit(record);
@@ -127,7 +130,7 @@ export class LibraryCatalogModel {
     } finally { this.writing = false; this.publish(); }
   }
   saveOutcome(record) {
-    try { this.operationStore.put(record); this.publish({recoveryWarning: false}); } catch { this.publish({recoveryWarning: true}); }
+    try { const current = this.operationStore.get(record.library_id); if (current && current.operation_id !== record.operation_id) return; this.operationStore.put(record); this.publish({recoveryWarning: false}); } catch { this.publish({recoveryWarning: true}); }
   }
   async applyResult(record, result) {
     const next = {...record, phase: result.outcome}; this.saveOutcome(next);

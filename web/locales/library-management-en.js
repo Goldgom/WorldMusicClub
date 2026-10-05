@@ -127,7 +127,7 @@ export default Object.freeze({
   "management.catalog.check": "Check this operation status",
   "management.catalog.retry": "Retry the same reviewed operation",
   "management.catalog.dismiss": "Finish confirmed uncommitted review",
-  "management.catalog.refreshError": "The operation is saved, but the song list refresh failed. Refresh again to show the current list.",
+  "management.catalog.refreshError": "The operation is saved, but the saved-song list refresh failed. Use Check this operation status to verify and refresh the list again.",
   "management.catalog.recoveryWarning": "Native result is known, but the local recovery record could not be updated. Keep the operation ID and check status after reopening.",
   "management.catalog.details": "Original technical details",
   "management.catalog.error.unavailable": "This native build does not support recoverable song management.",

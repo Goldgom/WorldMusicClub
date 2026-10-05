@@ -74,7 +74,7 @@ test('recovery persistence failure prevents native writes; malformed and wrong-l
   const response = model.snapshot().response;
   for (const mutate of [v => { v.library_id = `library-${'0'.repeat(64)}`; }, v => { v.rows[0].edition_id = v.rows[0].key; }, v => { v.rows[0].pack_count = 99; }, v => { v.rows.push(v.rows[0]); }]) { const copy = structuredClone(response); mutate(copy); assert.throws(() => checkedCatalogQuery(copy, catalogQuery(), libraryId), {code: 'catalog_invalid_response'}); }
   const p = model.snapshot().preview, request = server.catalogRequests.find(row => row.path.endsWith('/preview')).body;
-  for (const mutate of [v => { v.preview.request.action.song_ids.reverse(); v.preview.request.action.song_ids.push(server.rows[1].edition_id); }, v => { v.summary.changed_song_count++; }, v => { v.preview.effects.reclaimed_bytes = 1; }, v => { v.summary.affected_packs = []; }]) { const copy = {format: 'worldmusichub-catalog', version: 1, native_only: true, library_id: libraryId, preview: structuredClone(p.preview), summary: structuredClone(p.summary)}; mutate(copy); assert.throws(() => checkedCatalogPreview(copy, request), {code: 'catalog_invalid_response'}); }
+  for (const mutate of [v => { v.preview.request.action.unreviewed_action = 'trash_pack'; }, v => { v.preview.request.action.song_ids.reverse(); v.preview.request.action.song_ids.push(server.rows[1].edition_id); }, v => { v.summary.changed_song_count++; }, v => { v.preview.effects.reclaimed_bytes = 1; }, v => { v.summary.affected_packs = []; }]) { const copy = {format: 'worldmusichub-catalog', version: 1, native_only: true, library_id: libraryId, preview: structuredClone(p.preview), summary: structuredClone(p.summary)}; mutate(copy); assert.throws(() => checkedCatalogPreview(copy, request), {code: 'catalog_invalid_response'}); }
   model.destroy();
 });
 
@@ -123,4 +123,13 @@ test('lost initialization response reconciles its original bootstrap ID and seed
 test('a mismatched success receipt is uncertain until the exact saved receipt is verified', async () => {
   const {server, model} = await harness(); model.toggle(server.rows[0], true); await model.previewSelection();
   server.setCatalogRoute(async request => { if (request.path.endsWith('/commit')) { const response = await request.proceed().json(); response.receipt.preview.request.action.song_ids.push(server.rows[1].edition_id); return nativeResponse(response); } }); await model.commit(); assert.equal(model.snapshot().operation.phase, 'uncertain'); server.setCatalogRoute(null); await model.checkOperation(); assert.equal(model.snapshot().operation.phase, 'committed'); model.destroy();
+});
+
+test('a late old result cannot replace a newer persisted operation recovery pointer', async () => {
+  const {server, model, create, store} = await harness(), gate = deferred(), committed = deferred(); model.toggle(server.rows[0], true); await model.previewSelection();
+  server.setCatalogRoute(async request => { if (request.path.endsWith('/commit')) { const result = request.proceed(); committed.resolve(); await gate.promise; return result; } });
+  const old = model.commit(); await committed.promise; model.destroy(); server.setCatalogRoute(null);
+  const reopened = create(); await reopened.open(); reopened.toggle(server.rows[1], true); await reopened.previewSelection();
+  server.setCatalogRoute(request => request.path.endsWith('/commit') ? Promise.reject(Error('Authored second response unavailable')) : undefined); await reopened.commit(); const next = store.get(libraryId); assert.equal(next.phase, 'uncertain');
+  gate.resolve(); await old; assert.equal(store.get(libraryId).operation_id, next.operation_id); assert.equal(store.get(libraryId).phase, 'uncertain'); reopened.destroy();
 });

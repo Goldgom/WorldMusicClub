@@ -127,7 +127,7 @@ export default Object.freeze({
   "management.catalog.check": "查询此操作状态",
   "management.catalog.retry": "重试同一已核对操作",
   "management.catalog.dismiss": "结束已确认未提交的操作",
-  "management.catalog.refreshError": "操作已保存，但乐曲列表刷新失败。请再次刷新以显示当前列表。",
+  "management.catalog.refreshError": "操作已保存，但已存乐曲列表刷新失败。请使用“查询此操作状态”重新核验并刷新列表。",
   "management.catalog.recoveryWarning": "已取得本机结果，但本地恢复记录更新失败。请保留操作标识，重新打开后查询状态。",
   "management.catalog.details": "原始技术详情",
   "management.catalog.error.unavailable": "此本机版本尚不支持可恢复的乐曲管理。",
