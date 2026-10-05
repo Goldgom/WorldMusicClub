@@ -41,7 +41,7 @@ function createAcceptanceNavigation({document,until,click}) {
   async function enterLibrary() {
     await waitScreen('home','home-single-player','visible native home menu');
     click('home-single-player');
-    await until(()=>ready('library','start-listen')&&$('song-lobby').dataset.previewStatus==='ready'&&$('catalog').querySelector('.catalog-item'),'visible native single-player catalog preview');
+    await until(()=>ready('library',$('configure-song-mod')?'configure-song-mod':'start-listen')&&$('song-lobby').dataset.previewStatus==='ready'&&$('catalog').querySelector('.catalog-item'),'visible native single-player catalog preview');
   }
   async function returnToLibrary() {
     await waitScreen('stage','back-to-library','stage library navigation');click('back-to-library');

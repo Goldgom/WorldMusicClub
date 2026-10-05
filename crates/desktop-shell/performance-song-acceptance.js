@@ -33,11 +33,13 @@ function observeCompletePerformanceAudio(root=globalThis) {
 // unchanged native Play/KeyR/Pause proof after the visible stage is ready.
 async function activatePerformanceOriginalScore({document,click,menu}) {
  const $=id=>document.getElementById(id),setup={kind:'scripted-menu',controls:[]};
- await menu.waitScreen('library','start-listen','original catalog preview ready');
+ await menu.waitScreen('library','configure-song-mod','original catalog preview ready');
  setup.previewId=$('song-lobby').dataset.previewId;
  // Silent setup must not wait for AudioContext activation without a gesture.
  if($('sound-button').getAttribute('aria-pressed')!=='true'){click('sound-button');setup.controls.push('sound-button');}
- click('start-listen');setup.controls.push('start-listen');
+ for(const id of ['configure-song-mod','song-mod-all-machine','song-mod-apply']){click(id);setup.controls.push(id);}
+ await menu.waitScreen('library','start-performance','original Listen Mod ready');
+ click('start-performance');setup.controls.push('start-performance');
  await menu.waitScreen('stage','play-button','original score admitted to stage');
  setup.title=$('stage-title').textContent;return setup;
 }

@@ -89,7 +89,9 @@ async function prepareNativeReferenceScoredTake({document,native,click,closeDial
     }
     await until(()=>document.body.dataset.screen==='stage'&&!$('play-button').disabled,'resumed score stage');
     if($('sound-button').getAttribute('aria-pressed')!=='true')click('sound-button');
-    click('settings-button');$('session-mode').value='practice';$('session-mode').dispatchEvent(new Event('change',{bubbles:true}));$('count-in').checked=false;closeDialogs();
+    if($('edit-song-mod')){click('edit-song-mod');click('song-mod-all-human');click('song-mod-apply');await until(()=>!$('song-mod-dialog').open&&$('session-mode').value==='practice','human Mod applied');}
+    else{$('session-mode').value='practice';$('session-mode').dispatchEvent(new Event('change',{bubbles:true}));}
+    click('settings-button');$('count-in').checked=false;closeDialogs();
     // Readiness is a required evidence boundary even when an event callback
     // already sampled the same state; ordinary polling remains deduplicated.
     await until(()=>!$('play-button').disabled,'score practice ready');const initialPosition=trace.changed('ready',{checkpoint:true}).positionMs;

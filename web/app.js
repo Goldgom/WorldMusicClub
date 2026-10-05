@@ -500,7 +500,7 @@ function refreshSongModView(){
   if(!songModView)return;
   const candidate=modContext('preview'),active=modContext('stage');let reason='',canStart=false;
   if(candidate){try{assertSongModSupported(candidate.mod,candidate.capabilities);const options=songModOptions(candidate.mod);canStart=!startingPreview&&preview.canStart(options.mode);if(!canStart)reason=compatibilityText(preview.value.compatibility);if(!synth.muted&&(typeof globalThis.AudioWorkletNode!=='function'||Boolean(synth.context&&!synth.context.audioWorklet))){canStart=false;reason=cleanErrorText(i18n.locale,{code:'clean_audio_worklet_unavailable'});}}catch(error){reason=i18n.locale==='en'?error.message:'当前 Mod 无法播放：'+error.message;}}
-  if(!candidate&&preview.value.status==='choice')reason=i18n.locale==='en'?'Choose the basic instrumental renderer below to configure this source.':'请先在下方选择基础器乐渲染器，再配置此来源。';songModView.update({preview:candidate,stage:active,canStart,reason});
+  if(!candidate&&preview.value.status==='choice')reason=i18n.locale==='en'?'Choose the basic instrumental renderer below to configure this source.':'请先在下方选择基础器乐渲染器，再配置此来源。';songModView.update({preview:candidate,stage:active,canStart,reason,inspectionOnly:preview.value.status==='inspection'&&Boolean(preview.value.score)});
 }
 async function applySongMod({origin,context,mod,isCurrent=()=>true}) {
   validateSongMod(mod,{identity:songMods.identity(context),parts:context.score.parts});assertSongModSupported(mod,songModCapabilities(context));

@@ -13,3 +13,46 @@ fn exact_playback_clock_module_is_embedded_with_its_app_import() {
     let app = std::str::from_utf8(practice_server::asset("/app.js").unwrap()).unwrap();
     assert!(app.contains("from './playback-clock-view.js'"));
 }
+
+#[test]
+fn song_mod_and_sound_modules_are_embedded_with_exact_source_bytes() {
+    for (path, bytes) in [
+        (
+            "/song-mod.js",
+            include_bytes!("../../../web/song-mod.js").as_slice(),
+        ),
+        (
+            "/song-mod-view.js",
+            include_bytes!("../../../web/song-mod-view.js").as_slice(),
+        ),
+        (
+            "/canonical-audio-plan.js",
+            include_bytes!("../../../web/canonical-audio-plan.js").as_slice(),
+        ),
+        (
+            "/canonical-audio-core.js",
+            include_bytes!("../../../web/canonical-audio-core.js").as_slice(),
+        ),
+        (
+            "/basic-key-audio-plan.js",
+            include_bytes!("../../../web/basic-key-audio-plan.js").as_slice(),
+        ),
+        (
+            "/basic-key-audio-core.js",
+            include_bytes!("../../../web/basic-key-audio-core.js").as_slice(),
+        ),
+        (
+            "/vsq-audio-plan.js",
+            include_bytes!("../../../web/vsq-audio-plan.js").as_slice(),
+        ),
+        (
+            "/vsq-practice-player.js",
+            include_bytes!("../../../web/vsq-practice-player.js").as_slice(),
+        ),
+    ] {
+        assert_eq!(practice_server::asset(path).unwrap(), bytes, "{path}");
+    }
+    let app = std::str::from_utf8(practice_server::asset("/app.js").unwrap()).unwrap();
+    assert!(app.contains("from './song-mod.js'"));
+    assert!(app.contains("from './song-mod-view.js'"));
+}
