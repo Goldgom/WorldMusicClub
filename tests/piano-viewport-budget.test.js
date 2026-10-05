@@ -4,9 +4,9 @@ import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
 import {pianoViewportBudget,observePianoViewportBudget} from '../web/piano-viewport-budget.js';
 
-test('short-landscape Mod removes its long summary from the heading flow while retaining the settings control',async()=>{
+test('short-landscape Mod and navigation stay compact when the shared stage switches between piano and guitar',async()=>{
   const css=await readFile(new URL('../web/piano-stage.css',import.meta.url),'utf8');
-  const {document}=parseHTML(`<style>${css}</style>`),rules=[...document.querySelector('style').sheet.cssRules];
+  const {document}=parseHTML(`<html><style>${css}</style><body class="game-shell"><main id="workspace" class="piano-workspace"><div class="piano-workspace-heading"><section id="song-mod-stage"><button id="edit-song-mod"></button><span id="song-mod-stage-summary"></span></section><nav><button id="settings-button" class="button"></button></nav></div></main></body></html>`),rules=[...document.querySelector('style').sheet.cssRules];
   const scoped=rules.filter(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:651px)').flatMap(rule=>[...rule.cssRules]);
   const summary=scoped.find(rule=>rule.selectorText.endsWith(' #song-mod-stage-summary'));
   assert.ok(summary,'The compact rule must cover the failing 844×390 viewport without changing desktop or portrait');
@@ -16,6 +16,12 @@ test('short-landscape Mod removes its long summary from the heading flow while r
   assert.notEqual(summary.style.visibility,'hidden');
   const button=scoped.find(rule=>rule.selectorText.endsWith(' #edit-song-mod'));
   assert.equal(button.style.flex,'none');assert.equal(button.style['white-space'],'nowrap','The existing Mod control keeps its complete label');
+  const mod=scoped.find(rule=>rule.selectorText.endsWith('>#song-mod-stage'));
+  const navigation=scoped.find(rule=>rule.selectorText.endsWith(' .piano-workspace-heading nav .button'));
+  for(const piano of [true,false,true]){
+    document.getElementById('workspace').classList.toggle('piano-workspace',piano);
+    for(const [id,rule]of [['song-mod-stage',mod],['song-mod-stage-summary',summary],['edit-song-mod',button],['settings-button',navigation]])assert.equal(document.getElementById(id).matches(rule.selectorText),true,`${id} keeps its compact rule in ${piano?'piano':'guitar'}`);
+  }
 });
 
 test('viewport capacity accounts for real footer overflow, preserves spare desktop space and converts CSS zoom once',()=>{

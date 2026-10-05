@@ -36,6 +36,22 @@ async function scoreControls(page) {
 async function closeScoreControls(page) {
   if(await page.locator('#notation-tools').isVisible()&&await page.locator('#notation-tools').evaluate(node=>node.open))await page.locator('#notation-tools>summary').click();
 }
+async function openSettingsWithEvidence(page, entry, phase) {
+  const inspect=()=>page.evaluate(()=>{
+    const rect=node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};};
+    const controls=[...document.querySelectorAll('.stage-hud nav button')].map(node=>{const box=rect(node),hit=document.elementFromPoint(box.x+box.width/2,box.y+box.height/2);return{id:node.id,label:node.textContent,box,centerHit:hit?.closest('button')?.id||hit?.id||hit?.tagName};});
+    return {screen:document.body.dataset.screen,instrument:document.querySelector('.play-panel').dataset.instrument,hud:rect(document.querySelector('.stage-hud')),mod:rect(document.querySelector('#song-mod-stage')),controls,dialogs:[...document.querySelectorAll('dialog[open]')].map(node=>node.id),events:globalThis.__wmhRhythmNavigationEvents.slice()};
+  });
+  const before=await inspect();
+  await writeFile(path.join(output,`${entry.name}-${phase}-settings-geometry.json`),JSON.stringify({before},null,2)+'\n');
+  await page.locator('#settings-button').click();
+  const after=await inspect(),receipt={before,after};
+  await writeFile(path.join(output,`${entry.name}-${phase}-settings-geometry.json`),JSON.stringify(receipt,null,2)+'\n');
+  const click=after.events.findLast(event=>event.sequence>(before.events.at(-1)?.sequence||0)&&event.type==='click');
+  assert.equal(click?.target,'settings-button',`${entry.name}: Settings pointer click reached ${click?.target||'no recorded navigation control'}`);
+  assert.equal(click.trusted,true,`${entry.name}: Settings requires a real pointer click`);
+  assert.deepEqual(after.dialogs,['settings-dialog'],`${entry.name}: Settings must open its own dialog`);
+}
 async function checkLaneOverlay(page, entry, view) {
   await closeScoreControls(page);
   await page.waitForFunction(() => document.querySelector('#workspace').classList.contains('notation-on-lanes')&&!document.querySelector('#notation-lane-overlay').hidden);
@@ -181,6 +197,14 @@ try {
       await page.addInitScript(({locale,theme}) => {
         localStorage.setItem('worldmusichub.locale.v1', locale);
         localStorage.setItem('worldmusichub.theme', JSON.stringify({mode:theme}));
+        globalThis.__wmhRhythmNavigationEvents=[];
+        for(const type of ['pointerdown','pointerup','click'])document.addEventListener(type,event=>{
+          const target=event.target.closest?.('.stage-hud nav button');if(!target)return;
+          const rect=node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height};};
+          const rows=globalThis.__wmhRhythmNavigationEvents;
+          rows.push({sequence:(rows.at(-1)?.sequence||0)+1,type,trusted:event.isTrusted,target:target.id,x:event.clientX,y:event.clientY,box:rect(target),controls:['settings-button','results-button'].map(id=>({id,...rect(document.getElementById(id))}))});
+          if(rows.length>96)rows.shift();
+        },true);
       }, entry);
       await page.goto(origin);await waitForPlaybackClock(page); await page.evaluate(() => document.fonts.ready);
       if (await page.locator('#game-home').isVisible()) await page.locator('#home-single-player').click();
@@ -240,7 +264,7 @@ try {
       const jianpuGeometry = await checkLaneOverlay(page, entry, 'jianpu');assert.deepEqual(jianpuGeometry.range,staffGeometry.range,'Changing notation preserves every configured key');
       await page.screenshot({path:path.join(output, `${entry.name}-jianpu.png`), fullPage:true});
       await page.locator('#notation-toggle').click();
-      await page.locator('#settings-button').click();
+      await openSettingsWithEvidence(page,entry,'change-to-guitar');
       await page.locator('#instrument').selectOption('guitar');
       await page.locator('#settings-dialog [data-close-panel]').click();
       await page.waitForFunction(() => !document.querySelector('#guitar-stage').hidden && document.querySelectorAll('.fret-button').length === 78);
@@ -277,7 +301,7 @@ try {
       assert.deepEqual(responses.filter(response => response.status >= 400), [], 'Real engine responses must succeed');
       await page.locator('#reset-button').click();
       await page.waitForFunction(() => document.querySelector('#stage-cue').dataset.cueState === 'ready');
-      await page.locator('#settings-button').click();
+      await openSettingsWithEvidence(page,entry,'return-to-piano');
       await page.locator('#instrument').selectOption('piano');
       await page.locator('#settings-dialog [data-close-panel]').click();
       await page.waitForFunction(() => !document.querySelector('#piano-stage').hidden && document.querySelector('#stage-cue').dataset.cueState === 'ready');
