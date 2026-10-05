@@ -72,7 +72,7 @@ test('piano HUD stays in flow and shared lane sizes use measured viewport capaci
  const copy=rule('.game-shell #workspace.piano-workspace .performance-status>.performance-status-copy');assert.equal(copy['overflow-wrap'],'anywhere');assert.equal(copy['min-width'],'0');
  const cue=rule('.game-shell #workspace.piano-workspace .performance-status>#stage-cue');assert.equal(cue.position,'static');assert.equal(cue['flex-wrap'],'wrap');
  const nested=rules.flatMap(item=>item.cssRules?[...item.cssRules]:[item]),activeBudgets=nested.filter(item=>item.style?.getPropertyValue('--piano-lane-height')?.includes('piano-available-lane-height'));
- assert.equal(activeBudgets.length,4);for(const item of activeBudgets){const value=item.style.getPropertyValue('--piano-lane-height');assert.match(value,/max\(100px,min/);assert.doesNotMatch(value,/piano-status-space|piano-notice-space/,'Real viewport capacity accounts for chrome once, including CSS zoom');}
+ assert.equal(activeBudgets.length,4);for(const item of activeBudgets){const value=item.style.getPropertyValue('--piano-lane-height');assert.match(value,/^max\(100px,(?:min|var)\(/);assert.doesNotMatch(value,/piano-status-space|piano-notice-space/,'Real viewport capacity accounts for chrome once, including CSS zoom');}
 });
 
 test('short landscape gives following status a full non-shrinking row instead of the controls remainder',async()=>{

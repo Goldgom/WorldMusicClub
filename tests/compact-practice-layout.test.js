@@ -136,3 +136,29 @@ test('compact CSS reserves a complete fret row and allows the Follow toolbar to 
   assert.equal(expanded['grid-template-rows'],'max-content max-content max-content','An explicitly taller board must expand its grid track before the disclosure row');
   assert.equal(expanded['grid-auto-rows'],'max-content','A full-width open disclosure can create another row, which must also retain its content height');
 });
+
+test('compact guitar guidance shows both complete chosen shapes before its scrollable explanation',async()=>{
+  const css=await readFile(new URL('../web/guitar-live-guidance.css',import.meta.url),'utf8'),{document}=parseHTML(`<style>${css}</style>`);
+  const rules=[...document.querySelector('style').sheet.cssRules].find(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:651px)').cssRules;
+  const rule=selector=>[...rules].find(item=>item.selectorText===selector).style;
+  assert.equal(rule('#guitar-live-route').display,'flex');assert.equal(rule('#guitar-live-route')['flex-direction'],'column');assert.equal(rule('.guitar-live-band').order,'-1');assert.equal(rule('.guitar-live-band').flex,'none');
+  const padding=rule('.performance-layout #guitar-guidance,.performance-layout #workspace.with-notation #guitar-guidance').padding;
+  assert.equal(padding,'1px 7px');
+  const position=parseFloat(rule('.guitar-live-position')['line-height']),action=parseFloat(rule('.guitar-live-action')['line-height']);
+  assert.ok(position+action>=24,'Every current and next choice retains its original complete two-line marker');
+  // Real 500 markers are 28px; heading 14.296875px. The table includes the
+  // tuning line, solid current separator, dashed next separator and borders.
+  const table=14+(position+action+1)+(position+action+2)+2,heading=14.296875;
+  assert.equal(table,75);assert.ok(heading+table+2*parseFloat(padding)+2<94,'Both chosen shapes fit before the retained legend and transition text');
+  for(const selector of ['#guitar-live-route','.guitar-live-band'])for(const property of ['visibility','max-height','overflow'])assert.equal(rule(selector).getPropertyValue(property),'','Guidance text is reordered, never removed or clipped');
+});
+
+test('portrait score scope uses a reserved title slot instead of overflowing the background controls',async()=>{
+  const css=await readFile(new URL('../web/piano-stage.css',import.meta.url),'utf8'),{document}=parseHTML(`<style>${css}</style>`);
+  const rules=[...document.querySelector('style').sheet.cssRules].filter(rule=>rule.media?.mediaText==='(max-width:650px)').flatMap(rule=>[...rule.cssRules]),style=selector=>rules.findLast(rule=>rule.selectorText===selector).style;
+  assert.equal(style('.game-shell .piano-stage-toolbar .notation-overlay-options').display,'contents');
+  const scope=style('.game-shell .piano-stage-toolbar .notation-scope-summary');assert.equal(scope['grid-column'],'1/span 2');assert.equal(scope['grid-row'],'1');assert.equal(scope['align-self'],'end');
+  const title=style('.game-shell .piano-stage-shared .piano-stage-title');assert.ok(parseFloat(title['line-height'])+2*parseFloat(scope['line-height'])<=40,'Piano title and two readable scope lines fit above the separate options row');
+  for(const [selector,column]of [[':first-child','1/span 5'],[':nth-child(2)','6/span 4']]){const label=style('.game-shell .piano-stage-toolbar .notation-overlay-options>label'+selector);assert.equal(label['grid-column'],column);assert.equal(label['grid-row'],'2');}
+  assert.equal(style('.game-shell .piano-stage-toolbar .notation-tools')['grid-column'],'10/-1','Score options retain their original, nonoverlapping native target');
+});

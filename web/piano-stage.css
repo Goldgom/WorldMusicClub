@@ -195,7 +195,7 @@
 /* A 651px landscape cannot fit full session-tool labels beside the title and
    guide. Keep every original control in one row at a usable 34px target; their
    full text remains the accessible name and tooltip. Only decoration changes. */
-@media(max-height:600px) and (min-width:651px) and (max-width:800px){
+@media(max-height:600px) and (min-width:651px) and (max-width:1000px){
  .game-shell :is(.piano-workspace,:where(#workspace)) .piano-workspace-heading{gap:4px}
  .game-shell :is(.piano-workspace,:where(#workspace)) .piano-workspace-heading nav{flex:0 0 auto;gap:3px}
  .game-shell .piano-workspace-heading nav :is(#library-button,#import-tools-button,#score-tools-button,#settings-button,#results-button),.game-shell .piano-workspace-heading>#back-to-library{position:relative;flex:0 0 34px;width:34px;min-width:34px;max-width:34px;height:34px;min-height:34px;padding:0;overflow:hidden;text-indent:-9999px;white-space:nowrap}
@@ -234,7 +234,7 @@
 /* Short landscape spends one row on mode controls. Move the original controls
    here without cloning their handlers, and keep expanded guidance above it. */
 @media(max-height:600px) and (min-width:651px){
- .piano-workspace{--piano-toolbar-height:40px;--piano-lane-height:max(100px,min(calc(32dvh + 1px),var(--piano-available-lane-height,10000px)))}
+ .piano-workspace{--piano-toolbar-height:36px;--piano-lane-height:max(100px,var(--piano-available-lane-height,calc(32dvh + 1px)))}
  .game-shell #workspace.piano-workspace,.game-shell #free-practice-screen.piano-workspace{padding-top:4px;padding-bottom:6px;gap:4px}
  /* Retain the notice and its 34px dismissal target without spending 18px on
     padding and a gap above it. The lane and extreme guide keybed keep their size. */
@@ -306,4 +306,45 @@
  .game-shell .piano-transport>#piano-fingering-guidance{position:static;flex:0 1 150px;width:auto;min-width:0;border:0;border-radius:6px}
  .game-shell .piano-transport>#piano-fingering-guidance>summary{min-height:36px;align-content:center;padding:4px 7px;font-size:11px}
  .game-shell .piano-transport #piano-fingering-guidance .piano-guidance-body{position:absolute;z-index:7;right:8px;bottom:calc(100% + 4px);width:min(520px,calc(100vw - 40px));max-height:180px;overflow:auto;padding:10px;background:#142333;border:1px solid #91b0c2;border-radius:8px}
+}
+
+/* A long instrument-range hint can use the spare status width instead of
+   forcing a second line in a fixed 260px slot on an otherwise empty row. */
+.game-shell #workspace.piano-workspace .performance-status>.performance-hint{flex:none;max-width:50%}
+
+/* Compact chrome yields to the complete lane, extreme keybed and real pointer
+   targets. Every message stays in flow; only long notice text scrolls. */
+@media(max-height:600px) and (min-width:651px){
+ .game-shell.performance-layout #workspace,.game-shell #workspace.piano-workspace,.game-shell #free-practice-screen.piano-workspace{padding-top:0;padding-bottom:2px;gap:4px}
+ .game-shell:has(:is(#workspace,#free-practice-screen):not([hidden])) #notice{margin-top:0;padding-top:0;padding-bottom:0;align-items:center}
+ .game-shell:has(:is(#workspace,#free-practice-screen):not([hidden])) #notice-message{max-height:32px;font-size:12px;line-height:16px}
+ .game-shell #workspace.piano-workspace .play-panel>.performance-status{padding-top:1px;padding-bottom:1px}
+ .game-shell #workspace.piano-workspace .performance-status .onset-counter>span,.game-shell #workspace.piano-workspace .performance-status #hud-accuracy{font-size:20px;line-height:22px}
+ .game-shell #workspace.piano-workspace .performance-status>#hud-result{flex-direction:row;align-items:baseline;gap:4px}
+ .game-shell #workspace.piano-workspace .performance-status #stage-cue-main{font-size:14px;line-height:18px}
+ .game-shell .piano-stage-shared .piano-stage-toolbar{min-height:36px;padding-top:1px;padding-bottom:1px}
+ .game-shell.performance-layout #workspace.piano-workspace .play-panel[data-instrument=piano]>.piano-compact-transport{min-height:40px;padding-top:0;padding-bottom:0}
+}
+
+/* The wider landscape has room for title, guide and physical mapping in one
+   heading row once navigation uses the same original icon targets as 651px.
+   Narrower stages keep their existing separate metadata row. */
+@media(max-height:600px) and (min-width:801px) and (max-width:1000px){
+ .game-shell #workspace .piano-workspace-heading{min-height:34px}
+ .game-shell #workspace .piano-workspace-heading>:is(#notation-toggle,#rhythm-stage-free){font-size:11px;line-height:12px;padding-top:4px;padding-bottom:4px;min-height:34px}
+ .game-shell #workspace .piano-workspace-heading .stage-heading:has(>.beginner-controls-compact){grid-template-columns:minmax(64px,1fr) max-content auto;min-width:287px}
+ .game-shell #workspace .piano-workspace-heading .keyboard-stage-meta{grid-column:3;grid-row:1;margin-top:0;gap:4px}
+ .game-shell #workspace .piano-workspace-heading .keyboard-stage-meta #stage-subtitle{min-width:54px;max-width:90px}
+ .game-shell #workspace #edit-song-mod{max-width:none;white-space:nowrap;font-size:11px;padding-left:5px;padding-right:5px}
+}
+
+@media(max-width:650px){
+ .game-shell #workspace.piano-workspace .play-panel>.performance-status{padding-top:4px;padding-bottom:4px}
+ /* Scope text previously squeezed into an 18px remainder and painted across
+    both toolbar rows. Use the spare space below the title, before the lane. */
+ .game-shell .piano-stage-shared .piano-stage-title{align-self:start;line-height:14px}
+ .game-shell .piano-stage-toolbar .notation-overlay-options{display:contents}
+ .game-shell .piano-stage-toolbar .notation-overlay-options>label:first-child{grid-column:1/span 5;grid-row:2}
+ .game-shell .piano-stage-toolbar .notation-overlay-options>label:nth-child(2){grid-column:6/span 4;grid-row:2}
+ .game-shell .piano-stage-toolbar .notation-scope-summary{grid-column:1/span 2;grid-row:1;align-self:end;max-width:none;font-size:10px;line-height:12px;overflow-wrap:normal}
 }

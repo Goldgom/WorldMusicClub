@@ -26,7 +26,12 @@
 /* The route must never be clipped to the old 96px card viewport. The stage
    integrator reserves this block before allocating remaining board height. */
 @media(max-height:600px) and (min-width:651px){
- .performance-layout #guitar-guidance,.performance-layout #workspace.with-notation #guitar-guidance{max-height:none;overflow:visible;padding:3px 7px}
+ .performance-layout #guitar-guidance,.performance-layout #workspace.with-notation #guitar-guidance{max-height:none;overflow:visible;padding:1px 7px}
+ /* Chosen positions are the first content in the existing guidance scroller.
+    The full legend and transition follow, without clipping either shape. */
+ #guitar-live-route{display:flex;flex-direction:column}
+ .guitar-live-band{order:-1;flex:none;margin-top:0}
+ .guitar-live-band+.guitar-live-band{margin-top:3px}
  .performance-layout .guitar-stage{gap:3px}
  .guitar-guidance-heading{font-size:11px;line-height:1.3;gap:1px 8px}
  #guitar-live-route .guitar-live-legend{font-size:11px;line-height:1.25}

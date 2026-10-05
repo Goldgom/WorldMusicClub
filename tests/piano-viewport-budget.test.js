@@ -27,8 +27,8 @@ test('short-landscape Mod and navigation stay compact when the shared stage swit
 test('narrow landscape reserves six real navigation targets without consuming a second music row',async()=>{
   const css=await readFile(new URL('../web/piano-stage.css',import.meta.url),'utf8');
   const {document}=parseHTML(`<style>${css}</style>`),rules=[...document.querySelector('style').sheet.cssRules];
-  const narrow=rules.find(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:651px) and (max-width:800px)');
-  assert.ok(narrow,'The full 651–800px range needs a layout distinct from the wider compact header');
+  const narrow=rules.find(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:651px) and (max-width:1000px)');
+  assert.ok(narrow,'The full 651–1000px range needs usable navigation targets without tall wrapped labels');
   const targets=[...narrow.cssRules].find(rule=>rule.style?.width==='34px');
   for(const id of ['library-button','import-tools-button','score-tools-button','settings-button','results-button','back-to-library'])assert.ok(targets.selectorText.includes('#'+id));
   assert.equal(targets.style.flex,'0 0 34px');assert.equal(targets.style['min-width'],'34px');assert.equal(targets.style['min-height'],'34px');
@@ -55,6 +55,50 @@ test('viewport capacity accounts for real footer overflow, preserves spare deskt
   const tight=pianoViewportBudget({viewportBottom:390,laneHeight:100,transportBottom:410,bottomPadding:6});
   assert.deepEqual(tight,{height:100,available:74,deficit:26},'An impossible chrome budget cannot silently shrink the readable lane');
   assert.equal(pianoViewportBudget({viewportBottom:720,laneHeight:0,transportBottom:700}),null);
+});
+
+test('measured compact chrome leaves room for the complete extreme keybed, live HUD and fixed transport',async()=>{
+  const css=await readFile(new URL('../web/piano-stage.css',import.meta.url),'utf8'),{document}=parseHTML(`<style>${css}</style>`),all=[...document.querySelector('style').sheet.cssRules];
+  const short=all.filter(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:651px)').flatMap(rule=>[...rule.cssRules]),style=selector=>short.findLast(rule=>rule.selectorText===selector).style;
+  const workspace=style('.game-shell.performance-layout #workspace,.game-shell #workspace.piano-workspace,.game-shell #free-practice-screen.piano-workspace');
+  const status=style('.game-shell #workspace.piano-workspace .play-panel>.performance-status'),counter=style('.game-shell #workspace.piano-workspace .performance-status .onset-counter>span,.game-shell #workspace.piano-workspace .performance-status #hud-accuracy');
+  const toolbar=style('.game-shell .piano-stage-shared .piano-stage-toolbar'),transport=style('.game-shell.performance-layout #workspace.piano-workspace .play-panel[data-instrument=piano]>.piano-compact-transport');
+  const heading=all.find(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:801px) and (max-width:1000px)');
+  const headingRules=[...heading.cssRules],headingHeight=parseFloat(headingRules.find(rule=>rule.selectorText.endsWith(' .piano-workspace-heading')).style['min-height']);
+  // Actual 500 evidence: 844×390, visible notice 40px + 4px margin,
+  // heading 44.09375px, READY status 36.390625px, extreme keybed 104px,
+  // lane floor 100px, transport 44.84375px. Total was 433.328125px.
+  const old=44+4+44.09375+4+36.390625+40+100+4+104+2+44.84375+6;
+  assert.equal(old,433.328125);assert.ok(old>390);
+  const notice=34+2,liveStatus=parseFloat(counter['line-height'])+parseFloat(status['padding-top'])+parseFloat(status['padding-bottom'])+2;
+  const fullSeekAndLabel=38.84375,transportHeight=Math.max(parseFloat(transport['min-height']),fullSeekAndLabel+parseFloat(transport['padding-top'])+parseFloat(transport['padding-bottom'])+2);
+  const chrome=notice+parseFloat(workspace['padding-top'])+headingHeight+parseFloat(workspace.gap)+liveStatus+parseFloat(toolbar['min-height'])+4+104+2+transportHeight+parseFloat(workspace['padding-bottom']);
+  assert.ok(chrome+100<=390,'Even the 22px live counter, 104px glyph keybed and complete seek target fit beside the unchanged 100px lane');
+  assert.equal(style('.piano-workspace')['--piano-lane-height'],'max(100px,var(--piano-available-lane-height,calc(32dvh + 1px)))','Remaining space must keep the transport anchored across live HUD changes instead of stopping at a viewport-percentage cap');
+  const available=pianoViewportBudget({viewportBottom:390,laneHeight:100,transportBottom:chrome+100-parseFloat(workspace['padding-bottom']),bottomPadding:parseFloat(workspace['padding-bottom'])});
+  assert.ok(available.height>=100);assert.equal(available.deficit,0);
+  const reveal=pianoViewportBudget({viewportBottom:390,laneHeight:100,transportBottom:chrome+100-26-2,bottomPadding:2});
+  const next=pianoViewportBudget({viewportBottom:390,laneHeight:reveal.height,transportBottom:390-2+2,bottomPadding:2});
+  assert.equal(next.height,reveal.height-2,'The observed 2px live change with the 78px keybed is absorbed by the lane, preserving the bottom transport position');
+  const hint=all.findLast(rule=>rule.selectorText==='.game-shell #workspace.piano-workspace .performance-status>.performance-hint').style;
+  assert.equal(hint.flex,'none');assert.equal(hint['max-width'],'50%','The observed D768 hint can use idle horizontal space, retaining every word');
+});
+
+test('wider compact header reserves separate title, guide, mapping and navigation targets',async()=>{
+  const css=await readFile(new URL('../web/piano-stage.css',import.meta.url),'utf8'),{document}=parseHTML(`<style>${css}</style>`),all=[...document.querySelector('style').sheet.cssRules];
+  const rules=[...all.find(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:801px) and (max-width:1000px)').cssRules];
+  const heading=rules.find(rule=>rule.selectorText.endsWith('.stage-heading:has(>.beginner-controls-compact)')).style,meta=rules.find(rule=>rule.selectorText.endsWith(' .keyboard-stage-meta')).style;
+  assert.equal(heading['grid-template-columns'],'minmax(64px,1fr) max-content auto');assert.equal(meta['grid-column'],'3');assert.equal(meta['grid-row'],'1');
+  // Existing measured guide 70.6875px and mapping target 81.671875px retain
+  // their native sizes beside a 64px title and 54px mode text minimum.
+  assert.ok(64+70.6875+81.671875+54+4+12<=parseFloat(heading['min-width']));
+  const mod=rules.find(rule=>rule.selectorText.endsWith(' #edit-song-mod')).style;
+  assert.equal(mod['white-space'],'nowrap');assert.equal(mod['max-width'],'none');
+  const primary=rules.find(rule=>rule.selectorText.endsWith('>:is(#notation-toggle,#rhythm-stage-free)')).style;
+  assert.equal(2*parseFloat(primary['line-height'])+parseFloat(primary['padding-top'])+parseFloat(primary['padding-bottom'])+2,34,'Both complete two-line primary labels fit their unchanged 34px targets');
+  const oldModText=92-18,newMod=(oldModText*11/12)+parseFloat(mod['padding-left'])+parseFloat(mod['padding-right'])+2;
+  const reserved=parseFloat(heading['min-width'])+34+70+70+newMod+(6*34+5*3)+5*4;
+  for(const width of [801,844,900,1000])assert.ok(reserved<=width-20,`${width}px preserves every target inside the 10px workspace edges`);
 });
 
 test('actual heading changes and 125 percent zoom refresh one shared normal/Free capacity without synchronous observer writes',()=>{
