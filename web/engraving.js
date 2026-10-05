@@ -168,7 +168,7 @@ function loadRenderer(document, visualLease) {
       // Removing an already requested script cannot prove it will never
       // evaluate. Keep its native load/error fence, and fail admission at the
       // existing load deadline instead of awaiting it or shifting an anchor.
-      retained.fail(Object.assign(new Error('Notation bundle loading did not finish before audio admission.'), {code: 'clean_audio_unavailable'}));
+      retained.fail(Object.assign(new Error('Notation bundle loading did not finish before audio admission.'), {code: 'notation_audio_reload_required'}));
       script.remove();
       reject(Object.assign(new Error('The optional offline engraving bundle is unavailable.'), {code: 'engraving_bundle'}));
     }, 8000);

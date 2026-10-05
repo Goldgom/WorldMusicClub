@@ -320,9 +320,15 @@ test('the original bundle deadline rejects pending audio without admitting a lat
   env.view.setTimeout=(callback,milliseconds)=>{assert.equal(milliseconds,8000);timeout=callback;return 1;};env.view.clearTimeout=()=>{};
   env.document.head.onAppend=script=>env.scripts.push(script);
   const rendering=renderEngravedStaff(env.container,xml);await tick();
-  const audio=admission.acquireAudio(),rejected=assert.rejects(audio,{code:'clean_audio_unavailable'});
+  const audio=admission.acquireAudio(),rejected=assert.rejects(audio,{code:'notation_audio_reload_required'});
   timeout();assert.equal((await rendering).status,'unavailable');await rejected;
-  await assert.rejects(admission.acquireAudio(),{code:'clean_audio_unavailable'});
+  // Removing/hiding the failed score is not proof that its requested script
+  // cannot still execute. Every explicit Start fails promptly, without a timer.
+  disposeEngravedStaff(env.container);env.container.remove();
+  for(let attempt=0;attempt<3;attempt++){
+    let settled=false;const start=admission.acquireAudio().catch(error=>{settled=true;assert.equal(error.code,'notation_audio_reload_required');});
+    await tick();assert.equal(settled,true,'A future Start must reject rather than remain pending');await start;
+  }
   env.view.opensheetmusicdisplay={OpenSheetMusicDisplay:env.Renderer};env.scripts[0].onload();await tick();
   const explicit=await admission.acquireAudio();assert.equal(env.instances.length,0);explicit.release();
 });

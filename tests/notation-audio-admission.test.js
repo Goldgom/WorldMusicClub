@@ -6,7 +6,20 @@ import {CanonicalAudioReceiver} from '../web/canonical-audio-receiver.js';
 import {CanonicalAudioCore} from '../web/canonical-audio-core.js';
 import {buildCanonicalAudioPlan,CANONICAL_AUDIO_POLICY} from '../web/canonical-audio-plan.js';
 import {basicKeyAudioHarness} from './basic-key-audio-harness.js';
+import {canonicalAudioErrorText} from '../web/canonical-practice-text.js';
+import {cleanErrorText} from '../web/clean-song-text.js';
 const tick=async()=>{for(let n=0;n<8;n++)await Promise.resolve();};
+
+test('unresolved notation loading gives the same save-and-reopen recovery in canonical and complete-song playback',()=>{
+  const error={code:'notation_audio_reload_required'};
+  for(const render of [canonicalAudioErrorText,cleanErrorText]){
+    const en=render('en',error),zh=render('zh-CN',error);
+    assert.match(en,/Export any practice takes.*then reload the page or reopen the app/);
+    assert.match(zh,/先导出需要保留的练习记录，再刷新页面或重新打开应用/);
+    assert.match(en,/notation_audio_reload_required/);assert.match(zh,/notation_audio_reload_required/);
+    assert.doesNotMatch(en,/retry|unlock|audio settings/i);
+  }
+});
 
 test('pending audio takes priority over new notation and cancellation releases queued and admitted work',async()=>{
   const gate=notationAudioAdmission({}),old=gate.tryVisual(),stop=new AbortController();let painted=false;

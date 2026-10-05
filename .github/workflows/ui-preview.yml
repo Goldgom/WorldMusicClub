@@ -28,7 +28,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p ui-preview
-          node --test --test-reporter=tap --test-name-pattern='^(real free piano fills desktop|original grand staff and Jianpu follow|game menu and audible song preview|normal and free piano share|original falling bars visibly cross|real D768 lobby and compact performance fit|short-landscape following reveals|real guitar current and next six-note|real initial compact guide stays)' tests/full-app-browser.test.js | tee ui-preview/tests.tap
+          node --test --test-reporter=tap --test-name-pattern='^(real free piano fills desktop|original grand staff and Jianpu follow|game menu and audible song preview|normal and free piano share|original falling bars visibly cross|real D768 lobby and compact performance fit|short-landscape following reveals|real guitar current and next six-note|real initial compact guide stays|real compact 88-key and custom extreme guides)' tests/full-app-browser.test.js | tee ui-preview/tests.tap
       - name: Verify preview provenance and required real screenshots
         run: node scripts/verify-ui-preview.mjs ui-preview
       - name: Retain compact failure pixels and geometry before the full preview

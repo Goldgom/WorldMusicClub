@@ -18,6 +18,7 @@ export function canonicalAudioErrorText(locale,error) {
     canonical_audio_loop_unavailable:['The required audio-thread loop is unavailable. This loop cannot start until that renderer is available.','所需音频线程循环不可用，此循环需待对应渲染器可用后才能开始。'],
     clean_clock_unavailable:['The audio device interrupted the source clock. Playback is paused; press Play when the device is available.','音频设备中断了来源时钟。播放已暂停，设备可用后请重新点击播放。'],
     clean_late_start:['The audio start confirmation arrived too late. Playback was canceled; press Play to retry.','音频开始确认未及时到达，本次播放已取消，请点击播放重试。'],
+    notation_audio_reload_required:['Notation loading did not finish. Playback is blocked. Export any practice takes you want to keep, then reload the page or reopen the app.','谱面加载未完成，已阻止播放。请先导出需要保留的练习记录，再刷新页面或重新打开应用。'],
     reference_policy_required:['Review the canonical sine-tone interpretation before starting playback.','请先查看规范乐谱的正弦音参考解释，再开始播放。'],
     unsupported_audio_sample_rate:['This audio device cannot represent every retained pitch. Use another supported output device or silent practice.','此音频设备无法表示全部保留音高，请使用另一支持的输出设备或静音练习。'],
   };

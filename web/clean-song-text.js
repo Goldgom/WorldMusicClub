@@ -2,6 +2,7 @@ const families=['击弦键盘','明亮槌击','持续风琴','拨弦','低音弦
 export const cleanText=(locale,en,zh)=>locale==='en'?en:zh;
 export function cleanFamily(locale,program){const en=['struck keys','bright mallets','sustained organ','plucked strings','low strings','bowed strings','ensemble','brass','reed','pipe','lead','pad','effects','world strings','struck effects','sound effects'];return cleanText(locale,`reference ${en[program>>3]}`,`参考${families[program>>3]}`);}
 export function cleanErrorText(locale,error){
+ if(error?.code==='notation_audio_reload_required')return cleanText(locale,'Notation loading did not finish. Playback is blocked. Export any practice takes you want to keep, then reload the page or reopen the app. (notation_audio_reload_required)','谱面加载未完成，已阻止播放。请先导出需要保留的练习记录，再刷新页面或重新打开应用。（notation_audio_reload_required）');
  if(error?.code==='invalid_instrument_override')return cleanText(locale,'This Mod requests an unsupported part or synthetic sound. Reopen Mod and restore its source sound before retrying.','此 Mod 请求了不支持的声部或合成音色。请重新打开 Mod，恢复源渲染器音色后重试。');
  if(error?.code==='audio_timbre_fingerprint')return cleanText(locale,'The audio-thread sound selection did not match the prepared Mod. Playback stopped; apply the current Mod and retry.','音频线程的音色选择与已准备的 Mod 不匹配。播放已停止，请应用当前 Mod 后重试。');
  if(error?.code==='live_audio_closed')return cleanText(locale,'The audio device is closed (live_audio_closed). Reopen the app before trying sound again, or turn sound off for silent practice.','音频设备已关闭（live_audio_closed）。请重新打开应用后再尝试发声，或关闭声音进行静音练习。');
