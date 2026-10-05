@@ -3,8 +3,8 @@ import {LibraryOperationStore} from './library-operation-store.js';
 const failure = error => ({code: error?.code || 'library_transport', message: error?.message || String(error)});
 /** Owns metadata and operation recovery; never owns a score, recorder or player. */
 export class LibraryCatalogModel {
-  constructor({getStorage, operationStore = new LibraryOperationStore(), onCommitted = async () => {}, onObserverError = error => globalThis.reportError?.(error)} = {}) {
-    Object.assign(this, {getStorage, operationStore, onCommitted, onObserverError});
+  constructor({getStorage, getProtectedSong = () => null, operationStore = new LibraryOperationStore(), onCommitted = async () => {}, onObserverError = error => globalThis.reportError?.(error)} = {}) {
+    Object.assign(this, {getStorage, getProtectedSong, operationStore, onCommitted, onObserverError});
     this.listeners = new Set(); this.selected = new Map(); this.cursors = [null]; this.readVersion = 0; this.invalidationVersion = 0;
     this.state = {phase: 'idle', status: null, query: catalogQuery(), response: null, page: 0, stale: false, preview: null, operation: null, result: null, error: null, operationError: null, refreshError: false};
   }
@@ -18,7 +18,7 @@ export class LibraryCatalogModel {
   async storage() {
     const storage = await this.getStorage();
     if (storage.info.kind !== 'native' || !storage.info.capabilities.manageCatalog) throw Object.assign(new Error('Native catalog management is unavailable.'), {code: 'catalog_unavailable'});
-    return storage;
+    this.storageOwner = storage; return storage;
   }
   startRead(phase = 'loading') {
     this.controller?.abort(); const controller = new AbortController(), version = ++this.readVersion;
@@ -61,10 +61,21 @@ export class LibraryCatalogModel {
   }
   next() { if (!this.state.response?.next_cursor || this.state.phase === 'loading' || this.state.stale) return Promise.resolve(false); const page = this.state.page + 1; this.cursors[page] = this.state.response.next_cursor; return this.read({page}); }
   previous() { return this.state.page > 0 && this.state.phase !== 'loading' && !this.state.stale ? this.read({page: this.state.page - 1}) : Promise.resolve(false); }
-  selectable(row) { return row.catalog_managed && row.physical_available && (!this.selected.size || this.state.query.view !== 'trash' || [...this.selected.values()][0].trashed_by === row.trashed_by); }
+  protectedEdition(libraryId = this.state.status?.library_id) {
+    const song = this.getProtectedSong();
+    return libraryId === this.state.status?.library_id && this.storageOwner?.info.kind === 'native' && this.storageOwner.ownsCleanSong?.(song) && /^native:song-[0-9a-f]{64}$/.test(song.libraryKey)
+      ? `clean:${song.libraryKey.slice(7)}` : null;
+  }
+  selectionProtected(rows = [...this.selected.values()]) { const id = this.protectedEdition(); return this.state.query.view !== 'trash' && Boolean(id && rows.some(row => row.storage_kind === 'clean' && row.edition_id === id)); }
+  recordProtected(record) { return record?.kind === 'trash_songs' && record.preview.request.action.song_ids.includes(this.protectedEdition(record.library_id || this.state.status?.library_id)); }
+  protectionError() { return {code: 'catalog_current_song', message: 'This current complete song still needs native notation pages. Select another song before moving this edition to Trash.'}; }
+  sessionChanged() { this.publish(); }
+  selectable(row) { return !this.selectionProtected([row]) && row.catalog_managed && row.physical_available && (!this.selected.size || this.state.query.view !== 'trash' || [...this.selected.values()][0].trashed_by === row.trashed_by); }
   toggle(row, checked) {
     if (this.state.phase !== 'ready' || this.state.stale || this.pending() || this.writing) return;
-    const found = this.state.response?.rows.find(item => item.edition_id === row.edition_id); if (!found || checked && !this.selectable(found)) return;
+    const found = this.state.response?.rows.find(item => item.edition_id === row.edition_id);
+    if(found && checked && this.selectionProtected([found])){this.publish({preview:null,error:this.protectionError()});return;}
+    if (!found || checked && !this.selectable(found)) return;
     if (checked) this.selected.set(found.edition_id, structuredClone(found)); else this.selected.delete(found.edition_id);
     this.publish({preview: null, error: null});
   }
@@ -86,10 +97,11 @@ export class LibraryCatalogModel {
   }
   async previewSelection() {
     if (this.state.phase !== 'ready' || this.state.stale || this.pending() || this.writing || !this.selected.size) return;
+    if (this.selectionProtected()) { this.publish({preview: null, error: this.protectionError()}); return; }
     const selected = structuredClone([...this.selected.values()]), kind = this.state.query.view === 'trash' ? 'restore_songs' : 'trash_songs', response = this.state.response;
     const request = {action: kind, edition_ids: selected.map(row => row.edition_id), trash_operation_id: kind === 'restore_songs' ? selected[0].trashed_by : null, expected_generation: response.generation, catalog_digest: response.catalog_digest, library_id: response.library_id};
     const read = this.startRead('previewing');
-    try { const value = await (await this.storage()).previewCatalog({...request, signal: read.signal}); if (read.owns()) this.publish({phase: 'ready', preview: {kind, preview: value.preview, summary: value.summary, selected}}); }
+    try { const value = await (await this.storage()).previewCatalog({...request, signal: read.signal}); if (read.owns()) { const preview = {kind, preview: value.preview, summary: value.summary, selected}; if(this.recordProtected(preview))this.publish({phase: 'ready', preview: null, error: this.protectionError()});else this.publish({phase: 'ready', preview}); } }
     catch (error) { if (read.owns()) this.publish({phase: 'ready', preview: null, error: failure(error), stale: this.state.stale || ['catalog_stale', 'catalog_conflict'].includes(error.code)}); }
   }
   async previewSync() {
@@ -109,7 +121,12 @@ export class LibraryCatalogModel {
   }
   async commit() {
     if (!this.state.preview || this.writing || this.pending()) return false;
-    const p = structuredClone(this.state.preview), operation_id = p.kind === 'initialize' ? p.preview.operation_id : p.preview.request.operation_id;
+    const owner = this.state.preview;
+    if (this.recordProtected(owner)) { this.publish({error: this.protectionError()}); return false; }
+    let storage; try { storage = await this.storage(); } catch(error) { this.publish({error: failure(error)}); return false; }
+    if(this.state.preview !== owner || this.writing || this.pending())return false;
+    if(this.recordProtected(owner)){this.publish({error: this.protectionError()});return false;}
+    const p = structuredClone(owner), operation_id = p.kind === 'initialize' ? p.preview.operation_id : p.preview.request.operation_id;
     const record = {...p, library_id: this.state.status.library_id, operation_id, phase: 'submitted'};
     try {
       const saved = this.operationStore.get(record.library_id);
@@ -119,11 +136,11 @@ export class LibraryCatalogModel {
       }
       this.operationStore.put(record);
     } catch (error) { this.publish({error: failure(error)}); return false; }
-    return this.submit(record);
+    return this.submit(record, storage);
   }
-  async submit(record) {
+  async submit(record, storage) {
     this.writing = true; this.selected.clear(); this.publish({operation: record, preview: null, result: null, operationError: null, error: null, phase: 'submitting'});
-    try { const result = await (await this.storage()).commitCatalog(record); await this.applyResult(record, result); return true; }
+    try { storage ||= await this.storage(); if(this.recordProtected(record))throw Object.assign(new Error(this.protectionError().message),{code:'catalog_current_song',outcome:'not_committed'}); const result = await storage.commitCatalog(record); await this.applyResult(record, result); return true; }
     catch (error) {
       const next = {...record, phase: error.outcome === 'not_committed' ? 'not_committed' : 'uncertain'};
       this.saveOutcome(next); this.publish({operation: next, operationError: failure(error), phase: this.opened ? (this.state.response ? 'ready' : 'uninitialized') : 'idle'}); return false;
@@ -152,9 +169,10 @@ export class LibraryCatalogModel {
     const record = this.state.operation; if (record?.phase !== 'not_committed' || this.writing || this.checking) return;
     this.checking = true; this.publish({checking: true, operationError: null});
     try {
-      const status = await (await this.storage()).catalogStatus();
+      const storage = await this.storage(), status = await storage.catalogStatus();
+      if(this.recordProtected(record)){this.publish({operationError: this.protectionError()});return;}
       if (status.library_id !== record.library_id || (record.kind === 'initialize' ? status.state !== 'uninitialized' : status.generation !== record.preview.request.expected_generation || status.catalog_digest !== record.preview.base_digest)) throw Object.assign(new Error('The library changed. This frozen operation cannot be retried. Keep its identity and check status.'), {code: 'catalog_stale'});
-      const next = {...record, phase: 'submitted'}; this.operationStore.put(next); await this.submit(next);
+      const next = {...record, phase: 'submitted'}; this.operationStore.put(next); await this.submit(next, storage);
     } catch (error) { this.publish({operationError: failure(error)}); }
     finally { this.checking = false; this.publish({checking: false}); }
   }

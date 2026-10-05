@@ -137,7 +137,7 @@ let transpositionView = null;
 let externalOmrView = null;
 let notationFollowing = null;
 let writtenCursor = null, writtenCursorStatus = null, writtenCursorRetry = null;
-let sourceArchiveView=null,referenceListening=null,performanceListening=null,lobbyPreview=null,scoreStorage=null,scoreStorageView=null,bulkImportView=null,songAuthoringView=null,fileSelectionVersion=0;
+let sourceArchiveView=null,referenceListening=null,performanceListening=null,lobbyPreview=null,scoreStorage=null,scoreStorageView=null,bulkImportView=null,songAuthoringView=null,libraryManagement=null,fileSelectionVersion=0;
 let pendingScoreSaveOwner=null,scoreSaveNavigation=0,noticeRevision=0;
 let midiController=null;
 let freeSession=null,freeView=null,freePreview=null,freeLiveOwner=null,freeLiveStart=0,freeCaptureState='idle',freeRecordInstrument=null,freeClockWall=0,freeWindowFocused=true;
@@ -339,7 +339,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     // draw and start the new score's lazy cursor request.
     writtenCursor?.reset();
     const previousPart = requestedPracticePart !== undefined ? requestedPracticePart : preserveTempo ? state.practicePart : null;
-    state.cleanSong=cleanSong;if(!cleanSong){previewMedia?.clear();previewMediaKey=null;}cleanMutedParts.clear();cleanSoloParts.clear();cleanPlayer.select(cleanSong);activeMedia?.clear();activeMediaKey=null;
+    state.cleanSong=cleanSong;libraryManagement?.catalog.sessionChanged();if(!cleanSong){previewMedia?.clear();previewMediaKey=null;}cleanMutedParts.clear();cleanSoloParts.clear();cleanPlayer.select(cleanSong);activeMedia?.clear();activeMediaKey=null;
     state.score = compiled?.score||score;state.inspection=inspection;
     if(requestedMode!==undefined){state.mode=requestedMode;$('session-mode').value=requestedMode;}
     state.importDiagnostics = importDiagnostics;
@@ -1373,6 +1373,7 @@ function renderPreview(){
   $('open-score').hidden=!basicKeys&&!(isVsqSong(value.cleanSong)&&value.cleanSong.runtime);$('open-score').disabled=startingPreview||!value.score||!['ready','inspection'].includes(value.status);
   $('start-listen').disabled=startingPreview||!preview.canStart('listen');$('start-practice').disabled=startingPreview||!preview.canStart('practice');
   const diagnostics=value.compiled?.diagnostics||[];$('preview-notices').hidden=!diagnostics.length;bindText($('preview-notices-title'), () => t('app.previewNotices', {count:diagnostics.length}));$('preview-notice-list').replaceChildren();for(const diagnostic of diagnostics.slice(0,20)){const row=document.createElement('li');bindText(row, () => diagnosticText(diagnostic));$('preview-notice-list').append(row)}if(diagnostics.length>20){const row=document.createElement('li');bindText(row, () => t('app.moreNotices', {count:diagnostics.length-20}));$('preview-notice-list').append(row)}
+  if(['catalog_in_trash','library_not_found'].includes(value.errorCode))bindText($('preview-status'),()=>i18n.t('management.catalog.previewUnavailable'));
   const select=$('preview-part'),signature=JSON.stringify([i18n.revision,Boolean(value.cleanSong),item?.parts?.map(part=>[part.id,part.name])||[]]);
   if(select.dataset.parts!==signature){select.replaceChildren();if(!value.cleanSong){const all=document.createElement('option');all.value='';bindText(all, () => t('app.allParts'));select.append(all);}for(const part of item?.parts||[]){const option=document.createElement('option');option.value=part.id;option.disabled=basicKeys&&!basicKeysParts(value.cleanSong).some(item=>item.id===part.id&&item.practice_available);bindText(option, () => part.name);select.append(option)}select.dataset.parts=signature;}
   select.value=value.part||'';$('preview-part-label').hidden=!value.compiled;
@@ -1397,13 +1398,14 @@ async function startPreview(mode){
   const candidate=preview.value,version=preview.version,request=++startRequest;startingPreview=true;renderPreview();
   try{
     if(!synth.muted)await synth.unlock();if(request!==startRequest||version!==preview.version||candidate.score!==preview.value.score)return;
+    if(candidate.identity?.startsWith('native:')){await (await scoreStorage.storage()).requireActive(candidate.identity);if(request!==startRequest||version!==preview.version||candidate!==preview.value)return;}
     const intent=++state.loadIntent;
     const loaded=await compileScore(candidate.score,false,intent,candidate.compiled.diagnostics||[],candidate.part,mode,candidate.identity,candidate.cleanSong);
     if(!loaded||request!==startRequest||intent!==state.loadIntent)return;
     enteringPreview=true;try{shell.show('stage')}finally{enteringPreview=false;}
     if(mode==='practice'&&state.compatibility.status!=='ready'){notice(compatibilityNotice(state.compatibility),true);return;}
     await togglePlayback();
-  }catch(error){notice(() => t('app.startError', {detail:errorDetail(error)}),true);}
+  }catch(error){if(['catalog_in_trash','library_not_found'].includes(error.code)&&preview.value===candidate){preview.cancel();preview.publish({...candidate,status:'error',errorCode:error.code,message:error.message});}notice(() => t('app.startError', {detail:errorDetail(error)}),true);}
   finally{if(request===startRequest){startingPreview=false;renderPreview();updateButtons();}}
 }
 async function chooseVsqAndStart(mode){
@@ -1420,8 +1422,9 @@ async function chooseVsqAndStart(mode){
 }
 async function openPreviewScore(){
   const candidate=preview.value;if(startingPreview||!(isBasicKeysSong(candidate.cleanSong)||isVsqSong(candidate.cleanSong)&&candidate.cleanSong.runtime)||!candidate.score||!['ready','inspection'].includes(candidate.status))return;
-  const request=++startRequest;startingPreview=true;renderPreview();
+  const request=++startRequest,version=preview.version;startingPreview=true;renderPreview();
   try{
+    if(candidate.identity?.startsWith('native:')){await (await scoreStorage.storage()).requireActive(candidate.identity);if(request!==startRequest||version!==preview.version||candidate!==preview.value)return;}
     if(state.cleanSong?.identity!==candidate.cleanSong.identity||state.cleanSong?.libraryKey!==candidate.cleanSong.libraryKey){const intent=++state.loadIntent;const loaded=await compileScore(candidate.score,false,intent,candidate.compiled?.diagnostics||[],candidate.part,'practice',candidate.identity,candidate.cleanSong,true);if(!loaded||request!==startRequest)return;}
     else{pausePlayback();state.inspection=true;updateButtons();}
     enteringPreview=true;try{shell.show('stage');if(!shell.notationVisible())$('notation-toggle').click();engravedView.show();}finally{enteringPreview=false;}
@@ -1476,7 +1479,7 @@ const libraryView = setupScoreLibrary({getScore:()=>state.cleanSong?null:state.s
 const legacyLibraryButton=$('library-button');legacyLibraryButton.removeAttribute('data-i18n');
 bindText(legacyLibraryButton,()=>i18n.locale==='en'?(scoreStorage?.snapshot().kind==='native'?'Legacy browser archives':'Browser archives'):(scoreStorage?.snapshot().kind==='native'?'旧版浏览器收藏':'浏览器收藏管理'));
 scoreStorage=new ScoreStorageModel({openStorage:()=>openScoreStorage({origin:location.origin,validateScore:(score,signal)=>api('/api/compile',score,signal)})});
-const libraryManagement=setupLibraryManagementView({document,i18n,getStorage:()=>scoreStorage.storage(),onCommitted:async()=>{if(!await scoreStorage.rescan())throw new Error('Saved-song inventory refresh failed.');}});
+libraryManagement=setupLibraryManagementView({document,i18n,getStorage:()=>scoreStorage.storage(),getProtectedSong:()=>isBasicKeysSong(state.cleanSong)?state.cleanSong:null,onCommitted:async()=>{if(!await scoreStorage.rescan())throw new Error('Saved-song inventory refresh failed.');}});
 window.addEventListener('pagehide',()=>libraryManagement.destroy());
 bulkImportView=setupBulkImportView({document,i18n,getStorageKind:async()=>(await scoreStorage.storage()).info.kind,
   onOpen:()=>{scoreSaveNavigation++;state.loadIntent++;state.compileController?.abort();referenceListening?.close();performanceListening?.stop({revokePolicy:true});cancelPendingStart();},pausePlayback,
@@ -1490,7 +1493,7 @@ $('settings-dialog').addEventListener('close',()=>{scoreSaveNavigation++});
 const storageLobbyHost=document.createElement('div');$('catalog').before(storageLobbyHost);
 setupScoreStorageLobbyStatus({model:scoreStorage,host:storageLobbyHost,document,i18n,onConfigure:()=>shell.open('settings')});
 let managementInventorySignature=null;
-scoreStorage.subscribe(snapshot=>{const signature=JSON.stringify(snapshot.entries.map(row=>row.libraryKey));if(managementInventorySignature!==null&&signature!==managementInventorySignature)libraryManagement.invalidate();managementInventorySignature=signature;renderCatalog();const binding=displayBindings.get(legacyLibraryButton);if(binding?.text)legacyLibraryButton.textContent=binding.text()});
+scoreStorage.subscribe(snapshot=>{const signature=JSON.stringify(snapshot.entries.map(row=>row.libraryKey));if(managementInventorySignature!==null&&signature!==managementInventorySignature)libraryManagement.invalidate();managementInventorySignature=signature;const candidate=preview.value;if(snapshot.kind==='native'&&!snapshot.reading&&!snapshot.error&&candidate.identity?.startsWith('native:')&&candidate.status!=='error'&&!snapshot.entries.some(row=>row.libraryKey===candidate.identity)){preview.cancel();preview.publish({...candidate,status:'error',errorCode:'library_not_found',message:i18n.t('management.catalog.previewUnavailable')});}renderCatalog();const binding=displayBindings.get(legacyLibraryButton);if(binding?.text)legacyLibraryButton.textContent=binding.text()});
 $('score-library').addEventListener('close',()=>{if(scoreStorage.snapshot().kind==='browser')void scoreStorage.rescan()});
 const engravedView = setupEngravedView({i18n,onBasicPage:(page,batch)=>{if(hasBasicKeyRendition(state.cleanSong)){if(page){state.notationPart=batch?.scope==='all'?null:page.part_id;$('notation-part').value=state.notationPart||'';}if(!state.engravingActive)renderNotationPage();}},getScore:()=>state.score,getCleanSong:()=>state.cleanSong,getPracticePart:()=>state.practicePart,getMode:()=>state.mode,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),notice,onVisibility:active=>{
   state.engravingActive=active;

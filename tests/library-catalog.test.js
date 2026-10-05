@@ -133,3 +133,58 @@ test('a late old result cannot replace a newer persisted operation recovery poin
   server.setCatalogRoute(request => request.path.endsWith('/commit') ? Promise.reject(Error('Authored second response unavailable')) : undefined); await reopened.commit(); const next = store.get(libraryId); assert.equal(next.phase, 'uncertain');
   gate.resolve(); await old; assert.equal(store.get(libraryId).operation_id, next.operation_id); assert.equal(store.get(libraryId).phase, 'uncertain'); reopened.destroy();
 });
+
+test('current native complete edition is protected by adapter ownership and exact storage-qualified identity', async () => {
+  const {server, adapter, model} = await harness();
+  const current = {libraryKey: `native:${server.rows[1].key}`};
+  let owner = current;
+  adapter.ownsCleanSong = song => song === owner;
+  model.getProtectedSong = () => current;
+  assert.equal(model.selectable(server.rows[1]), false);
+  assert.equal(model.selectable(server.rows[0]), true, 'Legacy edition remains removable');
+  assert.equal(model.selectable({...server.rows[1], key: server.rows[0].key, edition_id: `clean:${server.rows[0].key}`}), true, 'Same title or score ID never protects another edition');
+  assert.equal(model.selectable({...server.rows[1], storage_kind: 'legacy', edition_id: `legacy:${server.rows[1].key}`}), true);
+  model.toggle(server.rows[1], true); assert.equal(model.selected.size, 0);
+  model.selectPage(true); assert.ok(!model.selected.has(server.rows[1].edition_id));
+  owner = null; assert.equal(model.selectable(server.rows[1]), true, 'Identical key admitted by another adapter is not this library owner');
+  owner = current; assert.equal(model.protectedEdition(`library-${'f'.repeat(64)}`), null, 'A different native library ID cannot share protection');
+  await model.setView({view: 'trash'});
+  assert.equal(model.selectionProtected([server.rows[1]]), false, 'Restore is not blocked by current-session protection');
+  model.destroy();
+});
+
+test('a current-song change fences stale selections and pending native previews without silently filtering', async () => {
+  const {server, adapter, model} = await harness(), row = server.rows[1], song = {libraryKey: `native:${row.key}`};
+  let current = null; adapter.ownsCleanSong = value => value === song; model.getProtectedSong = () => current;
+  model.toggle(row, true); current = song;
+  const before = server.catalogRequests.length;
+  await model.previewSelection(); assert.equal(server.catalogRequests.length, before); assert.equal(model.snapshot().error.code, 'catalog_current_song'); assert.equal(model.selected.size, 1);
+  current = null;
+  const admitted = deferred(), gate = deferred();
+  server.setCatalogRoute(async request => { if(request.path.endsWith('/preview')){admitted.resolve();await gate.promise;return request.proceed();} });
+  const pending = model.previewSelection(); await admitted.promise; current = song; gate.resolve(); await pending;
+  assert.equal(model.snapshot().preview, null); assert.equal(model.snapshot().error.code, 'catalog_current_song'); assert.equal(server.history.size, 0);
+  model.destroy();
+});
+
+test('current-song checks precede recovery-pointer admission and the native commit after an awaited adapter', async () => {
+  const {server, adapter, model, store} = await harness(), row = server.rows[1], song = {libraryKey: `native:${row.key}`};
+  let current = null; adapter.ownsCleanSong = value => value === song; model.getProtectedSong = () => current;
+  model.toggle(row, true); await model.previewSelection();
+  const admitted = deferred(), gate = deferred(); model.getStorage = async () => {admitted.resolve();await gate.promise;return adapter;};
+  const pending = model.commit(); await admitted.promise; current = song; gate.resolve();
+  assert.equal(await pending, false); assert.equal(model.snapshot().error.code, 'catalog_current_song'); assert.equal(store.get(libraryId), null);
+  assert.equal(server.catalogRequests.some(row => row.path.endsWith('/commit')), false);
+  current = null; assert.equal(await model.commit(), true); assert.ok(row.trashed_by); model.destroy();
+});
+
+test('proven-absent retry respects new current-song protection but preserves its original operation ID', async () => {
+  const {server, adapter, model, store} = await harness(), row=server.rows[1], song={libraryKey:`native:${row.key}`};
+  let current=null; adapter.ownsCleanSong=value=>value===song; model.getProtectedSong=()=>current;
+  model.toggle(row,true);await model.previewSelection();const id=model.snapshot().preview.preview.request.operation_id;
+  server.setCatalogRoute(request=>{if(request.path.endsWith('/commit'))throw Error('Original before-dispatch loss');});
+  await model.commit();server.setCatalogRoute(null);await model.checkOperation();assert.equal(model.snapshot().operation.phase,'not_committed');
+  current=song;const before=server.catalogRequests.filter(row=>row.path.endsWith('/commit')).length;await model.retry();assert.equal(server.catalogRequests.filter(row=>row.path.endsWith('/commit')).length,before);assert.equal(model.snapshot().operationError.code,'catalog_current_song');assert.equal(store.get(libraryId).operation_id,id);
+  current=null;await model.retry();assert.equal(model.snapshot().operation.phase,'committed');assert.equal(model.snapshot().operation.operation_id,id);
+  current=song;await model.setView({view:'trash'});model.toggle(row,true);await model.previewSelection();assert.equal(model.snapshot().preview.kind,'restore_songs');assert.equal(await model.commit(),true);assert.equal(row.trashed_by,null);model.destroy();
+});

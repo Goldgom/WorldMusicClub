@@ -60,6 +60,27 @@ a duplicate entry, so it cannot reappear in the active saved-song list. Explicit
 restore makes the same save a normal duplicate again. ZIP reimports continue to
 record physical duplicate receipts while preserving the original Trash state.
 
+The current native Basic complete song requires later pages from the saved source.
+Its exact clean edition cannot be selected for Trash while it is loaded for
+Listen, Practice or inspection, including while paused in the library. Ownership
+matches the actual storage adapter that admitted the object and its complete
+storage-qualified key, not the title or score ID. Choose and explicitly open
+another song before reviewing this edition for Trash. This guard never switches
+songs, stops audio or clears takes. Legacy current-song behavior and selected
+restore stay unchanged. A stale selection/preview is checked again before native
+submission and before a proven-absent retry; no item is silently dropped from a
+frozen operation.
+
+A saved browsing preview can become stale through another native process.
+Inventory refresh marks a missing candidate unavailable without replacing the
+admitted session. New Start or Open-score actions also recheck the exact native
+edition before compilation/admission. Returning to an existing session does not
+reload or clear it. External removal can still make a later native page fail;
+the UI reports that failure and never bypasses the native Trash check. The new
+admission check deliberately uses the existing full native load endpoint, so
+large complete songs may add startup work; no cheaper disposition endpoint or
+new cache semantics are introduced.
+
 ## Development checks
 
 `npm run test:library-management` includes the catalog adapter, operation-store,
@@ -123,3 +144,25 @@ durability on Windows. Full workspace/all-targets and browser/Windows release
 acceptance remain required before promotion. Product scope and capacity limits
 remain those in [catalog-product.md](catalog-product.md) and
 [catalog-transition-core.md](catalog-transition-core.md).
+
+## Current Basic session regression
+
+`npm run test:current-basic-catalog-native` uses the existing authored Basic MIDI
+package and an original legacy pack in a fresh owned temporary library. Supply
+`WMH_NATIVE_IMPORT_DRIVER`, its actual `WMH_CATALOG_DRIVER_BUILD_SHA`, and optional
+`WMH_CURRENT_BASIC_REPORT`. The real Rust dispatcher, production adapter and app
+DOM exercise paused practice, the disabled exact-current Trash row, a later
+successful native page, explicit switching to another song, Trash/restore, and
+normal practice/preview part changes, custom display meter and source/rendition
+view changes retaining the same protection, plus separate native processes
+removing a preview before Start and before rescan.
+Retained physical file hashes and serialized current takes are checked. Node
+audio/DOM fixtures do not establish physical audio, browser or Windows acceptance.
+
+For the later actual-window check, import the ORIGINAL
+`basic-key-original.zip`, start Practice, pause, choose a two-measure notation
+window, then use **曲库 → 曲包与查重 → 移入回收站与恢复**. The current edition must
+be disabled with the explanation to open another song. Close the dialog, use
+**返回演奏**, and advance to a new page. After explicitly opening another song,
+the first edition may be selected for a fresh reviewed Trash operation. Retain
+the original take export and source hashes; do not use a real user library.

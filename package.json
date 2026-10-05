@@ -24,7 +24,8 @@
     "test:library-catalog-acceptance": "node --test tests/library-catalog-acceptance.test.js tests/library-catalog-acceptance-renderer.test.js tests/library-catalog-native-registration.test.js tests/desktop-acceptance-wait.test.js tests/library-management-workflow.test.js",
     "test:library-catalog-hosted": "node scripts/hosted-library-catalog-check.mjs",
     "test:pack-management-native": "node scripts/check-pack-management-native.mjs",
-    "test:pack-management-hosted": "node scripts/hosted-pack-management-check.mjs"
+    "test:pack-management-hosted": "node scripts/hosted-pack-management-check.mjs",
+    "test:current-basic-catalog-native": "node scripts/check-current-basic-catalog-native.mjs"
   },
   "devDependencies": {
     "ajv": "^8.20.0",

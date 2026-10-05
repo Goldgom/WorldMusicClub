@@ -1,4 +1,8 @@
 export default Object.freeze({
+  "management.catalog.currentSong": "这是当前载入的完整曲目。请先选择并打开另一首歌，再将此版本移入回收站；本次操作不会更改当前练习记录。",
+  "management.catalog.error.currentSong": "所选项目包含当前完整曲目。请先打开另一首歌，再重新核对此次选择。没有曲目被移入回收站。",
+  "management.catalog.previewUnavailable": "此收藏版本已不在可用曲库中。请先恢复它或选择另一首歌，再开始新会话；当前会话和练习记录会保留。",
+
   "management.catalog.syncRemaining": "本次核对批次完成后仍有 {songs} 个新乐曲版本及 {sources} 个源文件归档待同步。保存此批次后，请再次核对并明确确认下一批。",
   "management.catalog.syncImpact": "新纳入管理 {songs} 个版本 · 新增 {memberships} 条归属 · 新增 {packs} 个曲包",
   "management.packEvidenceUnresolved": "已核验保留的来源，但乐曲归属尚未确认。仅有来源备份或缺少有效导入回执时，不推断任何乐曲成员；请查看来源与导入问题。",

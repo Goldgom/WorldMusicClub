@@ -10,7 +10,7 @@ const errorKeys = {
 };
 const editionPageSize = 20;
 /** This view has no playback, navigation, score-loading or recording callbacks. */
-export function setupLibraryManagementView({document = globalThis.document, i18n, getStorage, onCommitted = async () => {}, model = new LibraryManagementModel({getStorage}), transport = createBulkImportTransport(), download = downloadPack} = {}) {
+export function setupLibraryManagementView({document = globalThis.document, i18n, getStorage, getProtectedSong, onCommitted = async () => {}, model = new LibraryManagementModel({getStorage}), transport = createBulkImportTransport(), download = downloadPack} = {}) {
   const make = (tag, className) => { const node = document.createElement(tag); if (className) node.className = className; return node; };
   const t = (key, params = {}) => i18n.t(`management.${key}`, params);
   const dialog = make('dialog', 'shell-dialog library-management-dialog');
@@ -29,7 +29,7 @@ export function setupLibraryManagementView({document = globalThis.document, i18n
   const $ = id => document.getElementById(`management-${id}`);
   let state = model.snapshot(), exporting = false, exportState = null, exportError = null, rowsSignature = null, packName = '', opener = null, destroyed = false, exportGeneration = 0, exportController = null;
   let catalogActive = false;
-  const catalogView = setupLibraryCatalogView({document, i18n, getStorage, onCommitted: async () => { cancelExport(); model.invalidate(); await onCommitted(); }});
+  const catalogView = setupLibraryCatalogView({document, i18n, getStorage, getProtectedSong, onCommitted: async () => { cancelExport(); model.invalidate(); await onCommitted(); }});
   $('browser').before(catalogView.element);
   const catalogButton = make('button', 'button secondary'); catalogButton.id = 'management-catalog-button'; catalogButton.type = 'button'; catalogButton.hidden = true;
   catalogButton.addEventListener('click', () => { catalogActive = true; cancelExport(); model.close(); $('browser').hidden = true; catalogButton.setAttribute('aria-pressed', 'true'); catalogView.open(); });

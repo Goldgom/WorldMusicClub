@@ -48,7 +48,7 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
  if(health?.name!=='WorldMusicHub'||health.engine!=='rust'||health.score_format_version!==1||!['native-protocol-no-listener','loopback-only'].includes(health.network))throw issue('library_environment_unknown','The Rust app health contract did not identify a supported storage environment.');
  const kind=health.network==='native-protocol-no-listener'?'native':'browser';
  const browser=kind==='browser'?await openBrowserLibrary():null;
- const allowedAssets=new Map(),assetReads=[];
+ const allowedAssets=new Map(),admittedCleanSongs=new WeakSet(),assetReads=[];
  let assetReadActive=false,closed=false;
  const validate=async(score,signal)=>{
   signal?.throwIfAborted();const result=validateScore?await validateScore(structuredClone(score),signal):await request('/api/compile',{body:score,signal});signal?.throwIfAborted();
@@ -101,6 +101,13 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
    if(error.code==='library_invalid_response')error.persistence='unknown';throw error;
   }
  }
+ // Read current native disposition without replacing any admitted song/media owner.
+ async function requireActive(key,{signal}={}){
+  if(kind!=='native')return;
+  const storageKey=rawKey(kind,key),value=await request('/api/library/load',{body:{key:storageKey},signal});
+  if(entry(kind,value?.entry).storageKey!==storageKey)throw issue('library_invalid_response','The current native edition differs from the selected key.');
+ }
+ const ownsCleanSong=song=>kind==='native'&&!closed&&Boolean(song)&&admittedCleanSongs.has(song);
  async function load(key,{signal}={}){
   const storageKey=rawKey(kind,key);let saved;
   if(kind==='browser'){
@@ -118,7 +125,7 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
   }
   if(!isBasicKeysSong(saved.cleanSong)&&!isVsqSong(saved.cleanSong)&&!isPerformanceSong(saved.cleanSong))await validate(saved.score,signal);
   signal?.throwIfAborted();
-  if(kind==='native'&&!closed){if(saved.cleanSong)allowedAssets.set(key,saved.cleanSong);else allowedAssets.delete(key);}
+  if(kind==='native'&&!closed){if(saved.cleanSong){allowedAssets.set(key,saved.cleanSong);admittedCleanSongs.add(saved.cleanSong);}else allowedAssets.delete(key);}
   return saved;
  }
  async function chooseVsqPractice(song,{signal}={}){
@@ -187,5 +194,5 @@ export async function openScoreStorage({fetcher=globalThis.fetch,origin=globalTh
   for(const job of assetReads.splice(0)){job.detach();job.reject(issue('library_storage_closed','The local library is closed.'));}
   browser?.close();
  }
- return{info,list,save,load,loadAsset,chooseVsqPractice,exportBackup,queryManagement,catalogStatus,queryCatalog,previewCatalogInitialize,previewCatalog,previewCatalogSync,commitCatalog,catalogOperation,close};
+ return{info,list,save,load,requireActive,ownsCleanSong,loadAsset,chooseVsqPractice,exportBackup,queryManagement,catalogStatus,queryCatalog,previewCatalogInitialize,previewCatalog,previewCatalogSync,commitCatalog,catalogOperation,close};
 }

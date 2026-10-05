@@ -1,6 +1,6 @@
 import {LibraryCatalogModel} from './library-catalog-model.js';
-const errors = {catalog_unavailable: 'unavailable', catalog_invalid_response: 'invalid', catalog_stale: 'stale', catalog_conflict: 'stale', catalog_recovery_required: 'recovery', catalog_capacity: 'capacity', library_operation_storage: 'storage', catalog_pending_operation: 'pending', catalog_invalid_request: 'query'};
-export function setupLibraryCatalogView({document, i18n, getStorage, onCommitted, model = new LibraryCatalogModel({getStorage, onCommitted})} = {}) {
+const errors = {catalog_current_song: 'currentSong', catalog_unavailable: 'unavailable', catalog_invalid_response: 'invalid', catalog_stale: 'stale', catalog_conflict: 'stale', catalog_recovery_required: 'recovery', catalog_capacity: 'capacity', library_operation_storage: 'storage', catalog_pending_operation: 'pending', catalog_invalid_request: 'query'};
+export function setupLibraryCatalogView({document, i18n, getStorage, getProtectedSong, onCommitted, model = new LibraryCatalogModel({getStorage, getProtectedSong, onCommitted})} = {}) {
   const make = (tag, className) => { const node = document.createElement(tag); if (className) node.className = className; return node; };
   const t = (key, params = {}) => i18n.t(`management.catalog.${key}`, params);
   const host = make('section', 'management-catalog'); host.id = 'management-catalog'; host.hidden = true;
@@ -48,13 +48,14 @@ export function setupLibraryCatalogView({document, i18n, getStorage, onCommitted
     paragraph(parent, record.kind === 'trash_songs' ? 'trashImpact' : record.kind === 'restore_songs' ? 'restoreImpact' : record.kind === 'sync_imports' ? 'syncHelp' : 'initializeEffect');
   }
   function renderRows() {
-    const signature = JSON.stringify([state.response, i18n.locale]); if (signature === rowsSignature) return;
+    const signature = JSON.stringify([state.response, i18n.locale, model.protectedEdition()]); if (signature === rowsSignature) return;
     rowsSignature = signature; $('rows').replaceChildren();
     for (const row of state.response?.rows || []) {
       const li = make('li', 'management-row'); li.dataset.catalogSong = row.edition_id;
       const label = make('label'), input = make('input'), title = make('strong'); input.type = 'checkbox'; input.dataset.catalogEdition = row.edition_id; input.setAttribute('aria-label', t('select', {title: row.title, id: row.edition_id})); title.textContent = row.title || row.score_id;
       input.addEventListener('change', () => model.toggle(row, input.checked)); label.append(input, title); li.append(label);
       const id = make('p', 'management-identity'); id.textContent = row.edition_id; li.append(id);
+      if (model.selectionProtected([row])) paragraph(li, 'currentSong');
       if (!row.catalog_managed) paragraph(li, 'unmanaged');
       if (!row.physical_available) paragraph(li, 'unavailablePayload');
       if (row.trashed_by) { const owner = make('p', 'management-identity'); owner.textContent = t('trashOwner', {id: row.trashed_by}); li.append(owner); }
@@ -81,13 +82,13 @@ export function setupLibraryCatalogView({document, i18n, getStorage, onCommitted
     for (const box of $('rows').querySelectorAll('[data-catalog-edition]')) { const row = rows.find(item => item.edition_id === box.dataset.catalogEdition); box.checked = selected.has(row.edition_id); box.disabled = !enabled || !model.selectable(row); }
     const selectable = rows.filter(row => model.selectable(row)); $('select-page').disabled = !enabled || !selectable.length; $('select-page').checked = selectable.length > 0 && selectable.every(row => selected.has(row.edition_id)); $('select-page').indeterminate = visible > 0 && !$('select-page').checked;
     $('selection').textContent = t('selection', {count: selected.size, hidden: selected.size - visible}); $('clear').disabled = !selected.size || busy;
-    $('preview').textContent = t(state.query.view === 'trash' ? 'restorePreview' : 'trashPreview'); $('preview').disabled = !enabled || !selected.size;
+    $('preview').textContent = t(state.query.view === 'trash' ? 'restorePreview' : 'trashPreview'); $('preview').disabled = !enabled || !selected.size || model.selectionProtected();
     $('sync-preview').disabled = !enabled; $('sync-preview').hidden = !state.status?.supported_operations?.includes('sync_inventory') || state.query.view !== 'active';
     $('empty').hidden = !response || rows.length > 0 || busy; $('page').textContent = response ? t('page', {page: state.page + 1, total: response.total}) : '';
     $('previous').disabled = busy || state.stale || state.page === 0; $('next').disabled = busy || state.stale || !response?.next_cursor;
     const preview = state.preview; $('review').hidden = !preview;
     const currentReview = JSON.stringify([preview, i18n.locale]); if (preview && reviewSignature !== currentReview) { reviewSignature = currentReview; $('review-title').textContent = t(`review.${preview.kind}`); impact($('review-content'), preview); }
-    $('confirm').textContent = t(`confirm.${preview?.kind || 'trash_songs'}`); $('confirm').disabled = busy || Boolean(pending); $('cancel').disabled = state.phase === 'submitting';
+    $('confirm').textContent = t(`confirm.${preview?.kind || 'trash_songs'}`); $('confirm').disabled = busy || Boolean(pending) || model.recordProtected(preview); $('cancel').disabled = state.phase === 'submitting';
     const op = state.operation; $('operation').hidden = !op;
     if (op) {
       $('operation-status').textContent = t(`outcome.${op.phase}`, op.phase === 'committed' ? {count: op.kind === 'initialize' ? op.preview.counts.managed_songs : op.summary.changed_song_count} : {});
@@ -108,5 +109,5 @@ export function setupLibraryCatalogView({document, i18n, getStorage, onCommitted
   $('clear').addEventListener('click', () => model.clearSelection()); $('select-page').addEventListener('change', () => model.selectPage($('select-page').checked));
   $('previous').addEventListener('click', () => void model.previous()); $('next').addEventListener('click', () => void model.next());
   const unsubscribe = model.subscribe(next => { state = next; render(); }), unlocale = i18n.subscribe(render); render();
-  return {element: host, model, open() { host.hidden = false; void model.open(); }, close() { host.hidden = true; model.close(); }, invalidate() { model.invalidate(); }, destroy() { unsubscribe(); unlocale(); model.destroy(); host.remove(); }};
+  return {element: host, model, open() { host.hidden = false; void model.open(); }, close() { host.hidden = true; model.close(); }, invalidate() { model.invalidate(); }, sessionChanged() { model.sessionChanged(); }, destroy() { unsubscribe(); unlocale(); model.destroy(); host.remove(); }};
 }
