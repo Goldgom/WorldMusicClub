@@ -55,6 +55,7 @@ import {setupImageReview} from './image-review.js';
 import {setupThemes} from './themes.js';
 import {PIANO_RANGES, beat, midiName, pitchMidi, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, renderNotation, notationPageCount, notationLayout, keyAt, keyTonic} from './music.js';
 import {Transport, Synth, TimelineIndex} from './transport.js';
+import {publishPlaybackClock,nativeRangeSeekPosition} from './playback-clock-view.js';
 import {formatTime} from './music.js';
 
 const $ = id => document.getElementById(id);
@@ -238,7 +239,7 @@ function silenceHeld(reason = 'application_cleanup', eventWall = performance.now
   synth.silence();
   document.querySelectorAll('.pressed').forEach(el => el.classList.remove('pressed'));
 }
-function pausePlayback(reason = 'app.paused', evidenceReason = 'pause') {
+function pausePlayback(reason = 'app.paused', evidenceReason = 'pause', {redraw = true} = {}) {
   lobbyPreview?.stop(['blur','hidden','pagehide'].includes(evidenceReason)?'interrupted':'stopped');
   if(referenceListening?.isOpen()){referenceListening.pause();return;}
   if(performanceListening?.isActive()){if(['blur','hidden','pagehide'].includes(evidenceReason))performanceListening.stop();else performanceListening.pause();return;}
@@ -255,11 +256,13 @@ function pausePlayback(reason = 'app.paused', evidenceReason = 'pause') {
     }else{transport.pause(pauseTime);bindText($('transport-status'),()=>typeof reason==='function'?reason():reason.startsWith('app.')?t(reason):reason);}
   }
   silenceHeld(evidenceReason,pauseTime,pauseTime,recordEvidence);metronome?.pause();
-  updateButtons();
-  drawFrame();
+  if(redraw){updateButtons();drawFrame();}
 }
 function resetPlayback() {
-  pausePlayback();
+  // Score/loop changes may already have published their new bounds in state.
+  // Keep the ordinary pause cleanup/evidence boundary, but render only after
+  // this reset has replaced the old completed transport with the new clock.
+  pausePlayback(undefined,'pause',{redraw:false});
   transport.reset();activeMedia?.sync({positionMs:0,running:false});
   if (state.loop) transport.seek(state.loop.start_ms);
   state.loopIteration = 1;metronome?.reset();
@@ -288,8 +291,9 @@ function canSeekPlayback() {
 }
 function updateProgress(position,duration) {
   const progress=$('progress'),bounds=playbackSeekBounds();
+  const clock=publishPlaybackClock(progress,{positionMs:position,durationMs:duration,rangeStartMs:bounds?.start??0,rangeEndMs:bounds?.end??duration,available:Boolean(state.compiled),running:transport.running,completed:transport.completed,hasStarted:transport.hasStarted,preparing:state.playPending});
   progress.min=bounds?.start??0;progress.max=bounds?.end??Math.max(1,duration);
-  progress.value=Math.min(Number(progress.max),Math.max(Number(progress.min),position));
+  progress.value=Math.min(clock.rangeEndMs,Math.max(clock.rangeStartMs,clock.positionMs));
   progress.disabled=!canSeekPlayback();
   const help=()=>t(!bounds?'app.seekUnavailable':state.mode==='practice'?'app.seekPracticeDisabled':state.loop?'app.seekLoopHelp':'app.seekHelp');
   bindText($('progress-help'),help);bindAttribute(progress,'title',help);
@@ -1066,7 +1070,7 @@ function displayedWrittenEntries(written) {
 function drawFrame(displayOnly = false) {
   const now = performance.now();
   if(displayOnly!==true)advanceLoopClock(now);
-  const position = transport.time(now);
+  let position = transport.time(now);
   if (displayOnly!==true && synth.droppedVoices && !state.audioLimitWarned) { state.audioLimitWarned = true; notice(() => t('app.audioLimit')); }
   const timeline = state.compiled?.timeline;
   const duration = timeline?.duration_ms || 0;
@@ -1090,6 +1094,10 @@ function drawFrame(displayOnly = false) {
     if(!transport.running&&!state.loop&&pass&&pass.closedWall!==null&&pass.deadline!==null&&now>=pass.deadline&&!transport.completed){transport.finish(duration);bindText($('transport-status'), () => t('app.complete'));updateButtons()}
     if(state.recorder.ready(now).length)drainAssessments();
   }
+  // Completion above may have replaced an overshooting frame time with the
+  // exact source endpoint. Every display below, including written-note lookup,
+  // uses this same frame's current transport sample, never range readback.
+  position=transport.time(now);
   if(displayOnly!==true&&state.cleanSong)activeMedia?.sync({positionMs:position,running:transport.running});
   updateProgress(position,duration);
   performanceView?.update();
@@ -1194,7 +1202,7 @@ $('notation-next').addEventListener('click', () => { notationFollowing?.suspend(
 $('play-button').addEventListener('click', togglePlayback);
 $('reset-button').addEventListener('click', resetPlayback);
 $('progress').addEventListener('pointerdown',event=>{if(event.button===0&&canSeekPlayback())pausePlayback('app.seekPaused','seek');});
-$('progress').addEventListener('input',event=>seekPlayback(event.target.value));
+$('progress').addEventListener('input',event=>{const bounds=playbackSeekBounds();seekPlayback(bounds&&canSeekPlayback()?nativeRangeSeekPosition(event.target,bounds):NaN);});
 $('progress').addEventListener('keydown',event=>{
   if(!canSeekPlayback()||event.altKey||event.ctrlKey||event.metaKey)return;
   const bounds=playbackSeekBounds(),position=transport.time(performance.now());
