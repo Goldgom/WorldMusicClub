@@ -4,11 +4,13 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {lstat, mkdir, readFile, writeFile} from 'node:fs/promises';
-import {dirname, extname, join, resolve, sep} from 'node:path';
+import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {startVsqNativeDriver} from '../tests/vsq-native-driver-fixtures.js';
 import {createAuthoringHostedChooser} from './song-authoring-hosted-chooser.mjs';
 import {CATALOG_ACCEPTANCE_PHASES, CATALOG_ACCEPTANCE_FILENAMES, prepareLibraryCatalogFixtures, catalogSha256 as sha256} from './prepare-library-catalog-acceptance.mjs';
+import {startHostedAssetServer, createHostedNativeBridge, NATIVE_PROTOCOL_ORIGIN} from './hosted-worklet-assets.mjs';
+import {managementHostedRoute, observeManagementWorkletLoads, validateManagementWorkletLoads, validateManagementNativeBridge, validateManagementHostedOrigin} from './management-hosted-runtime.mjs';
 import {catalogSourceBinding, catalogLibraryInventory, verifyLibraryCatalogAcceptance, validateCatalogScreenshot} from './verify-library-catalog-acceptance.mjs';
 
 assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Catalog browser acceptance requires authorized hosted Actions');
@@ -17,13 +19,14 @@ const root = fileURLToPath(new URL('../', import.meta.url)), git = (...args) => 
 assert.equal(process.env.WMH_SOURCE_SHA, head, 'Catalog acceptance must use the frozen exact source');
 assert.equal(git('status', '--porcelain', '--untracked-files=normal'), '', 'Catalog hosted source must be clean');
 assert.ok(process.env.WMH_NATIVE_IMPORT_DRIVER, 'An already-built exact-source native driver is required');
-const output = resolve(process.env.WMH_ARTIFACT_DIR || join(root, 'test-results/library-catalog')), binary = resolve(process.env.WMH_NATIVE_IMPORT_DRIVER), origin = 'https://wmh.localhost';
+assert.ok(process.env.WMH_SERVER_BINARY, 'An already-built exact-source practice server is required');
+const output = resolve(process.env.WMH_ARTIFACT_DIR || join(root, 'test-results/library-catalog')), binary = resolve(process.env.WMH_NATIVE_IMPORT_DRIVER), serverBinary = resolve(process.env.WMH_SERVER_BINARY);
 await mkdir(dirname(output), {recursive: true}); await mkdir(output, {recursive: false});
 for (const folder of ['downloads', 'api']) await mkdir(join(output, folder));
 const fixture = await prepareLibraryCatalogFixtures(join(output, 'fixtures')), binding = await catalogSourceBinding(root), runId = randomUUID(), profileDirectory = join(output, 'webview-catalog-profile'), library = join(output, 'Scores');
-const config = {version: 1, viewport_contract: {kind: 'hosted-fixed', requested: {width: 1280, height: 720}}, run_id: runId, source_binding: binding, fixture}, configBytes = Buffer.from(JSON.stringify(config, null, 2) + '\n'); await writeFile(join(output, 'catalog-config.json'), configBytes, {flag: 'wx'});
-const driverBytes = await readFile(binary), report = {version: 1, kind: 'original-library-catalog-hosted-real-native-stdio', scenario: 'library-catalog', ...binding, driver_sha256: sha256(driverBytes), driver_bytes: driverBytes.length, run_id: runId, config_sha256: sha256(configBytes), profile_reused: true, directory: library, phases: [], screenshots: [], viewport: {width: 1280, height: 720}, ok: false, claims: {browser: true, native_filesystem: true, native_window: false, physical_audio: false, user_library: false, private_music: false}};
-let context, driver, page, chooser;
+const config = {version: 1, viewport_contract: {kind: 'hosted-fixed', requested: {width: 1280, height: 720}}, run_id: runId, source_binding: binding, fixture};
+const driverBytes = await readFile(binary), report = {version: 1, kind: 'original-library-catalog-hosted-real-native-stdio', scenario: 'library-catalog', ...binding, driver_sha256: sha256(driverBytes), driver_bytes: driverBytes.length, run_id: runId, config_sha256: null, native_protocol_origin: NATIVE_PROTOCOL_ORIGIN, profile_reused: true, directory: library, phases: [], screenshots: [], viewport: {width: 1280, height: 720}, ok: false, claims: {browser: true, native_filesystem: true, native_window: false, physical_audio: false, user_library: false, private_music: false}};
+let context, driver, page, chooser, assetServer, origin, nativeBridge, cancelled = false;
 async function bounded(promise, label, milliseconds = 15000) { let timer; try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(Error(`${label} exceeded ${milliseconds}ms`)), milliseconds); })]); } finally { clearTimeout(timer); } }
 const save = (filename, value) => writeFile(join(output, filename), JSON.stringify(value, null, 2) + '\n', {flag: 'wx'});
 async function snapshot(phase) { await save(`snapshot-${phase}.json`, {version: 1, files: await catalogLibraryInventory(library)}); }
@@ -32,14 +35,19 @@ async function screenshot(phase, action) {
   const value = {file, phase, ...(action === undefined ? {} : {action}), bytes: bytes.length, sha256: sha256(bytes), locale: 'zh-CN'}; validateCatalogScreenshot(bytes, value); report.screenshots.push(value);
 }
 try {
+  report.asset_server = {}; assetServer = await startHostedAssetServer({root, sourceSha: head, binary: serverBinary, evidence: report.asset_server}); origin = assetServer.origin; report.origin = origin;
+  Object.assign(config, {hosted_origin: origin, native_protocol_origin: NATIVE_PROTOCOL_ORIGIN});
+  const configBytes = Buffer.from(JSON.stringify(config, null, 2) + '\n'); report.config_sha256 = sha256(configBytes); await writeFile(join(output, 'catalog-config.json'), configBytes, {flag: 'wx'});
   const {chromium} = await import('playwright');
   for (const [index, phase] of CATALOG_ACCEPTANCE_PHASES.entries()) {
     if (index === 0) await assert.rejects(lstat(profileDirectory), {code: 'ENOENT'}); else assert.ok((await lstat(profileDirectory)).isDirectory() && !(await lstat(profileDirectory)).isSymbolicLink());
     driver = startVsqNativeDriver({binary, directory: library, cwd: root, requestTimeoutMs: 15000, closeTimeoutMs: 3000});
     const host = {phase, process_id: driver.pid, launched_new_process: true, renderer_ok: false, normal_close: false, renderer_origin: origin, executable_tcp_listeners: 0, listener_evidence: 'native-driver-stdio-contract', profile_directory: profileDirectory, profile_fresh: index === 0, profile_reused: index !== 0, profile_absent_before_launch: index === 0, actions: 0, api_trace: [], page_errors: [], console_errors: [], chooser: null}; report.phases.push(host);
+    nativeBridge = createHostedNativeBridge({origin, getOwnedPage: () => page}); host.native_bridge = nativeBridge.evidence;
     context = await chromium.launchPersistentContext(profileDirectory, {headless: true, viewport: report.viewport, locale: 'zh-CN', acceptDownloads: true, serviceWorkers: 'block', timeout: 20000});
     await save(`profile-${phase}.json`, {version: 1, phase, process_id: driver.pid, profile_directory: profileDirectory, library_directory: library, fresh_required: index === 0, created_new: index === 0});
     const scripts = await Promise.all(['acceptance-wait.js', 'reference-acceptance.js', 'library-catalog-acceptance.js'].map(name => readFile(join(root, 'crates/desktop-shell', name), 'utf8')));
+    await context.addInitScript(observeManagementWorkletLoads);
     await context.addInitScript(`globalThis.__WMH_ACCEPTANCE_PHASE__=${JSON.stringify(phase)};\n${scripts.join('\n')}`);
     const downloads = [], actionResults = new Map(); let renderer = null, actionPending = false, actionFailure = null, snapshotBefore = false;
     async function perform(action) {
@@ -56,7 +64,7 @@ try {
       } catch (error) { result.error = String(error.stack || error); actionFailure = result.error; }
       finally { await save(`result-${phase}-${action.sequence}.json`, result); actionResults.set(action.sequence, result); actionPending = false; }
     }
-    await context.route('**/*', async route => {
+    await context.route(url => managementHostedRoute(url, origin), async route => {
       const request = route.request(), url = new URL(request.url()), pathname = url.pathname;
       if (url.origin !== origin) { host.page_errors.push(`Unexpected external URL: ${url.origin}`); await route.abort(); return; }
       try {
@@ -69,14 +77,17 @@ try {
           const sequence = Number(pathname.slice('/__desktop_smoke/result/'.length)), result = actionResults.get(sequence); await route.fulfill(result ? {status: 200, json: result} : {status: 404, json: {error: 'pending'}}); return;
         }
         if (pathname.startsWith('/api/')) {
-          assert.ok(host.api_trace.length < 256, 'Bounded native dispatch trace'); const body = request.postDataBuffer() || Buffer.alloc(0), row = {sequence: host.api_trace.length + 1, path: pathname, method: request.method(), request_bytes: body.length, request_sha256: sha256(body)}; host.api_trace.push(row);
-          const response = await driver.fetcher(pathname + url.search, {method: request.method(), headers: request.headers(), body}), bytes = await response.bytes();
-          Object.assign(row, {status: response.status, response_bytes: bytes.length, response_sha256: sha256(bytes), response_file: `api/${phase}-${row.sequence}${response.contentType.includes('json') ? '.json' : '.bin'}`}); await writeFile(join(output, row.response_file), bytes, {flag: 'wx'});
-          await route.fulfill({status: response.status, contentType: response.contentType, body: bytes}); return;
+          await nativeBridge.run(request, async (headers, mapping) => {
+            assert.ok(host.api_trace.length < 256, 'Bounded native dispatch trace'); const body = request.postDataBuffer() || Buffer.alloc(0), row = {sequence: host.api_trace.length + 1, path: pathname + url.search, method: request.method(), request_bytes: body.length, request_sha256: sha256(body)}; host.api_trace.push(row);
+            Object.assign(mapping, {native_sequence: row.sequence, native_request_sha256: row.request_sha256, native_request_bytes: row.request_bytes});
+            const response = await driver.fetcher(row.path, {method: request.method(), headers, body}), bytes = await response.bytes();
+            Object.assign(row, {status: response.status, response_bytes: bytes.length, response_sha256: sha256(bytes), response_file: `api/${phase}-${row.sequence}${response.contentType.includes('json') ? '.json' : '.bin'}`}); await writeFile(join(output, row.response_file), bytes, {flag: 'wx'});
+            Object.assign(mapping, {native_status: row.status, native_response_sha256: row.response_sha256});
+            try { await route.fulfill({status: response.status, contentType: response.contentType, body: bytes}); }
+            catch (error) { if (!nativeBridge.closing) throw error; row.delivery = 'context-closed-during-cleanup'; }
+          }); return;
         }
-        const file = resolve(root, 'web', '.' + decodeURIComponent(pathname === '/' ? '/index.html' : pathname)); assert.ok(file.startsWith(join(root, 'web') + sep));
-        try { await route.fulfill({status: 200, contentType: ({'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2'})[extname(file)] || 'application/octet-stream', body: await readFile(file)}); }
-        catch (error) { if (error.code !== 'ENOENT') throw error; await route.fulfill({status: 404, body: 'Not found'}); }
+        throw Error('Hosted management routing must not intercept a shipped asset');
       } catch (error) { host.page_errors.push(String(error.stack || error)); await route.abort(); }
     });
     page = context.pages()[0] || await context.newPage(); page.setDefaultTimeout(15000); page.setDefaultNavigationTimeout(15000);
@@ -87,18 +98,21 @@ try {
       try { await download.saveAs(join(output, 'downloads', row.file)); row.success = true; } catch (error) { host.page_errors.push(String(error)); } finally { row.complete = true; }
     });
     chooser.navigation('start'); await page.goto(origin); chooser.navigation('end');
-    await bounded((async () => { while (!renderer && !actionFailure && !host.page_errors.length) await new Promise(resolve => setTimeout(resolve, 100)); assert.equal(actionFailure, null); assert.deepEqual(host.page_errors, []); })(), `${phase} actual renderer`, 240000);
+    await bounded((async () => { while (!cancelled && !renderer && !actionFailure && !host.page_errors.length) await new Promise(resolve => setTimeout(resolve, 100)); assert.equal(cancelled, false, 'Catalog hosted phase cancelled'); assert.equal(actionFailure, null); assert.deepEqual(host.page_errors, []); })(), `${phase} actual renderer`, 240000);
     assert.equal(renderer?.ok, true, renderer?.error); assert.equal(actionPending, false); chooser.assertComplete(renderer.actions.filter(row => row.kind === 'picker').map(row => row.sequence)); await screenshot(phase);
+    host.worklet_loads = await bounded(page.evaluate(() => globalThis.__wmhManagementWorkletLoads), `${phase} worklet diagnostics`, 10000); validateManagementWorkletLoads(host.worklet_loads, origin, {required: index === 0});
+    host.renderer_ok = true; nativeBridge.stopAdmission(); await bounded(context.close(), `${phase} profile persistence`, 15000); context = null; await nativeBridge.drain(); validateManagementNativeBridge(host.native_bridge, origin, host.api_trace); nativeBridge = null; assert.deepEqual(host.page_errors, []); chooser.stop(); chooser = null;
     await save(`host-api-${phase}.json`, {version: 1, phase, process_id: driver.pid, rows: host.api_trace});
-    host.renderer_ok = true; await bounded(context.close(), `${phase} profile persistence`, 15000); context = null; chooser.stop(); chooser = null;
     await bounded(driver.close(), `${phase} native close`, 5000); driver = null; host.normal_close = true; await snapshot(phase);
   }
+  const closingServer = assetServer; assetServer = null; await closingServer.close(); validateManagementHostedOrigin(report, config, head);
   assert.equal(sha256(await readFile(binary)), report.driver_sha256, 'Immutable driver changed during acceptance'); report.ok = true; await writeFile(join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n');
-  const proof = await verifyLibraryCatalogAcceptance(output, {sourceSha: head, sourceTree: binding.source_tree, driver: binary, sourceRoot: root}); await save('library-catalog-proof.json', proof);
-} catch (error) { report.ok = false; report.error = String(error.stack || error); process.exitCode = 1; }
+  const proof = await verifyLibraryCatalogAcceptance(output, {sourceSha: head, sourceTree: binding.source_tree, driver: binary, server: serverBinary, sourceRoot: root}); await save('library-catalog-proof.json', proof);
+} catch (error) { cancelled = true; report.ok = false; report.error = String(error.stack || error); process.exitCode = 1; }
 finally {
-  chooser?.stop();
-  for (const [name, resource] of [['context', context], ['driver', driver]]) if (resource) try { await bounded(resource.close(), `final ${name} cleanup`, 10000); } catch (error) { report.ok = false; process.exitCode = 1; (report.cleanup_errors ||= []).push(String(error)); }
+  cancelled = true; chooser?.stop(); nativeBridge?.stopAdmission();
+  if (page && !page.isClosed()) try { report.phases.at(-1).worklet_loads = await bounded(page.evaluate(() => globalThis.__wmhManagementWorkletLoads), 'final worklet diagnostics', 10000); } catch (error) { (report.diagnostic_errors ||= []).push(String(error)); }
+  for (const [name, close] of [['context', () => context?.close()], ['native-requests', () => nativeBridge?.drain()], ['driver', () => driver?.close()], ['asset-server', () => assetServer?.close()]]) try { await bounded(Promise.resolve().then(close), `final ${name} cleanup`, 10000); } catch (error) { report.ok = false; process.exitCode = 1; (report.cleanup_errors ||= []).push(`${name}: ${String(error)}`); }
   await writeFile(join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n');
 }
 if (!report.ok) throw Error(report.error || JSON.stringify(report.cleanup_errors));

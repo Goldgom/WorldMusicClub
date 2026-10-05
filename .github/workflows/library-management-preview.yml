@@ -36,7 +36,10 @@ jobs:
       - run: npm run test:library-management
       - run: npm run test:library-catalog-acceptance
       - run: cargo test -p worldmusichub-desktop --test catalog --test pack_groups --locked
-      - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - id: management_native_driver
+        run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - id: management_asset_server
+        run: cargo build -p practice-server --locked
       - name: Verify build source and actual original native protocol
         timeout-minutes: 6
         env:
@@ -57,21 +60,24 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Real pack picker, duplicates, paging and selected exports
         id: management_pack_browser
+        if: ${{ !cancelled() && steps.management_asset_server.outcome == 'success' && steps.management_native_driver.outcome == 'success' && steps.management_browser_ready.outcome == 'success' }}
         timeout-minutes: 6
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
           WMH_ARTIFACT_DIR: ${{ runner.temp }}/library-management-browser/packs
         run: npm run test:pack-management-hosted
       - name: Three actual catalog processes with one persisted browser profile
         id: management_catalog_browser
-        if: ${{ !cancelled() && steps.management_browser_ready.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.management_asset_server.outcome == 'success' && steps.management_native_driver.outcome == 'success' && steps.management_browser_ready.outcome == 'success' }}
         timeout-minutes: 15
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
           WMH_ARTIFACT_DIR: ${{ runner.temp }}/library-management-browser/catalog
         run: npm run test:library-catalog-hosted
       - name: Reverify exact source, native driver and retained bytes
@@ -79,10 +85,11 @@ jobs:
         env:
           WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
         run: |
           export WMH_SOURCE_TREE="$(git rev-parse 'HEAD^{tree}')"
           node scripts/verify-library-catalog-acceptance.mjs --check "$RUNNER_TEMP/library-management-browser/catalog"
-      - name: Retain original browser proof and exact driver, excluding browser profiles
+      - name: Retain original browser proof, exact driver and asset server, excluding browser profiles
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -92,6 +99,7 @@ jobs:
             ${{ runner.temp }}/library-management-browser/**
             !${{ runner.temp }}/library-management-browser/**/webview-catalog-profile/**
             target/debug/examples/native_import_driver
+            target/debug/practice-server
           include-hidden-files: true
           if-no-files-found: warn
   management-windows:

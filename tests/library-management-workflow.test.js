@@ -10,6 +10,52 @@ assert.ifError(parsed.error);
 assert.equal(parsed.status, 0, parsed.stderr);
 const workflow = JSON.parse(parsed.stdout), jobIds = ['management-browser', 'management-windows'];
 const step = (id, command) => workflow.jobs[id].steps.find(row => row.run?.includes(command));
+const serverBinary = '${{ github.workspace }}/target/debug/practice-server';
+const focusedBrowserGuard = "${{ !cancelled() && steps.management_asset_server.outcome == 'success' && steps.management_native_driver.outcome == 'success' && steps.management_browser_ready.outcome == 'success' }}";
+const fullBrowserGuard = "${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}";
+
+function hostedManagementAssetContract(document, {jobId, serverId, driverId, browserId}) {
+  const steps = document.jobs[jobId].steps;
+  const checkout = steps.findIndex(row => row.uses?.startsWith('actions/checkout@'));
+  const engraving = steps.findIndex(row => row.run === 'npm run prepare:engraving');
+  assert.equal(steps[checkout]?.with.ref, '${{ github.sha }}', 'Hosted assets must use the frozen checkout');
+  const prerequisites = {
+    [serverId]: 'cargo build -p practice-server --locked',
+    [driverId]: 'cargo build -p worldmusichub-desktop --example native_import_driver --locked',
+    [browserId]: 'npx playwright install --with-deps chromium',
+  };
+  for (const [id, command] of Object.entries(prerequisites)) {
+    const build = steps.find(row => row.id === id);
+    assert.equal(build?.run, command, `Missing exact management prerequisite: ${id}`);
+    assert.equal(build.if, undefined); assert.equal(build['continue-on-error'], undefined);
+    assert.ok(checkout >= 0 && steps.indexOf(build) > checkout);
+    if (id === serverId) assert.ok(engraving > checkout && steps.indexOf(build) > engraving, 'Prepare exact assets before compiling their embedded server');
+  }
+  const guard = `\${{ !cancelled() && steps.${serverId}.outcome == 'success' && steps.${driverId}.outcome == 'success' && steps.${browserId}.outcome == 'success' }}`;
+  for (const id of ['management_pack_browser', 'management_catalog_browser']) {
+    const run = steps.find(row => row.id === id); assert.ok(run);
+    for (const prerequisite of Object.keys(prerequisites)) assert.ok(steps.findIndex(row => row.id === prerequisite) < steps.indexOf(run));
+    assert.equal(run.if, guard, 'Both hosted gates need the real asset server, stdio driver and browser');
+    assert.equal(run['continue-on-error'], undefined);
+    assert.equal(run.env.WMH_HOSTED_BROWSER, '1');
+    assert.equal(run.env.WMH_SOURCE_SHA, '${{ github.sha }}');
+    assert.equal(run.env.WMH_NATIVE_IMPORT_DRIVER, '${{ github.workspace }}/target/debug/examples/native_import_driver');
+    assert.equal(run.env.WMH_SERVER_BINARY, serverBinary);
+  }
+  const verify = steps.find(row => row.run?.includes('verify-library-catalog-acceptance.mjs --check'));
+  assert.equal(verify?.env.WMH_SERVER_BINARY, serverBinary, 'Reverification must hash the exact retained server');
+  const upload = steps.find(row => row.with?.name === 'library-management-browser-${{ github.sha }}');
+  assert.ok(upload?.uses?.startsWith('actions/upload-artifact@'));
+  assert.equal(upload.if, 'always()', 'Retain the exact server on failed runs too');
+  assert.equal(upload.with['include-hidden-files'], true);
+  const paths = upload.with.path.trim().split('\n');
+  for (const path of [
+    '${{ runner.temp }}/library-management-browser/**',
+    '!${{ runner.temp }}/library-management-browser/**/webview-catalog-profile/**',
+    'target/debug/examples/native_import_driver',
+    'target/debug/practice-server',
+  ]) assert.ok(paths.includes(path), `Missing bounded management artifact path: ${path}`);
+}
 
 test('Python manifest checks install the locked Node evidence verifier dependencies on both Rust runners', () => {
   const parsed = spawnSync(python, ['scripts/check-authoring-workflow.py', '.github/workflows/check.yml', '--json'], {cwd: root, encoding: 'utf8', timeout: 10000});
@@ -38,7 +84,7 @@ test('management proof runs only on its named preview branch or explicit dispatc
     assert.deepEqual(job.steps.find(row => row.uses?.startsWith('actions/checkout@')).with, {ref: '${{ github.sha }}', 'fetch-depth': 0});
     for (const row of job.steps) {
       assert.equal(row['continue-on-error'], undefined);
-      if (row.run && row.if) assert.match(row.if, /^\$\{\{ !cancelled\(\) && steps\.management_(browser_ready|catalog_browser)\.outcome == 'success' \}\}$/);
+      if (row.run && row.if) assert.ok([focusedBrowserGuard, "${{ !cancelled() && steps.management_catalog_browser.outcome == 'success' }}"].includes(row.if));
       if (row.uses) assert.match(row.uses, /@[a-f0-9]{40}$/);
     }
     assert.ok(step(id, 'npm run prepare:engraving'));
@@ -64,7 +110,7 @@ test('real browser gates use a freshly built driver and disjoint owned output ro
     outputs.push(run.env.WMH_ARTIFACT_DIR);
   }
   assert.equal(new Set(outputs).size, 2);
-  assert.equal(step(id, 'npm run test:library-catalog-hosted').if, "${{ !cancelled() && steps.management_browser_ready.outcome == 'success' }}");
+  assert.equal(step(id, 'npm run test:library-catalog-hosted').if, focusedBrowserGuard);
   const verify = step(id, 'verify-library-catalog-acceptance.mjs --check');
   assert.equal(verify.env.WMH_SOURCE_SHA, '${{ github.sha }}');
   assert.ok(verify.env.WMH_NATIVE_IMPORT_DRIVER);
@@ -107,7 +153,50 @@ assert.ifError(fullParsed.error);
 assert.equal(fullParsed.status, 0, fullParsed.stderr);
 const fullWorkflow = JSON.parse(fullParsed.stdout);
 
+const hostedAssetGates = [
+  {name: 'focused', document: workflow, jobId: 'management-browser', serverId: 'management_asset_server', driverId: 'management_native_driver', browserId: 'management_browser_ready'},
+  {name: 'full', document: fullWorkflow, jobId: 'bulk-import-browser', serverId: 'notation_server', driverId: 'dense_native_driver', browserId: 'dense_browser_setup'},
+];
+
+for (const gate of hostedAssetGates) {
+  test(`${gate.name} management gates build, bind and retain exact-source Worklet assets before either hosted scenario`, () => {
+    hostedManagementAssetContract(gate.document, gate);
+  });
+
+  test(`${gate.name} management contract rejects missing server builds, prerequisite guards, binary bindings and failure artifacts`, () => {
+    const run = (steps, id) => steps.find(row => row.id === id);
+    const upload = steps => steps.find(row => row.with?.name === 'library-management-browser-${{ github.sha }}');
+    const verify = steps => steps.find(row => row.run?.includes('verify-library-catalog-acceptance.mjs --check'));
+    for (const [name, mutate] of [
+      ['missing server build', steps => steps.splice(steps.findIndex(row => row.id === gate.serverId), 1)],
+      ['wrong server build', steps => { run(steps, gate.serverId).run = 'cargo build -p practice-server --release --locked'; }],
+      ['conditional server build', steps => { run(steps, gate.serverId).if = 'false'; }],
+      ['ignored server build failure', steps => { run(steps, gate.serverId)['continue-on-error'] = true; }],
+      ['server build after gates', steps => steps.push(...steps.splice(steps.findIndex(row => row.id === gate.serverId), 1))],
+      ['unprepared embedded assets', steps => steps.splice(steps.findIndex(row => row.run === 'npm run prepare:engraving'), 1)],
+      ['stale checkout', steps => { steps.find(row => row.uses?.startsWith('actions/checkout@')).with.ref = 'main'; }],
+      ...['management_pack_browser', 'management_catalog_browser'].flatMap(id => [
+        [`${id} missing server guard`, steps => { run(steps, id).if = run(steps, id).if.replace(`steps.${gate.serverId}.outcome == 'success' && `, ''); }],
+        [`${id} missing server binary`, steps => { delete run(steps, id).env.WMH_SERVER_BINARY; }],
+        [`${id} stale server binary`, steps => { run(steps, id).env.WMH_SERVER_BINARY = '${{ github.workspace }}/previous/practice-server'; }],
+      ]),
+      ['missing verifier binary', steps => { delete verify(steps).env.WMH_SERVER_BINARY; }],
+      ['stale verifier binary', steps => { verify(steps).env.WMH_SERVER_BINARY = '${{ github.workspace }}/previous/practice-server'; }],
+      ['missing management artifact', steps => steps.splice(steps.indexOf(upload(steps)), 1)],
+      ['missing server artifact', steps => { upload(steps).with.path = upload(steps).with.path.replace('target/debug/practice-server\n', ''); }],
+      ['unbounded server artifact', steps => { upload(steps).with.path = upload(steps).with.path.replace('target/debug/practice-server', 'target/**'); }],
+      ['failure artifact suppressed', steps => { delete upload(steps).if; }],
+      ['browser profiles retained', steps => { upload(steps).with.path = upload(steps).with.path.replace('!${{ runner.temp }}/library-management-browser/**/webview-catalog-profile/**\n', ''); }],
+    ]) {
+      const changed = structuredClone(gate.document);
+      mutate(changed.jobs[gate.jobId].steps);
+      assert.throws(() => hostedManagementAssetContract(changed, gate), name);
+    }
+  });
+}
+
 function fullManagementContract(document) {
+  hostedManagementAssetContract(document, hostedAssetGates[1]);
   assert.deepEqual(document.on, {push: {branches: ['integration/native-desktop', 'validation/**']}, workflow_dispatch: null});
   assert.deepEqual(document.permissions, {contents: 'read'});
   const browser = document.jobs['bulk-import-browser'], native = document.jobs['native-feature-acceptance'];
@@ -122,7 +211,7 @@ function fullManagementContract(document) {
   ]) {
     const run = browser.steps.find(row => row.id === id); assert.ok(run);
     assert.ok(browserReady >= 0 && driverReady >= 0 && browser.steps.indexOf(run) > Math.max(browserReady, driverReady));
-    assert.equal(run.if, "${{ !cancelled() && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}");
+    assert.equal(run.if, fullBrowserGuard);
     assert.equal(run['continue-on-error'], undefined);
     assert.equal(run['timeout-minutes'], bound);
     assert.equal(run.env.WMH_HOSTED_BROWSER, '1');
@@ -188,6 +277,7 @@ test('full management uploads preserve failed original evidence and hidden journ
       '${{ runner.temp }}/library-management-browser/**',
       '!${{ runner.temp }}/library-management-browser/**/webview-catalog-profile/**',
       'target/debug/examples/native_import_driver',
+      'target/debug/practice-server',
     ]],
     ['native-feature-acceptance', 'library-management-windows', [
       '${{ runner.temp }}/library-management-windows/**',

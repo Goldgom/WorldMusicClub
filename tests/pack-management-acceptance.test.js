@@ -66,6 +66,64 @@ test('hosted gate rejects local, dirty, wrong-source and missing-driver runs bef
   assert.equal(result.status, 1); assert.match(result.stderr, /requires an authorized hosted Actions runner/);
 });
 
+// Exercise the actual runner teardown with pure boundaries. Loading the hosted
+// entrypoint itself would try its guarded native/browser setup, which these
+// tests must never execute locally.
+async function hostedSessionCleanup(resources) {
+  const source = await readFile(new URL('../scripts/hosted-pack-management-check.mjs', import.meta.url), 'utf8');
+  const start = source.indexOf('async function closeWithin('), end = source.indexOf('\nconst action =', start);
+  assert.ok(start >= 0 && end > start, 'Hosted session cleanup declarations must be present');
+  return new Function('assert', 'resources', `
+    let {context, page, driver, nativeBridge, processHost} = resources;
+    let sessionClosePromise;
+    ${source.slice(start, end)}
+    return closeSession;
+  `)(assert, resources);
+}
+
+test('hosted session retains failed worklet details and drains before closing native exactly once', async () => {
+  const events = [], drain = deferred(), host = {cleanup: {}};
+  const worklet = {version: 1, modules: [{url: 'http://127.0.0.1:43123/live-tone-audio-processor.js', status: 'failed', error: {name: 'AbortError', message: 'Original module load failure'}}]};
+  const close = await hostedSessionCleanup({
+    processHost: host,
+    page: {evaluate: async () => { events.push('diagnostics'); return worklet; }},
+    context: {close: async () => { events.push('context'); }},
+    nativeBridge: {stopAdmission: () => events.push('stop-admission'), drain: async () => { events.push('drain'); await drain.promise; }},
+    driver: {close: async () => { events.push('driver'); }}
+  });
+  const first = close(); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(events, ['stop-admission', 'diagnostics', 'context', 'drain']);
+  assert.deepEqual(host.worklet_loads, worklet);
+  const concurrent = close();
+  assert.deepEqual(events, ['stop-admission', 'diagnostics', 'context', 'drain'], 'Concurrent final cleanup must await the existing teardown');
+  drain.resolve(); await Promise.all([first, concurrent]); await close();
+  assert.deepEqual(events, ['stop-admission', 'diagnostics', 'context', 'drain', 'driver']);
+  assert.deepEqual(host.cleanup, {context: {status: 'closed'}, 'native-requests': {status: 'closed'}, driver: {status: 'closed'}});
+});
+
+test('hosted session cleanup preserves every failure while still releasing later resources', async () => {
+  const events = [], host = {cleanup: {}};
+  const fail = name => async () => { events.push(name); throw Error(`Original ${name} failure`); };
+  const close = await hostedSessionCleanup({
+    processHost: host,
+    page: {evaluate: fail('diagnostics')},
+    context: {close: fail('context')},
+    nativeBridge: {stopAdmission: () => events.push('stop-admission'), drain: fail('drain')},
+    driver: {close: fail('driver')}
+  });
+  const checkFailure = error => {
+    assert.ok(error instanceof AggregateError); assert.equal(error.errors.length, 4);
+    for (const name of ['diagnostics', 'context', 'drain', 'driver']) assert.match(error.message, new RegExp(`Original ${name} failure`));
+    return true;
+  };
+  await assert.rejects(close(), checkFailure); await assert.rejects(close(), checkFailure);
+  assert.deepEqual(events, ['stop-admission', 'diagnostics', 'context', 'drain', 'driver']);
+  assert.match(host.diagnostics_error, /Original diagnostics failure/);
+  for (const [key, failure] of [['context', 'context'], ['native-requests', 'drain'], ['driver', 'driver']]) {
+    assert.equal(host.cleanup[key].status, 'failed'); assert.match(host.cleanup[key].error, new RegExp(`Original ${failure} failure`));
+  }
+});
+
 test('fixture writing is exact and refuses to overwrite prior artifact paths', async t => {
   const directory = await ownedRoot(t), fixture = originalPackManagementFixtures(); await writeOriginalFixtures(directory, fixture);
   assert.equal((await readdir(directory)).length, 9);

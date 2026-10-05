@@ -56,7 +56,7 @@ test('original streaming ZIP bytes are independent of the host ZipInfo platform 
 
 test('source binding rejects old, unbound and independently changed evidence', () => {
   const expected = sourceBinding(); assert.doesNotThrow(() => validateCatalogSourceBinding(expected, expected));
-  for (const file of ['web/performance-view.js', 'web/piano-stage-view.js', 'web/piano-layout-budget.js']) {
+  for (const file of ['web/performance-view.js', 'web/piano-stage-view.js', 'web/piano-layout-budget.js', 'scripts/hosted-worklet-assets.mjs', 'scripts/management-hosted-runtime.mjs']) {
     assert.equal(CATALOG_SOURCE_FILES.filter(name => name === file).length, 1, 'Every production piano budget module must be bound exactly once');
     const missing = structuredClone(expected); delete missing.source_hashes[file]; assert.throws(() => validateCatalogSourceBinding(missing, expected));
     const changed = structuredClone(expected); changed.source_hashes[file] = sha256('changed piano budget module'); assert.throws(() => validateCatalogSourceBinding(changed, expected));
@@ -222,6 +222,15 @@ test('three-phase protocol oracle independently checks exact ownership, lost res
     v => delete v[1].stale_ownership, v => v[1].api_trace.find(row => row.delivery === 'deferred-read').release_event = 1,
     v => v[1].stale_ownership.after.edition_ids.pop(), v => v[1].stale_ownership.reopen_action = v[1].stale_ownership.close_action,
   ]) { const changed = structuredClone(reports); edit(changed); assert.throws(() => validateCatalogProtocolPhases(changed, options)); }
+});
+
+test('hosted catalog origin is admitted only with the independently supplied exact loopback origin', async () => {
+  const {reports, options} = await protocol(); const expectedOrigin = 'http://127.0.0.1:43123';
+  reports.forEach(report => { report.origin = expectedOrigin; });
+  assert.doesNotThrow(() => validateCatalogProtocolPhases(reports, {...options, expectedOrigin}));
+  assert.throws(() => validateCatalogProtocolPhases(reports, options), 'Native Windows origin must remain strict');
+  for (const wrong of ['http://127.0.0.1:43124', 'http://localhost:43123', 'https://other.example']) assert.throws(() => validateCatalogProtocolPhases(reports, {...options, expectedOrigin: wrong}));
+  const changed = structuredClone(reports); changed[1].origin = 'https://wmh.localhost'; assert.throws(() => validateCatalogProtocolPhases(changed, {...options, expectedOrigin}));
 });
 
 test('actual ORIGINAL prior-runtime journal replay verifies both copies, generations, effects and API state digests', async t => {

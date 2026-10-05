@@ -210,24 +210,26 @@ jobs:
       - name: Original pack picker, duplicates, paging and selected exports
         id: management_pack_browser
         # Independent original fixtures and storage; earlier failures stay failed.
-        if: ${{ !cancelled() && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         timeout-minutes: 6
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
           WMH_ARTIFACT_DIR: ${{ runner.temp }}/library-management-browser/packs
         run: |
           test ! -e "$WMH_ARTIFACT_DIR"
           npm run test:pack-management-hosted
       - name: Three original catalog processes with one persisted browser profile
         id: management_catalog_browser
-        if: ${{ !cancelled() && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         timeout-minutes: 15
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
           WMH_ARTIFACT_DIR: ${{ runner.temp }}/library-management-browser/catalog
         run: |
           test ! -e "$WMH_ARTIFACT_DIR"
@@ -238,10 +240,11 @@ jobs:
         env:
           WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
         run: |
           export WMH_SOURCE_TREE="$(git rev-parse 'HEAD^{tree}')"
           node scripts/verify-library-catalog-acceptance.mjs --check "$RUNNER_TEMP/library-management-browser/catalog"
-      - name: Retain original management browser proof and exact driver
+      - name: Retain original management browser proof, exact driver and asset server
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -250,6 +253,7 @@ jobs:
             ${{ runner.temp }}/library-management-browser/**
             !${{ runner.temp }}/library-management-browser/**/webview-catalog-profile/**
             target/debug/examples/native_import_driver
+            target/debug/practice-server
           include-hidden-files: true
           if-no-files-found: warn
       - name: Retain original dense rendition timing and source evidence

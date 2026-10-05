@@ -4,6 +4,8 @@ import {execFileSync} from 'node:child_process';
 import {lstat, readFile, readdir, writeFile} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
+import {validateRendererOrigin, NATIVE_PROTOCOL_ORIGIN} from './hosted-worklet-assets.mjs';
+import {validateManagementHostedOrigin, validateManagementNativeBridge, validateManagementWorkletLoads} from './management-hosted-runtime.mjs';
 import {validateCleanScreenshot} from './verify-native-clean-song-evidence.mjs';
 import {CATALOG_ACCEPTANCE_PHASES, originalCatalogAcceptanceFixtures, catalogSha256 as sha256} from './prepare-library-catalog-acceptance.mjs';
 import {checkedCatalogStatus, checkedCatalogQuery, checkedInitializePreview, checkedCatalogPreview, checkedRecoveryRecord, checkedCatalogResult, sameCatalogValue} from '../web/library-catalog-contract.js';
@@ -26,6 +28,7 @@ export const CATALOG_SOURCE_FILES = Object.freeze([
   'crates/desktop-shell/src/lib.rs', 'crates/desktop-shell/src/acceptance.rs', 'crates/desktop-shell/src/catalog_product.rs', 'crates/desktop-shell/src/catalog_journal.rs', 'crates/desktop-shell/src/catalog.rs',
   'crates/desktop-shell/src/windows.rs', 'crates/desktop-shell/acceptance-wait.js', 'crates/desktop-shell/reference-acceptance.js',
   'scripts/windows-desktop-acceptance.ps1', 'scripts/windows-desktop-profile.ps1', 'scripts/windows-desktop-catalog-snapshot.ps1', 'scripts/windows-desktop-geometry.ps1', 'scripts/windows-desktop-native.cs', 'scripts/windows-desktop-evidence.ps1',
+  'scripts/hosted-worklet-assets.mjs', 'scripts/management-hosted-runtime.mjs',
   'scripts/hosted-library-catalog-check.mjs', 'scripts/song-authoring-hosted-chooser.mjs',
 ]);
 export const CATALOG_REQUIRED_CHECKS = Object.freeze({
@@ -253,13 +256,13 @@ export async function catalogLibraryInventory(directory) {
   await walk(directory); return rows.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export function validateCatalogProtocolPhases(reports, {sourceBinding, runId, fixture = originalCatalogAcceptanceFixtures(), nativeGeometries, nativeProcesses, requireOrganization = false} = {}) {
+export function validateCatalogProtocolPhases(reports, {sourceBinding, runId, fixture = originalCatalogAcceptanceFixtures(), nativeGeometries, nativeProcesses, requireOrganization = false, expectedOrigin = NATIVE_PROTOCOL_ORIGIN} = {}) {
   validateCatalogPhaseSequence(reports, {nativeGeometries, nativeProcesses});
   assert.ok(typeof runId === 'string' && runId.length >= 16 && runId.length <= 128, 'Catalog run identity required');
   const allApi = [];
   for (const report of reports) {
     assert.equal(report.version, 1); assert.equal(report.scenario, 'library-catalog'); assert.equal(report.ok, true);
-    assert.equal(report.run_id, runId); assert.equal(report.origin, 'https://wmh.localhost');
+    assert.equal(report.run_id, runId); assert.equal(report.origin, validateRendererOrigin(expectedOrigin));
     assert.deepEqual(report.errors, []); validateCatalogSourceBinding(report.source_binding, sourceBinding);
     assert.deepEqual(report.opened_score_databases, [], 'Native acceptance opened browser score fallback storage');
     assert.deepEqual(report.claims, {synthetic_clock: false, mock_success: false, private_music: false});
@@ -542,6 +545,18 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
   assert.equal(host.config_sha256, sha256(configBytes)); assert.equal(config.version, 1); assert.equal(config.run_id, host.run_id);
   validateCatalogSourceBinding(config.source_binding, sourceBinding);
   assert.deepEqual(config.viewport_contract, native ? CATALOG_NATIVE_VIEWPORT_CONTRACT : CATALOG_HOSTED_VIEWPORT_CONTRACT, 'Catalog configuration must bind the exact viewport contract');
+  const expectedOrigin = native ? NATIVE_PROTOCOL_ORIGIN : validateManagementHostedOrigin(host, config, sourceBinding.source_sha);
+  if (native) { assert.equal(config.hosted_origin, undefined); assert.equal(host.asset_server, undefined); }
+  else {
+    assert.ok(options.server, 'Independent exact-source practice-server bytes are required');
+    const bytes = await readFile(options.server); assert.equal(sha256(bytes), host.asset_server.server_sha256); assert.equal(bytes.length, host.asset_server.server_bytes);
+    for (const asset of host.asset_server.assets) {
+      assert.match(asset.path, /^web\/[a-z0-9-]+\.js$/);
+      const source = execFileSync('git', ['show', `${sourceBinding.source_sha}:${asset.path}`], {cwd: sourceRoot, maxBuffer: 1024 * 1024});
+      assert.equal(asset.sha256, sha256(source), `Hosted Worklet asset changed: ${asset.path}`); assert.equal(asset.bytes, source.length);
+      assert.equal(sha256(await readFile(join(sourceRoot, asset.path))), asset.sha256);
+    }
+  }
   if (native) {
     assert.deepEqual(host.requested_viewport, CATALOG_REQUESTED_VIEWPORT);
     assert.deepEqual(host.minimum_viewport, CATALOG_MINIMUM_VIEWPORT);
@@ -560,7 +575,7 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
   for (const [index, phase] of CATALOG_ACCEPTANCE_PHASES.entries()) {
     const row = host.phases[index], report = await json(`renderer-${phase}.json`); reports.push(report);
     assert.ok(uint(row.process_id) && row.process_id > 0); assert.equal(row.launched_new_process, true); assert.equal(row.renderer_ok, true); assert.equal(row.normal_close, true);
-    assert.equal(row.renderer_origin, 'https://wmh.localhost'); assert.equal(row.executable_tcp_listeners, 0);
+    assert.equal(row.renderer_origin, expectedOrigin); assert.equal(row.executable_tcp_listeners, 0);
     assert.equal(row.actions, report.actions.length); assert.ok(row.actions > 0 && row.actions <= CATALOG_EVIDENCE_LIMITS.actions);
     assert.equal(row.profile_fresh, index === 0); assert.equal(row.profile_reused, index !== 0); assert.equal(row.profile_absent_before_launch, index === 0);
     profileDirectories.add(row.profile_directory);
@@ -610,6 +625,7 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
       assert.deepEqual(row.page_errors, []);
       const independent = await json(`host-api-${phase}.json`); assert.equal(independent.version, 1); assert.equal(independent.phase, phase); assert.equal(independent.process_id, row.process_id);
       assert.deepEqual(independent.rows, row.api_trace); validateCatalogHostApiTrace(independent.rows, report.api_trace);
+      validateManagementNativeBridge(row.native_bridge, expectedOrigin, independent.rows); validateManagementWorkletLoads(row.worklet_loads, expectedOrigin, {required: index === 0});
       for (const response of independent.rows) { const bytes = await read(response.response_file); assert.equal(bytes.length, response.response_bytes); assert.equal(sha256(bytes), response.response_sha256, 'Independent exact native response bytes changed'); }
       const chooser = row.chooser; assert.equal(chooser.version, 1);
       for (const field of ['late_events', 'extra_events', 'unowned_events', 'omitted_events']) assert.equal(chooser[field], 0);
@@ -642,7 +658,7 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
   assert.equal(profileDirectories.size, 1, 'Recovery phases used different browser profile directories');
   assert.ok(typeof host.directory === 'string' && host.directory.replaceAll('\\', '/').endsWith('/Scores'));
   assert.equal([...profileDirectories][0].replaceAll('\\', '/'), `${host.directory.replaceAll('\\', '/').slice(0, -7)}/webview-catalog-profile`);
-  const operations = validateCatalogProtocolPhases(reports, {sourceBinding, runId: host.run_id, fixture, requireOrganization: true, ...(native ? {nativeGeometries, nativeProcesses: host.phases.map(row => row.process_id)} : {})});
+  const operations = validateCatalogProtocolPhases(reports, {sourceBinding, runId: host.run_id, fixture, requireOrganization: true, expectedOrigin, ...(native ? {nativeGeometries, nativeProcesses: host.phases.map(row => row.process_id)} : {})});
   const [seed, restart, final] = reports;
   assert.equal(seed.api_trace.filter(row => row.path === '/api/library/list' && row.status === 200)[0]?.response.entries.length, 0, 'Seed must prove a genuinely empty native library');
   for (const report of reports) {
@@ -728,12 +744,12 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
   }
   assert.equal(unmatchedImports.length, 0, 'Native import result has no durable receipt');
   assert.equal(preservation[1].new_receipt_files, 4, 'Exactly two duplicate receipts and two backup copies may be added');
-  return {version: 1, ok: true, scenario: 'library-catalog', source_sha: sourceBinding.source_sha, source_tree: sourceBinding.source_tree, [`${binaryKind}_sha256`]: sha256(binaryBytes), run_id: host.run_id, phases: [...CATALOG_ACCEPTANCE_PHASES], api_count: operations.api_count, operations: journal, preservation, clean_key: retained.cleanKey, claims: {browser: true, native_filesystem: true, native_window: native, physical_audio: false, user_library: false, private_music: false, full_acceptance: false}, files};
+  return {version: 1, ok: true, scenario: 'library-catalog', source_sha: sourceBinding.source_sha, source_tree: sourceBinding.source_tree, [`${binaryKind}_sha256`]: sha256(binaryBytes), ...(!native ? {hosted_origin: expectedOrigin, asset_server_sha256: host.asset_server.server_sha256} : {}), run_id: host.run_id, phases: [...CATALOG_ACCEPTANCE_PHASES], api_count: operations.api_count, operations: journal, preservation, clean_key: retained.cleanKey, claims: {browser: true, native_filesystem: true, native_window: native, physical_audio: false, user_library: false, private_music: false, full_acceptance: false}, files};
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const check = process.argv[2] === '--check', directory = resolve(process.argv[check ? 3 : 2]);
-  const proof = await verifyLibraryCatalogAcceptance(directory, {sourceSha: process.env.WMH_SOURCE_SHA, sourceTree: process.env.WMH_SOURCE_TREE, executable: process.env.WMH_LIBRARY_CATALOG_EXECUTABLE, driver: process.env.WMH_NATIVE_IMPORT_DRIVER});
+  const proof = await verifyLibraryCatalogAcceptance(directory, {sourceSha: process.env.WMH_SOURCE_SHA, sourceTree: process.env.WMH_SOURCE_TREE, executable: process.env.WMH_LIBRARY_CATALOG_EXECUTABLE, driver: process.env.WMH_NATIVE_IMPORT_DRIVER, server: process.env.WMH_SERVER_BINARY});
   if (check) assert.deepEqual(parse(await readFile(join(directory, 'library-catalog-proof.json'))), proof);
   else await writeFile(join(directory, 'library-catalog-proof.json'), JSON.stringify(proof, null, 2) + '\n');
   console.log(JSON.stringify({ok: proof.ok, source_sha: proof.source_sha, files: proof.files.length, claims: proof.claims}));

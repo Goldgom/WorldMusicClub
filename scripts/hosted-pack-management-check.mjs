@@ -1,48 +1,79 @@
 // Separate, opt-in hosted acceptance. Never run locally to bypass a browser denial.
-// Real Chromium + exact-source native stdio; no network listener or mocked API.
+// Real Chromium + production loopback assets + socket-free exact-source native stdio.
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {mkdir, mkdtemp, readFile, writeFile} from 'node:fs/promises';
-import {extname, join, resolve, sep} from 'node:path';
+import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {startVsqNativeDriver} from '../tests/vsq-native-driver-fixtures.js';
 import {observeRealAudio} from '../tests/browser-input-fixtures.js';
 import {assertCleanExportInventory} from '../tests/clean-song-package-fixtures.js';
 import {validateCleanScreenshot} from './verify-native-clean-song-evidence.mjs';
 import {managementRequest, checkedManagementResponse} from '../web/library-management-contract.js';
+import {startHostedAssetServer, createHostedNativeBridge, NATIVE_PROTOCOL_ORIGIN} from './hosted-worklet-assets.mjs';
+import {managementHostedRoute, observeManagementWorkletLoads, validateManagementHostedOrigin, validateManagementWorkletLoads, validateManagementNativeBridge} from './management-hosted-runtime.mjs';
 import {PACK_MANAGEMENT_LIMITS as LIMIT, originalPackManagementFixtures, fixtureManifest, writeOriginalFixtures, requireHostedPackManagement, moveOriginalReceiptsAside, originalLibraryInventory, assertOriginalManagementInventory, assertSelectedLegacyExport, inspectOriginalManagementZip, practiceBaselineReady, assertSettledPracticeExport, sha256} from './pack-management-acceptance-fixtures.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const git = (...args) => execFileSync('git', args, {cwd: root, encoding: 'utf8'}).trim();
 const sourceSha = git('rev-parse', 'HEAD');
 requireHostedPackManagement(process.env, sourceSha, git('status', '--porcelain', '--untracked-files=normal'));
+assert.ok(process.env.WMH_SERVER_BINARY, 'An already-built exact-source practice-server is required');
 const output = resolve(process.env.WMH_ARTIFACT_DIR || join(root, 'test-results/pack-management'));
 await mkdir(output, {recursive: true});
-const owned = await mkdtemp(join(output, 'original-run-')), library = join(owned, 'Scores'), binary = resolve(process.env.WMH_NATIVE_IMPORT_DRIVER), origin = 'https://wmh.localhost';
+const owned = await mkdtemp(join(output, 'original-run-')), library = join(owned, 'Scores'), binary = resolve(process.env.WMH_NATIVE_IMPORT_DRIVER), serverBinary = resolve(process.env.WMH_SERVER_BINARY);
 await writeFile(join(owned, 'ORIGINAL-ACCEPTANCE-ROOT'), 'pack-management-original-only-v1\n', {flag: 'wx'});
 for (const folder of ['fixtures', 'api', 'downloads']) await mkdir(join(owned, folder));
 const fixture = originalPackManagementFixtures(); await writeOriginalFixtures(join(owned, 'fixtures'), fixture);
 const report = {version: 1, kind: 'original-pack-management-hosted-real-native-stdio', source_sha: sourceSha, source_tree: git('rev-parse', 'HEAD^{tree}'), driver_sha256: sha256(await readFile(binary)), viewport: {width: 1280, height: 720}, locale: 'zh-CN', fixture: fixtureManifest(fixture), source_hashes: {}, api: [], actions: [], screenshots: [], downloads: [], page_errors: [], cases: [], process_ids: [], ok: false, claims: {browser: true, native_filesystem: true, native_window: false, physical_audio: false, user_library: false, private_music: false, destructive_management: false}};
-for (const filename of ['scripts/hosted-pack-management-check.mjs', 'scripts/pack-management-acceptance-fixtures.mjs', 'web/app.js', 'web/library-management-contract.js', 'web/library-management-model.js', 'web/library-management-view.js', 'web/library-management.css', 'tests/vsq-native-driver-fixtures.js']) report.source_hashes[filename] = sha256(await readFile(join(root, filename)));
-let driver, browser, context, page, phase = 'import', cancelled = false, timeout;
+report.hosted_origin = null; report.native_protocol_origin = NATIVE_PROTOCOL_ORIGIN;
+report.host = {origin: null, hosted_origin: null, native_protocol_origin: NATIVE_PROTOCOL_ORIGIN, asset_server: {}, processes: []};
+for (const filename of ['scripts/hosted-pack-management-check.mjs', 'scripts/pack-management-acceptance-fixtures.mjs', 'scripts/hosted-worklet-assets.mjs', 'scripts/management-hosted-runtime.mjs', 'web/app.js', 'web/library-management-contract.js', 'web/library-management-model.js', 'web/library-management-view.js', 'web/library-management.css', 'tests/vsq-native-driver-fixtures.js']) report.source_hashes[filename] = sha256(await readFile(join(root, filename)));
+let driver, browser, context, page, assetServer, origin, nativeBridge, processHost, sessionClosePromise, phase = 'import', cancelled = false, timeout;
 const committed = new Map();
 const recordCase = (name, details = {}) => report.cases.push({name, ...details, ok: true});
 async function closeWithin(resource, name) {
   let timer;
-  try { await Promise.race([resource.close(), new Promise((_, reject) => { timer = setTimeout(() => reject(Error(`${name} cleanup exceeded 5000ms`)), 5000); })]); }
+  try { return await Promise.race([resource.close(), new Promise((_, reject) => { timer = setTimeout(() => reject(Error(`${name} cleanup exceeded 5000ms`)), 5000); })]); }
   finally { clearTimeout(timer); }
+}
+async function closeSession() {
+  if (sessionClosePromise) return sessionClosePromise;
+  const ownedContext = context, ownedPage = page, ownedDriver = driver, ownedBridge = nativeBridge, host = processHost;
+  ownedBridge?.stopAdmission();
+  context = page = driver = nativeBridge = processHost = null;
+  sessionClosePromise = (async () => {
+    const errors = [];
+    if (host) {
+      try {
+        assert.ok(ownedPage, 'No owned page was created for worklet diagnostics');
+        host.worklet_loads = await closeWithin({close: () => ownedPage.evaluate(() => globalThis.__wmhManagementWorkletLoads ?? null)}, 'worklet diagnostics');
+      } catch (error) { host.diagnostics_error = String(error.stack || error); errors.push(error); }
+    }
+    // Keep admitted native operations alive until the owned page is closed, then
+    // drain their bridge before closing the real socket-free native process.
+    for (const [name, resource] of [['context', ownedContext], ['native-requests', ownedBridge && {close: () => ownedBridge.drain()}], ['driver', ownedDriver]]) if (resource) {
+      const cleanup = {status: 'closing'}; if (host) host.cleanup[name] = cleanup;
+      try { await closeWithin(resource, name); cleanup.status = 'closed'; }
+      catch (error) { cleanup.status = 'failed'; cleanup.error = String(error.stack || error); errors.push(error); }
+    }
+    if (errors.length) throw new AggregateError(errors, errors.map(error => String(error)).join('; '));
+  })();
+  return sessionClosePromise;
 }
 const action = async (name, run) => {
   assert.equal(cancelled, false, 'Hosted run expired'); assert.ok(report.actions.length < LIMIT.actions, 'UI action bound');
   const row = {sequence: report.actions.length + 1, name}; report.actions.push(row); await run(); row.completed = true;
 };
-async function native(path, options = {}, source = 'browser') {
+async function native(path, options = {}, source = 'browser', ownedDriver = driver) {
   assert.equal(cancelled, false); assert.ok(report.api.length < LIMIT.api, 'Native request bound');
   const body = options.body ? Buffer.from(options.body) : Buffer.alloc(0);
-  const row = {sequence: report.api.length + 1, phase, source, path, method: options.method || 'GET', request_bytes: body.length, request_sha256: sha256(body)};
+  const row = {sequence: report.api.length + 1, process_id: ownedDriver.pid, phase, source, path, method: options.method || 'GET', request_bytes: body.length, request_sha256: sha256(body)};
   report.api.push(row);
   if (path === '/api/library/manage/query' || path === '/api/library/pack/export' || path === '/api/library/import/export') row.request = JSON.parse(body);
-  const response = await driver.fetcher(path, options), bytes = await response.bytes();
+  let response, bytes;
+  try { response = await ownedDriver.fetcher(path, options); bytes = await response.bytes(); }
+  catch (error) { row.error = String(error.stack || error); throw error; }
   Object.assign(row, {status: response.status, bytes: bytes.length, sha256: sha256(bytes)});
   if (path.startsWith('/api/library/import/') || path === '/api/library/manage/query' || path === '/api/library/pack/export' || path === '/api/health' || path === '/api/assess') {
     row.file = `api/${String(row.sequence).padStart(3, '0')}${response.contentType.includes('json') ? '.json' : '.bin'}`;
@@ -56,7 +87,7 @@ async function native(path, options = {}, source = 'browser') {
       committed.set(filename, result); row.filename = filename;
     }
   }
-  return {...response, bytes: async () => bytes};
+  return {...response, bytes: async () => bytes, row};
 }
 async function query(body) {
   const response = await native('/api/library/manage/query', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(managementRequest(body))}, 'independent-contract-check');
@@ -106,25 +137,29 @@ async function browserState() {
   return page.evaluate(() => ({score: document.querySelector('#score-title').textContent, preview: document.querySelector('#song-lobby').dataset.previewId, mode: document.querySelector('#session-mode').value, progress: document.querySelector('#progress').value, transport: document.querySelector('#transport-status').textContent, audio: {...window.audioObservation}}));
 }
 async function launch() {
+  assert.equal(cancelled, false, 'Hosted run expired'); sessionClosePromise = null;
   driver = startVsqNativeDriver({binary, directory: library, cwd: root, requestTimeoutMs: 15000, closeTimeoutMs: 3000}); report.process_ids.push(driver.pid);
+  const ownedDriver = driver; let ownedPage;
+  const bridge = createHostedNativeBridge({origin, getOwnedPage: () => ownedPage}); nativeBridge = bridge;
+  processHost = {phase, process_id: driver.pid, native_bridge: bridge.evidence, worklet_loads: null, cleanup: {}}; report.host.processes.push(processHost);
   context = await browser.newContext({viewport: report.viewport, locale: report.locale, acceptDownloads: true, serviceWorkers: 'block'});
-  await context.addInitScript(`localStorage.setItem('worldmusichub.locale.v1','zh-CN');(${observeRealAudio.toString()})();`);
-  await context.route('**/*', async route => {
+  await context.addInitScript(`localStorage.setItem('worldmusichub.locale.v1','zh-CN');(${observeManagementWorkletLoads.toString()})();(${observeRealAudio.toString()})();`);
+  await context.route(url => managementHostedRoute(url, origin), async route => {
     const request = route.request(), url = new URL(request.url());
-    if (url.origin !== origin) { report.page_errors.push(`Unexpected external request: ${url.origin}`); await route.abort(); return; }
     try {
+      assert.equal(url.origin, origin, `Unexpected external request: ${url.origin}`);
       if (url.pathname.startsWith('/api/')) {
-        const response = await native(url.pathname + url.search, {method: request.method(), headers: request.headers(), body: request.postDataBuffer() || undefined});
-        await route.fulfill({status: response.status, contentType: response.contentType, body: await response.bytes()}); return;
+        await bridge.run(request, async (headers, bridgeRow) => {
+          const response = await native(url.pathname + url.search, {method: request.method(), headers, body: request.postDataBuffer() || undefined}, 'browser', ownedDriver);
+          Object.assign(bridgeRow, {native_sequence: response.row.sequence, native_request_sha256: response.row.request_sha256, native_request_bytes: response.row.request_bytes, native_status: response.row.status, native_response_sha256: response.row.sha256});
+          try { await route.fulfill({status: response.status, contentType: response.contentType, body: await response.bytes()}); }
+          catch (error) { if (!bridge.closing) throw error; response.row.delivery = 'context-closed-during-cleanup'; }
+        }); return;
       }
-      const file = resolve(root, 'web', '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname));
-      assert.ok(file.startsWith(join(root, 'web') + sep));
-      const contentType = ({'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2'})[extname(file)] || 'application/octet-stream';
-      try { await route.fulfill({status: 200, contentType, body: await readFile(file)}); }
-      catch (error) { if (error.code !== 'ENOENT') throw error; await route.fulfill({status: 404, body: 'Not found'}); }
-    } catch (error) { report.page_errors.push(String(error.stack || error)); await route.abort(); }
+      throw Error(`Unexpected hosted management control request: ${url.pathname}`);
+    } catch (error) { report.page_errors.push(String(error.stack || error)); try { await route.abort(); } catch {} }
   });
-  page = await context.newPage(); page.setDefaultTimeout(15000); page.setDefaultNavigationTimeout(15000);
+  page = await context.newPage(); ownedPage = page; page.setDefaultTimeout(15000); page.setDefaultNavigationTimeout(15000);
   page.on('pageerror', error => report.page_errors.push(String(error.stack || error)));
   await page.goto(origin); assert.equal(await page.locator('html').getAttribute('lang'), 'zh-CN');
   await page.locator('#home-single-player').click(); await page.waitForFunction(() => !document.querySelector('#start-listen').disabled);
@@ -146,6 +181,8 @@ async function importFiles(inputs, label) {
   });
 }
 async function run() {
+  try { assetServer = await startHostedAssetServer({root, sourceSha, binary: serverBinary, evidence: report.host.asset_server}); }
+  finally { origin = report.host.asset_server.origin ?? null; report.host.origin = report.host.hosted_origin = report.hosted_origin = origin; }
   const {chromium} = await import('playwright'); browser = await chromium.launch({headless: true, timeout: 20000}); await launch();
   await importFiles(fixture.initial, 'Import six ORIGINAL files through the real multiple file picker');
   await importFiles(fixture.retries, 'Retry the exact standalone and backup bytes under new Unicode filenames');
@@ -255,7 +292,7 @@ async function run() {
   await page.locator('#lobby-home').click(); await page.locator('#start-free-practice').click(); assert.deepEqual(await download('#free-export-draft', 'free-draft-after.json'), draftRecording); assert.deepEqual(await download('#free-export-record', 'free-saved-after.json'), savedRecording);
   const databases = await page.evaluate(async () => (await indexedDB.databases()).map(row => row.name)); assert.equal(databases.includes('worldmusichub.scores.v1'), false);
   await screenshot('management-preserved-free-recordings'); recordCase('byte-equivalent-active-score-practice-take-saved-and-unsaved-free-recordings', {library_files_unchanged: inventoryAfter.length, browser_score_fallback: false});
-  await closeWithin(context, 'context'); context = null; await driver.close(); driver = null;
+  await closeSession();
   phase = 'restart'; await launch();
   assert.equal(await page.locator('#catalog [data-library-key]').count(), LIMIT.songs);
   const restarted = await uiQuery('Fresh native process and browser profile reopens persisted metadata', () => page.locator('#library-management-button').click());
@@ -271,7 +308,20 @@ try {
   if (page && !cancelled) try { await screenshot('management-failure'); } catch {}
 } finally {
   clearTimeout(timeout); cancelled = true;
-  for (const [name, resource] of [['context', context], ['browser', browser], ['driver', driver]]) if (resource) try { await closeWithin(resource, name); } catch (error) { report.ok = false; process.exitCode = 1; (report.cleanup_errors ||= []).push(`${name}: ${String(error)}`); }
+  try { await closeSession(); } catch (error) { report.ok = false; process.exitCode = 1; (report.cleanup_errors ||= []).push(`session: ${String(error)}`); }
+  for (const [name, resource] of [['browser', browser], ['asset-server', assetServer]]) if (resource) try { await closeWithin(resource, name); } catch (error) { report.ok = false; process.exitCode = 1; (report.cleanup_errors ||= []).push(`${name}: ${String(error)}`); }
+  if (report.ok) try {
+    validateManagementHostedOrigin(report.host, report, sourceSha);
+    assert.equal(report.host.processes.length, 2);
+    assert.deepEqual(report.host.processes.map(row => row.process_id), report.process_ids);
+    for (const host of report.host.processes) {
+      for (const name of ['context', 'native-requests', 'driver']) assert.equal(host.cleanup[name]?.status, 'closed');
+      assert.equal(host.diagnostics_error, undefined);
+      validateManagementWorkletLoads(host.worklet_loads, origin, {required: host.phase === 'import'});
+      validateManagementNativeBridge(host.native_bridge, origin, report.api.filter(row => row.process_id === host.process_id && row.source === 'browser'));
+    }
+    assert.deepEqual(report.page_errors, []);
+  } catch (error) { report.ok = false; process.exitCode = 1; report.error = String(error.stack || error); }
   await writeFile(join(owned, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   await writeFile(join(output, 'latest-run.json'), JSON.stringify({directory: owned, report: join(owned, 'report.json'), source_sha: sourceSha, ok: report.ok}, null, 2) + '\n');
 }

@@ -79,7 +79,8 @@ const independentGates = [
     prerequisites: { native_build: 'cargo build -p worldmusichub-desktop --release --locked' } },
   ...['npm run test:pack-management-hosted', 'npm run test:library-catalog-hosted'].map(target => ({
     job: jobIds[0], basic: 'node scripts/hosted-basic-key-check.mjs', target,
-    prerequisites: { dense_native_driver: 'cargo build -p worldmusichub-desktop --example native_import_driver --locked',
+    prerequisites: { notation_server: 'cargo build -p practice-server --locked',
+      dense_native_driver: 'cargo build -p worldmusichub-desktop --example native_import_driver --locked',
       dense_browser_setup: 'npx playwright install --with-deps chromium' },
   })),
   { job: jobIds[1], basic: '-Scenario basic-key', target: '-Scenario library-catalog',
