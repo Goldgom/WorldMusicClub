@@ -1,4 +1,4 @@
-import {installPlaybackClockReader} from './browser-playback-clock.js';
+import {installPlaybackClockReader, waitForPlaybackClock} from './browser-playback-clock.js';
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -155,7 +155,7 @@ export async function captureOverlayPaintEvidence({page,ui,view,artifactDirector
 // Imported by the authorized hosted runner. This module never launches a browser.
 export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,readyForTitle,closeShellPanels,artifactDirectory,exportScore,exportTakeData,waitForEngraving}) {
   test('normal and free piano share actual geometry colors toolbar and held feedback at the same configured range',{timeout:90_000},async()=>{
-    const page=getPage(),score=originalAboveKeyboardScore(),evidence=[];await installPlaybackClockReader(page);score.id='original-shared-stage';score.title='Original shared piano stage comparison';score.parts[0].notes=score.parts[0].notes.filter(note=>note.at.numerator>=4);
+    const page=getPage(),score=originalAboveKeyboardScore(),evidence=[];await installPlaybackClockReader(page);await waitForPlaybackClock(page);score.id='original-shared-stage';score.title='Original shared piano stage comparison';score.parts[0].notes=score.parts[0].notes.filter(note=>note.at.numerator>=4);
     await ui('#instrument').selectOption('piano');await ui('#key-count').selectOption('61');await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();
     await ui('#score-file').setInputFiles({name:`${score.id}.json`,mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);await closeShellPanels();
     if(await page.locator('#notation-toggle').getAttribute('aria-expanded')==='true')await page.locator('#notation-toggle').click();
@@ -239,7 +239,7 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,read
     await writeFile(join(artifactDirectory,'worldmusichub-shared-piano-stage.json'),JSON.stringify({original_fixtures_only:true,configured_range:{key_count:61,lowest_midi:36,highest_midi:96},localeProof,evidence,compactHeaderProof,normalProbe,sharedFooter,held:{normal:normalHeld,free:freeHeld},actual_paired_screenshots:true,normal_take_preserved:true,score_preserved:true,ime_suppressed:true,protected_control_released_input:true,navigation_released_input:true},null,2));
   });
   test('original falling bars visibly cross staff and Jianpu lane background during actual playback',{timeout:90_000},async()=>{
-    const page=getPage(),score=originalAboveKeyboardScore(),evidence=[];await installPlaybackClockReader(page);score.id='original-live-overlay';score.title='Original live falling-lane overlay';score.tempo[0].bpm=60;
+    const page=getPage(),score=originalAboveKeyboardScore(),evidence=[];await installPlaybackClockReader(page);await waitForPlaybackClock(page);score.id='original-live-overlay';score.title='Original live falling-lane overlay';score.tempo[0].bpm=60;
     await ui('#instrument').selectOption('piano');await ui('#key-count').selectOption('61');await ui('#session-mode').selectOption('listen');await ui('#count-in').uncheck();await ui('#score-file').setInputFiles({name:`${score.id}.json`,mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);
     await ui('#interface-language').selectOption('zh-CN');await ui('#theme-mode').selectOption('light');await page.emulateMedia({reducedMotion:'no-preference'});
     for(const viewport of [{width:1280,height:720},{width:1920,height:1080}])for(const [button,view]of [['#engraved-button','staff'],['#jianpu-button','jianpu']]){

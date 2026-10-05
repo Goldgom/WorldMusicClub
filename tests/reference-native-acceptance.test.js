@@ -1,5 +1,5 @@
 import {readPlaybackClock} from '../web/playback-clock-view.js';
-import {setEvidencePlaybackClock} from './playback-clock-evidence-fixtures.js';
+import {evidenceClockNode,setEvidencePlaybackClock} from './playback-clock-evidence-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -187,4 +187,21 @@ test('waiting for a clock transition retains the causal click rather than loggin
   assert.equal(result.omitted,0);assert.ok(result.rows.length<5);assert.ok(result.rows.some(row=>row.event?.type==='click'&&row.event.trusted));
   assert.equal(result.current.positionMs,150,'Latest clock remains available without evicting event receipt');
   assert.equal(result.rows.find(row=>row.event).event.preventedAtCapture,false,'Capture-phase sampling is explicitly named');
+});
+
+test('native clock preparation waits only for first publication within the existing readiness bound',async()=>{
+ const prefix=source.slice(0,source.indexOf('const NATIVE_REFERENCE_FIXTURE'));
+ for(const mode of ['absent-element-valid','absent-attribute-valid','absent-deadline','malformed','empty','unavailable']){
+  const valid=mode==='unavailable'?evidenceClockNode(0,{durationMs:0,available:false}):evidenceClockNode(0,{durationMs:5000}),node={getAttribute:()=>raw};
+  let raw=mode==='malformed'?'{':mode==='empty'?'':mode==='unavailable'?valid.dataset.playbackClock:null,element=mode==='absent-element-valid'?null:node,polls=0,reads=0;
+  const document={getElementById:id=>{assert.equal(id,'progress');return element;}},prepare=runInNewContext(`${prefix}\nprepareNativePlaybackClock`,{__wmhReadPlaybackClock:document=>{reads++;return readPlaybackClock(document);}});
+  const until=async(predicate,label,...overrides)=>{
+   assert.equal(label,'first published playback clock');assert.deepEqual(overrides,[],'Preparation keeps the scenario readiness bound');
+   for(let i=0;i<3;i++){polls++;if(i===1&&mode.endsWith('-valid')){element=node;raw=valid.dataset.playbackClock;}if(predicate())return;}
+   throw Error('existing readiness deadline');
+  };
+  if(mode==='absent-deadline'){await assert.rejects(prepare({document,until}),/existing readiness deadline/);assert.equal(polls,3);assert.equal(reads,0);}
+  else if(['malformed','empty'].includes(mode)){await assert.rejects(prepare({document,until}),/missing or invalid/);assert.equal(polls,1);assert.equal(reads,1);}
+  else{await prepare({document,until});assert.equal(polls,mode==='unavailable'?1:2);assert.equal(reads,1);}
+ }
 });

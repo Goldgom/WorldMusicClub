@@ -103,6 +103,28 @@ function validateVsqSeekControl(control,endMs,disabled=false){
  assert.equal(control.disabled,disabled);assert.equal(control.connected,true);assert.equal(control.inert,false);
  assert.ok(typeof control.label==='string'&&control.label.trim(),'VSQ seek needs an accessible label');assert.ok(control.describedBy?.split(/\s+/).includes('progress-help')&&control.guidance?.trim(),'VSQ seek needs linked guidance');
 }
+// Event.timeStamp is the occurrence/creation clock, not listener receipt order.
+// Native mouse-derived events can retain the older platform timestamp while a
+// range input/change event is created during that gesture. Keep both clocks.
+// https://dom.spec.whatwg.org/#concept-event-create
+// Chromium mouse_event_manager.cc passes WebMouseEvent.TimeStamp() to click.
+export function validateVsqSeekGesture(events,{eventStart,pointerAction,positionMs}){
+ const field=value=>Number.isFinite(value)?value:value===undefined?'missing':value===null?'null':typeof value;
+ const summary=()=>JSON.stringify(events.slice(0,8).map(event=>({type:typeof event?.type==='string'?event.type.slice(0,24):typeof event?.type,sequence:field(event?.observedSequence),action:field(event?.actionSequence),observedAtMs:field(event?.observedAtMs),eventTimeMs:field(event?.eventTimeMs)})));
+ try{
+  assert.equal(events.length,5,'Native seek needs one complete pointer/input/change/click gesture');
+  for(const type of ['pointerdown','pointerup','input','change','click'])assert.equal(events.filter(event=>event.type===type).length,1);
+  let previousObserved=-Infinity;
+  for(const [index,event]of events.entries()){
+   assert.equal(event.id,'progress');assert.equal(event.trusted,true);assert.equal(event.actionSequence,pointerAction,'Seek event belongs to another native action');assert.equal(event.observedSequence,eventStart+index,'Seek observation sequence missing or reordered');
+   assert.ok(Number.isFinite(event.observedAtMs)&&event.observedAtMs>=0&&event.observedAtMs>=previousObserved,'Seek receipt time missing or backwards');previousObserved=event.observedAtMs;
+   assert.ok(Number.isFinite(event.eventTimeMs)&&event.eventTimeMs>=0,'Seek original event timestamp missing or invalid');
+   if(['pointerdown','pointerup','click'].includes(event.type))assert.equal(event.button,0);
+   if(['input','change'].includes(event.type))assert.equal(Number(event.value),positionMs,'Seek event value differs from actual paused source position');
+  }
+  assert.equal(events[0].type,'pointerdown');assert.ok(events.findIndex(event=>event.type==='input')<events.findIndex(event=>event.type==='change'));assert.ok(events.findIndex(event=>event.type==='pointerup')<events.findIndex(event=>event.type==='click'));
+ }catch(error){throw Error(`VSQ seek gesture rejected: ${String(error.message).slice(0,256)}; events=${summary()}`);}
+}
 export function validateVsqSeekEvidence(report,response){
  const seek=report.seek,endMs=response.runtime.end_ms;
  assert.equal(seek?.version,1,'VSQ real seek observations absent');
@@ -120,10 +142,7 @@ export function validateVsqSeekEvidence(report,response){
  for(const index of [seek.eventStart,seek.eventEnd,seek.playEventStart,seek.playEventEnd])assert.ok(Number.isSafeInteger(index)&&index>=0&&index<=report.trusted.length,'VSQ seek event boundary invalid');
  assert.ok(seek.eventStart<seek.eventEnd&&seek.eventEnd===seek.playEventStart&&seek.playEventStart<seek.playEventEnd,'VSQ seek and explicit Play event boundaries overlap or omit events');
  const events=report.trusted.slice(seek.eventStart,seek.eventEnd);
- assert.equal(events.length,5,'Native seek needs one complete pointer/input/change/click gesture');
- for(const type of ['pointerdown','pointerup','input','change','click'])assert.equal(events.filter(event=>event.type===type).length,1);
- let previous=-Infinity;for(const event of events){assert.equal(event.id,'progress');assert.equal(event.trusted,true);assert.ok(Number.isFinite(event.eventTimeMs)&&event.eventTimeMs>=previous,'Seek gesture time missing or backwards');previous=event.eventTimeMs;if(['pointerdown','pointerup','click'].includes(event.type))assert.equal(event.button,0);if(['input','change'].includes(event.type))assert.equal(Number(event.value),report.seekPositionMs,'Seek event value differs from actual paused source position');}
- assert.equal(events[0].type,'pointerdown');assert.ok(events.findIndex(event=>event.type==='input')<events.findIndex(event=>event.type==='change'));assert.ok(events.findIndex(event=>event.type==='pointerup')<events.findIndex(event=>event.type==='click'));
+ validateVsqSeekGesture(events,{eventStart:seek.eventStart,pointerAction:seek.pointerAction,positionMs:report.seekPositionMs});
  assert.deepEqual(report.trusted.slice(seek.playEventStart,seek.playEventEnd).map(event=>[event.id,event.type,event.trusted]),[['play-button','click',true]],'Source tail requires a distinct trusted Play click');
  validateVsqAudioThreadRuns(report.seekThread,response,{complete:false,pcm:false});assert.equal(report.seekThread.length,1);const run=report.seekThread[0];assert.equal(run.positionFrame,Math.round(report.seekPositionMs*run.plan.sampleRate/1000),'Tail ledger does not begin at the actual range-selected source frame');
  assert.equal(run.terminals[0].record.started,0);assert.equal(run.terminals[0].record.skipped,response.runtime.notes.length);assert.ok(run.pcm.blocks.every(block=>block.peak<=1e-7&&block.rms<=1e-8),'Seeked source tail must remain silent');

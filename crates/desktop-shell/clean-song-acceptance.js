@@ -174,7 +174,7 @@ async function retainCleanPlaybackEvidence({report,observer,restoreAudio,run}) {
  }
  addEventListener('DOMContentLoaded',async()=>{
   const report={version:1,phase,ok:false,origin:location.origin,checks:[],errors,importReports,openedScoreDatabases,trusted,chooserObservations:chooser.records,screenshots:{},files:{}};
-  try{await prepareNativePlaybackClock();
+  try{await prepareNativePlaybackClock({document,until});
    assert(localStorage.getItem('wmh.clean.acceptance.marker')===null,'Clean scenario requires a fresh WebView profile');report.profileMarkerAbsent=true;localStorage.setItem('wmh.clean.acceptance.marker',phase);await menu.enterLibrary();const {getAppI18n}=await import('/app-locale.js');getAppI18n(document).setLocale('en');assert((await json('/api/health')).network==='native-protocol-no-listener','Clean acceptance requires native protocol');
    if(phase==='clean-seed'){assert((await inventory()).entries.length===0,'Clean seed requires empty native Scores');await choose('clean-authored-song.zip');assert(importReports.at(-1).body.items.length===1&&importReports.at(-1).body.items[0].status==='ready'&&(await inventory()).entries.length===0,'Clean preflight wrote or lost song');report.screenshots.preflight=await native('click',$('bulk-import-title'));await save();assert(importReports.at(-1).body.items[0].status==='saved','Complete clean package was not saved');await native('click',$('bulk-import-done'));report.checks.push('actual-picker-clean-preflight-save');}
    else assert(phase==='clean-restart','Unknown clean phase');

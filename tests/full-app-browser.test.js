@@ -1,4 +1,4 @@
-import {readPlaybackClock, installPlaybackClockReader} from './browser-playback-clock.js';
+import {readPlaybackClock, installPlaybackClockReader, waitForPlaybackClock} from './browser-playback-clock.js';
 import {registerGameLobbyBrowserRegressions} from './game-lobby-browser-regression.js';
 import {assertLocaleRoundTrip,registerLocaleBrowserRegressions} from './locale-browser-regression.js';
 import {registerBeginnerBrowserRegressions} from './beginner-browser-regression.js';
@@ -119,7 +119,7 @@ async function startPreview({reset = true, notation = true, mode = 'listen'} = {
   if ((await page.locator('#notation-toggle').getAttribute('aria-expanded')==='true') !== notation) await page.locator('#notation-toggle').click();
 }
 async function reloadStage(options) {
-  const response = await page.reload(options);
+  const response = await page.reload(options);await waitForPlaybackClock(page);
   await selectLegacyEnglish(page);
   await startPreview();
   return response;
@@ -466,6 +466,7 @@ beforeEach(async t => {
       nextResponse('/api/compile', bootstrapTimeout),
       page.goto(origin, {waitUntil: 'domcontentloaded'}),
     ]);
+    await waitForPlaybackClock(page);
     initialCompilation = await responseJson(compilation);
     await page.locator('#game-home').waitFor({state:'visible'});
     assert.equal(await page.locator('#workspace').isVisible(),false,'Startup menu does not activate a practice session');
@@ -2288,7 +2289,7 @@ test('real language picker starts from Chinese and preserves the paused take, so
   assert.deepEqual(await exportScore(),score);
   assert.equal(requests.filter(request=>request.path==='/api/compile').length,compileCount,'Locale rendering never recompiles or transposes the score');
   await closeShellPanels();
-  await page.reload({waitUntil:'domcontentloaded'});
+  await page.reload({waitUntil:'domcontentloaded'});await waitForPlaybackClock(page);
   await page.locator('#interface-language').waitFor({state:'attached'});
   assert.equal(await page.locator('html').getAttribute('lang'),'en','An explicit English choice persists on reload');
   assert.equal(await page.locator('#interface-language').inputValue(),'en');
@@ -2402,7 +2403,7 @@ test('real IME and form-focus boundaries release physical notes without inventin
 });
 
 test('real Sound Off scored Start and Play capture silently without creating an AudioContext',testOptions,async()=>{
-  await page.addInitScript(observeRealAudio);await page.reload({waitUntil:'domcontentloaded'});await page.locator('#home-single-player').click();await page.locator('#start-practice:not([disabled])').waitFor();
+  await page.addInitScript(observeRealAudio);await page.reload({waitUntil:'domcontentloaded'});await waitForPlaybackClock(page);await page.locator('#home-single-player').click();await page.locator('#start-practice:not([disabled])').waitFor();
   assert.deepEqual(await page.evaluate(()=>audioObservation),{construct:0,resume:0,oscillator:0,start:0,stop:0});
   // Free practice exposes the shared Sound switch before any scored activation.
   // No free recording is started; every sound change is a visible user action.
@@ -2467,7 +2468,7 @@ test('real no-score Free practice survives an unavailable catalog and saves the 
   const unavailable=route=>route.abort('failed');await page.route('**/api/catalog/index',unavailable);const requestStart=requests.length;
   try{
     const healthResponse=nextResponse('/api/health');
-    await page.reload({waitUntil:'domcontentloaded'});const health=await responseJson(await healthResponse);
+    await page.reload({waitUntil:'domcontentloaded'});await waitForPlaybackClock(page);const health=await responseJson(await healthResponse);
     assert.equal(health.name,'WorldMusicHub');assert.equal(health.engine,'rust');assert.equal(health.score_format_version,1);assert.equal(health.network,'loopback-only');
     await page.waitForFunction(()=>document.querySelector('#catalog-status').textContent.includes('metadata is unavailable')&&document.querySelector('[data-score-storage]').getAttribute('aria-busy')==='false');
     assert.equal(await page.locator('#resume-session').isVisible(),false);assert.equal(await page.locator('#score-tools-button').isDisabled(),true);assert.equal(await page.locator('#start-listen').isDisabled(),true);assert.ok(failedResources.some(failure=>failure.path==='/api/catalog/index'));

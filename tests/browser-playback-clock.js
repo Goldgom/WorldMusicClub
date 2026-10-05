@@ -9,3 +9,15 @@ export async function installPlaybackClockReader(page) {
   await page.addInitScript({content});
   await page.evaluate(content);
 }
+
+// Navigation can finish before the app publishes its first observation. Missing
+// metadata is pending; published metadata must satisfy the strict reader now.
+export async function waitForPlaybackClock(page) {
+  const ready = await page.waitForFunction(() => {
+    const progress = document.getElementById('progress');
+    if (!progress || progress.getAttribute('data-playback-clock') === null) return false;
+    globalThis.__wmhReadPlaybackClock(progress);
+    return true;
+  });
+  await ready.dispose();
+}

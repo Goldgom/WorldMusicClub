@@ -1,4 +1,4 @@
-import {installPlaybackClockReader} from '../tests/browser-playback-clock.js';
+import {installPlaybackClockReader, waitForPlaybackClock} from '../tests/browser-playback-clock.js';
 // Author/run only on an authorized hosted browser runner. This file is excluded
 // from npm test and must never be used to bypass a local browser launch denial.
 import assert from 'node:assert/strict';
@@ -181,7 +181,7 @@ try {
         localStorage.setItem('worldmusichub.locale.v1', locale);
         localStorage.setItem('worldmusichub.theme', JSON.stringify({mode:theme}));
       }, entry);
-      await page.goto(origin); await page.evaluate(() => document.fonts.ready);
+      await page.goto(origin);await waitForPlaybackClock(page); await page.evaluate(() => document.fonts.ready);
       if (await page.locator('#game-home').isVisible()) await page.locator('#home-single-player').click();
       await page.waitForFunction(() => !document.querySelector('#start-listen').disabled);
       assert.equal(await page.locator('html').getAttribute('lang'), entry.locale);

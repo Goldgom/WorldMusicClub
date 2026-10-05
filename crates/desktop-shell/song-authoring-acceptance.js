@@ -82,7 +82,7 @@ async function prepareAuthoringNavigationPause({document,native,click,menu,until
  const silent=()=>{const value=probe.snapshot();assert(value.sourceStarts===0&&value.activeSources===0&&value.pendingSources===0,'Authoring allocated or scheduled audio');return value;};
  const latestDraft=name=>report.responses.filter(row=>row.path==='/api/clean-song/draft'&&row.body.source_name===name).at(-1)?.body;
  addEventListener('DOMContentLoaded',async()=>{
-  try{await prepareNativePlaybackClock();
+  try{await prepareNativePlaybackClock({document,until});
    assert(['authoring-seed','authoring-restart'].includes(phase),'Unknown authoring phase');assert(localStorage.getItem('wmh.authoring.acceptance.marker')===null,'Authoring requires a fresh browser profile');report.profileMarkerAbsent=true;localStorage.setItem('wmh.authoring.acceptance.marker',phase);
    await menu.enterLibrary();const {getAppI18n}=await import('/app-locale.js');getAppI18n(document).setLocale('en');assert((await json('/api/health')).network==='native-protocol-no-listener','Actual Rust protocol required');
    if(phase==='authoring-seed'){

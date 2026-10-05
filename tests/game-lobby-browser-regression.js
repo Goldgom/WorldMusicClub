@@ -1,4 +1,4 @@
-import {readPlaybackClock} from './browser-playback-clock.js';
+import {readPlaybackClock, installPlaybackClockReader, waitForPlaybackClock} from './browser-playback-clock.js';
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -8,10 +8,10 @@ import {observeRealAudio} from './browser-input-fixtures.js';
 // Rust-backed page. Importing this module does not start a browser or server.
 export function registerGameLobbyBrowserRegressions({test,getPage,ui,closeShellPanels,exportScore,exportTakeData,artifactDirectory}) {
   test('game menu and audible song preview keep equal library halves and independent session state at 1280 and 1920', {timeout:90_000}, async()=>{
-    const page=getPage(),evidence=[];
+    const page=getPage(),evidence=[];await installPlaybackClockReader(page);
     await page.addInitScript(observeRealAudio);
     for(const viewport of [{width:1280,height:720},{width:1920,height:1080}]) {
-      await page.setViewportSize(viewport);await page.reload();
+      await page.setViewportSize(viewport);await page.reload();await waitForPlaybackClock(page);
       await page.locator('#home-single-player').waitFor({state:'visible'});
       await ui('#interface-language').selectOption('zh-CN');await closeShellPanels();
       await page.evaluate(()=>document.fonts.ready);

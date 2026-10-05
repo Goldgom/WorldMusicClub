@@ -51,7 +51,7 @@ async function prepareVsqAuthoringListen({document,native,until,receiver,audio,s
  const runtimes=()=>report.responses.filter(row=>row.path==='/api/library/runtime');
  const choiceState=()=>({preview:$('song-lobby').dataset.previewStatus,listenDisabled:$('start-listen').disabled,practiceDisabled:$('start-practice').disabled,fullVocalDisabled:$('vsq-full-vocal').disabled,fullVocalVisible:!$('vsq-full-vocal').hidden&&$('vsq-full-vocal').getBoundingClientRect().width>0,choiceVisible:!$('vsq-choose-base-notes').hidden,limits:[...$('vsq-interpretation-limits').children].map(n=>n.textContent),tracks:[...$('clean-song-tracks').children].map(n=>n.textContent),audio:audio(),runtimeRequests:runtimes().length});
  addEventListener('DOMContentLoaded',async()=>{
-  try{await prepareNativePlaybackClock();
+  try{await prepareNativePlaybackClock({document,until});
    assert(['vsq-authoring-seed','vsq-authoring-restart'].includes(phase),'Unknown VSQ authoring phase');assert(localStorage.getItem('wmh.vsq-authoring.acceptance.marker')===null,'VSQ authoring needs a fresh browser profile');report.profileMarkerAbsent=true;localStorage.setItem('wmh.vsq-authoring.acceptance.marker',phase);
    await menu.enterLibrary();const {getAppI18n}=await import('/app-locale.js'),i18n=getAppI18n(document);i18n.setLocale('en');assert((await json('/api/health')).network==='native-protocol-no-listener','Actual Rust protocol required');
    if(phase==='vsq-authoring-seed'){

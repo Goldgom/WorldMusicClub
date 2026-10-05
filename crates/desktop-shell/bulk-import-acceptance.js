@@ -63,7 +63,7 @@ function createBulkChooserObserver({target,now=()=>performance.now(),defer=callb
  const stableSession=()=>({title:$('score-title').textContent,stage:$('stage-title').textContent,pass:document.querySelector('.performance-status')?.dataset.passId,revision:document.querySelector('.performance-status')?.dataset.revision,captured:$('hud-captured').textContent,position:globalThis.__wmhReadPlaybackClock(document).positionMs});
  addEventListener('DOMContentLoaded',async()=>{
   const report={version:1,phase,ok:false,origin:location.origin,checks:[],importReports,openedScoreDatabases,errors,screenshots,chooserObservations:chooserObserver.records,files:{}};
-  try{await prepareNativePlaybackClock();
+  try{await prepareNativePlaybackClock({document,until});
    assert(localStorage.getItem('wmh.bulk.acceptance.marker')===null,'Bulk scenario requires a fresh WebView profile');report.profileMarkerAbsent=true;localStorage.setItem('wmh.bulk.acceptance.marker',phase);
    await menu.enterLibrary();const {getAppI18n}=await import('/app-locale.js');getAppI18n(document).setLocale('en');assert((await json('/api/health')).network==='native-protocol-no-listener','Bulk proof requires native protocol');
    if(phase==='bulk-seed'){

@@ -1,4 +1,4 @@
-import {readPlaybackClock} from './browser-playback-clock.js';
+import {readPlaybackClock, installPlaybackClockReader, waitForPlaybackClock} from './browser-playback-clock.js';
 import assert from 'node:assert/strict';
 import {readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -148,7 +148,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui, readyForT
   }
 
   test('real initial compact guide stays on stage through tall and short resizes without losing held input or playfield space',{timeout:60_000},async()=>{
-    const page=getPage();await page.setViewportSize({width:844,height:390});await page.reload();
+    const page=getPage();await installPlaybackClockReader(page);await page.setViewportSize({width:844,height:390});await page.reload();await waitForPlaybackClock(page);
     await page.locator('#home-single-player').click();await page.locator('#start-listen:not([disabled])').waitFor();
     const {score}=await prepare('beginner-initial-compact');
     assert.equal(await page.locator('#beginner-enabled').isChecked(),false);

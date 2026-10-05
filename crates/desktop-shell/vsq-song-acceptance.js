@@ -90,7 +90,7 @@ function readVsqPickerGesture(document,event=null) {
  const control=node=>node?{id:node.id,tag:node.tagName,type:node.type,disabled:Boolean(node.disabled),connected:Boolean(node.isConnected),inert:Boolean(node.inert)}:null;
  return{observedAtMs,eventTimeMs:event?.timeStamp??null,type:event?.type??'before-action',targetId:event?.target?.id||event?.target?.closest?.('#import-button')?.id||null,trusted:event?event.isTrusted===true:null,button:event?.button??null,buttons:event?.buttons??null,defaultPrevented:event?.defaultPrevented===true,activation:{isActive:activation?.isActive??null,hasBeenActive:activation?.hasBeenActive??null},focus:{hasFocus:document.hasFocus?.()??null,activeId:document.activeElement?.id??null,visibility:document.visibilityState??null},trigger:control(button),input:{...control(input),multiple:input?.multiple??null},dialog:dialog?{id:dialog.id,open:dialog.open,modal:dialog.matches(':modal')}:null};
 }
-function createVsqControlObserver(document) {
+function createVsqControlObserver(document,{readActionSequence=()=>null}={}) {
  const trusted=[],pickers=[],listeners=[];let active=null,activeInput=null;
  function observe(event){
   const trigger=event.target?.closest?.('#import-button'),fingering=event.target?.closest?.('#piano-fingering-replan,#piano-source-hand,#piano-source-finger,#instrument,#guitar-lock-finger,#guitar-lock-fret,#guitar-apply-lock,#guitar-clear-locks'),id=trigger?'import-button':fingering?.id||event.target?.id,part=event.target?.dataset?.partId||event.target?.dataset?.soloPartId,isFile=id==='score-file'||(activeInput!==null&&event.target===activeInput);
@@ -98,7 +98,7 @@ function createVsqControlObserver(document) {
   if(['pointerdown','pointerup'].includes(event.type)&&id!=='progress')return;
   if(!isFile&&!['vsq-choose-base-notes','play-button','clean-song-target','stage-title','bulk-import-save','score-file','import-button','progress'].includes(id)&&!fingering&&!part)return;
   const row={type:event.type,trusted:event.isTrusted===true,id:id||null,part:part||null,code:event.code||null,value:event.target?.value||null,checked:typeof event.target?.checked==='boolean'?event.target.checked:null};
-  if(id==='progress')Object.assign(row,{button:event.button??null,eventTimeMs:event.timeStamp??null});
+  if(id==='progress')Object.assign(row,{button:event.button??null,eventTimeMs:event.timeStamp??null,observedAtMs:document.defaultView?.performance?.now()??null,observedSequence:trusted.length,actionSequence:readActionSequence()});
   if(isFile){
    const originalControl=Boolean(active&&event.target===activeInput&&activeInput===document.getElementById?.('score-file'));
    if(active&&event.type==='click'&&event.isTrusted===false){if(active.delegatedClicks.length>=1)throw Error('VSQ picker has repeated hidden-input delegation');active.delegatedClicks.push({type:'click',trusted:false,id,sequence:active.sequence,originalControl});return;}
@@ -137,9 +137,10 @@ function waitVsqSourceOnset({read,bounded,request=requestAnimationFrame,cancel=c
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(v,m)=>{if(!v)throw Error(m);};
  const originalFetch=globalThis.fetch,fetcher=originalFetch.bind(globalThis),waits=createAcceptanceWait(),json=(path,body)=>waits.json(fetcher,path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},10000);
- const controls=createVsqControlObserver(document);
+ let sequence=0;
+ const controls=createVsqControlObserver(document,{readActionSequence:()=>sequence});
  const report={version:1,phase,origin:location.origin,ok:false,stage:'initialization',checks:[],errors:[],requests:[],imports:[],runtimeResponses:[],assessmentRequests:[],assessmentResponses:[],trusted:controls.trusted,pickerObservations:controls.pickers,files:{},screenshots:{},diagnostics:[],fingering:{version:1,responses:[],observations:[],samples:[],actions:[],stale:null}};
- let sequence=0,probe,receiver,live,follow,requestObservationActive=true,fingeringObservationActive=false;
+ let probe,receiver,live,follow,requestObservationActive=true,fingeringObservationActive=false;
  const checkpoint=stage=>{report.stage=stage;assert(report.diagnostics.length<48,'VSQ diagnostic stage bound exceeded');report.diagnostics.push({stage,elapsedMs:performance.now()});};
  const until=(condition,label,ms=10000)=>waits.until(signal=>{receiver?.assertHealthy();live?.assertHealthy();return condition(signal);},`VSQ ${report.stage}: ${label}`,ms);
  const closeDialogs=()=>{for(const d of document.querySelectorAll('dialog[open]'))d.close();};
@@ -173,7 +174,7 @@ function waitVsqSourceOnset({read,bounded,request=requestAnimationFrame,cancel=c
  }
  async function reset(){await native('click',$('reset-button'));await until(()=>globalThis.__wmhReadPlaybackClock(document).positionMs===0&&!$('play-button').disabled,'transport reset');}
  addEventListener('DOMContentLoaded',async()=>{
-  try {await prepareNativePlaybackClock();
+  try {await prepareNativePlaybackClock({document,until});
    assert(['vsq-seed','vsq-restart'].includes(phase),'Unknown VSQ phase');assert(localStorage.getItem('wmh.vsq.acceptance.marker')===null,'VSQ needs a fresh browser profile');report.profileMarkerAbsent=true;localStorage.setItem('wmh.vsq.acceptance.marker',phase);
    await menu.enterLibrary();const {getAppI18n}=await import('/app-locale.js');getAppI18n(document).setLocale('en');assert((await json('/api/health')).network==='native-protocol-no-listener','VSQ requires actual native protocol');probe=observeNativeReferenceAudio();receiver=await observeBasicKeyReceiver(document);live=await observeLiveToneAudio(document,{keyCode:'KeyU',midi:63,readSource:()=>receiver.status()});
    if(phase==='vsq-seed'){

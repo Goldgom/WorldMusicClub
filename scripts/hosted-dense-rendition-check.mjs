@@ -1,4 +1,4 @@
-import {installPlaybackClockReader} from '../tests/browser-playback-clock.js';
+import {installPlaybackClockReader, waitForPlaybackClock} from '../tests/browser-playback-clock.js';
 // Hosted Chromium and the exact-source native stdio driver only. No local launch.
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
@@ -46,7 +46,7 @@ try{
   }
   throw Error('Hosted route must not intercept a shipped asset');
  });
- page=await context.newPage();await installPlaybackClockReader(page);page.setDefaultTimeout(30000);page.on('pageerror',error=>report.pageErrors.push(String(error.stack||error)));await page.goto(origin);report.locale=await page.evaluate(()=>document.documentElement.lang);assert.equal(report.locale,'zh-CN');
+ page=await context.newPage();await installPlaybackClockReader(page);page.setDefaultTimeout(30000);page.on('pageerror',error=>report.pageErrors.push(String(error.stack||error)));await page.goto(origin);await waitForPlaybackClock(page);report.locale=await page.evaluate(()=>document.documentElement.lang);assert.equal(report.locale,'zh-CN');
  await action('Enter library',()=>page.locator('#home-single-player').click());await action('Choose original dense source',()=>page.locator(`#catalog [data-library-key="native:${prepared.manifest.key}"]`).click());await page.waitForFunction(()=>!document.getElementById('open-score').disabled);
  await action('Open paused native score',()=>page.locator('#open-score').click());await controls(true);if(await page.locator('#engraved-button').getAttribute('aria-pressed')!=='true')await action('Choose actual staff',()=>page.locator('#engraved-button').click());await controls(false);
  await page.waitForFunction(()=>document.getElementById('workspace').dataset.notationRenderStatus==='ready'&&document.querySelector('#engraved-staff .vf-notehead'));

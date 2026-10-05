@@ -1,4 +1,4 @@
-import {installPlaybackClockReader} from './browser-playback-clock.js';
+import {installPlaybackClockReader, waitForPlaybackClock} from './browser-playback-clock.js';
 import assert from 'node:assert/strict';
 import {readFile,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -12,7 +12,7 @@ export function registerReferenceListeningBrowserRegressions({test,getPage,ui,re
   test('real complete MIDI reference listener preserves every source event and the paused scored take through transport, mute and locale changes',
     {timeout:60_000},async()=>{
       const page = getPage(), source = originalReferenceMidiFixture();
-      await installPlaybackClockReader(page);
+      await installPlaybackClockReader(page);await waitForPlaybackClock(page);
       const score = keyboardBrowserScore('original-reference-beside-paused-take');
       const evidence = [], midiRequests = [], forbiddenRequests = [];
       const audio = () => page.evaluate(()=>({...window.audioObservation}));

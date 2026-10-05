@@ -1,4 +1,4 @@
-import {installPlaybackClockReader,readPlaybackClock} from '../tests/browser-playback-clock.js';
+import {installPlaybackClockReader,readPlaybackClock, waitForPlaybackClock} from '../tests/browser-playback-clock.js';
 // Execute only on the explicitly authorized hosted runner. No local browser or
 // server launch is permitted. Fixtures below are authored here, never uploads
 // from the user's music collection. Screenshots are required evidence.
@@ -68,7 +68,7 @@ try {
   const origin=`http://127.0.0.1:${port}`;let ready=false;for(let count=0;count<120;count++){try{if((await fetch(`${origin}/api/health`)).ok){ready=true;break;}}catch{}if(server.exitCode!==null)throw Error(serverLog);await new Promise(resolve=>setTimeout(resolve,100));}assert.ok(ready);
   const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});const context=await browser.newContext({viewport:{width:1280,height:720}});page=await context.newPage();await installPlaybackClockReader(page);page.on('pageerror',error=>report.page_errors.push(error.message));page.on('response',response=>{if(new URL(response.url()).pathname==='/api/notation-navigation')navigationReads.push((async()=>{assert.equal(response.status(),200);const request=response.request().postDataJSON(),body=await response.json();assert.deepEqual(request,score);assert.equal(body.source_measure_count,24);report.navigation.push(body);})().catch(error=>report.page_errors.push(error.stack||String(error))));});
   await page.addInitScript(()=>localStorage.setItem('worldmusichub.locale.v1','en'));
-  await page.goto(origin);await page.locator('#home-single-player').click();await page.locator('#score-file').setInputFiles({name:'original-multipart.wmhscore.json',mimeType:'application/json',buffer:Buffer.from(raw)});
+  await page.goto(origin);await waitForPlaybackClock(page);await page.locator('#home-single-player').click();await page.locator('#score-file').setInputFiles({name:'original-multipart.wmhscore.json',mimeType:'application/json',buffer:Buffer.from(raw)});
   await page.waitForFunction(title=>document.getElementById('score-title').textContent===title,score.title);
   // Imported scores open directly; retain the real app navigation in either
   // supported lobby/direct-import flow rather than replacing page DOM.

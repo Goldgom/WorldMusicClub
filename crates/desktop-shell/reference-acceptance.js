@@ -2,7 +2,11 @@
  * the real native WebView AudioContext; no parser, audio, file input or API mock. */
 // Import the production's versioned DOM reader before any owned scenario.
 // Native range strings remain input evidence, never a source-clock fallback.
-async function prepareNativePlaybackClock(){globalThis.__wmhReadPlaybackClock=(await import('/playback-clock-view.js')).readPlaybackClock;}
+async function prepareNativePlaybackClock({document=globalThis.document,until}){
+ if(typeof globalThis.__wmhReadPlaybackClock!=='function')globalThis.__wmhReadPlaybackClock=(await import('/playback-clock-view.js')).readPlaybackClock;
+ if(typeof until!=='function')throw Error('Playback clock preparation needs the existing bounded readiness wait');
+ await until(()=>{const node=document.getElementById('progress');if(!node||node.getAttribute('data-playback-clock')===null)return false;globalThis.__wmhReadPlaybackClock(document);return true;},'first published playback clock');
+}
 function nativePlaybackEnded(endMs,document=globalThis.document){const clock=globalThis.__wmhReadPlaybackClock(document);return clock.positionMs===endMs&&clock.completed&&clock.phase==='ended';}
 function nativePlaybackClockDiagnostic(document){try{const clock=globalThis.__wmhReadPlaybackClock(document);return{position:clock.positionMs,clock};}catch(error){return{position:null,clockError:String(error).slice(0,512)};}}
 
@@ -74,7 +78,7 @@ function observeNativeReferenceTransport(document, {now=()=>performance.now(),de
 }
 
 async function prepareNativeReferenceScoredTake({document,native,click,closeDialogs,until}) {
-  if(typeof globalThis.__wmhReadPlaybackClock!=='function')await prepareNativePlaybackClock();
+  await prepareNativePlaybackClock({document,until});
   const $=id=>document.getElementById(id),trace=observeNativeReferenceTransport(document);
   let stage='prepare';
   try {
