@@ -169,7 +169,7 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,read
     const footerProof=async mode=>{
       const proof=await footerNode.evaluate((node,mode)=>{
         const ids=['keyboard-active-range','keyboard-current-offset','keyboard-octave-down','keyboard-semitone-down','keyboard-semitone-up','keyboard-octave-up','keyboard-performance-details','keyboard-map','keyboard-offset-reset','keyboard-open-settings'];
-        const compact=matchMedia('(max-height:600px) and (min-width:651px)').matches;
+        const compact=matchMedia('(max-height:600px) and (min-width:651px), (max-width:650px)').matches;
         const buttons=['keyboard-octave-down','keyboard-semitone-down','keyboard-semitone-up','keyboard-octave-up'].map(id=>{const button=document.getElementById(id),r=button.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return{id,text:button.textContent,label:button.getAttribute('aria-label'),reachable:hit===button||button.contains(hit)};});
         return {mode,compact,same:node===document.querySelector('.keyboard-input-footer'),count:document.querySelectorAll('.keyboard-input-footer').length,ids:ids.map(id=>({id,count:document.querySelectorAll(`#${id}`).length,inside:node.contains(document.getElementById(id))})),host:node.closest('#keyboard-input-settings,.free-performance-panel,.play-panel')?.id||node.closest('.free-performance-panel,.play-panel')?.className,after:node.previousElementSibling?.id,indicatorInFree:Boolean(document.querySelector('#keyboard-compact-status').closest('.free-practice-heading')),buttons};
       },mode);

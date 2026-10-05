@@ -33,7 +33,7 @@
 .keyboard-compact-status { flex: none; min-width: 0; border: 1px solid var(--border, #dce2e8); border-radius: 4px; padding: 0 3px; font-family: inherit; font-size: 11px; line-height: 16px; color: var(--ink, #24372d); background: var(--paper, #fff); white-space: nowrap; cursor: pointer; }
 @media (max-width: 600px) { .keyboard-input-fields { grid-template-columns: 1fr; } .keyboard-map-key { min-width: 2rem; } }
 
-@media (max-height: 600px) and (min-width: 651px) {
+@media (max-height: 600px) and (min-width: 651px), (max-width: 650px) {
   .keyboard-footer.keyboard-input-footer { padding: 3px 10px; max-height: min(180px, 40dvh); }
   .keyboard-performance-details>summary { max-width: 8rem; }
   .keyboard-stage-meta { display: flex; align-items: center; gap: 5px; margin-top: 4px; min-width: 0; }

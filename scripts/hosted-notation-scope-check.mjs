@@ -45,7 +45,7 @@ async function geometry(mode) {
     const key=keyboard.querySelector('[data-midi="60"]'),keyBounds=rect(key),hit=document.elementFromPoint(keyBounds.x+keyBounds.width/2,keyBounds.bottom-12);
     const visible=glyphs.filter(glyph=>glyph.bounds.bottom>bounds.y&&glyph.bounds.y<bounds.bottom&&glyph.bounds.right>bounds.x&&glyph.bounds.x<bounds.right);
     return {viewport:{width:innerWidth,height:innerHeight},overlay:bounds,keyboard:rect(keyboard),scrollTop:overlay.scrollTop,scrollHeight:overlay.scrollHeight,clientHeight:overlay.clientHeight,
-      fit:overlay.dataset.notationFit,scale:Number(overlay.dataset.notationScale||1),glyphs,visibleGlyphs:visible.length,keyboardReachable:hit===key||key.contains(hit),
+      fit:overlay.dataset.notationFit,scale:Number(overlay.dataset.notationScale||1),glyphs,visibleGlyphs:visible.length,keyboardReachable:hit===key||key.contains(hit),keyboardHit:{keyBounds,point:{x:keyBounds.x+keyBounds.width/2,y:keyBounds.bottom-12},target:hit?.id||hit?.className||hit?.tagName||null},
       renderedParts:document.getElementById('notation-scope-status')?.parentElement.dataset.renderedParts,totalParts:document.getElementById('notation-scope-status')?.parentElement.dataset.totalParts,
       renderStatus:document.getElementById('workspace').dataset.notationRenderStatus,renderedIds:JSON.parse(document.getElementById('workspace').dataset.renderedNotationParts||'[]'),range:document.getElementById('engraving-range').textContent,focusedIds:JSON.parse(document.getElementById('written-cursor-status').dataset.sourceNoteIds||'[]'),sourceMeasure:document.getElementById('written-cursor-status').dataset.sourceMeasureIndex,
       scope:document.getElementById('notation-scope')?.value,status:document.getElementById('notation-scope-status')?.textContent,progress:globalThis.__wmhReadPlaybackClock().positionMs,
@@ -54,6 +54,7 @@ async function geometry(mode) {
 }
 function checkParts(value,ids){assert.equal(value.renderStatus,'ready');assert.deepEqual(value.renderedIds,ids);assert.equal(Number(value.renderedParts),ids.length);const sourceParts=new Map(score.parts.flatMap(part=>part.notes.map(note=>[note.id,part.id])));assert.ok(value.sourceIds.length>0,'Painted glyph bindings must expose original note IDs');const painted=[...new Set(value.sourceIds.map(id=>{assert.ok(sourceParts.has(id),'Unknown painted source ID');return sourceParts.get(id);}))];assert.deepEqual(painted.sort(),[...ids].sort(),'Every requested part must have actual source-bound paint');}
 function checkGeometry(value,mode) {
+  report.last_geometry={mode,value};
   assert.ok(value.glyphs.length>0&&value.visibleGlyphs>0,'Actual visible notation glyphs are required');
   assert.ok(value.overlay.bottom<=value.keyboard.y+1,'Notation must stop before the keyboard');assert.equal(value.keyboardReachable,true,'Score paint/options must not intercept keys');
   assert.equal(value.horizontalDocumentOverflow,false);assert.ok(value.scale>=.75);

@@ -52,7 +52,7 @@ export function setupKeyboardInputView({document, controller, i18n, getVisualRan
   const limit = localized('p','keyboard-configuration-limit','keyboard.historyLimit','warning'); limit.hidden = true;
   mapDetails.append(mapStatus,localized('p','keyboard-input-shortcuts','keyboard.shortcuts'),map,mapActions);
   footer.append(status,actions,mapDetails,limit);
-  // Short landscape cannot afford a second permanent instrument toolbar: it
+  // Short landscape and narrow portrait cannot afford a second permanent toolbar: it
   // takes space from the falling notes and the complete first guitar row. Keep
   // the same controls in Settings there, with an anchor for their stage home.
   // Moving existing nodes retains their handlers, disclosure state and map.
@@ -63,7 +63,7 @@ export function setupKeyboardInputView({document, controller, i18n, getVisualRan
   compactStatus.setAttribute('aria-controls','settings-dialog'); compactStatus.setAttribute('aria-haspopup','dialog'); compactStatus.dataset.keyboardInput = 'off';
   compactStatus.addEventListener('click',openKeyboardSettings);
   if (stageMeta) { subtitle.replaceWith(stageMeta); stageMeta.append(subtitle,compactStatus); }
-  const shortLandscape = document.defaultView?.matchMedia?.('(max-height:600px) and (min-width:651px)');
+  const shortLandscape = document.defaultView?.matchMedia?.('(max-height:600px) and (min-width:651px), (max-width:650px)');
   let activeScreen=document.body?.dataset.screen||'stage';
   function arrangeFooter() {
     const compact = Boolean(shortLandscape?.matches && host && stageMeta);

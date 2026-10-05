@@ -16,6 +16,18 @@
 .performance-layout .stage-hud>.complete-practice-controls{order:10;flex:1 1 20rem;min-width:0;padding:0;flex-wrap:nowrap;gap:8px}
 .performance-layout .complete-practice-controls>.button,.performance-layout .complete-practice-controls>label{flex:none;white-space:nowrap}
 .performance-layout .complete-practice-controls>p{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
+/* Keep optional selection summaries inside a bounded tool track. A new mode
+   control must not force every desktop action onto a second heading row. */
+@media(min-width:1280px){
+ .performance-layout #workspace>.stage-hud{flex-wrap:nowrap!important;gap:6px}
+ .performance-layout #workspace>.stage-hud .stage-heading{flex:1 1 9rem;min-width:9rem}
+ .performance-layout #workspace>.stage-hud>nav{flex:0 1 auto;flex-wrap:nowrap;gap:4px;min-width:0}
+ .performance-layout #workspace>.stage-hud>.button,.performance-layout #workspace>.stage-hud nav .button{flex:0 1 auto;min-width:0;white-space:normal;padding-left:6px;padding-right:6px}
+ .performance-layout #workspace>.stage-hud>:is(.complete-practice-controls,.song-mod-stage){flex:0 1 11rem;min-width:6rem;max-width:11rem;flex-wrap:nowrap;padding:0;gap:6px;order:initial}
+ .performance-layout #workspace>.stage-hud>:is(.complete-practice-controls,.song-mod-stage)>.button{flex:0 1 auto;min-width:0;max-width:100%;white-space:normal}
+ .performance-layout #workspace>.stage-hud #song-mod-stage-summary{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .performance-layout #workspace>.stage-hud>#song-parts-tools{flex:0 1 7rem;min-width:5rem}
+}
 @media(max-width:650px){.performance-layout .stage-hud:has(.complete-practice-controls:not([hidden])) .stage-heading{min-width:10rem}.performance-layout .stage-hud>.complete-practice-controls{flex-basis:100%;flex-wrap:wrap}.performance-layout .complete-practice-controls>p{flex-basis:100%}}
 .performance-layout .stage-hud:has(.complete-practice-controls:not([hidden]))>#song-parts-tools{flex:0 1 10rem;min-width:6rem;max-width:10rem}
 .performance-layout .stage-hud:has(.complete-practice-controls:not([hidden])) #song-parts-summary{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

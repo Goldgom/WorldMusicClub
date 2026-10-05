@@ -5,6 +5,7 @@ import {keyTonic} from './music.js';
 import {setupStageNotationLayout} from './stage-notation-layout.js';
 import {mountPianoStage,createPianoToolbar,renderPianoRails,observePianoNoticeBudget} from './piano-stage-view.js';
 import {createPianoBudgetUpdate} from './piano-layout-budget.js';
+import {observePianoViewportBudget} from './piano-viewport-budget.js';
 export const FIELD_COLORS=Object.freeze({background:'#142333',backgroundEnd:'#1d3b4b',natural:'#7be4ce',accidental:'#acb0f5',scheduled:'#f4ce78',noteText:'#112538'});
 
 /** Presentation changes only. Unchanged attributes can still invalidate style
@@ -59,6 +60,7 @@ export function observePianoStatusBudget({document,status,window=document.defaul
 
 /** Presentation only. The app still owns all timing, sound and recorder state. */
 export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
+  let viewportBudget=null;
   const $=id=>document.getElementById(id),header=document.querySelector('.shell-header'),nav=header.querySelector('nav'),hud=document.querySelector('.stage-hud'),play=document.querySelector('.play-panel');
   document.body.classList.add('performance-layout');
   const stopNoticeBudget=observePianoNoticeBudget({document});
@@ -89,6 +91,7 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
   const engravingControls=notation.querySelector('.engraving-controls'),pageControls=notation.querySelector('.engraving-pages'),followingControls=notation.querySelector('.engraving-follow-controls');
   const followingLabel=$('engraving-follow').closest('label');label(followingLabel,'follow.label');
   const shortLandscape=window.matchMedia?.('(max-height:600px) and (min-width:651px)');
+  const compactPiano=window.matchMedia?.('(max-height:800px) and (min-width:651px)'),portraitPiano=window.matchMedia?.('(max-width:650px)');
   function arrangeNotationTools(){
     const above=$('workspace').classList.contains('notation-on-lanes'),compact=Boolean(shortLandscape?.matches)||above,focused=document.activeElement;
     notation.classList.toggle('short-notation',compact);
@@ -116,16 +119,18 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
   const cue=$('stage-cue'),cueHome=document.createComment('Guitar transport cue home');cue.before(cueHome);
   let pianoGuidance=null,guidanceHome=null;
   function arrangePianoAuxiliary(){
-    const compact=Boolean(shortLandscape?.matches)&&play.dataset.instrument!=='guitar',focused=document.activeElement;
+    const pianoMode=play.dataset.instrument!=='guitar',compact=Boolean(compactPiano?.matches)&&pianoMode,dockGuidance=pianoMode&&(compact||Boolean(portraitPiano?.matches)),focused=document.activeElement;
     if(play.dataset.instrument!=='guitar'){if(cue.parentElement!==status)status.append(cue);}
     else if(cue.previousSibling!==cueHome)cueHome.after(cue);
     transport.classList.toggle('piano-compact-transport',compact);
-    if(compact){if(pan.parentElement!==transport)transport.append(pan);if(pianoGuidance&&pianoGuidance.parentElement!==transport)transport.append(pianoGuidance);}
-    else{if(pan.previousSibling!==panHome)panHome.after(pan);if(pianoGuidance&&pianoGuidance.previousSibling!==guidanceHome)guidanceHome.after(pianoGuidance);}
+    if(compact){if(pan.parentElement!==transport)transport.append(pan);}
+    else if(pan.previousSibling!==panHome)panHome.after(pan);
+    if(dockGuidance){if(pianoGuidance&&pianoGuidance.parentElement!==transport)transport.append(pianoGuidance);}
+    else if(pianoGuidance&&pianoGuidance.previousSibling!==guidanceHome)guidanceHome.after(pianoGuidance);
     if(focused&&document.activeElement!==focused&&(pan.contains(focused)||pianoGuidance?.contains(focused)))focused.focus({preventScroll:true});
   }
   function setPianoGuidance(node){pianoGuidance=node;piano.after(node);guidanceHome=document.createComment('Piano fingering guidance home');node.before(guidanceHome);arrangePianoAuxiliary();}
-  shortLandscape?.addEventListener('change',arrangePianoAuxiliary);arrangePianoAuxiliary();
+  compactPiano?.addEventListener('change',arrangePianoAuxiliary);portraitPiano?.addEventListener('change',arrangePianoAuxiliary);arrangePianoAuxiliary();
   const pianoPresentation=mountPianoStage({document,stage:piano,scroll,surface:$('piano-surface'),keyboard:$('keyboard'),canvas:$('falling-notes')});
   renderPianoRails({document,rails:pianoPresentation.rails,geometry:getContext().geometry||[]});
   const pianoTitle=document.createElement('h2');pianoTitle.setAttribute('data-i18n','free.pianoTitle');pianoTitle.textContent=i18n.t('free.pianoTitle');
@@ -162,10 +167,11 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
     const cueState=!cue?null:context.running?'countdown':context.completed?'complete':context.hasStarted?'paused':'ready',signature=JSON.stringify([i18n.revision,cue,cueState]);
     if(signature!==lastCue){lastCue=signature;const node=$('stage-cue');node.hidden=!cue;if(cueState)node.dataset.cueState=cueState;else node.removeAttribute('data-cue-state');$('stage-cue-main').textContent=cue?.main||'';$('stage-cue-detail').textContent=cue?.detail||'';}updateRange();
   }
-  function screenChanged(screen){if(screen==='stage'){hud.append(nav);header.hidden=true;}else if(screen==='free'){$('free-practice-screen').querySelector('.free-practice-heading').append(nav);header.hidden=true;}else{header.append(nav);header.hidden=false;}update();notationLayout.refresh();}
+  function screenChanged(screen){if(screen==='stage'){hud.append(nav);header.hidden=true;}else if(screen==='free'){$('free-practice-screen').querySelector('.free-practice-heading').append(nav);header.hidden=true;}else{header.append(nav);header.hidden=false;}update();notationLayout.refresh();viewportBudget?.refresh();}
   const refreshLocale=()=>{localizeStatic(document,i18n);update();notationLayout.refresh();};
   localizeStatic(document,i18n);screenChanged(document.body.dataset.screen);
   const unsubscribe=i18n.subscribe(refreshLocale);
   const stopStatusBudget=observePianoStatusBudget({document,status});
-  return{update,screenChanged,setPianoGuidance,destroy(){stopStatusBudget();stopNoticeBudget();unsubscribe();notationLayout.destroy();window.removeEventListener('resize',updateRange);scroll.removeEventListener('scroll',updateRange);shortLandscape?.removeEventListener('change',arrangeNotationTools);shortLandscape?.removeEventListener('change',arrangePianoAuxiliary);cueHome.after(cue);cueHome.remove();panHome.after(pan);if(pianoGuidance)guidanceHome.after(pianoGuidance);panHome.remove();guidanceHome?.remove();transport.classList.remove('piano-compact-transport');}};
+  viewportBudget=observePianoViewportBudget({document});
+  return{update,screenChanged,setPianoGuidance,destroy(){viewportBudget.destroy();stopStatusBudget();stopNoticeBudget();unsubscribe();notationLayout.destroy();window.removeEventListener('resize',updateRange);scroll.removeEventListener('scroll',updateRange);shortLandscape?.removeEventListener('change',arrangeNotationTools);compactPiano?.removeEventListener('change',arrangePianoAuxiliary);portraitPiano?.removeEventListener('change',arrangePianoAuxiliary);cueHome.after(cue);cueHome.remove();panHome.after(pan);if(pianoGuidance)guidanceHome.after(pianoGuidance);panHome.remove();guidanceHome?.remove();transport.classList.remove('piano-compact-transport');}};
 }

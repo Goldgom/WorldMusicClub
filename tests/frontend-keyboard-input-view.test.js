@@ -9,7 +9,7 @@ import {createI18n} from '../web/i18n.js';
 function fixture(options={},viewOptions={},short=false) {
   const {document,window}=parseHTML('<html><body><div class="stage-heading"><h1 id="stage-title">Score</h1><p id="stage-subtitle">Practice</p></div><dialog id="settings-dialog"><div class="shell-dialog-content"></div></dialog><section class="play-panel"><div class="piano-stage"><canvas id="falling-notes"></canvas><div id="keyboard"><button data-midi="60"><span class="key-shortcut"></span></button><button data-midi="36"><span class="key-shortcut"></span></button></div></div><div class="keyboard-footer"></div><div class="transport"><button id="play-button">Play</button><button id="stop-button">Stop</button></div></section><section id="free-practice-screen"><div class="free-practice-heading"><h1 id="free-practice-title">Free</h1></div><section id="free-piano-stage"></section><div class="free-stage-footer"></div></section></body></html>');
   const mediaListeners=new Set(),media={matches:short,addEventListener(type,listener){assert.equal(type,'change');mediaListeners.add(listener);},removeEventListener(type,listener){assert.equal(type,'change');mediaListeners.delete(listener);}};
-  window.matchMedia=query=>{assert.equal(query,'(max-height:600px) and (min-width:651px)');return media;};
+  window.matchMedia=query=>{assert.equal(query,'(max-height:600px) and (min-width:651px), (max-width:650px)');return media;};
   const setShortLandscape=matches=>{media.matches=matches;for(const listener of mediaListeners)listener({matches});};
   Object.defineProperty(window.HTMLSelectElement.prototype,'value',{configurable:true,get(){return this.querySelector('option[selected]')?.value||this.querySelector('option')?.value||''},set(value){for(const option of this.querySelectorAll('option'))option.toggleAttribute('selected',option.value===String(value))}});
   const $=id=>document.getElementById(id), events=[],i18n=createI18n({locale:'en',onReport:()=>{}});let view;
@@ -17,7 +17,7 @@ function fixture(options={},viewOptions={},short=false) {
   const controller=createKeyboardInput({getContext:()=>({screen:'stage'}),pressNote:(...args)=>events.push(['on',...args]),releaseNote:(...args)=>events.push(['off',...args]),releaseMatching:(...args)=>events.push(['cleanup',...args]),onChange:next=>view?.render(next),...options});
   view=setupKeyboardInputView({document,controller,i18n,getVisualRange:()=>({low:48,high:72}),...viewOptions});
   const emit=(target,type,properties={})=>{const event=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(event,properties);target.dispatchEvent(event);return event;};
-  return {document,window,$,controller,view,events,i18n,emit,stageNodes,setShortLandscape,mediaListeners};
+  return {document,window,$,controller,view,events,i18n,emit,stageNodes,setShortLandscape,setViewport:(width,height)=>setShortLandscape(width<=650||height<=600&&width>=651),mediaListeners};
 }
 
 test('wide physical mapping is available, with accurate matching piano labels and separate display range',()=>{
@@ -104,6 +104,21 @@ test('short landscape uses Settings for the same keyboard controls and keeps liv
   assert.equal($('keyboard-current-offset').textContent,'+11');
   assert.equal($('keyboard-active-range').textContent,'B2–A6');
   assert.ok(indicator.getAttribute('aria-label').includes(i18n.t('keyboard.offset',{semitones:11})));
+});
+
+test('390 portrait resizes preserve one Settings footer, clickable range, disclosure and input ownership in both modes',()=>{
+  let configured=0;
+  const {document,$,view,controller,events,setViewport}=fixture({}, {onConfigure:()=>configured++});
+  const footer=document.querySelector('.keyboard-input-footer'),map=$('keyboard-map'),details=$('keyboard-performance-details'),badge=$('keyboard-compact-status');details.setAttribute('open','');
+  controller.keydown({code:'KeyR',key:'r',target:document.body,timeStamp:1,preventDefault(){}});const before=controller.exportConfigurationData();
+  for(const mode of ['stage','free','stage']){
+    view.setScreen(mode);setViewport(390,844);assert.equal(footer.parentElement,$('keyboard-input-settings'));assert.equal(badge.hidden,false);badge.click();
+    assert.equal(badge.closest(mode==='free'?'.free-practice-heading':'.stage-heading')!==null,true);
+    assert.equal($('keyboard-map'),map);assert.equal(details.hasAttribute('open'),true);assert.deepEqual(controller.exportConfigurationData(),before);
+    setViewport(1280,900);assert.notEqual(footer.parentElement,$('keyboard-input-settings'));assert.equal(badge.hidden,true);
+  }
+  assert.equal(configured,3);assert.equal(events.filter(row=>row[0]==='on').length,1);assert.equal(events.filter(row=>row[0]==='off').length,0);
+  controller.keyup({code:'KeyR',timeStamp:2});assert.equal(events.filter(row=>row[0]==='off').length,1);view.destroy();
 });
 
 test('one existing keyboard footer and mapping disclosure move between modes and retain the compact Settings home',()=>{

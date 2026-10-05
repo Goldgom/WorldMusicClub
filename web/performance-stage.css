@@ -213,4 +213,8 @@
      grow with that height: a 56px flexible track would let frets cover the next
      row's disclosure and intercept its close click. The stage owns overflow. */
   .performance-layout .guitar-stage:has(#guitar-plan-controls[open]),.performance-layout .guitar-stage:has(.guitar-details[open]),.performance-layout .play-panel:has(#practice-gate:not([hidden])) .guitar-stage{grid-template-rows:max-content max-content max-content;grid-auto-rows:max-content}
+  /* A tall live matrix cannot consume the fixed first fret row. Its own
+     viewport scrolls; expanded route/source tools retain the stage scroller. */
+  .performance-layout #workspace .guitar-stage:not(:has(#guitar-plan-controls[open],.guitar-details[open])){grid-template-rows:minmax(0,1fr) 56px max-content}
+  .performance-layout #workspace .guitar-stage:not(:has(#guitar-plan-controls[open],.guitar-details[open])) #guitar-guidance{min-height:0;max-height:100%;overflow:auto;overscroll-behavior:contain}
 }

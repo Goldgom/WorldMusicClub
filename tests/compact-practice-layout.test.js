@@ -88,6 +88,9 @@ test('compact CSS reserves a complete fret row and allows the Follow toolbar to 
   assert.equal(rule('.performance-layout #notation-dock .short-notation').overflow,'visible');
   assert.equal(rule('.performance-layout #notation-dock .short-notation .engraving-follow-controls').position,'sticky');
   assert.equal(rule('.performance-layout .guitar-stage')['grid-template-rows'],'max-content minmax(56px,1fr) max-content','Full guidance and both disclosure summaries reserve their content height around a complete first fret row');
+  const closed='.performance-layout #workspace .guitar-stage:not(:has(#guitar-plan-controls[open],.guitar-details[open]))';
+  assert.equal(rule(closed)['grid-template-rows'],'minmax(0,1fr) 56px max-content','A tall live matrix must yield space to the complete first fret row and disclosures');
+  assert.equal(rule(closed+' #guitar-guidance')['max-height'],'100%');assert.equal(rule(closed+' #guitar-guidance').overflow,'auto','All matrix rows remain reachable through their own bounded scroller');
   assert.equal(rule('.performance-layout #guitar-planning')['grid-column'],'1');
   assert.equal(rule('.performance-layout .guitar-details')['grid-column'],'2');
   const expanded=rule('.performance-layout .guitar-stage:has(#guitar-plan-controls[open]),.performance-layout .guitar-stage:has(.guitar-details[open]),.performance-layout .play-panel:has(#practice-gate:not([hidden])) .guitar-stage');
