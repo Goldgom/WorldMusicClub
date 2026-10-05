@@ -50,7 +50,11 @@ export function setupNotationFit({viewport,getSurface,getReservedHeight=()=>0,on
     viewport.dataset.notationFit=plan.status;viewport.dataset.notationScale=String(plan.scale);
     // A new page can have the same dimensions as its predecessor. Its separate
     // cue layer still needs the newly fitted paint coordinates exactly once.
-    const signature=JSON.stringify(plan);if(signature!==last||paintChanged){last=signature;onChange(plan);}
+    // At the readable scale floor, a smaller lane can have the exact same fit
+    // result and page counts. Its clipping edges still invalidate a cached
+    // current-note reveal, including while paused between playback frames.
+    const signature=JSON.stringify([plan,rect.left,rect.top,rect.width,rect.height,viewport.clientWidth,viewport.clientHeight]);
+    if(signature!==last||paintChanged){last=signature;onChange(plan);}
     return plan;
   }
   // Current-note outlines are an absolute, pointer-inert layer outside SVG.

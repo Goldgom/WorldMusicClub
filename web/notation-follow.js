@@ -168,6 +168,14 @@ export function setupNotationFollowing({api,getContext,getPlayback,view,prepareN
     })().finally(()=>{if(pending===request)pending=null;if(current===generation)controller=null});
     pending=request;return request;
   }
+  function viewportChanged(){
+    view.resetReveal?.();
+    if(!checkbox.checked||!view.isActive())return;
+    // Fit and glyph mounts can finish between paused playback frames. Reveal
+    // against that finished paint and publish its limitation in the same turn.
+    // This reads the existing transport; it never starts or advances playback.
+    const playback=getPlayback();tick(playback.position,playback.running,playback.written);
+  }
   checkbox.addEventListener('change',()=>{
     if(!checkbox.checked){suspend({key:'followManual'});return}
     last='';view.resetReveal?.();
@@ -177,5 +185,5 @@ export function setupNotationFollowing({api,getContext,getPlayback,view,prepareN
   message(defaultEnabled?'followOn':'followOff');
   // Text-only redraw: never tick, prepare, read the transport, navigate or reveal.
   i18n.subscribe(redrawLocale);
-  return {tick,suspend,scoreChanged,prepare,isEnabled:()=>checkbox.checked};
+  return {tick,suspend,scoreChanged,prepare,viewportChanged,isEnabled:()=>checkbox.checked};
 }

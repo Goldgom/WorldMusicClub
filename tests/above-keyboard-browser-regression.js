@@ -52,7 +52,7 @@ export function registerAboveKeyboardBrowserRegressions({test,getPage,ui,readyFo
     for(const viewport of [{width:1920,height:1080},{width:1280,height:720},{width:1033,height:403},{width:844,height:390},{width:390,height:844},{width:1280,height:720}]){
       await page.setViewportSize(viewport);await settle();
       const geometry=await simultaneousStageGeometry();
-      await writeFile(join(artifactDirectory,'worldmusichub-lane-overlay-layout-checkpoint.json'),JSON.stringify({original_fixtures_only:true,complete:false,completed_layouts:evidence,current:{viewport,geometry}},null,2));
+      await writeFile(join(artifactDirectory,'worldmusichub-live-lane-overlay-layout-checkpoint.json'),JSON.stringify({original_fixtures_only:true,complete:false,completed_layouts:evidence,current:{viewport,geometry}},null,2));
       await verifyPlacement(geometry);
       assert.equal(geometry.above,false,'A detached above-keyboard music band is not the overlay');
       assert.equal(await page.locator('#engraving-follow').isChecked(),true,'Resizing does not become manual navigation');
@@ -63,13 +63,17 @@ export function registerAboveKeyboardBrowserRegressions({test,getPage,ui,readyFo
         else{await page.waitForFunction(()=>document.querySelector('#notation .score-note.active'));const digits=await page.locator('#notation .jianpu-note').evaluateAll(nodes=>nodes.map(node=>parseFloat(getComputedStyle(node).fontSize)));assert.ok(digits.length&&digits.every(size=>size>=25),'Jianpu is never shrunk to fit the band');}
         await verifyPlacement(await simultaneousStageGeometry());
         const markers=await actualMarkerVisibility(button==='#engraved-button'?'.engraving-expected-cue:not([hidden])':'#notation .score-note.active');
+        const follow=await page.evaluate(()=>{const overlay=document.querySelector('#notation-lane-overlay'),bounds=overlay.getBoundingClientRect();return{status:document.querySelector('#engraving-follow-status').textContent,enabled:document.querySelector('#engraving-follow').checked,source_note_ids:document.querySelector('#written-cursor-status').dataset.sourceNoteIds,source_measure_index:document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex,viewport:{top:bounds.top,bottom:bounds.bottom,left:bounds.left,right:bounds.right,clientHeight:overlay.clientHeight,scrollHeight:overlay.scrollHeight,scrollTop:overlay.scrollTop},fit:overlay.dataset.notationFit,scale:overlay.dataset.notationScale};});
+        // Keep the observed compact failure state even when an assertion stops
+        // this loop. The live prefix is included in hosted evidence uploads.
+        await writeFile(join(artifactDirectory,'worldmusichub-live-lane-overlay-follow-checkpoint.json'),JSON.stringify({original_fixtures_only:true,complete:false,completed_layouts:evidence,current:{viewport,button,markers,follow}},null,2));
         assert.equal(markers.length,2,'Both original voices retain a current-note marker after every resize and view switch');
         let compactFallback=null;
         if(viewport.width>=1280&&viewport.height>=700)assert.ok(markers.every(marker=>marker.painted&&marker.fraction>=.9),`${button}: both current staff voices stay readable at ${viewport.width}×${viewport.height}`);
         else if(!markers.every(marker=>marker.painted&&marker.fraction>=.9)){
           assert.ok(markers.every(marker=>marker.painted)&&markers.some(marker=>marker.fraction>0),'Compact fallback retains exact current-note identities and visible notation ink');
           const partial=await page.evaluate(async()=>{const {getAppI18n}=await import('/app-locale.js');return getAppI18n(document).t('notationRuntime.partial');});
-          assert.ok((await page.locator('#engraving-follow-status').textContent()).includes(partial),'Unfittable simultaneous voices explicitly report partial visibility');
+          assert.ok(follow.status.includes(partial),'Unfittable simultaneous voices explicitly report partial visibility');
           const before=await page.locator('#notation-lane-overlay').evaluate(node=>node.scrollTop),direction=before>0?'up':'down';await ui(`#notation-pan-${direction}`).click();
           const after=await page.locator('#notation-lane-overlay').evaluate(node=>node.scrollTop);assert.notEqual(after,before,'A real keyboard-accessible pan control reveals another portion of the compact music');assert.equal(await page.locator('#engraving-follow').isChecked(),false,'Manual compact panning suspends exact following');
           compactFallback={partial_status:partial,direction,before,after};await ui('#engraving-follow').check();await closeShellPanels();await settle();

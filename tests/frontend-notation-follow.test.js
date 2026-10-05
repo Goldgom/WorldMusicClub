@@ -196,6 +196,20 @@ test('known follow-map failure retains its explicit original cause across locale
 });
 
 
+test('viewport refresh discards replaced-source preparation and respects manual suspension',async()=>{
+ const env=environment();
+ try{
+  const old=env.context,obsolete=env.follow.prepare();
+  env.setContext(setup());env.setPlayback({position:2500,running:false});env.follow.viewportChanged();
+  assert.equal(env.calls.length,2,'The changed source gets its own navigation request');
+  env.calls[0].resolve(old.response);await obsolete;assert.equal(env.pages.length,0,'Late old-source geometry cannot navigate the new score');
+  const current=env.follow.prepare();env.calls[1].resolve(env.context.response);await current;
+  assert.equal(env.pages.at(-1),3);assert.match(env.status.textContent,/Paused at written measure 0/);
+  env.follow.suspend();const pages=env.pages.length;env.follow.viewportChanged();
+  assert.equal(env.pages.length,pages);assert.equal(env.calls.length,2);assert.equal(env.checkbox.checked,false);
+ }finally{env.restore();}
+});
+
 test('basic source-clock page following retains the shared switch without consulting an empty generic measure map',async()=>{
  const data=JSON.parse(readFileSync(new URL('./fixtures/basic-keys-notation-follow.json',import.meta.url),'utf8')),open=data.open;
  const song=prepareCleanSong(`native:song-${open.clean_package.content_sha256}`,open.clean_package,null),context={score:song.notation,timeline:song.compilation.timeline};

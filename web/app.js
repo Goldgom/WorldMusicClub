@@ -1553,7 +1553,7 @@ const engravedView = setupEngravedView({i18n,onBasicPage:(page,batch)=>{if(hasBa
 $('workspace').addEventListener('notationscopechange',event=>{engravedView.setScope(event.detail);const scope=engravedView.scopeInfo();state.notationPart=scope.scope==='all'?null:scope.partId;$('notation-part').value=state.notationPart||'';renderNotationPage();});
 const basicNotationReveal=createBasicNotationReveal({container:$('notation'),dock:$('notation-dock')});
 $('notation-dock').addEventListener('toggle',()=>basicNotationReveal.reset(),true);
-$('workspace').addEventListener('notationviewportchange',()=>{basicNotationReveal.reset();engravedView.resetReveal();});
+$('workspace').addEventListener('notationviewportchange',()=>notationFollowing?.viewportChanged());
 const followingView={
   usesPositionFollowing:()=>isBasicKeysSong(state.cleanSong),
   followPosition(position,running,written){

@@ -7,6 +7,8 @@ import {readFileSync} from 'node:fs';
 import {prepareCleanSong} from '../web/clean-song-package.js';
 import {basicKeyWrittenAt} from '../web/basic-key-notation.js';
 import {planEngravingReveal} from '../web/engraving-reveal.js';
+import {NotationNavigationIndex,setupNotationFollowing} from '../web/notation-follow.js';
+import {originalAboveKeyboardScore} from './above-keyboard-browser-regression.js';
 const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return{promise,resolve}};
 function environment({loadAdapter,onManualNavigation,onBasicPage,isVisible,getCleanSong,getPracticePart=()=>null,getMode,observeResize=false,i18n=createI18n({locale:'en'})}={}){
  const prior=Object.fromEntries(['document','window','MutationObserver','ResizeObserver','fetch'].map(key=>[key,globalThis[key]]));const elements=new Map(),calls=[],visible=[],failures=[],resizeObservers=[],windowListeners=new Map();let score=null,pauses=0;const failure=deferred();
@@ -153,6 +155,45 @@ test('following reveals fresh verified bounds once per identity or geometry chan
   const readCount=reads;env.elements.get('engraving-follow').checked=false;env.view.revealExpectedWrittenNotes('repeat-3');assert.equal(reads,readCount);assert.equal(env.calls.length,1);assert.equal(env.pauses,0);assert.equal(JSON.stringify(score),before);
   assert.deepEqual(env.resizeObservers[0].observed,[dock]);for(const listener of env.windowListeners.get('pagehide'))listener();assert.deepEqual(env.resizeObservers[0].observed,[]);for(const listener of env.windowListeners.get('pageshow'))listener({persisted:true});assert.deepEqual(env.resizeObservers[0].observed,[dock]);
  }finally{env.close()}
+});
+
+test('paused original grand-staff following reveals and reports a compact viewport before another playback frame',async()=>{
+ const score=originalAboveKeyboardScore(),original=JSON.stringify(score),measure=8,ids=['band-8-1','band-8-2'];
+ const timeline={duration_ms:12000,notes:score.parts[0].notes.map(note=>({id:note.id,source_note_ids:[note.id],part_id:score.parts[0].id,start_ms:note.at.numerator*250,duration_ms:1000}))};
+ const navigation=new NotationNavigationIndex({version:1,source_measure_count:12,duration_ms:12000,diagnostics:[],
+  occurrences:score.measures.map((item,index)=>({id:`original-${index}`,source_measure_index:index,measure_number:item.number,source_from:item.at,source_to:{numerator:(index+1)*4,denominator:1},start_ms:index*1000,end_ms:(index+1)*1000,repeat_region_index:null,repeat_pass:null,repeat_times:null,written_note_ids:[`band-${index}-1`,`band-${index}-2`],continuing_note_ids:[]})),
+  sounding_groups:timeline.notes.map(note=>({occurrence_id:note.id,source_note_ids:note.source_note_ids,part_id:note.part_id,start_ms:note.start_ms,end_ms:note.start_ms+note.duration_ms}))},score,timeline);
+ const playback=Object.freeze({position:8250,running:false}),expected={sourceNoteIds:ids,sourceMeasureIndex:measure};
+ let current=null,reads=0,renders=0,clockReads=0,height=300,headTop=110;
+ const env=environment({loadAdapter:async()=>({disposeEngravedStaff(){},async renderEngravedStaff(_container,_xml,options){
+  renders++;return{ok:true,metadata:{fromMeasure:options.fromMeasure,toMeasure:options.toMeasure},dispose(){},mappingStatus:()=>({status:'ready',verifiedGlyphCount:2,diagnostics:[]}),setExpectedWrittenNotes(value){current=value;return true},clearExpectedWrittenNotes(){current=null;return true},expectedNoteBounds(){
+   reads++;return{status:current?'ready':'unavailable',rects:(current?.sourceNoteIds||[]).map((id,index)=>({sourceNoteId:id,xmlNoteId:id,left:120,right:136,top:90+headTop+index*145-overlay.scrollTop,bottom:106+headTop+index*145-overlay.scrollTop}))};
+  }};
+ }})});
+ const dock=document.getElementById('notation-dock'),overlay=document.getElementById('notation-lane-overlay'),status=document.getElementById('engraving-follow-status');
+ status.setAttribute=()=>{};dock.ownerDocument=document;
+ Object.assign(overlay,{hidden:false,clientTop:0,clientLeft:0,clientWidth:1000,scrollTop:0,scrollLeft:0,scrollHeight:500,getBoundingClientRect:()=>({top:90,left:10,width:1000,height}),scrollTo({top,left}){this.scrollTop=top;this.scrollLeft=left}});
+ Object.defineProperty(overlay,'clientHeight',{get:()=>height});
+ const scroller={clientTop:0,clientLeft:0,clientWidth:968,scrollLeft:0,scrollTop:0,scrollWidth:968,getBoundingClientRect:()=>({left:26,width:968}),scrollTo({left}){this.scrollLeft=left}};
+ env.elements.get('engraved-staff').closest=()=>scroller;
+ const follow=setupNotationFollowing({document,i18n:createI18n({locale:'zh-CN'}),getContext:()=>({score,timeline}),getPlayback:()=>{clockReads++;return playback},prepareNavigation:async()=>navigation,view:env.view});
+ try{
+  env.setScore(score);env.view.followMeasure(measure);env.view.setExpectedWrittenNotes(expected);
+  env.calls.at(-1).resolve({ok:true,json:async()=>({xml:'<score-partwise/>',part_id_map:{piano:'P1'},diagnostics:[]})});await new Promise(resolve=>setImmediate(resolve));
+  await follow.prepare();assert.match(status.textContent,/已暂停于谱面第 9 小节/);assert.doesNotMatch(status.textContent,/部分预期音符/);
+  assert.equal(reads,1);height=130;overlay.scrollTop=135;
+  follow.viewportChanged();
+  assert.match(status.textContent,/部分预期音符/,'Paused resize must publish partial visibility without waiting for the idle transport frame');
+  assert.equal(reads,2);assert.equal(overlay.scrollTop,98,'Reveal the exact upper voice that was clipped by the inherited scroll position');
+  assert.equal(env.view.revealExpectedWrittenNotes('original-8',measure).status,'partial');assert.equal(reads,2,'A stable playback frame reuses the freshly measured partial result');
+  follow.tick(playback.position,false);assert.match(status.textContent,/部分预期音符/,'An ordinary paused tick cannot overwrite the limitation with stale ready status');
+  height=300;follow.viewportChanged();assert.doesNotMatch(status.textContent,/部分预期音符/,'Only a genuinely fitting viewport clears the warning');
+  env.view.hide();env.view.show();env.view.setExpectedWrittenNotes(expected);height=130;headTop=40;overlay.scrollTop=135;
+  await new Promise(resolve=>setImmediate(resolve));follow.viewportChanged();
+  assert.equal(renders,2,'Switching back mounts fresh staff glyphs');assert.match(status.textContent,/部分预期音符/);assert.equal(overlay.scrollTop,28);assert.deepEqual(current,expected);
+  follow.suspend();const before=clockReads;follow.viewportChanged();assert.equal(clockReads,before,'Manual following stays suspended across subsequent fit notifications');
+  assert.equal(env.pauses,0);assert.deepEqual(playback,{position:8250,running:false});assert.equal(JSON.stringify(score),original);assert.equal(env.view.navigationState().from,9);
+ }finally{follow.suspend();env.close();}
 });
 
 test('intentional notation scrolling suspends optional follow without preventing native input',()=>{

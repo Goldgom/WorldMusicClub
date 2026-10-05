@@ -107,3 +107,21 @@ test('nested responsive part mounts stay unscaled, account for headings, and rel
  const fit=setupNotationFit({viewport,getSurface:()=>surface,window,onChange:plan=>plans.push(plan)});fit.measure();fit.measure();assert.equal(first.style.zoom,'0.8','100px of unscaled headings and spacing is reserved');assert.equal(mount.style.zoom,undefined);assert.equal(wrapper.style.zoom,undefined);assert.equal(plans.length,1,'Stable native geometry does not trigger repeated fitting');
  const next=first.cloneNode(true);next.style.zoom='';next.style.maxWidth='';delete next.dataset.notationFitPaint;geometry(next);first.replaceWith(next);svg=next;fit.measure();assert.equal(first.style.zoom,'');assert.equal(first.dataset.notationFitPaint,undefined,'Historical page ownership is released immediately');assert.equal(next.style.zoom,'0.8');assert.equal(mount.style.zoom,undefined);assert.equal(plans.length,2,'A replacement page with equal fit dimensions refreshes its new cue geometry');fit.measure();assert.equal(plans.length,2,'Stable replacement paint does not repeatedly measure cue geometry');next.remove();assert.equal(fit.measure().status,'unavailable');assert.equal(next.style.zoom,'');assert.equal(viewport.dataset.notationScale,'1');fit.destroy();assert.equal(next.style.zoom,'');
 });
+
+test('a resized viewport invalidates follow geometry even when minimum scale and page counts stay unchanged',()=>{
+ const {document,window}=parseHTML('<html><body><div id="viewport"><div id="surface"><svg><ellipse class="note-head"/></svg></div></div></body></html>');
+ const viewport=document.getElementById('viewport'),surface=document.getElementById('surface'),svg=surface.firstElementChild,plans=[];
+ let height=150,top=90;
+ viewport.getBoundingClientRect=()=>({left:10,top,width:1000,height});
+ surface.getBoundingClientRect=()=>({width:1000,height:300*(Number(svg.style.zoom)||1)});
+ svg.getBoundingClientRect=()=>({width:1000*(Number(svg.style.zoom)||1),height:300*(Number(svg.style.zoom)||1)});
+ svg.firstElementChild.getBoundingClientRect=()=>({height:10*(Number(svg.style.zoom)||1)});window.getComputedStyle=()=>({});
+ const fit=setupNotationFit({viewport,getSurface:()=>surface,window,onChange:plan=>plans.push(plan)});
+ try{
+  fit.measure();const first=plans[0];assert.equal(first.scale,.75);assert.equal(first.verticalPages,2);
+  height=130;assert.deepEqual(fit.measure(),first,'The fitted music itself is unchanged');
+  assert.equal(plans.length,2,'The smaller reveal viewport must invalidate a previously ready current-note group');
+  top=105;fit.measure();assert.equal(plans.length,3,'Moving the lane must also refresh its clipping coordinates');
+  fit.measure();assert.equal(plans.length,3,'Stable geometry does not repeatedly read current-note bounds');
+ }finally{fit.destroy();}
+});
