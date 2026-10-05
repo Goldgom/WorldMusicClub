@@ -1,0 +1,24 @@
+{
+  "format": "worldmusichub-song",
+  "id": "midi-basic-4835ffbbf6102a664ec63c1e6a1761b777157391bb1ecbd78d73378ef1e56233",
+  "media": [],
+  "rights": {
+    "attribution": "User-supplied MIDI; source rights are unverified",
+    "license": null,
+    "status": "user_supplied_unverified"
+  },
+  "score": {
+    "bytes": 4064,
+    "path": "score.json",
+    "sha256": "fae1c33dd01ade9f98911a9b8b48ac94068a462e125e4d914f553f6188581eac"
+  },
+  "sources": [
+    {
+      "bytes": 115,
+      "format": "midi",
+      "sha256": "4835ffbbf6102a664ec63c1e6a1761b777157391bb1ecbd78d73378ef1e56233"
+    }
+  ],
+  "title": "Original complete practice",
+  "version": 2
+}

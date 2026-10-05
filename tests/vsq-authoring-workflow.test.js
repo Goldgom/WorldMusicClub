@@ -192,7 +192,7 @@ const contract=read('tests/windows-desktop-contract.ps1');
 const quoted=(text,pattern)=>[...text.matchAll(pattern)].map(match=>match[1]);
 
 test('new phases agree across Rust, native orchestration and every fresh-profile registry',()=>{
- const rustPhases=Object.fromEntries([...rust.matchAll(/pub const (\w*PHASES): \[&str; \d+\] = \[([\s\S]*?)\];/g)]
+ const rustPhases=Object.fromEntries([...rust.matchAll(/pub const (\w*PHASES): \[&str; \d+\] =\s*\[([\s\S]*?)\];/g)]
   .map(([,key,value])=>[key,quoted(value,/"([^"]+)"/g)]));
  assert.deepEqual(rustPhases.VSQ_AUTHORING_PHASES,phases);
  const fresh=Object.entries(rustPhases).filter(([key])=>!['PHASES','CATALOG_PHASES'].includes(key)).flatMap(([,values])=>values);

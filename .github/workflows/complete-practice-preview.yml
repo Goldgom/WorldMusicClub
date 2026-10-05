@@ -1,0 +1,131 @@
+name: Original complete-practice focused acceptance
+on:
+  push:
+    branches: ['preview/complete-practice']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: complete-practice-${{ github.ref }}
+  cancel-in-progress: true
+# This proves only the bounded original complete-practice flow. It neither
+# publishes a package nor substitutes for the full accepted-source release gate.
+jobs:
+  complete-practice-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyYAML==6.0.3
+      - run: python scripts/check-authoring-workflow.py .github/workflows/complete-practice-preview.yml
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: '1.99.0'
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: node --test tests/complete-practice-acceptance.test.js
+      - run: 'cargo test -p worldmusichub-desktop --lib acceptance:: --locked'
+      - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - run: cargo build -p score-core --bin clean-song-batch --locked
+      - run: cargo build -p practice-server --locked
+      - name: Rebuild exact original source and verify real Rust union/unison output
+        env:
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_COMPLETE_PRACTICE_CONVERTER: ${{ github.workspace }}/target/debug/clean-song-batch
+          WMH_COMPLETE_PRACTICE_REPORT: ${{ github.workspace }}/test-results/complete-practice/native-protocol/report.json
+        run: node scripts/check-complete-practice-native.mjs
+      - run: npx playwright install --with-deps chromium
+      - name: Trusted cold Apply, take separation, cancel/reset, labels and VSQ at both sizes
+        env:
+          WMH_HOSTED_BROWSER: '1'
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
+        run: |
+          WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-complete-practice-check.mjs
+          WMH_VIEWPORT_WIDTH=960 WMH_VIEWPORT_HEIGHT=640 node scripts/hosted-complete-practice-check.mjs
+      - name: Retain bounded source, protocol, browser, processor and take evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: complete-practice-browser-${{ github.sha }}
+          path: |
+            test-results/complete-practice/*/*.json
+            test-results/complete-practice/*/*.png
+            test-results/complete-practice/*/downloads/*.json
+            test-results/complete-practice/*/fixtures/*
+            test-results/complete-practice/*/Scores/clean-songs/**
+            test-results/complete-practice/*/Scores/clean-backups/**
+          if-no-files-found: warn
+  complete-practice-windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      RUSTFLAGS: '-C target-feature=+crt-static'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyYAML==6.0.3
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: '1.99.0'
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: node --test tests/complete-practice-acceptance.test.js
+      - name: Parse owned Windows acceptance and its profile selector
+        shell: pwsh
+        run: |
+          foreach ($path in @('scripts/windows-desktop-acceptance.ps1','scripts/windows-desktop-profile.ps1')) {
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors)
+            if ($errors.Count) { $errors | Format-List; throw 'PowerShell syntax errors' }
+          }
+          ./tests/windows-desktop-contract.ps1
+      - run: 'cargo test -p worldmusichub-desktop --lib acceptance:: --locked'
+      - run: cargo build -p worldmusichub-desktop --release --locked
+      - name: Owned native controls with actual client pixels and work-area measurements
+        shell: pwsh
+        run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-complete-practice -Scenario complete-practice
+      - name: Independently bind complete-practice proof to source tree and executable bytes
+        shell: pwsh
+        run: |
+          $env:WMH_SOURCE_SHA='${{ github.sha }}'
+          $env:WMH_SOURCE_TREE=(git rev-parse 'HEAD^{tree}').Trim()
+          $env:WMH_COMPLETE_PRACTICE_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
+          node scripts/verify-complete-practice-evidence.mjs --check desktop-complete-practice
+          if ($LASTEXITCODE -ne 0) { throw 'Complete-practice source/EXE proof failed' }
+      - name: Retain original native control, geometry, processor and take evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: complete-practice-windows-${{ github.sha }}
+          path: |
+            desktop-complete-practice/*.json
+            desktop-complete-practice/*.png
+            desktop-complete-practice/*.log
+            desktop-complete-practice/downloads/*.json
+            desktop-complete-practice/fixtures/*
+            desktop-complete-practice/Scores/clean-songs/**
+            desktop-complete-practice/Scores/clean-backups/**
+          if-no-files-found: warn

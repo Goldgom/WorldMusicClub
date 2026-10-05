@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "rights": "CC0-1.0",
+  "origin": "Mechanical original C/E/G gates authored solely for public WorldMusicHub acceptance",
+  "generator": "scripts/prepare-complete-practice-fixtures.mjs:originalCompletePracticeMidi",
+  "source_bytes": 115,
+  "source_sha256": "4835ffbbf6102a664ec63c1e6a1761b777157391bb1ecbd78d73378ef1e56233",
+  "converter": "cargo run -p score-core --bin clean-song-batch --locked -- INPUT OUTPUT --json",
+  "retained_outputs": ["metadata.json", "score.json"],
+  "converter_metadata_policy": "The unmodified converter uses user_supplied_unverified for unknown sources. This separate authorship record identifies these exact generator bytes as original; no converter output is rewritten.",
+  "purpose": "Two human parts share C5 at 1500 ms; later E5/G5 are separate targets. Machine C4/G8 sound for five seconds. G8 stays outside the default piano display and blocks an all-human selection under that range.",
+  "exclusions": "No supplied or third-party song, recording, title, excerpt, or melody is used"
+}

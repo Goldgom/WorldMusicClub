@@ -20,7 +20,7 @@ $profileRoot=Join-Path ([IO.Path]::GetTempPath()) ('wmh profile 拼谱 '+[guid]:
 $heldProfile=$null
 New-Item -ItemType Directory $profileRoot | Out-Null
 try {
-  $freshPhases=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart')
+  $freshPhases=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','complete-practice-seed','complete-practice-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart')
   New-Item -ItemType Directory (Join-Path $profileRoot 'Scores') | Out-Null
   $score=Join-Path $profileRoot 'Scores/original.bin';[IO.File]::WriteAllText($score,'native score bytes')
   $profiles=@()
@@ -226,7 +226,7 @@ $temporary=Join-Path ([System.IO.Path]::GetTempPath()) ('wmh picker 拼谱 '+[gu
 try {
   $fixtures=Join-Path $temporary 'fixtures';$downloads=Join-Path $temporary 'downloads'
   New-Item -ItemType Directory $fixtures,$downloads | Out-Null
-  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu','malformed.json','folder-original.json','folder-conflict.json','原创曲包_日本語.zip','bulk-conflict.zip','bulk-backup.json','bulk-failure.zip','bulk-malformed.zip','bulk-standard-a.json','bulk-standard-b.json','clean-authored-song.zip','vsq-authored-song.zip','performance-authored-songs.zip','pitch-bend-authored-songs.zip','authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid','authoring-original.vsq','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip','catalog-original-legacy.zip','catalog-original-shared.zip','catalog-original-clean.zip')
+  $fixed=@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu','malformed.json','folder-original.json','folder-conflict.json','原创曲包_日本語.zip','bulk-conflict.zip','bulk-backup.json','bulk-failure.zip','bulk-malformed.zip','bulk-standard-a.json','bulk-standard-b.json','clean-authored-song.zip','vsq-authored-song.zip','performance-authored-songs.zip','pitch-bend-authored-songs.zip','authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid','authoring-original.vsq','complete-practice-original.zip','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip','catalog-original-legacy.zip','catalog-original-shared.zip','catalog-original-clean.zip')
   foreach($name in $fixed) {
     $expected=Join-Path $fixtures $name;[System.IO.File]::WriteAllText($expected,'fixture')
     Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) -ceq $expected) "fixed path $name"
@@ -257,14 +257,14 @@ try {
   foreach($name in @('authoring','authoring-pair','authoring-multiple','authoring-original','authoring-original-pair.extra','authoring-original-pair.mid','authoring-original-blocked-pair','authoring-any-1.zip','authoring-seed-extra-1.zip','authoring-restart-extra-1.json','Authoring-seed-1.zip','authoring-seed-1.zip/','authoring-restart-1.json/')) {
     Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) } "unapproved authoring alias $name"
   }
-  foreach($name in @('authoring-original-pair','authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip')) {
+  foreach($name in @('authoring-original-pair','authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid','complete-practice-original.zip','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip')) {
     foreach($invalid in @("../$name","..\$name","fixtures/$name","fixtures\$name",($name+'.extra'),($name+"`n"),($name+"`0"),$name.ToUpperInvariant(),(Join-Path $fixtures $name))) {
       Assert-Rejected { [NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$invalid) } "unapproved authoring path $invalid"
     }
   }
   $linkTarget=Join-Path $temporary 'original-link-target.mid'
   [System.IO.File]::WriteAllText($linkTarget,'original reparse contract fixture')
-  foreach($name in @('authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip')) {
+  foreach($name in @('authoring-original-strict.mid','authoring-original-events.mid','authoring-original-blocked.mid','complete-practice-original.zip','basic-key-original.zip','basic-key-invalid-profile.zip','basic-key-forged-coverage.zip')) {
     $path=Join-Path $fixtures $name
     [System.IO.File]::WriteAllText((Join-Path $downloads $name),'outside the fixture root')
     Assert-True ([NativeAcceptance]::ResolveFixturePath($fixtures,$temporary,$name) -ceq $path) "authoring fixture remains rooted $name"

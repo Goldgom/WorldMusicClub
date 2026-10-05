@@ -29,7 +29,7 @@ test('catalog native scenario selects one exact renderer, fixture preparer and v
 test('catalog profile and window hooks preserve other scenarios and require an existing profile on restart',()=>{
   const windows=read('crates/desktop-shell/src/windows.rs');
   assert.match(windows,/\.inner_size\(1280\.0, 900\.0\)/);
-  assert.match(windows,/if worldmusichub_desktop::acceptance::CATALOG_PHASES.contains\(&acceptance.phase\) \{\s*builder = builder.inner_size\(1280\.0, 720\.0\);\s*\}/);
+  assert.match(windows,/if worldmusichub_desktop::acceptance::CATALOG_PHASES.contains\(&acceptance.phase\)\s*\|\| worldmusichub_desktop::acceptance::COMPLETE_PRACTICE_PHASES.contains\(\s*&acceptance.phase,?\s*\)\s*\{\s*builder = builder.inner_size\(1280\.0, 720\.0\);\s*\}/);
   assert.match(rust,/if CATALOG_PHASES.contains\(&self.phase\) \{\s*self.directory.join\("webview-catalog-profile"\)\s*\} else if PHASES.contains\(&self.phase\) \{\s*self.directory.join\("webview-profile"\)/);
   assert.match(rust,/let existing_required = catalog && self.phase != "catalog-seed"/);
   assert.match(rust,/if existing_required \{[\s\S]*?require_ordinary_directory\(&profile\)\?;[\s\S]*?require_catalog_profile_evidence\("catalog-seed", true\)\?;[\s\S]*?return Ok\(false\)/);
@@ -64,7 +64,7 @@ test('catalog application screenshots capture exactly the actual client pixels w
   const capture=host.slice(host.indexOf('function Capture-Handle('),host.indexOf('function Find-Control('));
   assert.match(capture,/function Capture-Handle\(\[IntPtr\]\$Handle,\[string\]\$Name,\[switch\]\$ClientOnly\)/);
   assert.match(capture,/\$printFlags=2/);
-  assert.match(capture,/if\(\$ClientOnly\) \{\s*if\(\$Scenario -cne 'library-catalog'\)\{throw/);
+  assert.match(capture,/if\(\$ClientOnly\) \{\s*if\(\$Scenario -cnotin @\('library-catalog','complete-practice'\)\)\{throw/);
   assert.match(capture,/GetClientRect\(\$Handle,\[ref\]\$rectangle\)/);
   assert.match(capture,/actual client pixels exceed the finite capture bound/);
   assert.match(capture,/geometry_file=\$catalogCaptureGeometryFile/);
@@ -74,7 +74,7 @@ test('catalog application screenshots capture exactly the actual client pixels w
   assert.match(capture,/\$printFlags=3\s*\} elseif\(-not \[NativeAcceptance\]::GetWindowRect\(\$Handle,\[ref\]\$rectangle\)\)/);
   assert.match(capture,/System.Drawing.Bitmap\(\(\$rectangle.Right-\$rectangle.Left\),\(\$rectangle.Bottom-\$rectangle.Top\)\)/);
   assert.match(capture,/PrintWindow\(\$Handle,\$device,\$printFlags\)/);
-  assert.match(capture,/Capture-Handle \$App.MainWindowHandle \$Name -ClientOnly:\(\$Scenario -ceq 'library-catalog'\)/);
+  assert.match(capture,/Capture-Handle \$App.MainWindowHandle \$Name -ClientOnly:\(\$Scenario -cin @\('library-catalog','complete-practice'\)\)/);
   assert.doesNotMatch(capture,/DrawImage|\.Resize\(|\.ScaleTransform\(/);
   const pickerCalls=host.split('\n').filter(line=>line.includes('Capture-Handle $dialog '));
   assert.ok(pickerCalls.length>0);

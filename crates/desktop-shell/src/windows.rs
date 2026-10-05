@@ -188,7 +188,8 @@ pub fn run() {
                 };
                 builder = builder.data_directory(profile);
                 if let Some(acceptance) = &acceptance {
-                    if worldmusichub_desktop::acceptance::CATALOG_PHASES.contains(&acceptance.phase) {
+                    if worldmusichub_desktop::acceptance::CATALOG_PHASES.contains(&acceptance.phase)
+                        || worldmusichub_desktop::acceptance::COMPLETE_PRACTICE_PHASES.contains(&acceptance.phase) {
                         builder = builder.inner_size(1280.0, 720.0);
                     }
                     builder = builder.initialization_script(acceptance.script());

@@ -20,6 +20,8 @@ pub const PERFORMANCE_PHASES: [&str; 3] = [
     "performance-restart",
 ];
 pub const PITCH_BEND_PHASES: [&str; 2] = ["pitch-bend-seed", "pitch-bend-restart"];
+pub const COMPLETE_PRACTICE_PHASES: [&str; 2] =
+    ["complete-practice-seed", "complete-practice-restart"];
 pub const BASIC_KEY_PHASES: [&str; 2] = ["basic-key-seed", "basic-key-restart"];
 pub const AUTHORING_PHASES: [&str; 2] = ["authoring-seed", "authoring-restart"];
 pub const VSQ_AUTHORING_PHASES: [&str; 2] = ["vsq-authoring-seed", "vsq-authoring-restart"];
@@ -48,6 +50,7 @@ impl Acceptance {
             .chain(AUTHORING_PHASES)
             .chain(VSQ_AUTHORING_PHASES)
             .chain(BASIC_KEY_PHASES)
+            .chain(COMPLETE_PRACTICE_PHASES)
             .chain(CATALOG_PHASES)
             .find(|candidate| *candidate == phase)
             .ok_or("Unknown acceptance phase")?;
@@ -67,6 +70,7 @@ impl Acceptance {
             || PITCH_BEND_PHASES.contains(&self.phase)
             || AUTHORING_PHASES.contains(&self.phase)
             || VSQ_AUTHORING_PHASES.contains(&self.phase)
+            || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
         {
             // Reuse the existing bounded observers, without starting the VSQ run.
@@ -76,6 +80,7 @@ impl Acceptance {
             if PITCH_BEND_PHASES.contains(&self.phase)
                 || AUTHORING_PHASES.contains(&self.phase)
                 || VSQ_AUTHORING_PHASES.contains(&self.phase)
+                || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
                 || BASIC_KEY_PHASES.contains(&self.phase)
             {
                 let (performance_helpers, _) = include_str!("../performance-song-acceptance.js")
@@ -83,7 +88,9 @@ impl Acceptance {
                     .expect("Performance observer prefix must precede its runner");
                 format!(
                     "{observers}\n{performance_helpers}\n{}",
-                    if BASIC_KEY_PHASES.contains(&self.phase) {
+                    if COMPLETE_PRACTICE_PHASES.contains(&self.phase) {
+                        include_str!("../complete-practice-acceptance.js").to_string()
+                    } else if BASIC_KEY_PHASES.contains(&self.phase) {
                         include_str!("../basic-key-acceptance.js").to_string()
                     } else if VSQ_AUTHORING_PHASES.contains(&self.phase) {
                         let (authoring_helpers, _) =
@@ -119,6 +126,7 @@ impl Acceptance {
                 || PITCH_BEND_PHASES.contains(&self.phase)
                 || AUTHORING_PHASES.contains(&self.phase)
                 || VSQ_AUTHORING_PHASES.contains(&self.phase)
+                || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
                 || BASIC_KEY_PHASES.contains(&self.phase)
             {
                 &performance
@@ -150,6 +158,7 @@ impl Acceptance {
             || PITCH_BEND_PHASES.contains(&self.phase)
             || AUTHORING_PHASES.contains(&self.phase)
             || VSQ_AUTHORING_PHASES.contains(&self.phase)
+            || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase);
         self.directory.join(if song_folder {
@@ -261,6 +270,7 @@ impl Acceptance {
             || PITCH_BEND_PHASES.contains(&self.phase)
             || AUTHORING_PHASES.contains(&self.phase)
             || VSQ_AUTHORING_PHASES.contains(&self.phase)
+            || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase)
         {
@@ -285,6 +295,7 @@ impl Acceptance {
             && !PITCH_BEND_PHASES.contains(&self.phase)
             && !AUTHORING_PHASES.contains(&self.phase)
             && !VSQ_AUTHORING_PHASES.contains(&self.phase)
+            && !COMPLETE_PRACTICE_PHASES.contains(&self.phase)
             && !BASIC_KEY_PHASES.contains(&self.phase)
             && !CATALOG_PHASES.contains(&self.phase)
         {
@@ -373,6 +384,7 @@ impl Acceptance {
             || PITCH_BEND_PHASES.contains(&self.phase)
             || AUTHORING_PHASES.contains(&self.phase)
             || VSQ_AUTHORING_PHASES.contains(&self.phase)
+            || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase))
             && (name.to_lowercase().ends_with(".zip")
@@ -546,6 +558,7 @@ pub fn receive_report(
             || PITCH_BEND_PHASES.contains(&run.phase)
             || AUTHORING_PHASES.contains(&run.phase)
             || VSQ_AUTHORING_PHASES.contains(&run.phase)
+            || COMPLETE_PRACTICE_PHASES.contains(&run.phase)
             || BASIC_KEY_PHASES.contains(&run.phase)
             || CATALOG_PHASES.contains(&run.phase)
     });
@@ -714,6 +727,7 @@ fn valid_action(value: &Value) -> bool {
             "catalog-original-legacy.zip",
             "catalog-original-shared.zip",
             "catalog-original-clean.zip",
+            "complete-practice-original.zip",
             "basic-key-original.zip",
             "basic-key-invalid-profile.zip",
             "basic-key-forged-coverage.zip",
@@ -746,6 +760,7 @@ fn valid_action(value: &Value) -> bool {
             .iter()
             .chain(VSQ_AUTHORING_PHASES.iter())
             .chain(BASIC_KEY_PHASES.iter())
+            .chain(COMPLETE_PRACTICE_PHASES.iter())
             .chain(CATALOG_PHASES.iter())
             .any(|phase| {
                 (1..=16).any(|sequence| {
@@ -764,6 +779,27 @@ fn valid_action(value: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn complete_practice_phases_keep_bounded_native_routing() {
+        for phase in COMPLETE_PRACTICE_PHASES {
+            let evidence = Evidence::new();
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert!(run
+                .script()
+                .contains(include_str!("../complete-practice-acceptance.js")));
+            assert!(run.script().contains("function createVsqJsonObserver"));
+            assert_eq!(run.report_limit(), MAX_CLEAN_REPORT_BYTES);
+            assert!(run.library_directory().ends_with("Scores"));
+            assert!(run.profile_directory().ends_with(phase));
+        }
+        assert!(valid_action(
+            &json!({"version":1,"sequence":64,"kind":"picker","x":1,"y":1,"width":1280,"height":720,"file":"complete-practice-original.zip"})
+        ));
+        assert!(!valid_action(
+            &json!({"version":1,"sequence":65,"kind":"picker","x":1,"y":1,"width":1280,"height":720,"file":"complete-practice-original.zip"})
+        ));
+    }
 
     #[test]
     fn atomic_json_preserves_open_snapshot_while_publishing_complete_replacement() {
