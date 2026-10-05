@@ -109,7 +109,7 @@ try {
 }
 # Closed numeric plans are pure to inspect. Never emit their native keystrokes
 # in these contract tests; the measured foreground click belongs to the GUI run.
-foreach($phase in @('canonical-practice-seed','canonical-practice-controls','canonical-practice-restart')) {
+foreach($phase in @('canonical-practice-controls')) {
   foreach($case in @(@{kind='canonical-range-start';keys=@(0x32)},@{kind='canonical-range-end';keys=@(0x36)},@{kind='canonical-tempo';keys=@(0x39,0x30)})) {
     $keys=[NativeAcceptance]::CanonicalNumericKeys($phase,$case.kind)
     Assert-True (($keys -join ',') -ceq ($case.keys -join ',')) "closed canonical virtual keys: $phase/$($case.kind)"
@@ -118,9 +118,9 @@ foreach($phase in @('canonical-practice-seed','canonical-practice-controls','can
     Assert-Rejected { [NativeAcceptance]::CanonicalNumericKeys($phase,$kind) } "unknown canonical numeric kind: $kind"
   }
 }
-foreach($phase in @('seed','complete-practice-seed','catalog-seed','canonical-practice-any','CANONICAL-PRACTICE-SEED',"canonical-practice-seed`n",'')) {
+foreach($phase in @('seed','complete-practice-seed','catalog-seed','canonical-practice-seed','canonical-practice-restart','canonical-practice-any','CANONICAL-PRACTICE-SEED',"canonical-practice-seed`n",'')) {
   foreach($kind in @('canonical-range-start','canonical-range-end','canonical-tempo')) {
-    Assert-Rejected { [NativeAcceptance]::CanonicalNumericKeys($phase,$kind) } "numeric edit forbidden outside canonical phases: $phase/$kind"
+    Assert-Rejected { [NativeAcceptance]::CanonicalNumericKeys($phase,$kind) } "numeric edit forbidden outside canonical controls: $phase/$kind"
   }
 }
 function New-ValidHost {

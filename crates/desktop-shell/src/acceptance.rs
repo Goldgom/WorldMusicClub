@@ -734,7 +734,7 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
         "click",
     ]
     .contains(&value["kind"].as_str().unwrap_or(""))
-        && !(CANONICAL_PRACTICE_PHASES.contains(&phase)
+        && !(phase == "canonical-practice-controls"
             && [
                 "canonical-range-start",
                 "canonical-range-end",
@@ -967,7 +967,13 @@ mod tests {
                     .unwrap();
                 assert_eq!(
                     run.handle(&request).unwrap().status(),
-                    if canonical.contains(&phase) { 200 } else { 400 },
+                    if (kind == "picker" && canonical.contains(&phase))
+                        || (kind != "picker" && phase == "canonical-practice-controls")
+                    {
+                        200
+                    } else {
+                        400
+                    },
                     "{phase}: {kind}"
                 );
                 for (field, invalid) in [
@@ -992,7 +998,10 @@ mod tests {
         ] {
             let action =
                 json!({"version":1,"sequence":1,"kind":kind,"x":1,"y":1,"width":1280,"height":720});
-            assert!(!valid_action_for_phase(&action, canonical[0]), "{kind}");
+            assert!(
+                !valid_action_for_phase(&action, "canonical-practice-controls"),
+                "{kind}"
+            );
         }
         for file in [
             "../canonical-practice-original.json",
@@ -1005,7 +1014,10 @@ mod tests {
             assert!(!valid_action_for_phase(&action, canonical[0]), "{file}");
         }
         let with_file = json!({"version":1,"sequence":1,"kind":"canonical-tempo","x":1,"y":1,"width":1280,"height":720,"file":"canonical-practice-original.json"});
-        assert!(!valid_action_for_phase(&with_file, canonical[0]));
+        assert!(!valid_action_for_phase(
+            &with_file,
+            "canonical-practice-controls"
+        ));
     }
 
     #[test]

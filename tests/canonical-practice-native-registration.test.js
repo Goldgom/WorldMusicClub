@@ -36,7 +36,7 @@ test('canonical profiles retain one owned cache and require both exact predecess
 
 test('numeric native actions keep a closed phase/key mapping and an owned click before fixed keystrokes',()=>{
   const keys=native.slice(native.indexOf('public static byte[] CanonicalNumericKeys('),native.indexOf('public static void HeldPerformanceKey('));
-  assert.match(keys,/if\(phase!="canonical-practice-seed" && phase!="canonical-practice-controls" && phase!="canonical-practice-restart"\)/);
+  assert.match(keys,/if\(phase!="canonical-practice-controls"\)/);
   for(const [kind,virtualKeys] of [['canonical-range-start','0x32'],['canonical-range-end','0x36'],['canonical-tempo','0x39,0x30']])assert.ok(keys.includes(`case "${kind}": return new byte[]{${virtualKeys}};`));
   assert.equal((keys.match(/case "/g)||[]).length,3);
   assert.match(keys,/default: throw new InvalidOperationException/);
@@ -50,6 +50,7 @@ test('numeric native actions keep a closed phase/key mapping and an owned click 
   assert.match(action,/method='fixed_ctrl_a_digits_tab';select_all_virtual_keys=@\(0x11,0x41\);digit_virtual_keys=@\(\$canonicalNumericKeys\);commit_virtual_key=0x09;pointer_clicked=\$true;completed=\$false/);
   assert.match(action,/\$Evidence.native_numeric.completed=\$true/);
   assert.match(rust,/if !valid_action_for_phase\(&value, self.phase\)/);
+  assert.match(rust,/&& !\(phase == "canonical-practice-controls"/);
 });
 
 test('canonical picker names remain exact original fixtures and inputs match actual app controls',()=>{

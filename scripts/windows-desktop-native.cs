@@ -65,8 +65,8 @@ public static class NativeAcceptance {
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h,IntPtr device,uint flags);
   public static void Key(byte key) { byte scan=(byte)MapVirtualKey(key,0); keybd_event(key,scan,0,UIntPtr.Zero); keybd_event(key,scan,2,UIntPtr.Zero); }
   public static byte[] CanonicalNumericKeys(string phase,string kind) {
-    if(phase!="canonical-practice-seed" && phase!="canonical-practice-controls" && phase!="canonical-practice-restart")
-      throw new InvalidOperationException("Canonical numeric edits require a canonical acceptance phase");
+    if(phase!="canonical-practice-controls")
+      throw new InvalidOperationException("Canonical numeric edits require the canonical controls phase");
     switch(kind) {
       case "canonical-range-start": return new byte[]{0x32};
       case "canonical-range-end": return new byte[]{0x36};
