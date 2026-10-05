@@ -94,6 +94,11 @@ pub fn content_type_allowed(path: &str, content_type: &str) -> bool {
                 || content_type.starts_with("text/xml")))
 }
 pub fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
+    if path == "/api/canonical-audio-profile" && bytes.len() > MAX_REQUEST_BYTES {
+        return Err(
+            "canonical_audio_budget: score request exceeds 8 MiB; source remains unchanged".into(),
+        );
+    }
     match path {
         "/api/omr/audiveris-draft" => {
             serde_json::from_slice::<score_core::external_omr::AudiverisInput>(&bytes)
@@ -124,6 +129,10 @@ pub fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
         "/api/transposition/restore" => serde_json::from_slice::<score_core::Score>(&bytes)
             .map_err(|e| json_input_error("transposed score", e))
             .and_then(|score| score_core::transposition::restore_original(&score))
+            .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
+        "/api/canonical-audio-profile" => serde_json::from_slice::<score_core::Score>(&bytes)
+            .map_err(|e| json_input_error("canonical audio score", e))
+            .and_then(score_core::canonical_audio::compile_audio_profile)
             .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
         "/api/compile" => serde_json::from_slice(&bytes)
             .map_err(|e| json_input_error("score JSON", e))
@@ -198,4 +207,32 @@ pub fn api(path: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
 /// Retrieve an exact embedded asset; never reads a runtime path.
 pub fn asset(path: &str) -> Option<&'static [u8]> {
     web_asset(path)
+}
+
+#[cfg(test)]
+mod canonical_audio_api_tests {
+    #[test]
+    fn canonical_audio_api_reuses_compile_without_changing_legacy_shape() {
+        let score = score_core::catalog().remove(0);
+        let bytes = serde_json::to_vec(&score).unwrap();
+        let compiled = super::api("/api/compile", bytes.clone()).unwrap();
+        let profile = super::api("/api/canonical-audio-profile", bytes).unwrap();
+        assert_eq!(compiled.as_object().unwrap().len(), 3);
+        assert_eq!(profile["duration_ms"], compiled["timeline"]["duration_ms"]);
+        assert_eq!(
+            profile["occurrences"].as_array().unwrap().len(),
+            compiled["timeline"]["notes"].as_array().unwrap().len()
+        );
+        assert_eq!(profile["profile"], score_core::canonical_audio::PROFILE);
+        assert!(super::content_type_allowed(
+            "/api/canonical-audio-profile",
+            "application/json"
+        ));
+        assert!(super::api(
+            "/api/canonical-audio-profile",
+            vec![b' '; super::MAX_REQUEST_BYTES + 1]
+        )
+        .unwrap_err()
+        .contains("8 MiB"));
+    }
 }

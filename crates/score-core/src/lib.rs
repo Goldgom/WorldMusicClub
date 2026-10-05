@@ -3,6 +3,7 @@
 pub mod adaptation;
 pub mod assistance;
 pub mod basic_keys;
+pub mod canonical_audio;
 pub mod clean_conversion;
 pub mod clean_pack;
 pub mod clean_performance;

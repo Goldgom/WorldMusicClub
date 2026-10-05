@@ -1,0 +1,234 @@
+{
+  "version": 1,
+  "id": "原作|🎼",
+  "title": "Original canonical audio fixture",
+  "composer": "WorldMusicClub test authors",
+  "provenance": {
+    "kind": "original",
+    "attribution": "Original synthetic test exercise; no third-party score",
+    "source_url": null,
+    "license": "CC0-1.0"
+  },
+  "parts": [
+    {
+      "id": "人 手 🎹",
+      "name": "Human",
+      "instrument": "piano",
+      "notes": [
+        {
+          "id": "起|\u0000",
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "C",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "声部 🎼",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": true,
+          "tie_stop": false
+        },
+        {
+          "id": "续 🎼",
+          "at": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "C",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "声部 🎼",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": true
+        }
+      ]
+    },
+    {
+      "id": "机 器/一",
+      "name": "Accompaniment one",
+      "instrument": "piano",
+      "notes": [
+        {
+          "id": "同音:一",
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 2,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "C",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "声部 🎼",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "极短 🐦",
+          "at": {
+            "numerator": 2,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 1,
+            "denominator": 1000000
+          },
+          "pitch": {
+            "step": "G",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "声部 🎼",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        },
+        {
+          "id": "机器休止",
+          "at": {
+            "numerator": 2,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 2,
+            "denominator": 1
+          },
+          "pitch": null,
+          "voice": "声部 🎼",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        }
+      ]
+    },
+    {
+      "id": "机器二",
+      "name": "Accompaniment two",
+      "instrument": "piano",
+      "notes": [
+        {
+          "id": "同音:二",
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 2,
+            "denominator": 1
+          },
+          "pitch": {
+            "step": "C",
+            "alter": 0,
+            "octave": 4
+          },
+          "voice": "声部 🎼",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        }
+      ]
+    },
+    {
+      "id": "空声部",
+      "name": "Empty",
+      "instrument": "piano",
+      "notes": []
+    },
+    {
+      "id": "休止声部",
+      "name": "Rest only",
+      "instrument": "piano",
+      "notes": [
+        {
+          "id": "静音|休止",
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 4,
+            "denominator": 1
+          },
+          "pitch": null,
+          "voice": "声部 🎼",
+          "staff": 1,
+          "velocity": 90,
+          "tie_start": false,
+          "tie_stop": false
+        }
+      ]
+    }
+  ],
+  "tempo": [
+    {
+      "at": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "bpm": 120
+    }
+  ],
+  "meters": [
+    {
+      "at": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "numerator": 4,
+      "denominator": 4
+    }
+  ],
+  "keys": [],
+  "measures": [
+    {
+      "number": 1,
+      "at": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "length": {
+        "numerator": 4,
+        "denominator": 1
+      }
+    }
+  ],
+  "repeats": [
+    {
+      "from": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "to": {
+        "numerator": 4,
+        "denominator": 1
+      },
+      "times": 2
+    }
+  ],
+  "source": null
+}
