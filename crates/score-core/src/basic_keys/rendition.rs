@@ -199,6 +199,12 @@ fn peak(mut edges: Vec<(u64, i32)>) -> usize {
 /// canonical envelope, notation and uncertainty evidence remain unchanged.
 pub fn compile_rendition(score: &CompleteBasicKeys) -> Result<RenditionCompilation, String> {
     validate(score)?;
+    compile_validated(score)
+}
+
+/// Only sibling core code holding an already validated immutable source may
+/// bypass re-derivation. The public compiler continues to validate its input.
+pub(super) fn compile_validated(score: &CompleteBasicKeys) -> Result<RenditionCompilation, String> {
     let raw = conversion::timeline_from_records(&score.performance)?;
     let ppq = raw.ppq();
     let routes: BTreeMap<_, _> = score

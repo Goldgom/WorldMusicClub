@@ -9,6 +9,7 @@
 use crate::{clean_song::SourceEvidence, midi_events, Beat, Score};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::OnceLock;
 
 mod conversion;
 mod notation;
@@ -32,6 +33,40 @@ pub use conversion::convert_midi;
 pub const FORMAT: &str = "worldmusichub-complete-score";
 pub const PROFILE: &str = "wmh-basic-keys-midi1-v1";
 pub const MAX_JSON_BYTES: usize = 16 * 1024 * 1024;
+
+/// An immutable source proved by the closed complete-event decoder. Callers
+/// cannot replace its source or inject a compiled rendition. Reusing this value
+/// avoids deriving the same projection for every page; persistence checks still
+/// belong to the storage owner and must precede every use.
+#[derive(Debug)]
+pub struct ValidatedSource {
+    source: CompleteBasicKeys,
+    rendition: OnceLock<Result<RenditionCompilation, String>>,
+}
+impl ValidatedSource {
+    pub fn decode_json(bytes: &[u8]) -> Result<Self, String> {
+        Ok(Self {
+            source: decode_json(bytes)?,
+            rendition: OnceLock::new(),
+        })
+    }
+    pub fn source(&self) -> &CompleteBasicKeys {
+        &self.source
+    }
+    pub fn notation_page(&self, request: &NotationRequest) -> Result<NotationPage, String> {
+        let rendition = match request.rendition_policy_id.as_deref() {
+            None => None,
+            Some(RENDITION_POLICY) => Some(
+                self.rendition
+                    .get_or_init(|| rendition::compile_validated(&self.source))
+                    .as_ref()
+                    .map_err(Clone::clone)?,
+            ),
+            Some(_) => return Err("Unknown basic-key notation rendition policy".into()),
+        };
+        notation::validated_page(&self.source, request, rendition)
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

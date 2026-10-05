@@ -11,7 +11,10 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -21,6 +24,27 @@ pub const MAX_METADATA_BYTES: usize = 256 * 1024;
 pub const MAX_PACKAGE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_STORAGE_BYTES: u64 = 3 * 1024 * 1024 * 1024;
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+// One bounded source across all libraries, never a directory/metadata verdict.
+// Locks only protect Arc replacement; no cache guard spans storage access.
+static NOTATION_SOURCE: Mutex<Option<Arc<ParsedBasicSource>>> = Mutex::new(None);
+
+#[derive(Debug)]
+pub(crate) struct ParsedBasicSource {
+    json: Vec<u8>,
+    pub validated: score_core::basic_keys::ValidatedSource,
+}
+impl ParsedBasicSource {
+    fn decode(json: &[u8]) -> Result<Arc<Self>> {
+        #[cfg(test)]
+        tests::record_basic_decode();
+        let validated =
+            score_core::basic_keys::ValidatedSource::decode_json(json).map_err(invalid)?;
+        Ok(Arc::new(Self {
+            json: json.to_vec(),
+            validated,
+        }))
+    }
+}
 fn invalid(message: impl Into<String>) -> LibraryError {
     fail(422, "clean_package_invalid", message)
 }
@@ -139,6 +163,7 @@ pub struct Package {
     pub runtime: Value,
     pub coverage: Value,
     catalog_fields: (String, score_core::Provenance),
+    basic_source: Option<Arc<ParsedBasicSource>>,
 }
 impl Package {
     /// Index the actual authoritative payload when no notation exists. Never
@@ -441,6 +466,15 @@ fn parse_inner(
     files: &BTreeMap<String, (u64, String)>,
     mode: ReadMode,
 ) -> Result<Package> {
+    parse_reusing_source(metadata_bytes, score_bytes, files, mode, None)
+}
+fn parse_reusing_source(
+    metadata_bytes: &[u8],
+    score_bytes: &[u8],
+    files: &BTreeMap<String, (u64, String)>,
+    mode: ReadMode,
+    reuse: Option<&Arc<ParsedBasicSource>>,
+) -> Result<Package> {
     if metadata_bytes.len() > MAX_METADATA_BYTES || score_bytes.len() > MAX_JSON_BYTES {
         return Err(invalid("Clean package JSON exceeds its bounded limit"));
     }
@@ -509,12 +543,23 @@ fn parse_inner(
             )
         }
         (1, None, Some(score_core::basic_keys::PROFILE)) => {
-            let score = score_core::basic_keys::decode_json(score_bytes).map_err(invalid)?;
+            let decoded;
+            let score = if mode == ReadMode::Catalog {
+                // Exact bytes, not a digest, path, timestamp or length hint.
+                deferred_basic = Some(match reuse.filter(|old| old.json == score_bytes) {
+                    Some(old) => Arc::clone(old),
+                    None => ParsedBasicSource::decode(score_bytes)?,
+                });
+                deferred_basic.as_ref().unwrap().validated.source()
+            } else {
+                decoded = score_core::basic_keys::decode_json(score_bytes).map_err(invalid)?;
+                &decoded
+            };
             let runtime = if mode == ReadMode::Full {
-                basic_runtime(&score)?
+                basic_runtime(score)?
             } else {
                 if mode == ReadMode::Catalog {
-                    runtime_upper_bound = Some(basic_runtime_upper_bound(&score)?);
+                    runtime_upper_bound = Some(basic_runtime_upper_bound(score)?);
                 }
                 Value::Null
             };
@@ -542,9 +587,6 @@ fn parse_inner(
                 ),
                 vec![],
             );
-            if mode == ReadMode::Catalog {
-                deferred_basic = Some(score);
-            }
             fields
         }
         (1, None, Some("wmh-semantic-midi1-v1")) => {
@@ -787,6 +829,7 @@ fn parse_inner(
         runtime,
         coverage,
         catalog_fields,
+        basic_source: deferred_basic,
     };
     let mut response_bytes = open_response_bytes(&package)?;
     if let Some(upper_bound) = runtime_upper_bound {
@@ -794,7 +837,8 @@ fn parse_inner(
         // cannot admit an oversized response. Near the boundary, use the exact
         // existing compiler and size check, preserving its acceptance/errors.
         if response_bytes.saturating_sub(4).saturating_add(upper_bound) > MAX_OPEN_RESPONSE_BYTES {
-            package.runtime = basic_runtime(deferred_basic.as_ref().unwrap())?;
+            package.runtime =
+                basic_runtime(package.basic_source.as_ref().unwrap().validated.source())?;
             response_bytes = open_response_bytes(&package)?;
         }
     }
@@ -963,18 +1007,23 @@ fn folder_inventory(
     }
     Ok(out)
 }
-fn read_package(folder: &Path, mode: ReadMode) -> Result<Package> {
+fn read_package(
+    folder: &Path,
+    mode: ReadMode,
+    reuse: Option<&Arc<ParsedBasicSource>>,
+) -> Result<Package> {
     check_node(folder, true)?;
     let metadata = read_bounded(&folder.join("metadata.json"), MAX_METADATA_BYTES)?;
     let score = read_bounded(&folder.join("score.json"), MAX_JSON_BYTES)?;
     let descriptor: Metadata =
         serde_json::from_slice(&metadata).map_err(|e| invalid(e.to_string()))?;
     let deferred = (mode == ReadMode::Asset).then_some(descriptor.media.as_slice());
-    let package = parse_inner(
+    let package = parse_reusing_source(
         &metadata,
         &score,
         &folder_inventory(folder, deferred)?,
         mode,
+        reuse,
     )?;
     if mode != ReadMode::Asset {
         for media in &package.metadata.media {
@@ -997,6 +1046,14 @@ fn load_folder(folder: &Path, key: &str) -> Result<(Entry, Package)> {
     load_folder_mode(folder, key, ReadMode::Full)
 }
 fn load_folder_mode(folder: &Path, key: &str, mode: ReadMode) -> Result<(Entry, Package)> {
+    load_folder_reusing_source(folder, key, mode, None)
+}
+fn load_folder_reusing_source(
+    folder: &Path,
+    key: &str,
+    mode: ReadMode,
+    reuse: Option<&Arc<ParsedBasicSource>>,
+) -> Result<(Entry, Package)> {
     #[cfg(test)]
     tests::record_validation(folder);
     check_node(folder, true)?;
@@ -1005,7 +1062,7 @@ fn load_folder_mode(folder: &Path, key: &str, mode: ReadMode) -> Result<(Entry, 
         MAX_METADATA_BYTES,
     )?)
     .map_err(|e| invalid(e.to_string()))?;
-    let package = read_package(&folder.join("package"), mode)?;
+    let package = read_package(&folder.join("package"), mode, reuse)?;
     let (composer, provenance) = package.catalog_fields()?;
     if entry.library_format_version != 2
         || entry.revision != 1
@@ -1475,14 +1532,22 @@ pub(super) fn scan(library: &NativeLibrary, inventory: &mut Inventory) -> Result
     }
     Ok(())
 }
-/// Validated operation-local source for key-bound inspection APIs. No runtime
-/// or caller-selected path crosses this boundary; every call rereads both copies.
+/// Source for key-bound inspection APIs. Every call rereads both copies and
+/// rechecks all storage/admission evidence. Only immutable semantics of exact
+/// matching score bytes can survive an operation, in one bounded cache slot.
 pub(crate) struct SourcePackage {
     pub profile: Option<String>,
     pub content_sha256: String,
-    pub score_json: String,
+    pub basic_source: Option<Arc<ParsedBasicSource>>,
 }
 pub(crate) fn load_source(library: &NativeLibrary, key: &str) -> Result<Option<SourcePackage>> {
+    load_source_with_cache(library, key, &NOTATION_SOURCE)
+}
+fn load_source_with_cache(
+    library: &NativeLibrary,
+    key: &str,
+    cache: &Mutex<Option<Arc<ParsedBasicSource>>>,
+) -> Result<Option<SourcePackage>> {
     if !super::valid_key(key) {
         return Err(fail(
             400,
@@ -1491,18 +1556,35 @@ pub(crate) fn load_source(library: &NativeLibrary, key: &str) -> Result<Option<S
         ));
     }
     let _lock = library.lock()?;
-    Ok(
-        load_pair(library, key, ReadMode::Catalog)?.map(|(_, package)| SourcePackage {
-            profile: package.profile,
-            content_sha256: package.identity,
-            score_json: package.score_json,
-        }),
-    )
+    // Snapshot after queueing on the existing library gate: a preceding cold
+    // request may have published this exact source while we were waiting.
+    let reuse = cache.lock().ok().and_then(|cache| cache.clone());
+    let loaded = load_pair_reusing_source(library, key, ReadMode::Catalog, reuse.as_ref())?;
+    if let Some((_, package)) = &loaded {
+        // Publish only after both independent copies and entries passed. Cache
+        // poisoning is a miss, not permission to bypass a storage check.
+        if let Ok(mut cache) = cache.lock() {
+            *cache = package.basic_source.clone();
+        }
+    }
+    Ok(loaded.map(|(_, package)| SourcePackage {
+        profile: package.profile,
+        content_sha256: package.identity,
+        basic_source: package.basic_source,
+    }))
 }
 fn load_pair(
     library: &NativeLibrary,
     key: &str,
     mode: ReadMode,
+) -> Result<Option<(Entry, Package)>> {
+    load_pair_reusing_source(library, key, mode, None)
+}
+fn load_pair_reusing_source(
+    library: &NativeLibrary,
+    key: &str,
+    mode: ReadMode,
+    reuse: Option<&Arc<ParsedBasicSource>>,
 ) -> Result<Option<(Entry, Package)>> {
     areas(library)?;
     let folder = library.root.join("clean-songs").join(key);
@@ -1511,8 +1593,13 @@ fn load_pair(
         Err(e) => return Err(io_error(e)),
         Ok(_) => (),
     }
-    let (entry, package) = load_folder_mode(&folder, key, mode)?;
-    let (backup, _) = load_folder_mode(&library.root.join("clean-backups").join(key), key, mode)?;
+    let (entry, package) = load_folder_reusing_source(&folder, key, mode, reuse)?;
+    let (backup, _) = load_folder_reusing_source(
+        &library.root.join("clean-backups").join(key),
+        key,
+        mode,
+        package.basic_source.as_ref(),
+    )?;
     if serde_json::to_value(&entry).ok() != serde_json::to_value(&backup).ok() {
         return Err(invalid(
             "Clean primary and independent backup metadata disagree",
@@ -1583,6 +1670,10 @@ mod tests {
         static PROFILE_VALIDATIONS: RefCell<usize> = const { RefCell::new(0) };
         static RUNTIME_COMPILATIONS: RefCell<usize> = const { RefCell::new(0) };
         static LAST_RESPONSE_BYTES: RefCell<usize> = const { RefCell::new(0) };
+        static BASIC_DECODES: RefCell<usize> = const { RefCell::new(0) };
+    }
+    pub(super) fn record_basic_decode() {
+        BASIC_DECODES.with_borrow_mut(|count| *count += 1);
     }
     pub(super) fn record_profile_validation() {
         PROFILE_VALIDATIONS.with_borrow_mut(|count| *count += 1);
@@ -1907,7 +1998,10 @@ mod tests {
                 .unwrap()
                 .clean_package
                 .unwrap();
-            assert_eq!(source.score_json, loaded.score_json);
+            assert_eq!(
+                source.basic_source.unwrap().json,
+                loaded.score_json.as_bytes()
+            );
         }
         for index in 0..6 {
             let folder = fixture.folder("clean-songs", index);
@@ -1933,6 +2027,204 @@ mod tests {
             );
             fixture.assert_exact_files(index);
         }
+    }
+
+    #[test]
+    fn basic_source_reuses_only_exact_bytes_after_rechecking_both_copies() {
+        let fixture = SyntheticLibrary::basic(1);
+        let key = &fixture.entries[0].key;
+        BASIC_DECODES.with_borrow_mut(|count| *count = 0);
+        let trace = ValidationTrace::start();
+        let (_, cold) = load_pair_reusing_source(&fixture.library, key, ReadMode::Catalog, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(trace.finish().len(), 2);
+        BASIC_DECODES.with_borrow(|count| assert_eq!(*count, 1));
+        let source = cold.basic_source.unwrap();
+        let trace = ValidationTrace::start();
+        let (_, warm) =
+            load_pair_reusing_source(&fixture.library, key, ReadMode::Catalog, Some(&source))
+                .unwrap()
+                .unwrap();
+        assert_eq!(trace.finish().len(), 2);
+        BASIC_DECODES.with_borrow(|count| assert_eq!(*count, 1));
+        assert!(Arc::ptr_eq(&source, warm.basic_source.as_ref().unwrap()));
+        let mut request = score_core::basic_keys::NotationRequest {
+            part_id: source.validated.source().performance.parts[0].id.clone(),
+            rendition_policy_id: None,
+            first_measure: 0,
+            measure_count: 1,
+            display_meter: Some(score_core::basic_keys::DisplayMeter {
+                numerator: 4,
+                denominator: 4,
+            }),
+            position_ms: None,
+        };
+        for policy in [
+            None,
+            Some(score_core::basic_keys::RENDITION_POLICY.to_owned()),
+        ] {
+            request.rendition_policy_id = policy;
+            for first_measure in 0..3 {
+                request.first_measure = first_measure;
+                let expected =
+                    score_core::basic_keys::notation_page(source.validated.source(), &request)
+                        .unwrap();
+                for _ in 0..2 {
+                    let actual = source.validated.notation_page(&request).unwrap();
+                    assert_eq!(
+                        serde_json::to_vec(&actual).unwrap(),
+                        serde_json::to_vec(&expected).unwrap()
+                    );
+                }
+            }
+        }
+        // Another valid source cannot borrow the first source's semantic proof.
+        let other = SyntheticLibrary::basic(2);
+        let (_, changed) = load_pair_reusing_source(
+            &other.library,
+            &other.entries[1].key,
+            ReadMode::Catalog,
+            Some(&source),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(!Arc::ptr_eq(
+            &source,
+            changed.basic_source.as_ref().unwrap()
+        ));
+        fixture.assert_exact_files(0);
+    }
+
+    #[test]
+    fn queued_cold_notation_requests_share_one_validated_source() {
+        use std::time::{Duration, Instant};
+        let fixture = SyntheticLibrary::basic(1);
+        let library = &fixture.library;
+        let key = &fixture.entries[0].key;
+        let cache = &Mutex::new(None);
+        let held = library.lock().unwrap();
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..2)
+                .map(|_| {
+                    scope.spawn(|| {
+                        BASIC_DECODES.with_borrow_mut(|count| *count = 0);
+                        let source = load_source_with_cache(library, key, cache)
+                            .unwrap()
+                            .unwrap()
+                            .basic_source
+                            .unwrap();
+                        (source, BASIC_DECODES.with_borrow(|count| *count))
+                    })
+                })
+                .collect();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while library.process_lock.waiting.load(Ordering::SeqCst) != 2
+                && Instant::now() < deadline
+            {
+                std::thread::yield_now();
+            }
+            let waiting = library.process_lock.waiting.load(Ordering::SeqCst);
+            drop(held);
+            let results: Vec<_> = handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect();
+            assert_eq!(
+                waiting, 2,
+                "Both cold requests must reach the held library gate"
+            );
+            assert_eq!(results.iter().map(|result| result.1).sum::<usize>(), 1);
+            assert!(Arc::ptr_eq(&results[0].0, &results[1].0));
+        });
+        fixture.assert_exact_files(0);
+    }
+
+    #[test]
+    fn warmed_notation_source_rejects_same_size_same_mtime_changes_to_either_copy() {
+        use std::fs::{File, FileTimes};
+        let fixture = SyntheticLibrary::basic(1);
+        let key = &fixture.entries[0].key;
+        let source = load_source(&fixture.library, key)
+            .unwrap()
+            .unwrap()
+            .basic_source
+            .unwrap();
+        let request = serde_json::json!({
+            "source": {"key": key, "content_sha256": fixture.entries[0].content_sha256, "profile": score_core::basic_keys::PROFILE},
+            "settings": {"part_id": source.validated.source().performance.parts[0].id,
+                "first_measure": 0, "measure_count": 1, "display_meter": {"numerator": 4, "denominator": 4},
+                "rendition_policy_id": score_core::basic_keys::RENDITION_POLICY}
+        });
+        let request = serde_json::to_vec(&request).unwrap();
+        let expected = crate::native_basic_keys::notation(&fixture.library, &request).unwrap();
+        for area in ["clean-songs", "clean-backups"] {
+            for relative in [
+                "entry.json",
+                "package/metadata.json",
+                "package/score.json",
+                "package/media/silence.wav",
+            ] {
+                let path = fixture.folder(area, 0).join(relative);
+                let original = fs::read(&path).unwrap();
+                let stamp = fs::metadata(&path).unwrap().modified().unwrap();
+                let mut changed = original.clone();
+                if relative.ends_with(".wav") {
+                    *changed.last_mut().unwrap() ^= 1;
+                } else {
+                    let needle = b"original-scan-exercise-0";
+                    let at = changed
+                        .windows(needle.len())
+                        .position(|w| w == needle)
+                        .unwrap();
+                    changed[at] = b'O';
+                }
+                fs::write(&path, &changed).unwrap();
+                File::options()
+                    .write(true)
+                    .open(&path)
+                    .unwrap()
+                    .set_times(FileTimes::new().set_modified(stamp))
+                    .unwrap();
+                assert_eq!(fs::metadata(&path).unwrap().len(), original.len() as u64);
+                assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), stamp);
+                assert!(
+                    crate::native_basic_keys::notation(&fixture.library, &request).is_err(),
+                    "{area}/{relative}"
+                );
+                fs::write(&path, &original).unwrap();
+                let restored =
+                    crate::native_basic_keys::notation(&fixture.library, &request).unwrap();
+                assert_eq!(
+                    serde_json::to_vec(&restored).unwrap(),
+                    serde_json::to_vec(&expected).unwrap()
+                );
+            }
+            let extra = fixture.folder(area, 0).join("package/extra.json");
+            fs::write(&extra, b"{}").unwrap();
+            assert!(crate::native_basic_keys::notation(&fixture.library, &request).is_err());
+            fs::remove_file(extra).unwrap();
+        }
+        fixture.assert_exact_files(0);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn warmed_notation_source_rejects_symlinked_source_files() {
+        let fixture = SyntheticLibrary::basic(1);
+        let key = &fixture.entries[0].key;
+        assert!(load_source(&fixture.library, key).unwrap().is_some());
+        for area in ["clean-songs", "clean-backups"] {
+            let source = fixture.folder(area, 0).join("package/score.json");
+            let held = fixture.root.join("held-score.json");
+            fs::rename(&source, &held).unwrap();
+            std::os::unix::fs::symlink(&held, &source).unwrap();
+            assert!(load_source(&fixture.library, key).is_err());
+            fs::remove_file(&source).unwrap();
+            fs::rename(&held, &source).unwrap();
+            assert!(load_source(&fixture.library, key).unwrap().is_some());
+        }
+        fixture.assert_exact_files(0);
     }
 
     #[test]

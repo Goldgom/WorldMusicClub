@@ -71,6 +71,47 @@ fn known_meter() -> CompleteBasicKeys {
 }
 
 #[test]
+fn immutable_source_pages_match_checked_pages_without_exposing_mutable_proofs() {
+    let source = known_meter();
+    let bytes = encode_json(&source).unwrap();
+    let validated = ValidatedSource::decode_json(&bytes).unwrap();
+    for policy in [None, Some(RENDITION_POLICY.to_owned())] {
+        for first in 0..4 {
+            let mut settings = request(&source, first, 1);
+            settings.rendition_policy_id = policy.clone();
+            let expected = serde_json::to_vec(&notation_page(&source, &settings).unwrap()).unwrap();
+            for _ in 0..2 {
+                assert_eq!(
+                    serde_json::to_vec(&validated.notation_page(&settings).unwrap()).unwrap(),
+                    expected
+                );
+            }
+        }
+    }
+    let mut invalid = source.clone();
+    invalid.coverage.key_attacks += 1;
+    assert!(notation_page(&invalid, &request(&source, 0, 1)).is_err());
+    assert!(compile_rendition(&invalid).is_err());
+    let mut forged: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    forged["coverage"]["key_attacks"] = 999.into();
+    assert!(ValidatedSource::decode_json(&serde_json::to_vec(&forged).unwrap()).is_err());
+    let mut settings = request(&source, 0, 1);
+    settings.rendition_policy_id = Some("unrecognized-policy".into());
+    assert_eq!(
+        validated.notation_page(&settings).unwrap_err(),
+        notation_page(&source, &settings).unwrap_err()
+    );
+    settings.rendition_policy_id = Some(RENDITION_POLICY.into());
+    for invalid_position in [-1., f64::INFINITY, f64::NAN] {
+        settings.position_ms = Some(invalid_position);
+        assert_eq!(
+            validated.notation_page(&settings).unwrap_err(),
+            notation_page(&source, &settings).unwrap_err()
+        );
+    }
+}
+
+#[test]
 fn source_meter_changes_midmeasure_build_exact_page_and_source_keys() {
     let source = known_meter();
     let before = encode_json(&source).unwrap();

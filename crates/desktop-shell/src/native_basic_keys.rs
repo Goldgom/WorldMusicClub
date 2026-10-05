@@ -37,9 +37,10 @@ pub(crate) fn notation(library: &NativeLibrary, bytes: &[u8]) -> Result<Value, L
     {
         return Err(mismatch());
     }
-    let score = basic_keys::decode_json(package.score_json.as_bytes())
-        .map_err(|e| fail(422, "clean_package_invalid", e))?;
-    let page = basic_keys::notation_page(&score, &request.settings)
+    let source = package.basic_source.as_ref().ok_or_else(mismatch)?;
+    let page = source
+        .validated
+        .notation_page(&request.settings)
         .map_err(|e| fail(422, "library_basic_keys_notation", e))?;
     Ok(json!({"source": request.source, "page": page}))
 }

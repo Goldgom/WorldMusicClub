@@ -524,9 +524,17 @@ pub fn notation_page(
     validate(source)?;
     let rendition = match request.rendition_policy_id.as_deref() {
         None => None,
-        Some(RENDITION_POLICY) => Some(super::rendition::compile_rendition(source)?),
+        Some(RENDITION_POLICY) => Some(super::rendition::compile_validated(source)?),
         Some(_) => return Err("Unknown basic-key notation rendition policy".into()),
     };
+    validated_page(source, request, rendition.as_ref())
+}
+
+pub(super) fn validated_page(
+    source: &CompleteBasicKeys,
+    request: &NotationRequest,
+    rendition: Option<&RenditionCompilation>,
+) -> Result<NotationPage, String> {
     if request
         .position_ms
         .is_some_and(|ms| !ms.is_finite() || ms < 0.)
