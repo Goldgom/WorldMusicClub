@@ -12,12 +12,12 @@ export class BasicKeyPlayer {
     Object.assign(this,{getPositionMs,onError,lookAheadMs});this.epoch=0;this.song=null;this.receiver=null;this.running=false;this.preparing=false;this.anchor=null;
   }
   select(song){this.stop();this.song=song;}
-  buildPlan({context,mode='listen',targetPart=null,mutedParts=null,soloParts=null,acceptedPolicyId}={}) {
+  buildPlan({context,mode='listen',targetPart=null,practiceSelection,mutedParts=null,soloParts=null,acceptedPolicyId}={}) {
     const song=this.song,rendition=song?.runtime?.rendition;
     if(!isBasicKeysSong(song)||!rendition||rendition.policy_id!==BASIC_KEY_RENDITION)throw new CleanSongError('clean_renderer_unsupported','A native complete basic-key rendition is required.');
     if(acceptedPolicyId!==rendition.policy_id)throw new CleanSongError('reference_policy_required','Select the disclosed basic-key interpretation before playback.');
     if(this.lookAheadMs!==rendition.policy.allocation_lookahead_ms)throw new CleanSongError('reference_policy_required','The renderer allocation budget must match the declared native policy.');
-    return buildBasicKeyAudioPlan(song,{sampleRate:context.sampleRate,mode,targetPart,mutedParts:mutedParts||[],soloParts:soloParts||[]});
+    return buildBasicKeyAudioPlan(song,{sampleRate:context.sampleRate,mode,targetPart,practiceSelection,mutedParts:mutedParts||[],soloParts:soloParts||[]});
   }
   async prepare(options={}) {
     this.stop();const epoch=this.epoch,{context,output,resumePositionMs=0}=options;

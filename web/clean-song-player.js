@@ -55,9 +55,9 @@ export class CleanSongPlayer {
     return null;
   }
   startPrepared(options={}) {return (isVsqSong(this.song)?this.vsq:this.basicKeys).startPrepared(options);}
-  start({context,output,mode='listen',targetPart=null,mutedParts=null,soloParts=null,resumePositionMs=null,instrument='piano',acceptedPolicyId}={}) {
-    if(isBasicKeysSong(this.song))return this.basicKeys.start({context,output,mode,targetPart,mutedParts,soloParts,resumePositionMs,acceptedPolicyId});
-    if(isVsqSong(this.song))return this.vsq.start({context,output,mode,targetPart,mutedParts,soloParts,resumePositionMs,instrument});
+  start({context,output,mode='listen',targetPart=null,practiceSelection,mutedParts=null,soloParts=null,resumePositionMs=null,instrument='piano',acceptedPolicyId}={}) {
+    if(isBasicKeysSong(this.song))return this.basicKeys.start({context,output,mode,targetPart,practiceSelection,mutedParts,soloParts,resumePositionMs,acceptedPolicyId});
+    if(isVsqSong(this.song))return this.vsq.start({context,output,mode,targetPart,practiceSelection,mutedParts,soloParts,resumePositionMs,instrument});
     this.stop();if(!this.song||!this.profile.supported)throw new CleanSongError('clean_renderer_unsupported','The reference renderer cannot represent these retained commands.',{blockers:this.profile?.blockers});
     if(this.profile.logical_device_mapping&&acceptedPolicyId!==this.profile.rendition)throw new CleanSongError('reference_policy_required','Select the disclosed logical device mapping to this procedural receiver.');
     if(!context||context.state!=='running'||!output)throw new CleanSongError('clean_audio_unavailable','Audio must be unlocked by a user gesture.');

@@ -1,4 +1,5 @@
-import {BASIC_KEY_RENDITION, BASIC_KEY_MAX_VOICES, basicKeyRenditionNotes} from './basic-key-rendition.js';
+import {humanPracticePartIds} from './practice-selection.js';
+import {BASIC_KEY_RENDITION, BASIC_KEY_MAX_VOICES, basicKeyRenditionNotes, basicKeyExactMilliseconds} from './basic-key-rendition.js';
 
 // Wire bounds are independent of the number of active voices. The complete
 // plan is copied once into the worklet; no AudioNode is allocated per note.
@@ -51,13 +52,13 @@ export function basicKeyGateFrames(start, end, sampleRate) {
 }
 
 /** Accept an already admitted Rust rendition, never reinterpret source events. */
-export function buildBasicKeyAudioPlan(song, {sampleRate, mode = 'listen', targetPart = null, mutedParts = [], soloParts = []} = {}) {
+export function buildBasicKeyAudioPlan(song, {sampleRate, mode = 'listen', targetPart = null, practiceSelection, mutedParts = [], soloParts = []} = {}) {
   basicKeySampleRate(sampleRate);
   const rendition = song?.runtime?.rendition, timeline = song?.compilation?.timeline?.notes;
   if (rendition?.policy_id !== BASIC_KEY_RENDITION || rendition.source_sha256 !== song?.score?.source?.sha256 || !Array.isArray(timeline) || !Array.isArray(rendition.notes)) audioFail('invalid_audio_plan', 'An admitted native basic-key rendition is required.');
   if (rendition.policy?.allocation_lookahead_ms !== 100 || rendition.policy?.voice_limit !== 128 || rendition.policy?.receiver_gate_tail_ms !== 0) audioFail('reference_policy_required', 'The basic audio receiver requires the declared 100 ms, 128-voice, zero-tail policy.');
   if (!['listen', 'practice'].includes(mode)) audioFail('invalid_audio_plan', 'Unknown basic-key playback mode.');
-  if (mode === 'practice' && !song.runtime.parts?.some(part => part.id === targetPart)) audioFail('clean_target_required', 'Choose one human part.');
+  const humanParts = humanPracticePartIds(song.runtime.parts,{mode,practiceSelection,targetPart});
   if (timeline.length !== rendition.notes.length || timeline.length > BASIC_KEY_AUDIO_LIMITS.maxNotes) audioFail('audio_plan_limit', 'The complete source exceeds the bounded audio plan note count.', {maxNotes: BASIC_KEY_AUDIO_LIMITS.maxNotes});
   const muted = new Set(mutedParts), solo = new Set(soloParts), evidence = new Map();
   for (const note of basicKeyRenditionNotes(rendition)) {
@@ -69,9 +70,10 @@ export function buildBasicKeyAudioPlan(song, {sampleRate, mode = 'listen', targe
     const note = evidence.get(target.id);
     if (!note || seen.has(target.id)) audioFail('invalid_audio_plan', 'The audio timeline does not join every native gate exactly once.');
     seen.add(target.id);
-    if (muted.has(target.part_id) || (solo.size && !solo.has(target.part_id)) || (mode === 'practice' && target.part_id === targetPart)) continue;
     const [start, end] = basicKeyGateFrames(note.start, note.end, sampleRate);
     if (!['melodic_key', 'percussion_selector'].includes(note.role)) audioFail('invalid_audio_plan', 'The native gate has an unknown sound role.');
+    if (!integer(target.midi,0,127) || !integer(target.velocity,1,127) || target.source_note_id !== target.id || target.source_note_ids?.length !== 1 || target.source_note_ids[0] !== target.id || target.id !== `midi-t${note.attack.track + 1}-e${note.attack.event + 1}` || !song.runtime.parts.some(part => part.id === target.part_id) || !Number.isFinite(target.start_ms) || !Number.isFinite(target.duration_ms) || Math.abs(target.start_ms-basicKeyExactMilliseconds(note.start)) > .001 || Math.abs(target.duration_ms-(basicKeyExactMilliseconds(note.end)-basicKeyExactMilliseconds(note.start))) > .001) audioFail('invalid_audio_plan', 'A native basic-key identity or gate does not match its target projection.');
+    if (muted.has(target.part_id) || (solo.size && !solo.has(target.part_id)) || humanParts.has(target.part_id)) continue;
     notes.push([target.id, `midi:${rendition.source_sha256}:t${note.attack.track}:e${note.attack.event}`, start, end, target.midi, target.velocity, note.role === 'percussion_selector' ? 1 : 0]);
   }
   // Native ordering is retained among equal sample boundaries.

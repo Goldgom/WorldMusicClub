@@ -18,7 +18,10 @@ export function basicKeyAllocationBudget(notes,{lookAheadMs=100,include=()=>true
 const previewBudgets=new WeakMap();
 export function referencePreviewBudget(notes,targetPart=null,rendition=null){
   if(!previewBudgets.has(notes))previewBudgets.set(notes,new Map());const cache=previewBudgets.get(notes);
-  if(!cache.has(targetPart)){const excluded=new Set(notes.filter(note=>note.part_id===targetPart).map(note=>note.id));cache.set(targetPart,rendition?exactBasicKeyAllocationBudget(rendition,{include:id=>!excluded.has(id)}):basicKeyAllocationBudget(notes,{include:note=>note.part_id!==targetPart}));}return cache.get(targetPart);
+  const selection=targetPart!==null&&typeof targetPart==='object'?targetPart:null;
+  if(selection&&(!['all','parts'].includes(selection.kind)||!Array.isArray(selection.part_ids)||!selection.part_ids.length||new Set(selection.part_ids).size!==selection.part_ids.length||selection.part_ids.some(id=>typeof id!=='string'||!id)||selection.kind==='all'&&notes.some(note=>!selection.part_ids.includes(note.part_id))))throw new TypeError('Resolve the human practice selection before checking accompaniment capacity.');
+  const humanParts=new Set(selection?selection.part_ids:targetPart===null?[]:[targetPart]),key=JSON.stringify([...humanParts].sort());
+  if(!cache.has(key)){const excluded=new Set(notes.filter(note=>humanParts.has(note.part_id)).map(note=>note.id));cache.set(key,rendition?exactBasicKeyAllocationBudget(rendition,{include:id=>!excluded.has(id)}):basicKeyAllocationBudget(notes,{include:note=>!humanParts.has(note.part_id)}));}return cache.get(key);
 }
 export function exactBasicKeyAllocationBudget(rendition,{include=()=>true}={}){
   const edges=[],lead=BigInt(rendition.policy.allocation_lookahead_ms)*1000n;

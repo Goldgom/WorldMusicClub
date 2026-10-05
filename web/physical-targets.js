@@ -1,3 +1,5 @@
+// Rust String ordering follows Unicode scalar values, including non-BMP IDs.
+const compareSourceIds=(a,b)=>{const aa=[...a],bb=[...b];for(let i=0;i<Math.min(aa.length,bb.length);i++){const d=aa[i].codePointAt(0)-bb[i].codePointAt(0);if(d)return d;}return aa.length-bb.length;};
 /** Validate the Rust target plan without inferring or grouping attacks in JavaScript. */
 export function validateTargetPlan(plan, sourceTimeline) {
   const fail = () => { throw new Error('The physical target plan is incomplete or changes source attacks. Recheck the selection with Rust.'); };
@@ -10,15 +12,19 @@ export function validateTargetPlan(plan, sourceTimeline) {
     if (!group || !Array.isArray(group.source_occurrence_ids) || !group.source_occurrence_ids.length || !Array.isArray(group.source_note_ids) || !Array.isArray(group.part_ids) || groupIds.has(group.target_id)) fail();
     groupIds.add(group.target_id);
     const target = targets.get(group.target_id); if (!target) fail();
-    const expectedSources = new Set(), expectedParts = new Set(); let maxDuration=0;
+    const expectedSources = new Set(), expectedParts = new Set(); let maxDuration=0,maxVelocity=0,representative=null;
     for (const id of group.source_occurrence_ids) {
       const source = sources.get(id);
       if (!source || visited.has(id) || source.midi !== target.midi || source.start_ms !== target.start_ms) fail();
       visited.add(id);maxDuration=Math.max(maxDuration,source.duration_ms);expectedParts.add(source.part_id);
+      maxVelocity=Math.max(maxVelocity,source.velocity??0);
+      if(!representative||compareSourceIds(source.id,representative.id)<0)representative=source;
       for(const sourceId of source.source_note_ids?.length?source.source_note_ids:[source.source_note_id||source.id])expectedSources.add(sourceId);
     }
     const actualSources = new Set(group.source_note_ids), actualParts = new Set(group.part_ids);
-    if (target.duration_ms !== maxDuration || actualSources.size !== expectedSources.size || [...actualSources].some(id=>!expectedSources.has(id)) || actualParts.size !== expectedParts.size || [...actualParts].some(id=>!expectedParts.has(id))) fail();
+    if (target.id!==representative.id || target.part_id!==representative.part_id || target.source_note_id!==representative.source_note_id || target.voice!==representative.voice || target.staff!==representative.staff || (target.velocity??0)!==maxVelocity || target.duration_ms !== maxDuration || actualSources.size !== expectedSources.size || [...actualSources].some(id=>!expectedSources.has(id)) || actualParts.size !== expectedParts.size || actualParts.size!==group.part_ids.length || [...actualParts].some(id=>!expectedParts.has(id))) fail();
+    const targetSources=new Set(mappedSourceIds(target));
+    if(targetSources.size!==expectedSources.size||[...targetSources].some(id=>!expectedSources.has(id)))fail();
   }
   if (visited.size !== sources.size || (plan.playable && plan.target_count === 0)) fail();
   return plan;

@@ -44,7 +44,14 @@ export function windowNotes(notes, startMs, endMs) {
 }
 /** Select canonical part/occurrence IDs without changing note timing or source Score. */
 export function practiceScope(timeline, partId = null, loop = null) {
-  const notes = partId === null ? timeline.notes : timeline.notes.filter(note => note.part_id === partId);
+  let includes;
+  if (partId !== null && typeof partId === 'object') {
+    if (!['all','parts'].includes(partId.kind) || !Array.isArray(partId.part_ids) || !partId.part_ids.length || partId.part_ids.some(id => typeof id !== 'string' || !id) || new Set(partId.part_ids).size !== partId.part_ids.length) throw new TypeError('Resolve the explicit human practice selection against its source parts first.');
+    const ids = new Set(partId.part_ids);
+    if (partId.kind === 'all' && timeline.notes.some(note => !ids.has(note.part_id))) throw new TypeError('The complete human selection does not cover every source part.');
+    includes = note => ids.has(note.part_id);
+  } else includes = note => partId === null || note.part_id === partId;
+  const notes = timeline.notes.filter(includes);
   const selected = {...timeline, notes};
   const ids = new Set(notes.map(note => note.id));
   const targetIds = loop ? new Set(loop.target_note_ids.filter(id => ids.has(id))) : ids;

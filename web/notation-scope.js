@@ -1,11 +1,14 @@
+import {resolvePracticeSelection} from './practice-selection.js';
+
 /** Notation scope never changes practice targets, routing, mute or solo. A
  * missing current part is a choice to make, not permission to pick the first. */
-export function resolveNotationScope({parts=[],scope='current',practicePartId=null,selectedPartId=null}={}) {
+export function resolveNotationScope({parts=[],scope='current',practicePartId=null,practiceSelection=null,selectedPartId=null}={}) {
   const ids=parts.map(part=>part.id);
   if(ids.some(id=>typeof id!=='string'||!id)||new Set(ids).size!==ids.length)throw new TypeError('Notation parts must have unique source IDs.');
   if(!['current','all','part'].includes(scope))throw new TypeError('Unknown notation scope.');
-  const partId=scope==='current'?practicePartId:scope==='part'?selectedPartId:null;
-  const partIds=scope==='all'?ids:ids.includes(partId)?[partId]:[];
+  const humanIds=scope==='current'&&practiceSelection&&ids.length?resolvePracticeSelection(parts,practiceSelection).part_ids:null;
+  const partId=scope==='current'?(humanIds?humanIds.length===1?humanIds[0]:null:practicePartId):scope==='part'?selectedPartId:null;
+  const partIds=scope==='all'?ids:humanIds|| (ids.includes(partId)?[partId]:[]);
   return {scope,partId,partIds,totalParts:ids.length,status:!ids.length?'empty':partIds.length?'ready':scope==='current'?'choose_current_part':'choose_part'};
 }
 

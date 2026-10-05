@@ -123,6 +123,39 @@ pub fn plan_targets(
     if reduced > 0 {
         diagnostics.push(Diagnostic::warning("piano_unison_targets", format!("{reduced} exact simultaneous same-key events share a physical piano attack. Every source occurrence and tied segment remains mapped; playback and the original score are unchanged. Timing grades measure attacks only, not independent voice releases."), None));
     }
+    if piano {
+        // Independent voices may reattack a key whose earlier gate continues.
+        // Onset scoring remains valid; a range check cannot certify independent
+        // physical holds. Keep every original gate and give an exact witness.
+        let mut held: HashMap<u8, &crate::TimedNote> = HashMap::new();
+        let mut conflicts = 0;
+        for note in &notes {
+            if let Some(prior) = held.get(&note.midi) {
+                let end = prior.start_ms + prior.duration_ms;
+                if note.start_ms < end {
+                    conflicts += 1;
+                    if conflicts <= 32 {
+                        diagnostics.push(Diagnostic::warning(
+                            "piano_overlapping_key_gates",
+                            format!("MIDI key {} target {} starts at {} ms while target {} continues until {} ms. These separate attacks remain scored; independent same-key holds are not certified, and neither source duration is changed.", note.midi, note.id, note.start_ms, prior.id, end),
+                            Some(note.id.clone()),
+                        ));
+                    }
+                    if note.start_ms + note.duration_ms <= end {
+                        continue;
+                    }
+                }
+            }
+            held.insert(note.midi, note);
+        }
+        if conflicts > 32 {
+            diagnostics.push(Diagnostic::warning(
+                "piano_overlapping_key_gates_summary",
+                format!("{conflicts} same-key reattacks overlap earlier retained gates. The first 32 exact witnesses are shown; every target and source duration remains in the plan. This is onset-only practice, not certification of independent voice holds."),
+                None,
+            ));
+        }
+    }
     if !piano {
         diagnostics.push(Diagnostic::warning("guitar_pitch_only_targets", "Guitar note-on targets retain separate source events. Pitch-only MIDI does not identify strings; fingering, sustain and same-pitch string identity need manual review.", None));
     }
@@ -246,6 +279,87 @@ mod tests {
             result.onset_completion.unwrap().longest_complete_sequence,
             2
         );
+    }
+    #[test]
+    fn multipart_unison_identity_is_stable_across_source_order_and_keeps_each_gate() {
+        let mut timeline = compile(unison()).unwrap().timeline;
+        timeline.notes[0].velocity = 60;
+        timeline.notes[1].velocity = 100;
+        timeline.notes[1].duration_ms /= 2.;
+        let before = serde_json::to_value(&timeline).unwrap();
+        let first = plan_targets(&timeline, &piano()).unwrap();
+        timeline.notes.reverse();
+        let reordered = plan_targets(&timeline, &piano()).unwrap();
+        assert_eq!(
+            serde_json::to_value(&first).unwrap(),
+            serde_json::to_value(&reordered).unwrap()
+        );
+        assert_eq!(first.timeline.notes[0].velocity, 100);
+        assert_eq!(
+            first.timeline.notes[0].duration_ms,
+            before["notes"][0]["duration_ms"].as_f64().unwrap()
+        );
+        assert_eq!(first.groups[0].source_occurrence_ids.len(), 2);
+        assert_eq!(first.groups[0].part_ids.len(), 2);
+        timeline.notes.reverse();
+        assert_eq!(serde_json::to_value(&timeline).unwrap(), before);
+    }
+    #[test]
+    fn staggered_same_key_gates_are_diagnosed_without_changing_onset_scoring_or_duration() {
+        let mut timeline = compile(unison()).unwrap().timeline;
+        timeline.notes[1].start_ms = 0.25;
+        timeline.notes[1].duration_ms /= 2.;
+        let before = serde_json::to_value(&timeline).unwrap();
+        let plan = plan_targets(&timeline, &piano()).unwrap();
+        assert!(
+            plan.playable,
+            "Gate overlap does not disable onset-only practice"
+        );
+        assert_eq!(plan.target_count, 2);
+        let warning = plan
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "piano_overlapping_key_gates")
+            .unwrap();
+        assert_eq!(
+            warning.note_id.as_deref(),
+            Some(timeline.notes[1].id.as_str())
+        );
+        assert!(warning.message.contains("0.25 ms"));
+        assert!(warning.message.contains(&timeline.notes[0].id));
+        for target in &plan.timeline.notes {
+            let source = timeline.notes.iter().find(|n| n.id == target.id).unwrap();
+            assert_eq!(target.start_ms, source.start_ms);
+            assert_eq!(target.duration_ms, source.duration_ms);
+        }
+        assert_eq!(serde_json::to_value(&timeline).unwrap(), before);
+        let inputs: Vec<_> = plan
+            .timeline
+            .notes
+            .iter()
+            .map(|note| InputEvent {
+                midi: note.midi,
+                at_ms: note.start_ms,
+                velocity: 90,
+            })
+            .collect();
+        assert!(crate::assess(&plan.timeline, &inputs, 180.)
+            .unwrap()
+            .misses
+            .is_empty());
+    }
+    #[test]
+    fn adjacent_same_key_gates_do_not_claim_an_overlap() {
+        let mut timeline = compile(unison()).unwrap().timeline;
+        timeline.notes[0].duration_ms = 0.25;
+        timeline.notes[1].start_ms = 0.25;
+        timeline.notes[1].duration_ms = 0.25;
+        let plan = plan_targets(&timeline, &piano()).unwrap();
+        assert_eq!(plan.target_count, 2);
+        assert!(!plan
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "piano_overlapping_key_gates"));
     }
     #[test]
     fn part_selection_recomputes_groups_and_guitar_does_not_collapse_strings() {

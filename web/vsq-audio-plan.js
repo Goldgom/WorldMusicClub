@@ -1,3 +1,4 @@
+import {humanPracticePartIds} from './practice-selection.js';
 import {isVsqSong} from './clean-song-package.js';
 import {BASIC_KEY_AUDIO_PROTOCOL, BASIC_KEY_AUDIO_LIMITS, VSQ_AUDIO_POLICY, VSQ_AUDIO_IDENTITY, audioFail, basicKeyGateFrames, basicKeySampleRate, validateBasicKeyAudioPlan} from './basic-key-audio-plan.js';
 
@@ -11,13 +12,13 @@ const nativeMs = time => {
 
 /** Explicit instrumental choice admits native gates, never notation compilation,
  * vocal Dynamics, singer programs or guessed MIDI coordinates. */
-export function buildVsqAudioPlan(song, {sampleRate, mode = 'listen', targetPart = null, mutedParts = [], soloParts = [], instrument = 'piano'} = {}) {
+export function buildVsqAudioPlan(song, {sampleRate, mode = 'listen', targetPart = null, practiceSelection, mutedParts = [], soloParts = [], instrument = 'piano'} = {}) {
   basicKeySampleRate(sampleRate);
   const runtime = song?.runtime, timeline = song?.compilation?.timeline;
   if (!isVsqSong(song) || runtime?.profile !== 'wmh-vsq-base-note-practice-v1' || runtime.choice !== 'base_notes_instrumental' || runtime.source_sha256 !== song.score.source.sha256 || !Array.isArray(runtime.notes) || !Array.isArray(timeline?.notes)) audioFail('vsq_choice_required', 'Choose base-note instrumental practice first.');
   if (!['listen', 'practice'].includes(mode)) audioFail('invalid_audio_plan', 'Unknown VSQ playback mode.');
   if (!['piano', 'guitar'].includes(instrument)) audioFail('vsq_reference_instrument', 'Choose a supported reference instrument.');
-  if (mode === 'practice' && !runtime.parts.some(part => part.part_id === targetPart)) audioFail('clean_target_required', 'Choose one human part.');
+  const humanParts = humanPracticePartIds(runtime.parts.map(part => part.part_id),{mode,practiceSelection,targetPart});
   if (runtime.parts.length > 128) audioFail('part_budget_exceeded', 'Too many reference parts.');
   if (runtime.notes.length > BASIC_KEY_AUDIO_LIMITS.maxNotes) audioFail('audio_plan_limit', 'The complete VSQ source exceeds the bounded audio plan note count.', {maxNotes: BASIC_KEY_AUDIO_LIMITS.maxNotes});
   if (runtime.notes.length !== timeline.notes.length || song.reference_velocity !== 90) audioFail('invalid_audio_plan', 'The native VSQ timeline or fixed reference velocity is invalid.');
@@ -28,7 +29,7 @@ export function buildVsqAudioPlan(song, {sampleRate, mode = 'listen', targetPart
     const target = projected.get(note.note_id), [start, end] = basicKeyGateFrames(note.start_microseconds, note.end_microseconds, sampleRate);
     if (seen.has(note.note_id) || !target || !Number.isInteger(note.source_track_index) || note.source_track_index < 1 || note.source_track_index > 65535 || !/^ID#(?:[0-9]{4}|[0-9]{8})$/.test(note.authored_note_id) || note.note_id !== `vsq-t${note.source_track_index}-${note.authored_note_id}` || note.part_id !== `vsq-track-${note.source_track_index}` || nativeMs(note.start_microseconds) !== note.start_ms || nativeMs(note.end_microseconds) !== note.end_ms || target.start_ms !== note.start_ms || target.duration_ms !== note.end_ms - note.start_ms || target.midi !== note.key || target.part_id !== note.part_id || target.velocity !== 90 || end > durationFrames) audioFail('invalid_audio_plan', 'A native VSQ identity or rational gate does not match its target projection.');
     seen.add(note.note_id);
-    if (muted.has(note.part_id) || solo.size && !solo.has(note.part_id) || mode === 'practice' && note.part_id === targetPart) continue;
+    if (muted.has(note.part_id) || solo.size && !solo.has(note.part_id) || humanParts.has(note.part_id)) continue;
     notes.push([note.note_id, `vsq:${runtime.source_sha256}:t${note.source_track_index}:${note.authored_note_id}`, start, end, note.key, song.reference_velocity, instrument === 'piano' ? 2 : 3]);
   }
   // Stable ordering at equal frames retains native authored EventList order.
