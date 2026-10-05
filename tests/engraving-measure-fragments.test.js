@@ -319,7 +319,7 @@ test('authored native key pages retain four source IDs and reject a source note 
 
 test('production adapter permits fragments only for unchanged native v2 admission and keeps public source paging',async()=>{
   const fixture=JSON.parse(readFileSync(new URL('./fixtures/basic-key-internal-key-pages.json',import.meta.url),'utf8'));
-  for(const kind of ['native','generic','crossing','layout-failure']){
+  for(const cooperative of [false,true]) for(const kind of ['native','generic','crossing','layout-failure']){
     const data=fixture[kind==='crossing'?'crossing':'noncrossing'],song=prepareCleanSong(`native:song-${data.open.clean_package.content_sha256}`,data.open.clean_package,null),page=basicKeyNotationPage(data.response,data.request,song);
     const identity=kind==='generic'?{score:page.score,noteMap:page.musicxml.note_id_map,partIdMap:page.musicxml.part_id_map,voiceIdMap:page.musicxml.voice_id_map}:basicKeyEngravingIdentity(song,page);
     const {document}=parseHTML('<html><body><div id="staff"></div></body></html>'),instances=[],before=JSON.stringify(data);
@@ -332,7 +332,7 @@ test('production adapter permits fragments only for unchanged native v2 admissio
       clear(){assert.equal(this.GraphicSheet?.reCalculate,this.originalRecalculate,'Disposal restores the owned layout hook before clearing');this.mount.replaceChildren();}
     }
     Object.defineProperty(document,'defaultView',{configurable:true,value:{DOMParser:XmlParser,opensheetmusicdisplay:{...osmd,OpenSheetMusicDisplay:ReaderRenderer}}});
-    const result=await renderEngravedStaff(document.getElementById('staff'),page.musicxml.xml,{identity,fromMeasure:1,toMeasure:2,responsive:false});
+    const result=await renderEngravedStaff(document.getElementById('staff'),page.musicxml.xml,{identity,fromMeasure:1,toMeasure:2,responsive:false,cooperative});
     if(kind==='layout-failure'){assert.equal(result.code,'engraving_renderFailed');assert.equal(result.cause.message,'original-layout-failure');assert.equal(document.querySelector('svg'),null);assert.equal(instances[0].GraphicSheet.reCalculate,instances[0].originalRecalculate);}
     else if(kind!=='native'){assert.equal(result.code,'engraving_projection');assert.equal(instances.length,0,'Ineligible data never reaches the renderer');}
     else{

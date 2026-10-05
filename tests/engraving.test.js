@@ -4,6 +4,7 @@ import {DOMParser} from 'linkedom';
 import {createRequire} from 'node:module';
 import {createI18n} from '../web/i18n.js';
 import {validateEngravingInput, renderEngravedStaff, disposeEngravedStaff, ENGRAVING_LIMITS, EXACT_RHYTHM_LIMITS} from '../web/engraving.js';
+import {createEngravingRenderScheduler} from '../web/engraving-render-scheduler.js';
 
 // Deliberately small DOM/renderer doubles. These exercise the adapter, not OSMD's glyph/layout code.
 class Element {
@@ -37,10 +38,10 @@ const parserFor = document => class { parseFromString(input, type) { assert.equa
 const validate = (blueprint = {}, options = {}) => validateEngravingInput(xml, options, parserFor(scoreDocument(blueprint)));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return {promise, resolve, reject}; };
 const tick = () => new Promise(resolve => setImmediate(resolve));
-function environment({load, failure, parts = 1, version = '2.1.3-release', withoutBundle = false, empty = false} = {}) {
+function environment({load, failure, parts = 1, notes = 3, version = '2.1.3-release', withoutBundle = false, empty = false} = {}) {
   const instances = [], observers = [], frames = new Map(), scripts = [];
   const document = {createElement(name) { return new Element(name, this); }};
-  const sourceDocument = scoreDocument({parts});
+  const sourceDocument = scoreDocument({parts, notes});
   const view = {DOMParser: parserFor(sourceDocument), ResizeObserver: class {constructor(callback) {this.callback = callback; observers.push(this);} observe(target) {this.target = target;} disconnect() {this.disconnected = true;}}, requestAnimationFrame(callback) {const id = frames.size + 1; frames.set(id, callback); return id;}, cancelAnimationFrame(id) {frames.delete(id);}};
   document.defaultView = view;
   class Renderer {
@@ -191,7 +192,7 @@ test('range and part options are explicit and never silently clamp user requests
   const checked = validate({measures: 90, parts: 2});
   assert.deepEqual([checked.options.fromMeasure, checked.options.toMeasure], [1, 32]);
   assert.equal(validate({measures: 90}, {fromMeasure: 1, toMeasure: 65}).status, 'unsupported');
-  for (const options of [{fromMeasure: 0}, {toMeasure: 5}, {partIds: []}, {partIds: ['missing']}, {partIds: ['P1', 'P1']}, {zoom: 9}, {width: 100}, {compactHeader:'false'}, null]) assert.equal(validate({}, options).status, 'invalid');
+  for (const options of [{fromMeasure: 0}, {toMeasure: 5}, {partIds: []}, {partIds: ['missing']}, {partIds: ['P1', 'P1']}, {zoom: 9}, {width: 100}, {compactHeader:'false'}, {cooperative:'false'}, null]) assert.equal(validate({}, options).status, 'invalid');
   assert.deepEqual(validate({parts: 2}, {partIds: ['P2']}).options.partIds, ['P2']);
 });
 
@@ -376,4 +377,126 @@ test('unknown OSMD failures retain the original exception behind a localized tec
   assert.match(output.message,/原始技术详情：<literal OSMD failure>/);i18n.setLocale('en');
   assert.match(output.message,/Original technical details: <literal OSMD failure>/);assert.equal(output.cause,cause);
   assert.equal(env.container.children.length,0);assert.deepEqual(i18n.getReports(),[]);
+});
+
+// An explicit event-loop double establishes phase ordering and cancellation,
+// not wall-clock performance, actual browser paint, or OSMD glyph geometry.
+function cooperativeEnvironment(settings = {}) {
+  const env = environment(settings), timers = new Map(), events = [];
+  let timerId = 0;
+  env.view.setTimeout = callback => { const id = ++timerId; timers.set(id, callback); return id; };
+  env.view.clearTimeout = id => timers.delete(id);
+  const Parser = env.view.DOMParser;
+  env.view.DOMParser = class extends Parser {
+    parseFromString(...args) { events.push('validate'); return super.parseFromString(...args); }
+  };
+  env.view.opensheetmusicdisplay.OpenSheetMusicDisplay = class extends env.Renderer {
+    load(...args) { events.push('load'); return super.load(...args); }
+    updateGraphic() { events.push('graph'); return super.updateGraphic(); }
+    render() { events.push('svg'); return super.render(); }
+  };
+  function frame() {
+    const callbacks = [...env.frames.values()]; env.frames.clear();
+    callbacks.forEach(callback => callback());
+  }
+  function task() {
+    const callbacks = [...timers.values()]; timers.clear();
+    callbacks.forEach(callback => callback());
+  }
+  return {...env, timers, events, frame, task, async advance() { frame(); task(); await tick(); }};
+}
+
+test('cooperative phases wait for a task after the frame, sharing only one outstanding wait', async () => {
+  const env = cooperativeEnvironment(), scheduler = createEngravingRenderScheduler(env.view);
+  let settled = false;
+  const pending = scheduler.yield(); pending.then(() => { settled = true; });
+  assert.equal(scheduler.yield(), pending);
+  assert.equal(env.frames.size, 1); assert.equal(env.timers.size, 0);
+  env.frame(); await tick();
+  assert.equal(settled, false, 'Resolving inside rAF would extend the same pre-paint microtask chain');
+  assert.equal(env.frames.size, 0); assert.equal(env.timers.size, 1);
+  env.task(); assert.equal(await pending, true);
+  assert.equal(env.frames.size + env.timers.size, 0);
+  scheduler.dispose(); assert.equal(await scheduler.yield(), false);
+});
+
+test('cooperative waits cancel in hidden frames and queued tasks, with a task-only fallback', async () => {
+  for (const afterFrame of [false, true]) {
+    const env = cooperativeEnvironment(), scheduler = createEngravingRenderScheduler(env.view);
+    const pending = scheduler.yield(); if (afterFrame) env.frame();
+    scheduler.dispose(); scheduler.dispose();
+    assert.equal(await pending, false); assert.equal(env.frames.size + env.timers.size, 0);
+    env.frame(); env.task(); assert.equal(await scheduler.yield(), false);
+  }
+  const env = cooperativeEnvironment(); delete env.view.requestAnimationFrame;
+  const scheduler = createEngravingRenderScheduler(env.view), pending = scheduler.yield();
+  assert.equal(env.timers.size, 1); env.task(); assert.equal(await pending, true); scheduler.dispose();
+});
+
+test('four dense synthetic part renders cannot chain parsing, loading, graph, SVG and mapping in one frame', async () => {
+  const env = cooperativeEnvironment({notes: 512}), outcomes = [], mappings = [];
+  let finished = false;
+  const batch = (async () => {
+    for (let index = 0; index < 4; index++) {
+      const container = env.document.createElement('section');
+      outcomes.push(await renderEngravedStaff(container, xml, {cooperative: true, onMappingChange: () => mappings.push(index)}));
+    }
+    finished = true;
+  })();
+  let turns = 0;
+  while (!finished && turns < 30) {
+    const before = env.events.length;
+    assert.equal(env.frames.size, 1); assert.equal(env.timers.size, 0);
+    env.frame(); await tick();
+    assert.equal(env.events.length, before, 'Animation frame callbacks do not execute the next expensive phase');
+    assert.equal(env.frames.size, 0); assert.equal(env.timers.size, 1);
+    env.task(); await tick();
+    assert.ok(env.events.length - before <= 1, 'No second indivisible phase starts in the same task turn');
+    turns++;
+  }
+  assert.equal(finished, true); await batch;
+  assert.equal(turns, 24); assert.equal(outcomes.length, 4);
+  assert.ok(outcomes.every(outcome => outcome.ok));
+  assert.equal(outcomes.reduce((sum, outcome) => sum + outcome.metadata.noteCount, 0), 2048);
+  assert.deepEqual(env.events, Array.from({length: 4}, () => ['validate', 'load', 'graph', 'svg']).flat());
+  assert.deepEqual(mappings, [0, 1, 2, 3]);
+  assert.ok(env.instances.every(renderer => renderer.renders === 1));
+  assert.equal(env.frames.size + env.timers.size, 0);
+  outcomes.forEach(outcome => outcome.dispose());
+});
+
+test('aborting at every cooperative phase settles immediately and never publishes a partial successor', async () => {
+  for (let completedPhases = 0; completedPhases < 6; completedPhases++) {
+    const env = cooperativeEnvironment(), controller = new AbortController();
+    const pending = renderEngravedStaff(env.container, xml, {cooperative: true}, controller.signal);
+    for (let index = 0; index < completedPhases; index++) await env.advance();
+    const events = [...env.events]; controller.abort();
+    assert.equal((await pending).status, 'cancelled');
+    assert.equal(env.frames.size + env.timers.size, 0);
+    assert.equal(env.container.children.length, 0);
+    assert.ok(env.instances.every(renderer => renderer.cleared));
+    env.frame(); env.task(); await tick(); assert.deepEqual(env.events, events);
+  }
+});
+
+test('cancellation between a completed task and its promise continuation still prevents source parsing', async () => {
+  const env = cooperativeEnvironment(), controller = new AbortController();
+  const pending = renderEngravedStaff(env.container, xml, {cooperative: true}, controller.signal);
+  env.frame(); env.task(); controller.abort();
+  assert.equal((await pending).status, 'cancelled');
+  assert.deepEqual(env.events, []); assert.equal(env.instances.length, 0);
+});
+
+test('a replacement owns the container before an older cooperative parse or SVG can resume', async () => {
+  for (const completedPhases of [0, 5]) {
+    const env = cooperativeEnvironment();
+    const first = renderEngravedStaff(env.container, xml, {cooperative: true});
+    for (let index = 0; index < completedPhases; index++) await env.advance();
+    const latest = await renderEngravedStaff(env.container, xml);
+    const published = env.container.children[0];
+    assert.equal((await first).status, 'cancelled'); assert.equal(latest.ok, true);
+    env.frame(); env.task(); await tick();
+    assert.equal(env.container.children[0], published);
+    assert.equal(env.frames.size + env.timers.size, 0); latest.dispose();
+  }
 });

@@ -2,6 +2,7 @@
 import {validateEngravingNoteMap,createEngravingNoteBindings,validateEngravingModelTies,restoreSourceBoundPageTies,isAdmittedNativeEngravingSource} from './engraving-note-map.js';
 import {createEngravingProjection,createSourceBoundEngravingFragments, restoreSourceBoundProjectionFractions, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from './engraving-projection.js';
 import {prepareEngravingFragmentLabels,prepareEngravingFragmentBarlines} from './engraving-measure-fragments.js';
+import {createEngravingRenderScheduler} from './engraving-render-scheduler.js';
 import {getAppI18n} from './app-locale.js';
 export const ENGRAVING_VERSION = '2.1.3';
 export const ENGRAVING_BUNDLE_SHA256 = '099b2125aef055ca4faae75957037404973f9451544b52d9b3a0b1f788b33581';
@@ -130,6 +131,7 @@ export function validateEngravingInput(xml, options = {}, Parser = globalThis.DO
   if (!Number.isFinite(zoom) || zoom < 0.5 || zoom > 2) return invalid('zoom');
   if (options.width !== undefined && (!Number.isFinite(options.width) || options.width < 320 || options.width > 4096)) return invalid('width');
   if(options.compactHeader!==undefined&&typeof options.compactHeader!=='boolean')return invalid('compactHeader');
+  if(options.cooperative!==undefined&&typeof options.cooperative!=='boolean')return invalid('options');
   const identity = validateEngravingNoteMap(document, options.identity);
   if (noteCount > ENGRAVING_LIMITS.notes && !identity.ok) return unsupported('sourceMap');
   return {ok: true, status: 'validated', document, identity, options: {dark: options.dark === true, responsive: options.responsive !== false, compactHeader:options.compactHeader===true, fromMeasure, toMeasure, partIds: selectedIds, zoom, width: options.width}, metadata: {noteCount, measureCount, partIds, fromMeasure, toMeasure}};
@@ -169,7 +171,9 @@ export function disposeEngravedStaff(container) { active.get(container)?.dispose
 /**
  * Returns {ok,status,message,metadata,dispose,resize}; never falls back silently.
  * Only the newest call for a container may publish DOM. `signal` cancels at async boundaries;
- * OSMD's synchronous render cannot be interrupted mid-call. See docs/ENGRAVING.md.
+ * With cooperative:true, each expensive phase starts after an animation frame
+ * and task turn. OSMD's synchronous calls cannot be interrupted mid-call.
+ * See docs/ENGRAVING.md.
  */
 export async function renderEngravedStaff(container, xml, options = {}, signal) {
   const i18n=options?.i18n??getAppI18n(container?.ownerDocument);
@@ -178,15 +182,8 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
   const document = container.ownerDocument;
   const view = document.defaultView ?? globalThis;
   if (signal?.aborted) return result('cancelled', 'cancelled', i18n);
-  const checked = validateEngravingInput(xml, options&&typeof options==='object'&&!Array.isArray(options)?{...options,i18n}:options, view.DOMParser ?? globalThis.DOMParser);
-  if (!checked.ok) return checked;
-  const identity = checked.identity;
-  let projection = identity.ok ? createEngravingProjection(checked.document, identity, checked.options, ENGRAVING_LIMITS) : null;
-  if (projection?.key === 'projection' && isAdmittedNativeEngravingSource(checked.document, identity)) {
-    projection = createSourceBoundEngravingFragments(checked.document, identity, checked.options, ENGRAVING_LIMITS);
-  }
-  if (projection && !projection.ok) return result('unsupported', projection.key, i18n);
-  const boundIdentity = projection ? {...identity, projection} : identity;
+  const scheduler = options?.cooperative === true ? createEngravingRenderScheduler(view) : null;
+  let checked, identity, projection, boundIdentity;
   let unsubscribeLocale, renderer, mount, observer, frame, fragmentLayout, bindings=null, expected=null, renderGeneration=0, ready = false, cancelled = false, width = 0;
   const useAnimationFrame = typeof view.requestAnimationFrame === 'function' && typeof view.cancelAnimationFrame === 'function';
   let cancelWait;
@@ -198,6 +195,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     unsubscribeLocale?.();
     bindings?.dispose();bindings=null;expected=null;
     fragmentLayout?.dispose?.();fragmentLayout=null;
+    scheduler?.dispose();
     cancelWait();
     observer?.disconnect();
     cancelFrame();
@@ -230,6 +228,20 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     }
   };
   try {
+    // Register ownership and cancellation before yielding, including before
+    // parsing. A newer score/scope must be able to cancel every queued phase.
+    if (scheduler && (!await scheduler.yield() || !isCurrent())) return result('cancelled', 'cancelled', i18n);
+    checked = validateEngravingInput(xml, options&&typeof options==='object'&&!Array.isArray(options)?{...options,i18n}:options, view.DOMParser ?? globalThis.DOMParser);
+    if (!checked.ok) { state.dispose(); return checked; }
+    identity = checked.identity;
+    if (scheduler && (!await scheduler.yield() || !isCurrent())) return result('cancelled', 'cancelled', i18n);
+    projection = identity.ok ? createEngravingProjection(checked.document, identity, checked.options, ENGRAVING_LIMITS) : null;
+    if (projection?.key === 'projection' && isAdmittedNativeEngravingSource(checked.document, identity)) {
+      projection = createSourceBoundEngravingFragments(checked.document, identity, checked.options, ENGRAVING_LIMITS);
+    }
+    if (projection && !projection.ok) { state.dispose(); return result('unsupported', projection.key, i18n); }
+    boundIdentity = projection ? {...identity, projection} : identity;
+    if (scheduler && (!await scheduler.yield() || !isCurrent())) return result('cancelled', 'cancelled', i18n);
     const Renderer = await Promise.race([loadRenderer(document), cancellation]);
     if (!isCurrent() || !Renderer) return result('cancelled', 'cancelled', i18n);
     mount = document.createElement('div');
@@ -252,6 +264,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     const loaded = renderer.load(projection?.document || checked.document);
     await Promise.race([loaded, cancellation]);
     if (!isCurrent()) return result('cancelled', 'cancelled', i18n);
+    if (scheduler && (!await scheduler.yield() || !isCurrent())) return result('cancelled', 'cancelled', i18n);
     if (projection) {
       const fractions = restoreSourceBoundProjectionFractions(renderer.Sheet, projection, identity.score, ENGRAVING_LIMITS);
       if (!fractions.ok) { state.dispose(); return result('unsupported', fractions.key, i18n); }
@@ -285,8 +298,10 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
       fragmentLayout = prepareEngravingFragmentBarlines(renderer, projection, identity.score, ENGRAVING_LIMITS, view.opensheetmusicdisplay);
       if (!fragmentLayout.ok) { state.dispose(); return result('unsupported', 'projection', i18n); }
     }
+    if (scheduler && (!await scheduler.yield() || !isCurrent())) return result('cancelled', 'cancelled', i18n);
     renderer.render();
     if (!isCurrent()) return result('cancelled', 'cancelled', i18n);
+    if (scheduler && (!await scheduler.yield() || !isCurrent())) return result('cancelled', 'cancelled', i18n);
     if (!mount.querySelector('svg')) { state.dispose(); return result('error', 'noStaff', i18n); }
     // OSMD draws with DOM/SVG primitives. No imported source is inserted with innerHTML.
     container.replaceChildren(mount);

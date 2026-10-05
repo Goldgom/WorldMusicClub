@@ -50,6 +50,7 @@ const rendered = await renderEngravedStaff(container, exported.xml, {
   partIds: selectedXmlId ? [selectedXmlId] : null,
   zoom: 1,
   responsive: true,
+  cooperative: true,
   identity: {score, noteMap: exported.note_id_map,
     partIdMap: exported.part_id_map, voiceIdMap: exported.voice_id_map},
   onMappingChange: mapping => updateNotationNotices(mapping.diagnostics),
@@ -67,6 +68,29 @@ disposeEngravedStaff(container); // or rendered.dispose(); both are idempotent
 ```
 
 Only an **XML string** is accepted. URL strings, Blobs, MXL archives and arbitrary remote assets are rejected. Internally the validated XML is parsed into a `Document` and passed to `osmd.load(document)`, deliberately bypassing OSMD's automatic URL interpretation of short strings. Imported source is never inserted as HTML.
+
+The app opts into `cooperative: true` for both individual and stacked part views.
+Rendering yields before input validation, projection, OSMD loading, source-model
+checks/graph update, SVG rendering, and glyph binding/publication. Each yield
+queues a task from an animation-frame callback; resolving the wait directly
+inside that callback would run the next Promise continuation before paint.
+This prevents all four parts of a dense page from forming one uninterrupted
+Promise chain. Each foreground renderer owns at most one pending frame or timer,
+and a newer score/scope or abort cancels it even before parsing starts. Hidden
+tabs defer visual preparation until frames resume. There is no speculative
+renderer cache, worker, audio-start dependency, or source-clock change. The
+existing current-page and one-next-page native JSON cache bounds are unchanged.
+
+This does not make an individual OSMD call interruptible, reduce note/part
+coverage, or guarantee a millisecond frame budget. Source checks/graph update,
+SVG rendering, glyph binding and existing synchronous resize rendering can each
+still be expensive. Initial and next-page completion can take more wall time
+because rendering gives animation and input opportunities between phases.
+Node event-loop doubles prove scheduling, cancellation, and unchanged model
+guards; they do not establish real paint speed. Hosted dense-score acceptance
+must measure animation callback-to-callback gaps at both page changes as well
+as individual callback durations, exact note/part coverage, source IDs, ties,
+key changes, scope changes, seek/restart, and unchanged audio event counts.
 
 The promise resolves with `{ok, status, message, metadata, dispose, resize, setExpectedWrittenNotes, clearExpectedWrittenNotes, mappingStatus}`:
 

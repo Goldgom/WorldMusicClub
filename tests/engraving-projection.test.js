@@ -288,7 +288,7 @@ test('fraction recovery refuses approximation, wrong or missing notes, wrong clo
 
 test('production adapter restores source-proved short clocks before layout and refuses near-miss floats',async()=>{
   const spec=shortMeasureFixture({parts:1});
-  for(const corrupt of [false,true]){
+  for(const cooperative of [false,true]) for(const corrupt of [false,true]){
     const {document}=parseHTML('<html><body><div id="staff"></div></body></html>'),container=document.getElementById('staff'),instances=[],view={DOMParser:XmlParser};
     Object.defineProperty(document,'defaultView',{configurable:true,value:view});
     class ReaderRenderer {
@@ -299,7 +299,7 @@ test('production adapter restores source-proved short clocks before layout and r
       clear(){this.mount.replaceChildren();}
     }
     view.opensheetmusicdisplay={OpenSheetMusicDisplay:ReaderRenderer};
-    const result=await renderEngravedStaff(container,spec.xml,{identity:spec.identity,fromMeasure:1,toMeasure:4,responsive:false});
+    const result=await renderEngravedStaff(container,spec.xml,{identity:spec.identity,fromMeasure:1,toMeasure:4,responsive:false,cooperative});
     if(corrupt){assert.equal(result.code,'engraving_projection');assert.equal(instances[0].layouts,0);assert.equal(container.querySelector('svg'),null);}
     else{assert.equal(result.ok,true,result.message);assert.equal(instances[0].layouts,1);result.dispose();}
   }
@@ -538,7 +538,7 @@ test('cross-voice context preserves canonical voice priority and refuses ambiguo
 
 test('adapter draws the selected local range and refuses a lost model tie before any graphical layout',async()=>{
   const spec=sustainedFixture({measures:4});
-  for(const lostTie of [false,true]) {
+  for(const cooperative of [false,true]) for(const lostTie of [false,true]) {
     const {document}=parseHTML('<html><body><div id="staff"></div></body></html>'),container=document.getElementById('staff'),instances=[],view={DOMParser:XmlParser};
     Object.defineProperty(document,'defaultView',{configurable:true,value:view});
     class ReaderRenderer {
@@ -547,7 +547,7 @@ test('adapter draws the selected local range and refuses a lost model tie before
       updateGraphic(){this.updates++}render(){this.renders++;this.mount.appendChild(document.createElementNS('http://www.w3.org/2000/svg','svg'))}clear(){this.mount.replaceChildren()}
     }
     view.opensheetmusicdisplay={OpenSheetMusicDisplay:ReaderRenderer};
-    const result=await renderEngravedStaff(container,spec.xml,{identity:spec.identity,fromMeasure:2,toMeasure:3,responsive:false}),renderer=instances[0];
+    const result=await renderEngravedStaff(container,spec.xml,{identity:spec.identity,fromMeasure:2,toMeasure:3,responsive:false,cooperative}),renderer=instances[0];
     assert.equal(renderer.loaded.querySelectorAll('measure').length,4,'Both original ends load into the bounded model');
     if(lostTie){assert.equal(result.code,'engraving_tieContext');assert.equal(renderer.updates,0);assert.equal(renderer.renders,0);assert.equal(container.querySelector('svg'),null)}
     else{assert.equal(result.ok,true,result.message);assert.equal(renderer.EngravingRules.MinMeasureToDrawIndex,1);assert.equal(renderer.EngravingRules.MaxMeasureToDrawIndex,2);assert.equal(result.metadata.fromMeasure,2);assert.equal(result.metadata.toMeasure,3);assert.equal(result.metadata.modelFromMeasure,1);assert.equal(result.metadata.modelToMeasure,4);assert.equal(result.mappingStatus().displayedSegmentCount,2);assert.equal(result.mappingStatus().segmentCount,4);result.dispose()}
