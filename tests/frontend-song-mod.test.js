@@ -111,3 +111,10 @@ test('canonical playback mute rebuilds held audio at the paused source position 
   await app.click('edit-song-mod');set(app,'mute',score.parts[1].id,true);await apply(app);const after=await app.exported('export-takes');assert.equal(after.passes[0].id,before.passes[0].id);assert.deepEqual(after.passes[0].inputs,before.passes[0].inputs);assert.deepEqual(after.passes[0].captures,before.passes[0].captures);assert.deepEqual(after.target_plan,before.target_plan);assert.equal(app.$('progress').value,position);await app.click('play-button');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');assert.equal(source(app).core.plan.count,0);assert.equal(source(app).core.positionFrame,Math.round(Number(position)*source(app).core.sampleRate/1000));assert.equal((await app.exported('export-takes')).passes.length,1);
  }finally{await app.close();}
 });
+
+
+test('an already active legacy Listen session opens Mod with machine roles and display edits cannot create human ownership',async()=>{
+ const f=await basicFixture(),{app,score}=f;
+ try{await app.click('start-listen');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');await app.click('edit-song-mod');assert.ok(score.parts.every(part=>control(app,'performer',part.id).value==='machine'));set(app,'visible',score.parts[1].id,false);await apply(app);assert.equal(app.$('session-mode').value,'listen');const take=await app.exported('export-takes');assert.equal(take.passes.length,0);assert.ok(take.song_mod.config.parts.every(part=>part.performer==='machine'));}
+ finally{await app.close();}
+});

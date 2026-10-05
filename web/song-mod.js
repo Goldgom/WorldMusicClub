@@ -44,7 +44,7 @@ export function validateSongMod(mod,{identity,parts}={}) {
 export function defaultSongMod(context,identity=songModIdentity(context)) {
   const {score}=context;
   const selection=context.practiceSelection||context.selection;
-  const selected=new Set(selection?.kind==='all'?score.parts.map(part=>part.id):selection?.part_ids||[context.part||score.parts[0].id]);
+  const selected=new Set(context.mode==='listen'?[]:selection?.kind==='all'?score.parts.map(part=>part.id):selection?.part_ids||[context.part||score.parts[0].id]);
   return createSongMod(identity,{layout:context.practiceLayout||'complete',showOtherParts:context.showOthers!==false,parts:score.parts.map(part=>({partId:part.id,performer:selected.has(part.id)?'human':'machine',instrument:'source',muted:false,visible:true}))});
 }
 export function songModCapabilities({cleanSong=null,compiled}={}) {
