@@ -65,10 +65,32 @@ export function validateVsqPickerGestures(gestures){
  for(const row of gestures.slice(1,4)){assert.equal(row.button,0,'VSQ picker must use one left-button gesture');assert.equal(row.defaultPrevented,false);}
  for(const row of gestures.slice(3,5)){assert.deepEqual(row.activation,{isActive:true,hasBeenActive:true},'VSQ file picker lacks transient user activation');assert.equal(row.focus.hasFocus,true,'VSQ picker trigger is unfocused');assert.equal(row.focus.visibility,'visible');assert.equal(row.focus.activeId,'import-button');}
 }
+// HTML file selection fires input then change on the same original element:
+// https://html.spec.whatwg.org/multipage/input.html#file-upload-state-(type=file)
+// The older six-step helper above is retained for separate Performance/Pitch
+// observers; Basic and VSQ require every step of the complete file event chain.
+export function validateOwnedPickerGestures(gestures){
+ assert.ok(Array.isArray(gestures)&&gestures.length===7,'Owned picker needs the complete input/change gesture chain');
+ assert.deepEqual(gestures.map(row=>[row.type,row.targetId,row.trusted]),[['before-action',null,null],['pointerdown','import-button',true],['pointerup','import-button',true],['click','import-button',true],['click','score-file',false],['input','score-file',true],['change','score-file',true]],'Owned picker input/change order or trust changed');
+ validateVsqPickerGestures([...gestures.slice(0,5),gestures[6]]);
+ const input=gestures[5],change=gestures[6];assert.ok(Number.isFinite(input.observedAtMs)&&input.observedAtMs>=gestures[4].observedAtMs&&input.observedAtMs<=change.observedAtMs,'File input must precede its committed change');assert.ok(Number.isFinite(input.eventTimeMs)&&input.eventTimeMs>=0&&input.eventTimeMs<=change.eventTimeMs,'File input event timestamp is absent or out of order');
+ for(const row of [input,change])assert.deepEqual(row.input,{id:'score-file',tag:'INPUT',type:'file',disabled:false,connected:true,inert:false,multiple:true},'Selected files must belong to the original enabled file control');
+}
+export function validateOwnedFilePickers(rows,fileEvents,filenames){
+ assert.ok(Array.isArray(rows)&&Array.isArray(fileEvents),'Complete owned picker and file events required');assert.equal(rows.length,filenames.length,'Owned picker count differs');assert.equal(fileEvents.length,2*rows.length,'Each owned picker requires exactly one input then one change');assert.equal(new Set(rows.map(row=>row.sequence)).size,rows.length,'Picker sequences must be unique');
+ for(const [index,row]of rows.entries()){
+  validateOwnedPickerGestures(row.gestures);assert.ok(positive(row.sequence)&&row.sequence<=64);if(index)assert.ok(rows[index-1].sequence<row.sequence);assert.equal(row.filename,filenames[index]);assert.equal(row.completed,true);
+  assert.deepEqual(row.delegatedClicks,[{type:'click',trusted:false,id:'score-file',sequence:row.sequence,originalControl:true}],'Only one owned hidden-input delegation is permitted');
+  for(const [offset,type]of ['input','change'].entries()){
+   const event=fileEvents[index*2+offset],gesture=row.gestures[5+offset],expected={type,trusted:true,id:'score-file',sequence:row.sequence,originalControl:true,filename:filenames[index],fileCount:1,eventTimeMs:gesture.eventTimeMs};
+   assert.deepEqual(row[type==='input'?'inputs':'changes'],[expected],`Picker must receive one trusted original-file ${type}`);
+   assert.deepEqual({type:event.type,trusted:event.trusted,id:event.id,sequence:event.pickerSequence,originalControl:event.originalControl,filename:event.filename,fileCount:event.fileCount,eventTimeMs:event.eventTimeMs},expected,'File event must bind the same owned picker, original control, filename and timestamp');
+  }
+ }
+}
 export function validateVsqPickerEvidence(report){
- const rows=report.pickerObservations;assert.ok(Array.isArray(rows),'VSQ picker delegation observations missing');assert.equal(rows.length,report.phase==='vsq-seed'?1:0,'VSQ picker observation count differs');
- const changes=report.trusted.filter(row=>row.id==='score-file');assert.equal(changes.length,rows.length,'VSQ file events must pair with actual chooser changes');
- for(const row of rows){validateVsqPickerGestures(row.gestures);assert.ok(positive(row.sequence)&&row.sequence<=64);assert.equal(row.filename,VSQ_FIXTURE_FILENAME);assert.equal(row.completed,true);assert.deepEqual(row.delegatedClicks,[{type:'click',trusted:false,id:'score-file',sequence:row.sequence}],'VSQ only permits one hidden-input delegation inside its owned picker');assert.deepEqual(row.changes,[{type:'change',trusted:true,id:'score-file',sequence:row.sequence,filename:VSQ_FIXTURE_FILENAME}],'VSQ picker requires one trusted original-file change');assert.equal(changes.filter(event=>event.type==='change'&&event.trusted===true&&event.pickerSequence===row.sequence).length,1,'VSQ picker change was not delivered to the actual file control');}
+ const fileEvents=report.trusted.filter(row=>row.id==='score-file'||row.pickerSequence!==undefined);
+ validateOwnedFilePickers(report.pickerObservations,fileEvents,report.phase==='vsq-seed'?[VSQ_FIXTURE_FILENAME]:[]);
 }
 export function validateVsqRenderer(report,fixture=vsqAcceptanceFixture(),{expectedOrigin=NATIVE_PROTOCOL_ORIGIN}={}) {
  assert.equal(report.version,1);assert.equal(report.ok,true,report.error);assert.ok(VSQ_PHASES.includes(report.phase));assert.equal(report.origin,validateRendererOrigin(expectedOrigin));assert.equal(report.profileMarkerAbsent,true);assert.equal(report.stage,'complete');assert.deepEqual(report.errors,[]);
