@@ -1,3 +1,4 @@
+import {canonicalPreviewAudioBootstrap,installCanonicalPreviewAudio,readCanonicalPreviewAudio,assertCanonicalPreviewOutput,assertCanonicalPreviewStopped} from './browser-canonical-preview-audio.js';
 import {configureSongMod, openSongMod, startSongModPerformance} from '../scripts/hosted-song-mod-controls.mjs';
 import {readPlaybackClock, installPlaybackClockReader, waitForPlaybackClock} from './browser-playback-clock.js';
 import assert from 'node:assert/strict';
@@ -10,9 +11,9 @@ import {observeRealAudio} from './browser-input-fixtures.js';
 export function registerGameLobbyBrowserRegressions({test,getPage,ui,closeShellPanels,exportScore,exportTakeData,artifactDirectory}) {
   test('game menu and audible song preview keep equal library halves and independent session state at 1280 and 1920', {timeout:90_000}, async()=>{
     const page=getPage(),evidence=[];await installPlaybackClockReader(page);
-    await page.addInitScript(observeRealAudio);
+    await page.addInitScript(observeRealAudio);await page.addInitScript(canonicalPreviewAudioBootstrap);
     for(const viewport of [{width:1280,height:720},{width:1920,height:1080}]) {
-      await page.setViewportSize(viewport);await page.reload();await waitForPlaybackClock(page);
+      await page.setViewportSize(viewport);const compiledResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/compile'&&response.request().method()==='POST');await page.reload();await waitForPlaybackClock(page);const compilation=await(await compiledResponse).json();await installCanonicalPreviewAudio(page);
       await page.locator('#home-single-player').waitFor({state:'visible'});
       await ui('#interface-language').selectOption('zh-CN');await closeShellPanels();
       await page.evaluate(()=>document.fonts.ready);
@@ -62,29 +63,39 @@ export function registerGameLobbyBrowserRegressions({test,getPage,ui,closeShellP
       assert.equal(lobby.screen,'library');assert.ok(Math.abs(lobby.library.width-lobby.preview.width)<2,'The entire library pane takes half the available lobby');
       assert.ok(lobby.library.height>viewport.height*.65);assert.ok(lobby.preview.x>=lobby.library.right);
       assert.ok(lobby.start.width>0&&lobby.start.height>0);assert.ok(lobby.start.bottom<=viewport.height+1);assert.ok(lobby.mod.width>0&&lobby.mod.height>0&&lobby.mod.bottom<=viewport.height+1);assert.ok(lobby.audition.bottom<=viewport.height+1);assert.ok(lobby.scrollWidth<=viewport.width+1);
+      const profileResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/canonical-audio-profile'&&response.request().method()==='POST');
       await page.locator('#lobby-preview-play').click();
-      await page.waitForFunction(()=>document.querySelector('#lobby-preview-status').dataset.state==='playing'&&window.audioObservation.start>0);
+      await page.waitForFunction(()=>document.querySelector('#lobby-preview-status').dataset.state==='playing'&&globalThis.__wmhPreviewAudio.snapshot()[0]?.pcm.blocks.some(block=>block.peak>1e-6&&block.rms>1e-8));
+      const response=await profileResponse;assert.equal(response.status(),200);assert.deepEqual(response.request().postDataJSON(),compilation.score);const profile=await response.json();
+      const playingAudio=await readCanonicalPreviewAudio(page);assert.equal(playingAudio.runs.length,1);assertCanonicalPreviewOutput(playingAudio.runs[0],compilation,profile);
       const audio=await page.evaluate(()=>({...window.audioObservation,states:window.audioObservedContexts.map(context=>context.state)}));
-      assert.equal(audio.construct,1);assert.ok(audio.start>0);assert.ok(audio.states.every(state=>state==='running'));
+      assert.equal(audio.construct,1);assert.ok(audio.states.every(state=>state==='running'));
       await page.screenshot({path:join(artifactDirectory,`worldmusichub-game-lobby-${viewport.width}x${viewport.height}.png`),fullPage:true});
-      await page.locator('#lobby-preview-play').click();
+      await page.locator('#lobby-preview-play').click();await page.waitForFunction(()=>globalThis.__wmhPreviewAudio.quiet());
+      const stoppedAudio=await readCanonicalPreviewAudio(page);assertCanonicalPreviewStopped(stoppedAudio,0,{pcm:true});assertCanonicalPreviewOutput(stoppedAudio.runs[0],compilation,profile);
       await page.locator('#settings-button').click();await page.locator('#count-in').uncheck();await closeShellPanels();
       await startSongModPerformance(page,{performers:'all'});await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase==='capturing');await page.locator('#back-to-library').click();
       await page.waitForFunction(()=>!['capturing','grace'].includes(document.querySelector('.performance-status').dataset.phase));
       const beforeScore=await exportScore(),beforeTakes=await exportTakeData();await closeShellPanels();
       if(await page.locator('#workspace').isVisible())await page.locator('#back-to-library').click();
       const position=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;
-      await page.locator('#lobby-preview-play').click();await page.waitForFunction(()=>document.querySelector('#lobby-preview-status').dataset.state==='playing');
-      await page.locator('#lobby-preview-volume').focus();await page.locator('#lobby-preview-volume').press('Home');
-      for(let step=0;step<26;step++)await page.locator('#lobby-preview-volume').press('ArrowRight');
+      const resumedPreviewIndex=(await readCanonicalPreviewAudio(page)).runs.length;
+      await page.locator('#lobby-preview-play').click();await page.waitForFunction(index=>document.querySelector('#lobby-preview-status').dataset.state==='playing'&&globalThis.__wmhPreviewAudio.snapshot()[index]?.pcm.blocks.some(block=>block.peak>1e-6&&block.rms>1e-8),resumedPreviewIndex);
+      assertCanonicalPreviewOutput((await readCanonicalPreviewAudio(page)).runs[resumedPreviewIndex],compilation,profile);
+      await page.locator('#lobby-preview-volume').focus();
+      for(let step=0;step<19;step++)await page.locator('#lobby-preview-volume').press('ArrowLeft');
+      assert.equal(await page.locator('#lobby-preview-volume').inputValue(),'26');
       await page.locator('#lobby-preview-sound').uncheck();
-      assert.equal(await page.locator('#lobby-preview-status').getAttribute('data-state'),'muted');
+      assert.equal(await page.locator('#lobby-preview-status').getAttribute('data-state'),'muted');await page.waitForFunction(index=>globalThis.__wmhPreviewAudio.snapshot()[index]?.lifecycle.disposed,resumedPreviewIndex);
+      const mutedAudio=await readCanonicalPreviewAudio(page);assertCanonicalPreviewStopped(mutedAudio,resumedPreviewIndex,{pcm:true});
       await page.locator('#lobby-preview-sound').check();assert.equal(await page.locator('#lobby-preview-status').getAttribute('data-state'),'stopped');
-      await page.locator('#lobby-preview-play').click();await page.locator('#lobby-home').click();
+      const exitPreviewIndex=(await readCanonicalPreviewAudio(page)).runs.length;await page.locator('#lobby-preview-play').click();await page.waitForFunction(index=>globalThis.__wmhPreviewAudio.snapshot()[index]?.started,exitPreviewIndex);await page.locator('#lobby-home').click();await page.waitForFunction(index=>globalThis.__wmhPreviewAudio.snapshot()[index]?.lifecycle.disposed,exitPreviewIndex);
+      const exitedAudio=await readCanonicalPreviewAudio(page);assertCanonicalPreviewStopped(exitedAudio,exitPreviewIndex);
       await page.locator('#home-single-player').click();assert.equal(await page.locator('#lobby-preview-status').getAttribute('data-state'),'stopped');
       assert.equal((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,position);
       assert.deepEqual(await exportScore(),beforeScore);assert.deepEqual(await exportTakeData(),beforeTakes);await closeShellPanels();
-      evidence.push({viewport,home,lobby,audio,visibleLabels,canonicalScoreUnchanged:true,retainedTakeUnchanged:true,noAutomaticResume:true});
+      const observerCleanup=await page.evaluate(()=>globalThis.__wmhPreviewAudio.restore());assert.deepEqual(observerCleanup,{restored:true,overflow:false,errors:[],cleanupErrors:[]});
+      evidence.push({viewport,home,lobby,audio,playingAudio,stoppedAudio,mutedAudio,exitedAudio,observerCleanup,physicalAudio:false,visibleLabels,canonicalScoreUnchanged:true,retainedTakeUnchanged:true,noAutomaticResume:true});
     }
     await writeFile(join(artifactDirectory,'worldmusichub-game-menu-preview-evidence.json'),JSON.stringify(evidence,null,2));
   });
