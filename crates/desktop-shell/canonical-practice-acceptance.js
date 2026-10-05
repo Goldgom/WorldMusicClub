@@ -1,5 +1,16 @@
 /* Actual application-only acceptance. All controls use host-owned trusted actions.
  * Read-only observers forward the production call, event, promise and clock. */
+function canonicalPracticeSampleOffsetFrames(plan,positionFrame){
+ // The acknowledged production plan clips crossing notes at A/seek, then
+ // places that first pass after its declared count-in. Source onset alone
+ // can precede this gate and consume the bounded analyser budget in silence.
+ if(!plan.rangeMode){const first=plan.notes.find(note=>note[2]>positionFrame);return first?Math.max(first[1],positionFrame)-positionFrame:null;}
+ const first=plan.notes[plan.firstRangeOrder[0]];
+ if(first)return plan.initialCountInFrames+Math.max(first[1],plan.initialPositionFrame)-plan.initialPositionFrame;
+ // A seek can leave no first-pass gates while a later loop still has them.
+ const next=plan.maxPasses>1&&plan.notes[plan.rangeOrder[0]];
+ return next?plan.initialCountInFrames+plan.rangeEndFrame-plan.initialPositionFrame+plan.countInFrames+Math.max(next[1],plan.rangeStartFrame)-plan.rangeStartFrame:null;
+}
 function compactCanonicalPracticeAudio(rows){
  const compact=record=>{const r=structuredClone(record);if(r.ledgerLayout==='range-pass-major'&&r.ledger){r.ledgerCapacity=r.ledger.actualStarts.length;r.unusedLedgerSentinel=0;r.unusedLedgerEmpty=r.ledger.actualStarts.slice(r.recordCount).every(n=>n===0)&&r.ledger.actualEnds.slice(r.recordCount).every(n=>n===0);r.ledger.actualStarts=r.ledger.actualStarts.slice(0,r.recordCount);r.ledger.actualEnds=r.ledger.actualEnds.slice(0,r.recordCount);r.passFrames=Array.from(r.passFrames||[]).slice(0,r.passCount);}if(r.pauseSpans)r.pauseSpans=Array.from(r.pauseSpans);return r;};
  return rows.map(row=>({...row,terminals:row.terminals.map(t=>({...t,record:compact(t.record)})),rawTerminals:row.rawTerminals.map(t=>({...t,record:compact(t.record)}))}));
@@ -46,7 +57,7 @@ function compactCanonicalPracticeAudio(rows){
  addEventListener('DOMContentLoaded',async()=>{try{
   assert(['canonical-practice-seed','canonical-practice-controls','canonical-practice-restart'].includes(phase),'Unknown canonical phase');for(const type of ['click','input','change','keydown','keyup'])document.addEventListener(type,input,true);controls=createVsqControlObserver(document,{readActionSequence:()=>sequence});
   await prepareNativePlaybackClock({document,until});const {CanonicalAudioReceiver}=await import('/canonical-audio-receiver.js');
-  receiver=await observeBasicKeyReceiver(document,{Receiver:CanonicalAudioReceiver,readStartFrame:n=>n[1],readEndFrame:n=>n[2],onStart(owner){const listener=e=>{if(!['paused','resumed','pass_started'].includes(e.data?.type))return;assert(report.receipts.length<64,'Canonical receipt bound');report.receipts.push({sequence,isTrusted:e.isTrusted===true,nativeMessage:e instanceof MessageEvent,nativePort:e.currentTarget===owner.node.port&&e.currentTarget instanceof MessagePort,record:structuredClone(e.data)});};owner.node.port.addEventListener('message',listener);receiptRemovers.push(()=>owner.node.port.removeEventListener('message',listener));}});
+  receiver=await observeBasicKeyReceiver(document,{Receiver:CanonicalAudioReceiver,readStartFrame:n=>n[1],readEndFrame:n=>n[2],readSampleOffsetFrames:canonicalPracticeSampleOffsetFrames,onStart(owner){const listener=e=>{if(!['paused','resumed','pass_started'].includes(e.data?.type))return;assert(report.receipts.length<64,'Canonical receipt bound');report.receipts.push({sequence,isTrusted:e.isTrusted===true,nativeMessage:e instanceof MessageEvent,nativePort:e.currentTarget===owner.node.port&&e.currentTarget instanceof MessagePort,record:structuredClone(e.data)});};owner.node.port.addEventListener('message',listener);receiptRemovers.push(()=>owner.node.port.removeEventListener('message',listener));}});
   live=await observeLiveToneAudio(document,{keyCode:'Digit2',midi:72,readSource:()=>receiver.status()});await library();(await import('/app-locale.js')).getAppI18n(document).setLocale('en');assert((await json('/api/health')).network==='native-protocol-no-listener','Actual Rust stdin/native protocol required');
   if(phase==='canonical-practice-seed')await importFile('canonical-practice-original.json');
   const inventory=await json('/api/library/list');assert(inventory.entries.length===1,'One persisted original JSON required');report.key=inventory.entries[0].key;report.opened=await json('/api/library/load',{key:report.key});await select(report.key);
