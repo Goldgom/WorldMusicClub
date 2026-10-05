@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile, mkdtemp, mkdir, writeFile, symlink, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {deflateSync} from 'node:zlib';
 import Ajv2020 from 'ajv/dist/2020.js';
 import {DEFAULT_SKIN, SKIN_LIMITS, SKIN_FEATURES, parseSkinManifest, validateSkinManifest,
@@ -32,7 +33,7 @@ test('default and original sample satisfy strict schema, semantic validator and 
   const result = await validateSkinResources(sample, resources());
   assert.equal(result.assets.size, 1); assert.deepEqual(result.diagnostics, []);
   assert.notEqual(result.assets.get('woven'), originalPng);
-  assert.deepEqual(await validateSkinDirectory(new URL('../skins/original-midnight', import.meta.url).pathname),
+  assert.deepEqual(await validateSkinDirectory(fileURLToPath(new URL('../skins/original-midnight', import.meta.url))),
     {format: 'worldmusicclub-skin', version: 1, id: 'original-midnight', valid: true, usable_assets: 1, diagnostics: []});
 });
 
