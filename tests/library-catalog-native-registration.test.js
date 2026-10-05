@@ -31,7 +31,7 @@ test('catalog profile and window hooks preserve other scenarios and require an e
   assert.match(windows,/\.inner_size\(1280\.0, 900\.0\)/);
   assert.match(windows,/if worldmusichub_desktop::acceptance::CATALOG_PHASES.contains\(&acceptance.phase\)\s*\|\| worldmusichub_desktop::acceptance::COMPLETE_PRACTICE_PHASES.contains\(\s*&acceptance.phase,?\s*\)\s*\{\s*builder = builder.inner_size\(1280\.0, 720\.0\);\s*\}/);
   assert.match(rust,/if CATALOG_PHASES.contains\(&self.phase\) \{\s*self.directory.join\("webview-catalog-profile"\)\s*\} else if PHASES.contains\(&self.phase\) \{\s*self.directory.join\("webview-profile"\)/);
-  assert.match(rust,/let existing_required = catalog && self.phase != "catalog-seed"/);
+  assert.match(rust,/let existing_required = \(catalog && self.phase != "catalog-seed"\) \|\| complete_restart/);
   assert.match(rust,/if existing_required \{[\s\S]*?require_ordinary_directory\(&profile\)\?;[\s\S]*?require_catalog_profile_evidence\("catalog-seed", true\)\?;[\s\S]*?return Ok\(false\)/);
   assert.match(profile,/if\(\$selection.existing_required\) \{[\s\S]*?if\(\$selection.profile_absent_before_launch\)\{throw/);
   assert.match(profile,/Assert-CatalogProfilePredecessor \$Directory \$selection 'catalog-seed' \$true/);

@@ -3,16 +3,18 @@
 . (Join-Path $PSScriptRoot 'windows-desktop-evidence.ps1')
 function Get-AcceptanceProfile([string]$Directory,[string]$Phase) {
   $shared=@('seed','restart','close-active','reopen')
-  $fresh=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','complete-practice-seed','complete-practice-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart')
+  $fresh=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart')
+  $complete=@('complete-practice-seed','complete-practice-restart')
   $catalog=@('catalog-seed','catalog-restart','catalog-final')
-  if($Phase -cnotin ($shared+$fresh+$catalog)){throw "Unknown acceptance profile phase: $Phase"}
+  if($Phase -cnotin ($shared+$fresh+$catalog+$complete)){throw "Unknown acceptance profile phase: $Phase"}
   if(-not [IO.Path]::IsPathFullyQualified($Directory)){throw 'Acceptance profile root must be absolute'}
   $root=Get-Item -LiteralPath $Directory -Force -ErrorAction Stop
   if(-not $root.PSIsContainer -or ($root.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw "Acceptance profile root must be an ordinary directory: $Directory"}
   $catalogPhase=$Phase -cin $catalog
-  $freshRequired=$Phase -cin $fresh -or $Phase -ceq 'catalog-seed'
-  $profile=if($catalogPhase){Join-Path $Directory 'webview-catalog-profile'}elseif($freshRequired){Join-Path (Join-Path $Directory 'webview-profiles') $Phase}else{Join-Path $Directory 'webview-profile'}
-  return [ordered]@{phase=$Phase;profile_directory=$profile;fresh_required=$freshRequired;existing_required=($catalogPhase -and $Phase -cne 'catalog-seed');library_directory=(Join-Path $Directory $(if($Phase -cin $shared){'score-library'}else{'Scores'}))}
+  $completePhase=$Phase -cin $complete
+  $freshRequired=$Phase -cin $fresh -or $Phase -ceq 'catalog-seed' -or $Phase -ceq 'complete-practice-seed'
+  $profile=if($catalogPhase){Join-Path $Directory 'webview-catalog-profile'}elseif($completePhase){Join-Path (Join-Path $Directory 'webview-profiles') 'complete-practice-seed'}elseif($freshRequired){Join-Path (Join-Path $Directory 'webview-profiles') $Phase}else{Join-Path $Directory 'webview-profile'}
+  return [ordered]@{phase=$Phase;profile_directory=$profile;fresh_required=$freshRequired;existing_required=(($catalogPhase -and $Phase -cne 'catalog-seed') -or ($completePhase -and $Phase -ceq 'complete-practice-restart'));library_directory=(Join-Path $Directory $(if($Phase -cin $shared){'score-library'}else{'Scores'}))}
 }
 function Get-AcceptancePathItem([string]$Path) {
   try { return Get-Item -LiteralPath $Path -Force -ErrorAction Stop }
@@ -30,8 +32,11 @@ function Assert-AcceptanceProfileLaunch([string]$Directory,[string]$Phase) {
   if($null -ne $existing -and (-not $existing.PSIsContainer -or ($existing.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){throw "Shared profile must be an ordinary directory: $($selection.profile_directory)"}
   if($selection.existing_required) {
     if($selection.profile_absent_before_launch){throw "Catalog restart requires its existing test-owned profile: $($selection.profile_directory)"}
-    Assert-CatalogProfilePredecessor $Directory $selection 'catalog-seed' $true
-    if($Phase -ceq 'catalog-final'){Assert-CatalogProfilePredecessor $Directory $selection 'catalog-restart' $false}
+    if($Phase -ceq 'complete-practice-restart'){Assert-CatalogProfilePredecessor $Directory $selection 'complete-practice-seed' $true}
+    else {
+      Assert-CatalogProfilePredecessor $Directory $selection 'catalog-seed' $true
+      if($Phase -ceq 'catalog-final'){Assert-CatalogProfilePredecessor $Directory $selection 'catalog-restart' $false}
+    }
   }
   # Do not create it here. The Rust host atomically reserves the exact same path
   # immediately before passing it to WebviewWindowBuilder.data_directory.

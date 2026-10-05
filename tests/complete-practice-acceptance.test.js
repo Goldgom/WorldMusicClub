@@ -5,7 +5,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
 import {completePracticeFixture,originalCompletePracticeMidi,COMPLETE_PRACTICE_PHASES} from '../scripts/prepare-complete-practice-fixtures.mjs';
-import {validateCompleteOpened,validateCompleteGeometry,validateCompletePracticeTakes,validateCompletePracticeRenderer} from '../scripts/verify-complete-practice-evidence.mjs';
+import {validateCompleteOpened,validateCompleteGeometry,validateCompletePracticeTakes,validateCompletePracticeRenderer,verifyCompletePracticeProfiles,validateCompletePracticeLabels} from '../scripts/verify-complete-practice-evidence.mjs';
 import {digest} from './clean-song-package-fixtures.js';
 const root=fileURLToPath(new URL('../',import.meta.url)),source=name=>readFile(new URL(`../${name}`,import.meta.url),'utf8');
 const f=completePracticeFixture(),human=['midi-t1-c1-r0','midi-t2-c2-r0'];
@@ -22,3 +22,22 @@ test('focused workflow really invokes browser and native gates with no autoplay 
 test('hosted runner refuses a local browser attempt before launching tools',()=>{const run=spawnSync(process.execPath,['scripts/hosted-complete-practice-check.mjs'],{cwd:root,env:{...process.env,GITHUB_ACTIONS:'false',WMH_HOSTED_BROWSER:'0'},encoding:'utf8'});assert.notEqual(run.status,0);assert.match(run.stderr,/Only the authorized hosted browser runner/);assert.doesNotMatch(run.stderr,/executable doesn't exist|browserType.launch|EADDR/);});
 
 test('only the generated complete-practice evidence directory is ignored',()=>{const ignored=spawnSync('git',['check-ignore','--no-index','desktop-complete-practice/report.json'],{cwd:root,encoding:'utf8'});assert.equal(ignored.status,0);assert.equal(ignored.stdout.trim(),'desktop-complete-practice/report.json');const source=spawnSync('git',['check-ignore','--no-index','crates/desktop-shell/complete-practice-acceptance.js'],{cwd:root,encoding:'utf8'});assert.equal(source.status,1);});
+
+
+test('owned native label restart rejects fresh substitutes, missing seed proof and reused process IDs',async()=>{
+ const directory='C:\\owned acceptance\\Scores',profile='C:\\owned acceptance\\webview-profiles\\complete-practice-seed';
+ const native={directory,profile_reused:true,phases:COMPLETE_PRACTICE_PHASES.map((phase,index)=>({phase,process_id:100+index,profile_directory:profile,profile_fresh:index===0,profile_reused:index===1,profile_absent_before_launch:index===0}))};
+ const proofs=Object.fromEntries(native.phases.map((row,index)=>[`profile-${row.phase}.json`,{version:1,phase:row.phase,process_id:row.process_id,profile_directory:profile,library_directory:directory,fresh_required:index===0,created_new:index===0}]));
+ await verifyCompletePracticeProfiles(native,async name=>proofs[name]);
+ for(const mutate of [n=>n.profile_reused=false,n=>n.phases.reverse(),n=>n.phases[1].process_id=100,n=>n.phases[1].profile_directory+='-replacement',n=>n.phases[1].profile_fresh=true,n=>n.phases[1].profile_absent_before_launch=true,n=>n.phases[1].profile_reused=false,n=>n.directory='relative/Scores']){const changed=structuredClone(native);mutate(changed);await assert.rejects(verifyCompletePracticeProfiles(changed,async name=>proofs[name]));}
+ for(const mutate of [p=>delete p['profile-complete-practice-seed.json'],p=>p['profile-complete-practice-seed.json'].created_new=false,p=>p['profile-complete-practice-restart.json'].created_new=true,p=>p['profile-complete-practice-restart.json'].fresh_required=true,p=>p['profile-complete-practice-restart.json'].library_directory='C:/other/Scores']){const changed=structuredClone(proofs);mutate(changed);await assert.rejects(verifyCompletePracticeProfiles(native,async name=>changed[name]));}
+});
+
+test('label evidence distinguishes first use, a real reload and retained application restart',async()=>{
+ const seed={phase:'complete-practice-seed',labelsDefaultHidden:true,labelsAtLaunch:{stored:null,checked:false},labelReload:{checked:true,stored:'true',navigationType:'reload'}};
+ const restart={phase:'complete-practice-restart',labelsAtLaunch:{stored:'true',checked:true},labelsResetByUser:{stored:'false',checked:false},trusted:[{id:'falling-note-labels',type:'change',trusted:true,checked:false}]};
+ validateCompletePracticeLabels(seed);validateCompletePracticeLabels(restart);
+ for(const mutate of [r=>r.labelsAtLaunch.stored=null,r=>r.labelsAtLaunch.checked=false,r=>r.labelsResetByUser.stored='true',r=>r.trusted[0].trusted=false,r=>r.trusted[0].checked=true]){const changed=structuredClone(restart);mutate(changed);assert.throws(()=>validateCompletePracticeLabels(changed));}
+ const wrong=structuredClone(seed);wrong.labelReload.navigationType='navigate';assert.throws(()=>validateCompletePracticeLabels(wrong));
+ const [host,renderer]=await Promise.all([source('scripts/hosted-complete-practice-check.mjs'),source('crates/desktop-shell/complete-practice-acceptance.js')]);assert.match(host,/persistedStorage=await context.storageState\(\)/);assert.match(host,/storageState:persistedStorage/);assert.doesNotMatch(renderer,/localStorage\.setItem/);assert.match(renderer,/User label setting did not survive application restart/);
+});

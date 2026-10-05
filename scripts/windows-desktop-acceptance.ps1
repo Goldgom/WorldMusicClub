@@ -422,6 +422,7 @@ $nativeReportName=if($Scenario -eq 'library-catalog'){'native-library-catalog.js
 $phases=if($Scenario -eq 'library-catalog'){@('catalog-seed','catalog-restart','catalog-final')}elseif($Scenario -eq 'complete-practice'){@('complete-practice-seed','complete-practice-restart')}elseif($Scenario -eq 'basic-key'){@('basic-key-seed','basic-key-restart')}elseif($Scenario -eq 'vsq-authoring'){@('vsq-authoring-seed','vsq-authoring-restart')}elseif($Scenario -eq 'authoring'){@('authoring-seed','authoring-restart')}elseif($Scenario -eq 'pitch-bend'){@('pitch-bend-seed','pitch-bend-restart')}elseif($Scenario -eq 'performance-song'){@('performance-seed','performance-controls','performance-restart')}elseif($Scenario -eq 'vsq-song'){@('vsq-seed','vsq-restart')}elseif($Scenario -eq 'clean-song'){@('clean-seed','clean-restart')}elseif($Scenario -eq 'bulk-import'){@('bulk-seed','bulk-restart','bulk-failure')}elseif($Scenario -eq 'song-folder'){@('folder-seed','folder-restart','folder-failure')}else{@('seed','restart','close-active','reopen')}
 if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','library-catalog')){$native.profile_reused=$false;$native.scenario=$Scenario;$native.directory=Join-Path $OutputDirectory 'Scores'}
 try {
+if($Scenario -eq 'complete-practice'){$native.profile_reused=$true}
 if($Scenario -eq 'library-catalog') {
   $native.profile_reused=$true;$native.screenshots=@();$native.requested_viewport=[ordered]@{width=1280;height=720};$native.minimum_viewport=[ordered]@{width=900;height=640}
   $sourceNames=& node --input-type=module -e 'import {pathToFileURL} from "node:url"; const module=await import(pathToFileURL(process.argv[2])); console.log(JSON.stringify(module.CATALOG_SOURCE_FILES));' -- catalog-source-list (Join-Path $PSScriptRoot 'verify-library-catalog-acceptance.mjs')
@@ -508,6 +509,7 @@ if($Scenario -eq 'library-catalog') {
     $item=[ordered]@{phase=$phase;process_id=$app.Id;renderer_ok=$report.ok;renderer_origin=$report.origin;actions=$sequence-1;elapsed_seconds=([DateTime]::UtcNow-$phaseStart).TotalSeconds;executable_tcp_listeners=$listeners.Count;normal_close=$false}
     $item.profile_directory=$profileSelection.profile_directory;$item.profile_absent_before_launch=$profileSelection.profile_absent_before_launch
     if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','library-catalog')){$item.launched_new_process=$true;$item.profile_fresh=$true;$item.profile_reused=$false}
+    if($Scenario -eq 'complete-practice'){$item.profile_fresh=$profileSelection.fresh_required;$item.profile_reused=$profileSelection.existing_required}
     if($Scenario -eq 'library-catalog'){$item.profile_fresh=$profileSelection.fresh_required;$item.profile_reused=$profileSelection.existing_required;$item.geometry_file=$catalogCaptureGeometryFile}
     $native.phases+=,$item;Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
     if(-not $report.ok){throw "Native $phase failed: $($report.error)"}

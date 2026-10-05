@@ -20,7 +20,7 @@ $profileRoot=Join-Path ([IO.Path]::GetTempPath()) ('wmh profile 拼谱 '+[guid]:
 $heldProfile=$null
 New-Item -ItemType Directory $profileRoot | Out-Null
 try {
-  $freshPhases=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','complete-practice-seed','complete-practice-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart')
+  $freshPhases=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart')
   New-Item -ItemType Directory (Join-Path $profileRoot 'Scores') | Out-Null
   $score=Join-Path $profileRoot 'Scores/original.bin';[IO.File]::WriteAllText($score,'native score bytes')
   $profiles=@()
@@ -57,6 +57,17 @@ try {
     if($phase -eq 'seed'){New-Item -ItemType Directory $selection.profile_directory | Out-Null}
     else{Assert-True (-not $selection.profile_absent_before_launch) 'desktop restart reuses its existing profile'}
   }
+  $completePhases=@('complete-practice-seed','complete-practice-restart')
+  Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $completePhases[1] } 'complete restart needs its seed profile'
+  $completeSeed=Assert-AcceptanceProfileLaunch $profileRoot $completePhases[0]
+  Assert-True $completeSeed.fresh_required 'complete seed reserves a fresh owned cache'
+  New-Item -ItemType Directory $completeSeed.profile_directory | Out-Null
+  $completeProof=[ordered]@{version=1;phase=$completePhases[0];process_id=42;profile_directory=$completeSeed.profile_directory;library_directory=$completeSeed.library_directory;fresh_required=$true;created_new=$true}
+  $completeProof | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $profileRoot 'profile-complete-practice-seed.json')
+  $completeRestart=Assert-AcceptanceProfileLaunch $profileRoot $completePhases[1]
+  Assert-True ($completeRestart.profile_directory -ceq $completeSeed.profile_directory -and $completeRestart.existing_required -and -not $completeRestart.fresh_required -and -not $completeRestart.profile_absent_before_launch) 'complete restart retains its exact seed cache'
+  Remove-Item -LiteralPath (Join-Path $profileRoot 'profile-complete-practice-seed.json')
+  Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $completePhases[1] } 'complete restart rejects a cache without seed ownership proof'
   foreach($phase in @('','VSQ-seed','vsq-any','../vsq-seed','vsq-seed/extra','vsq-seed\extra',"vsq-seed`n")){Assert-Rejected { Get-AcceptanceProfile $profileRoot $phase } 'unknown phase cannot select a path'}
   Assert-Rejected { Get-AcceptanceProfile 'relative-root' 'vsq-seed' } 'relative acceptance root'
   $fileRoot=Join-Path $profileRoot 'file-root';[IO.File]::WriteAllText($fileRoot,'not a directory')

@@ -174,6 +174,10 @@ impl Acceptance {
             self.directory.join("webview-catalog-profile")
         } else if PHASES.contains(&self.phase) {
             self.directory.join("webview-profile")
+        } else if COMPLETE_PRACTICE_PHASES.contains(&self.phase) {
+            self.directory
+                .join("webview-profiles")
+                .join("complete-practice-seed")
         } else {
             self.directory.join("webview-profiles").join(self.phase)
         }
@@ -181,7 +185,8 @@ impl Acceptance {
     pub fn prepare_webview_profile(&self) -> std::io::Result<PathBuf> {
         let profile = self.profile_directory();
         let catalog = CATALOG_PHASES.contains(&self.phase);
-        let existing_required = catalog && self.phase != "catalog-seed";
+        let complete_restart = self.phase == "complete-practice-restart";
+        let existing_required = (catalog && self.phase != "catalog-seed") || complete_restart;
         let fresh_required = !PHASES.contains(&self.phase) && !existing_required;
         let prepare = || -> std::io::Result<bool> {
             require_ordinary_directory(&self.directory)?;
@@ -189,9 +194,13 @@ impl Acceptance {
                 // A restart must never manufacture a replacement browser profile.
                 // Require the same ordinary path and bounded earlier host records.
                 require_ordinary_directory(&profile)?;
-                self.require_catalog_profile_evidence("catalog-seed", true)?;
-                if self.phase == "catalog-final" {
-                    self.require_catalog_profile_evidence("catalog-restart", false)?;
+                if complete_restart {
+                    self.require_catalog_profile_evidence("complete-practice-seed", true)?;
+                } else {
+                    self.require_catalog_profile_evidence("catalog-seed", true)?;
+                    if self.phase == "catalog-final" {
+                        self.require_catalog_profile_evidence("catalog-restart", false)?;
+                    }
                 }
                 return Ok(false);
             }
@@ -791,7 +800,7 @@ mod tests {
             assert!(run.script().contains("function createVsqJsonObserver"));
             assert_eq!(run.report_limit(), MAX_CLEAN_REPORT_BYTES);
             assert!(run.library_directory().ends_with("Scores"));
-            assert!(run.profile_directory().ends_with(phase));
+            assert!(run.profile_directory().ends_with("complete-practice-seed"));
         }
         assert!(valid_action(
             &json!({"version":1,"sequence":64,"kind":"picker","x":1,"y":1,"width":1280,"height":720,"file":"complete-practice-original.zip"})
@@ -799,6 +808,31 @@ mod tests {
         assert!(!valid_action(
             &json!({"version":1,"sequence":65,"kind":"picker","x":1,"y":1,"width":1280,"height":720,"file":"complete-practice-original.zip"})
         ));
+    }
+
+    #[test]
+    fn complete_practice_restart_requires_the_existing_seed_profile() {
+        let evidence = Evidence::new();
+        let seed = Acceptance::new(evidence.0.clone(), "complete-practice-seed").unwrap();
+        let restart = Acceptance::new(evidence.0.clone(), "complete-practice-restart").unwrap();
+        assert!(restart.prepare_webview_profile().is_err());
+        let profile = seed.prepare_webview_profile().unwrap();
+        std::fs::write(profile.join("marker"), b"preserve this owned cache").unwrap();
+        assert!(seed.prepare_webview_profile().is_err());
+        assert_eq!(restart.prepare_webview_profile().unwrap(), profile);
+        assert_eq!(
+            std::fs::read(profile.join("marker")).unwrap(),
+            b"preserve this owned cache"
+        );
+        let proof = read_ordinary_json(
+            &evidence.0.join("profile-complete-practice-restart.json"),
+            8192,
+        )
+        .unwrap();
+        assert_eq!(proof["fresh_required"], false);
+        assert_eq!(proof["created_new"], false);
+        std::fs::remove_file(evidence.0.join("profile-complete-practice-seed.json")).unwrap();
+        assert!(restart.prepare_webview_profile().is_err());
     }
 
     #[test]
