@@ -274,23 +274,19 @@ test('VSQ receiver seek disconnects immediately and requires a fresh explicit pr
 });
 
 
-test('VSQ instrumental Listen occupies the main action slot, retains explicit choice and recovers from preparation failure',async()=>{
- const {app,server,storageKey}=await appFixture();const direct=app.$('vsq-listen-basic'),ordinary=app.$('start-listen'),part=app.$('preview-part'),i18n=getAppI18n(app.document);
+test('VSQ keeps explicit source preparation, then uses Mod and one Start action with real synthetic override',async()=>{
+ const {app,server,storageKey}=await appFixture(),i18n=getAppI18n(app.document),choice=app.$('vsq-choose-base-notes');
  try{
-  assert.equal(direct.parentNode,ordinary.parentNode);assert.ok(direct.parentNode.classList.contains('preview-actions'));
-  assert.equal(direct.hidden,false);assert.equal(direct.disabled,false);assert.equal(ordinary.hidden,true);assert.equal(ordinary.disabled,true);
-  assert.equal(app.$('preview-part-help').hidden,true);assert.equal(server.requests.some(r=>r.path==='/api/library/runtime'),false);assert.equal(admittedGates(app).length,0);
-  for(const locale of ['zh-CN','en']){i18n.setLocale(locale);assert.equal(app.$('vsq-listen-basic'),direct);assert.equal(app.$('preview-part'),part);assert.match(app.$('preview-status').textContent,locale==='en'?/every authored part/:/全部创作声部/);assert.doesNotMatch(app.$('preview-status').textContent,/unavailable|不可用/);}
+  assert.equal(app.$('vsq-listen-basic').hidden,true);assert.equal(app.$('start-listen').hidden,true);assert.equal(app.$('start-performance').disabled,true);assert.equal(app.$('configure-song-mod').disabled,true);assert.equal(choice.disabled,false);assert.equal(server.requests.some(r=>r.path==='/api/library/runtime'),false);assert.equal(admittedGates(app).length,0);
+  for(const locale of ['zh-CN','en']){i18n.setLocale(locale);assert.match(app.$('song-mod-preview-summary').textContent,locale==='en'?/basic instrumental renderer/:/基础器乐渲染器/);}
   server.setRoute(({path})=>path==='/api/library/runtime'?nativeResponse({code:'library_runtime_invalid',error:'Authored preparation failure'},422):undefined);
-  await app.click('vsq-listen-basic');await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choice'&&!direct.disabled);
-  assert.match(app.$('preview-status').textContent,/could not be prepared.*Retry/);assert.equal(ordinary.hidden,true);assert.equal(direct.hidden,false);assert.equal(admittedGates(app).length,0);assert.equal(server.requests.filter(r=>r.path==='/api/library/runtime').length,1);
+  await app.click('vsq-choose-base-notes');await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choice'&&!choice.disabled);assert.match(app.$('preview-status').textContent,/could not be prepared.*Retry/);assert.equal(admittedGates(app).length,0);assert.equal(server.requests.filter(r=>r.path==='/api/library/runtime').length,1);
   server.setRoute(({path})=>path==='/api/library/runtime'?nativeResponse(response()):undefined);
-  await app.click('vsq-listen-basic');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
-  assert.equal(admittedGates(app).length,2);assert.equal(direct.hidden,true);assert.equal(ordinary.hidden,false);assert.equal(ordinary.textContent,i18n.t('shell.listenAllParts'));
-  assert.equal(app.$('preview-part-help').hidden,false);assert.equal(app.$('preview-part-help').closest('details'),null,'Part help remains beside the selector, outside collapsed session help');assert.equal(app.$('preview-part-help').previousElementSibling,app.$('preview-part-label'));assert.equal(part.getAttribute('aria-describedby'),'preview-part-help');assert.equal(part.querySelector('option[value=""]'),null);
-  for(const locale of ['zh-CN','en']){i18n.setLocale(locale);assert.equal(app.$('preview-part'),part);assert.equal(app.$('vsq-listen-basic'),direct);assert.equal(app.$('preview-part-label').firstChild.textContent,i18n.t('shell.humanPracticePart'));assert.equal(app.$('preview-part-help').textContent,i18n.t('shell.cleanPartHelp'));assert.equal(ordinary.textContent,i18n.t('shell.listenAllParts'));assert.match(app.$('clean-song-rendition').textContent,locale==='en'?/^All-part instrumental listening is selected/:/^已选择全部声部的基础器乐聆听方式/);}
-  await app.click('back-to-library');app.savedButton(storageKey).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choice');assert.equal(direct.hidden,false);assert.equal(ordinary.hidden,true);assert.equal(server.requests.filter(r=>r.path==='/api/library/runtime').length,2,'Reload makes no new interpretation request');
-  app.document.querySelector('#catalog [data-score-id]').click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready'&&app.$('clean-song-preview').hidden);
-  assert.equal(direct.hidden,true);assert.equal(ordinary.hidden,false);assert.equal(ordinary.textContent,i18n.t('shell.startListen'));assert.equal(app.$('preview-part-label').firstChild.textContent,i18n.t('shell.targetPart'));assert.equal(app.$('preview-part-help').hidden,true);
+  await app.click('vsq-choose-base-notes');await app.until(()=>!app.$('configure-song-mod').disabled);assert.equal(admittedGates(app).length,0);assert.equal(app.document.body.dataset.screen,'library');
+  await app.click('configure-song-mod');await app.click('song-mod-all-machine');const sound=app.$('song-mod-parts').querySelector('[data-mod-instrument]');assert.equal(sound.disabled,false);sound.value='reed';app.emit(sound,'change');await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open&&!app.$('start-performance').disabled);await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
+  assert.equal(admittedGates(app).length,2);assert.equal(app.$('session-mode').value,'listen');assert.ok(connectedReceivers(app)[0].core.plan.timbreProfile);assert.ok([...connectedReceivers(app)[0].core.plan.timbres].some(Boolean));assert.equal(app.$('start-listen').hidden,true);assert.equal(app.$('vsq-listen-basic').hidden,true);
+  for(const locale of ['zh-CN','en']){i18n.setLocale(locale);assert.equal(app.$('start-performance').textContent,locale==='en'?'Start performance':'开始演奏');assert.match(app.$('clean-song-stage-status').textContent,locale==='en'?/pitched synthesis/:/有音高合成/);}
+  await app.click('back-to-library');app.savedButton(storageKey).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choice');assert.equal(app.$('start-performance').disabled,true);assert.equal(server.requests.filter(r=>r.path==='/api/library/runtime').length,2,'Reload cannot silently accept the renderer again');
+  app.document.querySelector('#catalog [data-score-id]').click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready'&&app.$('clean-song-preview').hidden);assert.equal(app.$('start-listen').hidden,true);assert.equal(app.$('start-performance').hidden,false);
  }finally{await app.close();}
 });

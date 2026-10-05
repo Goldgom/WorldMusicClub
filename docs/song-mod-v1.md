@@ -2,7 +2,7 @@
 
 Song Mods are user-owned sidecars. They do not replace any canonical, MIDI, VSQ, raw-source, skin or notation schema. They contain no executable scripts, accounts, multiplayer routes or user assets.
 
-The selected-song action strip has one **Start performance / 开始演奏** action and a **Mod** entry. Apply saves the draft without starting playback. Cancel discards it, including while compatibility checks are pending. The in-stage Mod entry pauses before editing; applying restarts that session and clears its in-memory takes, with an explicit warning. In-stage Play/Pause, Replay, Reset and seek controls remain.
+The selected-song action strip has one **Start performance / 开始演奏** action and a **Mod** entry. Apply saves the draft without starting playback. Cancel discards it, including while compatibility checks are pending. The in-stage Mod entry pauses before editing; changing performers or sound policy restarts that session and clears its in-memory takes, with an explicit warning. Display and playback mute changes preserve the paused source position, target plan and takes; mute rebuilds only the machine audio plan on the next Play. In-stage Play/Pause, Replay, Reset and seek controls remain.
 
 ## Contract
 
@@ -30,7 +30,8 @@ Browser persistence is versioned and keyed by song ID plus typed source revision
 | Canonical compiled audio v1 | Supported | sine / triangle / reed in canonical AudioWorklet | Existing sine PCM, profile, source fingerprints, ties/repeats and gates |
 | Basic MIDI key rendition v2 / FIFO v1 | Supported | sine / triangle / reed in BasicKey AudioWorklet | Existing melodic sine and percussion pulse, exact admitted gates |
 | Chosen VSQ base-note runtime | Supported | sine / triangle / reed in VSQ AudioWorklet | Existing chosen piano/guitar reference recipe and fixed reference velocity |
-| Legacy/unsupported complete profiles | Only available admitted target/display capabilities | Disabled with a reason | No new main-thread or silent sound fallback |
+| Existing procedural clean source profile | Supported through its already admitted reference renderer | Disabled with a reason | Existing source renderer only; an override can never fall back to it |
+| Unsupported complete profiles | Only available admitted target/display capabilities | Disabled with a reason | No new sound fallback |
 | Human live input | Shared existing physical input and target profile | Per-part machine sound is disabled while human is selected | Existing shared live instrument; no invented per-part device routing |
 
 The sound names are **Synthetic sine**, **Soft triangle synthesis**, and **Reed synthesis**. They are finite basic additive recipes, not acoustic instruments, GM patches, vocal banks or original mixer reproduction. Harmonics at or above Nyquist are omitted; an unrepresentable fundamental rejects the entire plan. Source never auto-converts percussion. Only an explicit percussion override selects a pitched synthetic color at the retained MIDI key while preserving the percussion gate/envelope. It does not change drum selectors into new human piano targets.
@@ -43,7 +44,7 @@ The Mod's human set is passed into the existing target planner, notation classif
 
 Mute only controls source playback and does not remove human targets. Display only controls presentation and does not remove sound or targets. Human live sound remains the shared live-instrument control, disclosed in each human row.
 
-Mod Apply uses the existing reset boundary and retains canonical A/B range and tempo settings. Tempo/transposition still use existing Rust derivation and instrument/fingering regeneration; a derived canonical score receives its own source revision with the same compatible Mod choices. Complete-song tempo/transpose/loop restrictions remain explicit until matching complete performance derivation exists. Count-in, source gate timing, loop/pass ledgers, paused oscillator phases and replay admission remain governed by the current audio-thread paths.
+Only performer or sound-policy Mod changes use the existing reset boundary. Display and playback mute changes preserve takes. All Mod changes retain canonical A/B range and tempo settings. Tempo/transposition still use existing Rust derivation and instrument/fingering regeneration; a derived canonical score receives its own source revision with the same compatible Mod choices. Complete-song tempo/transpose/loop restrictions remain explicit until matching complete performance derivation exists. Count-in, source gate timing, loop/pass ledgers, paused oscillator phases and replay admission remain governed by the current audio-thread paths.
 
 ## Verification boundary
 

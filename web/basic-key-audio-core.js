@@ -6,6 +6,12 @@ const TAU = 2 * Math.PI;
 // Finite synthetic colors only, with no sample assets or acoustic models.
 const TRIANGLE = Object.freeze([0, 1, 0, -1 / 9, 0, 1 / 25, 0, -1 / 49, 0, 1 / 81]);
 const REED = Object.freeze([0, 1, .55, .4, .2, .15, .1, .08, .05, .03]);
+function validateTimbreCommand(message, plan) {
+  // The host's independent command binding must survive removal of the
+  // optional wire extension. ACKs also carry the actual validated identity.
+  if (message.expectedTimbreProfile === undefined && message.expectedTimbreFingerprint === undefined) return;
+  if (message.expectedTimbreProfile !== (plan.timbreProfile ?? null) || message.expectedTimbreFingerprint !== (plan.timbreFingerprint ?? null)) reject('audio_timbre_fingerprint', 'The prepared synthetic color identity differs from the requested selection.');
+}
 
 /** Shared by the actual AudioWorkletProcessor and the block-by-block tests.
  * No clock polling, DOM, timers, per-note nodes, or allocations in the sample
@@ -29,7 +35,7 @@ export class BasicKeyAudioCore {
   }
   resetSlots() { this.activeCount = 0; this.freeCount = this.limits.maxVoices; for (let i = 0; i < this.limits.maxVoices; i++) this.freeSlots[i] = this.limits.maxVoices - 1 - i; }
   snapshot(frame) {
-    return {generation: this.generation, planGeneration: this.planGeneration, state: this.state, sourceSha256: this.plan?.sourceSha256 ?? null, policyId: this.plan?.policyId ?? null, identityKind: this.plan?.identityKind ?? 'midi-source-coordinate', sampleRate: this.sampleRate, frame, anchorFrame: this.anchorFrame ?? null, positionFrame: this.positionFrame ?? null, durationFrames: this.plan?.durationFrames ?? 0, sourceNotes: this.plan?.sourceNotes ?? 0, notes: this.plan?.count ?? 0, eligibleNotes: this.eligibleCount, started: this.startedCount, ended: this.endedCount, skipped: this.skippedCount, active: this.activeCount};
+    return {generation: this.generation, planGeneration: this.planGeneration, state: this.state, sourceSha256: this.plan?.sourceSha256 ?? null, policyId: this.plan?.policyId ?? null, identityKind: this.plan?.identityKind ?? 'midi-source-coordinate', ...(this.plan?.timbreProfile ? {timbreProfile: this.plan.timbreProfile, timbreFingerprint: this.plan.timbreFingerprint} : {}), sampleRate: this.sampleRate, frame, anchorFrame: this.anchorFrame ?? null, positionFrame: this.positionFrame ?? null, durationFrames: this.plan?.durationFrames ?? 0, sourceNotes: this.plan?.sourceNotes ?? 0, notes: this.plan?.count ?? 0, eligibleNotes: this.eligibleCount, started: this.startedCount, ended: this.endedCount, skipped: this.skippedCount, active: this.activeCount};
   }
   emitCompletion(type, frame, extra = {}) {
     const ledger = this.validated && this.actualStarts ? {actualStarts: this.actualStarts, actualEnds: this.actualEnds} : null;
@@ -72,6 +78,7 @@ export class BasicKeyAudioCore {
         this.plan = null; this.planGeneration = this.generation; this.order = null;
         this.startedCount = 0; this.endedCount = 0; this.skippedCount = 0; this.cursor = 0; this.eligibleCount = 0; this.validated = false;
         const plan = (this.profile?.openTransfer || openBasicKeyAudioTransfer)(message.wire, this.sampleRate);
+        validateTimbreCommand(message, plan);
         if (!integer(message.positionFrame, -600 * this.sampleRate, plan.durationFrames)) reject('invalid_audio_command', 'The prepared source position exceeds the rendition or ten-minute count-in bound.');
         this.profile?.validatePosition?.(plan, message.positionFrame);
         this.profileValidation = this.profile?.beginValidation?.(plan);
@@ -84,6 +91,7 @@ export class BasicKeyAudioCore {
       if (message.generation !== this.generation) reject('invalid_audio_command', 'The audio generation was not prepared.');
       if (message.type === 'start') {
         if (this.state !== 'ready') reject('invalid_audio_command', 'Only a ready audio generation can start.');
+        validateTimbreCommand(message, this.plan);
         if (!integer(message.anchorFrame, frame + 1, Math.min(this.limits.maxFrame, frame + Math.ceil(this.sampleRate * .1)))) reject('clean_late_start', 'The start anchor must be in the future and within the declared 100 ms lead.');
         if (!integer(message.anchorFrame + this.plan.durationFrames - this.positionFrame, 0, this.limits.maxFrame)) reject('invalid_audio_command', 'The anchored rendition exceeds the exact audio frame range.');
         this.anchorFrame = message.anchorFrame; this.expectedFrame = null; this.state = 'running';

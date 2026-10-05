@@ -9,6 +9,29 @@ function nameChannelTracks({score,runtime}){for(const events of [score.performan
 const namedSong=edit=>cleanSong(data=>{nameChannelTracks(data);edit?.(data);});
 test('full reference plays independent program families from the shared clock without global piano',()=>{const h=harness();h.start();const oscillators=h.nodes.filter(node=>node.kind==='oscillator');assert.equal(oscillators.length,4);assert.equal(oscillators[0].starts[0],0.05);assert.notEqual(oscillators[1].frequency.events[0].value,oscillators[3].frequency.events[0].value);assert.equal(h.player.lanes.size,2);h.player.stop();assert.equal(h.timers.size,0);assert.ok(oscillators.every(node=>node.disconnected));});
 test('practice human target and muted part never schedule machine voices',()=>{const song=cleanSong(),h=harness(song),[first,second]=song.score.performance.parts;h.start({mode:'practice',targetPart:first.id});assert.equal(h.player.lanes.get(first.id).receiver.voices.size,0);assert.equal(h.player.lanes.get(second.id).receiver.voices.size,1);h.start({mode:'practice',targetPart:first.id,mutedParts:[second.id]});assert.equal(h.nodes.filter(node=>node.kind==='oscillator'&&!node.disconnected).length,0);h.player.stop();});
+test('legacy source renderer uses the full explicit human union for lane gains and every scheduled gate',()=>{
+ const song=cleanSong(),before=JSON.stringify(song),[first,second]=song.score.performance.parts,original=ReferenceAudioReceiver.prototype.schedule;let scheduled=[];
+ ReferenceAudioReceiver.prototype.schedule=function(note,start,end){scheduled.push({note,start,end});return original.call(this,note,start,end);};
+ try{
+  for(const [options,humans] of [
+   [{mode:'listen',practiceSelection:{kind:'all'}},[]],
+   [{mode:'practice',practiceSelection:{kind:'all'}},[first.id,second.id]],
+   [{mode:'practice',targetPart:first.id,practiceSelection:{kind:'parts',part_ids:[second.id,first.id]}},[first.id,second.id]],
+   [{mode:'practice',targetPart:second.id,practiceSelection:{kind:'parts',part_ids:[first.id]}},[first.id]],
+  ]){
+   const h=harness(song);scheduled=[];
+   try{
+    h.start(options);assert.deepEqual([...h.player.humanParts],humans);
+    for(const part of song.score.performance.parts){h.player.command({command:{kind:'volume',channel:part.channel,value:127}},0);h.player.command({command:{kind:'reverb_send',channel:part.channel,value:48}},0);assert.equal(h.player.lanes.get(part.id).gain.gain.value,humans.includes(part.id)?0:1);}
+    for(let position=0;position<=1800;position+=20){h.position(position);h.context.currentTime=(position+50)/1000;h.player.pump();}
+    assert.deepEqual(scheduled.map(item=>item.note.eventId),song.runtime.notes.filter(note=>!humans.includes(note.part_id)).map(note=>note.event_id));assert.deepEqual(h.errors,[]);
+    for(const item of scheduled){const note=song.runtime.notes.find(note=>note.event_id===item.note.eventId);assert.equal(item.note.key,note.key);assert.ok(Math.abs(item.start-(note.start_ms+50)/1000)<1e-12);assert.ok(Math.abs(item.end-(note.end_ms+50)/1000)<1e-12);}
+   }finally{h.player.stop();}
+  }
+  assert.equal(JSON.stringify(song),before);
+  for(const practiceSelection of [{kind:'parts',part_ids:[]},{kind:'parts',part_ids:['missing']},{kind:'parts',part_ids:[first.id,first.id]}]){const h=harness(song);assert.throws(()=>h.start({mode:'practice',practiceSelection}),{code:'clean_target_required'});assert.equal(h.nodes.length,1);h.player.stop();}
+ }finally{ReferenceAudioReceiver.prototype.schedule=original;}
+});
 test('CC91 room is bounded, independently gated, and zero clears wet output',()=>{const song=cleanSong(({runtime,score})=>{for(const events of [runtime.events,score.performance.events]){const event=events.find(e=>e.command.kind==='volume');event.command={kind:'reverb_send',channel:0,value:48};}}),h=harness(song);h.start();const lane=h.player.lanes.get(song.score.performance.parts[0].id);assert.equal(lane.room!==null,true);assert.equal(h.nodes.filter(node=>node.type==='convolver').length,2);const wet=h.nodes.filter(node=>node.type==='gain'&&node.gain.events.some(event=>event.value===0.22));assert.equal(wet.length,1);h.player.command({command:{kind:'reverb_send',channel:0,value:0}},.5);assert.equal(wet[0].gain.value,0);const callback=[...h.timers.values()][0];h.player.pause();assert.ok(h.nodes.filter(node=>node.type==='convolver').every(node=>node.buffer===null&&node.disconnected));callback();assert.equal(h.player.running,false);h.start();assert.equal(h.nodes.filter(node=>node.type==='convolver'&&!node.disconnected).length,2);h.player.stop();});
 test('unsupported banks chorus and pressure block the whole rendition; metadata stays supported',()=>{assert.equal(inspectCleanRendition(cleanSong()).supported,true);for(const command of [{kind:'bank_select',channel:0,component:'msb',value:1},{kind:'chorus_send',channel:0,value:1},{kind:'channel_pressure',channel:0,pressure:2}]){const song=cleanSong(({runtime})=>runtime.events[0].command=command);assert.equal(inspectCleanRendition(song).supported,false);const h=harness(song);assert.throws(()=>h.start(),error=>error.code==='clean_renderer_unsupported');assert.equal(h.nodes.length,1);}});
 test('scheduler interruption stops all voices and stale callbacks cannot restart',()=>{const h=harness();h.start();const callback=[...h.timers.values()][0];h.position(900);h.context.currentTime=.95;callback();assert.equal(h.errors[0].code,'clean_late_scheduler');assert.equal(h.player.running,false);assert.equal(h.player.lanes.size,0);callback();assert.equal(h.errors.length,1);});

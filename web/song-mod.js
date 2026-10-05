@@ -1,4 +1,5 @@
 import {CanonicalSha256,canonicalFingerprint,canonicalUtf8} from './canonical-audio-fingerprint.js';
+import {inspectCleanRendition} from './clean-song-player.js';
 import {hasBasicKeyRendition,isVsqSong} from './clean-song-package.js';
 
 export const SONG_MOD_FORMAT='wmc-song-mod';
@@ -47,8 +48,8 @@ export function defaultSongMod(context,identity=songModIdentity(context)) {
   return createSongMod(identity,{layout:context.practiceLayout||'complete',showOtherParts:context.showOthers!==false,parts:score.parts.map(part=>({partId:part.id,performer:selected.has(part.id)?'human':'machine',instrument:'source',muted:false,visible:true}))});
 }
 export function songModCapabilities({cleanSong=null,compiled}={}) {
-  const performers=Boolean(compiled),audio=!cleanSong||hasBasicKeyRendition(cleanSong)||isVsqSong(cleanSong)&&Boolean(cleanSong.runtime);
-  return {performers,audio,instruments:performers&&audio,instrumentReason:audio?'':'renderer_has_no_per_part_timbre',audioReason:audio?'':'renderer_has_no_audio_thread'};
+  const performers=Boolean(compiled),audioThread=!cleanSong||hasBasicKeyRendition(cleanSong)||isVsqSong(cleanSong)&&Boolean(cleanSong.runtime),audio=audioThread||Boolean(cleanSong&&performers&&inspectCleanRendition(cleanSong).supported);
+  return {performers,audio,audioThread,instruments:performers&&audioThread,instrumentReason:audioThread?'':'renderer_has_no_per_part_timbre',audioReason:audio?'':'renderer_has_no_supported_audio'};
 }
 export function songModOptions(mod) {
   const {config}=validateSongMod(mod),human=config.parts.filter(part=>part.performer==='human').map(part=>part.partId);
@@ -56,11 +57,21 @@ export function songModOptions(mod) {
   // Listen bypasses human recording/scoring; the Mod remains the role owner.
   return {mode:human.length?'practice':'listen',practiceSelection:human.length===config.parts.length||!human.length?{kind:'all',part_ids:config.parts.map(part=>part.partId)}:{kind:'parts',part_ids:human},part:human.length===1?human[0]:null,practiceLayout:config.layout,showOthers:config.showOtherParts,mutedPartIds:config.parts.filter(part=>part.muted).map(part=>part.partId),hiddenPartIds:config.parts.filter(part=>!part.visible).map(part=>part.partId),instrumentOverrides:Object.fromEntries(config.parts.filter(part=>part.instrument!=='source').map(part=>[part.partId,part.instrument]))};
 }
+/** Only ownership or synthesis-policy changes invalidate the current take. */
+export function songModChanges(before,after) {
+  validateSongMod(before);validateSongMod(after);
+  const previous=new Map(before.config.parts.map(part=>[part.partId,part]));
+  const ownership=after.config.parts.some(part=>previous.get(part.partId)?.performer!==part.performer);
+  const instruments=after.config.parts.some(part=>previous.get(part.partId)?.instrument!==part.instrument);
+  const mix=after.config.parts.some(part=>previous.get(part.partId)?.muted!==part.muted);
+  const display=before.config.layout!==after.config.layout||before.config.showOtherParts!==after.config.showOtherParts||after.config.parts.some(part=>previous.get(part.partId)?.visible!==part.visible);
+  return {ownership,instruments,mix,display,requiresReset:ownership||instruments};
+}
 export function assertSongModSupported(mod,capabilities) {
   validateSongMod(mod);
   if(!capabilities.performers)fail('This source has no supported performance targets.');
   if(!capabilities.instruments&&mod.config.parts.some(part=>part.instrument!=='source'))fail('This renderer does not support per-part instrument overrides. Restore the source sound to continue.');
-  if(!capabilities.audio&&mod.config.parts.some(part=>part.performer==='machine'&&!part.muted))fail('This renderer has no audio-thread accompaniment. Assign all sounding parts to a human or mute them.');
+  if(!capabilities.audio&&mod.config.parts.some(part=>part.performer==='machine'&&!part.muted))fail('This renderer has no supported source accompaniment. Assign all sounding parts to a human or mute them.');
 }
 
 /** Storage errors keep the usable session Mod and never erase an older copy. */

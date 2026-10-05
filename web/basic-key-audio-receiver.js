@@ -88,7 +88,7 @@ export class BasicKeyAudioReceiver {
     this.outputGate = context.createGain();
     try {
       this.outputGate.gain.value = 0; this.outputGate.connect(output);
-      this.generation = 0; this.requestId = 0; this.pending = new Map(); this.state = 'idle'; this.connected = false; this.disposed = false; this.broken = false; this.plan = null; this.lastCompletion = null;
+      this.generation = 0; this.requestId = 0; this.pending = new Map(); this.timbreBindings = new Map(); this.state = 'idle'; this.connected = false; this.disposed = false; this.broken = false; this.plan = null; this.lastCompletion = null;
       this.node.port.onmessage = event => this.receive(event.data);
       this.node.port.onmessageerror = () => this.fail(error('audio_processor_error', 'The audio receiver received an unreadable processor message.'));
       this.node.onprocessorerror = () => { this.broken = true; this.fail(error('audio_processor_error', 'The audio processor failed; create a new receiver before retrying.')); };
@@ -110,6 +110,10 @@ export class BasicKeyAudioReceiver {
   requireOpen() { if (this.disposed || this.disposing || this.broken) throw error('audio_receiver_closed', 'The audio receiver is closed or failed.'); }
   rejectPending(reason) { for (const pending of this.pending.values()) { this.clearTimer(pending.timer); pending.reject(reason); } this.pending.clear(); }
   takePending(requestId) { const pending = this.pending.get(requestId); if (pending) { this.clearTimer(pending.timer); this.pending.delete(requestId); } return pending; }
+  timbreCommandBinding() {
+    const binding = this.timbreBindings.get(this.planGeneration);
+    return binding ? {expectedTimbreProfile: binding.timbreProfile, expectedTimbreFingerprint: binding.timbreFingerprint} : {};
+  }
   detach() { this.outputGate.gain.cancelScheduledValues(this.context.currentTime); this.outputGate.gain.setValueAtTime(0, this.context.currentTime); if (this.connected) { try { this.node.disconnect(); } finally { this.connected = false; } } }
   request(type, payload = {}, transfer = []) {
     if (this.pending.size >= 32 || this.requestId >= LIMITS.maxGeneration) return Promise.reject(error('audio_command_limit', 'The audio command bound was reached.'));
@@ -136,8 +140,12 @@ export class BasicKeyAudioReceiver {
     const packed = createBasicKeyAudioTransfer(plan);
     this.detach(); this.rejectPending(error('audio_canceled', 'A new audio preparation canceled the previous generation.'));
     this.nextGeneration(); this.planGeneration = this.generation; this.plan = plan; this.positionFrame = positionFrame; this.state = 'preparing'; this.prepareInFlight = this.generation;
+    // Retain scalars independently of the transferred envelope so stripping
+    // every optional wire field cannot downgrade an override into source sound.
+    this.timbreBindings.set(this.planGeneration, Object.freeze({timbreProfile: packed.wire.timbreProfile ?? null, timbreFingerprint: packed.wire.timbreFingerprint ?? null, sourceSha256: plan.sourceSha256, policyId: plan.policyId, identityKind: plan.identityKind ?? 'midi-source-coordinate', sampleRate: plan.sampleRate}));
+    while (this.timbreBindings.size > 2) this.timbreBindings.delete(this.timbreBindings.keys().next().value);
     this.node.connect(this.outputGate); this.connected = true;
-    return this.request('prepare', {wire: packed.wire, positionFrame}, packed.transfer);
+    return this.request('prepare', {wire: packed.wire, positionFrame, ...this.timbreCommandBinding()}, packed.transfer);
   }
   start({anchorTime = this.context.currentTime + .05} = {}) {
     this.requireOpen();
@@ -147,7 +155,7 @@ export class BasicKeyAudioReceiver {
     if (!this.connected) { this.node.connect(this.outputGate); this.connected = true; }
     this.outputGate.gain.setValueAtTime(1, anchorFrame / this.context.sampleRate);
     this.state = 'starting';
-    return this.request('start', {anchorFrame});
+    return this.request('start', {anchorFrame, ...this.timbreCommandBinding()});
   }
   cancel(reason = 'stop', {reportFailure = true} = {}) {
     if (this.disposed) return;
@@ -178,6 +186,14 @@ export class BasicKeyAudioReceiver {
     if (this.disposed || !message || !Number.isSafeInteger(message.generation)) return;
     if (['ready', 'error', 'stale'].includes(message.type) && message.generation === this.prepareInFlight) this.prepareInFlight = null;
     if (message.type === 'canceled' && message.generation > this.prepareInFlight) this.prepareInFlight = null;
+    if (this.timbreBindings.size && ['ready', 'started', 'snapshot', 'audit', 'audit_transferred', 'ended', 'canceled'].includes(message.type) && (message.type !== 'canceled' || message.ledger)) {
+      const binding = this.timbreBindings.get(message.planGeneration);
+      if (message.generation === this.generation && message.type !== 'canceled' && message.planGeneration !== this.planGeneration || binding && ((message.timbreProfile ?? null) !== binding.timbreProfile || (message.timbreFingerprint ?? null) !== binding.timbreFingerprint || ['sourceSha256', 'policyId', 'identityKind', 'sampleRate'].some(key => message[key] !== binding[key]))) {
+        if (message.type === 'canceled' && (this.state === 'error' || this.disposing)) { if (this.disposing && message.generation === this.generation) this.closePort(); return; }
+        this.fail(error('audio_timbre_fingerprint', 'The audio acknowledgement belongs to another source or synthetic color selection.')); return;
+      }
+      if (!binding && message.ledger) return;
+    }
     if (['ended', 'canceled'].includes(message.type) && message.ledger && message.planGeneration >= (this.lastCompletion?.planGeneration ?? 0)) {
       // One bounded terminal ledger is retained even if a later cancellation
       // has already fenced transport callbacks. Its generation is explicit.

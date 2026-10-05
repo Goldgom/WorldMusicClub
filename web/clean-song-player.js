@@ -4,6 +4,7 @@ import {createReferenceRoom} from './clean-song-reverb.js';
 import {VsqPracticePlayer} from './vsq-practice-player.js';
 import {BasicKeyPlayer,BASIC_KEY_RENDITION} from './basic-key-player.js';
 import {basicKeyInstrumentOverrides} from './basic-key-audio-plan.js';
+import {humanPracticePartIds} from './practice-selection.js';
 import {CleanSongError,isCleanSong,isVsqSong,isBasicKeysSong} from './clean-song-package.js';
 import {INITIAL_SENSITIVITY_KIND,validInitialSensitivity,applyInitialSensitivity,unbentReferenceKey} from './clean-song-initial-sensitivity.js';
 import {INITIAL_SENSITIVITY12_KIND,validInitialSensitivity12Song,applyInitialSensitivity12,centeredPitchState,unbentReferenceKey12} from './clean-song-initial-sensitivity12.js';
@@ -63,8 +64,8 @@ export class CleanSongPlayer {
     this.stop();basicKeyInstrumentOverrides([],instrumentOverrides);if(!this.song||!this.profile.supported)throw new CleanSongError('clean_renderer_unsupported','The reference renderer cannot represent these retained commands.',{blockers:this.profile?.blockers});
     if(this.profile.logical_device_mapping&&acceptedPolicyId!==this.profile.rendition)throw new CleanSongError('reference_policy_required','Select the disclosed logical device mapping to this procedural receiver.');
     if(!context||context.state!=='running'||!output)throw new CleanSongError('clean_audio_unavailable','Audio must be unlocked by a user gesture.');
-    if(mode==='practice'&&!this.song.score.performance.parts.some(part=>part.id===targetPart))throw new CleanSongError('clean_target_required','Choose one human part.');
-    this.resumePositionMs=resumePositionMs;this.context=context;this.output=output;this.mode=mode;this.targetPart=targetPart;this.mutedParts=new Set(mutedParts||[]);this.channels=new Map();this.running=true;
+    const humanParts=humanPracticePartIds(this.song.score.performance.parts,{mode,practiceSelection,targetPart});
+    this.resumePositionMs=resumePositionMs;this.context=context;this.output=output;this.mode=mode;this.targetPart=targetPart;this.humanParts=humanParts;this.mutedParts=new Set(mutedParts||[]);this.channels=new Map();this.running=true;
     const position=this.getPositionMs(),events=this.song.runtime.events;this.eventCursor=0;this.noteCursor=0;
     try{
       for(const part of this.song.score.performance.parts){let gain,pan,room;try{gain=context.createGain();pan=context.createStereoPanner();room=createReferenceRoom(context,output);gain.connect(pan);pan.connect(room.input);const receiver=new ReferenceAudioReceiver(context,gain,{maxVoices:128,ErrorType:CleanSongError});this.lanes.set(part.id,{part,gain,pan,room,receiver});}catch(error){gain?.disconnect();pan?.disconnect();room?.close();throw error;}}
@@ -74,7 +75,7 @@ export class CleanSongPlayer {
       this.pump(this.epoch,true);
     }catch(error){this.stop();throw error;}
   }
-  updateLane(lane,at){const state=this.channels.get(lane.part.channel)||defaults();const silent=this.mutedParts.has(lane.part.id)||(this.mode==='practice'&&this.targetPart===lane.part.id);lane.gain.gain.setValueAtTime(silent?0:(state.volume/127)*(state.expression/127),at);lane.pan.pan.setValueAtTime(Math.max(-1,(state.pan-64)/63),at);lane.room.set(silent?0:state.reverb_send,at);}
+  updateLane(lane,at){const state=this.channels.get(lane.part.channel)||defaults();const silent=this.mutedParts.has(lane.part.id)||this.humanParts.has(lane.part.id);lane.gain.gain.setValueAtTime(silent?0:(state.volume/127)*(state.expression/127),at);lane.pan.pan.setValueAtTime(Math.max(-1,(state.pan-64)/63),at);lane.room.set(silent?0:state.reverb_send,at);}
   command(event,at){const command=event.command;if(command.channel===undefined)return;const state=this.channels.get(command.channel)||defaults();apply(state,command);this.channels.set(command.channel,state);for(const lane of this.lanes.values())if(lane.part.channel===command.channel)this.updateLane(lane,at);}
   pump(epoch=this.epoch,initial=false){
     if(!this.running||epoch!==this.epoch)return;
@@ -83,7 +84,7 @@ export class CleanSongPlayer {
       if(context.state!=='running'||!Number.isFinite(position))throw new CleanSongError('clean_clock_unavailable','Playback clock or audio context stopped.');
       const events=this.song.runtime.events,notes=this.song.runtime.notes,limit=position+this.lookAheadMs;
       while(this.eventCursor<events.length&&events[this.eventCursor].at_ms<=limit){const event=events[this.eventCursor++];if(!initial&&event.at_ms<position-30)throw new CleanSongError('clean_late_scheduler','A performance event missed its audio deadline.',{eventId:event.event_id});this.command(event,now+Math.max(0,event.at_ms-position)/1000);}
-      while(this.noteCursor<notes.length&&notes[this.noteCursor].start_ms<=limit){const note=notes[this.noteCursor++];if(note.end_ms<=Math.max(position,initial&&Number.isFinite(this.resumePositionMs)?this.resumePositionMs:position))continue;if(this.mutedParts.has(note.part_id)||(this.mode==='practice'&&note.part_id===this.targetPart))continue;
+      while(this.noteCursor<notes.length&&notes[this.noteCursor].start_ms<=limit){const note=notes[this.noteCursor++];if(note.end_ms<=Math.max(position,initial&&Number.isFinite(this.resumePositionMs)?this.resumePositionMs:position))continue;if(this.mutedParts.has(note.part_id)||this.humanParts.has(note.part_id))continue;
         if(!initial&&note.start_ms<position-30)throw new CleanSongError('clean_late_scheduler','A note missed its audio deadline.',{eventId:note.event_id});
         let count=0;for(const lane of this.lanes.values()){lane.receiver.prune(now);count+=lane.receiver.voices.size;}if(count>=128)throw new CleanSongError('voice_budget_exceeded','The full reference exceeds its 128 voice limit.');
         const state=this.channels.get(note.channel)||defaults();

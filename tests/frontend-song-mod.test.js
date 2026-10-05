@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {nativeScoreServer,nativeStorageApp,nativeResponse} from './native-storage-app-fixtures.js';
 import {basicKeyRenditionFixture} from './basic-key-rendition-fixtures.js';
 import {originalMultipartNotation} from './notation-scope-fixtures.js';
+import {getAppI18n} from '../web/app-locale.js';
 import {SONG_MOD_STORAGE_PREFIX} from '../web/song-mod.js';
 
 async function basicFixture({storageValues=new Map()}={}){
@@ -67,7 +68,46 @@ test('Basic Mod sound controls reach actual audio-thread timbre buffers and rest
 test('Cancel and navigation during pending Mod checks cannot save or apply a stale draft; repeated Apply checks once',async()=>{
  const f=await basicFixture(),{app,server,score,storageValues}=f;let release,gate=false;
  server.setRoute(({path,defaultReply})=>gate&&path==='/api/practice-targets'?new Promise(resolve=>{release=()=>resolve(defaultReply());}):undefined);
- try{await app.click('configure-song-mod');set(app,'performer',score.parts[2].id,'human');gate=true;const before=app.requests.filter(r=>r.path==='/api/practice-targets').length;app.$('song-mod-apply').click();app.$('song-mod-apply').click();await app.until(()=>Boolean(release));assert.equal(app.requests.filter(r=>r.path==='/api/practice-targets').length,before+1);await app.click('song-mod-cancel');assert.equal(app.$('song-mod-dialog').open,false);release();gate=false;await app.tick();assert.equal([...storageValues.keys()].some(key=>key.startsWith(SONG_MOD_STORAGE_PREFIX)),false);
+ try{await app.click('configure-song-mod');set(app,'performer',score.parts[2].id,'human');gate=true;const before=app.requests.filter(r=>r.path==='/api/practice-targets').length;app.$('song-mod-apply').click();app.$('song-mod-apply').click();await app.until(()=>Boolean(release));assert.equal(app.requests.filter(r=>r.path==='/api/practice-targets').length,before+1);await app.click('song-mod-cancel');assert.equal(app.$('song-mod-dialog').open,false);assert.equal(app.$('start-performance').disabled,false);assert.equal(app.$('configure-song-mod').disabled,false);release();gate=false;await app.tick();assert.equal([...storageValues.keys()].some(key=>key.startsWith(SONG_MOD_STORAGE_PREFIX)),false);
   await app.click('configure-song-mod');set(app,'performer',score.parts[2].id,'human');gate=true;release=null;app.$('song-mod-apply').click();await app.until(()=>Boolean(release));await app.click('start-free-practice');release();gate=false;await app.tick();assert.equal(app.document.body.dataset.screen,'free');assert.equal([...storageValues.keys()].some(key=>key.startsWith(SONG_MOD_STORAGE_PREFIX)),false);
  }finally{release?.();await app.close();}
+});
+
+
+test('derived canonical tempo revision keeps its Mod through library reentry and leaves the prior saved revision intact',async()=>{
+ const score=originalMultipartNotation({partCount:2,measures:4}),server=await nativeScoreServer({scores:[score]}),storageValues=new Map(),app=await nativeStorageApp(server,{now:()=>1000,storageValues});
+ try{const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('start-performance').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('configure-song-mod');await app.click('song-mod-all-machine');set(app,'instrument',score.parts[0].id,'reed');await apply(app);await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');await app.click('play-button');const before=(await app.exported('export-takes')).song_mod;
+  app.$('tempo').value='123';app.emit(app.$('tempo'),'change');await app.until(()=>!app.$('play-button').disabled&&app.$('tempo').value==='123');const changed=(await app.exported('export-takes')).song_mod;assert.notEqual(changed.sourceRevision.value,before.sourceRevision.value);assert.deepEqual(changed.config,before.config);assert.equal([...storageValues.keys()].filter(k=>k.startsWith(SONG_MOD_STORAGE_PREFIX)).length,2);
+  await app.click('back-to-library');await app.click('configure-song-mod');assert.equal(control(app,'performer',score.parts[0].id).value,'machine');assert.equal(control(app,'instrument',score.parts[0].id).value,'reed');await app.click('song-mod-cancel');await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');assert.deepEqual((await app.exported('export-takes')).song_mod,changed);
+ }finally{await app.close();}
+});
+
+test('stage Apply closes its cancellable draft before committing and checking new physical targets',async()=>{
+ const score=originalMultipartNotation({partCount:2,measures:4}),server=await nativeScoreServer({scores:[score]}),app=await nativeStorageApp(server,{now:()=>1000});let release,gate=false;
+ try{const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('start-performance').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('start-performance').disabled);await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');await app.click('edit-song-mod');await app.click('song-mod-all-machine');
+  server.setRoute(({path,defaultReply})=>gate&&path==='/api/practice-targets'?new Promise(resolve=>{release=()=>resolve(defaultReply());}):undefined);gate=true;app.$('song-mod-apply').click();await app.until(()=>Boolean(release));assert.equal(app.$('song-mod-dialog').open,false,'No Cancel is offered after the commit boundary');assert.equal(app.$('session-mode').value,'listen');release();gate=false;await app.until(()=>!app.$('play-button').disabled);assert.equal((await app.exported('export-takes')).passes.length,0);
+ }finally{release?.();await app.close();}
+});
+
+
+test('display and playback mute edits preserve the human take, targets and paused clock',async()=>{
+ const f=await basicFixture(),{app,score}=f,parts=score.parts;
+ const humanState=take=>take.passes.map(pass=>({id:pass.id,timeline:pass.timeline,inputs:pass.inputs,captures:pass.captures}));
+ try{await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');f.time(1120);const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:71,button:0});await app.tick();f.time(1160);app.emit(key,'pointerup',{pointerId:71});await app.click('play-button');const before=await app.exported('export-takes'),position=app.$('progress').value;assert.equal(before.passes[0].inputs.length,1);
+  await app.click('edit-song-mod');app.$('song-mod-layout').value='complete';app.$('song-mod-show-others').checked=false;app.emit(app.$('song-mod-show-others'),'change');set(app,'visible',parts[2].id,false);assert.match(app.$('song-mod-warning').textContent,/keep the current position/);await apply(app);let after=await app.exported('export-takes');assert.deepEqual(humanState(after),humanState(before));assert.deepEqual(after.target_plan,before.target_plan);assert.equal(app.$('progress').value,position);
+  await app.click('edit-song-mod');set(app,'mute',parts[1].id,true);await apply(app);after=await app.exported('export-takes');assert.deepEqual(humanState(after),humanState(before));assert.deepEqual(after.target_plan,before.target_plan);assert.equal(app.$('progress').value,position);await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(source(app).core.plan.count,1);assert.equal((await app.exported('export-takes')).passes.length,before.passes.length);
+ }finally{await app.close();}
+});
+
+test('locale changes cannot restore retired lobby or stage configuration controls',async()=>{
+ const f=await basicFixture(),{app}=f,i18n=getAppI18n(app.document);
+ try{for(const locale of ['zh-CN','en']){i18n.setLocale(locale);assert.deepEqual([...app.document.querySelectorAll('.preview-actions button')].filter(node=>!node.hidden).map(node=>node.id),['start-performance','configure-song-mod']);assert.equal(app.$('complete-practice-controls').hidden,true);}await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');i18n.setLocale('zh-CN');assert.equal(app.$('complete-practice-controls').hidden,true);assert.equal(app.$('clean-song-target').closest('label').hidden,true);assert.equal(app.$('session-mode').closest('label').hidden,true);
+ }finally{await app.close();}
+});
+
+test('canonical playback mute rebuilds held audio at the paused source position without clearing its human pass',async()=>{
+ const score=originalMultipartNotation({partCount:2,measures:4}),server=await nativeScoreServer({scores:[score]});let clock=1000;const app=await nativeStorageApp(server,{now:()=>clock});
+ try{const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('start-performance').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('configure-song-mod');await app.click('song-mod-all-machine');set(app,'performer',score.parts[0].id,'human');await apply(app);app.$('count-in').checked=false;await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');clock=1150;app.renderAudioTo(.15);app.frame();const keyNode=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(keyNode,'pointerdown',{pointerId:72,button:0});await app.tick();clock=1190;app.renderAudioTo(.19);app.emit(keyNode,'pointerup',{pointerId:72});await app.click('play-button');const before=await app.exported('export-takes'),position=app.$('progress').value;assert.equal(before.passes[0].inputs.length,1);
+  await app.click('edit-song-mod');set(app,'mute',score.parts[1].id,true);await apply(app);const after=await app.exported('export-takes');assert.equal(after.passes[0].id,before.passes[0].id);assert.deepEqual(after.passes[0].inputs,before.passes[0].inputs);assert.deepEqual(after.passes[0].captures,before.passes[0].captures);assert.deepEqual(after.target_plan,before.target_plan);assert.equal(app.$('progress').value,position);await app.click('play-button');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');assert.equal(source(app).core.plan.count,0);assert.equal(source(app).core.positionFrame,Math.round(Number(position)*source(app).core.sampleRate/1000));assert.equal((await app.exported('export-takes')).passes.length,1);
+ }finally{await app.close();}
 });

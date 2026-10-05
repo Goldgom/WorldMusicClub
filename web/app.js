@@ -20,7 +20,7 @@ import {setupSourceArchiveView} from './source-archive-view.js';
 import {setupGameShell} from './game-shell.js';
 import {setupNoticeView} from './notice-view.js';
 import {resolvePracticeSelection,humanPracticePartIds} from './practice-selection.js';
-import {SongModStore,createSongMod,songModOptions,songModCapabilities,assertSongModSupported,validateSongMod} from './song-mod.js';
+import {SongModStore,createSongMod,songModChanges,songModOptions,songModCapabilities,assertSongModSupported,validateSongMod} from './song-mod.js';
 import {setupSongModView} from './song-mod-view.js';
 import {setupCompletePracticeView} from './complete-practice-view.js';
 import {CanonicalPracticeSession,canonicalPracticeOptions,canonicalDisplayNotes} from './canonical-practice-session.js';
@@ -200,7 +200,7 @@ shell=setupGameShell({i18n,pausePlayback,onPanel:name=>{scoreSaveNavigation++;re
   onNotation:()=>{engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
 const noticeView=setupNoticeView({document,i18n,getScope:()=>state.score?.title});
 lobbyPreview=setupLobbyPreview({document,i18n,api,allowed:()=>shell.screen()==='library'&&!startingPreview&&!document.hidden&&!document.querySelector('dialog[open]')});
-preview=new ScorePreview({resolveOptions:context=>{const entry=songMods.read(context);return entry.explicit?{...songModOptions(entry.mod),songMod:entry.mod}:null;},compile:(score,signal)=>api('/api/compile',score,signal),check:checkPreview,onChange:()=>{renderPreview();renderCatalog()}});
+preview=new ScorePreview({resolveOptions:context=>{if(context.score.parts.length>128)return null;const entry=songMods.read(context);return entry.explicit?{...songModOptions(entry.mod),songMod:entry.mod}:null;},compile:(score,signal)=>api('/api/compile',score,signal),check:checkPreview,onChange:()=>{renderPreview();renderCatalog()}});
 
 function notice(message, error = false) {
   noticeRevision++;
@@ -362,7 +362,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     writtenCursor?.reset();
     const previousPart = requestedPracticePart !== undefined ? requestedPracticePart : preserveTempo ? state.practicePart : null;
     state.cleanSong=cleanSong;libraryManagement?.catalog.sessionChanged();if(!cleanSong){previewMedia?.clear();previewMediaKey=null;}cleanMutedParts.clear();cleanSoloParts.clear();cleanPlayer.select(cleanSong);activeMedia?.clear();activeMediaKey=null;
-    state.score = compiled?.score||score;state.songMod=practiceOptions?.songMod||(preserveTempo?state.songMod:null);if(state.songMod){const identity=songMods.identity({score:state.score,cleanSong});state.songMod=createSongMod(identity,state.songMod.config);}state.hiddenPartIds=new Set(state.songMod?songModOptions(state.songMod).hiddenPartIds:[]);if(state.songMod)for(const id of songModOptions(state.songMod).mutedPartIds)cleanMutedParts.add(id);state.inspection=inspection;canonicalSession.select(cleanSong?null:compiled);
+    state.score = compiled?.score||score;state.songMod=practiceOptions?.songMod||(preserveTempo?state.songMod:null);if(state.songMod){const context={score:state.score,cleanSong,practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts},identity=songMods.identity(context),changed=state.songMod.songId!==identity.songId||state.songMod.sourceRevision.kind!==identity.sourceRevision.kind||state.songMod.sourceRevision.value!==identity.sourceRevision.value;state.songMod=createSongMod(identity,state.songMod.config);if(changed)songMods.save(context,state.songMod);}state.hiddenPartIds=new Set(state.songMod?songModOptions(state.songMod).hiddenPartIds:[]);if(state.songMod)for(const id of songModOptions(state.songMod).mutedPartIds)cleanMutedParts.add(id);state.inspection=inspection;canonicalSession.select(cleanSong?null:compiled);
     if(requestedMode!==undefined){state.mode=requestedMode;$('session-mode').value=requestedMode;}
     state.importDiagnostics = importDiagnostics;
     const diagnostics = [...new Map([...(compiled?.diagnostics||[]), ...importDiagnostics].map(item => [`${item.code}:${item.note_id || ''}:${item.message}`, item])).values()];
@@ -492,29 +492,37 @@ function humanPartIds(){if(!state.score||!state.practiceSelection)return new Set
 function refreshPracticeView(){$('practice-part')?.closest('label')?.toggleAttribute('hidden',state.mode==='practice'&&state.practiceLayout==='complete');const available=value=>Boolean(value?.compiled)&&(!value.cleanSong||hasBasicKeyRendition(value.cleanSong)||isVsqSong(value.cleanSong)&&Boolean(value.cleanSong.runtime));completePracticeView?.update({previewAvailable:available(preview?.value),previewReady:!startingPreview&&preview?.value.status==='ready'&&available(preview.value),stageReady:available(state),mode:state.mode,layout:state.practiceLayout,selection:state.practiceSelection,parts:state.score?.parts||[],showOthers:state.showOtherParts});refreshSongModView();}
 function modContext(origin) {
   const value=origin==='preview'?preview.value:{score:state.score,compiled:state.compiled,cleanSong:state.cleanSong,practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts};
-  if(!value?.score||!value.compiled)return null;
+  if(!value?.score||!value.compiled||value.score.parts.length>128)return null;
   const entry=songMods.read(value);
   return {...value,...entry,mod:origin==='stage'&&state.songMod?state.songMod:entry.mod,capabilities:songModCapabilities(value),previewVersion:preview.version,navigation:scoreSaveNavigation,generation:state.generation,hasTakes:origin==='stage'&&(transport.hasStarted||state.recorder.passes.length>0)};
 }
 function refreshSongModView(){
   if(!songModView)return;
   const candidate=modContext('preview'),active=modContext('stage');let reason='',canStart=false;
-  if(candidate){try{assertSongModSupported(candidate.mod,candidate.capabilities);const options=songModOptions(candidate.mod);canStart=!startingPreview&&preview.canStart(options.mode);if(!canStart)reason=compatibilityText(preview.value.compatibility);if(!synth.muted&&(typeof globalThis.AudioWorkletNode!=='function'||Boolean(synth.context&&!synth.context.audioWorklet))){canStart=false;reason=cleanErrorText(i18n.locale,{code:'clean_audio_worklet_unavailable'});}}catch(error){reason=i18n.locale==='en'?error.message:'当前 Mod 无法播放：'+error.message;}}
-  if(!candidate&&preview.value.status==='choice')reason=i18n.locale==='en'?'Choose the basic instrumental renderer below to configure this source.':'请先在下方选择基础器乐渲染器，再配置此来源。';songModView.update({preview:candidate,stage:active,canStart,reason,inspectionOnly:preview.value.status==='inspection'&&Boolean(preview.value.score)});
+  if(candidate){try{assertSongModSupported(candidate.mod,candidate.capabilities);const options=songModOptions(candidate.mod);canStart=!startingPreview&&preview.canStart(options.mode);if(!canStart)reason=compatibilityText(preview.value.compatibility);if(candidate.capabilities.audioThread&&!synth.muted&&(typeof globalThis.AudioWorkletNode!=='function'||Boolean(synth.context&&!synth.context.audioWorklet))){canStart=false;reason=cleanErrorText(i18n.locale,{code:'clean_audio_worklet_unavailable'});}}catch(error){reason=i18n.locale==='en'?error.message:'当前 Mod 无法播放：'+error.message;}}
+  if(preview.value.score?.parts.length>128)reason=i18n.locale==='en'?'This source exceeds the 128-part Mod budget. Inspect the complete source below.':'此来源超出 Mod 的 128 声部预算；可在下方查看完整来源。';if(!candidate&&preview.value.status==='choice')reason=i18n.locale==='en'?'Choose the basic instrumental renderer below to configure this source.':'请先在下方选择基础器乐渲染器，再配置此来源。';songModView.update({preview:candidate,stage:active,canStart,reason,inspectionOnly:(preview.value.status==='inspection'||preview.value.score?.parts.length>128)&&Boolean(preview.value.score)});
 }
-async function applySongMod({origin,context,mod,isCurrent=()=>true}) {
+async function applySongMod({origin,context,mod,isCurrent=()=>true,commit=()=>true}) {
   validateSongMod(mod,{identity:songMods.identity(context),parts:context.score.parts});assertSongModSupported(mod,songModCapabilities(context));
-  const options=songModOptions(mod),current=()=>isCurrent()&&!document.hidden&&context.navigation===scoreSaveNavigation&&(origin==='stage'?context.score===state.score&&context.generation===state.generation&&shell.screen()==='stage':context.score===preview.value.score&&context.identity===preview.value.identity&&context.previewVersion===preview.version&&shell.screen()==='library');
+  const options=songModOptions(mod),changes=songModChanges(context.mod,mod),current=()=>isCurrent()&&!document.hidden&&context.navigation===scoreSaveNavigation&&(origin==='stage'?context.score===state.score&&context.generation===state.generation&&shell.screen()==='stage':context.score===preview.value.score&&context.identity===preview.value.identity&&context.previewVersion===preview.version&&shell.screen()==='library');
   if(!current())return;
-  const compatibility=options.mode==='practice'?await checkPreview(context.compiled,options.practiceSelection):{status:'ready'};
-  if(!current())return;
+  const compatibility=options.mode==='practice'&&(origin==='preview'||changes.requiresReset)?await checkPreview(context.compiled,options.practiceSelection):origin==='preview'?{status:'ready'}:state.compatibility;
+  if(origin==='stage'&&changes.mix&&canonicalSession.pendingPause){await canonicalSession.pendingPause;await Promise.resolve();}
+  if(!current()||!commit())return;
   songMods.save(context,mod);
   if(origin==='preview'){
     preview.cancel();preview.publish({...preview.value,...options,songMod:mod,compatibility});
   }else{
     state.songMod=mod;state.hiddenPartIds=new Set(options.hiddenPartIds);cleanMutedParts.clear();cleanSoloParts.clear();for(const id of options.mutedPartIds)cleanMutedParts.add(id);
-    state.mode=options.mode;$('session-mode').value=options.mode;
-    await applyHumanSelection(options.practiceSelection,{layout:options.practiceLayout,showOthers:options.showOthers});
+    if(changes.requiresReset){state.mode=options.mode;$('session-mode').value=options.mode;await applyHumanSelection(options.practiceSelection,{layout:options.practiceLayout,showOthers:options.showOthers});}
+    else{
+      // The paused recorder and source position survive output/display edits.
+      // A canonical mute change needs a fresh plan instead of resuming the held mix.
+      if(changes.mix)canonicalSession.stop();
+      state.practiceLayout=options.practiceLayout;state.showOtherParts=options.showOthers;
+      if(changes.display){engravedView.practicePartChanged();renderNotationPage();drawFrame(true);}
+      updateButtons();
+    }
   }
   refreshSongModView();
 }
@@ -1597,7 +1605,7 @@ async function openPreviewScore(){
   finally{if(request===startRequest){startingPreview=false;renderPreview();updateButtons();}}
 }
 $('open-score').addEventListener('click',()=>openPreviewScore());
-i18n.subscribe(()=>{redrawAppText();if(state.score&&!state.engravingActive)renderNotationPage();state.lastHighlight='';drawFrame(true);});
+i18n.subscribe(()=>{redrawAppText();refreshSongModView();if(state.score&&!state.engravingActive)renderNotationPage();state.lastHighlight='';drawFrame(true);});
 $('start-listen').addEventListener('click',()=>startPreview('listen'));
 $('start-practice').addEventListener('click',async()=>{const value=preview.value;if(value.practiceLayout==='complete'){if(!synth.muted)await synth.unlock();await preview.select(value.identity,async()=>value.cleanSong?{score:value.score,cleanSong:value.cleanSong}:value.score,{part:value.part,practiceLayout:'solo'});}await startPreview('practice');});
 $('preview-part').addEventListener('change',()=>{const value=preview.value;if(value.score)preview.select(value.identity,async()=>value.cleanSong?{score:value.score,cleanSong:value.cleanSong}:value.score,{part:$('preview-part').value||null});});
@@ -1635,7 +1643,7 @@ async function importCanonicalScore(score, signal, {practicePart=undefined,diagn
   finally{signal.removeEventListener('abort',cancel)}
 }
 function activateCanonicalTransformation(score,signal,options={}) {
-  const practiceOptions={...canonicalPracticeOptions(score.parts,{practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts}),...(state.songMod?{songMod:createSongMod(songMods.identity({score}),state.songMod.config)}:{})};
+  const practiceOptions={...canonicalPracticeOptions(score.parts,{practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts}),...(state.songMod?{songMod:state.songMod}:{})};
   return importCanonicalScore(score,signal,{...options,practicePart:practiceOptions.part,practiceOptions});
 }
 async function importReviewedScore(kind,score,signal,options) {
@@ -1759,9 +1767,9 @@ function openCleanRangeSetup(){
   $(state.instrument==='piano'?'custom-key-count':'guitar-tuning').focus();
 }
 fallingNoteLabels=setupFallingNoteLabels({document,i18n,onChange:()=>drawFrame(true)});
-completePracticeView=setupCompletePracticeView({document,i18n,getContext:origin=>origin==='preview'?{...preview.value,selection:preview.value.practiceSelection,previewVersion:preview.version}:({score:state.score,compiled:state.compiled,cleanSong:state.cleanSong,selection:state.practiceSelection,showOthers:state.showOtherParts,hasTakes:transport.hasStarted||state.recorder.passes.length>0}),onOpen:()=>pausePlayback(),onDisplay:show=>{state.showOtherParts=show;engravedView.practicePartChanged();renderNotationPage();drawFrame(true);refreshPracticeView();},onApply:applyCompletePracticeChoice});
+completePracticeView=setupCompletePracticeView({document,i18n,replacedByMod:true,getContext:origin=>origin==='preview'?{...preview.value,selection:preview.value.practiceSelection,previewVersion:preview.version}:({score:state.score,compiled:state.compiled,cleanSong:state.cleanSong,selection:state.practiceSelection,showOthers:state.showOtherParts,hasTakes:transport.hasStarted||state.recorder.passes.length>0}),onOpen:()=>pausePlayback(),onDisplay:show=>{state.showOtherParts=show;engravedView.practicePartChanged();renderNotationPage();drawFrame(true);refreshPracticeView();},onApply:applyCompletePracticeChoice});
 songModView=setupSongModView({document,i18n,getContext:modContext,onOpen:()=>pausePlayback(),onApply:applySongMod,onStart:startUnifiedPerformance});
-cleanView=setupCleanSongView({document,i18n,onRangeSetup:openCleanRangeSetup,onVsqStart:chooseVsqAndStart,onVsqChoice:()=>preview.chooseVsqPractice(async(song,signal)=>(await scoreStorage.storage()).chooseVsqPractice(song,{signal})),onOpen:()=>pausePlayback(),onTarget:part=>{if(!state.cleanSong||transport.running)return;void applyHumanSelection({kind:'parts',part_ids:[part]},{layout:'solo'});},onMute:(part,muted)=>{if(transport.running)return;if(muted)cleanMutedParts.add(part);else cleanMutedParts.delete(part);resetPlayback();},onSolo:(part,solo)=>{if(transport.running)return;if(solo)cleanSoloParts.add(part);else cleanSoloParts.delete(part);resetPlayback();},onResetMix:()=>{if(transport.running)return;cleanMutedParts.clear();cleanSoloParts.clear();resetPlayback();},onRange:()=>{$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}});
+cleanView=setupCleanSongView({document,i18n,unifiedEntry:true,onRangeSetup:openCleanRangeSetup,onVsqStart:chooseVsqAndStart,onVsqChoice:()=>preview.chooseVsqPractice(async(song,signal)=>(await scoreStorage.storage()).chooseVsqPractice(song,{signal})),onOpen:()=>pausePlayback(),onTarget:part=>{if(!state.cleanSong||transport.running)return;void applyHumanSelection({kind:'parts',part_ids:[part]},{layout:'solo'});},onMute:(part,muted)=>{if(transport.running)return;if(muted)cleanMutedParts.add(part);else cleanMutedParts.delete(part);resetPlayback();},onSolo:(part,solo)=>{if(transport.running)return;if(solo)cleanSoloParts.add(part);else cleanSoloParts.delete(part);resetPlayback();},onResetMix:()=>{if(transport.running)return;cleanMutedParts.clear();cleanSoloParts.clear();resetPlayback();},onRange:()=>{$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}});
 performanceListening=setupCompletePerformanceListening({document,i18n,synth,host:$('clean-song-preview'),isVisible:()=>shell.screen()==='library',allowed:()=>!document.hidden&&!document.querySelector('dialog[open]'),onBeforePlay:()=>pausePlayback(),onActiveChange:()=>syncInputRoute(),getSoundEnabled:()=>!synth.muted,onSoundChange:setSoundEnabled});
 const loadCleanAsset=async(key,handle,options)=>(await scoreStorage.storage()).loadAsset(key,handle,options);
 previewMedia=createCleanSongMedia({loadAsset:loadCleanAsset,cover:cleanView.cover,onStatus:value=>cleanView.renderPreviewMedia(value)});

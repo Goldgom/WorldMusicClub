@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {BasicKeyAudioCore} from '../web/basic-key-audio-core.js';
-import {BASIC_KEY_AUDIO_PROTOCOL, BASIC_KEY_AUDIO_LIMITS, BASIC_KEY_TIMBRE_PROFILE, basicKeyGateFrames, buildBasicKeyAudioPlan, validateBasicKeyAudioPlan, encodeBasicKeyAudioPlan, decodeBasicKeyAudioPlan, createBasicKeyAudioTransfer} from '../web/basic-key-audio-plan.js';
+import {BASIC_KEY_AUDIO_PROTOCOL, BASIC_KEY_AUDIO_LIMITS, BASIC_KEY_TIMBRE_PROFILE, VSQ_AUDIO_POLICY, VSQ_AUDIO_IDENTITY, basicKeyGateFrames, buildBasicKeyAudioPlan, validateBasicKeyAudioPlan, encodeBasicKeyAudioPlan, decodeBasicKeyAudioPlan, createBasicKeyAudioTransfer} from '../web/basic-key-audio-plan.js';
 import {cleanErrorText} from '../web/clean-song-text.js';
 import {BasicKeyAudioReceiver} from '../web/basic-key-audio-receiver.js';
 import {basicKeySong} from './basic-key-rendition-fixtures.js';
@@ -545,3 +545,46 @@ test('worklet rejects missing color profiles, unsupported codes and supported-co
     assert.equal(core.state, 'error'); assert.equal(messages.at(-1).code, code); assert.equal(core.startedCount, 0); assert.equal(messages.some(message => message.type === 'ready'), false);
   }
 });
+
+for (const kind of ['BasicKey', 'VSQ']) {
+  const sourcePlan = () => kind === 'BasicKey' ? plan([[0, 1000, 60, 90, 0]]) : validateBasicKeyAudioPlan({protocol: BASIC_KEY_AUDIO_PROTOCOL, policyId: VSQ_AUDIO_POLICY, identityKind: VSQ_AUDIO_IDENTITY, sourceSha256: hash, sampleRate, durationFrames: 1000, sourceNotes: 1, notes: [['vsq-t1-ID#0001', `vsq:${hash}:t1:ID#0001`, 0, 1000, 60, 90, 2]]});
+  const colorPlan = color => validateBasicKeyAudioPlan({...sourcePlan(), timbreProfile: BASIC_KEY_TIMBRE_PROFILE, timbres: [color]});
+  const stripWire = message => { delete message.wire.timbreProfile; delete message.wire.timbreFingerprint; delete message.wire.buffers.timbres; };
+
+  test(`${kind} transport rejects stripped or replaced synthetic identity before admitting playback`, async () => {
+    for (const corruption of ['wire', 'wire-and-command', 'replacement', 'ready-ack', 'source-to-override']) {
+      const h = basicKeyAudioHarness({autoMessages: false}), errors = [], timers = lifecycleTimers(), receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, onError: value => errors.push(value), ...timers});
+      try {
+        const preparing = receiver.prepare(corruption === 'source-to-override' ? sourcePlan() : colorPlan(3)), rejected = assert.rejects(preparing, {code: 'audio_timbre_fingerprint'}), message = h.toCore[0][1];
+        if (corruption === 'wire' || corruption === 'wire-and-command') stripWire(message);
+        if (corruption === 'wire-and-command') { delete message.expectedTimbreProfile; delete message.expectedTimbreFingerprint; }
+        if (corruption === 'replacement' || corruption === 'source-to-override') {
+          message.wire = createBasicKeyAudioTransfer(colorPlan(2)).wire;
+          message.expectedTimbreProfile = message.wire.timbreProfile; message.expectedTimbreFingerprint = message.wire.timbreFingerprint;
+        }
+        h.deliverCore(); h.finishPreparation();
+        if (corruption === 'ready-ack') { const ready = h.toMain.find(([, m]) => m.type === 'ready')[1]; delete ready.timbreProfile; delete ready.timbreFingerprint; }
+        if (corruption === 'wire') assert.equal(h.toMain.some(([, m]) => m.type === 'ready'), false, 'The independent prepare command detects a stripped extension');
+        h.deliverMain(); await rejected; h.deliverCore(); h.deliverMain();
+        assert.equal(receiver.state, 'error', corruption); assert.equal(receiver.connected, false); assert.equal(receiver.outputGate.gain.value, 0); assert.equal(receiver.pending.size, 0); assert.equal(timers.pending.size, 0); assert.equal(errors.length, 1);
+        assert.equal(h.nodes[0].core.startedCount, 0); assert.ok(h.renderBlock()[0].every(value => value === 0)); await assert.rejects(receiver.start(), {code: 'clean_audio_unavailable'});
+      } finally { receiver.dispose(); h.deliverCore(); h.deliverMain(); assert.equal(timers.pending.size, 0); }
+    }
+  });
+
+  test(`${kind} start command and acknowledgement remain bound to the admitted synthetic identity`, async () => {
+    for (const corruption of ['command', 'ack']) {
+      const h = basicKeyAudioHarness({autoMessages: false}), started = [], timers = lifecycleTimers(), receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, onStarted: value => started.push(value), ...timers});
+      try {
+        const preparing = receiver.prepare(colorPlan(3)); h.deliverCore(); h.finishPreparation(); h.deliverMain(); const ready = await preparing;
+        assert.equal(ready.timbreProfile, BASIC_KEY_TIMBRE_PROFILE); assert.match(ready.timbreFingerprint, /^[a-f0-9]{64}$/);
+        const starting = receiver.start(), rejected = assert.rejects(starting, {code: 'audio_timbre_fingerprint'});
+        if (corruption === 'command') h.toCore[0][1].expectedTimbreFingerprint = '0'.repeat(64);
+        h.deliverCore();
+        if (corruption === 'ack') { const ack = h.toMain.find(([, m]) => m.type === 'started')[1]; delete ack.timbreProfile; delete ack.timbreFingerprint; }
+        h.deliverMain(); await rejected; h.deliverCore(); h.deliverMain();
+        assert.deepEqual(started, []); assert.equal(receiver.state, 'error'); assert.equal(receiver.connected, false); assert.equal(receiver.outputGate.gain.value, 0); assert.ok(h.renderBlock()[0].every(value => value === 0)); assert.equal(timers.pending.size, 0);
+      } finally { receiver.dispose(); h.deliverCore(); h.deliverMain(); assert.equal(timers.pending.size, 0); }
+    }
+  });
+}

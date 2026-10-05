@@ -4,7 +4,7 @@ import {inspectCleanRendition} from './clean-song-player.js';
 import {cleanText,cleanFamily,cleanMediaError,cleanCommand,cleanLogicalDeviceMapping} from './clean-song-text.js';
 import {referencePreviewBudget,BASIC_KEY_MAX_VOICES} from './basic-key-rendition.js';
 import {midiName} from './music.js';
-export function setupCleanSongView({document,i18n,onTarget,onMute,onSolo,onResetMix,onRange,onRangeSetup,onOpen,onVsqChoice,onVsqStart}) {
+export function setupCleanSongView({document,i18n,unifiedEntry=false,onTarget,onMute,onSolo,onResetMix,onRange,onRangeSetup,onOpen,onVsqChoice,onVsqStart}) {
   const make=(tag,id,parent)=>{const node=document.createElement(tag);if(id)node.id=id;if(parent)parent.append(node);return node;};
   const preview=make('section','clean-song-preview',document.querySelector('.preview-copy'));preview.hidden=true;
   const previewMediaStatus=make('p','clean-song-preview-media-status',preview);
@@ -32,7 +32,7 @@ export function setupCleanSongView({document,i18n,onTarget,onMute,onSolo,onReset
     button.textContent=text('Custom range / device setup','自定义音域／设备设置');
     help.textContent=text(`Applied range: ${midiName(device[0])}–${midiName(device[1])} (MIDI ${device[0]}–${device[1]}). Set a custom on-screen keyboard range or match your device, then apply the setup. This does not extend a physical keyboard or change source pitches. Listening includes all pitches.`,`已应用音域：${midiName(device[0])}～${midiName(device[1])}（MIDI ${device[0]}～${device[1]}）。可自定义屏幕键盘音域或匹配实际设备，再应用设置。这不会扩展实体键盘或改变源音高。聆听保留全部音高。`);
   }
-  function renderPreview(song,state={}){candidate=song;choiceState=state;preview.hidden=!song;preview.dataset.packageId=song?.identity||'';choice.hidden=!isVsqSong(song);directListen.hidden=!isVsqSong(song)||Boolean(song?.runtime);routing.hidden=true;routing.textContent='';policy.hidden=!hasBasicKeyRendition(song);previewRange.hidden=!isBasicKeysSong(song);if(!song)return;
+  function renderPreview(song,state={}){candidate=song;choiceState=state;preview.hidden=!song;preview.dataset.packageId=song?.identity||'';choice.hidden=!isVsqSong(song);directListen.hidden=unifiedEntry||!isVsqSong(song)||Boolean(song?.runtime);directPractice.hidden=unifiedEntry;routing.hidden=true;routing.textContent='';policy.hidden=!hasBasicKeyRendition(song);previewRange.hidden=!isBasicKeysSong(song);if(!song)return;
     const performance=isPerformanceSong(song);for(const node of [previewStatus,rendition,tracks])node.hidden=performance;
     if(performance)return;
     const allocations=song.compilation&&(hasBasicKeyRendition(song)||isVsqSong(song))?referencePreviewBudget(song.compilation.timeline.notes,null,song.runtime.rendition):0;routing.hidden=allocations<=BASIC_KEY_MAX_VOICES;if(!routing.hidden)routing.textContent=text(`This full mix needs ${allocations} active or scheduled voices; this receiver supports ${BASIC_KEY_MAX_VOICES}. Choose a human part that reduces accompaniment, or configure playback mute in Mod before playing. No attacks are dropped.`,`完整混音需要 ${allocations} 个活动或预调度声音；此接收器上限为 ${BASIC_KEY_MAX_VOICES}。请选择能减少伴奏的人演奏声部，或在 Mod 中设置声部播放静音后再开始。不会丢弃任何按键。`);
