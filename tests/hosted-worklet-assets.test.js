@@ -2,6 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
+import {createHash} from 'node:crypto';
+import {installBulkImportNativeBridge} from '../scripts/hosted-bulk-import-check.mjs';
 import {readFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
@@ -94,4 +96,55 @@ test('ownership is rechecked after asynchronous headers before any native forwar
  for(const change of [f=>{f.state.url='https://foreign.example/';},f=>{f.state.url=origin+'/changed';},f=>{f.state.detached=true;},f=>{f.state.closed=true;},f=>{f.state.workers=[{}];},f=>{f.state.serviceWorker={};},f=>{f.state.navigation=true;},f=>{f.currentPage=ownedRequest().page;},f=>{const replacement={...f.frame};f.request.frame=()=>replacement;f.page.mainFrame=()=>replacement;}]){
   const fixture=ownedRequest({headers:{}});fixture.currentPage=fixture.page;fixture.request.allHeaders=async()=>{change(fixture);return {};};const bridge=createHostedNativeBridge({origin,getOwnedPage:()=>fixture.currentPage});let invoked=false;await assert.rejects(bridge.run(fixture.request,()=>{invoked=true;}));assert.equal(invoked,false);assert.equal(bridge.evidence.requests.length,0);
  }
+});
+
+
+test('bulk import leaves the complete real Worklet closure on ordinary HTTP and forwards exact original API bytes only',async()=>{
+ const served=[],forwarded=[],fulfilled=[],evidence={};let matcher,handler;
+ const context={route:async(match,run)=>{matcher=match;handler=run;}},owner=ownedRequest();
+ const original=Buffer.from('Original authored import bytes \u0000\u00ff'),reply=Buffer.from('{"original":"authored native response"}');
+ const bridge=await installBulkImportNativeBridge(context,{origin,getOwnedPage:()=>owner.page,evidence,driver:{fetcher:async(path,options)=>{forwarded.push({path,options});return{status:200,contentType:'application/json',bytes:async()=>reply};}}});
+ // This ordinary-server boundary reads real checked-in bytes. No listener or
+ // browser is started, and passing it cannot substitute for hosted playback.
+ const ordinary=async url=>{assert.equal(matcher(new URL(url)),false,'A real source asset must never enter page interception');served.push(new URL(url).pathname);return fetcher(url);};
+ const receipts=await verifyHostedWorkletAssets({root,sourceSha:sha,origin,fetcher:ordinary,sourceReader});
+ assert.ok(receipts.some(row=>row.path==='web/live-tone-audio-processor.js'));
+ assert.ok(receipts.some(row=>row.path==='web/canonical-audio-processor.js'));
+ for(const asset of ['/','/index.html','/app.js','/bulk-import.css','/fonts/original.woff2'])assert.equal(matcher(new URL(origin+asset)),false);
+ assert.equal(served.length,receipts.length);assert.equal(forwarded.length,0);
+ owner.request.url=()=>origin+'/api/library/import/preview?original=1';owner.request.postDataBuffer=()=>original;
+ owner.request.allHeaders=async()=>({'content-type':'application/octet-stream','x-wmh-filename':encodeURIComponent('原创.zip')});
+ assert.equal(matcher(new URL(owner.request.url())),true);
+ await handler({request:()=>owner.request,fulfill:async value=>fulfilled.push(value),abort:async()=>assert.fail('Owned native API must not abort')});
+ assert.equal(forwarded.length,1);assert.equal(forwarded[0].path,'/api/library/import/preview?original=1');assert.equal(forwarded[0].options.body,original);
+ assert.equal(forwarded[0].options.headers.origin,'https://wmh.localhost');assert.equal(forwarded[0].options.headers.host,'wmh.localhost');assert.equal(forwarded[0].options.headers['x-wmh-filename'],encodeURIComponent('原创.zip'));
+ assert.deepEqual(fulfilled,[{status:200,contentType:'application/json',body:reply}]);assert.deepEqual(evidence.route_errors,[]);
+ const [row]=evidence.native_bridge.requests;assert.equal(row.incoming_origin,null);assert.equal(row.request_timeout_ms,10000);assert.equal(row.native_request_bytes,original.length);
+ assert.equal(row.native_request_sha256,createHash('sha256').update(original).digest('hex'));assert.equal(row.native_response_sha256,createHash('sha256').update(reply).digest('hex'));
+ bridge.stopAdmission();await bridge.drain();assert.equal(evidence.native_bridge.drain.status,'complete');
+});
+
+test('bulk-import routing fails closed for a foreign target or owner and retains the original native failure',async()=>{
+ for(const failure of ['foreign-target','foreign-owner','native-failure']){
+  let matcher,handler,forwarded=0,aborted=0;const owner=ownedRequest(),evidence={};
+  owner.request.postDataBuffer=()=>Buffer.from('Original test input');
+  const bridge=await installBulkImportNativeBridge({route:async(match,run)=>{matcher=match;handler=run;}},{origin,getOwnedPage:()=>owner.page,evidence,driver:{fetcher:async()=>{forwarded++;throw Error('Original native rejection');}}});
+  if(failure==='foreign-target')owner.request.url=()=> 'https://foreign.example/api/library/import/preview';
+  if(failure==='foreign-owner')owner.state.url='https://foreign.example/';
+  assert.equal(matcher(new URL(owner.request.url())),true);
+  await handler({request:()=>owner.request,fulfill:async()=>assert.fail('Rejected request must not fulfill'),abort:async()=>{aborted++;}});
+  assert.equal(aborted,1);assert.equal(forwarded,failure==='native-failure'?1:0);assert.equal(evidence.route_errors.length,1);
+  if(failure==='native-failure'){assert.match(evidence.route_errors[0],/Original native rejection/);assert.equal(evidence.native_bridge.requests[0].status,'failed');}
+  bridge.stopAdmission();await bridge.drain();
+ }
+});
+
+test('bulk preview builds its existing exact-source asset server before import without changing bootstrap lifecycle gates',async()=>{
+ const workflow=JSON.parse(execFileSync('python3',['scripts/check-authoring-workflow.py','--json','.github/workflows/bulk-import-preview.yml'],{cwd:root,encoding:'utf8'}));
+ const steps=workflow.jobs['bulk-ui'].steps,builds=steps.filter(row=>row.run==='cargo build -p practice-server --locked');assert.equal(builds.length,1);assert.equal(builds[0].id,'recovery_backend');
+ const run=steps.find(row=>row.run==='node scripts/hosted-bulk-import-check.mjs');assert.ok(steps.indexOf(builds[0])<steps.indexOf(run));assert.equal(run.env.WMH_SERVER_BINARY,'${{ github.workspace }}/target/debug/practice-server');
+ const source=await readFile(new URL('../scripts/hosted-bulk-import-check.mjs',import.meta.url),'utf8');
+ for(const required of ['startHostedAssetServer({root','validateHostedAssetEvidence(report.asset_server','startSongModPerformance(page',"assert.equal(report.bootstrap.running,true)","assert.equal(await page.locator('#score-title').textContent(),activeTitle)","assert.equal(await page.locator('#song-lobby').getAttribute('data-preview-id'),preview)",'assert.deepEqual(await readFile(originalPath),fixture.bytes)','await closeSession();page=await launch()','validateManagementWorkletLoads(profile.worklet_loads'])assert.ok(source.includes(required),required);
+ assert.equal(source.includes('await readFile(file)'),false);assert.equal(source.includes('context.route(`${origin}/**`'),false);
+ const controls=await readFile(new URL('../scripts/hosted-song-mod-controls.mjs',import.meta.url),'utf8');assert.match(controls,/running===true/);
 });

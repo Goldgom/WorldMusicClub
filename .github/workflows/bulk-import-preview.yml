@@ -25,11 +25,15 @@ jobs:
       - run: npm run prepare:engraving
       - run: npx playwright install --with-deps chromium
       - run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - name: Build the real backend for affected checkpoint regressions
+        id: recovery_backend
+        run: cargo build -p practice-server --locked
       - name: Exercise original pack imports through real Rust persistence
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+          WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
         run: node scripts/hosted-bulk-import-check.mjs
       - name: Preserve source-bound import workflow screenshots
         if: always()
@@ -38,9 +42,6 @@ jobs:
           name: bulk-import-ui-preview-${{ github.sha }}
           path: test-results/bulk-import/
           if-no-files-found: warn
-      - name: Build the real backend for affected checkpoint regressions
-        id: recovery_backend
-        run: cargo build -p practice-server --locked
       - name: Check invalid single-score routing and assessment ownership
         if: ${{ !cancelled() && steps.recovery_backend.outcome == 'success' }}
         run: >-
