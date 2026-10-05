@@ -458,3 +458,460 @@ mod tests {
         assert!(library.list().unwrap().entries.is_empty());
     }
 }
+
+// This reader is deliberately separate from the latest-report history API.
+// It never creates import areas or recovers originals and requires the caller's
+// existing library lock. Complete receipts in either independent copy are read
+// once, all successful retries are unioned, and disagreements are excluded.
+#[derive(Default)]
+pub(crate) struct ReferenceCounts {
+    pub receipts: usize,
+    pub source_items: std::collections::BTreeSet<String>,
+}
+pub(crate) struct ReceiptProjection {
+    pub packs: Vec<crate::native_library::pack_groups::Pack>,
+    pub references: std::collections::BTreeMap<(String, String), ReferenceCounts>,
+    pub issues: Vec<crate::native_library::pack_groups::QueryIssue>,
+}
+
+fn optional_children(path: &Path, limit: usize) -> Result<Vec<PathBuf>> {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(error) => Err(io_error(error)),
+        Ok(_) => children(path, limit),
+    }
+}
+fn receipt_name(name: &str) -> bool {
+    name.len() == 65
+        && name.starts_with("report-")
+        && name.ends_with(".json")
+        && name.as_bytes()[7..39].iter().all(u8::is_ascii_digit)
+        && name.as_bytes()[39] == b'-'
+        && name.as_bytes()[40..60].iter().all(u8::is_ascii_digit)
+}
+fn hex_digest(hash: &str) -> bool {
+    hash.len() == 64
+        && hash
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+}
+fn known_fields(value: &Value, names: &[&str]) -> Result<()> {
+    if value
+        .as_object()
+        .is_none_or(|object| object.keys().any(|key| !names.contains(&key.as_str())))
+    {
+        return Err(invalid("Unknown or malformed receipt metadata"));
+    }
+    Ok(())
+}
+fn parse_projection_report(bytes: &[u8], source: &Source) -> Result<Report> {
+    let value = serde_json::from_slice::<super::UniqueMetadata>(bytes)
+        .map_err(|e| invalid(format!("Invalid receipt JSON: {e}")))?
+        .0;
+    known_fields(
+        &value,
+        &[
+            "format",
+            "version",
+            "mode",
+            "source",
+            "items",
+            "summary",
+            "inventory",
+            "warnings",
+        ],
+    )?;
+    known_fields(
+        &value["source"],
+        &["filename", "sha256", "bytes", "retained", "archive_key"],
+    )?;
+    known_fields(&value["inventory"], &["files", "expanded_bytes"])?;
+    if let Some(items) = value["items"].as_array() {
+        for item in items {
+            known_fields(
+                item,
+                &[
+                    "index",
+                    "path",
+                    "title",
+                    "status",
+                    "code",
+                    "message",
+                    "playable",
+                    "clean_package",
+                    "derivation",
+                    "entry",
+                ],
+            )?;
+        }
+    }
+    if let Some(files) = value["inventory"]["files"].as_array() {
+        for file in files {
+            known_fields(file, &["path", "bytes", "sha256"])?;
+        }
+    }
+    let report: Report = serde_json::from_value(value).map_err(|e| invalid(e.to_string()))?;
+    if report.format != "worldmusichub-import-report"
+        || report.version != 1
+        || report.mode != "commit"
+        || report.source.archive_key != source.archive_key
+        || report.source.sha256 != source.sha256
+        || report.source.bytes != source.bytes
+        || !report.source.retained
+        || report.source.filename.len() > 4096
+        || report.items.len() > super::MAX_SONGS
+        || report.inventory.files.len() > super::MAX_ZIP_ENTRIES
+        || report.inventory.expanded_bytes > super::MAX_EXPANDED_BYTES
+    {
+        return Err(invalid(
+            "Receipt version, committed source identity or bounds are inconsistent",
+        ));
+    }
+    let mut paths = std::collections::BTreeSet::new();
+    for file in &report.inventory.files {
+        crate::native_library::clean_package::safe_path(&file.path)?;
+        if !paths.insert(file.path.as_str())
+            || !hex_digest(&file.sha256)
+            || file.bytes > super::MAX_ENTRY_BYTES as u64
+        {
+            return Err(invalid(
+                "Receipt inventory identity or bounds are inconsistent",
+            ));
+        }
+    }
+    let mut indexes = std::collections::BTreeSet::new();
+    let mut item_paths = std::collections::BTreeSet::new();
+    for item in &report.items {
+        crate::native_library::clean_package::safe_path(&item.path)?;
+        if item.index >= super::MAX_SONGS
+            || !indexes.insert(item.index)
+            || !item_paths.insert(item.path.as_str())
+            || !paths.contains(item.path.as_str())
+            || !matches!(
+                item.status.as_str(),
+                "saved" | "duplicate" | "conflict" | "ready" | "error" | "retained_nonplayable"
+            )
+        {
+            return Err(invalid(
+                "Receipt item identity, path or status is inconsistent",
+            ));
+        }
+    }
+    Ok(report)
+}
+fn verified_projection_source(
+    folder: &Path,
+    key: &str,
+    scanned_source_bytes: &mut u64,
+) -> Result<Source> {
+    check_node(folder, true)?;
+    let raw = serde_json::from_slice::<super::UniqueMetadata>(&read_bounded(
+        &folder.join("source.json"),
+        4096,
+    )?)
+    .map_err(|e| invalid(format!("Invalid retained source metadata: {e}")))?
+    .0;
+    known_fields(
+        &raw,
+        &["filename", "sha256", "bytes", "retained", "archive_key"],
+    )?;
+    let source = descriptor(folder, key)?;
+    let original_path = folder.join("source.bin");
+    check_node(&original_path, false)?;
+    if fs::metadata(&original_path).map_err(io_error)?.len() != source.bytes as u64 {
+        return Err(fail(
+            422,
+            "pack_archive_corrupt",
+            "Retained original size disagrees with its validated descriptor",
+        ));
+    }
+    if source.bytes as u64 > (2 * MAX_STORED_BYTES).saturating_sub(*scanned_source_bytes) {
+        return Err(fail(413, "library_query_limit", "Retained original verification exceeds 2 GiB across both copies; no incomplete snapshot was published"));
+    }
+    *scanned_source_bytes += source.bytes as u64;
+    if source.filename.len() > 4096 {
+        return Err(invalid("Retained filename exceeds metadata bound"));
+    }
+    let original = read_bounded(&folder.join("source.bin"), MAX_PACK_BYTES)?;
+    if original.len() != source.bytes || digest(&original) != source.sha256 {
+        return Err(fail(
+            422,
+            "pack_archive_corrupt",
+            "Retained original checksum mismatch; no membership was inferred",
+        ));
+    }
+    Ok(source)
+}
+
+pub(crate) fn project_receipts_locked(
+    library: &NativeLibrary,
+    entries: &[crate::native_library::Entry],
+) -> Result<ReceiptProjection> {
+    use crate::native_library::pack_groups::{edition_id, Pack, QueryIssue};
+    use std::collections::{BTreeMap, BTreeSet};
+    const MAX_RECEIPT_SCAN_BYTES: usize = 128 * 1024 * 1024;
+    const MAX_PROJECTED_REFERENCES: usize = 16384;
+    let mut output = ReceiptProjection {
+        packs: Vec::new(),
+        references: BTreeMap::new(),
+        issues: Vec::new(),
+    };
+    let mut archive_keys = BTreeSet::new();
+    for area in ["imports", "import-backups"] {
+        for path in optional_children(&library.root.join(area), MAX_ARCHIVES + 1)? {
+            let key = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if key_valid(key) {
+                archive_keys.insert(key.to_owned());
+            } else {
+                output.issues.push(QueryIssue::new(
+                    "pack_unknown_archive",
+                    "Unrecognized retained import folder preserved and excluded",
+                    None,
+                    None,
+                ));
+            }
+        }
+    }
+    if archive_keys.len() > MAX_ARCHIVES {
+        return Err(fail(
+            413,
+            "library_query_limit",
+            "More than 128 retained archive identities; projection was not published",
+        ));
+    }
+    let verified: BTreeMap<_, _> = entries
+        .iter()
+        .map(|entry| {
+            (
+                edition_id(entry),
+                serde_json::to_value(entry).expect("verified entry"),
+            )
+        })
+        .collect();
+    let mut scanned_bytes = 0usize;
+    let mut scanned_source_bytes = 0u64;
+    let mut logical_reference_count = 0usize;
+    for key in archive_keys {
+        let primary = library.root.join("imports").join(&key);
+        let backup = library.root.join("import-backups").join(&key);
+        let primary_present = match fs::symlink_metadata(&primary) {
+            Ok(_) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => return Err(io_error(error)),
+        };
+        let source_folder = if primary_present { &primary } else { &backup };
+        let source =
+            match verified_projection_source(source_folder, &key, &mut scanned_source_bytes) {
+                Ok(source) => source,
+                Err(error) if error.code == "library_query_limit" => return Err(error),
+                Err(error) => {
+                    output
+                        .issues
+                        .push(QueryIssue::new(error.code, error.error, Some(&key), None));
+                    continue;
+                }
+            };
+        let pack_id = format!("import-{}", source.sha256);
+        let mut pack = Pack {
+            pack_id: pack_id.clone(),
+            archive_key: key.clone(),
+            name: source.filename.clone(),
+            source_bytes: source.bytes,
+            song_count: 0,
+            shared_song_count: 0,
+            retained_only_count: 0,
+            receipt_count: 0,
+            issue_count: 0,
+            provenance: "validated_receipts",
+        };
+        if !primary_present {
+            output.issues.push(QueryIssue::new("pack_backup_only","Only an independently verified original backup is present; membership remains unresolved",Some(&key),None));
+            pack.provenance = "unresolved";
+            output.packs.push(pack);
+            continue;
+        }
+        let backup_valid =
+            match verified_projection_source(&backup, &key, &mut scanned_source_bytes) {
+                Ok(other) if other.bytes == source.bytes && other.sha256 == source.sha256 => true,
+                Ok(_) => {
+                    output.issues.push(QueryIssue::new(
+                        "pack_backup_invalid",
+                        "Retained source copies disagree",
+                        Some(&key),
+                        None,
+                    ));
+                    false
+                }
+                Err(error) if error.code == "library_query_limit" => return Err(error),
+                Err(error) => {
+                    output.issues.push(QueryIssue::new(
+                        "pack_backup_invalid",
+                        error.error,
+                        Some(&key),
+                        None,
+                    ));
+                    false
+                }
+            };
+        let mut names: BTreeMap<String, (Option<PathBuf>, Option<PathBuf>)> = BTreeMap::new();
+        for (folder, is_backup) in [(&primary, false), (&backup, true)] {
+            if is_backup && !backup_valid {
+                continue;
+            }
+            for path in children(folder, 1024)? {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if receipt_name(name) {
+                    let pair = names.entry(name.to_owned()).or_default();
+                    if is_backup {
+                        pair.1 = Some(path);
+                    } else {
+                        pair.0 = Some(path);
+                    }
+                } else if name.starts_with("report-") || name.starts_with(".report-") {
+                    output.issues.push(QueryIssue::new(
+                        "pack_report_invalid_name",
+                        "An incomplete or unrecognized receipt was excluded",
+                        Some(&key),
+                        None,
+                    ));
+                }
+            }
+        }
+        let mut latest_items: BTreeMap<String, String> = BTreeMap::new();
+        let mut linked_paths = BTreeSet::new();
+        for (name, (first, second)) in names {
+            let read = |path: &Path, scanned_bytes: &mut usize| -> Result<Vec<u8>> {
+                check_node(path, false)?;
+                let len = fs::metadata(path).map_err(io_error)?.len();
+                if len > MAX_REPORT_BYTES as u64
+                    || len as usize > MAX_RECEIPT_SCAN_BYTES.saturating_sub(*scanned_bytes)
+                {
+                    return Err(fail(413,"library_query_limit","All-receipt verification exceeds 128 MiB per refresh; no incomplete snapshot was published"));
+                }
+                *scanned_bytes += len as usize;
+                read_bounded(path, MAX_REPORT_BYTES)
+            };
+            let parsed = (|| -> Result<Report> {
+                let bytes = read(
+                    first.as_ref().or(second.as_ref()).expect("receipt copy"),
+                    &mut scanned_bytes,
+                )?;
+                if let (Some(_), Some(backup_receipt)) = (&first, &second) {
+                    let other = read(backup_receipt, &mut scanned_bytes)?;
+                    if bytes != other {
+                        return Err(invalid("Independent copies of this receipt disagree"));
+                    }
+                }
+                parse_projection_report(&bytes, &source)
+            })();
+            let report = match parsed {
+                Ok(report) => report,
+                Err(error) if error.code == "library_query_limit" => return Err(error),
+                Err(error) => {
+                    output.issues.push(QueryIssue::new(
+                        "pack_receipt_invalid",
+                        format!("Receipt {name}: {}", error.error),
+                        Some(&key),
+                        None,
+                    ));
+                    continue;
+                }
+            };
+            if first.is_none() || second.is_none() {
+                output.issues.push(QueryIssue::new(
+                    "pack_receipt_single_copy",
+                    format!("Receipt {name} is present in only one verified source copy"),
+                    Some(&key),
+                    None,
+                ));
+            }
+            pack.receipt_count += 1;
+            for item in report.items {
+                latest_items.insert(item.path.clone(), item.status.clone());
+                if !matches!(item.status.as_str(), "saved" | "duplicate") {
+                    continue;
+                }
+                let Some(entry) = item.entry else {
+                    output.issues.push(QueryIssue::new(
+                        "pack_receipt_unresolved",
+                        "Successful receipt item has no immutable edition reference",
+                        Some(&key),
+                        None,
+                    ));
+                    continue;
+                };
+                let id = edition_id(&entry);
+                if verified.get(&id) != Some(&serde_json::to_value(&entry).expect("receipt entry"))
+                {
+                    output.issues.push(QueryIssue::new(
+                        "pack_receipt_unresolved",
+                        "Receipt edition does not match a verified physical song",
+                        Some(&key),
+                        Some(&entry.key),
+                    ));
+                    continue;
+                }
+                linked_paths.insert(item.path.clone());
+                let counts = output.references.entry((pack_id.clone(), id)).or_default();
+                counts.receipts += 1;
+                if counts.source_items.insert(item.path) {
+                    logical_reference_count += 1;
+                }
+                if logical_reference_count > MAX_PROJECTED_REFERENCES {
+                    return Err(fail(413, "library_query_limit", "Logical source references exceed 16384; no incomplete projection was published"));
+                }
+            }
+            if output.references.len() > MAX_PROJECTED_REFERENCES
+                || latest_items.len() > super::MAX_ZIP_ENTRIES
+                || output.issues.len() > 4096
+            {
+                return Err(fail(
+                    413,
+                    "library_query_limit",
+                    "Receipt projection exceeds its bounded membership or issue capacity",
+                ));
+            }
+        }
+        for (path, status) in latest_items {
+            if linked_paths.contains(&path) {
+                continue;
+            }
+            if status == "retained_nonplayable" {
+                pack.retained_only_count += 1;
+            } else {
+                output.issues.push(QueryIssue::new(
+                    "pack_item_unresolved",
+                    format!("Source item {path} remains {status}; no membership was inferred"),
+                    Some(&key),
+                    None,
+                ));
+            }
+        }
+        if pack.receipt_count == 0 {
+            pack.provenance = "unresolved";
+            output.issues.push(QueryIssue::new(
+                "pack_report_pending",
+                "Retained original has no validated complete import receipt",
+                Some(&key),
+                None,
+            ));
+        }
+        output.packs.push(pack);
+        if output.issues.len() > 4096 {
+            return Err(fail(
+                413,
+                "library_query_limit",
+                "Projection issue count exceeds 4096; no incomplete snapshot was published",
+            ));
+        }
+    }
+    if !optional_children(&library.root.join(".import-staging"), 256)?.is_empty() {
+        output.issues.push(QueryIssue::new(
+            "pack_incomplete_stages",
+            "Interrupted original-source stages are preserved and excluded",
+            None,
+            None,
+        ));
+    }
+    Ok(output)
+}

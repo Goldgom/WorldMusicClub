@@ -14,7 +14,7 @@ use std::{
 use zip::ZipArchive;
 
 #[path = "song_pack_storage.rs"]
-mod storage;
+pub(crate) mod storage;
 #[path = "song_pack_zip.rs"]
 mod zip_guard;
 
@@ -202,7 +202,8 @@ pub fn is_import_route(path: &str) -> bool {
 pub fn is_large_operation(path: &str) -> bool {
     matches!(
         path,
-        "/api/library/import/preview"
+        "/api/library/manage/query"
+            | "/api/library/import/preview"
             | "/api/library/import/commit"
             | "/api/library/import/export"
             | "/api/library/pack/export"
@@ -224,6 +225,9 @@ pub fn valid_history_query(uri: &http::Uri) -> bool {
         })
 }
 pub fn request_limit(path: &str) -> usize {
+    if path == "/api/library/manage/query" {
+        return native_library::pack_groups::REQUEST_LIMIT;
+    }
     if matches!(
         path,
         "/api/library/import/preview" | "/api/library/import/commit"
