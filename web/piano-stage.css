@@ -74,8 +74,11 @@
 .notation-tools{position:relative;flex:none}.notation-tools>summary{cursor:pointer;list-style:none}.notation-tools[open]>summary{outline:2px solid #a1ffea;outline-offset:1px}
 .game-shell #workspace.notation-on-lanes #notation-dock{position:absolute;top:calc(100% + 10px);right:0;z-index:8;display:block;width:min(520px,calc(100vw - 42px));max-height:min(65dvh,520px);margin:0;overflow:auto;box-shadow:0 10px 30px #0005;border:1px solid var(--border);border-radius:12px;background:var(--paper);color:var(--ink)}
 .game-shell #workspace.notation-on-lanes #notation-dock[hidden]{display:none}
-.game-shell #workspace.notation-on-lanes #notation-dock .notation-panel{display:block;overflow:visible}
-.game-shell #workspace.notation-on-lanes #notation-dock .engraving-follow-controls{position:static;display:flex;flex-wrap:wrap;gap:6px}
+.game-shell #workspace.notation-on-lanes #notation-dock .notation-panel{display:flex;flex-direction:column;overflow:visible}
+.game-shell #workspace.notation-on-lanes #notation-dock .notation-panel>*{flex:none;min-width:0}
+/* Paging, Follow and its full status share the first pinned row group. Long
+   scope explanations and help stay in the same scrollable controls pane. */
+.game-shell #workspace.notation-on-lanes #notation-dock .engraving-follow-controls{order:-1;position:sticky;top:0;z-index:3;display:flex;flex-wrap:wrap;gap:6px;background:var(--paper)}
 .game-shell #workspace.notation-on-lanes #notation-dock #engraving-follow-status{flex-basis:100%;white-space:normal}
 .notation-pan-controls{display:flex;gap:6px;padding:6px 12px}.notation-pan-controls .button{min-width:36px}
 .game-shell .piano-stage-toolbar :is(input,button,summary):focus-visible{outline:3px solid #ffd78c;outline-offset:2px;box-shadow:none}

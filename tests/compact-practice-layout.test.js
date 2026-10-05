@@ -162,3 +162,14 @@ test('portrait score scope uses a reserved title slot instead of overflowing the
   for(const [selector,column]of [[':first-child','1/span 5'],[':nth-child(2)','6/span 4']]){const label=style('.game-shell .piano-stage-toolbar .notation-overlay-options>label'+selector);assert.equal(label['grid-column'],column);assert.equal(label['grid-row'],'2');}
   assert.equal(style('.game-shell .piano-stage-toolbar .notation-tools')['grid-column'],'10/-1','Score options retain their original, nonoverlapping native target');
 });
+
+test('piano score options pin paging and complete Follow status ahead of long scope and help content',async()=>{
+  const css=await readFile(new URL('../web/piano-stage.css',import.meta.url),'utf8'),{document}=parseHTML(`<style>${css}</style>`),rules=[...document.querySelector('style').sheet.cssRules];
+  const style=selector=>rules.findLast(rule=>rule.selectorText===selector).style,prefix='.game-shell #workspace.notation-on-lanes #notation-dock';
+  const pane=style(prefix+' .notation-panel'),children=style(prefix+' .notation-panel>*'),follow=style(prefix+' .engraving-follow-controls'),status=style(prefix+' #engraving-follow-status');
+  assert.equal(pane.display,'flex');assert.equal(pane['flex-direction'],'column');assert.equal(pane.overflow,'visible');assert.equal(children.flex,'none','Long content cannot shrink the controls beneath their native targets');
+  assert.equal(follow.order,'-1');assert.equal(follow.position,'sticky');assert.equal(follow.top,'0');assert.equal(follow['flex-wrap'],'wrap');assert.equal(follow.background,'var(--paper)','Scrolled explanations cannot paint through the pinned controls');
+  assert.equal(status['flex-basis'],'100%');assert.equal(status['white-space'],'normal','Follow status keeps its own readable full-width row below paging and checkbox');
+  assert.equal(style(prefix).overflow,'auto','All retained scope, source and help details remain reachable in the original pane');
+  for(const selector of [prefix+' .notation-panel',prefix+' .engraving-follow-controls',prefix+' #engraving-follow-status'])for(const property of ['height','max-height','text-overflow'])assert.equal(style(selector).getPropertyValue(property),'','The pinned content is not clipped or shortened');
+});
