@@ -36,7 +36,7 @@ import {fixture} from './frontend-fixtures.js';
 import {densePianoforte} from './numbered-layout-fixtures.js';
 import {originalGuitarChordTransitions} from './guitar-live-fixtures.js';
 import {connectionDiagnostics} from './browser-connection-diagnostics.js';
-import {installAudioAdmissionDiagnostics, readAudioAdmissionDiagnostics} from './browser-audio-admission-diagnostics.js';
+import {prepareAudioAdmissionDiagnostics, installAudioAdmissionDiagnostics, readAudioAdmissionDiagnostics} from './browser-audio-admission-diagnostics.js';
 import {validatePerformanceRecord} from '../web/performance-library.js';
 import {assertAddedLibraryCopies} from './library-copy-assertions.js';
 
@@ -443,6 +443,7 @@ beforeEach(async t => {
   context.setDefaultNavigationTimeout(15_000);
   page = await context.newPage();
   await installPlaybackClockReader(page);
+  await prepareAudioAdmissionDiagnostics(page);
   page.on('pageerror', error => pageErrors.push(error.message));
   page.on('console', message => { if (['error','warning'].includes(message.type()) && browserConsole.length < 30) browserConsole.push({type:message.type(),text:message.text().slice(0,1000)}); });
   page.on('requestfailed', request => { const url=new URL(request.url()); if(url.origin===origin && failedResources.length<30)failedResources.push({path:url.pathname,error:request.failure()?.errorText}); });

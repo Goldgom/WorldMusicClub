@@ -79,12 +79,18 @@ export function observeAudioAdmission(BasicReceiver, CanonicalReceiver, target =
   };
 }
 
+// Register only the trusted observer factory before navigation. Browser module
+// imports and receiver observation still wait for the app's existing readiness.
+export async function prepareAudioAdmissionDiagnostics(page) {
+  await page.addInitScript({content: `globalThis.__wmhObserveAudioAdmission = (${observeAudioAdmission.toString()});`});
+}
+
 export async function installAudioAdmissionDiagnostics(page) {
-  await page.evaluate(async source => {
+  await page.evaluate(async () => {
     const [{BasicKeyAudioReceiver}, {CanonicalAudioReceiver}] = await Promise.all([import('/basic-key-audio-receiver.js'), import('/canonical-audio-receiver.js')]);
     globalThis.__wmhAudioAdmissionDiagnostics?.dispose();
-    globalThis.__wmhAudioAdmissionDiagnostics = (0, eval)(`(${source})`)(BasicKeyAudioReceiver, CanonicalAudioReceiver, globalThis);
-  }, observeAudioAdmission.toString());
+    globalThis.__wmhAudioAdmissionDiagnostics = globalThis.__wmhObserveAudioAdmission(BasicKeyAudioReceiver, CanonicalAudioReceiver, globalThis);
+  });
 }
 
 export async function readAudioAdmissionDiagnostics(page) {

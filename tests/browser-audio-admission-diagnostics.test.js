@@ -6,12 +6,51 @@ import {CanonicalAudioReceiver} from '../web/canonical-audio-receiver.js';
 import {CanonicalAudioCore} from '../web/canonical-audio-core.js';
 import {buildCanonicalAudioPlan, CANONICAL_AUDIO_POLICY} from '../web/canonical-audio-plan.js';
 import {basicKeyAudioHarness} from './basic-key-audio-harness.js';
-import {observeAudioAdmission} from './browser-audio-admission-diagnostics.js';
+import {observeAudioAdmission, prepareAudioAdmissionDiagnostics, installAudioAdmissionDiagnostics} from './browser-audio-admission-diagnostics.js';
 
 function originalPlan() {
   const f = JSON.parse(readFileSync(new URL('./fixtures/canonical-audio-evidence.json', import.meta.url)));
   return buildCanonicalAudioPlan(f.compilation, f.profile, {mode: 'practice', practiceSelection: {kind: 'parts', part_ids: ['人 手 🎹']}, acceptedPolicyId: CANONICAL_AUDIO_POLICY, sampleRate: 48000});
 }
+
+test('audio diagnostics keep the application CSP and use no runtime string compiler', () => {
+  for (const path of ['./browser-audio-admission-diagnostics.js', './full-app-browser.test.js']) {
+    const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+    assert.doesNotMatch(source, /\beval\b|\bFunction\s*\(/, path);
+    assert.doesNotMatch(source, /bypassCSP|setBypassCSP|unsafe-eval|content-security-policy/i, path);
+  }
+});
+
+test('two-stage installer registers only a factory before navigation and observes receivers after readiness', async () => {
+  const calls = []; let navigated = false, ready = false;
+  const page = {
+    async addInitScript(script) {
+      assert.equal(navigated, false);
+      assert.deepEqual(script, {content: `globalThis.__wmhObserveAudioAdmission = (${observeAudioAdmission.toString()});`});
+      assert.doesNotMatch(script.content, /\bimport\s*\(|new\s+(?:AudioContext|AudioWorkletNode|OpenSheetMusicDisplay)\b/);
+      calls.push('register factory');
+    },
+    async goto() { navigated = true; calls.push('navigate'); },
+    async appReady() { assert.equal(navigated, true); ready = true; calls.push('app ready'); },
+    async evaluate(callback, ...args) {
+      assert.equal(ready, true); assert.equal(typeof callback, 'function'); assert.deepEqual(args, []);
+      const source = callback.toString();
+      assert.match(source, /import\('\/basic-key-audio-receiver\.js'\)/);
+      assert.match(source, /import\('\/canonical-audio-receiver\.js'\)/);
+      assert.match(source, /globalThis\.__wmhObserveAudioAdmission\(BasicKeyAudioReceiver, CanonicalAudioReceiver, globalThis\)/);
+      assert.doesNotMatch(source, /opensheetmusicdisplay|renderEngravedStaff/);
+      calls.push('observe receivers');
+    },
+  };
+  await prepareAudioAdmissionDiagnostics(page);
+  assert.deepEqual(calls, ['register factory'], 'Registration neither imports modules nor invokes observation');
+  await page.goto(); await page.appReady(); await installAudioAdmissionDiagnostics(page);
+  assert.deepEqual(calls, ['register factory', 'navigate', 'app ready', 'observe receivers']);
+  const suite = readFileSync(new URL('./full-app-browser.test.js', import.meta.url), 'utf8');
+  const bootstrap = suite.slice(suite.indexOf('beforeEach(async t =>'));
+  const order = ['await prepareAudioAdmissionDiagnostics(page)', 'page.goto(origin,', 'await waitForPlaybackClock(page)', 'await installAudioAdmissionDiagnostics(page)', 'await startPreview()'].map(step => bootstrap.indexOf(step));
+  assert.ok(order.every((index, i) => index >= 0 && (i === 0 || index > order[i - 1])), 'The real suite preserves the tested two-stage order before Play');
+});
 
 for (const lateSide of ['processor', 'main']) test(`actual canonical protocol evidence distinguishes a late ${lateSide} start without changing cancellation`, async () => {
   const h = basicKeyAudioHarness({autoMessages: false});
