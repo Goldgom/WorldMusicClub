@@ -138,7 +138,10 @@ function waitVsqSourceOnset({read,bounded,request=requestAnimationFrame,cancel=c
  async function silence(label){await until(()=>audio().activeSources===0&&audio().pendingSources===0&&receiver.quiet(),label,5000);return audio();}
  function choiceState(){return{preview:$('song-lobby').dataset.previewStatus,listenDisabled:$('start-listen').disabled,practiceDisabled:$('start-practice').disabled,fullVocalDisabled:$('vsq-full-vocal').disabled,fullVocalVisible:!$('vsq-full-vocal').hidden&&$('vsq-full-vocal').getBoundingClientRect().width>0,choiceVisible:!$('vsq-choose-base-notes').hidden,limits:$('vsq-interpretation-limits').children.length,tracks:[...$('clean-song-tracks').children].map(n=>n.textContent),audio:audio(),runtimeRequests:report.runtimeResponses.length};}
  async function select(entry){await until(()=>$('catalog').querySelector(`[data-library-key="native:${entry.key}"]`),'stored nonplayable song row');await native('click',$('catalog').querySelector(`[data-library-key="native:${entry.key}"]`));await until(()=>$('song-lobby').dataset.previewStatus==='choice','explicit interpretation choice');const state=choiceState();assert(state.listenDisabled&&state.practiceDisabled&&state.fullVocalDisabled&&state.fullVocalVisible&&state.choiceVisible&&state.limits===8&&state.tracks.length===2,'VSQ choice UI incomplete');return state;}
- async function start(mode){await native('click',$(`start-${mode}`));await until(()=>document.body.dataset.screen==='stage'&&!$('play-button').disabled,`${mode} stage admission`);}
+ async function start(mode){
+  const started=receiver.status().started;await native('click',$(`start-${mode}`));
+  await until(()=>{const audio=receiver.status();return document.body.dataset.screen==='stage'&&!$('play-button').disabled&&$('clean-song-stage').dataset.rendererState==='playing'&&audio.started===started+1&&audio.pendingReceivers===0&&audio.ownedNodes.some(node=>node.state==='running'&&node.connected&&!node.disposed&&!node.disposing&&node.pendingCommands===0&&node.pendingStarts===0);},`${mode} audio-thread stage admission`,10000);
+ }
  async function reset(){await native('click',$('reset-button'));await until(()=>Number($('progress').value)===0&&!$('play-button').disabled,'transport reset');}
  addEventListener('DOMContentLoaded',async()=>{
   try {
