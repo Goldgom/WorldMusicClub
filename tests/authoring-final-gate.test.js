@@ -56,5 +56,3 @@ test('authoring artifacts retain only bounded original evidence and clean output
  for(const [id,prefix]of [['bulk-import-browser','test-results/song-authoring/*/'],['native-feature-acceptance','desktop-authoring/']]){const upload=workflow.jobs[id].steps.find(value=>value.uses?.startsWith('actions/upload-artifact@')&&value.with.path.includes(prefix));assert.ok(upload);assert.equal(upload.if,'always()');const paths=upload.with.path.split('\n').filter(value=>value.startsWith(prefix));assert.deepEqual(paths.sort(),suffixes.map(suffix=>prefix+suffix).sort());assert.doesNotMatch(paths.join('\n'),/webview|profile|AppData|USERPROFILE|\.\.\//);}
  assert.match(read('.gitignore'),/^\/desktop-authoring\/$/m);assert.doesNotMatch(read('.gitignore'),/^\/desktop-\*\/?$/m);
 });
-
-import './check-workflow.test.js';

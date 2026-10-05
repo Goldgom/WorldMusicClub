@@ -20,6 +20,51 @@ const uploadAction = 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1
 const downloadAction = 'actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3';
 const step = (document, job, command) => document.jobs[job].steps.find(row => row.run === command);
 
+function validateParserProvisioning(document) {
+  const consumers = [];
+  for (const [id, job] of Object.entries(document.jobs)) {
+    const dependent = job.steps.filter(row => /\bnpm test\b|\bpython -m unittest discover\b|scripts\/check-authoring-workflow\.py/.test(row.run || ''));
+    if (!dependent.length) continue;
+    consumers.push(id);
+    const python = job.steps.findIndex(row => row.uses?.startsWith('actions/setup-python@') && row.with?.['python-version'] === '3.12');
+    const parser = job.steps.findIndex(row => row.run === 'python -m pip install PyYAML==6.0.3');
+    assert.ok(python >= 0 && parser > python, `${id} needs the pinned parser in its selected Python`);
+    for (const row of dependent) assert.ok(job.steps.indexOf(row) > parser, `${id} imports YAML before installing it`);
+    for (const row of [job.steps[python], job.steps[parser]]) {
+      assert.equal(row.if, undefined);
+      assert.equal(row['continue-on-error'], undefined);
+    }
+  }
+  assert.deepEqual(consumers.sort(), ['frontend-checks', 'rust']);
+}
+
+test('every Verify job importing the workflow parser installs pinned PyYAML before discovery or Node contracts', () => {
+  validateParserProvisioning(workflow);
+  for (const id of ['rust', 'frontend-checks']) {
+    for (const mutate of [
+      steps => steps.splice(steps.findIndex(row => row.run === 'python -m pip install PyYAML==6.0.3'), 1),
+      steps => { steps.find(row => row.run === 'python -m pip install PyYAML==6.0.3').run = 'python -m pip install PyYAML'; },
+      steps => { steps.find(row => row.run === 'python -m pip install PyYAML==6.0.3').if = 'false'; },
+      steps => { steps.find(row => row.run === 'python -m pip install PyYAML==6.0.3')['continue-on-error'] = true; },
+      steps => steps.push(...steps.splice(steps.findIndex(row => row.run === 'python -m pip install PyYAML==6.0.3'), 1)),
+    ]) {
+      const changed = structuredClone(workflow);
+      mutate(changed.jobs[id].steps);
+      assert.throws(() => validateParserProvisioning(changed), id);
+    }
+  }
+});
+
+test('both Rust platforms remain mandatory while a failed peer cannot cancel their evidence', () => {
+  const rust = workflow.jobs.rust;
+  assert.deepEqual(rust.strategy.matrix.os, ['ubuntu-latest', 'windows-latest']);
+  assert.equal(rust.strategy['fail-fast'], false);
+  assert.equal(rust['continue-on-error'], undefined);
+  assert.equal(rust.if, undefined);
+  for (const row of rust.steps) assert.equal(row['continue-on-error'], undefined);
+  assert.equal(step(workflow, 'rust', "python -m unittest discover -s tests -p 'test_*.py'").if, undefined);
+});
+
 function validateParallelGate(document) {
   assert.deepEqual(document.on, {push: {branches: ['main', 'validation/**']}, pull_request: null, workflow_dispatch: null});
   assert.deepEqual(document.permissions, {contents: 'read'});
