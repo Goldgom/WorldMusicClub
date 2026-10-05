@@ -45,6 +45,21 @@ test('all-machine Start is Listen and never creates a human take; all-human keep
  }finally{await app.close();}
 });
 
+test('compact stage Mod keeps its complete current summary available on the real button across locale and performer changes',async()=>{
+ const f=await basicFixture(),{app}=f,i18n=getAppI18n(app.document);
+ try{
+  await app.click('configure-song-mod');await app.click('song-mod-all-machine');await apply(app);await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
+  const button=app.$('edit-song-mod'),description=app.$('song-mod-stage-summary');
+  for(const locale of ['zh-CN','en']){
+   i18n.setLocale(locale);assert.equal(button.getAttribute('aria-describedby'),description.id);assert.equal(description.hidden,false);assert.equal(description.getAttribute('aria-hidden'),null);
+   assert.equal(button.title,description.textContent);assert.match(button.title,locale==='en'?/0 human · 3 machine.*Listen \(no scoring\)/:/0 个真人声部 · 3 个机器声部.*聆听（不评分）/);
+   assert.equal(app.document.querySelectorAll('#edit-song-mod').length,1);
+  }
+  await app.click('edit-song-mod');await app.click('song-mod-all-human');await apply(app);
+  assert.equal(app.$('edit-song-mod'),button);assert.equal(button.title,description.textContent);assert.match(button.title,/3 human · 0 machine/);assert.doesNotMatch(button.title,/Listen/);
+ }finally{await app.close();}
+});
+
 test('a reopened Basic source restores saved Mod assignment rather than a first-part fallback',async()=>{
  const storageValues=new Map();let f=await basicFixture({storageValues});
  try{await f.app.click('configure-song-mod');await f.app.click('song-mod-all-machine');set(f.app,'mute',f.score.parts[1].id,true);await apply(f.app);}finally{await f.app.close();}

@@ -1,7 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
 import {pianoViewportBudget,observePianoViewportBudget} from '../web/piano-viewport-budget.js';
+
+test('short-landscape Mod removes its long summary from the heading flow while retaining the settings control',async()=>{
+  const css=await readFile(new URL('../web/piano-stage.css',import.meta.url),'utf8');
+  const {document}=parseHTML(`<style>${css}</style>`),rules=[...document.querySelector('style').sheet.cssRules];
+  const scoped=rules.filter(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:651px)').flatMap(rule=>[...rule.cssRules]);
+  const summary=scoped.find(rule=>rule.selectorText.endsWith(' #song-mod-stage-summary'));
+  assert.ok(summary,'The compact rule must cover the failing 844×390 viewport without changing desktop or portrait');
+  assert.equal(summary.style.position,'absolute','Long localized Mod prose must not consume the navigation width or a new heading row');
+  assert.equal(summary.style.width,'1px');assert.equal(summary.style.height,'1px');assert.equal(summary.style['clip-path'],'inset(50%)');
+  assert.notEqual(summary.style.display,'none','Keep the full button description available to assistive reading');
+  assert.notEqual(summary.style.visibility,'hidden');
+  const button=scoped.find(rule=>rule.selectorText.endsWith(' #edit-song-mod'));
+  assert.equal(button.style.flex,'none');assert.equal(button.style['white-space'],'nowrap','The existing Mod control keeps its complete label');
+});
 
 test('viewport capacity accounts for real footer overflow, preserves spare desktop space and converts CSS zoom once',()=>{
   assert.deepEqual(pianoViewportBudget({viewportBottom:720,laneHeight:308,transportBottom:729.796875,bottomPadding:8}),{height:290.2,available:290.2,deficit:0});

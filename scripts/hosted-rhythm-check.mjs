@@ -212,9 +212,16 @@ try {
       const reducedMotionPause = await checkReducedMotionPause(page, entry);
       const compactHeader = await checkCompactHeader(page, entry, 'piano');
       const geometry = await page.evaluate(() => {
-        const box = selector => {const rect=document.querySelector(selector).getBoundingClientRect();return {x:rect.x,y:rect.y,right:rect.right,bottom:rect.bottom,width:rect.width,height:rect.height};};
-        return {documentWidth:document.documentElement.scrollWidth,falling:box('#falling-notes'),transport:box('.transport'),hud:box('.stage-hud')};
+        const rect = node => {const r=node.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
+        const box = selector => rect(document.querySelector(selector)),workspace=document.querySelector('#workspace');
+        return {documentWidth:document.documentElement.scrollWidth,falling:box('#falling-notes'),transport:box('.transport'),hud:box('.stage-hud'),keyboard:box('#keyboard'),
+          viewport:{width:innerWidth,height:innerHeight},workspace:{...rect(workspace),scrollTop:workspace.scrollTop,clientHeight:workspace.clientHeight,scrollHeight:workspace.scrollHeight},
+          laneBudget:document.body.style.getPropertyValue('--piano-available-lane-height'),beginnerEnabled:document.querySelector('#beginner-enabled').checked,
+          heading:[...document.querySelector('.stage-hud').children].filter(node=>!node.hidden).map(node=>({id:node.id,tag:node.tagName,...rect(node)})),
+          navigation:[...document.querySelectorAll('.stage-hud nav button')].filter(node=>!node.hidden).map(node=>({id:node.id,label:node.textContent,...rect(node)}))};
       });
+      // Save the actual post-interaction geometry even when the assertion fails.
+      await writeFile(path.join(output, `${entry.name}-piano-geometry.json`), JSON.stringify(geometry,null,2)+'\n');
       assert.ok(geometry.documentWidth <= entry.width + 1, `${entry.name}: horizontal overflow`);
       assert.ok(geometry.falling.height >= 100, `${entry.name}: falling canvas is too short`);
       assert.ok(geometry.transport.y >= 0 && geometry.transport.bottom <= entry.height + 1, `${entry.name}: transport outside viewport`);
