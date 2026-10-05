@@ -106,10 +106,11 @@ impl Acceptance {
             String::new()
         };
         format!(
-            "globalThis.__WMH_ACCEPTANCE_PHASE__={};\n{}\n{}\n{}",
+            "globalThis.__WMH_ACCEPTANCE_PHASE__={};\n{}\n{}\n{}\n{}",
             serde_json::to_string(self.phase).unwrap(),
             include_str!("../acceptance-wait.js"),
             include_str!("../reference-acceptance.js"),
+            include_str!("../live-tone-acceptance.js"),
             if PERFORMANCE_PHASES.contains(&self.phase)
                 || PITCH_BEND_PHASES.contains(&self.phase)
                 || AUTHORING_PHASES.contains(&self.phase)

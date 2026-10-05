@@ -28,8 +28,8 @@ test('native-origin mapping admits the owned main frame and rejects any conflict
  for(const invalid of ['http://localhost:43210','http://127.0.0.2:43210','https://127.0.0.1:43210','http://127.0.0.1:65536',origin+'/',origin+'/path','https://evil.example'])assert.throws(()=>validateHostedOrigin(invalid));
  assert.equal(validateRendererOrigin(),'https://wmh.localhost');assert.equal(validateRendererOrigin(origin),origin);assert.throws(()=>validateRendererOrigin('https://evil.example'));
 });
-test('real-source Worklet closure receipts compare all four untouched transitive modules',async()=>{
- const receipts=await verifyHostedWorkletAssets({root,sourceSha:sha,origin,fetcher});assert.deepEqual(receipts.map(row=>row.path),['web/basic-key-audio-processor.js','web/basic-key-audio-core.js','web/basic-key-audio-plan.js','web/basic-key-rendition.js']);assert.ok(receipts.every(row=>row.source_sha===sha&&row.status===200&&row.bytes>0));
+test('real-source Worklet closure receipts compare both source and persistent live transitive modules',async()=>{
+ const receipts=await verifyHostedWorkletAssets({root,sourceSha:sha,origin,fetcher});assert.deepEqual(receipts.map(row=>row.path),['web/basic-key-audio-processor.js','web/live-tone-audio-processor.js','web/live-tone-receiver.js','web/basic-key-audio-core.js','web/live-tone-core.js','web/basic-key-audio-plan.js','web/basic-key-rendition.js']);assert.ok(receipts.every(row=>row.source_sha===sha&&row.status===200&&row.bytes>0));
  await assert.rejects(verifyHostedWorkletAssets({root,sourceSha:sha,origin,fetcher:async url=>response(url,'modified')}),/differs from frozen source/);
  await assert.rejects(verifyHostedWorkletAssets({root,sourceSha:sha,origin,fetcher:async url=>response(url,'not found',{status:404})}),/did not serve/);
  const remote=Buffer.from("import 'https://foreign.example/module.js';");await assert.rejects(verifyHostedWorkletAssets({root,sourceSha:sha,origin,fetcher:async url=>response(url,remote),sourceReader:async()=>remote}),/same-origin sibling/);

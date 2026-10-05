@@ -248,8 +248,8 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
     # the source onset window reacquiring it or clicking the stage again.
     $foreground=[NativeAcceptance]::GetForegroundWindow();$enabled=[NativeAcceptance]::IsWindowEnabled($window)
     if($foreground -ne $window -or -not $enabled){throw 'Prepared C5 app foreground ownership was lost'}
-    $Evidence.native_key=[ordered]@{app_hwnd=$window.ToInt64();foreground=$foreground.ToInt64();app_process_id=$App.Id;app_enabled=$enabled;code='Digit2';virtual_key=0x32;focus_reacquired=$false;pointer_clicked=$false}
-    [NativeAcceptance]::Key(0x32);return
+    $Evidence.native_key=[ordered]@{app_hwnd=$window.ToInt64();foreground=$foreground.ToInt64();app_process_id=$App.Id;app_enabled=$enabled;code='Digit2';virtual_key=0x32;hold_ms=40;focus_reacquired=$false;pointer_clicked=$false}
+    [NativeAcceptance]::HeldPerformanceKey(0x32);return
   }
   if($Action.kind -eq 'toggle-follow') {
     # The renderer owns focus on the actual Follow checkbox. Space uses its
@@ -264,8 +264,8 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
     # Never click or reacquire foreground ownership inside the onset window.
     $foreground=[NativeAcceptance]::GetForegroundWindow();$enabled=[NativeAcceptance]::IsWindowEnabled($window)
     if($foreground -ne $window -or -not $enabled){throw 'Prepared VSQ D#4 app foreground ownership was lost'}
-    $Evidence.native_key=[ordered]@{app_hwnd=$window.ToInt64();foreground=$foreground.ToInt64();app_process_id=$App.Id;app_enabled=$enabled;code='KeyU';virtual_key=0x55;focus_reacquired=$false;pointer_clicked=$false}
-    [NativeAcceptance]::Key(0x55);return
+    $Evidence.native_key=[ordered]@{app_hwnd=$window.ToInt64();foreground=$foreground.ToInt64();app_process_id=$App.Id;app_enabled=$enabled;code='KeyU';virtual_key=0x55;hold_ms=40;focus_reacquired=$false;pointer_clicked=$false}
+    [NativeAcceptance]::HeldPerformanceKey(0x55);return
   }
   [NativeAcceptance]::SetForegroundWindow($window) | Out-Null
   Start-Sleep -Milliseconds 150

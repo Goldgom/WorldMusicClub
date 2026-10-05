@@ -57,6 +57,12 @@ public static class NativeAcceptance {
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int command);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h,IntPtr device,uint flags);
   public static void Key(byte key) { byte scan=(byte)MapVirtualKey(key,0); keybd_event(key,scan,0,UIntPtr.Zero); keybd_event(key,scan,2,UIntPtr.Zero); }
+  public static void HeldPerformanceKey(byte key) {
+    if(key!=0x32 && key!=0x55)throw new ArgumentOutOfRangeException("key","Only the closed C5 and D-sharp test keys may be held");
+    byte scan=(byte)MapVirtualKey(key,0);keybd_event(key,scan,0,UIntPtr.Zero);
+    try { System.Threading.Thread.Sleep(40); }
+    finally { keybd_event(key,scan,2,UIntPtr.Zero); }
+  }
   public static void Click(int x,int y) { POINT actual; if(!SetCursorPos(x,y) || !GetCursorPos(out actual) || actual.X!=x || actual.Y!=y)throw new InvalidOperationException("Native pointer was clipped or could not reach the requested point"); ClickPositioned(); }
   public static void ClickPositioned() { mouse_event(2,0,0,0,UIntPtr.Zero); mouse_event(4,0,0,0,UIntPtr.Zero); }
   public static RECT WorkArea(IntPtr window) {
