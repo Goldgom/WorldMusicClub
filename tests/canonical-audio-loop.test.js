@@ -30,6 +30,15 @@ test('zero-machine 250ms loops keep full source identity and all pass clocks wit
  const p=plan({practiceSelection:{kind:'all'},loop:{enabled:true,maxPasses:4}}),h=rig(p);let energy=0;while(h.core.state==='running')for(const v of h.block())energy+=Math.abs(v);
  const e=h.messages.find(m=>m.type==='ended');assert.equal(energy,0);assert.equal(p.durationFrames,192000);assert.equal(p.recordCapacity,0);assert.equal(e.recordCount,0);assert.equal(e.passCount,4);assert.equal(e.frame,h.anchor+4*(4800+12000));assert.equal(e.ledger.actualStarts.length,0);
 });
+test('per-part synthetic loop colors retain clipped gates, count-ins, pass clocks and seek identity',()=>{
+ const runs=[];
+ for(const instrument of [undefined,'triangle','reed']){
+  const p=plan({loop:{enabled:true,maxPasses:3},resumePositionMs:300,...(instrument?{instrumentOverrides:{'机 器/一':instrument,'机器二':instrument}}:{})}),h=rig(p);let energy=0;
+  while(h.core.state==='running'){const before=h.frame,pcm=h.block();for(let i=0;i<pcm.length;i++){energy+=Math.abs(pcm[i]);const elapsed=before+i-h.anchor,firstLength=p.rangeEndFrame-p.initialPositionFrame,cycle=p.countInFrames+p.rangeEndFrame-p.rangeStartFrame;if(elapsed>=firstLength&&(elapsed-firstLength)%cycle<p.countInFrames)assert.equal(pcm[i],0);}}
+  runs.push({p,energy,ended:h.messages.find(m=>m.type==='ended')});assert.ok(energy>0);
+ }
+ for(const run of runs.slice(1)){assert.deepEqual(run.p.notes,runs[0].p.notes);assert.deepEqual(run.ended.ledger,runs[0].ended.ledger);assert.deepEqual(run.ended.passFrames,runs[0].ended.passFrames);assert.equal(run.ended.frame,runs[0].ended.frame);assert.notEqual(run.energy,runs[0].energy);}
+});
 test('pause/resume inside one loop preserves envelope and pass boundary without re-count-in',()=>{
  const p=plan({loop:{enabled:true,maxPasses:3}}),h=rig(p);while(h.frame<10000)h.block();const pauseFrame=h.frame,pass=h.core.rangePassIndex,phase=h.core.voiceSlots[h.core.activeSlots[0]].phase;h.command('pause');
  for(let i=0;i<8;i++)assert.ok(h.block().every(v=>v===0));assert.equal(h.core.voiceSlots[h.core.activeSlots[0]].phase,phase);const resume=h.frame+64;h.command('resume',{anchorFrame:resume});assert.equal(h.core.rangePassIndex,pass);

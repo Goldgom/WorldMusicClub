@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {CanonicalAudioCore} from '../web/canonical-audio-core.js';
 import {CanonicalAudioReceiver} from '../web/canonical-audio-receiver.js';
 import {CanonicalPlayer} from '../web/canonical-player.js';
+import {CanonicalPracticeSession} from '../web/canonical-practice-session.js';
 import {buildCanonicalAudioPlan,CANONICAL_AUDIO_POLICY} from '../web/canonical-audio-plan.js';
 import {basicKeyAudioHarness} from './basic-key-audio-harness.js';
 const fixture=()=>JSON.parse(readFileSync(new URL('./fixtures/canonical-audio-evidence.json',import.meta.url)));
@@ -72,4 +73,15 @@ test('canonical scheduling modules have no path to machine-generated input/scori
  for(const name of ['canonical-audio-core','canonical-audio-plan','canonical-audio-processor','canonical-audio-receiver','canonical-player']){
   const text=readFileSync(new URL(`../web/${name}.js`,import.meta.url),'utf8');assert.doesNotMatch(text,/requestAnimationFrame|\bSynth\b|plan_targets\(|InputEvent|recordInput|assess\(|onHit\(|dispatchEvent\(/);
  }
+});
+
+test('session forwards synthetic part colors and mute to sounding and silent plans with honest interpretation',async()=>{
+ const h=basicKeyAudioHarness(),f=fixture(),before=JSON.stringify(f),session=new CanonicalPracticeSession({api:async()=>f.profile,playerFactory:callbacks=>new CanonicalPlayer({...callbacks,receiverFactory:()=>create(h)})});session.select(f.compilation);
+ const configured={...options,context:h.context,output:h.output,instrumentOverrides:{'机 器/一':'triangle','机器二':'reed'},mutedPartIds:['机器二'],range:{startMs:0,endMs:500},countInMs:100,loop:{enabled:true,maxPasses:3}};
+ try{
+  const sounding=await session.prepare(configured);assert.equal(sounding.plan.count,4);assert.ok(sounding.plan.instruments.every(i=>i===1));assert.equal(h.nodes.at(-1).core.plan.synthesisPolicyId,sounding.plan.synthesisPolicyId);
+  assert.deepEqual(sounding.interpretation.instrument_overrides,configured.instrumentOverrides);assert.deepEqual(sounding.interpretation.muted_part_ids,configured.mutedPartIds);assert.equal(sounding.interpretation.reference_timbre,'per-part synthetic');assert.equal(sounding.interpretation.source_timbres_preserved,false);assert.match(sounding.interpretation.timbre_description,/not acoustic instrument reproduction/);assert.equal(sounding.interpretation.policy_id,CANONICAL_AUDIO_POLICY);
+  const silent=await session.prepare({...configured,soundEnabled:false});assert.equal(silent.plan.planFingerprint,sounding.plan.planFingerprint);assert.equal(silent.interpretation.sound_enabled,false);assert.equal(silent.interpretation.source_clock_available,true);assert.equal(JSON.stringify(f),before);
+  const baseline=await session.prepare({...options,context:h.context,soundEnabled:false});assert.equal(baseline.interpretation.reference_timbre,'sine');assert.equal(baseline.interpretation.instrument_overrides,undefined);assert.equal(baseline.interpretation.muted_part_ids,undefined);
+ }finally{session.stop();await settle();}
 });

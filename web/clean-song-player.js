@@ -3,6 +3,7 @@ import {ReferenceAudioReceiver} from './midi-reference-synth.js';
 import {createReferenceRoom} from './clean-song-reverb.js';
 import {VsqPracticePlayer} from './vsq-practice-player.js';
 import {BasicKeyPlayer,BASIC_KEY_RENDITION} from './basic-key-player.js';
+import {basicKeyInstrumentOverrides} from './basic-key-audio-plan.js';
 import {CleanSongError,isCleanSong,isVsqSong,isBasicKeysSong} from './clean-song-package.js';
 import {INITIAL_SENSITIVITY_KIND,validInitialSensitivity,applyInitialSensitivity,unbentReferenceKey} from './clean-song-initial-sensitivity.js';
 import {INITIAL_SENSITIVITY12_KIND,validInitialSensitivity12Song,applyInitialSensitivity12,centeredPitchState,unbentReferenceKey12} from './clean-song-initial-sensitivity12.js';
@@ -52,13 +53,14 @@ export class CleanSongPlayer {
   prepare(options={}) {
     if(isBasicKeysSong(this.song))return this.basicKeys.prepare(options);
     if(isVsqSong(this.song))return this.vsq.prepare(options);
+    basicKeyInstrumentOverrides([],options.instrumentOverrides);
     return null;
   }
   startPrepared(options={}) {return (isVsqSong(this.song)?this.vsq:this.basicKeys).startPrepared(options);}
-  start({context,output,mode='listen',targetPart=null,practiceSelection,mutedParts=null,soloParts=null,resumePositionMs=null,instrument='piano',acceptedPolicyId}={}) {
-    if(isBasicKeysSong(this.song))return this.basicKeys.start({context,output,mode,targetPart,practiceSelection,mutedParts,soloParts,resumePositionMs,acceptedPolicyId});
-    if(isVsqSong(this.song))return this.vsq.start({context,output,mode,targetPart,practiceSelection,mutedParts,soloParts,resumePositionMs,instrument});
-    this.stop();if(!this.song||!this.profile.supported)throw new CleanSongError('clean_renderer_unsupported','The reference renderer cannot represent these retained commands.',{blockers:this.profile?.blockers});
+  start({context,output,mode='listen',targetPart=null,practiceSelection,mutedParts=null,soloParts=null,resumePositionMs=null,instrument='piano',instrumentOverrides={},acceptedPolicyId}={}) {
+    if(isBasicKeysSong(this.song))return this.basicKeys.start({context,output,mode,targetPart,practiceSelection,mutedParts,soloParts,resumePositionMs,instrumentOverrides,acceptedPolicyId});
+    if(isVsqSong(this.song))return this.vsq.start({context,output,mode,targetPart,practiceSelection,mutedParts,soloParts,resumePositionMs,instrument,instrumentOverrides});
+    this.stop();basicKeyInstrumentOverrides([],instrumentOverrides);if(!this.song||!this.profile.supported)throw new CleanSongError('clean_renderer_unsupported','The reference renderer cannot represent these retained commands.',{blockers:this.profile?.blockers});
     if(this.profile.logical_device_mapping&&acceptedPolicyId!==this.profile.rendition)throw new CleanSongError('reference_policy_required','Select the disclosed logical device mapping to this procedural receiver.');
     if(!context||context.state!=='running'||!output)throw new CleanSongError('clean_audio_unavailable','Audio must be unlocked by a user gesture.');
     if(mode==='practice'&&!this.song.score.performance.parts.some(part=>part.id===targetPart))throw new CleanSongError('clean_target_required','Choose one human part.');

@@ -290,3 +290,10 @@ test('explicit resume excludes a gate ended inside the 50 ms admission lead',()=
  ReferenceAudioReceiver.prototype.schedule=function(note,start,end,...options){scheduled.push({note,start,end});return original.call(this,note,start,end,...options);};
  try{h.position(984.6);h.start({resumePositionMs:1034.6});assert.ok(scheduled.length);assert.ok(scheduled.every(row=>row.end>row.start));assert.ok(scheduled.every(row=>h.player.song.runtime.notes.find(note=>note.event_id===row.note.eventId).end_ms>1034.6));}finally{h.player.stop();ReferenceAudioReceiver.prototype.schedule=original;}
 });
+
+test('legacy references reject requested synthetic overrides before allocating or silently falling back',()=>{
+ const h=harness(),id=h.player.song.score.performance.parts[0].id;
+ assert.throws(()=>h.start({instrumentOverrides:{[id]:'triangle'}}),{code:'invalid_instrument_override'});
+ assert.throws(()=>h.player.prepare({instrumentOverrides:{[id]:'triangle'}}),{code:'invalid_instrument_override'});
+ assert.equal(h.nodes.length,1);assert.equal(h.player.running,false);
+});

@@ -6,10 +6,11 @@ import {performance} from 'node:perf_hooks';
 import {CanonicalAudioCore} from '../web/canonical-audio-core.js';
 import {buildCanonicalAudioPlan,CANONICAL_AUDIO_POLICY,createCanonicalAudioTransfer} from '../web/canonical-audio-plan.js';
 import {capacityEvidence} from './canonical-audio-fixtures.js';
+import {canonicalFingerprint} from '../web/canonical-audio-fingerprint.js';
 const fixture=()=>JSON.parse(readFileSync(new URL('./fixtures/canonical-audio-evidence.json',import.meta.url)));
-const plan=(f=fixture(),selection={kind:'parts',part_ids:['人 手 🎹']})=>buildCanonicalAudioPlan(f.compilation,f.profile,{sampleRate:48000,mode:'practice',practiceSelection:selection,acceptedPolicyId:CANONICAL_AUDIO_POLICY});
+const plan=(f=fixture(),selection={kind:'parts',part_ids:['人 手 🎹']},options={})=>buildCanonicalAudioPlan(f.compilation,f.profile,{sampleRate:48000,mode:'practice',practiceSelection:selection,acceptedPolicyId:CANONICAL_AUDIO_POLICY,...options});
 function setup(p=plan(),{positionFrame=0,Core=CanonicalAudioCore}={}){
- const messages=[],trace=[],core=new Core(48000,{emit:(m,transfer=[])=>messages.push(structuredClone(m,{transfer})),trace:m=>trace.push(m)}),packed=createCanonicalAudioTransfer(p);let frame=0;
+ const messages=[],trace=[],core=new Core(p.sampleRate,{emit:(m,transfer=[])=>messages.push(structuredClone(m,{transfer})),trace:m=>trace.push(m)}),packed=createCanonicalAudioTransfer(p);let frame=0;
  core.handleMessage({type:'prepare',generation:1,requestId:1,wire:structuredClone(packed.wire,{transfer:packed.transfer}),positionFrame},0);
  const block=(size=128)=>{const channel=new Float32Array(size);core.process([channel],frame);frame+=size;return channel;};
  while(core.state==='preparing'){block();assert.ok(core.lastPrepareWork<=256);}
@@ -38,8 +39,8 @@ test('all-human playback emits no attack and preserves count-in and complete sou
  const h=setup(plan(fixture(),{kind:'all'}),{positionFrame:-960});h.command('start',{anchorFrame:h.frame+128});let energy=0;while(h.core.state==='running')for(const v of h.block())energy+=Math.abs(v);
  const e=h.messages.find(m=>m.type==='ended');assert.equal(energy,0);assert.equal(e.started,0);assert.equal(e.sourceNotes,7);assert.equal(e.frame,e.anchorFrame+960+192000);assert.equal(e.ledger.actualStarts.length,0);
 });
-function renderWithPause(pause){
- const h=setup(),startFrame=h.frame,anchor=startFrame+100;h.command('start',{anchorFrame:anchor});const output=[];let pauseFrame,resumeFrame,held;
+function renderWithPause(pause,p=plan()){
+ const h=setup(p),startFrame=h.frame,anchor=startFrame+100;h.command('start',{anchorFrame:anchor});const output=[];let pauseFrame,resumeFrame,held;
  while(h.core.state==='running'){
   if(pause&&!pauseFrame&&h.frame===2048){pauseFrame=h.frame;held=h.core.voiceSlots[h.core.activeSlots[0]].phase;h.command('pause');assert.equal(h.core.state,'paused');
    for(let i=0;i<3;i++)output.push(...h.block());assert.equal(h.core.voiceSlots[h.core.activeSlots[0]].phase,held);
@@ -77,4 +78,50 @@ test('100k-row preparation is bounded to 256 work items/quantum and cancellation
  assert.equal(c.state,'ready');assert.equal(c.eligibleCount,100000);assert.ok(blocks>=Math.ceil(200000/256));
  const p2=createCanonicalAudioTransfer(p);c.handleMessage({type:'prepare',generation:2,positionFrame:0,wire:p2.wire},frame);c.process([channel],frame);assert.equal(c.state,'preparing');c.handleMessage({type:'cancel',generation:3},frame+128);assert.equal(c.state,'canceled');c.process([channel],frame+128);assert.ok(channel.every(v=>v===0));
  console.log(JSON.stringify({evidence:'canonical-processor-capacity-development-not-device',messageMs,maxChunkMs,blocks,algorithmRowsPerQuantum:256,transferBytes:packed.transfer.reduce((n,b)=>n+b.byteLength,0)}));
+});
+
+test('sine, triangle-like and reed-like selections render distinct PCM with identical actual gates',()=>{
+ const rendered={source:renderWithPause(false)};
+ for(const instrument of ['sine','triangle','reed'])rendered[instrument]=renderWithPause(false,plan(fixture(),undefined,{instrumentOverrides:{'机 器/一':instrument,'机器二':instrument}}));
+ assert.deepEqual(rendered.sine.output,rendered.source.output,'Explicit sine preserves the original PCM');
+ for(const instrument of ['triangle','reed']){
+  assert.deepEqual(rendered[instrument].h.trace,rendered.source.h.trace);assert.deepEqual(rendered[instrument].h.messages.at(-1).ledger,rendered.source.h.messages.at(-1).ledger);
+  const delta=rendered[instrument].output.reduce((sum,v,i)=>sum+Math.abs(v-rendered.source.output[i]),0);assert.ok(delta>100,`${instrument} changes more than metadata`);assert.ok(rendered[instrument].output.every(Number.isFinite));
+ }
+ assert.notDeepEqual(rendered.triangle.output,rendered.reed.output);
+ const muted=renderWithPause(false,plan(fixture(),undefined,{mutedPartIds:['机 器/一','机器二'],instrumentOverrides:{'机 器/一':'reed'}}));
+ assert.ok(muted.output.every(v=>v===0));assert.equal(muted.h.trace.length,0);assert.equal(muted.h.messages.at(-1).frame,rendered.source.h.messages.at(-1).frame);
+});
+
+test('synthetic timbre pause resumes identical held PCM and complete gate ledger',()=>{
+ for(const instrument of ['triangle','reed']){
+  const p=plan(fixture(),undefined,{instrumentOverrides:{'机 器/一':instrument,'机器二':instrument}}),plain=renderWithPause(false,p),paused=renderWithPause(true,p);
+  const compressed=paused.output.slice(0,paused.pauseFrame-paused.startFrame).concat(paused.output.slice(paused.resumeFrame-paused.startFrame)),length=plain.h.messages.at(-1).frame-plain.startFrame;
+  assert.deepEqual(compressed.slice(0,length),plain.output.slice(0,length));assert.equal(paused.h.messages.at(-1).frame-plain.h.messages.at(-1).frame,paused.resumeFrame-paused.pauseFrame);
+ }
+});
+
+test('simultaneous unison parts retain independent synthetic colors in the rendered mix',()=>{
+ const instrumentOverrides={'机 器/一':'triangle','机器二':'reed'},render=mutedPartIds=>renderWithPause(false,plan(fixture(),undefined,{instrumentOverrides,mutedPartIds}));
+ const mixed=render([]),triangle=render(['机器二']),reed=render(['机 器/一']);let difference=0;
+ assert.equal(mixed.h.messages.at(-1).started,6);assert.equal(triangle.h.messages.at(-1).started,4);assert.equal(reed.h.messages.at(-1).started,2);
+ for(let i=0;i<mixed.output.length;i++)difference=Math.max(difference,Math.abs(mixed.output[i]-triangle.output[i]-reed.output[i]));
+ assert.ok(difference<1e-8,`The full PCM is the sum of both independent part colors: ${difference}`);
+});
+
+test('additive harmonics at or above Nyquist are omitted without changing the fundamental gate',()=>{
+ const f=capacityEvidence({count:1});for(const n of [f.compilation.timeline.notes[0],f.profile.occurrences[0]]){n.midi=103;n.duration_ms=100;}
+ f.compilation.timeline.duration_ms=100;f.profile.duration_ms=100;const {compiled_fingerprint,...unsigned}=f.profile;f.profile.compiled_fingerprint=canonicalFingerprint(f.profile.profile,unsigned);
+ const outputs=[];for(const instrument of ['sine','triangle','reed']){
+  const p=plan(f,{kind:'parts',part_ids:['human']},{sampleRate:8000,instrumentOverrides:{machine:instrument}}),h=setup(p),samples=[];h.command('start',{anchorFrame:h.frame+32});while(h.core.state==='running')samples.push(...h.block());outputs.push(samples);
+  assert.equal(h.core.voiceSlots[0].harmonicLimit,1);assert.ok(samples.some(v=>v!==0));
+ }
+ assert.deepEqual(outputs[0],outputs[1]);assert.deepEqual(outputs[0],outputs[2]);
+});
+
+test('transferred synthetic instrument tamper and unsupported codes fail before ready',()=>{
+ for(const [mutate,code] of [[w=>new Uint8Array(w.buffers.instruments)[0]=0,'canonical_audio_fingerprint'],[w=>new Uint8Array(w.buffers.instruments)[0]=255,'invalid_canonical_audio_plan'],[w=>{delete w.synthesisPolicyId;},'invalid_canonical_audio_plan'],[w=>{delete w.synthesisPolicyId;delete w.buffers.instruments;},'canonical_audio_fingerprint']]){
+  const p=plan(fixture(),undefined,{instrumentOverrides:{'机 器/一':'reed'}}),packed=createCanonicalAudioTransfer(p);mutate(packed.wire);const messages=[],c=new CanonicalAudioCore(48000,{emit:m=>messages.push(m)});c.handleMessage({type:'prepare',generation:1,positionFrame:0,wire:packed.wire},0);let frame=0;while(c.state==='preparing'){c.process([new Float32Array(128)],frame);frame+=128;}
+  assert.equal(c.state,'error');assert.equal(messages.at(-1).code,code);assert.ok(!messages.some(m=>m.type==='ready'));
+ }
 });

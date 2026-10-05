@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {prepareCleanSong, prepareVsqPractice} from '../web/clean-song-package.js';
 import {buildVsqAudioPlan} from '../web/vsq-audio-plan.js';
 import {BasicKeyAudioCore} from '../web/basic-key-audio-core.js';
-import {BASIC_KEY_AUDIO_PROTOCOL, BASIC_KEY_AUDIO_LIMITS, VSQ_AUDIO_POLICY, VSQ_AUDIO_IDENTITY, VSQ_TRIANGLE_SIZE, basicKeyGateFrames, validateBasicKeyAudioPlan, createBasicKeyAudioTransfer} from '../web/basic-key-audio-plan.js';
+import {CleanSongPlayer} from '../web/clean-song-player.js';
+import {basicKeyAudioHarness} from './basic-key-audio-harness.js';
+import {BASIC_KEY_AUDIO_PROTOCOL, BASIC_KEY_AUDIO_LIMITS, BASIC_KEY_TIMBRE_PROFILE, VSQ_AUDIO_POLICY, VSQ_AUDIO_IDENTITY, VSQ_TRIANGLE_SIZE, basicKeyGateFrames, validateBasicKeyAudioPlan, createBasicKeyAudioTransfer} from '../web/basic-key-audio-plan.js';
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url)));
 const sampleRate = 48000, hash = 'a'.repeat(64);
@@ -27,10 +30,10 @@ function run(plan, {position = 0, audit = false} = {}) {
   const anchor = frame + Math.round(plan.sampleRate * .05);
   core.handleMessage({type: 'start', generation: 1, anchorFrame: anchor}, frame);
   if (audit) core.handleMessage({type: 'audit', generation: 1, offset: 0, count: 256}, frame);
-  let nonzero = 0;
-  while (core.state === 'running') { const block = new Float32Array(128); core.process([block], frame); assert.ok(block.every(Number.isFinite)); nonzero += block.filter(value => value !== 0).length; frame += block.length; }
+  let nonzero = 0; const pcm = new Float32Array(plan.durationFrames);
+  while (core.state === 'running') { const block = new Float32Array(128); core.process([block], frame); assert.ok(block.every(Number.isFinite)); nonzero += block.filter(value => value !== 0).length; for (let at = 0; at < block.length; at++) if (frame+at >= anchor && frame+at-anchor < pcm.length) pcm[frame+at-anchor] = block[at]; frame += block.length; }
   assert.equal(core.state, 'ended', JSON.stringify(messages));
-  return {core, messages, anchor, byteLength, nonzero, completion: messages.at(-1)};
+  return {core, messages, anchor, byteLength, nonzero, pcm, completion: messages.at(-1)};
 }
 
 test('VSQ uses every exact native gate and source end without changing source/score bytes or applying vocal Dynamics', () => {
@@ -89,6 +92,8 @@ test('VSQ accepts and renders the 65536-note, 128-voice bound with wire data bel
   const notes=Array.from({length:BASIC_KEY_AUDIO_LIMITS.maxNotes},(_,index)=>row(String(index).padStart(8,'0'),Math.floor(index/128),Math.floor(index/128)+1));
   const plan=syntheticPlan(notes,{sampleRate:8000}),result=run(plan);
   assert.equal(result.core.startedCount,65536);assert.equal(result.core.endedCount,65536);assert.equal(result.core.activeCount,0);assert.ok(result.byteLength<BASIC_KEY_AUDIO_LIMITS.maxBytes);assert.ok(JSON.stringify(plan).length<BASIC_KEY_AUDIO_LIMITS.maxBytes);
+  const colors=run(validateBasicKeyAudioPlan({...plan,timbreProfile:BASIC_KEY_TIMBRE_PROFILE,timbres:Array(notes.length).fill(3)}));
+  assert.equal(colors.core.startedCount,65536);assert.equal(colors.core.endedCount,65536);assert.ok(colors.byteLength<BASIC_KEY_AUDIO_LIMITS.maxBytes);assert.deepEqual(colors.completion.ledger,result.completion.ledger);
   assert.throws(()=>validateBasicKeyAudioPlan({...plan,sourceNotes:65537}),{code:'invalid_audio_plan'});
   assert.throws(()=>syntheticPlan(Array.from({length:129},(_,index)=>row(String(index).padStart(4,'0'),0,1))),{code:'voice_budget_exceeded'});
 });
@@ -122,4 +127,45 @@ test('canceling during bounded VSQ waveform validation cannot emit ready, attack
   const block=new Float32Array(128);core.process([block],0);assert.equal(core.state,'preparing');assert.equal(core.preparePhase,-1);assert.ok(block.every(value=>value===0));
   core.handleMessage({type:'cancel',generation:2,reason:'pause'},128);core.process([block],128);assert.equal(core.state,'canceled');assert.equal(core.startedCount,0);assert.equal(messages.some(message=>message.type==='ready'),false);assert.equal(messages.at(-1).ledger,null);assert.ok(block.every(value=>value===0));
   core.handleMessage({type:'start',generation:1,anchorFrame:512},256);assert.equal(messages.at(-1).type,'stale');assert.equal(core.state,'canceled');
+});
+
+test('VSQ per-part synthetic choices preserve source identity, exact gates and both default recipes', () => {
+  const song = vsqSong(), before = JSON.stringify(song), defaultPlan = buildVsqAudioPlan(song, {sampleRate});
+  assert.deepEqual(buildVsqAudioPlan(song, {sampleRate, instrumentOverrides: {}}), defaultPlan);
+  for (const [instrument, code] of [['sine', 1], ['triangle', 2], ['reed', 3]]) {
+    const plan = buildVsqAudioPlan(song, {sampleRate, instrumentOverrides: {'vsq-track-1': instrument}});
+    assert.deepEqual(plan.notes, defaultPlan.notes); assert.deepEqual(plan.timbres, [code, 0]);
+    assert.equal(plan.identityKind, VSQ_AUDIO_IDENTITY); assert.equal(plan.policyId, VSQ_AUDIO_POLICY); assert.equal(plan.sourceSha256, defaultPlan.sourceSha256);
+    const expected = run(defaultPlan), actual = run(plan); assert.notDeepEqual(actual.pcm, expected.pcm); assert.deepEqual(actual.completion.ledger, expected.completion.ledger);
+    const onlyOther = buildVsqAudioPlan(song, {sampleRate, instrumentOverrides: {'vsq-track-1': instrument}, mutedParts: ['vsq-track-1']});
+    assert.deepEqual(onlyOther, buildVsqAudioPlan(song, {sampleRate, mutedParts: ['vsq-track-1']}));
+  }
+  for (const [role, digest] of [[2, '63067bbd38fcd6034d03c9e5e080832993794ac48510a12afd26de91d40ffdc3'], [3, 'c6fc965bf8218ac859fb1892a7de9985bfd9fc34ab7d5c45884ce084815ce99b']]) {
+    const result = run(syntheticPlan([row('0001', 0, 1000, role)]));
+    assert.equal(createHash('sha256').update(Buffer.from(result.pcm.buffer)).digest('hex'), digest);
+  }
+  for (const instrumentOverrides of [{missing: 'sine'}, {'vsq-track-1': 'source'}, {'vsq-track-1': 'voicebank'}, null]) assert.throws(() => buildVsqAudioPlan(song, {sampleRate, instrumentOverrides}), {code: 'invalid_instrument_override'});
+  assert.equal(JSON.stringify(song), before);
+});
+
+test('VSQ replacement colors validate their actual fundamental and reject altered supported selections', () => {
+  const plan = syntheticPlan([row('0001', 0, 1000, 3, 127)], {timbreProfile: BASIC_KEY_TIMBRE_PROFILE, timbres: [3]});
+  assert.ok(run(plan).nonzero, 'Replacing the source recipe omits source harmonics that cannot be represented');
+  const wire = createBasicKeyAudioTransfer(plan).wire, messages = [], core = new BasicKeyAudioCore(sampleRate, {emit: message => messages.push(message)});
+  new Uint8Array(wire.buffers.timbres)[0] = 1;
+  core.handleMessage({type: 'prepare', generation: 1, positionFrame: 0, wire}, 0);
+  let frame = 0; while (core.state === 'preparing') { core.process([new Float32Array(128)], frame); frame += 128; }
+  assert.equal(core.state, 'error'); assert.equal(core.startedCount, 0); assert.equal(messages.at(-1).code, 'audio_timbre_fingerprint');
+  assert.throws(() => syntheticPlan([row('0001', 0, 1000, 3, 127)], {sampleRate: 8000, timbreProfile: BASIC_KEY_TIMBRE_PROFILE, timbres: [3]}), {code: 'unsupported_audio_sample_rate'});
+});
+
+test('VSQ selected colors cross the real receiver transfer and reset with a fresh source preparation', async () => {
+  const audio = basicKeyAudioHarness(), player = new CleanSongPlayer({getPositionMs: () => 0}), original = Object.getOwnPropertyDescriptor(globalThis, 'AudioWorkletNode');
+  globalThis.AudioWorkletNode = class { constructor() { return audio.nodeFactory(); } };
+  try {
+    player.select(vsqSong());
+    const anchor = await player.start({context: audio.context, output: audio.output, instrument: 'guitar', instrumentOverrides: {'vsq-track-1': 'triangle', 'vsq-track-2': 'reed'}});
+    const core = audio.nodes.at(-1).core; assert.deepEqual([...core.plan.timbres], [2, 3]); assert.equal(core.plan.timbreProfile, BASIC_KEY_TIMBRE_PROFILE); assert.equal(core.plan.identityKind, VSQ_AUDIO_IDENTITY); assert.ok(anchor.anchorFrame > 0);
+    player.stop(); await player.prepare({context: audio.context, output: audio.output}); assert.equal(audio.nodes.at(-1).core.plan.timbres, undefined);
+  } finally { player.stop(); if (original) Object.defineProperty(globalThis, 'AudioWorkletNode', original); else delete globalThis.AudioWorkletNode; }
 });

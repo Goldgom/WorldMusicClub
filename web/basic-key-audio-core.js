@@ -1,8 +1,11 @@
-import {BASIC_KEY_AUDIO_LIMITS as LIMITS, BasicKeyAudioError, basicKeySampleRate, openBasicKeyAudioTransfer, VSQ_AUDIO_IDENTITY, VSQ_TRIANGLE_SIZE, audioTransferIdentity, compareAudioTransferIdentity} from './basic-key-audio-plan.js';
+import {BASIC_KEY_AUDIO_LIMITS as LIMITS, BASIC_KEY_TIMBRE_PROFILE, BASIC_KEY_SYNTHETIC_INSTRUMENTS, BasicKeyAudioError, basicKeySampleRate, openBasicKeyAudioTransfer, VSQ_AUDIO_IDENTITY, VSQ_TRIANGLE_SIZE, audioTransferIdentity, compareAudioTransferIdentity, basicKeyTimbreHasher, hashBasicKeyTimbreRow} from './basic-key-audio-plan.js';
 
 const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
 const reject = (code, message, details) => { throw new BasicKeyAudioError(code, message, details); };
 const TAU = 2 * Math.PI;
+// Finite synthetic colors only, with no sample assets or acoustic models.
+const TRIANGLE = Object.freeze([0, 1, 0, -1 / 9, 0, 1 / 25, 0, -1 / 49, 0, 1 / 81]);
+const REED = Object.freeze([0, 1, .55, .4, .2, .15, .1, .08, .05, .03]);
 
 /** Shared by the actual AudioWorkletProcessor and the block-by-block tests.
  * No clock polling, DOM, timers, per-note nodes, or allocations in the sample
@@ -15,7 +18,7 @@ export class BasicKeyAudioCore {
     this.generation = 0; this.state = 'idle'; this.plan = null; this.planGeneration = 0;
     this.activeCount = 0; this.startedCount = 0; this.endedCount = 0; this.skippedCount = 0; this.cursor = 0;
     this.previousBlockFrame = null; this.previousBlockLength = 0; this.successfulBlocks = 0;
-    this.voiceSlots = Array.from({length: this.limits.maxVoices}, () => ({note: -1, start: 0, end: 0, phase: 0, step: 0, peak: 0, drum: false, vsqRatio: 0, harmonicPhase: 0, triangleOffset: 0, noiseIndex: 0, noiseState: 0x574d4801, x1: 0, x2: 0, y1: 0, y2: 0}));
+    this.voiceSlots = Array.from({length: this.limits.maxVoices}, () => ({note: -1, start: 0, end: 0, phase: 0, step: 0, peak: 0, drum: false, timbre: 0, timbreHarmonicLimit: 1, timbreHarmonicScale: 1, vsqRatio: 0, harmonicPhase: 0, triangleOffset: 0, noiseIndex: 0, noiseState: 0x574d4801, x1: 0, x2: 0, y1: 0, y2: 0}));
     this.activeSlots = new Uint8Array(this.limits.maxVoices); this.freeSlots = new Uint8Array(this.limits.maxVoices);
     this.endHeap = new Float64Array(this.limits.maxVoices); this.heapLength = 0; this.eligibleCount = 0; this.validated = false;
     this.resetSlots();
@@ -72,6 +75,7 @@ export class BasicKeyAudioCore {
         if (!integer(message.positionFrame, -600 * this.sampleRate, plan.durationFrames)) reject('invalid_audio_command', 'The prepared source position exceeds the rendition or ten-minute count-in bound.');
         this.profile?.validatePosition?.(plan, message.positionFrame);
         this.profileValidation = this.profile?.beginValidation?.(plan);
+        this.timbreValidation = plan.timbreProfile === BASIC_KEY_TIMBRE_PROFILE ? basicKeyTimbreHasher(plan) : null;
         this.plan = plan; this.positionFrame = message.positionFrame; this.anchorFrame = null;
         this.order = plan.playOrder; this.actualStarts = plan.actualStarts; this.actualEnds = plan.actualEnds; this.steps = plan.steps;
         this.preparePhase = plan.triangles ? -1 : 0; this.prepareCursor = 0; this.prepareRequestId = requestId; this.heapLength = 0;
@@ -120,6 +124,7 @@ export class BasicKeyAudioCore {
       if (this.prepareCursor === phaseLength) {
         if (this.preparePhase === 0) { this.preparePhase = 1; this.prepareCursor = 0; continue; }
         this.profile?.finishValidation?.(p, this.profileValidation);
+        if (this.timbreValidation && this.timbreValidation.hex() !== p.timbreFingerprint) reject('audio_timbre_fingerprint', 'Transferred synthetic colors do not match their prepared source gates.');
         this.validated = true; this.state = 'ready'; this.emit({type: 'ready', requestId: this.prepareRequestId, ...this.snapshot(frame + blockLength)}); break;
       }
       const index = this.prepareCursor++; worked++;
@@ -130,8 +135,11 @@ export class BasicKeyAudioCore {
       const validIdentity = this.profile ? this.profile.validIdentity(p, index) : vsq ? p.sourceTracks[index] > 0 && (digits === 4 || digits === 8) && p.authoredIds[index] < 10 ** digits : integer(p.tracks[index], 0, Number.MAX_SAFE_INTEGER - 1) && integer(p.events[index], 0, Number.MAX_SAFE_INTEGER - 1);
       if (!integer(start, 0, p.durationFrames) || !integer(end, start + 1, p.durationFrames) || index > 0 && start < p.starts[index - 1] || !validIdentity || key > 127 || velocity < (this.profile?.allowZeroVelocity ? 0 : 1) || velocity > 127 || (vsq ? velocity !== 90 || role < 2 || role > 3 : role > 1)) reject('invalid_audio_plan', 'A transferred audio gate is invalid or out of order.');
       this.profile?.validateRow?.(p, index, this.profileValidation);
+      const timbre = p.timbreProfile === BASIC_KEY_TIMBRE_PROFILE ? p.timbres[index] : 0;
+      if (!integer(timbre, 0, BASIC_KEY_SYNTHETIC_INSTRUMENTS.length)) reject('invalid_audio_plan', 'A transferred synthetic color is unsupported.');
+      if (this.timbreValidation) hashBasicKeyTimbreRow(this.timbreValidation, p, index);
       const frequency = 440 * 2 ** ((key - 69) / 12);
-      if (role !== 1 && frequency * (vsq ? role : 1) > this.sampleRate * .45) reject('unsupported_audio_sample_rate', 'The audio device cannot represent every retained key and declared harmonic without clamping.');
+      if ((timbre || role !== 1) && frequency * (vsq && !timbre ? role : 1) > this.sampleRate * .45) reject('unsupported_audio_sample_rate', 'The audio device cannot represent every retained key and declared harmonic without clamping.');
       this.steps[index] = TAU * frequency / this.sampleRate;
       const ordered = p.idOrder[index];
       if (ordered >= p.count || p.seen[ordered]) reject('invalid_audio_plan', 'The source-coordinate permutation is not complete and unique.');
@@ -156,6 +164,13 @@ export class BasicKeyAudioCore {
     const slot = this.freeSlots[--this.freeCount], voice = this.voiceSlots[slot], plan = this.plan;
     voice.note = index; voice.start = frame; voice.end = this.anchorFrame + plan.ends[index] - this.positionFrame;
     voice.step = this.steps[index]; voice.phase = voice.step / 2; voice.peak = .08 * plan.velocities[index] / 127; voice.drum = plan.roles[index] === 1;
+    voice.timbre = plan.timbreProfile === BASIC_KEY_TIMBRE_PROFILE ? plan.timbres[index] : 0;
+    if (voice.timbre > 1) {
+      const harmonics = voice.timbre === 2 ? TRIANGLE : REED;
+      voice.timbreHarmonicLimit = Math.min(9, Math.ceil(Math.PI / voice.step) - 1);
+      let amplitude = 0; for (let h = 1; h <= voice.timbreHarmonicLimit; h++) amplitude += Math.abs(harmonics[h]);
+      voice.timbreHarmonicScale = 1 / amplitude;
+    }
     voice.vsqRatio = plan.roles[index] >= 2 ? plan.roles[index] : 0; voice.harmonicPhase = voice.phase * voice.vsqRatio; voice.triangleOffset = plan.keys[index] * VSQ_TRIANGLE_SIZE;
     voice.noiseIndex = 0; voice.noiseState = 0x574d4801; voice.x1 = 0; voice.x2 = 0; voice.y1 = 0; voice.y2 = 0;
     this.activeSlots[this.activeCount++] = slot; this.actualStarts[index] = frame; this.startedCount++;
@@ -173,7 +188,18 @@ export class BasicKeyAudioCore {
     else if (age < length - release) level = sustain;
     else level = sustain * (length - age) / release;
     let value;
-    if (voice.drum) {
+    if (voice.timbre) {
+      if (voice.timbre === 1) value = Math.sin(voice.phase);
+      else {
+        const harmonics = voice.timbre === 2 ? TRIANGLE : REED; value = 0;
+        // The recurrence bounds expensive trigonometry to one sine/cosine per
+        // sample, even at 128 simultaneous voices and nine retained harmonics.
+        const twiceCos = 2 * Math.cos(voice.phase); let previous = 0, sine = Math.sin(voice.phase);
+        for (let h = 1; h <= voice.timbreHarmonicLimit; h++) { value += harmonics[h] * sine; const next = twiceCos * sine - previous; previous = sine; sine = next; }
+        value *= voice.timbreHarmonicScale;
+      }
+      voice.phase += voice.step; if (voice.phase >= TAU) voice.phase -= TAU;
+    } else if (voice.drum) {
       let random = voice.noiseState; random ^= random << 13; random ^= random >>> 17; random ^= random << 5;
       const x = Math.fround((random >>> 0) / 2147483648 - 1); voice.noiseState = random;
       if (++voice.noiseIndex === this.noiseLength) { voice.noiseIndex = 0; voice.noiseState = 0x574d4801; }

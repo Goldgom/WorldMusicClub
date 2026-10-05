@@ -65,3 +65,33 @@ test('100k complete source and occurrence rows and 1m references are admitted wi
  }
  console.log(JSON.stringify({evidence:'canonical-host-capacity-development',heapBefore:before,heapAfter:process.memoryUsage().heapUsed,rss:process.memoryUsage().rss,wireBytes:100000*CANONICAL_AUDIO_BYTES_PER_NOTE}));
 });
+
+test('per-part synthetic overrides bind renderer selection while preserving source and gate identity',()=>{
+ const f=fixture(),before=JSON.stringify(f),baseline=build(f),empty=build(f,{instrumentOverrides:{},mutedPartIds:[]});
+ assert.equal(baseline.planFingerprint,'533bd691f576646ac8571a587340c522ea34c0843d9aed142029ad811cfc9612','Unmodified canonical reference retains its established fingerprint');
+ assert.equal(empty.planFingerprint,baseline.planFingerprint);assert.equal(empty.synthesisPolicyId,undefined);assert.equal(createCanonicalAudioTransfer(empty).wire.buffers.instruments,undefined);
+ const overrides={'机器二':'reed','机 器/一':'triangle','人 手 🎹':'sine'},p=build(f,{instrumentOverrides:overrides});
+ const reordered=build(f,{instrumentOverrides:{'人 手 🎹':'sine','机 器/一':'triangle','机器二':'reed'}});
+ assert.equal(p.planFingerprint,reordered.planFingerprint);assert.notEqual(p.selectionFingerprint,baseline.selectionFingerprint);assert.notEqual(p.planFingerprint,baseline.planFingerprint);
+ assert.deepEqual(p.notes,baseline.notes);assert.deepEqual(p.mapping,baseline.mapping);assert.equal(p.sourceFingerprint,baseline.sourceFingerprint);assert.equal(p.compiledFingerprint,baseline.compiledFingerprint);assert.equal(p.policyId,baseline.policyId);
+ assert.deepEqual(p.instruments,p.notes.map((_,i)=>canonicalIdentity(p,i).partId==='机 器/一'?1:2));
+ const packed=createCanonicalAudioTransfer(p),wire=openCanonicalAudioTransfer(packed.wire,48000);assert.deepEqual([...wire.instruments],p.instruments);assert.equal(packed.transfer.reduce((n,b)=>n+b.byteLength,0),(CANONICAL_AUDIO_BYTES_PER_NOTE+1)*p.count);
+ overrides['机器二']='sine';assert.equal(p.instrumentOverrides['机器二'],'reed');assert.throws(()=>{p.instruments[0]=0;},TypeError);assert.equal(JSON.stringify(f),before);
+});
+
+test('muted machine parts leave source clock, human selection, identities and audible subset independent',()=>{
+ const f=fixture(),base=build(f),muted=build(f,{mutedPartIds:['机器二']}),listen=build(f,{mode:'listen',audiblePartIds:['人 手 🎹','机器二'],mutedPartIds:['机器二']});
+ assert.equal(muted.count,4);assert.equal(listen.count,2);assert.ok(muted.notes.every((_,i)=>canonicalIdentity(muted,i).partId==='机 器/一'));assert.ok(listen.notes.every((_,i)=>canonicalIdentity(listen,i).partId==='人 手 🎹'));
+ assert.deepEqual(muted.selection,base.selection);assert.equal(muted.durationFrames,base.durationFrames);assert.equal(muted.sourceOccurrences,base.sourceOccurrences);assert.equal(muted.sourceFingerprint,base.sourceFingerprint);assert.notEqual(muted.selectionFingerprint,base.selectionFingerprint);
+ const all=build(f,{mutedPartIds:f.profile.part_ids});assert.equal(all.count,0);assert.equal(all.durationFrames,base.durationFrames);
+ const reordered=build(f,{mutedPartIds:[...f.profile.part_ids].reverse()});assert.equal(all.planFingerprint,reordered.planFingerprint);
+});
+
+test('unknown instrument or mute selections and unsupported transfer policy fail explicitly',()=>{
+ for(const instrumentOverrides of [null,[],{absent:'sine'},{'机 器/一':'source'},{'机 器/一':'piano'},{'机 器/一':0},Object.create({'机 器/一':'reed'}),Object.defineProperty({},'机 器/一',{get:()=>{throw Error('Do not invoke a selection getter');},enumerable:true})])assert.throws(()=>build(fixture(),{instrumentOverrides}),{code:'invalid_canonical_audio_plan'});
+ for(const mutedPartIds of [null,'机器二',['absent'],['机器二','机器二'],Array(1)])assert.throws(()=>build(fixture(),{mutedPartIds}),{code:'invalid_canonical_audio_plan'});
+ const packed=createCanonicalAudioTransfer(build(fixture(),{instrumentOverrides:{'机 器/一':'reed'}}));
+ for(const synthesisPolicyId of [undefined,null,'unknown'])assert.throws(()=>openCanonicalAudioTransfer({...packed.wire,synthesisPolicyId},48000),{code:'invalid_canonical_audio_plan'});
+ const noInstruments={...packed.wire,buffers:{...packed.wire.buffers}};delete noInstruments.buffers.instruments;assert.throws(()=>openCanonicalAudioTransfer(noInstruments,48000));
+ for(const field of ['timbres','triangles','instrumentOverrides'])assert.throws(()=>openCanonicalAudioTransfer({...packed.wire,[field]:new Uint8Array(packed.wire.count)},48000),{code:'invalid_canonical_audio_plan'});
+});

@@ -102,3 +102,15 @@ test('canceling between preparation and the convenience start continuation fence
  basic.prepare=options=>prepare(options).then(result=>{queueMicrotask(()=>basic.stop());return result;});
  try{assert.equal(await h.start(),null);assert.equal(basic.running,false);assert.equal(h.nodes.at(-1).connected,false);}finally{h.close();}
 });
+
+test('per-part colors reach the worklet through convenience start and reset on source preparation',async()=>{
+ const h=harness(),ids=h.song.runtime.parts.map(part=>part.id);
+ try{
+  await h.start({instrumentOverrides:{[ids[0]]:'triangle',[ids[1]]:'reed'}});
+  assert.deepEqual([...core(h).plan.timbres],h.player.basicKeys.plan.timbres);assert.ok(core(h).plan.timbres.includes(2));assert.ok(core(h).plan.timbres.includes(3));
+  assert.equal(core(h).plan.sourceSha256,h.song.score.source.sha256);assert.equal(core(h).plan.policyId,BASIC_KEY_RENDITION);
+  await h.player.prepare({context:h.context,output:h.output,acceptedPolicyId:BASIC_KEY_RENDITION,instrumentOverrides:{}});
+  assert.equal(core(h).plan.timbres,undefined);
+  await assert.rejects(h.start({instrumentOverrides:{[ids[0]]:'piano'}}),{code:'invalid_instrument_override'});assert.equal(h.player.basicKeys.running,false);
+ }finally{h.close();}
+});

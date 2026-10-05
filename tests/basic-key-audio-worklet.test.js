@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {BasicKeyAudioCore} from '../web/basic-key-audio-core.js';
-import {BASIC_KEY_AUDIO_PROTOCOL, BASIC_KEY_AUDIO_LIMITS, basicKeyGateFrames, buildBasicKeyAudioPlan, validateBasicKeyAudioPlan, encodeBasicKeyAudioPlan, decodeBasicKeyAudioPlan, createBasicKeyAudioTransfer} from '../web/basic-key-audio-plan.js';
+import {BASIC_KEY_AUDIO_PROTOCOL, BASIC_KEY_AUDIO_LIMITS, BASIC_KEY_TIMBRE_PROFILE, basicKeyGateFrames, buildBasicKeyAudioPlan, validateBasicKeyAudioPlan, encodeBasicKeyAudioPlan, decodeBasicKeyAudioPlan, createBasicKeyAudioTransfer} from '../web/basic-key-audio-plan.js';
 import {cleanErrorText} from '../web/clean-song-text.js';
 import {BasicKeyAudioReceiver} from '../web/basic-key-audio-receiver.js';
 import {basicKeySong} from './basic-key-rendition-fixtures.js';
@@ -21,6 +22,15 @@ function plan(rows, {rate = sampleRate, duration = Math.max(0, ...rows.map(row =
 }
 function transferWire(program) { return createBasicKeyAudioTransfer(program).wire; }
 function finishCorePreparation(core, frame = 0) { while (core.state === 'preparing') { core.process([new Float32Array(128)], frame); frame += 128; } return frame; }
+function sourcePcm(program) {
+  const core = new BasicKeyAudioCore(program.sampleRate);
+  core.handleMessage({type: 'prepare', generation: 1, wire: transferWire(program), positionFrame: 0}, 0);
+  const frame = finishCorePreparation(core), anchor = frame + 128;
+  assert.equal(core.state, 'ready'); core.handleMessage({type: 'start', generation: 1, anchorFrame: anchor}, frame);
+  core.process([new Float32Array(128)], frame);
+  const pcm = new Float32Array(program.durationFrames); core.process([pcm], anchor);
+  assert.ok(pcm.every(Number.isFinite)); return {core, pcm};
+}
 function coreRun(program, {anchor = 2400, position = 0, blockSize = 128, trace = []} = {}) {
   const messages = [], core = new BasicKeyAudioCore(program.sampleRate, {emit: message => messages.push(message), trace: event => trace.push(event)});
   core.handleMessage({type: 'prepare', generation: 1, wire: transferWire(program), positionFrame: position}, 0);
@@ -359,8 +369,9 @@ test('a module load that never resolves has a bounded lifecycle deadline before 
 
 test('maximum plan preparation is silent and bounded per quantum without render-thread JSON, sort or buffer copies', () => {
   const count = BASIC_KEY_AUDIO_LIMITS.maxNotes;
-  for (const rate of [8000, 48000, 384000]) {
-    const program = plan(Array.from({length: count}, (_, index) => [index * 2, index * 2 + 1, 60, 80, 0]), {rate, duration: count * 2});
+  for (const [rate, color] of [[8000, false], [48000, false], [384000, false], [8000, true]]) {
+    const sourcePlan = plan(Array.from({length: count}, (_, index) => [index * 2, index * 2 + 1, 60, 80, 0]), {rate, duration: count * 2});
+    const program = color ? validateBasicKeyAudioPlan({...sourcePlan, timbreProfile: BASIC_KEY_TIMBRE_PROFILE, timbres: Array(count).fill(3)}) : sourcePlan;
     const packed = createBasicKeyAudioTransfer(program), wire = structuredClone(packed.wire, {transfer: packed.transfer});
     assert.ok(packed.transfer.every(buffer => buffer.byteLength === 0), 'Ownership was transferred away from the host');
     const messages = [], core = new BasicKeyAudioCore(rate, {emit: value => messages.push(value)}), startsBuffer = wire.buffers.starts, ledgerBuffer = wire.buffers.actualStarts;
@@ -452,4 +463,85 @@ test('receiver initialization failure releases the partial graph and port while 
  const h=basicKeyAudioHarness(),original=new Error('Output connection failed');let disconnected=0;
  h.context.createGain=()=>({gain:{value:0},connect(){throw original;},disconnect(){disconnected++;}});
  await assert.rejects(BasicKeyAudioReceiver.create(h.context,h.output,{nodeFactory:h.nodeFactory}),failure=>{assert.equal(failure.details.phase,'receiver-initialization');assert.equal(failure.cause,original);return true;});assert.equal(disconnected,1);assert.equal(h.nodes[0].connected,false);assert.equal(h.nodes[0].closed,true);
+});
+
+test('per-part synthetic colors preserve all source gates, roles and source-default PCM', () => {
+  const song = basicKeySong(), before = JSON.stringify(song), defaults = buildBasicKeyAudioPlan(song, {sampleRate});
+  assert.deepEqual(buildBasicKeyAudioPlan(song, {sampleRate, instrumentOverrides: {}}), defaults);
+  assert.equal(defaults.timbreProfile, undefined); assert.equal(transferWire(defaults).buffers.timbres, undefined);
+  const melodic = song.compilation.timeline.notes.find(note => note.midi === 64).part_id;
+  for (const [instrument, code] of [['sine', 1], ['triangle', 2], ['reed', 3]]) {
+    const overrides = {[melodic]: instrument}, modified = buildBasicKeyAudioPlan(song, {sampleRate, instrumentOverrides: overrides});
+    overrides[melodic] = 'bad'; assert.ok(Object.isFrozen(modified.timbres));
+    assert.equal(modified.timbreProfile, BASIC_KEY_TIMBRE_PROFILE);
+    assert.deepEqual(modified.notes, defaults.notes); assert.equal(modified.sourceSha256, defaults.sourceSha256); assert.equal(modified.policyId, defaults.policyId);
+    assert.deepEqual(modified.timbres, defaults.notes.map(row => song.compilation.timeline.notes.find(note => note.id === row[0]).part_id === melodic ? code : 0));
+    const baseline = sourcePcm(defaults).pcm, changed = sourcePcm(modified).pcm;
+    if (instrument === 'sine') assert.deepEqual(changed, baseline); else assert.notDeepEqual(changed, baseline);
+    for (const position of [0, -200, 12000]) {
+      const expected = coreRun(defaults, {position}), actual = coreRun(modified, {position});
+      assert.deepEqual(actual.ledger, expected.ledger); assert.deepEqual(actual.trace, expected.trace);
+    }
+    const muted = buildBasicKeyAudioPlan(song, {sampleRate, mutedParts: [melodic], instrumentOverrides: {[melodic]: instrument}});
+    assert.deepEqual(muted, buildBasicKeyAudioPlan(song, {sampleRate, mutedParts: [melodic]}));
+  }
+  assert.equal(JSON.stringify(song), before);
+  // Captured from the pre-override renderer at the same source gate and phase.
+  for (const [role, digest] of [[0, 'f2aaf9b2427a7a79c19a42391b8fee9cad2f23bffd9922f3f8eec69e7859cd38'], [1, 'cb9e6574eef96ae8ca7e4d707c37c37d25b30bd30b56ae0a0fae056bbe780604']]) {
+    const {pcm} = sourcePcm(plan([[0, 1000, 60, 90, role]]));
+    assert.equal(createHash('sha256').update(Buffer.from(pcm.buffer)).digest('hex'), digest);
+  }
+});
+
+test('percussion accepts tonal colors without changing its role, decay envelope or gate ledger', () => {
+  const original = plan([[0, 1000, 60, 90, 1]]), baseline = sourcePcm(original);
+  for (const code of [1, 2, 3]) {
+    const modified = validateBasicKeyAudioPlan({...original, timbreProfile: BASIC_KEY_TIMBRE_PROFILE, timbres: [code]});
+    const {core, pcm} = sourcePcm(modified), voice = core.voiceSlots.find(v => v.note === 0);
+    assert.notDeepEqual(pcm, baseline.pcm); assert.equal(voice.drum, true); assert.equal(voice.timbre, code);
+    assert.deepEqual(coreRun(modified).ledger, coreRun(original).ledger);
+    assert.ok(pcm.every(value => Math.abs(value) <= voice.peak));
+  }
+});
+
+test('finite additive colors exclude Nyquist harmonics and use normalized bounded amplitude', () => {
+  const original = plan([[0, 1000, 81, 90, 0]], {rate: 8800});
+  for (const [code, coefficients] of [[2, [0, 1, 0, -1/9, 0, 1/25, 0, -1/49, 0, 1/81]], [3, [0, 1, .55, .4, .2, .15, .1, .08, .05, .03]]]) {
+    const {core, pcm} = sourcePcm(validateBasicKeyAudioPlan({...original, timbreProfile: BASIC_KEY_TIMBRE_PROFILE, timbres: [code]}));
+    const voice = core.voiceSlots.find(v => v.note === 0); assert.equal(voice.timbreHarmonicLimit, 4, 'The fifth harmonic is exactly Nyquist and must be omitted');
+    let phase = voice.step/2; const scale = 1/coefficients.slice(1, 5).reduce((sum, amplitude) => sum + Math.abs(amplitude), 0);
+    for (let frame = 0; frame < pcm.length; frame++) {
+      const age = frame + .5, attack = .004*8800, release = .02*8800;
+      const level = age < attack ? voice.peak*age/attack : age < 1000-release ? voice.peak : voice.peak*(1000-age)/release;
+      const expected = coefficients.slice(1, 5).reduce((sum, amplitude, h) => sum + amplitude*Math.sin((h+1)*phase), 0)*scale*level;
+      assert.ok(Math.abs(pcm[frame]-expected) < 1e-8); phase += voice.step; if (phase >= 2*Math.PI) phase -= 2*Math.PI;
+    }
+  }
+});
+
+test('unknown parts, unsupported colors and malformed selections fail before transfer', () => {
+  const song = basicKeySong(), id = song.runtime.parts[0].id;
+  for (const instrumentOverrides of [null, [], 'sine', {[id]: 'piano'}, {[id]: 'source'}, {[id]: undefined}, {missing: 'sine'}, {[Symbol('part')]: 'sine'}, Object.create({[id]: 'sine'})]) {
+    assert.throws(() => buildBasicKeyAudioPlan(song, {sampleRate, mutedParts: [id], instrumentOverrides}), {code: 'invalid_instrument_override'});
+  }
+  const original = plan([[0, 1000, 60, 90, 0]]);
+  for (const timbres of [[], [4], [-1], [1.5], [NaN], [undefined], Array(1)]) assert.throws(() => validateBasicKeyAudioPlan({...original, timbreProfile: BASIC_KEY_TIMBRE_PROFILE, timbres}), {code: 'invalid_audio_plan'});
+  assert.throws(() => validateBasicKeyAudioPlan({...original, timbres: [1]}), {code: 'invalid_audio_plan'});
+});
+
+test('worklet rejects missing color profiles, unsupported codes and supported-code or gate tampering before sound', () => {
+  const original = validateBasicKeyAudioPlan({...plan([[0, 1000, 60, 90, 0]]), timbreProfile: BASIC_KEY_TIMBRE_PROFILE, timbres: [2]});
+  for (const [change, code] of [
+    [wire => { new Uint8Array(wire.buffers.timbres)[0] = 4; }, 'invalid_audio_plan'],
+    [wire => { new Uint8Array(wire.buffers.timbres)[0] = 3; }, 'audio_timbre_fingerprint'],
+    [wire => { new Uint8Array(wire.buffers.keys)[0] = 61; }, 'audio_timbre_fingerprint'],
+    [wire => { delete wire.timbreProfile; }, 'invalid_audio_plan'],
+    [wire => { delete wire.timbreFingerprint; }, 'invalid_audio_plan'],
+    [wire => { delete wire.buffers.timbres; }, 'invalid_audio_plan'],
+    [wire => { wire.buffers.timbres = wire.buffers.keys; }, 'invalid_audio_plan']
+  ]) {
+    const wire = transferWire(original), messages = [], core = new BasicKeyAudioCore(sampleRate, {emit: message => messages.push(message)}); change(wire);
+    core.handleMessage({type: 'prepare', generation: 1, positionFrame: 0, wire}, 0); finishCorePreparation(core);
+    assert.equal(core.state, 'error'); assert.equal(messages.at(-1).code, code); assert.equal(core.startedCount, 0); assert.equal(messages.some(message => message.type === 'ready'), false);
+  }
 });

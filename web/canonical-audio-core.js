@@ -1,7 +1,12 @@
 import {BasicKeyAudioCore} from './basic-key-audio-core.js';
 import {BasicKeyAudioError} from './basic-key-audio-plan.js';
-import {CANONICAL_AUDIO_LIMITS as LIMITS,openCanonicalAudioTransfer,canonicalPlanHasher} from './canonical-audio-plan.js';
+import {CANONICAL_AUDIO_LIMITS as LIMITS,CANONICAL_SYNTHETIC_INSTRUMENTS,openCanonicalAudioTransfer,canonicalPlanHasher} from './canonical-audio-plan.js';
 const int=(n,a,b)=>Number.isSafeInteger(n)&&n>=a&&n<=b;
+const TAU=2*Math.PI;
+// Basic synthetic colors, not acoustic instrument models. Harmonics above
+// Nyquist are excluded for each pitch; nine terms bound sample-loop work.
+const TRIANGLE=Object.freeze([0,1,0,-1/9,0,1/25,0,-1/49,0,1/81]);
+const REED=Object.freeze([0,1,.55,.4,.2,.15,.1,.08,.05,.03]);
 const rangeDuration=p=>p.initialCountInFrames+p.rangeEndFrame-p.initialPositionFrame+(p.maxPasses-1)*(p.countInFrames+p.rangeEndFrame-p.rangeStartFrame);
 const reject=(code,message)=>{throw new BasicKeyAudioError(code,message);};
 const profile=Object.freeze({
@@ -14,7 +19,7 @@ const profile=Object.freeze({
   eligibleGate:(p,i,position)=>p.rangeMode?p.initialPositionFrame<p.rangeEndFrame&&p.ends[i]>p.initialPositionFrame:p.ends[i]>position,
   beginValidation(p){const h=canonicalPlanHasher(p);h.rangeCount=0;h.firstCount=0;return h;},
   audibleGate:(p,i)=>!p.rangeMode||p.ends[i]>p.rangeStartFrame&&p.starts[i]<p.rangeEndFrame,
-  validateRow(p,i,h){h.gate(p.occurrences[i],p.starts[i],p.ends[i],p.keys[i],p.velocities[i]);if(p.ends[i]>p.rangeStartFrame&&p.starts[i]<p.rangeEndFrame){if(p.rangeMode)p.rangeOrder[h.rangeCount]=i;h.rangeCount++;if(p.initialPositionFrame<p.rangeEndFrame&&p.ends[i]>p.initialPositionFrame)h.firstCount++;}},
+  validateRow(p,i,h){h.gate(p.occurrences[i],p.starts[i],p.ends[i],p.keys[i],p.velocities[i]);if(p.instruments){if(!int(p.instruments[i],0,CANONICAL_SYNTHETIC_INSTRUMENTS.length-1))reject('invalid_canonical_audio_plan','A transferred synthetic instrument is unsupported.');h.number(p.instruments[i]);}if(p.ends[i]>p.rangeStartFrame&&p.starts[i]<p.rangeEndFrame){if(p.rangeMode)p.rangeOrder[h.rangeCount]=i;h.rangeCount++;if(p.initialPositionFrame<p.rangeEndFrame&&p.ends[i]>p.initialPositionFrame)h.firstCount++;}},
   finishValidation(p,h){if(h.hex()!==p.planFingerprint||h.rangeCount!==p.rangeGateCount||h.firstCount!==p.firstGateCount)reject('canonical_audio_fingerprint','Transferred gates do not match the prepared frame-plan fingerprint.');},
 });
 
@@ -23,7 +28,7 @@ const profile=Object.freeze({
  * Held voices keep oscillator phase and envelope age across a pause. No timer,
  * renderer callback, input event or scoring callback can schedule a note here. */
 export class CanonicalAudioCore extends BasicKeyAudioCore {
-  constructor(sampleRate,options={}){super(sampleRate,{...options,profile});this.pauseCount=0;this.totalPausedFrames=0;this.pauseSpans=new Float64Array(LIMITS.maxPauses*2);for(const voice of this.voiceSlots)voice.recordIndex=-1;}
+  constructor(sampleRate,options={}){super(sampleRate,{...options,profile});this.pauseCount=0;this.totalPausedFrames=0;this.pauseSpans=new Float64Array(LIMITS.maxPauses*2);for(const voice of this.voiceSlots){voice.recordIndex=-1;voice.syntheticInstrument=0;voice.harmonicLimit=1;voice.harmonicScale=1;}}
   snapshot(frame){return {...super.snapshot(frame),sourceFingerprint:this.plan?.sourceFingerprint??null,compiledFingerprint:this.plan?.compiledFingerprint??null,selectionFingerprint:this.plan?.selectionFingerprint??null,planFingerprint:this.plan?.planFingerprint??null,sourcePositionFrame:this.sourcePosition(frame),pauseCount:this.pauseCount,totalPausedFrames:this.totalPausedFrames,rangeMode:this.plan?.rangeMode??false,rangePolicyId:this.plan?.rangePolicyId??null,rangeStartFrame:this.plan?.rangeStartFrame??0,rangeEndFrame:this.plan?.rangeEndFrame??0,countInFrames:this.plan?.countInFrames??0,rangeGateCount:this.plan?.rangeGateCount??0,firstGateCount:this.plan?.firstGateCount??0,initialPositionFrame:this.plan?.initialPositionFrame??0,initialCountInFrames:this.plan?.initialCountInFrames??0,requestedPasses:this.plan?.requestedPasses??1,maxPasses:this.plan?.maxPasses??1,budgetLimited:(this.plan?.maxPasses??1)<(this.plan?.requestedPasses??1),recordCapacity:this.plan?.recordCapacity??0,passIndex:this.state==='paused'||this.resumeFrame!=null&&frame<this.resumeFrame?this.pausedPassIndex??-1:this.plan?.rangeMode&&this.anchorFrame!=null?this.rangeClock(frame).passIndex:this.rangePassIndex??-1};}
   sourcePosition(frame){if(this.state==='paused'||this.resumeFrame!=null&&frame<this.resumeFrame)return this.pausedPositionFrame;if(this.anchorFrame==null)return this.positionFrame??null;
     if(this.plan?.rangeMode)return this.rangeClock(frame).position;
@@ -121,11 +126,28 @@ export class CanonicalAudioCore extends BasicKeyAudioCore {
   }
   render(channels,firstFrame){return this.plan?.rangeMode&&this.state==='running'?this.processRange(channels,firstFrame):super.process(channels,firstFrame);}
   attack(index,frame){
-    if(!this.plan.rangeMode){super.attack(index,frame);return;}
-    const record=this.startedCount,p=this.plan;if(record>=p.recordCapacity)reject('canonical_audio_budget','The complete pass ledger is exhausted.');
+    const record=this.startedCount,p=this.plan;if(p.rangeMode&&record>=p.recordCapacity)reject('canonical_audio_budget','The complete pass ledger is exhausted.');
     super.attack(index,frame);const voice=this.voiceSlots[this.activeSlots[this.activeCount-1]];
+    voice.syntheticInstrument=p.instruments?.[index]??0;
+    if(voice.syntheticInstrument){
+      const harmonics=voice.syntheticInstrument===1?TRIANGLE:REED;voice.harmonicLimit=Math.min(9,Math.ceil(Math.PI/voice.step)-1);
+      let gain=0;for(let h=1;h<=voice.harmonicLimit;h++)gain+=Math.abs(harmonics[h]);voice.harmonicScale=1/gain;
+    }
+    if(!p.rangeMode)return;
     voice.end=this.rangePassAnchor+Math.min(p.ends[index],p.rangeEndFrame)-(this.rangePassIndex===0?p.initialPositionFrame:p.rangeStartFrame);voice.recordIndex=record;
     p.loopStarts[record]=frame;p.loopEnds[record]=-1;
+  }
+  sample(voice,frame){
+    if(!voice.syntheticInstrument)return super.sample(voice,frame);
+    // Match the sine reference's midpoint phase and gate-only envelope. Pause
+    // freezes this phase; loops rearticulate through the same attack method.
+    const length=voice.end-voice.start,age=frame-voice.start+.5,attack=Math.min(.004*this.sampleRate,length/3),release=Math.min(.02*this.sampleRate,length/3);
+    const level=age<attack?voice.peak*age/attack:age<length-release?voice.peak:voice.peak*(length-age)/release;
+    const harmonics=voice.syntheticInstrument===1?TRIANGLE:REED,multiple=2*Math.cos(voice.phase);let previous=0,current=Math.sin(voice.phase),value=current;
+    // The sine recurrence bounds trig work to two calls per voice/sample.
+    for(let h=2;h<=voice.harmonicLimit;h++){const next=multiple*current-previous;previous=current;current=next;value+=harmonics[h]*current;}
+    voice.phase+=voice.step;if(voice.phase>=TAU)voice.phase-=TAU;
+    return value*voice.harmonicScale*level;
   }
   finishVoice(activeIndex,frame,reason){const voice=this.voiceSlots[this.activeSlots[activeIndex]];if(this.plan?.rangeMode)this.plan.loopEnds[voice.recordIndex]=frame;super.finishVoice(activeIndex,frame,reason);}
   processRange(channels,firstFrame){
