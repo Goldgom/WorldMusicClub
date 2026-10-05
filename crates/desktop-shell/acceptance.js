@@ -1,6 +1,9 @@
 /* Hosted Windows only: exercise unchanged app controls, actual native files, and real profile storage. */
 (() => {
   const phase = globalThis.__WMH_ACCEPTANCE_PHASE__;
+  // Seed: 35 existing file/Free actions + 10 bounded scored-take actions +
+  // 27 reference-listening actions. Other generic phases retain their limit.
+  const actionLimit = phase === 'seed' ? 72 : 64;
   const $ = id => document.getElementById(id);
   const errors = [], requests = [];
   const midi = {apiAvailable:typeof navigator.requestMIDIAccess==='function',calls:0,outcome:'not-requested'};
@@ -46,6 +49,7 @@
     return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(byte=>byte.toString(16).padStart(2,'0')).join('');
   }
   async function native(kind,node,file) {
+    assert(sequence<actionLimit,'Native acceptance action count exceeded');
     node.scrollIntoView({block:'center',inline:'center'}); node.focus(); await delay(150);
     const bounds=node.getBoundingClientRect();
     assert(bounds.width>0 && bounds.height>0,'Native target is not visible');

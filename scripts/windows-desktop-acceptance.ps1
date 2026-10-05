@@ -511,7 +511,7 @@ if($Scenario -eq 'library-catalog') {
       $actionFile=Join-Path $OutputDirectory "action-$phase-$sequence.json"
       $action=Read-AcceptanceJsonSnapshot -Path $actionFile -MaximumBytes 64KB -AllowPending
       if($null -ne $action) {
-        $actionLimit=if($phase -in @('vsq-seed','vsq-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart','canonical-practice-seed')){80}elseif($Scenario -in @('performance-song','pitch-bend','bulk-import','song-folder')){75}else{64}
+        $actionLimit=if($phase -ceq 'seed'){72}elseif($phase -in @('vsq-seed','vsq-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart','canonical-practice-seed')){80}elseif($Scenario -in @('performance-song','pitch-bend','bulk-import','song-folder')){75}else{64}
         if($action.sequence -ne $sequence -or $sequence -gt $actionLimit){throw 'Out-of-order or over-limit native action'}
         $catalogReportedViewport=@($action.width,$action.height)
         $result=@{ok=$false}

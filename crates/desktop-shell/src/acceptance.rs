@@ -658,7 +658,11 @@ pub fn receive_report(
 // Only these existing scenarios need extra visible Mod setup actions. The
 // native action vocabulary, owned coordinates and payload limits stay closed.
 fn action_limit(phase: &str) -> u64 {
-    if VSQ_PHASES.contains(&phase)
+    if phase == "seed" {
+        // 35 import/navigation/Free actions + at most 10 scored-take setup
+        // actions + 27 reference-listening actions, including visible Mods.
+        72
+    } else if VSQ_PHASES.contains(&phase)
         || BASIC_KEY_PHASES.contains(&phase)
         || AUTHORING_PHASES.contains(&phase)
         || VSQ_AUTHORING_PHASES.contains(&phase)
@@ -2519,7 +2523,7 @@ mod tests {
         for (key, value) in [
             ("body", json!("score content must not enter a trace")),
             ("stage", json!("unknown")),
-            ("sequence", json!(65)),
+            ("sequence", json!(action_limit("seed") + 1)),
             ("path", json!("/api/".to_owned() + &"x".repeat(128))),
             ("status", json!(600)),
         ] {
@@ -2625,7 +2629,10 @@ mod tests {
             ("canonical-practice-controls", 64),
             ("complete-practice-seed", 64),
             ("catalog-seed", 64),
-            ("seed", 64),
+            ("seed", 72),
+            ("restart", 64),
+            ("close-active", 64),
+            ("reopen", 64),
             ("unknown-mod-phase", 64),
         ] {
             assert_eq!(action_limit(phase), limit);
@@ -2640,6 +2647,37 @@ mod tests {
             assert!(valid_progress_for_phase(&progress, phase));
             progress["sequence"] = json!(limit + 1);
             assert!(!valid_progress_for_phase(&progress, phase));
+        }
+    }
+    #[test]
+    fn generic_seed_action_and_result_routes_keep_the_same_closed_boundary() {
+        let evidence = Evidence::new();
+        let run = Acceptance::new(evidence.0.clone(), "seed").unwrap();
+        for (sequence, status) in [(65, 200), (72, 200), (73, 400)] {
+            let action = json!({"version":1,"sequence":sequence,"kind":"click","x":122.5,"y":550.6,"width":1024,"height":689});
+            let request = Request::builder()
+                .method("POST")
+                .uri("/__desktop_smoke/action")
+                .body(serde_json::to_vec(&action).unwrap())
+                .unwrap();
+            assert_eq!(run.handle(&request).unwrap().status(), status);
+            let result = Request::builder()
+                .uri(format!("/__desktop_smoke/result/{sequence}"))
+                .body(Vec::new())
+                .unwrap();
+            assert_eq!(
+                run.handle(&result).unwrap().status(),
+                if status == 200 { 404 } else { 400 }
+            );
+        }
+        for (field, value) in [
+            ("kind", json!("set-mod")),
+            ("x", json!(20000)),
+            ("keys", json!([17, 65])),
+        ] {
+            let mut action = json!({"version":1,"sequence":72,"kind":"click","x":1,"y":1,"width":1024,"height":689});
+            action[field] = value;
+            assert!(!valid_action_for_phase(&action, "seed"));
         }
     }
     #[test]

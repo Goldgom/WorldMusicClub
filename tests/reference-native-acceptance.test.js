@@ -23,6 +23,42 @@ test('native chooser fixture is exactly the new original three-track source with
   assert.match(contract,/\.\.\/original-reference-overlap\.mid/,'Traversal is explicitly rejected by hosted pure path tests');
 });
 
+test('generic seed budget derives from its finite visible Mod and reference actions and stays phase-scoped',async()=>{
+  const [renderer,rust,runner]=await Promise.all(['../crates/desktop-shell/acceptance.js','../crates/desktop-shell/src/acceptance.rs','../scripts/windows-desktop-acceptance.ps1'].map(path=>readFile(new URL(path,import.meta.url),'utf8')));
+  const count=(text,call)=>text.split(call).length-1;
+  const seed=renderer.slice(renderer.indexOf("if(phase==='seed') {"),renderer.indexOf('\n      } else {'));
+  const scored=source.slice(source.indexOf('async function prepareNativeReferenceScoredTake'),source.indexOf('async function checkNativeReferenceListening'));
+  const reference=source.slice(source.indexOf('async function checkNativeReferenceListening'),source.indexOf('// Shared actual AudioWorklet'));
+  // Seed's four source picks + two cancellations + malformed/canonical picks;
+  // its three passes over four dialog types; one four-action Listen Mod entry.
+  assert.match(seed,/for\(const file of \['original-duet\.mxl','midi-original-ppq\.mid','jianpu-original-steps\.jianpu','original-duet\.musicxml'\]\)await importScore/);
+  assert.match(seed,/for\(let i=0;i<2;i\+\+\)await importScore/);
+  assert.match(renderer,/for\(let pass=0;pass<3;pass\+\+\)/);
+  assert.match(renderer,/\['settings','score-tools','results','import-tools'\]/);
+  assert.equal(count(seed,'await createAcceptanceSongMod('),1);assert.match(seed,/\.start\('none'\)/);
+  assert.equal(count(seed,'await importScore('),4);assert.equal(count(seed,'await navigation()'),1);
+  const beforeReference=count(seed,'await native(')+count(seed,'await download(')+4+2+1+1+3*4+4;
+  assert.equal(beforeReference,35);
+  // Exclude setupClick's wrapper call; include each optional setup branch once.
+  const scoredMaximum=count(scored,'await setupClick(')+count(scored,'await native(')-1;
+  assert.equal(scoredMaximum,10);
+  // play/open and score/take-download wrappers each dispatch exactly one action.
+  const referenceActions=count(reference,'await native(')-2+count(reference,'await play(')+count(reference,'await open(')+count(reference,'await download(')-2+count(reference,'await scoreDownload(')+count(reference,'await takeDownload(');
+  assert.equal(referenceActions,27);
+  const maximum=beforeReference+scoredMaximum+referenceActions;assert.equal(maximum,72);
+  const limit=renderer.match(/const actionLimit = ([^;]+);/)[1];
+  for(const phase of ['seed','restart','close-active','reopen','unknown'])assert.equal(runInNewContext(limit,{phase}),phase==='seed'?maximum:64);
+  assert.match(renderer,/assert\(sequence<actionLimit,'Native acceptance action count exceeded'\)/);
+  assert.ok(renderer.indexOf('assert(sequence<actionLimit')<renderer.indexOf('sequence:++sequence'));
+  assert.match(rust,/if phase == "seed" \{[\s\S]*?\n\s*72\n\s*\} else if VSQ_PHASES/);
+  assert.match(runner,/\$actionLimit=if\(\$phase -ceq 'seed'\)\{72\}elseif/);
+  // Run 37375067601 completed the first 64 actions. Without the optional Sound
+  // setup action, its next fixed action is reference-sound and its total is 71.
+  const referenceOrder=['beforeScore','beforeTake','reference-listening-entry','reference-choose-file','reference-download','reference-policy-accept','reference-sound','reference-play','reference-source-name','reference-pause','reference-play','reference-choose-file','reference-stop','reference-play','reference-stop','reference-mute-1','reference-play','reference-stop','reference-mute-1','reference-play','reference-sound','reference-sound','reference-play','reference-close','reference-listening-entry','afterScore','afterTake'];
+  assert.equal(referenceOrder.length,referenceActions);assert.equal(referenceOrder[65-(beforeReference+scoredMaximum-1)-1],'reference-sound');
+  assert.equal(beforeReference+scoredMaximum-1+referenceOrder.length,71);
+});
+
 function audioFixture(){
   class NativeSource {
     constructor(context,kind){this.context=context;this.kind=kind;this.calls=[];}
