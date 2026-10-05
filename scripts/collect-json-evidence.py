@@ -9,7 +9,7 @@ import stat
 
 MAX_BYTES = 23 * 1024 * 1024
 MAX_FILES = 4096
-EXCLUDED = {"webview-profiles", "webview-catalog-profile"}
+EXCLUDED = {"webview-profile", "webview-profiles", "webview-catalog-profile"}
 
 
 def collect(temp, output, roots, source_sha, budget=MAX_BYTES):

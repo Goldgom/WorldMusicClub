@@ -31,9 +31,13 @@ GROUPS = {
 JOBS = {"browser": "bulk-import-browser", "windows": "native-feature-acceptance"}
 
 
+def groups_for(platform):
+    return {**GROUPS, "desktop-acceptance": "desktop-acceptance"} if platform == "windows" else GROUPS
+
+
 def diagnostic_pairs(platform):
     steps = WORKFLOW["jobs"][JOBS[platform]]["steps"]
-    for group, native_root in GROUPS.items():
+    for group, native_root in groups_for(platform).items():
         output = f"{group}-{platform}-json"
         upload = next(step for step in steps
                       if step.get("with", {}).get("name") == output + "-${{ github.sha }}")
@@ -106,7 +110,7 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
             # via the runner's implicit success() guard. Failure still fails the job.
             self.assertEqual(steps[-len(diagnostics):], diagnostics)
             self.assertEqual(sum("scripts/collect-json-evidence.py" in step.get("run", "")
-                                 for step in steps), len(GROUPS))
+                                 for step in steps), len(groups_for(platform)))
 
     def test_every_group_retains_exact_failure_json_and_bound_inventory(self):
         for platform in JOBS:
@@ -118,6 +122,7 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
                     for path, data in reports.items():
                         self.put(evidence, path, data)
                     for path in ["failure.png", "driver.exe", "server.log",
+                                 "webview-profile/Preferences.json",
                                  "nested/webview-profiles/Preferences.json",
                                  "webview-catalog-profile/Preferences.json"]:
                         self.put(evidence, path, b"excluded")
@@ -140,6 +145,31 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
                     files = [path for path in directory.rglob("*") if path.is_file()]
                     self.assertEqual(len(files), len(expected) + 1)
                     self.assertLessEqual(sum(path.stat().st_size for path in files), MAX_BYTES)
+
+    def test_generic_windows_seed_and_action_failure_stays_exact_without_a_browser_group(self):
+        self.assertNotIn("desktop-acceptance", {pair[0] for pair in diagnostic_pairs("browser")})
+        _, root, output, collect, _ = next(pair for pair in diagnostic_pairs("windows")
+                                         if pair[0] == "desktop-acceptance")
+        self.assertEqual(root, "desktop-acceptance")
+        evidence = self.evidence_root("windows", root)
+        reports = {
+            "renderer-seed.json": b'{"phase":"seed","ok":false,"error":"Invalid acceptance action"}\n',
+            "action-seed-1.json": b'{"sequence":1,"type":"click","target":"start"}\n',
+            "result-seed-1.json": b'{"ok":false,"error":"Invalid acceptance action"}\n',
+            "native-acceptance.json": b'{"ok":false,"failure_details":{"phase":"seed"}}\n',
+        }
+        for path, data in reports.items():
+            self.put(evidence, path, data)
+        self.put(evidence, "webview-profile/Default/Preferences.json", b'{"not_evidence":true}')
+        completed = self.execute(collect)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        directory = self.temp / output
+        manifest = json.loads((directory / "diagnostic-inventory.json").read_bytes())
+        self.assertEqual({row["path"] for row in manifest["files"]},
+                         {root + "/" + path for path in reports})
+        for path, data in reports.items():
+            self.assertEqual((directory / root / path).read_bytes(), data)
+        self.assertFalse((directory / root / "webview-profile").exists())
 
     def test_absent_evidence_is_explicitly_an_empty_subset_not_acceptance(self):
         for platform in JOBS:
