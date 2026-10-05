@@ -1,4 +1,5 @@
 import {basicKeyAudioHarness} from './basic-key-audio-harness.js';
+import {BasicKeyAudioReceiver} from '../web/basic-key-audio-receiver.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -213,11 +214,33 @@ for(const action of ['pause','reset','mute','blur','hidden','settings','navigati
  }finally{release?.();await app.close();}
 });
 
-for(const state of ['suspended','closed'])test(`VSQ ${state} audio cancels and cannot auto-resume`,async()=>{
- const {app}=await appFixture();try{
-  await choose(app);await start(app,'practice');app.setAudioState(state);await app.tick();assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');assert.match(app.$('notice-message').textContent,/clean_clock_unavailable/);
-  app.setAudioState('running');await app.tick();assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');
- }finally{await app.close();}
+for(const state of ['suspended','closed'])test(`VSQ source-only ${state} audio reports its own clock failure`,async()=>{
+ const h=playerHarness(VsqPracticePlayer);try{
+  await h.start();const node=h.nodes.at(-1);h.setState(state);await Promise.resolve();await Promise.resolve();
+  assert.deepEqual(h.errors.map(error=>error.code),['clean_clock_unavailable']);assert.equal(node.connected,false);assert.equal(node.core.state,'canceled');
+  const count=h.nodes.length;h.setState('running');await Promise.resolve();assert.equal(h.nodes.length,count);assert.equal(node.connected,false);assert.equal(node.core.state,'canceled');
+ }finally{h.close();}
+});
+
+for(const state of ['suspended','closed'])test(`VSQ ${state} live audio cancels the source first and cannot auto-resume`,async()=>{
+ const {app}=await appFixture(),sourceFailures=[],originalFail=BasicKeyAudioReceiver.prototype.fail;
+ BasicKeyAudioReceiver.prototype.fail=function(error){sourceFailures.push(error.code);return originalFail.call(this,error);};
+ try{
+  await choose(app);await start(app,'practice');const source=connectedReceivers(app)[0],live=app.audioNodes.find(node=>node.kind==='live-audio-worklet'),sourcePlan=source.core.plan;
+  assert.ok(app.audioNodes.indexOf(live)<app.audioNodes.indexOf(source),'Live receiver is registered before source preparation');
+  app.setAudioState(state);await app.tick();assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');
+  assert.equal(source.core.state,'canceled');assert.equal(source.core.plan,sourcePlan);assert.deepEqual(sourceFailures,[],'The later source state listener sees cancellation, so it emits no second clock failure');
+  assert.equal(live.core.state,'suspended');assert.equal(live.connected,true);const graph=structuredClone(app.audioGraphEvents),nodeCount=app.audioNodes.length;
+  for(const locale of ['en','zh-CN']){getAppI18n(app.document).setLocale(locale);const message=app.$('notice-message').textContent;assert.match(message,state==='closed'?/live_audio_closed/:/live_audio_interrupted/);if(state==='closed')assert.match(message,locale==='en'?/Reopen the app/:/重新打开应用/);else{assert.match(message,locale==='en'?/new play or note action/:/重新点击播放或按音符键/);assert.doesNotMatch(message,/Reopen the app|重新打开应用/);}}
+  if(state==='suspended'){
+   app.setAudioState('running');await app.tick();assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');assert.equal(live.core.state,'suspended');assert.deepEqual(app.audioGraphEvents,graph);
+   await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(live.core.state,'ready');assert.equal(app.audioNodes.find(node=>node.kind==='live-audio-worklet'),live);assert.equal(app.audioNodes.filter(node=>node.kind==='live-audio-worklet').length,1);assert.equal(live.core.activeNotes,0);
+  }else{
+   await app.click('play-button');assert.match(app.$('notice-message').textContent,/live_audio_closed/);assert.match(app.$('notice-message').textContent,/重新打开应用/);assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');assert.equal(app.audioNodes.length,nodeCount);assert.deepEqual(app.audioGraphEvents,graph);
+   await app.click('sound-button');await app.click('play-button');assert.equal(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(connectedReceivers(app).length,0);assert.equal(app.audioNodes.length,nodeCount);
+  }
+  assert.deepEqual(sourceFailures,[]);
+ }finally{BasicKeyAudioReceiver.prototype.fail=originalFail;await app.close();}
 });
 
 test('missing worklet blocks VSQ audio explicitly; silent practice and sound toggles never restart it',async()=>{

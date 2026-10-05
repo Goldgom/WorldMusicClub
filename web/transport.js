@@ -52,6 +52,8 @@ export class Synth {
     if (!Audio && !this.context) throw new Error('Audio is unavailable in this browser. Try a current Chrome, Edge, Firefox or Safari.');
     if (this.disposed) throw new Error('The audio output is closed.');
     this.context ||= new Audio();
+    if (this.liveError) throw this.liveError;
+    if (this.liveRequired && this.context.state === 'closed') throw this.rememberLiveFailure(Object.assign(new Error('The audio device is closed; reopen the app before using sound again.'), {code: 'live_audio_closed'}));
     if (!this.output) {
       this.output = this.context.createGain(); this.output.gain.value = 0.7;
       if (this.context.createDynamicsCompressor) {
@@ -98,14 +100,19 @@ export class Synth {
       }
       this.liveReceiver = receiver;
       return receiver;
-    }).catch(error => { if (!this.disposed && error?.code !== 'live_audio_interrupted') this.liveError = error; throw error; });
+    }).catch(error => { throw this.rememberLiveFailure(error); });
     this.livePreparation = pending;
     try { return await pending; } finally { if (this.livePreparation === pending) this.livePreparation = null; }
+  }
+  rememberLiveFailure(error) {
+    if (error?.code === 'live_audio_interrupted' && this.context?.state === 'closed') error = Object.assign(new Error('The audio device is closed; reopen the app before using sound again.'), {code: 'live_audio_closed', cause: error});
+    if (!this.disposed && error?.code !== 'live_audio_interrupted') this.liveError = error;
+    return error;
   }
   liveFailed(error) {
     // Device suspension is recoverable only through an explicit user unlock.
     // Processor failures remain visible and may never switch to legacy audio.
-    if (error?.code !== 'live_audio_interrupted') this.liveError = error;
+    error = this.rememberLiveFailure(error);
     for (const voice of [...this.voices.values(), ...this.releasingVoices, ...this.clickVoices.values()]) voice.disposed = true;
     this.voices.clear(); this.releasingVoices.clear(); this.clickVoices.clear();
     this.onError(error);

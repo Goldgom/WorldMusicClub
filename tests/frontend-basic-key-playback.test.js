@@ -141,7 +141,7 @@ test('a late start acknowledgement cancels audio without backdating transport or
 for(const state of ['suspended','closed'])test(`an audio context becoming ${state} stops playback and never resumes on a state notification`,async()=>{
  const {app}=await setup();try{
   await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');app.setAudioState(state);await app.tick();
-  assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');assert.match(app.$('notice-message').textContent,/live_audio_interrupted/);
+  assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');assert.match(app.$('notice-message').textContent,state==='closed'?/live_audio_closed/:/live_audio_interrupted/);
   app.setAudioState('running');await app.tick();assert.equal(connectedReceivers(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');
  }finally{await app.close();}
 });

@@ -84,3 +84,12 @@ test('late readiness after final disposal is silent and cannot reopen the receiv
   await assert.rejects(pending,{code:'live_audio_canceled'});assert.equal(f.receivers[0].disposed,true);assert.deepEqual(f.commands,[]);
   await assert.rejects(synth.unlock(),/closed/);assert.equal(synth.liveReceiver,null);
 });
+
+test('closed context is terminal before resume and does not rebuild the persistent node',async()=>{
+  const f=fixture(),{synth,context}=f;await synth.prepareLiveAudio();synth.play('held',60);const graph=structuredClone(f.graph);
+  context.state='closed';f.receivers[0].state='interrupted';context.resume=()=>assert.fail('A closed context must not be resumed');
+  f.fail(Object.assign(new Error('Device stopped'),{code:'live_audio_interrupted'}));
+  assert.equal(f.errors[0].code,'live_audio_closed');assert.equal(synth.liveError,f.errors[0]);assert.equal(synth.voices.size,0);
+  await assert.rejects(synth.unlock(),{code:'live_audio_closed'});await assert.rejects(synth.prepareLiveAudio(),{code:'live_audio_closed'});
+  assert.equal(f.count(),1);assert.deepEqual(f.graph,graph);assert.equal(f.commands.some(([kind])=>kind==='resume'),false);
+});
