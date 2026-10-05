@@ -108,6 +108,32 @@ async function freePianoStylesheetRules(){
  }
  return result;
 }
+function splitSelectorList(value){
+ const selectors=[];let start=0,parentheses=0,brackets=0,quote=null,escaped=false;
+ for(let index=0;index<value.length;index++){
+  const char=value[index];
+  if(escaped){escaped=false;continue;}
+  if(char==='\\'){escaped=true;continue;}
+  if(quote){if(char===quote)quote=null;continue;}
+  if(char==='"'||char==="'"){quote=char;continue;}
+  if(char==='(')parentheses++;
+  else if(char===')')parentheses--;
+  else if(char==='[')brackets++;
+  else if(char===']')brackets--;
+  else if(char===','&&parentheses===0&&brackets===0){selectors.push(value.slice(start,index).trim());start=index+1;}
+ }
+ selectors.push(value.slice(start).trim());return selectors;
+}
+test('cascade selector lists split only top-level commas across nested functions, attributes, quotes and escapes',()=>{
+ const cases=[
+  ['.game-shell :is(.piano-workspace,:where(#workspace)) .piano-workspace-heading','.fallback'],
+  [':not(:is(.one,.two),:has(>[data-label="a,b"]))','[data-label=\'a,b\']'],
+  [String.raw`.escaped\,comma`,String.raw`[data-token=a\,b]`,'.after'],
+  [String.raw`[data-label="quoted\",),[value"]`,String.raw`[data-label='single\',),[value']`,'.after'],
+  [String.raw`.escaped\\`,'.after'],
+ ];
+ for(const selectors of cases)assert.deepEqual(splitSelectorList(` ${selectors.join(', ')} `),selectors);
+});
 function cascadeLayout(element,rules,size){
  const properties=['display','flex-direction','align-items','align-self','gap','max-width','padding','padding-top','padding-right','padding-bottom','padding-left','grid-area','order'],winners={};
  const mediaMatches=media=>media.every(query=>query.split(',').some(branch=>{
@@ -117,7 +143,7 @@ function cascadeLayout(element,rules,size){
  for(const {rule,media,href}of rules){
   if(!mediaMatches(media)||!properties.some(property=>rule.style.getPropertyValue(property)))continue;
   // Split only selector-list commas, not commas inside a functional selector.
-  const selectors=rule.selectorText.split(/,(?![^()]*\))/);
+  const selectors=splitSelectorList(rule.selectorText);
   for(const selector of selectors){
    if(selector.includes('::')||!element.matches(selector))continue;
    const specificity=value=>{
