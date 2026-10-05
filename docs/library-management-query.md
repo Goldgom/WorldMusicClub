@@ -1,11 +1,17 @@
 # Native pack grouping and duplicate review
 
-This is the first read-only implementation slice. `POST /api/library/manage/query`
-projects immutable physical editions into imported groups from retained originals
-and all validated bounded import receipts. It does not create a durable catalog,
-rename or remove memberships, delete songs, implement Trash, restore anything, or
-change conversion. Those operations still require the later transaction and
-recovery design. Browser storage is a separate store and has no implicit fallback.
+`POST /api/library/manage/query` remains a read-only metadata projection of
+immutable physical editions and retained import evidence. The separate
+[catalog product API](catalog-product.md) now handles explicit initialization,
+selected-song Trash/restore and synchronization; query v1 itself performs no
+catalog transitions and keeps its original `import-*` wire identities.
+
+Before initialization, validated receipts project imported memberships as before.
+After initialization, active catalog edges govern the returned song memberships;
+source archives map those edges back to import IDs. Trashed editions are excluded,
+and a new physical edition awaiting explicit synchronization remains active and
+unfiled with a `catalog_unmanaged_entry` issue. Re-reading receipts cannot resurrect
+removed memberships. Source-only and unresolved evidence remains in Issues.
 
 The native health response advertises `library_management_query_version: 1`.
 Requests require the existing same-origin native protocol and JSON content type.
@@ -84,8 +90,9 @@ existing behavior of recovering a missing primary song from its verified backup;
 there are no new explicit catalog/song mutations. Recovery issues remain visible.
 There is no nested public `list`, `load`, or history call under that lock.
 
-All later queries share advisory metadata across handles for that root, without
-opening or hashing music assets or retained originals. Freshness explicitly says
+All later queries first verify the managed journal head under the native gate,
+then share advisory metadata across handles for that root when its manifest is
+unchanged, without opening or hashing music assets or retained originals. Freshness explicitly says
 `advisory_snapshot`, `song_integrity: verified_at_snapshot`,
 `change_detection: explicit_refresh`, and includes the verification timestamp.
 Refresh after imports or external changes. The authoritative list/load/export

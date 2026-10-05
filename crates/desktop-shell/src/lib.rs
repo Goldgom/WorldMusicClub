@@ -8,6 +8,7 @@ pub mod catalog_journal;
 mod native_basic_keys;
 mod native_fingering;
 pub mod native_library;
+pub use native_library::catalog_product;
 pub mod song_pack;
 use http::{Request, Response};
 use serde_json::{json, Value};
@@ -230,7 +231,7 @@ fn dispatch_inner(
     if request.method() == "GET" {
         return match path {
             "/api/health" => json_response(Ok(
-                json!({"name":"WorldMusicHub","display_name":"WorldMusicClub","version":env!("CARGO_PKG_VERSION"),"engine":"rust","network":"native-protocol-no-listener","score_format_version":1,"score_schema_revision":score_core::SCORE_SCHEMA_REVISION,"library_management_query_version":1}),
+                json!({"name":"WorldMusicHub","display_name":"WorldMusicClub","version":env!("CARGO_PKG_VERSION"),"engine":"rust","network":"native-protocol-no-listener","score_format_version":1,"score_schema_revision":score_core::SCORE_SCHEMA_REVISION,"library_management_query_version":1,"library_catalog_version":1}),
             )),
             "/api/catalog" => json_response(
                 serde_json::to_value(score_core::catalog()).map_err(|e| e.to_string()),

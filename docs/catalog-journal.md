@@ -1,9 +1,9 @@
-# Native catalog journal (isolated development slice)
+# Native catalog journal
 
 `worldmusichub_desktop::catalog_journal` is a Rust host-only persistence API for
-checked `catalog::Catalog` transitions. Nothing calls it from routes, scanners,
-imports, the existing query v1, or the UI. It does not enable runtime deletion or
-automatic migration. There are no payload, song, source-original, history, or
+checked `catalog::Catalog` transitions. The [native product adapter](catalog-product.md)
+now calls its already-locked helpers for explicit initialization and selected-song
+Trash/restore/sync. There is no automatic migration. There are no payload, song, source-original, history, or
 staging deletion operations, automatic expiry, or garbage collection.
 
 ## Host API and boundaries
@@ -24,11 +24,11 @@ staging deletion operations, automatic expiry, or garbage collection.
   resolve its result with the identical `initialize` call. Reinitialization with
   the identical seed/ID returns current state and never rewinds it.
 
-The host-visible Rust module is hidden from generated API docs and has no wire
-contract. It must remain disconnected from ordinary inventory and import until
-migration, tombstone-aware scans/reimport, payload checks, native ID generation,
-and a bounded versioned adapter have separate integration tests. The older query
-v1 identity format is unchanged. Existing older binaries can still display
+The host-visible Rust module is hidden from generated API docs. Its product wire
+contract lives in the separate native adapter, whose original integration tests
+cover migration, tombstone-aware scans/reimport, payload checks, random host IDs,
+response-loss reconciliation and selected restoration. The older query v1
+identity format is unchanged. Existing older binaries can still display
 physically retained trashed songs; this slice supplies no downgrade guard.
 
 ## Persisted evidence and commit decision

@@ -123,19 +123,35 @@ fn stage(library: &NativeLibrary, report: &Report, bytes: &[u8]) -> Result<PathB
     sync_directory(&folder)?;
     Ok(folder)
 }
-pub(super) fn retain(library: &NativeLibrary, report: &Report, bytes: &[u8]) -> Result<()> {
+#[cfg(test)]
+pub(crate) fn retain(library: &NativeLibrary, report: &Report, bytes: &[u8]) -> Result<()> {
     retain_with_copy_boundary(library, report, bytes, |_| Ok(()))
+}
+
+pub(super) fn retain_locked(library: &NativeLibrary, report: &Report, bytes: &[u8]) -> Result<()> {
+    retain_locked_with_copy_boundary(library, report, bytes, |_| Ok(()))
 }
 
 // A private copy-boundary callback lets tests fail deterministically between
 // publications, without races, permission assumptions or renderer-controlled IO.
+#[cfg(test)]
 fn retain_with_copy_boundary(
+    library: &NativeLibrary,
+    report: &Report,
+    bytes: &[u8],
+    after_copy: impl FnMut(&str) -> Result<()>,
+) -> Result<()> {
+    let _lock = library.lock()?;
+    crate::catalog_product::load_managed_locked(library)?;
+    retain_locked_with_copy_boundary(library, report, bytes, after_copy)
+}
+
+fn retain_locked_with_copy_boundary(
     library: &NativeLibrary,
     report: &Report,
     bytes: &[u8],
     mut after_copy: impl FnMut(&str) -> Result<()>,
 ) -> Result<()> {
-    let _lock = library.lock()?;
     areas(library)?;
     let key = &report.source.archive_key;
     let copies = ["imports", "import-backups"]
@@ -199,7 +215,14 @@ fn retain_with_copy_boundary(
     })
 }
 
-pub(super) fn receipt(library: &NativeLibrary, report: &Report) -> Result<()> {
+#[cfg(test)]
+pub(crate) fn receipt(library: &NativeLibrary, report: &Report) -> Result<()> {
+    let _lock = library.lock()?;
+    crate::catalog_product::load_managed_locked(library)?;
+    receipt_locked(library, report)
+}
+
+pub(super) fn receipt_locked(library: &NativeLibrary, report: &Report) -> Result<()> {
     let bytes = serde_json::to_vec(report).map_err(|e| invalid(e.to_string()))?;
     if bytes.len() > MAX_REPORT_BYTES {
         return Err(fail(
@@ -208,7 +231,6 @@ pub(super) fn receipt(library: &NativeLibrary, report: &Report) -> Result<()> {
             "Original retained, but import report exceeds 32 MiB",
         ));
     }
-    let _lock = library.lock()?;
     room_for(library, 2 * bytes.len() as u64)?;
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -469,8 +491,16 @@ pub(crate) struct ReferenceCounts {
     pub source_items: std::collections::BTreeSet<String>,
 }
 pub(crate) struct ReceiptProjection {
+    /// A present invalid original copy blocks product mutations; advisory query still exposes issues.
+    pub blocking_source_error: Option<crate::native_library::LibraryError>,
     pub packs: Vec<crate::native_library::pack_groups::Pack>,
     pub references: std::collections::BTreeMap<(String, String), ReferenceCounts>,
+    /// Exact source.bin bytes in independently verified retained copies, keyed
+    /// by pack-<sha256>. Metadata, receipts and stages are excluded.
+    pub verified_source_bytes: std::collections::BTreeMap<String, u64>,
+    /// Exact validated receipt evidence, without collapsing retries or upload
+    /// labels into the logical source-item identities used by query v1.
+    pub origins: Vec<crate::catalog::Origin>,
     pub issues: Vec<crate::native_library::pack_groups::QueryIssue>,
 }
 
@@ -950,9 +980,13 @@ pub(crate) fn project_receipts_locked(
     use std::collections::{BTreeMap, BTreeSet};
     const MAX_RECEIPT_SCAN_BYTES: usize = 128 * 1024 * 1024;
     const MAX_PROJECTED_REFERENCES: usize = 16384;
+    const MAX_PROJECTED_ORIGINS: usize = 16384;
     let mut output = ReceiptProjection {
+        blocking_source_error: None,
         packs: Vec::new(),
         references: BTreeMap::new(),
+        verified_source_bytes: BTreeMap::new(),
+        origins: Vec::new(),
         issues: Vec::new(),
     };
     let mut archive_keys = BTreeSet::new();
@@ -1005,12 +1039,18 @@ pub(crate) fn project_receipts_locked(
                 Err(error) if error.code == "library_query_limit" => return Err(error),
                 Err(error) => {
                     output
+                        .blocking_source_error
+                        .get_or_insert_with(|| error.clone());
+                    output
                         .issues
                         .push(QueryIssue::new(error.code, error.error, Some(&key), None));
                     continue;
                 }
             };
         let source = &retained.source;
+        output
+            .verified_source_bytes
+            .insert(key.clone(), source.bytes as u64);
         let pack_id = format!("import-{}", source.sha256);
         let mut pack = Pack {
             pack_id: pack_id.clone(),
@@ -1030,6 +1070,11 @@ pub(crate) fn project_receipts_locked(
             output.packs.push(pack);
             continue;
         }
+        let backup_present = match fs::symlink_metadata(&backup) {
+            Ok(_) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => return Err(io_error(error)),
+        };
         let backup_valid =
             match verified_projection_source(&backup, &key, &mut scanned_source_bytes) {
                 Ok(other)
@@ -1039,6 +1084,13 @@ pub(crate) fn project_receipts_locked(
                     true
                 }
                 Ok(_) => {
+                    output.blocking_source_error.get_or_insert_with(|| {
+                        fail(
+                            422,
+                            "pack_backup_invalid",
+                            "Retained original source copies disagree",
+                        )
+                    });
                     output.issues.push(QueryIssue::new(
                         "pack_backup_invalid",
                         "Retained source copies disagree",
@@ -1049,6 +1101,11 @@ pub(crate) fn project_receipts_locked(
                 }
                 Err(error) if error.code == "library_query_limit" => return Err(error),
                 Err(error) => {
+                    if backup_present {
+                        output
+                            .blocking_source_error
+                            .get_or_insert_with(|| error.clone());
+                    }
                     output.issues.push(QueryIssue::new(
                         "pack_backup_invalid",
                         error.error,
@@ -1058,6 +1115,11 @@ pub(crate) fn project_receipts_locked(
                     false
                 }
             };
+        if backup_valid {
+            output
+                .verified_source_bytes
+                .insert(key.clone(), source.bytes as u64 * 2);
+        }
         let mut context =
             match ReceiptContext::new(&primary, source, &retained.bytes, &mut scanned_bytes) {
                 Ok(context) => context,
@@ -1180,6 +1242,29 @@ pub(crate) fn project_receipts_locked(
                     ));
                     continue;
                 }
+                if output.origins.len() >= MAX_PROJECTED_ORIGINS {
+                    return Err(fail(
+                        413,
+                        "library_query_limit",
+                        "Validated receipt origins exceed 16384; no incomplete projection was published",
+                    ));
+                }
+                output.origins.push(crate::catalog::Origin {
+                    song: crate::catalog::SongId::parse(id.clone()).map_err(|_| {
+                        invalid("Validated receipt has an invalid edition identity")
+                    })?,
+                    source: crate::catalog::SourceId::parse(key.clone())
+                        .map_err(|_| invalid("Validated receipt has an invalid source identity"))?,
+                    receipt_filename: name.clone(),
+                    item_index: item.index as u32,
+                    item_kind: if !context.zip || identity == "mxl:single" {
+                        crate::catalog::OriginItemKind::InertLabel
+                    } else {
+                        crate::catalog::OriginItemKind::RelativePath
+                    },
+                    item_path: item.path,
+                    evidence_type: crate::catalog::EvidenceType::ReceiptDerived,
+                });
                 linked_paths.insert(identity.clone());
                 let counts = output.references.entry((pack_id.clone(), id)).or_default();
                 counts.receipts += 1;

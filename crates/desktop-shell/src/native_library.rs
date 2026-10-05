@@ -3,6 +3,8 @@
 //! Each published song and its independent backup contains the exact submitted
 //! canonical JSON, metadata, and an inert copy of the retained source payload.
 //! The folders are the index; losing a cache cannot lose the library inventory.
+#[path = "catalog_product.rs"]
+pub mod catalog_product;
 #[path = "clean_package.rs"]
 pub mod clean_package;
 #[path = "pack_groups.rs"]
@@ -36,6 +38,7 @@ static PROCESS_LOCKS: OnceLock<Mutex<HashMap<PathBuf, Weak<ProcessLock>>>> = Onc
 struct ProcessLock {
     mutex: Mutex<()>,
     management: Mutex<Option<pack_groups::Projection>>,
+    catalog_product: Mutex<Option<catalog_product::Projection>>,
     #[cfg(test)]
     waiting: std::sync::atomic::AtomicUsize,
 }
@@ -543,7 +546,7 @@ impl NativeLibrary {
         sync_directory(&self.root.join(area))
     }
 
-    fn scan(&self) -> Result<Inventory> {
+    pub(crate) fn scan(&self) -> Result<Inventory> {
         let mut inventory = Inventory {
             storage: "native-filesystem",
             library_format_version: VERSION,
@@ -663,10 +666,30 @@ impl NativeLibrary {
 
     pub fn list(&self) -> Result<Inventory> {
         let _lock = self.lock()?;
+        let mut inventory = self.scan()?;
+        crate::catalog_product::filter_active_locked(self, &mut inventory)?;
+        Ok(inventory)
+    }
+
+    /// Import admission uses retained physical editions, including Trash, for
+    /// duplicate detection and capacity. It must never use the active UI list.
+    #[cfg(test)]
+    pub(crate) fn physical_inventory(&self) -> Result<Inventory> {
+        let _lock = self.lock()?;
+        crate::catalog_product::load_managed_locked(self)?;
         self.scan()
     }
 
     pub fn save(&self, request: SaveRequest) -> Result<Entry> {
+        let _lock = self.lock()?;
+        // A damaged managed catalog must not be bypassed by a new physical save.
+        crate::catalog_product::load_managed_locked(self)?;
+        self.save_locked(request)
+    }
+
+    /// Caller holds the native lock and has checked the managed catalog before
+    /// publishing any part of this operation. Never reacquire that lock here.
+    pub(crate) fn save_locked(&self, request: SaveRequest) -> Result<Entry> {
         let (score, content_sha256) = checked_score(&request.score_json)?;
         let label = request.label.unwrap_or_else(|| score.title.clone());
         if label.trim().is_empty() || label.len() > 1024 {
@@ -676,7 +699,6 @@ impl NativeLibrary {
                 "A label must contain 1–1024 UTF-8 bytes",
             ));
         }
-        let _lock = self.lock()?;
         let inventory = self.scan()?;
         let key = format!("song-{content_sha256}");
         if let Some(existing) = inventory.entries.iter().find(|entry| entry.key == key) {
@@ -786,6 +808,10 @@ impl NativeLibrary {
         }
         let _lock = self.lock()?;
         if let Some(loaded) = clean_package::load(self, key)? {
+            crate::catalog_product::require_active_locked(
+                self,
+                &pack_groups::edition_id(&loaded.entry),
+            )?;
             return Ok(loaded);
         }
         let folder = self.root.join("songs").join(key);
@@ -800,8 +826,56 @@ impl NativeLibrary {
             Err(error) => return Err(io_error(error)),
             Ok(_) => (),
         }
-        self.load_folder(&folder, key)
+        let loaded = self.load_folder(&folder, key)?;
+        crate::catalog_product::require_active_locked(
+            self,
+            &pack_groups::edition_id(&loaded.entry),
+        )?;
+        Ok(loaded)
     }
+}
+
+/// Count verified retained score/source payloads under the caller's library
+/// lock. Missing copies contribute no bytes; damaged or disagreeing present
+/// copies fail closed. Metadata and interrupted stages are not payloads.
+pub(crate) fn verified_retained_payload_bytes(
+    library: &NativeLibrary,
+    entry: &Entry,
+) -> Result<u64> {
+    if entry.clean_package.is_some() {
+        return clean_package::verified_retained_payload_bytes(library, entry);
+    }
+    let expected = serde_json::to_value(entry).map_err(|e| corrupt(e.to_string()))?;
+    let mut total = 0u64;
+    for area in ["songs", "backups"] {
+        let folder = library.root.join(area).join(&entry.key);
+        match fs::symlink_metadata(&folder) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(io_error(error)),
+            Ok(_) => (),
+        }
+        let loaded = library.load_folder(&folder, &entry.key)?;
+        if serde_json::to_value(&loaded.entry).map_err(|e| corrupt(e.to_string()))? != expected {
+            return Err(corrupt(
+                "Retained score copies disagree with the verified edition",
+            ));
+        }
+        let source_bytes = loaded
+            .entry
+            .retained_source
+            .as_ref()
+            .map_or(0, |source| source.bytes as u64);
+        total = total
+            .checked_add(loaded.entry.score_bytes as u64)
+            .and_then(|bytes| bytes.checked_add(source_bytes))
+            .ok_or_else(|| corrupt("Retained payload size overflow"))?;
+    }
+    if total == 0 {
+        return Err(corrupt(
+            "No verified retained payload remains for this edition",
+        ));
+    }
+    Ok(total)
 }
 
 pub fn is_library_route(path: &str) -> bool {
@@ -921,6 +995,9 @@ pub fn dispatch(
     path: &str,
     bytes: &[u8],
 ) -> http::Response<Vec<u8>> {
+    if path.starts_with("/api/library/catalog/") {
+        return catalog_product::dispatch(library, method, path, bytes);
+    }
     if method == "POST" && path == "/api/library/asset" {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]

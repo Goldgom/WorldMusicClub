@@ -200,18 +200,19 @@ pub fn is_import_route(path: &str) -> bool {
     )
 }
 pub fn is_large_operation(path: &str) -> bool {
-    matches!(
-        path,
-        "/api/library/manage/query"
-            | "/api/library/import/preview"
-            | "/api/library/import/commit"
-            | "/api/library/import/export"
-            | "/api/library/pack/export"
-            | "/api/library/asset"
-            | "/api/library/runtime"
-            | "/api/library/fingering/piano"
-            | "/api/library/fingering/guitar"
-    )
+    path.starts_with("/api/library/catalog/")
+        || matches!(
+            path,
+            "/api/library/manage/query"
+                | "/api/library/import/preview"
+                | "/api/library/import/commit"
+                | "/api/library/import/export"
+                | "/api/library/pack/export"
+                | "/api/library/asset"
+                | "/api/library/runtime"
+                | "/api/library/fingering/piano"
+                | "/api/library/fingering/guitar"
+        )
 }
 pub fn valid_history_query(uri: &http::Uri) -> bool {
     uri.path() == "/api/library/imports"
@@ -225,6 +226,9 @@ pub fn valid_history_query(uri: &http::Uri) -> bool {
         })
 }
 pub fn request_limit(path: &str) -> usize {
+    if path.starts_with("/api/library/catalog/") {
+        return crate::catalog_product::REQUEST_LIMIT;
+    }
     if path == "/api/library/manage/query" {
         return native_library::pack_groups::REQUEST_LIMIT;
     }
@@ -1033,6 +1037,36 @@ pub fn import(
     keep_both: bool,
     selected: Option<usize>,
 ) -> Result<Report> {
+    import_with_boundary(
+        library,
+        filename,
+        bytes,
+        commit,
+        keep_both,
+        selected,
+        || Ok(()),
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn import_with_receipt_boundary(
+    library: &NativeLibrary,
+    filename: &str,
+    bytes: &[u8],
+    before_receipt: impl FnOnce() -> Result<()>,
+) -> Result<Report> {
+    import_with_boundary(library, filename, bytes, true, false, None, before_receipt)
+}
+
+fn import_with_boundary(
+    library: &NativeLibrary,
+    filename: &str,
+    bytes: &[u8],
+    commit: bool,
+    keep_both: bool,
+    selected: Option<usize>,
+    before_receipt: impl FnOnce() -> Result<()>,
+) -> Result<Report> {
     if filename.is_empty() || filename.len() > 1024 || filename.chars().any(char::is_control) {
         return Err(invalid(
             "Original filename must be 1–1024 UTF-8 bytes without control characters",
@@ -1043,31 +1077,26 @@ pub fn import(
     if selected.is_some_and(|i| i >= plan.candidates.len()) {
         return Err(invalid("Selected song index is outside this pack"));
     }
-    let clean_batch = commit
-        && plan.candidates.iter().any(|c| c.clean.is_some())
-        && plan
-            .candidates
-            .iter()
-            .all(|c| c.clean.is_some() || c.score.is_err());
-    let mut existing = if clean_batch {
-        Vec::new()
+    // Bootstrap/sync must never observe a newly saved edition before its exact
+    // retained import receipt. One native lock covers the entire publication.
+    let _lock = library.lock()?;
+    crate::catalog_product::load_managed_locked(library)?;
+    let mut batch = if commit && plan.candidates.iter().any(|c| c.clean.is_some()) {
+        Some(clean_package::Batch::begin_locked(library)?)
     } else {
-        library.list()?.entries
+        None
+    };
+    let mut existing = if let Some(batch) = &batch {
+        batch.entries().to_vec()
+    } else {
+        library.scan()?.entries
     };
     let mut planned_hashes = HashSet::new();
     let mut planned_ids = HashSet::new();
     if commit {
-        storage::retain(library, &plan.report, bytes)?;
+        storage::retain_locked(library, &plan.report, bytes)?;
         plan.report.source.retained = true;
         plan.report.mode = "commit".into();
-    }
-    let mut batch = if clean_batch {
-        Some(clean_package::Batch::begin(library)?)
-    } else {
-        None
-    };
-    if let Some(batch) = &batch {
-        existing = batch.entries().to_vec();
     }
     for (index, candidate) in plan.candidates.into_iter().enumerate() {
         let mut item = Item {
@@ -1194,11 +1223,16 @@ pub fn import(
                                 )
                             })
                     } else {
-                        library.save(SaveRequest {
+                        let request = SaveRequest {
                             score_json,
                             label: candidate.label,
                             allow_conflicting_id: keep_both,
-                        })
+                        };
+                        if let Some(batch) = &mut batch {
+                            batch.save_legacy(request)
+                        } else {
+                            library.save_locked(request)
+                        }
                     };
                     match saved {
                         Ok(entry) => {
@@ -1272,7 +1306,7 @@ pub fn import(
         .summary
         .insert("total".into(), plan.report.items.len());
     if commit {
-        storage::receipt(library, &plan.report).map_err(|e|fail(500,"library_commit_uncertain",format!("Original source retained and songs may be saved, but the final receipt could not be stored. Refresh before retrying: {}",e.error)))?;
+        before_receipt().and_then(|()|storage::receipt_locked(library, &plan.report)).map_err(|e|fail(500,"library_commit_uncertain",format!("Original source retained and songs may be saved, but the final receipt could not be stored. Refresh before retrying: {}",e.error)))?;
     }
     Ok(plan.report)
 }

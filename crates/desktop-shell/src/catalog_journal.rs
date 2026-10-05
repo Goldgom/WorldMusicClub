@@ -1,5 +1,5 @@
-//! Host-only experimental catalog persistence. No route, scan, import or migration
-//! calls this module. IDs and verified seed/payload availability are host duties.
+//! Backup-first catalog persistence used by the bounded native product adapter.
+//! IDs and verified seed/payload availability remain host duties.
 //! A verified independent backup is the commit decision; incomplete stages are
 //! retained. Unix directory sync gives the existing native durability guarantees;
 //! Windows inherits process-crash recovery, not a power-loss directory guarantee.
@@ -419,7 +419,7 @@ pub fn load(library: &NativeLibrary) -> Result<Option<Loaded>> {
     let _lock = library.lock()?;
     load_locked(library)
 }
-fn load_locked(library: &NativeLibrary) -> Result<Option<Loaded>> {
+pub(crate) fn load_locked(library: &NativeLibrary) -> Result<Option<Loaded>> {
     let root = &library.root;
     let mut usage = usage(root)?;
     let Some(format) = read_format(root)? else {
@@ -691,11 +691,28 @@ fn initialize_with(
     id: OperationId,
     hook: &mut Hook<'_>,
 ) -> std::result::Result<Loaded, CommitError> {
+    let _lock = library
+        .lock()
+        .map_err(|cause| commit_error(&id, true, cause.into()))?;
+    initialize_locked_with(library, seed, id, hook)
+}
+pub(crate) fn initialize_locked(
+    library: &NativeLibrary,
+    seed: Catalog,
+    id: OperationId,
+) -> std::result::Result<Loaded, CommitError> {
+    initialize_locked_with(library, seed, id, &mut |_| Ok(()))
+}
+fn initialize_locked_with(
+    library: &NativeLibrary,
+    seed: Catalog,
+    id: OperationId,
+    hook: &mut Hook<'_>,
+) -> std::result::Result<Loaded, CommitError> {
     // Until the native gate permits a verified lookup, an earlier call of this
     // operation may already have committed. Lock failure cannot prove absence.
     let mut decided = true;
     let result = (|| {
-        let _lock = library.lock()?;
         if Catalog::from_seed(seed.snapshot().inventory.clone())? != seed {
             return Err(Error::Recovery(
                 "Bootstrap requires generation-zero verified seed",
@@ -805,12 +822,27 @@ fn commit_with(
     preview: &Preview,
     hook: &mut Hook<'_>,
 ) -> std::result::Result<Committed, CommitError> {
+    let _lock = library
+        .lock()
+        .map_err(|cause| commit_error(&preview.request.operation_id, true, cause.into()))?;
+    commit_locked_with(library, preview, hook)
+}
+pub(crate) fn commit_locked(
+    library: &NativeLibrary,
+    preview: &Preview,
+) -> std::result::Result<Committed, CommitError> {
+    commit_locked_with(library, preview, &mut |_| Ok(()))
+}
+fn commit_locked_with(
+    library: &NativeLibrary,
+    preview: &Preview,
+    hook: &mut Hook<'_>,
+) -> std::result::Result<Committed, CommitError> {
     // Until the native gate permits a verified lookup, an earlier call of this
     // operation may already have committed. Lock failure cannot prove absence.
     let mut decided = true;
     let id = &preview.request.operation_id;
     let result = (|| {
-        let _lock = library.lock()?;
         let Some(current) = load_locked(library)? else {
             decided = false;
             return Err(Error::NeverManaged);
@@ -854,3 +886,16 @@ fn commit_with(
 #[cfg(test)]
 #[path = "catalog_journal_tests.rs"]
 mod tests;
+
+/// Caller must have successfully loaded the full chain while holding the lock.
+pub(crate) fn bootstrap_locked(library: &NativeLibrary) -> Result<(OperationId, String, Catalog)> {
+    let genesis = commit_paths(&library.root, "catalog-backups")?
+        .remove(&0)
+        .ok_or(Error::Recovery("Missing genesis"))?;
+    let generation = read_generation(&genesis)?;
+    Ok((
+        generation.info.operation_id,
+        generation.info.state.sha256,
+        generation.catalog,
+    ))
+}
