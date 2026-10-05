@@ -1,4 +1,4 @@
-import {readPlaybackClock, installPlaybackClockReader, waitForPlaybackClock} from './browser-playback-clock.js';
+import {readPlaybackClock, installPlaybackClockReader, waitForPlaybackClock, waitForPlaybackClockAdvance} from './browser-playback-clock.js';
 import {registerGameLobbyBrowserRegressions} from './game-lobby-browser-regression.js';
 import {assertLocaleRoundTrip,registerLocaleBrowserRegressions} from './locale-browser-regression.js';
 import {registerBeginnerBrowserRegressions} from './beginner-browser-regression.js';
@@ -913,6 +913,7 @@ test('browser practice records real keyboard timing and displays the Rust assess
   await ui('#stage-title').click();
   await page.keyboard.press('Space');
   await page.waitForFunction(() => document.querySelector('#play-button').textContent.includes('Pause'));
+  await waitForPlaybackClockAdvance(page);
   await page.keyboard.press('r');
   const [response] = await Promise.all([nextResponse('/api/assess'), ui('#assess-button').click()]);
   const assessment = await responseJson(response);
@@ -1598,7 +1599,9 @@ test('real Rust HUD shows a checked pass snapshot and hides it across resume and
   const captured=await page.locator('.performance-status').evaluate(element=>({pass:element.dataset.passId,revision:element.dataset.revision}));assert.ok(captured.pass);assert.equal(await page.locator('#hud-result').isVisible(),false);
   const assessedResponse=nextResponse('/api/assess');await ui('#assess-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase==='grace');assert.equal(await page.locator('#hud-result').isVisible(),false);await closeShellPanels();const response=await assessedResponse,assessment=await responseJson(response);assert.equal(assessment.hits.length,0);assert.equal(assessment.extras.length,1);assert.equal(assessment.extras[0].midi,90);assert.equal(assessment.misses.length,initialCompilation.timeline.notes.length);assert.equal(response.request().postDataJSON().inputs.length,1);
   await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase==='assessed');assert.match(await page.locator('#hud-label').textContent(),/Previous check/);assert.equal(await page.locator('#hud-accuracy').textContent(),'0%');assert.equal(await page.locator('#hud-result').isVisible(),true);assert.match(await page.locator('#hud-result').textContent(),/Onset match rate/);assert.equal(await page.locator('.performance-status').getAttribute('data-pass-id'),captured.pass);assert.equal(await page.locator('.performance-status').getAttribute('data-revision'),captured.revision);await viewportSnapshot('hud-previous-rust-check');
+  const resumedFrom=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;
   await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase==='capturing');assert.equal(await page.locator('#hud-result').isVisible(),false);
+  await waitForPlaybackClockAdvance(page,resumedFrom);
   // This observer only reads visible HUD mutations. Its measured grace interval
   // allows one animation frame around the recorder's exact 500 + 180 ms deadline.
   const observation=page.evaluate(()=>new Promise(resolve=>{const hud=document.querySelector('.performance-status'),result=document.querySelector('#hud-result'),samples=[];let graceStart=null;const observer=new MutationObserver(()=>{const phase=hud.dataset.phase,now=performance.now();if(phase==='grace'&&graceStart===null)graceStart=now;if(graceStart!==null)samples.push({elapsed:now-graceStart,phase,resultHidden:result.hidden,pass:hud.dataset.passId,revision:hud.dataset.revision});if(graceStart!==null&&phase==='assessed'){observer.disconnect();resolve(samples)}});observer.observe(hud,{attributes:true,subtree:true,childList:true,characterData:true})}));
@@ -2065,7 +2068,7 @@ test('short-landscape following reveals later systems with non-color cues and pr
   await ui('#session-mode').selectOption('practice');await ui('#count-in').uncheck();await ui('#reset-button').click();await closeShellPanels();
   await page.waitForFunction(()=>document.querySelector('#written-cursor-status').dataset.status==='ready');
   const stageBefore=await page.evaluate(()=>{const box=document.querySelector('.transport').getBoundingClientRect();return{windowX:scrollX,windowY:scrollY,transport:{x:box.x,y:box.y,width:box.width,height:box.height}}});
-  await ui('#engraving-follow').check();await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('a');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');
+  await ui('#engraving-follow').check();await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page);await page.locator('#stage-title').click();await page.keyboard.press('a');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');
   await page.waitForFunction(()=>Number(document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex)>=3);await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
   const cueVisible=()=>{const cue=document.querySelector('.engraving-expected-cue:not([hidden])'),dock=document.querySelector('#notation-lane-overlay');if(!cue)return false;const head=cue.getBoundingClientRect(),pane=dock.getBoundingClientRect();return head.width>0&&head.height>0&&head.left>=pane.left&&head.right<=pane.right&&head.top>=pane.top&&head.bottom<=pane.bottom};
   await page.waitForFunction(cueVisible);
@@ -2104,7 +2107,7 @@ test('real whole-phrase guitar route honors editable locks, exposes conflicts an
   assert.equal(await page.locator('#guitar-show-alternatives').isChecked(),false);assert.equal(await page.locator('#guitar-show-picking').isChecked(),false);
   await page.waitForFunction(()=>document.querySelectorAll('#fretboard [data-recommended="true"]').length===1);
   const chosen=page.locator('#fretboard [data-recommended="true"]');assert.equal(await chosen.getAttribute('data-string'),'1');assert.equal(await chosen.getAttribute('data-fret'),'5');assert.equal(await page.locator('#fretboard .pitch-option').count(),0);
-  await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('i');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
+  await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page);await page.locator('#stage-title').click();await page.keyboard.press('i');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
   const before=await exportTakeData();assert.equal(before.passes[0].inputs.length,1);
   await page.locator('#guitar-plan-controls summary').click();await page.locator('#guitar-lock-source').selectOption('held-e');await page.locator('#guitar-lock-string').selectOption('1');await page.locator('#guitar-lock-fret').selectOption('0');await page.locator('#guitar-lock-finger').selectOption('0');
   const blockedResponse=watchPlan(body=>body.locks.some(lock=>lock.source_note_id==='held-e'&&lock.string===1));await page.locator('#guitar-apply-lock').click();const blocked=await responseJson(await blockedResponse);
@@ -2135,7 +2138,7 @@ test('real piano hands preserve merged ties and repeat targets through editable 
   const merged=initial.targets.filter(target=>target.source_note_ids.includes('tie-end'));assert.equal(merged.length,2);assert.ok(merged.every(target=>['tie-start','tie-end','unison'].every(id=>target.source_note_ids.includes(id))));assert.notEqual(merged[0].target_id,merged[1].target_id);
   await page.waitForFunction(()=>document.querySelector('#piano-fingering-status').dataset.phase==='ready');await page.locator('#piano-fingering-guidance>summary').click();await page.waitForFunction(()=>document.querySelectorAll('.piano-finger-target').length===6);
   assert.equal(await page.locator('#piano-fingering-guidance').getAttribute('aria-live'),'off');const key=page.locator('#keyboard [data-midi="60"]');assert.equal(await key.getAttribute('aria-label'),'Play C4');assert.equal(await key.getAttribute('aria-pressed'),'false');assert.equal(await key.locator('.piano-finger-label').evaluate(element=>getComputedStyle(element).pointerEvents),'none');
-  await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('r');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
+  await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page);await page.locator('#stage-title').click();await page.keyboard.press('r');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
   const take=await exportTakeData();assert.equal(take.passes[0].inputs.length,1);
   if(!await ui('#instrument-settings').evaluate(element=>element.open))await ui('#instrument-settings>summary').click();if(!await ui('.piano-lock-editor').evaluate(element=>element.open))await ui('.piano-lock-editor>summary').click();await ui('#piano-source-note').selectOption('tie-end');
   const leftResponse=watchPlan(body=>body.locks.some(lock=>lock.source_note_id==='tie-end'&&lock.hand==='left'&&lock.finger===null));await ui('#piano-source-hand').selectOption('left');assert.equal((await responseJson(await leftResponse)).status,'ready');
@@ -2262,6 +2265,7 @@ test('real language picker starts from Chinese and preserves the paused take, so
   // The shared bootstrap proves a fresh zh-CN page before its explicit English choice.
   const score = await prepareKeyboardBrowserPractice('original-locale-picker');
   await page.locator('#play-button').click();
+  await waitForPlaybackClockAdvance(page);
   await page.locator('#stage-title').click(); await page.keyboard.press('r');
   await page.locator('#settings-button').click();
   assert.match(await page.locator('#play-button').textContent(),/Play/,'Entering Settings deliberately pauses playback');
@@ -2310,26 +2314,37 @@ test('real language picker starts from Chinese and preserves the paused take, so
 
 test('real running locale-service notifications retain a held note and the advancing canonical clock',testOptions,async()=>{
   const score=await prepareKeyboardBrowserPractice('original-running-locale');await page.evaluate(observeRealAudio);
+  // Observe the device used by the production reader, without changing its clock
+  // or returned position. This context may predate the oscillator observer.
+  await page.evaluate(async()=>{
+    const {CanonicalAudioReceiver}=await import('/canonical-audio-receiver.js'),sourceClock=CanonicalAudioReceiver.prototype.sourceClockAtTime;
+    CanonicalAudioReceiver.prototype.sourceClockAtTime=function(...args){window.localeAudioContext=this.context;return sourceClock.apply(this,args);};
+  });
   await page.locator('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>0);
   await page.locator('#play-button').click();const before=await exportTakeData();
   const compileCount=requests.filter(request=>request.path==='/api/compile').length;
-  await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.down('r');
+  const resumedFrom=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;
+  await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page,resumedFrom);await page.locator('#stage-title').click();await page.keyboard.down('r');
   assert.equal(await page.locator('#keyboard [data-midi="60"]').getAttribute('aria-pressed'),'true');
   const snapshots=await page.evaluate(async()=>{
     const {getAppI18n}=await import('/app-locale.js'),i18n=getAppI18n(document),key=document.querySelector('#keyboard [data-midi="60"]');
     const snapshot=()=>({position:globalThis.__wmhReadPlaybackClock().positionMs,pass:document.querySelector('.performance-status').dataset.passId,revision:document.querySelector('.performance-status').dataset.revision,captured:document.querySelector('#hud-captured').textContent,focused:document.activeElement.id,held:key.getAttribute('aria-pressed'),audio:{...audioObservation},sameKey:document.querySelector('#keyboard [data-midi="60"]')===key});
-    const original=snapshot();
-    const localize=locale=>{const wallBefore=performance.now();i18n.setLocale(locale);const state=snapshot(),wallAfter=performance.now();return{locale,state,wallBefore,wallAfter,play:document.querySelector('#play-button').textContent,keyLabel:key.getAttribute('aria-label')}};
+    const original=snapshot(),audio=window.localeAudioContext;
+    if(!audio||audio.state!=='running')throw new Error('Locale timing requires the actual running source AudioContext');
+    const frame=()=>Math.round(audio.currentTime*audio.sampleRate);
+    const localize=locale=>{const wallBefore=performance.now(),frameBefore=frame();i18n.setLocale(locale);const state=snapshot(),frameAfter=frame(),wallAfter=performance.now();return{locale,state,frameBefore,frameAfter,wallBefore,wallAfter,play:document.querySelector('#play-button').textContent,keyLabel:key.getAttribute('aria-label')}};
     // Locale redraws refresh progress from the running clock. Establish a fresh
     // display baseline before measuring changes; the last animation frame may lag.
     const primed=localize('zh-CN'),baseline=localize('en'),localized=[];
     for(const locale of ['zh-CN','en','zh-CN'])localized.push(localize(locale));
-    return {original,primed,baseline,localized};
+    return {original,primed,baseline,localized,sampleRate:audio.sampleRate};
   });
   const {position:originalPosition,...originalState}=snapshots.original;
   for(const item of [snapshots.primed,snapshots.baseline,...snapshots.localized]){const{position,...state}=item.state;assert.deepEqual(state,originalState,'Synchronous display-only notifications preserve held contact, focus, recorder state and audio');assert.ok(position>=originalPosition,'A display-only notification cannot move the running clock backward');assert.match(item.play,item.locale==='en'?/Pause/:/暂停/);assert.equal(item.keyLabel,item.locale==='en'?'Play C4':'弹奏 C4');}
   let previous=snapshots.baseline;
-  for(const item of snapshots.localized){const elapsed=item.state.position-previous.state.position,minimum=Math.max(0,item.wallBefore-previous.wallAfter),maximum=item.wallAfter-previous.wallBefore;assert.ok(elapsed>=minimum&&elapsed<=maximum,JSON.stringify({locale:item.locale,elapsed,minimum,maximum,message:'Progress advances at the canonical clock rate within the measured redraw wall interval'}));previous=item;}
+  // AudioContext time advances in device quanta. Compare exact frame deltas to
+  // device observations around each redraw, including a legitimate zero quantum.
+  for(const item of snapshots.localized){const elapsedFrames=Math.round(item.state.position*snapshots.sampleRate/1000)-Math.round(previous.state.position*snapshots.sampleRate/1000),minimum=Math.max(0,item.frameBefore-previous.frameAfter),maximum=item.frameAfter-previous.frameBefore;assert.ok(elapsedFrames>=minimum&&elapsedFrames<=maximum,JSON.stringify({locale:item.locale,elapsedFrames,minimum,maximum,message:'Progress advances at the actual canonical audio-frame rate within the observed redraw interval'}));previous=item;}
   await page.waitForFunction(position=>globalThis.__wmhReadPlaybackClock().positionMs>position,snapshots.localized.at(-1).state.position);
   assert.equal(await page.locator('#keyboard [data-midi="60"]').getAttribute('aria-pressed'),'true');
   await page.keyboard.up('r');await page.locator('#play-button').click();
@@ -2352,7 +2367,7 @@ test('real wide physical keyboard records every C2 through A sharp 5 pitch with 
   const map=await page.locator('#keyboard-map [data-code]').evaluateAll(elements=>elements.map(element=>({code:element.dataset.code,midi:Number(element.dataset.noteMidi),enabled:element.dataset.enabled,row:element.parentElement.dataset.row})));
   assert.deepEqual(map,wideKeyboardBindings.map(({code,midi,row})=>({code,midi,enabled:'true',row})));
   assert.equal(await page.locator('#keyboard [data-midi="60"] .key-shortcut').textContent(),'R');assert.equal(await page.locator('#keyboard [data-midi="64"] .key-shortcut').textContent(),'I');
-  await page.locator('#play-button').click();await page.locator('#stage-title').click();
+  await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page);await page.locator('#stage-title').click();
   for(const binding of wideKeyboardBindings)await page.keyboard.press(binding.key);
   await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='47');
   assert.equal(await page.locator('#keyboard .pressed').count(),0);assert.equal(await page.locator('#keyboard-map .held').count(),0);
@@ -2366,17 +2381,19 @@ test('real wide physical keyboard records every C2 through A sharp 5 pitch with 
 
 test('real keyboard input transposition and custom mapping retain performed MIDI without changing score pitches',testOptions,async()=>{
   const score=await prepareKeyboardBrowserPractice('original-custom-keyboard');
-  const playKey=async key=>{await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press(key);await page.locator('#play-button').click();};
+  const playKey=async key=>{const previous=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page,previous);await page.locator('#stage-title').click();await page.keyboard.press(key);await page.locator('#play-button').click();};
   await playKey('r');const initial=await exportTakeData(),compileCount=requests.filter(request=>request.path==='/api/compile').length;
   await ui('#keyboard-input-offset').fill('2');await ui('#keyboard-settings-apply').click();await closeShellPanels();
   assert.equal(await page.locator('#keyboard [data-midi="62"] .key-shortcut').textContent(),'R');
-  await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('r');await page.keyboard.press('ArrowRight');await page.keyboard.press('r');await page.keyboard.press('ArrowUp');await page.keyboard.press('r');await page.locator('#play-button').click();
+  const transposedFrom=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;
+  await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page,transposedFrom);await page.locator('#stage-title').click();await page.keyboard.press('r');await page.keyboard.press('ArrowRight');await page.keyboard.press('r');await page.keyboard.press('ArrowUp');await page.keyboard.press('r');await page.locator('#play-button').click();
   await ui('#keyboard-base-midi').fill('60');await ui('#keyboard-input-offset').fill('0');await ui('#keyboard-settings-apply').click();await ui('#keyboard-preset').selectOption('custom');
   const duplicate=[{code:'KeyR',offset:0,label:'Root',row:'custom'},{code:'KeyI',offset:0,label:'Fifth',row:'custom'}];
   const configuration=await page.locator('#keyboard-map').getAttribute('data-configuration-id');
   await ui('#keyboard-mapping-editor').fill(JSON.stringify(duplicate));await ui('#keyboard-mapping-apply').click();assert.match(await ui('#keyboard-configuration-error').textContent(),/Multiple keys map to the same pitch/);assert.equal(await page.locator('#keyboard-map').getAttribute('data-configuration-id'),configuration);
   const custom=duplicate.map((binding,index)=>({...binding,offset:index*7}));await ui('#keyboard-mapping-editor').fill(JSON.stringify(custom));await ui('#keyboard-mapping-apply').click();assert.equal(await ui('#keyboard-configuration-error').isVisible(),false);assert.equal(await ui('#keyboard-preset').inputValue(),'custom');await closeShellPanels();
-  await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('r');await page.keyboard.press('i');await page.locator('#play-button').click();
+  const customFrom=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;
+  await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page,customFrom);await page.locator('#stage-title').click();await page.keyboard.press('r');await page.keyboard.press('i');await page.locator('#play-button').click();
   const take=await exportTakeData(),performed=[60,62,63,75,60,67];assert.deepEqual(take.passes[0].inputs.map(input=>input.midi),performed);assertTypingEvidence(take,performed);
   assert.deepEqual(take.passes[0].timeline,initial.passes[0].timeline);assert.deepEqual(take.passes[0].timeline.notes.map(note=>note.midi),[60,64]);
   assert.deepEqual(take.keyboard_input_configuration.current_configuration.mapping,custom);assert.equal(take.keyboard_input_configuration.current_configuration.base_midi,60);assert.equal(take.keyboard_input_configuration.current_configuration.transpose_semitones,0);
@@ -2401,7 +2418,7 @@ test('real muted keyboard controls validate MIDI bounds and never create, resume
 });
 
 test('real IME and form-focus boundaries release physical notes without inventing note offs or captures',testOptions,async()=>{
-  const score=await prepareKeyboardBrowserPractice('original-keyboard-ime');await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.down('r');assert.equal(await page.locator('#keyboard [data-midi="60"]').getAttribute('aria-pressed'),'true');
+  const score=await prepareKeyboardBrowserPractice('original-keyboard-ime');await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page);await page.locator('#stage-title').click();await page.keyboard.down('r');assert.equal(await page.locator('#keyboard [data-midi="60"]').getAttribute('aria-pressed'),'true');
   await page.locator('#stage-title').dispatchEvent('compositionstart',{data:'中'});assert.equal(await page.locator('#keyboard .pressed').count(),0);assert.equal(await page.locator('#keyboard-map .held').count(),0);
   await page.keyboard.press('a');await page.locator('#stage-title').dispatchEvent('keydown',{key:'Process',code:'KeyI',keyCode:229,isComposing:true});await page.keyboard.up('r');await page.locator('#stage-title').dispatchEvent('compositionend',{data:'中文'});
   assert.equal(await page.locator('#hud-captured').textContent(),'1');await page.keyboard.down('i');assert.equal(await page.locator('#keyboard [data-midi="64"]').getAttribute('aria-pressed'),'true');
@@ -2526,7 +2543,7 @@ test('real Free A/B selection, import and backup preserve records while fixed-to
 
 test('real Free recording and return preserve the complete paused scored take, loop and canonical source',testOptions,async()=>{
   const score=await prepareKeyboardBrowserPractice('original-score-beside-free');await ui('.practice-options>summary').click();await ui('#loop-from').fill('0');await ui('#loop-to').fill('4');await ui('#loop-apply').click();await page.waitForFunction(()=>document.querySelector('#loop-enabled').checked);await closeShellPanels();
-  await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('r');await page.locator('#play-button').click();
+  await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page);await page.locator('#stage-title').click();await page.keyboard.press('r');await page.locator('#play-button').click();
   const before=await exportTakeData(),snapshot=await pausedTakeSnapshot(),loop=await page.locator('#loop-from,#loop-to,#loop-enabled').evaluateAll(elements=>elements.map(element=>({id:element.id,value:element.value,checked:element.checked})));
   const requestStart=requests.length;await enterSilentFreePractice();const free=await recordAndSaveFreeKeys('Separate free record',['i','p']);assertFreeMusicalEvents(free.data,[64,66]);assert.equal(await page.locator('#workspace').isVisible(),false);
   await page.locator('#free-exit').click();await page.locator('#resume-session').click();assert.deepEqual(await pausedTakeSnapshot(),snapshot);assert.deepEqual(await page.locator('#loop-from,#loop-to,#loop-enabled').evaluateAll(elements=>elements.map(element=>({id:element.id,value:element.value,checked:element.checked}))),loop);assert.deepEqual(await exportTakeData(),before,'Free observations, library writes and navigation cannot leak into the scored recorder or its keyboard-configuration history');assert.deepEqual(await exportScore(),score);
@@ -2538,7 +2555,7 @@ test('real explicit guitar phrase uses Rust inventory then filtered locks withou
   const score=guitarPhraseBrowserScore(),watch=predicate=>page.waitForResponse(response=>new URL(response.url()).pathname==='/api/fingering/guitar'&&response.request().method()==='POST'&&response.request().postDataJSON()?.score?.id===score.id&&predicate(response.request().postDataJSON()));
   const initialPlan=watch(body=>!body.planning_scope&&body.locks.length===0);await ui('#score-file').setInputFiles({name:'original-guitar-phrase.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))});await readyForTitle(score.title);assert.equal((await responseJson(await initialPlan)).status,'ready');
   const compiled=await rustApi('/api/compile',score),source=id=>compiled.timeline.notes.find(note=>note.source_note_ids.includes(id));assert.equal(compiled.timeline.duration_ms,8000);
-  await ui('#session-mode').selectOption('practice');await ui('.practice-options>summary').click();await ui('#loop-from').fill('0');await ui('#loop-to').fill('8');await ui('#loop-apply').click();await page.waitForFunction(()=>document.querySelector('#loop-enabled').checked);await closeShellPanels();await page.locator('#play-button').click();await page.locator('#stage-title').click();await page.keyboard.press('r');await page.locator('#play-button').click();
+  await ui('#session-mode').selectOption('practice');await ui('.practice-options>summary').click();await ui('#loop-from').fill('0');await ui('#loop-to').fill('8');await ui('#loop-apply').click();await page.waitForFunction(()=>document.querySelector('#loop-enabled').checked);await closeShellPanels();await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page);await page.locator('#stage-title').click();await page.keyboard.press('r');await page.locator('#play-button').click();
   const before=await exportTakeData(),snapshot=await pausedTakeSnapshot(),loop=await page.locator('#loop-from,#loop-to,#loop-enabled').evaluateAll(elements=>elements.map(element=>({id:element.id,value:element.value,checked:element.checked})));
   await page.locator('#guitar-plan-controls>summary').click();
   const locks=[{source_note_id:'entry-e',string:2,fret:5,finger:3},{source_note_id:'outside-after',string:1,fret:5,finger:3}];

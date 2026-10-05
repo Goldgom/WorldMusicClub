@@ -21,3 +21,14 @@ export async function waitForPlaybackClock(page) {
   });
   await ready.dispose();
 }
+
+// A successful Play click may still precede the renderer's 50 ms start anchor.
+// Input fixtures must observe actual source-clock progress before capturing an
+// in-take event; resume callers pass the position observed before clicking Play.
+export async function waitForPlaybackClockAdvance(page, previousPositionMs = 0) {
+  const advanced = await page.waitForFunction(previous => {
+    const clock = globalThis.__wmhReadPlaybackClock();
+    return clock.available && clock.running && clock.phase === 'playing' && clock.positionMs > previous;
+  }, previousPositionMs);
+  await advanced.dispose();
+}
