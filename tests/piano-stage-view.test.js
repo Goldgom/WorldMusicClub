@@ -37,10 +37,10 @@ test('shared toolbar reuses mode-owned action handlers and marks them as nonmusi
 });
 
  test('notice budget tracks the rendered original banner and restores the shared lane allocation on dismissal',()=>{
-  const {document:dom}=parseHTML('<html><body><p id="notice" hidden>Notice</p></body></html>'),banner=dom.getElementById('notice'),callbacks={},observed=[];let height=32,disposed=0;const window={addEventListener(type,callback){callbacks[type]=callback},removeEventListener(type,callback){assert.ok(callbacks[type]===callback);delete callbacks[type]}},document={defaultView:window,body:dom.body,getElementById:id=>dom.getElementById(id)};
+  const {document:dom}=parseHTML('<html><body><p id="notice" hidden>Notice</p></body></html>'),banner=dom.getElementById('notice'),callbacks={},observed=[];let height=32,disposed=0,frame;const flush=()=>{const callback=frame;frame=null;callback?.();},window={requestAnimationFrame(callback){frame=callback;return 1;},cancelAnimationFrame(){frame=null;},addEventListener(type,callback){callbacks[type]=callback},removeEventListener(type,callback){assert.ok(callbacks[type]===callback);delete callbacks[type]}},document={defaultView:window,body:dom.body,getElementById:id=>dom.getElementById(id)};
   banner.getBoundingClientRect=()=>({height});window.getComputedStyle=()=>({marginTop:'2px',marginBottom:'3px'});
   window.ResizeObserver=class{constructor(callback){callbacks.resizeObserver=callback}observe(node){observed.push(node)}disconnect(){disposed++}};window.MutationObserver=class{constructor(callback){callbacks.mutation=callback}observe(node,options){observed.push(node);assert.deepEqual(options.attributeFilter,['hidden'])}disconnect(){disposed++}};
-  const stop=observePianoNoticeBudget({document}),budget=()=>document.body.style.getPropertyValue('--piano-notice-space');assert.equal(budget(),'0px');assert.ok(observed.every(node=>node===banner));
-  banner.hidden=false;callbacks.mutation();assert.equal(budget(),'37px');height=54.2;callbacks.resizeObserver();assert.equal(budget(),'60px');banner.hidden=true;callbacks.mutation();assert.equal(budget(),'0px','Dismissal restores the complete shared normal/free lane budget');
-  banner.hidden=false;callbacks.resize();assert.equal(budget(),'60px');stop();assert.equal(disposed,2);assert.ok(!budget());
+  const stop=observePianoNoticeBudget({document}),budget=()=>document.body.style.getPropertyValue('--piano-notice-space');flush();assert.equal(budget(),'0px');assert.ok(observed.every(node=>node===banner));
+  banner.hidden=false;callbacks.mutation();flush();assert.equal(budget(),'37px');height=54.2;callbacks.resizeObserver();flush();assert.equal(budget(),'60px');banner.hidden=true;callbacks.mutation();flush();assert.equal(budget(),'0px','Dismissal restores the complete shared normal/free lane budget');
+  banner.hidden=false;callbacks.resize();flush();assert.equal(budget(),'60px');stop();assert.equal(disposed,2);assert.ok(!budget());
  });

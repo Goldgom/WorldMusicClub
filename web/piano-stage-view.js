@@ -1,4 +1,5 @@
 import {midiName} from './music.js';
+import {createPianoBudgetUpdate} from './piano-layout-budget.js';
 
 /** The two modes share physical geometry and presentation, never input ownership. */
 export const pianoMinimumWidth = geometry => Math.max(640, geometry.filter(key => !key.black).length * 22);
@@ -42,20 +43,19 @@ export function renderPianoKeybed({document,keyboard,geometry,bindings=[],labelF
 
 /** Notices consume the same lane budget in either mode. Reading their rendered
  * size never changes their lifetime, focus, or the musical transport. */
-export function observePianoNoticeBudget({document}) {
-  const window=document.defaultView,banner=document.getElementById('notice');
+export function observePianoNoticeBudget({document,window=document.defaultView}) {
+  const banner=document.getElementById('notice');
   if(!banner)return()=>{};
-  let previous=null;
-  const refresh=()=>{
+  const update=createPianoBudgetUpdate({document,window,property:'--piano-notice-space',measure(){
+    if(!banner.isConnected||document.getElementById('notice')!==banner)return;
     const rect=!banner.hidden&&banner.getBoundingClientRect?.();
     const css=rect&&window.getComputedStyle?.(banner);
     const height=rect?Math.ceil(rect.height+(parseFloat(css?.marginTop)||0)+(parseFloat(css?.marginBottom)||0)):0;
-    if(height===previous)return;previous=height;
-    document.body.style.setProperty('--piano-notice-space',`${height}px`);
-  };
-  const resize=window.ResizeObserver?new window.ResizeObserver(refresh):null;
-  const mutation=window.MutationObserver?new window.MutationObserver(refresh):null;
+    return `${height}px`;
+  }});
+  const resize=window.ResizeObserver?new window.ResizeObserver(update.schedule):null;
+  const mutation=window.MutationObserver?new window.MutationObserver(update.schedule):null;
   resize?.observe(banner);mutation?.observe(banner,{attributes:true,attributeFilter:['hidden']});
-  window.addEventListener('resize',refresh);refresh();
-  return()=>{resize?.disconnect();mutation?.disconnect();window.removeEventListener('resize',refresh);document.body.style.removeProperty('--piano-notice-space');};
+  window.addEventListener('resize',update.schedule);update.schedule();
+  return()=>{resize?.disconnect();mutation?.disconnect();window.removeEventListener('resize',update.schedule);update.dispose();};
 }

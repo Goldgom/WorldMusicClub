@@ -10,7 +10,6 @@ import {Transport} from '../web/transport.js';
 import {contrastRatio} from '../web/themes.js';
 import {fixture} from './frontend-fixtures.js';
 import './frontend-midi-settings.test.js';
-import './notation-hud-geometry.test.js';
 const english=createI18n({locale:'en',onReport(){}});
 
 test('dense written highlighting mutates only changed identities and initializes replaced pages',()=>{
@@ -53,14 +52,14 @@ test('note names retain AA contrast on every scheduled note color',()=>{for(cons
 
 test('the piano status row reserves its actual wrapped height and preserves the shared budget while Free is visible',()=>{
  const {document}=parseHTML('<html><body><main id="workspace" class="piano-workspace"><div class="performance-status"></div></main></body></html>'),status=document.querySelector('.performance-status');
- let height=36,width=1000,refresh,disconnected=false;const listeners=new Map();
+ let height=36,width=1000,refresh,frame,disconnected=false;const listeners=new Map(),flush=()=>{const callback=frame;frame=null;callback?.();};
  status.getBoundingClientRect=()=>({width,height});
- const window={ResizeObserver:class{constructor(callback){refresh=callback;}observe(node){assert.equal(node,status);}disconnect(){disconnected=true;}},addEventListener:(type,callback)=>listeners.set(type,callback),removeEventListener:type=>listeners.delete(type)};
+ const window={requestAnimationFrame(callback){frame=callback;return 1;},cancelAnimationFrame(){frame=null;},ResizeObserver:class{constructor(callback){refresh=callback;}observe(node){assert.equal(node,status);}disconnect(){disconnected=true;}},addEventListener:(type,callback)=>listeners.set(type,callback),removeEventListener:type=>listeners.delete(type)};
  const stop=observePianoStatusBudget({document,status,window}),budget=()=>document.body.style.getPropertyValue('--piano-status-space');
- assert.equal(budget(),'36px');height=61.25;refresh();assert.equal(budget(),'62px','A longer localized label reserves the complete wrapped row');
- width=height=0;refresh();assert.equal(budget(),'62px','A hidden normal stage does not change shared Free geometry');
- width=1000;height=40;document.getElementById('workspace').classList.remove('piano-workspace');refresh();assert.equal(budget(),'62px','Guitar status does not replace the piano budget');
- document.getElementById('workspace').classList.add('piano-workspace');listeners.get('resize')();assert.equal(budget(),'40px');
+ flush();assert.equal(budget(),'36px');height=61.25;refresh();flush();assert.equal(budget(),'62px','A longer localized label reserves the complete wrapped row');
+ width=height=0;refresh();flush();assert.equal(budget(),'62px','A hidden normal stage does not change shared Free geometry');
+ width=1000;height=40;document.getElementById('workspace').classList.remove('piano-workspace');refresh();flush();assert.equal(budget(),'62px','Guitar status does not replace the piano budget');
+ document.getElementById('workspace').classList.add('piano-workspace');listeners.get('resize')();flush();assert.equal(budget(),'40px');
  stop();assert.equal(budget(),undefined);assert.equal(disconnected,true);assert.equal(listeners.size,0);
 });
 

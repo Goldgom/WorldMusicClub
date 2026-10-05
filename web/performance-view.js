@@ -4,6 +4,7 @@ import {stageFeedbackView} from './hud-feedback.js';
 import {keyTonic} from './music.js';
 import {setupStageNotationLayout} from './stage-notation-layout.js';
 import {mountPianoStage,createPianoToolbar,renderPianoRails,observePianoNoticeBudget} from './piano-stage-view.js';
+import {createPianoBudgetUpdate} from './piano-layout-budget.js';
 export const FIELD_COLORS=Object.freeze({background:'#142333',backgroundEnd:'#1d3b4b',natural:'#7be4ce',accidental:'#acb0f5',scheduled:'#f4ce78',noteText:'#112538'});
 
 /** Presentation changes only. Unchanged attributes can still invalidate style
@@ -45,18 +46,15 @@ export function performanceCue(context,i18n=getAppI18n()){
 /** The status bar owns real space outside the music. Keep the last visible
  * height while Free is open so both piano modes retain the same lane budget. */
 export function observePianoStatusBudget({document,status,window=document.defaultView}){
-  let previous=0;
-  const refresh=()=>{
-    if(!document.getElementById('workspace')?.classList.contains('piano-workspace'))return;
+  const update=createPianoBudgetUpdate({document,window,property:'--piano-status-space',measure(){
+    if(!status.isConnected||!document.getElementById('workspace')?.classList.contains('piano-workspace'))return;
     const box=status.getBoundingClientRect?.();
     if(!box?.width||!box.height)return;
-    const height=Math.ceil(box.height);
-    if(height===previous)return;previous=height;
-    document.body.style.setProperty('--piano-status-space',`${height}px`);
-  };
-  const observer=window.ResizeObserver?new window.ResizeObserver(refresh):null;
-  observer?.observe(status);window.addEventListener('resize',refresh);refresh();
-  return()=>{observer?.disconnect();window.removeEventListener('resize',refresh);document.body.style.removeProperty('--piano-status-space');};
+    return `${Math.ceil(box.height)}px`;
+  }});
+  const observer=window.ResizeObserver?new window.ResizeObserver(update.schedule):null;
+  observer?.observe(status);window.addEventListener('resize',update.schedule);update.schedule();
+  return()=>{observer?.disconnect();window.removeEventListener('resize',update.schedule);update.dispose();};
 }
 
 /** Presentation only. The app still owns all timing, sound and recorder state. */
