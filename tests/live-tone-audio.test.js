@@ -200,3 +200,14 @@ test('adapter rejects mismatched acknowledgements and malformed PCM receipts wit
   next.receive({type: 'ack', source: 'live-tone', command: 'play', generation: next.generation, requestId, frame: 0});
   await assert.rejects(waiting, {code: 'live_audio_protocol_error'}); assert.equal(next.pending.size, 0); next.dispose();
 });
+
+test('bounded host metadata eviction cannot strand a still-held DSP voice while ended replies are delayed', async () => {
+  const h = adapterHarness(), receiver = await h.create(); receiver.play('held', 69); await h.flush(); h.render(); await h.flush();
+  // Pause delivery to the host while transient voices naturally retire. The
+  // DSP still owns the long-held first key; the host reaches its 64-ID bound.
+  const receive = h.nodes[0].port.onmessage; h.nodes[0].port.onmessage = () => {};
+  for (let i = 0; i < 64; i++) { receiver.play(`short-${i}`, 60, 20); await h.flush(); h.render(9000); await h.flush(); }
+  assert.equal(receiver.notes.has('held'), false); assert.ok(h.nodes[0].core.snapshot(0).voices.some(v => v.id === 'held'));
+  receiver.release('held'); await h.flush(); h.render(700); await h.flush(); assert.equal(h.nodes[0].core.activeNotes, 0);
+  h.nodes[0].port.onmessage = receive; receiver.dispose();
+});

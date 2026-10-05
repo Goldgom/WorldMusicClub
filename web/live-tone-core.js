@@ -163,7 +163,7 @@ export class LiveToneCore {
       } else if (message.type === 'release' || message.type === 'stop') {
         liveToneId(message.id);
         if (!integer(message.token, 1, L.maxToken)) reject('invalid_live_audio_command', 'The live audio release token is invalid.');
-        for (const voice of this.notes) if (voice.occupied && voice.id === message.id && (message.type === 'stop' ? voice.token <= message.token : voice.token === message.token)) {
+        for (const voice of this.notes) if (voice.occupied && voice.id === message.id && voice.token <= message.token) {
           if (message.type === 'release') this.releaseVoice(voice, frame); else this.finish(voice, frame, 'stopped');
         }
       } else if (message.type === 'silence' || message.type === 'silenceClicks' || message.type === 'close') {

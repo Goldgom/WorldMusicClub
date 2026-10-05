@@ -125,7 +125,10 @@ export class LiveToneReceiver {
   }
   release(id) {
     liveToneId(id); if (this.disposed || this.state !== 'ready') return null;
-    const token = this.notes.get(id); if (!token) return null;
+    // Current-ID metadata is bounded and may lag the processor's ended replies.
+    // A captured upper token still releases the held ID after host eviction,
+    // while a delayed old release cannot touch a newer token for the same ID.
+    const token = this.notes.get(id) || this.token; if (!token) return null;
     this.notes.delete(id); return this.send('release', {id, token});
   }
   stop(id) {
