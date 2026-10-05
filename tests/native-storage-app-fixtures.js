@@ -54,7 +54,7 @@ export async function nativeScoreServer({scores=[],directory='C:\\Test-only\\Wor
 }
 
 /** Real app import, mocked DOM/audio/native transport and isolated browser storage. */
-export async function nativeStorageApp(server,{now,audioSampleRate=8000,audioWorklet=true,audioMessages=true,liveAudioMessages=true,storageValues=new Map()}={}) {
+export async function nativeStorageApp(server,{now,audioSampleRate=8000,audioWorklet=true,audioMessages=true,liveAudioMessages=true,storageValues=new Map(),localStorageDescriptor}={}) {
   const {document,window}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8'));
   const audioNodes=[],audioHarnesses=[],audioDevices=[],audioGraphEvents=[];const downloads=[],plays=[],values=storageValues,factory=new IDBFactory(),openedDatabases=[];
   const midiDevice={id:'test-device',name:'Test MIDI',state:'connected',connection:'open',onmidimessage:null};
@@ -100,6 +100,7 @@ export async function nativeStorageApp(server,{now,audioSampleRate=8000,audioWor
   if(now)installed.performance={now};
   const originals=new Map(Object.keys(installed).map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
   for(const [key,value]of Object.entries(installed))Object.defineProperty(globalThis,key,{configurable:true,value});
+  if(localStorageDescriptor)Object.defineProperty(globalThis,'localStorage',{configurable:true,...localStorageDescriptor});
   const $=id=>document.getElementById(id),tick=()=>new Promise(resolve=>setImmediate(resolve));
   // Real WebCrypto/file completions may wait behind other test processes. A
   // fixed number of empty event-loop turns is not a bound on that async work.

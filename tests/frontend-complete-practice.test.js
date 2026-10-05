@@ -63,3 +63,27 @@ test('display inventory and actual positions keep stable cached references throu
  let inventories=0;const cache=createPracticeDisplayCache({getParts:()=>{inventories++;return[{id:'drums',percussion:true},{id:'keys',percussion:false}];}}),song={},geometry=[{midi:60},{midi:61}],guitar={tuning:[40,52],frets:0,capo:0},context={cleanSong:song,instrument:'piano',geometry,guitar},first=cache(context);
  for(let frame=0;frame<1000;frame++){const next=cache(context);assert.equal(next.availableMidi,first.availableMidi);assert.equal(next.excludedMachinePartIds,first.excludedMachinePartIds);}assert.equal(inventories,1);assert.deepEqual([...first.excludedMachinePartIds],['drums']);const fret=cache({...context,instrument:'guitar'});assert.deepEqual([...fret.availableMidi],[40,52]);assert.equal(cache({...context,instrument:'guitar'}).availableMidi,fret.availableMidi);assert.equal(inventories,1);assert.notEqual(cache({...context,geometry:[{midi:72}]}).availableMidi,first.availableMidi);cache({...context,cleanSong:{}});assert.equal(inventories,2);
 });
+
+for(const failure of ['property-getter','missing-storage','read-method','write-method'])test(`falling-note preference remains session-only when browser storage fails at ${failure}`,()=>{
+ const original=Object.getOwnPropertyDescriptor(globalThis,'localStorage'),values=new Map([[FALLING_NOTE_LABELS_KEY,'true']]),f=dialogFixture(4),changes=[];let reads=0,writes=0;
+ const denied=()=>{throw new DOMException('Storage unavailable','SecurityError');};
+ const storage={getItem:key=>{reads++;if(failure==='read-method')return denied();return values.get(key)??null;},setItem:(key,value)=>{writes++;if(failure==='write-method')return denied();values.set(key,value);}};
+ Object.defineProperty(globalThis,'localStorage',failure==='property-getter'?{configurable:true,get(){reads++;return denied();}}:{configurable:true,value:failure==='missing-storage'?undefined:storage});
+ try{
+  const initiallyEnabled=failure==='write-method';assert.equal(readFallingNoteLabels(),initiallyEnabled);
+  const setting=setupFallingNoteLabels({document:f.document,i18n:f.i18n,onChange:value=>changes.push(value)}),input=f.$('falling-note-labels'),status=f.$('falling-note-labels-status');assert.equal(setting.enabled(),initiallyEnabled);assert.equal(input.checked,initiallyEnabled);assert.equal(status.hidden,initiallyEnabled);
+  input.checked=!initiallyEnabled;f.emit(input);assert.equal(setting.enabled(),!initiallyEnabled);assert.deepEqual(changes,[!initiallyEnabled]);
+  if(failure==='read-method'){assert.equal(values.get(FALLING_NOTE_LABELS_KEY),'true');assert.equal(writes,1);assert.equal(status.hidden,true,'A later successful explicit write may restore persistence');}
+  else{assert.equal(status.hidden,false);assert.match(status.textContent,/this tab but could not be saved/);assert.equal(values.get(FALLING_NOTE_LABELS_KEY),'true','Failed storage cannot overwrite the retained preference');}
+  const counts=[reads,writes];f.i18n.locale='zh-CN';f.listeners.forEach(listener=>listener());assert.deepEqual([reads,writes],counts,'Locale redraw must not retry storage');assert.equal(setting.enabled(),!initiallyEnabled);if(failure!=='read-method')assert.match(status.textContent,/当前标签页.*未能保存/);
+  assert.equal(readFallingNoteLabels(),initiallyEnabled,'Unsaved in-memory changes are not restored as persistent preferences');
+ }finally{if(original)Object.defineProperty(globalThis,'localStorage',original);else delete globalThis.localStorage;}
+});
+
+for(const failure of ['property-getter','missing-storage'])test(`the production app reaches playback with ${failure} and still toggles falling-note labels`,async()=>{
+ const localStorageDescriptor=failure==='property-getter'?{get(){throw new DOMException('Storage unavailable','SecurityError');}}:{value:undefined},server=await nativeScoreServer(),app=await nativeStorageApp(server,{localStorageDescriptor});
+ try{
+  await app.until(()=>!app.$('start-listen').disabled,'Storage denial must not interrupt app initialization');assert.equal(app.$('falling-note-labels').checked,false);assert.match(app.$('falling-note-labels-status').textContent,/storage is unavailable/);
+  await app.click('home-single-player');await app.click('start-listen');await app.until(()=>app.document.body.dataset.screen==='stage');await app.click('settings-button');const input=app.$('falling-note-labels');input.checked=true;app.emit(input,'change');app.frame();assert.equal(app.$('falling-notes').dataset.noteLabels,'true');assert.match(app.$('falling-note-labels-status').textContent,/could not be saved/);input.checked=false;app.emit(input,'change');app.frame();assert.equal(app.$('falling-notes').dataset.noteLabels,'false');assert.equal(app.$('play-button').disabled,false);
+ }finally{await app.close();}
+});
