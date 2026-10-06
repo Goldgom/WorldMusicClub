@@ -32,7 +32,8 @@ JOBS = {"browser": "bulk-import-browser", "windows": "native-feature-acceptance"
 
 
 def groups_for(platform):
-    return {**GROUPS, "desktop-acceptance": "desktop-acceptance"} if platform == "windows" else GROUPS
+    return ({**GROUPS, "desktop-acceptance": "desktop-acceptance"} if platform == "windows"
+            else {**GROUPS, "pack-management": "packs"})
 
 
 def diagnostic_pairs(platform):
@@ -42,7 +43,7 @@ def diagnostic_pairs(platform):
         upload = next(step for step in steps
                       if step.get("with", {}).get("name") == output + "-${{ github.sha }}")
         collect = steps[steps.index(upload) - 1]
-        yield group, native_root if platform == "windows" else group, output, collect, upload
+        yield group, native_root if platform == "windows" or group == "pack-management" else group, output, collect, upload
 
 
 class WindowsJsonDiagnosticsTests(unittest.TestCase):
@@ -68,6 +69,8 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
                               capture_output=True, text=True, timeout=15, check=False)
 
     def evidence_root(self, platform, name):
+        if platform == "browser" and name == "packs":
+            return self.temp / "library-management-browser" / name
         return self.workspace / "test-results" / name if platform == "browser" else self.workspace / name
 
     def put(self, directory, relative, data):
@@ -84,7 +87,7 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
             for group, root, output, collect, upload in diagnostic_pairs(platform):
                 with self.subTest(platform=platform, group=group):
                     diagnostics.extend([collect, upload])
-                    base = self.workspace / "test-results" if platform == "browser" else self.workspace
+                    base = self.evidence_root(platform, root).parent
                     self.assertEqual(self.command(collect)[2:], [
                         base.as_posix(), (self.temp / output).as_posix(),
                         "--root", root, "--source-sha", SOURCE_SHA,
@@ -97,14 +100,20 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
                     self.assertEqual(upload["with"]["path"], "${{ runner.temp }}/" + output + "/")
                     self.assertEqual(upload["with"]["if-no-files-found"], "error")
                     self.assertIs(upload["with"]["include-hidden-files"], True)
-                    full_name = (f"canonical-practice-{platform}" if group == "canonical-practice"
+                    full_name = ("library-management-browser" if group == "pack-management"
+                                 else f"canonical-practice-{platform}" if group == "canonical-practice"
                                  else "bulk-import-browser" if platform == "browser" else "native-feature-evidence")
                     full = next(step for step in steps if step.get("with", {}).get("name")
                                 == full_name + "-${{ github.sha }}")
                     self.assertEqual(full["if"], "always()")
-                    self.assertIn(("test-results/" if platform == "browser" else "") + root + "/",
-                                  full["with"]["path"])
-                    self.assertIn(".png", full["with"]["path"])
+                    if group == "pack-management":
+                        self.assertIn("${{ runner.temp }}/library-management-browser/**", full["with"]["path"])
+                        self.assertIn("target/debug/examples/native_import_driver", full["with"]["path"])
+                        self.assertIn("target/debug/practice-server", full["with"]["path"])
+                    else:
+                        self.assertIn(("test-results/" if platform == "browser" else "") + root + "/",
+                                      full["with"]["path"])
+                        self.assertIn(".png", full["with"]["path"])
                     self.assertLess(steps.index(full), steps.index(collect))
             # Added collectors cannot suppress any existing validation/package step
             # via the runner's implicit success() guard. Failure still fails the job.
@@ -119,6 +128,10 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
                     evidence = self.evidence_root(platform, root)
                     reports = {"report.json": b'{"ok":false,"stage":"audio-admission"}\n',
                                "nested/geometry.json": b'{"width":720,"pcm":[0,0]}\n'}
+                    if group == "pack-management":
+                        reports = {"latest-run.json": b'{"ok":false,"report":"original-run/report.json"}\n',
+                                   "original-run/report.json": b'{"ok":false,"error":"Actual pointer practice input required","practice_input":{"clock_before_wait":{"positionMs":0}}}\n',
+                                   "original-run/downloads/practice-take-before.json": b'{"passes":[{"inputs":[]}]}\n'}
                     for path, data in reports.items():
                         self.put(evidence, path, data)
                     for path in ["failure.png", "driver.exe", "server.log",

@@ -9,7 +9,8 @@ import {storedZip} from './native-import-driver-fixtures.js';
 import {songRow, packRow, managementServer} from './library-management-fixtures.js';
 import {nativeStorageApp, nativeResponse, deferred} from './native-storage-app-fixtures.js';
 import {checkedManagementResponse, managementRequest} from '../web/library-management-contract.js';
-import {PACK_MANAGEMENT_LIMITS, originalPackManagementFixtures, fixtureManifest, writeOriginalFixtures, requireHostedPackManagement, moveOriginalReceiptsAside, originalLibraryInventory, assertOriginalManagementInventory, inspectOriginalManagementZip, practiceBaselineReady, assertSettledPracticeExport, sha256} from '../scripts/pack-management-acceptance-fixtures.mjs';
+import {readPlaybackClock} from './browser-playback-clock.js';
+import {PACK_MANAGEMENT_LIMITS, originalPackManagementFixtures, fixtureManifest, writeOriginalFixtures, requireHostedPackManagement, moveOriginalReceiptsAside, originalLibraryInventory, assertOriginalManagementInventory, inspectOriginalManagementZip, practiceBaselineReady, assertSettledPracticeExport, assertPracticePointerCapture, sha256} from '../scripts/pack-management-acceptance-fixtures.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const ownedRoot = async t => {
@@ -196,7 +197,7 @@ test('current Rust-emitted recovery samples remain accepted without claiming thi
   assert.ok(packs.some(row => row.retained_only_count > 0));
 });
 
-test('practice baseline waits through actual app grace and in-flight assessment before preserving its complete export', async () => {
+test('practice baseline rejects a pre-anchor pointer, then waits for captured input and settled assessment before preservation', async () => {
   const server = await managementServer(), gate = deferred(); let now = 10000, assessing = false;
   server.setExtraRoute(async ({path}) => {
     if (path === '/api/assess') { assessing = true; await gate.promise; return nativeResponse({hits: [], misses: [], extras: [], accuracy_percent: 0, mean_abs_error_ms: null}); }
@@ -207,8 +208,23 @@ test('practice baseline waits through actual app grace and in-flight assessment 
     assert.equal(app.$('count-in').closest('dialog')?.id, 'settings-dialog', 'Performance layout moves this control into Settings');
     app.$('count-in').checked = false;
     await app.click('start-practice'); await app.until(() => app.document.body.dataset.screen === 'stage' && /Pause/.test(app.$('play-button').textContent));
-    now=app.sourceStartWall()+10;app.renderAudioTo((now-10000)/1000);
-    const key = app.$('keyboard').querySelector('[data-midi="60"]'); app.emit(key, 'pointerdown', {pointerId: 9, button: 0}); app.emit(key, 'pointerup', {pointerId: 9});
+    // The old hosted fixture clicked at this exact UI state. Real app/recorder
+    // code must retain that early event without manufacturing a scored input.
+    assert.ok(app.sourceStartWall() > now); app.frame();
+    assert.equal(readPlaybackClock(app.document).running, true);
+    assert.equal(readPlaybackClock(app.document).positionMs, 0);
+    const key = app.$('keyboard').querySelector('[data-midi="60"]');
+    app.emit(key, 'pointerdown', {pointerId: 8, button: 0}); app.emit(key, 'pointerup', {pointerId: 8});
+    app.frame(); assert.equal(app.$('hud-captured').textContent, '0');
+    const early = await app.exported('export-takes');
+    assert.deepEqual(early.passes[0].inputs, []); assert.deepEqual(early.passes[0].captures, []);
+    const earlyOnset = early.input_evidence.events.find(event => event.kind === 'note_on');
+    assert.equal(earlyOnset.input_kind, 'on_screen_pointer'); assert.equal(earlyOnset.event_wall_ms, now);
+    assert.equal(earlyOnset.onset_capture, null); assert.throws(() => assertPracticePointerCapture(early), /Exactly one practice input/);
+    now=app.sourceStartWall()+10;app.renderAudioTo((now-10000)/1000);app.frame();
+    assert.ok(readPlaybackClock(app.document).positionMs > 0);
+    app.emit(key, 'pointerdown', {pointerId: 9, button: 0}); app.emit(key, 'pointerup', {pointerId: 9});
+    app.frame(); assert.equal(app.$('hud-captured').textContent, '1');
     await app.click('back-to-library'); await app.click('results-button');
     assert.equal(practiceBaselineReady(app.document), false); await app.click('assess-button');
     now += 179; app.frame(); assert.equal(assessing, false); assert.equal(practiceBaselineReady(app.document), false, 'Input grace is not a stable baseline');
@@ -220,6 +236,15 @@ test('practice baseline waits through actual app grace and in-flight assessment 
     assert.equal(practiceBaselineReady(app.document), true, JSON.stringify({phase: app.$('result-summary').dataset.phase, pass: app.$('result-summary').dataset.passId, revision: app.$('result-summary').dataset.revision, assessed: app.$('result-summary').dataset.assessedRevision, retryHidden: app.$('retry-assessments').hidden}));
     const before = await app.exported('export-takes'), settled = assertSettledPracticeExport(before);
     assert.deepEqual(settled, [{id: 1, revision: 1, assessed_revision: 1, pending: false, inputs: 1}]);
+    assert.deepEqual(assertPracticePointerCapture(before).input, {midi: 60, at_ms: 10, velocity: 90});
+    assert.deepEqual(before.input_evidence.events.find(event => event.kind === 'note_on'), earlyOnset, 'Waiting never rewrites the rejected early observation');
+    for (const mutate of [
+      take => { take.passes[0].inputs.push({...take.passes[0].inputs[0]}); },
+      take => { take.passes[0].captures[0].event_wall_ms--; },
+      take => { take.input_evidence.events.find(event => event.onset_capture).input_kind = 'typing_keyboard'; },
+      take => { take.input_evidence.events.find(event => event.onset_capture).onset_capture.event_id++; },
+      take => { take.input_evidence.truncated = true; },
+    ]) { const changed = structuredClone(before); mutate(changed); assert.throws(() => assertPracticePointerCapture(changed)); }
     for (const mutate of [pass => { pass.pending = true; }, pass => { pass.manual_deadline_wall_ms = now + 180; }, pass => { pass.assessed_revision--; }, pass => { pass.error = 'Original failed assessment'; }, pass => { pass.assessment = null; }, pass => { pass.clock_segments.at(-1).wallEnd = null; }]) {
       const changed = structuredClone(before); mutate(changed.passes[0]); assert.throws(() => assertSettledPracticeExport(changed));
     }

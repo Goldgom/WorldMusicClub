@@ -168,3 +168,24 @@ export function assertSettledPracticeExport(value) {
   assert.ok(value.passes.some(pass => pass.inputs.length > 0), 'Actual pointer practice input required');
   return value.passes.map(pass => ({id: pass.id, revision: pass.revision, assessed_revision: pass.assessed_revision, pending: pass.pending, inputs: pass.inputs.length}));
 }
+
+/** The preservation fixture owns one actual C4 pointer capture, not just a HUD count. */
+export function assertPracticePointerCapture(value) {
+  assert.equal(value.passes.reduce((count, pass) => count + pass.inputs.length, 0), 1, 'Exactly one practice input is required');
+  const captures = value.passes.flatMap(pass => pass.captures.map(capture => ({pass, capture})));
+  assert.equal(captures.length, 1, 'Exactly one recorded pointer capture is required');
+  const {pass, capture} = captures[0], input = pass.inputs[0];
+  assert.equal(pass.capture_enabled, true);
+  assert.equal(input.midi, 60); assert.ok(input.at_ms > 0, 'Pointer input must follow the source start anchor');
+  assert.deepEqual(capture.input, input);
+  const correctedWall = capture.event_wall_ms - value.latency_ms;
+  assert.ok(pass.clock_segments.some(segment => correctedWall >= segment.wallStart && (segment.wallEnd === null || correctedWall <= segment.wallEnd) && input.at_ms === segment.positionStart + correctedWall - segment.wallStart), 'Pointer capture must own its exact source-clock timestamp');
+  assert.equal(value.input_evidence?.truncated, false);
+  const onsets = value.input_evidence.events.filter(event => event.kind === 'note_on' && event.onset_capture !== null);
+  assert.equal(onsets.length, 1, 'Exactly one observed onset must own the capture');
+  const onset = onsets[0];
+  assert.equal(onset.input_kind, 'on_screen_pointer'); assert.equal(onset.encoding, 'pointer_down'); assert.equal(onset.midi, 60);
+  assert.deepEqual(onset.onset_capture, {pass_id: pass.id, event_id: capture.event_id});
+  assert.equal(onset.event_wall_ms, capture.event_wall_ms); assert.equal(onset.received_wall_ms, capture.received_wall_ms);
+  return {pass_id: pass.id, event_id: capture.event_id, input: {...input}, event_wall_ms: capture.event_wall_ms};
+}

@@ -8,12 +8,13 @@ import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {startVsqNativeDriver} from '../tests/vsq-native-driver-fixtures.js';
 import {observeRealAudio} from '../tests/browser-input-fixtures.js';
+import {installPlaybackClockReader, readPlaybackClock, waitForPlaybackClockAdvance} from '../tests/browser-playback-clock.js';
 import {assertCleanExportInventory} from '../tests/clean-song-package-fixtures.js';
 import {validateCleanScreenshot} from './verify-native-clean-song-evidence.mjs';
 import {managementRequest, checkedManagementResponse} from '../web/library-management-contract.js';
 import {startHostedAssetServer, createHostedNativeBridge, NATIVE_PROTOCOL_ORIGIN} from './hosted-worklet-assets.mjs';
 import {managementHostedRoute, observeManagementWorkletLoads, validateManagementHostedOrigin, validateManagementWorkletLoads, validateManagementNativeBridge} from './management-hosted-runtime.mjs';
-import {PACK_MANAGEMENT_LIMITS as LIMIT, originalPackManagementFixtures, fixtureManifest, writeOriginalFixtures, requireHostedPackManagement, moveOriginalReceiptsAside, originalLibraryInventory, assertOriginalManagementInventory, assertSelectedLegacyExport, inspectOriginalManagementZip, practiceBaselineReady, assertSettledPracticeExport, sha256} from './pack-management-acceptance-fixtures.mjs';
+import {PACK_MANAGEMENT_LIMITS as LIMIT, originalPackManagementFixtures, fixtureManifest, writeOriginalFixtures, requireHostedPackManagement, moveOriginalReceiptsAside, originalLibraryInventory, assertOriginalManagementInventory, assertSelectedLegacyExport, inspectOriginalManagementZip, practiceBaselineReady, assertSettledPracticeExport, assertPracticePointerCapture, sha256} from './pack-management-acceptance-fixtures.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const git = (...args) => execFileSync('git', args, {cwd: root, encoding: 'utf8'}).trim();
@@ -29,7 +30,7 @@ const fixture = originalPackManagementFixtures(); await writeOriginalFixtures(jo
 const report = {version: 1, kind: 'original-pack-management-hosted-real-native-stdio', source_sha: sourceSha, source_tree: git('rev-parse', 'HEAD^{tree}'), driver_sha256: sha256(await readFile(binary)), viewport: {width: 1280, height: 720}, locale: 'zh-CN', fixture: fixtureManifest(fixture), source_hashes: {}, api: [], actions: [], screenshots: [], downloads: [], page_errors: [], cases: [], process_ids: [], ok: false, claims: {browser: true, native_filesystem: true, native_window: false, physical_audio: false, user_library: false, private_music: false, destructive_management: false}};
 report.hosted_origin = null; report.native_protocol_origin = NATIVE_PROTOCOL_ORIGIN;
 report.host = {origin: null, hosted_origin: null, native_protocol_origin: NATIVE_PROTOCOL_ORIGIN, asset_server: {}, processes: []};
-for (const filename of ['scripts/hosted-pack-management-check.mjs', 'scripts/pack-management-acceptance-fixtures.mjs', 'scripts/hosted-worklet-assets.mjs', 'scripts/management-hosted-runtime.mjs', 'web/app.js','web/song-mod.js','web/song-mod-view.js','scripts/hosted-song-mod-controls.mjs', 'web/library-management-contract.js', 'web/library-management-model.js', 'web/library-management-view.js', 'web/library-management.css', 'tests/vsq-native-driver-fixtures.js']) report.source_hashes[filename] = sha256(await readFile(join(root, filename)));
+for (const filename of ['scripts/hosted-pack-management-check.mjs', 'scripts/pack-management-acceptance-fixtures.mjs', 'scripts/hosted-worklet-assets.mjs', 'scripts/management-hosted-runtime.mjs', 'web/app.js', 'web/practice-recorder.js', 'web/playback-clock-view.js', 'tests/browser-playback-clock.js','web/song-mod.js','web/song-mod-view.js','scripts/hosted-song-mod-controls.mjs', 'web/library-management-contract.js', 'web/library-management-model.js', 'web/library-management-view.js', 'web/library-management.css', 'tests/vsq-native-driver-fixtures.js']) report.source_hashes[filename] = sha256(await readFile(join(root, filename)));
 let driver, browser, context, page, assetServer, origin, nativeBridge, processHost, sessionClosePromise, phase = 'import', cancelled = false, timeout;
 const committed = new Map();
 const recordCase = (name, details = {}) => report.cases.push({name, ...details, ok: true});
@@ -129,8 +130,8 @@ async function captureScoreAndTake(suffix) {
     report.practice_baseline = {dom: await page.locator('#result-summary').evaluate(node => ({phase: node.dataset.phase, pass_id: node.dataset.passId, revision: node.dataset.revision, assessed_revision: node.dataset.assessedRevision})), assessment_api: report.api.filter(row => row.path === '/api/assess').map(row => ({sequence: row.sequence, status: row.status, sha256: row.sha256, file: row.file}))};
   });
   const take = await download('#export-takes', `practice-take-${suffix}.json`);
-  const settled = assertSettledPracticeExport(JSON.parse(take));
-  if (suffix === 'before') report.practice_baseline.passes = settled;
+  const value = JSON.parse(take), settled = assertSettledPracticeExport(value), pointer = assertPracticePointerCapture(value);
+  if (suffix === 'before') Object.assign(report.practice_baseline, {passes: settled, pointer});
   await page.locator('[data-close-panel="results"]').click();
   return {score, take};
 }
@@ -163,6 +164,7 @@ async function launch() {
   page = await context.newPage(); ownedPage = page; page.setDefaultTimeout(15000); page.setDefaultNavigationTimeout(15000);
   page.on('pageerror', error => report.page_errors.push(String(error.stack || error)));
   await page.goto(origin); assert.equal(await page.locator('html').getAttribute('lang'), 'zh-CN');
+  await installPlaybackClockReader(page);
   await page.locator('#home-single-player').click(); await waitForSongMod(page);
 }
 async function importFiles(inputs, label) {
@@ -203,7 +205,16 @@ async function run() {
     await startSongModPerformance(page,{performers:'none'}); await page.waitForFunction(() => document.body.dataset.screen === 'stage' && /暂停/.test(document.querySelector('#play-button').textContent));
     await page.locator('#settings-button').click(); await page.locator('#count-in').uncheck(); await page.locator('[data-close-panel="settings"]').click(); await page.locator('#back-to-library').click();
     await startSongModPerformance(page,{performers:'all'}); await page.waitForFunction(() => document.body.dataset.screen === 'stage' && /暂停/.test(document.querySelector('#play-button').textContent));
-    await page.locator('#keyboard [data-midi="60"]').click(); await page.locator('#back-to-library').click();
+    // Pause is published before the renderer's future source anchor. An early
+    // live key is correctly unscored; this fixture needs a real in-take input.
+    report.practice_input = {clock_before_wait: await page.locator('#progress').evaluate(readPlaybackClock)};
+    await waitForPlaybackClockAdvance(page);
+    report.practice_input.clock_before_pointer = await page.locator('#progress').evaluate(readPlaybackClock);
+    assert.equal(await page.locator('#hud-captured').textContent(), '0');
+    await page.locator('#keyboard [data-midi="60"]').click();
+    await page.waitForFunction(() => document.querySelector('#hud-captured').textContent === '1');
+    report.practice_input.captured_before_pause = await page.locator('#hud-captured').textContent();
+    await page.locator('#back-to-library').click();
   });
   const before = await captureScoreAndTake('before');
   let savedRecording, draftRecording;
