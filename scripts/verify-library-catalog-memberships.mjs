@@ -1,6 +1,6 @@
 // Strict ORIGINAL-fixture evidence extension. Synthetic Node fixtures never establish acceptance.
 import assert from 'node:assert/strict';
-import {checkedCatalogStatus, checkedCatalogQuery, checkedCatalogPreview, checkedRecoveryRecord, checkedCatalogResult, sameCatalogValue} from '../web/library-catalog-contract.js';
+import {catalogQuery, checkedCatalogStatus, checkedCatalogQuery, checkedCatalogPreview, checkedRecoveryRecord, checkedCatalogResult, sameCatalogValue} from '../web/library-catalog-contract.js';
 import en from '../web/locales/library-management-en.js';
 import zh from '../web/locales/library-management-zh-CN.js';
 
@@ -77,7 +77,7 @@ export function validateCatalogMemberships(reports, {initial, selectedIds, allAp
   assert.ok(sourcePackId, 'Original custom pack identity is required');
   const membershipRecords = recordNames.map((name, index) => (index ? last : first).records[name]);
   const [remove, undoRemove, create, add, move, undoMove, conflictRemove, readd] = membershipRecords;
-  const destinationPackId = create.preview.request.action.pack_id, source = custom(sourcePackId, 'rr'), destination = custom(destinationPackId, 'rrr');
+  const destinationPackId = create.preview.request.action.pack_id, source = custom(sourcePackId, 'rr'), destination = custom(destinationPackId, 'r');
   const importedIds = [...new Set(initial.rows.flatMap(row => row.packs.map(pack => pack.collection_id)))];
   assert.ok(destinationPackId !== sourcePackId && !importedIds.includes(destinationPackId));
   assert.ok(!importedIds.includes(sourcePackId));
@@ -104,7 +104,7 @@ export function validateCatalogMemberships(reports, {initial, selectedIds, allAp
   const expectedActions = [
     {type: kinds[0], pack_id: sourcePackId, song_ids: remove.selected.map(row => row.edition_id)},
     {type: kinds[1], membership_operation_id: remove.operation_id},
-    {type: kinds[2], pack_id: destinationPackId, name: 'rrr'},
+    {type: kinds[2], pack_id: destinationPackId, name: 'r'},
     {type: kinds[3], pack_id: destinationPackId, song_ids: [legacy]},
     {type: kinds[4], from_pack: sourcePackId, to_pack: destinationPackId, song_ids: move.selected.map(row => row.edition_id)},
     {type: kinds[5], membership_operation_id: move.operation_id},
@@ -119,7 +119,20 @@ export function validateCatalogMemberships(reports, {initial, selectedIds, allAp
     checkedRecoveryRecord(record, libraryId); assert.equal(record.phase, 'committed'); assert.equal(record.kind, kinds[index]);
     assert.deepEqual(record.preview.request.action, expectedActions[index]);
     assert.deepEqual(record.selected.map(row => row.edition_id).sort(), expectedSelections[index]);
-    for (const row of record.selected) assert.equal(row.title, initial.rows.find(item => item.edition_id === row.edition_id).title);
+    if (record.kind === 'undo_memberships') {
+      // Undo labels use the renderer's current verified page. A moved-out source
+      // is empty, so its exact storage-qualified IDs are the required fallback.
+      const visible = report.api_trace.findLast(row => row.path === '/api/library/catalog/query' && row.source === 'app' && row.request?.view === 'active' && row.sequence < review.sequence);
+      nativeCall(visible, null); checkedCatalogQuery(visible.response, catalogQuery(visible.request), libraryId);
+      assert.equal(visible.response.generation, record.preview.request.expected_generation); assert.equal(visible.response.catalog_digest, record.preview.base_digest);
+      assert.equal(visible.request.collection_id ?? null, index === 5 ? sourcePackId : null, 'Undo title lookup must use the actual source-filter or restarted catalog page');
+      assert.ok(visible.action_sequence < review.action_sequence, 'Undo review must follow its verified catalog page');
+      for (const row of record.selected) {
+        const metadata = visible.response.rows.find(item => item.edition_id === row.edition_id);
+        if (metadata) assert.equal(metadata.title, initial.rows.find(item => item.edition_id === row.edition_id).title, 'Visible native song metadata changed');
+        assert.equal(row.title, metadata?.title || row.edition_id, 'Undo display label differs from its verified page or exact edition fallback');
+      }
+    } else for (const row of record.selected) assert.equal(row.title, initial.rows.find(item => item.edition_id === row.edition_id).title);
     assert.equal(record.preview.request.expected_generation, generation - 1); assert.equal(record.preview.next_generation, generation); assert.equal(record.preview.base_digest, digest);
     assert.deepEqual(record.preview.effects.added_memberships, added[index]); assert.deepEqual(record.preview.effects.removed_memberships, removed[index]);
     assert.deepEqual(record.preview.effects.noops, index === 4 ? [{target: {kind: 'membership', id: {pack: destinationPackId, song: legacy}}, reason: 'already_present'}] : []);
@@ -154,7 +167,7 @@ export function validateCatalogMemberships(reports, {initial, selectedIds, allAp
     for (const click of clicks) actionAt(report, click.sequence, click.control);
   }
   const nameKeys = final.actions.filter(row => row.sequence > commits[1].action_sequence && row.sequence < previews[2].action_sequence && row.control === 'management-catalog-create-name');
-  assert.equal(nameKeys.length, 3, 'Destination name must come from three real keyboard actions');
+  assert.equal(nameKeys.length, 1, 'Destination name must come from one real keyboard action');
   for (const key of nameKeys) { actionAt(final, key.sequence, key.control, 'key-r'); assert.equal(key.trusted_key_downs, 1); assert.equal(key.trusted_key_ups, 1); }
   const checkpoint = (report, value, index) => {
     const result = nativeQuery(report, value, index + 5, commits[index - 1].response.catalog_digest, rowStates[index], countAt(index), libraryId);
@@ -203,7 +216,7 @@ export function validateCatalogMemberships(reports, {initial, selectedIds, allAp
   shotBetween(final, 'membership-restart-undo', Math.min(...discovery.map(row => row.action_sequence)), previews[1].action_sequence);
   shotBetween(final, 'membership-move-review', previews[4].action_sequence, commits[4].action_sequence);
   shotBetween(final, 'membership-conflict', commits[7].action_sequence);
-  const options = ['', ...[sourcePackId, destinationPackId].sort()], labels = new Map([[sourcePackId, `rr · ${sourcePackId}`], [destinationPackId, `rrr · ${destinationPackId}`]]);
+  const options = ['', ...[sourcePackId, destinationPackId].sort()], labels = new Map([[sourcePackId, `rr · ${sourcePackId}`], [destinationPackId, `r · ${destinationPackId}`]]);
   selection(final, 'management-catalog-add-target', destinationPackId, options, labels, commits[2].action_sequence, previews[3].action_sequence);
   selection(final, 'management-catalog-move-target', destinationPackId, ['', destinationPackId], labels, commits[3].action_sequence, previews[4].action_sequence);
   selection(final, 'management-catalog-add-target', sourcePackId, options, labels, commits[6].action_sequence, previews[7].action_sequence);

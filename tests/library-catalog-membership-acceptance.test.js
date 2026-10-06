@@ -14,6 +14,24 @@ test('synthetic membership protocol binds eight changes, native restart Undo and
   for (let generation = 6; generation <= 13; generation++) assert.deepEqual(validateMembershipJournalState(value.states[generation], value.states[generation - 1], value.records[generation], generation, value.records), value.states[generation]);
 });
 
+test('Undo review labels bind the actual verified page and exact IDs when the moved-out source is empty', async () => {
+  const value = await syntheticMembershipProtocol(), final = value.reports[2], undo = final.memberships.records.undo_move, restarted = final.memberships.records.undo_after_restart;
+  assert.ok(undo.selected.every(row => row.title === row.edition_id));
+  assert.ok(restarted.selected.every(row => row.title === value.initial.rows.find(item => item.edition_id === row.edition_id).title));
+  assert.doesNotThrow(() => validate(value));
+  const page = input => input.reports[2].api_trace.findLast(row => row.path === '/api/library/catalog/query' && row.source === 'app' && row.response.generation === 10 && row.request.collection_id === input.reports[2].memberships.source_pack_id);
+  for (const [label, mutate] of [
+    ['arbitrary fallback', v => { v.reports[2].memberships.records.undo_move.selected[0].title = 'Unverified label'; }],
+    ['initial title cannot replace an absent page label', v => { const row = v.reports[2].memberships.records.undo_move.selected[0]; row.title = v.initial.rows.find(item => item.edition_id === row.edition_id).title; }],
+    ['ID cannot replace a present native title', v => { const row = v.reports[2].memberships.records.undo_after_restart.selected[0]; row.title = row.edition_id; }],
+    ['stale visible page', v => { page(v).response.generation--; }],
+    ['changed page digest', v => { page(v).response.catalog_digest = '0'.repeat(64); }],
+    ['foreign query substituted', v => { page(v).source = 'probe'; }],
+    ['wrong source filter', v => { page(v).request.collection_id = null; }],
+    ['failed visible query', v => { page(v).status = 409; }],
+  ]) { const edited = clone(value); mutate(edited); assert.throws(() => validate(edited), undefined, label); }
+});
+
 test('synthetic membership evidence rejects missing, stale, edited, repeated and untrusted proof', async () => {
   const value = await syntheticMembershipProtocol();
   const mutations = [
@@ -38,6 +56,8 @@ test('synthetic membership evidence rejects missing, stale, edited, repeated and
     ['retry action', v => { v.reports[2].actions.push({control: 'management-catalog-retry'}); }],
     ['untrusted remove click', v => { v.reports[1].actions.find(row => row.control === 'management-catalog-remove-preview').trusted_clicks = 0; }],
     ['missing exact edition click', v => { v.reports[2].actions.find(row => row.control === v.selectedIds[0]).control = 'different-edition'; }],
+    ['extra destination typing action', v => { const action = v.reports[2].actions.find(row => row.control === 'management-catalog-create-name'); v.reports[2].actions.push(clone(action)); }],
+    ['old destination name cannot be relabeled', v => { v.reports[2].memberships.records.create_destination.preview.request.action.name = 'rrr'; }],
     ['synthetic destination name', v => { v.reports[2].actions.find(row => row.control === 'management-catalog-create-name').trusted_key_downs = 0; }],
     ['untrusted move selection', v => { v.reports[2].actions.find(row => row.control === 'management-catalog-move-target').selection.untrusted_changes = 1; }],
     ['wrong destination options', v => { v.reports[2].actions.find(row => row.control === 'management-catalog-move-target').selection.option_values.push(v.reports[2].memberships.source_pack_id); }],

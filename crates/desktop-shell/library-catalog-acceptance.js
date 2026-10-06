@@ -132,7 +132,7 @@ function catalogTrustedActionComplete(action) {
       || selected?.target_id !== action.control || selected.target_tag !== 'SELECT'
       || !(selected.before === '' || Array.isArray(selected.option_values) && selected.option_values.includes(selected.before)) || selected.before === selected.after || !/^collection-[0-9a-f]{32}$/.test(selected.after)
       || !Array.isArray(selected.option_values) || selected.option_values.length < 2 || selected.option_values.length > 3 || selected.option_values[0] !== '' || new Set(selected.option_values).size !== selected.option_values.length || !selected.option_values.slice(1).every(id => /^collection-[0-9a-f]{32}$/.test(id)) || selected.selected_index !== (action.kind === 'select-second' ? 1 : selected.option_values.length - 1) || selected.option_values[selected.selected_index] !== selected.after
-      || !['rr', 'rrr'].some(name => selected.selected_text === `${name} · ${selected.after}`) || selected.trusted_changes !== 1 || selected.untrusted_changes !== 0
+      || !['r', 'rr'].some(name => selected.selected_text === `${name} · ${selected.after}`) || selected.trusted_changes !== 1 || selected.untrusted_changes !== 0
       || !Array.isArray(selected.events)) return false;
     const types = selected.events.map(event => event.type);
     return selected.events.length >= 2 && selected.events.length <= 4
@@ -248,9 +248,13 @@ async function runCatalogMembershipAcceptance({stage, document, native, until, q
     assert(cat('filter').value === sourcePackId, 'Move rehearsal must start in the exact custom source');
     if (!cat('organize').open) await native('click', cat('organize').querySelector('summary'));
     assert(cat('create-name').value === '', 'Final destination name input must be fresh');
-    for (let i = 0; i < 3; i++) await native('key-r', cat('create-name'));
-    assert(cat('create-name').value === 'rrr', 'Destination name needs three real keyboard actions');
-    await review('create-preview', 'create_pack'); await confirm('create_destination');
+    // The source is already named rr. One real key creates the distinct r
+    // destination without depending on repeated-click caret placement.
+    await native('key-r', cat('create-name'));
+    assert(cat('create-name').value === 'r', 'Destination name needs exactly one real keyboard action');
+    const created = await review('create-preview', 'create_pack');
+    assert(created.preview.request.action.name === 'r' && created.preview.request.action.pack_id !== sourcePackId, 'Destination review must keep its exact name and distinct pack identity');
+    await confirm('create_destination');
     const destinationId = output.records.create_destination.preview.request.action.pack_id;
     await select([legacy]); await destination('add-target', destinationId); await review('add-preview', 'add_memberships'); await confirm('add_existing_destination');
     await select(selected); await destination('move-target', destinationId); const move = await review('move-preview', 'move_memberships');

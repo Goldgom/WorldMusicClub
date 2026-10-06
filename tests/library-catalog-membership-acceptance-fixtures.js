@@ -62,10 +62,11 @@ export async function syntheticMembershipProtocol({server: suppliedServer, repor
   const perform = async (kind, ids = [], fields = {}, {name, lost = false, shot} = {}) => {
     const before = await query(), control = {trash_songs: '', restore_songs: '', create_pack: 'create-', rename_pack: 'rename-', add_memberships: 'add-', remove_memberships: 'remove-', move_memberships: 'move-', undo_memberships: 'undo-'}[kind];
     if (name) for (const id of ids) action(id);
-    if (name === 'create_destination') for (let i = 0; i < 3; i++) action('management-catalog-create-name', 'key-r', {trusted_key_downs: 1, trusted_key_ups: 1});
+    if (name === 'create_destination') action('management-catalog-create-name', 'key-r', {trusted_key_downs: 1, trusted_key_ups: 1});
+    const visible = kind === 'undo_memberships' ? await call('/api/library/catalog/query', {view: 'active', ...(name === 'undo_move' ? {collection_id: source} : {}), limit: 40, refresh: true}) : null;
     const sequence = action(`management-catalog-${control}preview`), preview = await call('/api/library/catalog/preview', {action: kind, edition_ids: ids, expected_generation: before.generation, catalog_digest: before.catalog_digest, library_id: libraryId, ...fields});
     const selectedIds = kind === 'undo_memberships' ? preview.summary.selected_edition_ids : ids;
-    const record = {kind, library_id: libraryId, operation_id: preview.preview.request.operation_id, phase: 'committed', preview: preview.preview, summary: preview.summary, selected: selectedIds.map(id => ({edition_id: id, title: server.rows.find(row => row.edition_id === id).title}))};
+    const record = {kind, library_id: libraryId, operation_id: preview.preview.request.operation_id, phase: 'committed', preview: preview.preview, summary: preview.summary, selected: selectedIds.map(id => ({edition_id: id, title: visible ? visible.rows.find(row => row.edition_id === id)?.title || id : server.rows.find(row => row.edition_id === id).title}))};
     if (shot) current.screenshots[shot] = sequence;
     if (name) current.memberships.review_focus.push({kind, action_sequence: sequence, active_element: 'management-catalog-review-title', top: 120, bottom: 160, width: 500, height: 40, viewport: {width: 1280, height: 720}});
     action('management-catalog-confirm'); await call('/api/library/catalog/commit', {library_id: libraryId, preview: record.preview}, {delivery: lost ? 'lost-after-native' : 'forwarded'});
@@ -116,9 +117,9 @@ export async function syntheticMembershipProtocol({server: suppliedServer, repor
   current.organization = {...clone(reports[1].organization), empty: null, review_focus: [], packs: packRows, filtered, filter_action, visible_editions: filtered.rows.map(row => row.edition_id).sort()};
   current.screenshots['persisted-user-pack'] = filter_action; current.catalog.active = await query();
   current.catalog.trash = await call('/api/library/catalog/query', {view: 'trash', limit: 100, refresh: true}, {source: 'probe'});
-  const destinationRecord = await perform('create_pack', [], {name: 'rrr'}, {name: 'create_destination'}), destination = destinationRecord.preview.request.action.pack_id;
+  const destinationRecord = await perform('create_pack', [], {name: 'r'}, {name: 'create_destination'}), destination = destinationRecord.preview.request.action.pack_id;
   const select = (control, target, options, before = '') => {
-    const selected_index = options.indexOf(target), selected_text = `${target === source ? 'rr' : 'rrr'} · ${target}`;
+    const selected_index = options.indexOf(target), selected_text = `${target === source ? 'rr' : 'r'} · ${target}`;
     action(control, selected_index === options.length - 1 ? 'select-last' : 'select-second', {selection: {target_id: control, target_tag: 'SELECT', before, after: target, option_values: options, selected_index, selected_text, trusted_changes: 1, untrusted_changes: 0, events: [{type: 'click', trusted: true, target_id: control, value: before}, {type: 'input', trusted: true, target_id: control, value: target}, {type: 'change', trusted: true, target_id: control, value: target}]}});
   };
   const options = ['', ...[source, destination].sort()]; select('management-catalog-add-target', destination, options);

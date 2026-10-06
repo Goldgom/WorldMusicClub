@@ -296,7 +296,7 @@ export function validateCatalogProtocolPhases(reports, {sourceBinding, runId, fi
           const options = action.selection.option_values; assert.ok(Array.isArray(options) && options.length >= 2 && options.length <= 3 && options[0] === '' && new Set(options).size === options.length);
           assert.ok(options.slice(1).every(id => /^collection-[a-f0-9]{32}$/.test(id))); assert.ok(options.includes(action.selection.before) && action.selection.before !== action.selection.after);
           assert.equal(action.selection.selected_index, action.kind === 'select-second' ? 1 : options.length - 1); assert.equal(options[action.selection.selected_index], action.selection.after);
-          assert.ok(['rr', 'rrr'].some(name => action.selection.selected_text === `${name} · ${action.selection.after}`));
+          assert.ok(['r', 'rr'].some(name => action.selection.selected_text === `${name} · ${action.selection.after}`));
         } else { assert.equal(action.selection.before, ''); assert.deepEqual(action.selection.option_values, ['', action.selection.after]); assert.equal(action.selection.selected_index, 1); assert.equal(action.selection.selected_text, `rr · ${action.selection.after}`); }
         assert.equal(action.selection.trusted_changes, 1); assert.equal(action.selection.untrusted_changes, 0);
         const events = action.selection.events; assert.ok(Array.isArray(events) && events.length >= 2 && events.length <= 4);
@@ -686,7 +686,7 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
   const [seed, restart, final] = reports;
   assert.equal(seed.api_trace.filter(row => row.path === '/api/library/list' && row.status === 200)[0]?.response.entries.length, 0, 'Seed must prove a genuinely empty native library');
   for (const report of reports) {
-    assert.equal(report.actions.filter(row => row.kind === 'key-r').length, report === seed ? 3 : report === restart ? 2 : 4, 'Actual practice/recording and organization name key actions differ');
+    assert.equal(report.actions.filter(row => row.kind === 'key-r').length, report === seed ? 3 : 2, 'Actual practice/recording and organization name key actions differ');
     for (const row of report.api_trace.filter(row => row.path === '/api/library/list' && row.status === 200)) assert.equal(row.response.directory, host.directory, 'Native query did not use the host-owned ORIGINAL Scores root');
   }
   for (const report of [seed, final]) for (const view of ['packs', 'duplicates']) {

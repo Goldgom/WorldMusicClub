@@ -28,7 +28,7 @@ test('shared membership acceptance helper drives removal, cache-free recovery, u
   }
   async function input(kind, node) {
     assert.ok(node && !node.disabled, `Unavailable ${node?.id}`); const sequence = actions.length + 1; actions.push({sequence, kind, control: node.id}); node.focus(); node.click();
-    if (kind === 'key-r') { node.value += 'r'; app.emit(node, 'input'); }
+    if (kind === 'key-r') { assert.equal(node.value, '', 'Destination typing must start fresh and use only one native action'); node.value += 'r'; app.emit(node, 'input'); }
     else if (['select-last', 'select-second'].includes(kind)) { node.value = kind === 'select-last' ? [...node.options].at(-1).value : node.options[1].value; app.emit(node, 'change'); }
     else assert.equal(kind, 'click');
     if (node.type === 'checkbox') { node.checked = !node.checked; app.emit(node, 'change'); }
@@ -41,10 +41,35 @@ test('shared membership acceptance helper drives removal, cache-free recovery, u
   try {
     await launch(); await filter(); const removed = await helpers.runCatalogMembershipAcceptance({...args(), stage: 'remove'}); assert.equal(operation(), null); assert.equal(removed.records.remove_before_restart.kind, 'remove_memberships'); assert.equal(actions.length, 5);
     await app.close(); app = null; await launch(); const recovered = await helpers.runCatalogMembershipAcceptance({...args(), stage: 'recover'}); assert.equal(recovered.discovery.local_record, null); assert.equal(recovered.records.undo_after_restart.kind, 'undo_memberships');
-    await filter(); const before = actions.length, finished = await helpers.runCatalogMembershipAcceptance({...args(), stage: 'exercise', output: recovered}); assert.equal(actions.length - before, 28);
+    await filter(); const before = actions.length, finished = await helpers.runCatalogMembershipAcceptance({...args(), stage: 'exercise', output: recovered}); assert.equal(actions.length - before, 26);
+    assert.deepEqual(actions.slice(before).filter(row => row.kind === 'key-r').map(({kind, control}) => ({kind, control})), [{kind: 'key-r', control: 'management-catalog-create-name'}]);
+    assert.equal(finished.records.create_destination.preview.request.action.name, 'r'); assert.equal(server.packs.get(source).name, 'rr');
     assert.equal(finished.uncertain.before.operation_id, finished.uncertain.after.operation_id); assert.equal(finished.conflict.disabled, true); assert.equal(finished.conflict.status.membership_undo.can_undo, false);
     const destination = finished.records.create_destination.preview.request.action.pack_id;
+    assert.notEqual(destination, source); assert.equal(server.packs.get(destination).name, 'r');
     assert.ok(selected.every(row => row.packs.some(pack => pack.collection_id === source))); assert.equal(selected[0].packs.some(pack => pack.collection_id === destination), true); assert.equal(selected[1].packs.some(pack => pack.collection_id === destination), false);
     assert.equal(calls.filter(row => row.path.endsWith('/commit')).length, 8); assert.equal(server.history.size, 8);
   } finally { await app?.close(); }
+});
+
+test('membership destination typing rejects a stale name or a key action that does not produce exactly r', async () => {
+  for (const [initial, typed] of [['r', 'r'], ['', ''], ['', 'rr'], ['', 'R']]) {
+    let value = initial, keys = 0;
+    const sourcePackId = customPackId(0), nodes = {
+      'management-catalog-filter': {value: sourcePackId},
+      'management-catalog-organize': {open: true},
+      'management-catalog-create-name': {get value() { return value; }},
+    };
+    await assert.rejects(helpers.runCatalogMembershipAcceptance({stage: 'exercise', sourcePackId, selected: [], document: {getElementById: id => nodes[id]}, native: async (kind, node) => {
+      assert.equal(kind, 'key-r'); assert.equal(node, nodes['management-catalog-create-name']); keys++; value = typed;
+    }}), initial ? /name input must be fresh/ : /exactly one real keyboard action/);
+    assert.equal(keys, initial ? 0 : 1);
+  }
+});
+
+test('destination selection proof accepts the distinct r and rr names and rejects the retired rrr label', () => {
+  const destination = customPackId(1), control = 'management-catalog-move-target';
+  const action = {kind: 'select-last', control, trusted_clicks: 1, untrusted_clicks: 0, selection: {target_id: control, target_tag: 'SELECT', before: '', after: destination, option_values: ['', destination], selected_index: 1, selected_text: '', trusted_changes: 1, untrusted_changes: 0, events: [{type: 'click', trusted: true, target_id: control, value: ''}, {type: 'input', trusted: true, target_id: control, value: destination}, {type: 'change', trusted: true, target_id: control, value: destination}]}};
+  for (const name of ['r', 'rr']) { action.selection.selected_text = `${name} · ${destination}`; assert.equal(helpers.catalogTrustedActionComplete(action), true); }
+  action.selection.selected_text = `rrr · ${destination}`; assert.equal(helpers.catalogTrustedActionComplete(action), false);
 });

@@ -294,8 +294,8 @@ and verifies the exact option IDs, then uses the existing bounded `select-second
 sequence. It never assigns a value in a hosted/native run. The ordinary
 organization selector keeps its earlier stricter blank-to-single-target gate.
 No phase or action-count limit is expanded: seed/restart/final retain 64 actions;
-the new membership exercise uses 28 actions, the restart-phase bound is 57 and
-the full final-phase bound is 62.
+the new membership exercise uses 26 actions, the restart-phase bound is 57 and
+the full final-phase bound is 60.
 Every accepted native action still needs its own client screenshot and geometry.
 The Windows host source allowlist must include all 52 verifier-bound files.
 
@@ -318,3 +318,22 @@ geometry. It is not a hosted-browser or Windows acceptance substitute. The
 existing `npm run test:library-catalog-hosted` and Windows `library-catalog`
 scenario are still the actual-window entry points, run from a clean frozen source
 with its freshly built driver/executable and independently bound source hashes.
+
+
+The destination fixture now uses one real typed `r` from a verified empty field;
+the original source is still exactly `rr`. Their distinct native collection IDs,
+reviewed names, dropdown labels and operation effects remain mandatory. Source551
+Windows actions recorded all three repeated click/KeyR pairs, but their final
+value did not match `rrr`; the missing caret/selection history leaves the precise
+interference mechanism unresolved. The one-key setup avoids that incidental
+repeated-click dependency. It does not reinterpret the retained failed run as a
+pass or remove the original create/rename keyboard checks.
+
+Undo review labels are checked against the last preceding verified application
+query with the same library, generation, digest and expected filter. An edition
+on that page must retain its native title; an edition absent from the page must
+display its complete storage-qualified ID, as the production UI does. The empty
+source filter after Move therefore requires exact ID labels. Arbitrary labels,
+wrong IDs, substituted probe responses, stale metadata and wrong filters remain
+rejected. This is display-label binding; song metadata and all exact inverse
+identity/effect checks are unchanged.
