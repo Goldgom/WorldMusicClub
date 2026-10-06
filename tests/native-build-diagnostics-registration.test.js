@@ -78,9 +78,12 @@ test('native diagnostic renderer composes only its bounded runner and existing o
 });
 test('diagnostic source extension preserves all runtime dependencies within explicit finite capacities', () => {
   const runtime = ['crates/practice-server/build_source.rs', 'crates/practice-server/src/build_identity.rs', 'web/build-diagnostics.js', 'web/build-diagnostics-view.js', 'web/build-diagnostics.css'];
-  assert.equal(CANONICAL_PRACTICE_SOURCE_FILES.length, 121);assert.equal(LIVE_TONE_NAVIGATION_SOURCE_FILES.length, 132);assert.equal(LIVE_TONE_NAVIGATION_SOURCE_LIMIT, 160);assert.equal(CATALOG_SOURCE_FILES.length, 55);
+  assert.equal(CANONICAL_PRACTICE_SOURCE_FILES.length, 123);assert.equal(LIVE_TONE_NAVIGATION_SOURCE_FILES.length, 134);assert.equal(LIVE_TONE_NAVIGATION_SOURCE_LIMIT, 160);assert.equal(CATALOG_SOURCE_FILES.length, 57);
   for (const path of runtime) for (const inventory of [CANONICAL_PRACTICE_SOURCE_FILES, LIVE_TONE_NAVIGATION_SOURCE_FILES, BUILD_DIAGNOSTICS_SOURCE_FILES]) assert.equal(inventory.filter(name => name === path).length, 1, `Missing ${path}`);
   for (const path of runtime.filter(path => path.startsWith('web/'))) assert.ok(CATALOG_SOURCE_FILES.includes(path));
+  for (const path of ['scripts/windows-picker-observation.ps1', 'crates/desktop-shell/picker-observation.js']) {
+    for (const inventory of [CANONICAL_PRACTICE_SOURCE_FILES, LIVE_TONE_NAVIGATION_SOURCE_FILES, BUILD_DIAGNOSTICS_SOURCE_FILES, CATALOG_SOURCE_FILES]) assert.equal(inventory.filter(name => name === path).length, 1, `Unbound picker observer: ${path}`);
+  }
   for (const path of ['crates/desktop-shell/build-diagnostics-acceptance.js', 'scripts/windows-build-diagnostics.ps1', 'scripts/verify-native-build-diagnostics.mjs', 'scripts/build-diagnostics-evidence.mjs']) assert.ok(BUILD_DIAGNOSTICS_SOURCE_FILES.includes(path));
   assert.ok(BUILD_DIAGNOSTICS_SOURCE_FILES.length <= 160);assert.equal(new Set(BUILD_DIAGNOSTICS_SOURCE_FILES).size, BUILD_DIAGNOSTICS_SOURCE_FILES.length);
 });

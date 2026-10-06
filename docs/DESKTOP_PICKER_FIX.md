@@ -261,3 +261,93 @@ types. All physical-click, foreground/hit-test, geometry and five-second chooser
 dismissal checks remain. Edit and ComboBoxEx32 text were exact in the failed run;
 the intermediate ComboBox text was empty, so the typed-path route is unchanged.
 No Open click or native import success is claimed from this failed run.
+
+## Source 564: preserve picker lifecycle and original DOM receipts
+
+The original [run 37521074905, native job 112466307914](https://github.com/Goldgom/WorldMusicClub/actions/runs/37521074905/job/112466307914)
+failed on two separate actions of source `ca5654026491047aa0672ed903154a8ad59c93a3`,
+tree `12ffd1fae4386338e372b8feb8373b9e535d8b49`. The official original-only ZIPs
+were downloaded through the GitHub artifact connector and every entry checked
+against its existing byte-count/SHA-256 inventory before inspection:
+
+- Desktop artifact `11440264851`: 55,944 bytes, 90 inventoried JSON files, ZIP
+  SHA-256 `3b547decd4d107aa459dbb72d256bf2a5c1fd979cca92422c5a08989382b2c4b`
+- Bulk artifact `11441666170`: 24,582 bytes, 44 inventoried JSON files, ZIP
+  SHA-256 `fd6c75402e5616dc9fd2a628369809b4aab251796429235b7dfad12eb5f0bbd1`
+
+Base seed action 35 targeted the visible `free-import-file` for `seed-4.json`.
+Its native point `(353,405)` hit the foreground app, but no foreground owned
+`#32770` was found within ten seconds. It has no trusted DOM receipt or rejected
+window inventory, so wrong/stale DOM target, missing event delivery, background
+picker and delayed construction cannot be distinguished. The successful 562
+baseline used exactly the same action coordinates and fixture name.
+
+Bulk seed action 17 selected `原创曲包_日本語.zip`. Exact native filename readback
+and the verified Open-button hit passed. At 5,033 ms of the dismissal wait, the
+same owned HWND `655400` was visible and foreground, with its app disabled.
+This was a real modal state, not merely a hidden chooser with app-focus recovery
+pending. The trace eventually includes import preview at host elapsed 21,767 ms;
+the later failure-text inventory has no filename-control rows. That does not
+independently prove when teardown completed. The old
+trace and dismissal wait have different origins and no common wall-clock anchor.
+Those numbers cannot establish the precise delay/order relative to the timeout.
+No behavioral cause, filename-entry repair, or increased timeout follows from
+this evidence. The VSQ seek failure repaired in 565 is separate.
+
+The bounded observation correction keeps native selection, action order, strict
+PID/HWND/ancestry/point gates, ten-second opening and five-second closing limits.
+It retains the original failure even if a later diagnostic observes recovery:
+
+- `picker-observation-{phase}-{sequence}.json` records native action stages,
+  foreground HWND/PID, app state, and up to eight exact app-owned root windows.
+  Full inventories run outside opening/closing polls and before final pointer
+  verification. Enumeration stops at 256 callbacks or 25 ms with explicit
+  completeness, visited-count, stop-reason and actual elapsed metadata; an
+  in-flight native call can overrun the time cap but cannot admit late success.
+  No window titles/text are collected. Unchanged polling samples coalesce; the
+  first 63 transitions and latest tail are retained, with an omission count and
+  a 128 KiB file bound. Polls record their already-read decision samples only in
+  memory, without enumeration, JSON serialization or disk I/O. Persistence runs
+  after the native decision, with failure state saved before diagnostic captures
+- Opening/closing use the original 10/5 second budgets on a submission-local
+  Stopwatch. The same pure decision helper checks expiry before native sampling
+  and again after reading all decision facts; expiry wins over a ready state.
+  Post-input observation cannot manufacture a successful late first sample.
+  No diagnostic work intervenes between final SetCursorPos/GetCursorPos,
+  current hit validation and the client mouse event
+- Base/bulk seed installs passive capture listeners only while the original
+  picker action is pending. Pointerdown/up/click receipts record trust, safe
+  target IDs, original-control connection/disabled state, hit geometry and
+  timestamps. They neither modify nor await event dispatch or file selection
+- The acceptance-only `/__desktop_smoke/picker-observation` sink binds at most
+  six 2 KiB receipts to the current persisted file action and its allowed
+  control. It rejects another phase, action, control, extra fields, duplicates
+  and oversized data, and persists a separate 16 KiB `picker-dom-*.json` file.
+  It cannot import a file or manufacture a successful action. Ordinary app
+  dispatch rejects the route. Delayed or absent receipt delivery remains unknown
+- Native observation and host trace/receipt rows carry Unix UTC milliseconds
+  from the same Windows clock. Their independent monotonic `elapsed_ms` origins
+  remain explicitly separate. Renderer event time and host receipt time are
+  both retained: delivery may be delayed by a native modal. Clock jumps and
+  separate native queries still preclude assuming an atomic whole-system snapshot
+
+Node regressions execute the passive listener with wrong targets, untrusted
+hidden-input delegation, unavailable controls, stalled/rejected transport and
+bounded metadata. Rust tests exercise actual receipt admission and persistence;
+pure PowerShell contracts retain the original failure, coalesce samples and
+verify overflow/publication behavior without GUI calls. PowerShell/.NET and real
+Windows input are unavailable on the preparation host, so its new contract and
+actual lifecycle evidence still require an exact-source Windows run. This is an
+observation repair, not completed native acceptance.
+
+The independent review of local draft `21801231c` caught three observation
+hazards before integration: synchronous recording after pointer readback,
+acceptance after observation crossed the operation deadline, and unbounded
+whole-desktop callback work. The follow-on correction moves full snapshots and
+persistence out of those paths. Deterministic cases execute the production C#
+decision expression for an opening sample at 10.05 seconds after a 9.95-second
+loop entry, and a first closing sample at 5.1 seconds; both are expired even
+when the window state is ready. The Windows pure contract calls the full helper
+with those same cases, exact deadline boundaries and inventory limits. Node
+runs the shared primitive expressions and checks their actual host call order;
+it does not claim PowerShell execution or Windows native input validation.

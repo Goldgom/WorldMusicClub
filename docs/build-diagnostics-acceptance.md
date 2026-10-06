@@ -90,7 +90,7 @@ one stylesheet produces119/130/126 and catalog54 respectively. Every old binding
 remains. Only live-navigation's source capacity changes128→160, with a comment
 explaining the five added runtime dependencies and mutation tests proving that
 missing, extra, duplicate and over-bound modules fail. Canonical and its Python
-adapter keep128. Catalog host/tests explicitly require54. The new diagnostic
+adapter keep128. That diagnostics-only checkpoint required54 catalog modules. The new diagnostic
 scenario has its own exact union containing its host/renderer/verifier/tests.
 Later Human branches must remeasure their own inventories and retain their
 additional bindings; these exact545 counts are not a universal branch cap.
@@ -152,9 +152,11 @@ source before a release or acceptance claim.
 ## Combined feature and diagnostic inventory
 
 The integration of the preserved feature chain with accepted diagnostics retains
-121 canonical, 132 live-navigation, 128 skin, 55 catalog, 132 diagnostic and 133
+123 canonical, 134 live-navigation, 130 skin, 57 catalog, 134 diagnostic and 135
 human-timbre source bindings. Human timbre uses an explicit 160-file capacity so
-the complete diagnostic runtime stays bound; the historical checkpoint counts
+the complete diagnostic runtime stays bound. The shared Windows picker observer
+and passive base/bulk event observer are also bound without removing prior files;
+the historical checkpoint counts
 above remain unchanged. Native diagnostic reports, images and logs cross the
 parallel job boundary as unchanged bytes, without WebView profiles or library
 contents. The package join reruns the strict diagnostic verifier against the

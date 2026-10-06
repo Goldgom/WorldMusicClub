@@ -54,6 +54,8 @@
     const bounds=node.getBoundingClientRect();
     assert(bounds.width>0 && bounds.height>0,'Native target is not visible');
     const action={version:1,sequence:++sequence,kind,x:bounds.x+bounds.width/2,y:bounds.y+bounds.height/2,width:innerWidth,height:innerHeight,...(file?{file}:{})};
+    const pickerObservation=phase==='seed'&&['picker','cancel-picker'].includes(kind)?createNativePickerObservation({document,fetcher:originalFetch,sequence,node}):null;
+    try {
     checkpoint('native-action-posting');
     await json('/__desktop_smoke/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action)});
     checkpoint('native-result-wait');
@@ -61,6 +63,7 @@
     await until(async signal=>{const response=await originalFetch(`/__desktop_smoke/result/${sequence}`,{signal});if(response.status===404)return false;checkpoint('native-result-headers',{status:response.status});result=await response.json();if(!response.ok)throw Error(result.error || `Native result HTTP ${response.status}`);return true;},`native ${kind} result ${sequence}`);
     checkpoint('native-result-read');
     assert(result.ok,result.error || `Native ${kind} failed`);return sequence;
+    } finally {pickerObservation?.stop();}
   }
   const click=id=>{assert($(id) && !$(id).disabled,`Control ${id} unavailable`);$(id).click();};
   const closeDialogs=()=>{for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();};

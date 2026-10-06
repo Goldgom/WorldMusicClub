@@ -2,11 +2,12 @@
 pub use crate::acceptance_publication::atomic_json;
 use crate::{error, response};
 use http::{Request, Response};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     path::{Path, PathBuf},
     sync::Mutex,
-    time::Instant,
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 pub const PHASES: [&str; 4] = ["seed", "restart", "close-active", "reopen"];
@@ -47,11 +48,118 @@ pub const CATALOG_PHASES: [&str; 3] = ["catalog-seed", "catalog-restart", "catal
 pub const MAX_CLEAN_REPORT_BYTES: usize = 1024 * 1024;
 pub const MAX_SMOKE_REPORT_BYTES: usize = 64 * 1024;
 pub const MAX_BULK_REPORT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_PICKER_OBSERVATION_BYTES: usize = 2048;
+const MAX_PICKER_OBSERVATIONS: usize = 6;
+const MAX_PICKER_OBSERVATION_FILE_BYTES: usize = 16 * 1024;
+
+#[derive(Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct PickerObservation {
+    version: u8,
+    sequence: u64,
+    event: String,
+    expected_id: String,
+    trusted: bool,
+    // Value makes these required nullable fields, rather than optional keys.
+    target_id: Value,
+    target_tag: Value,
+    expected_connected: bool,
+    expected_disabled: bool,
+    expected_hit: bool,
+    target_matches: bool,
+    x: f64,
+    y: f64,
+    bounds: [f64; 4],
+    viewport: [f64; 2],
+    renderer_time_ms: f64,
+    utc_ms: u64,
+}
+impl PickerObservation {
+    fn valid(&self, phase: &str) -> bool {
+        let coordinate = |number: f64| number.is_finite() && (-8192.0..=8192.0).contains(&number);
+        let target_id = self.target_id.is_null()
+            || self.target_id.as_str().is_some_and(|id| {
+                !id.is_empty()
+                    && id.len() <= 64
+                    && id.as_bytes()[0].is_ascii_lowercase()
+                    && id.bytes().all(|byte| {
+                        byte.is_ascii_lowercase()
+                            || byte.is_ascii_digit()
+                            || matches!(byte, b'_' | b'-')
+                    })
+            });
+        let target_tag = self.target_tag.is_null()
+            || self.target_tag.as_str().is_some_and(|tag| {
+                !tag.is_empty()
+                    && tag.len() <= 16
+                    && tag.as_bytes()[0].is_ascii_uppercase()
+                    && tag
+                        .bytes()
+                        .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+            });
+        ["seed", "bulk-seed"].contains(&phase)
+            && self.version == 1
+            && (1..=action_limit(phase)).contains(&self.sequence)
+            && ["pointerdown", "pointerup", "click"].contains(&self.event.as_str())
+            && (self.expected_id == "import-button"
+                || (phase == "seed" && self.expected_id == "free-import-file"))
+            && target_id
+            && target_tag
+            && coordinate(self.x)
+            && coordinate(self.y)
+            && self.bounds.into_iter().all(coordinate)
+            && self.bounds[2] >= 0.0
+            && self.bounds[3] >= 0.0
+            && self
+                .viewport
+                .into_iter()
+                .all(|number| number.is_finite() && number > 0.0 && number <= 8192.0)
+            && self.renderer_time_ms.is_finite()
+            && (0.0..=360000.0).contains(&self.renderer_time_ms)
+            && self.utc_ms <= 9_007_199_254_740_991
+    }
+    fn bound_to(&self, action: &Value, phase: &str) -> bool {
+        valid_action_for_phase(action, phase)
+            && action["sequence"].as_u64() == Some(self.sequence)
+            && ["picker", "cancel-picker"].contains(&action["kind"].as_str().unwrap_or(""))
+            && (self.expected_id == "free-import-file")
+                == (phase == "seed"
+                    && action["kind"] == "picker"
+                    && action["file"] == "seed-4.json")
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PickerObservationRow {
+    elapsed_ms: u64,
+    utc_ms: u64,
+    receipt: PickerObservation,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PickerObservations {
+    version: u8,
+    diagnostic_only: bool,
+    phase: String,
+    sequence: u64,
+    events: Vec<PickerObservationRow>,
+}
+
+fn host_utc_ms() -> Option<u64> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| u64::try_from(duration.as_millis()).ok())
+}
+
 pub struct Acceptance {
     directory: PathBuf,
     pub phase: &'static str,
     downloads: Mutex<Vec<Value>>,
     trace: Mutex<Vec<Value>>,
+    picker_observation_publication: Mutex<()>,
     catalog_snapshot_requested: Mutex<bool>,
     started: Instant,
 }
@@ -84,6 +192,7 @@ impl Acceptance {
             phase,
             downloads: Mutex::new(Vec::new()),
             trace: Mutex::new(Vec::new()),
+            picker_observation_publication: Mutex::new(()),
             catalog_snapshot_requested: Mutex::new(false),
             started: Instant::now(),
         })
@@ -219,11 +328,16 @@ impl Acceptance {
             String::new()
         };
         format!(
-            "globalThis.__WMH_ACCEPTANCE_PHASE__={};\n{}\n{}\n{}\n{}",
+            "globalThis.__WMH_ACCEPTANCE_PHASE__={};\n{}\n{}\n{}\n{}\n{}",
             serde_json::to_string(self.phase).unwrap(),
             include_str!("../acceptance-wait.js"),
             include_str!("../reference-acceptance.js"),
             include_str!("../live-tone-acceptance.js"),
+            if ["seed", "bulk-seed"].contains(&self.phase) {
+                include_str!("../picker-observation.js")
+            } else {
+                ""
+            },
             if SKIN_PHASES.contains(&self.phase) {
                 &skin
             } else if PERFORMANCE_PHASES.contains(&self.phase)
@@ -510,15 +624,24 @@ impl Acceptance {
     }
     fn trace(&self, event: Value) {
         let Ok(mut rows) = self.trace.lock() else {
+            eprintln!("Cannot lock native acceptance trace");
             return;
         };
         if rows.last().is_some_and(|row| row["event"] == event) {
             return;
         }
+        let Some(utc_ms) = host_utc_ms() else {
+            eprintln!("Cannot read native acceptance UTC clock");
+            return;
+        };
         if rows.len() == 128 {
             rows.remove(0);
         }
-        rows.push(json!({"elapsed_ms":self.started.elapsed().as_millis(),"event":event}));
+        // Both host and renderer trace rows use the host's Unix wall clock;
+        // elapsed_ms retains the acceptance-process monotonic origin.
+        rows.push(
+            json!({"elapsed_ms":self.started.elapsed().as_millis(),"utc_ms":utc_ms,"event":event}),
+        );
         let bytes =
             serde_json::to_vec(&json!({"version":1,"phase":self.phase,"events":*rows})).unwrap();
         if atomic_json(
@@ -584,8 +707,114 @@ impl Acceptance {
             row["success"] = json!(success);
         }
     }
+    fn observe_picker(&self, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+        if !["seed", "bulk-seed"].contains(&self.phase) || request.method() != "POST" {
+            return error(404, "Not found");
+        }
+        if request.body().len() > MAX_PICKER_OBSERVATION_BYTES {
+            return error(400, "Invalid picker observation");
+        }
+        let Ok(receipt) = serde_json::from_slice::<PickerObservation>(request.body()) else {
+            return error(400, "Invalid picker observation");
+        };
+        if !receipt.valid(self.phase) {
+            return error(400, "Invalid picker observation");
+        }
+        // Serialize receipt check/write with native action publication. A late
+        // event cannot be attributed to an action after a newer action is saved.
+        let Ok(_publication) = self.picker_observation_publication.lock() else {
+            return error(500, "Cannot lock picker observation storage");
+        };
+        let sequence = receipt.sequence;
+        let action = read_ordinary_json(
+            &self
+                .directory
+                .join(format!("action-{}-{sequence}.json", self.phase)),
+            16 * 1024,
+        );
+        let Ok(action) = action else {
+            return error(400, "Picker observation has no valid native action");
+        };
+        if !receipt.bound_to(&action, self.phase) {
+            return error(400, "Picker observation does not match its native action");
+        }
+        for newer in (sequence + 1)..=action_limit(self.phase) {
+            match std::fs::symlink_metadata(
+                self.directory
+                    .join(format!("action-{}-{newer}.json", self.phase)),
+            ) {
+                Ok(_) => return error(400, "Picker observation action expired"),
+                Err(read_error) if read_error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return error(500, "Cannot check picker observation ownership"),
+            }
+        }
+        let name = format!("picker-dom-{}-{sequence}.json", self.phase);
+        let mut observations = match read_ordinary_json(
+            &self.directory.join(&name),
+            MAX_PICKER_OBSERVATION_FILE_BYTES,
+        ) {
+            Ok(value) => {
+                let Ok(saved) = serde_json::from_value::<PickerObservations>(value) else {
+                    return error(500, "Invalid picker observation storage");
+                };
+                saved
+            }
+            Err(read_error) if read_error.kind() == std::io::ErrorKind::NotFound => {
+                PickerObservations {
+                    version: 1,
+                    diagnostic_only: true,
+                    phase: self.phase.into(),
+                    sequence,
+                    events: Vec::new(),
+                }
+            }
+            Err(_) => return error(500, "Cannot read picker observation storage"),
+        };
+        if observations.version != 1
+            || !observations.diagnostic_only
+            || observations.phase != self.phase
+            || observations.sequence != sequence
+            || observations.events.len() > MAX_PICKER_OBSERVATIONS
+            || observations.events.iter().enumerate().any(|(index, row)| {
+                !row.receipt.valid(self.phase)
+                    || !row.receipt.bound_to(&action, self.phase)
+                    || observations.events[..index]
+                        .iter()
+                        .any(|earlier| earlier.receipt == row.receipt)
+            })
+        {
+            return error(500, "Invalid picker observation storage");
+        }
+        if observations.events.len() == MAX_PICKER_OBSERVATIONS
+            || observations.events.iter().any(|row| row.receipt == receipt)
+        {
+            return error(400, "Picker observation duplicate or limit reached");
+        }
+        let Some(utc_ms) = host_utc_ms() else {
+            return error(500, "Cannot read picker observation UTC clock");
+        };
+        observations.events.push(PickerObservationRow {
+            elapsed_ms: u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            utc_ms,
+            receipt,
+        });
+        // This bounded diagnostic file is independent of the trace ring. Its
+        // absence, delayed delivery or flags never assert picker success/failure.
+        let Ok(bytes) = serde_json::to_vec(&observations) else {
+            return error(500, "Cannot encode picker observation storage");
+        };
+        if bytes.len() > MAX_PICKER_OBSERVATION_FILE_BYTES
+            || atomic_json(&self.directory, &name, &bytes).is_err()
+        {
+            return error(500, "Cannot save picker observation storage");
+        }
+        response(200, "application/json", b"{}".as_slice())
+    }
     pub fn handle(&self, request: &Request<Vec<u8>>) -> Option<Response<Vec<u8>>> {
         let path = request.uri().path();
+        if path == "/__desktop_smoke/picker-observation" {
+            return Some(self.observe_picker(request));
+        }
         let result = if path == "/__desktop_smoke/catalog-config" {
             if !CATALOG_PHASES.contains(&self.phase) || request.method() != "GET" {
                 return Some(error(404, "Not found"));
@@ -619,6 +848,9 @@ impl Acceptance {
             if !valid_action_for_phase(&value, self.phase) {
                 return Some(error(400, "Invalid acceptance action"));
             }
+            let Ok(_publication) = self.picker_observation_publication.lock() else {
+                return Some(error(500, "Cannot lock acceptance action storage"));
+            };
             if value["kind"] == "catalog-snapshot-before" {
                 if self.phase != "catalog-seed" {
                     return Some(error(400, "Catalog snapshot requires the seed phase"));
@@ -1091,6 +1323,414 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn picker_observation_request(value: &Value) -> Request<Vec<u8>> {
+        Request::builder()
+            .method("POST")
+            .uri("https://wmh.localhost/__desktop_smoke/picker-observation")
+            .body(serde_json::to_vec(value).unwrap())
+            .unwrap()
+    }
+    fn picker_observation_fixture(sequence: u64, expected_id: &str) -> Value {
+        json!({
+            "version":1,"sequence":sequence,"event":"pointerdown","expected_id":expected_id,
+            "trusted":true,"target_id":expected_id,"target_tag":"INPUT",
+            "expected_connected":true,"expected_disabled":false,"expected_hit":true,"target_matches":true,
+            "x":220.5,"y":340.25,"bounds":[200.0,320.0,100.0,40.0],"viewport":[1024.0,689.0],
+            "renderer_time_ms":12345.5,"utc_ms":1_800_000_000_000_u64
+        })
+    }
+    fn publish_picker_test_action(run: &Acceptance, sequence: u64, kind: &str, file: Option<&str>) {
+        let mut action = json!({"version":1,"sequence":sequence,"kind":kind,"x":220.5,"y":340.25,"width":1024,"height":689});
+        if let Some(file) = file {
+            action["file"] = json!(file);
+        }
+        let request = Request::builder()
+            .method("POST")
+            .uri("/__desktop_smoke/action")
+            .body(serde_json::to_vec(&action).unwrap())
+            .unwrap();
+        assert_eq!(run.handle(&request).unwrap().status(), 200);
+    }
+    #[test]
+    fn picker_observations_bind_original_seed35_and_bulk17_without_asserting_success() {
+        for (phase, sequence, id, file) in [
+            ("seed", 35, "free-import-file", "seed-4.json"),
+            ("bulk-seed", 17, "import-button", "原创曲包_日本語.zip"),
+        ] {
+            let evidence = Evidence::new();
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            let mut receipt = picker_observation_fixture(sequence, id);
+            assert_eq!(
+                run.handle(&picker_observation_request(&receipt))
+                    .unwrap()
+                    .status(),
+                400
+            );
+            publish_picker_test_action(&run, sequence, "picker", Some(file));
+            for field in [
+                "trusted",
+                "expected_connected",
+                "expected_hit",
+                "target_matches",
+            ] {
+                receipt[field] = json!(false);
+            }
+            receipt["expected_disabled"] = json!(true);
+            receipt["target_id"] = Value::Null;
+            receipt["target_tag"] = Value::Null;
+            let before = host_utc_ms().unwrap();
+            assert_eq!(
+                run.handle(&picker_observation_request(&receipt))
+                    .unwrap()
+                    .status(),
+                200
+            );
+            let saved = read_ordinary_json(
+                &evidence
+                    .0
+                    .join(format!("picker-dom-{phase}-{sequence}.json")),
+                MAX_PICKER_OBSERVATION_FILE_BYTES,
+            )
+            .unwrap();
+            assert_eq!(saved["diagnostic_only"], true);
+            assert_eq!(saved["phase"], phase);
+            assert_eq!(saved["sequence"], sequence);
+            assert_eq!(saved["events"][0]["receipt"], receipt);
+            assert!(saved["events"][0]["elapsed_ms"].as_u64().is_some());
+            assert!((before..=host_utc_ms().unwrap())
+                .contains(&saved["events"][0]["utc_ms"].as_u64().unwrap()));
+            assert!(saved.get("ok").is_none());
+            assert!(!run.directory.join(run.report_name()).exists());
+            let script = run.script();
+            assert!(script.contains(include_str!("../picker-observation.js")));
+        }
+    }
+    #[test]
+    fn picker_observations_reject_wrong_phase_target_action_and_expired_sequence() {
+        for phase in ["restart", "bulk-restart", "vsq-seed"] {
+            let evidence = Evidence::new();
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert_eq!(
+                run.handle(&picker_observation_request(&picker_observation_fixture(
+                    17,
+                    "import-button"
+                )))
+                .unwrap()
+                .status(),
+                404
+            );
+            assert!(!run
+                .script()
+                .contains(include_str!("../picker-observation.js")));
+        }
+        let evidence = Evidence::new();
+        let run = Acceptance::new(evidence.0.clone(), "seed").unwrap();
+        let receipt = picker_observation_fixture(35, "free-import-file");
+        publish_picker_test_action(&run, 35, "click", None);
+        assert_eq!(
+            run.handle(&picker_observation_request(&receipt))
+                .unwrap()
+                .status(),
+            400
+        );
+        publish_picker_test_action(&run, 35, "picker", Some("seed-3.json"));
+        assert_eq!(
+            run.handle(&picker_observation_request(&receipt))
+                .unwrap()
+                .status(),
+            400
+        );
+        publish_picker_test_action(&run, 35, "picker", Some("seed-4.json"));
+        assert_eq!(
+            run.handle(&picker_observation_request(&picker_observation_fixture(
+                35,
+                "import-button"
+            )))
+            .unwrap()
+            .status(),
+            400
+        );
+        assert_eq!(
+            run.handle(&picker_observation_request(&picker_observation_fixture(
+                34,
+                "free-import-file"
+            )))
+            .unwrap()
+            .status(),
+            400
+        );
+        // Any newer action expires ownership, even if sequence+1 is absent.
+        publish_picker_test_action(&run, 37, "click", None);
+        assert_eq!(
+            run.handle(&picker_observation_request(&receipt))
+                .unwrap()
+                .status(),
+            400
+        );
+        assert!(!run.directory.join("picker-dom-seed-35.json").exists());
+        let bulk = Acceptance::new(evidence.0.clone(), "bulk-seed").unwrap();
+        publish_picker_test_action(&bulk, 17, "cancel-picker", None);
+        let receipt = picker_observation_fixture(17, "import-button");
+        assert_eq!(
+            bulk.handle(&picker_observation_request(&receipt))
+                .unwrap()
+                .status(),
+            200
+        );
+        assert_eq!(
+            bulk.handle(&picker_observation_request(&picker_observation_fixture(
+                17,
+                "free-import-file"
+            )))
+            .unwrap()
+            .status(),
+            400
+        );
+        let get = Request::builder()
+            .method("GET")
+            .uri("/__desktop_smoke/picker-observation")
+            .body(Vec::new())
+            .unwrap();
+        assert_eq!(bulk.handle(&get).unwrap().status(), 404);
+        // Ordinary application dispatch has no Acceptance instance or sink and
+        // preserves its existing generic rejection of POST to an unknown route.
+        assert_eq!(
+            crate::dispatch(picker_observation_request(&receipt)).status(),
+            405
+        );
+    }
+    #[test]
+    fn picker_observations_require_the_exact_bounded_metadata_schema() {
+        let evidence = Evidence::new();
+        let run = Acceptance::new(evidence.0.clone(), "seed").unwrap();
+        publish_picker_test_action(&run, 35, "picker", Some("seed-4.json"));
+        let receipt = picker_observation_fixture(35, "free-import-file");
+        for (key, value) in [
+            ("version", json!(2)),
+            ("version", json!(1.0)),
+            ("sequence", json!(0)),
+            ("sequence", json!(73)),
+            ("sequence", json!(-1)),
+            ("event", json!("change")),
+            ("expected_id", json!("score-file")),
+            ("trusted", json!(1)),
+            ("expected_connected", json!("true")),
+            ("expected_disabled", Value::Null),
+            ("expected_hit", json!(0)),
+            ("target_matches", json!([])),
+            ("target_id", json!("some DOM text")),
+            ("target_id", json!("a".repeat(65))),
+            ("target_id", json!("#id")),
+            ("target_id", json!("秘密")),
+            ("target_id", json!("")),
+            ("target_tag", json!("input")),
+            ("target_tag", json!("A".repeat(17))),
+            ("target_tag", json!("1TAG")),
+            ("target_tag", json!("TAG-TEXT")),
+            ("x", json!(-8192.01)),
+            ("x", json!(8192.01)),
+            ("x", Value::Null),
+            ("y", json!(-8193)),
+            ("y", json!(8193)),
+            ("bounds", json!([0, 0, 1])),
+            ("bounds", json!([0, 0, 1, 1, 1])),
+            ("bounds", json!([-8193, 0, 1, 1])),
+            ("bounds", json!([0, 8193, 1, 1])),
+            ("bounds", json!([0, 0, -1, 1])),
+            ("bounds", json!([0, 0, 1, -1])),
+            ("bounds", json!([0, 0, 8193, 1])),
+            ("bounds", json!([0, 0, 1, 8193])),
+            ("viewport", json!([1024])),
+            ("viewport", json!([1024, 689, 1])),
+            ("viewport", json!([0, 689])),
+            ("viewport", json!([1024, -1])),
+            ("viewport", json!([8193, 689])),
+            ("viewport", json!([1024, 8193])),
+            ("renderer_time_ms", json!(-0.1)),
+            ("renderer_time_ms", json!(360000.1)),
+            ("utc_ms", json!(-1)),
+            ("utc_ms", json!(1.5)),
+            ("utc_ms", json!(9_007_199_254_740_992_u64)),
+            ("text", json!("DOM text must not be accepted")),
+            ("file", json!("seed-4.json")),
+            ("phase", json!("seed")),
+        ] {
+            let mut invalid = receipt.clone();
+            invalid[key] = value;
+            assert_eq!(
+                run.handle(&picker_observation_request(&invalid))
+                    .unwrap()
+                    .status(),
+                400,
+                "{key}: {}",
+                invalid[key]
+            );
+        }
+        for field in receipt.as_object().unwrap().keys() {
+            let mut missing = receipt.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            assert_eq!(
+                run.handle(&picker_observation_request(&missing))
+                    .unwrap()
+                    .status(),
+                400,
+                "missing {field}"
+            );
+        }
+        for raw in [
+            serde_json::to_string(&receipt).unwrap().replacen(
+                "\"version\":1",
+                "\"version\":1,\"version\":1",
+                1,
+            ),
+            serde_json::to_string(&receipt)
+                .unwrap()
+                .replacen("220.5", "1e999", 1),
+            " ".repeat(MAX_PICKER_OBSERVATION_BYTES + 1),
+        ] {
+            let mut request = picker_observation_request(&receipt);
+            *request.body_mut() = raw.into_bytes();
+            assert_eq!(run.handle(&request).unwrap().status(), 400);
+        }
+        assert!(!run.directory.join("picker-dom-seed-35.json").exists());
+        let mut boundary = receipt;
+        boundary["x"] = json!(-8192);
+        boundary["y"] = json!(8192);
+        boundary["bounds"] = json!([-8192, 8192, 0, 8192]);
+        boundary["viewport"] = json!([0.001, 8192]);
+        boundary["renderer_time_ms"] = json!(360000);
+        boundary["utc_ms"] = json!(9_007_199_254_740_991_u64);
+        boundary["target_id"] = json!("a".repeat(64));
+        boundary["target_tag"] = json!("A".repeat(16));
+        let mut request = picker_observation_request(&boundary);
+        request
+            .body_mut()
+            .resize(MAX_PICKER_OBSERVATION_BYTES, b' ');
+        assert_eq!(run.handle(&request).unwrap().status(), 200);
+    }
+    #[test]
+    fn picker_observations_keep_six_distinct_receipts_through_trace_eviction() {
+        let evidence = Evidence::new();
+        let run = Acceptance::new(evidence.0.clone(), "seed").unwrap();
+        publish_picker_test_action(&run, 35, "picker", Some("seed-4.json"));
+        let mut receipt = picker_observation_fixture(35, "free-import-file");
+        let path = run.directory.join("picker-dom-seed-35.json");
+        for index in 0..6 {
+            receipt["event"] = json!(["pointerdown", "pointerup", "click"][index % 3]);
+            receipt["renderer_time_ms"] = json!(index);
+            assert_eq!(
+                run.handle(&picker_observation_request(&receipt))
+                    .unwrap()
+                    .status(),
+                200
+            );
+            let before = std::fs::read(&path).unwrap();
+            assert_eq!(
+                run.handle(&picker_observation_request(&receipt))
+                    .unwrap()
+                    .status(),
+                400
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+        }
+        let before = std::fs::read(&path).unwrap();
+        receipt["renderer_time_ms"] = json!(6);
+        assert_eq!(
+            run.handle(&picker_observation_request(&receipt))
+                .unwrap()
+                .status(),
+            400
+        );
+        for index in 0..140 {
+            run.trace_request(
+                "reply-submitted",
+                &format!("/api/observed/{index}"),
+                Some(200),
+            );
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        let saved: Value = serde_json::from_slice(&before).unwrap();
+        assert_eq!(saved["events"].as_array().unwrap().len(), 6);
+        let trace = read_ordinary_json(&run.directory.join("trace-seed.json"), 64 * 1024).unwrap();
+        assert_eq!(trace["events"].as_array().unwrap().len(), 128);
+        assert!(trace["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["utc_ms"].as_u64().is_some()));
+        // A recreated owner still preserves the on-disk receipt limit.
+        let reopened = Acceptance::new(evidence.0.clone(), "seed").unwrap();
+        assert_eq!(
+            reopened
+                .handle(&picker_observation_request(&receipt))
+                .unwrap()
+                .status(),
+            400
+        );
+        assert_eq!(std::fs::read(path).unwrap(), before);
+    }
+    #[test]
+    fn picker_observation_storage_failures_are_explicit_and_preserve_existing_evidence() {
+        let evidence = Evidence::new();
+        let run = Acceptance::new(evidence.0.clone(), "seed").unwrap();
+        publish_picker_test_action(&run, 35, "picker", Some("seed-4.json"));
+        let receipt = picker_observation_fixture(35, "free-import-file");
+        let name = "picker-dom-seed-35.json";
+        std::fs::create_dir(run.directory.join(format!("{name}.tmp"))).unwrap();
+        assert_eq!(
+            run.handle(&picker_observation_request(&receipt))
+                .unwrap()
+                .status(),
+            500
+        );
+        assert!(!run.directory.join(name).exists());
+        std::fs::remove_dir(run.directory.join(format!("{name}.tmp"))).unwrap();
+        std::fs::write(run.directory.join(name), b"{\"unrecognized\":true}").unwrap();
+        assert_eq!(
+            run.handle(&picker_observation_request(&receipt))
+                .unwrap()
+                .status(),
+            500
+        );
+        assert_eq!(
+            std::fs::read(run.directory.join(name)).unwrap(),
+            b"{\"unrecognized\":true}"
+        );
+    }
+    #[test]
+    fn picker_observation_concurrent_publication_keeps_the_six_receipt_limit() {
+        let evidence = Evidence::new();
+        let run = Acceptance::new(evidence.0.clone(), "seed").unwrap();
+        publish_picker_test_action(&run, 35, "picker", Some("seed-4.json"));
+        let statuses = std::thread::scope(|scope| {
+            let workers: Vec<_> = (0..12)
+                .map(|index| {
+                    let run = &run;
+                    scope.spawn(move || {
+                        let mut receipt = picker_observation_fixture(35, "free-import-file");
+                        receipt["renderer_time_ms"] = json!(index);
+                        run.handle(&picker_observation_request(&receipt))
+                            .unwrap()
+                            .status()
+                            .as_u16()
+                    })
+                })
+                .collect();
+            workers
+                .into_iter()
+                .map(|worker| worker.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(statuses.iter().filter(|status| **status == 200).count(), 6);
+        assert_eq!(statuses.iter().filter(|status| **status == 400).count(), 6);
+        let saved = read_ordinary_json(
+            &run.directory.join("picker-dom-seed-35.json"),
+            MAX_PICKER_OBSERVATION_FILE_BYTES,
+        )
+        .unwrap();
+        assert_eq!(saved["events"].as_array().unwrap().len(), 6);
+    }
 
     #[test]
     fn human_timbre_registration_and_actions_are_closed_and_bounded() {

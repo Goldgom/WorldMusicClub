@@ -1,0 +1,227 @@
+{
+  "source_sha": "ca5654026491047aa0672ed903154a8ad59c93a3",
+  "source_tree": "12ffd1fae4386338e372b8feb8373b9e535d8b49",
+  "run_id": 37521074905,
+  "job_id": 112466307914,
+  "seed": {
+    "artifact_id": 11440264851,
+    "zip_sha256": "3b547decd4d107aa459dbb72d256bf2a5c1fd979cca92422c5a08989382b2c4b",
+    "action": {
+      "version": 1,
+      "sequence": 35,
+      "kind": "picker",
+      "x": 353.125,
+      "y": 374.78125,
+      "width": 1024,
+      "height": 689,
+      "file": "seed-4.json"
+    },
+    "result": {
+      "ok": false,
+      "error": "No owned Windows file picker opened; no browser file-input substitution is allowed",
+      "client_click": {
+        "client": [
+          0,
+          0,
+          1024,
+          689
+        ],
+        "origin": [
+          0,
+          31
+        ],
+        "viewport": [
+          1024,
+          689
+        ],
+        "requested": [
+          353,
+          405
+        ],
+        "work_area": [
+          0,
+          0,
+          1024,
+          720
+        ],
+        "actual": [
+          353,
+          405
+        ],
+        "hit_hwnd": 262552,
+        "hit_root": 131630,
+        "app_hwnd": 131630,
+        "foreground": 131630
+      }
+    }
+  },
+  "bulk": {
+    "artifact_id": 11441666170,
+    "zip_sha256": "fd6c75402e5616dc9fd2a628369809b4aab251796429235b7dfad12eb5f0bbd1",
+    "action": {
+      "version": 1,
+      "sequence": 17,
+      "kind": "picker",
+      "x": 504.5,
+      "y": 344.375,
+      "width": 1024,
+      "height": 689,
+      "file": "原创曲包_日本語.zip"
+    },
+    "result": {
+      "filename_candidates": [
+        {
+          "id": "1148",
+          "class": "ComboBoxEx32",
+          "control_type": "ControlType.Pane",
+          "enabled": true,
+          "value_pattern": false,
+          "read_only": null
+        }
+      ],
+      "ok": false,
+      "filename_host_found": true,
+      "open_button_candidate_count": 2,
+      "filename_candidate_count": 1,
+      "filename_host": {
+        "hwnd": 1049162,
+        "selection": "unique_UIA_and_native_ComboBoxEx32_handle"
+      },
+      "filename_entry_method": "native_ComboBoxEx32_edit",
+      "filename_host_candidates": [
+        {
+          "id": "1148",
+          "class": "ComboBoxEx32",
+          "control_type": "ControlType.Pane",
+          "process_id": 8408,
+          "enabled": true,
+          "hwnd": 1049162,
+          "native_class": "ComboBoxEx32",
+          "native_control_id": 1148,
+          "native_process_id": 8408,
+          "dialog_descendant": true,
+          "native_enabled": true,
+          "native_visible": true
+        },
+        {
+          "id": "1148",
+          "class": "ComboBox",
+          "control_type": "ControlType.Pane",
+          "process_id": 8408,
+          "enabled": true,
+          "hwnd": 1376898,
+          "native_class": "ComboBox",
+          "native_control_id": 1148,
+          "native_process_id": 8408,
+          "dialog_descendant": true,
+          "native_enabled": true,
+          "native_visible": true
+        },
+        {
+          "id": "1148",
+          "class": "Edit",
+          "control_type": "ControlType.Pane",
+          "process_id": 8408,
+          "enabled": true,
+          "hwnd": 1180258,
+          "native_class": "Edit",
+          "native_control_id": 1148,
+          "native_process_id": 8408,
+          "dialog_descendant": true,
+          "native_enabled": true,
+          "native_visible": true
+        }
+      ],
+      "filename_host_count": 3,
+      "filename_failure_text": [],
+      "uia_entry_unavailable": "Windows filename host 1148 has no unique writable filename control after 5 seconds; see filename_candidates in this action result",
+      "picker_completion": {
+        "dialog_exists": true,
+        "dialog_visible": true,
+        "foreground_hwnd": 655400,
+        "owned_popup_visible": true,
+        "app_foreground": false,
+        "app_enabled": false,
+        "dialog_dismissed": false,
+        "elapsed_ms": 5033
+      },
+      "client_click": {
+        "client": [
+          0,
+          0,
+          1024,
+          689
+        ],
+        "origin": [
+          0,
+          31
+        ],
+        "viewport": [
+          1024,
+          689
+        ],
+        "requested": [
+          504,
+          375
+        ],
+        "work_area": [
+          0,
+          0,
+          1024,
+          720
+        ],
+        "actual": [
+          504,
+          375
+        ],
+        "hit_hwnd": 459296,
+        "hit_root": 393772,
+        "app_hwnd": 393772,
+        "foreground": 393772
+      },
+      "owned_dialog": {
+        "hwnd": 655400,
+        "process_id": 8408,
+        "class": "#32770",
+        "root_owner_hwnd": 393772,
+        "app_hwnd": 393772,
+        "app_process_id": 8408
+      },
+      "open_button": {
+        "hwnd": 1180276,
+        "class": "Button",
+        "uia_control_type": "ControlType.Pane",
+        "control_id": 1,
+        "process_id": 8408,
+        "enabled": true,
+        "visible": true,
+        "dialog_descendant": true,
+        "bounds": [
+          412,
+          460,
+          500,
+          486
+        ],
+        "hit_hwnd": 1180276,
+        "point": [
+          456,
+          473
+        ],
+        "method": "verified_native_mouse_click"
+      },
+      "error": "Owned Windows picker did not dismiss within 5 seconds",
+      "filename_native_edit": {
+        "hwnd": 1180258,
+        "process_id": 8408,
+        "class": "Edit",
+        "control_id": 1148,
+        "host_descendant": true,
+        "enabled": true,
+        "visible": true,
+        "read_only": false,
+        "entry_method": "WM_SETTEXT",
+        "exact_readback": true
+      }
+    }
+  }
+}

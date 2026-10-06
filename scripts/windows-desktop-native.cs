@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.IO;
 using System.Text.RegularExpressions;
+using System.Collections.Generic;
 public sealed class NativeFileNameHost {
   public IntPtr Window;
   public uint AutomationProcess, NativeProcess;
@@ -24,10 +25,54 @@ public sealed class NativePickerButton {
   public int NativeControlId;
   public bool IsButton, AutomationEnabled, InDialog, Enabled, Visible;
 }
+public sealed class NativePickerWindowInventory {
+  public IntPtr[] Windows;
+  public int Visited;
+  public long ElapsedMilliseconds;
+  public bool Complete;
+  public string StopReason;
+}
 public static class NativeAcceptance {
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left,Top,Right,Bottom; }
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X,Y; }
   [StructLayout(LayoutKind.Sequential)] public struct MONITORINFO { public uint Size; public RECT Monitor,Work; public uint Flags; }
+  private delegate bool EnumWindowCallback(IntPtr window,IntPtr parameter);
+  [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowCallback callback,IntPtr parameter);
+  // Pure policy used by both native polling loops. A ready state first
+  // observed at/after the deadline cannot turn a timeout into success.
+  public static int PickerPollDecision(long elapsedMilliseconds,int budgetMilliseconds,bool ready) {
+    if(elapsedMilliseconds<0 || (budgetMilliseconds!=5000 && budgetMilliseconds!=10000))throw new ArgumentOutOfRangeException("budgetMilliseconds");
+    return elapsedMilliseconds >= budgetMilliseconds ? -1 : ready ? 1 : 0;
+  }
+  public static string PickerObservationStopReason(int visited,long elapsedMilliseconds) {
+    if(visited<0 || elapsedMilliseconds<0)throw new ArgumentOutOfRangeException("visited");
+    return visited >= 256 ? "visit-limit" : elapsedMilliseconds >= 25 ? "time-limit" : null;
+  }
+  // This inventory runs outside input verification and opening/closing polls.
+  // The callback/time caps limit work, not merely the retained owned windows.
+  public static NativePickerWindowInventory OwnedPickerObservationWindows(IntPtr appWindow,uint appProcess) {
+    if(appWindow==IntPtr.Zero || appProcess==0)throw new InvalidOperationException("Picker observation needs an exact app owner");
+    var result=new NativePickerWindowInventory();var windows=new List<IntPtr>();
+    var watch=System.Diagnostics.Stopwatch.StartNew();
+    bool complete=EnumWindows(delegate(IntPtr window,IntPtr parameter) {
+      result.Visited++;
+      result.StopReason=PickerObservationStopReason(result.Visited,watch.ElapsedMilliseconds);
+      if(result.StopReason!=null)return false;
+      uint process;GetWindowThreadProcessId(window,out process);
+      if(window!=appWindow && process==appProcess && GetAncestor(window,3)==appWindow) {
+        if(windows.Count==8){result.StopReason="owned-window-limit";return false;}
+        windows.Add(window);
+      }
+      result.StopReason=PickerObservationStopReason(result.Visited,watch.ElapsedMilliseconds);
+      return result.StopReason==null;
+    },IntPtr.Zero);
+    watch.Stop();result.ElapsedMilliseconds=watch.ElapsedMilliseconds;
+    if(result.StopReason==null)result.StopReason=PickerObservationStopReason(result.Visited,result.ElapsedMilliseconds);
+    if(!complete && result.StopReason==null)result.StopReason="enumeration-failed";
+    result.Complete=complete && result.StopReason==null;
+    windows.Sort(delegate(IntPtr left,IntPtr right){return left.ToInt64().CompareTo(right.ToInt64());});
+    result.Windows=windows.ToArray();return result;
+  }
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h,out RECT r);
   [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h,out RECT r);
   [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h,ref POINT p);

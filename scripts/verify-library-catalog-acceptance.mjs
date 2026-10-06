@@ -20,6 +20,7 @@ export {validateCatalogPhaseSequence} from './catalog-native-geometry.mjs';
 
 export const CATALOG_EVIDENCE_LIMITS = Object.freeze({report: 1024 * 1024, file: 16 * 1024 * 1024, files: 512, total: 32 * 1024 * 1024, actions: 64, api: 180});
 export const CATALOG_SOURCE_FILES = Object.freeze([
+  'scripts/windows-picker-observation.ps1', 'crates/desktop-shell/picker-observation.js',
   'web/build-diagnostics.js', 'web/build-diagnostics-view.js', 'web/build-diagnostics.css',
   'scripts/prepare-library-catalog-acceptance.mjs', 'scripts/verify-library-catalog-acceptance.mjs', 'scripts/verify-library-catalog-organization.mjs', 'scripts/verify-library-catalog-memberships.mjs', 'scripts/catalog-native-geometry.mjs',
   'crates/desktop-shell/library-catalog-acceptance.js',

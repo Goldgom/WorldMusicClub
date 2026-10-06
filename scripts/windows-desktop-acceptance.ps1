@@ -80,6 +80,7 @@ else{Add-Type -Path (Join-Path $PSScriptRoot 'windows-desktop-native.cs')}
 . (Join-Path $PSScriptRoot 'windows-desktop-catalog-snapshot.ps1')
 . (Join-Path $PSScriptRoot 'windows-desktop-geometry.ps1')
 . (Join-Path $PSScriptRoot 'windows-build-diagnostics.ps1')
+. (Join-Path $PSScriptRoot 'windows-picker-observation.ps1')
 $catalogRendererGeometry=$null;$catalogReportedViewport=$null;$catalogCaptureGeometryFile=$null
 function Save-Json($Value,[string]$Path) {
   $temporary="$Path.tmp"
@@ -287,7 +288,7 @@ function Get-PickerButtonCandidate($Element,[IntPtr]$Dialog) {
   $candidate.InDialog=[NativeAcceptance]::IsChild($Dialog,$handle);$candidate.Enabled=[NativeAcceptance]::IsWindowEnabled($handle);$candidate.Visible=[NativeAcceptance]::IsWindowVisible($handle)
   return $candidate
 }
-function Click-PickerAction($Root,[IntPtr]$Dialog,$App,[hashtable]$Evidence,[int]$ControlId=1) {
+function Click-PickerAction($Root,[IntPtr]$Dialog,$App,[hashtable]$Evidence,[int]$ControlId=1,$Observation=$null) {
   if($ControlId -notin @(1,2)){throw 'Only native Open or Cancel is supported'}
   $prefix=if($ControlId -eq 1){'open_button'}else{'cancel_button'}
   $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,[string]$ControlId)
@@ -300,6 +301,7 @@ function Click-PickerAction($Root,[IntPtr]$Dialog,$App,[hashtable]$Evidence,[int
   [void][NativeAcceptance]::SetForegroundWindow($Dialog);Start-Sleep -Milliseconds 100
   # Re-read the live control and require its screen center to hit that exact
   # button (or a native child), rather than trusting a stale UIA rectangle.
+  Record-PickerObservation $Observation 'picker-button-before-click' $App $Dialog $Evidence
   $live=Get-PickerButtonCandidate ([System.Windows.Automation.AutomationElement]::FromHandle($handle)) $Dialog
   if([NativeAcceptance]::SelectPickerActionButton([NativePickerButton[]]@($live),[uint32]$App.Id,$ControlId) -ne $handle){throw 'Open button native handle changed during verification'}
   $dialogBounds=New-Object NativeAcceptance+RECT;$buttonBounds=New-Object NativeAcceptance+RECT
@@ -311,19 +313,33 @@ function Click-PickerAction($Root,[IntPtr]$Dialog,$App,[hashtable]$Evidence,[int
   [NativeAcceptance]::ValidatePickerClick($Dialog,$App.MainWindowHandle,[NativeAcceptance]::GetAncestor($Dialog,3),[NativeAcceptance]::GetForegroundWindow(),[uint32]$App.Id,$dialogProcess,($hitProcess -eq $App.Id -and ($hit -eq $handle -or [NativeAcceptance]::IsChild($handle,$hit))))
   $Evidence[$prefix]=[ordered]@{hwnd=$handle.ToInt64();class=$live.NativeClass;uia_control_type=$live.AutomationControlType;control_id=$live.NativeControlId;process_id=$live.NativeProcess;enabled=$live.Enabled;visible=$live.Visible;dialog_descendant=$live.InDialog;bounds=@($buttonBounds.Left,$buttonBounds.Top,$buttonBounds.Right,$buttonBounds.Bottom);hit_hwnd=$hit.ToInt64();point=@($point.X,$point.Y);method='verified_native_mouse_click'}
   [NativeAcceptance]::Click($point.X,$point.Y)
+  $submittedClock=[Diagnostics.Stopwatch]::StartNew()
+  Record-PickerPoll $Observation 'picker-button-after-click' @{input_submitted=$true} 'input-submitted' $Evidence
+  return $submittedClock
 }
-function Wait-PickerDismissal([IntPtr]$Dialog,$App,[hashtable]$Evidence) {
-  $started=[DateTime]::UtcNow;$deadline=$started.AddSeconds(5)
+function Wait-PickerDismissal([IntPtr]$Dialog,$App,[hashtable]$Evidence,$Observation,[Diagnostics.Stopwatch]$SubmittedClock) {
   while($true) {
+    $elapsed=$SubmittedClock.ElapsedMilliseconds
+    if([NativeAcceptance]::PickerPollDecision($elapsed,5000,$false) -lt 0){
+      Record-PickerPoll $Observation 'dismissal-poll' @{sampled=$false;operation_elapsed_ms=$elapsed;decision=-1} 'expired-before-sample' $Evidence
+      throw 'Owned Windows picker did not dismiss within 5 seconds'
+    }
     $exists=[NativeAcceptance]::IsWindow($Dialog);$visible=[NativeAcceptance]::IsWindowVisible($Dialog)
     $foreground=[NativeAcceptance]::GetForegroundWindow();[uint32]$process=0
     [void][NativeAcceptance]::GetWindowThreadProcessId($foreground,[ref]$process)
     $popup=$foreground -ne $App.MainWindowHandle -and $process -eq $App.Id -and [NativeAcceptance]::GetAncestor($foreground,3) -eq $App.MainWindowHandle -and [NativeAcceptance]::IsWindowVisible($foreground)
     $appForeground=$foreground -eq $App.MainWindowHandle;$appEnabled=[NativeAcceptance]::IsWindowEnabled($App.MainWindowHandle)
     $dismissed=[NativeAcceptance]::PickerDismissed($exists,$visible,$popup,$appForeground,$appEnabled)
-    $Evidence.picker_completion=[ordered]@{dialog_exists=$exists;dialog_visible=$visible;foreground_hwnd=$foreground.ToInt64();owned_popup_visible=$popup;app_foreground=$appForeground;app_enabled=$appEnabled;dialog_dismissed=$dismissed;elapsed_ms=[int]([DateTime]::UtcNow-$started).TotalMilliseconds}
-    if($dismissed){return}
-    if([DateTime]::UtcNow -ge $deadline){throw 'Owned Windows picker did not dismiss within 5 seconds'}
+    $elapsed=$SubmittedClock.ElapsedMilliseconds
+    $decision=[NativeAcceptance]::PickerPollDecision($elapsed,5000,$dismissed)
+    $Evidence.picker_completion=[ordered]@{dialog_exists=$exists;dialog_visible=$visible;foreground_hwnd=$foreground.ToInt64();owned_popup_visible=$popup;app_foreground=$appForeground;app_enabled=$appEnabled;dialog_dismissed=$dismissed;elapsed_ms=$elapsed;within_deadline=($decision -ge 0)}
+    $state=[ordered]@{sampled=$true;dialog_hwnd=$Dialog.ToInt64();dialog_exists=$exists;dialog_visible=$visible;foreground_hwnd=$foreground.ToInt64();owned_popup_visible=$popup;app_foreground=$appForeground;app_enabled=$appEnabled;state_ready=$dismissed;operation_elapsed_ms=$elapsed;decision=$decision}
+    $key="$exists|$visible|$foreground|$popup|$appForeground|$appEnabled|$decision"
+    Record-PickerPoll $Observation 'dismissal-poll' $state $key $Evidence
+    # Evaluate the timestamp of the completed native sample before accepting it.
+    # No observation may make a newly seen, expired state count as success.
+    if($decision -lt 0){throw 'Owned Windows picker did not dismiss within 5 seconds'}
+    if($decision -eq 1){return}
     Start-Sleep -Milliseconds 100
   }
 }
@@ -358,6 +374,26 @@ function Capture-PickerFailure([IntPtr]$Dialog,$App,$Action,[hashtable]$Evidence
   }
 }
 function Native-Action($App,$Action,[hashtable]$Evidence) {
+  $observation=$null
+  if($Action.kind -cin @('picker','cancel-picker')){
+    try{$observation=New-PickerObservation $env:WMH_DESKTOP_ACCEPTANCE_PHASE $Action.sequence $native}
+    catch{$Evidence.picker_observation_error=$_.Exception.Message}
+  }
+  try{
+    Record-PickerObservation $observation 'action-start' $App ([IntPtr]::Zero) $Evidence
+    Invoke-NativeAction $App $Action $Evidence $observation
+    Record-PickerObservation $observation 'completed' $App ([IntPtr]::Zero) $Evidence
+    Flush-PickerObservation $observation $Evidence
+  }catch{
+    $failure=$_
+    if($null -ne $observation){$observation.report.error=$failure.Exception.Message}
+    Flush-PickerObservation $observation $Evidence
+    Record-PickerObservation $observation 'failed' $App ([IntPtr]::Zero) $Evidence
+    Flush-PickerObservation $observation $Evidence
+    throw $failure
+  }
+}
+function Invoke-NativeAction($App,$Action,[hashtable]$Evidence,$Observation=$null) {
   if($Scenario -ceq 'human-mod-timbre') {
     if($env:WMH_DESKTOP_ACCEPTANCE_PHASE -cnotin @('human-timbre-seed','human-timbre-migrate','human-timbre-restart')){throw 'Human timbre actions require an explicit human timbre phase'}
     if($Action.kind -cnotin @('click','picker','select-first','select-second','select-last','key-r','live-key-r-down','live-key-r-up')){throw 'Unknown closed human timbre action'}
@@ -439,11 +475,14 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
   $point=[NativeAcceptance]::ClientClickPoint($rectangle,$origin,$Action.x,$Action.y,$Action.width,$Action.height)
   $work=[NativeAcceptance]::WorkArea($window);$actual=[NativeAcceptance+POINT]::new()
   $Evidence.client_click=[ordered]@{client=@($rectangle.Left,$rectangle.Top,$rectangle.Right,$rectangle.Bottom);origin=@($origin.X,$origin.Y);viewport=@($Action.width,$Action.height);requested=@($point.X,$point.Y);work_area=@($work.Left,$work.Top,$work.Right,$work.Bottom)}
+  Record-PickerObservation $Observation 'client-before-click' $App ([IntPtr]::Zero) $Evidence
   if(-not [NativeAcceptance]::SetCursorPos($point.X,$point.Y) -or -not [NativeAcceptance]::GetCursorPos([ref]$actual)){throw 'Cannot observe actual native pointer position'}
   $hit=[NativeAcceptance]::WindowFromPoint($actual);$hitRoot=[NativeAcceptance]::GetAncestor($hit,2);$foreground=[NativeAcceptance]::GetForegroundWindow()
   $Evidence.client_click.actual=@($actual.X,$actual.Y);$Evidence.client_click.hit_hwnd=$hit.ToInt64();$Evidence.client_click.hit_root=$hitRoot.ToInt64();$Evidence.client_click.app_hwnd=$window.ToInt64();$Evidence.client_click.foreground=$foreground.ToInt64()
   [NativeAcceptance]::ValidateClientClick($work,$point,$actual,$window,$foreground,($hit -eq $window -or $hitRoot -eq $window -or [NativeAcceptance]::IsChild($window,$hit)))
   [NativeAcceptance]::ClickPositioned()
+  $clientSubmittedClock=[Diagnostics.Stopwatch]::StartNew()
+  Record-PickerPoll $Observation 'client-after-click' @{input_submitted=$true} 'input-submitted' $Evidence
   if($null -ne $canonicalNumericKeys) {
     $foreground=[NativeAcceptance]::GetForegroundWindow();$enabled=[NativeAcceptance]::IsWindowEnabled($window)
     if($foreground -ne $window -or -not $enabled){throw 'Canonical numeric app foreground ownership was lost'}
@@ -458,11 +497,26 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
   if($Action.kind -eq 'key-r'){[NativeAcceptance]::Key(0x52);return}
   if($Action.kind -eq 'click'){return}
   if($Action.kind -notin @('picker','cancel-picker')){throw 'Unknown acceptance action'}
-  $deadline=[DateTime]::UtcNow.AddSeconds(10);$dialog=[IntPtr]::Zero
-  while([DateTime]::UtcNow -lt $deadline) {
+  $dialog=[IntPtr]::Zero
+  while($true) {
+    $elapsed=$clientSubmittedClock.ElapsedMilliseconds
+    if([NativeAcceptance]::PickerPollDecision($elapsed,10000,$false) -lt 0){
+      Record-PickerPoll $Observation 'discovery-poll' @{sampled=$false;operation_elapsed_ms=$elapsed;decision=-1} 'expired-before-sample' $Evidence
+      break
+    }
     $candidate=[NativeAcceptance]::GetForegroundWindow();$class=[System.Text.StringBuilder]::new(256)
     [void][NativeAcceptance]::GetClassName($candidate,$class,256)
-    if($class.ToString() -eq '#32770' -and [NativeAcceptance]::GetAncestor($candidate,3) -eq $window){$dialog=$candidate;break}
+    $owner=[NativeAcceptance]::GetAncestor($candidate,3);[uint32]$candidateProcess=0
+    [void][NativeAcceptance]::GetWindowThreadProcessId($candidate,[ref]$candidateProcess)
+    $ready=$class.ToString() -eq '#32770' -and $owner -eq $window
+    $elapsed=$clientSubmittedClock.ElapsedMilliseconds
+    $decision=[NativeAcceptance]::PickerPollDecision($elapsed,10000,$ready)
+    $ownedClass=if($candidateProcess -eq $App.Id -and $owner -eq $window){$class.ToString()}else{$null}
+    $state=[ordered]@{sampled=$true;foreground_hwnd=$candidate.ToInt64();foreground_process_id=$candidateProcess;foreground_root_owner_hwnd=$owner.ToInt64();owned_class=$ownedClass;state_ready=$ready;operation_elapsed_ms=$elapsed;decision=$decision}
+    $key="$candidate|$candidateProcess|$owner|$ownedClass|$decision"
+    Record-PickerPoll $Observation 'discovery-poll' $state $key $Evidence
+    if($decision -lt 0){break}
+    if($decision -eq 1){$dialog=$candidate;break}
     Start-Sleep -Milliseconds 100
   }
   if($dialog -eq [IntPtr]::Zero){throw 'No owned Windows file picker opened; no browser file-input substitution is allowed'}
@@ -471,6 +525,7 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
   $Evidence.owned_dialog=[ordered]@{hwnd=$dialog.ToInt64();process_id=$dialogProcess;class=$class.ToString();root_owner_hwnd=[NativeAcceptance]::GetAncestor($dialog,3).ToInt64();app_hwnd=$window.ToInt64();app_process_id=$App.Id}
   try {
     if($dialogProcess -ne $App.Id){throw 'Windows picker process does not match its app owner'}
+    Record-PickerObservation $Observation 'owned-dialog-found' $App $dialog $Evidence
     if($Action.kind -eq 'cancel-picker'){
       # A foreground HWND can exist before its controls are shown. Do not send
       # Escape into that construction gap or mistake hidden-before-show for close.
@@ -491,8 +546,8 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
         Start-Sleep -Milliseconds 100
       }
       if(-not $ready){throw 'Owned Windows Cancel button was not ready within 5 seconds'}
-      Click-PickerAction $root $dialog $App $Evidence 2
-      Wait-PickerDismissal $dialog $App $Evidence;return
+      $submittedClock=Click-PickerAction $root $dialog $App $Evidence 2 $Observation
+      Wait-PickerDismissal $dialog $App $Evidence $Observation $submittedClock;return
     }
     $path=[NativeAcceptance]::ResolveFixturePath($Fixtures,$OutputDirectory,[string]$Action.file)
     $root=[System.Windows.Automation.AutomationElement]::FromHandle($dialog)
@@ -507,13 +562,19 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
       if($entry.Pattern.Current.Value -cne $path){throw 'Windows filename control did not retain the selected fixture path'}
       $Evidence.filename_entry_method='UIA_ValuePattern'
     }
+    Record-PickerObservation $Observation 'filename-ready' $App $dialog $Evidence
     Capture-Handle $dialog "owned-picker-before-open-$($env:WMH_DESKTOP_ACCEPTANCE_PHASE)-$($Action.sequence)"
-    Click-PickerAction $root $dialog $App $Evidence 1
-    Wait-PickerDismissal $dialog $App $Evidence
+    $submittedClock=Click-PickerAction $root $dialog $App $Evidence 1 $Observation
+    Wait-PickerDismissal $dialog $App $Evidence $Observation $submittedClock
   } catch {
     $failure=$_.Exception.Message
+    if($null -ne $Observation){$Observation.report.error=$failure}
+    Flush-PickerObservation $Observation $Evidence
+    Record-PickerObservation $Observation 'failure-capture-before' $App $dialog $Evidence
+    Flush-PickerObservation $Observation $Evidence
     try {Capture-PickerFailure $dialog $App $Action $Evidence}
     catch {$Evidence.failure_capture_error=$_.Exception.Message}
+    Record-PickerObservation $Observation 'failure-capture-after' $App $dialog $Evidence
     throw $failure
   }
 }
@@ -592,7 +653,7 @@ if($Scenario -eq 'library-catalog') {
   if($LASTEXITCODE -ne 0){throw 'Cannot read catalog acceptance source allowlist'}
   $sourceNames=ConvertFrom-Json -InputObject $sourceNames
   # The closed catalog retains Mod, skin, membership and diagnostic-view dependencies.
-  if($sourceNames.Count -ne 55 -or @($sourceNames | Sort-Object -Unique).Count -ne 55){throw 'Catalog source allowlist must contain exactly 55 distinct modules'}
+  if($sourceNames.Count -ne 57 -or @($sourceNames | Sort-Object -Unique).Count -ne 57){throw 'Catalog source allowlist must contain exactly 57 distinct modules'}
   $native.source_hashes=[ordered]@{}
   foreach($name in $sourceNames) {
     if($name -cnotmatch '^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)+$' -or $name.Split('/') -contains '..'){throw 'Catalog source allowlist contains an unsafe path'}
