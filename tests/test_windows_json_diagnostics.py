@@ -1,4 +1,5 @@
 """Exercise the full acceptance workflow's additive JSON diagnostic commands."""
+import copy
 import hashlib
 import importlib.util
 import json
@@ -47,6 +48,70 @@ def diagnostic_pairs(platform):
 
 
 class WindowsJsonDiagnosticsTests(unittest.TestCase):
+    def assert_early_vsq_ownership(self, workflow):
+        for platform, job_id in JOBS.items():
+            steps = workflow['jobs'][job_id]['steps']
+            browser = platform == 'browser'
+            command = 'node scripts/hosted-vsq-song-check.mjs' if browser else '-Scenario vsq-song'
+            owners = [step for step in steps if command in step.get('run', '')]
+            self.assertEqual(len(owners), 1)
+            owner = owners[0]
+            self.assertEqual(owner['id'], 'required_032' if browser else 'required_023')
+            early_ids = ['required_056', 'required_057'] if browser else [
+                'required_042', 'required_043', 'vsq_capture_collect',
+                'vsq_capture_seed_upload', 'vsq_capture_restart_upload']
+            ids = [step.get('id') for step in steps]
+            for name in early_ids:
+                self.assertEqual(ids.count(name), 1, 'No missing or duplicate diagnostic upload')
+            first = steps.index(owner) + 1
+            self.assertEqual(ids[first:first + len(early_ids)], early_ids,
+                             'Collect only after the exact owning scenario has returned')
+            for step in steps[first:first + len(early_ids)]:
+                self.assertEqual(step['if'], 'always()')
+                self.assertNotIn('continue-on-error', step)
+            following = steps[first + len(early_ids)]
+            self.assertIn('node scripts/hosted-performance-song-check.mjs' if browser else '-Scenario performance-song',
+                          following['run'])
+            self.assertEqual(following['if'],
+                "${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}"
+                if browser else "${{ !cancelled() && steps.native_build.outcome == 'success' }}")
+            gate = steps[-1]
+            self.assertEqual(gate['id'], 'producer_gate')
+            self.assertEqual(gate['if'], 'always()')
+            self.assertEqual(gate['run'], 'python scripts/native-acceptance-join.py steps')
+            required = gate['env']['ACCEPTANCE_REQUIRED_STEPS'].split(',')
+            self.assertTrue(all(required.count(name) == 1 for name in [owner['id'], *early_ids, following['id']]))
+
+    def test_vsq_subsets_immediately_follow_only_their_completed_owner(self):
+        self.assert_early_vsq_ownership(WORKFLOW)
+
+    def test_early_collection_wrong_owner_duplicates_or_suppressed_later_scenarios_fail_contract(self):
+        for platform, job_id in JOBS.items():
+            owner_id, collect_id = ('required_032', 'required_056') if platform == 'browser' else ('required_023', 'required_042')
+            for mutation in ['before_owner', 'wrong_later_owner', 'duplicate', 'conditional', 'missing_gate', 'suppress_later']:
+                with self.subTest(platform=platform, mutation=mutation):
+                    workflow = copy.deepcopy(WORKFLOW)
+                    steps = workflow['jobs'][job_id]['steps']
+                    owner = next(step for step in steps if step.get('id') == owner_id)
+                    collect = next(step for step in steps if step.get('id') == collect_id)
+                    if mutation in ['before_owner', 'wrong_later_owner']:
+                        steps.remove(collect)
+                        steps.insert(steps.index(owner) + (0 if mutation == 'before_owner' else 3), collect)
+                    elif mutation == 'duplicate':
+                        steps.append(copy.deepcopy(collect))
+                    elif mutation == 'conditional':
+                        collect['if'] = 'success()'
+                    elif mutation == 'missing_gate':
+                        required = steps[-1]['env']['ACCEPTANCE_REQUIRED_STEPS'].split(',')
+                        required.remove(collect_id)
+                        steps[-1]['env']['ACCEPTANCE_REQUIRED_STEPS'] = ','.join(required)
+                    else:
+                        following = next(step for step in steps if ('hosted-performance-song-check.mjs'
+                            if platform == 'browser' else '-Scenario performance-song') in step.get('run', ''))
+                        following['if'] = 'success()'
+                    with self.assertRaises(AssertionError):
+                        self.assert_early_vsq_ownership(workflow)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -79,14 +144,15 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
         path.write_bytes(data)
         return path
 
-    def test_independent_always_run_subsets_follow_full_artifacts_and_acceptance(self):
+    def test_independent_always_run_subsets_preserve_full_artifacts_and_acceptance(self):
         self.assertEqual(WORKFLOW["permissions"], {"contents": "read"})
         for platform, job_id in JOBS.items():
             steps = WORKFLOW["jobs"][job_id]["steps"]
             diagnostics = []
             for group, root, output, collect, upload in diagnostic_pairs(platform):
                 with self.subTest(platform=platform, group=group):
-                    diagnostics.extend([collect, upload])
+                    if group != "vsq-song":
+                        diagnostics.extend([collect, upload])
                     base = self.evidence_root(platform, root).parent
                     self.assertEqual(self.command(collect)[2:], [
                         base.as_posix(), (self.temp / output).as_posix(),
@@ -114,7 +180,10 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
                         self.assertIn(("test-results/" if platform == "browser" else "") + root + "/",
                                       full["with"]["path"])
                         self.assertIn(".png", full["with"]["path"])
-                    self.assertLess(steps.index(full), steps.index(collect))
+                    if group == "vsq-song":
+                        self.assertLess(steps.index(collect), steps.index(full))
+                    else:
+                        self.assertLess(steps.index(full), steps.index(collect))
                 if platform == "windows" and group == "vsq-song":
                     # Exact selected PNG diagnostics are additive to the original
                     # adjacent JSON pair and remain mandatory producer receipts.
@@ -125,8 +194,7 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
                         self.assertEqual(step["if"], "always()")
                         self.assertNotIn("continue-on-error", step)
                         self.assertIn(step["id"], steps[-1]["env"]["ACCEPTANCE_REQUIRED_STEPS"].split(","))
-                    diagnostics.extend(extras)
-            # Collectors stay after all original UI checks and full evidence.
+            # Other groups stay after all original UI checks and full evidence.
             # Only the new transfer/mandatory-result seal follows; packaging now
             # requires the successful producer job, including retained evidence.
             start = steps.index(diagnostics[0])

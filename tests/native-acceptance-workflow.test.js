@@ -752,3 +752,31 @@ test('observed555 Python platform pair passes while wrong OS or swapped patches 
     }
   }
 });
+
+test('early VSQ diagnostics cannot suppress later independent scenarios or clear final failure', () => {
+  for (const [id, owner, diagnostics] of [
+    ['bulk-import-browser', 'required_032', ['required_056', 'required_057']],
+    ['native-feature-acceptance', 'required_023', ['required_042', 'required_043', 'vsq_capture_collect', 'vsq_capture_seed_upload', 'vsq_capture_restart_upload']],
+  ]) {
+    const jobSteps = steps(jobBlock(id));
+    const ownerIndex = jobSteps.findIndex(step => step.includes(`id: ${owner}\n`));
+    assert.ok(ownerIndex >= 0);
+    for (const [offset, diagnostic] of diagnostics.entries()) {
+      const step = jobSteps[ownerIndex + offset + 1];
+      assert.ok(step.includes(`id: ${diagnostic}\n`));
+      assert.equal(gateRuns(step, {failed: true}), true, 'Retain the owning scenario failure immediately');
+    }
+    const later = jobSteps.slice(ownerIndex + diagnostics.length + 1).filter(step =>
+      step.includes('./scripts/windows-desktop-acceptance.ps1 -Executable') ||
+      step.includes('node scripts/hosted-') || /run: npm run test:(?:pack-management|library-catalog)-hosted/.test(step));
+    assert.ok(later.length >= 8, 'All later independent feature scenarios remain');
+    const outcomes = {native_build: 'success', notation_server: 'success', dense_native_driver: 'success', dense_browser_setup: 'success',
+      ...Object.fromEntries([owner, ...diagnostics].map(name => [name, 'failure']))};
+    for (const step of later) {
+      assert.equal(gateRuns(step, {failed: true, outcomes}), true, 'Later work survives owner/collector failure');
+      assert.equal(gateRuns(step, {cancelled: true, outcomes}), false);
+    }
+    const failed = passingNeeds(); failed[id].result = 'failure';
+    assert.equal(check(failed).status, 1, 'Later success cannot admit failed acceptance');
+  }
+});
