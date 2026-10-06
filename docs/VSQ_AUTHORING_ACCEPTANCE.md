@@ -49,9 +49,13 @@ Seed and restart run as `vsq-authoring-seed` and `vsq-authoring-restart`:
    browsing, choosing the projection and fresh loading do not start audio or
    resume the paused session. Original vocal rendering remains unavailable
 5. Only the trusted base-note instrumental choice requests the exact native
-   runtime. Explicit Listen/Play then exercises native notation following through
-   its sounding interval, release gap, declared tail and final readout. This
-   observes source scheduling, not physical audibility or original vocals
+   runtime. The post-choice snapshot waits for the same saved source and consumed
+   runtime, with visible Start and Mod enabled after compatibility admission.
+   Preview `ready` and enabled Mod alone are insufficient while the asynchronous
+   target/instrument check is pending. All-machine Mod and unified Start then
+   exercise Listen; Play after Reset follows its sounding interval, release gap,
+   declared tail and final readout. This observes source scheduling, not physical
+   audibility or original vocals
 6. A reload requires the choice again. Normal process close precedes a fresh
    browser profile/process against the same Scores library; restart rechecks
    every stored metadata/score string and independently repeats the choice flow

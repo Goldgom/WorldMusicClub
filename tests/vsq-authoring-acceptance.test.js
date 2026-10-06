@@ -1,6 +1,9 @@
 // Real captured Rust responses and original input only. Mutations below test
 // rejection contracts; they never create passing native or GUI evidence.
 import test from 'node:test';
+import vm from 'node:vm';
+import {nativeScoreServer,nativeStorageApp,nativeResponse,deferred} from './native-storage-app-fixtures.js';
+import {waitForTestCondition} from './async-test-wait.js';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
@@ -12,7 +15,7 @@ import {VSQ_AUTHORING_FIXTURE_FILENAME,vsqAuthoringFixture,validateVsqAuthoringD
 import {assertVsqAuthoringZip,validateVsqAuthoringOpened,validateVsqAuthoringRuntime} from '../scripts/check-vsq-authoring-native.mjs';
 import {authoringDraftFingerprint} from '../scripts/song-authoring-fixture-contract.mjs';
 import {storedZip} from './native-import-driver-fixtures.js';
-import {validateVsqAuthoringPicker,validateVsqAuthoringIsolation,validateVsqAuthoringAudio,validateVsqAuthoringViewport,validateVsqAuthoringNativeScreenshot} from '../scripts/verify-native-vsq-authoring-evidence.mjs';
+import {validateVsqAuthoringEntry,validateVsqAuthoringPicker,validateVsqAuthoringIsolation,validateVsqAuthoringAudio,validateVsqAuthoringViewport,validateVsqAuthoringNativeScreenshot} from '../scripts/verify-native-vsq-authoring-evidence.mjs';
 
 import {syntheticVsqAuthoringQuietAudio,syntheticVsqAuthoringAudio} from './vsq-authoring-audio-thread-fixtures.js';
 
@@ -323,4 +326,48 @@ test('authored VSQ rejects legacy schedules, changed native ledgers, silent or d
   r=>r.reviewReceiverCleanup.overflow=true,r=>r.reviewAudio.worklet.initializations.push({settled:false}),
  ];
  for(const mutate of mutations){const report=syntheticVsqAuthoringAudio(fixture.runtime);mutate(report);assert.throws(()=>validateVsqAuthoringAudio(report,fixture),mutate.toString());}
+});
+
+
+// Real app and ScorePreview, captured original Rust fixtures, controlled native
+// response deadlines. This is a DOM regression, never Windows/browser proof.
+test('VSQ authoring choice waits for current-source unified Start admission after both deferred compatibility responses',async()=>{
+ const source=await readFile(new URL('../crates/desktop-shell/vsq-authoring-acceptance.js',import.meta.url),'utf8');
+ const helpers=vm.runInNewContext(source.split('(() => {')[0]+'\n({readVsqAuthoringEntry,admitVsqAuthoringChoice})');
+ const server=await nativeScoreServer(),descriptor=fixture.opened.clean_package,score=JSON.parse(fixture.opened.score_json),runtimes=[];
+ const entry={key:fixture.key,revision:1,title:score.title,composer:score.composer,score_id:score.id,label:score.title,score_bytes:Buffer.byteLength(fixture.opened.score_json),saved_at_unix_ms:1700000000000,clean_package:{version:2,content_sha256:descriptor.content_sha256,profile:descriptor.profile,capabilities:descriptor.capabilities,interpretation_limits:descriptor.interpretation_limits,media:[]}};
+ server.records.set(fixture.key,{...fixture.opened,entry});
+ const gates=new Map();let gating=false;
+ server.setRoute(({path,defaultReply})=>{
+  if(path==='/api/library/runtime'){
+   const response=nativeResponse(fixture.runtime),read=response.json,requestIndex=server.requests.length-1;
+   response.json=async()=>{const body=await read();runtimes.push({path,requestIndex,body});return body;};return response;
+  }
+  if(gating&&['/api/practice-targets','/api/instrument-check'].includes(path)){
+   const gate=deferred();gates.set(path,gate);return gate.promise.then(defaultReply);
+  }
+ });
+ const app=await nativeStorageApp(server,{now:()=>1000});let predicate;
+ const readState=()=>({preview:app.$('song-lobby').dataset.previewStatus,runtimeRequests:runtimes.length,entry:structuredClone(helpers.readVsqAuthoringEntry(app.document,()=>runtimes)),listenDisabled:app.$('start-performance').disabled,practiceDisabled:app.$('start-performance').disabled,fullVocalDisabled:app.$('vsq-full-vocal').disabled,choiceVisible:!app.$('vsq-choose-base-notes').hidden});
+ try{
+  await app.until(()=>app.savedButton(fixture.key)&&!app.$('start-performance').disabled);await app.click('home-single-player');app.savedButton(fixture.key).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choice');
+  validateVsqAuthoringEntry(readState(),fixture);const take=await app.exported('export-takes'),beforeAudio=app.audio();gating=true;
+  await app.click('vsq-choose-base-notes');await app.until(()=>gates.has('/api/practice-targets'));
+  const interim=readState();assert.equal(interim.preview,'ready');assert.equal(interim.runtimeRequests,1);assert.equal(interim.entry.modDisabled,false);assert.equal(interim.entry.startDisabled,true,'Ready preview and enabled Mod must not imply admitted Start');
+  assert.throws(()=>validateVsqAuthoringEntry(interim,fixture));
+  const admission=helpers.admitVsqAuthoringChoice({read:readState,identity:`native:${fixture.key}`,sourceSha256:fixture.manifest.sha256,until:(condition,label,timeoutMs)=>{predicate=condition;assert.equal(timeoutMs,10000);return waitForTestCondition(condition,{label,timeoutMs});}});
+  assert.equal(predicate(),false);gates.get('/api/practice-targets').resolve();await app.until(()=>gates.has('/api/instrument-check'));assert.equal(predicate(),false,'Target response alone cannot bypass the pending instrument check');
+  assert.equal(readState().entry.startDisabled,true);gates.get('/api/instrument-check').resolve();const admitted=await admission;
+  validateVsqAuthoringEntry(admitted,fixture);assert.equal(admitted.entry.previewId,`native:${fixture.key}`);assert.equal(admitted.entry.startDisabled,false);assert.equal(admitted.entry.modDisabled,false);assert.equal(admitted.fullVocalDisabled,true);assert.equal(admitted.choiceVisible,false);
+  assert.deepEqual(app.audio(),beforeAudio);assert.equal(app.audioNodes.filter(node=>node.kind==='audio-worklet').length,0);assert.deepEqual(await app.exported('export-takes'),take);assert.equal(server.requests.filter(row=>row.path==='/api/library/runtime').length,1);
+  assert.equal(server.records.get(fixture.key).clean_package.score_json,fixture.opened.clean_package.score_json);assert.match(descriptor.score_json,/9007199254740993/);
+  // A newer ready source or mismatching consumed runtime must not satisfy this
+  // choice's wait, even if that other source's visible Start is enabled.
+  for(const mutate of [state=>state.entry.previewId='native:other-source',state=>state.entry.screen='home',state=>state.entry.runtime.sourceSha256='0'.repeat(64),state=>state.entry.runtime.contentSha256='0'.repeat(64),state=>state.entry.runtime.choice='full_vocal',state=>state.entry.runtime.profile='other',state=>state.entry.startDisabled=true,state=>state.entry.modDisabled=true,state=>state.entry.startVisible=false,state=>state.entry.modVisible=false,state=>state.fullVocalDisabled=false,state=>state.choiceVisible=true,state=>state.runtimeRequests=2]){
+   const invalid=structuredClone(admitted);mutate(invalid);await assert.rejects(helpers.admitVsqAuthoringChoice({read:()=>invalid,identity:`native:${fixture.key}`,sourceSha256:fixture.manifest.sha256,until:async(condition,label,ms)=>{assert.equal(ms,10000);assert.equal(condition(),false,mutate.toString());throw Error('bounded admission rejected');}}),/bounded admission rejected/);
+  }
+  for(const mutate of [state=>delete state.entry,state=>state.entry.startDisabled=true,state=>state.entry.modDisabled=true,state=>state.entry.startVisible=false,state=>state.entry.modVisible=false,state=>state.entry.previewId='native:other-source',state=>state.entry.runtime.sourceSha256='0'.repeat(64),state=>state.entry.runtime.contentSha256='0'.repeat(64),state=>state.entry.runtime.requestIndex=-1,state=>state.listenDisabled=true,state=>state.practiceDisabled=true]){
+   const invalid=structuredClone(admitted);mutate(invalid);assert.throws(()=>validateVsqAuthoringEntry(invalid,fixture),mutate.toString());
+  }
+ }finally{gating=false;for(const gate of gates.values())gate.resolve();await app.close();}
 });

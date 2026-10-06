@@ -100,6 +100,17 @@ export function validateVsqAuthoringViewport(report,nativeEvidence){
 export function validateVsqAuthoringNativeScreenshot(bytes,viewport,windowPixels){
  const pixels=validateCleanScreenshot(bytes);assert.ok(pixels.width>=viewport.clientSize.width&&pixels.height>=viewport.clientSize.height,'Full-window screenshot must contain the measured native client');if(windowPixels)assert.deepEqual(pixels,windowPixels,'Action screenshot must match the same native window capture dimensions');return pixels;
 }
+export function validateVsqAuthoringEntry(state,fixture=vsqAuthoringFixture()){
+ const entry=state.entry,ready=state.preview==='ready';
+ assert.equal(entry?.screen,'library');assert.equal(entry.previewId,`native:${fixture.key}`);
+ assert.equal(entry.startVisible,true);assert.equal(entry.modVisible,true);
+ assert.equal(entry.startDisabled,!ready);assert.equal(entry.modDisabled,!ready);
+ // The legacy report names refer to the same unified Start entry point.
+ assert.equal(state.listenDisabled,entry.startDisabled);assert.equal(state.practiceDisabled,entry.startDisabled);
+ if(state.runtimeRequests===0)assert.equal(entry.runtime,null);
+ else{assert.ok(Number.isSafeInteger(entry.runtime?.requestIndex)&&entry.runtime.requestIndex>=0);assert.deepEqual(entry.runtime,{requestIndex:entry.runtime.requestIndex,sourceSha256:fixture.manifest.sha256,contentSha256:fixture.opened.clean_package.content_sha256,profile:fixture.runtime.runtime.profile,choice:'base_notes_instrumental'});}
+ return entry;
+}
 export function validateVsqAuthoringRenderer(report,fixture=vsqAuthoringFixture(),nativeEvidence,expectedOrigin='https://wmh.localhost'){
  assert.equal(report.version,1);assert.equal(report.ok,true,report.error);assert.ok(VSQ_AUTHORING_PHASES.includes(report.phase));assert.equal(report.origin,validateRendererOrigin(expectedOrigin));assert.equal(report.stage,'complete');assert.equal(report.profileMarkerAbsent,true);assert.deepEqual(report.errors,[]);assert.ok(positive(report.actions)&&report.actions<=80);validateVsqAuthoringPicker(report,fixture);
  assert.ok(Array.isArray(report.requests)&&report.requests.length<=160);assert.ok(Array.isArray(report.responses)&&report.responses.length<=24);assert.ok(Array.isArray(report.trusted)&&report.trusted.length<=256);validateVsqAuthoringIsolation(report);
@@ -108,6 +119,7 @@ export function validateVsqAuthoringRenderer(report,fixture=vsqAuthoringFixture(
  assert.equal(report.requests.filter(row=>row.path==='/api/library/runtime').length,1);assert.equal(report.requests.filter(row=>row.path==='/api/notation-navigation'&&row.body?.id===JSON.parse(fixture.draft.package.metadata_json).id).length,0);
  assert.equal(report.inventory.length,1);assert.equal(report.inventory[0].key,fixture.key);assert.equal(report.opened.length,1);assert.equal(report.opened[0].key,fixture.key);assert.deepEqual(report.opened[0].entry,report.inventory[0]);validateVsqAuthoringOpened(report.opened[0],fixture);validateVsqAuthoringOpened(report.reopened,fixture);assert.deepEqual(report.reopened.entry,report.inventory[0]);
  for(const state of [report.beforeChoice,report.reloadChoice]){assert.equal(state.preview,'choice');for(const name of ['listenDisabled','practiceDisabled','fullVocalDisabled','fullVocalVisible','choiceVisible'])assert.equal(state[name],true);assert.equal(state.limits.length,8);assert.equal(state.tracks.length,3);for(const part of fixture.draft.inventory.parts)assert.ok(state.tracks.some(text=>text.includes(part.vsq.name)));stopped(state.audio);}
+ for(const state of [report.beforeChoice,report.afterChoice,report.reloadChoice]){const entry=validateVsqAuthoringEntry(state,fixture);if(entry.runtime)assert.equal(entry.runtime.requestIndex,runtime[0].requestIndex);}
  assert.deepEqual(report.browseTakeState,report.beforeTakeState);assert.deepEqual(report.afterChoiceTakeState,report.beforeTakeState);assert.equal(report.beforeChoice.runtimeRequests,0);silent(report.beforeChoice.audio);assert.equal(report.afterChoice.preview,'ready');assert.equal(report.afterChoice.runtimeRequests,1);assert.equal(report.afterChoice.listenDisabled,false);assert.equal(report.afterChoice.practiceDisabled,false);assert.equal(report.afterChoice.fullVocalDisabled,true);silent(report.afterChoice.audio);assert.equal(report.reloadChoice.runtimeRequests,1);
  assert.ok(report.choiceZh.button.includes('基础音符器乐练习')&&report.choiceZh.vocal.includes('不可用')&&report.choiceZh.description.includes('源歌手'));assert.equal(report.choiceZh.limits.length,8);assert.ok(report.choiceZh.limits.every(text=>/[\u3400-\u9fff]/.test(text)&&!/[a-z]{4}/i.test(text)));
  validateVsqFollowing(report.following,fixture.runtime);validateVsqFollowingSurface(report.followingSurface);assert.equal(report.followingReadout.positionMs,fixture.runtime.runtime.end_ms);const endClock=readPlaybackClock({getAttribute:()=>JSON.stringify(report.followingReadout.clock)});assert.equal(endClock.positionMs,fixture.runtime.runtime.end_ms);assert.equal(endClock.completed,true);assert.equal(endClock.phase,'ended');assert.deepEqual(report.followingReadout.ids,[]);validateVsqAuthoringAudio(report,fixture);
