@@ -33,7 +33,10 @@ class CaptureDiagnosticsTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        # Windows TEMP can use host-selected casing or an 8.3 ancestor. Resolve
+        # only this newly created test-owned directory before exercising the
+        # collector, whose input alias/link rejection remains unchanged.
+        self.root = Path(temporary.name).resolve(strict=True)
         self.evidence = self.root / 'desktop-vsq-song'
         self.output = self.root / 'captures'
         self.evidence.mkdir()

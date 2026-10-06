@@ -41,7 +41,7 @@ class NativeAcceptanceTransferTests(unittest.TestCase):
         self.runner_temp.mkdir()
         self.archive = self.root / 'transfer.zip'
         self.git('init', '--quiet')
-        (self.workspace / 'README.md').write_text('Original tracked source\n', encoding='utf-8')
+        (self.workspace / 'README.md').write_bytes(b'Original tracked source\n')
         self.git('add', 'README.md')
         self.payload = {name: b'Original synthetic notice; not acceptance\n' for name in transfer.REQUIRED_FILES}
         self.payload[transfer.EXE] = b'MZ original fixture, never executed'
@@ -594,6 +594,32 @@ class NativeAcceptanceTransferTests(unittest.TestCase):
                                 env=environment, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.path(transfer.EXE).read_bytes(), self.payload[transfer.EXE])
+
+
+class NativeTransferNewlineTests(unittest.TestCase):
+    def test_rejected_transfer_preserves_exact_source_with_windows_text_defaults(self):
+        original_open = Path.open
+
+        def windows_text_default(path, mode='r', buffering=-1, encoding=None, errors=None, newline=None):
+            # Simulate Windows text output on every host. Keep binary writes and
+            # explicit newline choices untouched; the fixture must choose bytes.
+            if 'b' not in mode and any(flag in mode for flag in ('w', 'a', 'x')) and newline is None:
+                newline = '\r\n'
+            return original_open(path, mode, buffering, encoding, errors, newline)
+
+        result = unittest.TestResult()
+        with tempfile.TemporaryDirectory() as temporary, patch.object(Path, 'open', windows_text_default):
+            probe = Path(temporary) / 'windows-text.txt'
+            probe.write_text('Original tracked source\n', encoding='utf-8')
+            self.assertEqual(probe.read_bytes(), b'Original tracked source\r\n')
+            # Exercise the existing hostile-archive path and its byte-exact
+            # no-restoration assertion, not a second implementation of it.
+            case = NativeAcceptanceTransferTests('test_trusted_sha_rejects_byte_tampering_before_zip_parsing')
+            case.run(result)
+        self.assertEqual(result.testsRun, 1)
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.failures, [])
+        self.assertEqual(result.skipped, [])
 
 
 if __name__ == '__main__':

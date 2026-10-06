@@ -48,7 +48,8 @@ def exact_root(value, *, missing=False):
         names = [entry.name for entry in current.parent.iterdir()
                  if entry.name.casefold() == current.name.casefold()]
         require(names == [current.name] if current.exists() else not names,
-                'Case/short-name-aliased root component')
+                'Case/short-name-aliased root component: requested=' + repr(current.name[:80])
+                + '; entries=' + repr([name[:80] for name in names[:2]]))
     return path
 
 
