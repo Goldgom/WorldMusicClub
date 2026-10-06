@@ -184,7 +184,9 @@ html[data-theme=dark]:not([data-theme-mode=custom]) .rhythm-shell {
 .rhythm-shell .game-home .rhythm-kicker {letter-spacing:2px;font-weight:650;font-size:12px;margin-bottom:22px}
 .rhythm-shell .game-home .rhythm-hero h2 {font-size:clamp(40px,4.2vw,72px);line-height:1.18;letter-spacing:-2px}
 .rhythm-shell .game-home .rhythm-hero-description {max-width:340px;font-size:14px;line-height:1.85;margin-top:23px}
-.rhythm-shell .game-home .rhythm-hero-art {width:240px;height:240px;right:-10px;bottom:-8px;opacity:.42}
+/* Rotated orbits may extend beyond this decorative box. Contain their paint
+   here so they cannot widen the home scroller on portrait or zoomed layouts. */
+.rhythm-shell .game-home .rhythm-hero-art {width:240px;height:240px;right:-10px;bottom:-8px;opacity:.42;overflow:clip}
 .rhythm-shell .game-mode-menu {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-content:center}
 .rhythm-shell .game-mode {position:relative;display:flex;align-items:center;gap:16px;text-align:left;min-width:0;min-height:104px;padding:20px;border:1px solid var(--border);border-radius:18px;background:var(--paper);color:var(--ink);font:inherit;cursor:pointer;box-shadow:0 5px 20px #17102806}
 .rhythm-shell .game-mode:focus-visible {outline:3px solid var(--focus-ring);outline-offset:4px}

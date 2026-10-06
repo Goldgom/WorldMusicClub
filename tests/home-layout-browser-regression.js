@@ -77,6 +77,7 @@ export function registerHomeLayoutBrowserRegressions({test, getPage, ui, closeSh
           return {screen:document.body.dataset.screen, viewport:{width:innerWidth,height:innerHeight}, documentWidth:document.documentElement.scrollWidth,
             observed:{locale:document.documentElement.lang,theme:document.documentElement.dataset.themeMode,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduce' : 'no-preference'},
             home:{...rect(home), scrollWidth:home.scrollWidth, clientWidth:home.clientWidth, scrollHeight:home.scrollHeight, clientHeight:home.clientHeight},
+            overflowCandidates:home.scrollWidth > home.clientWidth+1 ? [...home.querySelectorAll('*')].map(node=>({tag:node.tagName,id:node.id,className:node.className,...rect(node)})).filter(box=>box.right>home.getBoundingClientRect().right+1||box.left<home.getBoundingClientRect().left-1) : [],
             intro:rect(document.querySelector('.rhythm-home-intro')), free:rect(document.querySelector('.rhythm-free-entry')),
             cards:[...document.querySelectorAll('.game-mode')].map(node => ({id:node.id, disabled:node.disabled, ...rect(node),
               text:[...node.querySelectorAll('.game-mode-copy strong,.game-mode-copy small')].map(text => { const range = document.createRange(); range.selectNodeContents(text); return {...rect(range), content:text.textContent}; }),
