@@ -9,7 +9,7 @@ const workflow = readFileSync(new URL('../.github/workflows/windows-desktop-acce
 const jobIds = ['bulk-import-browser', 'native-feature-acceptance'];
 const mandatoryOutputs = {
   'bulk-import-browser': ['management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser', 'canonical_practice_protocol', 'canonical_practice_browser_720', 'canonical_practice_browser_720_verify', 'canonical_practice_browser_640', 'canonical_practice_browser_640_verify'],
-  'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify', 'canonical_practice_windows', 'canonical_practice_windows_verify'],
+  'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify', 'canonical_practice_windows', 'canonical_practice_windows_verify', 'native_full_portable', 'native_full_upload', 'native_runtime_package', 'native_runtime_verify', 'native_runtime_startup', 'native_runtime_delivery', 'native_runtime_delivery_verify', 'native_runtime_upload', 'native_runtime_evidence'],
 };
 // These contracts intentionally inspect the workflow's literal job/step blocks;
 // the behavioral cases execute its actual summary program, not a test copy.
@@ -29,6 +29,7 @@ const sha = 'a'.repeat(40), tree = 'b'.repeat(40), run = '123456';
 function passingNeeds() {
   return Object.fromEntries(jobIds.map(id => [id, {
     result: 'success', outputs: { source_sha: sha, source_tree: tree, run_id: run,
+      ...(id === 'native-feature-acceptance' ? {full_artifact_id: '201', runtime_artifact_id: '202', runtime_evidence_id: '203', full_sha256: 'e'.repeat(64), runtime_sha256: 'c'.repeat(64), delivery_sha256: 'd'.repeat(64)} : {}),
       ...Object.fromEntries(mandatoryOutputs[id].map(name => [name, 'success'])) },
   }]));
 }
@@ -39,7 +40,7 @@ function check(needs, extraEnv = {}) {
     const child = spawnSync(process.execPath, ['-'], {
       input: program, encoding: 'utf8', timeout: 5000,
       env: { ...process.env, ACCEPTANCE_NEEDS: JSON.stringify(needs),
-        ACCEPTANCE_SHA: sha, ACCEPTANCE_RUN_ID: run, GITHUB_STEP_SUMMARY: summaryPath, ...extraEnv },
+        ACCEPTANCE_SHA: sha, ACCEPTANCE_RUN_ID: run, ACCEPTANCE_REPOSITORY: 'example/original-fixture', GITHUB_STEP_SUMMARY: summaryPath, ...extraEnv },
     });
     assert.ifError(child.error);
     assert.equal(child.signal, null);
@@ -335,7 +336,7 @@ test('all real checks fail closed and failure evidence survives independently', 
       if (step.includes('continue-on-error:')) {
         assert.match(step, /uses: actions\/cache\/(?:restore|save)@/);
       }
-      if (step.includes('uses: actions/upload-artifact@') && !step.includes('name: WorldMusicClub-Native-Candidate-')) {
+      if (step.includes('uses: actions/upload-artifact@') && !step.includes('name: WorldMusicClub-Native-Candidate-') && !step.includes('name: WorldMusicClub-Native-Runtime-Candidate-')) {
         assert.match(step, /^        if: always\(\)$/m);
       }
     }
@@ -675,4 +676,24 @@ test('Basic-key Windows diagnostics keep the full evidence and every existing sc
   assert.match(full,/desktop-basic-key\/\*\.json/);assert.match(full,/desktop-basic-key\/\*\.png/);
   assert.ok(jobSteps.indexOf(full)<jobSteps.indexOf(collect));
   assertIndependentNativeScenarios(block);
+});
+
+
+test('runtime delivery identity is required even when every producer says success', () => {
+  for (const key of ['full_artifact_id', 'runtime_artifact_id', 'runtime_evidence_id', 'full_sha256', 'runtime_sha256', 'delivery_sha256']) {
+    for (const value of [undefined, '', 'not-an-identity']) {
+      const needs = passingNeeds();
+      needs['native-feature-acceptance'].outputs[key] = value;
+      assert.equal(check(needs).status, 1, `${key}=${value}`);
+    }
+  }
+  const needs = passingNeeds();
+  needs['native-feature-acceptance'].outputs.runtime_artifact_id = needs['native-feature-acceptance'].outputs.full_artifact_id;
+  assert.equal(check(needs).status, 1);
+  assert.equal(check(passingNeeds(), {ACCEPTANCE_REPOSITORY: 'invalid'}).status, 1);
+  const result = check(passingNeeds());
+  assert.equal(result.status, 0);
+  assert.match(result.summary, /https:\/\/github.com\/example\/original-fixture\/actions\/runs\/123456\/artifacts\/202/);
+  assert.match(result.summary, /runtime_sha256: c{64}/);
+  assert.match(result.summary, /separate full Verify WorldMusicClub workflow must also succeed/);
 });

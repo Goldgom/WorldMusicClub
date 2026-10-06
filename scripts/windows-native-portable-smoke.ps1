@@ -27,9 +27,10 @@ public static class NativePortableSmoke {
 $previousDirectory=$env:WMH_DESKTOP_SMOKE_DIR;$previousPhase=$env:WMH_DESKTOP_ACCEPTANCE_PHASE
 $env:WMH_DESKTOP_SMOKE_DIR=$null;$env:WMH_DESKTOP_ACCEPTANCE_PHASE=$null
 $app=$null
-$report=[ordered]@{version=1;source_sha=$info.git_commit;source_tree=$info.git_tree;commit_count=$info.commit_count;executable_sha256=$info.files.'WorldMusicClub-Native.exe'.sha256;normal_startup=$true;test_hooks_enabled=$false;ok=$false;normal_close=$false;clean_machine_installation=$false}
+$report=[ordered]@{version=1;package_directory=$Directory;executable_path=$Executable;workflow_run_id=$env:GITHUB_RUN_ID;source_sha=$info.git_commit;source_tree=$info.git_tree;commit_count=$info.commit_count;executable_sha256=$info.files.'WorldMusicClub-Native.exe'.sha256;normal_startup=$true;test_hooks_enabled=$false;ok=$false;normal_close=$false;clean_machine_installation=$false}
 try {
   $app=Start-Process -FilePath $Executable -WorkingDirectory $Directory -PassThru -RedirectStandardError (Join-Path $OutputDirectory 'normal-stderr.log')
+  $report.native_process_id=$app.Id
   $deadline=[DateTime]::UtcNow.AddSeconds(60)
   $ready=$false
   while(-not $ready){

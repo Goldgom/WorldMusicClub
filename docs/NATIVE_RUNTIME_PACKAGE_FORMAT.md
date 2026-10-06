@@ -1,8 +1,10 @@
 # Future native runtime package format 1
 
-Status: isolated prototype for future normal builds. No workflow uses this
-format yet. No existing package was downloaded, rebuilt, split, or delivered
-by this work. Synthetic contract tests are not native acceptance.
+Status: additive integration for future ordinary builds in
+`windows-desktop-acceptance.yml`. No existing package was downloaded, rebuilt,
+split, or delivered by this work. Local synthetic contract tests are not native
+acceptance; the first actual Windows runtime startup and full checkpoint remain
+required before offering a future Runtime candidate.
 
 ## Artifact boundary
 
@@ -155,44 +157,70 @@ continued accepted distribution unless the exact bytes are retained at an
 approved durable destination. Do not silently replace expired evidence with
 newly generated proof for an old runtime.
 
-## Future workflow integration, explicitly deferred
+## Future ordinary-build workflow integration
 
-Do not enable the runtime as the default artifact by changing only the upload
-path. A subsequent coordinated change must:
+The full native ZIP, verifier and ordinary extracted startup remain unchanged
+in scope. All native, browser, Rust, formatting/clippy and full checkpoint gates
+are retained. The existing Full/native candidate artifact name is preserved.
+After successful full verification and startup, the workflow uploads that Full
+ZIP and its checksum, obtaining the immutable artifact ID from the upload step.
+Runtime creation uses only those same local full ZIP bytes and requires the
+upload's artifact URL to match the current repository/run/artifact identity.
+There is no old-artifact retrieval, metadata fetch, alternate download route,
+second executable build or acceptance bypass.
 
-1. Keep the entire existing full-package creation/verifier and all native,
-   browser, Rust, formatting/clippy, and checkpoint acceptance gates intact
-2. Update `docs/WINDOWS_NATIVE.md` so its copied README and START-HERE explain
-   both distributions, the two inventories, required WebView2 installation,
-   evidence access, and unchanged acceptance limits. The prototype's new guide
-   qualifies existing full-package instructions; production docs must be
-   consistent before the runtime becomes a default deliverable
-3. Retain/upload the complete existing native package first, obtain its exact
-   immutable run/artifact URL, and create the runtime from those same local
-   bytes. No current or old denied artifact is fetched or rebuilt for this step
-4. Extract and run normal startup on the runtime ZIP in a fresh location,
-   verify the EXE hash is the one accepted earlier, and require normal close,
-   expected controls/assets/catalog, correct origin, and no EXE TCP listeners.
-   Preserve the existing full extracted-package check as well
-5. Bind the runtime ZIP hash and final startup reports to source/tree, workflow
-   run, full ZIP hash, and EXE hash in retained delivery evidence. The final
-   acceptance summary must require this runtime startup outcome; no self-hash
-   cycle is introduced by pretending post-packaging proof was already in the
-   ZIP. Separately retained checkpoint evidence keeps its existing full scope
-6. Upload an additive distinctly named Runtime candidate and its checksum;
-   keep the complete Full/native candidate and all raw proof. Require the
-   exact run's native/browser acceptance summary and same-source full Verify
-   workflow before delivery or source promotion. Document the retention period
-7. Exercise the new unit tests in normal checks and add workflow tests proving
-   both uploads, their exact identities, the runtime startup gate, evidence
-   retention, and unchanged final acceptance conditions
+An independent verifier checks the Runtime ZIP against the hash exported by
+its producer step. `windows-native-runtime-smoke.ps1` then invokes
+`native-runtime-delivery.py extract`, which requires the same trusted digest,
+source/tree, repository/run, Full artifact ID and the pre-upload Full ZIP digest. It checks the checksum pair,
+verifies every ZIP member, and extracts exclusively into a new directory. The
+extracted tree must contain exactly all Runtime files and required directories,
+without links, junctions, added files or missing assets. The existing
+`windows-native-portable-smoke.ps1` runs the extracted EXE ordinarily: enabled
+Single player home control, real rendered window, no EXE TCP listeners, and
+normal close. No acceptance hooks or redirected WebView profile are enabled.
+Catalog, notices, source archives and unfamiliar assets must still match the
+complete retained inventory; the original Full acceptance supplies their
+functional proof for the same exact EXE.
 
-Publishing, GitHub Releases, signing, installer/updater behavior, a rebuild of
-any existing candidate, and any artifact-transfer workaround are out of scope.
-No workflow, acceptance adapter, or existing full manifest changes are part of
-this prototype.
+Origin is deliberately scoped: the ordinary UI Automation startup does not
+read `location.origin`. The delivery verifier independently revalidates the
+same-source Full evidence and requires both Full startup reports to bind
+`https://wmh.localhost` to that exact EXE. Its record explicitly reports
+`ordinary_startup_origin_observed: false`; it does not invent a new observation.
 
-## Compatibility and smallest reviewable change
+After startup, `native-runtime-delivery.py create` and `verify` independently
+recheck the archives, complete extracted Runtime tree and both final startup
+report/screenshot/log inventories. The retained `delivery.json` binds source,
+tree, count, run, repository, Full artifact/ZIP, Runtime ZIP and EXE hashes. The
+normal startup reports include their actual executable/extraction paths and
+workflow run, so copying Full's report cannot satisfy Runtime's fresh-path
+check. Failed, stale, missing or overclaimed reports fail closed. This metadata
+is retained outside both ZIPs; there is no post-packaging self-hash cycle.
+
+Only after those checks succeed does the workflow upload the distinctly named
+`WorldMusicClub-Native-Runtime-Candidate-*` ZIP and checksum. It retains Runtime
+startup JSON, PNG and log files plus the delivery record in
+`native-runtime-delivery-evidence-*`, including available diagnostic files after
+failure. All original raw Full/native/browser proof uploads remain. The final
+summary requires all added outcomes and distinct Full, Runtime and Runtime-proof
+artifact IDs, records trusted Runtime/delivery digests, and still requires the
+separate full Verify WorldMusicClub workflow for the same source before delivery
+or main promotion. Neither uploader labels a package accepted by itself.
+
+The workflow requests the same 90-day retention for Full, Runtime and all its
+raw proof. Actual repository policy can shorten it. Check actual availability
+and separately retained full-checkpoint evidence before delivery. Runtime must
+not remain offered after any required exact evidence expires unless all exact
+bytes are retained at an approved durable destination. No automatic renewal,
+rebuild of old proof, publication, installer, signing or updater is introduced.
+
+Normal Python test discovery runs the original package contract tests and the
+new extraction/delivery/workflow tests. Tests use only tiny original synthetic
+files and explicit substitutions for full semantic acceptance. They do not
+start a Windows executable, run a GUI, or qualify any artifact for delivery.
+
+## Compatibility and scope
 
 Keep the extracted folder and EXE names unchanged; native app identity, profile
 origin, saved music, and migration behavior are unaffected. Download names must
@@ -207,11 +235,9 @@ manifest meaning requires an explicit format/version review and migration.
 Unknown versions are rejected. Filename changes or new required third-party
 license material cannot be used to drop files from older full inventories.
 
-The minimum prototype commit is exactly three new files:
-`native-runtime-package.py`, `test_native_runtime_package.py`, and this design
-contract. It can be reviewed and unit-tested without building an executable,
-running a server/browser, downloading production artifacts, or changing CI.
-The test suite creates tiny original pseudo-PE headers and literal assets;
-its substituted full-acceptance boundary is explicitly marked. A separate test
-calls the real unchanged verifier and confirms it rejects the incomplete
-synthetic package. Passing these tests never labels a Windows package accepted.
+The original prototype remains an independently verifiable package format.
+The integration adds an offline delivery helper and ordinary Windows startup
+wrapper without modifying the full native verifier. Synthetic tests explicitly
+mark their substituted full-acceptance boundary, and a real-verifier negative
+case rejects incomplete synthetic evidence. Passing these tests never labels a
+Windows package accepted.
