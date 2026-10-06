@@ -115,6 +115,27 @@ async fn route(
             "/api/health" => json_reply(Ok(
                 json!({"name":"WorldMusicHub","display_name":"WorldMusicClub","version":env!("CARGO_PKG_VERSION"),"engine":"rust","network":"loopback-only","score_format_version":1,"score_schema_revision":score_core::SCORE_SCHEMA_REVISION}),
             )),
+            practice_server::build_identity::ROUTE => {
+                if request.uri().query().is_some() || !request.body().is_end_stream() {
+                    return reply(
+                        400,
+                        "application/json; charset=utf-8",
+                        r#"{"error":"build_diagnostics_invalid_request"}"#,
+                    );
+                }
+                match tokio::task::spawn_blocking(|| {
+                    practice_server::build_identity::diagnostics("loopback-only")
+                })
+                .await
+                {
+                    Ok(value) => json_reply(Ok(value)),
+                    Err(_) => reply(
+                        500,
+                        "application/json; charset=utf-8",
+                        r#"{"error":"build_diagnostics_unavailable"}"#,
+                    ),
+                }
+            }
             "/api/catalog" => {
                 json_reply(serde_json::to_value(score_core::catalog()).map_err(|e| e.to_string()))
             }
@@ -157,6 +178,13 @@ async fn route(
                 }
             }
         };
+    }
+    if path == practice_server::build_identity::ROUTE {
+        return reply(
+            405,
+            "application/json; charset=utf-8",
+            r#"{"error":"method_not_allowed"}"#,
+        );
     }
     if request.method() != Method::POST || !path.starts_with("/api/") {
         if song_route {

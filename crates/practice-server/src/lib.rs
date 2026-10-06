@@ -1,6 +1,7 @@
 //! Shared, bounded-operation engine entry points for HTTP and desktop adapters.
 use serde::Deserialize;
 pub mod basic_keys_api;
+pub mod build_identity;
 mod clean_draft_api;
 mod song_api;
 pub use song_api::{

@@ -2227,6 +2227,7 @@ dependencies = [
  "score-core",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
 ]
 

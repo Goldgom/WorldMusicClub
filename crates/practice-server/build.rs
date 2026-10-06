@@ -2,6 +2,7 @@ use std::{
     env, fs, io,
     path::{Path, PathBuf},
 };
+mod build_source;
 #[derive(Clone, Copy)]
 struct Limits {
     files: usize,
@@ -90,7 +91,11 @@ fn collect_assets(root: &Path, limits: Limits) -> io::Result<Vec<(String, PathBu
     Ok(result)
 }
 fn main() {
-    let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../web");
+    let workspace = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("../..");
+    let out = PathBuf::from(env::var("OUT_DIR").unwrap());
+    build_source::emit(&workspace, &out, &env::var("TARGET").unwrap())
+        .expect("build identity generation failed");
+    let root = workspace.join("web");
     println!("cargo:rerun-if-changed={}", root.display());
     let entries =
         collect_assets(&root, LIMITS).expect("WorldMusicClub web asset validation failed");
@@ -100,11 +105,7 @@ fn main() {
         code += &format!("{:?} => Some(include_bytes!({:?})),\n", url, path);
     }
     code += "_ => None } }\n";
-    fs::write(
-        PathBuf::from(env::var("OUT_DIR").unwrap()).join("web_assets.rs"),
-        code,
-    )
-    .unwrap();
+    build_source::write_if_changed(&out.join("web_assets.rs"), code.as_bytes()).unwrap();
 }
 #[cfg(test)]
 mod tests {
