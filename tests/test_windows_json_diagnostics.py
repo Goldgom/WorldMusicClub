@@ -30,6 +30,52 @@ GROUPS = {
     "canonical-practice": "desktop-canonical-practice",
 }
 JOBS = {"browser": "bulk-import-browser", "windows": "native-feature-acceptance"}
+NEW_DIAGNOSTICS = {'build_diagnostics_collect', 'build_diagnostics_upload'}
+# Frozen two-parent integration a4cfcda474ff398fab69d7c7eddd83333511b9d2.
+# Hash complete job bodies after normalizing only step order and required-list
+# order. This protects every original command, condition, output, source/run/EXE
+# binding and full artifact from an accidental whole-workflow replacement.
+BASELINE_JOBS = {
+    'bulk-import-browser': 'd5c664e1d424e5e01972e9482e7b3e3a9fce2d5eb0f4819505673abaf9bbdb0b',
+    'windows-pure-checks': '93d0ac4e7c25dd3f09c38e5924ec1e532892770231f1d922ebef44d0c154c93d',
+    'native-feature-acceptance': 'cdc250580e074d4477d9f911beb9cae7613a20967c65d3e52a1f42bafb0116de',
+    'native-package': 'ae0f0c8e05913dc82d7382c3f9b56b552a62bd575e278050a1301d818e91adb5',
+    'acceptance-summary': 'b5d722181b2071357fffa57d7fc99656990558ad9454351e8bb6f17514e9b151',
+}
+BASELINE_OTHER_ORDER = {
+    'bulk-import-browser': 'c3635a351fbc785708d50d7360aae49c535527f247308eba6129967d7edca3a4',
+    'windows-pure-checks': '3a6c73ef957fe75c9e4a91bf751a6f759e9e5b15f967230a22123e32b39d94ea',
+    'native-feature-acceptance': 'd234a133c0d66c5c678666f8f754c00b756fa2145468e3282a80092252350f88',
+    'native-package': '6e59abbbbc79be047794016903dbc03c4a93952632a09b93be28c2731689565c',
+    'acceptance-summary': '1d8fc6ceb1f94c6326d6d5483d258fcb2e179e9869325b245d105c2219bf69fd',
+}
+# Ordered writers/rechecks of each complete collected root, not merely its
+# first successful report. The final ID is the earliest safe collection point.
+ROOT_OWNERS = {
+    'browser': {
+        'bulk-import': (['required_031'], ['required_054', 'required_055'], 'npm run test:bulk-import-hosted'),
+        'vsq-song': (['required_032'], ['required_056', 'required_057'], 'node scripts/hosted-vsq-song-check.mjs'),
+        'performance-song': (['required_033'], ['required_058', 'required_059'], 'node scripts/hosted-performance-song-check.mjs'),
+        'pitch-bend': (['required_034'], ['required_060', 'required_061'], 'node scripts/hosted-pitch-bend-check.mjs'),
+        'song-authoring': (['required_027', 'required_035'], ['required_062', 'required_063'], 'node scripts/hosted-song-authoring-check.mjs'),
+        'vsq-authoring': (['required_029', 'required_042'], ['required_064', 'required_065'], 'node scripts/hosted-vsq-authoring-check.mjs'),
+        'canonical-practice': (['canonical_practice_protocol', 'canonical_practice_browser_720',
+            'canonical_practice_browser_720_verify', 'canonical_practice_browser_640', 'canonical_practice_browser_640_verify'],
+            ['required_066', 'required_067'], 'node scripts/verify-canonical-practice-evidence.mjs --check'),
+        'pack-management': (['management_pack_browser'], ['required_068', 'required_069'], 'npm run test:pack-management-hosted'),
+    },
+    'windows': {
+        'desktop-acceptance': (['required_019'], ['required_054', 'required_055'], '-OutputDirectory desktop-acceptance'),
+        'bulk-import': (['required_021'], ['required_040', 'required_041'], '-OutputDirectory desktop-bulk-import -Scenario bulk-import'),
+        'vsq-song': (['required_023'], ['required_042', 'required_043'], '-OutputDirectory desktop-vsq-song -Scenario vsq-song'),
+        'performance-song': (['required_024'], ['required_044', 'required_045'], '-OutputDirectory desktop-performance-song -Scenario performance-song'),
+        'pitch-bend': (['required_025'], ['required_046', 'required_047'], '-OutputDirectory desktop-pitch-bend -Scenario pitch-bend'),
+        'song-authoring': (['required_026'], ['required_048', 'required_049'], '-OutputDirectory desktop-authoring -Scenario authoring'),
+        'vsq-authoring': (['required_032'], ['required_050', 'required_051'], '-OutputDirectory desktop-vsq-authoring -Scenario vsq-authoring'),
+        'canonical-practice': (['canonical_practice_windows', 'canonical_practice_windows_verify'],
+            ['required_052', 'required_053'], 'node scripts/verify-canonical-practice-evidence.mjs --check desktop-canonical-practice'),
+    },
+}
 
 
 def groups_for(platform):
@@ -48,6 +94,119 @@ def diagnostic_pairs(platform):
 
 
 class WindowsJsonDiagnosticsTests(unittest.TestCase):
+    def assert_original_job_bodies(self, workflow):
+        self.assertEqual(set(workflow['jobs']), set(BASELINE_JOBS))
+        for name, expected in BASELINE_JOBS.items():
+            job = copy.deepcopy(workflow['jobs'][name])
+            relocated = {'bulk-import-browser': range(54, 70), 'native-feature-acceptance': range(38, 56)}.get(name, [])
+            movable = NEW_DIAGNOSTICS | {f'required_{number:03}' for number in relocated}
+            order = [step.get('id') for step in job['steps'] if step.get('id') not in movable]
+            self.assertEqual(hashlib.sha256(json.dumps(order, separators=(',', ':')).encode()).hexdigest(),
+                             BASELINE_OTHER_ORDER[name], name + ': original producer/recheck order changed')
+            job['steps'] = sorted((step for step in job['steps']
+                                   if step.get('id') not in NEW_DIAGNOSTICS), key=lambda step: step.get('id', ''))
+            for step in job['steps']:
+                if step.get('id') == 'producer_gate':
+                    step['env']['ACCEPTANCE_REQUIRED_STEPS'] = ','.join(sorted(
+                        value for value in step['env']['ACCEPTANCE_REQUIRED_STEPS'].split(',')
+                        if value not in NEW_DIAGNOSTICS))
+            actual = hashlib.sha256(json.dumps(job, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+            self.assertEqual(actual, expected, name + ': original job body/output/gate changed')
+
+    def test_every_original_job_body_output_gate_and_full_artifact_is_unchanged(self):
+        self.assert_original_job_bodies(WORKFLOW)
+
+    def test_original_contract_rejects_changed_commands_outputs_gates_and_artifact_paths(self):
+        for mutation in ['command', 'output', 'gate', 'full_artifact']:
+            with self.subTest(mutation=mutation):
+                document = copy.deepcopy(WORKFLOW)
+                job = document['jobs']['native-feature-acceptance']
+                if mutation == 'command':
+                    next(step for step in job['steps'] if step.get('id') == 'build_diagnostics_windows')['run'] += '\necho changed'
+                elif mutation == 'output':
+                    job['outputs']['build_diagnostics_windows'] = '${{ steps.build_diagnostics_upload.outcome }}'
+                elif mutation == 'gate':
+                    job['steps'][-1]['env']['ACCEPTANCE_REQUIRED_STEPS'] = job['steps'][-1]['env']['ACCEPTANCE_REQUIRED_STEPS'].replace('build_diagnostics_windows_verify,', '')
+                else:
+                    next(step for step in job['steps'] if step.get('id') == 'required_037')['with']['path'] += '\nprivate-profile/**'
+                with self.assertRaises(AssertionError):
+                    self.assert_original_job_bodies(document)
+
+    def assert_complete_root_ownership(self, workflow):
+        for platform, job_id in JOBS.items():
+            steps = workflow['jobs'][job_id]['steps']
+            ids = [step.get('id') for step in steps]
+            self.assertEqual(set(ROOT_OWNERS[platform]), set(groups_for(platform)))
+            required = steps[-1]['env']['ACCEPTANCE_REQUIRED_STEPS'].split(',')
+            for group, (producers, pair, final_command) in ROOT_OWNERS[platform].items():
+                for name in [*producers, *pair]:
+                    self.assertEqual(ids.count(name), 1, f'{platform}/{group}: missing/duplicate {name}')
+                    self.assertEqual(required.count(name), 1)
+                producer_indices = [ids.index(name) for name in producers]
+                self.assertEqual(producer_indices, sorted(producer_indices))
+                boundary = producer_indices[-1]
+                self.assertIn(final_command, steps[boundary]['run'])
+                self.assertEqual(ids[boundary + 1:boundary + 3], pair,
+                                 f'{platform}/{group}: wait for the entire root before collecting')
+                for index in [boundary + 1, boundary + 2]:
+                    self.assertEqual(steps[index]['if'], 'always()')
+                    self.assertNotIn('continue-on-error', steps[index])
+            if platform == 'browser':
+                for group, producer, variable in [('song-authoring', 'required_027', 'WMH_AUTHORING_REPORT'),
+                                                   ('vsq-authoring', 'required_029', 'WMH_VSQ_AUTHORING_REPORT'),
+                                                   ('canonical-practice', 'canonical_practice_protocol', 'WMH_CANONICAL_PRACTICE_REPORT')]:
+                    self.assertEqual(steps[ids.index(producer)]['env'][variable],
+                                     '${{ github.workspace }}/test-results/' + group + '/native-protocol/report.json')
+                for size in ['720', '640']:
+                    for suffix in ['', '_verify']:
+                        producer = steps[ids.index('canonical_practice_browser_' + size + suffix)]
+                        self.assertEqual(producer['env']['WMH_ARTIFACT_DIR'],
+                                         '${{ github.workspace }}/test-results/canonical-practice/' + size)
+                for name, leaf in [('management_pack_browser', 'packs'), ('management_catalog_browser', 'catalog')]:
+                    self.assertEqual(steps[ids.index(name)]['env']['WMH_ARTIFACT_DIR'],
+                                     '${{ runner.temp }}/library-management-browser/' + leaf)
+            else:
+                # Existing Basic JSON/PNG diagnostics also have one complete
+                # native owner. Its full artifact stays with the final bundle.
+                boundary = ids.index('required_027')
+                self.assertIn('-OutputDirectory desktop-basic-key -Scenario basic-key', steps[boundary]['run'])
+                self.assertEqual(ids[boundary + 1:boundary + 3], ['required_038', 'required_039'])
+                self.assertIn('collect-basic-key-diagnostics.py desktop-basic-key', steps[boundary + 1]['run'])
+                for name in ['required_038', 'required_039']:
+                    self.assertEqual(ids.count(name), 1)
+                    self.assertEqual(required.count(name), 1)
+                    self.assertEqual(steps[ids.index(name)]['if'], 'always()')
+
+    def test_all_json_pairs_wait_for_every_writer_and_recheck_of_their_root(self):
+        self.assert_complete_root_ownership(WORKFLOW)
+
+    def test_missing_early_duplicate_or_late_root_producer_breaks_ownership(self):
+        for platform, groups in ROOT_OWNERS.items():
+            for group, (producers, pair, _) in groups.items():
+                for mutation in ['missing', 'missing_producer', 'before_final_producer', 'duplicate', 'producer_after_collection']:
+                    with self.subTest(platform=platform, group=group, mutation=mutation):
+                        workflow = copy.deepcopy(WORKFLOW)
+                        steps = workflow['jobs'][JOBS[platform]]['steps']
+                        collect = next(step for step in steps if step.get('id') == pair[0])
+                        producer = next(step for step in steps if step.get('id') == producers[-1])
+                        if mutation == 'missing':
+                            steps.remove(collect)
+                        elif mutation == 'missing_producer':
+                            steps.remove(producer)
+                        elif mutation == 'before_final_producer':
+                            steps.remove(collect)
+                            steps.insert(steps.index(producer), collect)
+                        elif mutation == 'duplicate':
+                            steps.insert(steps.index(collect), copy.deepcopy(collect))
+                        else:
+                            # Include earlier protocol writers and first-size
+                            # rechecks, not only the final viewport.
+                            moved = next(step for step in steps if step.get('id') == producers[0])
+                            steps.remove(moved)
+                            steps.insert(steps.index(collect) + 1, moved)
+                        with self.assertRaises(AssertionError):
+                            self.assert_complete_root_ownership(workflow)
+
     def assert_early_vsq_ownership(self, workflow):
         for platform, job_id in JOBS.items():
             steps = workflow['jobs'][job_id]['steps']
@@ -148,11 +307,8 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
         self.assertEqual(WORKFLOW["permissions"], {"contents": "read"})
         for platform, job_id in JOBS.items():
             steps = WORKFLOW["jobs"][job_id]["steps"]
-            diagnostics = []
             for group, root, output, collect, upload in diagnostic_pairs(platform):
                 with self.subTest(platform=platform, group=group):
-                    if group != "vsq-song":
-                        diagnostics.extend([collect, upload])
                     base = self.evidence_root(platform, root).parent
                     self.assertEqual(self.command(collect)[2:], [
                         base.as_posix(), (self.temp / output).as_posix(),
@@ -180,10 +336,7 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
                         self.assertIn(("test-results/" if platform == "browser" else "") + root + "/",
                                       full["with"]["path"])
                         self.assertIn(".png", full["with"]["path"])
-                    if group == "vsq-song":
-                        self.assertLess(steps.index(collect), steps.index(full))
-                    else:
-                        self.assertLess(steps.index(full), steps.index(collect))
+                    self.assertLess(steps.index(collect), steps.index(full))
                 if platform == "windows" and group == "vsq-song":
                     # Exact selected PNG diagnostics are additive to the original
                     # adjacent JSON pair and remain mandatory producer receipts.
@@ -194,12 +347,14 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
                         self.assertEqual(step["if"], "always()")
                         self.assertNotIn("continue-on-error", step)
                         self.assertIn(step["id"], steps[-1]["env"]["ACCEPTANCE_REQUIRED_STEPS"].split(","))
-            # Other groups stay after all original UI checks and full evidence.
-            # Only the new transfer/mandatory-result seal follows; packaging now
-            # requires the successful producer job, including retained evidence.
-            start = steps.index(diagnostics[0])
-            self.assertEqual(steps[start:start + len(diagnostics)], diagnostics)
-            suffix = [step["id"] for step in steps[start + len(diagnostics):]]
+            # Complete cross-feature artifacts remain last, after catalog's
+            # final verifier. Moving a small subset cannot move the full proof.
+            final_verify = next(step for step in steps if step.get('id') ==
+                                ('management_catalog_browser_verify' if platform == 'browser' else 'management_catalog_windows_verify'))
+            full = next(step for step in steps if step.get('id') ==
+                        ('required_053' if platform == 'browser' else 'required_037'))
+            self.assertLess(steps.index(final_verify), steps.index(full))
+            suffix = [step["id"] for step in steps[steps.index(full) + 1:]]
             self.assertEqual(suffix, ["native_transfer", "native_transfer_upload", "native_transfer_identity", "producer_gate"]
                              if platform == "windows" else ["producer_gate"])
             self.assertEqual(sum("scripts/collect-json-evidence.py" in step.get("run", "")

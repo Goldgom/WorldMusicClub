@@ -107,6 +107,19 @@ archive gates remain. Diagnostic evidence is retained in the existing native
 artifact; it is not silently inserted into the release ZIP or presented as a
 replacement for full package acceptance.
 
+The workflow also emits `build-diagnostics-windows-diagnostics-${sha}` after the
+phase and its independent recheck, using the existing bounded collector's
+explicit `build-diagnostics` mode. The small artifact preserves the original
+root JSON and PNG bytes, including all available action/result pairs, screenshots,
+profile-creation proof and snapshot files. A source-bound SHA-256 inventory
+records the named Scores directories' presence and empty state without copying
+their contents. The collector never traverses WebView profiles or arbitrary
+directories. Payload and inventory together are limited to 23 MiB; an oversized
+subset fails instead of omitting or transforming evidence. Failed or skipped
+phases can still emit partial diagnostics, whose inventory explicitly denies
+full acceptance. All original producer, recheck, transfer and final gates remain
+mandatory, and the full artifact stays unchanged.
+
 The existing21-case `native-clean-profile-routing.test.js` is now a mandatory
 step immediately after the exact `native_import_driver` build, using that
 executable through `WMH_NATIVE_IMPORT_DRIVER`. No duplicate compatibility matrix

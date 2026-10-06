@@ -166,6 +166,24 @@ jobs:
           WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
         run: npm run test:bulk-import-hosted
+      - name: Collect bounded bulk-import browser JSON diagnostics
+        id: required_054
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}/test-results" "${{ runner.temp }}/bulk-import-browser-json"
+          --root bulk-import
+          --source-sha "${{ github.sha }}"
+      - name: Upload bulk-import browser JSON diagnostics
+        id: required_055
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: bulk-import-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/bulk-import-browser-json/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
       - name: VSQ chooser, explicit practice, native following, exact export and restart
         id: required_032
         # Own fixture, storage directory and processes; preserve any earlier failure.
@@ -206,6 +224,24 @@ jobs:
         run: |
           WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-performance-song-check.mjs
           WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-performance-song-check.mjs
+      - name: Collect bounded performance-song browser JSON diagnostics
+        id: required_058
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}/test-results" "${{ runner.temp }}/performance-song-browser-json"
+          --root performance-song
+          --source-sha "${{ github.sha }}"
+      - name: Upload performance-song browser JSON diagnostics
+        id: required_059
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: performance-song-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/performance-song-browser-json/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Original pitch policy, exact receiver clocks, pause/resume and unchanged take
         id: required_034
         # Own fixture, storage directory and processes; preserve any earlier failure.
@@ -217,6 +253,24 @@ jobs:
         run: |
           WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-pitch-bend-check.mjs
           WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-pitch-bend-check.mjs
+      - name: Collect bounded pitch-bend browser JSON diagnostics
+        id: required_060
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}/test-results" "${{ runner.temp }}/pitch-bend-browser-json"
+          --root pitch-bend
+          --source-sha "${{ github.sha }}"
+      - name: Upload pitch-bend browser JSON diagnostics
+        id: required_061
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pitch-bend-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/pitch-bend-browser-json/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Original authoring picker, complete review, save and restart at all sizes
         id: required_035
         # Own fixture, storage directory and processes; preserve any earlier failure.
@@ -229,6 +283,24 @@ jobs:
           WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-song-authoring-check.mjs
           WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-song-authoring-check.mjs
           WMH_VIEWPORT_WIDTH=1920 WMH_VIEWPORT_HEIGHT=1080 node scripts/hosted-song-authoring-check.mjs
+      - name: Collect bounded song-authoring browser JSON diagnostics
+        id: required_062
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}/test-results" "${{ runner.temp }}/song-authoring-browser-json"
+          --root song-authoring
+          --source-sha "${{ github.sha }}"
+      - name: Upload song-authoring browser JSON diagnostics
+        id: required_063
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: song-authoring-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/song-authoring-browser-json/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Original basic-key real keyboard, Chinese inventory, exact export and restart
         id: required_036
         # Own fixture, storage directory and processes; preserve any earlier failure.
@@ -310,6 +382,24 @@ jobs:
         run: |
           node scripts/verify-canonical-practice-evidence.mjs "$WMH_ARTIFACT_DIR"
           node scripts/verify-canonical-practice-evidence.mjs --check "$WMH_ARTIFACT_DIR"
+      - name: Collect bounded canonical-practice browser JSON diagnostics
+        id: required_066
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}/test-results" "${{ runner.temp }}/canonical-practice-browser-json"
+          --root canonical-practice
+          --source-sha "${{ github.sha }}"
+      - name: Upload canonical-practice browser JSON diagnostics
+        id: required_067
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: canonical-practice-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/canonical-practice-browser-json/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Original VSQ authoring, whole inventory, explicit practice and restart
         id: required_042
         # Own fixtures, Scores and fresh processes; no basic-key evidence input.
@@ -322,6 +412,24 @@ jobs:
           WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-vsq-authoring-check.mjs
           WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-vsq-authoring-check.mjs
           WMH_VIEWPORT_WIDTH=1920 WMH_VIEWPORT_HEIGHT=1080 node scripts/hosted-vsq-authoring-check.mjs
+      - name: Collect bounded vsq-authoring browser JSON diagnostics
+        id: required_064
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}/test-results" "${{ runner.temp }}/vsq-authoring-browser-json"
+          --root vsq-authoring
+          --source-sha "${{ github.sha }}"
+      - name: Upload vsq-authoring browser JSON diagnostics
+        id: required_065
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: vsq-authoring-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/vsq-authoring-browser-json/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Original twelve-part Current and All notation, scrolling and real page following
         id: required_043
         # Own original fixture/server; a failed earlier scenario must stay visible.
@@ -355,6 +463,24 @@ jobs:
         run: |
           test ! -e "$WMH_ARTIFACT_DIR"
           npm run test:pack-management-hosted
+      - name: Collect bounded pack-management browser JSON diagnostics
+        id: required_068
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ runner.temp }}/library-management-browser" "${{ runner.temp }}/pack-management-browser-json"
+          --root packs
+          --source-sha "${{ github.sha }}"
+      - name: Upload pack-management browser JSON diagnostics
+        id: required_069
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pack-management-browser-json-${{ github.sha }}
+          path: ${{ runner.temp }}/pack-management-browser-json/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Three original catalog processes with one persisted browser profile
         id: management_catalog_browser
         if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
@@ -496,138 +622,12 @@ jobs:
           if-no-files-found: warn
       # JSON-only subsets aid diagnosis; full evidence above is still required.
       # Separate always-run steps keep one oversized group from suppressing others.
-      - name: Collect bounded bulk-import browser JSON diagnostics
-        id: required_054
-        if: always()
-        run: >-
-          python scripts/collect-json-evidence.py
-          "${{ github.workspace }}/test-results" "${{ runner.temp }}/bulk-import-browser-json"
-          --root bulk-import
-          --source-sha "${{ github.sha }}"
-      - name: Upload bulk-import browser JSON diagnostics
-        id: required_055
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: bulk-import-browser-json-${{ github.sha }}
-          path: ${{ runner.temp }}/bulk-import-browser-json/
-          retention-days: 90
-          if-no-files-found: error
-          include-hidden-files: true
-      - name: Collect bounded performance-song browser JSON diagnostics
-        id: required_058
-        if: always()
-        run: >-
-          python scripts/collect-json-evidence.py
-          "${{ github.workspace }}/test-results" "${{ runner.temp }}/performance-song-browser-json"
-          --root performance-song
-          --source-sha "${{ github.sha }}"
-      - name: Upload performance-song browser JSON diagnostics
-        id: required_059
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: performance-song-browser-json-${{ github.sha }}
-          path: ${{ runner.temp }}/performance-song-browser-json/
-          retention-days: 90
-          if-no-files-found: error
-          include-hidden-files: true
-      - name: Collect bounded pitch-bend browser JSON diagnostics
-        id: required_060
-        if: always()
-        run: >-
-          python scripts/collect-json-evidence.py
-          "${{ github.workspace }}/test-results" "${{ runner.temp }}/pitch-bend-browser-json"
-          --root pitch-bend
-          --source-sha "${{ github.sha }}"
-      - name: Upload pitch-bend browser JSON diagnostics
-        id: required_061
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: pitch-bend-browser-json-${{ github.sha }}
-          path: ${{ runner.temp }}/pitch-bend-browser-json/
-          retention-days: 90
-          if-no-files-found: error
-          include-hidden-files: true
-      - name: Collect bounded song-authoring browser JSON diagnostics
-        id: required_062
-        if: always()
-        run: >-
-          python scripts/collect-json-evidence.py
-          "${{ github.workspace }}/test-results" "${{ runner.temp }}/song-authoring-browser-json"
-          --root song-authoring
-          --source-sha "${{ github.sha }}"
-      - name: Upload song-authoring browser JSON diagnostics
-        id: required_063
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: song-authoring-browser-json-${{ github.sha }}
-          path: ${{ runner.temp }}/song-authoring-browser-json/
-          retention-days: 90
-          if-no-files-found: error
-          include-hidden-files: true
-      - name: Collect bounded vsq-authoring browser JSON diagnostics
-        id: required_064
-        if: always()
-        run: >-
-          python scripts/collect-json-evidence.py
-          "${{ github.workspace }}/test-results" "${{ runner.temp }}/vsq-authoring-browser-json"
-          --root vsq-authoring
-          --source-sha "${{ github.sha }}"
-      - name: Upload vsq-authoring browser JSON diagnostics
-        id: required_065
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: vsq-authoring-browser-json-${{ github.sha }}
-          path: ${{ runner.temp }}/vsq-authoring-browser-json/
-          retention-days: 90
-          if-no-files-found: error
-          include-hidden-files: true
-      - name: Collect bounded canonical-practice browser JSON diagnostics
-        id: required_066
-        if: always()
-        run: >-
-          python scripts/collect-json-evidence.py
-          "${{ github.workspace }}/test-results" "${{ runner.temp }}/canonical-practice-browser-json"
-          --root canonical-practice
-          --source-sha "${{ github.sha }}"
-      - name: Upload canonical-practice browser JSON diagnostics
-        id: required_067
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: canonical-practice-browser-json-${{ github.sha }}
-          path: ${{ runner.temp }}/canonical-practice-browser-json/
-          retention-days: 90
-          if-no-files-found: error
-          include-hidden-files: true
-      - name: Collect bounded pack-management browser JSON diagnostics
-        id: required_068
-        if: always()
-        run: >-
-          python scripts/collect-json-evidence.py
-          "${{ runner.temp }}/library-management-browser" "${{ runner.temp }}/pack-management-browser-json"
-          --root packs
-          --source-sha "${{ github.sha }}"
-      - name: Upload pack-management browser JSON diagnostics
-        id: required_069
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: pack-management-browser-json-${{ github.sha }}
-          path: ${{ runner.temp }}/pack-management-browser-json/
-          retention-days: 90
-          if-no-files-found: error
-          include-hidden-files: true
       - name: Require every mandatory producer step without skips
         id: producer_gate
         if: always()
         env:
           ACCEPTANCE_STEPS: ${{ toJSON(steps) }}
-          ACCEPTANCE_REQUIRED_STEPS: required_001,acceptance_source,required_003,required_004,required_005,required_006,required_007,acceptance_identity,required_009,required_010,required_011,required_012,required_013,required_014,required_015,dense_native_driver,native_clean_profile_routing,required_017,complete_practice_converter,notation_server,required_020,complete_practice_protocol,canonical_practice_protocol,required_023,required_024,required_025,required_026,required_027,required_028,required_029,dense_browser_setup,required_031,required_032,required_056,required_057,required_033,required_034,required_035,required_036,complete_practice_browser,canonical_practice_browser_720,canonical_practice_browser_720_verify,canonical_practice_browser_640,canonical_practice_browser_640_verify,required_042,required_043,required_044,management_pack_browser,management_catalog_browser,management_catalog_browser_verify,required_048,required_049,required_050,required_051,required_052,required_053,required_054,required_055,required_058,required_059,required_060,required_061,required_062,required_063,required_064,required_065,required_066,required_067,required_068,required_069
+          ACCEPTANCE_REQUIRED_STEPS: required_001,acceptance_source,required_003,required_004,required_005,required_006,required_007,acceptance_identity,required_009,required_010,required_011,required_012,required_013,required_014,required_015,dense_native_driver,native_clean_profile_routing,required_017,complete_practice_converter,notation_server,required_020,complete_practice_protocol,canonical_practice_protocol,required_023,required_024,required_025,required_026,required_027,required_028,required_029,dense_browser_setup,required_031,required_054,required_055,required_032,required_056,required_057,required_033,required_058,required_059,required_034,required_060,required_061,required_035,required_062,required_063,required_036,complete_practice_browser,canonical_practice_browser_720,canonical_practice_browser_720_verify,canonical_practice_browser_640,canonical_practice_browser_640_verify,required_066,required_067,required_042,required_064,required_065,required_043,required_044,management_pack_browser,required_068,required_069,management_catalog_browser,management_catalog_browser_verify,required_048,required_049,required_050,required_051,required_052,required_053
         run: python scripts/native-acceptance-join.py steps
   windows-pure-checks:
     # No dependency on the long native UI path; every original pure check remains mandatory.
@@ -851,6 +851,25 @@ jobs:
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-acceptance
+      - name: Collect bounded desktop-acceptance windows JSON diagnostics
+        id: required_054
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}" "${{ runner.temp }}/desktop-acceptance-windows-json"
+          --root desktop-acceptance
+          --source-sha "${{ github.sha }}"
+      - name: Upload desktop-acceptance windows JSON diagnostics
+        id: required_055
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: desktop-acceptance-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/desktop-acceptance-windows-json/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
+      # No WebView profile, private fixtures, installer or GitHub Release upload.
       - name: Native song folders and fresh-profile restart acceptance
         id: required_020
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
@@ -861,6 +880,24 @@ jobs:
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-bulk-import -Scenario bulk-import
+      - name: Collect bounded bulk-import windows JSON diagnostics
+        id: required_040
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}" "${{ runner.temp }}/bulk-import-windows-json"
+          --root desktop-bulk-import
+          --source-sha "${{ github.sha }}"
+      - name: Upload bulk-import windows JSON diagnostics
+        id: required_041
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: bulk-import-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/bulk-import-windows-json/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Native complete clean song, decoded media, export and new-process persistence
         id: required_022
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
@@ -919,21 +956,94 @@ jobs:
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-performance-song -Scenario performance-song
+      - name: Collect bounded performance-song windows JSON diagnostics
+        id: required_044
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}" "${{ runner.temp }}/performance-song-windows-json"
+          --root desktop-performance-song
+          --source-sha "${{ github.sha }}"
+      - name: Upload performance-song windows JSON diagnostics
+        id: required_045
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: performance-song-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/performance-song-windows-json/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Native original pitch policy, source-clock bends and held-state reconstruction
         id: required_025
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-pitch-bend -Scenario pitch-bend
+      - name: Collect bounded pitch-bend windows JSON diagnostics
+        id: required_046
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}" "${{ runner.temp }}/pitch-bend-windows-json"
+          --root desktop-pitch-bend
+          --source-sha "${{ github.sha }}"
+      - name: Upload pitch-bend windows JSON diagnostics
+        id: required_047
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pitch-bend-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/pitch-bend-windows-json/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Native original authoring pair, explicit saves, exact export and fresh-process restart
         id: required_026
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-authoring -Scenario authoring
+      - name: Collect bounded song-authoring windows JSON diagnostics
+        id: required_048
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}" "${{ runner.temp }}/song-authoring-windows-json"
+          --root desktop-authoring
+          --source-sha "${{ github.sha }}"
+      - name: Upload song-authoring windows JSON diagnostics
+        id: required_049
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: song-authoring-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/song-authoring-windows-json/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Native original basic-key inventory, keyboard and restart
         id: required_027
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-basic-key -Scenario basic-key
+      - name: Collect bounded Basic-key Windows toolbar diagnostics
+        id: required_038
+        if: always()
+        run: >-
+          python scripts/collect-basic-key-diagnostics.py
+          desktop-basic-key "${{ runner.temp }}/basic-key-windows-diagnostics"
+          --source-sha "${{ github.sha }}"
+      - name: Upload Basic-key Windows toolbar diagnostics
+        id: required_039
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: basic-key-windows-diagnostics-${{ github.sha }}
+          path: ${{ runner.temp }}/basic-key-windows-diagnostics/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
+      # JSON-only subsets aid diagnosis; full evidence above is still required.
+      # Separate always-run steps keep one oversized group from suppressing others.
       - name: Native complete-practice trusted popup, key input, labels and measured viewport
         id: complete_practice_windows
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
@@ -976,12 +1086,48 @@ jobs:
           $env:WMH_SOURCE_TREE=(git rev-parse 'HEAD^{tree}').Trim()
           node scripts/verify-canonical-practice-evidence.mjs --check desktop-canonical-practice
           if ($LASTEXITCODE -ne 0) { throw 'Canonical-practice exact-source proof failed' }
+      - name: Collect bounded canonical-practice windows JSON diagnostics
+        id: required_052
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}" "${{ runner.temp }}/canonical-practice-windows-json"
+          --root desktop-canonical-practice
+          --source-sha "${{ github.sha }}"
+      - name: Upload canonical-practice windows JSON diagnostics
+        id: required_053
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: canonical-practice-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/canonical-practice-windows-json/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Native original VSQ authoring and exact fresh-process restart
         id: required_032
         # Generates its own fixtures and profile from the same checked build.
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-vsq-authoring -Scenario vsq-authoring
+      - name: Collect bounded vsq-authoring windows JSON diagnostics
+        id: required_050
+        if: always()
+        run: >-
+          python scripts/collect-json-evidence.py
+          "${{ github.workspace }}" "${{ runner.temp }}/vsq-authoring-windows-json"
+          --root desktop-vsq-authoring
+          --source-sha "${{ github.sha }}"
+      - name: Upload vsq-authoring windows JSON diagnostics
+        id: required_051
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: vsq-authoring-windows-json-${{ github.sha }}
+          path: ${{ runner.temp }}/vsq-authoring-windows-json/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Native original catalog controls and three-process recovery
         id: management_catalog_windows
         # The exact packaged EXE, with an independent original library and profile.
@@ -1036,6 +1182,23 @@ jobs:
         run: |
           node scripts/verify-native-build-diagnostics.mjs --check desktop-build-diagnostics
           if ($LASTEXITCODE -ne 0) { throw 'Native diagnostics source/process/privacy proof failed' }
+      - name: Collect bounded build diagnostics Windows JSON and PNG evidence
+        id: build_diagnostics_collect
+        if: always()
+        run: >-
+          python scripts/collect-basic-key-diagnostics.py
+          desktop-build-diagnostics "${{ runner.temp }}/build-diagnostics-windows-diagnostics"
+          --source-sha "${{ github.sha }}" --scenario build-diagnostics
+      - name: Upload bounded build diagnostics Windows evidence
+        id: build_diagnostics_upload
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: build-diagnostics-windows-diagnostics-${{ github.sha }}
+          path: ${{ runner.temp }}/build-diagnostics-windows-diagnostics/
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Retain original canonical native proof and exact executable
         id: required_036
         if: always()
@@ -1163,152 +1326,6 @@ jobs:
             desktop-portable/*.log
           retention-days: 90
           if-no-files-found: warn
-      - name: Collect bounded Basic-key Windows toolbar diagnostics
-        id: required_038
-        if: always()
-        run: >-
-          python scripts/collect-basic-key-diagnostics.py
-          desktop-basic-key "${{ runner.temp }}/basic-key-windows-diagnostics"
-          --source-sha "${{ github.sha }}"
-      - name: Upload Basic-key Windows toolbar diagnostics
-        id: required_039
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: basic-key-windows-diagnostics-${{ github.sha }}
-          path: ${{ runner.temp }}/basic-key-windows-diagnostics/
-          retention-days: 90
-          if-no-files-found: error
-          include-hidden-files: true
-      # JSON-only subsets aid diagnosis; full evidence above is still required.
-      # Separate always-run steps keep one oversized group from suppressing others.
-      - name: Collect bounded bulk-import windows JSON diagnostics
-        id: required_040
-        if: always()
-        run: >-
-          python scripts/collect-json-evidence.py
-          "${{ github.workspace }}" "${{ runner.temp }}/bulk-import-windows-json"
-          --root desktop-bulk-import
-          --source-sha "${{ github.sha }}"
-      - name: Upload bulk-import windows JSON diagnostics
-        id: required_041
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: bulk-import-windows-json-${{ github.sha }}
-          path: ${{ runner.temp }}/bulk-import-windows-json/
-          retention-days: 90
-          if-no-files-found: error
-          include-hidden-files: true
-      - name: Collect bounded performance-song windows JSON diagnostics
-        id: required_044
-        if: always()
-        run: >-
-          python scripts/collect-json-evidence.py
-          "${{ github.workspace }}" "${{ runner.temp }}/performance-song-windows-json"
-          --root desktop-performance-song
-          --source-sha "${{ github.sha }}"
-      - name: Upload performance-song windows JSON diagnostics
-        id: required_045
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: performance-song-windows-json-${{ github.sha }}
-          path: ${{ runner.temp }}/performance-song-windows-json/
-          retention-days: 90
-          if-no-files-found: error
-          include-hidden-files: true
-      - name: Collect bounded pitch-bend windows JSON diagnostics
-        id: required_046
-        if: always()
-        run: >-
-          python scripts/collect-json-evidence.py
-          "${{ github.workspace }}" "${{ runner.temp }}/pitch-bend-windows-json"
-          --root desktop-pitch-bend
-          --source-sha "${{ github.sha }}"
-      - name: Upload pitch-bend windows JSON diagnostics
-        id: required_047
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: pitch-bend-windows-json-${{ github.sha }}
-          path: ${{ runner.temp }}/pitch-bend-windows-json/
-          retention-days: 90
-          if-no-files-found: error
-          include-hidden-files: true
-      - name: Collect bounded song-authoring windows JSON diagnostics
-        id: required_048
-        if: always()
-        run: >-
-          python scripts/collect-json-evidence.py
-          "${{ github.workspace }}" "${{ runner.temp }}/song-authoring-windows-json"
-          --root desktop-authoring
-          --source-sha "${{ github.sha }}"
-      - name: Upload song-authoring windows JSON diagnostics
-        id: required_049
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: song-authoring-windows-json-${{ github.sha }}
-          path: ${{ runner.temp }}/song-authoring-windows-json/
-          retention-days: 90
-          if-no-files-found: error
-          include-hidden-files: true
-      - name: Collect bounded vsq-authoring windows JSON diagnostics
-        id: required_050
-        if: always()
-        run: >-
-          python scripts/collect-json-evidence.py
-          "${{ github.workspace }}" "${{ runner.temp }}/vsq-authoring-windows-json"
-          --root desktop-vsq-authoring
-          --source-sha "${{ github.sha }}"
-      - name: Upload vsq-authoring windows JSON diagnostics
-        id: required_051
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: vsq-authoring-windows-json-${{ github.sha }}
-          path: ${{ runner.temp }}/vsq-authoring-windows-json/
-          retention-days: 90
-          if-no-files-found: error
-          include-hidden-files: true
-      - name: Collect bounded canonical-practice windows JSON diagnostics
-        id: required_052
-        if: always()
-        run: >-
-          python scripts/collect-json-evidence.py
-          "${{ github.workspace }}" "${{ runner.temp }}/canonical-practice-windows-json"
-          --root desktop-canonical-practice
-          --source-sha "${{ github.sha }}"
-      - name: Upload canonical-practice windows JSON diagnostics
-        id: required_053
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: canonical-practice-windows-json-${{ github.sha }}
-          path: ${{ runner.temp }}/canonical-practice-windows-json/
-          retention-days: 90
-          if-no-files-found: error
-          include-hidden-files: true
-      - name: Collect bounded desktop-acceptance windows JSON diagnostics
-        id: required_054
-        if: always()
-        run: >-
-          python scripts/collect-json-evidence.py
-          "${{ github.workspace }}" "${{ runner.temp }}/desktop-acceptance-windows-json"
-          --root desktop-acceptance
-          --source-sha "${{ github.sha }}"
-      - name: Upload desktop-acceptance windows JSON diagnostics
-        id: required_055
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: desktop-acceptance-windows-json-${{ github.sha }}
-          path: ${{ runner.temp }}/desktop-acceptance-windows-json/
-          retention-days: 90
-          if-no-files-found: error
-          include-hidden-files: true
-      # No WebView profile, private fixtures, installer or GitHub Release upload.
       - name: Seal bounded original native inputs for the package join
         id: native_transfer
         env:
@@ -1342,7 +1359,7 @@ jobs:
         if: always()
         env:
           ACCEPTANCE_STEPS: ${{ toJSON(steps) }}
-          ACCEPTANCE_REQUIRED_STEPS: required_001,acceptance_source,required_003,required_004,required_005,acceptance_identity,required_007,required_008,required_009,required_010,required_011,required_012,native_build,required_016,required_017,required_018,required_019,required_020,required_021,required_022,required_023,required_042,required_043,vsq_capture_collect,vsq_capture_seed_upload,vsq_capture_restart_upload,required_024,required_025,required_026,required_027,complete_practice_windows,complete_practice_windows_verify,canonical_practice_windows,canonical_practice_windows_verify,required_032,management_catalog_windows,management_catalog_windows_verify,required_035,build_diagnostics_windows,build_diagnostics_windows_verify,required_036,required_037,required_038,required_039,required_040,required_041,required_044,required_045,required_046,required_047,required_048,required_049,required_050,required_051,required_052,required_053,required_054,required_055,native_transfer,native_transfer_upload,native_transfer_identity
+          ACCEPTANCE_REQUIRED_STEPS: required_001,acceptance_source,required_003,required_004,required_005,acceptance_identity,required_007,required_008,required_009,required_010,required_011,required_012,native_build,required_016,required_017,required_018,required_019,required_054,required_055,required_020,required_021,required_040,required_041,required_022,required_023,required_042,required_043,vsq_capture_collect,vsq_capture_seed_upload,vsq_capture_restart_upload,required_024,required_044,required_045,required_025,required_046,required_047,required_026,required_048,required_049,required_027,required_038,required_039,complete_practice_windows,complete_practice_windows_verify,canonical_practice_windows,canonical_practice_windows_verify,required_052,required_053,required_032,required_050,required_051,management_catalog_windows,management_catalog_windows_verify,required_035,build_diagnostics_windows,build_diagnostics_windows_verify,build_diagnostics_collect,build_diagnostics_upload,required_036,required_037,native_transfer,native_transfer_upload,native_transfer_identity
         run: python scripts/native-acceptance-join.py steps
   native-package:
     # Candidate creation is suppressed unless every exact-source producer succeeds.

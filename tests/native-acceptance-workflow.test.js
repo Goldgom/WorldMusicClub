@@ -686,7 +686,9 @@ test('Basic-key Windows diagnostics keep the full evidence and every existing sc
   assert.match(collect,/python scripts\/collect-basic-key-diagnostics\.py\s+desktop-basic-key "\$\{\{ runner\.temp \}\}\/basic-key-windows-diagnostics"\s+--source-sha "\$\{\{ github\.sha \}\}"/);
   const full=jobSteps.find(step=>step.includes('name: native-feature-evidence-${{ github.sha }}'));
   assert.match(full,/desktop-basic-key\/\*\.json/);assert.match(full,/desktop-basic-key\/\*\.png/);
-  assert.ok(jobSteps.indexOf(full)<jobSteps.indexOf(collect));
+  const owner=jobSteps.find(step=>step.includes('id: required_027\n'));
+  assert.equal(jobSteps.indexOf(collect),jobSteps.indexOf(owner)+1);
+  assert.ok(jobSteps.indexOf(collect)<jobSteps.indexOf(full));
   assertIndependentNativeScenarios(block);
 });
 
