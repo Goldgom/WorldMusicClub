@@ -43,7 +43,7 @@ class RuntimeEncodingTests(unittest.TestCase):
 class RuntimeWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.workflow = yaml.safe_load(WORKFLOW.read_text(encoding='utf-8'))
-        self.native = self.workflow['jobs']['native-feature-acceptance']
+        self.native = self.workflow['jobs']['native-package']
         self.steps = self.native['steps']
         self.by_id = {step['id']: step for step in self.steps if 'id' in step}
 
@@ -118,12 +118,12 @@ class RuntimeWorkflowTests(unittest.TestCase):
         self.assertIn('Get-FileHash', self.by_id['native_runtime_delivery_verify']['run'])
 
     def test_raw_proof_and_runtime_have_equal_retention_and_failure_evidence_stays_enabled(self):
-        for job in ['bulk-import-browser', 'native-feature-acceptance']:
+        for job in ['bulk-import-browser', 'native-feature-acceptance', 'native-package']:
             uploads = [step for step in self.workflow['jobs'][job]['steps'] if step.get('uses', '').startswith('actions/upload-artifact@')]
             self.assertTrue(uploads)
             for upload in uploads:
                 self.assertEqual(upload['with']['retention-days'], 90, upload['name'] if 'name' in upload else upload['with']['name'])
-        original = next(step for step in self.steps if step.get('with', {}).get('name') == 'native-feature-evidence-${{ github.sha }}')
+        original = next(step for step in self.workflow['jobs']['native-feature-acceptance']['steps'] if step.get('with', {}).get('name') == 'native-feature-evidence-${{ github.sha }}')
         self.assertEqual(original['if'], 'always()')
         for root in ['desktop-startup', 'desktop-acceptance', 'desktop-song-folder', 'desktop-bulk-import', 'desktop-clean-song',
                      'desktop-vsq-song', 'desktop-performance-song', 'desktop-pitch-bend', 'desktop-vsq-authoring',
@@ -139,7 +139,7 @@ class RuntimeWorkflowTests(unittest.TestCase):
 
     def test_summary_requires_all_runtime_outcomes_and_keeps_separate_full_checkpoint(self):
         summary = self.workflow['jobs']['acceptance-summary']
-        self.assertEqual(summary['needs'], ['bulk-import-browser', 'native-feature-acceptance'])
+        self.assertEqual(summary['needs'], ['bulk-import-browser', 'windows-pure-checks', 'native-feature-acceptance', 'native-package'])
         self.assertEqual(summary['if'], '${{ always() }}')
         program = summary['steps'][0]['run']
         for name in GATES:

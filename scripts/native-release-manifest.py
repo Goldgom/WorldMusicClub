@@ -489,6 +489,7 @@ def verify_packaged_profiles(read, metadata):
 
 def create_manifest(directory, metadata):
     directory = Path(directory)
+    verify_build_provenance(lambda name: (directory / name).read_bytes(), metadata)
     required = [EXE, 'README.md', 'LICENSE', 'START-HERE.md',
                 *SCORE_SCHEMAS, 'catalog/index.json',
                 'licenses/engraving/engraving-manifest.json',
@@ -603,6 +604,7 @@ def verify_archive(archive):
             require(len(data) == item['bytes'] and sha(data) == item['sha256'], f'Native ZIP checksum differs: {name}')
             sums[name] = item['sha256']
         windows_executable(package.read(prefix + EXE))
+        verify_build_provenance(lambda name: package.read(prefix + name), info)
         verify_packaged_pitch_bend_evidence(lambda name: package.read(prefix + name), info)
         verify_packaged_song_authoring_evidence(lambda name: package.read(prefix + name), info)
         _new_music.verify_packaged(lambda name: package.read(prefix + name), info)
@@ -657,6 +659,85 @@ def source_metadata(commit, count):
             'runtime_bundled': False, 'installer': False, 'http_server_process': False}
 
 
+BUILD_PROVENANCE = 'evidence/native-build-provenance.json'
+SOURCE_METADATA_FIELDS = frozenset(('name', 'executable', 'git_commit', 'git_tree', 'commit_count',
+    'release_label', 'target', 'app_version', 'score_schema_revision', 'rustc_verbose', 'cargo', 'node',
+    'build_platform', 'rustflags', 'cargo_lock_sha256', 'npm_lock_sha256', 'distribution',
+    'acceptance_scope', 'acceptance_workflow_run_id', 'checkpoint_requirements',
+    'runtime_bundled', 'installer', 'http_server_process'))
+
+
+def build_provenance(metadata, executable):
+    """Capture only on the original build/UI runner, after the exact EXE exists."""
+    data = _pitch.read_evidence(executable, 256 * 1024 * 1024)
+    windows_executable(data)
+    require(os.environ.get('GITHUB_JOB') == 'native-feature-acceptance', 'Original native producer job required')
+    attempt = os.environ.get('GITHUB_RUN_ATTEMPT', '')
+    require(re.fullmatch('[1-9][0-9]*', attempt), 'Original native run attempt required')
+    return {'format_version': 1, 'producer_job': os.environ['GITHUB_JOB'],
+            'run_attempt': attempt, 'source': metadata,
+            'executable_sha256': sha(data), 'executable_bytes': len(data)}
+
+
+def validate_build_provenance(data, metadata, executable):
+    require(0 < len(data) <= 64 * 1024, 'Native build provenance is missing or unbounded')
+    value = json.loads(data)
+    require(isinstance(value, dict) and set(value) == {'format_version', 'producer_job', 'run_attempt',
+            'source', 'executable_sha256', 'executable_bytes'} and type(value['format_version']) is int
+            and value['format_version'] == 1 and value['producer_job'] == 'native-feature-acceptance',
+            'Original native producer provenance differs')
+    require(isinstance(value['run_attempt'], str) and re.fullmatch('[1-9][0-9]*', value['run_attempt']),
+            'Original native run attempt is missing')
+    source = value['source']
+    require(isinstance(source, dict) and set(source) == SOURCE_METADATA_FIELDS,
+            'Native build source metadata is incomplete')
+    for key in SOURCE_METADATA_FIELDS - {'build_platform'}:
+        require(source[key] == metadata.get(key), f'Native build provenance differs: {key}')
+    require(isinstance(source['build_platform'], str) and 0 < len(source['build_platform']) <= 512,
+            'Original native build platform is missing')
+    require(type(value['executable_bytes']) is int and value['executable_bytes'] == len(executable)
+            and value['executable_sha256'] == sha(executable), 'Original native build executable differs')
+    return value
+
+
+def bind_build_provenance(path, metadata, executable, directory):
+    data = _pitch.read_evidence(path, 64 * 1024)
+    value = validate_build_provenance(data, metadata, _pitch.read_evidence(executable, 256 * 1024 * 1024))
+    require(os.environ.get('GITHUB_JOB') == 'native-package'
+            and value['run_attempt'] == os.environ.get('GITHUB_RUN_ATTEMPT'),
+            'Packaging job/run attempt differs from original native producer')
+    result = dict(value['source'])  # Preserve the actual builder's platform verbatim.
+    result['build_provenance'] = {'path': BUILD_PROVENANCE, 'sha256': sha(data),
+                                'producer_job': value['producer_job'], 'run_attempt': value['run_attempt']}
+    result['packaging_environment'] = {'job': os.environ['GITHUB_JOB'], 'run_attempt': value['run_attempt'],
+                                      'workflow_run_id': metadata['acceptance_workflow_run_id'],
+                                      'platform': metadata['build_platform']}
+    with (Path(directory) / BUILD_PROVENANCE).open('xb') as stream:
+        stream.write(data)
+    return result
+
+
+def verify_build_provenance(read, metadata):
+    binding = metadata.get('build_provenance')
+    if binding is None:
+        require('packaging_environment' not in metadata, 'Packaging environment lacks original build provenance')
+        return  # Existing same-runner packages remain compatible.
+    require(isinstance(binding, dict) and set(binding) == {'path', 'sha256', 'producer_job', 'run_attempt'}
+            and binding['path'] == BUILD_PROVENANCE, 'Native build provenance binding differs')
+    data = read(BUILD_PROVENANCE)
+    require(sha(data) == binding['sha256'], 'Native build provenance bytes changed')
+    value = validate_build_provenance(data, metadata, read(EXE))
+    require(value['source']['build_platform'] == metadata.get('build_platform')
+            and value['producer_job'] == binding['producer_job'] and value['run_attempt'] == binding['run_attempt'],
+            'Original build platform/job/attempt was replaced')
+    package = metadata.get('packaging_environment')
+    require(isinstance(package, dict) and set(package) == {'job', 'run_attempt', 'workflow_run_id', 'platform'}
+            and package['job'] == 'native-package' and package['run_attempt'] == value['run_attempt']
+            and package['workflow_run_id'] == metadata['acceptance_workflow_run_id']
+            and isinstance(package['platform'], str) and 0 < len(package['platform']) <= 512,
+            'Separate packaging environment identity is missing')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -674,14 +755,29 @@ def main():
     create.add_argument('--basic-key', required=True, type=Path)
     create.add_argument('--catalog-evidence', required=True, type=Path)
     create.add_argument('--canonical-practice', required=True, type=Path)
+    create.add_argument('--build-provenance', type=Path)
+    provenance = commands.add_parser('provenance')
+    provenance.add_argument('--commit', required=True)
+    provenance.add_argument('--count', required=True, type=int)
+    provenance.add_argument('--executable', required=True, type=Path)
+    provenance.add_argument('--output', required=True, type=Path)
     archive = commands.add_parser('archive')
     archive.add_argument('directory', type=Path)
     archive.add_argument('archive', type=Path)
     verify = commands.add_parser('verify')
     verify.add_argument('archive', type=Path)
     args = parser.parse_args()
+    if args.command == 'provenance':
+        value = build_provenance(source_metadata(args.commit, args.count), args.executable)
+        with args.output.open('x', encoding='utf-8', newline='\n') as stream:
+            json.dump(value, stream, ensure_ascii=False, sort_keys=True, indent=2)
+            stream.write('\n')
+        print('Original native build provenance retained')
+        return
     if args.command == 'create':
         metadata = source_metadata(args.commit, args.count)
+        if args.build_provenance:
+            metadata = bind_build_provenance(args.build_provenance, metadata, args.directory / EXE, args.directory)
         metadata['acceptance'] = accepted_evidence(args.startup, args.acceptance, args.directory / EXE, args.commit, metadata['git_tree'])
         metadata['acceptance'].update(accepted_song_folder_evidence(args.song_folder, args.directory / EXE, args.commit, metadata['git_tree']))
         metadata['acceptance'].update(accepted_performance_song_evidence(args.performance_song, args.directory / EXE, args.commit, metadata['git_tree']))

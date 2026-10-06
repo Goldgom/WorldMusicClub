@@ -7,9 +7,12 @@ import test from 'node:test';
 
 const workflow = readFileSync(new URL('../.github/workflows/windows-desktop-acceptance.yml', import.meta.url), 'utf8');
 const jobIds = ['bulk-import-browser', 'native-feature-acceptance'];
+const allJobIds = ['bulk-import-browser', 'windows-pure-checks', 'native-feature-acceptance', 'native-package'];
 const mandatoryOutputs = {
-  'bulk-import-browser': ['management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser', 'canonical_practice_protocol', 'canonical_practice_browser_720', 'canonical_practice_browser_720_verify', 'canonical_practice_browser_640', 'canonical_practice_browser_640_verify'],
-  'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify', 'canonical_practice_windows', 'canonical_practice_windows_verify', 'native_full_portable', 'native_full_upload', 'native_runtime_package', 'native_runtime_verify', 'native_runtime_startup', 'native_runtime_delivery', 'native_runtime_delivery_verify', 'native_runtime_upload', 'native_runtime_evidence'],
+  'bulk-import-browser': ['producer_gate', 'management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser', 'canonical_practice_protocol', 'canonical_practice_browser_720', 'canonical_practice_browser_720_verify', 'canonical_practice_browser_640', 'canonical_practice_browser_640_verify'],
+  'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify', 'canonical_practice_windows', 'canonical_practice_windows_verify', 'producer_gate'],
+  'windows-pure-checks': ['producer_gate'],
+  'native-package': ['producer_gate', 'native_full_portable', 'native_full_upload', 'native_runtime_package', 'native_runtime_verify', 'native_runtime_startup', 'native_runtime_delivery', 'native_runtime_delivery_verify', 'native_runtime_upload', 'native_runtime_evidence'],
 };
 // These contracts intentionally inspect the workflow's literal job/step blocks;
 // the behavioral cases execute its actual summary program, not a test copy.
@@ -21,15 +24,20 @@ function jobBlock(id) {
 function steps(block) {
   return block.split(/\n(?=      - )/).slice(1);
 }
+// Inspect existing scenario/manifest contracts in dependency order; the real
+// cross-job prerequisites and transfer boundary are tested independently below.
+function nativePipelineSteps() { return ['windows-pure-checks', 'native-feature-acceptance', 'native-package'].flatMap(id => steps(jobBlock(id))); }
 const finalJob = jobBlock('acceptance-summary');
 const program = finalJob.match(/          node <<'NODE'\n([\s\S]+?)\n          NODE(?:\n|$)/)?.[1]
   .split('\n').map(line => line.slice(10)).join('\n');
 assert.ok(program, 'The tested inline summary program must be the workflow entry point');
 const sha = 'a'.repeat(40), tree = 'b'.repeat(40), run = '123456';
 function passingNeeds() {
-  return Object.fromEntries(jobIds.map(id => [id, {
+  return Object.fromEntries(allJobIds.map(id => [id, {
     result: 'success', outputs: { source_sha: sha, source_tree: tree, run_id: run,
-      ...(id === 'native-feature-acceptance' ? {full_artifact_id: '201', runtime_artifact_id: '202', runtime_evidence_id: '203', full_sha256: 'e'.repeat(64), runtime_sha256: 'c'.repeat(64), delivery_sha256: 'd'.repeat(64)} : {}),
+      identity: JSON.stringify({source_sha: sha, source_tree: tree, run_id: run, run_attempt: '1', repository: 'example/original-fixture', cargo_lock_sha256: '1'.repeat(64), npm_lock_sha256: '2'.repeat(64), rust: '1.99.0', node: 'v22.23.3', python: id === 'bulk-import-browser' ? '3.12.14' : '3.12.10', runner_os: id === 'bulk-import-browser' ? 'Linux' : 'Windows', rustflags: id === 'bulk-import-browser' ? '' : '-C target-feature=+crt-static'}),
+      ...(id === 'native-feature-acceptance' ? {transfer_artifact_id: '200', transfer_sha256: 'f'.repeat(64)} : {}),
+      ...(id === 'native-package' ? {full_artifact_id: '201', runtime_artifact_id: '202', runtime_evidence_id: '203', full_sha256: 'e'.repeat(64), runtime_sha256: 'c'.repeat(64), delivery_sha256: 'd'.repeat(64)} : {}),
       ...Object.fromEntries(mandatoryOutputs[id].map(name => [name, 'success'])) },
   }]));
 }
@@ -40,7 +48,7 @@ function check(needs, extraEnv = {}) {
     const child = spawnSync(process.execPath, ['-'], {
       input: program, encoding: 'utf8', timeout: 5000,
       env: { ...process.env, ACCEPTANCE_NEEDS: JSON.stringify(needs),
-        ACCEPTANCE_SHA: sha, ACCEPTANCE_RUN_ID: run, ACCEPTANCE_REPOSITORY: 'example/original-fixture', GITHUB_STEP_SUMMARY: summaryPath, ...extraEnv },
+        ACCEPTANCE_SHA: sha, ACCEPTANCE_RUN_ID: run, ACCEPTANCE_RUN_ATTEMPT: '1', ACCEPTANCE_REPOSITORY: 'example/original-fixture', GITHUB_STEP_SUMMARY: summaryPath, ...extraEnv },
     });
     assert.ifError(child.error);
     assert.equal(child.signal, null);
@@ -78,7 +86,10 @@ const nativeScenarioGuard = "${{ !cancelled() && steps.native_build.outcome == '
 function assertIndependentNativeScenarios(block) {
   assert.match(block, /^    timeout-minutes: 60$/m);
   assert.doesNotMatch(block, /^    continue-on-error:/m);
-  const jobSteps = steps(block), buildIndex = jobSteps.findIndex(step => step.includes('id: native_build\n'));
+  const packageBlock = jobBlock('native-package');
+  assert.match(packageBlock, /^    needs: \[bulk-import-browser, windows-pure-checks, native-feature-acceptance\]$/m);
+  assert.doesNotMatch(packageBlock, /^    (?:if|continue-on-error):/m);
+  const jobSteps = [...steps(block), ...steps(packageBlock)], buildIndex = jobSteps.findIndex(step => step.includes('id: native_build\n'));
   assert.ok(buildIndex >= 0);
   assert.match(jobSteps[buildIndex], /run: cargo build -p worldmusichub-desktop --release --locked/);
   assert.doesNotMatch(jobSteps[buildIndex], /^        (?:if|continue-on-error):/m);
@@ -139,7 +150,7 @@ test('native independence contract rejects lost gates, shared folders, stale bui
     block.replace(generic, generic.replace(nativeScenarioGuard, '${{ !cancelled() }}')),
     block.replace(generic, generic.replace('        shell:', '        continue-on-error: true\n        shell:')),
     block.replace('    timeout-minutes: 60', '    timeout-minutes: 120'),
-    block.replace('        id: native_package\n', `        id: native_package\n        if: ${nativeScenarioGuard}\n`),
+    block.replace('      - id: native_build\n', '      - id: native_build\n        if: ${{ always() }}\n'),
     block.replace(generic, `      - run: cargo build -p worldmusichub-desktop --release --locked\n${generic}`),
   ]) assert.throws(() => assertIndependentNativeScenarios(mutant));
 });
@@ -201,7 +212,7 @@ test('a failed basic-key gate cannot suppress independent VSQ, twelve-part and m
 });
 
 test('later independent success cannot erase a failed basic gate or admit its native ZIP', () => {
-  const nativeSteps = steps(jobBlock(jobIds[1]));
+  const nativeSteps = nativePipelineSteps();
   const pack = nativeSteps.find(step => step.includes('id: native_package'));
   const extracted = nativeSteps.find(step => step.includes('Expand-Archive -Path'));
   const candidate = nativeSteps.find(step => step.includes('name: WorldMusicClub-Native-Candidate-'));
@@ -244,7 +255,7 @@ test('browser and Windows jobs run independently and export their checked source
 
 test('the bounded final gate always joins both jobs and cannot succeed by skipping its check', () => {
   const dependencies = finalJob.match(/^    needs: \[([^\]]+)\]$/m)?.[1].split(',').map(id => id.trim());
-  assert.deepEqual(dependencies?.sort(), [...jobIds].sort());
+  assert.deepEqual(dependencies?.sort(), [...allJobIds].sort());
   assert.match(finalJob, /^    if: \$\{\{ always\(\) \}\}$/m);
   assert.match(finalJob, /^    timeout-minutes: 5$/m);
   assert.equal(steps(finalJob).length, 1);
@@ -275,7 +286,7 @@ test('only success/success passes; every failed, cancelled and skipped combinati
 });
 
 test('missing jobs/outputs and stale source, tree or run fail even with successful statuses', () => {
-  for (const id of jobIds) {
+  for (const id of allJobIds) {
     const missing = passingNeeds();
     delete missing[id];
     assert.equal(check(missing).status, 1, `${id} missing`);
@@ -336,12 +347,12 @@ test('all real checks fail closed and failure evidence survives independently', 
       if (step.includes('continue-on-error:')) {
         assert.match(step, /uses: actions\/cache\/(?:restore|save)@/);
       }
-      if (step.includes('uses: actions/upload-artifact@') && !step.includes('name: WorldMusicClub-Native-Candidate-') && !step.includes('name: WorldMusicClub-Native-Runtime-Candidate-')) {
+      if (step.includes('uses: actions/upload-artifact@') && !step.includes('name: WorldMusicClub-Native-Candidate-') && !step.includes('name: WorldMusicClub-Native-Runtime-Candidate-') && !step.includes('name: native-package-inputs-')) {
         assert.match(step, /^        if: always\(\)$/m);
       }
     }
   }
-  const nativeSteps = steps(jobBlock(jobIds[1]));
+  const nativeSteps = nativePipelineSteps();
   const packageIndex = nativeSteps.findIndex(step => step.includes('id: native_package'));
   const extractedIndex = nativeSteps.findIndex(step => step.includes('Expand-Archive -Path'));
   const candidateIndex = nativeSteps.findIndex(step => step.includes('name: WorldMusicClub-Native-Candidate-'));
@@ -376,7 +387,7 @@ test('complete performance uses the exact built driver, both viewport gates and 
   for (const height of [720, 900]) {
     assert.ok(browserSteps[hostedIndex].includes(`WMH_VIEWPORT_HEIGHT=${height} node scripts/hosted-performance-song-check.mjs`));
   }
-  const nativeSteps = steps(jobBlock(jobIds[1]));
+  const nativeSteps = nativePipelineSteps();
   const scenario = nativeSteps.find(step => step.includes('-Scenario performance-song'));
   assert.match(scenario, /-Executable target\/release\/worldmusichub-desktop\.exe -OutputDirectory desktop-performance-song -Scenario performance-song/);
   const pack = nativeSteps.find(step => step.includes('id: native_package'));
@@ -430,7 +441,7 @@ test('pitch browser heights and actual Windows scenario are mandatory before the
   assert.match(browserSteps[hostedIndex], /WMH_HOSTED_BROWSER: '1'/);
   assert.match(browserSteps[hostedIndex], /WMH_SOURCE_SHA: \$\{\{ github\.sha \}\}/);
   for (const height of [720, 900]) assert.ok(browserSteps[hostedIndex].includes(`WMH_VIEWPORT_HEIGHT=${height} node scripts/hosted-pitch-bend-check.mjs`));
-  const nativeSteps = steps(jobBlock(jobIds[1]));
+  const nativeSteps = nativePipelineSteps();
   const scenarioIndex = nativeSteps.findIndex(step => step.includes('-Scenario pitch-bend'));
   const packageIndex = nativeSteps.findIndex(step => step.includes('id: native_package'));
   assert.ok(scenarioIndex > 0 && scenarioIndex < packageIndex);
@@ -469,7 +480,7 @@ test('mandatory pitch artifacts use exact original-only roots and omit every bro
 });
 
 test('all fresh native scenarios retain small profile proofs and exclude retained browser caches', () => {
-  const nativeSteps = steps(jobBlock(jobIds[1]));
+  const nativeSteps = nativePipelineSteps();
   const upload = nativeSteps.find(step => step.includes('uses: actions/upload-artifact@') && step.includes('desktop-song-folder/'));
   const paths = [...upload.matchAll(/^            (.+)$/gm)].map(match => match[1]);
   for (const scenario of ['song-folder', 'bulk-import', 'clean-song', 'vsq-song', 'performance-song', 'pitch-bend', 'authoring']) {
@@ -512,7 +523,7 @@ test('one failed picker cannot hide later independent song browser evidence', ()
 });
 
 test('complete-practice stays mandatory in normal validation, package source binding and final summary', () => {
-  const browser = steps(jobBlock(jobIds[0])), native = steps(jobBlock(jobIds[1]));
+  const browser = steps(jobBlock(jobIds[0])), native = nativePipelineSteps();
   const protocol = browser.find(step => step.includes('id: complete_practice_protocol\n'));
   const hosted = browser.find(step => step.includes('id: complete_practice_browser\n'));
   const windows = native.find(step => step.includes('id: complete_practice_windows\n'));
@@ -605,7 +616,7 @@ test('canonical Rust and both actual browser sizes have independent mandatory ex
 });
 
 test('canonical Windows proof binds the built EXE and source before both package copy and required manifest inclusion', () => {
-  const native = steps(jobBlock(jobIds[1]));
+  const native = nativePipelineSteps();
   const windows = native.find(step => step.includes('id: canonical_practice_windows\n'));
   const verify = native.find(step => step.includes('id: canonical_practice_windows_verify\n'));
   const pack = native.find(step => step.includes('id: native_package\n'));
@@ -683,12 +694,12 @@ test('runtime delivery identity is required even when every producer says succes
   for (const key of ['full_artifact_id', 'runtime_artifact_id', 'runtime_evidence_id', 'full_sha256', 'runtime_sha256', 'delivery_sha256']) {
     for (const value of [undefined, '', 'not-an-identity']) {
       const needs = passingNeeds();
-      needs['native-feature-acceptance'].outputs[key] = value;
+      needs['native-package'].outputs[key] = value;
       assert.equal(check(needs).status, 1, `${key}=${value}`);
     }
   }
   const needs = passingNeeds();
-  needs['native-feature-acceptance'].outputs.runtime_artifact_id = needs['native-feature-acceptance'].outputs.full_artifact_id;
+  needs['native-package'].outputs.runtime_artifact_id = needs['native-package'].outputs.full_artifact_id;
   assert.equal(check(needs).status, 1);
   assert.equal(check(passingNeeds(), {ACCEPTANCE_REPOSITORY: 'invalid'}).status, 1);
   const result = check(passingNeeds());
@@ -696,4 +707,48 @@ test('runtime delivery identity is required even when every producer says succes
   assert.match(result.summary, /https:\/\/github.com\/example\/original-fixture\/actions\/runs\/123456\/artifacts\/202/);
   assert.match(result.summary, /runtime_sha256: c{64}/);
   assert.match(result.summary, /separate full Verify WorldMusicClub workflow must also succeed/);
+});
+
+test('parallel summary cannot accept a failed/skipped pure check or package producer', () => {
+  for (const id of ['windows-pure-checks', 'native-package']) {
+    for (const result of ['failure', 'skipped', 'cancelled', '']) {
+      const needs = passingNeeds(); needs[id].result = result;
+      assert.equal(check(needs).status, 1, `${id}: ${result}`);
+    }
+  }
+});
+
+test('parallel summary rejects mismatched locks, installed tools, run attempt and static CRT', () => {
+  for (const id of allJobIds) {
+    for (const [field, value] of Object.entries({cargo_lock_sha256: '9'.repeat(64), npm_lock_sha256: '8'.repeat(64),
+      rust: '1.98.0', node: 'v22.19.0', python: '3.12.11', run_attempt: '2', repository: 'other/repository',
+      rustflags: '-C target-feature=-crt-static'})) {
+      const needs = passingNeeds(), identity = JSON.parse(needs[id].outputs.identity);
+      identity[field] = value; needs[id].outputs.identity = JSON.stringify(identity);
+      assert.equal(check(needs).status, 1, `${id}/${field}`);
+    }
+    for (const value of ['', 'null', '{}', '{invalid']) {
+      const needs = passingNeeds(); needs[id].outputs.identity = value;
+      assert.equal(check(needs).status, 1, `${id}: malformed identity`);
+    }
+  }
+  const needs = passingNeeds(); delete needs['native-feature-acceptance'].outputs.transfer_sha256;
+  assert.equal(check(needs).status, 1);
+});
+
+test('observed555 Python platform pair passes while wrong OS or swapped patches fail the summary', () => {
+  const baseline = passingNeeds();
+  assert.equal(JSON.parse(baseline['bulk-import-browser'].outputs.identity).python, '3.12.14');
+  for (const id of ['windows-pure-checks', 'native-feature-acceptance', 'native-package'])
+    assert.equal(JSON.parse(baseline[id].outputs.identity).python, '3.12.10');
+  assert.equal(check(baseline).status, 0);
+  for (const id of allJobIds) {
+    for (const [field, value] of [['runner_os', 'Darwin'],
+      ['runner_os', id === 'bulk-import-browser' ? 'Windows' : 'Linux'],
+      ['python', id === 'bulk-import-browser' ? '3.12.10' : '3.12.14']]) {
+      const needs = passingNeeds(), identity = JSON.parse(needs[id].outputs.identity);
+      identity[field] = value; needs[id].outputs.identity = JSON.stringify(identity);
+      assert.equal(check(needs).status, 1, `${id}/${field}=${value}`);
+    }
+  }
 });

@@ -75,7 +75,7 @@ test('only the named non-acceptance browser preview skips Windows; full acceptan
  const skipRef='refs/heads/preview/basic-key-browser';assert.equal(preview.jobs['basic-key-windows'].if,"${{ github.ref != 'refs/heads/preview/basic-key-browser' }}");assert.equal(preview.jobs['basic-key-browser'].if,undefined);assert.match(preview['run-name'],/Linux transport preview \(non-acceptance\)/);
  for(const ref of ['refs/heads/preview/basic-key','refs/heads/validation/333','refs/heads/main'])assert.notEqual(ref,skipRef);
  assert.deepEqual(full.on.push.branches,['integration/native-desktop','validation/**']);assert.ok(Object.hasOwn(full.on,'workflow_dispatch'));
- for(const job of ['bulk-import-browser','native-feature-acceptance'])assert.equal(full.jobs[job].if,undefined);assert.deepEqual(full.jobs['acceptance-summary'].needs,['bulk-import-browser','native-feature-acceptance']);assert.equal(full.jobs['acceptance-summary'].if,'${{ always() }}');
+ for(const job of ['bulk-import-browser','native-feature-acceptance'])assert.equal(full.jobs[job].if,undefined);assert.deepEqual(full.jobs['acceptance-summary'].needs,['bulk-import-browser','windows-pure-checks','native-feature-acceptance','native-package']);assert.equal(full.jobs['acceptance-summary'].if,'${{ always() }}');
 });
 
 test('missing source-built executable records failure before touching the listener boundary',async()=>{

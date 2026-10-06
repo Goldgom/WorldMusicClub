@@ -23,8 +23,11 @@ jobs:
       canonical_practice_browser_720_verify: ${{ steps.canonical_practice_browser_720_verify.outcome }}
       canonical_practice_browser_640: ${{ steps.canonical_practice_browser_640.outcome }}
       canonical_practice_browser_640_verify: ${{ steps.canonical_practice_browser_640_verify.outcome }}
+      identity: ${{ steps.acceptance_identity.outputs.identity }}
+      producer_gate: ${{ steps.producer_gate.outcome }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        id: required_001
         with:
           ref: ${{ github.sha }}
       - name: Record exact acceptance source
@@ -35,28 +38,44 @@ jobs:
           echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "source_tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        id: required_003
         with:
           toolchain: '1.99.0'
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        id: required_004
         with:
-          python-version: '3.12'
+          python-version: '3.12.14'
       # QA-only parser dependency; it is never included in the app package.
       - run: python -m pip install PyYAML==6.0.3
+        id: required_005
       - run: python scripts/check-authoring-workflow.py .github/workflows/windows-desktop-acceptance.yml
+        id: required_006
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        id: required_007
         with:
-          node-version: '22'
+          node-version: '22.23.3'
           cache: npm
+      - name: Bind exact source, locks and installed toolchain
+        id: acceptance_identity
+        run: python scripts/native-acceptance-join.py identity
       - run: npm ci --ignore-scripts --omit=optional
+        id: required_009
       - run: npm run prepare:engraving
+        id: required_010
       - run: node --test tests/complete-practice-acceptance.test.js
+        id: required_011
       - run: npm run test:canonical-practice-acceptance
+        id: required_012
       - run: npm run test:bulk-import
+        id: required_013
       - run: node --test tests/pitch-bend-import-baseline.test.js tests/native-pitch-bend-evidence.test.js tests/pitch-bend-acceptance-workflow.test.js
+        id: required_014
       - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js tests/authoring-final-gate.test.js
+        id: required_015
       - id: dense_native_driver
         run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
       - name: Original current Basic catalog protection through Rust stdin and app DOM
+        id: required_017
         timeout-minutes: 6
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
@@ -68,6 +87,7 @@ jobs:
       - id: notation_server
         run: cargo build -p practice-server --locked
       - name: Original basic-key CLI bytes and native receiver protocol
+        id: required_020
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
           WMH_SOURCE_SHA: ${{ github.sha }}
@@ -94,32 +114,39 @@ jobs:
           WMH_CANONICAL_PRACTICE_REPORT: ${{ github.workspace }}/test-results/canonical-practice/native-protocol/report.json
         run: node scripts/check-canonical-practice-native.mjs
       - name: Complete clean media package through actual Rust protocol
+        id: required_023
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
         run: node scripts/check-clean-song-native.mjs
       - name: Complete authored VSQ package through actual Rust protocol
+        id: required_024
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
         run: node scripts/check-vsq-song-native.mjs
       - name: Complete typed performance packages through actual Rust protocol
+        id: required_025
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
         run: node scripts/check-performance-song-native.mjs
       - name: Original pitch packages through exact Rust protocol
+        id: required_026
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
         run: node scripts/check-pitch-bend-native.mjs
       - name: Whole original MIDI authoring through exact Rust protocol
+        id: required_027
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
           WMH_AUTHORING_REPORT: ${{ github.workspace }}/test-results/song-authoring/native-protocol/report.json
         run: node scripts/check-song-authoring-native.mjs
       - name: Real DOM and native Rust disk route without a listener
+        id: required_028
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
           WMH_IMPORT_REPORT: ${{ github.workspace }}/test-results/bulk-import-dom.json
         run: npm run test:bulk-import-native
       - name: Original VSQ authoring through exact Rust protocol
+        id: required_029
         env:
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
           WMH_VSQ_AUTHORING_REPORT: ${{ github.workspace }}/test-results/vsq-authoring/native-protocol/report.json
@@ -127,12 +154,14 @@ jobs:
       - id: dense_browser_setup
         run: npx playwright install --with-deps chromium
       - name: Real picker, original bytes, unified pack and fresh-profile screenshot proof
+        id: required_031
         env:
           WMH_HOSTED_BROWSER: '1'
           WMH_SOURCE_SHA: ${{ github.sha }}
           WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
         run: npm run test:bulk-import-hosted
       - name: VSQ chooser, explicit practice, native following, exact export and restart
+        id: required_032
         # Own fixture, storage directory and processes; preserve any earlier failure.
         if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         env:
@@ -143,6 +172,7 @@ jobs:
           WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-vsq-song-check.mjs
           WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-vsq-song-check.mjs
       - name: Complete performance chooser, explicit reference controls, exact export and restart
+        id: required_033
         # Own fixture, storage directory and processes; preserve any earlier failure.
         if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         env:
@@ -153,6 +183,7 @@ jobs:
           WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-performance-song-check.mjs
           WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-performance-song-check.mjs
       - name: Original pitch policy, exact receiver clocks, pause/resume and unchanged take
+        id: required_034
         # Own fixture, storage directory and processes; preserve any earlier failure.
         if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         env:
@@ -163,6 +194,7 @@ jobs:
           WMH_VIEWPORT_HEIGHT=720 node scripts/hosted-pitch-bend-check.mjs
           WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-pitch-bend-check.mjs
       - name: Original authoring picker, complete review, save and restart at all sizes
+        id: required_035
         # Own fixture, storage directory and processes; preserve any earlier failure.
         if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         env:
@@ -174,6 +206,7 @@ jobs:
           WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-song-authoring-check.mjs
           WMH_VIEWPORT_WIDTH=1920 WMH_VIEWPORT_HEIGHT=1080 node scripts/hosted-song-authoring-check.mjs
       - name: Original basic-key real keyboard, Chinese inventory, exact export and restart
+        id: required_036
         # Own fixture, storage directory and processes; preserve any earlier failure.
         if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         env:
@@ -254,6 +287,7 @@ jobs:
           node scripts/verify-canonical-practice-evidence.mjs "$WMH_ARTIFACT_DIR"
           node scripts/verify-canonical-practice-evidence.mjs --check "$WMH_ARTIFACT_DIR"
       - name: Original VSQ authoring, whole inventory, explicit practice and restart
+        id: required_042
         # Own fixtures, Scores and fresh processes; no basic-key evidence input.
         if: ${{ !cancelled() && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         env:
@@ -265,6 +299,7 @@ jobs:
           WMH_VIEWPORT_WIDTH=1280 WMH_VIEWPORT_HEIGHT=900 node scripts/hosted-vsq-authoring-check.mjs
           WMH_VIEWPORT_WIDTH=1920 WMH_VIEWPORT_HEIGHT=1080 node scripts/hosted-vsq-authoring-check.mjs
       - name: Original twelve-part Current and All notation, scrolling and real page following
+        id: required_043
         # Own original fixture/server; a failed earlier scenario must stay visible.
         if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         env:
@@ -273,6 +308,7 @@ jobs:
           WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
         run: node scripts/hosted-notation-scope-check.mjs
       - name: Continuous original dense audio across real native page rendering
+        id: required_044
         if: ${{ !cancelled() && steps.notation_server.outcome == 'success' && steps.dense_native_driver.outcome == 'success' && steps.dense_browser_setup.outcome == 'success' }}
         timeout-minutes: 4
         env:
@@ -319,6 +355,7 @@ jobs:
           export WMH_SOURCE_TREE="$(git rev-parse 'HEAD^{tree}')"
           node scripts/verify-library-catalog-acceptance.mjs --check "$RUNNER_TEMP/library-management-browser/catalog"
       - name: Retain original canonical browser proof, source files and exact driver
+        id: required_048
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -337,6 +374,7 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
       - name: Retain original management browser proof, exact driver and asset server
+        id: required_049
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -350,6 +388,7 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
       - name: Retain original dense rendition timing and source evidence
+        id: required_050
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -362,6 +401,7 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
       - name: Retain original notation scope and fit evidence
+        id: required_051
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -373,6 +413,7 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
       - name: Retain small basic-key browser diagnostics
+        id: required_052
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -384,6 +425,7 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
       - name: Preserve authored bulk-import evidence
+        id: required_053
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -431,6 +473,7 @@ jobs:
       # JSON-only subsets aid diagnosis; full evidence above is still required.
       # Separate always-run steps keep one oversized group from suppressing others.
       - name: Collect bounded bulk-import browser JSON diagnostics
+        id: required_054
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -438,6 +481,7 @@ jobs:
           --root bulk-import
           --source-sha "${{ github.sha }}"
       - name: Upload bulk-import browser JSON diagnostics
+        id: required_055
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -447,6 +491,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
       - name: Collect bounded vsq-song browser JSON diagnostics
+        id: required_056
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -454,6 +499,7 @@ jobs:
           --root vsq-song
           --source-sha "${{ github.sha }}"
       - name: Upload vsq-song browser JSON diagnostics
+        id: required_057
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -463,6 +509,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
       - name: Collect bounded performance-song browser JSON diagnostics
+        id: required_058
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -470,6 +517,7 @@ jobs:
           --root performance-song
           --source-sha "${{ github.sha }}"
       - name: Upload performance-song browser JSON diagnostics
+        id: required_059
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -479,6 +527,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
       - name: Collect bounded pitch-bend browser JSON diagnostics
+        id: required_060
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -486,6 +535,7 @@ jobs:
           --root pitch-bend
           --source-sha "${{ github.sha }}"
       - name: Upload pitch-bend browser JSON diagnostics
+        id: required_061
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -495,6 +545,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
       - name: Collect bounded song-authoring browser JSON diagnostics
+        id: required_062
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -502,6 +553,7 @@ jobs:
           --root song-authoring
           --source-sha "${{ github.sha }}"
       - name: Upload song-authoring browser JSON diagnostics
+        id: required_063
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -511,6 +563,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
       - name: Collect bounded vsq-authoring browser JSON diagnostics
+        id: required_064
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -518,6 +571,7 @@ jobs:
           --root vsq-authoring
           --source-sha "${{ github.sha }}"
       - name: Upload vsq-authoring browser JSON diagnostics
+        id: required_065
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -527,6 +581,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
       - name: Collect bounded canonical-practice browser JSON diagnostics
+        id: required_066
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -534,6 +589,7 @@ jobs:
           --root canonical-practice
           --source-sha "${{ github.sha }}"
       - name: Upload canonical-practice browser JSON diagnostics
+        id: required_067
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -543,6 +599,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
       - name: Collect bounded pack-management browser JSON diagnostics
+        id: required_068
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -550,6 +607,7 @@ jobs:
           --root packs
           --source-sha "${{ github.sha }}"
       - name: Upload pack-management browser JSON diagnostics
+        id: required_069
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -558,6 +616,103 @@ jobs:
           retention-days: 90
           if-no-files-found: error
           include-hidden-files: true
+      - name: Require every mandatory producer step without skips
+        id: producer_gate
+        if: always()
+        env:
+          ACCEPTANCE_STEPS: ${{ toJSON(steps) }}
+          ACCEPTANCE_REQUIRED_STEPS: required_001,acceptance_source,required_003,required_004,required_005,required_006,required_007,acceptance_identity,required_009,required_010,required_011,required_012,required_013,required_014,required_015,dense_native_driver,required_017,complete_practice_converter,notation_server,required_020,complete_practice_protocol,canonical_practice_protocol,required_023,required_024,required_025,required_026,required_027,required_028,required_029,dense_browser_setup,required_031,required_032,required_033,required_034,required_035,required_036,complete_practice_browser,canonical_practice_browser_720,canonical_practice_browser_720_verify,canonical_practice_browser_640,canonical_practice_browser_640_verify,required_042,required_043,required_044,management_pack_browser,management_catalog_browser,management_catalog_browser_verify,required_048,required_049,required_050,required_051,required_052,required_053,required_054,required_055,required_056,required_057,required_058,required_059,required_060,required_061,required_062,required_063,required_064,required_065,required_066,required_067,required_068,required_069
+        run: python scripts/native-acceptance-join.py steps
+  windows-pure-checks:
+    # No dependency on the long native UI path; every original pure check remains mandatory.
+    runs-on: windows-latest
+    timeout-minutes: 45
+    outputs:
+      source_sha: ${{ steps.acceptance_source.outputs.source_sha }}
+      source_tree: ${{ steps.acceptance_source.outputs.source_tree }}
+      run_id: ${{ github.run_id }}
+      identity: ${{ steps.acceptance_identity.outputs.identity }}
+      producer_gate: ${{ steps.producer_gate.outcome }}
+    env:
+      RUSTFLAGS: '-C target-feature=+crt-static'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        id: required_001
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Record exact acceptance source
+        id: acceptance_source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "source_tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        id: required_003
+        with:
+          toolchain: '1.99.0'
+          components: rustfmt, clippy, rust-docs
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        id: required_004
+        with:
+          node-version: '22.23.3'
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        id: required_005
+        with:
+          python-version: '3.12.10'
+      # QA-only parser dependency; it is never included in the app package.
+      - name: Bind exact source, locks and installed toolchain
+        id: acceptance_identity
+        run: python scripts/native-acceptance-join.py identity
+      - run: python -m pip install PyYAML==6.0.3
+        id: required_007
+      - run: python scripts/check-authoring-workflow.py .github/workflows/windows-desktop-acceptance.yml
+        id: required_008
+      - run: npm ci --ignore-scripts --omit=optional
+        id: required_009
+      - run: npm run prepare:engraving
+        id: required_010
+      - name: Parse the exact native acceptance script
+        id: required_011
+        shell: pwsh
+        run: |
+          foreach ($script in @('scripts/windows-desktop-acceptance.ps1','scripts/windows-desktop-profile.ps1','scripts/windows-desktop-catalog-snapshot.ps1','scripts/windows-desktop-geometry.ps1','scripts/windows-native-portable-smoke.ps1','scripts/windows-native-runtime-smoke.ps1')) {
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$tokens,[ref]$errors)
+            if ($errors.Count) { $errors | Format-List; throw "PowerShell syntax errors in $script" }
+          }
+      - name: Test native filename ownership and approved fixture paths without GUI
+        id: required_012
+        shell: pwsh
+        run: ./tests/windows-desktop-contract.ps1
+      - run: node --test tests/complete-practice-acceptance.test.js
+        id: required_013
+      - run: npm run test:canonical-practice-acceptance
+        id: required_014
+      - run: npm test
+        id: required_015
+      - run: node --test tests/desktop-evidence.test.js tests/desktop-acceptance-wait.test.js tests/native-song-folder-evidence.test.js tests/native-bulk-import-evidence.test.js tests/native-clean-song-evidence.test.js tests/native-vsq-song-evidence.test.js tests/vsq-fingering-evidence.test.js tests/performance-song-fixtures.test.js tests/native-performance-song-evidence.test.js tests/pitch-bend-import-baseline.test.js tests/native-pitch-bend-evidence.test.js tests/pitch-bend-acceptance-workflow.test.js
+        id: required_016
+      - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js tests/authoring-final-gate.test.js
+        id: required_017
+      - run: cargo fmt --all --check
+        id: required_018
+      - run: cargo test --workspace --all-targets --locked
+        id: required_019
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        id: required_020
+      - run: python -m unittest discover -s tests -p 'test_*.py'
+        id: required_021
+      - name: Require every mandatory producer step without skips
+        id: producer_gate
+        if: always()
+        env:
+          ACCEPTANCE_STEPS: ${{ toJSON(steps) }}
+          ACCEPTANCE_REQUIRED_STEPS: required_001,acceptance_source,required_003,required_004,required_005,acceptance_identity,required_007,required_008,required_009,required_010,required_011,required_012,required_013,required_014,required_015,required_016,required_017,required_018,required_019,required_020,required_021
+        run: python scripts/native-acceptance-join.py steps
   native-feature-acceptance:
     # Independent runners retain Windows diagnostics when browser checks fail.
     runs-on: windows-latest
@@ -572,26 +727,16 @@ jobs:
       complete_practice_windows_verify: ${{ steps.complete_practice_windows_verify.outcome }}
       canonical_practice_windows: ${{ steps.canonical_practice_windows.outcome }}
       canonical_practice_windows_verify: ${{ steps.canonical_practice_windows_verify.outcome }}
-      native_full_portable: ${{ steps.native_full_portable.outcome }}
-      native_full_upload: ${{ steps.native_full_upload.outcome }}
-      native_runtime_package: ${{ steps.native_runtime_package.outcome }}
-      native_runtime_verify: ${{ steps.native_runtime_verify.outcome }}
-      native_runtime_startup: ${{ steps.native_runtime_startup.outcome }}
-      native_runtime_delivery: ${{ steps.native_runtime_delivery.outcome }}
-      native_runtime_delivery_verify: ${{ steps.native_runtime_delivery_verify.outcome }}
-      native_runtime_upload: ${{ steps.native_runtime_upload.outcome }}
-      native_runtime_evidence: ${{ steps.native_runtime_evidence.outcome }}
-      full_artifact_id: ${{ steps.native_full_upload.outputs.artifact-id }}
-      runtime_artifact_id: ${{ steps.native_runtime_upload.outputs.artifact-id }}
-      runtime_evidence_id: ${{ steps.native_runtime_evidence.outputs.artifact-id }}
-      full_sha256: ${{ steps.native_package.outputs.sha256 }}
-      runtime_sha256: ${{ steps.native_runtime_package.outputs.sha256 }}
-      delivery_sha256: ${{ steps.native_runtime_delivery_verify.outputs.sha256 }}
+      identity: ${{ steps.acceptance_identity.outputs.identity }}
+      producer_gate: ${{ steps.producer_gate.outcome }}
+      transfer_artifact_id: ${{ steps.native_transfer_upload.outputs.artifact-id }}
+      transfer_sha256: ${{ steps.native_transfer.outputs.sha256 }}
     env:
       RUSTFLAGS: '-C target-feature=+crt-static'
       CARGO_INCREMENTAL: '0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        id: required_001
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -603,27 +748,33 @@ jobs:
           echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "source_tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        id: required_003
         with:
           toolchain: '1.99.0'
           components: rustfmt, clippy, rust-docs
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        id: required_004
         with:
-          node-version: '22'
+          node-version: '22.23.3'
           cache: npm
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        id: required_005
         with:
-          python-version: '3.12'
+          python-version: '3.12.10'
       # QA-only parser dependency; it is never included in the app package.
+      - name: Bind exact source, locks and installed toolchain
+        id: acceptance_identity
+        run: python scripts/native-acceptance-join.py identity
       - run: python -m pip install PyYAML==6.0.3
+        id: required_007
       - run: python scripts/check-authoring-workflow.py .github/workflows/windows-desktop-acceptance.yml
+        id: required_008
       - run: npm ci --ignore-scripts --omit=optional
+        id: required_009
       - run: npm run prepare:engraving
-      - run: node --test tests/complete-practice-acceptance.test.js
-      - run: npm run test:canonical-practice-acceptance
-      - run: npm test
-      - run: node --test tests/desktop-evidence.test.js tests/desktop-acceptance-wait.test.js tests/native-song-folder-evidence.test.js tests/native-bulk-import-evidence.test.js tests/native-clean-song-evidence.test.js tests/native-vsq-song-evidence.test.js tests/vsq-fingering-evidence.test.js tests/performance-song-fixtures.test.js tests/native-performance-song-evidence.test.js tests/pitch-bend-import-baseline.test.js tests/native-pitch-bend-evidence.test.js tests/pitch-bend-acceptance-workflow.test.js
-      - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js tests/authoring-final-gate.test.js
+        id: required_010
       - name: Parse the exact native acceptance script
+        id: required_011
         shell: pwsh
         run: |
           foreach ($script in @('scripts/windows-desktop-acceptance.ps1','scripts/windows-desktop-profile.ps1','scripts/windows-desktop-catalog-snapshot.ps1','scripts/windows-desktop-geometry.ps1','scripts/windows-native-portable-smoke.ps1','scripts/windows-native-runtime-smoke.ps1')) {
@@ -632,6 +783,7 @@ jobs:
             if ($errors.Count) { $errors | Format-List; throw "PowerShell syntax errors in $script" }
           }
       - name: Test native filename ownership and approved fixture paths without GUI
+        id: required_012
         shell: pwsh
         run: ./tests/windows-desktop-contract.ps1
       # Only public generated build artifacts; no Cargo home, credentials, UI
@@ -656,9 +808,6 @@ jobs:
           key: native-rust-v1-${{ runner.os }}-${{ runner.arch }}-msvc-1.99.0-crt-static-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', '.cargo/config*', 'rust-toolchain*', '.github/workflows/windows-desktop-acceptance.yml') }}
           fail-on-cache-miss: false
           enableCrossOsArchive: false
-      - run: cargo fmt --all --check
-      - run: cargo test --workspace --all-targets --locked
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - id: native_build
         run: cargo build -p worldmusichub-desktop --release --locked
       # Save after successful compilation, before UI acceptance can fail. This is
@@ -679,47 +828,58 @@ jobs:
           key: ${{ steps.native_rust_cache.outputs.cache-primary-key }}
           enableCrossOsArchive: false
       - run: cargo fetch --locked --target x86_64-pc-windows-msvc
-      - run: python -m unittest discover -s tests -p 'test_*.py'
+        id: required_016
       - run: python scripts/prepare-rust-notices.py --target x86_64-pc-windows-msvc --output dist/licenses/native-rust
+        id: required_017
       - name: Bound startup, offline engraving and normal native close
+        id: required_018
         shell: pwsh
         run: ./scripts/windows-desktop-smoke.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-startup
       # Each scenario owns fixtures, data, profiles and processes beneath its
       # distinct output root. Keep collecting exact-build evidence after failure;
       # checks still fail the job and default success() still gates packaging.
       - name: Native files, restart, keyboard, library and close acceptance
+        id: required_019
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-acceptance
       - name: Native song folders and fresh-profile restart acceptance
+        id: required_020
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-song-folder -Scenario song-folder
       - name: Native batch import, source retention and unified pack acceptance
+        id: required_021
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-bulk-import -Scenario bulk-import
       - name: Native complete clean song, decoded media, export and new-process persistence
+        id: required_022
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-clean-song -Scenario clean-song
       - name: Native VSQ chooser, explicit choice, exact following, export and fresh-process reset
+        id: required_023
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-vsq-song -Scenario vsq-song
       - name: Native complete performance chooser, reference controls, exact export and fresh-process restart
+        id: required_024
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-performance-song -Scenario performance-song
       - name: Native original pitch policy, source-clock bends and held-state reconstruction
+        id: required_025
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-pitch-bend -Scenario pitch-bend
       - name: Native original authoring pair, explicit saves, exact export and fresh-process restart
+        id: required_026
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-authoring -Scenario authoring
       - name: Native original basic-key inventory, keyboard and restart
+        id: required_027
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-basic-key -Scenario basic-key
@@ -766,6 +926,7 @@ jobs:
           node scripts/verify-canonical-practice-evidence.mjs --check desktop-canonical-practice
           if ($LASTEXITCODE -ne 0) { throw 'Canonical-practice exact-source proof failed' }
       - name: Native original VSQ authoring and exact fresh-process restart
+        id: required_032
         # Generates its own fixtures and profile from the same checked build.
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
@@ -792,6 +953,7 @@ jobs:
           node scripts/verify-library-catalog-acceptance.mjs --check "$env:RUNNER_TEMP/library-management-windows"
           if ($LASTEXITCODE -ne 0) { throw 'Native catalog exact-source proof failed' }
       - name: Retain original native catalog proof and exact EXE
+        id: required_035
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -803,166 +965,8 @@ jobs:
           include-hidden-files: true
           retention-days: 90
           if-no-files-found: warn
-      # Default success() keeps candidate packaging behind every native gate.
-      # This job cannot establish browser or whole-checkpoint acceptance.
-      - name: Package native candidate with exact provenance and notices
-        id: native_package
-        shell: pwsh
-        run: |
-          node scripts/verify-native-bulk-import-evidence.mjs --check desktop-bulk-import
-          if ($LASTEXITCODE -ne 0) { throw 'Native bulk-import exact-source proof failed' }
-          $bulkProof=Get-Content -Raw desktop-bulk-import/native-bulk-import-files.json | ConvertFrom-Json
-          $currentTree=(git rev-parse 'HEAD^{tree}').Trim()
-          $currentExe=(Get-FileHash target/release/worldmusichub-desktop.exe -Algorithm SHA256).Hash.ToLower()
-          if ($bulkProof.source_sha -cne '${{ github.sha }}' -or $bulkProof.source_tree -cne $currentTree -or $bulkProof.executable_sha256 -cne $currentExe) { throw 'Bulk-import evidence does not match the exact packaged source and executable' }
-          node scripts/verify-native-clean-song-evidence.mjs --check desktop-clean-song
-          if ($LASTEXITCODE -ne 0) { throw 'Native clean-song exact-source proof failed' }
-          $cleanProof=Get-Content -Raw desktop-clean-song/native-clean-song-files.json | ConvertFrom-Json
-          if ($cleanProof.source_sha -cne '${{ github.sha }}' -or $cleanProof.source_tree -cne $currentTree -or $cleanProof.executable_sha256 -cne $currentExe) { throw 'Clean-song evidence does not match the exact packaged source and executable' }
-          node scripts/verify-native-vsq-song-evidence.mjs --check desktop-vsq-song
-          if ($LASTEXITCODE -ne 0) { throw 'Native VSQ exact-source proof failed' }
-          $vsqProof=Get-Content -Raw desktop-vsq-song/native-vsq-song-files.json | ConvertFrom-Json
-          if ($vsqProof.source_sha -cne '${{ github.sha }}' -or $vsqProof.source_tree -cne $currentTree -or $vsqProof.executable_sha256 -cne $currentExe) { throw 'VSQ evidence does not match the exact packaged source and executable' }
-          node scripts/verify-native-performance-song-evidence.mjs --check desktop-performance-song
-          if ($LASTEXITCODE -ne 0) { throw 'Native complete performance exact-source proof failed' }
-          $performanceProof=Get-Content -Raw desktop-performance-song/native-performance-song-files.json | ConvertFrom-Json
-          $currentExeBytes=(Get-Item target/release/worldmusichub-desktop.exe).Length
-          if ($performanceProof.source_sha -cne '${{ github.sha }}' -or $performanceProof.source_tree -cne $currentTree -or $performanceProof.executable_sha256 -cne $currentExe -or $performanceProof.executable_bytes -ne $currentExeBytes) { throw 'Complete performance evidence does not match the exact packaged source and executable' }
-          node scripts/verify-native-pitch-bend-evidence.mjs --check desktop-pitch-bend
-          if ($LASTEXITCODE -ne 0) { throw 'Native pitch-bend exact-source proof failed' }
-          $pitchProof=Get-Content -Raw desktop-pitch-bend/native-pitch-bend-files.json | ConvertFrom-Json
-          if ($pitchProof.source_sha -cne '${{ github.sha }}' -or $pitchProof.source_tree -cne $currentTree -or $pitchProof.executable_sha256 -cne $currentExe -or $pitchProof.executable_bytes -ne $currentExeBytes) { throw 'Pitch-bend evidence does not match the exact packaged source and executable' }
-          python scripts/native-pitch-bend-manifest.py desktop-pitch-bend --executable target/release/worldmusichub-desktop.exe --commit '${{ github.sha }}' --tree $currentTree
-          if ($LASTEXITCODE -ne 0) { throw 'Native pitch-bend focused manifest failed' }
-          node scripts/verify-native-song-authoring-evidence.mjs --check desktop-authoring
-          if ($LASTEXITCODE -ne 0) { throw 'Native song authoring exact-source proof failed' }
-          $authoringProof=Get-Content -Raw desktop-authoring/native-song-authoring-files.json | ConvertFrom-Json
-          if ($authoringProof.source_sha -cne '${{ github.sha }}' -or $authoringProof.source_tree -cne $currentTree -or $authoringProof.executable_sha256 -cne $currentExe -or $authoringProof.executable_bytes -ne $currentExeBytes) { throw 'Song authoring evidence does not match the exact packaged source and executable' }
-          python scripts/native-song-authoring-manifest.py desktop-authoring --executable target/release/worldmusichub-desktop.exe --commit '${{ github.sha }}' --tree $currentTree
-          if ($LASTEXITCODE -ne 0) { throw 'Native song authoring focused manifest failed' }
-          node scripts/verify-native-vsq-authoring-evidence.mjs --check desktop-vsq-authoring
-          if ($LASTEXITCODE -ne 0) { throw 'Native VSQ authoring proof failed' }
-          python scripts/native-vsq-authoring-manifest.py desktop-vsq-authoring --executable target/release/worldmusichub-desktop.exe --commit '${{ github.sha }}' --tree $currentTree
-          if ($LASTEXITCODE -ne 0) { throw 'Native VSQ authoring source/EXE manifest failed' }
-          $env:WMH_SOURCE_SHA='${{ github.sha }}'
-          $env:WMH_SOURCE_TREE=$currentTree
-          $env:WMH_BASIC_KEY_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
-          node scripts/verify-basic-key-evidence.mjs --check desktop-basic-key
-          if ($LASTEXITCODE -ne 0) { throw 'Basic-key evidence does not match exact packaged source and executable' }
-          $env:WMH_COMPLETE_PRACTICE_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
-          node scripts/verify-complete-practice-evidence.mjs --check desktop-complete-practice
-          if ($LASTEXITCODE -ne 0) { throw 'Complete-practice evidence does not match exact packaged source and executable' }
-          $env:WMH_CANONICAL_PRACTICE_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
-          node scripts/verify-canonical-practice-evidence.mjs --check desktop-canonical-practice
-          if ($LASTEXITCODE -ne 0) { throw 'Canonical-practice evidence does not match exact packaged source and executable' }
-          $count=(git rev-list --count HEAD).Trim()
-          $folder='dist/WorldMusicClub-Native'
-          New-Item -ItemType Directory "$folder/licenses/engraving","$folder/evidence" -Force | Out-Null
-          Copy-Item target/release/worldmusichub-desktop.exe "$folder/WorldMusicClub-Native.exe"
-          Copy-Item LICENSE $folder
-          Copy-Item desktop-basic-key/native-basic-key.json,desktop-basic-key/basic-key-proof.json,desktop-basic-key/renderer-basic-key-*.json,desktop-basic-key/profile-basic-key-*.json "$folder/evidence/"
-          Copy-Item desktop-complete-practice/native-complete-practice.json,desktop-complete-practice/complete-practice-proof.json,desktop-complete-practice/renderer-complete-practice-*.json,desktop-complete-practice/profile-complete-practice-*.json "$folder/evidence/"
-          # The manifest adapter copies the complete canonical gate into evidence/canonical-practice/.
-          Copy-Item docs/WINDOWS_NATIVE.md "$folder/README.md"
-          Copy-Item docs/WINDOWS_NATIVE.md "$folder/START-HERE.md"
-          Copy-Item -Recurse docs,schema,schemas,catalog $folder
-          Copy-Item web/vendor/*.txt,web/vendor/engraving-manifest.json "$folder/licenses/engraving/"
-          Copy-Item -Recurse dist/licenses/native-rust "$folder/licenses/rust"
-          Copy-Item desktop-startup/native-report.json,desktop-startup/renderer-report.json "$folder/evidence/"
-          Copy-Item desktop-acceptance/native-acceptance.json,desktop-acceptance/downloaded-files.json,desktop-acceptance/renderer-*.json "$folder/evidence/"
-          Copy-Item desktop-bulk-import/native-bulk-import.json,desktop-bulk-import/native-bulk-import-files.json,desktop-bulk-import/renderer-bulk-*.json,desktop-bulk-import/profile-bulk-*.json "$folder/evidence/"
-          Copy-Item desktop-clean-song/native-clean-song.json,desktop-clean-song/native-clean-song-files.json,desktop-clean-song/renderer-clean-*.json,desktop-clean-song/profile-clean-*.json "$folder/evidence/"
-          Copy-Item desktop-vsq-song/native-vsq-song.json,desktop-vsq-song/native-vsq-song-files.json,desktop-vsq-song/renderer-vsq-*.json,desktop-vsq-song/profile-vsq-*.json "$folder/evidence/"
-          python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder --performance-song desktop-performance-song --pitch-bend desktop-pitch-bend --song-authoring desktop-authoring --vsq-authoring desktop-vsq-authoring --basic-key desktop-basic-key --canonical-practice desktop-canonical-practice --catalog-evidence "$env:RUNNER_TEMP/library-management-windows"
-          if ($LASTEXITCODE -ne 0) { throw 'Native provenance/acceptance inventory failed' }
-          $zip="dist/WorldMusicClub-Native-Windows-x64-commit-$count.zip"
-          python scripts/native-release-manifest.py archive $folder $zip
-          if ($LASTEXITCODE -ne 0) { throw 'Native archive verification failed' }
-          "archive=$zip" >> $env:GITHUB_OUTPUT
-          "count=$count" >> $env:GITHUB_OUTPUT
-          "sha256=$((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
-      - name: Verify normal startup of extracted native preview
-        id: native_full_portable
-        shell: pwsh
-        run: |
-          $destination=Join-Path $env:RUNNER_TEMP 'wmh-native-portable-extracted'
-          Expand-Archive -Path '${{ steps.native_package.outputs.archive }}' -DestinationPath $destination
-          ./scripts/windows-native-portable-smoke.ps1 -Directory (Join-Path $destination 'WorldMusicClub-Native') -OutputDirectory desktop-portable
-      # Keep the full artifact identity unchanged. Runtime is additive and is
-      # derived only from this future build's already verified local full ZIP.
-      - name: Upload native-only candidate pending final acceptance
-        id: native_full_upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: WorldMusicClub-Native-Candidate-Windows-x64-commit-${{ steps.native_package.outputs.count }}-${{ github.sha }}
-          path: |
-            dist/WorldMusicClub-Native-Windows-x64-*.zip
-            dist/WorldMusicClub-Native-Windows-x64-*.zip.sha256
-          retention-days: 90
-          if-no-files-found: error
-      - name: Create runtime from this run's retained complete native ZIP
-        id: native_runtime_package
-        shell: pwsh
-        run: |
-          $zip="dist/WorldMusicClub-Native-Runtime-Windows-x64-commit-${{ steps.native_package.outputs.count }}.zip"
-          $reference='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.native_full_upload.outputs.artifact-id }}'
-          if ('${{ steps.native_full_upload.outputs.artifact-url }}' -cne $reference) { throw 'Full upload returned a different immutable artifact identity' }
-          if ((Get-FileHash '${{ steps.native_package.outputs.archive }}' -Algorithm SHA256).Hash.ToLowerInvariant() -cne '${{ steps.native_package.outputs.sha256 }}') { throw 'Full ZIP changed after its verified pre-upload digest' }
-          python scripts/native-runtime-package.py create '${{ steps.native_package.outputs.archive }}' $zip --commit '${{ github.sha }}' --tree '${{ steps.acceptance_source.outputs.source_tree }}' --evidence-reference $reference
-          if ($LASTEXITCODE -ne 0) { throw 'Runtime creation/full evidence revalidation failed' }
-          "archive=$zip" >> $env:GITHUB_OUTPUT
-          "sha256=$((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
-      - name: Independently verify exact runtime candidate
-        id: native_runtime_verify
-        shell: pwsh
-        run: |
-          python scripts/native-runtime-package.py verify '${{ steps.native_runtime_package.outputs.archive }}' --expected-sha256 '${{ steps.native_runtime_package.outputs.sha256 }}'
-          if ($LASTEXITCODE -ne 0) { throw 'Independent runtime verification failed' }
-      - name: Verify ordinary startup from fresh extracted runtime
-        id: native_runtime_startup
-        shell: pwsh
-        run: |
-          $proof=Join-Path $env:RUNNER_TEMP 'native-runtime-evidence'
-          if (Test-Path $proof) { throw 'Use a fresh runtime proof directory' }
-          New-Item -ItemType Directory $proof | Out-Null
-          ./scripts/windows-native-runtime-smoke.ps1 -Archive '${{ steps.native_runtime_package.outputs.archive }}' -ExpectedSha256 '${{ steps.native_runtime_package.outputs.sha256 }}' -ExpectedFullSha256 '${{ steps.native_package.outputs.sha256 }}' -Destination (Join-Path $env:RUNNER_TEMP 'wmh-native-runtime-extracted') -OutputDirectory (Join-Path $proof 'startup') -Commit '${{ github.sha }}' -Tree '${{ steps.acceptance_source.outputs.source_tree }}' -RunId '${{ github.run_id }}' -Repository '${{ github.repository }}' -FullArtifactId '${{ steps.native_full_upload.outputs.artifact-id }}'
-      - name: Bind full and runtime normal startup to this source and both ZIPs
-        id: native_runtime_delivery
-        shell: pwsh
-        run: |
-          python scripts/native-runtime-delivery.py create --archive '${{ steps.native_runtime_package.outputs.archive }}' --expected-sha256 '${{ steps.native_runtime_package.outputs.sha256 }}' --expected-full-sha256 '${{ steps.native_package.outputs.sha256 }}' --full-archive '${{ steps.native_package.outputs.archive }}' --extracted "$env:RUNNER_TEMP/wmh-native-runtime-extracted/WorldMusicClub-Native" --full-startup desktop-portable --runtime-startup "$env:RUNNER_TEMP/native-runtime-evidence/startup" --record "$env:RUNNER_TEMP/native-runtime-evidence/delivery.json" --commit '${{ github.sha }}' --tree '${{ steps.acceptance_source.outputs.source_tree }}' --run-id '${{ github.run_id }}' --repository '${{ github.repository }}' --full-artifact-id '${{ steps.native_full_upload.outputs.artifact-id }}'
-          if ($LASTEXITCODE -ne 0) { throw 'Runtime delivery source/evidence binding failed' }
-      - name: Reverify retained runtime delivery record without rewriting it
-        id: native_runtime_delivery_verify
-        shell: pwsh
-        run: |
-          python scripts/native-runtime-delivery.py verify --archive '${{ steps.native_runtime_package.outputs.archive }}' --expected-sha256 '${{ steps.native_runtime_package.outputs.sha256 }}' --expected-full-sha256 '${{ steps.native_package.outputs.sha256 }}' --full-archive '${{ steps.native_package.outputs.archive }}' --extracted "$env:RUNNER_TEMP/wmh-native-runtime-extracted/WorldMusicClub-Native" --full-startup desktop-portable --runtime-startup "$env:RUNNER_TEMP/native-runtime-evidence/startup" --record "$env:RUNNER_TEMP/native-runtime-evidence/delivery.json" --commit '${{ github.sha }}' --tree '${{ steps.acceptance_source.outputs.source_tree }}' --run-id '${{ github.run_id }}' --repository '${{ github.repository }}' --full-artifact-id '${{ steps.native_full_upload.outputs.artifact-id }}'
-          if ($LASTEXITCODE -ne 0) { throw 'Retained runtime delivery record differs' }
-          "sha256=$((Get-FileHash "$env:RUNNER_TEMP/native-runtime-evidence/delivery.json" -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
-      - name: Upload additive runtime candidate pending full checkpoint acceptance
-        id: native_runtime_upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: WorldMusicClub-Native-Runtime-Candidate-Windows-x64-commit-${{ steps.native_package.outputs.count }}-${{ github.sha }}
-          path: |
-            ${{ steps.native_runtime_package.outputs.archive }}
-            ${{ steps.native_runtime_package.outputs.archive }}.sha256
-          retention-days: 90
-          if-no-files-found: error
-      - name: Retain final runtime delivery evidence on success and failure
-        id: native_runtime_evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: native-runtime-delivery-evidence-${{ github.sha }}
-          path: |
-            ${{ runner.temp }}/native-runtime-evidence/delivery.json
-            ${{ runner.temp }}/native-runtime-evidence/startup/*.json
-            ${{ runner.temp }}/native-runtime-evidence/startup/*.png
-            ${{ runner.temp }}/native-runtime-evidence/startup/*.log
-          retention-days: 90
-          if-no-files-found: error
       - name: Retain original canonical native proof and exact executable
+        id: required_036
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -981,6 +985,7 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
       - name: Preserve bounded evidence on success and failure
+        id: required_037
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1085,12 +1090,14 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
       - name: Collect bounded Basic-key Windows toolbar diagnostics
+        id: required_038
         if: always()
         run: >-
           python scripts/collect-basic-key-diagnostics.py
           desktop-basic-key "${{ runner.temp }}/basic-key-windows-diagnostics"
           --source-sha "${{ github.sha }}"
       - name: Upload Basic-key Windows toolbar diagnostics
+        id: required_039
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1102,6 +1109,7 @@ jobs:
       # JSON-only subsets aid diagnosis; full evidence above is still required.
       # Separate always-run steps keep one oversized group from suppressing others.
       - name: Collect bounded bulk-import windows JSON diagnostics
+        id: required_040
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -1109,6 +1117,7 @@ jobs:
           --root desktop-bulk-import
           --source-sha "${{ github.sha }}"
       - name: Upload bulk-import windows JSON diagnostics
+        id: required_041
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1118,6 +1127,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
       - name: Collect bounded vsq-song windows JSON diagnostics
+        id: required_042
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -1125,6 +1135,7 @@ jobs:
           --root desktop-vsq-song
           --source-sha "${{ github.sha }}"
       - name: Upload vsq-song windows JSON diagnostics
+        id: required_043
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1134,6 +1145,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
       - name: Collect bounded performance-song windows JSON diagnostics
+        id: required_044
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -1141,6 +1153,7 @@ jobs:
           --root desktop-performance-song
           --source-sha "${{ github.sha }}"
       - name: Upload performance-song windows JSON diagnostics
+        id: required_045
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1150,6 +1163,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
       - name: Collect bounded pitch-bend windows JSON diagnostics
+        id: required_046
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -1157,6 +1171,7 @@ jobs:
           --root desktop-pitch-bend
           --source-sha "${{ github.sha }}"
       - name: Upload pitch-bend windows JSON diagnostics
+        id: required_047
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1166,6 +1181,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
       - name: Collect bounded song-authoring windows JSON diagnostics
+        id: required_048
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -1173,6 +1189,7 @@ jobs:
           --root desktop-authoring
           --source-sha "${{ github.sha }}"
       - name: Upload song-authoring windows JSON diagnostics
+        id: required_049
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1182,6 +1199,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
       - name: Collect bounded vsq-authoring windows JSON diagnostics
+        id: required_050
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -1189,6 +1207,7 @@ jobs:
           --root desktop-vsq-authoring
           --source-sha "${{ github.sha }}"
       - name: Upload vsq-authoring windows JSON diagnostics
+        id: required_051
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1198,6 +1217,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
       - name: Collect bounded canonical-practice windows JSON diagnostics
+        id: required_052
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -1205,6 +1225,7 @@ jobs:
           --root desktop-canonical-practice
           --source-sha "${{ github.sha }}"
       - name: Upload canonical-practice windows JSON diagnostics
+        id: required_053
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1214,6 +1235,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
       - name: Collect bounded desktop-acceptance windows JSON diagnostics
+        id: required_054
         if: always()
         run: >-
           python scripts/collect-json-evidence.py
@@ -1221,6 +1243,7 @@ jobs:
           --root desktop-acceptance
           --source-sha "${{ github.sha }}"
       - name: Upload desktop-acceptance windows JSON diagnostics
+        id: required_055
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1230,28 +1253,330 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
       # No WebView profile, private fixtures, installer or GitHub Release upload.
+      - name: Seal bounded original native inputs for the package join
+        id: native_transfer
+        env:
+          ACCEPTANCE_IDENTITY: ${{ steps.acceptance_identity.outputs.identity }}
+        shell: pwsh
+        run: |
+          $count=(git rev-list --count HEAD).Trim()
+          python scripts/native-release-manifest.py provenance --commit '${{ github.sha }}' --count $count --executable target/release/worldmusichub-desktop.exe --output target/release/native-build-provenance.json
+          if ($LASTEXITCODE -ne 0) { throw 'Original native build provenance failed' }
+          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/native-acceptance-transfer" -ErrorAction Stop | Out-Null
+          python scripts/native-acceptance-transfer.py create --workspace "$env:GITHUB_WORKSPACE" --runner-temp "$env:RUNNER_TEMP" --output "$env:RUNNER_TEMP/native-acceptance-transfer/native-inputs.zip"
+          if ($LASTEXITCODE -ne 0) { throw 'Native transfer sealing failed' }
+      - name: Retain immutable native package inputs
+        id: native_transfer_upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-package-inputs-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-acceptance-transfer/native-inputs.zip
+          retention-days: 90
+          if-no-files-found: error
+      - name: Check immutable native input artifact identity
+        id: native_transfer_identity
+        shell: pwsh
+        run: |
+          $id='${{ steps.native_transfer_upload.outputs.artifact-id }}'
+          if ($id -notmatch '^[1-9][0-9]{0,19}$') { throw 'Native input artifact ID is missing' }
+          $url='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/' + $id
+          if ('${{ steps.native_transfer_upload.outputs.artifact-url }}' -cne $url) { throw 'Native input artifact identity differs' }
+      - name: Require every mandatory producer step without skips
+        id: producer_gate
+        if: always()
+        env:
+          ACCEPTANCE_STEPS: ${{ toJSON(steps) }}
+          ACCEPTANCE_REQUIRED_STEPS: required_001,acceptance_source,required_003,required_004,required_005,acceptance_identity,required_007,required_008,required_009,required_010,required_011,required_012,native_build,required_016,required_017,required_018,required_019,required_020,required_021,required_022,required_023,required_024,required_025,required_026,required_027,complete_practice_windows,complete_practice_windows_verify,canonical_practice_windows,canonical_practice_windows_verify,required_032,management_catalog_windows,management_catalog_windows_verify,required_035,required_036,required_037,required_038,required_039,required_040,required_041,required_042,required_043,required_044,required_045,required_046,required_047,required_048,required_049,required_050,required_051,required_052,required_053,required_054,required_055,native_transfer,native_transfer_upload,native_transfer_identity
+        run: python scripts/native-acceptance-join.py steps
+  native-package:
+    # Candidate creation is suppressed unless every exact-source producer succeeds.
+    needs: [bulk-import-browser, windows-pure-checks, native-feature-acceptance]
+    runs-on: windows-latest
+    timeout-minutes: 20
+    outputs:
+      source_sha: ${{ steps.acceptance_source.outputs.source_sha }}
+      source_tree: ${{ steps.acceptance_source.outputs.source_tree }}
+      run_id: ${{ github.run_id }}
+      identity: ${{ steps.acceptance_identity.outputs.identity }}
+      producer_gate: ${{ steps.producer_gate.outcome }}
+      native_full_portable: ${{ steps.native_full_portable.outcome }}
+      native_full_upload: ${{ steps.native_full_upload.outcome }}
+      native_runtime_package: ${{ steps.native_runtime_package.outcome }}
+      native_runtime_verify: ${{ steps.native_runtime_verify.outcome }}
+      native_runtime_startup: ${{ steps.native_runtime_startup.outcome }}
+      native_runtime_delivery: ${{ steps.native_runtime_delivery.outcome }}
+      native_runtime_delivery_verify: ${{ steps.native_runtime_delivery_verify.outcome }}
+      native_runtime_upload: ${{ steps.native_runtime_upload.outcome }}
+      native_runtime_evidence: ${{ steps.native_runtime_evidence.outcome }}
+      full_artifact_id: ${{ steps.native_full_upload.outputs.artifact-id }}
+      runtime_artifact_id: ${{ steps.native_runtime_upload.outputs.artifact-id }}
+      runtime_evidence_id: ${{ steps.native_runtime_evidence.outputs.artifact-id }}
+      full_sha256: ${{ steps.native_package.outputs.sha256 }}
+      runtime_sha256: ${{ steps.native_runtime_package.outputs.sha256 }}
+      delivery_sha256: ${{ steps.native_runtime_delivery_verify.outputs.sha256 }}
+    env:
+      RUSTFLAGS: '-C target-feature=+crt-static'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        id: required_001
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Record exact acceptance source
+        id: acceptance_source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "source_tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        id: required_003
+        with:
+          toolchain: '1.99.0'
+          components: rustfmt, clippy, rust-docs
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        id: required_004
+        with:
+          node-version: '22.23.3'
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        id: required_005
+        with:
+          python-version: '3.12.10'
+      # QA-only parser dependency; it is never included in the app package.
+      - name: Bind exact source, locks and installed toolchain
+        id: acceptance_identity
+        run: python scripts/native-acceptance-join.py identity
+      - run: python -m pip install PyYAML==6.0.3
+        id: required_007
+      - run: python scripts/check-authoring-workflow.py .github/workflows/windows-desktop-acceptance.yml
+        id: required_008
+      - run: npm ci --ignore-scripts --omit=optional
+        id: required_009
+      - name: Require every exact-source producer before downloading package inputs
+        id: package_join
+        env:
+          ACCEPTANCE_NEEDS: ${{ toJSON(needs) }}
+          ACCEPTANCE_IDENTITY: ${{ steps.acceptance_identity.outputs.identity }}
+        run: python scripts/native-acceptance-join.py join
+      - name: Download only this successful producer's immutable artifact
+        id: native_transfer_download
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8
+        with:
+          artifact-ids: ${{ needs.native-feature-acceptance.outputs.transfer_artifact_id }}
+          path: ${{ runner.temp }}/native-acceptance-transfer
+          merge-multiple: true
+      - name: Verify original bytes and source binding before restoring package inputs
+        id: native_transfer_restore
+        env:
+          ACCEPTANCE_IDENTITY: ${{ steps.acceptance_identity.outputs.identity }}
+          ACCEPTANCE_TRANSFER_SHA256: ${{ needs.native-feature-acceptance.outputs.transfer_sha256 }}
+        shell: pwsh
+        run: |
+          python scripts/native-acceptance-transfer.py restore --workspace "$env:GITHUB_WORKSPACE" --runner-temp "$env:RUNNER_TEMP" --archive "$env:RUNNER_TEMP/native-acceptance-transfer/native-inputs.zip" --expected-sha256 "$env:ACCEPTANCE_TRANSFER_SHA256"
+          if ($LASTEXITCODE -ne 0) { throw 'Native transfer byte/source verification failed' }
+      - name: Package native candidate with exact provenance and notices
+        id: native_package
+        shell: pwsh
+        run: |
+          node scripts/verify-native-bulk-import-evidence.mjs --check desktop-bulk-import
+          if ($LASTEXITCODE -ne 0) { throw 'Native bulk-import exact-source proof failed' }
+          $bulkProof=Get-Content -Raw desktop-bulk-import/native-bulk-import-files.json | ConvertFrom-Json
+          $currentTree=(git rev-parse 'HEAD^{tree}').Trim()
+          $currentExe=(Get-FileHash target/release/worldmusichub-desktop.exe -Algorithm SHA256).Hash.ToLower()
+          if ($bulkProof.source_sha -cne '${{ github.sha }}' -or $bulkProof.source_tree -cne $currentTree -or $bulkProof.executable_sha256 -cne $currentExe) { throw 'Bulk-import evidence does not match the exact packaged source and executable' }
+          node scripts/verify-native-clean-song-evidence.mjs --check desktop-clean-song
+          if ($LASTEXITCODE -ne 0) { throw 'Native clean-song exact-source proof failed' }
+          $cleanProof=Get-Content -Raw desktop-clean-song/native-clean-song-files.json | ConvertFrom-Json
+          if ($cleanProof.source_sha -cne '${{ github.sha }}' -or $cleanProof.source_tree -cne $currentTree -or $cleanProof.executable_sha256 -cne $currentExe) { throw 'Clean-song evidence does not match the exact packaged source and executable' }
+          node scripts/verify-native-vsq-song-evidence.mjs --check desktop-vsq-song
+          if ($LASTEXITCODE -ne 0) { throw 'Native VSQ exact-source proof failed' }
+          $vsqProof=Get-Content -Raw desktop-vsq-song/native-vsq-song-files.json | ConvertFrom-Json
+          if ($vsqProof.source_sha -cne '${{ github.sha }}' -or $vsqProof.source_tree -cne $currentTree -or $vsqProof.executable_sha256 -cne $currentExe) { throw 'VSQ evidence does not match the exact packaged source and executable' }
+          node scripts/verify-native-performance-song-evidence.mjs --check desktop-performance-song
+          if ($LASTEXITCODE -ne 0) { throw 'Native complete performance exact-source proof failed' }
+          $performanceProof=Get-Content -Raw desktop-performance-song/native-performance-song-files.json | ConvertFrom-Json
+          $currentExeBytes=(Get-Item target/release/worldmusichub-desktop.exe).Length
+          if ($performanceProof.source_sha -cne '${{ github.sha }}' -or $performanceProof.source_tree -cne $currentTree -or $performanceProof.executable_sha256 -cne $currentExe -or $performanceProof.executable_bytes -ne $currentExeBytes) { throw 'Complete performance evidence does not match the exact packaged source and executable' }
+          node scripts/verify-native-pitch-bend-evidence.mjs --check desktop-pitch-bend
+          if ($LASTEXITCODE -ne 0) { throw 'Native pitch-bend exact-source proof failed' }
+          $pitchProof=Get-Content -Raw desktop-pitch-bend/native-pitch-bend-files.json | ConvertFrom-Json
+          if ($pitchProof.source_sha -cne '${{ github.sha }}' -or $pitchProof.source_tree -cne $currentTree -or $pitchProof.executable_sha256 -cne $currentExe -or $pitchProof.executable_bytes -ne $currentExeBytes) { throw 'Pitch-bend evidence does not match the exact packaged source and executable' }
+          python scripts/native-pitch-bend-manifest.py desktop-pitch-bend --executable target/release/worldmusichub-desktop.exe --commit '${{ github.sha }}' --tree $currentTree
+          if ($LASTEXITCODE -ne 0) { throw 'Native pitch-bend focused manifest failed' }
+          node scripts/verify-native-song-authoring-evidence.mjs --check desktop-authoring
+          if ($LASTEXITCODE -ne 0) { throw 'Native song authoring exact-source proof failed' }
+          $authoringProof=Get-Content -Raw desktop-authoring/native-song-authoring-files.json | ConvertFrom-Json
+          if ($authoringProof.source_sha -cne '${{ github.sha }}' -or $authoringProof.source_tree -cne $currentTree -or $authoringProof.executable_sha256 -cne $currentExe -or $authoringProof.executable_bytes -ne $currentExeBytes) { throw 'Song authoring evidence does not match the exact packaged source and executable' }
+          python scripts/native-song-authoring-manifest.py desktop-authoring --executable target/release/worldmusichub-desktop.exe --commit '${{ github.sha }}' --tree $currentTree
+          if ($LASTEXITCODE -ne 0) { throw 'Native song authoring focused manifest failed' }
+          node scripts/verify-native-vsq-authoring-evidence.mjs --check desktop-vsq-authoring
+          if ($LASTEXITCODE -ne 0) { throw 'Native VSQ authoring proof failed' }
+          python scripts/native-vsq-authoring-manifest.py desktop-vsq-authoring --executable target/release/worldmusichub-desktop.exe --commit '${{ github.sha }}' --tree $currentTree
+          if ($LASTEXITCODE -ne 0) { throw 'Native VSQ authoring source/EXE manifest failed' }
+          $env:WMH_SOURCE_SHA='${{ github.sha }}'
+          $env:WMH_SOURCE_TREE=$currentTree
+          $env:WMH_BASIC_KEY_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
+          node scripts/verify-basic-key-evidence.mjs --check desktop-basic-key
+          if ($LASTEXITCODE -ne 0) { throw 'Basic-key evidence does not match exact packaged source and executable' }
+          $env:WMH_COMPLETE_PRACTICE_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
+          node scripts/verify-complete-practice-evidence.mjs --check desktop-complete-practice
+          if ($LASTEXITCODE -ne 0) { throw 'Complete-practice evidence does not match exact packaged source and executable' }
+          $env:WMH_CANONICAL_PRACTICE_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
+          node scripts/verify-canonical-practice-evidence.mjs --check desktop-canonical-practice
+          if ($LASTEXITCODE -ne 0) { throw 'Canonical-practice evidence does not match exact packaged source and executable' }
+          $count=(git rev-list --count HEAD).Trim()
+          $folder='dist/WorldMusicClub-Native'
+          New-Item -ItemType Directory "$folder/licenses/engraving","$folder/evidence" -Force | Out-Null
+          Copy-Item target/release/worldmusichub-desktop.exe "$folder/WorldMusicClub-Native.exe"
+          Copy-Item LICENSE $folder
+          Copy-Item desktop-basic-key/native-basic-key.json,desktop-basic-key/basic-key-proof.json,desktop-basic-key/renderer-basic-key-*.json,desktop-basic-key/profile-basic-key-*.json "$folder/evidence/"
+          Copy-Item desktop-complete-practice/native-complete-practice.json,desktop-complete-practice/complete-practice-proof.json,desktop-complete-practice/renderer-complete-practice-*.json,desktop-complete-practice/profile-complete-practice-*.json "$folder/evidence/"
+          # The manifest adapter copies the complete canonical gate into evidence/canonical-practice/.
+          Copy-Item docs/WINDOWS_NATIVE.md "$folder/README.md"
+          Copy-Item docs/WINDOWS_NATIVE.md "$folder/START-HERE.md"
+          Copy-Item -Recurse docs,schema,schemas,catalog $folder
+          Copy-Item web/vendor/*.txt,web/vendor/engraving-manifest.json "$folder/licenses/engraving/"
+          Copy-Item -Recurse dist/licenses/native-rust "$folder/licenses/rust"
+          Copy-Item desktop-startup/native-report.json,desktop-startup/renderer-report.json "$folder/evidence/"
+          Copy-Item desktop-acceptance/native-acceptance.json,desktop-acceptance/downloaded-files.json,desktop-acceptance/renderer-*.json "$folder/evidence/"
+          Copy-Item desktop-bulk-import/native-bulk-import.json,desktop-bulk-import/native-bulk-import-files.json,desktop-bulk-import/renderer-bulk-*.json,desktop-bulk-import/profile-bulk-*.json "$folder/evidence/"
+          Copy-Item desktop-clean-song/native-clean-song.json,desktop-clean-song/native-clean-song-files.json,desktop-clean-song/renderer-clean-*.json,desktop-clean-song/profile-clean-*.json "$folder/evidence/"
+          Copy-Item desktop-vsq-song/native-vsq-song.json,desktop-vsq-song/native-vsq-song-files.json,desktop-vsq-song/renderer-vsq-*.json,desktop-vsq-song/profile-vsq-*.json "$folder/evidence/"
+          python scripts/native-release-manifest.py create $folder --commit '${{ github.sha }}' --count $count --startup desktop-startup --acceptance desktop-acceptance --song-folder desktop-song-folder --performance-song desktop-performance-song --pitch-bend desktop-pitch-bend --song-authoring desktop-authoring --vsq-authoring desktop-vsq-authoring --basic-key desktop-basic-key --canonical-practice desktop-canonical-practice --catalog-evidence "$env:RUNNER_TEMP/library-management-windows" --build-provenance target/release/native-build-provenance.json
+          if ($LASTEXITCODE -ne 0) { throw 'Native provenance/acceptance inventory failed' }
+          $zip="dist/WorldMusicClub-Native-Windows-x64-commit-$count.zip"
+          python scripts/native-release-manifest.py archive $folder $zip
+          if ($LASTEXITCODE -ne 0) { throw 'Native archive verification failed' }
+          "archive=$zip" >> $env:GITHUB_OUTPUT
+          "count=$count" >> $env:GITHUB_OUTPUT
+          "sha256=$((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+      - name: Verify normal startup of extracted native preview
+        id: native_full_portable
+        shell: pwsh
+        run: |
+          $destination=Join-Path $env:RUNNER_TEMP 'wmh-native-portable-extracted'
+          Expand-Archive -Path '${{ steps.native_package.outputs.archive }}' -DestinationPath $destination
+          ./scripts/windows-native-portable-smoke.ps1 -Directory (Join-Path $destination 'WorldMusicClub-Native') -OutputDirectory desktop-portable
+      # Keep the full artifact identity unchanged. Runtime is additive and is
+      # derived only from this future build's already verified local full ZIP.
+      - name: Upload native-only candidate pending final acceptance
+        id: native_full_upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: WorldMusicClub-Native-Candidate-Windows-x64-commit-${{ steps.native_package.outputs.count }}-${{ github.sha }}
+          path: |
+            dist/WorldMusicClub-Native-Windows-x64-*.zip
+            dist/WorldMusicClub-Native-Windows-x64-*.zip.sha256
+          retention-days: 90
+          if-no-files-found: error
+      - name: Create runtime from this run's retained complete native ZIP
+        id: native_runtime_package
+        shell: pwsh
+        run: |
+          $zip="dist/WorldMusicClub-Native-Runtime-Windows-x64-commit-${{ steps.native_package.outputs.count }}.zip"
+          $reference='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.native_full_upload.outputs.artifact-id }}'
+          if ('${{ steps.native_full_upload.outputs.artifact-url }}' -cne $reference) { throw 'Full upload returned a different immutable artifact identity' }
+          if ((Get-FileHash '${{ steps.native_package.outputs.archive }}' -Algorithm SHA256).Hash.ToLowerInvariant() -cne '${{ steps.native_package.outputs.sha256 }}') { throw 'Full ZIP changed after its verified pre-upload digest' }
+          python scripts/native-runtime-package.py create '${{ steps.native_package.outputs.archive }}' $zip --commit '${{ github.sha }}' --tree '${{ steps.acceptance_source.outputs.source_tree }}' --evidence-reference $reference
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime creation/full evidence revalidation failed' }
+          "archive=$zip" >> $env:GITHUB_OUTPUT
+          "sha256=$((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+      - name: Independently verify exact runtime candidate
+        id: native_runtime_verify
+        shell: pwsh
+        run: |
+          python scripts/native-runtime-package.py verify '${{ steps.native_runtime_package.outputs.archive }}' --expected-sha256 '${{ steps.native_runtime_package.outputs.sha256 }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Independent runtime verification failed' }
+      - name: Verify ordinary startup from fresh extracted runtime
+        id: native_runtime_startup
+        shell: pwsh
+        run: |
+          $proof=Join-Path $env:RUNNER_TEMP 'native-runtime-evidence'
+          if (Test-Path $proof) { throw 'Use a fresh runtime proof directory' }
+          New-Item -ItemType Directory $proof | Out-Null
+          ./scripts/windows-native-runtime-smoke.ps1 -Archive '${{ steps.native_runtime_package.outputs.archive }}' -ExpectedSha256 '${{ steps.native_runtime_package.outputs.sha256 }}' -ExpectedFullSha256 '${{ steps.native_package.outputs.sha256 }}' -Destination (Join-Path $env:RUNNER_TEMP 'wmh-native-runtime-extracted') -OutputDirectory (Join-Path $proof 'startup') -Commit '${{ github.sha }}' -Tree '${{ steps.acceptance_source.outputs.source_tree }}' -RunId '${{ github.run_id }}' -Repository '${{ github.repository }}' -FullArtifactId '${{ steps.native_full_upload.outputs.artifact-id }}'
+      - name: Bind full and runtime normal startup to this source and both ZIPs
+        id: native_runtime_delivery
+        shell: pwsh
+        run: |
+          python scripts/native-runtime-delivery.py create --archive '${{ steps.native_runtime_package.outputs.archive }}' --expected-sha256 '${{ steps.native_runtime_package.outputs.sha256 }}' --expected-full-sha256 '${{ steps.native_package.outputs.sha256 }}' --full-archive '${{ steps.native_package.outputs.archive }}' --extracted "$env:RUNNER_TEMP/wmh-native-runtime-extracted/WorldMusicClub-Native" --full-startup desktop-portable --runtime-startup "$env:RUNNER_TEMP/native-runtime-evidence/startup" --record "$env:RUNNER_TEMP/native-runtime-evidence/delivery.json" --commit '${{ github.sha }}' --tree '${{ steps.acceptance_source.outputs.source_tree }}' --run-id '${{ github.run_id }}' --repository '${{ github.repository }}' --full-artifact-id '${{ steps.native_full_upload.outputs.artifact-id }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime delivery source/evidence binding failed' }
+      - name: Reverify retained runtime delivery record without rewriting it
+        id: native_runtime_delivery_verify
+        shell: pwsh
+        run: |
+          python scripts/native-runtime-delivery.py verify --archive '${{ steps.native_runtime_package.outputs.archive }}' --expected-sha256 '${{ steps.native_runtime_package.outputs.sha256 }}' --expected-full-sha256 '${{ steps.native_package.outputs.sha256 }}' --full-archive '${{ steps.native_package.outputs.archive }}' --extracted "$env:RUNNER_TEMP/wmh-native-runtime-extracted/WorldMusicClub-Native" --full-startup desktop-portable --runtime-startup "$env:RUNNER_TEMP/native-runtime-evidence/startup" --record "$env:RUNNER_TEMP/native-runtime-evidence/delivery.json" --commit '${{ github.sha }}' --tree '${{ steps.acceptance_source.outputs.source_tree }}' --run-id '${{ github.run_id }}' --repository '${{ github.repository }}' --full-artifact-id '${{ steps.native_full_upload.outputs.artifact-id }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Retained runtime delivery record differs' }
+          "sha256=$((Get-FileHash "$env:RUNNER_TEMP/native-runtime-evidence/delivery.json" -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+      - name: Upload additive runtime candidate pending full checkpoint acceptance
+        id: native_runtime_upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: WorldMusicClub-Native-Runtime-Candidate-Windows-x64-commit-${{ steps.native_package.outputs.count }}-${{ github.sha }}
+          path: |
+            ${{ steps.native_runtime_package.outputs.archive }}
+            ${{ steps.native_runtime_package.outputs.archive }}.sha256
+          retention-days: 90
+          if-no-files-found: error
+      - name: Retain final runtime delivery evidence on success and failure
+        id: native_runtime_evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-runtime-delivery-evidence-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/native-runtime-evidence/delivery.json
+            ${{ runner.temp }}/native-runtime-evidence/startup/*.json
+            ${{ runner.temp }}/native-runtime-evidence/startup/*.png
+            ${{ runner.temp }}/native-runtime-evidence/startup/*.log
+          retention-days: 90
+          if-no-files-found: error
+      - name: Preserve package consumer startup evidence on success and failure
+        id: required_023
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-package-consumer-evidence-${{ github.sha }}
+          path: |
+            desktop-portable/*.json
+            desktop-portable/*.png
+            desktop-portable/*.log
+          retention-days: 90
+          if-no-files-found: warn
+      - name: Require every mandatory producer step without skips
+        id: producer_gate
+        if: always()
+        env:
+          ACCEPTANCE_STEPS: ${{ toJSON(steps) }}
+          ACCEPTANCE_REQUIRED_STEPS: required_001,acceptance_source,required_003,required_004,required_005,acceptance_identity,required_007,required_008,required_009,package_join,native_transfer_download,native_transfer_restore,native_package,native_full_portable,native_full_upload,native_runtime_package,native_runtime_verify,native_runtime_startup,native_runtime_delivery,native_runtime_delivery_verify,native_runtime_upload,native_runtime_evidence,required_023
+        run: python scripts/native-acceptance-join.py steps
   acceptance-summary:
     name: Native and browser acceptance summary
-    needs: [bulk-import-browser, native-feature-acceptance]
+    needs: [bulk-import-browser, windows-pure-checks, native-feature-acceptance, native-package]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       # No checkout/download/network dependency: report failures and skips too.
-      - name: Require both jobs for this exact source and run
+      - name: Require all jobs for this exact source, locks, toolchain and run
         env:
           ACCEPTANCE_NEEDS: ${{ toJSON(needs) }}
           ACCEPTANCE_SHA: ${{ github.sha }}
+          ACCEPTANCE_RUN_ATTEMPT: ${{ github.run_attempt }}
           ACCEPTANCE_RUN_ID: ${{ github.run_id }}
           ACCEPTANCE_REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
           node <<'NODE'
           const fs = require('node:fs');
-          const jobs = ['bulk-import-browser', 'native-feature-acceptance'];
+          const jobs = ['bulk-import-browser', 'windows-pure-checks', 'native-feature-acceptance', 'native-package'];
           const mandatorySteps = {
-            'bulk-import-browser': ['management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser', 'canonical_practice_protocol', 'canonical_practice_browser_720', 'canonical_practice_browser_720_verify', 'canonical_practice_browser_640', 'canonical_practice_browser_640_verify'],
-            'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify', 'canonical_practice_windows', 'canonical_practice_windows_verify', 'native_full_portable', 'native_full_upload', 'native_runtime_package', 'native_runtime_verify', 'native_runtime_startup', 'native_runtime_delivery', 'native_runtime_delivery_verify', 'native_runtime_upload', 'native_runtime_evidence'],
+            'bulk-import-browser': ['producer_gate', 'management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser', 'canonical_practice_protocol', 'canonical_practice_browser_720', 'canonical_practice_browser_720_verify', 'canonical_practice_browser_640', 'canonical_practice_browser_640_verify'],
+            'windows-pure-checks': ['producer_gate'],
+            'native-feature-acceptance': ['producer_gate', 'management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify', 'canonical_practice_windows', 'canonical_practice_windows_verify'],
+            'native-package': ['producer_gate', 'native_full_portable', 'native_full_upload', 'native_runtime_package', 'native_runtime_verify', 'native_runtime_startup', 'native_runtime_delivery', 'native_runtime_delivery_verify', 'native_runtime_upload', 'native_runtime_evidence'],
           };
           const needs = JSON.parse(process.env.ACCEPTANCE_NEEDS);
           const sha = process.env.ACCEPTANCE_SHA;
@@ -1275,10 +1600,30 @@ jobs:
               if (outcome !== 'success') errors.push(`${job}/${step}: ${outcome} (success required)`);
             }
           }
-          if (needs[jobs[0]]?.outputs?.source_tree !== needs[jobs[1]]?.outputs?.source_tree) {
-            errors.push('Browser and Windows source trees differ');
+          const identities = [];
+          for (const job of jobs) {
+            const outputs = needs[job]?.outputs || {};
+            try {
+              const identity = JSON.parse(outputs.identity || 'null');
+              const shared = ['source_sha', 'source_tree', 'run_id', 'run_attempt', 'repository', 'cargo_lock_sha256', 'npm_lock_sha256', 'rust', 'node'];
+              if (!identity || Object.keys(identity).sort().join() !== [...shared, 'python', 'runner_os', 'rustflags'].sort().join()) throw Error('missing or unknown identity fields');
+              for (const [field, length] of [['source_sha', 40], ['source_tree', 40], ['cargo_lock_sha256', 64], ['npm_lock_sha256', 64]]) {
+                if (typeof identity[field] !== 'string' || !new RegExp(`^[0-9a-f]{${length}}$`).test(identity[field])) throw Error(`invalid ${field}`);
+              }
+              if (identity.source_sha !== sha || identity.source_tree !== outputs.source_tree || identity.run_id !== run || identity.run_attempt !== process.env.ACCEPTANCE_RUN_ATTEMPT || identity.repository !== process.env.ACCEPTANCE_REPOSITORY) throw Error('source/tree/run/attempt/repository differs');
+              const runnerOS = job === 'bulk-import-browser' ? 'Linux' : 'Windows';
+              const pythonPin = runnerOS === 'Windows' ? '3.12.10' : '3.12.14';
+              if (identity.runner_os !== runnerOS) throw Error('declared runner OS differs');
+              if (identity.rust !== '1.99.0' || identity.node !== 'v22.23.3' || identity.python !== pythonPin) throw Error('source-pinned platform toolchain differs');
+              if (identity.rustflags !== (job === 'bulk-import-browser' ? '' : '-C target-feature=+crt-static')) throw Error('static CRT policy differs');
+              const binding = shared.map(key => identity[key]);
+              if (identities.length && JSON.stringify(binding) !== JSON.stringify(identities[0])) throw Error('producer source/tree/locks/toolchain differs');
+              identities.push(binding);
+            } catch (error) { errors.push(`${job}: invalid acceptance identity: ${error.message}`); }
           }
-          const native = needs['native-feature-acceptance']?.outputs || {};
+          const producer = needs['native-feature-acceptance']?.outputs || {};
+          if (!/^[1-9][0-9]{0,19}$/.test(producer.transfer_artifact_id || '') || !/^[0-9a-f]{64}$/.test(producer.transfer_sha256 || '')) errors.push('Missing immutable native transfer artifact identity/digest');
+          const native = needs['native-package']?.outputs || {};
           const repository = process.env.ACCEPTANCE_REPOSITORY;
           if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/.test(repository || '')) errors.push('Missing or invalid repository');
           const artifactFields = ['full_artifact_id', 'runtime_artifact_id', 'runtime_evidence_id'];

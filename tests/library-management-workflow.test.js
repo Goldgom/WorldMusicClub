@@ -230,9 +230,12 @@ function fullManagementContract(document) {
   assert.match(browserCheck.run, /verify-library-catalog-acceptance\.mjs --check "\$RUNNER_TEMP\/library-management-browser\/catalog"/);
   const scenario = native.steps.find(row => row.id === 'management_catalog_windows');
   const verify = native.steps.find(row => row.id === 'management_catalog_windows_verify');
-  const pack = native.steps.find(row => row.id === 'native_package');
+  const packaging = document.jobs['native-package'];
+  assert.deepEqual(packaging.needs, ['bulk-import-browser', 'windows-pure-checks', 'native-feature-acceptance']);
+  assert.equal(packaging.if, undefined); assert.equal(packaging['continue-on-error'], undefined);
+  const pack = packaging.steps.find(row => row.id === 'native_package');
   assert.ok(scenario && verify && pack);
-  assert.ok(native.steps.indexOf(scenario) < native.steps.indexOf(verify) && native.steps.indexOf(verify) < native.steps.indexOf(pack));
+  assert.ok(native.steps.indexOf(scenario) < native.steps.indexOf(verify) && packaging.needs.includes('native-feature-acceptance'));
   assert.equal(scenario.if, "${{ !cancelled() && steps.native_build.outcome == 'success' }}");
   assert.equal(scenario['timeout-minutes'], 15);
   assert.equal(scenario.shell, 'pwsh');
@@ -255,7 +258,7 @@ test('the full acceptance gate reuses original management scenarios with fresh r
 
 test('removing management prerequisites, source binding, fresh storage or package evidence breaks the full gate contract', () => {
   const browserStep = (doc, id) => doc.jobs['bulk-import-browser'].steps.find(row => row.id === id);
-  const nativeStep = (doc, id) => doc.jobs['native-feature-acceptance'].steps.find(row => row.id === id);
+  const nativeStep = (doc, id) => doc.jobs[id === 'native_package' ? 'native-package' : 'native-feature-acceptance'].steps.find(row => row.id === id);
   for (const edit of [
     doc => { browserStep(doc, 'management_pack_browser').if = undefined; },
     doc => { browserStep(doc, 'management_catalog_browser').if = "${{ !cancelled() && steps.management_pack_browser.outcome == 'success' }}"; },

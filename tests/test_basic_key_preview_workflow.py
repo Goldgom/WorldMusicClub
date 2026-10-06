@@ -127,11 +127,11 @@ class BasicKeyPreviewWorkflowTest(unittest.TestCase):
         commands = "\n".join(row.get("run", "") for row in linux["steps"])
         for name in ["hosted-basic-key-check.mjs", "hosted-notation-scope-check.mjs", "hosted-dense-rendition-check.mjs", "check-basic-key-native.mjs"]:
             self.assertIn(name, commands)
-        self.assertEqual(full["jobs"]["acceptance-summary"]["needs"], ["bulk-import-browser", "native-feature-acceptance"])
+        self.assertEqual(full["jobs"]["acceptance-summary"]["needs"], ["bulk-import-browser", "windows-pure-checks", "native-feature-acceptance", "native-package"])
         native = full["jobs"]["native-feature-acceptance"]
         self.assertNotIn("if", native)
         self.assertNotIn("needs", native)
-        commands = "\n".join(row.get("run", "") for row in native["steps"])
+        commands = "\n".join(row.get("run", "") for job in [native, full["jobs"]["windows-pure-checks"]] for row in job["steps"])
         for command in ["npm test", "cargo test --workspace --all-targets --locked", "cargo clippy --workspace --all-targets --locked -- -D warnings", "-Scenario basic-key"]:
             self.assertIn(command, commands)
         source = (ROOT / ".github/workflows/basic-key-preview.yml").read_text(encoding="utf-8")

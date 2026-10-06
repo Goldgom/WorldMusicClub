@@ -95,7 +95,7 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
                     for step in (collect, upload):
                         self.assertEqual(step["if"], "always()")
                         self.assertNotIn("continue-on-error", step)
-                        self.assertNotIn("id", step)
+                        self.assertIn(step["id"], steps[-1]["env"]["ACCEPTANCE_REQUIRED_STEPS"].split(","))
                     self.assertRegex(upload["uses"], r"^actions/upload-artifact@[0-9a-f]{40}$")
                     self.assertEqual(upload["with"]["path"], "${{ runner.temp }}/" + output + "/")
                     self.assertEqual(upload["with"]["if-no-files-found"], "error")
@@ -115,9 +115,14 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
                                       full["with"]["path"])
                         self.assertIn(".png", full["with"]["path"])
                     self.assertLess(steps.index(full), steps.index(collect))
-            # Added collectors cannot suppress any existing validation/package step
-            # via the runner's implicit success() guard. Failure still fails the job.
-            self.assertEqual(steps[-len(diagnostics):], diagnostics)
+            # Collectors stay after all original UI checks and full evidence.
+            # Only the new transfer/mandatory-result seal follows; packaging now
+            # requires the successful producer job, including retained evidence.
+            start = steps.index(diagnostics[0])
+            self.assertEqual(steps[start:start + len(diagnostics)], diagnostics)
+            suffix = [step["id"] for step in steps[start + len(diagnostics):]]
+            self.assertEqual(suffix, ["native_transfer", "native_transfer_upload", "native_transfer_identity", "producer_gate"]
+                             if platform == "windows" else ["producer_gate"])
             self.assertEqual(sum("scripts/collect-json-evidence.py" in step.get("run", "")
                                  for step in steps), len(groups_for(platform)))
 

@@ -7,7 +7,9 @@ wrapper owns normal startup; this helper verifies bytes and its retained report.
 import argparse
 import importlib.util
 import json
+import os
 from pathlib import Path
+import platform
 import stat
 import zipfile
 
@@ -152,7 +154,8 @@ def startup_evidence(directory, manifest, extracted=None):
     return {name: runtime.record(value) for name, value in sorted(data.items())}
 
 
-def delivery_record(archive, full_archive, extracted, full_startup, runtime_startup, **identity):
+def delivery_record(archive, full_archive, extracted, full_startup, runtime_startup,
+                    require_current_environment=False, **identity):
     manifest, verification = checked_runtime(archive, full_archive=full_archive, **identity)
     file_count = checked_extracted(archive, extracted)
     require(Path(full_archive).name == manifest['full_evidence']['filename'], 'Full ZIP filename differs')
@@ -166,6 +169,7 @@ def delivery_record(archive, full_archive, extracted, full_startup, runtime_star
     # that the ordinary UI Automation smoke observed location.origin directly.
     with zipfile.ZipFile(full_archive) as package:
         rows = runtime.inventory(package)
+        info = runtime.parse_json(runtime.read_member(package, rows, runtime.INFO))
         host = runtime.parse_json(runtime.read_member(package, rows, 'evidence/native-report.json'))
         renderer = runtime.parse_json(runtime.read_member(package, rows, 'evidence/renderer-report.json'))
         require(host.get('source_sha') == identity['commit']
@@ -173,6 +177,7 @@ def delivery_record(archive, full_archive, extracted, full_startup, runtime_star
                 and host.get('renderer_origin') == 'https://wmh.localhost'
                 and renderer.get('origin') == 'https://wmh.localhost'
                 and renderer.get('ok') is True, 'Same-EXE full startup origin differs')
+    environments = delivery_environments(info, identity['run_id'], require_current_environment)
     require(runtime.file_sha(archive) == identity['expected_sha256']
             and runtime.file_sha(full_archive) == manifest['full_evidence']['sha256'],
             'Archive changed while binding delivery evidence')
@@ -182,6 +187,7 @@ def delivery_record(archive, full_archive, extracted, full_startup, runtime_star
             'runtime_archive': {'filename': Path(archive).name, 'sha256': identity['expected_sha256'],
                                 'bytes': Path(archive).stat().st_size},
             'full_evidence': manifest['full_evidence'],
+            **({'execution_environments': environments} if environments else {}),
             'runtime_verification': verification,
             'extracted_runtime_file_count': file_count,
             'full_normal_startup': full_proof, 'runtime_normal_startup': runtime_proof,
@@ -191,6 +197,28 @@ def delivery_record(archive, full_archive, extracted, full_startup, runtime_star
             'clean_machine_installation': False, 'audibility': False,
             'checkpoint_requirements': ['Native Windows feature acceptance / acceptance-summary for this source and run',
                                         'Verify WorldMusicClub for this source']}
+
+
+def delivery_environments(info, run_id, require_current_environment=False):
+    """Keep original build facts separate from this job's real ordinary startup."""
+    if 'build_provenance' not in info:
+        require('packaging_environment' not in info, 'Packaging environment lacks original build provenance')
+        return None
+    # The complete full archive was independently verified before this read.
+    package = info.get('packaging_environment')
+    require(isinstance(package, dict) and package.get('job') == 'native-package'
+            and package.get('workflow_run_id') == run_id,
+            'Recorded packaging/normal-startup job or workflow differs')
+    if require_current_environment:
+        require(package['job'] == os.environ.get('GITHUB_JOB')
+                and package.get('run_attempt') == os.environ.get('GITHUB_RUN_ATTEMPT')
+                and package.get('platform') == platform.platform(),
+                'Normal startup must run on the recorded packaging job/attempt/platform')
+    # Reverification preserves historical observations; the auditor need not
+    # impersonate the original GitHub job or claim its current VM made them.
+    return {'original_build': {'platform': info['build_platform'],
+                               'provenance': info['build_provenance']},
+            'packaging_and_normal_startup': package}
 
 
 def main():
@@ -221,7 +249,7 @@ def main():
         print(json.dumps({'source': result['source'], 'extracted_runtime': 'verified'}, sort_keys=True))
     else:
         path = args.pop('record')
-        result = delivery_record(**args)
+        result = delivery_record(**args, require_current_environment=command == 'create')
         if command == 'create':
             with path.open('xb') as output:
                 output.write(runtime.json_bytes(result))
