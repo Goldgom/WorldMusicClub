@@ -10,8 +10,56 @@ import {setupPerformanceView} from '../web/performance-view.js';
 import {Transport} from '../web/transport.js';
 import {contrastRatio} from '../web/themes.js';
 import {setupStageNotationLayout} from '../web/stage-notation-layout.js';
+import {assertHomeHoverBoundary} from './home-hover-boundary.js';
 
 const onsetCount = record => record.observations.events.filter(event => event.kind === 'note_on').length;
+
+test('home hover lifts only decorative contents while preserving the original button boundary and focus ring', async () => {
+  const css=await readFile(new URL('../web/rhythm-shell.css',import.meta.url),'utf8');
+  const {document}=parseHTML(`<style>${css}</style>`),rules=[...document.querySelector('style').sheet.cssRules];
+  const hover=rules.find(rule=>rule.selectorText==='.rhythm-shell .game-mode:not(:disabled):hover');
+  const motion=rules.find(rule=>rule.media?.mediaText==='(prefers-reduced-motion:no-preference)');
+  const lift=[...motion.cssRules].find(rule=>rule.selectorText==='.rhythm-shell .game-mode:not(:disabled):hover>:is(.game-mode-icon,.game-mode-copy,.game-mode-arrow)');
+  assert.ok(hover);assert.ok(lift,'The 2px hover feedback belongs to the contents, inside the stable hitbox');
+  assert.equal(lift.style.transform,'translateY(-2px)');assert.equal(lift.style.length,1);
+  assert.equal(rules.some(rule=>rule.selectorText===lift.selectorText),false,'Reduced motion never receives the decorative lift');
+  assert.equal(hover.style['border-color'],'var(--green)');assert.ok(hover.style.background.includes('color-mix'));
+  for(const property of ['transform','translate','scale','rotate','top','bottom','margin','padding','height','width','border-width','pointer-events'])assert.equal(hover.style.getPropertyValue(property),'',`Hover must not move, resize or disable the button: ${property}`);
+  const focus=rules.find(rule=>rule.selectorText==='.rhythm-shell .game-mode:focus-visible');
+  assert.equal(focus.style.outline,'3px solid var(--focus-ring)');assert.equal(focus.style['outline-offset'],'4px');
+  const app=await freePracticeApp();
+  try{
+    const buttons=[...app.document.querySelectorAll('.game-mode')];assert.equal(buttons.length,6);
+    assert.deepEqual(buttons.filter(node=>node.disabled).map(node=>node.id),['home-collaboration','home-online']);
+    for(const button of buttons.filter(node=>!node.disabled)){
+      assert.equal(button.tagName,'BUTTON');assert.equal(button.type,'button');assert.equal(button.querySelectorAll('button,a,input,[tabindex]').length,0);
+      assert.deepEqual([...button.children].map(node=>node.className),['game-mode-icon','game-mode-copy','game-mode-arrow']);
+      assert.ok([...button.children].every(node=>node.tagName==='SPAN'),'No second interactive surface can take ownership of the lifted content');
+      assert.ok(button.querySelector('.game-mode-copy strong').textContent.trim());
+    }
+    const button=app.$('home-single-player');button.querySelector('.game-mode-copy strong').click();await app.tick();
+    assert.equal(app.document.body.dataset.screen,'library','A click on lifted text still reaches the existing button controller');
+    await app.click('lobby-home');assert.equal(app.$('home-single-player'),button);
+    assert.equal(app.document.body.dataset.screen,'home');assert.deepEqual(app.audio(),{contexts:0,unlocks:0});
+  }finally{await app.close();}
+});
+
+test('hover evidence rejects the original 97/95px oscillation, lost ownership and synthetic activation',()=>{
+  const target={x:536,y:97,width:440,height:126},viewport={width:1024,height:689};
+  const row={id:'home-single-player',screen:'home',viewport,reducedMotion:'no-preference',baseline:{target,copyY:133,hovered:false,transform:'none'},pointer:{x:756,y:222},
+    samples:Array.from({length:5},(_,frame)=>({frame,target:{...target},copyY:131,hovered:true,hitOwned:true,transform:'none',screen:'home',viewport})),
+    clicks:[{trusted:true,owned:true,x:756,y:222}],destination:'library',returnedHome:true,
+    keyboard:{focusId:'home-single-player',focusVisible:true,outlineWidth:3,target,clicks:[{trusted:true,owned:true}],destination:'library'}};
+  assertHomeHoverBoundary(row);
+  for(const mutate of [
+    value=>value.samples.forEach((sample,index)=>{sample.target.y=[97,95,97,95,97][index];}),
+    value=>{value.samples[2].hitOwned=false;},value=>{value.samples[2].hovered=false;},
+    value=>{value.samples[2].copyY=133;},value=>{value.clicks[0].trusted=false;},
+    value=>{value.keyboard.focusVisible=false;},value=>{value.keyboard.clicks[0].trusted=false;},
+  ]){const changed=structuredClone(row);mutate(changed);assert.throws(()=>assertHomeHoverBoundary(changed));}
+  const reduced=structuredClone(row);reduced.reducedMotion='reduce';reduced.samples.forEach(sample=>{sample.copyY=133;});assertHomeHoverBoundary(reduced);
+  reduced.samples[0].copyY=131;assert.throws(()=>assertHomeHoverBoundary(reduced),'Reduced motion cannot silently retain the decorative lift');
+});
 
 function laneOverlayFixture(){
  const {document,window}=parseHTML('<main id="workspace" class="with-notation"><aside id="notation-dock"><section class="notation-panel"><div class="section-heading"></div><label><input id="engraving-follow" type="checkbox"></label><div id="notation"><svg><g data-note-id="exact-source-id"></g></svg></div><p id="engraving-fallback" role="status">Original rendering limitation</p><div id="engraving-view"><div class="engraving-scroll"><div id="engraved-staff"><svg></svg></div></div></div></section></aside><section class="play-panel" data-instrument="piano"><div id="piano-stage"><div class="piano-stage-toolbar"></div><div class="piano-lanes-shared"><canvas id="falling-notes"></canvas></div><div id="keyboard"><button data-midi="60" aria-pressed="true"></button></div></div></section></main>');

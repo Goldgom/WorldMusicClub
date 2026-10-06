@@ -300,3 +300,24 @@ test('UI preview refuses the previous subset and skipped or failed compact guita
     assert.notEqual(checked.status,0);assert.match(checked.stderr,/Missing executed passing preview case: real short-landscape guitar/);
   }
 });
+
+const homeHoverPreviewCase='real home menu keeps its hitbox stable at the hover boundary';
+test('UI preview adds a real home boundary case while preserving all previous cases and its failure evidence',()=>{
+  const parsed=spawnSync(python,['scripts/check-authoring-workflow.py','.github/workflows/ui-preview.yml','--json'],{cwd:root,encoding:'utf8'});
+  assert.equal(parsed.status,0,parsed.stderr);const preview=JSON.parse(parsed.stdout);validateNoticePreview(preview);
+  const steps=preview.jobs['ui-preview'].steps,run=steps.find(row=>row.run?.includes('tests/full-app-browser.test.js'));
+  const pattern=run.run.match(/--test-name-pattern='([^']+)'/)?.[1];
+  for(const name of [...priorPreviewCases,noticePreviewCase,guitarNotationPreviewCase,homeHoverPreviewCase])assert.ok(new RegExp(pattern).test(name),name);
+  const retained=steps.find(row=>row.with?.name==='game-ui-failures-${{ github.sha }}').with.path.split('\n');
+  for(const name of ['worldmusichub-home-hover-boundary*.json','worldmusichub-home-hover-boundary*.png'])assert.ok(retained.includes('ui-preview/'+name));
+});
+
+test('UI preview refuses the previous subset and skipped or failed home boundary coverage',t=>{
+  const directory=mkdtempSync(join(tmpdir(),'wmh-home-hover-contract-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));
+  const previous=[...priorPreviewCases,noticePreviewCase,guitarNotationPreviewCase].map((name,index)=>`ok ${index+1} - ${name}`).join('\n');
+  for(const hover of ['',`ok 16 - ${homeHoverPreviewCase} # SKIP test name does not match pattern`,`not ok 16 - ${homeHoverPreviewCase}`]){
+    writeFileSync(join(directory,'tests.tap'),previous+'\n'+hover+'\n');
+    const checked=spawnSync(process.execPath,['scripts/verify-ui-preview.mjs',directory],{cwd:root,encoding:'utf8'});
+    assert.notEqual(checked.status,0);assert.match(checked.stderr,/Missing executed passing preview case: real home menu keeps its hitbox stable/);
+  }
+});

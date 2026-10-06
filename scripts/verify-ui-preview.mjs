@@ -4,9 +4,10 @@ import {createHash} from 'node:crypto';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 import {assertNotationHudClear} from '../tests/notation-hud-geometry.js';
+import {assertHomeHoverBoundary} from '../tests/home-hover-boundary.js';
 
 const directory=resolve(process.argv[2]||'ui-preview'),tap=readFileSync(join(directory,'tests.tap'),'utf8');
-const names=['real free piano fills desktop','original grand staff and Jianpu follow','game menu and audible song preview','normal and free piano share','original falling bars visibly cross',...['1280 by 720','1920 by 1080','844 by 390','390 by 844'].map(size=>`real D768 lobby and compact performance fit ${size}`),'short-landscape following reveals','real guitar current and next six-note','real initial compact guide stays','real compact 88-key and custom extreme guides','real piano hands preserve merged ties','real short-landscape guitar keeps a complete labelled row and transport beside notation'];
+const names=['real free piano fills desktop','original grand staff and Jianpu follow','game menu and audible song preview','normal and free piano share','original falling bars visibly cross',...['1280 by 720','1920 by 1080','844 by 390','390 by 844'].map(size=>`real D768 lobby and compact performance fit ${size}`),'short-landscape following reveals','real guitar current and next six-note','real initial compact guide stays','real compact 88-key and custom extreme guides','real piano hands preserve merged ties','real short-landscape guitar keeps a complete labelled row and transport beside notation','real home menu keeps its hitbox stable at the hover boundary'];
 for(const name of names)assert.ok(tap.split('\n').some(line=>/^ok \d+ - /.test(line)&&line.includes(name)&&!line.includes('# SKIP')),`Missing executed passing preview case: ${name}`);
 const files=[];
 function record(name,{size,png=false}={}){
@@ -26,6 +27,9 @@ for(const size of ['1280x720','1920x1080'])for(const name of [
 for(const size of ['1280x720','1920x1080','844x390','700x390','390x844'])for(const theme of ['light',...(size.startsWith('1280')||size.startsWith('1920')?['dark']:[])])for(const mode of ['normal','free'])record(`worldmusichub-shared-piano-${size}-${theme}-${mode}.png`,{size,png:true});
 for(const mode of ['normal','free'])record(`worldmusichub-shared-piano-1280x720-${mode}-held.png`,{size:'1280x720',png:true});
 for(const theme of ['light','dark'])for(const view of ['staff','jianpu'])for(const state of ['opacity100','opacity35','hidden'])record(`worldmusichub-lane-overlay-${theme}-${view}-${state}.png`,{png:true});
+const homeHover=record('worldmusichub-home-hover-boundary.json');assert.equal(homeHover.version,1);
+assert.deepEqual(homeHover.evidence.map(row=>[row.viewport.width,row.viewport.height,row.reducedMotion]),[[1024,689,'no-preference'],[1280,720,'no-preference'],[1920,1080,'no-preference'],[1024,689,'reduce']]);
+for(const row of homeHover.evidence){assertHomeHoverBoundary(row);const size=`${row.viewport.width}x${row.viewport.height}`;record(`worldmusichub-home-hover-boundary-${size}-${row.reducedMotion}.png`,{size,png:true});}
 record('worldmusichub-free-piano-stage.json');record('worldmusichub-game-menu-preview-evidence.json');
 const overlay=record('worldmusichub-above-keyboard.json');assert.equal(overlay.original_fixtures_only,true);assert.equal(overlay.paused_take_unchanged,true);assert.equal(overlay.canonical_score_unchanged,true);assert.equal(overlay.paintEvidence.length,4);
 for(const paint of overlay.paintEvidence){assert.ok(paint.geometry.inside&&paint.geometry.rootInside);assert.ok(paint.geometry.intersection.width>=250&&paint.geometry.intersection.height>=100);assert.ok(paint.visiblePixels.changed>=50&&paint.visiblePixels.fraction<.55);assert.ok(paint.opacityPixels.changed>=30);assert.equal(paint.geometry_unchanged,true);assert.equal(paint.key_node_preserved,true);assert.equal(paint.redundant_musicxml_exports,0);}

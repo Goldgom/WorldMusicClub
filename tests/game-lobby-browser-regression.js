@@ -5,10 +5,58 @@ import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {observeRealAudio} from './browser-input-fixtures.js';
+import {assertHomeHoverBoundary} from './home-hover-boundary.js';
 
 // Registration only. The real full-app/hosted runner supplies the browser and
 // Rust-backed page. Importing this module does not start a browser or server.
 export function registerGameLobbyBrowserRegressions({test,getPage,ui,closeShellPanels,exportScore,exportTakeData,artifactDirectory}) {
+  test('real home menu keeps its hitbox stable at the hover boundary', {timeout:45_000}, async()=>{
+    const page=getPage(),evidence=[];
+    try{
+      for(const {viewport,reducedMotion}of [...[{width:1024,height:689},{width:1280,height:720},{width:1920,height:1080}].map(viewport=>({viewport,reducedMotion:'no-preference'})),{viewport:{width:1024,height:689},reducedMotion:'reduce'}]){
+        await page.emulateMedia({reducedMotion});
+        await page.setViewportSize(viewport);await page.mouse.move(0,0);await page.reload();await waitForPlaybackClock(page);
+        await page.locator('#home-single-player').waitFor({state:'visible'});await page.evaluate(()=>document.fonts.ready);
+        const baseline=await page.locator('#home-single-player').evaluate(node=>{
+          const r=node.getBoundingClientRect();return{target:{x:r.x,y:r.y,width:r.width,height:r.height},copyY:node.querySelector('.game-mode-copy').getBoundingClientRect().y,hovered:node.matches(':hover'),transform:getComputedStyle(node).transform};
+        });
+        // The original 2px button transform ejects a stationary pointer here on
+        // alternate rendered frames. Mouse coordinates are real integer pixels.
+        const pointer={x:Math.floor(baseline.target.x+baseline.target.width/2),y:Math.ceil(baseline.target.y+baseline.target.height)-1};
+        const row={id:'home-single-player',viewport,reducedMotion,screen:'home',baseline,pointer,samples:[],clicks:[],destination:null,returnedHome:false};evidence.push(row);
+        await page.mouse.move(pointer.x,pointer.y);
+        row.samples=await page.evaluate(async pointer=>{
+          const node=document.getElementById('home-single-player'),samples=[];
+          for(let frame=0;frame<5;frame++){
+            await new Promise(requestAnimationFrame);
+            const r=node.getBoundingClientRect(),hit=document.elementFromPoint(pointer.x,pointer.y);
+            samples.push({frame,target:{x:r.x,y:r.y,width:r.width,height:r.height},copyY:node.querySelector('.game-mode-copy').getBoundingClientRect().y,
+              hovered:node.matches(':hover'),transform:getComputedStyle(node).transform,hitId:hit?.id||null,hitOwned:hit===node||node.contains(hit),screen:document.body.dataset.screen,viewport:{width:innerWidth,height:innerHeight}});
+          }
+          return samples;
+        },pointer);
+        await page.screenshot({path:join(artifactDirectory,`worldmusichub-home-hover-boundary-${viewport.width}x${viewport.height}-${reducedMotion}.png`)});
+        await page.evaluate(()=>{
+          const node=document.getElementById('home-single-player');globalThis.__wmhHomeBoundaryClicks=[];
+          node.addEventListener('click',event=>globalThis.__wmhHomeBoundaryClicks.push({trusted:event.isTrusted,owned:event.target===node||node.contains(event.target),x:event.clientX,y:event.clientY}),{once:true,capture:true});
+        });
+        await page.mouse.click(pointer.x,pointer.y);await page.locator('#song-lobby').waitFor({state:'visible'});
+        row.clicks=await page.evaluate(()=>globalThis.__wmhHomeBoundaryClicks);row.destination=await page.locator('body').getAttribute('data-screen');
+        await page.locator('#lobby-home').click();row.returnedHome=await page.locator('#home-single-player').isVisible();
+        await page.mouse.move(0,0);await page.keyboard.press('Tab');
+        row.keyboard=await page.locator('#home-single-player').evaluate(node=>{
+          const r=node.getBoundingClientRect();globalThis.__wmhHomeBoundaryKeyboardClicks=[];
+          node.addEventListener('click',event=>globalThis.__wmhHomeBoundaryKeyboardClicks.push({trusted:event.isTrusted,owned:event.target===node||node.contains(event.target)}),{once:true,capture:true});
+          return{focusId:document.activeElement?.id,focusVisible:node.matches(':focus-visible'),outlineWidth:parseFloat(getComputedStyle(node).outlineWidth),target:{x:r.x,y:r.y,width:r.width,height:r.height}};
+        });
+        await page.keyboard.press('Enter');await page.locator('#song-lobby').waitFor({state:'visible'});
+        row.keyboard.clicks=await page.evaluate(()=>globalThis.__wmhHomeBoundaryKeyboardClicks);row.keyboard.destination=await page.locator('body').getAttribute('data-screen');
+        assertHomeHoverBoundary(row);
+      }
+    }finally{
+      await writeFile(join(artifactDirectory,'worldmusichub-home-hover-boundary.json'),JSON.stringify({version:1,evidence},null,2));
+    }
+  });
   test('game menu and audible song preview keep equal library halves and independent session state at 1280 and 1920', {timeout:90_000}, async()=>{
     const page=getPage(),evidence=[];await installPlaybackClockReader(page);
     await page.addInitScript(observeRealAudio);await page.addInitScript(canonicalPreviewAudioBootstrap);
