@@ -353,7 +353,11 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
   state.compileController?.abort();
   const controller = new AbortController();
   state.compileController = controller;
-  const generation = ++state.generation;
+  controller.signal.addEventListener('abort',()=>{if(state.compileController===controller){renderPreview();updateButtons();}},{once:true});
+  const generation = ++state.generation, previewVersion = preview.version;
+  // An imported title can render before Rust target admission finishes. Keep
+  // the previous preview's actions unavailable until this source is adopted.
+  renderPreview();
   state.finishing = false;
   $('play-button').disabled = true;
   bindText($('transport-status'), () => t('app.preparingScore'));
@@ -386,8 +390,10 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     resetPlayback();
     renderScore(); sourceArchiveView?.scoreChanged(); libraryView.scoreChanged(); scoreStorageView?.render(); adaptationView?.scoreChanged(); transpositionView?.scoreChanged(); renderCatalog(); updateRangeWarning();
     bindText($('catalog-status'), () => t('app.currentSession', {title:state.score.title}));
-    const clockScore=state.score;await checkInstrument();if(state.score===clockScore){if(!state.cleanSong)metronome?.setScore();if(state.compiled)preview.adopt(state.compiled,previewCompatibility(state.compatibility),state.practicePart,requestedIdentity,state.cleanSong,{practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts});syncCleanMedia();}
-    return state.score===clockScore&&(expectedIntent===null||expectedIntent===state.loadIntent);
+    const clockScore=state.score;await checkInstrument();
+    const current=()=>state.compileController===controller&&!controller.signal.aborted&&state.score===clockScore&&(expectedIntent===null||expectedIntent===state.loadIntent);
+    if(current()){if(!state.cleanSong)metronome?.setScore();if(state.compiled&&preview.version===previewVersion)preview.adopt(state.compiled,previewCompatibility(state.compatibility),state.practicePart,requestedIdentity,state.cleanSong,{practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts});syncCleanMedia();}
+    return current();
   } catch (error) {
     if (error.name === 'AbortError') return;
     if (generation !== state.generation) return;
@@ -395,6 +401,8 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     $('tempo').value = String(displayOpeningTempo(state.score));
     bindText($('transport-status'), () => state.compiled ? t('app.previousScoreAvailable') : t('app.scoreUnavailable'));
     updateButtons();
+  } finally {
+    if(state.compileController===controller){state.compileController=null;renderPreview();updateButtons();}
   }
 }
 function songRows() {
@@ -499,15 +507,16 @@ function modContext(origin) {
   const entry=songMods.read(value);
   return {...value,...entry,mod:origin==='stage'&&state.songMod?state.songMod:entry.mod,capabilities:songModCapabilities(value),previewVersion:preview.version,navigation:scoreSaveNavigation,generation:state.generation,hasTakes:origin==='stage'&&(transport.hasStarted||state.recorder.passes.length>0)};
 }
+function scoreAdmissionPending(){return Boolean(state.compileController&&!state.compileController.signal.aborted);}
 function refreshSongModView(){
   if(!songModView)return;
   const candidate=modContext('preview'),active=modContext('stage');let reason='',canStart=false;
   if(candidate){try{assertSongModSupported(candidate.mod,candidate.capabilities);const options=songModOptions(candidate.mod);canStart=!startingPreview&&preview.canStart(options.mode);if(!canStart)reason=compatibilityText(preview.value.compatibility);if(candidate.capabilities.audioThread&&!synth.muted&&(typeof globalThis.AudioWorkletNode!=='function'||Boolean(synth.context&&!synth.context.audioWorklet))){canStart=false;reason=cleanErrorText(i18n.locale,{code:'clean_audio_worklet_unavailable'});}}catch(error){reason=i18n.locale==='en'?error.message:'当前 Mod 无法播放：'+error.message;}}
-  if(preview.value.score?.parts.length>128)reason=i18n.locale==='en'?'This source exceeds the 128-part Mod budget. Inspect the complete source below.':'此来源超出 Mod 的 128 声部预算；可在下方查看完整来源。';if(!candidate&&preview.value.status==='choice')reason=i18n.locale==='en'?'Choose the basic instrumental renderer below to configure this source.':'请先在下方选择基础器乐渲染器，再配置此来源。';songModView.update({preview:candidate,stage:active,canStart,reason,inspectionOnly:(preview.value.status==='inspection'||preview.value.score?.parts.length>128)&&Boolean(preview.value.score)});
+  if(preview.value.score?.parts.length>128)reason=i18n.locale==='en'?'This source exceeds the 128-part Mod budget. Inspect the complete source below.':'此来源超出 Mod 的 128 声部预算；可在下方查看完整来源。';if(!candidate&&preview.value.status==='choice')reason=i18n.locale==='en'?'Choose the basic instrumental renderer below to configure this source.':'请先在下方选择基础器乐渲染器，再配置此来源。';songModView.update({preview:candidate,stage:active,canStart:canStart&&!scoreAdmissionPending(),admitting:scoreAdmissionPending(),reason:scoreAdmissionPending()?t('app.preparingScore'):reason,inspectionOnly:(preview.value.status==='inspection'||preview.value.score?.parts.length>128)&&Boolean(preview.value.score)});
 }
 async function applySongMod({origin,context,mod,isCurrent=()=>true,commit=()=>true}) {
   validateSongMod(mod,{identity:songMods.identity(context),parts:context.score.parts});assertSongModSupported(mod,songModCapabilities(context));
-  const options=songModOptions(mod),changes=songModChanges(context.mod,mod),current=()=>isCurrent()&&!document.hidden&&context.navigation===scoreSaveNavigation&&(origin==='stage'?context.score===state.score&&context.generation===state.generation&&shell.screen()==='stage':context.score===preview.value.score&&context.identity===preview.value.identity&&context.previewVersion===preview.version&&shell.screen()==='library');
+  const options=songModOptions(mod),changes=songModChanges(context.mod,mod),current=()=>isCurrent()&&!scoreAdmissionPending()&&context.generation===state.generation&&!document.hidden&&context.navigation===scoreSaveNavigation&&(origin==='stage'?context.score===state.score&&shell.screen()==='stage':context.score===preview.value.score&&context.identity===preview.value.identity&&context.previewVersion===preview.version&&shell.screen()==='library');
   if(!current())return;
   const compatibility=options.mode==='practice'&&(origin==='preview'||changes.requiresReset)?await checkPreview(context.compiled,options.practiceSelection):origin==='preview'?{status:'ready'}:state.compatibility;
   if(origin==='stage'&&changes.mix&&canonicalSession.pendingPause){await canonicalSession.pendingPause;await Promise.resolve();}
@@ -538,7 +547,7 @@ async function applySongMod({origin,context,mod,isCurrent=()=>true,commit=()=>tr
   refreshSongModView();
 }
 async function startUnifiedPerformance(){
-  if(startingPreview)return;const context=modContext('preview');if(!context)return;
+  if(startingPreview||scoreAdmissionPending())return;const context=modContext('preview');if(!context)return;
   try{assertSongModSupported(context.mod,context.capabilities);const options=songModOptions(context.mod);preview.publish({...preview.value,...options,songMod:context.mod});await startPreview(options.mode);}
   catch(error){notice(()=>error.message,true);}
 }
@@ -1554,7 +1563,7 @@ function renderPreview(){
   bindText($('preview-status'), () => basicKeys?(hasBasicKeyRendition(value.cleanSong)?(i18n.locale==='en'?'Listen to every part, or choose your part for scored practice with accompaniment':'聆听全部声部，或选择人演奏的声部进行带伴奏评分练习'):(i18n.locale==='en'?'Choose a determined MIDI-key part to practice · reference audio unavailable':'请选择已确定的 MIDI 按键声部练习 · 参考音频不可用')):vsq?(startingPreview||value.status==='choosing'?t('app.preparingSession'):value.errorCode?(i18n.locale==='en'?'Instrumental playback could not be prepared. Retry the basic-instrument choice.':'未能准备基础器乐播放，请重试基础乐器选项。'):t(value.status==='choice'?'shell.vsqListenChoice':'shell.cleanListenScope')):performance?(i18n.locale==='en'?'Complete performance saved · Choose reference listening below':'完整演奏已保存 · 请在下方选择参考聆听'):startingPreview?t('app.preparingSession'):['loading','choosing'].includes(value.status)?t('app.preparingPreview'):value.status==='choice'?(i18n.locale==='en'?'Choose base-note instrumental practice to continue':'请选择基础音符器乐练习以继续'):value.status==='error'?(value.errorCode?.startsWith('clean_')?cleanErrorText(i18n.locale,{code:value.errorCode}):t('app.previewError', {detail:originalDetail(value.message)})):value.status==='ready'?t('app.previewReady'):t('app.previewBrowsing'));
   bindText($('preview-gate'), () => basicKeys&&value.status==='inspection'?(i18n.locale==='en'?'Practice clock unavailable; all parts and attacks retained':'练习时钟不可用；完整保留所有声部与按键'):performance?(i18n.locale==='en'?'Notation, practice targets and grades unavailable':'记谱、练习目标与评分不可用'):['choice','choosing'].includes(value.status)?(value.errorCode?(i18n.locale==='en'?'The instrumental choice failed; it can be retried.':'基础器乐选项准备失败，可以重试。'):(i18n.locale==='en'?'Basic instruments play the authored notes; original vocal synthesis is unsupported.':'基础乐器播放创作音符；暂不支持原歌声合成。')):compatibilityText(value.compatibility));$('preview-gate').classList.toggle('preview-blocked',['blocked','error','dirty'].includes(value.compatibility.status));
   $('open-score').hidden=!basicKeys&&!(isVsqSong(value.cleanSong)&&value.cleanSong.runtime);$('open-score').disabled=startingPreview||!value.score||!['ready','inspection'].includes(value.status);
-  $('start-listen').disabled=startingPreview||!preview.canStart('listen');$('start-practice').disabled=startingPreview||!preview.canStart('practice');
+  $('start-listen').disabled=startingPreview||scoreAdmissionPending()||!preview.canStart('listen');$('start-practice').disabled=startingPreview||scoreAdmissionPending()||!preview.canStart('practice');
   const diagnostics=value.compiled?.diagnostics||[];$('preview-notices').hidden=!diagnostics.length;bindText($('preview-notices-title'), () => t('app.previewNotices', {count:diagnostics.length}));$('preview-notice-list').replaceChildren();for(const diagnostic of diagnostics.slice(0,20)){const row=document.createElement('li');bindText(row, () => diagnosticText(diagnostic));$('preview-notice-list').append(row)}if(diagnostics.length>20){const row=document.createElement('li');bindText(row, () => t('app.moreNotices', {count:diagnostics.length-20}));$('preview-notice-list').append(row)}
   if(['catalog_in_trash','library_not_found'].includes(value.errorCode))bindText($('preview-status'),()=>i18n.t('management.catalog.previewUnavailable'));
   const select=$('preview-part'),signature=JSON.stringify([i18n.revision,Boolean(value.cleanSong),item?.parts?.map(part=>[part.id,part.name])||[]]);
@@ -1583,7 +1592,7 @@ function refreshPreview(){
   queueMicrotask(()=>{previewRefreshQueued=false;const value=preview.value;if(value.score)preview.select(value.identity,async()=>value.cleanSong?{score:value.score,cleanSong:value.cleanSong}:value.score,{part:value.part,practiceSelection:value.practiceSelection,practiceLayout:value.practiceLayout,showOthers:value.showOthers});});
 }
 async function startPreview(mode){
-  if(startingPreview||!preview.canStart(mode))return;
+  if(startingPreview||scoreAdmissionPending()||!preview.canStart(mode))return;
   lobbyPreview?.stop();
   const candidate=preview.value,version=preview.version,request=++startRequest;startingPreview=true;renderPreview();
   try{

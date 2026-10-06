@@ -1,4 +1,4 @@
-import {configureSongMod,startSongModPerformance} from './hosted-song-mod-controls.mjs';
+import {configureSongMod,startSongModPerformance,readSongModState} from './hosted-song-mod-controls.mjs';
 import {installPlaybackClockReader,readPlaybackClock, waitForPlaybackClock} from '../tests/browser-playback-clock.js';
 // Execute only on the explicitly authorized hosted runner. No local browser or
 // server launch is permitted. Fixtures below are authored here, never uploads
@@ -74,8 +74,10 @@ try {
   await page.waitForFunction(title=>document.getElementById('score-title').textContent===title,score.title);
   // Imported scores open directly; retain the real app navigation in either
   // supported lobby/direct-import flow rather than replacing page DOM.
-  if(await page.locator('#song-lobby').isVisible())await startSongModPerformance(page,{performers:'none'});
-  else await configureSongMod(page,{origin:'stage',restore:true,performers:'none',layout:'solo',showOtherParts:true});
+  report.mod_states=[];
+  const modEvidence={expectedSource:{title:score.title,partIds:score.parts.map(part=>part.id)},onEvidence:state=>report.mod_states.push(state)};
+  if(await page.locator('#song-lobby').isVisible())await startSongModPerformance(page,{performers:'none',...modEvidence});
+  else await configureSongMod(page,{origin:'stage',restore:true,performers:'none',layout:'solo',showOtherParts:true,...modEvidence});
   await page.waitForFunction(()=>document.body.dataset.screen==='stage');if((await page.locator('#progress').evaluate(readPlaybackClock)).running)await page.locator('#play-button').click();
   await controls(true);
   const originalPerformanceState=await performanceState();
@@ -99,9 +101,9 @@ try {
     // Browser CSS zoom exercises layout/reveal resize without modifying music.
     await page.evaluate(()=>{document.documentElement.style.zoom='1.25';dispatchEvent(new Event('resize'));});await settle();checkGeometry(await geometry('jianpu'),'jianpu');await screenshot('jianpu-125-percent-zoom');await page.evaluate(()=>{document.documentElement.style.zoom='';dispatchEvent(new Event('resize'));});
     await controls(true);await page.locator('#notation-scope').selectOption('current');await controls(false);await settle();
-    await configureSongMod(page,{origin:'stage',restore:true,performers:[score.parts[10].id],layout:'solo',showOtherParts:true});await page.locator('#settings-button').click();await page.locator('#count-in').uncheck();await page.locator('[data-close-panel="settings"]').click();await waitPaint([score.parts[10].id],'jianpu');await settle();
+    await configureSongMod(page,{origin:'stage',restore:true,performers:[score.parts[10].id],layout:'solo',showOtherParts:true,...modEvidence});await page.locator('#settings-button').click();await page.locator('#count-in').uncheck();await page.locator('[data-close-panel="settings"]').click();await waitPaint([score.parts[10].id],'jianpu');await settle();
     const current=await geometry('jianpu');checkParts(current,[score.parts[10].id]);assert.ok(current.status.includes(score.parts[10].name));
-    await configureSongMod(page,{origin:'stage',restore:true,performers:[score.parts[11].id],layout:'solo',showOtherParts:true});await waitPaint([score.parts[11].id],'jianpu');await settle();
+    await configureSongMod(page,{origin:'stage',restore:true,performers:[score.parts[11].id],layout:'solo',showOtherParts:true,...modEvidence});await waitPaint([score.parts[11].id],'jianpu');await settle();
     const changed=await geometry('jianpu');assert.ok(changed.status.includes(score.parts[11].name));checkParts(changed,[score.parts[11].id]);await screenshot('current-part-changed-to-12');
     // Follow a held original note into the next one-bar staff page. The clock
     // advances normally; changing score layout does not seek or rewrite it.
@@ -111,6 +113,9 @@ try {
     report.cases.push({name:'selected-current-zoom-and-held-page',selected,current,changed,crossed});
   }
   await Promise.all(navigationReads);assert.deepEqual(report.page_errors,[]);assert.ok(report.screenshots.length>=6);if(!baseline)assert.equal(report.cases.length,7);for(const artifact of report.artifacts){const bytes=await readFile(path.join(output,artifact.path));assert.equal(bytes.length,artifact.bytes);assert.equal(digest(bytes),artifact.sha256);}assert.equal(digest(await readFile(binary)),report.server_sha256);report.ok=true;
-}catch(error){report.error=error.stack||String(error);process.exitCode=1;if(page)try{await screenshot('failure');}catch{}}
+}catch(error){
+  report.error=error.stack||String(error);process.exitCode=1;
+  if(page){try{report.failure_mod_state=await readSongModState(page);}catch(diagnostic){report.failure_mod_error=String(diagnostic);}try{await screenshot('failure');}catch{}}
+}
 finally{await browser?.close();server?.kill();await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2)+'\n');await writeFile(path.join(output,'server.log'),serverLog);}
 if(!report.ok)throw Error(report.error);

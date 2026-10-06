@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {nativeScoreServer,nativeStorageApp,nativeResponse} from './native-storage-app-fixtures.js';
 import {fixture} from './frontend-fixtures.js';
 import {readPlaybackClock} from '../web/playback-clock-view.js';
+import {SONG_MOD_STORAGE_PREFIX} from '../web/song-mod.js';
 
 // In-memory DOM/backend wiring only. These checks launch no browser/server and
 // cannot establish native trusted input, device audio or hosted acceptance.
@@ -50,4 +51,100 @@ test('failed human preview Apply retains the draft and previous Listen settings 
     assert.ok([...app.$('song-mod-parts').querySelectorAll('[data-mod-performer]')].every(node=>node.value==='human'));
     await app.click('song-mod-all-machine');await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open);assert.equal(app.$('start-performance').disabled,false);assert.match(app.$('song-mod-preview-summary').textContent,/Listen/);
   }finally{await app.close();}
+});
+
+for(const delayedPath of ['/api/practice-targets','/api/instrument-check'])test(`import admission gates the previous Mod and Start until ${delayedPath} settles`,async()=>{
+  const {originalMultipartNotation}=await import('./notation-scope-fixtures.js');
+  const score=originalMultipartNotation(),server=await nativeScoreServer(),app=await nativeStorageApp(server,{now:()=>1000});let release;
+  try{
+    await app.until(()=>!app.$('start-performance').disabled);await app.click('home-single-player');const prior=app.$('preview-title').textContent;
+    server.setRoute(({path,defaultReply})=>path===delayedPath&&!release?new Promise(resolve=>{release=()=>resolve(defaultReply());}):undefined);
+    app.importFile(score);await app.until(()=>release&&app.$('score-title').textContent===score.title);
+    assert.equal(app.$('preview-title').textContent,prior,'The prior candidate has not been relabeled as the import');
+    assert.equal(app.$('configure-song-mod').disabled,true);assert.equal(app.$('start-performance').disabled,true);
+    // Programmatic activation in this DOM fixture also exercises handler guards;
+    // browser acceptance uses only the actual enabled visible controls.
+    await app.click('configure-song-mod');await app.click('start-performance');assert.equal(app.$('song-mod-dialog').open,false);assert.equal(app.document.body.dataset.screen,'library');
+    release();await app.until(()=>app.$('preview-title').textContent===score.title&&!app.$('configure-song-mod').disabled);
+    await app.click('configure-song-mod');assert.deepEqual([...app.$('song-mod-parts').querySelectorAll('[data-mod-performer]')].map(node=>node.dataset.modPerformer),score.parts.map(part=>part.id));
+    await app.click('song-mod-all-machine');await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open);assert.match(app.$('song-mod-preview-summary').textContent,/0 human · 12 machine.*Listen/);
+    await app.click('start-performance');await app.until(()=>app.document.body.dataset.screen==='stage'&&app.$('canonical-audio-policy').dataset.rendererState==='playing');
+    assert.equal(app.$('session-mode').value,'listen');assert.match(app.$('song-mod-stage-summary').textContent,/0 human · 12 machine.*Listen/);
+    assert.equal((await app.exported('export-takes')).passes.length,0);assert.deepEqual(await app.exported('export-button'),score);
+  }finally{release?.();await app.close();}
+});
+
+test('a failed replacement admission restores the previous Mod and Start without resuming or losing its take',async()=>{
+  const server=await nativeScoreServer(),app=await nativeStorageApp(server,{now:()=>1000});let release;
+  try{
+    await app.until(()=>!app.$('start-performance').disabled);await app.click('home-single-player');await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');await app.click('back-to-library');
+    const before=await app.exported('export-takes'),source=await app.exported('export-button'),title=app.$('preview-title').textContent;
+    const rejected={...structuredClone(fixture),id:'rejected-mod-replacement',title:'Rejected replacement'};
+    server.setRoute(({path,body})=>path==='/api/compile'&&body.id===rejected.id?new Promise(resolve=>{release=()=>resolve(nativeResponse({error:'Replacement rejected'},400));}):undefined);
+    app.importFile(rejected);await app.until(()=>Boolean(release));assert.equal(app.$('configure-song-mod').disabled,true);assert.equal(app.$('start-performance').disabled,true);
+    release();await app.until(()=>app.$('notice-message').textContent.includes('Replacement rejected')&&!app.$('configure-song-mod').disabled);
+    assert.equal(app.$('start-performance').disabled,false);assert.equal(app.$('preview-title').textContent,title);assert.equal(readPlaybackClock(app.$('progress')).running,false);
+    assert.deepEqual(await app.exported('export-button'),source);assert.deepEqual(await app.exported('export-takes'),before);
+    await app.click('configure-song-mod');assert.equal(app.$('song-mod-dialog').open,true);
+  }finally{release?.();await app.close();}
+});
+
+test('late imported target admission cannot replace a newer selected preview or apply an older open Mod draft',async()=>{
+  const {originalMultipartNotation}=await import('./notation-scope-fixtures.js');
+  const imported=originalMultipartNotation(),server=await nativeScoreServer(),storageValues=new Map(),app=await nativeStorageApp(server,{now:()=>1000,storageValues});let release;
+  try{
+    await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('home-single-player');await app.click('configure-song-mod');await app.click('song-mod-all-machine');
+    server.setRoute(({path,defaultReply})=>path==='/api/practice-targets'&&!release?new Promise(resolve=>{release=()=>resolve(defaultReply());}):undefined);
+    app.importFile(imported);await app.until(()=>release&&app.$('score-title').textContent===imported.title);
+    await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open);assert.equal(app.$('start-performance').disabled,true);
+    assert.equal([...storageValues.keys()].some(key=>key.startsWith(SONG_MOD_STORAGE_PREFIX)),false);
+    app.document.querySelector(`[data-score-id="${fixture.id}"]`).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready');
+    release();await app.until(()=>app.storageStatus().dataset.persistence==='saved'&&app.document.querySelector('[data-score-storage]').getAttribute('aria-busy')==='false','The imported source must finish its caller persistence callback');await app.tick();
+    assert.equal(app.$('configure-song-mod').disabled,false);assert.equal(app.document.body.dataset.screen,'library');assert.equal(app.$('preview-title').textContent,fixture.title);assert.equal(app.document.querySelector(`[data-score-id="${fixture.id}"]`).getAttribute('aria-pressed'),'true');assert.equal(app.$('score-title').textContent,imported.title);assert.deepEqual(await app.exported('export-button'),imported);
+    await app.click('configure-song-mod');assert.ok([...app.$('song-mod-parts').querySelectorAll('[data-mod-performer]')].every(node=>node.value==='human'));
+  }finally{release?.();await app.close();}
+});
+
+test('cancelling a deferred replacement restores usable preview controls before its late response',async()=>{
+  const server=await nativeScoreServer(),app=await nativeStorageApp(server,{now:()=>1000});let release;
+  try{
+    await app.until(()=>!app.$('start-performance').disabled);await app.click('home-single-player');const title=app.$('preview-title').textContent;
+    const replacement={...structuredClone(fixture),id:'cancelled-mod-replacement',title:'Cancelled replacement'};
+    server.setRoute(({path,body,defaultReply})=>path==='/api/compile'&&body.id===replacement.id?new Promise(resolve=>{release=()=>resolve(defaultReply());}):undefined);
+    app.importFile(replacement);await app.until(()=>Boolean(release));assert.equal(app.$('configure-song-mod').disabled,true);assert.equal(app.$('start-performance').disabled,true);
+    app.importFile('{broken',{name:'cancelled-by-newer-file.json'});await app.until(()=>app.$('notice-message').textContent.includes('cancelled-by-newer-file.json'));
+    assert.equal(app.$('configure-song-mod').disabled,false);assert.equal(app.$('start-performance').disabled,false);assert.equal(app.$('preview-title').textContent,title);
+    await app.click('configure-song-mod');await app.click('song-mod-all-machine');await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open);assert.match(app.$('song-mod-preview-summary').textContent,/0 human · 1 machine.*Listen/);
+    release();await app.tick();assert.equal(app.$('preview-title').textContent,title);assert.match(app.$('song-mod-preview-summary').textContent,/0 human · 1 machine.*Listen/);
+    await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');assert.equal(app.$('score-title').textContent,title);assert.equal((await app.exported('export-takes')).passes.length,0);
+  }finally{release?.();await app.close();}
+});
+
+test('an older Apply finishing during replacement admission cannot save its draft or re-enable Start',async()=>{
+  const {originalMultipartNotation}=await import('./notation-scope-fixtures.js');
+  const imported=originalMultipartNotation(),server=await nativeScoreServer(),storageValues=new Map(),app=await nativeStorageApp(server,{now:()=>1000,storageValues});let releaseApply,releaseImport;
+  try{
+    await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('home-single-player');await app.click('configure-song-mod');
+    server.setRoute(({path,body,defaultReply})=>{
+      if(path==='/api/practice-targets'&&!releaseApply)return new Promise(resolve=>{releaseApply=()=>resolve(defaultReply());});
+      if(path==='/api/compile'&&body.id===imported.id)return new Promise(resolve=>{releaseImport=()=>resolve(defaultReply());});
+    });
+    app.$('song-mod-apply').click();await app.until(()=>Boolean(releaseApply));app.importFile(imported);await app.until(()=>Boolean(releaseImport));
+    releaseApply();await app.until(()=>!app.$('song-mod-dialog').open);assert.equal(app.$('configure-song-mod').disabled,true);assert.equal(app.$('start-performance').disabled,true);
+    assert.equal([...storageValues.keys()].some(key=>key.startsWith(SONG_MOD_STORAGE_PREFIX)),false);
+    releaseImport();await app.until(()=>app.$('preview-title').textContent===imported.title&&!app.$('configure-song-mod').disabled);assert.match(app.$('song-mod-preview-summary').textContent,/12 human · 0 machine/);
+    await app.click('configure-song-mod');assert.equal(app.$('song-mod-parts').querySelectorAll('[data-mod-performer]').length,12);
+  }finally{releaseApply?.();releaseImport?.();await app.close();}
+});
+
+test('a deferred Start caller cannot navigate after a newer song is selected',async()=>{
+  const {originalMultipartNotation}=await import('./notation-scope-fixtures.js');
+  const selected=originalMultipartNotation(),server=await nativeScoreServer({scores:[selected]}),app=await nativeStorageApp(server,{now:()=>1000});let release;
+  try{
+    const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('start-performance').disabled);await app.click('home-single-player');
+    server.setRoute(({path,defaultReply})=>path==='/api/practice-targets'&&!release?new Promise(resolve=>{release=()=>resolve(defaultReply());}):undefined);
+    app.$('start-performance').click();await app.until(()=>Boolean(release));app.savedButton(key).click();await app.until(()=>app.$('preview-title').textContent===selected.title&&!app.$('configure-song-mod').disabled);
+    release();await app.tick();await app.tick();assert.equal(app.document.body.dataset.screen,'library');assert.equal(app.$('preview-title').textContent,selected.title);assert.equal(app.savedButton(key).getAttribute('aria-pressed'),'true');assert.equal(app.$('canonical-audio-policy').dataset.rendererState,'stopped');assert.equal((await app.exported('export-takes')).passes.length,0);
+    await app.click('start-performance');await app.until(()=>app.document.body.dataset.screen==='stage'&&app.$('canonical-audio-policy').dataset.rendererState==='playing');assert.equal(app.$('score-title').textContent,selected.title);assert.deepEqual(await app.exported('export-button'),selected);
+  }finally{release?.();await app.close();}
 });
