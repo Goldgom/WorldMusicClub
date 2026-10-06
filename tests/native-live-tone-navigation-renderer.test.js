@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext,Script} from 'node:vm';
 import {parseHTML} from 'linkedom';
+import {nativeScoreServer,nativeStorageApp} from './native-storage-app-fixtures.js';
+import {liveToneNavigationFixture,LIVE_TONE_NAVIGATION_FIXTURE_FILENAME} from '../scripts/prepare-live-tone-navigation-fixtures.mjs';
 
 const source=readFileSync(new URL('../crates/desktop-shell/live-tone-navigation-acceptance.js',import.meta.url),'utf8');
 const canonical=readFileSync(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8').split('(() => {')[0];
-const helpers=runInNewContext(canonical+'\n'+source.split('(() => {')[0]+'\n({nativeLiveToneNavigationCase,createNativeLiveToneNavigationControls,deliverNativeLiveToneNavigationReport,observeNativeLiveToneNavigation});',{structuredClone,TextEncoder});
+const helpers=runInNewContext(canonical+'\n'+source.split('(() => {')[0]+'\n({nativeLiveToneNavigationCase,nativeLiveToneNavigationInput,createNativeLiveToneNavigationControls,deliverNativeLiveToneNavigationReport,observeNativeLiveToneNavigation,observeCanonicalPracticeOwnedClick});',{structuredClone,TextEncoder});
 
-function harness(){
+function harness({controls={beginPicker(){},endPicker(){}}}={}){
  const listeners=new Map(),calls=[],results=new Map(),nodes=new Map(),report={controlActions:[],keyPreparations:[]};
  const document={body:{dataset:{screen:'stage'}},hidden:false,focused:true,open:null,activeElement:null,hit:null,hasFocus(){return this.focused;},getElementById:id=>nodes.get(id)||null,querySelector(selector){return selector==='dialog[open]'?this.open:null;},elementFromPoint(){return this.hit;},addEventListener(type,listener){if(!listeners.has(type))listeners.set(type,new Set());listeners.get(type).add(listener);},removeEventListener(type,listener){listeners.get(type)?.delete(listener);}};
  const view={innerWidth:1280,innerHeight:720,performance:{timeOrigin:1000},setTimeout,clearTimeout,requestAnimationFrame:fn=>{queueMicrotask(fn);return 1;},cancelAnimationFrame:()=>{}};document.defaultView=view;
@@ -16,8 +18,8 @@ function harness(){
  const stage=node('stage-title',{tagName:'H1'}),play=node('play-button'),settings=node('settings-button'),modal={id:'settings-dialog',hasAttribute:()=>true},heading=node('settings-title',{dialog:modal,tagName:'H2'}),close=node('',{dialog:modal,closePanel:'settings'});document.activeElement=stage;
  let running=true,fail=false,trusted=true;
  const until=async(fn,label)=>{for(let i=0;i<8;i++){if(await fn())return;await Promise.resolve();}throw Error(`Unsettled ${label}`);};
- const dispatch=helpers.createNativeLiveToneNavigationControls({document,phase:'live-navigation-settings-navigation',until,readClock:()=>({running,completed:false,positionMs:100}),frame:async()=>{calls.push(['frame']);},report,controls:{beginPicker(){},endPicker(){}},postAction:async action=>{calls.push(['post',structuredClone(action)]);results.set(action.sequence,{ok:!fail,error:fail?'host refused':undefined});if(!action.kind.startsWith('live-key-r-')){calls.push(['native-pointer',document.hit.id]);document.activeElement=document.hit;for(const listener of listeners.get('click')||[])listener({target:document.hit,isTrusted:trusted});}},readResult:async sequence=>results.get(sequence)||null});
- return{document,stage,play,settings,heading,close,modal,report,calls,dispatch,node,useNode:value=>nodes.set(value.id,value),run:async(kind,target,file)=>{document.hit=target;return dispatch.native(kind,target,file);},running:value=>{running=value;},fail:value=>{fail=value;},trusted:value=>{trusted=value;}};
+ const dispatch=helpers.createNativeLiveToneNavigationControls({document,phase:'live-navigation-settings-navigation',until,readClock:()=>({running,completed:false,positionMs:100}),frame:async()=>{calls.push(['frame']);},report,controls,postAction:async action=>{calls.push(['post',structuredClone(action)]);results.set(action.sequence,{ok:!fail,error:fail?'host refused':undefined});if(!action.kind.startsWith('live-key-r-')){calls.push(['native-pointer',document.hit.id]);document.activeElement=document.hit;for(const listener of listeners.get('click')||[])listener({target:document.hit,type:'click',timeStamp:1000,isTrusted:trusted});}},readResult:async sequence=>results.get(sequence)||null});
+ return{document,stage,play,settings,heading,close,modal,report,calls,dispatch,node,listeners,useNode:value=>nodes.set(value.id,value),run:async(kind,target,file)=>{document.hit=target;return dispatch.native(kind,target,file);},running:value=>{running=value;},fail:value=>{fail=value;},trusted:value=>{trusted=value;}};
 }
 
 test('native live navigation selects exactly four separate phases without changing canonical guards',()=>{
@@ -46,6 +48,19 @@ test('native pointer controls keep strict ownership, explicit blocked-key scope 
  f.trusted(false);await assert.rejects(f.run('click',f.close),/Unsettled/);assert.equal(f.report.controlActions.at(-1).closePanel,'settings');
 });
 
+test('native event ownership exists only during its dispatched pointer and clears on success or failure',async()=>{
+ const f=harness(),rows=[];assert.equal(f.dispatch.ownedControl(),null);
+ f.document.addEventListener('click',event=>rows.push(helpers.nativeLiveToneNavigationInput(event,f.dispatch.sequence(),f.dispatch.ownedControl())));
+ await f.run('click',f.settings);assert.equal(rows[0].controlId,'settings-button');assert.equal(rows[0].id,'settings-button');assert.equal(f.dispatch.ownedControl(),null);
+ f.fail(true);await assert.rejects(f.run('click',f.settings),/host refused/);assert.equal(rows[1].controlId,'settings-button');assert.equal(f.dispatch.ownedControl(),null);
+});
+
+test('picker setup failure clears the pointer observer and owner before any host dispatch',async()=>{
+ let ended=0;const cause=Error('injected picker setup failure'),f=harness({controls:{beginPicker(){throw cause;},endPicker(){ended++;}}}),button=f.node('import-button');
+ await assert.rejects(f.run('picker',button,LIVE_TONE_NAVIGATION_FIXTURE_FILENAME),error=>error===cause);
+ assert.equal(f.dispatch.ownedControl(),null);assert.equal(f.listeners.get('click').size,0);assert.equal(f.calls.filter(row=>row[0]==='post').length,0);assert.equal(ended,0,'A picker that never began must not be ended');assert.equal(f.report.controlActions[0].clicks.length,0);
+});
+
 test('real heading and summary DOM shapes retain an explicit boolean disabled field after serialization',async()=>{
  const {document}=parseHTML('<html><body><h1 id="real-h1">Stage</h1><h2 id="real-h2">Settings</h2><details open><summary id="real-summary">Options</summary></details><button id="disabled-button" disabled>Blocked</button></body></html>');
  for(const id of ['real-h1','real-h2','real-summary']){
@@ -57,12 +72,47 @@ test('real heading and summary DOM shapes retain an explicit boolean disabled fi
  const blocked=document.getElementById('disabled-button'),f=harness();assert.equal(blocked.disabled,true);await assert.rejects(f.run('click',blocked),/unavailable/);assert.equal(f.calls.filter(row=>row[0]==='post').length,0,'Normalization must not weaken disabled-control admission');
 });
 
+test('the actual app Import handler forwards exactly one click to its original hidden file input and preserves the original source',async()=>{
+ // Actual product DOM/handler, in-memory transport and fixture trust only.
+ // Linkedom bubbles document observers; this model checks both raw identities,
+ // while the independent native verifier requires the real capture order.
+ const server=await nativeScoreServer(),app=await nativeStorageApp(server),fixture=liveToneNavigationFixture();let observation;
+ try{
+  await app.until(()=>!app.$('start-listen').disabled);await app.click('import-tools-button');
+  const button=app.$('import-button'),input=app.$('score-file'),targets=[];input.addEventListener('click',event=>targets.push(event.target));
+  observation=helpers.observeCanonicalPracticeOwnedClick({document:app.document,node:button,sequence:7});
+  const event=new app.window.Event('click',{bubbles:true});Object.defineProperty(event,'isTrusted',{value:true});button.dispatchEvent(event);
+  const raw=JSON.parse(JSON.stringify(observation.events));assert.equal(raw.length,2);assert.deepEqual(targets,[input]);
+  assert.deepEqual(raw.filter(row=>row.owned),[{sequence:7,id:'import-button',owned:true,trusted:true}]);assert.deepEqual(raw.filter(row=>!row.owned),[{sequence:7,id:'score-file',owned:false,trusted:false}]);assert.equal(app.$('score-file'),input);
+  app.importFile(fixture.bytes.toString(),{name:LIVE_TONE_NAVIGATION_FIXTURE_FILENAME});await app.until(()=>server.records.size===1&&app.storageStatus()?.dataset.persistence==='saved');
+  assert.equal([...server.records.values()][0].score_json,fixture.bytes.toString());assert.deepEqual(await app.exported('export-button'),fixture.score);assert.deepEqual(JSON.parse(JSON.stringify(observation.events.slice(0,2))),raw,'Complete forwarding trace is retained unchanged');
+ }finally{observation?.restore();await app.close();}
+});
+
 test('native renderer retains id-less real KeyR release evidence and makes no clock or source substitutions',()=>{
  assert.match(source,/event.code!=='KeyR'/);assert.match(source,/eventTime:event.timeStamp/);assert.match(source,/surface:target.closest\?\.\('\[data-keyboard-performance\]'\)/);
  assert.match(source,/if\(release==='navigation'\)[\s\S]*pointer navigation cancelled the still-held native voice[\s\S]*live-key-r-up/);
  assert.match(source,/report.pausedBefore=snapshot\(\);[\s\S]*report.actionRoles.beforeTake=await take\('beforeTake'\)/);
  assert.match(source,/report.pausedAfter=snapshot\(\)/);assert.match(source,/report.actionRoles.afterTake=await take\('afterTake'\);report.actionRoles.score=await score\(\)/);
  assert.doesNotMatch(source,/recorder\.|transport\.position|currentFrame\s*=|currentTime\s*=|postMessage|createOscillator|createBufferSource/);
+});
+
+test('actual authoring card descendants retain their raw target and dispatched owner with one owned click',async()=>{
+ const server=await nativeScoreServer(),app=await nativeStorageApp(server);let observation;
+ try{
+  const button=app.$('home-song-authoring'),target=button.querySelector('.game-mode-copy strong'),rows=[];
+  assert.ok(target);assert.equal(target.id,'');assert.equal(target.closest('button'),button);
+  const capture=event=>rows.push(helpers.nativeLiveToneNavigationInput(event,19,button));app.document.addEventListener('click',capture,true);
+  observation=helpers.observeCanonicalPracticeOwnedClick({document:app.document,node:button,sequence:19});
+  const event=new app.window.Event('click',{bubbles:true});Object.defineProperties(event,{isTrusted:{value:true},timeStamp:{value:1234}});target.dispatchEvent(event);
+  assert.equal(app.document.body.dataset.screen,'authoring','The actual card handler receives the child click');assert.equal(rows.length,1);
+  const row=JSON.parse(JSON.stringify(rows[0]));assert.equal(row.id,null);assert.equal(row.controlId,'home-song-authoring');assert.equal(row.isTrusted,true);assert.equal(row.eventTime,1234);assert.equal(row.sequence,19);
+  assert.deepEqual(JSON.parse(JSON.stringify(observation.events)),[{sequence:19,id:null,owned:true,trusted:true}]);
+  app.document.removeEventListener('click',capture,true);
+  const foreign=app.document.createElement('button'),child=app.document.createElement('span');foreign.id='foreign-button';foreign.append(child);app.document.body.append(foreign);
+  assert.equal(helpers.nativeLiveToneNavigationInput({target:child,type:'click'},19,button),null,'A foreign button ancestor cannot acquire the dispatched control identity');
+  assert.equal(helpers.nativeLiveToneNavigationInput({target,type:'click'},19),null,'No control identity is inferred outside the actual dispatcher lifetime');
+ }finally{observation?.restore();await app.close();}
 });
 
 test('both Settings release routes close the owned modal before baseline export, reopen for blocked input, then return closed',async()=>{

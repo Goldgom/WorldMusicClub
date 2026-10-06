@@ -56,6 +56,17 @@ trace files. Before/after take bytes must be identical; exported score JSON
 and embedded source text must match the original fixture. Both observer
 cleanup objects, actual foreground ownership, finite PCM/input evidence,
 paused state, source tree and executable identity are checked separately.
+Every native pointer result must have a positive hit root equal to the app
+HWND, in addition to its foreground and renderer ownership checks. Ordinary
+controls retain one owned trusted click. The Import picker alone retains the
+exact ordered pair of its trusted `import-button` click and the production
+handler's untrusted `score-file` click. That pair is bound to the original
+file input, native picker action, owned dialog, trusted input/change events
+and unchanged fixture bytes; no untrusted events are filtered out. A card's
+descendant click keeps its raw target ID and separately records the active
+dispatched control ID after the canonical identity/contains ownership check.
+Role verification binds both to the requested control and its
+complete owned click trace; navigation also binds the live observer timestamp.
 The proof remains bounded to this native feature; it is not full checkpoint,
 package, release-ready or continuous-audio acceptance.
 

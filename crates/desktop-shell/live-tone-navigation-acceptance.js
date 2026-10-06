@@ -6,13 +6,23 @@ function nativeLiveToneNavigationCase(phase){
  return{route:match[1],release:match[2]};
 }
 
+function nativeLiveToneNavigationInput(event,sequence,control){
+ const target=event.target,part=target.closest?.('.song-mod-part'),button=target.closest?.('button');
+ const controlId=event.type==='click'&&control&&(target===control||control.contains(target))?control.id||null:null;
+ if(!target.id&&!part&&!controlId&&event.code!=='KeyR'&&!button?.dataset.closePanel)return null;
+ // Keep the raw target identity. A card's label/icon can receive the actual
+ // pointer. Bind only the currently dispatched control using the canonical
+ // observer's same identity/contains rule; never infer an arbitrary ancestor.
+ return{sequence,actionSequence:sequence,type:event.type,id:target.id||null,controlId,closePanel:button?.dataset.closePanel||null,part:part?.dataset.partId||null,modField:target.dataset?.modPerformer?'performer':target.dataset?.modInstrument?'instrument':target.dataset?.modMute?'mute':target.dataset?.modVisible?'visible':null,code:event.code||null,isTrusted:event.isTrusted===true,repeat:Boolean(event.repeat),eventTime:event.timeStamp,surface:target.closest?.('[data-keyboard-performance]')?.id||null,value:target.value??null,checked:typeof target.checked==='boolean'?target.checked:null};
+}
+
 async function deliverNativeLiveToneNavigationReport(report,send){
  let bytes=null;try{bytes=new TextEncoder().encode(JSON.stringify(report)).byteLength;if(bytes>=1_000_000)throw Error('Native live navigation report exceeded its 1 MiB wire budget');await send(report);return{delivered:true,bytes};}
  catch(error){await send({version:1,scenario:'live-tone-navigation',phase:report.phase,route:report.route,release:report.release,origin:report.origin,ok:false,error:'Native live navigation report could not be delivered',report_failure:{code:'live_navigation_report_delivery_failed',received_bytes:bytes,limit_bytes:1_000_000,detail:String(error).slice(0,512)}});return{delivered:false,bytes};}
 }
 
 function createNativeLiveToneNavigationControls({document,phase,until,readClock,frame,postAction,readResult,report,controls}){
- nativeLiveToneNavigationCase(phase);let sequence=0,held=false;
+ nativeLiveToneNavigationCase(phase);let sequence=0,held=false,ownedControl=null;
  const view=document.defaultView,assert=(value,message)=>{if(!value)throw Error(message);};
  async function native(kind,node,file){
   assert(['click','picker','select-first','select-last','key-r','live-key-r-down','live-key-r-up'].includes(kind),'Unsupported native live navigation action');
@@ -38,16 +48,17 @@ function createNativeLiveToneNavigationControls({document,phase,until,readClock,
   const b=node.getBoundingClientRect(),x=b.x+b.width/2,y=b.y+b.height/2,hit=document.elementFromPoint(x,y);
   assert(b.width>0&&b.height>0&&x>0&&x<view.innerWidth&&y>0&&y<view.innerHeight&&(hit===node||node.contains(hit)),'Native live navigation target is obscured or outside the viewport');
   const action={version:1,sequence:++sequence,kind,x,y,width:view.innerWidth,height:view.innerHeight,...(file?{file}:{})},pointer=control&&observeCanonicalPracticeOwnedClick({document,node,sequence});
-  if(control){control.request={...action,target:{x:b.x,y:b.y,width:b.width,height:b.height}};control.clicks=pointer.events;}
-  let completed=false;if(kind==='picker')controls.beginPicker(sequence,file);
+  if(control){control.request={...action,target:{x:b.x,y:b.y,width:b.width,height:b.height}};control.clicks=pointer.events;ownedControl=node;}
+  let completed=false,pickerStarted=false;
   try{
+   if(kind==='picker'){controls.beginPicker(sequence,file);pickerStarted=true;}
    await postAction(action);let result;await until(async()=>{result=await readResult(sequence);return result!==null;},`native ${kind} #${sequence}`,15000);assert(result.ok,result.error||'Native live navigation action failed');
    if(control){const after=node.getBoundingClientRect();control.afterDispatch={target:{x:after.x,y:after.y,width:after.width,height:after.height},disabled:Boolean(node.disabled)};await requireCanonicalPracticeOwnedClick({until,events:pointer.events,sequence,id:node.id,kind});}
    if(kind==='live-key-r-down')held=true;else if(kind==='live-key-r-up')held=false;
    completed=true;return sequence;
-  }finally{pointer?.restore();if(kind==='picker'&&!completed)controls.endPicker(sequence,false);}
+  }finally{ownedControl=null;pointer?.restore();if(pickerStarted&&!completed)controls.endPicker(sequence,false);}
  }
- return{native,sequence:()=>sequence,held:()=>held};
+ return{native,sequence:()=>sequence,held:()=>held,ownedControl:()=>ownedControl};
 }
 
 async function observeNativeLiveToneNavigation({document,route,release,native,click,until,live,receiver,clock,take,score,report}){
@@ -93,7 +104,7 @@ async function observeNativeLiveToneNavigation({document,route,release,native,cl
  const report={version:1,scenario:'live-tone-navigation',phase,route,release,origin:location.origin,ok:false,stage:'bootstrap',errors:[],trustedActions:[],controlActions:[],keyPreparations:[],actionRoles:{},files:{},physicalAudio:false,pcmCoverage:'finite-checkpoint-windows'};
  let receiver,live,controls,dispatch,cleaned=false;
  const frame=()=>new Promise(requestAnimationFrame),clock=()=>globalThis.__wmhReadPlaybackClock(document),until=(fn,label,ms=15000)=>waits.until(()=>{receiver?.assertHealthy();live?.assertHealthy();return fn();},`${phase}: ${label}`,ms);
- const input=event=>{const target=event.target,part=target.closest?.('.song-mod-part');if(!target.id&&!part&&event.code!=='KeyR'&&!target.closest?.('button')?.dataset.closePanel)return;assert(report.trustedActions.length<256,'Native live navigation trusted event bound');report.trustedActions.push({sequence:dispatch?.sequence()||0,actionSequence:dispatch?.sequence()||0,type:event.type,id:target.id||null,closePanel:target.closest?.('button')?.dataset.closePanel||null,part:part?.dataset.partId||null,modField:target.dataset?.modPerformer?'performer':target.dataset?.modInstrument?'instrument':target.dataset?.modMute?'mute':target.dataset?.modVisible?'visible':null,code:event.code||null,isTrusted:event.isTrusted===true,repeat:Boolean(event.repeat),eventTime:event.timeStamp,surface:target.closest?.('[data-keyboard-performance]')?.id||null,value:target.value??null,checked:typeof target.checked==='boolean'?target.checked:null});};
+ const input=event=>{const row=nativeLiveToneNavigationInput(event,dispatch?.sequence()||0,dispatch?.ownedControl());if(!row)return;assert(report.trustedActions.length<256,'Native live navigation trusted event bound');report.trustedActions.push(row);};
  const error=event=>{if(report.errors.length<16)report.errors.push(String(event.message||event.reason).slice(0,2048));};addEventListener('error',error);addEventListener('unhandledrejection',error);
  const cleanup=()=>{if(cleaned)return;cleaned=true;report.cleanup={live:live?.restore(),source:receiver?.restore()};report.pickerObservations=controls?.pickers||[];controls?.restore();for(const type of ['click','input','change','keydown','keyup'])document.removeEventListener(type,input,true);removeEventListener('error',error);removeEventListener('unhandledrejection',error);};
  addEventListener('DOMContentLoaded',async()=>{

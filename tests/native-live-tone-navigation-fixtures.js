@@ -1,6 +1,7 @@
 // Synthetic contract data only; never executable Windows or audio evidence.
 import {syntheticLiveToneEvidence} from './live-tone-evidence-fixtures.js';
-import {liveToneNavigationFixture} from '../scripts/prepare-live-tone-navigation-fixtures.mjs';
+import {syntheticOwnedFilePicker} from './owned-file-picker-fixtures.js';
+import {liveToneNavigationFixture,LIVE_TONE_NAVIGATION_FIXTURE_FILENAME} from '../scripts/prepare-live-tone-navigation-fixtures.mjs';
 export function syntheticNavigationEvidence({route='settings',release='keyup'}={}){
   const original=syntheticLiveToneEvidence({keyCode:'KeyR',midi:60}),e=structuredClone(original),r=e.ready.receiver;
   let sequence=4;
@@ -36,11 +37,15 @@ export function syntheticNativeLiveToneNavigationCase({route='settings',release=
  const phase=`live-navigation-${route}-${release}`,actions=[],results=[],trustedActions=[],controlActions=[],roles={};
  const target={x:100,y:100,width:120,height:40},nativeKey={app_hwnd:42,foreground:42,app_process_id:71,app_enabled:true,code:'KeyR',virtual_key:82,focus_reacquired:false,pointer_clicked:false};
  function action(kind,id,eventTime=500){
-  const n=actions.length+1,request={version:1,sequence:n,kind,x:160,y:120,width:1280,height:720};actions.push(request);
+  const n=actions.length+1,request={version:1,sequence:n,kind,x:160,y:120,width:1280,height:720,...(kind==='picker'?{file:LIVE_TONE_NAVIGATION_FIXTURE_FILENAME}:{})};actions.push(request);
   if(kind.startsWith('live-key-r-'))results.push({ok:true,native_key:{...structuredClone(nativeKey),held_before:kind==='live-key-r-up',held_after:kind==='live-key-r-down',held_ms:kind==='live-key-r-down'?0:release==='keyup'?40:230}});
   else{results.push({ok:true,client_click:{app_hwnd:42,foreground:42,hit_hwnd:43,hit_root:42,actual:[160,120],requested:[160,120],viewport:[1280,720]}});trustedActions.push({sequence:n,type:'click',id,code:null,isTrusted:true,repeat:false,eventTime,surface:null});const sample={target,width:1280,height:720,hitOwned:true};controlActions.push({sequence:n,id,kind,samples:[structuredClone(sample),structuredClone(sample)],request:{...request,target:structuredClone(target)},afterDispatch:{target:structuredClone(target),disabled:false},clicks:[{sequence:n,id,owned:true,trusted:true}]});}
   return n;
  }
+ const pickerSequence=action('picker','import-button',50),picker=syntheticOwnedFilePicker(LIVE_TONE_NAVIGATION_FIXTURE_FILENAME,pickerSequence);
+ controlActions.at(-1).clicks.push({sequence:pickerSequence,id:'score-file',owned:false,trusted:false});
+ results.at(-1).owned_dialog={class:'#32770',hwnd:44,process_id:71,app_process_id:71,app_hwnd:42,root_owner_hwnd:42};results.at(-1).picker_completion={dialog_dismissed:true,app_enabled:true,owned_popup_visible:false};
+ for(const [type,isTrusted]of [['click',false],['input',true],['change',true]])trustedActions.push({sequence:pickerSequence,type,id:'score-file',code:null,isTrusted,repeat:false,eventTime:50,surface:null});
  const modActions=[];for(const id of ['configure-song-mod','song-mod-all-human']){const sequence=action('click',id);modActions.push({sequence,id,kind:'click',field:null,part:null,value:null,checked:null});}
  const layout=action('select-last','song-mod-layout');modActions.push({sequence:layout,id:'song-mod-layout',kind:'select-last',field:null,part:null,value:'solo',checked:null});trustedActions.push({sequence:layout,actionSequence:layout,type:'change',id:'song-mod-layout',isTrusted:true,value:'solo',eventTime:500});for(const type of ['keydown','keyup'])trustedActions.push({sequence:layout,actionSequence:layout,type,id:'song-mod-layout',code:'End',isTrusted:true,repeat:false,eventTime:500,surface:null});
  const apply=action('click','song-mod-apply');modActions.push({sequence:apply,id:'song-mod-apply',kind:'click',field:null,part:null,value:null,checked:null});roles.play=action('click','start-performance');modActions.push({sequence:roles.play,id:'start-performance',kind:'click',field:null,part:null,value:null,checked:null});roles.keyFocus=action('click','stage-title');roles.keyDown=action('live-key-r-down','stage-title');
@@ -52,6 +57,6 @@ export function syntheticNativeLiveToneNavigationCase({route='settings',release=
  for(const row of trustedActions)row.actionSequence=row.sequence;trustedActions.sort((a,b)=>a.sequence-b.sequence);options.takeBefore.score_id=fixture.score.id;options.takeAfter=structuredClone(options.takeBefore);
  const beforeTakeBytes=Buffer.from(JSON.stringify(options.takeBefore,null,2)),afterTakeBytes=Buffer.from(beforeTakeBytes),scoreBytes=Buffer.from(fixture.bytes),paused={position:100,mode:'practice',captured:'1',pass:'1',revision:'1',title:fixture.score.title,stageTitle:fixture.score.title},cleanup={restored:true,overflow:false,errors:[],cleanupErrors:[]};
  const keyPreparations=[{sequence:roles.keyDown,kind:'live-key-r-down',focus:'stage-title',screen:'stage',clock:{available:true,running:true,positionMs:10},timeOrigin:100000},{sequence:roles.keyUp,kind:'live-key-r-up',focus:release==='keyup'?'stage-title':null,screen:release==='keyup'||route==='settings'?'stage':'authoring',clock:{available:true,running:release==='keyup',positionMs:100},timeOrigin:100000}];
- const report={keyPreparations,modActions,version:1,scenario:'live-tone-navigation',phase,route,release,origin:'https://wmh.localhost',ok:true,errors:[],physicalAudio:false,sourceTitle:fixture.score.title,sourceScoreJson:fixture.bytes.toString(),actions:actions.length,actionRoles:roles,trustedActions,controlActions,files:{beforeTake:`${phase}-1.json`,afterTake:`${phase}-2.json`,score:`${phase}-3.json`},pausedBefore:paused,pausedAfter:structuredClone(paused),audio:e,cleanup:{live:structuredClone(cleanup),source:structuredClone(cleanup)}};
+ const report={pickerObservations:[picker.observation],keyPreparations,modActions,version:1,scenario:'live-tone-navigation',phase,route,release,origin:'https://wmh.localhost',ok:true,errors:[],physicalAudio:false,sourceTitle:fixture.score.title,sourceScoreJson:fixture.bytes.toString(),actions:actions.length,actionRoles:roles,trustedActions,controlActions,files:{beforeTake:`${phase}-1.json`,afterTake:`${phase}-2.json`,score:`${phase}-3.json`},pausedBefore:paused,pausedAfter:structuredClone(paused),audio:e,cleanup:{live:structuredClone(cleanup),source:structuredClone(cleanup)}};
  return{report,exports:{beforeTakeBytes,afterTakeBytes,scoreBytes},actions,results,host:{process_id:71,actions:actions.length,live_key_held_at_close:false}};
 }

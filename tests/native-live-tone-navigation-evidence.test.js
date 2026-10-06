@@ -5,7 +5,7 @@ import {mkdtemp,mkdir,writeFile,readFile,rm,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {LIVE_TONE_NAVIGATION_CASES,LIVE_TONE_NAVIGATION_PHASES,LIVE_TONE_NAVIGATION_FIXTURE_FILENAME,LIVE_TONE_NAVIGATION_MANIFEST_FILENAME,liveToneNavigationFixture,prepareLiveToneNavigationFixtures} from '../scripts/prepare-live-tone-navigation-fixtures.mjs';
-import {LIVE_TONE_NAVIGATION_SOURCE_FILES,validateNativeLiveToneNavigationRenderer,validateNativeLiveToneNavigationActions,validateNativeLiveToneNavigationSourceBinding,verifyNativeLiveToneNavigationEvidence} from '../scripts/verify-native-live-tone-navigation-evidence.mjs';
+import {LIVE_TONE_NAVIGATION_SOURCE_FILES,validateNativeLiveToneNavigationRenderer,validateNativeLiveToneNavigationActions,validateNativeLiveToneNavigationControlClicks,validateNativeLiveToneNavigationSourceBinding,verifyNativeLiveToneNavigationEvidence} from '../scripts/verify-native-live-tone-navigation-evidence.mjs';
 import {syntheticNativeLiveToneNavigationCase} from './native-live-tone-navigation-fixtures.js';
 
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -18,9 +18,38 @@ test('native renderer and host contract accepts each separate finite route/relea
  for(const c of LIVE_TONE_NAVIGATION_CASES){const f=syntheticNativeLiveToneNavigationCase(c);validateNativeLiveToneNavigationRenderer(f.report,f.exports);validateNativeLiveToneNavigationActions(f.report,f.host,f.actions,f.results);}
 });
 
+test('only the exact trusted Import activation and original file-input delegation may form the native picker trace',()=>{
+ const f=syntheticNativeLiveToneNavigationCase(),row=f.report.controlActions.find(row=>row.kind==='picker'),before=structuredClone(f.report),classified=validateNativeLiveToneNavigationControlClicks(f.report,row);
+ assert.equal(classified.primary,row.clicks[0]);assert.equal(classified.forwarded,row.clicks[1]);assert.deepEqual(f.report,before,'Validation must retain every original event, not filter the trace');
+ const changes=[
+  (r,p)=>p.clicks=[],(r,p)=>p.clicks.shift(),(r,p)=>p.clicks.pop(),(r,p)=>p.clicks.push(structuredClone(p.clicks[0])),(r,p)=>p.clicks.push(structuredClone(p.clicks[1])),(r,p)=>p.clicks.reverse(),
+  (r,p)=>p.clicks[0].trusted=false,(r,p)=>p.clicks[0].owned=false,(r,p)=>p.clicks[0].id='another-button',(r,p)=>p.clicks[1].trusted=true,(r,p)=>p.clicks[1].owned=true,(r,p)=>p.clicks[1].id='foreign-file',(r,p)=>p.clicks[1].sequence++,
+  (r,p)=>p.id='other-import',(r,p)=>p.kind='click',(r,p)=>p.request.kind='click',(r,p)=>p.request.file='foreign.json',
+  r=>r.pickerObservations=[],r=>r.pickerObservations.push(structuredClone(r.pickerObservations[0])),r=>r.pickerObservations[0].sequence++,r=>r.pickerObservations[0].completed=false,r=>r.pickerObservations[0].filename='foreign.json',
+  r=>r.pickerObservations[0].delegatedClicks=[],r=>r.pickerObservations[0].delegatedClicks[0].originalControl=false,r=>r.pickerObservations[0].inputs[0].originalControl=false,r=>r.pickerObservations[0].changes[0].filename='foreign.json',r=>r.pickerObservations[0].changes[0].fileCount=2,
+  r=>r.pickerObservations[0].gestures[3].trusted=false,r=>r.pickerObservations[0].gestures[4].targetId='another-file',r=>r.pickerObservations[0].gestures[5].eventTimeMs++,
+  r=>r.trustedActions.find(row=>row.id==='score-file'&&row.type==='click').isTrusted=true,r=>r.trustedActions.find(row=>row.id==='score-file'&&row.type==='change').eventTime++,r=>r.trustedActions.push(structuredClone(r.trustedActions.find(row=>row.id==='score-file'&&row.type==='click'))),
+ ];
+ for(const [index,change]of changes.entries()){const value=structuredClone(before),picker=value.controlActions.find(row=>row.kind==='picker');change(value,picker);assert.throws(()=>validateNativeLiveToneNavigationControlClicks(value,picker),`Forwarding adversary ${index} accepted`);}
+ const ordinary=structuredClone(before.controlActions.find(row=>row.kind==='click'));ordinary.clicks.push({sequence:ordinary.sequence,id:'score-file',owned:false,trusted:false});assert.throws(()=>validateNativeLiveToneNavigationControlClicks(before,ordinary));ordinary.clicks=[ordinary.clicks[0],structuredClone(ordinary.clicks[0])];assert.throws(()=>validateNativeLiveToneNavigationControlClicks(before,ordinary));
+});
+
 test('native navigation preserves canonical score objects and exact embedded source across JSON formatting',()=>{
  const f=syntheticNativeLiveToneNavigationCase();f.exports.scoreBytes=Buffer.from(JSON.stringify(liveToneNavigationFixture().score));validateNativeLiveToneNavigationRenderer(f.report,f.exports);
  const changed=liveToneNavigationFixture().score;changed.source.content=changed.source.content.replace('\r\n','\n');f.exports.scoreBytes=Buffer.from(JSON.stringify(changed));assert.throws(()=>validateNativeLiveToneNavigationRenderer(f.report,f.exports),/score export changed/);
+});
+
+test('native authoring descendant clicks require matching raw ownership, button identity and live timestamp',()=>{
+ for(const release of ['keyup','navigation']){
+  const f=syntheticNativeLiveToneNavigationCase({route:'authoring',release}),n=f.report.actionRoles.navigation.at(-1),row=f.report.trustedActions.find(row=>row.sequence===n),control=f.report.controlActions.find(row=>row.sequence===n);
+  row.id=null;row.controlId='home-song-authoring';control.clicks[0].id=null;
+  validateNativeLiveToneNavigationRenderer(f.report,f.exports);
+  for(const mutate of [
+   (r,e,c)=>r.trustedActions.splice(r.trustedActions.indexOf(e),1),(r,e)=>delete e.controlId,(r,e)=>e.controlId='home-single-player',(r,e)=>e.isTrusted=false,(r,e)=>e.eventTime++,
+   (r,e,c)=>c.id='home-single-player',(r,e,c)=>c.clicks[0].id='foreign-child',(r,e,c)=>c.clicks[0].owned=false,(r,e,c)=>c.clicks[0].trusted=false,(r,e,c)=>c.clicks.push(structuredClone(c.clicks[0])),
+   (r,e)=>r.trustedActions.push(structuredClone(e)),(r,e)=>r.trustedActions.push({...e,id:'foreign-child',controlId:'foreign-button'}),
+  ]){const report=structuredClone(f.report),event=report.trustedActions.find(row=>row.sequence===n),owned=report.controlActions.find(row=>row.sequence===n);mutate(report,event,owned);assert.throws(()=>validateNativeLiveToneNavigationRenderer(report,f.exports));}
+ }
 });
 
 test('post-click navigation may hide or disable its old control without changing the owned pre-click geometry',()=>{
@@ -49,7 +78,8 @@ test('native key actions cannot hide focus reacquisition, substituted keys, miss
   f=>f.results[f.report.actionRoles.keyDown-1].native_key.focus_reacquired=true,f=>f.results[f.report.actionRoles.keyDown-1].native_key.pointer_clicked=true,
   f=>f.results[f.report.actionRoles.keyUp-1].native_key.app_enabled=false,f=>f.results[f.report.actionRoles.keyUp-1].native_key.foreground++,f=>f.results[f.report.actionRoles.keyUp-1].native_key.app_process_id++,
   f=>f.results[f.report.actionRoles.keyDown-1].client_click={},f=>f.actions[f.report.actionRoles.keyUp-1].kind='key-r',f=>f.actions[f.report.actionRoles.blockedKey-1].kind='live-key-r-up',
-  f=>f.actions[0].sequence++,f=>f.actions[0].keyCode='KeyR',f=>f.actions[0].x=20000,f=>f.results[0].ok=false,f=>f.results[0].client_click.actual[0]++,
+  f=>f.actions[0].sequence++,f=>f.actions[0].keyCode='KeyR',f=>f.actions[0].x=20000,f=>f.results[0].ok=false,f=>f.results[0].client_click.actual[0]++,f=>delete f.results[0].client_click.hit_root,f=>f.results[0].client_click.hit_root=0,f=>f.results[0].client_click.hit_root=99,
+  f=>f.actions[0].kind='click',f=>f.actions[0].file='foreign.json',f=>f.results[0].owned_dialog.root_owner_hwnd=99,f=>f.results[0].owned_dialog.process_id++,f=>f.results[0].picker_completion.dialog_dismissed=false,
   f=>f.report.controlActions.splice(0,1),f=>f.report.controlActions[0].request.x++,
   f=>f.report.modActions=[],f=>f.report.trustedActions.find(row=>row.type==='change'&&row.id==='song-mod-layout').isTrusted=false,
  ];
@@ -62,7 +92,7 @@ async function evidenceDirectory(t){
  const binding={source_sha:'a'.repeat(40),source_tree:'b'.repeat(40),source_hashes:Object.fromEntries(LIVE_TONE_NAVIGATION_SOURCE_FILES.map(path=>[path,hash(path)]))},executable=join(directory,'fixture-executable.bin'),executableBytes=Buffer.from('synthetic executable identity only');await writeFile(executable,executableBytes);
  const native={version:1,scenario:'live-tone-navigation',ok:true,profile_reused:false,directory:join(directory,'Scores'),...binding,executable_sha256:hash(executableBytes),executable_bytes:executableBytes.length,phases:[]};
  const fixtures=liveToneNavigationFixture();await save(`fixtures/${LIVE_TONE_NAVIGATION_FIXTURE_FILENAME}`,fixtures.bytes);await save(`fixtures/${LIVE_TONE_NAVIGATION_MANIFEST_FILENAME}`,fixtures.manifest);
- for(const [index,c]of LIVE_TONE_NAVIGATION_CASES.entries()){const f=syntheticNativeLiveToneNavigationCase(c),pid=71+index;for(const result of f.results)if(result.native_key)result.native_key.app_process_id=pid;
+ for(const [index,c]of LIVE_TONE_NAVIGATION_CASES.entries()){const f=syntheticNativeLiveToneNavigationCase(c),pid=71+index;for(const result of f.results){if(result.native_key)result.native_key.app_process_id=pid;if(result.owned_dialog){result.owned_dialog.process_id=pid;result.owned_dialog.app_process_id=pid;}}
   const host={phase:c.phase,process_id:pid,actions:f.actions.length,live_key_held_at_close:false,profile_fresh:true,profile_reused:false,profile_absent_before_launch:true,profile_directory:join(directory,'webview-profiles',c.phase),renderer_ok:true,normal_close:true,launched_new_process:true,renderer_origin:'https://wmh.localhost',executable_tcp_listeners:0,elapsed_seconds:20};native.phases.push(host);
   await save(`profile-${c.phase}.json`,{version:1,phase:c.phase,process_id:pid,profile_directory:host.profile_directory,library_directory:native.directory,fresh_required:true,created_new:true});await save(`renderer-${c.phase}.json`,f.report);
   for(const [name,file]of Object.entries(f.report.files))await save(`downloads/${file}`,f.exports[`${name}Bytes`]);
