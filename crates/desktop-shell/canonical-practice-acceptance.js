@@ -26,13 +26,51 @@ async function dispatchCanonicalPracticePlay({document,until,click,readClock}){
  },'canonical Play ready after target and compatibility checks');
  return click('play-button');
 }
+// Windows515 action62 captured the temporary 100px lane after Mod restore,
+// then its owned native click arrived after the viewport budget had expanded it.
+// Observe the public commit, then one unchanged painted target; equal early
+// rectangles alone cannot prove that the pending ResizeObserver has published.
+function prepareCanonicalPracticePlayTarget({document,window=document.defaultView,onSample=()=>{}}){
+ const root=document.getElementById('workspace'),node=document.getElementById('play-button'),lane=root.querySelector('.piano-lanes-shared'),transport=root.querySelector('.piano-transport'),samples=[];
+ return new Promise((resolve,reject)=>{
+  let frame=null,timeout=null,previous=null;
+  const finish=error=>{if(frame!==null)window.cancelAnimationFrame(frame);window.clearTimeout(timeout);error?reject(error):resolve(samples.at(-1));};
+  const fail=reason=>finish(Error(`${reason}: ${JSON.stringify(samples)}`));
+  const sample=()=>{
+   const targetRect=node.getBoundingClientRect(),laneRect=lane.getBoundingClientRect(),transportRect=transport.getBoundingClientRect(),zoom=Math.round(laneRect.height/parseFloat(window.getComputedStyle(lane).height)*1000)/1000;
+   const visual=window.visualViewport,viewportBottom=Math.min(window.innerHeight,visual?visual.offsetTop+visual.height:window.innerHeight),padding=parseFloat(window.getComputedStyle(root).paddingBottom)||0;
+   const expected=Math.max(100,Math.floor(((viewportBottom-transportRect.bottom-(root.scrollTop||0)*zoom+laneRect.height)/zoom-padding)*100)/100),committed=parseFloat(document.body.style.getPropertyValue('--piano-available-lane-height'));
+   const target={x:targetRect.x,y:targetRect.y,width:targetRect.width,height:targetRect.height},value={frame:samples.length,committed,expected,laneHeight:laneRect.height,transportBottom:transportRect.bottom,viewportBottom,zoom,width:window.innerWidth,height:window.innerHeight,target};
+   samples.push(value);onSample(value);
+   const ready=document.body.dataset.screen==='stage'&&!root.hidden&&!node.disabled&&!node.closest('[hidden]')&&!document.querySelector('dialog[open]')&&document.getElementById('practice-gate')?.hidden&&target.width>0&&target.height>0&&Number.isFinite(committed)&&Number.isFinite(expected)&&Math.abs(committed-expected)<=.02;
+   const fingerprint=JSON.stringify({...value,frame:0});
+   if(ready&&previous===fingerprint)return finish();
+   previous=ready?fingerprint:null;
+   // Three frames admit the actual budget commit; the fourth verifies that
+   // its target survived a paint. A missing commit remains a hard failure.
+   if(samples.length===5)return fail('Canonical Play geometry did not settle within four rendered frames');
+   frame=window.requestAnimationFrame(sample);
+  };
+  timeout=window.setTimeout(()=>fail('No canonical Play geometry frame within 2000ms'),2000);
+  sample();
+ });
+}
+async function observeCanonicalPracticePlayClick({until,trusted,sequence,eventStart}){
+ let event;
+ await until(()=>{
+  const matches=trusted.slice(eventStart).filter(row=>row.sequence===sequence&&row.id==='play-button'&&row.type==='click'&&row.trusted===true);
+  if(matches.length>1)throw Error(`Duplicate trusted canonical Play click for action ${sequence}`);
+  event=matches[0];return Boolean(event);
+ },`trusted Play click for action ${sequence}`);
+ return event;
+}
 function compactCanonicalPracticeAudio(rows){
  const compact=record=>{const r=structuredClone(record);if(r.ledgerLayout==='range-pass-major'&&r.ledger){r.ledgerCapacity=r.ledger.actualStarts.length;r.unusedLedgerSentinel=0;r.unusedLedgerEmpty=r.ledger.actualStarts.slice(r.recordCount).every(n=>n===0)&&r.ledger.actualEnds.slice(r.recordCount).every(n=>n===0);r.ledger.actualStarts=r.ledger.actualStarts.slice(0,r.recordCount);r.ledger.actualEnds=r.ledger.actualEnds.slice(0,r.recordCount);r.passFrames=Array.from(r.passFrames||[]).slice(0,r.passCount);}if(r.pauseSpans)r.pauseSpans=Array.from(r.pauseSpans);return r;};
  return rows.map(row=>({...row,terminals:row.terminals.map(t=>({...t,record:compact(t.record)})),rawTerminals:row.rawTerminals.map(t=>({...t,record:compact(t.record)}))}));
 }
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(v,m)=>{if(!v)throw Error(m);},waits=createAcceptanceWait(),fetcher=globalThis.fetch.bind(globalThis),originalFetch=globalThis.fetch;
- const report={version:1,phase,origin:location.origin,ok:false,stage:'bootstrap',errors:[],requests:[],responses:[],trusted:[],samples:{},screenshots:{},files:{},runs:{},receipts:[],edits:[]};
+ const report={version:1,phase,origin:location.origin,ok:false,stage:'bootstrap',errors:[],requests:[],responses:[],trusted:[],samples:{},screenshots:{},files:{},runs:{},receipts:[],edits:[],playActions:[]};
  let sequence=0,receiver,live,controls,restored=false;const receiptRemovers=[];
  const json=(path,body)=>waits.json(fetcher,path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},10000);
  const until=(fn,label,ms=15000)=>waits.until(()=>{receiver?.assertHealthy();live?.assertHealthy();return fn();},`${phase}: ${report.stage}: ${label}`,ms),frame=()=>new Promise(requestAnimationFrame);
@@ -43,9 +81,13 @@ function compactCanonicalPracticeAudio(rows){
  async function native(kind,node,file){
   assert(node&&!node.disabled,'Owned canonical control unavailable');const field=fields[kind];if(field)assert(phase==='canonical-practice-controls'&&node.id===field.id&&node.tagName==='INPUT'&&node.type===field.type,'Closed numeric action target mismatch');
   if(kind==='key-c5')assert(document.hasFocus()&&document.activeElement===node&&node.id==='stage-title','Prepared C5 focus lost');else{node.scrollIntoView({block:'center',inline:'center'});node.focus();await frame();await frame();}
+  let playAction;
+  if(kind==='click'&&node.id==='play-button'){playAction={sequence:sequence+1,eventStart:report.trusted.length,samples:[]};report.playActions.push(playAction);await prepareCanonicalPracticePlayTarget({document,onSample:value=>playAction.samples.push(value)});}
   const b=node.getBoundingClientRect(),x=b.x+b.width/2,y=b.y+b.height/2,hit=document.elementFromPoint(x,y);assert(b.width>0&&b.height>0&&x>0&&x<innerWidth&&y>0&&y<innerHeight&&(hit===node||node.contains(hit)),`Owned target obscured: ${node.id}`);assert(sequence<(phase==='canonical-practice-seed'?80:64),'Canonical native action bound');
   const before=field?{value:node.value,captured:$('hud-captured').textContent,eventStart:report.trusted.length}:null,a={version:1,sequence:++sequence,kind,x,y,width:innerWidth,height:innerHeight,...(file?{file}:{})};
+  if(playAction)playAction.request={...a,target:{x:b.x,y:b.y,width:b.width,height:b.height}};
   if(kind==='picker')controls.beginPicker(sequence,file);await json('/__desktop_smoke/action',a);let result;await until(async()=>{const r=await fetcher(`/__desktop_smoke/result/${sequence}`);if(r.status===404)return false;result=await r.json();return true;},`owned ${kind}`,15000);assert(result.ok,result.error);
+  if(playAction){const after=node.getBoundingClientRect();playAction.afterDispatch={target:{x:after.x,y:after.y,width:after.width,height:after.height},disabled:node.disabled};playAction.trustedClick=await observeCanonicalPracticePlayClick({until,trusted:report.trusted,sequence,eventStart:playAction.eventStart});}
   if(field){assert(node.value===field.value,'Fixed numeric value mismatch');report.edits.push({kind,sequence,id:node.id,type:node.type,before,after:{value:node.value,captured:$('hud-captured').textContent,eventEnd:report.trusted.length}});assert($('hud-captured').textContent==='0','Editing generated music input');}
   return sequence;
  }

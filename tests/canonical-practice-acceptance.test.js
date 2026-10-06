@@ -146,3 +146,60 @@ for(const rejects of [false,true])test(`canonical native Play waits for post-Mod
   assert.match(source,/async function play\(\)\{await dispatchCanonicalPracticePlay\(\{document,until,click,readClock:clock\}\);await until\(\(\)=>state\(\)==='playing'&&!\$\('play-button'\)\.disabled,'acknowledged play'\)/);
  }finally{release?.();await pending?.catch(()=>{});await app.close();}
 });
+
+// Read-only geometry double around the actual production viewport observer.
+// The old two-frame native preparation reads the same stale 100px lane twice;
+// delivery and the queued production write arrive only after those reads.
+async function canonicalPlayGeometryFixture(){
+ const {parseHTML}=await import('linkedom'),{observePianoViewportBudget}=await import('../web/piano-viewport-budget.js');
+ const {document}=parseHTML('<html lang="en"><body data-screen="stage"><main id="workspace" class="piano-workspace"><div class="piano-lanes-shared"></div><div class="piano-keybed-shared"></div><div class="piano-transport"><button id="play-button">Play</button></div><section id="practice-gate" hidden></section></main></body></html>');
+ const root=document.getElementById('workspace'),lane=root.querySelector('.piano-lanes-shared'),transport=root.querySelector('.piano-transport'),keyboard=root.querySelector('.piano-keybed-shared'),play=document.getElementById('play-button'),frames=new Map(),values=new Map();
+ let serial=0,laneHeight=100,pendingChrome=60,notify,extraTargetOffset=0;
+ Object.defineProperty(document.body,'style',{value:{getPropertyValue:key=>values.get(key)||'',setProperty(key,value){values.set(key,value);laneHeight=Math.round(parseFloat(value)*64)/64;},removeProperty:key=>values.delete(key)}});
+ root.getBoundingClientRect=()=>({top:68});lane.getBoundingClientRect=()=>({width:986,height:laneHeight});keyboard.getBoundingClientRect=()=>({height:120});transport.getBoundingClientRect=()=>({height:52,bottom:528.92+pendingChrome+laneHeight});play.getBoundingClientRect=()=>({x:67,y:485.5+laneHeight+extraTargetOffset,width:105,height:36});
+ const window={innerWidth:1024,innerHeight:689,getComputedStyle:node=>({height:node===lane?`${laneHeight}px`:'',paddingBottom:'16px'}),setTimeout,clearTimeout,requestAnimationFrame:fn=>(frames.set(++serial,fn),serial),cancelAnimationFrame:id=>frames.delete(id),addEventListener(){},removeEventListener(){},ResizeObserver:class{constructor(fn){notify=fn;}observe(){}disconnect(){}}};
+ const flush=()=>{const pending=[...frames.values()];frames.clear();for(const fn of pending)fn();};
+ const view=observePianoViewportBudget({document,window});flush();pendingChrome=0;
+ const source=readFileSync(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8'),prepare=runInNewContext(source.split('(() => {')[0]+'\nprepareCanonicalPracticePlayTarget;');
+ const samples=[];return{document,window,view,frames,flush,play,samples,notify:()=>notify(),moveTarget:amount=>{extraTargetOffset=amount;},prepare:()=>prepare({document,window,onSample:value=>samples.push(value)})};
+}
+
+test('canonical native Play waits through two equal stale rectangles and the actual delayed viewport commit',async()=>{
+ const env=await canonicalPlayGeometryFixture();
+ try{
+  const pending=env.prepare();assert.equal(env.samples[0].target.y+18,603.5);
+  env.flush();env.notify();env.flush();
+  assert.deepEqual(env.samples.map(row=>row.committed),[100,100,100]);assert.ok(env.samples.every(row=>row.expected===144.08));
+  env.flush();assert.equal(env.samples.at(-1).target.y+18,647.578125);assert.equal(env.frames.size,1,'A committed capacity must also survive a painted target check');
+  env.flush();const ready=await pending;
+  assert.deepEqual(env.samples.map(row=>row.committed),[100,100,100,144.08,144.08]);assert.equal(ready.target.y+ready.target.height/2,647.578125);assert.equal(env.frames.size,0);
+ }finally{env.view.destroy();}
+});
+
+test('canonical native Play fails with retained samples when the production viewport observer never commits',async()=>{
+ const env=await canonicalPlayGeometryFixture();
+ try{
+  const pending=env.prepare(),rejected=assert.rejects(pending,/geometry did not settle within four rendered frames.*"committed":100.*"expected":144.08/);
+  for(let n=0;n<4;n++)env.flush();await rejected;
+  assert.equal(env.samples.length,5);assert.equal(env.frames.size,0);assert.equal(env.play.getBoundingClientRect().y+18,603.5);
+ }finally{env.view.destroy();}
+});
+
+test('canonical native Play rejects a still-moving target even with a committed viewport capacity',async()=>{
+ const env=await canonicalPlayGeometryFixture();
+ try{
+  env.notify();env.flush();const pending=env.prepare(),rejected=assert.rejects(pending,/geometry did not settle within four rendered frames/);
+  for(let n=1;n<=4;n++){env.moveTarget(n);env.flush();}await rejected;
+  assert.ok(env.samples.every(row=>row.committed===144.08&&row.expected===144.08));assert.equal(env.frames.size,0);
+ }finally{env.view.destroy();}
+});
+
+test('canonical native Play proves its exact trusted click before audio acknowledgement and rejects duplicates',async()=>{
+ const source=readFileSync(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8'),observe=runInNewContext(source.split('(() => {')[0]+'\nobserveCanonicalPracticePlayClick;');
+ const event={sequence:62,id:'play-button',type:'click',trusted:true},trusted=[event,{...event,sequence:61},{...event,id:'stage-title'},{...event,trusted:false}];
+ let checks=0;const until=async(condition,label)=>{assert.equal(label,'trusted Play click for action 62');assert.equal(await condition(),false);checks++;trusted.push(event);assert.equal(await condition(),true);};
+ assert.equal(await observe({until,trusted,sequence:62,eventStart:1}),event);assert.equal(checks,1);
+ await assert.rejects(observe({until:async condition=>condition(),trusted:[event,event],sequence:62,eventStart:0}),/Duplicate trusted canonical Play click for action 62/);
+ await assert.rejects(observe({until:async condition=>{assert.equal(await condition(),false);throw Error('Missing exact trusted click');},trusted:[],sequence:62,eventStart:0}),/Missing exact trusted click/);
+ assert.ok(source.indexOf('playAction.trustedClick=await observeCanonicalPracticePlayClick')<source.indexOf("async function play(){await dispatchCanonicalPracticePlay"));
+});
