@@ -32,10 +32,26 @@ test('launch configuration rejects unbounded and invalid timeouts', () => {
   }
 });
 
-test('both browser bootstraps use managed selection while preserving their startup budgets', () => {
+test('browser callers inherit only an explicit process environment executable override', t => {
+  const previous = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+  t.after(() => {
+    if (previous === undefined) delete process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+    else process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE = previous;
+  });
+  delete process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+  assert.equal(Object.hasOwn(chromiumLaunchOptions({timeout: 30_000}), 'executablePath'), false);
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE = '';
+  assert.equal(Object.hasOwn(chromiumLaunchOptions({timeout: 30_000}), 'executablePath'), false);
+  const executablePath = '/opt/custom browser/chromium';
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE = executablePath;
+  assert.equal(chromiumLaunchOptions({timeout: 30_000}).executablePath, executablePath);
+});
+
+test('all browser bootstraps use managed selection while preserving their startup budgets', () => {
   for (const [filename, options] of [
     ['full-app-browser.test.js', '{timeout: 30_000}'],
     ['frontend-browser.test.js', '{timeout: 180_000}'],
+    ['engraving-browser.test.js', '{timeout: 30_000}'],
   ]) {
     const source = readFileSync(new URL(filename, import.meta.url), 'utf8');
     assert.ok(source.includes("import {chromiumLaunchOptions} from './browser-launch-options.js';"), filename);

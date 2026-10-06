@@ -17,6 +17,7 @@ import {fileURLToPath} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
 import {createHash} from 'node:crypto';
 import {chromium} from 'playwright';
+import {chromiumLaunchOptions} from './browser-launch-options.js';
 import {ENGRAVING_BUNDLE_SHA256} from '../web/engraving.js';
 import {registerNativeTieGraphBrowserTests} from './native-tie-graph-browser-cases.js';
 
@@ -88,8 +89,7 @@ before(async () => {
   const imported = await fetch(`${origin}/api/import/musicxml`, {method: 'POST', headers: {'Content-Type': 'application/xml'}, body: source});
   assert.equal(imported.status, 200, await imported.clone().text());
   duet = await imported.json();
-  const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome'].find(existsSync);
-  browser = await chromium.launch({...(executablePath ? {executablePath} : {}), headless: true, timeout: 30_000, args: ['--no-sandbox', '--disable-dev-shm-usage']});
+  browser = await chromium.launch(chromiumLaunchOptions({timeout: 30_000}));
 }, {timeout: 60_000});
 
 after(async () => {
