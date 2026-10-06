@@ -24,21 +24,21 @@ test('live proof rejects fabricated, absent, untrusted, silent, unconnected and 
  for(const [index,change]of changes.entries()){const e=syntheticLiveToneEvidence();change(e);assert.throws(()=>verify(e),`Adversary ${index} was accepted`);}
 });
 
-function harness({readyCheckpoint=false,initialGate=1}={}){
+function harness({readyCheckpoint=false,initialGate=1,sampleRate=48000}={}){
  const listeners=new Map(),frames=new Map(),nativeCalls=[];let wall=0,nextFrame=0,token=0;
  class MessageEvent{constructor(data,port,{trusted=true}={}){Object.assign(this,{data,target:port,currentTarget:port,isTrusted:trusted});}}
  class MessagePort{constructor(){this.listeners=new Set();}addEventListener(type,fn){this.listeners.add(fn);}removeEventListener(type,fn){this.listeners.delete(fn);}emit(data,options){const event=options?.plain?{data,target:this,currentTarget:this,isTrusted:true}:new MessageEvent(data,this,options);if(options?.checkpoint){this.onmessage?.(event);return(async()=>{await Promise.resolve();await Promise.resolve();await Promise.resolve();for(const listener of this.listeners)listener(event);})();}for(const listener of this.listeners)listener(event);this.onmessage?.(event);}}
  class AudioNode{constructor(context){this.context=context;}connect(...args){nativeCalls.push(['connect',this,...args]);if(args[0]===null)throw this.context.sentinel;return args[0];}disconnect(...args){nativeCalls.push(['disconnect',this,...args]);return 'native-disconnected';}}
  class AudioDestinationNode extends AudioNode{}
  class GainNode extends AudioNode{constructor(context){super(context);this.gain={value:1};}}
- class AnalyserNode extends AudioNode{constructor(context){super(context);this.fftSize=16384;}getFloatTimeDomainData(values){values.fill(.125);}}
+ class AnalyserNode extends AudioNode{constructor(context){super(context);this.fftSize=16384;}getFloatTimeDomainData(values){values.fill(this.context.pcmValue??.125);}}
  class AudioWorkletNode extends AudioNode{constructor(context){super(context);this.port=new MessagePort();this.listeners=new Set();this.numberOfInputs=0;this.numberOfOutputs=1;}addEventListener(type,fn){this.listeners.add(fn);}removeEventListener(type,fn){this.listeners.delete(fn);}}
- const context={state:'running',sampleRate:48000,currentTime:0,sentinel:Error('original native failure'),createGain(){return new GainNode(this);},createAnalyser(){return new AnalyserNode(this);}};context.destination=new AudioDestinationNode(context);
+ const context={state:'running',sampleRate,currentTime:0,sentinel:Error('original native failure'),createGain(){return new GainNode(this);},createAnalyser(){return new AnalyserNode(this);}};context.destination=new AudioDestinationNode(context);
  let lastPromise,lastReadyDelivery;
  class Receiver{
   static create(context,output,options){const owner=new Receiver(context,output,options);lastPromise=owner.request('initialize').then(()=>{owner.state='ready';return owner;});return lastPromise;}
   constructor(context,output,{onEvent=()=>{}}={}){Object.assign(this,{context,output,onEvent,generation:1,state:'initializing',disposed:false});this.node=new AudioWorkletNode(context);this.outputGate=context.createGain();this.outputGate.gain.value=initialGate;this.node.connect(this.outputGate);this.outputGate.connect(output);this.node.port.onmessage=event=>{if(event.data.type==='ready')this.readyResolve?.('real-ack');if(['started','ended'].includes(event.data.type))this.onEvent(event.data);};}
-  request(type){if(type==='fail')throw context.sentinel;return new Promise(resolve=>{this.readyResolve=resolve;queueMicrotask(()=>{lastReadyDelivery=this.node.port.emit({type:'ready',source:'live-tone',generation:1,sampleRate:48000,frame:0},{checkpoint:readyCheckpoint});});});}
+  request(type){if(type==='fail')throw context.sentinel;return new Promise(resolve=>{this.readyResolve=resolve;queueMicrotask(()=>{lastReadyDelivery=this.node.port.emit({type:'ready',source:'live-tone',generation:1,sampleRate:context.sampleRate,frame:0},{checkpoint:readyCheckpoint});});});}
   play(...args){nativeCalls.push(['play',this,...args]);if(args[0]==='throw')throw context.sentinel;return ++token;}
  }
  const document={addEventListener(type,fn){listeners.set(type,fn);},removeEventListener(type,fn){if(listeners.get(type)===fn)listeners.delete(type);}};
@@ -119,4 +119,48 @@ test('initialization zero never admits an invalid connection, muted human path o
   e=>e.ready.receiver.graphToDestination[1].gain=null,e=>e.pcm.blocks[0].graphToDestination[1].gain=null,e=>e.pcm.blocks=[],e=>e.pcm.blocks[0].peak=0,e=>e.pcm.blocks[0].energy=0,e=>e.pcm.blocks[0].nonzeroSamples=0,e=>e.receipts[1].record.pcmPeak=0,e=>e.receipts[1].record.pcmEnergy=0,e=>e.receipts[1].record.nonzeroSamples=0,
  ];
  for(const [index,change]of changes.entries()){const e=structuredClone(evidence);change(e);assert.throws(()=>verify(e),`Initialization-zero adversary ${index} was accepted`);}
+});
+
+test('navigation checkpoints retain native calls and PCM, drain history and never edit the production graph',async()=>{
+ const f=harness(),{observer,owner}=await initialized(f);f.time(100);observer.begin();f.input('keydown',200);const id='manual:key:keyboard-2:3:Digit2',token=owner.play(id,72);f.time(201);owner.node.port.emit(receipt('started',id,token));f.frame(216);assert.equal(observer.sounding(),true);
+ const before=f.nativeCalls.length;f.time(230);observer.checkpoint('navigation');f.listeners.get('pointerdown')({type:'pointerdown',isTrusted:true,timeStamp:231,target:{closest:()=>({id:'settings-button'})}});f.time(252);owner.node.port.emit({...receipt('ended',id,token),reason:'stopped'});f.input('keyup',260);f.context.pcmValue=0;f.time(270);observer.checkpoint('entered');
+ for(const time of [300,340,400,500,600])f.frame(time);assert.equal(observer.quiet('entered'),false,'Zero blocks from an undrained analyser history are insufficient');
+ for(const time of [640,700,760])f.frame(time);assert.equal(observer.quiet('entered'),true);
+ observer.sealCheckpoint('entered');assert.equal(observer.quiet('entered'),false,'A sealed finite window cannot certify later time');
+ f.time(810);observer.checkpoint('blocked-input');assert.equal(observer.quiet('blocked-input'),false,'An empty new window is not evidence');for(const time of [850,910,970])f.frame(time);assert.equal(observer.quiet('blocked-input'),true);observer.sealCheckpoint('blocked-input');
+ f.time(1100);observer.checkpoint('returned');for(const time of [1140,1200,1260])f.frame(time);assert.equal(observer.quiet('returned'),true);
+ const evidence=serializable(observer.finish());assert.equal(evidence.calls.length,1);assert.equal(evidence.actions[0].control,'settings-button');assert.equal(evidence.receipts[1].record.reason,'stopped');assert.equal(evidence.checkpoints[1].pcm.blocks[0].tapConnected,true);assert.ok(evidence.checkpoints.every(row=>row.sampling==='sealed'));assert.equal(evidence.pcmCoverage,'finite-checkpoint-windows');
+ assert.equal(f.nativeCalls.slice(before).filter(row=>['connect','disconnect','play'].includes(row[0])).length,0,'Observing navigation never reconnects or silences production nodes');validateLiveToneCleanup(serializable(observer.restore()));
+});
+
+async function silentNavigationWindow(){
+ const f=harness(),{observer,owner}=await initialized(f);f.time(100);observer.begin();f.input('keydown',200);const id='manual:key:keyboard-2:3:Digit2',token=owner.play(id,72);f.time(201);owner.node.port.emit(receipt('started',id,token));f.frame(216);f.input('keyup',240);f.time(252);owner.node.port.emit(receipt('ended',id,token));f.context.pcmValue=0;f.time(270);observer.checkpoint('entered');for(const time of [640,700,760])f.frame(time);assert.equal(observer.quiet('entered'),true);return{f,observer,owner};
+}
+
+test('a full PCM budget explicitly fails instead of certifying stale silence at a later audio time',async()=>{
+ const {f,observer}=await silentNavigationWindow();for(let time=780;f.frames.size&&time<5000;time+=20)f.frame(time);
+ const before=observer.failureEvidence();assert.equal(before.current.checkpoints[0].sampling,'exhausted');assert.equal(before.current.checkpoints[0].pcm.blocks.length,64);assert.equal(f.frames.size,0);assert.ok(before.errors.some(error=>error.includes('exhausted')));
+ f.time(10000);f.context.pcmValue=.1;assert.equal(observer.quiet('entered'),false);assert.throws(()=>observer.finish(),/fresh observing/);assert.throws(()=>observer.checkpoint('returned'),/Failed live-tone observation/);assert.equal(observer.restore().restored,true);
+});
+
+test('finish samples the live gate afresh and rejects audible output after a stopped RAF',async()=>{
+ const {f,observer}=await silentNavigationWindow();f.time(10000);f.context.pcmValue=.1;assert.equal(observer.quiet('entered'),false,'Old zero samples are not current evidence');assert.throws(()=>observer.finish(),/Fresh live-tone PCM/);
+ const evidence=observer.failureEvidence();assert.equal(evidence.current.checkpoints[0].pcm.blocks.at(-1).audioTime,10);assert.ok(evidence.current.checkpoints[0].pcm.blocks.at(-1).peak>.09);assert.equal(observer.restore().restored,true);
+});
+
+test('sealed windows require a new final window and do not grant another FFT grace period',async()=>{
+ for(const label of ['blocked-input','returned']){const {f,observer}=await silentNavigationWindow();const original=observer.failureEvidence().current.silenceEstablished;observer.sealCheckpoint('entered');assert.equal(f.frames.size,0);f.time(1000);assert.equal(observer.quiet('entered'),false);assert.throws(()=>observer.finish(),/fresh observing/);
+  observer.checkpoint(label);f.context.pcmValue=.1;f.frame(1100);f.context.pcmValue=0;for(const time of [1500,1560,1620])f.frame(time);assert.equal(observer.quiet(label),false,'Later zero samples cannot hide a nonzero block inside a reset drain window');assert.throws(()=>observer.finish(),/fresh observing/);assert.deepEqual(observer.failureEvidence().current.silenceEstablished,original);assert.equal(observer.restore().restored,true);
+ }
+});
+
+test('fresh zero completion is bounded while suspended context output is rejected',async()=>{
+ const {f,observer}=await silentNavigationWindow();observer.sealCheckpoint('entered');f.time(5000);observer.checkpoint('finished');for(const time of [5040,5100,5160])f.frame(time);assert.equal(observer.quiet('finished'),true);const before=observer.failureEvidence().current.checkpoints.at(-1).pcm.blocks.length,evidence=observer.finish();assert.equal(evidence.checkpoints.at(-1).pcm.blocks.length,before+1,'Finish takes a new actual analyser sample');assert.equal(evidence.checkpoints.at(-1).pcm.blocks.at(-1).audioTime,evidence.after.receiver.audioTime);validateLiveToneCleanup(serializable(observer.restore()));
+ const suspended=await silentNavigationWindow();suspended.f.context.state='suspended';suspended.f.frame(800);assert.equal(suspended.observer.quiet('entered'),false);assert.throws(()=>suspended.observer.finish(),/fresh observing/);assert.equal(suspended.observer.restore().restored,true);
+});
+
+test('navigation sampling remains bounded but spans FFT drain at the lowest supported rate',async()=>{
+ const f=harness({sampleRate:8000}),{observer,owner}=await initialized(f);f.time(100);observer.begin();f.input('keydown',200);const id='manual:key:keyboard-2:3:Digit2',token=owner.play(id,72);f.frame(220);f.input('keyup',240);f.time(252);owner.node.port.emit({...receipt('ended',id,token),sampleRate:8000,actualEndFrame:2016});f.context.pcmValue=0;f.time(270);observer.checkpoint('low-rate');
+ for(let time=280;time<=2650;time+=10)f.frame(time);
+ assert.equal(observer.quiet('low-rate'),true);const evidence=serializable(observer.finish()),blocks=evidence.checkpoints[0].pcm.blocks;assert.ok(blocks.length<64);assert.ok(blocks.at(-1).audioTime-blocks[0].audioTime>2.18);validateLiveToneCleanup(serializable(observer.restore()));
 });

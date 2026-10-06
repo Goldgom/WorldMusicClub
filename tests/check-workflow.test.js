@@ -321,3 +321,32 @@ test('UI preview refuses the previous subset and skipped or failed home boundary
     assert.notEqual(checked.status,0);assert.match(checked.stderr,/Missing executed passing preview case: real home menu keeps its hitbox stable/);
   }
 });
+
+const liveSilencePreviewCases=['settings','authoring'].flatMap(route=>['keyup','navigation'].map(release=>`real unmuted live worklet verifies finite silence through ${route} after ${release}`));
+function validateLiveSilencePreview(document){
+  validateNoticePreview(document);const steps=document.jobs['ui-preview'].steps,run=steps.find(row=>row.run?.includes('tests/full-app-browser.test.js'));
+  const pattern=run.run.match(/--test-name-pattern='([^']+)'/)?.[1],selected=new RegExp(pattern);
+  const previous=[...priorPreviewCases,noticePreviewCase,guitarNotationPreviewCase,homeHoverPreviewCase];assert.equal(previous.length,16);
+  for(const name of [...previous,...liveSilencePreviewCases])assert.ok(selected.test(name),`Missing selected preview case: ${name}`);
+  for(const name of liveSilencePreviewCases)assert.equal(selected.test(name+' extra'),false,'Live-silence preview selection must use complete case names');
+  const failure=steps.find(row=>row.with?.name==='game-ui-failures-${{ github.sha }}');assert.equal(failure.if,'always()');assert.ok(failure.with.path.split('\n').includes('ui-preview/worldmusichub-live-silence-*.json'),'Retain finite live-silence JSON diagnostics on failure');
+  const complete=steps.find(row=>row.with?.name==='game-ui-preview-${{ github.sha }}');assert.equal(complete.if,'always()');assert.ok(complete.with.path.split('\n').includes('ui-preview/*.json'));assert.ok(complete.with.path.split('\n').includes('ui-preview/tests.tap'));
+}
+
+test('UI preview retains all 16 existing cases and adds four finite live-silence cases with failure JSON retention',()=>{
+  const parsed=spawnSync(python,['scripts/check-authoring-workflow.py','.github/workflows/ui-preview.yml','--json'],{cwd:root,encoding:'utf8'});assert.equal(parsed.status,0,parsed.stderr);
+  const preview=JSON.parse(parsed.stdout);validateLiveSilencePreview(preview);
+  for(const mutate of [document=>{const run=document.jobs['ui-preview'].steps.find(row=>row.run?.includes('tests/full-app-browser.test.js'));run.run=run.run.replace('real unmuted live worklet verifies finite silence','unselected live case');},document=>{document.jobs['ui-preview'].steps.find(row=>row.with?.name==='game-ui-failures-${{ github.sha }}').with.path='';}]){const changed=structuredClone(preview);mutate(changed);assert.throws(()=>validateLiveSilencePreview(changed));}
+  const verifier=readFileSync(new URL('../scripts/verify-ui-preview.mjs',import.meta.url),'utf8');assert.match(verifier,/const files=verifyUiPreviewLiveSilence\(directory,tap\)/);assert.match(verifier,/\.\.\.LIVE_SILENCE_PREVIEW_CASES\.map\(row=>row.name\)/);assert.match(verifier,/live_audio_pcm_coverage:'finite-checkpoint-windows'/);
+  for(const flag of ['accepted_package','windows_native_verified','physical_midi_verified','actual_speaker_output_verified'])assert.ok(verifier.includes(`${flag}:false`));
+});
+
+test('UI preview CLI refuses an omitted, skipped, failed, TODO or renamed finite live-silence case',t=>{
+  const directory=mkdtempSync(join(tmpdir(),'wmh-live-silence-tap-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));
+  const previous=[...priorPreviewCases,noticePreviewCase,guitarNotationPreviewCase,homeHoverPreviewCase].map((name,index)=>`ok ${index+1} - ${name}`);
+  for(let index=0;index<4;index++)for(const replace of [()=>'',line=>line+' # SKIP not selected',line=>line+' # TODO pending',line=>line.replace(/^ok /,'not ok '),line=>line+' extra']){
+    const lines=liveSilencePreviewCases.map((name,index)=>`ok ${index+17} - ${name}`);lines[index]=replace(lines[index]);writeFileSync(join(directory,'tests.tap'),[...previous,...lines].join('\n')+'\n');
+    const result=spawnSync(process.execPath,['scripts/verify-ui-preview.mjs',directory],{cwd:root,encoding:'utf8'});assert.notEqual(result.status,0);assert.match(result.stderr,/Missing executed passing (?:live-silence )?preview case: real unmuted live worklet/);
+  }
+  writeFileSync(join(directory,'tests.tap'),[...previous,...liveSilencePreviewCases.map((name,index)=>`ok ${index+17} - ${name}`)].join('\n')+'\n');const missing=spawnSync(process.execPath,['scripts/verify-ui-preview.mjs',directory],{cwd:root,encoding:'utf8'});assert.notEqual(missing.status,0);assert.match(missing.stderr,/worldmusichub-live-silence-settings-keyup.json/);
+});

@@ -22,14 +22,14 @@ jobs:
       - run: npm run prepare:engraving
       - run: npx playwright install --with-deps chromium
       - run: cargo build -p practice-server --locked
-      - name: Exercise shared piano geometry and actual falling-lane notation paint
+      - name: Exercise shared piano geometry, notation paint and finite live-audio silence
         env:
           WMH_ARTIFACT_DIR: ui-preview
         run: |
           set -o pipefail
           mkdir -p ui-preview
-          node --test --test-reporter=tap --test-name-pattern='^(real free piano fills desktop|original grand staff and Jianpu follow|game menu and audible song preview|normal and free piano share|original falling bars visibly cross|real D768 lobby and compact performance fit|short-landscape following reveals|real guitar current and next six-note|real initial compact guide stays|real compact 88-key and custom extreme guides|real piano hands preserve merged ties|real short-landscape guitar keeps a complete labelled row and transport beside notation|real home menu keeps its hitbox stable at the hover boundary)' tests/full-app-browser.test.js | tee ui-preview/tests.tap
-      - name: Verify preview provenance and required real screenshots
+          node --test --test-reporter=tap --test-name-pattern='^(real free piano fills desktop|original grand staff and Jianpu follow|game menu and audible song preview|normal and free piano share|original falling bars visibly cross|real D768 lobby and compact performance fit|short-landscape following reveals|real guitar current and next six-note|real initial compact guide stays|real compact 88-key and custom extreme guides|real piano hands preserve merged ties|real short-landscape guitar keeps a complete labelled row and transport beside notation|real home menu keeps its hitbox stable at the hover boundary|real unmuted live worklet verifies finite silence through (settings|authoring) after (keyup|navigation)$)' tests/full-app-browser.test.js | tee ui-preview/tests.tap
+      - name: Verify preview provenance, required screenshots and finite live-audio evidence
         run: node scripts/verify-ui-preview.mjs ui-preview
       - name: Retain compact failure pixels and geometry before the full preview
         if: always()
@@ -42,6 +42,7 @@ jobs:
             ui-preview/worldmusichub-live-bootstrap*.json
             ui-preview/worldmusichub-compact-*-precheck.json
             ui-preview/worldmusichub-live-piano-notice-layout.json
+            ui-preview/worldmusichub-live-silence-*.json
             ui-preview/worldmusichub-home-hover-boundary*.json
             ui-preview/worldmusichub-home-hover-boundary*.png
             ui-preview/worldmusichub-live-guitar-render-*.json

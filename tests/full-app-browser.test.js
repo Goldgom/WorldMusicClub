@@ -9,6 +9,7 @@ import {registerStaffRegisterBrowserRegressions} from './staff-register-browser-
 import {registerAboveKeyboardBrowserRegressions} from './above-keyboard-browser-regression.js';
 import {registerReferenceListeningBrowserRegressions} from './reference-listening-browser-regression.js';
 import {registerSharedPianoStageBrowserRegressions} from './shared-piano-stage-browser-regression.js';
+import {registerLiveToneNavigationBrowserRegressions} from './live-tone-navigation-browser-regression.js';
 import {registerFreePianoBrowserRegressions} from './free-piano-browser-regression.js';
 import {selectLegacyEnglish, wideKeyboardBindings, keyboardBrowserScore, observeRealAudio, guitarPhraseBrowserScore, boundedPreviewBrowserRecord, orderedInitialTempoBrowserMidi, standardMidiDisclosure} from './browser-input-fixtures.js';
 /**
@@ -2652,3 +2653,5 @@ registerLocaleBrowserRegressions({test,getPage:()=>page,ui,closeShellPanels,wait
 registerGameLobbyBrowserRegressions({test,getPage:()=>page,ui,closeShellPanels,exportScore,exportTakeData,artifactDirectory});
 
 registerSharedPianoStageBrowserRegressions({test,getPage:()=>page,ui,setSessionMode,readyForTitle,closeShellPanels,artifactDirectory,exportScore,exportTakeData,waitForEngraving});
+
+registerLiveToneNavigationBrowserRegressions({test,getPage:()=>page,startPreview,prepareKeyboardBrowserPractice,ui,closeShellPanels,exportTakeData,exportScore,pausedTakeSnapshot,artifactDirectory});
