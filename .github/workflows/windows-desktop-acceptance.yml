@@ -13,6 +13,7 @@ jobs:
       source_sha: ${{ steps.acceptance_source.outputs.source_sha }}
       source_tree: ${{ steps.acceptance_source.outputs.source_tree }}
       run_id: ${{ github.run_id }}
+      native_clean_profile_routing: ${{ steps.native_clean_profile_routing.outcome }}
       management_pack_browser: ${{ steps.management_pack_browser.outcome }}
       management_catalog_browser: ${{ steps.management_catalog_browser.outcome }}
       management_catalog_browser_verify: ${{ steps.management_catalog_browser_verify.outcome }}
@@ -56,6 +57,11 @@ jobs:
       - run: node --test tests/song-authoring-model.test.js tests/frontend-song-authoring.test.js tests/song-authoring-acceptance-fixtures.test.js tests/native-song-authoring-evidence.test.js tests/authoring-acceptance-workflow.test.js tests/authoring-final-gate.test.js
       - id: dense_native_driver
         run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - name: Original clean-profile routing through the exact compiled native driver
+        id: native_clean_profile_routing
+        env:
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: node --test tests/native-clean-profile-routing.test.js
       - name: Original current Basic catalog protection through Rust stdin and app DOM
         timeout-minutes: 6
         env:
@@ -572,6 +578,8 @@ jobs:
       complete_practice_windows_verify: ${{ steps.complete_practice_windows_verify.outcome }}
       canonical_practice_windows: ${{ steps.canonical_practice_windows.outcome }}
       canonical_practice_windows_verify: ${{ steps.canonical_practice_windows_verify.outcome }}
+      build_diagnostics_windows: ${{ steps.build_diagnostics_windows.outcome }}
+      build_diagnostics_windows_verify: ${{ steps.build_diagnostics_windows_verify.outcome }}
       native_full_portable: ${{ steps.native_full_portable.outcome }}
       native_full_upload: ${{ steps.native_full_upload.outcome }}
       native_runtime_package: ${{ steps.native_runtime_package.outcome }}
@@ -626,7 +634,7 @@ jobs:
       - name: Parse the exact native acceptance script
         shell: pwsh
         run: |
-          foreach ($script in @('scripts/windows-desktop-acceptance.ps1','scripts/windows-desktop-profile.ps1','scripts/windows-desktop-catalog-snapshot.ps1','scripts/windows-desktop-geometry.ps1','scripts/windows-native-portable-smoke.ps1','scripts/windows-native-runtime-smoke.ps1')) {
+          foreach ($script in @('scripts/windows-desktop-acceptance.ps1','scripts/windows-desktop-profile.ps1','scripts/windows-desktop-catalog-snapshot.ps1','scripts/windows-desktop-geometry.ps1','scripts/windows-build-diagnostics.ps1','scripts/windows-native-portable-smoke.ps1','scripts/windows-native-runtime-smoke.ps1')) {
             $tokens=$null; $errors=$null
             [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$tokens,[ref]$errors)
             if ($errors.Count) { $errors | Format-List; throw "PowerShell syntax errors in $script" }
@@ -803,6 +811,26 @@ jobs:
           include-hidden-files: true
           retention-days: 90
           if-no-files-found: warn
+      - name: Actual native Settings build identity and explicit private summary
+        id: build_diagnostics_windows
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
+        timeout-minutes: 6
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -cne $env:GITHUB_SHA) { throw 'Unexpected diagnostics build source' }
+          if ((git rev-parse --is-shallow-repository).Trim() -cne 'false') { throw 'Diagnostics requires full source history' }
+          if (git status --porcelain --untracked-files=normal) { throw 'Diagnostics acceptance source is dirty' }
+          ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-build-diagnostics -Scenario build-diagnostics
+      - name: Reverify compiled source, actual owned image and selected diagnostic text
+        id: build_diagnostics_windows_verify
+        if: ${{ !cancelled() && steps.build_diagnostics_windows.outcome == 'success' }}
+        timeout-minutes: 2
+        shell: pwsh
+        env:
+          WMH_BUILD_DIAGNOSTICS_EXECUTABLE: ${{ github.workspace }}/target/release/worldmusichub-desktop.exe
+        run: |
+          node scripts/verify-native-build-diagnostics.mjs --check desktop-build-diagnostics
+          if ($LASTEXITCODE -ne 0) { throw 'Native diagnostics source/process/privacy proof failed' }
       # Default success() keeps candidate packaging behind every native gate.
       # This job cannot establish browser or whole-checkpoint acceptance.
       - name: Package native candidate with exact provenance and notices
@@ -814,6 +842,8 @@ jobs:
           $bulkProof=Get-Content -Raw desktop-bulk-import/native-bulk-import-files.json | ConvertFrom-Json
           $currentTree=(git rev-parse 'HEAD^{tree}').Trim()
           $currentExe=(Get-FileHash target/release/worldmusichub-desktop.exe -Algorithm SHA256).Hash.ToLower()
+          $diagnosticProof=Get-Content -Raw desktop-build-diagnostics/build-diagnostics-proof.json | ConvertFrom-Json
+          if ($diagnosticProof.source_sha -cne '${{ github.sha }}' -or $diagnosticProof.source_tree -cne $currentTree -or $diagnosticProof.executable_sha256 -cne $currentExe -or $diagnosticProof.source_commit_count -ne [long](git rev-list --count HEAD)) { throw 'Diagnostics does not match the exact packaged source/count/executable' }
           if ($bulkProof.source_sha -cne '${{ github.sha }}' -or $bulkProof.source_tree -cne $currentTree -or $bulkProof.executable_sha256 -cne $currentExe) { throw 'Bulk-import evidence does not match the exact packaged source and executable' }
           node scripts/verify-native-clean-song-evidence.mjs --check desktop-clean-song
           if ($LASTEXITCODE -ne 0) { throw 'Native clean-song exact-source proof failed' }
@@ -986,6 +1016,9 @@ jobs:
         with:
           name: native-feature-evidence-${{ github.sha }}
           path: |
+            desktop-build-diagnostics/*.json
+            desktop-build-diagnostics/*.png
+            desktop-build-diagnostics/*.log
             desktop-startup/*.json
             desktop-startup/*.png
             desktop-startup/*.log
@@ -1250,8 +1283,8 @@ jobs:
           const fs = require('node:fs');
           const jobs = ['bulk-import-browser', 'native-feature-acceptance'];
           const mandatorySteps = {
-            'bulk-import-browser': ['management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser', 'canonical_practice_protocol', 'canonical_practice_browser_720', 'canonical_practice_browser_720_verify', 'canonical_practice_browser_640', 'canonical_practice_browser_640_verify'],
-            'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify', 'canonical_practice_windows', 'canonical_practice_windows_verify', 'native_full_portable', 'native_full_upload', 'native_runtime_package', 'native_runtime_verify', 'native_runtime_startup', 'native_runtime_delivery', 'native_runtime_delivery_verify', 'native_runtime_upload', 'native_runtime_evidence'],
+            'bulk-import-browser': ['native_clean_profile_routing', 'management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser', 'canonical_practice_protocol', 'canonical_practice_browser_720', 'canonical_practice_browser_720_verify', 'canonical_practice_browser_640', 'canonical_practice_browser_640_verify'],
+            'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify', 'canonical_practice_windows', 'canonical_practice_windows_verify', 'build_diagnostics_windows', 'build_diagnostics_windows_verify', 'native_full_portable', 'native_full_upload', 'native_runtime_package', 'native_runtime_verify', 'native_runtime_startup', 'native_runtime_delivery', 'native_runtime_delivery_verify', 'native_runtime_upload', 'native_runtime_evidence'],
           };
           const needs = JSON.parse(process.env.ACCEPTANCE_NEEDS);
           const sha = process.env.ACCEPTANCE_SHA;

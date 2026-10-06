@@ -24,10 +24,10 @@ import {selectLegacyEnglish, wideKeyboardBindings, keyboardBrowserScore, observe
  */
 import test, {before, after, beforeEach, afterEach} from 'node:test';
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
+import {execFileSync, spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync} from 'node:fs';
-import {mkdir, readFile, writeFile} from 'node:fs/promises';
+import {mkdir, readFile, realpath, stat, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {tmpdir,freemem,totalmem} from 'node:os';
 import {join, resolve} from 'node:path';
@@ -540,6 +540,98 @@ test('actual Rust catalog, compiler and assessment preserve original exercises a
   assert.equal(empty.accuracy_percent, 0);
   assert.equal(empty.misses.length, 15);
   await assertStoppedAtZero();
+});
+
+test('real Settings build diagnostics lazily bind the Rust process and keep copied paths opt-in', testOptions, async () => {
+  // Reuse the original bundled exercise and owned server. No response, clipboard,
+  // browser permission or application state is replaced by this check.
+  assert.equal(initialCompilation.score.provenance.kind, 'original_exercise');
+  const diagnosticsPath = '/api/diagnostics/build';
+  const diagnosticRequests = () => requests.filter(request => request.path === diagnosticsPath);
+  assert.equal(diagnosticRequests().length, 0, 'Startup and library activation must not read build diagnostics');
+  await ui('#count-in').uncheck();await closeShellPanels();
+  await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page);
+  await page.locator('#settings-button').click();
+  assert.match(await page.locator('#play-button').textContent(), /Play/, 'The existing Settings entry pauses the original exercise');
+  const position = (await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;
+  const compileCount = requests.filter(request => request.path === '/api/compile').length;
+  assert.ok(position > 0);
+  assert.equal(await page.locator('#build-diagnostics').getAttribute('data-state'), 'idle');
+  assert.match(await page.locator('#build-diagnostics-text').inputValue(), /^compiled\.source_sha: unknown$/m);
+
+  // Independent host facts come from this checkout and the harness-owned file,
+  // never from a claimed revision, process path or release sidecar in the API.
+  const git = (...args) => execFileSync('git', ['--no-optional-locks', '-C', root, ...args], {
+    encoding: 'utf8', timeout: 5000, maxBuffer: 1024 * 1024,
+    env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+  const sourceSha = git('rev-parse', '--verify', 'HEAD'), sourceTree = git('rev-parse', '--verify', `${sourceSha}^{tree}`);
+  const shallow = git('rev-parse', '--is-shallow-repository');assert.ok(['true', 'false'].includes(shallow));
+  const sourceCount = shallow === 'true' ? null : Number(git('rev-list', '--count', sourceSha));
+  if (sourceCount !== null) assert.ok(Number.isSafeInteger(sourceCount) && sourceCount > 0);
+  const executablePath = await realpath(binary), executableStat = await stat(binary);
+  assert.ok(executableStat.isFile() && executableStat.size > 0 && executableStat.size <= 256 * 1024 * 1024);
+  const executableHash = createHash('sha256').update(await readFile(binary)).digest('hex');
+  assert.equal(diagnosticRequests().length, 0, 'Opening and leaving Settings visible must not fetch diagnostics');
+  const [response] = await Promise.all([nextResponse(diagnosticsPath), page.locator('#build-diagnostics-read').click()]);
+  assert.equal(response.url(), `${origin}${diagnosticsPath}`);
+  assert.equal(response.request().method(), 'GET');assert.equal(response.request().postData(), null);
+  assert.equal(response.request().redirectedFrom(), null);
+  assert.equal(response.headers()['x-content-type-options'], 'nosniff');
+  const identity = await responseJson(response), {compiled, native} = identity;
+  assert.equal(identity.schema_version, 1);
+  assert.equal(compiled.source_sha, sourceSha);assert.equal(compiled.source_tree, sourceTree);
+  assert.equal(compiled.source_commit_count, sourceCount);
+  assert.equal(compiled.source_error, shallow === 'true' ? 'shallow_history' : null);
+  assert.ok(['clean', 'dirty'].includes(compiled.source_status));
+  assert.equal(native.transport, 'loopback-only');assert.equal(native.process_id, server.pid);
+  const comparablePath = value => process.platform === 'win32' ? value.replace(/^\\\\\?\\/, '').toLowerCase() : value;
+  assert.equal(comparablePath(native.executable_path), comparablePath(executablePath));
+  assert.equal(native.executable_hash_status, 'ok');assert.equal(native.executable_error, null);
+  assert.equal(native.executable_sha256, executableHash);assert.equal(native.executable_bytes, executableStat.size);
+  assert.equal(native.executable_hash_scope, 'current_executable_path_file');assert.equal(native.executable_cache, 'once_per_process');
+  await page.waitForFunction(() => document.querySelector('#build-diagnostics').dataset.state === 'ready');
+  assert.equal(diagnosticRequests().length, 1);
+  for (const [field, expected] of Object.entries({sourceSha, sourceTree, sourceCount: sourceCount ?? 'Unknown', processId: server.pid, path: native.executable_path, hash: executableHash, transport: 'loopback-only'})) {
+    assert.equal(await page.locator(`#build-diagnostics-value-${field}`).textContent(), String(expected));
+  }
+  const report = page.locator('#build-diagnostics-text'), pathChoice = page.locator('#build-diagnostics-include-path');
+  assert.equal(await pathChoice.isChecked(), false);assert.equal(await report.getAttribute('readonly'), '');
+  const defaultText = await report.inputValue();
+  assert.equal(defaultText.includes(native.executable_path), false);assert.doesNotMatch(defaultText, /^native\.executable_path:/m);
+  for (const field of ['source_sha', 'source_tree', 'source_commit_count', 'source_status']) {
+    assert.ok(defaultText.split('\n').includes(`browser_assets.${field}: unknown`), 'Rust identity must not attest loaded browser assets');
+  }
+  assert.ok(defaultText.split('\n').includes(`compiled.source_sha: ${sourceSha}`));
+  assert.ok(defaultText.split('\n').includes(`compiled.source_tree: ${sourceTree}`));
+  assert.ok(defaultText.split('\n').includes(`compiled.source_commit_count: ${sourceCount ?? 'unknown'}`));
+
+  // Let the browser's actual clipboard policy decide the Copy outcome. The
+  // explicit Select action must always provide a usable manual alternative.
+  await page.locator('#build-diagnostics-copy').click();
+  await page.waitForFunction(() => /^(Diagnostic text copied\.|Clipboard access is unavailable\.)/.test(document.querySelector('#build-diagnostics-copy-status').textContent));
+  const copyOutcome = await page.locator('#build-diagnostics-copy-status').textContent();
+  await page.locator('#build-diagnostics-select').click();
+  assert.deepEqual(await report.evaluate(element => ({focused: document.activeElement === element, start: element.selectionStart, end: element.selectionEnd, length: element.value.length})), {
+    focused: true, start: 0, end: defaultText.length, length: defaultText.length,
+  });
+  assert.match(await page.locator('#build-diagnostics-copy-status').textContent(), /selected.*manually/);
+  await pathChoice.check();const includedText = await report.inputValue();
+  assert.equal(includedText, `${defaultText}\nnative.executable_path: ${native.executable_path}`);
+  await page.locator('#settings-dialog [data-close-panel]').click();
+  await page.waitForFunction(() => !document.querySelector('#build-diagnostics-include-path').checked);
+  await page.locator('#settings-button').click();
+  assert.equal(await pathChoice.isChecked(), false);assert.equal(await report.inputValue(), defaultText);
+  assert.equal(await page.locator('#build-diagnostics-copy-status').textContent(), '');
+  assert.equal(diagnosticRequests().length, 1, 'Copy, selection, path opt-in and reopening Settings must not fetch again');
+  assert.equal(requests.filter(request => request.path === '/api/compile').length, compileCount);
+  assert.equal((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs, position, 'Reading and copying diagnostics preserves the Settings-paused clock');
+  await writeFile(join(artifactDirectory, 'worldmusichub-live-build-diagnostics.json'), JSON.stringify({
+    source: {sha: sourceSha, tree: sourceTree, count: sourceCount, shallow: shallow === 'true'},
+    identity, defaultText, includedText, copyOutcome, manual_selection_verified: true,
+    path_choice_reset_on_close: true, diagnostic_gets: diagnosticRequests().length, paused_position_ms: position,
+  }, null, 2));
 });
 
 test('embedded browser UI selects all exercises and plays, pauses, resumes and resets from the keyboard', testOptions, async () => {

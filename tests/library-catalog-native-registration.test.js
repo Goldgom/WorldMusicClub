@@ -93,8 +93,8 @@ test('native source allowlist import cannot accidentally invoke the verifier CLI
   assert.equal(result.status,0,result.stderr);
   assert.equal(result.stderr,'');
   const files=JSON.parse(result.stdout);
-  assert.ok(Array.isArray(files));assert.equal(files.length,51);assert.equal(new Set(files).size,51);
-  assert.match(host,/\$sourceNames\.Count -ne 51 -or @\(\$sourceNames \| Sort-Object -Unique\)\.Count -ne 51\)\{throw 'Catalog source allowlist must contain exactly 51 distinct modules'/);
+  assert.ok(Array.isArray(files));assert.equal(files.length,54);assert.equal(new Set(files).size,54);
+  assert.match(host,/\$sourceNames\.Count -ne 54 -or @\(\$sourceNames \| Sort-Object -Unique\)\.Count -ne 54\)\{throw 'Catalog source allowlist must contain exactly 54 distinct modules'/);
   assert.ok(files.includes('scripts/verify-library-catalog-acceptance.mjs'));
   assert.ok(files.includes('scripts/windows-desktop-acceptance.ps1'));
 });

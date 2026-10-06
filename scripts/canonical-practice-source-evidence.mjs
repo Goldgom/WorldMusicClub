@@ -15,6 +15,7 @@ export function decodeCanonicalRendererReportBytes(input){
  return {bytes,renderer};
 }
 export const CANONICAL_PRACTICE_SOURCE_FILES=Object.freeze([
+ 'crates/practice-server/build_source.rs','crates/practice-server/src/build_identity.rs','web/build-diagnostics.js','web/build-diagnostics-view.js','web/build-diagnostics.css',
  'Cargo.toml','Cargo.lock','package.json','package-lock.json',
  '.github/workflows/canonical-practice-preview.yml','.github/workflows/windows-desktop-acceptance.yml',
  'scripts/canonical-practice-source-evidence.mjs','scripts/prepare-canonical-practice-fixtures.mjs','scripts/check-canonical-practice-native.mjs','scripts/verify-canonical-practice-evidence.mjs','scripts/verify-song-mod-controls.mjs','scripts/hosted-canonical-practice-check.mjs','scripts/hosted-worklet-assets.mjs','scripts/vsq-hosted-chooser.mjs','scripts/vsq-hosted-console.mjs','scripts/live-tone-proof.mjs','scripts/verify-complete-practice-evidence.mjs','scripts/verify-native-vsq-song-evidence.mjs','scripts/verify-native-clean-song-evidence.mjs','scripts/native-saved-audition-evidence.mjs',
