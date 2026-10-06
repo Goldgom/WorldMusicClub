@@ -27,7 +27,14 @@ const ENTRY_FIELDS=['library_format_version','revision','key','content_sha256','
 export function validateFolderAudition(value,score,{actions}={}){
  try{
   assert(value?.version===1&&!value.error&&!value.cleanupError&&!value.observationError&&value.fetchRestored===true,'Actual canonical audition evidence is missing');
-  equal(value.responses,[{path:'/api/compile',status:200,state:'consumed',body:value.compilation},{path:'/api/canonical-audio-profile',status:200,state:'consumed',body:value.profile}],'Audition must bind the exact responses consumed by the application');
+  // Native storage validates the loaded archive before ScorePreview compiles
+  // the same source for the lobby. Keep both consumed responses: selecting one
+  // matching body would hide a missing, extra, or divergent compilation.
+  equal(value.responses,[
+    {path:'/api/compile',status:200,state:'consumed',body:value.compilation},
+    {path:'/api/compile',status:200,state:'consumed',body:value.compilation},
+    {path:'/api/canonical-audio-profile',status:200,state:'consumed',body:value.profile},
+  ],'Audition must bind the exact storage-validation, preview-compilation and audio-profile responses consumed by the application');
   equal(value.compilation?.score,score,'Audition compilation must retain the exact saved source');
   const timeline=value.compilation.timeline;
   assert(timeline.duration_ms===8000,'Original audition duration changed');
