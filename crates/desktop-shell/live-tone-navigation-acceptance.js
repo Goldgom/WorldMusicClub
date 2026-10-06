@@ -13,7 +13,7 @@ function nativeLiveToneNavigationInput(event,sequence,control){
  // Keep the raw target identity. A card's label/icon can receive the actual
  // pointer. Bind only the currently dispatched control using the canonical
  // observer's same identity/contains rule; never infer an arbitrary ancestor.
- return{sequence,actionSequence:sequence,type:event.type,id:target.id||null,controlId,closePanel:button?.dataset.closePanel||null,part:part?.dataset.partId||null,modField:target.dataset?.modPerformer?'performer':target.dataset?.modInstrument?'instrument':target.dataset?.modMute?'mute':target.dataset?.modVisible?'visible':null,code:event.code||null,isTrusted:event.isTrusted===true,repeat:Boolean(event.repeat),eventTime:event.timeStamp,surface:target.closest?.('[data-keyboard-performance]')?.id||null,value:target.value??null,checked:typeof target.checked==='boolean'?target.checked:null};
+ return{sequence,actionSequence:sequence,type:event.type,id:target.id||null,controlId,closePanel:button?.dataset.closePanel||null,part:part?.dataset.partId||null,modField:target.dataset?.modPerformer?'performer':target.dataset?.modInstrument?'instrument':target.dataset?.modLiveInstrument?'liveInstrument':target.dataset?.modMute?'mute':target.dataset?.modVisible?'visible':null,code:event.code||null,isTrusted:event.isTrusted===true,repeat:Boolean(event.repeat),eventTime:event.timeStamp,surface:target.closest?.('[data-keyboard-performance]')?.id||null,value:target.value??null,checked:typeof target.checked==='boolean'?target.checked:null};
 }
 
 async function deliverNativeLiveToneNavigationReport(report,send){
@@ -22,10 +22,10 @@ async function deliverNativeLiveToneNavigationReport(report,send){
 }
 
 function createNativeLiveToneNavigationControls({document,phase,until,readClock,frame,postAction,readResult,report,controls}){
- nativeLiveToneNavigationCase(phase);let sequence=0,held=false,ownedControl=null;
+ const humanPhase=['human-timbre-seed','human-timbre-migrate','human-timbre-restart'].includes(phase);if(!humanPhase)nativeLiveToneNavigationCase(phase);let sequence=0,held=false,ownedControl=null;
  const view=document.defaultView,assert=(value,message)=>{if(!value)throw Error(message);};
  async function native(kind,node,file){
-  assert(['click','picker','select-first','select-last','key-r','live-key-r-down','live-key-r-up'].includes(kind),'Unsupported native live navigation action');
+  assert(['click','picker','select-first','select-second','select-last','key-r','live-key-r-down','live-key-r-up'].includes(kind)&&(kind!=='select-second'||humanPhase),'Unsupported native live navigation action');
   assert(node&&node.isConnected&&!node.disabled,'Owned live navigation target unavailable');
   const splitKey=kind==='live-key-r-down'||kind==='live-key-r-up';
   if(splitKey){
@@ -41,7 +41,7 @@ function createNativeLiveToneNavigationControls({document,phase,until,readClock,
    node.scrollIntoView({block:'center',inline:'center'});await frame();await frame();
   }
   assert(sequence<64,'Native live navigation action bound exceeded');
-  if(kind==='picker')assert(file==='live-tone-navigation-original.json'&&node.id==='import-button','Unexpected native live navigation fixture picker');
+  if(kind==='picker')assert((humanPhase?phase==='human-timbre-seed'&&file==='human-mod-timbre-original.json':file==='live-tone-navigation-original.json')&&node.id==='import-button','Unexpected native live navigation fixture picker');
   else assert(file===undefined,'Only the owned picker may name a fixture');
   let control;
   if(!splitKey){control={sequence:sequence+1,id:node.id||null,closePanel:node.dataset?.closePanel||null,kind,samples:[]};report.controlActions.push(control);await prepareCanonicalPracticeTarget({document,node,onSample:value=>control.samples.push(value)});}

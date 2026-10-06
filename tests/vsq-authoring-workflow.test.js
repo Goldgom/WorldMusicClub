@@ -195,12 +195,14 @@ test('new phases agree across Rust, native orchestration and every fresh-profile
  const rustPhases=Object.fromEntries([...rust.matchAll(/pub const (\w*PHASES): \[&str; \d+\] =\s*\[([\s\S]*?)\];/g)]
   .map(([,key,value])=>[key,quoted(value,/"([^"]+)"/g)]));
  assert.deepEqual(rustPhases.VSQ_AUTHORING_PHASES,phases);
- const fresh=Object.entries(rustPhases).filter(([key])=>!['PHASES','CATALOG_PHASES','COMPLETE_PRACTICE_PHASES','CANONICAL_PRACTICE_PHASES','SKIN_PHASES'].includes(key)).flatMap(([,values])=>values);
+ const fresh=Object.entries(rustPhases).filter(([key])=>!['PHASES','CATALOG_PHASES','COMPLETE_PRACTICE_PHASES','CANONICAL_PRACTICE_PHASES','SKIN_PHASES','HUMAN_MOD_TIMBRE_PHASES'].includes(key)).flatMap(([,values])=>values);
  const freshProfile=quoted(profile.match(/\$fresh=@\(([^\n]+)\)/)[1],/'([^']+)'/g);assert.equal(new Set(freshProfile).size,freshProfile.length);assert.equal(new Set(fresh).size,fresh.length);assert.deepEqual([...freshProfile].sort(),[...fresh].sort());
  assert.deepEqual(quoted(profile.match(/\$catalog=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.CATALOG_PHASES);
  const freshContract=quoted(contract.match(/\$freshPhases=@\(([^\n]+)\)/)[1],/'([^']+)'/g);assert.equal(new Set(freshContract).size,freshContract.length);assert.deepEqual([...freshContract].sort(),[...fresh].sort());
  assert.deepEqual(quoted(profile.match(/\$skin=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.SKIN_PHASES);
  assert.deepEqual(rustPhases.SKIN_PHASES,['skin-seed','skin-restart','skin-default-restart']);
+ assert.deepEqual(quoted(profile.match(/\$humanTimbre=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.HUMAN_MOD_TIMBRE_PHASES);
+ assert.deepEqual(rustPhases.HUMAN_MOD_TIMBRE_PHASES,['human-timbre-seed','human-timbre-migrate','human-timbre-restart']);
  assert.ok(contract.includes("windows-skin-profile-contract.ps1"));
  assert.deepEqual(quoted(profile.match(/\$complete=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.COMPLETE_PRACTICE_PHASES);
  assert.deepEqual(quoted(contract.match(/\$completePhases=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.COMPLETE_PRACTICE_PHASES);

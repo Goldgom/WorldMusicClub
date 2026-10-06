@@ -18,11 +18,13 @@ function assertPickerFixtureRegistries({rust,native,contract}){
   assert.deepEqual(canonical,['canonical-practice-original.json','canonical-practice-original.musicxml']);
   for(const file of canonical)assert.ok(!common.includes(file),'Canonical originals must remain phase-scoped');
   const live=[rust.match(/\|\| \(live_navigation && file == "([^"]+)"\)/)[1]];
+  const human=[rust.match(/\|\| \(phase == "human-timbre-seed" && file == "([^"]+)"\)/)[1]];
   const skin=quoted(rust.match(/\|\| \(phase == "skin-seed"\s*&& \[([\s\S]*?)\]\s*\.contains\(&file\)\)/)[1],/"([^"]+)"/g);
   assert.deepEqual(live,['live-tone-navigation-original.json']);
+  assert.deepEqual(human,['human-mod-timbre-original.json']);
   assert.deepEqual(skin,['skin-original-score.json','skin-original.json','checker.png']);
-  for(const file of [...live,...skin])assert.ok(!common.includes(file),'New originals must remain phase-scoped');
-  const admitted=[...common,...canonical,...live,...skin].sort();
+  for(const file of [...live,...human,...skin])assert.ok(!common.includes(file),'New originals must remain phase-scoped');
+  const admitted=[...common,...canonical,...live,...human,...skin].sort();
   const files=quoted(native.match(/Array\.IndexOf\(new\[\]\{([^}]+)\},name\)/)[1],/"([^"]+)"/g).sort();
   const checkedFiles=quoted(contract.match(/\$fixed=@\(([^\r\n]+)\)/)[1],/'([^']+)'/g).sort();
   assert.equal(new Set(admitted).size,admitted.length);assert.equal(new Set(files).size,files.length);assert.ok(files.includes(PERFORMANCE_FIXTURE_FILENAME));

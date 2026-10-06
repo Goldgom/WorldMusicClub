@@ -13,10 +13,11 @@ public static class NativeLiveToneNavigationKey {
 
   public static bool IsPhase(string phase) {
     return phase=="live-navigation-settings-keyup" || phase=="live-navigation-settings-navigation"
-      || phase=="live-navigation-authoring-keyup" || phase=="live-navigation-authoring-navigation";
+      || phase=="live-navigation-authoring-keyup" || phase=="live-navigation-authoring-navigation"
+      || phase=="human-timbre-seed" || phase=="human-timbre-migrate" || phase=="human-timbre-restart";
   }
   public static bool ValidateTransition(string phase,string kind,bool wasHeld,string priorPhase,IntPtr priorWindow,uint priorProcess,IntPtr window,IntPtr foreground,uint process,bool enabled) {
-    if(!IsPhase(phase))throw new InvalidOperationException("Fixed R actions require a live-navigation phase");
+    if(!IsPhase(phase))throw new InvalidOperationException("Fixed R actions require an explicit native live-tone phase");
     if(window==IntPtr.Zero || foreground!=window || process==0 || !enabled)
       throw new InvalidOperationException("Prepared live-key foreground ownership was lost");
     if(kind=="live-key-r-down") {

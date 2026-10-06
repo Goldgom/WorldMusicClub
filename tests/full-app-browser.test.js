@@ -1,3 +1,4 @@
+import {registerHumanModTimbreBrowserRegression} from './human-mod-timbre-browser-regression.js';
 import {browserSongModControls} from './browser-song-mod-controls.js';
 import {originalPaneRevealStudy,choosePaneRevealTarget,paneRevealSourceIdsAt} from './pane-reveal-fixture.js';
 import {configureSongMod, openSongMod} from '../scripts/hosted-song-mod-controls.mjs';
@@ -2678,3 +2679,5 @@ registerSharedPianoStageBrowserRegressions({test,getPage:()=>page,ui,setSessionM
 registerLiveToneNavigationBrowserRegressions({test,getPage:()=>page,startPreview,prepareKeyboardBrowserPractice,ui,closeShellPanels,exportTakeData,exportScore,pausedTakeSnapshot,artifactDirectory});
 
 registerSkinBrowserRegressions({test,getPage:()=>page,getOrigin:()=>origin,ui,startPreview,configureStageMod,readyForTitle,closeShellPanels,exportTakeData,exportScore,pausedTakeSnapshot,getRequests:getRequestsForLocale,artifactDirectory});
+
+registerHumanModTimbreBrowserRegression({test,getPage:()=>page,ui,readyForTitle,closeShellPanels,exportTakeData,exportScore,artifactDirectory});

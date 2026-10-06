@@ -36,6 +36,84 @@ export function validateLiveToneEvidence(e,{keyCode,midi,transport}={}) {
  assert.equal(heard,true,'Destination-connected live output must contain real PCM overlapping the exact human token');return e;
 }
 export function validateLiveToneCleanup(value){assert.deepEqual(value,{restored:true,overflow:false,errors:[],cleanupErrors:[]},'Live-tone observer must restore every native method and listener');}
+
+/** Supplement the original live-tone/transport proof with its one released
+ * checkpoint, captured before source playback pauses. This verifies retained
+ * finite observations, not continuous PCM coverage or actual native provenance.
+ * The original observer's sealed window and final boundary must both be fresh.
+ * The renderer allows 15 seconds to establish silence; this contract allows
+ * 30 seconds for the complete observation and at most a 10-second held note.
+ * Callers still validate the original input, recipe, take and host separately.
+ */
+export function validateLiveToneReleasedCheckpoint(e) {
+ assert.equal(e?.version,1);assert.equal(e.pcmCoverage,'finite-checkpoint-windows');assert.equal(e.overflow,false);assert.deepEqual(e.errors,[]);
+ assert.ok(Array.isArray(e.checkpoints)&&e.checkpoints.length===1,'Exactly one original released checkpoint required');
+ const {ready,after}=e,row=e.checkpoints[0],closed=row.closed,r=ready.receiver,rate=r.sampleRate;
+ assert.equal(ready.label,'ready');assert.equal(after.label,'after');assert.equal(row.label,'released');assert.equal(row.callCount,1);
+ assert.equal(row.sampling,'sealed','Only a sealed released window can prove silence');assert.equal(closed?.label,'released-sealed');
+ assert.ok(integer(rate)&&rate>=8000&&rate<=384000);
+ const identities=['receiverId','nodeId','gateId','destinationId','generation','sampleRate'];
+ for(const key of identities)assert.ok(integer(r[key])&&r[key]>0,`Original live ${key} must be a positive integer`);
+ const audible=path=>{graph(r,path);assert.equal(path[1].type,'GainNode');assert.deepEqual(path.map(node=>[node.id,node.type]),r.graphToDestination.map(node=>[node.id,node.type]),'Released output must retain the original connected path');};
+ const source=value=>{running(value);assert.ok(integer(value.activeReceivers)&&value.activeReceivers>0);assert.equal(value.pendingReceivers,0);assert.ok(integer(value.started)&&value.started>0);assert.equal(value.started,ready.source.started,'Source accompaniment must not restart before the released observation finishes');};
+ const observations=[];
+ const observe=value=>{assert.ok(integer(value.sequence)&&value.sequence>0);assert.ok(Number.isFinite(value.wallMs)&&value.wallMs>=0);assert.equal(value.graphRevision,ready.graphRevision,'Released observation must retain the original graph');observations.push(value);};
+ for(const boundary of [ready,row,closed,after]){
+  observe(boundary);assert.equal(boundary.nodes,1,'Released observation must retain its one persistent receiver');source(boundary.source);
+  const receiver=boundary.receiver;for(const key of identities)assert.equal(receiver[key],r[key],`Released live ${key} must retain the original owner`);
+  assert.equal(receiver.state,'ready');assert.equal(receiver.disposed,false);assert.equal(receiver.contextState,'running');
+  for(const key of ['nativeNode','nativePort','contextMatches','tapConnected'])assert.equal(receiver[key],true);
+  assert.equal(receiver.numberOfInputs,0);assert.equal(receiver.numberOfOutputs,1);assert.ok(Number.isFinite(receiver.audioTime)&&receiver.audioTime>=0);audible(receiver.graphToDestination);
+ }
+ assert.ok(integer(ready.graphRevision));assert.ok(ready.sequence<row.sequence&&row.sequence<closed.sequence&&closed.sequence<after.sequence,'Released, sealed and final boundaries must retain their original order');
+ assert.ok(after.wallMs-ready.wallMs<=30000&&after.receiver.audioTime-r.audioTime<=30,'Live observation must remain within its finite 30-second budget');
+ assert.ok(closed.wallMs-row.wallMs<=15000&&closed.receiver.audioTime-row.receiver.audioTime<=15,'Released observation exceeds its finite 15-second wait');
+ assert.ok(Array.isArray(e.inputs)&&e.inputs.length===2,'Exactly one original down/up pair must precede release');
+ assert.ok(Array.isArray(e.calls)&&e.calls.length===1,'Only the original human voice may inhabit the released window');
+ assert.ok(Array.isArray(e.receipts)&&e.receipts.length===2,'The original started and ended receipts must establish release');
+ const [down,up]=e.inputs,call=e.calls[0],[start,end]=e.receipts,t=end.record;
+ assert.equal(down.type,'keydown');assert.equal(up.type,'keyup');
+ for(const input of e.inputs){observe(input);assert.equal(input.code,e.expected.keyCode);assert.equal(input.isTrusted,true);assert.equal(input.repeat,false);assert.equal(input.surface,'stage-title');assert.ok(Number.isFinite(input.eventTime)&&input.eventTime>=0);source(input.source);}
+ assert.ok(up.eventTime-down.eventTime>=30&&up.eventTime-down.eventTime<=10000,'The original held key must stay within its 10-second note budget');
+ observe(call);source(call.source);assert.equal(call.inputSequence,down.sequence);assert.equal(call.receiverId,r.receiverId);assert.equal(call.generation,r.generation);assert.ok(integer(call.token)&&call.token>0);
+ assert.equal(start.record.type,'started');assert.equal(t.type,'ended');assert.equal(t.reason,'release');
+ assert.ok(down.sequence<call.sequence&&call.sequence<start.sequence&&start.sequence<up.sequence&&up.sequence<end.sequence&&end.sequence<row.sequence,'Released silence must follow this exact original key and native terminal receipt');
+ for(const receipt of [start,end]){observe(receipt);native(receipt);assert.equal(receipt.receiverId,r.receiverId);assert.equal(receipt.nodeId,r.nodeId);const record=receipt.record;for(const key of ['generation','token','id','midi'])assert.equal(record[key],call[key]);assert.equal(record.source,'live-tone');assert.equal(record.kind,'note');assert.equal(record.sampleRate,rate);assert.equal(record.key,e.expected.midi);}
+ assert.ok(integer(t.actualStartFrame)&&integer(t.actualEndFrame)&&t.actualEndFrame>t.actualStartFrame);assert.equal(t.frame,t.actualEndFrame);assert.equal(t.actualStartFrame,start.record.actualStartFrame);
+ assert.ok(t.actualStartFrame>=Math.floor(r.audioTime*rate)&&t.actualEndFrame<=Math.ceil(row.receiver.audioTime*rate)+256&&t.actualEndFrame<=Math.ceil(after.receiver.audioTime*rate),'Original native note must fit the released boundary within its rendering allowance');
+ assert.ok(t.actualEndFrame-t.actualStartFrame<=rate*10+Math.ceil(.012*rate),'Original note exceeds the 10-second hold and 12 ms release bound');
+ const pcm=(value,before,afterBoundary)=>{
+  assert.equal(value.method,'passive-fixed-live-gate-analyser');assert.equal(value.fftSize,16384);assert.ok(Array.isArray(value.blocks)&&value.blocks.length>0&&value.blocks.length<=64,'Each fixed-tap window needs a bounded set of actual PCM blocks');
+  let previous=before;
+  for(const block of value.blocks){
+   observe(block);assert.ok(block.sequence>previous.sequence&&block.sequence<afterBoundary.sequence,'PCM blocks must retain their ordered window sequence');
+   assert.equal(block.contextState,'running');assert.equal(block.tapConnected,true);assert.equal(block.samples,16384);
+   assert.ok(Number.isFinite(block.audioTime)&&block.audioTime>=before.receiver.audioTime&&block.audioTime<=afterBoundary.receiver.audioTime,'PCM audio time must be inside its original observation window');
+   assert.ok(Number.isFinite(block.peak)&&block.peak>=0&&Number.isFinite(block.energy)&&block.energy>=0);assert.ok(integer(block.nonzeroSamples)&&block.nonzeroSamples<=block.samples);audible(block.graphToDestination);previous=block;
+  }
+ };
+ pcm(e.pcm,ready,row);pcm(row.pcm,row,closed);
+ assert.ok(e.pcm.blocks.some(block=>block.sequence>call.sequence&&block.audioTime*rate>=t.firstNonzeroFrame&&block.audioTime*rate-block.samples<=t.lastRenderedFrame&&block.peak>1e-6&&block.energy>1e-10&&block.nonzeroSamples>0),'Original fixed-tap PCM must overlap the same released native token');
+ observations.sort((a,b)=>a.sequence-b.sequence);
+ assert.equal(observations[0],ready);assert.equal(observations.at(-1),after);
+ let previousAudio=ready;
+ const audioTime=value=>value.receiver?.audioTime??value.audioTime;
+ // Running AudioContext observations may straddle rendering quanta. Permit
+ // clock jitter without letting a finite wall window certify arbitrary audio
+ // times. Sampling gaps remain permitted; no continuous PCM claim is made.
+ const clockSlack=.1+256/rate;
+ for(const [index,value]of observations.entries()){
+  if(index){const previous=observations[index-1];assert.ok(value.sequence>previous.sequence,'Every observation must retain a distinct original sequence');assert.ok(value.wallMs>=previous.wallMs,'Observation wall times must follow their original sequence');}
+  if(audioTime(value)!==undefined){const elapsed=audioTime(value)-audioTime(previousAudio);assert.ok(elapsed>=0&&elapsed<=(value.wallMs-previousAudio.wallMs)/1000+clockSlack,'Audio observations must advance within their finite wall-clock window');assert.ok(audioTime(value)-r.audioTime<=(value.wallMs-ready.wallMs)/1000+clockSlack,'Audio observations cannot outpace the original wall-clock window');previousAudio=value;}
+ }
+ const quietFrame=Math.max(row.receiver.audioTime*rate,t.actualEndFrame)+row.pcm.fftSize+256,quiet=row.pcm.blocks.filter(block=>block.audioTime*rate>=quietFrame);
+ assert.ok(quiet.length>=3&&quiet.at(-1).audioTime-quiet[0].audioTime>=.1,'Released silence needs a drained FFT window and at least 100 ms of advancing-clock observations');
+ for(const block of quiet){assert.equal(block.peak,0,'Live output leaked after the original release drain');assert.equal(block.energy,0);assert.equal(block.nonzeroSamples,0);}
+ assert.deepEqual(e.silenceEstablished,{sequence:quiet[0].sequence,audioTime:quiet[0].audioTime},'Original silenceEstablished must bind the first drained sample');
+ const last=row.pcm.blocks.at(-1);
+ for(const boundary of [closed,after]){assert.ok(boundary.wallMs-last.wallMs>=0&&boundary.wallMs-last.wallMs<=100,'Released seal and finish require a fresh final PCM sample');assert.ok(boundary.receiver.audioTime-last.audioTime>=0&&boundary.receiver.audioTime-last.audioTime<=.1,'Released seal and finish cannot reuse old audio samples');}
+ return e;
+}
 // Scoring remains derived solely from the retained input event. DSP frames and
 // PCM values may prove sound, but never supply a captured performance timestamp.
 export function validateLiveToneInput(take,e){

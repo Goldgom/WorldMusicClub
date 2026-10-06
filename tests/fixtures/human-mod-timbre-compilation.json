@@ -1,0 +1,396 @@
+{
+  "version": 1,
+  "kind": "rust-generated-original-fixture-compilation",
+  "producer": "cargo run --offline --locked -p score-core --example canonical_audio_evidence",
+  "source_revision": "77366440ef167c8142c166d5531ba84baa73ef21",
+  "fixture_sha256": "e7c6218d6086d36ade9fc7e730f7fa9b60b01f880d1379cc5e1e243857e32426",
+  "compilation": {
+    "diagnostics": [],
+    "score": {
+      "composer": "WorldMusicClub test authors",
+      "id": "original-human-mod-timbre",
+      "keys": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "fifths": 0,
+          "mode": "major"
+        }
+      ],
+      "measures": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 1
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 2
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 8
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 3
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 12
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 4
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 16
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 5
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 20
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 6
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 24
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 7
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 28
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 8
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 32
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 9
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 36
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 10
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 40
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 11
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 44
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 12
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 48
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 13
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 52
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 14
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 56
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 15
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 60
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 16
+        }
+      ],
+      "meters": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "denominator": 4,
+          "numerator": 4
+        }
+      ],
+      "parts": [
+        {
+          "id": "human-one",
+          "instrument": "piano",
+          "name": "Human 1",
+          "notes": [
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 0
+              },
+              "duration": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "id": "human-one-c4",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 63
+              },
+              "duration": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "id": "human-one-e4",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "E"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            }
+          ]
+        },
+        {
+          "id": "human-two",
+          "instrument": "piano",
+          "name": "Human 2",
+          "notes": [
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 0
+              },
+              "duration": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "id": "human-two-c4",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 63
+              },
+              "duration": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "id": "human-two-e4",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "E"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "attribution": "Self-authored two-owner same-key Mod and live sound acceptance; no supplied or third-party music",
+        "kind": "original_exercise",
+        "license": "CC0-1.0",
+        "source_url": null
+      },
+      "repeats": [],
+      "source": {
+        "content": "﻿Original shared-input exercise · 原稿\r\nBoth parts own C4 at 0/1 and E4 at 63/1. Preserve all four source owners.",
+        "filename": "original-human-timbre.txt",
+        "format": "original-test-text"
+      },
+      "tempo": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "bpm": 60.0
+        }
+      ],
+      "title": "Original shared human timbre exercise",
+      "version": 1
+    },
+    "timeline": {
+      "duration_ms": 64000.0,
+      "notes": [
+        {
+          "duration_ms": 1000.0,
+          "id": "human-one-c4",
+          "midi": 60,
+          "part_id": "human-one",
+          "source_note_id": "human-one-c4",
+          "source_note_ids": [
+            "human-one-c4"
+          ],
+          "staff": 1,
+          "start_ms": 0.0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 1000.0,
+          "id": "human-two-c4",
+          "midi": 60,
+          "part_id": "human-two",
+          "source_note_id": "human-two-c4",
+          "source_note_ids": [
+            "human-two-c4"
+          ],
+          "staff": 1,
+          "start_ms": 0.0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 1000.0,
+          "id": "human-one-e4",
+          "midi": 64,
+          "part_id": "human-one",
+          "source_note_id": "human-one-e4",
+          "source_note_ids": [
+            "human-one-e4"
+          ],
+          "staff": 1,
+          "start_ms": 63000.0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 1000.0,
+          "id": "human-two-e4",
+          "midi": 64,
+          "part_id": "human-two",
+          "source_note_id": "human-two-e4",
+          "source_note_ids": [
+            "human-two-e4"
+          ],
+          "staff": 1,
+          "start_ms": 63000.0,
+          "velocity": 90,
+          "voice": "1"
+        }
+      ]
+    }
+  }
+}

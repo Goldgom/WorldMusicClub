@@ -33,6 +33,11 @@ pub const LIVE_TONE_NAVIGATION_PHASES: [&str; 4] = [
     "live-navigation-authoring-keyup",
     "live-navigation-authoring-navigation",
 ];
+pub const HUMAN_MOD_TIMBRE_PHASES: [&str; 3] = [
+    "human-timbre-seed",
+    "human-timbre-migrate",
+    "human-timbre-restart",
+];
 pub const BASIC_KEY_PHASES: [&str; 2] = ["basic-key-seed", "basic-key-restart"];
 pub const AUTHORING_PHASES: [&str; 2] = ["authoring-seed", "authoring-restart"];
 pub const VSQ_AUTHORING_PHASES: [&str; 2] = ["vsq-authoring-seed", "vsq-authoring-restart"];
@@ -65,6 +70,7 @@ impl Acceptance {
             .chain(COMPLETE_PRACTICE_PHASES)
             .chain(CANONICAL_PRACTICE_PHASES)
             .chain(LIVE_TONE_NAVIGATION_PHASES)
+            .chain(HUMAN_MOD_TIMBRE_PHASES)
             .chain(SKIN_PHASES)
             .chain(CATALOG_PHASES)
             .find(|candidate| *candidate == phase)
@@ -81,6 +87,28 @@ impl Acceptance {
         })
     }
     pub fn script(&self) -> String {
+        if HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase) {
+            let (vsq_helpers, _) = include_str!("../vsq-song-acceptance.js")
+                .split_once("(() => {")
+                .expect("VSQ helpers must precede their runner");
+            let (canonical_helpers, _) = include_str!("../canonical-practice-acceptance.js")
+                .split_once("(() => {")
+                .expect("Canonical helpers must precede their runner");
+            let (native_controls, _) = include_str!("../live-tone-navigation-acceptance.js")
+                .split_once("(() => {")
+                .expect("Native fixed-key helpers must precede their runner");
+            return format!(
+                "globalThis.__WMH_ACCEPTANCE_PHASE__={};\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+                serde_json::to_string(self.phase).unwrap(),
+                include_str!("../acceptance-wait.js"),
+                include_str!("../reference-acceptance.js"),
+                include_str!("../live-tone-acceptance.js"),
+                vsq_helpers,
+                canonical_helpers,
+                native_controls,
+                include_str!("../human-mod-timbre-acceptance.js")
+            );
+        }
         if LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase) {
             let (vsq_helpers, _) = include_str!("../vsq-song-acceptance.js")
                 .split_once("(() => {")
@@ -215,6 +243,7 @@ impl Acceptance {
             || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
             || CANONICAL_PRACTICE_PHASES.contains(&self.phase)
             || LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase)
+            || HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase)
             || SKIN_PHASES.contains(&self.phase);
@@ -231,6 +260,10 @@ impl Acceptance {
             self.directory.join("webview-catalog-profile")
         } else if PHASES.contains(&self.phase) {
             self.directory.join("webview-profile")
+        } else if HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase) {
+            self.directory
+                .join("webview-profiles")
+                .join("human-timbre-seed")
         } else if SKIN_PHASES.contains(&self.phase) {
             self.directory.join("webview-profiles").join("skin-seed")
         } else if CANONICAL_PRACTICE_PHASES.contains(&self.phase) {
@@ -251,11 +284,14 @@ impl Acceptance {
         let complete_restart = self.phase == "complete-practice-restart";
         let canonical_restart = CANONICAL_PRACTICE_PHASES.contains(&self.phase)
             && self.phase != "canonical-practice-seed";
+        let human_timbre_restart =
+            HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase) && self.phase != "human-timbre-seed";
         let skin_restart = SKIN_PHASES.contains(&self.phase) && self.phase != "skin-seed";
         let existing_required = (catalog && self.phase != "catalog-seed")
             || complete_restart
             || canonical_restart
-            || skin_restart;
+            || skin_restart
+            || human_timbre_restart;
         let fresh_required = !PHASES.contains(&self.phase) && !existing_required;
         let prepare = || -> std::io::Result<bool> {
             require_ordinary_directory(&self.directory)?;
@@ -263,7 +299,12 @@ impl Acceptance {
                 // A restart must never manufacture a replacement browser profile.
                 // Require the same ordinary path and bounded earlier host records.
                 require_ordinary_directory(&profile)?;
-                if skin_restart {
+                if human_timbre_restart {
+                    self.require_catalog_profile_evidence("human-timbre-seed", true)?;
+                    if self.phase == "human-timbre-restart" {
+                        self.require_catalog_profile_evidence("human-timbre-migrate", false)?;
+                    }
+                } else if skin_restart {
                     self.require_catalog_profile_evidence("skin-seed", true)?;
                     if self.phase == "skin-default-restart" {
                         self.require_catalog_profile_evidence("skin-restart", false)?;
@@ -364,6 +405,7 @@ impl Acceptance {
             || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
             || CANONICAL_PRACTICE_PHASES.contains(&self.phase)
             || LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase)
+            || HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase)
             || SKIN_PHASES.contains(&self.phase)
@@ -392,6 +434,7 @@ impl Acceptance {
             && !COMPLETE_PRACTICE_PHASES.contains(&self.phase)
             && !CANONICAL_PRACTICE_PHASES.contains(&self.phase)
             && !LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase)
+            && !HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase)
             && !BASIC_KEY_PHASES.contains(&self.phase)
             && !CATALOG_PHASES.contains(&self.phase)
             && !SKIN_PHASES.contains(&self.phase)
@@ -659,6 +702,7 @@ pub fn receive_report(
             || COMPLETE_PRACTICE_PHASES.contains(&run.phase)
             || CANONICAL_PRACTICE_PHASES.contains(&run.phase)
             || LIVE_TONE_NAVIGATION_PHASES.contains(&run.phase)
+            || HUMAN_MOD_TIMBRE_PHASES.contains(&run.phase)
             || BASIC_KEY_PHASES.contains(&run.phase)
             || CATALOG_PHASES.contains(&run.phase)
             || SKIN_PHASES.contains(&run.phase)
@@ -808,7 +852,9 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
         return false;
     }
     let live_navigation = LIVE_TONE_NAVIGATION_PHASES.contains(&phase);
-    if live_navigation
+    let human_timbre = HUMAN_MOD_TIMBRE_PHASES.contains(&phase);
+    if (live_navigation || human_timbre)
+        && !(human_timbre && value["kind"] == "select-second")
         && ![
             "click",
             "picker",
@@ -845,7 +891,7 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
                 "canonical-tempo",
             ]
             .contains(&value["kind"].as_str().unwrap_or("")))
-        && !(live_navigation
+        && !((live_navigation || human_timbre)
             && ["live-key-r-down", "live-key-r-up"].contains(&value["kind"].as_str().unwrap_or("")))
     {
         return false;
@@ -867,6 +913,11 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
     if value["kind"] == "picker" {
         let file = value["file"].as_str().unwrap_or("");
         if live_navigation && file != "live-tone-navigation-original.json" {
+            return false;
+        }
+        if human_timbre
+            && !(phase == "human-timbre-seed" && file == "human-mod-timbre-original.json")
+        {
             return false;
         }
         let fixture = [
@@ -911,6 +962,7 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
                 ]
                 .contains(&file))
             || (live_navigation && file == "live-tone-navigation-original.json")
+            || (phase == "human-timbre-seed" && file == "human-mod-timbre-original.json")
             || (phase == "skin-seed"
                 && [
                     "skin-original-score.json",
@@ -970,6 +1022,183 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn human_timbre_registration_and_actions_are_closed_and_bounded() {
+        let evidence = Evidence::new();
+        for phase in HUMAN_MOD_TIMBRE_PHASES {
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert_eq!(run.library_directory(), evidence.0.join("Scores"));
+            assert_eq!(run.report_name(), format!("renderer-{phase}.json"));
+            assert_eq!(run.report_limit(), MAX_CLEAN_REPORT_BYTES);
+            assert_eq!(action_limit(phase), 64);
+            let script = run.script();
+            assert!(script.contains(include_str!("../human-mod-timbre-acceptance.js")));
+            assert!(script.contains(include_str!("../live-tone-acceptance.js")));
+            assert!(script.contains("function createNativeLiveToneNavigationControls"));
+            for other in [
+                include_str!("../live-tone-navigation-acceptance.js"),
+                include_str!("../canonical-practice-acceptance.js"),
+                include_str!("../vsq-song-acceptance.js"),
+            ] {
+                assert!(!script.contains(other));
+            }
+            let mut action = json!({"version":1,"sequence":64,"kind":"click","x":20,"y":30,"width":1280,"height":720});
+            for kind in [
+                "click",
+                "select-first",
+                "select-second",
+                "select-last",
+                "key-r",
+                "live-key-r-down",
+                "live-key-r-up",
+            ] {
+                action["kind"] = json!(kind);
+                assert!(valid_action_for_phase(&action, phase), "{phase}: {kind}");
+            }
+            for kind in [
+                "key-c5",
+                "key-ds4",
+                "escape",
+                "cancel-picker",
+                "catalog-snapshot-before",
+                "canonical-tempo",
+                "live-key-other",
+                "eval",
+            ] {
+                action["kind"] = json!(kind);
+                assert!(!valid_action_for_phase(&action, phase), "{phase}: {kind}");
+            }
+            action["kind"] = json!("click");
+            action["sequence"] = json!(65);
+            assert!(!valid_action_for_phase(&action, phase));
+            action["sequence"] = json!(1);
+            action["key"] = json!("R");
+            assert!(!valid_action_for_phase(&action, phase));
+            action.as_object_mut().unwrap().remove("key");
+            action["kind"] = json!("picker");
+            for file in [
+                "human-mod-timbre-original.json",
+                "live-tone-navigation-original.json",
+                "original-duet.musicxml",
+                "../human-mod-timbre-original.json",
+                "HUMAN-MOD-TIMBRE-ORIGINAL.JSON",
+                "seed-1.json",
+            ] {
+                action["file"] = json!(file);
+                assert_eq!(
+                    valid_action_for_phase(&action, phase),
+                    phase == "human-timbre-seed" && file == "human-mod-timbre-original.json",
+                    "{phase}: {file}"
+                );
+            }
+            let exact = report_request("POST", sized_report(Some(phase), MAX_CLEAN_REPORT_BYTES));
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &exact).status(),
+                200
+            );
+            let oversized = report_request(
+                "POST",
+                sized_report(Some(phase), MAX_CLEAN_REPORT_BYTES + 1),
+            );
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &oversized).status(),
+                400
+            );
+            let rejected =
+                read_ordinary_json(&evidence.0.join(run.report_name()), MAX_CLEAN_REPORT_BYTES)
+                    .unwrap();
+            assert_eq!(rejected["report_failure"]["code"], "report_size");
+            let wrong = report_request("POST", sized_report(Some("seed"), 512));
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &wrong).status(),
+                400
+            );
+            let config = Request::builder()
+                .method("GET")
+                .uri("/__desktop_smoke/catalog-config")
+                .body(Vec::new())
+                .unwrap();
+            assert_eq!(run.handle(&config).unwrap().status(), 404);
+            let arbitrary = Request::builder()
+                .method("POST")
+                .uri("/__desktop_smoke/eval")
+                .body(Vec::new())
+                .unwrap();
+            assert!(run.handle(&arbitrary).is_none());
+        }
+        for phase in [
+            "human-timbre",
+            "human-timbre-controls",
+            "human-timbre-final",
+            "HUMAN-TIMBRE-SEED",
+        ] {
+            assert!(Acceptance::new(evidence.0.clone(), phase).is_err());
+        }
+        let picker = json!({"version":1,"sequence":1,"kind":"picker","x":20,"y":30,"width":1280,"height":720,"file":"human-mod-timbre-original.json"});
+        for phase in PHASES
+            .into_iter()
+            .chain(LIVE_TONE_NAVIGATION_PHASES)
+            .chain(CANONICAL_PRACTICE_PHASES)
+            .chain(SKIN_PHASES)
+        {
+            assert!(!valid_action_for_phase(&picker, phase));
+        }
+    }
+
+    #[test]
+    fn human_timbre_profile_requires_exact_migration_predecessors() {
+        let evidence = Evidence::new();
+        let seed = Acceptance::new(evidence.0.clone(), "human-timbre-seed").unwrap();
+        let migrate = Acceptance::new(evidence.0.clone(), "human-timbre-migrate").unwrap();
+        let restart = Acceptance::new(evidence.0.clone(), "human-timbre-restart").unwrap();
+        assert!(migrate.prepare_webview_profile().is_err());
+        assert!(restart.prepare_webview_profile().is_err());
+        let profile = seed.prepare_webview_profile().unwrap();
+        assert_eq!(
+            profile,
+            evidence.0.join("webview-profiles/human-timbre-seed")
+        );
+        std::fs::write(
+            profile.join("retained-preferences"),
+            b"original v1 and saved v2",
+        )
+        .unwrap();
+        assert!(seed.prepare_webview_profile().is_err());
+        assert!(restart.prepare_webview_profile().is_err());
+        assert_eq!(migrate.prepare_webview_profile().unwrap(), profile);
+        assert_eq!(restart.prepare_webview_profile().unwrap(), profile);
+        assert_eq!(
+            std::fs::read(profile.join("retained-preferences")).unwrap(),
+            b"original v1 and saved v2"
+        );
+        for (phase, fresh) in [("human-timbre-seed", true), ("human-timbre-migrate", false)] {
+            let path = evidence.0.join(format!("profile-{phase}.json"));
+            let original = read_ordinary_json(&path, 8192).unwrap();
+            assert_eq!(original["fresh_required"], fresh);
+            assert_eq!(original["created_new"], fresh);
+            for (field, invalid) in [
+                ("phase", json!("canonical-practice-seed")),
+                ("process_id", json!(0)),
+                ("profile_directory", json!(evidence.0.join("other-profile"))),
+                ("library_directory", json!(evidence.0.join("other-Scores"))),
+                ("fresh_required", json!(!fresh)),
+                ("created_new", json!(!fresh)),
+            ] {
+                let mut altered = original.clone();
+                altered[field] = invalid;
+                std::fs::write(&path, serde_json::to_vec(&altered).unwrap()).unwrap();
+                assert!(
+                    restart.prepare_webview_profile().is_err(),
+                    "{phase}: {field}"
+                );
+            }
+            std::fs::remove_file(&path).unwrap();
+            assert!(restart.prepare_webview_profile().is_err());
+            std::fs::write(&path, serde_json::to_vec(&original).unwrap()).unwrap();
+        }
+        assert_eq!(restart.prepare_webview_profile().unwrap(), profile);
+    }
 
     #[test]
     fn native_live_navigation_owns_four_fresh_bounded_phases_and_only_fixed_r_actions() {

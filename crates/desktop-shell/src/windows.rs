@@ -194,6 +194,9 @@ pub fn run() {
                         || worldmusichub_desktop::acceptance::LIVE_TONE_NAVIGATION_PHASES.contains(&acceptance.phase) {
                         builder = builder.inner_size(1280.0, 720.0);
                     }
+                    if worldmusichub_desktop::acceptance::HUMAN_MOD_TIMBRE_PHASES.contains(&acceptance.phase) {
+                        builder = builder.inner_size(1280.0, 720.0);
+                    }
                     if worldmusichub_desktop::acceptance::SKIN_PHASES.contains(&acceptance.phase) {
                         builder = builder.inner_size(1280.0, 720.0);
                     }
