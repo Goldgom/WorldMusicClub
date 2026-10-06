@@ -108,13 +108,14 @@ export class BasicKeyAudioReceiver {
     return ++this.generation;
   }
   requireOpen() { if (this.disposed || this.disposing || this.broken) throw error('audio_receiver_closed', 'The audio receiver is closed or failed.'); }
-  rejectPending(reason) { for (const pending of this.pending.values()) { this.clearTimer(pending.timer); pending.reject(reason); } this.pending.clear(); }
+  rejectPending(reason) { const commands = [...this.pending.values()]; this.pending.clear(); for (const pending of commands) { try { this.clearTimer(pending.timer); } catch { /* A late deadline is fenced by the cleared pending map. */ } pending.reject(reason); } }
   takePending(requestId) { const pending = this.pending.get(requestId); if (pending) { this.clearTimer(pending.timer); this.pending.delete(requestId); } return pending; }
   timbreCommandBinding() {
     const binding = this.timbreBindings.get(this.planGeneration);
     return binding ? {expectedTimbreProfile: binding.timbreProfile, expectedTimbreFingerprint: binding.timbreFingerprint} : {};
   }
-  detach() { this.outputGate.gain.cancelScheduledValues(this.context.currentTime); this.outputGate.gain.setValueAtTime(0, this.context.currentTime); if (this.connected) { try { this.node.disconnect(); } finally { this.connected = false; } } }
+  mute() { this.outputGate.gain.cancelScheduledValues(this.context.currentTime); this.outputGate.gain.setValueAtTime(0, this.context.currentTime); }
+  detach() { this.mute(); if (this.connected) { try { this.node.disconnect(); } finally { this.connected = false; } } }
   request(type, payload = {}, transfer = []) {
     if (this.pending.size >= 32 || this.requestId >= LIMITS.maxGeneration) return Promise.reject(error('audio_command_limit', 'The audio command bound was reached.'));
     const requestId = ++this.requestId, generation = this.generation;
@@ -157,15 +158,16 @@ export class BasicKeyAudioReceiver {
     this.state = 'starting';
     return this.request('start', {anchorFrame, ...this.timbreCommandBinding()});
   }
-  cancel(reason = 'stop', {reportFailure = true} = {}) {
-    if (this.disposed) return;
+  cancel(reason = 'stop', {reportFailure = true, deferDisconnect = false} = {}) {
+    if (this.disposed || this.disposing) return;
+    if (deferDisconnect) { this.disposeFromError = this.state === 'error'; this.disposeNeedsLedger = ['ready', 'starting', 'running', 'pausing', 'paused', 'resuming'].includes(this.state); this.disposing = true; }
     let failure;
-    try { this.detach(); } catch (cause) { failure = error('audio_processor_error', 'The audio output could not be detached.', {cause: String(cause)}); }
+    try { if (deferDisconnect) this.mute(); else this.detach(); } catch (cause) { failure = error('audio_processor_error', 'The audio output could not be silenced.', {cause: String(cause)}); }
     this.rejectPending(error('audio_canceled', 'Playback was canceled; a fresh explicit preparation is required.'));
     this.state = 'canceled';
     try { this.nextGeneration(); this.node.port.postMessage({type: 'cancel', generation: this.generation, reason}); }
     catch (cause) { failure ||= error('audio_processor_error', 'Audio cancellation could not be delivered; the disconnected receiver is closed.', {cause: String(cause)}); }
-    if (failure) { this.broken = true; this.state = 'error'; this.closePort(); if (reportFailure) this.onError(failure); }
+    if (failure) { this.broken = true; this.state = 'error'; this.closePort({reportFailure: false}); if (reportFailure) this.onError(failure); }
     return failure;
   }
   stop() { this.cancel('stop'); }
@@ -181,15 +183,33 @@ export class BasicKeyAudioReceiver {
     return {...completion, type: 'audit', ledger: undefined, offset, nextOffset: end, rows};
   }
   audit({offset = 0, count = LIMITS.maxAuditRows} = {}) { this.requireOpen(); if (this.lastCompletion?.ledger && this.lastCompletion.planGeneration === this.planGeneration) return Promise.resolve(this.completionAudit(offset, count)); return this.request('audit', {offset, count}); }
-  fail(reason) { this.rejectPending(reason); this.cancel('error', {reportFailure: false}); this.state = 'error'; this.onError(reason); }
+  disposalAckMatches(message) {
+    const plan = this.plan, ledger = message.ledger, length = plan?.rangeMode ? plan.recordCapacity : plan?.notes.length ?? 0;
+    if (message.generation !== this.generation || message.planGeneration !== (this.planGeneration ?? 0) || message.reason !== 'dispose' || message.state !== 'canceled' || message.active !== 0 || message.sampleRate !== this.context.sampleRate || !frameDiagnostic(message.frame)
+      || message.notes !== (plan?.notes.length ?? 0) || message.sourceNotes !== (plan?.sourceNotes ?? 0) || message.durationFrames !== (plan?.durationFrames ?? 0)
+      || !integer(message.started, 0, length) || message.ended !== message.started || !integer(message.skipped, 0, message.notes)) return false;
+    if (ledger === null) return !this.disposeNeedsLedger || this.lastCompletion?.planGeneration === message.planGeneration;
+    // Constant-size lifecycle validation only. The independent evidence oracle
+    // checks every sample gate; cleanup does not rescan a complete score.
+    return Boolean(ledger && [ledger.actualStarts, ledger.actualEnds].every(rows => Object.prototype.toString.call(rows) === '[object Float64Array]' && rows.length === length));
+  }
+  fail(reason) { this.rejectPending(reason); if (this.disposing) { this.broken = true; this.closePort({reportFailure: false}); } else this.cancel('error', {reportFailure: false}); this.state = 'error'; this.onError(reason); }
   receive(message) {
     if (this.disposed || !message || !Number.isSafeInteger(message.generation)) return;
+    // Disposal completion and earlier terminal evidence are separate: a real
+    // stop ledger may be followed by a ledger-less dispose ACK on the port.
+    const disposalAck = this.disposing && message.type === 'canceled' && this.disposalAckMatches(message);
+    const replacedTerminal = message.reason === 'prepare_replaced' && message.generation === message.planGeneration;
+    if (this.disposing && message.type === 'canceled' && !disposalAck && (message.generation >= this.generation || message.generation <= message.planGeneration && !replacedTerminal || !message.ledger)) {
+      if (this.disposeFromError && message.generation === this.generation) this.closePort({reportFailure: false});
+      return;
+    }
     if (['ready', 'error', 'stale'].includes(message.type) && message.generation === this.prepareInFlight) this.prepareInFlight = null;
     if (message.type === 'canceled' && message.generation > this.prepareInFlight) this.prepareInFlight = null;
-    if (this.timbreBindings.size && ['ready', 'started', 'snapshot', 'audit', 'audit_transferred', 'ended', 'canceled'].includes(message.type) && (message.type !== 'canceled' || message.ledger)) {
+    if (this.timbreBindings.size && ['ready', 'started', 'snapshot', 'audit', 'audit_transferred', 'ended', 'canceled'].includes(message.type) && (message.type !== 'canceled' || message.ledger || this.disposing)) {
       const binding = this.timbreBindings.get(message.planGeneration);
       if (message.generation === this.generation && message.type !== 'canceled' && message.planGeneration !== this.planGeneration || binding && ((message.timbreProfile ?? null) !== binding.timbreProfile || (message.timbreFingerprint ?? null) !== binding.timbreFingerprint || ['sourceSha256', 'policyId', 'identityKind', 'sampleRate'].some(key => message[key] !== binding[key]))) {
-        if (message.type === 'canceled' && (this.state === 'error' || this.disposing)) { if (this.disposing && message.generation === this.generation) this.closePort(); return; }
+        if (message.type === 'canceled' && (this.state === 'error' || this.disposing)) { if (this.disposing && this.disposeFromError && message.generation === this.generation) this.closePort({reportFailure: false}); return; }
         this.fail(error('audio_timbre_fingerprint', 'The audio acknowledgement belongs to another source or synthetic color selection.')); return;
       }
       if (!binding && message.ledger) return;
@@ -200,8 +220,9 @@ export class BasicKeyAudioReceiver {
       this.lastCompletion = Object.freeze({...message, anchorTime: message.anchorFrame / message.sampleRate, positionMs: message.positionFrame * 1000 / message.sampleRate});
       if (message.type === 'canceled') this.onStopped(this.lastCompletion);
     }
-    if (this.disposing && message.type === 'canceled' && message.generation === this.generation) { this.closePort(); return; }
+    if (this.disposing && disposalAck) { this.closePort(); return; }
     if (message.generation !== this.generation) return;
+    if (this.disposing && message.type !== 'error') return;
     const pending = this.pending.get(message.requestId);
     if (message.type === 'audit_transferred' && pending) {
       try { const result = this.completionAudit(message.offset, message.count); this.takePending(message.requestId); pending.resolve(result); }
@@ -221,21 +242,27 @@ export class BasicKeyAudioReceiver {
   }
   dispose() {
     if (this.disposed || this.disposing) return;
-    this.cancel('dispose'); if (this.disposed) return; this.disposing = true; this.state = 'disposed';
-    this.context.removeEventListener?.('statechange', this.stateListener);
-    this.outputGate.disconnect();
+    // A synchronous disconnect takes the browser's graph lock while the core
+    // can still be running. Mute/fence now; mutate that graph only after the
+    // matching cancel ACK, or after the existing bounded cleanup deadline.
+    this.cancel('dispose', {deferDisconnect: true}); if (this.disposed) return; this.state = 'disposed';
     if (this.broken || this.context.state === 'closed') this.closePort();
     // Lifecycle cleanup only, never note scheduling. A stopped/suspended audio
     // thread may never acknowledge; retain no dead port beyond this grace time.
-    else this.disposeTimer = this.setTimer(() => this.closePort(), 1000);
+    else try { this.disposeTimer = this.setTimer(() => this.closePort(), 1000); }
+    catch (cause) { this.fail(error('audio_processor_error', 'The audio disposal deadline could not be armed.', {cause: String(cause)})); }
   }
-  closePort() {
+  closePort({reportFailure = true} = {}) {
     if (this.disposed) return;
     this.disposed = true; this.disposing = false;
     this.rejectPending(error('audio_receiver_closed', 'The audio receiver is closed.'));
-    this.context.removeEventListener?.('statechange', this.stateListener);
-    this.outputGate.disconnect();
-    if (this.disposeTimer !== undefined) this.clearTimer(this.disposeTimer);
-    this.node.port.onmessage = null; this.node.port.onmessageerror = null; this.node.onprocessorerror = null; this.node.port.close?.();
+    let failure;
+    const cleanup = run => { try { run(); } catch (cause) { failure ||= error('audio_processor_error', 'The disposed audio receiver could not finish cleanup.', {cause: String(cause)}); } };
+    cleanup(() => this.context.removeEventListener?.('statechange', this.stateListener));
+    cleanup(() => { if (this.connected) { try { this.node.disconnect(); } finally { this.connected = false; } } });
+    cleanup(() => this.outputGate.disconnect());
+    if (this.disposeTimer !== undefined) cleanup(() => this.clearTimer(this.disposeTimer));
+    this.node.port.onmessage = null; this.node.port.onmessageerror = null; this.node.onprocessorerror = null; cleanup(() => this.node.port.close?.());
+    if (failure && reportFailure) this.onError(failure);
   }
 }

@@ -133,11 +133,21 @@ cancellation token; `planGeneration` identifies the playback being canceled.
 transport callbacks; it must be treated as completion evidence, never as
 permission to alter a new transport. No per-attack messages are posted.
 
-`dispose()` disconnects immediately and leaves the port alive long enough for
-the cancellation ledger. It closes on that acknowledgment, on an already
-failed/closed device, or after a one-second cleanup grace period. This cleanup
-timer does not schedule any audio. An acknowledgment lost to a closed/failed
-audio device is not a verified completion ledger.
+`dispose()` immediately zeros the output gate, rejects pending commands and
+fences the generation. It retains the muted graph until its matching canceled
+acknowledgment, then physically disconnects and closes the port. This avoids
+mutating the browser graph while this processor is still running. Repeated
+dispose calls and late transport replies cannot reopen the gate. Missing
+acknowledgments or malformed lifecycle metadata and ledger shape cannot report
+successful cancellation; an already failed/closed device or the one-second
+cleanup deadline still forces bounded
+disconnection. This cleanup timer does not schedule audio, and fallback cleanup
+is not a verified completion ledger. Canonical and VSQ receivers inherit this
+disposal sequence; ordinary stop/error cancellation retains immediate detach.
+ACK admission examines a bounded set of fields and typed-array lengths, without
+rescanning the score. Exact ledger gate values remain checked by the independent
+proof validator. An earlier genuine stop ledger remains retained even when a
+later disposal generation has already fenced transport callbacks.
 
 ## Verification scope
 

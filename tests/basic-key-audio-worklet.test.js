@@ -7,6 +7,7 @@ import {BasicKeyAudioCore} from '../web/basic-key-audio-core.js';
 import {BASIC_KEY_AUDIO_PROTOCOL, BASIC_KEY_AUDIO_LIMITS, BASIC_KEY_TIMBRE_PROFILE, VSQ_AUDIO_POLICY, VSQ_AUDIO_IDENTITY, basicKeyGateFrames, buildBasicKeyAudioPlan, validateBasicKeyAudioPlan, encodeBasicKeyAudioPlan, decodeBasicKeyAudioPlan, createBasicKeyAudioTransfer} from '../web/basic-key-audio-plan.js';
 import {cleanErrorText} from '../web/clean-song-text.js';
 import {BasicKeyAudioReceiver} from '../web/basic-key-audio-receiver.js';
+import {prepareCleanSong} from '../web/clean-song-package.js';
 import {basicKeySong} from './basic-key-rendition-fixtures.js';
 import {basicKeyAudioHarness} from './basic-key-audio-harness.js';
 import {DENSE_STREAM, denseDigest, originalDenseRenditionMidi, expectedDenseAttacks} from '../scripts/prepare-dense-rendition-fixture.mjs';
@@ -197,7 +198,7 @@ test('actual production processor wrapper delegates global currentFrame and outp
 test('production processor port preserves discontinuity details into the receiver failure and rejects pending work', async () => {
   const h = basicKeyAudioHarness({autoMessages: false}), errors = [], timers = lifecycleTimers(), toMain = []; let Processor, node;
   class Base { constructor() { this.port = {postMessage(message, transfer = []) { toMain.push(structuredClone(message, {transfer})); }}; } }
-  function deliverMain() { while (toMain.length) node.port.onmessage({data: toMain.shift()}); }
+  function deliverMain() { while (toMain.length) { const data = toMain.shift(); node.port.onmessage?.({data}); } }
   const realm = vm.createContext({AudioWorkletProcessor: Base, BasicKeyAudioCore, sampleRate, currentFrame: 0, registerProcessor(name, value) { assert.equal(name, BASIC_KEY_AUDIO_PROTOCOL); Processor = value; }});
   const source = readFileSync(new URL('../web/basic-key-audio-processor.js', import.meta.url), 'utf8').replace(/^import .*;\n/, '').replace('export class ', 'class ');
   vm.runInContext(source, realm); const processor = new Processor();
@@ -278,12 +279,194 @@ test('a delayed start acknowledgement fails the promise before transport can rep
   h.deliverCore(); h.deliverMain(); assert.equal(h.nodes[0].core.activeCount, 0); receiver.dispose(); h.deliverCore(); h.deliverMain();
 });
 
-test('disposing an active receiver immediately detaches and reports its actual cancellation ledger asynchronously', async () => {
+test('disposing an active receiver immediately mutes and disconnects after its actual cancellation ledger', async () => {
   const h = basicKeyAudioHarness(), stopped = [], receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, onStopped: value => stopped.push(value)});
   await receiver.prepare(plan([[0, 10000, 60, 80, 0], [5000, 6000, 64, 80, 0]])); await receiver.start({anchorTime: h.context.currentTime + .001});
-  h.renderBlock(); assert.equal(h.nodes[0].core.activeCount, 1); receiver.dispose(); assert.equal(receiver.connected, false); assert.equal(h.nodes[0].closed, false);
-  await Promise.resolve(); await Promise.resolve(); assert.equal(h.nodes[0].closed, true); assert.equal(stopped.length, 1);
+  h.renderBlock(); assert.equal(h.nodes[0].core.activeCount, 1); receiver.dispose(); assert.equal(receiver.outputGate.gain.value, 0); assert.equal(receiver.connected, true); assert.equal(h.nodes[0].closed, false);
+  await Promise.resolve(); await Promise.resolve(); assert.equal(receiver.connected, false); assert.equal(h.nodes[0].closed, true); assert.equal(stopped.length, 1);
   assert.equal(stopped[0].planGeneration, 1); assert.equal(stopped[0].generation, 2); assert.deepEqual([...stopped[0].ledger.actualStarts], [176, -1]); assert.deepEqual([...stopped[0].ledger.actualEnds], [256, -1]);
+});
+
+async function controlledDisposal(program = plan([[0, 10000, 60, 80, 0], [5000, 6000, 64, 80, 0]])) {
+  const h = basicKeyAudioHarness({autoMessages: false}), timers = lifecycleTimers(), stopped = [], started = [], ended = [], errors = [], graph = [];
+  const createGain = h.context.createGain;
+  h.context.createGain = () => { const gate = createGain(); gate.disconnect = () => graph.push('gate-disconnect'); return gate; };
+  const receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory() { const node = h.nodeFactory(), disconnect = node.disconnect; node.disconnect = function() { graph.push('node-disconnect'); return disconnect.call(this); }; return node; }, ...timers, onStopped: value => stopped.push(value), onStarted: value => started.push(value), onEnded: value => ended.push(value), onError: value => errors.push(value)});
+  const preparing = receiver.prepare(program); h.deliverCore(); h.finishPreparation(); h.deliverMain(); await preparing;
+  const starting = receiver.start({anchorTime: h.context.currentTime + .001}); h.deliverCore(); h.deliverMain(); await starting;
+  h.renderBlock(); graph.length = 0;
+  return {h, timers, receiver, node: h.nodes[0], stopped, started, ended, errors, graph};
+}
+
+test('delayed disposal ACK keeps a muted graph and exact ledger without reopening transport', async () => {
+  const {h, timers, receiver, node, stopped, started, errors, graph} = await controlledDisposal();
+  receiver.dispose(); const generation = receiver.generation;
+  assert.equal(receiver.outputGate.gain.value, 0); assert.equal(receiver.disposing, true); assert.deepEqual(graph, []);
+  assert.equal(timers.pending.size, 1); assert.equal([...timers.pending.values()][0].delay, 1000);
+  receiver.dispose(); receiver.stop(); receiver.pause(); receiver.reset(); receiver.seek(10);
+  assert.equal(receiver.generation, generation); assert.equal(h.toCore.length, 1); assert.equal(timers.pending.size, 1);
+  assert.throws(() => receiver.start(), {code: 'audio_receiver_closed'}); await assert.rejects(receiver.prepare(plan([[0, 10, 60, 80, 0]])), {code: 'audio_receiver_closed'});
+  assert.ok(h.renderBlock()[0].some(value => value !== 0), 'The core may render before its queued cancellation');
+  assert.equal(receiver.outputGate.gain.value, 0, 'Every rendered sample remains behind the closed output gate');
+  node.port.onmessage({data: structuredClone(started[0])});
+  node.port.onmessage({data: {...structuredClone(started[0]), generation}});
+  assert.equal(started.length, 1); assert.deepEqual(graph, []);
+  h.deliverCore(); assert.equal(node.core.state, 'canceled'); assert.deepEqual(graph, []);
+  const raw = h.toMain.find(([, message]) => message.type === 'canceled')[1];
+  h.deliverMain(); assert.equal(stopped.length, 1); assert.equal(stopped[0].frame, h.frame);
+  assert.deepEqual(stopped[0].ledger, raw.ledger); assert.deepEqual(Array.from(raw.ledger.actualEnds), [h.frame, -1]);
+  assert.deepEqual(graph, ['node-disconnect', 'gate-disconnect']); assert.equal(node.closed, true); assert.equal(receiver.connected, false); assert.equal(receiver.disposed, true); assert.equal(receiver.disposing, false); assert.equal(timers.pending.size, 0); assert.equal(receiver.pending.size, 0); assert.deepEqual(errors, []);
+  receiver.dispose(); assert.equal(graph.length, 2);
+});
+
+test('lost disposal ACK forces bounded cleanup without inventing completion evidence', async () => {
+  const {h, timers, receiver, node, stopped, graph} = await controlledDisposal();
+  receiver.dispose(); h.deliverCore(); const late = h.toMain.splice(0);
+  assert.equal(receiver.disposed, false); assert.equal(receiver.outputGate.gain.value, 0); assert.deepEqual(graph, []);
+  timers.fire(); assert.equal(receiver.disposed, true); assert.equal(node.closed, true); assert.equal(receiver.connected, false); assert.equal(receiver.disposing, false); assert.equal(timers.pending.size, 0); assert.deepEqual(stopped, []); assert.equal(receiver.lastCompletion, null);
+  for (const [, message] of late) receiver.receive(message);
+  assert.deepEqual(stopped, []); assert.equal(receiver.lastCompletion, null); assert.deepEqual(graph, ['node-disconnect', 'gate-disconnect']);
+});
+
+test('stale, malformed and identity-mismatched disposal ACKs cannot deliver completion or release the graph', async () => {
+  const mutations = {
+    'old-generation': m => m.generation--, 'future-generation': m => m.generation++, 'wrong-plan': m => m.planGeneration++,
+    'wrong-reason': m => m.reason = 'stop', 'wrong-state': m => m.state = 'running', 'active-voice': m => m.active++,
+    'wrong-rate': m => m.sampleRate++, 'invalid-frame': m => m.frame = NaN, 'wrong-notes': m => m.notes++,
+    'wrong-source-count': m => m.sourceNotes++, 'wrong-duration': m => m.durationFrames++, 'missing-ledger': m => m.ledger = null,
+    'malformed-ledger': m => m.ledger.actualStarts = [], 'wrong-ledger-type': m => m.ledger.actualEnds = new Float32Array(m.notes),
+    'wrong-ledger-length': m => m.ledger.actualEnds = new Float64Array(m.notes + 1),
+    'wrong-counter': m => m.started = -100,
+    'wrong-source': m => m.sourceSha256 = 'b'.repeat(64), 'wrong-policy': m => m.policyId = VSQ_AUDIO_POLICY,
+    'wrong-identity-kind': m => m.identityKind = VSQ_AUDIO_IDENTITY, 'wrong-timbre': m => m.timbreFingerprint = 'b'.repeat(64),
+  };
+  for (const [name, mutate] of Object.entries(mutations)) {
+    const program = validateBasicKeyAudioPlan({...plan([[0, 10000, 60, 80, 0]]), timbreProfile: BASIC_KEY_TIMBRE_PROFILE, timbres: [2]});
+    const {h, timers, receiver, stopped, graph} = await controlledDisposal(program);
+    receiver.dispose(); h.deliverCore(); const authentic = h.toMain.splice(0).find(([, message]) => message.type === 'canceled'), altered = structuredClone(authentic[1]); mutate(altered);
+    receiver.node.port.onmessage({data: altered});
+    assert.equal(receiver.disposed, false, name); assert.equal(receiver.connected, true, name); assert.equal(receiver.outputGate.gain.value, 0, name); assert.equal(timers.pending.size, 1, name); assert.deepEqual(stopped, [], name); assert.deepEqual(graph, [], name);
+    h.toMain.push(authentic); h.deliverMain(); assert.equal(receiver.disposed, true, name); assert.equal(stopped.length, 1, name); assert.equal(timers.pending.size, 0, name);
+  }
+});
+
+test('a natural terminal racing disposal retains its ledger without a stale ended callback', async () => {
+  const {h, timers, receiver, ended, stopped, graph} = await controlledDisposal(plan([[0, 100, 60, 80, 0]]));
+  while (h.nodes[0].core.state === 'running') h.renderBlock();
+  assert.ok(h.toMain.some(([, message]) => message.type === 'ended'));
+  receiver.dispose(); h.deliverCore(); h.deliverMain();
+  assert.deepEqual(ended, []); assert.deepEqual(stopped, []); assert.equal(receiver.lastCompletion.type, 'ended'); assert.equal(receiver.disposed, true); assert.equal(timers.pending.size, 0); assert.deepEqual(graph, ['node-disconnect', 'gate-disconnect']);
+});
+
+test('replacement receiver cannot be stopped or restarted by the old disposal ACK', async () => {
+  const {h, receiver, node, timers, stopped} = await controlledDisposal();
+  receiver.dispose();
+  const replacement = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, ...timers});
+  const preparing = replacement.prepare(plan([[0, 20000, 65, 90, 0]])); h.deliverCore(h.nodes[1]); h.finishPreparation(); h.deliverMain(h.nodes[1]); await preparing;
+  const starting = replacement.start({anchorTime: h.context.currentTime + .01}); h.deliverCore(h.nodes[1]); h.deliverMain(h.nodes[1]); await starting;
+  h.deliverCore(node); h.deliverMain(node);
+  assert.equal(receiver.disposed, true); assert.equal(stopped.length, 1); assert.equal(replacement.state, 'running'); assert.equal(replacement.connected, true); assert.equal(replacement.outputGate.gain.value, 1);
+  replacement.dispose(); h.deliverCore(); h.deliverMain(); assert.equal(replacement.disposed, true); assert.equal(timers.pending.size, 0);
+});
+
+for (const fault of ['post', 'processor', 'message', 'mute', 'closed-context']) test(`disposal ${fault} failure closes bounded resources without a fabricated ledger`, async () => {
+  const {h, timers, receiver, node, stopped, errors, graph} = await controlledDisposal();
+  if (fault === 'post') node.port.postMessage = () => { throw Error('cancel delivery failed'); };
+  if (fault === 'mute') receiver.outputGate.gain.setValueAtTime = () => { throw Error('mute failed'); };
+  if (fault === 'closed-context') h.context.state = 'closed';
+  receiver.dispose();
+  if (fault === 'processor') node.onprocessorerror();
+  if (fault === 'message') node.port.onmessageerror();
+  assert.equal(receiver.disposed, true); assert.equal(receiver.disposing, false); assert.equal(receiver.connected, false); assert.equal(node.closed, true); assert.equal(timers.pending.size, 0); assert.equal(receiver.pending.size, 0); assert.deepEqual(stopped, []); assert.equal(receiver.lastCompletion, null); assert.equal(errors.length, fault === 'closed-context' ? 0 : 1); assert.deepEqual(graph, ['node-disconnect', 'gate-disconnect']);
+});
+
+test('disposal cleanup still closes the gate and port if node disconnect throws', async () => {
+  const {h, timers, receiver, node, errors, graph} = await controlledDisposal();
+  node.disconnect = () => { graph.push('node-disconnect-failed'); throw Error('disconnect failed'); };
+  receiver.dispose(); h.deliverCore(); h.deliverMain();
+  assert.equal(receiver.disposed, true); assert.equal(node.closed, true); assert.equal(timers.pending.size, 0); assert.equal(errors.length, 1); assert.deepEqual(graph, ['node-disconnect-failed', 'gate-disconnect']);
+});
+
+test('a delayed earlier stop ledger survives disposal without releasing its graph before the dispose ACK', async () => {
+  const {h, timers, receiver, stopped, graph} = await controlledDisposal();
+  receiver.stop(); receiver.dispose(); h.deliverCore();
+  const receipts = h.toMain.splice(0); assert.deepEqual(receipts.map(([, m]) => [m.generation, m.reason, Boolean(m.ledger)]), [[2, 'stop', true], [3, 'dispose', false]]);
+  h.toMain.push(receipts[0]); h.deliverMain(); assert.equal(receiver.disposed, false); assert.equal(stopped.length, 1); assert.equal(stopped[0].generation, 2); assert.equal(receiver.lastCompletion, stopped[0]); assert.equal(timers.pending.size, 1); assert.deepEqual(graph, ['node-disconnect']);
+  h.toMain.push(receipts[1]); h.deliverMain(); assert.equal(receiver.disposed, true); assert.equal(stopped.length, 1); assert.equal(timers.pending.size, 0); assert.deepEqual(graph, ['node-disconnect', 'gate-disconnect']);
+});
+
+test('a replaced plan terminal remains auditable when the replacement is disposed before validation', async () => {
+  const {h, timers, receiver, stopped} = await controlledDisposal();
+  const preparing = receiver.prepare(plan([[0, 20000, 65, 90, 0]])), rejected = assert.rejects(preparing, {code: 'audio_canceled'});
+  receiver.dispose(); await rejected; h.deliverCore();
+  assert.deepEqual(h.toMain.map(([, m]) => [m.generation, m.planGeneration, m.reason, Boolean(m.ledger)]), [[1, 1, 'prepare_replaced', true], [3, 2, 'dispose', false]]);
+  h.deliverMain(); assert.equal(stopped.length, 1); assert.equal(stopped[0].reason, 'prepare_replaced'); assert.equal(stopped[0].planGeneration, 1); assert.equal(receiver.lastCompletion, stopped[0]); assert.equal(receiver.disposed, true); assert.equal(timers.pending.size, 0);
+});
+
+test('disposing after a core failure still retains the real canceled ledger and original error', async () => {
+  const {h, timers, receiver, node, stopped, errors} = await controlledDisposal();
+  node.core.process([new Float32Array(128)], 128); h.deliverMain();
+  assert.equal(errors.length, 1); assert.equal(errors[0].code, 'audio_render_discontinuity'); assert.equal(receiver.connected, false);
+  receiver.dispose(); h.deliverCore(); h.deliverMain();
+  assert.equal(stopped.length, 1); assert.equal(stopped[0].reason, 'error'); assert.equal(receiver.lastCompletion, stopped[0]); assert.equal(receiver.disposed, true); assert.equal(timers.pending.size, 0); assert.equal(errors.length, 1);
+});
+
+for (const stage of ['prepare', 'start']) test(`disposal fences a pending ${stage} and accepts the actual cancellation shape`, async () => {
+  const h = basicKeyAudioHarness({autoMessages: false}), timers = lifecycleTimers(), started = [], stopped = [], receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, ...timers, onStarted: m => started.push(m), onStopped: m => stopped.push(m)});
+  let pending = receiver.prepare(plan([[0, 10000, 60, 80, 0]]));
+  if (stage === 'start') { h.deliverCore(); h.finishPreparation(); h.deliverMain(); await pending; pending = receiver.start(); h.deliverCore(); }
+  const rejection = assert.rejects(pending, {code: 'audio_canceled'}); receiver.dispose(); await rejection;
+  assert.equal(receiver.pending.size, 0); assert.equal(timers.pending.size, 1); assert.equal(receiver.outputGate.gain.value, 0);
+  h.deliverCore(); h.deliverMain(); assert.equal(receiver.disposed, true); assert.equal(timers.pending.size, 0); assert.deepEqual(started, []); assert.equal(stopped.length, stage === 'start' ? 1 : 0); assert.equal(h.nodes[0].core.startedCount, 0);
+});
+
+for (const fault of ['listener-remove', 'timer-clear', 'timer-set']) test(`disposal ${fault} exception cannot strand the graph or port`, async () => {
+  const {h, timers, receiver, node, errors} = await controlledDisposal();
+  if (fault === 'listener-remove') h.context.removeEventListener = () => { throw Error('listener cleanup failed'); };
+  if (fault === 'timer-clear') receiver.clearTimer = () => { throw Error('deadline cleanup failed'); };
+  if (fault === 'timer-set') receiver.setTimer = () => { throw Error('deadline setup failed'); };
+  assert.doesNotThrow(() => receiver.dispose());
+  if (fault !== 'timer-set') { assert.equal(timers.pending.size, 1); timers.fire(); }
+  assert.equal(receiver.disposed, true); assert.equal(receiver.connected, false); assert.equal(node.closed, true); assert.equal(node.port.onmessage, null); assert.equal(node.port.onmessageerror, null); assert.equal(node.onprocessorerror, null); assert.equal(receiver.pending.size, 0); assert.equal(timers.pending.size, 0); assert.equal(errors.length, 1);
+});
+
+test('actual processor reproduces the retained 555 frame fault only when graph teardown precedes cancellation', async () => {
+  const descriptor = JSON.parse(readFileSync(new URL('./fixtures/basic-key-acceptance/rendition-native.json', import.meta.url))).open.clean_package;
+  const song = prepareCleanSong(`native:song-${descriptor.content_sha256}`, descriptor, JSON.parse(descriptor.score_json).notation);
+  const program = buildBasicKeyAudioPlan(song, {sampleRate: 44100, mode: 'practice', targetPart: 'midi-t3-c1-r0'});
+  assert.equal(program.sourceSha256, '7e5fea609420469fc4178cb8f1d740c80a3f07d0833632794aa0cd68375e5315');
+  assert.deepEqual(program.notes.map(n => [n[0], n[2], n[3]]), [['midi-t1-e4', 0, 529200], ['midi-t2-e1', 0, 11025], ['midi-t1-e6', 529200, 530082], ['midi-t1-e8', 529200, 530082]]);
+  for (const disconnectBeforeCancel of [true, false]) {
+    const emitted = [], toMain = [], toCore = [], timers = lifecycleTimers(), context = basicKeyAudioHarness({sampleRate: 44100}).context, disconnectedStates = []; let Processor, node;
+    class Base { constructor() { this.port = {postMessage(message, transfer = []) { const raw = structuredClone(message, {transfer}); emitted.push(raw); toMain.push(raw); }}; } }
+    const realm = vm.createContext({AudioWorkletProcessor: Base, BasicKeyAudioCore, sampleRate: 44100, currentFrame: 979968, registerProcessor(name, value) { assert.equal(name, BASIC_KEY_AUDIO_PROTOCOL); Processor = value; }});
+    vm.runInContext(readFileSync(new URL('../web/basic-key-audio-processor.js', import.meta.url), 'utf8').replace(/^import .*;\n/, '').replace('export class ', 'class '), realm);
+    const processor = new Processor(), block = () => processor.process([], [[new Float32Array(128)]]);
+    function deliverCore() { while (toCore.length) processor.port.onmessage({data: toCore.shift()}); }
+    function deliverMain() { while (toMain.length) { const data = toMain.shift(); node.port.onmessage?.({data}); } }
+    const receiver = await BasicKeyAudioReceiver.create(context, {}, {...timers, nodeFactory() { return node = {connect() {}, disconnect() {
+      disconnectedStates.push(processor.core.state);
+      // Model the observed host graph-lock failure: context advances, but a
+      // running processor sees its last currentFrame again during disconnect.
+      if (processor.core.state === 'running') { const frame = realm.currentFrame; realm.currentFrame = processor.core.previousBlockFrame; block(); realm.currentFrame = frame; }
+    }, port: {postMessage(message, transfer = []) { toCore.push(structuredClone(message, {transfer})); }, close() {}}}; }});
+    const preparing = receiver.prepare(program); deliverCore(); block(); context.currentTime = 980096 / 44100; deliverMain(); await preparing;
+    realm.currentFrame = 980352; context.currentTime = 980352 / 44100;
+    const starting = receiver.start({anchorTime: 982557 / 44100}); deliverCore(); deliverMain(); await starting;
+    for (let frame = 980352; frame <= 989824; frame += 128) { realm.currentFrame = frame; block(); }
+    assert.equal(processor.core.successfulBlocks, 75); context.currentTime = 989952 / 44100;
+    if (disconnectBeforeCancel) receiver.detach();
+    receiver.dispose(); assert.equal(receiver.outputGate.gain.value, 0); realm.currentFrame = 990080; deliverCore(); deliverMain();
+    const failure = emitted.find(m => m.type === 'error'), terminal = emitted.find(m => m.type === 'canceled');
+    if (disconnectBeforeCancel) {
+      assert.equal(failure.code, 'audio_render_discontinuity'); assert.deepEqual(failure.details, {discontinuityKind: 'block-frame', expectedFrame: 989952, actualFrame: 989824, previousBlockFrame: 989824, previousBlockLength: 128, blockLength: 128, frameDelta: -128, successfulBlocks: 75});
+      assert.deepEqual(Array.from(terminal.ledger.actualEnds), [989824, 989824, -1, -1]);
+    } else {
+      assert.equal(failure, undefined); assert.deepEqual(disconnectedStates, ['canceled']);
+      assert.deepEqual(Array.from(terminal.ledger.actualEnds), [990080, 990080, -1, -1]);
+    }
+    assert.equal(terminal.frame, 990080); assert.deepEqual(Array.from(terminal.ledger.actualStarts), [982557, 982557, -1, -1]); assert.equal(receiver.disposed, true); assert.equal(timers.pending.size, 0);
+  }
 });
 
 test('invalid prepare silences the previous plan; bounded generations never wrap or restart it', () => {

@@ -13,6 +13,23 @@ const plan=(sampleRate=48000)=>{const f=fixture();return buildCanonicalAudioPlan
 const create=async(h,extra={})=>CanonicalAudioReceiver.create(h.context,h.output,{...extra,nodeFactory:()=>h.nodeFactory({Core:CanonicalAudioCore})});
 const settle=async()=>{for(let i=0;i<6;i++)await Promise.resolve();};
 
+for(const ranged of [false,true])test(`canonical ${ranged?'range':'complete'} disposal inherits muted ACK ownership without changing its gate ledger`,async()=>{
+ const h=basicKeyAudioHarness({autoMessages:false}),stopped=[],f=fixture(),p=ranged?buildCanonicalAudioPlan(f.compilation,f.profile,{...options,sampleRate:48000,range:{startMs:250,endMs:500},countInMs:100,loop:{enabled:true,maxPasses:3}}):plan(),r=await create(h,{onStopped:m=>stopped.push(m)});
+ const preparing=r.prepare(p);h.deliverCore();h.finishPreparation();h.deliverMain();await preparing;
+ const starting=r.start({anchorTime:h.context.currentTime+.001});h.deliverCore();h.deliverMain();await starting;
+ for(let i=0;i<60;i++)h.renderBlock();
+ r.dispose();assert.equal(r.outputGate.gain.value,0);assert.equal(r.connected,true);assert.equal(r.sourcePositionMs(),null);
+ h.deliverCore();const ack=h.toMain.find(([,m])=>m.type==='canceled')[1];assert.equal(ack.ledger.actualStarts.length,ranged?p.recordCapacity:p.notes.length);assert.equal(r.disposalAckMatches(ack),true);h.deliverMain();
+ assert.equal(r.disposed,true);assert.equal(r.connected,false);assert.equal(stopped.length,1);assert.equal(stopped[0].planFingerprint,p.planFingerprint);assert.deepEqual(stopped[0].ledger,ack.ledger);
+});
+
+test('canonical disposal rejects a wrong plan fingerprint through its existing fail-closed path',async()=>{
+ const h=basicKeyAudioHarness({autoMessages:false}),stopped=[],errors=[],r=await create(h,{onStopped:m=>stopped.push(m),onError:e=>errors.push(e)});
+ const preparing=r.prepare(plan());h.deliverCore();h.finishPreparation();h.deliverMain();await preparing;
+ r.dispose();h.deliverCore();const ack=h.toMain.find(([,m])=>m.type==='canceled')[1];ack.planFingerprint='0'.repeat(64);h.deliverMain();
+ assert.equal(r.disposed,true);assert.equal(r.connected,false);assert.deepEqual(stopped,[]);assert.equal(r.lastCompletion,null);assert.equal(errors.length,1);assert.equal(errors[0].code,'canonical_audio_fingerprint');
+});
+
 test('canonical receiver prepare/start/pause/resume shares source clock and opaque completion mapping',async()=>{
  const h=basicKeyAudioHarness(),r=await create(h),p=plan();
  try{

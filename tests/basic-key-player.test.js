@@ -54,7 +54,7 @@ test('part practice, mute and solo filter output after whole-source interpretati
 test('pause/reset/resume cancel all active and future gates with fresh explicit anchors',async()=>{
  const h=harness();try{
   await assert.rejects(h.start({acceptedPolicyId:'other'}),{code:'reference_policy_required'});assert.equal(h.nodes.length,0);
-  await h.start();const old=core(h);h.renderTo(.06);assert.equal(old.activeCount,2);h.player.pause();assert.equal(h.nodes.at(-1).connected,false);await Promise.resolve();assert.equal(old.activeCount,0);h.renderTo(1.2);assert.equal(old.startedCount,2);
+  await h.start();const old=core(h),receiver=h.player.basicKeys.receiver;h.renderTo(.06);assert.equal(old.activeCount,2);h.player.pause();assert.equal(receiver.outputGate.gain.value,0);await Promise.resolve();assert.equal(old.activeCount,0);await Promise.resolve();assert.equal(h.nodes.at(-1).connected,false);h.renderTo(1.2);assert.equal(old.startedCount,2);
   const anchor=await h.start({resumePositionMs:600});assert.equal(anchor.positionMs,600);h.renderTo(anchor.anchorTime+.01);assert.equal(core(h).startedCount,2);assert.equal(core(h).skippedCount,3);
   h.player.stop();await Promise.resolve();assert.equal(core(h).activeCount,0);assert.deepEqual(h.errors,[]);
  }finally{h.close();}
@@ -100,7 +100,7 @@ test('an accepted audio ACK delayed before the player continuation cannot backda
 test('canceling between preparation and the convenience start continuation fences that start',async()=>{
  const h=harness(),basic=h.player.basicKeys,prepare=basic.prepare.bind(basic);
  basic.prepare=options=>prepare(options).then(result=>{queueMicrotask(()=>basic.stop());return result;});
- try{assert.equal(await h.start(),null);assert.equal(basic.running,false);assert.equal(h.nodes.at(-1).connected,false);}finally{h.close();}
+ try{assert.equal(await h.start(),null);assert.equal(basic.running,false);await Promise.resolve();await Promise.resolve();assert.equal(h.nodes.at(-1).connected,false);assert.equal(h.nodes.at(-1).core.startedCount,0);}finally{h.close();}
 });
 
 test('per-part colors reach the worklet through convenience start and reset on source preparation',async()=>{
