@@ -41,6 +41,7 @@ import {connectionDiagnostics} from './browser-connection-diagnostics.js';
 import {prepareAudioAdmissionDiagnostics, installAudioAdmissionDiagnostics, readAudioAdmissionDiagnostics} from './browser-audio-admission-diagnostics.js';
 import {validatePerformanceRecord} from '../web/performance-library.js';
 import {assertAddedLibraryCopies} from './library-copy-assertions.js';
+import {settlePianoViewportBudget} from './browser-piano-budget.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const binary = resolve(root, process.env.WMH_SERVER_BINARY || join('target', 'debug', `practice-server${process.platform === 'win32' ? '.exe' : ''}`));
@@ -2172,9 +2173,26 @@ test('real piano hands preserve merged ties and repeat targets through editable 
   const discardResponse=watchPlan(body=>body.left_hand.max_span_semitones===12&&body.locks.length===1);await ui('#piano-fingering-discard').click();assert.equal((await responseJson(await discardResponse)).status,'ready');await page.waitForFunction(()=>document.querySelector('#piano-fingering-status').dataset.phase==='ready');
   assert.deepEqual(await exportTakeData(),take,'Hand/finger editing and failed plans preserve the complete paused take');assert.deepEqual(await exportScore(),score);await closeShellPanels();await screenshot('piano-two-hand-guidance');
   await page.locator('#piano-fingering-guidance>summary').click();await page.setViewportSize({width:844,height:390});await page.emulateMedia({reducedMotion:'reduce'});await page.locator('#notation-toggle').click();await waitForEngraving();
-  const withNotice=await simultaneousStageGeometry(),position=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;assert.equal(await page.locator('#notice').isVisible(),true);assert.match(await page.locator('#notice-message').textContent(),/Complete score download/);
+  const noticeLayout={};
+  async function noticeGeometry(phase){
+    const observed=noticeLayout[phase]={};
+    try{
+      // Notice flow changes the workspace size synchronously, but its viewport
+      // observer commits lane capacity in the next frame. Settle that contract
+      // on both sides; never wait for the greater-height assertion itself.
+      observed.budget=await page.evaluate(settlePianoViewportBudget);
+    }catch(error){observed.settlementError=error.message;throw error;}
+    finally{
+      observed.geometry=await simultaneousStageGeometry();
+      observed.notice=await page.locator('#notice').evaluate(node=>({hidden:node.hidden,message:node.textContent,focus:document.activeElement?.id,committedSpace:document.body.style.getPropertyValue('--piano-notice-space')}));
+      // Persist both geometries even when settlement or a later assertion fails.
+      await writeFile(join(artifactDirectory,'worldmusichub-live-piano-notice-layout.json'),JSON.stringify(noticeLayout,null,2));
+    }
+    return observed.geometry;
+  }
+  const withNotice=await noticeGeometry('withNotice'),position=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;assert.equal(await page.locator('#notice').isVisible(),true);assert.match(await page.locator('#notice-message').textContent(),/Complete score download/);
   await page.locator('#notice-dismiss').focus();await page.keyboard.press('Enter');assert.equal(await page.locator('#notice').isVisible(),false);assert.equal(await page.evaluate(()=>document.activeElement.id),'stage-title');
-  const geometry=await simultaneousStageGeometry();assertSimultaneousPiano(geometry);assert.ok(geometry.canvasVisible.height>withNotice.canvasVisible.height,'Explicit dismissal restores space without hiding messages automatically');assert.equal((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,position);assert.deepEqual(await exportTakeData(),take,'Dismissing a status message does not alter the paused take');
+  const geometry=await noticeGeometry('dismissed');assertSimultaneousPiano(geometry);assert.ok(geometry.canvasVisible.height>withNotice.canvasVisible.height,'Explicit dismissal restores space without hiding messages automatically');assert.equal((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,position);assert.deepEqual(await exportTakeData(),take,'Dismissing a status message does not alter the paused take');
   await ui('#notice-history>summary').click();assert.match(await ui('#notice-history-list').textContent(),/Complete score download/);await closeShellPanels();await screenshot('piano-two-hand-guidance-844x390');
   await writeFile(join(artifactDirectory,'worldmusichub-live-piano-two-hands.json'),JSON.stringify({initial,leftPlan,conflict,restored,withNotice,geometry,notice_dismissed_by_user:true,paused_take_unchanged:true,canonical_score_unchanged:true},null,2));
 });

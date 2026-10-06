@@ -123,17 +123,19 @@ test('actual heading changes and 125 percent zoom refresh one shared normal/Free
   }finally{view.destroy();}
 });
 
-function guideBudgetFixture(){
-  const {document}=parseHTML('<html lang="en"><body data-screen="stage"><main id="workspace" class="piano-workspace"><div class="piano-lanes-shared"></div><div class="piano-keybed-shared"></div><div class="piano-transport"></div></main></body></html>');
-  const root=document.getElementById('workspace'),lane=root.querySelector('.piano-lanes-shared'),transport=root.querySelector('.piano-transport'),keyboard=root.querySelector('.piano-keybed-shared'),frames=new Map();
-  let serial=0,laneHeight=128.5625,keybedHeight=82,otherChrome=177.4375,notify;
+function guideBudgetFixture({noticeHeight=0}={}){
+  const {document}=parseHTML('<html lang="en"><body data-screen="stage"><div id="notice">Complete score download requested.</div><main id="workspace" class="piano-workspace"><div class="piano-lanes-shared"></div><div class="piano-keybed-shared"></div><div class="piano-transport"></div></main></body></html>');
+  const notice=document.getElementById('notice'),root=document.getElementById('workspace'),lane=root.querySelector('.piano-lanes-shared'),transport=root.querySelector('.piano-transport'),keyboard=root.querySelector('.piano-keybed-shared'),frames=new Map(),observed=new Set();
+  notice.hidden=noticeHeight===0;
+  let serial=0,laneHeight=128.5625,keybedHeight=82,otherChrome=177.4375-noticeHeight,notify;
   const values=new Map();Object.defineProperty(document.body,'style',{value:{getPropertyValue:key=>values.get(key)||'',setProperty(key,value){values.set(key,value);laneHeight=Math.round(parseFloat(value)*64)/64;},removeProperty:key=>values.delete(key)}});
   lane.getBoundingClientRect=()=>({width:824,height:laneHeight});keyboard.getBoundingClientRect=()=>({height:keybedHeight});
-  transport.getBoundingClientRect=()=>({height:40.84375,bottom:otherChrome+keybedHeight+laneHeight});
-  const window={innerWidth:844,innerHeight:390,getComputedStyle:node=>({height:node===lane?`${laneHeight}px`:'',paddingBottom:'2px'}),setTimeout,clearTimeout,requestAnimationFrame:fn=>(frames.set(++serial,fn),serial),cancelAnimationFrame:id=>frames.delete(id),addEventListener(){},removeEventListener(){},ResizeObserver:class{constructor(fn){notify=fn;}observe(){}disconnect(){}}};
+  root.getBoundingClientRect=()=>({top:notice.hidden?0:noticeHeight});
+  transport.getBoundingClientRect=()=>({height:40.84375,bottom:root.getBoundingClientRect().top+otherChrome+keybedHeight+laneHeight});
+  const window={innerWidth:844,innerHeight:390,getComputedStyle:node=>({height:node===lane?`${laneHeight}px`:'',paddingBottom:'2px'}),setTimeout,clearTimeout,requestAnimationFrame:fn=>(frames.set(++serial,fn),serial),cancelAnimationFrame:id=>frames.delete(id),addEventListener(){},removeEventListener(){},ResizeObserver:class{constructor(fn){notify=fn;}observe(node){observed.add(node);}disconnect(){}}};
   const flush=()=>{const pending=[...frames.values()];frames.clear();for(const fn of pending)fn();};
   const view=observePianoViewportBudget({document,window});flush();
-  return{document,window,view,frames,flush,notify:()=>notify(),guide(){keybedHeight+=12;},overflow(){otherChrome+=50;},bottom:()=>transport.getBoundingClientRect().bottom};
+  return{document,window,view,frames,flush,notice,root,observed,notify:()=>notify(),guide(){keybedHeight+=12;},overflow(){otherChrome+=50;},bottom:()=>transport.getBoundingClientRect().bottom};
 }
 
 test('guide budget settlement observes the real queued 12px repair after delayed ResizeObserver delivery',async()=>{
@@ -156,6 +158,44 @@ test('guide settlement fails after three frames when the actual observer never c
     env.guide();const settling=settlePianoViewportBudget(env),rejected=assert.rejects(settling,/did not commit within three rendered frames/);
     for(let index=0;index<3;index++)env.flush();await rejected;
     assert.equal(env.bottom(),400);assert.equal(env.frames.size,0);
+  }finally{env.view.destroy();}
+});
+
+test('notice dismissal restores all 36px only after the workspace observer commits its delayed frame',async()=>{
+  const env=guideBudgetFixture({noticeHeight:36});
+  try{
+    assert.ok(env.observed.has(env.root),'Notice flow changes the workspace actually watched by production');
+    const before=(await settlePianoViewportBudget(env)).at(-1);assert.equal(before.laneHeight,128.5625);assert.equal(env.notice.hidden,false);
+    env.notice.hidden=true;assert.equal(env.bottom(),352,'Hiding the notice changes flow immediately, before lane capacity grows');
+    const settling=settlePianoViewportBudget(env);env.flush();
+    assert.equal(env.bottom(),352,'Settlement cannot manufacture a missing observer delivery');
+    env.notify();assert.equal(env.bottom(),352,'The observer itself only queues the layout write');
+    env.flush();assert.equal(env.bottom(),388);env.flush();const samples=await settling;
+    assert.deepEqual(samples.map(sample=>sample.committed),[128.56,128.56,128.56,164.56]);
+    assert.ok(samples.every(sample=>sample.expected===164.56));assert.equal(samples.at(-1).laneHeight-before.laneHeight,36);
+    assert.equal(env.notice.hidden,true);assert.equal(env.frames.size,0);
+  }finally{env.view.destroy();}
+});
+
+test('the with-notice baseline waits for its own delayed capacity reduction without dismissing the message',async()=>{
+  const env=guideBudgetFixture({noticeHeight:36});
+  try{
+    env.notice.hidden=true;env.notify();env.flush();assert.equal(env.bottom(),388);
+    env.notice.hidden=false;assert.equal(env.bottom(),424);
+    const settling=settlePianoViewportBudget(env);env.flush();env.notify();env.flush();env.flush();const samples=await settling;
+    assert.deepEqual(samples.map(sample=>sample.committed),[164.56,164.56,164.56,128.56]);
+    assert.ok(samples.every(sample=>sample.expected===128.56));assert.equal(samples.at(-1).laneHeight,128.5625);
+    assert.equal(env.bottom(),388);assert.equal(env.notice.hidden,false);assert.equal(env.frames.size,0);
+  }finally{env.view.destroy();}
+});
+
+test('notice dismissal settlement rejects a missing viewport commit instead of accepting unchanged lane height',async()=>{
+  const env=guideBudgetFixture({noticeHeight:36});
+  try{
+    env.notice.hidden=true;
+    const settling=settlePianoViewportBudget(env),rejected=assert.rejects(settling,/did not commit within three rendered frames.*"committed":128\.56,"expected":164\.56/);
+    for(let index=0;index<3;index++)env.flush();await rejected;
+    assert.equal(env.bottom(),352);assert.equal(env.notice.hidden,true);assert.equal(env.frames.size,0);
   }finally{env.view.destroy();}
 });
 

@@ -6,7 +6,7 @@ import {resolve,join} from 'node:path';
 import {assertNotationHudClear} from '../tests/notation-hud-geometry.js';
 
 const directory=resolve(process.argv[2]||'ui-preview'),tap=readFileSync(join(directory,'tests.tap'),'utf8');
-const names=['real free piano fills desktop','original grand staff and Jianpu follow','game menu and audible song preview','normal and free piano share','original falling bars visibly cross',...['1280 by 720','1920 by 1080','844 by 390','390 by 844'].map(size=>`real D768 lobby and compact performance fit ${size}`),'short-landscape following reveals','real guitar current and next six-note','real initial compact guide stays','real compact 88-key and custom extreme guides'];
+const names=['real free piano fills desktop','original grand staff and Jianpu follow','game menu and audible song preview','normal and free piano share','original falling bars visibly cross',...['1280 by 720','1920 by 1080','844 by 390','390 by 844'].map(size=>`real D768 lobby and compact performance fit ${size}`),'short-landscape following reveals','real guitar current and next six-note','real initial compact guide stays','real compact 88-key and custom extreme guides','real piano hands preserve merged ties'];
 for(const name of names)assert.ok(tap.split('\n').some(line=>/^ok \d+ - /.test(line)&&line.includes(name)&&!line.includes('# SKIP')),`Missing executed passing preview case: ${name}`);
 const files=[];
 function record(name,{size,png=false}={}){
@@ -39,6 +39,12 @@ for(const pair of paired.evidence){assert.equal(pair.normal.locale,'zh-CN');asse
 for(const row of overlay.evidence)for(const notes of row.currentNotes)assertNotationHudClear(notes.hud);
 const live=record('worldmusichub-lane-overlay-live.json');assert.equal(live.original_fixtures_only,true);assert.equal(live.actual_playback,true);assert.equal(live.evidence.length,10);assert.deepEqual([...new Set(live.evidence.map(frame=>frame.locale))].sort(),['en','zh-CN']);for(const frame of live.evidence){assert.equal(frame.playing,true);assert.equal(frame.controls_closed,true);assert.equal(frame.current_markers,2);assert.ok(frame.geometry.canvasAlpha.opaque>20);assertNotationHudClear(frame.hud);assertNotationHudClear(frame.pausedHud);assert.equal(frame.pausedHud.cueState,'paused');}
 for(const size of ['1033x403','844x390','390x844'])for(const view of ['staff','jianpu'])record(`worldmusichub-lane-overlay-live-${size}-${view}.png`,{size,png:true});
+record('worldmusichub-live-piano-two-hand-guidance-844x390.png',{size:'844x390',png:true});
+const piano=record('worldmusichub-live-piano-two-hands.json'),notice=record('worldmusichub-live-piano-notice-layout.json');
+assert.equal(piano.notice_dismissed_by_user,true);assert.equal(piano.paused_take_unchanged,true);assert.equal(piano.canonical_score_unchanged,true);
+assert.equal(notice.withNotice.notice.hidden,false);assert.equal(notice.dismissed.notice.hidden,true);assert.equal(notice.dismissed.notice.focus,'stage-title');
+for(const phase of ['withNotice','dismissed']){assert.equal(notice[phase].settlementError,undefined);const samples=notice[phase].budget;assert.ok(samples.length>=1&&samples.length<=4);const last=samples.at(-1);assert.ok(Number.isFinite(last.committed)&&Number.isFinite(last.expected)&&Math.abs(last.committed-last.expected)<=.02);}
+assert.deepEqual(notice.withNotice.geometry,piano.withNotice);assert.deepEqual(notice.dismissed.geometry,piano.geometry);assert.ok(piano.geometry.canvasVisible.height>piano.withNotice.canvasVisible.height);
 const git=(...args)=>execFileSync('git',args,{encoding:'utf8'}).trim();
 const result={version:2,scope:'Actual hosted Rust/browser UI preview only',source_sha:git('rev-parse','HEAD'),source_tree:git('rev-parse','HEAD^{tree}'),commit_count:Number(git('rev-list','--count','HEAD')),accepted_package:false,windows_native_verified:false,physical_midi_verified:false,actual_speaker_output_verified:false,cases:names,files};
 writeFileSync(join(directory,'worldmusichub-ui-preview.json'),JSON.stringify(result,null,2));

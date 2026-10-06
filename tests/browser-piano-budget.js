@@ -1,5 +1,5 @@
-/** Run with page.evaluate after a guide changes the keybed. Playwright's
- * checkbox action may finish before ResizeObserver delivers the changed size.
+/** Run with page.evaluate after guides, notices or other stage chrome change.
+ * Playwright actions may finish before ResizeObserver delivers the changed size.
  * Wait for the actual viewport budget, never for acceptance geometry to pass.
  * Three frames cover observer delivery, its queued write and one dependent
  * chrome update; a missing observer/commit fails instead of polling indefinitely.

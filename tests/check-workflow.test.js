@@ -244,3 +244,38 @@ test('Verify cannot silently overwrite conflicting browser evidence or include u
     assert.deepEqual(readdirSync(invalid.target), []);
   }
 });
+
+const priorPreviewCases=['real free piano fills desktop','original grand staff and Jianpu follow','game menu and audible song preview','normal and free piano share','original falling bars visibly cross',...['1280 by 720','1920 by 1080','844 by 390','390 by 844'].map(size=>`real D768 lobby and compact performance fit ${size}`),'short-landscape following reveals','real guitar current and next six-note','real initial compact guide stays','real compact 88-key and custom extreme guides'];
+const noticePreviewCase='real piano hands preserve merged ties';
+
+function validateNoticePreview(document){
+  const steps=document.jobs['ui-preview'].steps,run=steps.find(row=>row.run?.includes('tests/full-app-browser.test.js'));
+  assert.ok(run);assert.equal(run.if,undefined);assert.equal(run['continue-on-error'],undefined);
+  assert.match(run.run,/set -o pipefail/);assert.match(run.run,/\| tee ui-preview\/tests\.tap/);
+  const pattern=run.run.match(/--test-name-pattern='([^']+)'/)?.[1];assert.ok(pattern);
+  const selected=new RegExp(pattern);for(const name of [...priorPreviewCases,noticePreviewCase])assert.ok(selected.test(name),`Missing preview case: ${name}`);
+  const verify=steps.find(row=>row.run==='node scripts/verify-ui-preview.mjs ui-preview');assert.ok(verify);assert.equal(verify.if,undefined);assert.equal(verify['continue-on-error'],undefined);
+  const failure=steps.find(row=>row.with?.name==='game-ui-failures-${{ github.sha }}');assert.ok(failure);assert.equal(failure.if,'always()');
+  assert.ok(failure.with.path.split('\n').includes('ui-preview/worldmusichub-live-piano-notice-layout.json'),'Retain paired notice geometry in the small failure artifact');
+}
+
+test('UI preview adds real notice dismissal without dropping the 13 existing cases or failure geometry',()=>{
+  const parsed=spawnSync(python,['scripts/check-authoring-workflow.py','.github/workflows/ui-preview.yml','--json'],{cwd:root,encoding:'utf8'});
+  assert.equal(parsed.status,0,parsed.stderr);const preview=JSON.parse(parsed.stdout);validateNoticePreview(preview);
+  for(const name of ['original grand staff and Jianpu follow',noticePreviewCase]){
+    const changed=structuredClone(preview),run=changed.jobs['ui-preview'].steps.find(row=>row.run?.includes('tests/full-app-browser.test.js'));run.run=run.run.replace(name,'unselected case');
+    assert.throws(()=>validateNoticePreview(changed),/Missing preview case/);
+  }
+  const missing=structuredClone(preview),failure=missing.jobs['ui-preview'].steps.find(row=>row.with?.name==='game-ui-failures-${{ github.sha }}');
+  failure.with.path=failure.with.path.replace('ui-preview/worldmusichub-live-piano-notice-layout.json','');assert.throws(()=>validateNoticePreview(missing),/Retain paired notice geometry/);
+});
+
+test('UI preview verification refuses the old passing subset or a skipped or failed notice case',t=>{
+  const directory=mkdtempSync(join(tmpdir(),'wmh-notice-preview-contract-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));
+  const previous=priorPreviewCases.map((name,index)=>`ok ${index+1} - ${name}`).join('\n');
+  for(const notice of ['',`ok 14 - ${noticePreviewCase} # SKIP test name does not match pattern`,`not ok 14 - ${noticePreviewCase}`]){
+    writeFileSync(join(directory,'tests.tap'),previous+'\n'+notice+'\n');
+    const checked=spawnSync(process.execPath,['scripts/verify-ui-preview.mjs',directory],{cwd:root,encoding:'utf8'});
+    assert.notEqual(checked.status,0);assert.match(checked.stderr,/Missing executed passing preview case: real piano hands preserve merged ties/);
+  }
+});
