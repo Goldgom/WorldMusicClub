@@ -39,6 +39,7 @@ test('the original two-owner fixture retains its other unplayed shared target an
     plan.target_count = 2;
     take.passes[0].range.end_ms = 64000;
     take.passes[0].assessment.misses.push('shared-e4-a');
+    fixture.options.expectedTargetPlan=structuredClone(plan);
     verify(fixture);
   }
 });
@@ -178,4 +179,8 @@ test('only aggregate floating PCM tolerates tiny platform roundoff; integral evi
   verify(fixture);
   fixture.e.receipts[1].record.nonzeroSamples--;
   assert.throws(() => verify(fixture));
+});
+
+test('human PCM proof cannot infer a physical grouping without an independent target plan',()=>{
+ const fixture=syntheticFixture();delete fixture.options.expectedTargetPlan;assert.throws(()=>verify(fixture),/independent expected physical target plan/);
 });

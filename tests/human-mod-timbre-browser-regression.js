@@ -8,7 +8,7 @@ import {waitForPlaybackClock,waitForPlaybackClockAdvance} from './browser-playba
 import {selectLegacyEnglish} from './browser-input-fixtures.js';
 import {openSongMod} from '../scripts/hosted-song-mod-controls.mjs';
 import {humanModTimbreFixture,HUMAN_MOD_TIMBRE_FIXTURE,HUMAN_MOD_TIMBRE_PARTS} from '../scripts/prepare-human-mod-timbre-fixtures.mjs';
-import {validateHumanModLiveTone} from '../scripts/human-mod-live-tone-proof.mjs';
+import {validateHumanModFixtureSample} from '../scripts/human-mod-timbre-sample-proof.mjs';
 import {validateHostedHumanModTimbre} from '../scripts/verify-human-mod-timbre-hosted.mjs';
 import {validateLiveToneCleanup} from '../scripts/live-tone-proof.mjs';
 
@@ -17,6 +17,20 @@ const traceStart=reference.indexOf('function observeNativeReferenceTransport('),
 assert.ok(traceStart>=0&&traceEnd>traceStart);
 export const humanModTimbreBootstrap=`${liveToneNavigationBootstrap}\n${reference.slice(traceStart,traceEnd)}\nglobalThis.__wmhHumanModTransport=observeNativeReferenceTransport;`;
 export const HUMAN_MOD_TIMBRE_BROWSER_CASE='real human Mod timbres preserve shared ownership, PCM, legacy storage and interrupted controls';
+
+/** One explicit acceptance action owns admission. An early public clock can
+ * still be ready/preparing after Start, so it must never trigger another toggle. */
+export async function admitHumanModPlayback(page,control){
+ assert.ok(['start-performance','play-button'].includes(control));
+ try{
+  await page.locator(`#${control}:not([disabled])`).click();
+  await page.locator('#workspace').waitFor({state:'visible'});
+  await waitForPlaybackClockAdvance(page);
+ }catch(error){
+  const observed=await page.evaluate(()=>{const source=globalThis.__wmhPreviewAudio?.status();return{screen:document.body.dataset.screen,clock:globalThis.__wmhReadPlaybackClock(),rendererState:document.querySelector('#canonical-audio-policy')?.dataset.rendererState,notice:document.querySelector('#notice-message')?.textContent,source:source?{activeReceivers:source.activeReceivers,pendingReceivers:source.pendingReceivers,started:source.started,errors:source.errors,overflow:source.overflow}:null};}).catch(()=>null);
+  throw new Error(`Human Mod ${control} admission did not reach advancing playback: ${JSON.stringify(observed)}`,{cause:error});
+ }
+}
 
 export function registerHumanModTimbreBrowserRegression({test,getPage,ui,readyForTitle,closeShellPanels,exportTakeData,exportScore,artifactDirectory}){
  test(HUMAN_MOD_TIMBRE_BROWSER_CASE,{timeout:180000},async()=>{
@@ -31,9 +45,9 @@ export function registerHumanModTimbreBrowserRegression({test,getPage,ui,readyFo
   const reopen=async()=>{await page.reload({waitUntil:'domcontentloaded'});await waitForPlaybackClock(page);await selectLegacyEnglish(page);await install();await page.locator('#home-single-player').click();await savedRow().waitFor();await savedRow().click();await page.waitForFunction(title=>document.querySelector('#preview-title').textContent===title&&!document.querySelector('#configure-song-mod').disabled,fixture.score.title);};
   const configurePerformance=async instrument=>{await ui('#instrument').selectOption(instrument);await closeShellPanels();};
   const prepareOptions=async()=>{if(!await ui('.practice-options').evaluate(node=>node.open))await ui('.practice-options>summary').click();await ui('#count-in').uncheck();await ui('#metronome-enabled').uncheck();await closeShellPanels();};
-  async function sample(label,expectedInstrument){
-   if(!await page.evaluate(()=>__wmhReadPlaybackClock().running)){await page.locator('#play-button:not([disabled])').waitFor();await page.locator('#play-button').click();}
-   await waitForPlaybackClockAdvance(page);if(await page.locator('#notation-toggle').getAttribute('aria-expanded')==='true')await page.locator('#notation-toggle').click();
+  async function sample(label,expectedInstrument,control='play-button'){
+   const profile=await page.evaluate(()=>({instrument:document.querySelector('#instrument').value,keys:document.querySelector('#key-count').value,tuning:document.querySelector('#guitar-tuning').value,frets:document.querySelector('#guitar-frets').value,capo:document.querySelector('#guitar-capo').value}));assert.ok(['piano','guitar'].includes(profile.instrument));assert.deepEqual(profile,{instrument:profile.instrument,keys:'61',tuning:'E4 B3 G3 D3 A2 E2',frets:'12',capo:'0'},'Each original sample requires the exact default profile retained by its Rust oracle');
+   await admitHumanModPlayback(page,control);if(await page.locator('#notation-toggle').getAttribute('aria-expanded')==='true')await page.locator('#notation-toggle').click();
    await page.locator('#stage-title').click();assert.equal(await page.locator('#keyboard-map [data-code="KeyR"]').getAttribute('data-note-midi'),'60');
    await page.evaluate(()=>{globalThis.__wmhHumanTrace=__wmhHumanModTransport(document,{keyCode:'KeyR'});__wmhHumanLive.begin();});
    await page.keyboard.down('r');await page.waitForTimeout(50);await page.waitForFunction(()=>{__wmhHumanLive.assertHealthy();return __wmhHumanLive.sounding();});await page.keyboard.up('r');await page.waitForFunction(()=>__wmhHumanLive.settled());
@@ -41,8 +55,8 @@ export function registerHumanModTimbreBrowserRegression({test,getPage,ui,readyFo
    await page.evaluate(()=>__wmhHumanLive.checkpoint('released'));await page.waitForFunction(()=>{__wmhHumanLive.assertHealthy();return __wmhHumanLive.quiet('released');});
    const observed=await page.evaluate(()=>{const audio=__wmhHumanLive.finish(),transport=__wmhHumanTrace.snapshot('complete');__wmhHumanTrace.stop();return{audio,transport};});
    await page.locator('#play-button').click();await ui('#assess-button:not([disabled])').click();await page.waitForFunction(()=>document.querySelector('.performance-status')?.dataset.phase==='assessed');const take=await exportTakeData();
-   validateHumanModLiveTone(observed.audio,{take,transport:observed.transport,expectedInstrument,expectedPartIds:parts});assert.deepEqual(await exportScore(),report.sourceScore);
-   const row={label,expectedInstrument,performanceInstrument:await page.locator('#instrument').inputValue(),...observed,take};report.samples.push(row);return take;
+   assert.deepEqual(await exportScore(),report.sourceScore);
+   const row={label,expectedInstrument,performanceInstrument:await page.locator('#instrument').inputValue(),...observed,take};validateHumanModFixtureSample(row,{take,compilation:report.compilation,expectedLiveInstrument:label.startsWith('follow-')?'follow':expectedInstrument});report.samples.push(row);return take;
   }
   try{
    await page.addInitScript(humanModTimbreBootstrap);await page.reload({waitUntil:'domcontentloaded'});await waitForPlaybackClock(page);await selectLegacyEnglish(page);
@@ -51,14 +65,14 @@ export function registerHumanModTimbreBrowserRegression({test,getPage,ui,readyFo
    legacy=await page.evaluate(async score=>{const m=await import('/song-mod.js'),identity=m.songModIdentity({score}),mod=m.defaultSongMod({score,mode:'practice',practiceSelection:{kind:'all'}});mod.version=1;for(const [index,part]of mod.config.parts.entries()){delete part.liveInstrument;part.instrument=index?'triangle':'reed';}mod.configFingerprint=m.songModConfigFingerprint(mod.config,1);m.validateSongMod(mod,{identity,parts:score.parts});const store=new m.SongModStore(),key=store.key(identity,m.SONG_MOD_LEGACY_STORAGE_PREFIX),v2Key=store.key(identity),raw=JSON.stringify(mod);if(localStorage.getItem(v2Key)!==null)throw Error('Fixture unexpectedly already has a v2 Mod');localStorage.setItem(key,raw);return{key,v2Key,raw};},report.sourceScore);report.legacy=legacy;
    await reopen();await prepareOptions();await configurePerformance('piano');await openSongMod(page,{origin:'preview'});let initial=await state('legacy-read');assert.ok(initial.parts.every(part=>part.performer==='human'&&part.liveInstrument==='follow'));assert.deepEqual(initial.parts.map(part=>part.instrument),['reed','triangle']);await page.locator('#song-mod-cancel').click();assert.deepEqual(await page.evaluate(({key,v2Key})=>({legacy:localStorage.getItem(key),v2:localStorage.getItem(v2Key)}),legacy),{legacy:legacy.raw,v2:null});
    await openSongMod(page,{origin:'preview'});await field(parts[0]).selectOption('piano');await field(parts[1]).selectOption('guitar');const conflict=await state('draft-conflict');assert.equal(conflict.applyDisabled,true);for(const part of fixture.score.parts)assert.ok(conflict.routing.includes(part.name));await page.screenshot({path:join(artifactDirectory,'worldmusichub-human-mod-conflict.png')});await unify('guitar');await apply();assert.equal(await page.evaluate(key=>localStorage.getItem(key),legacy.key),legacy.raw);
-   await page.locator('#start-performance:not([disabled])').click();await page.locator('#workspace').waitFor();const guitar=await sample('guitar','guitar');
+   const guitar=await sample('guitar','guitar','start-performance');
    await openSongMod(page,{origin:'stage'});await unify('piano');await page.locator('#song-mod-cancel').click();assert.deepEqual(await exportTakeData(),guitar,'Cancel preserves the entire paused take and applied Mod');
    await openSongMod(page,{origin:'stage'});await unify('piano');await apply();await sample('piano','piano');
    // Save explicit piano + follow while both resolve to piano, then change the
    // actual performance control. No draft is silently unified on revalidation.
-   await openSongMod(page,{origin:'stage'});await field(parts[1]).selectOption('follow');await apply();await configurePerformance('guitar');await page.waitForFunction(()=>document.querySelector('#play-button').disabled);await page.locator('#back-to-library').click();const changed=await state('changed-default-conflict');assert.equal(changed.startDisabled,true);for(const part of fixture.score.parts)assert.ok(changed.summary.includes(part.name));await openSongMod(page,{origin:'preview'});assert.equal(await field(parts[0]).inputValue(),'piano');assert.equal(await field(parts[1]).inputValue(),'follow');await unify('follow');await apply();await page.locator('#start-performance:not([disabled])').click();await page.locator('#workspace').waitFor();
+   await openSongMod(page,{origin:'stage'});await field(parts[1]).selectOption('follow');await apply();await configurePerformance('guitar');await page.waitForFunction(()=>document.querySelector('#play-button').disabled);await page.locator('#back-to-library').click();const changed=await state('changed-default-conflict');assert.equal(changed.startDisabled,true);for(const part of fixture.score.parts)assert.ok(changed.summary.includes(part.name));await openSongMod(page,{origin:'preview'});assert.equal(await field(parts[0]).inputValue(),'piano');assert.equal(await field(parts[1]).inputValue(),'follow');await unify('follow');await apply();await admitHumanModPlayback(page,'start-performance');
    await openSongMod(page,{origin:'stage'});await page.locator('#song-mod-all-machine').click();await apply();assert.equal((await state('listen-mode')).mode,'listen');await openSongMod(page,{origin:'stage'});await page.locator('#song-mod-all-human').click();await apply();assert.equal((await state('human-mode')).mode,'practice');await sample('follow-guitar-after-mode','guitar');
-   await cleanup();await reopen();await prepareOptions();await openSongMod(page,{origin:'preview'});const reopened=await state('v2-reopened');assert.ok(reopened.parts.every(part=>part.performer==='human'&&part.liveInstrument==='follow'));assert.deepEqual(reopened.parts.map(part=>part.instrument),['reed','triangle']);await page.locator('#song-mod-cancel').click();assert.equal(await page.evaluate(key=>localStorage.getItem(key),legacy.key),legacy.raw);await page.locator('#start-performance:not([disabled])').click();await page.locator('#workspace').waitFor();await sample('follow-after-reload',reopened.performanceInstrument);
+   await cleanup();await reopen();await prepareOptions();await openSongMod(page,{origin:'preview'});const reopened=await state('v2-reopened');assert.ok(reopened.parts.every(part=>part.performer==='human'&&part.liveInstrument==='follow'));assert.deepEqual(reopened.parts.map(part=>part.instrument),['reed','triangle']);await page.locator('#song-mod-cancel').click();assert.equal(await page.evaluate(key=>localStorage.getItem(key),legacy.key),legacy.raw);await sample('follow-after-reload',reopened.performanceInstrument,'start-performance');
    report.storage=await page.evaluate(({key,v2Key})=>({legacy:localStorage.getItem(key),v2:localStorage.getItem(v2Key)}),legacy);assert.equal(report.storage.legacy,legacy.raw);assert.equal(JSON.parse(report.storage.v2).version,2);report.ok=true;
   }catch(error){report.error=error.stack||String(error);if(installed)try{report.failure=await page.evaluate(()=>__wmhHumanLive.failureEvidence());}catch{}throw error;}
   finally{try{await cleanup();if(report.ok)validateHostedHumanModTimbre(report);}finally{await writeFile(join(artifactDirectory,'worldmusichub-human-mod-timbre.json'),JSON.stringify(report,null,2));}}

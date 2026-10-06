@@ -53,7 +53,7 @@ export function syntheticFixture({instrument = 'piano', rate = 48000, velocity =
   take.target_plan = {timeline, playable: true, diagnostics: [], source_note_count: 2, target_count: 1,
     groups: [{target_id: target.id, source_occurrence_ids: ['shared-c4-a', 'shared-c4-b'],
       source_note_ids: ['shared-c4-a', 'shared-c4-b'], part_ids: ['P1', 'P2']}]};
-  return structuredClone({e, options: {take, expectedInstrument: instrument, expectedPartIds: ['P1', 'P2'], transport: syntheticLiveToneTransport(e)}});
+  return structuredClone({e, options: {take, expectedInstrument: instrument, expectedPartIds: ['P1', 'P2'], expectedTargetPlan: structuredClone(take.target_plan), transport: syntheticLiveToneTransport(e)}});
 }
 
 // Append a complete, clock-consistent synthetic observer window to a synthetic

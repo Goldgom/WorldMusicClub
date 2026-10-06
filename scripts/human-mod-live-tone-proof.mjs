@@ -68,7 +68,7 @@ function replay(call, start, end, timbre) {
   return notes[1];
 }
 
-function validateTake(take, e, expectedPartIds) {
+function validateTake(take, e, expectedPartIds, expectedTargetPlan) {
   assert.equal(take?.version, 1);
   assert.ok(Number.isFinite(take.latency_ms));
   assert.ok(Number.isFinite(take.tolerance_ms) && take.tolerance_ms >= 10 && take.tolerance_ms <= 2000);
@@ -138,6 +138,8 @@ function validateTake(take, e, expectedPartIds) {
   'Scored onset must derive from the captured input clock, never DSP frames');
 
   const plan = take.target_plan;
+  assert.ok(expectedTargetPlan && typeof expectedTargetPlan === 'object' && !Array.isArray(expectedTargetPlan), 'An independent expected physical target plan is required');
+  assert.deepEqual(plan, expectedTargetPlan, 'The complete physical target plan must match its independent profile-bound reference');
   assert.equal(plan?.playable, true);
   bounded(plan.groups, limits.targets, 'Bounded retained target groups required');
   bounded(plan.timeline?.notes, limits.targets, 'Bounded retained target timeline required');
@@ -162,18 +164,20 @@ function validateTake(take, e, expectedPartIds) {
     assert.deepEqual(ids(targets[0].source_note_ids, 'Target must retain every source note'), [...group.source_note_ids].sort());
   }
   assert.equal(plan.source_note_count, occurrenceIds.size);
-  const shared = plan.timeline.notes.filter(note => note.midi === 60);
-  assert.equal(shared.length, 1, 'The acceptance take must identify one shared C4 target');
-  const target = shared[0], group = plan.groups.find(group => group.target_id === target.id);
-  assert.deepEqual(ids(group.part_ids, 'Shared C4 must retain all human owners'), expectedPartIds);
-  assert.ok(group.source_occurrence_ids.length >= expectedPartIds.length && group.source_note_ids.length >= expectedPartIds.length,
-    'Shared C4 cannot collapse away a human source owner');
+  const candidates = plan.timeline.notes.filter(note => note.midi === 60);
+  assert.ok(candidates.length > 0, 'The original C4 source targets must remain');
+  const candidateIds = new Set(candidates.map(note => note.id));
+  const candidateGroups = plan.groups.filter(group => candidateIds.has(group.target_id));
+  assert.deepEqual([...new Set(candidateGroups.flatMap(group => group.part_ids))].sort(), expectedPartIds,
+    'Every original C4 owner must survive the independently expected physical grouping');
   const assessment = pass.assessment;
   bounded(assessment?.hits, 1, 'Completed assessment hits required');
   bounded(assessment.extras, 1, 'Completed assessment extras required');
   assert.equal(assessment.hits.length + assessment.extras.length, 1, 'The original input must be assessed exactly once as a hit or extra');
   const hit = assessment.hits[0];
   if (hit) {
+    const target = candidates.find(note => note.id === hit.note_id);
+    assert.ok(target, 'The single assessed hit must refer to one original C4 physical target');
     assert.equal(hit.note_id, target.id);
     assert.equal(hit.midi, 60);
     assert.equal(hit.actual_ms, input.at_ms);
@@ -187,7 +191,7 @@ function validateTake(take, e, expectedPartIds) {
 /** Verify retained evidence only. The caller must independently bind transport,
  * native host/source identity, and actual exported bytes in its enclosing proof.
  * Returning the supplied value deliberately makes no actual-app/audio claim. */
-export function validateHumanModLiveTone(e, {take, expectedInstrument, expectedPartIds, transport} = {}) {
+export function validateHumanModLiveTone(e, {take, expectedInstrument, expectedPartIds, expectedTargetPlan, transport} = {}) {
   assert.ok(['piano', 'guitar'].includes(expectedInstrument), 'An explicit expected production recipe is required');
   bounded(expectedPartIds, limits.owners, 'Expected shared human owners required');
   assert.ok(expectedPartIds.length >= 2, 'Shared-key acceptance requires at least two human owners');
@@ -212,6 +216,6 @@ export function validateHumanModLiveTone(e, {take, expectedInstrument, expectedP
   }
   const opposite = expectedInstrument === 'piano' ? 'guitar' : 'piano';
   assert.equal(matchesAccounting(end, replay(call, start, end, opposite)), false, 'Native PCM must distinguish the selected recipe from the opposite recipe');
-  validateTake(take, e, owners);
+  validateTake(take, e, owners, expectedTargetPlan);
   return e;
 }

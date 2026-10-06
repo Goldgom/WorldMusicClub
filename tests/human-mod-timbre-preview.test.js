@@ -11,7 +11,7 @@ import {LIVE_SILENCE_PREVIEW_CASES} from '../scripts/ui-preview-live-silence.mjs
 import {SKIN_BROWSER_CASES} from '../scripts/ui-preview-skin.mjs';
 import {HOME_LAYOUT_PREVIEW_CASE} from '../scripts/ui-preview-home.mjs';
 import {humanModTimbreFixture,HUMAN_MOD_TIMBRE_PARTS} from '../scripts/prepare-human-mod-timbre-fixtures.mjs';
-import {humanModFixtureCompilation} from '../scripts/human-mod-timbre-sample-proof.mjs';
+import {humanModFixtureCompilation,humanModFixtureTargets} from '../scripts/human-mod-timbre-sample-proof.mjs';
 import {defaultSongMod,songModConfigFingerprint} from '../web/song-mod.js';
 import {syntheticFixture,addSyntheticReleasedCheckpoint} from './human-mod-proof-fixtures.js';
 import {liveToneCleanup} from './live-tone-evidence-fixtures.js';
@@ -24,11 +24,11 @@ function syntheticReport(){
   mod.config.parts.forEach((part,index)=>part.instrument=index?'triangle':'reed');mod.configFingerprint=songModConfigFingerprint(mod.config);
   const legacy=structuredClone(mod);legacy.version=1;legacy.config.parts.forEach(part=>delete part.liveInstrument);legacy.configFingerprint=songModConfigFingerprint(legacy.config,1);
   const samples=[['guitar','guitar','piano'],['piano','piano','piano'],['follow-guitar-after-mode','guitar','guitar'],['follow-after-reload','piano','piano']].map(([label,instrument,performanceInstrument])=>{
-    const f=syntheticFixture({instrument}),take=f.options.take,groups=[compilation.timeline.notes.slice(0,2),compilation.timeline.notes.slice(2)];
+    const f=syntheticFixture({instrument}),take=f.options.take;
     take.score_id=fixture.score.id;take.practice_part=null;take.practice_selection={kind:'all',part_ids:[...HUMAN_MOD_TIMBRE_PARTS]};take.song_mod=structuredClone(mod);
     take.song_mod.config.parts.forEach(part=>part.liveInstrument=label.startsWith('follow-')?'follow':instrument);take.song_mod.configFingerprint=songModConfigFingerprint(take.song_mod.config);
-    take.target_plan={playable:true,diagnostics:[],source_note_count:4,target_count:2,timeline:{duration_ms:64000,notes:groups.map(notes=>({...structuredClone(notes[0]),source_note_ids:notes.map(note=>note.source_note_id)}))},groups:groups.map(notes=>({target_id:notes[0].id,source_occurrence_ids:notes.map(note=>note.id),source_note_ids:notes.map(note=>note.source_note_id),part_ids:notes.map(note=>note.part_id)}))};
-    take.passes[0].timeline=structuredClone(take.target_plan.timeline);take.passes[0].range={start_ms:0,end_ms:64000};const hit=take.passes[0].assessment.hits[0];hit.note_id=groups[0][0].id;hit.expected_ms=0;hit.delta_ms=hit.actual_ms;take.passes[0].assessment.misses=[groups[1][0].id];
+    take.target_plan=humanModFixtureTargets(performanceInstrument);
+    take.passes[0].timeline=structuredClone(take.target_plan.timeline);take.passes[0].range={start_ms:0,end_ms:64000};const hit=take.passes[0].assessment.hits[0];hit.note_id=take.target_plan.timeline.notes.find(note=>note.midi===60).id;hit.expected_ms=0;hit.delta_ms=hit.actual_ms;take.passes[0].assessment.misses=take.target_plan.timeline.notes.filter(note=>note.id!==hit.note_id).map(note=>note.id);
     return{label,expectedInstrument:instrument,performanceInstrument,audio:addSyntheticReleasedCheckpoint(f.e),transport:f.options.transport,take};
   });
   return{version:1,scenario:'human-mod-timbre',ok:true,physicalAudio:false,fixture:fixture.manifest,sourceScore:fixture.score,compilation,samples,cleanup:Array.from({length:2},()=>({live:structuredClone(liveToneCleanup),source:structuredClone(liveToneCleanup)})),legacy:{raw:JSON.stringify(legacy)},storage:{legacy:JSON.stringify(legacy),v2:JSON.stringify(mod)},states:[{label:'draft-conflict',applyDisabled:true,routing:'Human 1 Human 2'},{label:'changed-default-conflict',startDisabled:true,summary:'Human 1 Human 2'},{label:'listen-mode',mode:'listen'},{label:'human-mode',mode:'practice'},{label:'v2-reopened',performanceInstrument:'piano'}]};

@@ -6,14 +6,15 @@ function nativeLiveToneNavigationCase(phase){
  return{route:match[1],release:match[2]};
 }
 
-function nativeLiveToneNavigationInput(event,sequence,control){
+function nativeLiveToneNavigationInput(event,sequence,control,selector){
  const target=event.target,part=target.closest?.('.song-mod-part'),button=target.closest?.('button');
- const controlId=event.type==='click'&&control&&(target===control||control.contains(target))?control.id||null:null;
- if(!target.id&&!part&&!controlId&&event.code!=='KeyR'&&!button?.dataset.closePanel)return null;
+ const ownedClick=event.type==='click'&&control&&(target===control||control.contains(target));
+ const controlId=ownedClick?control.id||null:null,controlPathOwned=Boolean(ownedClick&&selector&&event.composedPath?.().includes(control)),controlSelector=controlPathOwned?selector:null;
+ if(!target.id&&!part&&!controlId&&!controlSelector&&event.code!=='KeyR'&&!button?.dataset.closePanel)return null;
  // Keep the raw target identity. A card's label/icon can receive the actual
  // pointer. Bind only the currently dispatched control using the canonical
  // observer's same identity/contains rule; never infer an arbitrary ancestor.
- return{sequence,actionSequence:sequence,type:event.type,id:target.id||null,controlId,closePanel:button?.dataset.closePanel||null,part:part?.dataset.partId||null,modField:target.dataset?.modPerformer?'performer':target.dataset?.modInstrument?'instrument':target.dataset?.modLiveInstrument?'liveInstrument':target.dataset?.modMute?'mute':target.dataset?.modVisible?'visible':null,code:event.code||null,isTrusted:event.isTrusted===true,repeat:Boolean(event.repeat),eventTime:event.timeStamp,surface:target.closest?.('[data-keyboard-performance]')?.id||null,value:target.value??null,checked:typeof target.checked==='boolean'?target.checked:null};
+ return{sequence,actionSequence:sequence,type:event.type,id:target.id||null,controlId,...(controlSelector?{controlSelector,controlPathOwned}:{}),closePanel:button?.dataset.closePanel||null,part:part?.dataset.partId||null,modField:target.dataset?.modPerformer?'performer':target.dataset?.modInstrument?'instrument':target.dataset?.modLiveInstrument?'liveInstrument':target.dataset?.modMute?'mute':target.dataset?.modVisible?'visible':null,code:event.code||null,isTrusted:event.isTrusted===true,repeat:Boolean(event.repeat),eventTime:event.timeStamp,surface:target.closest?.('[data-keyboard-performance]')?.id||null,value:target.value??null,checked:typeof target.checked==='boolean'?target.checked:null};
 }
 
 async function deliverNativeLiveToneNavigationReport(report,send){
@@ -22,11 +23,18 @@ async function deliverNativeLiveToneNavigationReport(report,send){
 }
 
 function createNativeLiveToneNavigationControls({document,phase,until,readClock,frame,postAction,readResult,report,controls}){
- const humanPhase=['human-timbre-seed','human-timbre-migrate','human-timbre-restart'].includes(phase);if(!humanPhase)nativeLiveToneNavigationCase(phase);let sequence=0,held=false,ownedControl=null;
+ const humanPhase=['human-timbre-seed','human-timbre-migrate','human-timbre-restart'].includes(phase);if(!humanPhase)nativeLiveToneNavigationCase(phase);let sequence=0,held=false,ownedControl=null,ownedSelector=null;
  const view=document.defaultView,assert=(value,message)=>{if(!value)throw Error(message);};
- async function native(kind,node,file){
+ async function native(kind,node,file,selector){
   assert(['click','picker','select-first','select-second','select-last','key-r','live-key-r-down','live-key-r-up'].includes(kind)&&(kind!=='select-second'||humanPhase),'Unsupported native live navigation action');
   assert(node&&node.isConnected&&!node.disabled,'Owned live navigation target unavailable');
+  if(humanPhase&&kind==='click'&&!node.id&&!node.dataset?.closePanel)assert(selector!==undefined,'An ID-less human click requires its closed selector');
+  if(selector!==undefined){
+   assert(humanPhase&&kind==='click'&&!node.id&&typeof selector==='string'&&selector.length<256,'Only closed ID-less human click targets can name a selector');
+   assert(selector==='#settings-dialog .practice-options > summary'||(typeof report.key==='string'&&/^song-[a-f0-9]{64}$/.test(report.key)&&selector===`#catalog [data-library-key="native:${report.key}"]`),'Unexpected ID-less human target selector');
+   const matches=document.querySelectorAll(selector);assert(matches.length===1&&matches[0]===node,'Human selector must identify exactly the dispatched node');
+  }
+
   const splitKey=kind==='live-key-r-down'||kind==='live-key-r-up';
   if(splitKey){
    assert(document.hasFocus()&&!document.hidden&&document.activeElement===node,'Prepared live-key foreground/focus lost');
@@ -44,11 +52,12 @@ function createNativeLiveToneNavigationControls({document,phase,until,readClock,
   if(kind==='picker')assert((humanPhase?phase==='human-timbre-seed'&&file==='human-mod-timbre-original.json':file==='live-tone-navigation-original.json')&&node.id==='import-button','Unexpected native live navigation fixture picker');
   else assert(file===undefined,'Only the owned picker may name a fixture');
   let control;
-  if(!splitKey){control={sequence:sequence+1,id:node.id||null,closePanel:node.dataset?.closePanel||null,kind,samples:[]};report.controlActions.push(control);await prepareCanonicalPracticeTarget({document,node,onSample:value=>control.samples.push(value)});}
+  if(!splitKey){control={sequence:sequence+1,id:node.id||null,closePanel:node.dataset?.closePanel||null,...(selector?{selector}:{}),kind,samples:[]};report.controlActions.push(control);await prepareCanonicalPracticeTarget({document,node,onSample:value=>control.samples.push(value)});}
+  if(selector!==undefined){const matches=document.querySelectorAll(selector);assert(matches.length===1&&matches[0]===node,'Human selector changed before dispatch');}
   const b=node.getBoundingClientRect(),x=b.x+b.width/2,y=b.y+b.height/2,hit=document.elementFromPoint(x,y);
   assert(b.width>0&&b.height>0&&x>0&&x<view.innerWidth&&y>0&&y<view.innerHeight&&(hit===node||node.contains(hit)),'Native live navigation target is obscured or outside the viewport');
   const action={version:1,sequence:++sequence,kind,x,y,width:view.innerWidth,height:view.innerHeight,...(file?{file}:{})},pointer=control&&observeCanonicalPracticeOwnedClick({document,node,sequence});
-  if(control){control.request={...action,target:{x:b.x,y:b.y,width:b.width,height:b.height}};control.clicks=pointer.events;ownedControl=node;}
+  if(control){control.request={...action,target:{x:b.x,y:b.y,width:b.width,height:b.height}};control.clicks=pointer.events;ownedControl=node;ownedSelector=selector||null;}
   let completed=false,pickerStarted=false;
   try{
    if(kind==='picker'){controls.beginPicker(sequence,file);pickerStarted=true;}
@@ -56,9 +65,9 @@ function createNativeLiveToneNavigationControls({document,phase,until,readClock,
    if(control){const after=node.getBoundingClientRect();control.afterDispatch={target:{x:after.x,y:after.y,width:after.width,height:after.height},disabled:Boolean(node.disabled)};await requireCanonicalPracticeOwnedClick({until,events:pointer.events,sequence,id:node.id,kind});}
    if(kind==='live-key-r-down')held=true;else if(kind==='live-key-r-up')held=false;
    completed=true;return sequence;
-  }finally{ownedControl=null;pointer?.restore();if(pickerStarted&&!completed)controls.endPicker(sequence,false);}
+  }finally{ownedControl=null;ownedSelector=null;pointer?.restore();if(pickerStarted&&!completed)controls.endPicker(sequence,false);}
  }
- return{native,sequence:()=>sequence,held:()=>held,ownedControl:()=>ownedControl};
+ return{native,sequence:()=>sequence,held:()=>held,ownedControl:()=>ownedControl,ownedSelector:()=>ownedSelector};
 }
 
 async function observeNativeLiveToneNavigation({document,route,release,native,click,until,live,receiver,clock,take,score,report}){

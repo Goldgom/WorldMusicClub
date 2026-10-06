@@ -1,0 +1,1776 @@
+{
+  "provenance": {
+    "source": "Unchanged excerpts from original-only Windows native human timbre run",
+    "run_id": 37480384264,
+    "artifact_id": 11421108825,
+    "source_sha": "c105a7375b4c5f977b457853c62fa48bb964b056",
+    "report_sha256": {
+      "renderer-human-timbre-migrate.json": "d415968803c88453059b70644a6fdc53371c4b883f0099c1de2302e36e2c96c4",
+      "renderer-human-timbre-restart.json": "18ec436228508b7403690954cda0f0c15624ed1aeecc39bb5e6c5dbe43086d18"
+    }
+  },
+  "reports": [
+    {
+      "phase": "human-timbre-migrate",
+      "controlActions": [
+        {
+          "sequence": 10,
+          "id": null,
+          "closePanel": null,
+          "kind": "select-second",
+          "samples": [
+            {
+              "frame": 0,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 524.5625,
+                "y": 324.984375,
+                "width": 292.59375,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": null,
+              "hitOwned": true
+            },
+            {
+              "frame": 1,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 524.5625,
+                "y": 324.984375,
+                "width": 292.59375,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": null,
+              "hitOwned": true
+            }
+          ],
+          "request": {
+            "version": 1,
+            "sequence": 10,
+            "kind": "select-second",
+            "x": 670.859375,
+            "y": 344.984375,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 524.5625,
+              "y": 324.984375,
+              "width": 292.59375,
+              "height": 40
+            }
+          },
+          "clicks": [
+            {
+              "sequence": 10,
+              "id": null,
+              "owned": true,
+              "trusted": true
+            },
+            {
+              "sequence": 10,
+              "id": null,
+              "owned": true,
+              "trusted": true
+            }
+          ],
+          "afterDispatch": {
+            "target": {
+              "x": 524.5625,
+              "y": 324.984375,
+              "width": 292.59375,
+              "height": 40
+            },
+            "disabled": false
+          }
+        },
+        {
+          "sequence": 11,
+          "id": null,
+          "closePanel": null,
+          "kind": "select-last",
+          "samples": [
+            {
+              "frame": 0,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 524.5625,
+                "y": 432.234375,
+                "width": 292.59375,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": null,
+              "hitOwned": true
+            },
+            {
+              "frame": 1,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 524.5625,
+                "y": 432.234375,
+                "width": 292.59375,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": null,
+              "hitOwned": true
+            }
+          ],
+          "request": {
+            "version": 1,
+            "sequence": 11,
+            "kind": "select-last",
+            "x": 670.859375,
+            "y": 452.234375,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 524.5625,
+              "y": 432.234375,
+              "width": 292.59375,
+              "height": 40
+            }
+          },
+          "clicks": [
+            {
+              "sequence": 11,
+              "id": null,
+              "owned": true,
+              "trusted": true
+            },
+            {
+              "sequence": 11,
+              "id": null,
+              "owned": true,
+              "trusted": true
+            }
+          ],
+          "afterDispatch": {
+            "target": {
+              "x": 524.5625,
+              "y": 432.328125,
+              "width": 292.59375,
+              "height": 40
+            },
+            "disabled": false
+          }
+        },
+        {
+          "sequence": 12,
+          "id": "song-mod-unify-sound",
+          "closePanel": null,
+          "kind": "select-last",
+          "samples": [
+            {
+              "frame": 0,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 73,
+                "y": 324.5,
+                "width": 863,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-unify-sound",
+              "hitOwned": true
+            },
+            {
+              "frame": 1,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 73,
+                "y": 324.5,
+                "width": 863,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-unify-sound",
+              "hitOwned": true
+            }
+          ],
+          "request": {
+            "version": 1,
+            "sequence": 12,
+            "kind": "select-last",
+            "x": 504.5,
+            "y": 344.5,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 73,
+              "y": 324.5,
+              "width": 863,
+              "height": 40
+            }
+          },
+          "clicks": [
+            {
+              "sequence": 12,
+              "id": "song-mod-unify-sound",
+              "owned": true,
+              "trusted": true
+            },
+            {
+              "sequence": 12,
+              "id": "song-mod-unify-sound",
+              "owned": true,
+              "trusted": true
+            }
+          ],
+          "afterDispatch": {
+            "target": {
+              "x": 73,
+              "y": 324.5,
+              "width": 863,
+              "height": 40
+            },
+            "disabled": false
+          }
+        },
+        {
+          "sequence": 13,
+          "id": "song-mod-unify-human",
+          "closePanel": null,
+          "kind": "click",
+          "samples": [
+            {
+              "frame": 0,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 73,
+                "y": 329.5,
+                "width": 136.3125,
+                "height": 30
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-unify-human",
+              "hitOwned": true
+            },
+            {
+              "frame": 1,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 73,
+                "y": 329.5,
+                "width": 136.3125,
+                "height": 30
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-unify-human",
+              "hitOwned": true
+            }
+          ],
+          "request": {
+            "version": 1,
+            "sequence": 13,
+            "kind": "click",
+            "x": 141.15625,
+            "y": 344.5,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 73,
+              "y": 329.5,
+              "width": 136.3125,
+              "height": 30
+            }
+          },
+          "clicks": [
+            {
+              "sequence": 13,
+              "id": "song-mod-unify-human",
+              "owned": true,
+              "trusted": true
+            }
+          ],
+          "afterDispatch": {
+            "target": {
+              "x": 73,
+              "y": 307.40625,
+              "width": 136.3125,
+              "height": 30
+            },
+            "disabled": false
+          }
+        },
+        {
+          "sequence": 25,
+          "id": null,
+          "closePanel": null,
+          "kind": "select-second",
+          "samples": [
+            {
+              "frame": 0,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 524.5625,
+                "y": 324.890625,
+                "width": 292.59375,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": null,
+              "hitOwned": true
+            },
+            {
+              "frame": 1,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 524.5625,
+                "y": 324.890625,
+                "width": 292.59375,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": null,
+              "hitOwned": true
+            }
+          ],
+          "request": {
+            "version": 1,
+            "sequence": 25,
+            "kind": "select-second",
+            "x": 670.859375,
+            "y": 344.890625,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 524.5625,
+              "y": 324.890625,
+              "width": 292.59375,
+              "height": 40
+            }
+          },
+          "clicks": [
+            {
+              "sequence": 25,
+              "id": null,
+              "owned": true,
+              "trusted": true
+            },
+            {
+              "sequence": 25,
+              "id": null,
+              "owned": true,
+              "trusted": true
+            }
+          ],
+          "afterDispatch": {
+            "target": {
+              "x": 524.5625,
+              "y": 324.984375,
+              "width": 292.59375,
+              "height": 40
+            },
+            "disabled": false
+          }
+        },
+        {
+          "sequence": 26,
+          "id": "song-mod-cancel",
+          "closePanel": null,
+          "kind": "click",
+          "samples": [
+            {
+              "frame": 0,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 718.53125,
+                "y": 589.28125,
+                "width": 66.875,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-cancel",
+              "hitOwned": true
+            },
+            {
+              "frame": 1,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 718.53125,
+                "y": 589.28125,
+                "width": 66.875,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-cancel",
+              "hitOwned": true
+            }
+          ],
+          "request": {
+            "version": 1,
+            "sequence": 26,
+            "kind": "click",
+            "x": 751.96875,
+            "y": 609.28125,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 718.53125,
+              "y": 589.28125,
+              "width": 66.875,
+              "height": 40
+            }
+          },
+          "clicks": [
+            {
+              "sequence": 26,
+              "id": "song-mod-cancel",
+              "owned": true,
+              "trusted": true
+            }
+          ],
+          "afterDispatch": {
+            "target": {
+              "x": 0,
+              "y": 0,
+              "width": 0,
+              "height": 0
+            },
+            "disabled": false
+          }
+        },
+        {
+          "sequence": 31,
+          "id": "song-mod-unify-sound",
+          "closePanel": null,
+          "kind": "select-second",
+          "samples": [
+            {
+              "frame": 0,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 73,
+                "y": 320.40625,
+                "width": 863,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-unify-sound",
+              "hitOwned": true
+            },
+            {
+              "frame": 1,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 73,
+                "y": 320.40625,
+                "width": 863,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-unify-sound",
+              "hitOwned": true
+            }
+          ],
+          "request": {
+            "version": 1,
+            "sequence": 31,
+            "kind": "select-second",
+            "x": 504.5,
+            "y": 340.40625,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 73,
+              "y": 320.40625,
+              "width": 863,
+              "height": 40
+            }
+          },
+          "clicks": [
+            {
+              "sequence": 31,
+              "id": "song-mod-unify-sound",
+              "owned": true,
+              "trusted": true
+            },
+            {
+              "sequence": 31,
+              "id": "song-mod-unify-sound",
+              "owned": true,
+              "trusted": true
+            }
+          ],
+          "afterDispatch": {
+            "target": {
+              "x": 73,
+              "y": 320.40625,
+              "width": 863,
+              "height": 40
+            },
+            "disabled": false
+          }
+        },
+        {
+          "sequence": 32,
+          "id": "song-mod-unify-human",
+          "closePanel": null,
+          "kind": "click",
+          "samples": [
+            {
+              "frame": 0,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 73,
+                "y": 329.40625,
+                "width": 136.3125,
+                "height": 30
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-unify-human",
+              "hitOwned": true
+            },
+            {
+              "frame": 1,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 73,
+                "y": 329.40625,
+                "width": 136.3125,
+                "height": 30
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-unify-human",
+              "hitOwned": true
+            }
+          ],
+          "request": {
+            "version": 1,
+            "sequence": 32,
+            "kind": "click",
+            "x": 141.15625,
+            "y": 344.40625,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 73,
+              "y": 329.40625,
+              "width": 136.3125,
+              "height": 30
+            }
+          },
+          "clicks": [
+            {
+              "sequence": 32,
+              "id": "song-mod-unify-human",
+              "owned": true,
+              "trusted": true
+            }
+          ],
+          "afterDispatch": {
+            "target": {
+              "x": 73,
+              "y": 329.40625,
+              "width": 136.3125,
+              "height": 30
+            },
+            "disabled": false
+          }
+        },
+        {
+          "sequence": 44,
+          "id": "song-mod-unify-sound",
+          "closePanel": null,
+          "kind": "select-first",
+          "samples": [
+            {
+              "frame": 0,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 73,
+                "y": 320.40625,
+                "width": 863,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-unify-sound",
+              "hitOwned": true
+            },
+            {
+              "frame": 1,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 73,
+                "y": 320.40625,
+                "width": 863,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-unify-sound",
+              "hitOwned": true
+            }
+          ],
+          "request": {
+            "version": 1,
+            "sequence": 44,
+            "kind": "select-first",
+            "x": 504.5,
+            "y": 340.40625,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 73,
+              "y": 320.40625,
+              "width": 863,
+              "height": 40
+            }
+          },
+          "clicks": [
+            {
+              "sequence": 44,
+              "id": "song-mod-unify-sound",
+              "owned": true,
+              "trusted": true
+            },
+            {
+              "sequence": 44,
+              "id": "song-mod-unify-sound",
+              "owned": true,
+              "trusted": true
+            }
+          ],
+          "afterDispatch": {
+            "target": {
+              "x": 73,
+              "y": 320.40625,
+              "width": 863,
+              "height": 40
+            },
+            "disabled": false
+          }
+        },
+        {
+          "sequence": 45,
+          "id": "song-mod-unify-human",
+          "closePanel": null,
+          "kind": "click",
+          "samples": [
+            {
+              "frame": 0,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 73,
+                "y": 329.40625,
+                "width": 136.3125,
+                "height": 30
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-unify-human",
+              "hitOwned": true
+            },
+            {
+              "frame": 1,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 73,
+                "y": 329.40625,
+                "width": 136.3125,
+                "height": 30
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-unify-human",
+              "hitOwned": true
+            }
+          ],
+          "request": {
+            "version": 1,
+            "sequence": 45,
+            "kind": "click",
+            "x": 141.15625,
+            "y": 344.40625,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 73,
+              "y": 329.40625,
+              "width": 136.3125,
+              "height": 30
+            }
+          },
+          "clicks": [
+            {
+              "sequence": 45,
+              "id": "song-mod-unify-human",
+              "owned": true,
+              "trusted": true
+            }
+          ],
+          "afterDispatch": {
+            "target": {
+              "x": 73,
+              "y": 329.40625,
+              "width": 136.3125,
+              "height": 30
+            },
+            "disabled": false
+          }
+        }
+      ],
+      "trustedActions": [
+        {
+          "sequence": 10,
+          "actionSequence": 10,
+          "type": "click",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-one",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 4246.900000000023,
+          "surface": null,
+          "value": "follow",
+          "checked": null
+        },
+        {
+          "sequence": 10,
+          "actionSequence": 10,
+          "type": "input",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-one",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 4300,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 10,
+          "actionSequence": 10,
+          "type": "change",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-one",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 4300,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 10,
+          "actionSequence": 10,
+          "type": "click",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-one",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 4315.300000000047,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 11,
+          "actionSequence": 11,
+          "type": "click",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-two",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 4693.70000000007,
+          "surface": null,
+          "value": "follow",
+          "checked": null
+        },
+        {
+          "sequence": 11,
+          "actionSequence": 11,
+          "type": "input",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-two",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 4702.400000000023,
+          "surface": null,
+          "value": "guitar",
+          "checked": null
+        },
+        {
+          "sequence": 11,
+          "actionSequence": 11,
+          "type": "change",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-two",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 4702.400000000023,
+          "surface": null,
+          "value": "guitar",
+          "checked": null
+        },
+        {
+          "sequence": 11,
+          "actionSequence": 11,
+          "type": "click",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-two",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 4705.400000000023,
+          "surface": null,
+          "value": "guitar",
+          "checked": null
+        },
+        {
+          "sequence": 11,
+          "actionSequence": 11,
+          "type": "keyup",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-two",
+          "modField": "liveInstrument",
+          "code": "Enter",
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 4698.599999999977,
+          "surface": null,
+          "value": "guitar",
+          "checked": null
+        },
+        {
+          "sequence": 12,
+          "actionSequence": 12,
+          "type": "click",
+          "id": "song-mod-unify-sound",
+          "controlId": "song-mod-unify-sound",
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 5039.599999999977,
+          "surface": null,
+          "value": "follow",
+          "checked": null
+        },
+        {
+          "sequence": 12,
+          "actionSequence": 12,
+          "type": "input",
+          "id": "song-mod-unify-sound",
+          "controlId": null,
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 5048.300000000047,
+          "surface": null,
+          "value": "guitar",
+          "checked": null
+        },
+        {
+          "sequence": 12,
+          "actionSequence": 12,
+          "type": "change",
+          "id": "song-mod-unify-sound",
+          "controlId": null,
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 5048.300000000047,
+          "surface": null,
+          "value": "guitar",
+          "checked": null
+        },
+        {
+          "sequence": 12,
+          "actionSequence": 12,
+          "type": "click",
+          "id": "song-mod-unify-sound",
+          "controlId": "song-mod-unify-sound",
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 5051.099999999977,
+          "surface": null,
+          "value": "guitar",
+          "checked": null
+        },
+        {
+          "sequence": 12,
+          "actionSequence": 12,
+          "type": "keyup",
+          "id": "song-mod-unify-sound",
+          "controlId": null,
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": "Enter",
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 5044.900000000023,
+          "surface": null,
+          "value": "guitar",
+          "checked": null
+        },
+        {
+          "sequence": 13,
+          "actionSequence": 13,
+          "type": "click",
+          "id": "song-mod-unify-human",
+          "controlId": "song-mod-unify-human",
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 5489.20000000007,
+          "surface": null,
+          "value": "",
+          "checked": null
+        },
+        {
+          "sequence": 25,
+          "actionSequence": 25,
+          "type": "click",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-one",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 11800.20000000007,
+          "surface": null,
+          "value": "guitar",
+          "checked": null
+        },
+        {
+          "sequence": 25,
+          "actionSequence": 25,
+          "type": "input",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-one",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 11813.5,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 25,
+          "actionSequence": 25,
+          "type": "change",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-one",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 11813.5,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 25,
+          "actionSequence": 25,
+          "type": "click",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-one",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 11818.5,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 25,
+          "actionSequence": 25,
+          "type": "keyup",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-one",
+          "modField": "liveInstrument",
+          "code": "Enter",
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 11804.20000000007,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 26,
+          "actionSequence": 26,
+          "type": "click",
+          "id": "song-mod-cancel",
+          "controlId": "song-mod-cancel",
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 12254.599999999977,
+          "surface": null,
+          "value": "",
+          "checked": null
+        },
+        {
+          "sequence": 31,
+          "actionSequence": 31,
+          "type": "click",
+          "id": "song-mod-unify-sound",
+          "controlId": "song-mod-unify-sound",
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 14214.800000000047,
+          "surface": null,
+          "value": "guitar",
+          "checked": null
+        },
+        {
+          "sequence": 31,
+          "actionSequence": 31,
+          "type": "input",
+          "id": "song-mod-unify-sound",
+          "controlId": null,
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 14227.5,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 31,
+          "actionSequence": 31,
+          "type": "change",
+          "id": "song-mod-unify-sound",
+          "controlId": null,
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 14227.5,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 31,
+          "actionSequence": 31,
+          "type": "click",
+          "id": "song-mod-unify-sound",
+          "controlId": "song-mod-unify-sound",
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 14231.5,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 31,
+          "actionSequence": 31,
+          "type": "keyup",
+          "id": "song-mod-unify-sound",
+          "controlId": null,
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": "Enter",
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 14218.900000000023,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 32,
+          "actionSequence": 32,
+          "type": "click",
+          "id": "song-mod-unify-human",
+          "controlId": "song-mod-unify-human",
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 14668.900000000023,
+          "surface": null,
+          "value": "",
+          "checked": null
+        },
+        {
+          "sequence": 44,
+          "actionSequence": 44,
+          "type": "click",
+          "id": "song-mod-unify-sound",
+          "controlId": "song-mod-unify-sound",
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 20225.800000000047,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 44,
+          "actionSequence": 44,
+          "type": "input",
+          "id": "song-mod-unify-sound",
+          "controlId": null,
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 20239.70000000007,
+          "surface": null,
+          "value": "follow",
+          "checked": null
+        },
+        {
+          "sequence": 44,
+          "actionSequence": 44,
+          "type": "change",
+          "id": "song-mod-unify-sound",
+          "controlId": null,
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 20239.70000000007,
+          "surface": null,
+          "value": "follow",
+          "checked": null
+        },
+        {
+          "sequence": 44,
+          "actionSequence": 44,
+          "type": "click",
+          "id": "song-mod-unify-sound",
+          "controlId": "song-mod-unify-sound",
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 20243.800000000047,
+          "surface": null,
+          "value": "follow",
+          "checked": null
+        },
+        {
+          "sequence": 44,
+          "actionSequence": 44,
+          "type": "keyup",
+          "id": "song-mod-unify-sound",
+          "controlId": null,
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": "Enter",
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 20231.599999999977,
+          "surface": null,
+          "value": "follow",
+          "checked": null
+        },
+        {
+          "sequence": 45,
+          "actionSequence": 45,
+          "type": "click",
+          "id": "song-mod-unify-human",
+          "controlId": "song-mod-unify-human",
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 20656.099999999977,
+          "surface": null,
+          "value": "",
+          "checked": null
+        }
+      ]
+    },
+    {
+      "phase": "human-timbre-restart",
+      "controlActions": [
+        {
+          "sequence": 17,
+          "id": null,
+          "closePanel": null,
+          "kind": "select-second",
+          "samples": [
+            {
+              "frame": 0,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 524.5625,
+                "y": 324.984375,
+                "width": 292.59375,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": null,
+              "hitOwned": true
+            },
+            {
+              "frame": 1,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 524.5625,
+                "y": 324.984375,
+                "width": 292.59375,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": null,
+              "hitOwned": true
+            }
+          ],
+          "request": {
+            "version": 1,
+            "sequence": 17,
+            "kind": "select-second",
+            "x": 670.859375,
+            "y": 344.984375,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 524.5625,
+              "y": 324.984375,
+              "width": 292.59375,
+              "height": 40
+            }
+          },
+          "clicks": [
+            {
+              "sequence": 17,
+              "id": null,
+              "owned": true,
+              "trusted": true
+            },
+            {
+              "sequence": 17,
+              "id": null,
+              "owned": true,
+              "trusted": true
+            }
+          ],
+          "afterDispatch": {
+            "target": {
+              "x": 524.5625,
+              "y": 324.984375,
+              "width": 292.59375,
+              "height": 40
+            },
+            "disabled": false
+          }
+        },
+        {
+          "sequence": 18,
+          "id": "song-mod-apply",
+          "closePanel": null,
+          "kind": "click",
+          "samples": [
+            {
+              "frame": 0,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 795,
+                "y": 589.28125,
+                "width": 141,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-apply",
+              "hitOwned": true
+            },
+            {
+              "frame": 1,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 795,
+                "y": 589.28125,
+                "width": 141,
+                "height": 40
+              },
+              "modalOwner": "song-mod-dialog",
+              "hitId": "song-mod-apply",
+              "hitOwned": true
+            }
+          ],
+          "request": {
+            "version": 1,
+            "sequence": 18,
+            "kind": "click",
+            "x": 865.5,
+            "y": 609.28125,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 795,
+              "y": 589.28125,
+              "width": 141,
+              "height": 40
+            }
+          },
+          "clicks": [
+            {
+              "sequence": 18,
+              "id": "song-mod-apply",
+              "owned": true,
+              "trusted": true
+            }
+          ],
+          "afterDispatch": {
+            "target": {
+              "x": 0,
+              "y": 0,
+              "width": 0,
+              "height": 0
+            },
+            "disabled": false
+          }
+        },
+        {
+          "sequence": 20,
+          "id": "instrument",
+          "closePanel": null,
+          "kind": "select-last",
+          "samples": [
+            {
+              "frame": 0,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 41,
+                "y": 324.375,
+                "width": 456,
+                "height": 40
+              },
+              "modalOwner": "settings-dialog",
+              "hitId": "instrument",
+              "hitOwned": true
+            },
+            {
+              "frame": 1,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 41,
+                "y": 324.375,
+                "width": 456,
+                "height": 40
+              },
+              "modalOwner": "settings-dialog",
+              "hitId": "instrument",
+              "hitOwned": true
+            }
+          ],
+          "request": {
+            "version": 1,
+            "sequence": 20,
+            "kind": "select-last",
+            "x": 269,
+            "y": 344.375,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 41,
+              "y": 324.375,
+              "width": 456,
+              "height": 40
+            }
+          },
+          "clicks": [
+            {
+              "sequence": 20,
+              "id": "instrument",
+              "owned": true,
+              "trusted": true
+            },
+            {
+              "sequence": 20,
+              "id": "instrument",
+              "owned": true,
+              "trusted": true
+            }
+          ],
+          "afterDispatch": {
+            "target": {
+              "x": 41,
+              "y": 324.375,
+              "width": 456,
+              "height": 40
+            },
+            "disabled": false
+          }
+        },
+        {
+          "sequence": 21,
+          "id": null,
+          "closePanel": "settings",
+          "kind": "click",
+          "samples": [
+            {
+              "frame": 0,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 906.484375,
+                "y": 34,
+                "width": 62.515625,
+                "height": 41
+              },
+              "modalOwner": "settings-dialog",
+              "hitId": null,
+              "hitOwned": true
+            },
+            {
+              "frame": 1,
+              "width": 1024,
+              "height": 689,
+              "target": {
+                "x": 906.484375,
+                "y": 34,
+                "width": 62.515625,
+                "height": 41
+              },
+              "modalOwner": "settings-dialog",
+              "hitId": null,
+              "hitOwned": true
+            }
+          ],
+          "request": {
+            "version": 1,
+            "sequence": 21,
+            "kind": "click",
+            "x": 937.7421875,
+            "y": 54.5,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 906.484375,
+              "y": 34,
+              "width": 62.515625,
+              "height": 41
+            }
+          },
+          "clicks": [
+            {
+              "sequence": 21,
+              "id": null,
+              "owned": true,
+              "trusted": true
+            }
+          ],
+          "afterDispatch": {
+            "target": {
+              "x": 0,
+              "y": 0,
+              "width": 0,
+              "height": 0
+            },
+            "disabled": false
+          }
+        }
+      ],
+      "trustedActions": [
+        {
+          "sequence": 17,
+          "actionSequence": 17,
+          "type": "click",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-one",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 7485.5,
+          "surface": null,
+          "value": "follow",
+          "checked": null
+        },
+        {
+          "sequence": 17,
+          "actionSequence": 17,
+          "type": "input",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-one",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 7512.300000000047,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 17,
+          "actionSequence": 17,
+          "type": "change",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-one",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 7512.300000000047,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 17,
+          "actionSequence": 17,
+          "type": "click",
+          "id": null,
+          "controlId": null,
+          "closePanel": null,
+          "part": "human-one",
+          "modField": "liveInstrument",
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 7516.800000000047,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 18,
+          "actionSequence": 18,
+          "type": "click",
+          "id": "song-mod-apply",
+          "controlId": "song-mod-apply",
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 7959.20000000007,
+          "surface": null,
+          "value": "",
+          "checked": null
+        },
+        {
+          "sequence": 20,
+          "actionSequence": 20,
+          "type": "click",
+          "id": "instrument",
+          "controlId": "instrument",
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 8711.300000000047,
+          "surface": null,
+          "value": "piano",
+          "checked": null
+        },
+        {
+          "sequence": 20,
+          "actionSequence": 20,
+          "type": "input",
+          "id": "instrument",
+          "controlId": null,
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 8748.20000000007,
+          "surface": null,
+          "value": "guitar",
+          "checked": null
+        },
+        {
+          "sequence": 20,
+          "actionSequence": 20,
+          "type": "change",
+          "id": "instrument",
+          "controlId": null,
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 8748.20000000007,
+          "surface": null,
+          "value": "guitar",
+          "checked": null
+        },
+        {
+          "sequence": 20,
+          "actionSequence": 20,
+          "type": "click",
+          "id": "instrument",
+          "controlId": "instrument",
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 8808.5,
+          "surface": null,
+          "value": "guitar",
+          "checked": null
+        },
+        {
+          "sequence": 20,
+          "actionSequence": 20,
+          "type": "keyup",
+          "id": "instrument",
+          "controlId": null,
+          "closePanel": null,
+          "part": null,
+          "modField": null,
+          "code": "Enter",
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 8714.300000000047,
+          "surface": null,
+          "value": "guitar",
+          "checked": null
+        },
+        {
+          "sequence": 21,
+          "actionSequence": 21,
+          "type": "click",
+          "id": null,
+          "controlId": null,
+          "closePanel": "settings",
+          "part": null,
+          "modField": null,
+          "code": null,
+          "isTrusted": true,
+          "repeat": false,
+          "eventTime": 9167.5,
+          "surface": null,
+          "value": "",
+          "checked": null
+        }
+      ]
+    }
+  ]
+}

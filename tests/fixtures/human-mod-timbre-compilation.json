@@ -392,5 +392,241 @@
         }
       ]
     }
+  },
+  "targets_producer": "worldmusichub-desktop native_import_driver: POST /api/practice-targets; socket-free original fixture only",
+  "targets_source_revision": "b79682dbe5f39901ba3d55657607f17890034cb5",
+  "target_profiles": {
+    "piano": {
+      "profile": {
+        "kind": "piano",
+        "key_count": 61,
+        "lowest_midi": null
+      },
+      "plan": {
+        "diagnostics": [
+          {
+            "code": "piano_unison_targets",
+            "message": "2 exact simultaneous same-key events share a physical piano attack. Every source occurrence and tied segment remains mapped; playback and the original score are unchanged. Timing grades measure attacks only, not independent voice releases.",
+            "note_id": null,
+            "severity": "warning"
+          }
+        ],
+        "groups": [
+          {
+            "part_ids": [
+              "human-one",
+              "human-two"
+            ],
+            "source_note_ids": [
+              "human-one-c4",
+              "human-two-c4"
+            ],
+            "source_occurrence_ids": [
+              "human-one-c4",
+              "human-two-c4"
+            ],
+            "target_id": "human-one-c4"
+          },
+          {
+            "part_ids": [
+              "human-one",
+              "human-two"
+            ],
+            "source_note_ids": [
+              "human-one-e4",
+              "human-two-e4"
+            ],
+            "source_occurrence_ids": [
+              "human-one-e4",
+              "human-two-e4"
+            ],
+            "target_id": "human-one-e4"
+          }
+        ],
+        "playable": true,
+        "source_note_count": 4,
+        "target_count": 2,
+        "timeline": {
+          "duration_ms": 64000.0,
+          "notes": [
+            {
+              "duration_ms": 1000.0,
+              "id": "human-one-c4",
+              "midi": 60,
+              "part_id": "human-one",
+              "source_note_id": "human-one-c4",
+              "source_note_ids": [
+                "human-one-c4",
+                "human-two-c4"
+              ],
+              "staff": 1,
+              "start_ms": 0.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 1000.0,
+              "id": "human-one-e4",
+              "midi": 64,
+              "part_id": "human-one",
+              "source_note_id": "human-one-e4",
+              "source_note_ids": [
+                "human-one-e4",
+                "human-two-e4"
+              ],
+              "staff": 1,
+              "start_ms": 63000.0,
+              "velocity": 90,
+              "voice": "1"
+            }
+          ]
+        }
+      }
+    },
+    "guitar": {
+      "profile": {
+        "kind": "guitar",
+        "tuning": [
+          64,
+          59,
+          55,
+          50,
+          45,
+          40
+        ],
+        "frets": 12,
+        "capo": 0
+      },
+      "plan": {
+        "diagnostics": [
+          {
+            "code": "guitar_fingering_advisory",
+            "message": "Fret positions are pitch-compatible candidates, not a validated fingering. Hand reach, barre technique, sustained overlaps and reading order require review.",
+            "note_id": null,
+            "severity": "warning"
+          },
+          {
+            "code": "guitar_pitch_only_targets",
+            "message": "Guitar note-on targets retain separate source events. Pitch-only MIDI does not identify strings; fingering, sustain and same-pitch string identity need manual review.",
+            "note_id": null,
+            "severity": "warning"
+          }
+        ],
+        "groups": [
+          {
+            "part_ids": [
+              "human-one"
+            ],
+            "source_note_ids": [
+              "human-one-c4"
+            ],
+            "source_occurrence_ids": [
+              "human-one-c4"
+            ],
+            "target_id": "human-one-c4"
+          },
+          {
+            "part_ids": [
+              "human-two"
+            ],
+            "source_note_ids": [
+              "human-two-c4"
+            ],
+            "source_occurrence_ids": [
+              "human-two-c4"
+            ],
+            "target_id": "human-two-c4"
+          },
+          {
+            "part_ids": [
+              "human-one"
+            ],
+            "source_note_ids": [
+              "human-one-e4"
+            ],
+            "source_occurrence_ids": [
+              "human-one-e4"
+            ],
+            "target_id": "human-one-e4"
+          },
+          {
+            "part_ids": [
+              "human-two"
+            ],
+            "source_note_ids": [
+              "human-two-e4"
+            ],
+            "source_occurrence_ids": [
+              "human-two-e4"
+            ],
+            "target_id": "human-two-e4"
+          }
+        ],
+        "playable": true,
+        "source_note_count": 4,
+        "target_count": 4,
+        "timeline": {
+          "duration_ms": 64000.0,
+          "notes": [
+            {
+              "duration_ms": 1000.0,
+              "id": "human-one-c4",
+              "midi": 60,
+              "part_id": "human-one",
+              "source_note_id": "human-one-c4",
+              "source_note_ids": [
+                "human-one-c4"
+              ],
+              "staff": 1,
+              "start_ms": 0.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 1000.0,
+              "id": "human-two-c4",
+              "midi": 60,
+              "part_id": "human-two",
+              "source_note_id": "human-two-c4",
+              "source_note_ids": [
+                "human-two-c4"
+              ],
+              "staff": 1,
+              "start_ms": 0.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 1000.0,
+              "id": "human-one-e4",
+              "midi": 64,
+              "part_id": "human-one",
+              "source_note_id": "human-one-e4",
+              "source_note_ids": [
+                "human-one-e4"
+              ],
+              "staff": 1,
+              "start_ms": 63000.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 1000.0,
+              "id": "human-two-e4",
+              "midi": 64,
+              "part_id": "human-two",
+              "source_note_id": "human-two-e4",
+              "source_note_ids": [
+                "human-two-e4"
+              ],
+              "staff": 1,
+              "start_ms": 63000.0,
+              "velocity": 90,
+              "voice": "1"
+            }
+          ]
+        }
+      }
+    }
   }
 }

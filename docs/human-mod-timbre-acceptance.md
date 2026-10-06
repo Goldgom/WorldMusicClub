@@ -4,7 +4,10 @@ This is a bounded acceptance sequence for the browser Mod v2 extension. It is
 separate from product implementation and does not enable the Unity prototype.
 The authored fixture contains two parts, `human-one` and `human-two`, each owning
 C4 at 0/1 and E4 at 63/1. The existing fixed KeyR input plays C4. Four source notes
-must remain visible to the source contract and deduplicate to two physical targets.
+must remain visible to the source contract. The default Piano performance profile
+deduplicates them to two physical targets. The Guitar performance profile retains
+four separate source events and its existing pitch-only/manual-review diagnostics;
+one pitch-only input cannot complete both retained same-pitch guitar targets.
 
 `prepare-human-mod-timbre-fixtures.mjs` deterministically derives this new original
 exercise from the repository's original navigation exercise generator. It writes
@@ -22,7 +25,10 @@ node --test --test-name-pattern='real human Mod timbres' tests/full-app-browser.
 node scripts/verify-human-mod-timbre-hosted.mjs <artifacts>/worldmusichub-human-mod-timbre.json
 ```
 
-The case uses visible Mod, instrument, Results and navigation controls. The only
+The case uses visible Mod, instrument, Results and navigation controls. Each
+Start or Play action is explicit and is followed by the original advancing-clock
+wait. An early ready/preparing clock never triggers a second Play toggle that
+could cancel the owned admission. The only
 storage write outside those controls seeds a validated v1 sidecar belonging to
 this original fixture before a document reload; it is reported explicitly. It
 checks v1 read/Cancel without a v2 write, conflicting human choices, explicit
@@ -75,7 +81,12 @@ bytes. Its input SHA-256 and complete score are checked before use, and the actu
 application's `/api/compile` response must equal it. The existing
 `validateTargetPlan` checks the whole target plan against that compilation,
 including each occurrence, representative ID/part/voice/staff/velocity, source
-owners, duration and clock. Every sample also requires its full source-bound v2
+owners, duration and clock. The same oracle file also contains exact target plans
+produced through the existing socket-free native `/api/practice-targets` endpoint
+for default Piano (61 keys) and Guitar (standard tuning, 12 frets, capo 0). The
+complete plan and diagnostics must match the actual performance profile, regardless
+of whether the live recipe is piano or guitar. This is not a general allowance for
+four targets or an alteration to production grouping/scoring. Every sample also requires its full source-bound v2
 Mod and the actual performance control used to resolve Follow.
 
 Released windows require the original receiver/node/gate/destination/generation,
@@ -96,7 +107,9 @@ a connected nonmuted output path, positive analyser PCM overlapping that token,
 and a finite drained silence window. A separate transport observer and the take's
 input evidence retain the exact original DOM timestamps. One captured input must
 be assessed once, as either a hit or an extra; the test never alters timestamps to
-force a grade. Both source owners must remain in the target group.
+force a grade. Piano unison groups retain both owners; Guitar keeps each original owner in its
+separate source-event group. Every case still has exactly one recorded input, one
+assessment event and one live voice.
 
 The expected recipe is checked by replaying the existing production `LiveToneCore`
 offline with the observed sample rate, MIDI key, velocity and actual frames. For
