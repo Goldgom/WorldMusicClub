@@ -7,6 +7,7 @@ import {canonicalPracticeSourceBinding} from './canonical-practice-source-eviden
 import {sha256} from '../tests/skin-browser-fixture.js';
 
 export const NATIVE_SKIN_SOURCE_FILES=Object.freeze([
+  '.github/workflows/native-skin.yml',
   'crates/desktop-shell/skin-acceptance.js','scripts/native-skin-source-evidence.mjs',
   'scripts/prepare-native-skin-fixtures.mjs','scripts/verify-native-skin-evidence.mjs',
   'tests/skin-browser-fixture.js','tests/frontend-fixtures.js',

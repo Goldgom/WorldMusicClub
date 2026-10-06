@@ -8,13 +8,52 @@ import {join} from 'node:path';
 import {runInNewContext,Script} from 'node:vm';
 import {IDBFactory} from 'fake-indexeddb';
 import {nativeSkinFixture,prepareNativeSkinFixtures,NATIVE_SKIN_PHASES,NATIVE_SKIN_FILES} from '../scripts/prepare-native-skin-fixtures.mjs';
-import {validateNativeSkinRecord,validateNativeSkinProfiles,validateNativeSkinPicker,validateNativeSkinExports} from '../scripts/verify-native-skin-evidence.mjs';
+import {validateNativeSkinRecord,validateNativeSkinProfiles,validateNativeSkinPicker,validateNativeSkinExports,validateNativeSkinHostAction,validateNativeSkinControlClicks} from '../scripts/verify-native-skin-evidence.mjs';
 import {nativeScoreServer,nativeStorageApp} from './native-storage-app-fixtures.js';
 
 const source=readFileSync(new URL('../crates/desktop-shell/skin-acceptance.js',import.meta.url),'utf8');
 const helpers=runInNewContext(source.split('(() => {')[0]+'\n({driveNativeSkinRound,readNativeSkinRecord,observeNativeSkinPicker});',{Error,Promise,Array,Boolean});
 const modalScope=runInNewContext(readFileSync(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8').split('(() => {')[0]+'\ncanonicalPracticeModalScope;');
 const f=nativeSkinFixture(),record=selected=>({version:1,selected,manifest:f.skin.json.toString(),resources:[['assets/checker.png',Array.from(f.skin.png)]]});
+
+// Contract data follows the actual Windows537 host field shape, including a
+// half-pixel renderer coordinate and the native helper's floor conversion.
+function hostAction(){
+  return{action:{version:1,sequence:7,kind:'picker',x:504.5,y:344.375,width:1024,height:689,file:NATIVE_SKIN_FILES.score},host:{process_id:101},result:{ok:true,
+    client_click:{client:[0,0,1024,689],origin:[0,31],viewport:[1024,689],requested:[504,375],actual:[504,375],work_area:[0,0,1024,720],app_hwnd:42,foreground:42,hit_hwnd:43,hit_root:42},
+    owned_dialog:{hwnd:44,process_id:101,class:'#32770',root_owner_hwnd:42,app_hwnd:42,app_process_id:101},
+    picker_completion:{dialog_exists:false,dialog_visible:false,foreground_hwnd:42,owned_popup_visible:false,app_foreground:true,app_enabled:true,dialog_dismissed:true,elapsed_ms:110},
+    filename_entry_method:'UIA_ValuePattern'}};
+}
+test('native host gate rejects absent identities, foreign dialogs, unbound points and incomplete picker dismissal',()=>{
+  const good=hostAction();assert.equal(validateNativeSkinHostAction(good.action,good.result,good.host),42);assert.equal(validateNativeSkinHostAction(good.action,good.result,good.host,42),42);
+  const mutations=[v=>v.result.client_click={viewport:[1024,689]},v=>delete v.result.client_click.app_hwnd,v=>v.result.client_click.app_hwnd=0,
+    v=>v.result.client_click.hit_hwnd=undefined,v=>v.result.client_click.hit_root=undefined,v=>v.result.client_click.foreground=99,v=>v.result.client_click.hit_root=99,
+    v=>{v.result.client_click.actual=undefined;v.result.client_click.requested=undefined;},v=>{v.result.client_click.actual=[NaN,0];v.result.client_click.requested=[NaN,0];},
+    v=>{v.result.client_click.actual=[1,2];v.result.client_click.requested=[1,2];},v=>v.result.client_click.viewport=[1280,720],v=>v.result.client_click.work_area=[0,0,100,100],
+    v=>v.result.owned_dialog.process_id=999,v=>delete v.result.owned_dialog.process_id,v=>v.result.owned_dialog.app_process_id=999,
+    v=>v.result.owned_dialog.class='Unowned',v=>v.result.owned_dialog.hwnd=0,v=>v.result.owned_dialog.app_hwnd=7,v=>v.result.owned_dialog.root_owner_hwnd=7,
+    v=>v.result.picker_completion.app_enabled=false,v=>delete v.result.picker_completion.owned_popup_visible,v=>v.result.picker_completion.owned_popup_visible=true,
+    v=>v.result.picker_completion.foreground_hwnd=7,v=>v.result.picker_completion.app_foreground=false,v=>v.result.picker_completion.dialog_visible=true,v=>v.result.picker_completion.dialog_dismissed=false,
+    v=>{v.result.client_click={viewport:[1024,689]};v.result.owned_dialog={app_process_id:101,process_id:999,class:'Unowned',root_owner_hwnd:7,app_hwnd:1};v.result.picker_completion={dialog_dismissed:true,app_enabled:false,owned_popup_visible:true};}];
+  for(const [i,mutate]of mutations.entries()){const v=hostAction();mutate(v);assert.throws(()=>validateNativeSkinHostAction(v.action,v.result,v.host),`Host ownership adversary ${i} accepted`);}
+  assert.throws(()=>validateNativeSkinHostAction(good.action,good.result,good.host,99),/window changed/);
+  const fallback=hostAction();fallback.result.filename_entry_method='native_ComboBoxEx32_edit';fallback.result.filename_native_edit={hwnd:45,process_id:101,class:'Edit',host_descendant:true,enabled:true,visible:true,exact_readback:true,read_only:false,entry_method:'WM_SETTEXT'};
+  assert.equal(validateNativeSkinHostAction(fallback.action,fallback.result,fallback.host),42);fallback.result.filename_native_edit.process_id=999;assert.throws(()=>validateNativeSkinHostAction(fallback.action,fallback.result,fallback.host));
+});
+test('raw click gate retains precisely the observed native score delegation and rejects every extra untrusted click',()=>{
+  const row={sequence:7,kind:'picker',id:'import-button',request:{file:NATIVE_SKIN_FILES.score},clicks:[{sequence:7,id:'import-button',owned:true,trusted:true},{sequence:7,id:'score-file',owned:false,trusted:false}]};
+  const pickers=[{sequence:7,filename:NATIVE_SKIN_FILES.score,completed:true,delegatedClicks:[{type:'click',trusted:false,id:'score-file',sequence:7,originalControl:true}]}];
+  validateNativeSkinControlClicks(row,pickers);
+  for(const mutate of [r=>r.clicks.pop(),r=>r.clicks.reverse(),r=>r.clicks[1].id='skin-image',r=>r.clicks[1].trusted=true,r=>r.clicks[1].owned=true,r=>r.clicks[1].sequence=8,r=>r.clicks.push({...r.clicks[1]}),r=>r.clicks[0].owned=false,r=>r.request.file='private.json']){const r=structuredClone(row);mutate(r);assert.throws(()=>validateNativeSkinControlClicks(r,pickers));}
+  assert.throws(()=>validateNativeSkinControlClicks(row,[]));const unrelated=structuredClone(pickers);unrelated[0].delegatedClicks[0].originalControl=false;assert.throws(()=>validateNativeSkinControlClicks(row,unrelated));
+  // The observed home-button child is id-less. Detached export anchors produce
+  // no secondary document event; exports and direct skin pickers stay single.
+  for(const [kind,id]of [['click','home-single-player'],['click','export-button'],['click','export-takes'],['picker','skin-image']]){
+    const r={sequence:8,kind,id,clicks:[{sequence:8,id:id==='home-single-player'?null:id,owned:true,trusted:true}]};validateNativeSkinControlClicks(r);
+    r.clicks.push({sequence:8,id:null,owned:false,trusted:false});assert.throws(()=>validateNativeSkinControlClicks(r));
+  }
+});
 
 test('native skin fixture reuses deterministic original JSON, PNG and exact source payload without clobbering files',async()=>{
   const directory=await mkdtemp(join(tmpdir(),'native-skin-fixtures-'));

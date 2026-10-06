@@ -36,6 +36,7 @@ pub const LIVE_TONE_NAVIGATION_PHASES: [&str; 4] = [
 pub const BASIC_KEY_PHASES: [&str; 2] = ["basic-key-seed", "basic-key-restart"];
 pub const AUTHORING_PHASES: [&str; 2] = ["authoring-seed", "authoring-restart"];
 pub const VSQ_AUTHORING_PHASES: [&str; 2] = ["vsq-authoring-seed", "vsq-authoring-restart"];
+pub const SKIN_PHASES: [&str; 3] = ["skin-seed", "skin-restart", "skin-default-restart"];
 pub const CATALOG_PHASES: [&str; 3] = ["catalog-seed", "catalog-restart", "catalog-final"];
 pub const MAX_CLEAN_REPORT_BYTES: usize = 1024 * 1024;
 pub const MAX_SMOKE_REPORT_BYTES: usize = 64 * 1024;
@@ -64,6 +65,7 @@ impl Acceptance {
             .chain(COMPLETE_PRACTICE_PHASES)
             .chain(CANONICAL_PRACTICE_PHASES)
             .chain(LIVE_TONE_NAVIGATION_PHASES)
+            .chain(SKIN_PHASES)
             .chain(CATALOG_PHASES)
             .find(|candidate| *candidate == phase)
             .ok_or("Unknown acceptance phase")?;
@@ -97,6 +99,20 @@ impl Acceptance {
                 include_str!("../live-tone-navigation-acceptance.js")
             );
         }
+        let skin = if SKIN_PHASES.contains(&self.phase) {
+            let (observers, _) = include_str!("../vsq-song-acceptance.js")
+                .split_once("(() => {")
+                .expect("VSQ observer prefix must precede its runner");
+            let (controls, _) = include_str!("../canonical-practice-acceptance.js")
+                .split_once("(() => {")
+                .expect("Canonical control prefix must precede its runner");
+            format!(
+                "{observers}\n{controls}\n{}",
+                include_str!("../skin-acceptance.js")
+            )
+        } else {
+            String::new()
+        };
         let performance = if PERFORMANCE_PHASES.contains(&self.phase)
             || PITCH_BEND_PHASES.contains(&self.phase)
             || AUTHORING_PHASES.contains(&self.phase)
@@ -157,7 +173,9 @@ impl Acceptance {
             include_str!("../acceptance-wait.js"),
             include_str!("../reference-acceptance.js"),
             include_str!("../live-tone-acceptance.js"),
-            if PERFORMANCE_PHASES.contains(&self.phase)
+            if SKIN_PHASES.contains(&self.phase) {
+                &skin
+            } else if PERFORMANCE_PHASES.contains(&self.phase)
                 || PITCH_BEND_PHASES.contains(&self.phase)
                 || AUTHORING_PHASES.contains(&self.phase)
                 || VSQ_AUTHORING_PHASES.contains(&self.phase)
@@ -198,7 +216,8 @@ impl Acceptance {
             || CANONICAL_PRACTICE_PHASES.contains(&self.phase)
             || LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
-            || CATALOG_PHASES.contains(&self.phase);
+            || CATALOG_PHASES.contains(&self.phase)
+            || SKIN_PHASES.contains(&self.phase);
         self.directory.join(if song_folder {
             "Scores"
         } else {
@@ -212,6 +231,8 @@ impl Acceptance {
             self.directory.join("webview-catalog-profile")
         } else if PHASES.contains(&self.phase) {
             self.directory.join("webview-profile")
+        } else if SKIN_PHASES.contains(&self.phase) {
+            self.directory.join("webview-profiles").join("skin-seed")
         } else if CANONICAL_PRACTICE_PHASES.contains(&self.phase) {
             self.directory
                 .join("webview-profiles")
@@ -230,8 +251,11 @@ impl Acceptance {
         let complete_restart = self.phase == "complete-practice-restart";
         let canonical_restart = CANONICAL_PRACTICE_PHASES.contains(&self.phase)
             && self.phase != "canonical-practice-seed";
-        let existing_required =
-            (catalog && self.phase != "catalog-seed") || complete_restart || canonical_restart;
+        let skin_restart = SKIN_PHASES.contains(&self.phase) && self.phase != "skin-seed";
+        let existing_required = (catalog && self.phase != "catalog-seed")
+            || complete_restart
+            || canonical_restart
+            || skin_restart;
         let fresh_required = !PHASES.contains(&self.phase) && !existing_required;
         let prepare = || -> std::io::Result<bool> {
             require_ordinary_directory(&self.directory)?;
@@ -239,7 +263,12 @@ impl Acceptance {
                 // A restart must never manufacture a replacement browser profile.
                 // Require the same ordinary path and bounded earlier host records.
                 require_ordinary_directory(&profile)?;
-                if canonical_restart {
+                if skin_restart {
+                    self.require_catalog_profile_evidence("skin-seed", true)?;
+                    if self.phase == "skin-default-restart" {
+                        self.require_catalog_profile_evidence("skin-restart", false)?;
+                    }
+                } else if canonical_restart {
                     self.require_catalog_profile_evidence("canonical-practice-seed", true)?;
                     if self.phase == "canonical-practice-restart" {
                         self.require_catalog_profile_evidence(
@@ -337,6 +366,7 @@ impl Acceptance {
             || LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase)
+            || SKIN_PHASES.contains(&self.phase)
         {
             MAX_CLEAN_REPORT_BYTES
         } else if BULK_PHASES.contains(&self.phase) {
@@ -364,6 +394,7 @@ impl Acceptance {
             && !LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase)
             && !BASIC_KEY_PHASES.contains(&self.phase)
             && !CATALOG_PHASES.contains(&self.phase)
+            && !SKIN_PHASES.contains(&self.phase)
         {
             return;
         }
@@ -630,6 +661,7 @@ pub fn receive_report(
             || LIVE_TONE_NAVIGATION_PHASES.contains(&run.phase)
             || BASIC_KEY_PHASES.contains(&run.phase)
             || CATALOG_PHASES.contains(&run.phase)
+            || SKIN_PHASES.contains(&run.phase)
     });
     let limit = bulk.map_or(MAX_SMOKE_REPORT_BYTES, Acceptance::report_limit);
     let reject = |status, code, message| {
@@ -818,6 +850,12 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
     {
         return false;
     }
+    if SKIN_PHASES.contains(&phase)
+        && !["click", "picker", "key-r", "select-first", "select-last"]
+            .contains(&value["kind"].as_str().unwrap_or(""))
+    {
+        return false;
+    }
     for field in ["x", "y", "width", "height"] {
         if !value[field]
             .as_f64()
@@ -872,7 +910,25 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
                     "canonical-practice-original.musicxml",
                 ]
                 .contains(&file))
-            || (live_navigation && file == "live-tone-navigation-original.json");
+            || (live_navigation && file == "live-tone-navigation-original.json")
+            || (phase == "skin-seed"
+                && [
+                    "skin-original-score.json",
+                    "skin-original.json",
+                    "checker.png",
+                ]
+                .contains(&file));
+        if SKIN_PHASES.contains(&phase)
+            && !(phase == "skin-seed"
+                && [
+                    "skin-original-score.json",
+                    "skin-original.json",
+                    "checker.png",
+                ]
+                .contains(&file))
+        {
+            return false;
+        }
         let download = PHASES.iter().any(|phase| {
             file.strip_prefix(&format!("{phase}-"))
                 .and_then(|n| n.strip_suffix(".json"))
@@ -979,6 +1035,76 @@ mod tests {
         for phase in CANONICAL_PRACTICE_PHASES.into_iter().chain(PHASES) {
             assert!(!valid_action_for_phase(&action, phase));
         }
+    }
+
+    #[test]
+    fn skin_profiles_and_actions_keep_exact_restart_and_picker_boundaries() {
+        let evidence = Evidence::new();
+        let seed = Acceptance::new(evidence.0.clone(), "skin-seed").unwrap();
+        let restart = Acceptance::new(evidence.0.clone(), "skin-restart").unwrap();
+        let final_run = Acceptance::new(evidence.0.clone(), "skin-default-restart").unwrap();
+        assert!(restart.prepare_webview_profile().is_err());
+        let profile = seed.prepare_webview_profile().unwrap();
+        assert_eq!(profile, evidence.0.join("webview-profiles/skin-seed"));
+        assert!(seed.prepare_webview_profile().is_err());
+        std::fs::write(profile.join("retained-skin"), b"original fixture bytes").unwrap();
+        assert!(final_run.prepare_webview_profile().is_err());
+        assert_eq!(restart.prepare_webview_profile().unwrap(), profile);
+        assert_eq!(final_run.prepare_webview_profile().unwrap(), profile);
+        assert_eq!(
+            std::fs::read(profile.join("retained-skin")).unwrap(),
+            b"original fixture bytes"
+        );
+        for phase in SKIN_PHASES {
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert_eq!(run.report_limit(), MAX_CLEAN_REPORT_BYTES);
+            let request = report_request("POST", sized_report(Some(phase), MAX_CLEAN_REPORT_BYTES));
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &request).status(),
+                200
+            );
+            let oversized = report_request(
+                "POST",
+                sized_report(Some(phase), MAX_CLEAN_REPORT_BYTES + 1),
+            );
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &oversized).status(),
+                400
+            );
+            assert_eq!(run.library_directory(), evidence.0.join("Scores"));
+            assert!(run.script().contains(include_str!("../skin-acceptance.js")));
+            assert!(run
+                .script()
+                .contains("function prepareCanonicalPracticeTarget"));
+            assert!(!run
+                .script()
+                .contains(include_str!("../canonical-practice-acceptance.js")));
+            assert!(!run
+                .script()
+                .contains(include_str!("../vsq-song-acceptance.js")));
+            for file in [
+                "skin-original-score.json",
+                "skin-original.json",
+                "checker.png",
+            ] {
+                let action = json!({"version":1,"sequence":1,"kind":"picker","x":10,"y":10,"width":1280,"height":720,"file":file});
+                assert_eq!(valid_action_for_phase(&action, phase), phase == "skin-seed");
+                assert!(!valid_action_for_phase(&action, "canonical-practice-seed"));
+            }
+            for file in [
+                "../checker.png",
+                "CHECKER.PNG",
+                "private.json",
+                "original-duet.musicxml",
+            ] {
+                assert!(!valid_action_for_phase(
+                    &json!({"version":1,"sequence":1,"kind":"picker","x":10,"y":10,"width":1280,"height":720,"file":file}),
+                    phase
+                ));
+            }
+        }
+        std::fs::remove_file(evidence.0.join("profile-skin-restart.json")).unwrap();
+        assert!(final_run.prepare_webview_profile().is_err());
     }
 
     #[test]

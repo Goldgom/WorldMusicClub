@@ -11,6 +11,11 @@ After registration, run the frozen executable with:
 ./scripts/windows-desktop-acceptance.ps1 -Executable <exact-built-exe> -Scenario skin -OutputDirectory <fresh-owned-directory>
 ```
 
+The focused `native-skin.yml` workflow builds and verifies the same three
+phases, retaining failure evidence and the executable while excluding profiles.
+The workflow runs only on the dedicated `preview/native-skin` branch or an explicit
+dispatch. Merely preparing these files does not produce native acceptance evidence.
+
 The three ordered phases use one test-owned profile at
 `webview-profiles/skin-seed`. Only the first launch may create it. Each subsequent
 launch requires the original host profile record; the final launch additionally

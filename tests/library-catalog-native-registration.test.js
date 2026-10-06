@@ -14,9 +14,9 @@ const native=read('scripts/windows-desktop-native.cs');
 
 test('catalog native scenario selects one exact renderer, fixture preparer and verifier across three phases',()=>{
   assert.match(host,/\[ValidateSet\([^\n]*'library-catalog'/);
-  assert.match(host,/\$phases=if\(\$Scenario -eq 'library-catalog'\)\{@\('catalog-seed','catalog-restart','catalog-final'\)\}/);
-  assert.match(host,/\$nativeReportName=if\(\$Scenario -eq 'library-catalog'\)\{'native-library-catalog.json'\}/);
-  assert.match(host,/\$verifier=if\(\$Scenario -eq 'library-catalog'\)\{'verify-library-catalog-acceptance.mjs'\}/);
+  assert.match(host,/^\$phases=[^\n]*\b(?:if|elseif)\(\$Scenario -eq 'library-catalog'\)\{@\('catalog-seed','catalog-restart','catalog-final'\)\}/m);
+  assert.match(host,/^\$nativeReportName=[^\n]*\b(?:if|elseif)\(\$Scenario -eq 'library-catalog'\)\{'native-library-catalog.json'\}/m);
+  assert.match(host,/^\s*\$verifier=[^\n]*\b(?:if|elseif)\(\$Scenario -eq 'library-catalog'\)\{'verify-library-catalog-acceptance.mjs'\}/m);
   assert.ok(host.includes("'prepare-library-catalog-acceptance.mjs'"));
   assert.match(rust,/pub const CATALOG_PHASES: \[&str; 3\] = \["catalog-seed", "catalog-restart", "catalog-final"\]/);
   assert.match(rust,/\.chain\(CATALOG_PHASES\)\s*\.find/);
@@ -29,9 +29,9 @@ test('catalog native scenario selects one exact renderer, fixture preparer and v
 test('catalog profile and window hooks preserve other scenarios and require an existing profile on restart',()=>{
   const windows=read('crates/desktop-shell/src/windows.rs');
   assert.match(windows,/\.inner_size\(1280\.0, 900\.0\)/);
-  assert.match(windows,/if worldmusichub_desktop::acceptance::CATALOG_PHASES.contains\(&acceptance.phase\)\s*\|\| worldmusichub_desktop::acceptance::COMPLETE_PRACTICE_PHASES.contains\(\s*&acceptance.phase,?\s*\)\s*\|\| worldmusichub_desktop::acceptance::CANONICAL_PRACTICE_PHASES.contains\(\s*&acceptance.phase,?\s*\)\s*\{\s*builder = builder.inner_size\(1280\.0, 720\.0\);\s*\}/);
+  assert.match(windows,/if worldmusichub_desktop::acceptance::CATALOG_PHASES.contains\(&acceptance.phase\)\s*\|\| worldmusichub_desktop::acceptance::COMPLETE_PRACTICE_PHASES.contains\(\s*&acceptance.phase,?\s*\)\s*\|\| worldmusichub_desktop::acceptance::CANONICAL_PRACTICE_PHASES.contains\(\s*&acceptance.phase,?\s*\)\s*\|\| worldmusichub_desktop::acceptance::LIVE_TONE_NAVIGATION_PHASES.contains\(\s*&acceptance.phase,?\s*\)\s*\{\s*builder = builder.inner_size\(1280\.0, 720\.0\);\s*\}/);
   assert.match(rust,/if CATALOG_PHASES.contains\(&self.phase\) \{\s*self.directory.join\("webview-catalog-profile"\)\s*\} else if PHASES.contains\(&self.phase\) \{\s*self.directory.join\("webview-profile"\)/);
-  assert.match(rust,/let existing_required =\s*\(catalog && self.phase != "catalog-seed"\) \|\| complete_restart/);
+  assert.match(rust,/let existing_required =\s*\(catalog && self.phase != "catalog-seed"\)\s*\|\| complete_restart/);
   assert.match(rust,/if existing_required \{[\s\S]*?require_ordinary_directory\(&profile\)\?;[\s\S]*?require_catalog_profile_evidence\("catalog-seed", true\)\?;[\s\S]*?return Ok\(false\)/);
   assert.match(profile,/if\(\$selection.existing_required\) \{[\s\S]*?if\(\$selection.profile_absent_before_launch\)\{throw/);
   assert.match(profile,/Assert-CatalogProfilePredecessor \$Directory \$selection 'catalog-seed' \$true/);

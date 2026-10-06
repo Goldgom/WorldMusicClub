@@ -1,0 +1,67 @@
+name: Native skin profile persistence preview
+on:
+  push:
+    branches: ['preview/native-skin']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-skin-${{ github.ref }}
+  cancel-in-progress: true
+# Optional focused evidence only. No publishing, release or package promotion.
+jobs:
+  native-skin:
+    name: Original skin selection and default reopen
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      RUSTFLAGS: '-C target-feature=+crt-static'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          components: rustfmt
+      - run: npm ci --ignore-scripts --omit=optional
+      - run: npm run prepare:engraving
+      - run: node --test tests/native-skin-acceptance.test.js tests/native-skin-registration.test.js tests/canonical-practice-native-registration.test.js tests/library-catalog-native-registration.test.js tests/native-live-tone-navigation-registration.test.js
+      - run: cargo fmt --all --check
+      - run: cargo test -p worldmusichub-desktop --lib acceptance::tests --locked
+      - name: Pure fixed picker and profile contracts
+        shell: pwsh
+        run: |
+          foreach ($script in @('scripts/windows-desktop-acceptance.ps1','scripts/windows-desktop-profile.ps1','tests/windows-desktop-contract.ps1','tests/windows-skin-profile-contract.ps1')) {
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$tokens,[ref]$errors)
+            if ($errors.Count) { $errors | Format-List; throw "PowerShell syntax errors in $script" }
+          }
+          ./tests/windows-desktop-contract.ps1
+      - run: cargo build -p worldmusichub-desktop --release --locked
+      - name: Actual Windows Settings import and same-profile reopen
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -cne $env:GITHUB_SHA) { throw 'Unexpected skin acceptance build source' }
+          if (git status --porcelain --untracked-files=normal) { throw 'Skin acceptance source is dirty' }
+          ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory "$env:RUNNER_TEMP/native-skin-windows" -Scenario skin
+      - name: Independently reverify exact executable and persisted bytes
+        shell: pwsh
+        env:
+          WMH_SKIN_EXECUTABLE: ${{ github.workspace }}/target/release/worldmusichub-desktop.exe
+        run: |
+          node scripts/verify-native-skin-evidence.mjs --check "$env:RUNNER_TEMP/native-skin-windows"
+          if ($LASTEXITCODE -ne 0) { throw 'Native skin persistence proof failed' }
+      - name: Retain original evidence and executable, excluding browser profiles
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-skin-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/native-skin-windows/**
+            !${{ runner.temp }}/native-skin-windows/webview-profiles/**
+            target/release/worldmusichub-desktop.exe
+          if-no-files-found: warn
