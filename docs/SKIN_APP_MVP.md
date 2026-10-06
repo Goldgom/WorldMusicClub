@@ -66,9 +66,10 @@ with a visible diagnostic. A successful explicit import/reset can replace them.
 Persistence targets reopening the same origin in the same browser/WebView
 profile. It is not native filesystem storage, a portable profile, synchronization,
 or a promise that clearing site data or using a new browser profile retains the
-skin. The native shell uses its stable `wmh://localhost/` custom-protocol origin;
-native restart behavior still requires the platform acceptance gate. A browser
-server opened on another port has a different origin.
+skin. The native shell loads `wmh://localhost/`, mapped to the effective origin
+`https://wmh.localhost` in Windows WebView2. The same effective origin and profile
+are required; native skin restart behavior still requires platform acceptance.
+A browser server opened on another port has a different origin.
 
 No Rust API, score package, instrument configuration, performer assignment, input
 mapping, audio renderer, recorder or score clock is changed. The existing
@@ -78,12 +79,13 @@ installing the portable default manifest as a new skin.
 
 ## Verification
 
-Run `node --test tests/skin-format.test.js tests/skin-app.test.js` for manifest/PNG
+Run `npm run test:skin` for manifest/PNG
 budgets, imported-byte persistence, corrupt record handling, replacement/quota
 failure, reset, localization, HTML injection, duplicate actions and bounded note
-decoration. The app integration regression is
-`tests/frontend-skin-app.test.js` once the small app/bootstrap patch is applied.
+decoration. This script and the `npm test` aggregate include the actual-app
+regression in `tests/frontend-skin-app.test.js`, with the bootstrap wiring applied.
 
 These Node tests do not establish browser visual, native Windows package or
 accessibility acceptance. The integration owner runs the repository's complete
-acceptance gates against the combined exact source before publication.
+acceptance gates against the combined exact source before promotion to main or
+accepted package delivery.
