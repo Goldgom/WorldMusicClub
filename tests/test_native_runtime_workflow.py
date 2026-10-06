@@ -1,6 +1,8 @@
 """The additive runtime must never bypass complete native/checkpoint gates."""
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 import yaml
 
@@ -11,9 +13,36 @@ GATES = ['native_full_portable', 'native_full_upload', 'native_runtime_package',
          'native_runtime_upload', 'native_runtime_evidence']
 
 
+class RuntimeEncodingTests(unittest.TestCase):
+    def test_source_and_sidecar_checks_with_windows_legacy_text_default(self):
+        open_path = Path.open
+
+        def legacy_text_default(path, mode='r', buffering=-1, encoding=None, errors=None, newline=None):
+            if 'b' not in mode and encoding in (None, 'locale'):
+                encoding = 'cp1252'
+            return open_path(path, mode, buffering, encoding, errors, newline)
+
+        suite = unittest.TestSuite([
+            unittest.defaultTestLoader.loadTestsFromTestCase(RuntimeWorkflowTests),
+            unittest.defaultTestLoader.loadTestsFromName(
+                'test_native_runtime_package.RuntimePackageTests.test_existing_output_never_overwritten_and_sidecar_matches'),
+        ])
+        result = unittest.TestResult()
+        with tempfile.TemporaryDirectory() as temporary, patch.object(Path, 'open', legacy_text_default):
+            # Prove that this bounded simulation catches the original failure,
+            # independently of the host locale or Python's UTF-8 mode.
+            probe = Path(temporary) / 'utf8.txt'
+            probe.write_bytes('单'.encode('utf-8'))
+            with self.assertRaises(UnicodeDecodeError):
+                probe.read_text()
+            suite.run(result)
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.failures, [])
+
+
 class RuntimeWorkflowTests(unittest.TestCase):
     def setUp(self):
-        self.workflow = yaml.safe_load(WORKFLOW.read_text())
+        self.workflow = yaml.safe_load(WORKFLOW.read_text(encoding='utf-8'))
         self.native = self.workflow['jobs']['native-feature-acceptance']
         self.steps = self.native['steps']
         self.by_id = {step['id']: step for step in self.steps if 'id' in step}
@@ -67,11 +96,11 @@ class RuntimeWorkflowTests(unittest.TestCase):
             self.assertIn('-' + name + ' ', startup)
         self.assertIn('wmh-native-runtime-extracted', startup)
         self.assertIn('native-runtime-evidence', startup)
-        wrapper = (ROOT / 'scripts/windows-native-runtime-smoke.ps1').read_text()
+        wrapper = (ROOT / 'scripts/windows-native-runtime-smoke.ps1').read_text(encoding='utf-8')
         self.assertLess(wrapper.index('native-runtime-delivery.py'), wrapper.index('windows-native-portable-smoke.ps1'))
         self.assertIn("if ($LASTEXITCODE -ne 0) { throw", wrapper)
         self.assertNotIn('Expand-Archive', wrapper)
-        smoke = (ROOT / 'scripts/windows-native-portable-smoke.ps1').read_text()
+        smoke = (ROOT / 'scripts/windows-native-portable-smoke.ps1').read_text(encoding='utf-8')
         for check in ["$env:WMH_DESKTOP_SMOKE_DIR=$null", "$env:WMH_DESKTOP_ACCEPTANCE_PHASE=$null",
                       '$app.CloseMainWindow()', '$app.WaitForExit(10000)', 'Get-NetTCPConnection -State Listen -ErrorAction Stop',
                       'home-single-player', 'PrintWindow', 'package_directory=$Directory', 'workflow_run_id=$env:GITHUB_RUN_ID']:
@@ -119,7 +148,7 @@ class RuntimeWorkflowTests(unittest.TestCase):
         for key in ['full_artifact_id', 'runtime_artifact_id', 'runtime_evidence_id', 'full_sha256', 'runtime_sha256', 'delivery_sha256']:
             self.assertIn(key, self.native['outputs'])
             self.assertIn(key, program)
-        check = yaml.safe_load((ROOT / '.github/workflows/check.yml').read_text())
+        check = yaml.safe_load((ROOT / '.github/workflows/check.yml').read_text(encoding='utf-8'))
         self.assertTrue(any("python -m unittest discover -s tests -p 'test_*.py'" in step.get('run', '')
                             for job in check['jobs'].values() for step in job['steps']))
 

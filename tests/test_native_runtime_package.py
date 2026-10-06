@@ -435,9 +435,10 @@ class RuntimePackageTests(unittest.TestCase):
         self.assertEqual(self.verify()['full_native_evidence'], 'not-revalidated')
 
     def test_existing_output_never_overwritten_and_sidecar_matches(self):
+        self.output = self.root / 'original-单人模式.zip'
         self.create()
         original = self.output.read_bytes()
-        sidecar = self.output.with_suffix('.zip.sha256').read_text()
+        sidecar = self.output.with_suffix('.zip.sha256').read_text(encoding='utf-8')
         self.assertEqual(sidecar, runtime.file_sha(self.output) + '  ' + self.output.name + '\n')
         with self.assertRaisesRegex(ValueError, 'must be new'):
             runtime.create_runtime(self.full, self.output, COMMIT, TREE, REFERENCE)
