@@ -1526,7 +1526,8 @@ async function pausedTakeSnapshot() {
 async function compactGeometry() {
   return page.evaluate(()=>{
     const rect=selector=>{const element=document.querySelector(selector),box=element.getBoundingClientRect();return{x:box.x,y:box.y,width:box.width,height:box.height,right:box.right,bottom:box.bottom,clientHeight:element.clientHeight,scrollHeight:element.scrollHeight}};
-    return{viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},lobby:rect('#song-lobby'),preview:rect('.song-preview'),identity:rect('.preview-identity'),title:rect('#preview-title'),credits:rect('#preview-meta'),music:rect('#preview-music-meta'),copy:{...rect('.preview-copy'),overflow:getComputedStyle(document.querySelector('.preview-copy')).overflowY,scrollTop:document.querySelector('.preview-copy').scrollTop},footer:rect('.preview-footer'),gate:rect('#preview-gate'),start:rect('#start-performance'),mod:rect('#configure-song-mod'),stage:rect('#workspace'),hud:rect('.stage-hud'),play:rect('.play-panel'),field:rect('#falling-notes'),keyboard:rect('#keyboard'),transport:rect('.transport'),hudItems:[...document.querySelectorAll('.stage-hud>button,.stage-hud>.stage-heading,.stage-hud nav>.button')].map(element=>{const box=element.getBoundingClientRect();return{id:element.id||element.className,x:box.x,right:box.right,y:box.y,bottom:box.bottom,centerY:box.y+box.height/2}})};
+    const cue=document.querySelector('#stage-cue'),status=document.querySelector('.performance-status');
+    return{viewport:{width:innerWidth,height:innerHeight},document:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight},lobby:rect('#song-lobby'),preview:rect('.song-preview'),identity:rect('.preview-identity'),title:rect('#preview-title'),credits:rect('#preview-meta'),music:rect('#preview-music-meta'),copy:{...rect('.preview-copy'),overflow:getComputedStyle(document.querySelector('.preview-copy')).overflowY,scrollTop:document.querySelector('.preview-copy').scrollTop},footer:rect('.preview-footer'),gate:rect('#preview-gate'),start:rect('#start-performance'),mod:rect('#configure-song-mod'),stage:rect('#workspace'),hud:rect('.stage-hud'),play:rect('.play-panel'),field:rect('#falling-notes'),keyboard:rect('#keyboard'),transport:rect('.transport'),pianoBudget:{committed:document.body.style.getPropertyValue('--piano-available-lane-height'),status:rect('.performance-status'),phase:status.dataset.phase,cueState:cue.dataset.cueState,cueHidden:cue.hidden,cueText:cue.textContent,clockPhase:JSON.parse(document.querySelector('#progress').getAttribute('data-playback-clock')||'null')?.phase},hudItems:[...document.querySelectorAll('.stage-hud>button,.stage-hud>.stage-heading,.stage-hud nav>.button')].map(element=>{const box=element.getBoundingClientRect();return{id:element.id||element.className,x:box.x,right:box.right,y:box.y,bottom:box.bottom,centerY:box.y+box.height/2}})};
   });
 }
 
@@ -1537,6 +1538,23 @@ async function saveCompactPrecheck(name,geometry) {
     return selectors.map(selector=>({selector,nodes:[...document.querySelectorAll(selector)].map(node=>({...box(node),children:[...node.children].map(box)}))}));
   });
   await writeFile(join(artifactDirectory,`worldmusichub-compact-${name}-precheck.json`),JSON.stringify({geometry,chrome},null,2));
+}
+
+async function settledCompactStageGeometry(name) {
+  const evidence={before:await compactGeometry()};
+  try{
+    // Reset publishes READY before ResizeObserver delivers its wrapped status
+    // row. Require the existing budget commit, not a delay or a fitting box.
+    evidence.budget=await page.evaluate(settlePianoViewportBudget);
+  }catch(error){evidence.settlementError=error.message;throw error;}
+  finally{
+    evidence.after=await compactGeometry();
+    // Full-check artifact partitions retain live JSON. Keep both reads even
+    // when the observer never commits or the unchanged viewport bounds fail.
+    await writeFile(join(artifactDirectory,`worldmusichub-live-compact-${name}-budget.json`),JSON.stringify(evidence,null,2));
+  }
+  await saveCompactPrecheck(name,evidence.after);
+  return evidence.after;
 }
 
 function assertBoundedDocument(geometry) {
@@ -1585,7 +1603,7 @@ for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:8
     if(viewport.width>=1280){await ui('#theme-mode').selectOption('dark');await closeShellPanels();assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');assertPinnedPreview(await compactGeometry(),viewport);await viewportSnapshot(`compact-${viewport.width}x${viewport.height}-lobby-dark`);await ui('#theme-mode').selectOption('light');await closeShellPanels();assert.equal(await page.locator('html').getAttribute('data-theme'),'light');}
     assert.deepEqual(await exportScore(),initialCompilation.score);await closeShellPanels();
     await startPreview({notation:false});assert.equal(await page.locator('#stage-title').textContent(),edition.title);assert.equal(await page.locator('.shell-header').isVisible(),false);assert.equal(await page.locator('#notation-dock').isVisible(),false);assert.equal(await page.locator('#stage-cue-main').textContent(),'READY');
-    const stage=await compactGeometry();await saveCompactPrecheck(`${viewport.width}x${viewport.height}-stage`,stage);assertBoundedDocument(stage);assertInsideViewport(stage.stage,viewport,'Performance stage');assertInsideViewport(stage.play,viewport,'Playfield and transport');assertInsideViewport(stage.transport,viewport,'Transport');assert.ok(stage.stage.scrollHeight<=stage.stage.clientHeight+1,'The stage must not become a scrolling dashboard');assert.ok(stage.play.scrollHeight<=stage.play.clientHeight+1,'Playfield and transport must fit without panel scrolling');assert.ok(stage.field.height>=viewport.height*(viewport.width>=1280?.5:.32),`The musical field needs substantial vertical space: ${JSON.stringify(stage.field)}`);
+    const stage=await settledCompactStageGeometry(`${viewport.width}x${viewport.height}-stage`);assertBoundedDocument(stage);assertInsideViewport(stage.stage,viewport,'Performance stage');assertInsideViewport(stage.play,viewport,'Playfield and transport');assertInsideViewport(stage.transport,viewport,'Transport');assert.ok(stage.stage.scrollHeight<=stage.stage.clientHeight+1,'The stage must not become a scrolling dashboard');assert.ok(stage.play.scrollHeight<=stage.play.clientHeight+1,'Playfield and transport must fit without panel scrolling');assert.ok(stage.field.height>=viewport.height*(viewport.width>=1280?.5:.32),`The musical field needs substantial vertical space: ${JSON.stringify(stage.field)}`);
     if(viewport.width>=1280){const centers=stage.hudItems.map(item=>item.centerY);assert.ok(Math.max(...centers)-Math.min(...centers)<=2,`Desktop tools and title share one HUD row: ${JSON.stringify(stage.hudItems)}`);assert.ok(stage.hud.height<=70,JSON.stringify(stage.hud));}
     for(const item of stage.hudItems)assert.ok(item.x>=-1&&item.right<=viewport.width+1,`HUD control stays reachable: ${JSON.stringify(item)}`);
     for(const id of ['midi-button','count-in','keyboard-base-midi','keyboard-input-offset','keyboard-preset']){assert.equal(await page.locator(`#${id}`).count(),1);assert.equal(await page.locator(`#settings-dialog #${id}`).count(),1);assert.equal(await page.locator(`#${id}`).isVisible(),false);}

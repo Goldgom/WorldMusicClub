@@ -208,3 +208,45 @@ test('a committed minimum budget does not wait away persistent clipping or reduc
     assert.equal(env.frames.size,0);
   }finally{env.view.destroy();}
 });
+
+function resetReadyBudgetFixture(){
+  const {document}=parseHTML('<html lang="en"><body data-screen="stage"><main id="workspace" class="piano-workspace"><div class="performance-status" data-phase="listen"><span>Listen and explore</span><div id="stage-cue" hidden>READY</div></div><div class="piano-lanes-shared"></div><div class="piano-keybed-shared"></div><div class="piano-transport"></div></main></body></html>');
+  const root=document.getElementById('workspace'),status=root.querySelector('.performance-status'),cue=document.getElementById('stage-cue'),lane=root.querySelector('.piano-lanes-shared'),transport=root.querySelector('.piano-transport'),keyboard=root.querySelector('.piano-keybed-shared'),frames=new Map(),observed=new Set(),values=new Map();
+  let laneHeight=168,serial=0,notify;
+  // Reproduce actual542's 412.984375px precommit bottom from a bounded
+  // 388px baseline. The lane/chrome split models a wrapped READY row; the
+  // original failure did not retain those intermediate component rectangles.
+  status.getBoundingClientRect=()=>({width:824,height:cue.hidden?22:46.984375});
+  lane.getBoundingClientRect=()=>({width:824,height:laneHeight});keyboard.getBoundingClientRect=()=>({height:78});
+  root.getBoundingClientRect=()=>({top:0});
+  transport.getBoundingClientRect=()=>({height:40.84375,bottom:120+status.getBoundingClientRect().height+78+laneHeight});
+  Object.defineProperty(document.body,'style',{value:{getPropertyValue:key=>values.get(key)||'',setProperty(key,value){values.set(key,value);laneHeight=Math.round(parseFloat(value)*64)/64;},removeProperty:key=>values.delete(key)}});
+  const window={innerWidth:844,innerHeight:390,getComputedStyle:node=>({height:node===lane?`${laneHeight}px`:'',paddingBottom:'2px'}),setTimeout,clearTimeout,requestAnimationFrame:fn=>(frames.set(++serial,fn),serial),cancelAnimationFrame:id=>frames.delete(id),addEventListener(){},removeEventListener(){},ResizeObserver:class{constructor(fn){notify=fn;}observe(node){observed.add(node);}disconnect(){}}};
+  const flush=()=>{const pending=[...frames.values()];frames.clear();for(const fn of pending)fn();},view=observePianoViewportBudget({document,window});flush();
+  return{document,window,view,frames,flush,status,observed,notify:()=>notify(),reset(){cue.hidden=false;cue.dataset.cueState='ready';},bottom:()=>transport.getBoundingClientRect().bottom};
+}
+
+test('Reset to READY settles the observed status resize before accepting compact stage geometry',async()=>{
+  const env=resetReadyBudgetFixture();
+  try{
+    assert.ok(env.observed.has(env.status),'The production viewport observer owns the status row that READY expands');
+    assert.equal(env.bottom(),388);env.reset();assert.equal(env.bottom(),412.984375,'READY is readable before the old lane capacity has been corrected');
+    const settling=settlePianoViewportBudget(env);env.flush();assert.equal(env.bottom(),412.984375);
+    env.notify();assert.equal(env.bottom(),412.984375,'Observer delivery only queues a production write');
+    env.flush();env.flush();const samples=await settling;
+    assert.deepEqual(samples.map(sample=>sample.committed),[168,168,168,143.01]);
+    assert.ok(samples.every(sample=>sample.expected===143.01));assert.equal(env.bottom(),388);
+    assert.ok(samples.at(-1).laneHeight>=390*.32,'The original substantial-music bound still holds');
+    assert.equal(env.document.getElementById('stage-cue').dataset.cueState,'ready');assert.equal(env.frames.size,0);
+  }finally{env.view.destroy();}
+});
+
+test('Reset to READY fails after three frames if the status viewport budget never commits',async()=>{
+  const env=resetReadyBudgetFixture();
+  try{
+    env.reset();const settling=settlePianoViewportBudget(env),rejected=assert.rejects(settling,/did not commit within three rendered frames.*"committed":168,"expected":143\.01/);
+    for(let index=0;index<3;index++)env.flush();await rejected;
+    assert.equal(env.bottom(),412.984375,'Three elapsed frames cannot turn unchanged overflowing geometry into success');
+    assert.equal(env.frames.size,0);
+  }finally{env.view.destroy();}
+});

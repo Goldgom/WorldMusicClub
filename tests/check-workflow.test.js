@@ -258,6 +258,7 @@ function validateNoticePreview(document){
   const verify=steps.find(row=>row.run==='node scripts/verify-ui-preview.mjs ui-preview');assert.ok(verify);assert.equal(verify.if,undefined);assert.equal(verify['continue-on-error'],undefined);
   const failure=steps.find(row=>row.with?.name==='game-ui-failures-${{ github.sha }}');assert.ok(failure);assert.equal(failure.if,'always()');
   assert.ok(failure.with.path.split('\n').includes('ui-preview/worldmusichub-live-piano-notice-layout.json'),'Retain paired notice geometry in the small failure artifact');
+  assert.ok(failure.with.path.split('\n').includes('ui-preview/worldmusichub-live-compact-*-budget.json'),'Retain compact viewport budget settlement in the small failure artifact');
 }
 
 test('UI preview adds real notice dismissal without dropping the 13 existing cases or failure geometry',()=>{

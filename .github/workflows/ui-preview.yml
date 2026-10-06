@@ -42,6 +42,7 @@ jobs:
             ui-preview/worldmusichub-live-bootstrap*.json
             ui-preview/worldmusichub-compact-*-precheck.json
             ui-preview/worldmusichub-live-piano-notice-layout.json
+            ui-preview/worldmusichub-live-compact-*-budget.json
             ui-preview/worldmusichub-live-silence-*.json
             ui-preview/worldmusichub-skin-*.json
             ui-preview/worldmusichub-skin-*.png
