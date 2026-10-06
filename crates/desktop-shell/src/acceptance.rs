@@ -27,6 +27,12 @@ pub const CANONICAL_PRACTICE_PHASES: [&str; 3] = [
     "canonical-practice-controls",
     "canonical-practice-restart",
 ];
+pub const LIVE_TONE_NAVIGATION_PHASES: [&str; 4] = [
+    "live-navigation-settings-keyup",
+    "live-navigation-settings-navigation",
+    "live-navigation-authoring-keyup",
+    "live-navigation-authoring-navigation",
+];
 pub const BASIC_KEY_PHASES: [&str; 2] = ["basic-key-seed", "basic-key-restart"];
 pub const AUTHORING_PHASES: [&str; 2] = ["authoring-seed", "authoring-restart"];
 pub const VSQ_AUTHORING_PHASES: [&str; 2] = ["vsq-authoring-seed", "vsq-authoring-restart"];
@@ -57,6 +63,7 @@ impl Acceptance {
             .chain(BASIC_KEY_PHASES)
             .chain(COMPLETE_PRACTICE_PHASES)
             .chain(CANONICAL_PRACTICE_PHASES)
+            .chain(LIVE_TONE_NAVIGATION_PHASES)
             .chain(CATALOG_PHASES)
             .find(|candidate| *candidate == phase)
             .ok_or("Unknown acceptance phase")?;
@@ -72,6 +79,24 @@ impl Acceptance {
         })
     }
     pub fn script(&self) -> String {
+        if LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase) {
+            let (vsq_helpers, _) = include_str!("../vsq-song-acceptance.js")
+                .split_once("(() => {")
+                .expect("VSQ helpers must precede their runner");
+            let (canonical_helpers, _) = include_str!("../canonical-practice-acceptance.js")
+                .split_once("(() => {")
+                .expect("Canonical helpers must precede their runner");
+            return format!(
+                "globalThis.__WMH_ACCEPTANCE_PHASE__={};\n{}\n{}\n{}\n{}\n{}\n{}",
+                serde_json::to_string(self.phase).unwrap(),
+                include_str!("../acceptance-wait.js"),
+                include_str!("../reference-acceptance.js"),
+                include_str!("../live-tone-acceptance.js"),
+                vsq_helpers,
+                canonical_helpers,
+                include_str!("../live-tone-navigation-acceptance.js")
+            );
+        }
         let performance = if PERFORMANCE_PHASES.contains(&self.phase)
             || PITCH_BEND_PHASES.contains(&self.phase)
             || AUTHORING_PHASES.contains(&self.phase)
@@ -171,6 +196,7 @@ impl Acceptance {
             || VSQ_AUTHORING_PHASES.contains(&self.phase)
             || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
             || CANONICAL_PRACTICE_PHASES.contains(&self.phase)
+            || LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase);
         self.directory.join(if song_folder {
@@ -308,6 +334,7 @@ impl Acceptance {
             || VSQ_AUTHORING_PHASES.contains(&self.phase)
             || COMPLETE_PRACTICE_PHASES.contains(&self.phase)
             || CANONICAL_PRACTICE_PHASES.contains(&self.phase)
+            || LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase)
         {
@@ -334,6 +361,7 @@ impl Acceptance {
             && !VSQ_AUTHORING_PHASES.contains(&self.phase)
             && !COMPLETE_PRACTICE_PHASES.contains(&self.phase)
             && !CANONICAL_PRACTICE_PHASES.contains(&self.phase)
+            && !LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase)
             && !BASIC_KEY_PHASES.contains(&self.phase)
             && !CATALOG_PHASES.contains(&self.phase)
         {
@@ -599,6 +627,7 @@ pub fn receive_report(
             || VSQ_AUTHORING_PHASES.contains(&run.phase)
             || COMPLETE_PRACTICE_PHASES.contains(&run.phase)
             || CANONICAL_PRACTICE_PHASES.contains(&run.phase)
+            || LIVE_TONE_NAVIGATION_PHASES.contains(&run.phase)
             || BASIC_KEY_PHASES.contains(&run.phase)
             || CATALOG_PHASES.contains(&run.phase)
     });
@@ -746,6 +775,21 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
     {
         return false;
     }
+    let live_navigation = LIVE_TONE_NAVIGATION_PHASES.contains(&phase);
+    if live_navigation
+        && ![
+            "click",
+            "picker",
+            "select-first",
+            "select-last",
+            "key-r",
+            "live-key-r-down",
+            "live-key-r-up",
+        ]
+        .contains(&value["kind"].as_str().unwrap_or(""))
+    {
+        return false;
+    }
     if ![
         "picker",
         "cancel-picker",
@@ -769,6 +813,8 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
                 "canonical-tempo",
             ]
             .contains(&value["kind"].as_str().unwrap_or("")))
+        && !(live_navigation
+            && ["live-key-r-down", "live-key-r-up"].contains(&value["kind"].as_str().unwrap_or("")))
     {
         return false;
     }
@@ -782,6 +828,9 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
     }
     if value["kind"] == "picker" {
         let file = value["file"].as_str().unwrap_or("");
+        if live_navigation && file != "live-tone-navigation-original.json" {
+            return false;
+        }
         let fixture = [
             "original-duet.musicxml",
             "original-duet.mxl",
@@ -822,7 +871,8 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
                     "canonical-practice-original.json",
                     "canonical-practice-original.musicxml",
                 ]
-                .contains(&file));
+                .contains(&file))
+            || (live_navigation && file == "live-tone-navigation-original.json");
         let download = PHASES.iter().any(|phase| {
             file.strip_prefix(&format!("{phase}-"))
                 .and_then(|n| n.strip_suffix(".json"))
@@ -864,6 +914,72 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_live_navigation_owns_four_fresh_bounded_phases_and_only_fixed_r_actions() {
+        let evidence = Evidence::new();
+        for phase in LIVE_TONE_NAVIGATION_PHASES {
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert_eq!(run.library_directory(), evidence.0.join("Scores"));
+            assert_eq!(
+                run.profile_directory(),
+                evidence.0.join("webview-profiles").join(phase)
+            );
+            assert!(run.prepare_webview_profile().is_ok());
+            assert!(run.prepare_webview_profile().is_err());
+            assert_eq!(run.report_limit(), MAX_CLEAN_REPORT_BYTES);
+            assert_eq!(action_limit(phase), 64);
+            let script = run.script();
+            assert!(script.contains(include_str!("../live-tone-navigation-acceptance.js")));
+            assert!(script.contains(include_str!("../live-tone-acceptance.js")));
+            assert!(script.contains("function prepareCanonicalPracticeTarget"));
+            assert!(!script.contains(include_str!("../canonical-practice-acceptance.js")));
+            assert!(!script.contains(include_str!("../vsq-song-acceptance.js")));
+            let mut action = json!({"version":1,"sequence":1,"kind":"live-key-r-down","x":20,"y":30,"width":1280,"height":720});
+            for kind in [
+                "live-key-r-down",
+                "live-key-r-up",
+                "click",
+                "key-r",
+                "select-first",
+                "select-last",
+            ] {
+                action["kind"] = json!(kind);
+                assert!(valid_action_for_phase(&action, phase));
+            }
+            for kind in ["key-c5", "key-ds4", "live-key-other", "canonical-tempo"] {
+                action["kind"] = json!(kind);
+                assert!(!valid_action_for_phase(&action, phase));
+            }
+            action["kind"] = json!("picker");
+            action["file"] = json!("live-tone-navigation-original.json");
+            assert!(valid_action_for_phase(&action, phase));
+            assert!(!valid_action_for_phase(&action, "canonical-practice-seed"));
+            action["file"] = json!("canonical-practice-original.json");
+            assert!(!valid_action_for_phase(&action, phase));
+            let exact = report_request("POST", sized_report(Some(phase), MAX_CLEAN_REPORT_BYTES));
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &exact).status(),
+                200
+            );
+            let oversized = report_request(
+                "POST",
+                sized_report(Some(phase), MAX_CLEAN_REPORT_BYTES + 1),
+            );
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &oversized).status(),
+                400
+            );
+            let rejected =
+                read_ordinary_json(&evidence.0.join(run.report_name()), MAX_CLEAN_REPORT_BYTES)
+                    .unwrap();
+            assert_eq!(rejected["report_failure"]["code"], "report_size");
+        }
+        let action = json!({"version":1,"sequence":1,"kind":"live-key-r-down","x":20,"y":30,"width":1280,"height":720});
+        for phase in CANONICAL_PRACTICE_PHASES.into_iter().chain(PHASES) {
+            assert!(!valid_action_for_phase(&action, phase));
+        }
+    }
 
     #[test]
     fn canonical_practice_registration_keeps_original_observers_and_report_bounds() {

@@ -3,7 +3,7 @@
 . (Join-Path $PSScriptRoot 'windows-desktop-evidence.ps1')
 function Get-AcceptanceProfile([string]$Directory,[string]$Phase) {
   $shared=@('seed','restart','close-active','reopen')
-  $fresh=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart')
+  $fresh=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart','live-navigation-settings-keyup','live-navigation-settings-navigation','live-navigation-authoring-keyup','live-navigation-authoring-navigation')
   $complete=@('complete-practice-seed','complete-practice-restart')
   $canonical=@('canonical-practice-seed','canonical-practice-controls','canonical-practice-restart')
   $catalog=@('catalog-seed','catalog-restart','catalog-final')
