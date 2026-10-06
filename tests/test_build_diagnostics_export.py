@@ -4,7 +4,7 @@ import hashlib
 import importlib.util
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import shlex
 import subprocess
 import sys
@@ -73,11 +73,38 @@ class BuildDiagnosticsExportTests(unittest.TestCase):
         self.assertEqual(job['outputs']['build_diagnostics_windows_verify'], '${{ steps.build_diagnostics_windows_verify.outcome }}')
         return collect
 
-    def test_actual_workflow_waits_for_phase_and_recheck_then_runs_scoped_collector(self):
+    def workflow_command(self, step, root, output):
+        command = shlex.split(step['run'].replace('${{ runner.temp }}', root.as_posix()).replace('${{ github.sha }}', SHA))
+        self.assertEqual(command, ['python', 'scripts/collect-basic-key-diagnostics.py',
+                                  'desktop-build-diagnostics', output.as_posix(),
+                                  '--source-sha', SHA, '--scenario', 'build-diagnostics'])
+        return command
+
+    def test_workflow_command_keeps_exact_posix_destination_on_both_path_flavors(self):
         step = self.ownership(WORKFLOW)
-        command = shlex.split(step['run'].replace('${{ runner.temp }}', self.root.as_posix()).replace('${{ github.sha }}', SHA))
-        self.assertEqual(command[:2], ['python', 'scripts/collect-basic-key-diagnostics.py'])
-        self.assertEqual(command[2:], ['desktop-build-diagnostics', str(self.output), '--source-sha', SHA, '--scenario', 'build-diagnostics'])
+        for root, destination in [
+            (PurePosixPath('/tmp/runner temp'), '/tmp/runner temp/build-diagnostics-windows-diagnostics'),
+            (PureWindowsPath(r'C:\Users\RUNNER~1\AppData\Local\Temp\runner temp'),
+             'C:/Users/RUNNER~1/AppData/Local/Temp/runner temp/build-diagnostics-windows-diagnostics'),
+        ]:
+            with self.subTest(root=root):
+                output = root / 'build-diagnostics-windows-diagnostics'
+                command = self.workflow_command(step, root, output)
+                self.assertEqual(command[3], destination)
+                # Compare the complete intended argv. Do not normalize a raw
+                # Windows spelling, a different destination, or other arguments.
+                for wrong in [destination.replace('/', '\\'), destination + '-other']:
+                    changed = {**step, 'run': step['run'].replace(
+                        '${{ runner.temp }}/build-diagnostics-windows-diagnostics', wrong)}
+                    with self.assertRaises(AssertionError):
+                        self.workflow_command(changed, root, output)
+                for run in [step['run'].replace('--source-sha', '--source-tree'),
+                            step['run'] + ' --unexpected']:
+                    with self.assertRaises(AssertionError):
+                        self.workflow_command({**step, 'run': run}, root, output)
+
+    def test_actual_workflow_waits_for_phase_and_recheck_then_runs_scoped_collector(self):
+        command = self.workflow_command(self.ownership(WORKFLOW), self.root, self.output)
         self.put('native-build-diagnostics.json', json.dumps({'source_sha': SHA, 'ok': False}).encode())
         result = subprocess.run([sys.executable, str(ROOT / command[1]), *command[2:]], cwd=self.root,
                                 capture_output=True, text=True, timeout=15)
