@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {canonicalPracticeOptions,canonicalDisplayNotes} from '../web/canonical-practice-session.js';
-import {nativeScoreServer,nativeStorageApp,nativeResponse,deferred} from './native-storage-app-fixtures.js';
+import {nativeScoreServer,nativeStorageApp,nativeResponse,deferred,settleMutedAudioDisposal} from './native-storage-app-fixtures.js';
 import {originalMultipartNotation} from './notation-scope-fixtures.js';
 import {canonicalPracticeApp} from './canonical-practice-fixtures.js';
 import {readPlaybackClock} from '../web/playback-clock-view.js';
@@ -81,7 +81,7 @@ test('canonical all-part Listen completes at the full source endpoint and manual
   const f=await canonicalPracticeApp(),{app,evidence}=f;
   try{
     app.$('count-in').checked=false;await app.click('start-listen');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');const receiver=f.receiver();assert.equal(receiver.core.plan.count,evidence.compilation.timeline.notes.length);
-    f.time(5200);await app.tick();app.frame();assert.equal(readPlaybackClock(app.document).positionMs,4000);assert.equal(readPlaybackClock(app.document).completed,true);assert.equal(receiver.connected,false);assert.match(app.$('play-button').textContent,/Play again/);
+    f.time(5200);await app.tick();app.frame();assert.equal(readPlaybackClock(app.document).positionMs,4000);assert.equal(readPlaybackClock(app.document).completed,true);await settleMutedAudioDisposal(app,[receiver]);assert.equal(receiver.connected,false);assert.match(app.$('play-button').textContent,/Play again/);
     app.$('session-mode').value='practice';app.emit(app.$('session-mode'),'change');await app.click('assess-button');await app.until(()=>!app.$('export-takes').disabled);const take=await app.exported('export-takes');assert.equal(take.passes[0].interpretation.source_fingerprint,evidence.profile.source_fingerprint);assert.equal(take.passes[0].capture_enabled,false);assert.deepEqual(take.passes[0].captures,[]);
   }finally{await app.close();}
 });
@@ -117,7 +117,7 @@ test('canonical selected-part Listen keeps its audible subset through A/B seek a
     await app.click('play-button');await app.until(()=>!app.$('play-button').disabled);app.$('loop-from').value='4';app.$('loop-to').value='5';await app.click('loop-apply');await app.until(()=>app.$('loop-enabled').checked);app.$('progress').value=2250;app.emit(app.$('progress'),'input');await app.click('play-button');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');
     const receiver=f.receiver(),zero=app.sourceStartWall();assert.equal(receiver.core.plan.initialPositionFrame,2250*8);assert.equal(receiver.core.plan.firstGateCount,1);assert.equal(receiver.core.plan.rangeGateCount,1);assert.equal(receiver.core.plan.initialCountInFrames,0);
     f.time(zero+300);await app.tick();app.frame();renderedPosition(readPlaybackClock(app.document).positionMs,2050);assert.equal(f.receiver(),receiver);assert.equal(app.requests.some(request=>request.path==='/api/assess'),false);
-    app.emit(app.$('progress'),'keydown',{key:'End'});assert.equal(readPlaybackClock(app.document).positionMs,2500);assert.equal(readPlaybackClock(app.document).completed,true);assert.equal(receiver.connected,false);await app.click('play-button');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');assert.equal(f.receiver().core.plan.initialPositionFrame,2000*8,'An explicit replay after seeking to B begins at A');
+    app.emit(app.$('progress'),'keydown',{key:'End'});assert.equal(readPlaybackClock(app.document).positionMs,2500);assert.equal(readPlaybackClock(app.document).completed,true);await settleMutedAudioDisposal(app,[receiver]);assert.equal(receiver.connected,false);await app.click('play-button');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');assert.equal(f.receiver().core.plan.initialPositionFrame,2000*8,'An explicit replay after seeking to B begins at A');
   }finally{await app.close();}
 });
 

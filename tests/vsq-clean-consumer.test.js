@@ -11,7 +11,7 @@ import {keyAt,numberedNotationLayout} from '../web/music.js';
 import {getAppI18n} from '../web/app-locale.js';
 import {createBulkImportTransport} from '../web/bulk-import.js';
 import {fakeAudio,cleanSong} from './clean-song-fixtures.js';
-import {nativeScoreServer,nativeStorageApp,nativeResponse,deferred} from './native-storage-app-fixtures.js';
+import {nativeScoreServer,nativeStorageApp,nativeResponse,deferred,settleMutedAudioDisposal} from './native-storage-app-fixtures.js';
 import {importFile,importReport,importItem,selectImportFiles} from './bulk-import-fixtures.js';
 
 const read=name=>JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`,import.meta.url),'utf8'));
@@ -88,7 +88,7 @@ test('VSQ Dynamics zero retains fixed reference velocity and excludes human/mute
  const h=playerHarness();try{
   await h.start({mode:'listen',mutedParts:['vsq-track-2'],instrument:'piano'});assert.equal(h.player.vsq.plan.notes.length,1);assert.equal(h.player.vsq.plan.notes[0][5],90);assert.equal(h.player.vsq.plan.notes[0][6],2);h.player.stop();
   await h.start({mode:'practice',targetPart:'vsq-track-1',mutedParts:['vsq-track-2'],instrument:'guitar'});assert.equal(h.player.vsq.plan.notes.length,0);h.player.stop();
-  await h.start({mode:'practice',targetPart:'vsq-track-1',instrument:'guitar'});assert.equal(h.player.vsq.plan.notes.length,1);assert.equal(h.player.vsq.plan.notes[0][6],3);h.player.stop();assert.equal(h.nodes.filter(node=>node.connected).length,0);assert.deepEqual(h.errors,[]);
+  await h.start({mode:'practice',targetPart:'vsq-track-1',instrument:'guitar'});assert.equal(h.player.vsq.plan.notes.length,1);assert.equal(h.player.vsq.plan.notes[0][6],3);const receiver=h.player.vsq.receiver;h.player.stop();assert.equal(receiver.outputGate.gain.value,0);assert.equal(receiver.disposing,true);assert.ok(receiver.generation>receiver.planGeneration);h.deliverCore();h.deliverMain();assert.equal(receiver.disposed,true);assert.equal(receiver.node.closed,true);assert.equal(receiver.node.port.onmessage,null);assert.equal(h.nodes.filter(node=>node.connected).length,0);assert.deepEqual(h.errors,[]);
  }finally{h.close();}
 });
 
@@ -261,7 +261,7 @@ test('VSQ full Listen reaches the native source end despite a stalled main threa
  let clock=1000;const {app}=await appFixture({now:()=>clock});try{
   await choose(app);await start(app,'listen');const node=connectedReceivers(app)[0],core=node.core;
   app.renderAudioTo(4.2);await app.tick();assert.equal(core.state,'ended');assert.equal(core.startedCount,2);assert.equal(core.endedCount,2);assert.equal(core.activeCount,0);assert.equal(node.lastCompletion.frame,core.anchorFrame+core.plan.durationFrames);assert.equal(app.$('export-takes').disabled,true);
-  clock=5300;app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'ended');assert.equal(connectedReceivers(app).length,0);await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(connectedReceivers(app)[0].core.positionFrame,0);
+  clock=5300;app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'ended');await settleMutedAudioDisposal(app,[node]);assert.equal(connectedReceivers(app).length,0);await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(connectedReceivers(app)[0].core.positionFrame,0);
  }finally{await app.close();}
 });
 

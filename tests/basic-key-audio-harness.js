@@ -8,7 +8,7 @@ export function basicKeyAudioHarness({sampleRate = 48000, autoMessages = true} =
   const context = {sampleRate, state: 'running', currentTime: 0, loaded: [], createGain() { return {gain: {value: 0, cancelScheduledValues() {}, setValueAtTime(value) { this.value = value; }}, connect() {}, disconnect() {}}; }, audioWorklet: {async addModule(url) { context.loaded.push(url); }}, addEventListener(type, listener) { listeners.add(listener); }, removeEventListener(type, listener) { listeners.delete(listener); }};
   let frame = 0;
   const nodeFactory = ({Core = BasicKeyAudioCore, automatic = autoMessages} = {}) => {
-    const node = {connected: false, closed: false, connect() { this.connected = true; }, disconnect() { this.connected = false; }, port: {onmessage: null, start() {}, close() { node.closed = true; }, postMessage(message, transfer = []) { toCore.push([node, structuredClone(message, {transfer})]); if (automatic) queueMicrotask(() => deliverCore(node)); }}};
+    const node = {connected: false, closed: false, connectedOutput: null, connect(output) { this.connected = true; this.connectedOutput = output; }, disconnect() { this.connected = false; this.connectedOutput = null; }, port: {onmessage: null, start() {}, close() { node.closed = true; }, postMessage(message, transfer = []) { toCore.push([node, structuredClone(message, {transfer})]); if (automatic) queueMicrotask(() => deliverCore(node)); }}};
     node.core = new Core(sampleRate, {emit: (message, transfer = []) => { toMain.push([node, structuredClone(message, {transfer})]); if (automatic) queueMicrotask(() => deliverMain(node)); }});
     nodes.push(node); return node;
   };

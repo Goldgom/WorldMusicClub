@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {vsqAcceptanceFixture} from '../scripts/prepare-vsq-song-fixtures.mjs';
-import {nativeScoreServer,nativeStorageApp,nativeResponse,deferred,authoredScore} from './native-storage-app-fixtures.js';
+import {nativeScoreServer,nativeStorageApp,nativeResponse,deferred,authoredScore,settleMutedAudioDisposal} from './native-storage-app-fixtures.js';
 import {getAppI18n} from '../web/app-locale.js';
 import {cleanDescriptor,mediaFixture} from './clean-song-fixtures.js';
 import {readPlaybackClock} from '../web/playback-clock-view.js';
@@ -34,7 +34,7 @@ test('Listen has a real fractional range control and seeks into the source-decla
   assert.equal(Number(progress.max),duration);assert.equal(progress.disabled,false);
   time(1300);app.frame();progress.value=2041;app.emit(progress,'input');
   assert.equal(progress.value,'2041');assert.equal(readPlaybackClock(progress).positionMs,2041);assert.match(app.$('play-button').textContent,/Play/);
-  assert.equal(app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected).length,0);
+  await settleMutedAudioDisposal(app);assert.equal(app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected).length,0);
   time(1800);app.frame();assert.equal(readPlaybackClock(progress).positionMs,2041,'Seeking stays paused');
   await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
   const receiver=app.audioNodes.findLast(node=>node.kind==='audio-worklet'&&node.connected);
@@ -158,7 +158,7 @@ test('pointer seeking cancels held PC, pointer and MIDI sounds and follows pause
   assert.ok(app.document.querySelectorAll('#keyboard .pressed').length>=3);
   const progress=app.$('progress');app.emit(progress,'pointerdown',{pointerId:8,button:0});
   assert.equal(app.document.querySelectorAll('#keyboard .pressed').length,0);
-  assert.equal(app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected).length,0);
+  await settleMutedAudioDisposal(app);assert.equal(app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected).length,0);
   const live=app.audioNodes.find(node=>node.kind==='live-audio-worklet');
   await app.tick();assert.equal(live.core.notes.some(note=>note.occupied),false);
   progress.value=500;app.emit(progress,'input');

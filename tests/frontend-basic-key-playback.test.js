@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {basicKeyRenditionFixture} from './basic-key-rendition-fixtures.js';
-import {nativeScoreServer,nativeStorageApp,nativeResponse,authoredScore} from './native-storage-app-fixtures.js';
+import {nativeScoreServer,nativeStorageApp,nativeResponse,authoredScore,settleMutedAudioDisposal} from './native-storage-app-fixtures.js';
 import {getAppI18n} from '../web/app-locale.js';
 import {keyboardGeometry} from '../web/music.js';
 
@@ -25,7 +25,7 @@ test('complete basic Listen, pause, reset and natural end run on the native full
  const {app,descriptor,time}=await setup();try{
   assert.equal(app.$('start-listen').disabled,false);const i18n=getAppI18n(app.document);assert.equal(app.$('start-listen').hidden,true);assert.equal(app.$('start-performance').hidden,false);assert.equal(app.$('configure-song-mod').hidden,false);assert.equal(app.$('vsq-listen-basic').hidden,true);assert.equal(app.$('start-listen').textContent,i18n.t('shell.listenAllParts'));assert.equal(app.$('preview-part-label').firstChild.textContent,i18n.t('shell.humanPracticePart'));assert.equal(app.$('preview-part-help').hidden,true);assert.equal(app.$('preview-part').querySelector('option[value=""]'),null);assert.match(app.$('clean-song-rendition').textContent,/retains all 5 note onsets.*selected human part.*default synthesized/);assert.match(app.$('basic-key-policy-text').textContent,/FIFO.*20 ms.*CC120\/123/);
   const compiles=app.requests.filter(request=>request.path==='/api/compile').length;await app.click('start-listen');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(admittedGates(app).length,5);assert.equal(app.requests.filter(request=>request.path==='/api/compile').length,compiles);assert.equal(app.plays.filter(args=>String(args[0]).startsWith('score:')).length,0);assert.match(app.$('song-complete-range-text').textContent,/5 eligible targets/);
-  await app.click('play-button');assert.equal(admittedGates(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');await app.click('play-button');assert.equal(admittedGates(app).length,5);await app.click('reset-button');assert.equal(admittedGates(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'ready');await app.click('play-button');time(2151);assert.equal(connectedReceivers(app)[0].core.startedCount,5);assert.equal(connectedReceivers(app)[0].core.endedCount,5);await app.tick();app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'ended');assert.equal(admittedGates(app).length,0);assert.equal(readPlaybackClock(app.document).positionMs,1000);assert.equal(descriptor.score_json,basicKeyRenditionFixture().clean_package.score_json);
+  await app.click('play-button');assert.equal(admittedGates(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');await app.click('play-button');assert.equal(admittedGates(app).length,5);await app.click('reset-button');assert.equal(admittedGates(app).length,0);assert.equal(app.$('clean-song-stage').dataset.rendererState,'ready');await app.click('play-button');time(2151);assert.equal(connectedReceivers(app)[0].core.startedCount,5);assert.equal(connectedReceivers(app)[0].core.endedCount,5);await app.tick();app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'ended');await settleMutedAudioDisposal(app);assert.equal(admittedGates(app).length,0);assert.equal(readPlaybackClock(app.document).positionMs,1000);assert.equal(descriptor.score_json,basicKeyRenditionFixture().clean_package.score_json);
  }finally{await app.close();}
 });
 
@@ -163,7 +163,7 @@ test('natural completion waits for exact audio gate ends when the wall clock lea
  const {app,time}=await setup({advanceAudio:false});try{
   await app.click('start-listen');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');const audio=app.audioHarnesses[0],node=connectedReceivers(app)[0],core=node.core;
   app.renderAudioTo(1.03);time(2131);app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'playing');assert.equal(node.connected,true);assert.equal(core.activeCount,2);
-  app.renderAudioTo(1.06);await app.tick();app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'ended');assert.equal(node.connected,false);for(const [index,end] of core.plan.ends.entries())assert.equal(node.lastCompletion.ledger.actualEnds[index],core.anchorFrame+end);
+  app.renderAudioTo(1.06);await app.tick();app.frame();assert.equal(app.$('clean-song-stage').dataset.rendererState,'ended');await settleMutedAudioDisposal(app,[node]);assert.equal(node.connected,false);for(const [index,end] of core.plan.ends.entries())assert.equal(node.lastCompletion.ledger.actualEnds[index],core.anchorFrame+end);
  }finally{await app.close();}
 });
 
@@ -172,7 +172,7 @@ for(const interruption of ['pause','blur','mute'])test(`Practice ${interruption}
   await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');time(2070);await app.tick();app.frame();
   const before=await app.exported('export-takes');assert.equal(before.passes.length,1);assert.equal(before.passes[0].clock_segments[0].wallEnd,2050);assert.equal(before.passes[0].grace_deadline_wall_ms,2230);
   if(interruption==='pause')await app.click('play-button');else if(interruption==='blur')app.emit(app.window,'blur');else await app.click('sound-button');
-  assert.equal(app.$('play-button').disabled,true);assert.equal(connectedReceivers(app).length,0);time(2130);const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:701,button:0});await app.tick();app.emit(key,'pointerup',{pointerId:701});
+  assert.equal(app.$('play-button').disabled,true);if(interruption==='blur')await settleMutedAudioDisposal(app);assert.equal(connectedReceivers(app).length,0);time(2130);const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:701,button:0});await app.tick();app.emit(key,'pointerup',{pointerId:701});
   const grace=await app.exported('export-takes');assert.equal(grace.passes.length,1);assert.equal(grace.passes[0].clock_segments[0].wallEnd,2050);assert.equal(grace.passes[0].grace_deadline_wall_ms,2230);assert.equal(grace.passes[0].inputs.length,1);assert.equal(grace.passes[0].captures.length,1);assert.equal(grace.passes[0].inputs[0].at_ms,1080);
   time(2240);app.frame();await app.until(()=>!app.$('play-button').disabled);assert.equal((await app.exported('export-takes')).passes.length,1,'Assessment completion must not create another take');await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');await app.click('play-button');const replay=await app.exported('export-takes');assert.equal(replay.passes.length,2);assert.equal(replay.passes[0].inputs.length,1);assert.deepEqual(replay.passes[1].inputs,[]);assert.equal(replay.passes[1].clock_segments[0].positionStart,0);
  }finally{await app.close();}

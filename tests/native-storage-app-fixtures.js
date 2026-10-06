@@ -62,6 +62,21 @@ export async function nativeScoreServer({scores=[],directory='C:\\Test-only\\Wor
 }
 
 /** Real app import, mocked DOM/audio/native transport and isolated browser storage. */
+/** Assert the disposal boundary separately from audible/source-gate counts.
+ * The next event-loop turn delivers the production core's queued cancel and
+ * ACK; this helper neither injects a receipt nor fires the fallback timer. */
+export async function settleMutedAudioDisposal(app,nodes=app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected)){
+  assert.ok(nodes.length>0,'Expected a graph awaiting its disposal acknowledgement');
+  const pending=nodes.map(node=>{
+    const gate=node.connectedOutput,command=app.audioHarnesses.flatMap(h=>h.toCore).find(([owner,message])=>owner===node&&message.type==='cancel'&&message.reason==='dispose')?.[1];
+    assert.equal(node.connected,true);assert.equal(node.closed,false);assert.equal(gate?.gain.value,0,'Pending disposal must be immediately inaudible');assert.equal(gate.gain.events.at(-1)?.value,0,'The actual output gate received the zero-gain command');
+    assert.ok(command&&command.generation>node.core.planGeneration,'Disposal must already fence the playing generation');
+    return{node,gate,generation:command.generation};
+  });
+  await app.tick();
+  for(const{node,gate,generation}of pending){assert.equal(node.core.generation,generation);assert.equal(node.core.state,'canceled');assert.equal(node.core.activeCount,0);assert.equal(node.connected,false);assert.equal(node.connectedOutput,null);assert.equal(gate.disconnected,true);assert.equal(gate.gain.value,0);assert.equal(node.closed,true);assert.equal(node.port.onmessage,null);assert.equal(node.port.onmessageerror,null);assert.equal(node.onprocessorerror,null);}
+}
+
 export async function nativeStorageApp(server,{now,audioSampleRate=8000,audioWorklet=true,audioMessages=true,liveAudioMessages=true,storageValues=new Map(),localStorageDescriptor}={}) {
   const {document,window}=parseHTML(await readFile(new URL('../web/index.html',import.meta.url),'utf8'));
   const audioNodes=[],audioHarnesses=[],audioDevices=[],audioGraphEvents=[];const downloads=[],plays=[],values=storageValues,factory=new IDBFactory(),openedDatabases=[];
