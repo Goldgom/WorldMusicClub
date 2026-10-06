@@ -46,5 +46,5 @@ test('actual native and hosted routes never activate hidden legacy performance c
  const rhythm=await readFile(new URL('hosted-rhythm-check.mjs',hostedDir),'utf8');
  const hashLoop=rhythm.match(/for \(const name of \[([^\]]+)\]\) \{\s*sourceHashes\[name\] =/);assert.ok(hashLoop,'Rhythm evidence must hash its declared source files');
  const bound=[...hashLoop[1].matchAll(/'([^']+)'/g)].map(match=>match[1]);
- for(const file of ['web/song-mod.js','web/song-mod-view.js','scripts/hosted-song-mod-controls.mjs','web/piano-viewport-budget.js'])assert.equal(bound.filter(name=>name===file).length,1,`Rhythm source binding must retain ${file} exactly once`);
+ for(const file of ['web/song-mod.js','web/song-mod-view.js','web/part-instrument-policy.js','scripts/hosted-song-mod-controls.mjs','web/piano-viewport-budget.js'])assert.equal(bound.filter(name=>name===file).length,1,`Rhythm source binding must retain ${file} exactly once`);
 });

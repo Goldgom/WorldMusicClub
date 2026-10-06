@@ -6,6 +6,11 @@ import {SongModStore,createSongMod,defaultSongMod,songModConfigFingerprint,songM
 import {ScorePreview} from '../web/score-preview.js';
 import {prepareCleanSong,prepareVsqPractice} from '../web/clean-song-package.js';
 import {practiceStageNotes} from '../web/practice-stage-display.js';
+import {createPartInstrumentPolicy,resolvePartInstrumentInput,PART_INSTRUMENT_POLICY} from '../web/part-instrument-policy.js';
+import {buildCanonicalAudioPlan,CANONICAL_AUDIO_POLICY} from '../web/canonical-audio-plan.js';
+import {buildBasicKeyAudioPlan} from '../web/basic-key-audio-plan.js';
+import {buildVsqAudioPlan} from '../web/vsq-audio-plan.js';
+import {basicKeySong} from './basic-key-rendition-fixtures.js';
 import {fixture} from './frontend-fixtures.js';
 const context=()=>{const score=structuredClone(fixture);score.parts=[...score.parts,{...structuredClone(score.parts[0]),id:'other',name:'Other',notes:[]}];return {score,compiled:{timeline:{notes:[]}},practiceSelection:{kind:'parts',part_ids:[score.parts[0].id]},practiceLayout:'complete',showOthers:true};};
 test('song Mod retains source order, original bytes and shared performer ownership independently of mute/display',()=>{
@@ -30,6 +35,60 @@ test('machine/human display is independent and shared physical targets remain vi
  const human={id:'same-key',part_id:'one'},machine={id:'machine',part_id:'machine'};const result=practiceStageNotes({humanNotes:[human],sourceNotes:[human,machine],humanPartIds:new Set(['one','two']),hiddenPartIds:new Set(['one']),targetGroups:new Map([['same-key',{part_ids:['one','two']}]])});assert.deepEqual(result.map(n=>n.id),['machine','same-key']);assert.equal(result[0].practice_role,'machine');assert.equal(result[1].practice_role,'human');assert.deepEqual(practiceStageNotes({humanNotes:[human],sourceNotes:[human,machine],mode:'listen',hiddenPartIds:new Set(['one','machine'])}),[]);
 });
 test('unsupported renderer cannot silently consume a requested instrument',()=>{const value=context(),mod=defaultSongMod(value);mod.config.parts[1].instrument='reed';const changed=createSongMod(mod,mod.config);assert.throws(()=>assertSongModSupported(changed,{performers:true,instruments:false,audio:true}),/does not support/);assert.equal(songModCapabilities(value).instruments,true);});
+
+test('stored machine instruments stay dormant on human parts and reactivate only with machine ownership',()=>{
+ const value=context(),base=defaultSongMod(value),config=structuredClone(base.config);config.parts[0].instrument='reed';
+ const human=createSongMod(base,config),snapshot=JSON.stringify(human);
+ assert.deepEqual(songModOptions(human).instrumentOverrides,{});
+ assert.doesNotThrow(()=>assertSongModSupported(human,{performers:true,instruments:false,audio:true}));
+ const values=new Map(),storage={getItem:key=>values.get(key),setItem:(key,value)=>values.set(key,value)};
+ new SongModStore({storage}).save(value,human);assert.deepEqual(new SongModStore({storage}).read(value).mod,human);
+ config.parts[0].performer='machine';const machine=createSongMod(base,config);
+ assert.deepEqual(songModOptions(machine).instrumentOverrides,{[value.score.parts[0].id]:'reed'});
+ assert.throws(()=>assertSongModSupported(machine,{performers:true,instruments:false,audio:true}),/does not support/);
+ assert.equal(JSON.stringify(human),snapshot,'Projecting active sound does not rewrite saved choices');
+});
+
+test('source-bound input policy keeps the complete human group and explicitly refuses ambiguous or unsupported routes',()=>{
+ const value=context(),base=defaultSongMod(value),config=structuredClone(base.config);
+ for(const part of config.parts){part.performer='human';part.instrument='reed';part.muted=true;part.visible=false;}
+ const mod=createSongMod(base,config),policy=createPartInstrumentPolicy(mod,{identity:songModIdentity(value),parts:value.score.parts});
+ assert.equal(policy.policyId,PART_INSTRUMENT_POLICY);assert.equal(policy.configFingerprint,mod.configFingerprint);assert.deepEqual(policy.sourceRevision,mod.sourceRevision);
+ assert.equal(policy.human.kind,'shared-group');assert.deepEqual(policy.human.partIds,config.parts.map(part=>part.partId));assert.deepEqual(policy.machineInstrumentOverrides,{});
+ assert.deepEqual(resolvePartInstrumentInput(policy),{status:'ready',ownership:'shared-group',partIds:config.parts.map(part=>part.partId),instrument:'current-shared-live-instrument'});
+ assert.equal(resolvePartInstrumentInput(policy,{kind:'part',partId:config.parts[0].partId}).reason,'ambiguous_shared_human_input');
+ assert.equal(resolvePartInstrumentInput(policy,{kind:'part',partId:'invented'}).reason,'unknown_source_part');
+ for(const request of [null,{kind:'midi',channel:0},{kind:'part'},{kind:'shared',midi:60},{kind:'shared',source_note_id:'deduplicated-representative'},{kind:'part',partId:config.parts[0].partId,instrument:'guitar'},Object.create({kind:'shared'}),{kind:'shared',[Symbol('channel')]:0},Object.defineProperty({},'kind',{get(){throw Error('Do not invoke routing getters');},enumerable:true})])assert.equal(resolvePartInstrumentInput(policy,request).reason,'unsupported_input_route');
+ assert.throws(()=>{policy.human.partIds.pop();},TypeError);assert.throws(()=>{policy.sourceRevision.value='0'.repeat(64);},TypeError);
+ assert.throws(()=>resolvePartInstrumentInput(structuredClone(policy)),{code:'invalid_part_instrument_policy'});
+ assert.throws(()=>createPartInstrumentPolicy(mod,{identity:{...songModIdentity(value),songId:'different'}}),{code:'invalid_song_mod'});
+ config.parts[1].performer='machine';const single=createPartInstrumentPolicy(createSongMod(base,config));
+ assert.equal(resolvePartInstrumentInput(single,{kind:'part',partId:config.parts[0].partId}).ownership,'single-part');
+ assert.equal(resolvePartInstrumentInput(single,{kind:'part',partId:config.parts[1].partId}).reason,'part_is_machine');
+ assert.deepEqual(single.machineInstrumentOverrides,{[config.parts[1].partId]:'reed'});
+ config.parts[0].performer='machine';const listen=createPartInstrumentPolicy(createSongMod(base,config));
+ assert.equal(resolvePartInstrumentInput(listen).reason,'no_human_parts');
+ assert.deepEqual(policy.human.partIds,value.score.parts.map(part=>part.id),'Later draft edits do not rewrite an admitted policy');
+});
+
+test('canonical, Basic and VSQ plans ignore dormant human recipes while retaining source timing and identity',()=>{
+ const read=name=>JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`,import.meta.url))),canonical=read('canonical-audio-evidence'),basic=basicKeySong(),opened=read('vsq-clean-v1-native-open');
+ const vsq=prepareVsqPractice(prepareCleanSong(`native:song-${opened.clean_package.content_sha256}`,opened.clean_package,JSON.parse(opened.score_json)),read('vsq-clean-v1-runtime'));
+ for(const [name,value,build] of [
+  ['canonical',{score:canonical.compilation.score,compiled:canonical.compilation},options=>buildCanonicalAudioPlan(canonical.compilation,canonical.profile,{sampleRate:48000,acceptedPolicyId:CANONICAL_AUDIO_POLICY,...options})],
+  ['Basic',{score:basic.notation,compiled:basic.compilation,cleanSong:basic},options=>buildBasicKeyAudioPlan(basic,{sampleRate:48000,...options})],
+  ['VSQ',{score:vsq.notation,compiled:vsq.compilation,cleanSong:vsq},options=>buildVsqAudioPlan(vsq,{sampleRate:48000,...options})],
+ ]){
+  const sourceBefore=JSON.stringify(value),base=defaultSongMod(value),baseline=build(songModOptions(base)),config=structuredClone(base.config);config.parts[0].instrument='reed';
+  const human=createSongMod(base,config),policy=createPartInstrumentPolicy(human,{identity:songModIdentity(value),parts:value.score.parts});
+  assert.deepEqual(build(songModOptions(human)),baseline,`${name}: exact source plan retained, with no dormant synthesis identity`);
+  assert.equal(policy.human.kind,'single-part');assert.equal(policy.parts[0].storedMachineInstrument,'reed');assert.equal(policy.parts[0].sound,'current-shared-live-instrument');
+  config.parts[0].performer='machine';const machine=createSongMod(base,config),machinePlan=build(songModOptions(machine));
+  assert.ok(machinePlan.synthesisPolicyId||machinePlan.timbreProfile,`${name}: saved machine recipe activates`);
+  assert.equal(machinePlan.durationFrames,baseline.durationFrames);assert.equal(machinePlan.sourceNotes,baseline.sourceNotes);
+  assert.equal(JSON.stringify(value),sourceBefore,`${name}: complete source and retained program/timing metadata stay immutable`);
+ }
+});
 
 /** Synthetic admission fixture: one human note and 129 overlapping machine
  * notes. This tests preview admission only, not a native compiler or audio. */

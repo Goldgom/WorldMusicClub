@@ -44,7 +44,17 @@ The Mod's human set is passed into the existing target planner, notation classif
 
 Mute only controls source playback and does not remove human targets. Display only controls presentation and does not remove sound or targets. Human live sound remains the shared live-instrument control, disclosed in each human row.
 
+A part's `instrument` remains its saved **machine** recipe when the performer changes to Human. That dormant recipe is retained in the versioned Mod and shown in the disabled selector, but it is excluded from accompaniment options and renderer capability checks. Switching the part back to Machine reactivates the exact saved recipe and checks whether the renderer supports it. A dormant human recipe cannot add a synthesis identity to another part's source plan or force an unsupported machine renderer. The portable v1 envelope, fingerprint preimage and Rust/Unity parity vector are unchanged.
+
 Only performer or sound-policy Mod changes use the existing reset boundary. Display and playback mute changes preserve takes. All Mod changes retain canonical A/B range and tempo settings. Tempo/transposition still use existing Rust derivation and instrument/fingering regeneration; a derived canonical score receives its own source revision with the same compatible Mod choices. Complete-song tempo/transpose/loop restrictions remain explicit until matching complete performance derivation exists. Count-in, source gate timing, loop/pass ledgers, paused oscillator phases and replay admission remain governed by the current audio-thread paths.
+
+## Prepared part-instrument routing interface
+
+`web/part-instrument-policy.js` provides an immutable runtime snapshot with policy ID `wmc-part-instrument-policy-v1`. `createPartInstrumentPolicy(mod, {identity, parts})` validates the existing Mod binding and retains its song ID, typed source revision and configuration fingerprint. It names each part's current performer, effective sound and stored machine recipe, and exposes the human set as `none`, `single-part` or `shared-group`. Playback mute and visibility never remove human members. This is a view of the same source and Mod, not another persisted format or a transformed score.
+
+`resolvePartInstrumentInput(policy, {kind:'shared'})` returns the complete current human group. `{kind:'part', partId}` resolves only when that source part is the sole human part; it explicitly blocks individual routing when multiple human parts share input. Listen, unknown parts, machine parts and unsupported device/channel, pitch or independent instrument requests produce blocked results. A physical target's representative note cannot choose an individual owner; the existing target planner still owns deduplication and keeps every source owner.
+
+The dialog consumes this descriptor to explain the current input scope. The resolver is a tested prepared interface for later input consumers; it does not add device assignment, multiple live instruments, multiplayer or new acoustic instruments. A future consumer must rebuild the snapshot after Mod/source changes and match its source revision and configuration fingerprint to the active session before routing. Source programs, banks and program-change events remain in the unchanged score/package and are still governed by the admitted source renderer; they do not imply a live input instrument or device route. Existing transposition, playable-range checks and scoring remain owned by their current derivation and target paths.
 
 ## Verification boundary
 

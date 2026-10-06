@@ -55,7 +55,7 @@ export function songModOptions(mod) {
   const {config}=validateSongMod(mod),human=config.parts.filter(part=>part.performer==='human').map(part=>part.partId);
   // The legacy target planner needs a nonempty selection even in Listen mode.
   // Listen bypasses human recording/scoring; the Mod remains the role owner.
-  return {mode:human.length?'practice':'listen',practiceSelection:human.length===config.parts.length||!human.length?{kind:'all',part_ids:config.parts.map(part=>part.partId)}:{kind:'parts',part_ids:human},part:human.length===1?human[0]:null,practiceLayout:config.layout,showOthers:config.showOtherParts,mutedPartIds:config.parts.filter(part=>part.muted).map(part=>part.partId),hiddenPartIds:config.parts.filter(part=>!part.visible).map(part=>part.partId),instrumentOverrides:Object.fromEntries(config.parts.filter(part=>part.instrument!=='source').map(part=>[part.partId,part.instrument]))};
+  return {mode:human.length?'practice':'listen',practiceSelection:human.length===config.parts.length||!human.length?{kind:'all',part_ids:config.parts.map(part=>part.partId)}:{kind:'parts',part_ids:human},part:human.length===1?human[0]:null,practiceLayout:config.layout,showOthers:config.showOtherParts,mutedPartIds:config.parts.filter(part=>part.muted).map(part=>part.partId),hiddenPartIds:config.parts.filter(part=>!part.visible).map(part=>part.partId),instrumentOverrides:Object.fromEntries(config.parts.filter(part=>part.performer==='machine'&&part.instrument!=='source').map(part=>[part.partId,part.instrument]))};
 }
 /** Only ownership or synthesis-policy changes invalidate the current take. */
 export function songModChanges(before,after) {
@@ -70,7 +70,7 @@ export function songModChanges(before,after) {
 export function assertSongModSupported(mod,capabilities) {
   validateSongMod(mod);
   if(!capabilities.performers)fail('This source has no supported performance targets.');
-  if(!capabilities.instruments&&mod.config.parts.some(part=>part.instrument!=='source'))fail('This renderer does not support per-part instrument overrides. Restore the source sound to continue.');
+  if(!capabilities.instruments&&mod.config.parts.some(part=>part.performer==='machine'&&part.instrument!=='source'))fail('This renderer does not support per-part instrument overrides. Restore the source sound to continue.');
   if(!capabilities.audio&&mod.config.parts.some(part=>part.performer==='machine'&&!part.muted))fail('This renderer has no supported source accompaniment. Assign all sounding parts to a human or mute them.');
 }
 

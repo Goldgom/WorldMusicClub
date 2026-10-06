@@ -26,6 +26,10 @@ fn song_mod_and_sound_modules_are_embedded_with_exact_source_bytes() {
             include_bytes!("../../../web/song-mod-view.js").as_slice(),
         ),
         (
+            "/part-instrument-policy.js",
+            include_bytes!("../../../web/part-instrument-policy.js").as_slice(),
+        ),
+        (
             "/canonical-audio-plan.js",
             include_bytes!("../../../web/canonical-audio-plan.js").as_slice(),
         ),
@@ -55,4 +59,6 @@ fn song_mod_and_sound_modules_are_embedded_with_exact_source_bytes() {
     let app = std::str::from_utf8(practice_server::asset("/app.js").unwrap()).unwrap();
     assert!(app.contains("from './song-mod.js'"));
     assert!(app.contains("from './song-mod-view.js'"));
+    let view = std::str::from_utf8(practice_server::asset("/song-mod-view.js").unwrap()).unwrap();
+    assert!(view.contains("from './part-instrument-policy.js'"));
 }

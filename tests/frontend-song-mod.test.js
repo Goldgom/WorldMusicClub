@@ -45,6 +45,23 @@ test('all-machine Start is Listen and never creates a human take; all-human keep
  }finally{await app.close();}
 });
 
+test('Mod discloses shared input ownership and preserves dormant machine sounds through human role changes',async()=>{
+ const f=await basicFixture(),{app,score}=f,partId=score.parts[0].id;
+ try{
+  await app.click('configure-song-mod');assert.equal(app.$('song-mod-input-routing').dataset.inputOwnership,'single-part');
+  set(app,'performer',partId,'machine');set(app,'instrument',partId,'reed');set(app,'performer',partId,'human');
+  const instrument=control(app,'instrument',partId),reason=app.$(instrument.getAttribute('aria-describedby'));
+  assert.equal(instrument.value,'reed');assert.equal(instrument.disabled,true);assert.match(reason.textContent,/Saved machine sound: Reed synthesis/);assert.match(reason.textContent,/inactive/);
+  await app.click('song-mod-all-human');assert.equal(app.$('song-mod-input-routing').dataset.inputOwnership,'shared-group');assert.match(app.$('song-mod-input-routing').textContent,/scored together/);assert.match(app.$('song-mod-input-routing').textContent,/not available/);
+  await app.click('song-mod-all-machine');assert.equal(app.$('song-mod-input-routing').dataset.inputOwnership,'none');assert.match(app.$('song-mod-input-routing').textContent,/no human input is scored/);
+  set(app,'performer',partId,'human');await apply(app);await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
+  assert.equal(source(app).core.plan.timbreProfile,undefined,'Dormant human machine sound never enters the audio receiver');
+  const humanTake=await app.exported('export-takes');assert.equal(humanTake.song_mod.config.parts[0].instrument,'reed');assert.deepEqual(humanTake.practice_selection.part_ids,[partId]);
+  await app.click('edit-song-mod');assert.equal(control(app,'instrument',partId).value,'reed');set(app,'performer',partId,'machine');assert.equal(control(app,'instrument',partId).disabled,false);await apply(app);await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
+  assert.equal(source(app).core.plan.timbreProfile,'wmh-basic-synthetic-colors-v1');assert.equal(app.$('session-mode').value,'listen');assert.equal((await app.exported('export-takes')).passes.length,0);
+ }finally{await app.close();}
+});
+
 test('compact stage Mod keeps its complete current summary available on the real button across locale and performer changes',async()=>{
  const f=await basicFixture(),{app}=f,i18n=getAppI18n(app.document);
  try{

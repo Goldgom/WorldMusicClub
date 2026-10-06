@@ -18,7 +18,7 @@ if(!/^[0-9a-f]{40}$/.test(process.env.WMH_SOURCE_SHA||'')||process.env.WMH_SOURC
 const output=path.resolve(process.env.WMH_ARTIFACT_DIR||path.join(root,'test-results/score-storage'));
 await mkdir(output,{recursive:true});
 const report={source_sha:head,kind:'hosted-browser-and-native-ui-contract',native_filesystem_acceptance:false,cases:[],source_hashes:{},ok:false};
-for(const name of ['web/app.js','web/song-mod.js','web/song-mod-view.js','scripts/hosted-song-mod-controls.mjs','web/score-preview.js','web/native-score-storage.js','web/score-storage-model.js','web/score-storage-view.js','web/score-storage-view.css'])report.source_hashes[name]=createHash('sha256').update(await readFile(path.join(root,name))).digest('hex');
+for(const name of ['web/app.js','web/song-mod.js','web/song-mod-view.js','web/part-instrument-policy.js','scripts/hosted-song-mod-controls.mjs','web/score-preview.js','web/native-score-storage.js','web/score-storage-model.js','web/score-storage-view.js','web/score-storage-view.css'])report.source_hashes[name]=createHash('sha256').update(await readFile(path.join(root,name))).digest('hex');
 const original={...structuredClone(fixture),id:'authored-storage-hosted-exercise',title:'Original storage regression',source:{format:'authored-storage-source-v1',filename:'original-source.txt',content:'\uFEFFOriginal authored source\r\nAAEC/w==\r\n'}};
 const raw=`\n${JSON.stringify(original,null,2)}\n`;
 let server,browser,serverLog='';
