@@ -623,16 +623,30 @@ impl Acceptance {
                 return Some(error(400, "Invalid action sequence"));
             }
             let name = format!("result-{}-{sequence}.json", self.phase);
-            let Ok(bytes) = std::fs::read(self.directory.join(name)) else {
-                return Some(error(404, "Action pending"));
-            };
-            if bytes.len() > 4096 {
-                return Some(error(500, "Invalid action result"));
+            // A passive capture has two bounded window inventories plus PNG
+            // metadata. Admit its existing 256 KiB consumer envelope only for
+            // the exact, already-published VSQ capture action. Other actions
+            // retain their original 4 KiB limit, including unbound results.
+            let capture = ["vsq-seed", "vsq-restart"].contains(&self.phase)
+                && read_ordinary_json(
+                    &self
+                        .directory
+                        .join(format!("action-{}-{sequence}.json", self.phase)),
+                    16 * 1024,
+                )
+                .is_ok_and(|action| {
+                    valid_action_for_phase(&action, self.phase)
+                        && action["sequence"].as_u64() == Some(sequence)
+                        && action["kind"] == "capture"
+                });
+            let limit = if capture { 256 * 1024 } else { 4096 };
+            match read_ordinary_json(&self.directory.join(name), limit) {
+                Ok(value) => value,
+                Err(read_error) if read_error.kind() == std::io::ErrorKind::NotFound => {
+                    return Some(error(404, "Action pending"));
+                }
+                Err(_) => return Some(error(500, "Invalid action result")),
             }
-            let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
-                return Some(error(500, "Invalid action result"));
-            };
-            value
         };
         Some(response(
             200,
@@ -3025,11 +3039,129 @@ mod tests {
             serde_json::from_slice::<Value>(result.body()).unwrap()["ok"],
             true
         );
+        bytes.resize(4096, b' ');
+        atomic_json(&evidence.0, "result-seed-2.json", &bytes).unwrap();
+        assert_eq!(acceptance.handle(&request).unwrap().status(), 200);
         bytes.resize(4097, b' ');
         atomic_json(&evidence.0, "result-seed-2.json", &bytes).unwrap();
         assert_eq!(acceptance.handle(&request).unwrap().status(), 500);
         atomic_json(&evidence.0, "result-seed-2.json", b"{").unwrap();
         assert_eq!(acceptance.handle(&request).unwrap().status(), 500);
+    }
+    #[test]
+    fn passive_capture_results_keep_full_window_receipts_with_an_inclusive_finite_bound() {
+        for phase in VSQ_PHASES {
+            let evidence = Evidence::new();
+            let acceptance = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            let action = json!({"version":1,"sequence":17,"kind":"capture","x":500,"y":300,
+                "width":1024,"height":689,"devicePixelRatio":1});
+            let post = Request::builder()
+                .method("POST")
+                .uri("https://wmh.localhost/__desktop_smoke/action")
+                .body(serde_json::to_vec(&action).unwrap())
+                .unwrap();
+            assert_eq!(acceptance.handle(&post).unwrap().status(), 200);
+            let get = Request::builder()
+                .uri("https://wmh.localhost/__desktop_smoke/result/17")
+                .body(vec![])
+                .unwrap();
+            assert_eq!(acceptance.handle(&get).unwrap().status(), 404);
+            // Original scalar fixtures model the admitted maximum of 128
+            // windows in each snapshot; these are transport tests, not pixels.
+            let windows = (1..=128)
+                .map(|hwnd| json!({"hwnd":hwnd,"visible":false,"rect":[0,0,0,0]}))
+                .collect::<Vec<_>>();
+            let receipt = json!({"ok":true,"native_capture":{"version":1,"phase":phase,
+                "sequence":17,"before":{"windows_above":windows.clone()},
+                "after":{"windows_above":windows}}});
+            let mut bytes = serde_json::to_vec_pretty(&receipt).unwrap();
+            assert!(bytes.len() > 4096 && bytes.len() < 256 * 1024);
+            let result_name = format!("result-{phase}-17.json");
+            for size in [bytes.len(), 256 * 1024] {
+                bytes.resize(size, b' ');
+                atomic_json(&evidence.0, &result_name, &bytes).unwrap();
+                let result = acceptance.handle(&get).unwrap();
+                assert_eq!(result.status(), 200);
+                assert_eq!(
+                    serde_json::from_slice::<Value>(result.body()).unwrap(),
+                    receipt
+                );
+            }
+            bytes.push(b' ');
+            atomic_json(&evidence.0, &result_name, &bytes).unwrap();
+            assert_eq!(acceptance.handle(&get).unwrap().status(), 500);
+            atomic_json(&evidence.0, &result_name, b"{").unwrap();
+            assert_eq!(acceptance.handle(&get).unwrap().status(), 500);
+        }
+    }
+    #[test]
+    fn larger_capture_result_budget_requires_its_matching_admitted_action() {
+        for phase in ["vsq-seed", "vsq-restart", "seed"] {
+            let evidence = Evidence::new();
+            let acceptance = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            let get = Request::builder()
+                .uri("https://wmh.localhost/__desktop_smoke/result/17")
+                .body(vec![])
+                .unwrap();
+            let mut bytes = serde_json::to_vec(&json!({"ok":true,"kind":"capture",
+                "native_capture":{"kind":"foreground-client-pixels","phase":phase,"sequence":17}}))
+            .unwrap();
+            bytes.resize(7320, b' '); // Actual560 failed receipt size, using original fixture bytes.
+            atomic_json(&evidence.0, &format!("result-{phase}-17.json"), &bytes).unwrap();
+            assert_eq!(
+                acceptance.handle(&get).unwrap().status(),
+                500,
+                "unbound result"
+            );
+            let action = json!({"version":1,"sequence":17,"kind":"capture","x":500,"y":300,
+                "width":1024,"height":689,"devicePixelRatio":1});
+            let action_name = format!("action-{phase}-17.json");
+            atomic_json(
+                &evidence.0,
+                "action-other-phase-17.json",
+                &serde_json::to_vec(&action).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                acceptance.handle(&get).unwrap().status(),
+                500,
+                "wrong phase file"
+            );
+            for (field, value) in [
+                ("kind", json!("click")),
+                ("sequence", json!(18)),
+                ("devicePixelRatio", json!(2)),
+                ("file", json!("unexpected.png")),
+            ] {
+                let mut invalid = action.clone();
+                invalid[field] = value;
+                atomic_json(
+                    &evidence.0,
+                    &action_name,
+                    &serde_json::to_vec(&invalid).unwrap(),
+                )
+                .unwrap();
+                assert_eq!(
+                    acceptance.handle(&get).unwrap().status(),
+                    500,
+                    "{phase}: {field}"
+                );
+            }
+            let mut oversized_action = serde_json::to_vec(&action).unwrap();
+            oversized_action.resize(16 * 1024 + 1, b' ');
+            atomic_json(&evidence.0, &action_name, &oversized_action).unwrap();
+            assert_eq!(acceptance.handle(&get).unwrap().status(), 500);
+            atomic_json(
+                &evidence.0,
+                &action_name,
+                &serde_json::to_vec(&action).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                acceptance.handle(&get).unwrap().status(),
+                if phase == "seed" { 500 } else { 200 }
+            );
+        }
     }
     #[test]
     fn progress_accepts_only_bounded_stage_metadata() {
