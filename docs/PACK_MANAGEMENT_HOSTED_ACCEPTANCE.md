@@ -18,7 +18,7 @@ Local fixture/contract tests and syntax checks do not establish that native API 
 
 The result is six source groups and 45 immutable song editions. The shared edition has two logical source references; the two renamed retries only increase receipt references. Source-only and unresolved packs have no fabricated members. Missing-receipt recovery only renames the new test fixture's receipt files after checking an ownership marker; both source copies and all song bytes remain retained. No real library path is an input to either script.
 
-This pack-query slice remains read-only groups plus explicit selected exports. The integrated **移入回收站与恢复 / Remove and restore songs** panel has its own [catalog recovery acceptance](library-catalog-acceptance-evidence.md), including durable song Trash and selected restoration. Membership editing/moving, pack removal and renaming remain unexposed product work. Neither slice permanently deletes files or changes a real user library.
+This pack-query slice remains read-only groups plus explicit selected exports. The integrated **整理曲包与乐曲恢复 / Organize packs and recover songs** panel has its own [catalog recovery acceptance](library-catalog-acceptance-evidence.md), including durable song Trash and selected restoration. Imported source groups stay read-only. The separate catalog product supports custom-pack creation, renaming, adding selected active songs and filtered selected export; see [catalog product scope](catalog-product.md). Moving or removing members and deleting packs remain unexposed. These acceptance scenarios use original test-owned libraries, and neither product slice permanently deletes files.
 
 ## Local preparation checks
 

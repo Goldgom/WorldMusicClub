@@ -29,9 +29,11 @@ Earlier WorldMusicHub-Native packages retain their original names. The rename pr
   `evidence/renderer-seed.json`. A ready API with zero inputs is not a physical
   MIDI-device test; a denied or unavailable outcome is not MIDI support
 - Physical MIDI, audio output/latency, audible replay, IME/keyboard rollover,
-  full accessibility and clean-machine installation are not validated by the
-  silent native acceptance suite. Native scored-take/results and additional
-  export formats remain beyond its canonical-score/free-recording coverage
+  full accessibility and clean-machine installation remain unverified. The
+  native canonical and complete-practice gates do exercise trusted PC-keyboard
+  input, scored takes, results and their existing export contracts using original
+  test fixtures. Browser/WebView audio observations are bounded software checks;
+  they do not establish physical audibility, MIDI-device behavior or latency
 
 ## Saved music and migration
 

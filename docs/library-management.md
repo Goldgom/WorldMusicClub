@@ -1,6 +1,6 @@
 # Native library browsing
 
-The song library's **Packs and duplicates / 曲包与查重** entry opens a metadata-only native library browser. This slice provides pack groups, all immutable song editions, unfiled editions, duplicate evidence, source/import issues and explicit selected exports. On native builds with `library_catalog_version: 1`, a separate **Remove and restore songs / 移入回收站与恢复** panel adds explicit initialization, verified new-import sync, exact selected song removal to Trash and selected restore. See [catalog UI and recovery](library-catalog-ui.md). Pack membership editing, renaming and moving remain unexposed.
+The song library's **Packs and duplicates / 曲包与查重** entry opens a metadata-only native library browser. This slice provides pack groups, all immutable song editions, unfiled editions, duplicate evidence, source/import issues and explicit selected exports. On native builds with `library_catalog_version: 1`, a separate **Organize packs and recover songs / 整理曲包与乐曲恢复** panel adds explicit initialization, verified new-import sync, exact selected song removal to Trash and selected restore. See [catalog UI and recovery](library-catalog-ui.md). Imported source groups remain read-only. The catalog panel supports creating and renaming custom packs, adding selected active songs, and filtering selected exports by custom pack. Moving or removing pack members and deleting packs remain unexposed.
 
 ## Identity and evidence
 

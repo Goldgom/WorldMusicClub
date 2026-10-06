@@ -1,6 +1,6 @@
 # Recoverable song management UI
 
-The existing native management dialog offers **Manage user packs and Trash** only
+The existing native management dialog offers **Organize packs and recover songs / 整理曲包与乐曲恢复** only
 when health advertises `library_catalog_version: 1`. Its catalog v1 adapter is
 separate from query v1: existing imported groups and duplicate evidence keep their
 strict `import-*` identities. Catalog references carry a typed kind, collection ID and nullable imported-group
