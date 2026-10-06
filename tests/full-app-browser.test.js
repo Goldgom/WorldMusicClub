@@ -32,6 +32,7 @@ import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
+import {chromiumLaunchOptions} from './browser-launch-options.js';
 import {isDeepStrictEqual} from 'node:util';
 import {fixture} from './frontend-fixtures.js';
 import {densePianoforte} from './numbered-layout-fixtures.js';
@@ -410,14 +411,7 @@ before(async () => {
   process.once('SIGINT', interrupt);
   process.once('SIGTERM', interrupt);
   await waitForServer();
-  const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
-    || ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome'].find(existsSync);
-  browser = await chromium.launch({
-    ...(executablePath ? {executablePath} : {}),
-    headless: true,
-    timeout: 30_000,
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
-  });
+  browser = await chromium.launch(chromiumLaunchOptions({timeout: 30_000}));
 }, {timeout: 60_000});
 
 after(async () => {
