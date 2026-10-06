@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {keyboardBrowserScore} from './browser-input-fixtures.js';
+import {settlePianoViewportBudget} from './browser-piano-budget.js';
 
 export async function readBeginnerHelpGeometry(page,prefix='') {
   return page.evaluate(prefix=>{
@@ -164,6 +165,8 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui,setSession
     await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');
     await page.evaluate(()=>{window.beginnerResponsiveNodes=Object.fromEntries(['beginner-controls','beginner-enabled','beginner-reference','keyboard-compact-status','keyboard-map'].map(id=>[id,document.getElementById(id)]));});
     await page.locator('#beginner-enabled').check();
+    const guideBudget=await page.evaluate(settlePianoViewportBudget);
+    await artifact('live-beginner-initial-compact-budget',{samples:guideBudget});
     const on=await compactStageGeometry(page);assertCompactStage(on);
     const layouts=[],resizes=[];
     for(const viewport of [{width:1440,height:900},{width:844,height:390},{width:1280,height:720},{width:844,height:390}]){
@@ -187,7 +190,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui,setSession
     const take=await exportTakeData();assert.deepEqual(take.passes.at(-1).inputs.map(input=>input.midi),[60]);
     assert.deepEqual(take.input_evidence.events.filter(event=>['note_on','note_off','synthetic_release'].includes(event.kind)).map(event=>event.kind),['note_on','note_off']);
     assert.deepEqual(await exportScore(),score);
-    await artifact('beginner-initial-compact',{off,on,layouts,resizes,helpCycles,score_preserved:true,contacts:['note_on','note_off']});
+    await artifact('beginner-initial-compact',{off,on,guideBudget,layouts,resizes,helpCycles,score_preserved:true,contacts:['note_on','note_off']});
   });
 
   test('real compact 88-key and custom extreme guides retain every octave dot beside the unchanged falling-note field',{timeout:60_000},async()=>{

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
 import {pianoViewportBudget,observePianoViewportBudget} from '../web/piano-viewport-budget.js';
+import {settlePianoViewportBudget} from './browser-piano-budget.js';
 
 test('short-landscape Mod and navigation stay compact when the shared stage switches between piano and guitar',async()=>{
   const css=await readFile(new URL('../web/piano-stage.css',import.meta.url),'utf8');
@@ -120,4 +121,50 @@ test('actual heading changes and 125 percent zoom refresh one shared normal/Free
     document.body.dataset.screen='stage';zoom=1.25;view.refresh();flush();assert.equal(budget(),'188px');assert.equal((normalChrome+laneHeight+8)*zoom,720);
     callback();const pending=[...frames.values()];view.destroy();writes.length=0;for(const fn of pending)fn();assert.equal(writes.length,0);assert.equal(frames.size,0);assert.equal(disconnected,true);
   }finally{view.destroy();}
+});
+
+function guideBudgetFixture(){
+  const {document}=parseHTML('<html lang="en"><body data-screen="stage"><main id="workspace" class="piano-workspace"><div class="piano-lanes-shared"></div><div class="piano-keybed-shared"></div><div class="piano-transport"></div></main></body></html>');
+  const root=document.getElementById('workspace'),lane=root.querySelector('.piano-lanes-shared'),transport=root.querySelector('.piano-transport'),keyboard=root.querySelector('.piano-keybed-shared'),frames=new Map();
+  let serial=0,laneHeight=128.5625,keybedHeight=82,otherChrome=177.4375,notify;
+  const values=new Map();Object.defineProperty(document.body,'style',{value:{getPropertyValue:key=>values.get(key)||'',setProperty(key,value){values.set(key,value);laneHeight=Math.round(parseFloat(value)*64)/64;},removeProperty:key=>values.delete(key)}});
+  lane.getBoundingClientRect=()=>({width:824,height:laneHeight});keyboard.getBoundingClientRect=()=>({height:keybedHeight});
+  transport.getBoundingClientRect=()=>({height:40.84375,bottom:otherChrome+keybedHeight+laneHeight});
+  const window={innerWidth:844,innerHeight:390,getComputedStyle:node=>({height:node===lane?`${laneHeight}px`:'',paddingBottom:'2px'}),setTimeout,clearTimeout,requestAnimationFrame:fn=>(frames.set(++serial,fn),serial),cancelAnimationFrame:id=>frames.delete(id),addEventListener(){},removeEventListener(){},ResizeObserver:class{constructor(fn){notify=fn;}observe(){}disconnect(){}}};
+  const flush=()=>{const pending=[...frames.values()];frames.clear();for(const fn of pending)fn();};
+  const view=observePianoViewportBudget({document,window});flush();
+  return{document,window,view,frames,flush,notify:()=>notify(),guide(){keybedHeight+=12;},overflow(){otherChrome+=50;},bottom:()=>transport.getBoundingClientRect().bottom};
+}
+
+test('guide budget settlement observes the real queued 12px repair after delayed ResizeObserver delivery',async()=>{
+  const env=guideBudgetFixture();
+  try{
+    assert.equal(env.bottom(),388);env.guide();assert.equal(env.bottom(),400,'The immediate DOM read sees the larger guide with the previous lane capacity');
+    const settling=settlePianoViewportBudget(env);env.flush();
+    assert.equal(env.bottom(),400,'The first test frame does not invent a production observer notification');
+    env.notify();assert.equal(env.bottom(),400,'The real ResizeObserver only schedules a write');
+    env.flush();assert.equal(env.bottom(),388,'The next production frame commits the entire 12px correction');
+    env.flush();const samples=await settling;
+    assert.equal(samples.length,4);assert.deepEqual(samples.map(sample=>sample.committed),[128.56,128.56,128.56,116.56]);
+    assert.ok(samples.every(sample=>sample.expected===116.56));assert.equal(samples.at(-1).laneHeight,116.5625);assert.equal(env.frames.size,0);
+  }finally{env.view.destroy();}
+});
+
+test('guide settlement fails after three frames when the actual observer never commits',async()=>{
+  const env=guideBudgetFixture();
+  try{
+    env.guide();const settling=settlePianoViewportBudget(env),rejected=assert.rejects(settling,/did not commit within three rendered frames/);
+    for(let index=0;index<3;index++)env.flush();await rejected;
+    assert.equal(env.bottom(),400);assert.equal(env.frames.size,0);
+  }finally{env.view.destroy();}
+});
+
+test('a committed minimum budget does not wait away persistent clipping or reduce the readable lane',async()=>{
+  const env=guideBudgetFixture();
+  try{
+    env.overflow();env.notify();env.flush();const samples=await settlePianoViewportBudget(env);
+    assert.equal(samples.length,1);assert.equal(samples[0].committed,100);assert.equal(samples[0].laneHeight,100);
+    assert.ok(samples[0].available<100);assert.ok(env.bottom()>390,'Geometry acceptance must still fail after a valid but insufficient minimum budget');
+    assert.equal(env.frames.size,0);
+  }finally{env.view.destroy();}
 });
