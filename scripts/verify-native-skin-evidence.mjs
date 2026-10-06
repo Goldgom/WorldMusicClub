@@ -41,10 +41,45 @@ export function validateNativeSkinHostAction(action,result,host,appWindow=null){
   }
   return c.app_hwnd;
 }
-// Keep the full document click trace. Native Windows observes one legitimate
-// import-button -> hidden score-file delegation; detached export anchors do not
-// bubble through document. No other secondary or untrusted click is admitted.
-export function validateNativeSkinControlClicks(row,pickerObservations=[]){
+// Windows native SELECT closes on the host's fixed Home/End+Enter sequence with
+// a second trusted click. Admit only the two original seed Mod changes, bound to
+// their exact semantic receipts and the complete observed activation sequence.
+export function validateNativeSkinSelectActivation(row,{phase,modActions,trusted,controlActions}={}){
+  assert.equal(phase,'skin-seed');assert.ok(['select-first','select-last'].includes(row.kind));
+  const expected=row.kind==='select-last'?{id:null,part:'machine',field:'performer',value:'machine'}:{id:'song-mod-layout',part:null,field:null,value:'complete'};
+  assert.equal(row.id,expected.id);assert.equal(row.request.kind,row.kind);assert.equal(row.request.sequence,row.sequence);
+  assert.ok(Array.isArray(modActions)&&Array.isArray(trusted),'Mod receipt and trusted activation trace required');
+  assert.deepEqual(modActions.filter(action=>action.sequence===row.sequence),[{sequence:row.sequence,kind:row.kind,...expected,checked:null}]);
+  assert.ok(Array.isArray(row.samples)&&row.samples.length>=2&&row.samples.length<=5);
+  assert.ok(row.samples.every(sample=>sample.modalOwner==='song-mod-dialog'&&sample.hitOwned===true),'Native selection must target the owned Mod modal');
+  const clicks=Array.from({length:2},()=>({sequence:row.sequence,id:row.id,owned:true,trusted:true}));
+  assert.deepEqual(row.clicks,clicks,'Native selection needs its primary and Enter-activation clicks, both trusted and owned');
+  const events=trusted.filter(event=>event.sequence===row.sequence);
+  assert.deepEqual(events.map(event=>event.type),['click','input','change','click','keyup']);
+  for(const [i,event]of events.entries()){
+    assert.deepEqual(event,{sequence:row.sequence,id:row.id,type:event.type,trusted:true,code:i===4?'Enter':null,eventTime:event.eventTime,repeat:false});
+    assert.ok(Number.isFinite(event.eventTime)&&event.eventTime>=0);
+    // Enter keyup's hardware timestamp can precede the popup's queued change
+    // delivery. Retain it as observed; the first four DOM timestamps are ordered.
+    if(i>0&&i<4)assert.ok(event.eventTime>=events[i-1].eventTime);
+  }
+  // The host completes its fixed Enter down/up before the renderer admits the
+  // next native action. Use that next owned primary click as the upper anchor:
+  // popup change/click delivery need not follow hardware timestamp order.
+  assert.ok(Array.isArray(controlActions),'Next owned action is required to bound native Enter');
+  const following=controlActions.filter(action=>action.sequence===row.sequence+1);assert.equal(following.length,1);
+  const next=following[0],primary=next.clicks?.[0];assert.ok(primary&&(primary.id===null||typeof primary.id==='string'));
+  assert.deepEqual(primary,{sequence:next.sequence,id:primary.id,owned:true,trusted:true});
+  assert.equal(next.request.sequence,next.sequence);assert.equal(next.request.kind,next.kind);
+  const anchor=trusted.find(event=>event.sequence===next.sequence);assert.ok(anchor,'Following native action must have its trusted primary event');
+  assert.deepEqual(anchor,{sequence:next.sequence,id:primary.id,type:'click',trusted:true,code:null,eventTime:anchor.eventTime,repeat:false});
+  assert.ok(Number.isFinite(anchor.eventTime)&&anchor.eventTime>events[3].eventTime);
+  assert.ok(events[4].eventTime>=events[0].eventTime&&events[4].eventTime<anchor.eventTime,'Enter keyup must belong to this owned native activation');
+}
+// Keep every document click. Only the original score picker may forward to its
+// hidden input. Native select activation is separately bound to exact Mod edits;
+// detached export anchors do not bubble through document.
+export function validateNativeSkinControlClicks(row,pickerObservations=[],semantic){
   assert.ok(Array.isArray(row.clicks));const first=row.clicks[0];assert.ok(first&&(first.id===null||typeof first.id==='string'));
   assert.deepEqual(first,{sequence:row.sequence,id:first.id,owned:true,trusted:true},'Primary click must be the trusted owned target');
   if(row.kind==='picker'&&row.id==='import-button'){
@@ -52,7 +87,8 @@ export function validateNativeSkinControlClicks(row,pickerObservations=[]){
     assert.ok(picker&&picker.filename===NATIVE_SKIN_FILES.score&&picker.completed===true,'Hidden input forwarding must bind the completed original score picker');
     assert.deepEqual(picker.delegatedClicks,[{type:'click',trusted:false,id:'score-file',sequence:row.sequence,originalControl:true}]);
     assert.deepEqual(row.clicks,[{sequence:row.sequence,id:'import-button',owned:true,trusted:true},{sequence:row.sequence,id:'score-file',owned:false,trusted:false}]);
-  }else assert.equal(row.clicks.length,1,'Only the original score picker may forward a document click');
+  }else if(['select-first','select-last'].includes(row.kind))validateNativeSkinSelectActivation(row,semantic);
+  else assert.equal(row.clicks.length,1,'Only the original score picker may forward a document click');
 }
 export function validateNativeSkinRecord(record,selected){
   const f=nativeSkinFixture();
@@ -105,7 +141,7 @@ export function validateNativeSkinRenderer(report){
   for(const [i,row]of report.controlActions.entries()){
     assert.equal(row.sequence,i+1);assert.equal(row.request.sequence,row.sequence);assert.equal(row.kind,row.request.kind);assert.equal(row.disabled,false);
     assert.ok(row.samples.length>=2&&row.samples.length<=5);assert.equal(row.samples.at(-1).hitOwned,true);
-    validateNativeSkinControlClicks(row,report.pickerObservations);
+    validateNativeSkinControlClicks(row,report.pickerObservations,report);
     const target=row.samples.at(-1).target;assert.equal(row.request.x,target.x+target.width/2);assert.equal(row.request.y,target.y+target.height/2);
   }
   const controls=report.controlActions.filter(row=>['skin-import','skin-use','skin-reset','skin-manifest','skin-image'].includes(row.id));
@@ -118,9 +154,32 @@ export function validateNativeSkinRenderer(report){
   assert.deepEqual(Object.keys(round.files).sort(),['scoreAfter','scoreBefore','takeAfter','takeBefore']);assert.equal(new Set(Object.values(round.files)).size,4);
   return report;
 }
+export function validateNativeSkinTakePreservation(before,after,report){
+  if(report?.phase!=='skin-seed'){
+    assert.deepEqual(after,before,'Restart skin controls must preserve the full paused take');return;
+  }
+  const {input_evidence:prior,...priorTake}=before,{input_evidence:next,...nextTake}=after;
+  assert.deepEqual(nextTake,priorTake,'Native pickers must preserve every musical take field');
+  const {events:priorEvents,...priorMetadata}=prior,{events:nextEvents,...nextMetadata}=next;
+  assert.deepEqual(nextMetadata,priorMetadata);assert.equal(prior.truncated,false);assert.equal(prior.omitted_observations,0);assert.equal(prior.first_omitted_received_wall_ms,null);
+  assert.ok(Array.isArray(priorEvents)&&priorEvents.length>0);assert.equal(nextEvents.length,priorEvents.length+2,'Exactly one retained blur boundary per native skin picker is required');
+  assert.deepEqual(nextEvents.slice(0,priorEvents.length),priorEvents,'Every prior musical and lifecycle observation must remain byte-for-byte equivalent as JSON');
+  for(const [i,event]of nextEvents.entries())assert.equal(event.event_id,i+1,'Native picker boundaries must preserve continuous evidence IDs');
+  assert.equal(report.skinPickers.length,2);
+  for(const [i,[id,filename]]of [['skin-manifest',NATIVE_SKIN_FILES.manifest],['skin-image',NATIVE_SKIN_FILES.image]].entries()){
+    const picker=report.skinPickers[i];validateNativeSkinPicker(picker,id,filename);
+    const events=report.trusted.filter(event=>event.sequence===picker.sequence);assert.deepEqual(events.map(event=>event.type),['click','input','change']);
+    for(const event of events){assert.equal(event.id,id);assert.equal(event.trusted,true);assert.equal(event.repeat,false);assert.equal(event.code,null);assert.ok(Number.isFinite(event.eventTime)&&event.eventTime>=0);}
+    assert.ok(events[0].eventTime<events[1].eventTime&&events[1].eventTime<=events[2].eventTime);
+    const boundary=nextEvents[priorEvents.length+i],wall=boundary.event_wall_ms,received=boundary.received_wall_ms;
+    assert.ok(Number.isFinite(wall)&&Number.isFinite(received)&&wall>events[0].eventTime&&received>=wall&&received<events[1].eventTime,'Blur must occur strictly inside its own trusted native picker click-to-input interval');
+    assert.deepEqual(boundary,{event_id:priorEvents.length+i+1,kind:'boundary',source_id:null,source_generation:null,input_kind:null,channel:null,midi:null,velocity:null,encoding:null,reason:'blur',
+      event_wall_ms:wall,received_wall_ms:received,timestamp_basis:'application_clock',raw_timestamp_ms:null,boundary_wall_ms:wall,onset_capture:null},'Only a complete source-null native dialog blur record is allowed');
+  }
+}
 export function validateNativeSkinExports(files,report){
   const score=nativeSkinFixture().score;assert.deepEqual(files.scoreBefore,score);assert.deepEqual(files.scoreAfter,score);
-  assert.deepEqual(files.takeAfter,files.takeBefore,'Skin changes must preserve the full paused take');
+  validateNativeSkinTakePreservation(files.takeBefore,files.takeAfter,report);
   const take=files.takeBefore;assert.equal(take.score_id,score.id);assert.deepEqual(take.practice_selection,{kind:'parts',part_ids:['human']});assert.equal(take.view_configuration.practice_layout,'complete');
   assert.equal(take.passes.length,1);assert.equal(take.passes[0].inputs.length,1);assert.equal(take.passes[0].inputs[0].midi,60);
   const events=take.input_evidence.events,on=events.filter(e=>e.kind==='note_on'),off=events.filter(e=>e.kind==='note_off');
@@ -164,7 +223,7 @@ export async function verifyNativeSkinEvidence(directory,{sourceRoot,sourceSha,s
     validateCleanScreenshot(await read(`native-${phase}.png`,16*1024*1024));await json(`trace-${phase}.json`);
   }
   return{version:1,ok:true,scenario:'skin',...binding,executable_sha256:sha256(binary),executable_bytes:binary.length,phases:[...NATIVE_SKIN_PHASES],
-    claims:{actual_app:true,native_window:true,same_profile_restart:true,selected_restart:true,default_restart:true,exact_manifest_and_png:true,original_source_and_take_preserved:true,physical_audio:false,manual_device:false,private_music:false,full_acceptance:false},files:uniqueCanonicalEvidenceFiles(files)};
+    claims:{actual_app:true,native_window:true,same_profile_restart:true,selected_restart:true,default_restart:true,exact_manifest_and_png:true,original_source_and_musical_take_preserved:true,native_picker_blur_boundaries_retained:true,restart_full_take_preserved:true,physical_audio:false,manual_device:false,private_music:false,full_acceptance:false},files:uniqueCanonicalEvidenceFiles(files)};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   const check=process.argv[2]==='--check',directory=resolve(process.argv[check?3:2]);const proof=await verifyNativeSkinEvidence(directory,{sourceSha:process.env.WMH_SOURCE_SHA,sourceTree:process.env.WMH_SOURCE_TREE,executable:process.env.WMH_SKIN_EXECUTABLE});

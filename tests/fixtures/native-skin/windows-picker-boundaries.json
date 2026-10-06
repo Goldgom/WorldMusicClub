@@ -1,0 +1,2726 @@
+{
+  "provenance": {
+    "source": "original-only Windows native skin run",
+    "run_id": 37452134867,
+    "artifact_id": 11407956469,
+    "source_sha": "96ff682b1c7479583ae49f272a10eeb788788df5",
+    "report_sha256": "bb85dbdcbaa3b50272d4f43192672048a6b6a2c19ab97e05052421a717b05dcd",
+    "takeBefore_sha256": "a379e52fa494154444f75e64e3552ffdc0aefc07081dd838c4fcc52c2a18fe92",
+    "takeAfter_sha256": "267d7ba9d0e8f92981fc871954193ac8b8e58e7552b4bbf8f0e8ca1b5cc0df05"
+  },
+  "report": {
+    "phase": "skin-seed",
+    "skinPickers": [
+      {
+        "sequence": 20,
+        "id": "skin-manifest",
+        "filename": "skin-original.json",
+        "events": [
+          {
+            "type": "pointerdown",
+            "trusted": true,
+            "sequence": 20,
+            "id": "skin-manifest",
+            "tag": "INPUT",
+            "typeAttribute": "file",
+            "disabled": false,
+            "connected": true,
+            "multiple": false,
+            "dialog": "settings-dialog",
+            "modal": true,
+            "filename": null,
+            "fileCount": null
+          },
+          {
+            "type": "pointerup",
+            "trusted": true,
+            "sequence": 20,
+            "id": "skin-manifest",
+            "tag": "INPUT",
+            "typeAttribute": "file",
+            "disabled": false,
+            "connected": true,
+            "multiple": false,
+            "dialog": "settings-dialog",
+            "modal": true,
+            "filename": null,
+            "fileCount": null
+          },
+          {
+            "type": "click",
+            "trusted": true,
+            "sequence": 20,
+            "id": "skin-manifest",
+            "tag": "INPUT",
+            "typeAttribute": "file",
+            "disabled": false,
+            "connected": true,
+            "multiple": false,
+            "dialog": "settings-dialog",
+            "modal": true,
+            "filename": null,
+            "fileCount": null
+          },
+          {
+            "type": "input",
+            "trusted": true,
+            "sequence": 20,
+            "id": "skin-manifest",
+            "tag": "INPUT",
+            "typeAttribute": "file",
+            "disabled": false,
+            "connected": true,
+            "multiple": false,
+            "dialog": "settings-dialog",
+            "modal": true,
+            "filename": "skin-original.json",
+            "fileCount": 1
+          },
+          {
+            "type": "change",
+            "trusted": true,
+            "sequence": 20,
+            "id": "skin-manifest",
+            "tag": "INPUT",
+            "typeAttribute": "file",
+            "disabled": false,
+            "connected": true,
+            "multiple": false,
+            "dialog": "settings-dialog",
+            "modal": true,
+            "filename": "skin-original.json",
+            "fileCount": 1
+          }
+        ]
+      },
+      {
+        "sequence": 21,
+        "id": "skin-image",
+        "filename": "checker.png",
+        "events": [
+          {
+            "type": "pointerdown",
+            "trusted": true,
+            "sequence": 21,
+            "id": "skin-image",
+            "tag": "INPUT",
+            "typeAttribute": "file",
+            "disabled": false,
+            "connected": true,
+            "multiple": false,
+            "dialog": "settings-dialog",
+            "modal": true,
+            "filename": null,
+            "fileCount": null
+          },
+          {
+            "type": "pointerup",
+            "trusted": true,
+            "sequence": 21,
+            "id": "skin-image",
+            "tag": "INPUT",
+            "typeAttribute": "file",
+            "disabled": false,
+            "connected": true,
+            "multiple": false,
+            "dialog": "settings-dialog",
+            "modal": true,
+            "filename": null,
+            "fileCount": null
+          },
+          {
+            "type": "click",
+            "trusted": true,
+            "sequence": 21,
+            "id": "skin-image",
+            "tag": "INPUT",
+            "typeAttribute": "file",
+            "disabled": false,
+            "connected": true,
+            "multiple": false,
+            "dialog": "settings-dialog",
+            "modal": true,
+            "filename": null,
+            "fileCount": null
+          },
+          {
+            "type": "input",
+            "trusted": true,
+            "sequence": 21,
+            "id": "skin-image",
+            "tag": "INPUT",
+            "typeAttribute": "file",
+            "disabled": false,
+            "connected": true,
+            "multiple": false,
+            "dialog": "settings-dialog",
+            "modal": true,
+            "filename": "checker.png",
+            "fileCount": 1
+          },
+          {
+            "type": "change",
+            "trusted": true,
+            "sequence": 21,
+            "id": "skin-image",
+            "tag": "INPUT",
+            "typeAttribute": "file",
+            "disabled": false,
+            "connected": true,
+            "multiple": false,
+            "dialog": "settings-dialog",
+            "modal": true,
+            "filename": "checker.png",
+            "fileCount": 1
+          }
+        ]
+      }
+    ],
+    "trusted": [
+      {
+        "sequence": 20,
+        "id": "skin-manifest",
+        "type": "click",
+        "trusted": true,
+        "code": null,
+        "eventTime": 21331.79999999993,
+        "repeat": false
+      },
+      {
+        "sequence": 20,
+        "id": "skin-manifest",
+        "type": "input",
+        "trusted": true,
+        "code": null,
+        "eventTime": 27144.5,
+        "repeat": false
+      },
+      {
+        "sequence": 20,
+        "id": "skin-manifest",
+        "type": "change",
+        "trusted": true,
+        "code": null,
+        "eventTime": 27144.599999999977,
+        "repeat": false
+      },
+      {
+        "sequence": 21,
+        "id": "skin-image",
+        "type": "click",
+        "trusted": true,
+        "code": null,
+        "eventTime": 27477.599999999977,
+        "repeat": false
+      },
+      {
+        "sequence": 21,
+        "id": "skin-image",
+        "type": "input",
+        "trusted": true,
+        "code": null,
+        "eventTime": 33375.19999999995,
+        "repeat": false
+      },
+      {
+        "sequence": 21,
+        "id": "skin-image",
+        "type": "change",
+        "trusted": true,
+        "code": null,
+        "eventTime": 33375.29999999993,
+        "repeat": false
+      }
+    ]
+  },
+  "takeBefore": {
+    "version": 1,
+    "latency_ms": 0,
+    "tolerance_ms": 180,
+    "interruptions": [],
+    "unassigned_captures": [],
+    "passes": [
+      {
+        "id": 1,
+        "label": "Take 1",
+        "range": {
+          "start_ms": 0,
+          "end_ms": 64000
+        },
+        "timeline": {
+          "duration_ms": 64000,
+          "notes": [
+            {
+              "duration_ms": 8000,
+              "id": "human-sustain",
+              "midi": 60,
+              "part_id": "human",
+              "source_note_id": "human-sustain",
+              "source_note_ids": [
+                "human-sustain"
+              ],
+              "staff": 1,
+              "start_ms": 0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 1000,
+              "id": "human-tail",
+              "midi": 64,
+              "part_id": "human",
+              "source_note_id": "human-tail",
+              "source_note_ids": [
+                "human-tail"
+              ],
+              "staff": 1,
+              "start_ms": 63000,
+              "velocity": 90,
+              "voice": "1"
+            }
+          ]
+        },
+        "capture_enabled": true,
+        "clock_segments": [
+          {
+            "wallStart": 12589.322675736892,
+            "wallEnd": 17418.392970521472,
+            "positionStart": -4000
+          }
+        ],
+        "grace_deadline_wall_ms": null,
+        "manual_deadline_wall_ms": null,
+        "inputs": [
+          {
+            "midi": 60,
+            "at_ms": 386.3773242630614,
+            "velocity": 90
+          }
+        ],
+        "captures": [
+          {
+            "event_id": 1,
+            "event_wall_ms": 16975.699999999953,
+            "received_wall_ms": 16982.79999999993,
+            "input": {
+              "midi": 60,
+              "at_ms": 386.3773242630614,
+              "velocity": 90
+            }
+          }
+        ],
+        "revision": 1,
+        "assessed_revision": -1,
+        "assessment": null,
+        "error": null,
+        "boundary_reviews": [],
+        "ownership": "deterministic_corrected_clock",
+        "pending": true,
+        "interpretation": {
+          "source_fingerprint": "ce6cfbc379bef7fcc788947a3c51f95e3278611628a443c09b21067d69174d17",
+          "source_fingerprint_scope": "normalized_canonical_score",
+          "compiled_fingerprint": "09a70ef48413e01581fa9afc23b3ed052be0c2fb5ede1422d7739d9612cfe27e",
+          "runtime_profile": "wmh-canonical-compiled-audio-v1",
+          "policy_id": "wmh-canonical-sine-ms-v1",
+          "selection_fingerprint": "5ebc85ec22abe7c433b88d1ae5db8dab98ec37fee1aa3f300a4f55f70c1cca25",
+          "plan_fingerprint": "dbdd7af4036f6df9bf44d17ebee26ed28c764ae0f0dd9a991ce463eb3445b8f2",
+          "source_clock_available": true,
+          "source_duration_ms": 64000,
+          "sound_enabled": true,
+          "reference_timbre": "sine",
+          "source_timbres_preserved": false,
+          "timing": "Rust compiled binary64 milliseconds; floor attacks and ceil ends to device sample frames",
+          "sample_rate": 44100,
+          "range": null,
+          "loop": null,
+          "count_in_ms": 4000,
+          "practice_part": "human",
+          "practice_selection": {
+            "kind": "parts",
+            "part_ids": [
+              "human"
+            ]
+          },
+          "practice_layout": "complete",
+          "source_target_ids": [
+            "human-sustain",
+            "human-tail"
+          ],
+          "scoring": "selected_human_parts_key_and_onset_only",
+          "playback_segments": [
+            {
+              "wall_start_ms": 12589.322675736892,
+              "position_start_ms": -4000,
+              "source_fingerprint": "ce6cfbc379bef7fcc788947a3c51f95e3278611628a443c09b21067d69174d17",
+              "source_fingerprint_scope": "normalized_canonical_score",
+              "compiled_fingerprint": "09a70ef48413e01581fa9afc23b3ed052be0c2fb5ede1422d7739d9612cfe27e",
+              "runtime_profile": "wmh-canonical-compiled-audio-v1",
+              "policy_id": "wmh-canonical-sine-ms-v1",
+              "selection_fingerprint": "5ebc85ec22abe7c433b88d1ae5db8dab98ec37fee1aa3f300a4f55f70c1cca25",
+              "plan_fingerprint": "dbdd7af4036f6df9bf44d17ebee26ed28c764ae0f0dd9a991ce463eb3445b8f2",
+              "source_clock_available": true,
+              "source_duration_ms": 64000,
+              "sound_enabled": true,
+              "reference_timbre": "sine",
+              "source_timbres_preserved": false,
+              "timing": "Rust compiled binary64 milliseconds; floor attacks and ceil ends to device sample frames",
+              "sample_rate": 44100,
+              "range": null,
+              "loop": null,
+              "count_in_ms": 4000,
+              "audio_clock": {
+                "player_epoch": 32,
+                "generation": 1,
+                "pass_index": -1,
+                "cycle_start_frame": 29214,
+                "pass_start_frame": 205614,
+                "next_boundary_frame": 3028014,
+                "initial_anchor_frame": 29214
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "input_evidence": {
+      "version": 1,
+      "scope": "observed musical input from first practice pass until session reset",
+      "event_order": "receipt_order",
+      "pairing": "not_implemented",
+      "release_assessment": "not_implemented",
+      "duration_eligibility": "unknown",
+      "controllers": "only CC120/123 cleanup is observed; pedals and other controllers are not captured",
+      "limit": 100000,
+      "truncated": false,
+      "omitted_observations": 0,
+      "first_omitted_received_wall_ms": null,
+      "events": [
+        {
+          "event_id": 1,
+          "kind": "note_on",
+          "source_id": "source-1",
+          "source_generation": null,
+          "input_kind": "typing_keyboard",
+          "channel": null,
+          "midi": 60,
+          "velocity": 90,
+          "encoding": "key_down",
+          "reason": null,
+          "event_wall_ms": 16975.699999999953,
+          "received_wall_ms": 16982.79999999993,
+          "timestamp_basis": "event_monotonic",
+          "raw_timestamp_ms": 16975.699999999953,
+          "boundary_wall_ms": null,
+          "onset_capture": {
+            "pass_id": 1,
+            "event_id": 1
+          }
+        },
+        {
+          "event_id": 2,
+          "kind": "note_off",
+          "source_id": "source-1",
+          "source_generation": null,
+          "input_kind": "typing_keyboard",
+          "channel": null,
+          "midi": null,
+          "velocity": null,
+          "encoding": "key_up",
+          "reason": null,
+          "event_wall_ms": 16976.099999999977,
+          "received_wall_ms": 16987,
+          "timestamp_basis": "event_monotonic",
+          "raw_timestamp_ms": 16976.099999999977,
+          "boundary_wall_ms": null,
+          "onset_capture": null
+        },
+        {
+          "event_id": 3,
+          "kind": "boundary",
+          "source_id": null,
+          "source_generation": null,
+          "input_kind": null,
+          "channel": null,
+          "midi": null,
+          "velocity": null,
+          "encoding": null,
+          "reason": "pause",
+          "event_wall_ms": 17420.5,
+          "received_wall_ms": 17421,
+          "timestamp_basis": "application_clock",
+          "raw_timestamp_ms": null,
+          "boundary_wall_ms": 17420.5,
+          "onset_capture": null
+        }
+      ]
+    },
+    "score_id": "original-browser-skin-roles",
+    "practice_part": "human",
+    "practice_selection": {
+      "kind": "parts",
+      "part_ids": [
+        "human"
+      ]
+    },
+    "song_mod": {
+      "format": "wmc-song-mod",
+      "version": 1,
+      "songId": "original-browser-skin-roles",
+      "sourceRevision": {
+        "kind": "canonical-score-v1",
+        "value": "ce6cfbc379bef7fcc788947a3c51f95e3278611628a443c09b21067d69174d17"
+      },
+      "configFingerprint": "0ff5158c655c3cc8bd05a1ccbdbc5a4d0ad7bc1011f13b30c91a2d71dbe54188",
+      "config": {
+        "layout": "complete",
+        "showOtherParts": true,
+        "parts": [
+          {
+            "partId": "human",
+            "performer": "human",
+            "instrument": "source",
+            "muted": false,
+            "visible": true
+          },
+          {
+            "partId": "machine",
+            "performer": "machine",
+            "instrument": "source",
+            "muted": false,
+            "visible": true
+          }
+        ]
+      }
+    },
+    "view_configuration": {
+      "practice_layout": "complete",
+      "show_other_parts": true,
+      "falling_note_labels": false
+    },
+    "target_plan": {
+      "diagnostics": [],
+      "groups": [
+        {
+          "part_ids": [
+            "human"
+          ],
+          "source_note_ids": [
+            "human-sustain"
+          ],
+          "source_occurrence_ids": [
+            "human-sustain"
+          ],
+          "target_id": "human-sustain"
+        },
+        {
+          "part_ids": [
+            "human"
+          ],
+          "source_note_ids": [
+            "human-tail"
+          ],
+          "source_occurrence_ids": [
+            "human-tail"
+          ],
+          "target_id": "human-tail"
+        }
+      ],
+      "playable": true,
+      "source_note_count": 2,
+      "target_count": 2,
+      "timeline": {
+        "duration_ms": 64000,
+        "notes": [
+          {
+            "duration_ms": 8000,
+            "id": "human-sustain",
+            "midi": 60,
+            "part_id": "human",
+            "source_note_id": "human-sustain",
+            "source_note_ids": [
+              "human-sustain"
+            ],
+            "staff": 1,
+            "start_ms": 0,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "duration_ms": 1000,
+            "id": "human-tail",
+            "midi": 64,
+            "part_id": "human",
+            "source_note_id": "human-tail",
+            "source_note_ids": [
+              "human-tail"
+            ],
+            "staff": 1,
+            "start_ms": 63000,
+            "velocity": 90,
+            "voice": "1"
+          }
+        ]
+      }
+    },
+    "keyboard_input_configuration": {
+      "version": 1,
+      "scope": "PC keyboard performance input configuration; score pitches are unchanged",
+      "event_order": "receipt_order",
+      "label_basis": "physical US key positions",
+      "initial_configuration": {
+        "configuration_id": 1,
+        "kind": "keyboard_configuration",
+        "reason": "keyboard_initial_configuration",
+        "event_wall_ms": 927.5999999999767,
+        "received_wall_ms": 927.5999999999767,
+        "timestamp_basis": "event_monotonic",
+        "raw_timestamp_ms": 927.5999999999767,
+        "base_midi": 36,
+        "transpose_semitones": 0,
+        "scope": "performance_input_only",
+        "duplicate_pitch_policy": "reject",
+        "mapping": [
+          {
+            "code": "KeyZ",
+            "offset": 0,
+            "label": "Z",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyX",
+            "offset": 1,
+            "label": "X",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyC",
+            "offset": 2,
+            "label": "C",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyV",
+            "offset": 3,
+            "label": "V",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyB",
+            "offset": 4,
+            "label": "B",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyN",
+            "offset": 5,
+            "label": "N",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyM",
+            "offset": 6,
+            "label": "M",
+            "row": "bottom"
+          },
+          {
+            "code": "Comma",
+            "offset": 7,
+            "label": ",",
+            "row": "bottom"
+          },
+          {
+            "code": "Period",
+            "offset": 8,
+            "label": ".",
+            "row": "bottom"
+          },
+          {
+            "code": "Slash",
+            "offset": 9,
+            "label": "/",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyA",
+            "offset": 10,
+            "label": "A",
+            "row": "home"
+          },
+          {
+            "code": "KeyS",
+            "offset": 11,
+            "label": "S",
+            "row": "home"
+          },
+          {
+            "code": "KeyD",
+            "offset": 12,
+            "label": "D",
+            "row": "home"
+          },
+          {
+            "code": "KeyF",
+            "offset": 13,
+            "label": "F",
+            "row": "home"
+          },
+          {
+            "code": "KeyG",
+            "offset": 14,
+            "label": "G",
+            "row": "home"
+          },
+          {
+            "code": "KeyH",
+            "offset": 15,
+            "label": "H",
+            "row": "home"
+          },
+          {
+            "code": "KeyJ",
+            "offset": 16,
+            "label": "J",
+            "row": "home"
+          },
+          {
+            "code": "KeyK",
+            "offset": 17,
+            "label": "K",
+            "row": "home"
+          },
+          {
+            "code": "KeyL",
+            "offset": 18,
+            "label": "L",
+            "row": "home"
+          },
+          {
+            "code": "Semicolon",
+            "offset": 19,
+            "label": ";",
+            "row": "home"
+          },
+          {
+            "code": "Quote",
+            "offset": 20,
+            "label": "'",
+            "row": "home"
+          },
+          {
+            "code": "KeyQ",
+            "offset": 21,
+            "label": "Q",
+            "row": "upper"
+          },
+          {
+            "code": "KeyW",
+            "offset": 22,
+            "label": "W",
+            "row": "upper"
+          },
+          {
+            "code": "KeyE",
+            "offset": 23,
+            "label": "E",
+            "row": "upper"
+          },
+          {
+            "code": "KeyR",
+            "offset": 24,
+            "label": "R",
+            "row": "upper"
+          },
+          {
+            "code": "KeyT",
+            "offset": 25,
+            "label": "T",
+            "row": "upper"
+          },
+          {
+            "code": "KeyY",
+            "offset": 26,
+            "label": "Y",
+            "row": "upper"
+          },
+          {
+            "code": "KeyU",
+            "offset": 27,
+            "label": "U",
+            "row": "upper"
+          },
+          {
+            "code": "KeyI",
+            "offset": 28,
+            "label": "I",
+            "row": "upper"
+          },
+          {
+            "code": "KeyO",
+            "offset": 29,
+            "label": "O",
+            "row": "upper"
+          },
+          {
+            "code": "KeyP",
+            "offset": 30,
+            "label": "P",
+            "row": "upper"
+          },
+          {
+            "code": "BracketLeft",
+            "offset": 31,
+            "label": "[",
+            "row": "upper"
+          },
+          {
+            "code": "BracketRight",
+            "offset": 32,
+            "label": "]",
+            "row": "upper"
+          },
+          {
+            "code": "Backslash",
+            "offset": 33,
+            "label": "\\",
+            "row": "upper"
+          },
+          {
+            "code": "Backquote",
+            "offset": 34,
+            "label": "`",
+            "row": "number"
+          },
+          {
+            "code": "Digit1",
+            "offset": 35,
+            "label": "1",
+            "row": "number"
+          },
+          {
+            "code": "Digit2",
+            "offset": 36,
+            "label": "2",
+            "row": "number"
+          },
+          {
+            "code": "Digit3",
+            "offset": 37,
+            "label": "3",
+            "row": "number"
+          },
+          {
+            "code": "Digit4",
+            "offset": 38,
+            "label": "4",
+            "row": "number"
+          },
+          {
+            "code": "Digit5",
+            "offset": 39,
+            "label": "5",
+            "row": "number"
+          },
+          {
+            "code": "Digit6",
+            "offset": 40,
+            "label": "6",
+            "row": "number"
+          },
+          {
+            "code": "Digit7",
+            "offset": 41,
+            "label": "7",
+            "row": "number"
+          },
+          {
+            "code": "Digit8",
+            "offset": 42,
+            "label": "8",
+            "row": "number"
+          },
+          {
+            "code": "Digit9",
+            "offset": 43,
+            "label": "9",
+            "row": "number"
+          },
+          {
+            "code": "Digit0",
+            "offset": 44,
+            "label": "0",
+            "row": "number"
+          },
+          {
+            "code": "Minus",
+            "offset": 45,
+            "label": "-",
+            "row": "number"
+          },
+          {
+            "code": "Equal",
+            "offset": 46,
+            "label": "=",
+            "row": "number"
+          }
+        ]
+      },
+      "current_configuration": {
+        "configuration_id": 1,
+        "base_midi": 36,
+        "transpose_semitones": 0,
+        "duplicate_pitch_policy": "reject",
+        "mapping": [
+          {
+            "code": "KeyZ",
+            "offset": 0,
+            "label": "Z",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyX",
+            "offset": 1,
+            "label": "X",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyC",
+            "offset": 2,
+            "label": "C",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyV",
+            "offset": 3,
+            "label": "V",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyB",
+            "offset": 4,
+            "label": "B",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyN",
+            "offset": 5,
+            "label": "N",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyM",
+            "offset": 6,
+            "label": "M",
+            "row": "bottom"
+          },
+          {
+            "code": "Comma",
+            "offset": 7,
+            "label": ",",
+            "row": "bottom"
+          },
+          {
+            "code": "Period",
+            "offset": 8,
+            "label": ".",
+            "row": "bottom"
+          },
+          {
+            "code": "Slash",
+            "offset": 9,
+            "label": "/",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyA",
+            "offset": 10,
+            "label": "A",
+            "row": "home"
+          },
+          {
+            "code": "KeyS",
+            "offset": 11,
+            "label": "S",
+            "row": "home"
+          },
+          {
+            "code": "KeyD",
+            "offset": 12,
+            "label": "D",
+            "row": "home"
+          },
+          {
+            "code": "KeyF",
+            "offset": 13,
+            "label": "F",
+            "row": "home"
+          },
+          {
+            "code": "KeyG",
+            "offset": 14,
+            "label": "G",
+            "row": "home"
+          },
+          {
+            "code": "KeyH",
+            "offset": 15,
+            "label": "H",
+            "row": "home"
+          },
+          {
+            "code": "KeyJ",
+            "offset": 16,
+            "label": "J",
+            "row": "home"
+          },
+          {
+            "code": "KeyK",
+            "offset": 17,
+            "label": "K",
+            "row": "home"
+          },
+          {
+            "code": "KeyL",
+            "offset": 18,
+            "label": "L",
+            "row": "home"
+          },
+          {
+            "code": "Semicolon",
+            "offset": 19,
+            "label": ";",
+            "row": "home"
+          },
+          {
+            "code": "Quote",
+            "offset": 20,
+            "label": "'",
+            "row": "home"
+          },
+          {
+            "code": "KeyQ",
+            "offset": 21,
+            "label": "Q",
+            "row": "upper"
+          },
+          {
+            "code": "KeyW",
+            "offset": 22,
+            "label": "W",
+            "row": "upper"
+          },
+          {
+            "code": "KeyE",
+            "offset": 23,
+            "label": "E",
+            "row": "upper"
+          },
+          {
+            "code": "KeyR",
+            "offset": 24,
+            "label": "R",
+            "row": "upper"
+          },
+          {
+            "code": "KeyT",
+            "offset": 25,
+            "label": "T",
+            "row": "upper"
+          },
+          {
+            "code": "KeyY",
+            "offset": 26,
+            "label": "Y",
+            "row": "upper"
+          },
+          {
+            "code": "KeyU",
+            "offset": 27,
+            "label": "U",
+            "row": "upper"
+          },
+          {
+            "code": "KeyI",
+            "offset": 28,
+            "label": "I",
+            "row": "upper"
+          },
+          {
+            "code": "KeyO",
+            "offset": 29,
+            "label": "O",
+            "row": "upper"
+          },
+          {
+            "code": "KeyP",
+            "offset": 30,
+            "label": "P",
+            "row": "upper"
+          },
+          {
+            "code": "BracketLeft",
+            "offset": 31,
+            "label": "[",
+            "row": "upper"
+          },
+          {
+            "code": "BracketRight",
+            "offset": 32,
+            "label": "]",
+            "row": "upper"
+          },
+          {
+            "code": "Backslash",
+            "offset": 33,
+            "label": "\\",
+            "row": "upper"
+          },
+          {
+            "code": "Backquote",
+            "offset": 34,
+            "label": "`",
+            "row": "number"
+          },
+          {
+            "code": "Digit1",
+            "offset": 35,
+            "label": "1",
+            "row": "number"
+          },
+          {
+            "code": "Digit2",
+            "offset": 36,
+            "label": "2",
+            "row": "number"
+          },
+          {
+            "code": "Digit3",
+            "offset": 37,
+            "label": "3",
+            "row": "number"
+          },
+          {
+            "code": "Digit4",
+            "offset": 38,
+            "label": "4",
+            "row": "number"
+          },
+          {
+            "code": "Digit5",
+            "offset": 39,
+            "label": "5",
+            "row": "number"
+          },
+          {
+            "code": "Digit6",
+            "offset": 40,
+            "label": "6",
+            "row": "number"
+          },
+          {
+            "code": "Digit7",
+            "offset": 41,
+            "label": "7",
+            "row": "number"
+          },
+          {
+            "code": "Digit8",
+            "offset": 42,
+            "label": "8",
+            "row": "number"
+          },
+          {
+            "code": "Digit9",
+            "offset": 43,
+            "label": "9",
+            "row": "number"
+          },
+          {
+            "code": "Digit0",
+            "offset": 44,
+            "label": "0",
+            "row": "number"
+          },
+          {
+            "code": "Minus",
+            "offset": 45,
+            "label": "-",
+            "row": "number"
+          },
+          {
+            "code": "Equal",
+            "offset": 46,
+            "label": "=",
+            "row": "number"
+          }
+        ]
+      },
+      "events": [
+        {
+          "configuration_id": 1,
+          "kind": "keyboard_configuration",
+          "reason": "keyboard_initial_configuration",
+          "event_wall_ms": 927.5999999999767,
+          "received_wall_ms": 927.5999999999767,
+          "timestamp_basis": "event_monotonic",
+          "raw_timestamp_ms": 927.5999999999767,
+          "base_midi": 36,
+          "transpose_semitones": 0,
+          "scope": "performance_input_only",
+          "duplicate_pitch_policy": "reject",
+          "mapping": [
+            {
+              "code": "KeyZ",
+              "offset": 0,
+              "label": "Z",
+              "row": "bottom"
+            },
+            {
+              "code": "KeyX",
+              "offset": 1,
+              "label": "X",
+              "row": "bottom"
+            },
+            {
+              "code": "KeyC",
+              "offset": 2,
+              "label": "C",
+              "row": "bottom"
+            },
+            {
+              "code": "KeyV",
+              "offset": 3,
+              "label": "V",
+              "row": "bottom"
+            },
+            {
+              "code": "KeyB",
+              "offset": 4,
+              "label": "B",
+              "row": "bottom"
+            },
+            {
+              "code": "KeyN",
+              "offset": 5,
+              "label": "N",
+              "row": "bottom"
+            },
+            {
+              "code": "KeyM",
+              "offset": 6,
+              "label": "M",
+              "row": "bottom"
+            },
+            {
+              "code": "Comma",
+              "offset": 7,
+              "label": ",",
+              "row": "bottom"
+            },
+            {
+              "code": "Period",
+              "offset": 8,
+              "label": ".",
+              "row": "bottom"
+            },
+            {
+              "code": "Slash",
+              "offset": 9,
+              "label": "/",
+              "row": "bottom"
+            },
+            {
+              "code": "KeyA",
+              "offset": 10,
+              "label": "A",
+              "row": "home"
+            },
+            {
+              "code": "KeyS",
+              "offset": 11,
+              "label": "S",
+              "row": "home"
+            },
+            {
+              "code": "KeyD",
+              "offset": 12,
+              "label": "D",
+              "row": "home"
+            },
+            {
+              "code": "KeyF",
+              "offset": 13,
+              "label": "F",
+              "row": "home"
+            },
+            {
+              "code": "KeyG",
+              "offset": 14,
+              "label": "G",
+              "row": "home"
+            },
+            {
+              "code": "KeyH",
+              "offset": 15,
+              "label": "H",
+              "row": "home"
+            },
+            {
+              "code": "KeyJ",
+              "offset": 16,
+              "label": "J",
+              "row": "home"
+            },
+            {
+              "code": "KeyK",
+              "offset": 17,
+              "label": "K",
+              "row": "home"
+            },
+            {
+              "code": "KeyL",
+              "offset": 18,
+              "label": "L",
+              "row": "home"
+            },
+            {
+              "code": "Semicolon",
+              "offset": 19,
+              "label": ";",
+              "row": "home"
+            },
+            {
+              "code": "Quote",
+              "offset": 20,
+              "label": "'",
+              "row": "home"
+            },
+            {
+              "code": "KeyQ",
+              "offset": 21,
+              "label": "Q",
+              "row": "upper"
+            },
+            {
+              "code": "KeyW",
+              "offset": 22,
+              "label": "W",
+              "row": "upper"
+            },
+            {
+              "code": "KeyE",
+              "offset": 23,
+              "label": "E",
+              "row": "upper"
+            },
+            {
+              "code": "KeyR",
+              "offset": 24,
+              "label": "R",
+              "row": "upper"
+            },
+            {
+              "code": "KeyT",
+              "offset": 25,
+              "label": "T",
+              "row": "upper"
+            },
+            {
+              "code": "KeyY",
+              "offset": 26,
+              "label": "Y",
+              "row": "upper"
+            },
+            {
+              "code": "KeyU",
+              "offset": 27,
+              "label": "U",
+              "row": "upper"
+            },
+            {
+              "code": "KeyI",
+              "offset": 28,
+              "label": "I",
+              "row": "upper"
+            },
+            {
+              "code": "KeyO",
+              "offset": 29,
+              "label": "O",
+              "row": "upper"
+            },
+            {
+              "code": "KeyP",
+              "offset": 30,
+              "label": "P",
+              "row": "upper"
+            },
+            {
+              "code": "BracketLeft",
+              "offset": 31,
+              "label": "[",
+              "row": "upper"
+            },
+            {
+              "code": "BracketRight",
+              "offset": 32,
+              "label": "]",
+              "row": "upper"
+            },
+            {
+              "code": "Backslash",
+              "offset": 33,
+              "label": "\\",
+              "row": "upper"
+            },
+            {
+              "code": "Backquote",
+              "offset": 34,
+              "label": "`",
+              "row": "number"
+            },
+            {
+              "code": "Digit1",
+              "offset": 35,
+              "label": "1",
+              "row": "number"
+            },
+            {
+              "code": "Digit2",
+              "offset": 36,
+              "label": "2",
+              "row": "number"
+            },
+            {
+              "code": "Digit3",
+              "offset": 37,
+              "label": "3",
+              "row": "number"
+            },
+            {
+              "code": "Digit4",
+              "offset": 38,
+              "label": "4",
+              "row": "number"
+            },
+            {
+              "code": "Digit5",
+              "offset": 39,
+              "label": "5",
+              "row": "number"
+            },
+            {
+              "code": "Digit6",
+              "offset": 40,
+              "label": "6",
+              "row": "number"
+            },
+            {
+              "code": "Digit7",
+              "offset": 41,
+              "label": "7",
+              "row": "number"
+            },
+            {
+              "code": "Digit8",
+              "offset": 42,
+              "label": "8",
+              "row": "number"
+            },
+            {
+              "code": "Digit9",
+              "offset": 43,
+              "label": "9",
+              "row": "number"
+            },
+            {
+              "code": "Digit0",
+              "offset": 44,
+              "label": "0",
+              "row": "number"
+            },
+            {
+              "code": "Minus",
+              "offset": 45,
+              "label": "-",
+              "row": "number"
+            },
+            {
+              "code": "Equal",
+              "offset": 46,
+              "label": "=",
+              "row": "number"
+            }
+          ]
+        }
+      ],
+      "limit": 512,
+      "truncated": false,
+      "omitted_configurations": 0,
+      "first_omitted_received_wall_ms": null,
+      "hardware_rollover": "unknown; not detected"
+    }
+  },
+  "takeAfter": {
+    "version": 1,
+    "latency_ms": 0,
+    "tolerance_ms": 180,
+    "interruptions": [],
+    "unassigned_captures": [],
+    "passes": [
+      {
+        "id": 1,
+        "label": "Take 1",
+        "range": {
+          "start_ms": 0,
+          "end_ms": 64000
+        },
+        "timeline": {
+          "duration_ms": 64000,
+          "notes": [
+            {
+              "duration_ms": 8000,
+              "id": "human-sustain",
+              "midi": 60,
+              "part_id": "human",
+              "source_note_id": "human-sustain",
+              "source_note_ids": [
+                "human-sustain"
+              ],
+              "staff": 1,
+              "start_ms": 0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 1000,
+              "id": "human-tail",
+              "midi": 64,
+              "part_id": "human",
+              "source_note_id": "human-tail",
+              "source_note_ids": [
+                "human-tail"
+              ],
+              "staff": 1,
+              "start_ms": 63000,
+              "velocity": 90,
+              "voice": "1"
+            }
+          ]
+        },
+        "capture_enabled": true,
+        "clock_segments": [
+          {
+            "wallStart": 12589.322675736892,
+            "wallEnd": 17418.392970521472,
+            "positionStart": -4000
+          }
+        ],
+        "grace_deadline_wall_ms": null,
+        "manual_deadline_wall_ms": null,
+        "inputs": [
+          {
+            "midi": 60,
+            "at_ms": 386.3773242630614,
+            "velocity": 90
+          }
+        ],
+        "captures": [
+          {
+            "event_id": 1,
+            "event_wall_ms": 16975.699999999953,
+            "received_wall_ms": 16982.79999999993,
+            "input": {
+              "midi": 60,
+              "at_ms": 386.3773242630614,
+              "velocity": 90
+            }
+          }
+        ],
+        "revision": 1,
+        "assessed_revision": -1,
+        "assessment": null,
+        "error": null,
+        "boundary_reviews": [],
+        "ownership": "deterministic_corrected_clock",
+        "pending": true,
+        "interpretation": {
+          "source_fingerprint": "ce6cfbc379bef7fcc788947a3c51f95e3278611628a443c09b21067d69174d17",
+          "source_fingerprint_scope": "normalized_canonical_score",
+          "compiled_fingerprint": "09a70ef48413e01581fa9afc23b3ed052be0c2fb5ede1422d7739d9612cfe27e",
+          "runtime_profile": "wmh-canonical-compiled-audio-v1",
+          "policy_id": "wmh-canonical-sine-ms-v1",
+          "selection_fingerprint": "5ebc85ec22abe7c433b88d1ae5db8dab98ec37fee1aa3f300a4f55f70c1cca25",
+          "plan_fingerprint": "dbdd7af4036f6df9bf44d17ebee26ed28c764ae0f0dd9a991ce463eb3445b8f2",
+          "source_clock_available": true,
+          "source_duration_ms": 64000,
+          "sound_enabled": true,
+          "reference_timbre": "sine",
+          "source_timbres_preserved": false,
+          "timing": "Rust compiled binary64 milliseconds; floor attacks and ceil ends to device sample frames",
+          "sample_rate": 44100,
+          "range": null,
+          "loop": null,
+          "count_in_ms": 4000,
+          "practice_part": "human",
+          "practice_selection": {
+            "kind": "parts",
+            "part_ids": [
+              "human"
+            ]
+          },
+          "practice_layout": "complete",
+          "source_target_ids": [
+            "human-sustain",
+            "human-tail"
+          ],
+          "scoring": "selected_human_parts_key_and_onset_only",
+          "playback_segments": [
+            {
+              "wall_start_ms": 12589.322675736892,
+              "position_start_ms": -4000,
+              "source_fingerprint": "ce6cfbc379bef7fcc788947a3c51f95e3278611628a443c09b21067d69174d17",
+              "source_fingerprint_scope": "normalized_canonical_score",
+              "compiled_fingerprint": "09a70ef48413e01581fa9afc23b3ed052be0c2fb5ede1422d7739d9612cfe27e",
+              "runtime_profile": "wmh-canonical-compiled-audio-v1",
+              "policy_id": "wmh-canonical-sine-ms-v1",
+              "selection_fingerprint": "5ebc85ec22abe7c433b88d1ae5db8dab98ec37fee1aa3f300a4f55f70c1cca25",
+              "plan_fingerprint": "dbdd7af4036f6df9bf44d17ebee26ed28c764ae0f0dd9a991ce463eb3445b8f2",
+              "source_clock_available": true,
+              "source_duration_ms": 64000,
+              "sound_enabled": true,
+              "reference_timbre": "sine",
+              "source_timbres_preserved": false,
+              "timing": "Rust compiled binary64 milliseconds; floor attacks and ceil ends to device sample frames",
+              "sample_rate": 44100,
+              "range": null,
+              "loop": null,
+              "count_in_ms": 4000,
+              "audio_clock": {
+                "player_epoch": 32,
+                "generation": 1,
+                "pass_index": -1,
+                "cycle_start_frame": 29214,
+                "pass_start_frame": 205614,
+                "next_boundary_frame": 3028014,
+                "initial_anchor_frame": 29214
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "input_evidence": {
+      "version": 1,
+      "scope": "observed musical input from first practice pass until session reset",
+      "event_order": "receipt_order",
+      "pairing": "not_implemented",
+      "release_assessment": "not_implemented",
+      "duration_eligibility": "unknown",
+      "controllers": "only CC120/123 cleanup is observed; pedals and other controllers are not captured",
+      "limit": 100000,
+      "truncated": false,
+      "omitted_observations": 0,
+      "first_omitted_received_wall_ms": null,
+      "events": [
+        {
+          "event_id": 1,
+          "kind": "note_on",
+          "source_id": "source-1",
+          "source_generation": null,
+          "input_kind": "typing_keyboard",
+          "channel": null,
+          "midi": 60,
+          "velocity": 90,
+          "encoding": "key_down",
+          "reason": null,
+          "event_wall_ms": 16975.699999999953,
+          "received_wall_ms": 16982.79999999993,
+          "timestamp_basis": "event_monotonic",
+          "raw_timestamp_ms": 16975.699999999953,
+          "boundary_wall_ms": null,
+          "onset_capture": {
+            "pass_id": 1,
+            "event_id": 1
+          }
+        },
+        {
+          "event_id": 2,
+          "kind": "note_off",
+          "source_id": "source-1",
+          "source_generation": null,
+          "input_kind": "typing_keyboard",
+          "channel": null,
+          "midi": null,
+          "velocity": null,
+          "encoding": "key_up",
+          "reason": null,
+          "event_wall_ms": 16976.099999999977,
+          "received_wall_ms": 16987,
+          "timestamp_basis": "event_monotonic",
+          "raw_timestamp_ms": 16976.099999999977,
+          "boundary_wall_ms": null,
+          "onset_capture": null
+        },
+        {
+          "event_id": 3,
+          "kind": "boundary",
+          "source_id": null,
+          "source_generation": null,
+          "input_kind": null,
+          "channel": null,
+          "midi": null,
+          "velocity": null,
+          "encoding": null,
+          "reason": "pause",
+          "event_wall_ms": 17420.5,
+          "received_wall_ms": 17421,
+          "timestamp_basis": "application_clock",
+          "raw_timestamp_ms": null,
+          "boundary_wall_ms": 17420.5,
+          "onset_capture": null
+        },
+        {
+          "event_id": 4,
+          "kind": "boundary",
+          "source_id": null,
+          "source_generation": null,
+          "input_kind": null,
+          "channel": null,
+          "midi": null,
+          "velocity": null,
+          "encoding": null,
+          "reason": "blur",
+          "event_wall_ms": 21334.399999999907,
+          "received_wall_ms": 21334.399999999907,
+          "timestamp_basis": "application_clock",
+          "raw_timestamp_ms": null,
+          "boundary_wall_ms": 21334.399999999907,
+          "onset_capture": null
+        },
+        {
+          "event_id": 5,
+          "kind": "boundary",
+          "source_id": null,
+          "source_generation": null,
+          "input_kind": null,
+          "channel": null,
+          "midi": null,
+          "velocity": null,
+          "encoding": null,
+          "reason": "blur",
+          "event_wall_ms": 27479.899999999907,
+          "received_wall_ms": 27479.899999999907,
+          "timestamp_basis": "application_clock",
+          "raw_timestamp_ms": null,
+          "boundary_wall_ms": 27479.899999999907,
+          "onset_capture": null
+        }
+      ]
+    },
+    "score_id": "original-browser-skin-roles",
+    "practice_part": "human",
+    "practice_selection": {
+      "kind": "parts",
+      "part_ids": [
+        "human"
+      ]
+    },
+    "song_mod": {
+      "format": "wmc-song-mod",
+      "version": 1,
+      "songId": "original-browser-skin-roles",
+      "sourceRevision": {
+        "kind": "canonical-score-v1",
+        "value": "ce6cfbc379bef7fcc788947a3c51f95e3278611628a443c09b21067d69174d17"
+      },
+      "configFingerprint": "0ff5158c655c3cc8bd05a1ccbdbc5a4d0ad7bc1011f13b30c91a2d71dbe54188",
+      "config": {
+        "layout": "complete",
+        "showOtherParts": true,
+        "parts": [
+          {
+            "partId": "human",
+            "performer": "human",
+            "instrument": "source",
+            "muted": false,
+            "visible": true
+          },
+          {
+            "partId": "machine",
+            "performer": "machine",
+            "instrument": "source",
+            "muted": false,
+            "visible": true
+          }
+        ]
+      }
+    },
+    "view_configuration": {
+      "practice_layout": "complete",
+      "show_other_parts": true,
+      "falling_note_labels": false
+    },
+    "target_plan": {
+      "diagnostics": [],
+      "groups": [
+        {
+          "part_ids": [
+            "human"
+          ],
+          "source_note_ids": [
+            "human-sustain"
+          ],
+          "source_occurrence_ids": [
+            "human-sustain"
+          ],
+          "target_id": "human-sustain"
+        },
+        {
+          "part_ids": [
+            "human"
+          ],
+          "source_note_ids": [
+            "human-tail"
+          ],
+          "source_occurrence_ids": [
+            "human-tail"
+          ],
+          "target_id": "human-tail"
+        }
+      ],
+      "playable": true,
+      "source_note_count": 2,
+      "target_count": 2,
+      "timeline": {
+        "duration_ms": 64000,
+        "notes": [
+          {
+            "duration_ms": 8000,
+            "id": "human-sustain",
+            "midi": 60,
+            "part_id": "human",
+            "source_note_id": "human-sustain",
+            "source_note_ids": [
+              "human-sustain"
+            ],
+            "staff": 1,
+            "start_ms": 0,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "duration_ms": 1000,
+            "id": "human-tail",
+            "midi": 64,
+            "part_id": "human",
+            "source_note_id": "human-tail",
+            "source_note_ids": [
+              "human-tail"
+            ],
+            "staff": 1,
+            "start_ms": 63000,
+            "velocity": 90,
+            "voice": "1"
+          }
+        ]
+      }
+    },
+    "keyboard_input_configuration": {
+      "version": 1,
+      "scope": "PC keyboard performance input configuration; score pitches are unchanged",
+      "event_order": "receipt_order",
+      "label_basis": "physical US key positions",
+      "initial_configuration": {
+        "configuration_id": 1,
+        "kind": "keyboard_configuration",
+        "reason": "keyboard_initial_configuration",
+        "event_wall_ms": 927.5999999999767,
+        "received_wall_ms": 927.5999999999767,
+        "timestamp_basis": "event_monotonic",
+        "raw_timestamp_ms": 927.5999999999767,
+        "base_midi": 36,
+        "transpose_semitones": 0,
+        "scope": "performance_input_only",
+        "duplicate_pitch_policy": "reject",
+        "mapping": [
+          {
+            "code": "KeyZ",
+            "offset": 0,
+            "label": "Z",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyX",
+            "offset": 1,
+            "label": "X",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyC",
+            "offset": 2,
+            "label": "C",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyV",
+            "offset": 3,
+            "label": "V",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyB",
+            "offset": 4,
+            "label": "B",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyN",
+            "offset": 5,
+            "label": "N",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyM",
+            "offset": 6,
+            "label": "M",
+            "row": "bottom"
+          },
+          {
+            "code": "Comma",
+            "offset": 7,
+            "label": ",",
+            "row": "bottom"
+          },
+          {
+            "code": "Period",
+            "offset": 8,
+            "label": ".",
+            "row": "bottom"
+          },
+          {
+            "code": "Slash",
+            "offset": 9,
+            "label": "/",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyA",
+            "offset": 10,
+            "label": "A",
+            "row": "home"
+          },
+          {
+            "code": "KeyS",
+            "offset": 11,
+            "label": "S",
+            "row": "home"
+          },
+          {
+            "code": "KeyD",
+            "offset": 12,
+            "label": "D",
+            "row": "home"
+          },
+          {
+            "code": "KeyF",
+            "offset": 13,
+            "label": "F",
+            "row": "home"
+          },
+          {
+            "code": "KeyG",
+            "offset": 14,
+            "label": "G",
+            "row": "home"
+          },
+          {
+            "code": "KeyH",
+            "offset": 15,
+            "label": "H",
+            "row": "home"
+          },
+          {
+            "code": "KeyJ",
+            "offset": 16,
+            "label": "J",
+            "row": "home"
+          },
+          {
+            "code": "KeyK",
+            "offset": 17,
+            "label": "K",
+            "row": "home"
+          },
+          {
+            "code": "KeyL",
+            "offset": 18,
+            "label": "L",
+            "row": "home"
+          },
+          {
+            "code": "Semicolon",
+            "offset": 19,
+            "label": ";",
+            "row": "home"
+          },
+          {
+            "code": "Quote",
+            "offset": 20,
+            "label": "'",
+            "row": "home"
+          },
+          {
+            "code": "KeyQ",
+            "offset": 21,
+            "label": "Q",
+            "row": "upper"
+          },
+          {
+            "code": "KeyW",
+            "offset": 22,
+            "label": "W",
+            "row": "upper"
+          },
+          {
+            "code": "KeyE",
+            "offset": 23,
+            "label": "E",
+            "row": "upper"
+          },
+          {
+            "code": "KeyR",
+            "offset": 24,
+            "label": "R",
+            "row": "upper"
+          },
+          {
+            "code": "KeyT",
+            "offset": 25,
+            "label": "T",
+            "row": "upper"
+          },
+          {
+            "code": "KeyY",
+            "offset": 26,
+            "label": "Y",
+            "row": "upper"
+          },
+          {
+            "code": "KeyU",
+            "offset": 27,
+            "label": "U",
+            "row": "upper"
+          },
+          {
+            "code": "KeyI",
+            "offset": 28,
+            "label": "I",
+            "row": "upper"
+          },
+          {
+            "code": "KeyO",
+            "offset": 29,
+            "label": "O",
+            "row": "upper"
+          },
+          {
+            "code": "KeyP",
+            "offset": 30,
+            "label": "P",
+            "row": "upper"
+          },
+          {
+            "code": "BracketLeft",
+            "offset": 31,
+            "label": "[",
+            "row": "upper"
+          },
+          {
+            "code": "BracketRight",
+            "offset": 32,
+            "label": "]",
+            "row": "upper"
+          },
+          {
+            "code": "Backslash",
+            "offset": 33,
+            "label": "\\",
+            "row": "upper"
+          },
+          {
+            "code": "Backquote",
+            "offset": 34,
+            "label": "`",
+            "row": "number"
+          },
+          {
+            "code": "Digit1",
+            "offset": 35,
+            "label": "1",
+            "row": "number"
+          },
+          {
+            "code": "Digit2",
+            "offset": 36,
+            "label": "2",
+            "row": "number"
+          },
+          {
+            "code": "Digit3",
+            "offset": 37,
+            "label": "3",
+            "row": "number"
+          },
+          {
+            "code": "Digit4",
+            "offset": 38,
+            "label": "4",
+            "row": "number"
+          },
+          {
+            "code": "Digit5",
+            "offset": 39,
+            "label": "5",
+            "row": "number"
+          },
+          {
+            "code": "Digit6",
+            "offset": 40,
+            "label": "6",
+            "row": "number"
+          },
+          {
+            "code": "Digit7",
+            "offset": 41,
+            "label": "7",
+            "row": "number"
+          },
+          {
+            "code": "Digit8",
+            "offset": 42,
+            "label": "8",
+            "row": "number"
+          },
+          {
+            "code": "Digit9",
+            "offset": 43,
+            "label": "9",
+            "row": "number"
+          },
+          {
+            "code": "Digit0",
+            "offset": 44,
+            "label": "0",
+            "row": "number"
+          },
+          {
+            "code": "Minus",
+            "offset": 45,
+            "label": "-",
+            "row": "number"
+          },
+          {
+            "code": "Equal",
+            "offset": 46,
+            "label": "=",
+            "row": "number"
+          }
+        ]
+      },
+      "current_configuration": {
+        "configuration_id": 1,
+        "base_midi": 36,
+        "transpose_semitones": 0,
+        "duplicate_pitch_policy": "reject",
+        "mapping": [
+          {
+            "code": "KeyZ",
+            "offset": 0,
+            "label": "Z",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyX",
+            "offset": 1,
+            "label": "X",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyC",
+            "offset": 2,
+            "label": "C",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyV",
+            "offset": 3,
+            "label": "V",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyB",
+            "offset": 4,
+            "label": "B",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyN",
+            "offset": 5,
+            "label": "N",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyM",
+            "offset": 6,
+            "label": "M",
+            "row": "bottom"
+          },
+          {
+            "code": "Comma",
+            "offset": 7,
+            "label": ",",
+            "row": "bottom"
+          },
+          {
+            "code": "Period",
+            "offset": 8,
+            "label": ".",
+            "row": "bottom"
+          },
+          {
+            "code": "Slash",
+            "offset": 9,
+            "label": "/",
+            "row": "bottom"
+          },
+          {
+            "code": "KeyA",
+            "offset": 10,
+            "label": "A",
+            "row": "home"
+          },
+          {
+            "code": "KeyS",
+            "offset": 11,
+            "label": "S",
+            "row": "home"
+          },
+          {
+            "code": "KeyD",
+            "offset": 12,
+            "label": "D",
+            "row": "home"
+          },
+          {
+            "code": "KeyF",
+            "offset": 13,
+            "label": "F",
+            "row": "home"
+          },
+          {
+            "code": "KeyG",
+            "offset": 14,
+            "label": "G",
+            "row": "home"
+          },
+          {
+            "code": "KeyH",
+            "offset": 15,
+            "label": "H",
+            "row": "home"
+          },
+          {
+            "code": "KeyJ",
+            "offset": 16,
+            "label": "J",
+            "row": "home"
+          },
+          {
+            "code": "KeyK",
+            "offset": 17,
+            "label": "K",
+            "row": "home"
+          },
+          {
+            "code": "KeyL",
+            "offset": 18,
+            "label": "L",
+            "row": "home"
+          },
+          {
+            "code": "Semicolon",
+            "offset": 19,
+            "label": ";",
+            "row": "home"
+          },
+          {
+            "code": "Quote",
+            "offset": 20,
+            "label": "'",
+            "row": "home"
+          },
+          {
+            "code": "KeyQ",
+            "offset": 21,
+            "label": "Q",
+            "row": "upper"
+          },
+          {
+            "code": "KeyW",
+            "offset": 22,
+            "label": "W",
+            "row": "upper"
+          },
+          {
+            "code": "KeyE",
+            "offset": 23,
+            "label": "E",
+            "row": "upper"
+          },
+          {
+            "code": "KeyR",
+            "offset": 24,
+            "label": "R",
+            "row": "upper"
+          },
+          {
+            "code": "KeyT",
+            "offset": 25,
+            "label": "T",
+            "row": "upper"
+          },
+          {
+            "code": "KeyY",
+            "offset": 26,
+            "label": "Y",
+            "row": "upper"
+          },
+          {
+            "code": "KeyU",
+            "offset": 27,
+            "label": "U",
+            "row": "upper"
+          },
+          {
+            "code": "KeyI",
+            "offset": 28,
+            "label": "I",
+            "row": "upper"
+          },
+          {
+            "code": "KeyO",
+            "offset": 29,
+            "label": "O",
+            "row": "upper"
+          },
+          {
+            "code": "KeyP",
+            "offset": 30,
+            "label": "P",
+            "row": "upper"
+          },
+          {
+            "code": "BracketLeft",
+            "offset": 31,
+            "label": "[",
+            "row": "upper"
+          },
+          {
+            "code": "BracketRight",
+            "offset": 32,
+            "label": "]",
+            "row": "upper"
+          },
+          {
+            "code": "Backslash",
+            "offset": 33,
+            "label": "\\",
+            "row": "upper"
+          },
+          {
+            "code": "Backquote",
+            "offset": 34,
+            "label": "`",
+            "row": "number"
+          },
+          {
+            "code": "Digit1",
+            "offset": 35,
+            "label": "1",
+            "row": "number"
+          },
+          {
+            "code": "Digit2",
+            "offset": 36,
+            "label": "2",
+            "row": "number"
+          },
+          {
+            "code": "Digit3",
+            "offset": 37,
+            "label": "3",
+            "row": "number"
+          },
+          {
+            "code": "Digit4",
+            "offset": 38,
+            "label": "4",
+            "row": "number"
+          },
+          {
+            "code": "Digit5",
+            "offset": 39,
+            "label": "5",
+            "row": "number"
+          },
+          {
+            "code": "Digit6",
+            "offset": 40,
+            "label": "6",
+            "row": "number"
+          },
+          {
+            "code": "Digit7",
+            "offset": 41,
+            "label": "7",
+            "row": "number"
+          },
+          {
+            "code": "Digit8",
+            "offset": 42,
+            "label": "8",
+            "row": "number"
+          },
+          {
+            "code": "Digit9",
+            "offset": 43,
+            "label": "9",
+            "row": "number"
+          },
+          {
+            "code": "Digit0",
+            "offset": 44,
+            "label": "0",
+            "row": "number"
+          },
+          {
+            "code": "Minus",
+            "offset": 45,
+            "label": "-",
+            "row": "number"
+          },
+          {
+            "code": "Equal",
+            "offset": 46,
+            "label": "=",
+            "row": "number"
+          }
+        ]
+      },
+      "events": [
+        {
+          "configuration_id": 1,
+          "kind": "keyboard_configuration",
+          "reason": "keyboard_initial_configuration",
+          "event_wall_ms": 927.5999999999767,
+          "received_wall_ms": 927.5999999999767,
+          "timestamp_basis": "event_monotonic",
+          "raw_timestamp_ms": 927.5999999999767,
+          "base_midi": 36,
+          "transpose_semitones": 0,
+          "scope": "performance_input_only",
+          "duplicate_pitch_policy": "reject",
+          "mapping": [
+            {
+              "code": "KeyZ",
+              "offset": 0,
+              "label": "Z",
+              "row": "bottom"
+            },
+            {
+              "code": "KeyX",
+              "offset": 1,
+              "label": "X",
+              "row": "bottom"
+            },
+            {
+              "code": "KeyC",
+              "offset": 2,
+              "label": "C",
+              "row": "bottom"
+            },
+            {
+              "code": "KeyV",
+              "offset": 3,
+              "label": "V",
+              "row": "bottom"
+            },
+            {
+              "code": "KeyB",
+              "offset": 4,
+              "label": "B",
+              "row": "bottom"
+            },
+            {
+              "code": "KeyN",
+              "offset": 5,
+              "label": "N",
+              "row": "bottom"
+            },
+            {
+              "code": "KeyM",
+              "offset": 6,
+              "label": "M",
+              "row": "bottom"
+            },
+            {
+              "code": "Comma",
+              "offset": 7,
+              "label": ",",
+              "row": "bottom"
+            },
+            {
+              "code": "Period",
+              "offset": 8,
+              "label": ".",
+              "row": "bottom"
+            },
+            {
+              "code": "Slash",
+              "offset": 9,
+              "label": "/",
+              "row": "bottom"
+            },
+            {
+              "code": "KeyA",
+              "offset": 10,
+              "label": "A",
+              "row": "home"
+            },
+            {
+              "code": "KeyS",
+              "offset": 11,
+              "label": "S",
+              "row": "home"
+            },
+            {
+              "code": "KeyD",
+              "offset": 12,
+              "label": "D",
+              "row": "home"
+            },
+            {
+              "code": "KeyF",
+              "offset": 13,
+              "label": "F",
+              "row": "home"
+            },
+            {
+              "code": "KeyG",
+              "offset": 14,
+              "label": "G",
+              "row": "home"
+            },
+            {
+              "code": "KeyH",
+              "offset": 15,
+              "label": "H",
+              "row": "home"
+            },
+            {
+              "code": "KeyJ",
+              "offset": 16,
+              "label": "J",
+              "row": "home"
+            },
+            {
+              "code": "KeyK",
+              "offset": 17,
+              "label": "K",
+              "row": "home"
+            },
+            {
+              "code": "KeyL",
+              "offset": 18,
+              "label": "L",
+              "row": "home"
+            },
+            {
+              "code": "Semicolon",
+              "offset": 19,
+              "label": ";",
+              "row": "home"
+            },
+            {
+              "code": "Quote",
+              "offset": 20,
+              "label": "'",
+              "row": "home"
+            },
+            {
+              "code": "KeyQ",
+              "offset": 21,
+              "label": "Q",
+              "row": "upper"
+            },
+            {
+              "code": "KeyW",
+              "offset": 22,
+              "label": "W",
+              "row": "upper"
+            },
+            {
+              "code": "KeyE",
+              "offset": 23,
+              "label": "E",
+              "row": "upper"
+            },
+            {
+              "code": "KeyR",
+              "offset": 24,
+              "label": "R",
+              "row": "upper"
+            },
+            {
+              "code": "KeyT",
+              "offset": 25,
+              "label": "T",
+              "row": "upper"
+            },
+            {
+              "code": "KeyY",
+              "offset": 26,
+              "label": "Y",
+              "row": "upper"
+            },
+            {
+              "code": "KeyU",
+              "offset": 27,
+              "label": "U",
+              "row": "upper"
+            },
+            {
+              "code": "KeyI",
+              "offset": 28,
+              "label": "I",
+              "row": "upper"
+            },
+            {
+              "code": "KeyO",
+              "offset": 29,
+              "label": "O",
+              "row": "upper"
+            },
+            {
+              "code": "KeyP",
+              "offset": 30,
+              "label": "P",
+              "row": "upper"
+            },
+            {
+              "code": "BracketLeft",
+              "offset": 31,
+              "label": "[",
+              "row": "upper"
+            },
+            {
+              "code": "BracketRight",
+              "offset": 32,
+              "label": "]",
+              "row": "upper"
+            },
+            {
+              "code": "Backslash",
+              "offset": 33,
+              "label": "\\",
+              "row": "upper"
+            },
+            {
+              "code": "Backquote",
+              "offset": 34,
+              "label": "`",
+              "row": "number"
+            },
+            {
+              "code": "Digit1",
+              "offset": 35,
+              "label": "1",
+              "row": "number"
+            },
+            {
+              "code": "Digit2",
+              "offset": 36,
+              "label": "2",
+              "row": "number"
+            },
+            {
+              "code": "Digit3",
+              "offset": 37,
+              "label": "3",
+              "row": "number"
+            },
+            {
+              "code": "Digit4",
+              "offset": 38,
+              "label": "4",
+              "row": "number"
+            },
+            {
+              "code": "Digit5",
+              "offset": 39,
+              "label": "5",
+              "row": "number"
+            },
+            {
+              "code": "Digit6",
+              "offset": 40,
+              "label": "6",
+              "row": "number"
+            },
+            {
+              "code": "Digit7",
+              "offset": 41,
+              "label": "7",
+              "row": "number"
+            },
+            {
+              "code": "Digit8",
+              "offset": 42,
+              "label": "8",
+              "row": "number"
+            },
+            {
+              "code": "Digit9",
+              "offset": 43,
+              "label": "9",
+              "row": "number"
+            },
+            {
+              "code": "Digit0",
+              "offset": 44,
+              "label": "0",
+              "row": "number"
+            },
+            {
+              "code": "Minus",
+              "offset": 45,
+              "label": "-",
+              "row": "number"
+            },
+            {
+              "code": "Equal",
+              "offset": 46,
+              "label": "=",
+              "row": "number"
+            }
+          ]
+        }
+      ],
+      "limit": 512,
+      "truncated": false,
+      "omitted_configurations": 0,
+      "first_omitted_received_wall_ms": null,
+      "hardware_rollover": "unknown; not detected"
+    }
+  }
+}

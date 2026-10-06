@@ -1,0 +1,380 @@
+{
+  "provenance": {
+    "source": "original-only Windows native skin run",
+    "run_id": 37452134867,
+    "artifact_id": 11407956469,
+    "source_sha": "96ff682b1c7479583ae49f272a10eeb788788df5",
+    "report_sha256": "bb85dbdcbaa3b50272d4f43192672048a6b6a2c19ab97e05052421a717b05dcd"
+  },
+  "phase": "skin-seed",
+  "cases": [
+    {
+      "row": {
+        "sequence": 7,
+        "id": null,
+        "kind": "select-last",
+        "samples": [
+          {
+            "frame": 0,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 321.609375,
+              "y": 484.671875,
+              "width": 196.203125,
+              "height": 40
+            },
+            "modalOwner": "song-mod-dialog",
+            "hitId": null,
+            "hitOwned": true
+          },
+          {
+            "frame": 1,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 321.609375,
+              "y": 484.671875,
+              "width": 196.203125,
+              "height": 40
+            },
+            "modalOwner": "song-mod-dialog",
+            "hitId": null,
+            "hitOwned": true
+          }
+        ],
+        "request": {
+          "version": 1,
+          "sequence": 7,
+          "kind": "select-last",
+          "x": 419.7109375,
+          "y": 504.671875,
+          "width": 1024,
+          "height": 689
+        },
+        "disabled": false,
+        "clicks": [
+          {
+            "sequence": 7,
+            "id": null,
+            "owned": true,
+            "trusted": true
+          },
+          {
+            "sequence": 7,
+            "id": null,
+            "owned": true,
+            "trusted": true
+          }
+        ]
+      },
+      "modActions": [
+        {
+          "sequence": 7,
+          "kind": "select-last",
+          "id": null,
+          "part": "machine",
+          "field": "performer",
+          "value": "machine",
+          "checked": null
+        }
+      ],
+      "trusted": [
+        {
+          "sequence": 7,
+          "id": null,
+          "type": "click",
+          "trusted": true,
+          "code": null,
+          "eventTime": 10811.099999999977,
+          "repeat": false
+        },
+        {
+          "sequence": 7,
+          "id": null,
+          "type": "input",
+          "trusted": true,
+          "code": null,
+          "eventTime": 10888.099999999977,
+          "repeat": false
+        },
+        {
+          "sequence": 7,
+          "id": null,
+          "type": "change",
+          "trusted": true,
+          "code": null,
+          "eventTime": 10888.099999999977,
+          "repeat": false
+        },
+        {
+          "sequence": 7,
+          "id": null,
+          "type": "click",
+          "trusted": true,
+          "code": null,
+          "eventTime": 10892.599999999977,
+          "repeat": false
+        },
+        {
+          "sequence": 7,
+          "id": null,
+          "type": "keyup",
+          "trusted": true,
+          "code": "Enter",
+          "eventTime": 10832,
+          "repeat": false
+        },
+        {
+          "sequence": 8,
+          "id": "song-mod-layout",
+          "type": "click",
+          "trusted": true,
+          "code": null,
+          "eventTime": 11165.199999999953,
+          "repeat": false
+        }
+      ],
+      "followingAction": {
+        "sequence": 8,
+        "id": "song-mod-layout",
+        "kind": "select-first",
+        "samples": [
+          {
+            "frame": 0,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 73,
+              "y": 276.21875,
+              "width": 863,
+              "height": 40
+            },
+            "modalOwner": "song-mod-dialog",
+            "hitId": "song-mod-layout",
+            "hitOwned": true
+          },
+          {
+            "frame": 1,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 73,
+              "y": 276.21875,
+              "width": 863,
+              "height": 40
+            },
+            "modalOwner": "song-mod-dialog",
+            "hitId": "song-mod-layout",
+            "hitOwned": true
+          }
+        ],
+        "request": {
+          "version": 1,
+          "sequence": 8,
+          "kind": "select-first",
+          "x": 504.5,
+          "y": 296.21875,
+          "width": 1024,
+          "height": 689
+        },
+        "disabled": false,
+        "clicks": [
+          {
+            "sequence": 8,
+            "id": "song-mod-layout",
+            "owned": true,
+            "trusted": true
+          },
+          {
+            "sequence": 8,
+            "id": "song-mod-layout",
+            "owned": true,
+            "trusted": true
+          }
+        ]
+      }
+    },
+    {
+      "row": {
+        "sequence": 8,
+        "id": "song-mod-layout",
+        "kind": "select-first",
+        "samples": [
+          {
+            "frame": 0,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 73,
+              "y": 276.21875,
+              "width": 863,
+              "height": 40
+            },
+            "modalOwner": "song-mod-dialog",
+            "hitId": "song-mod-layout",
+            "hitOwned": true
+          },
+          {
+            "frame": 1,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 73,
+              "y": 276.21875,
+              "width": 863,
+              "height": 40
+            },
+            "modalOwner": "song-mod-dialog",
+            "hitId": "song-mod-layout",
+            "hitOwned": true
+          }
+        ],
+        "request": {
+          "version": 1,
+          "sequence": 8,
+          "kind": "select-first",
+          "x": 504.5,
+          "y": 296.21875,
+          "width": 1024,
+          "height": 689
+        },
+        "disabled": false,
+        "clicks": [
+          {
+            "sequence": 8,
+            "id": "song-mod-layout",
+            "owned": true,
+            "trusted": true
+          },
+          {
+            "sequence": 8,
+            "id": "song-mod-layout",
+            "owned": true,
+            "trusted": true
+          }
+        ]
+      },
+      "modActions": [
+        {
+          "sequence": 8,
+          "kind": "select-first",
+          "id": "song-mod-layout",
+          "part": null,
+          "field": null,
+          "value": "complete",
+          "checked": null
+        }
+      ],
+      "trusted": [
+        {
+          "sequence": 8,
+          "id": "song-mod-layout",
+          "type": "click",
+          "trusted": true,
+          "code": null,
+          "eventTime": 11165.199999999953,
+          "repeat": false
+        },
+        {
+          "sequence": 8,
+          "id": "song-mod-layout",
+          "type": "input",
+          "trusted": true,
+          "code": null,
+          "eventTime": 11178.599999999977,
+          "repeat": false
+        },
+        {
+          "sequence": 8,
+          "id": "song-mod-layout",
+          "type": "change",
+          "trusted": true,
+          "code": null,
+          "eventTime": 11178.599999999977,
+          "repeat": false
+        },
+        {
+          "sequence": 8,
+          "id": "song-mod-layout",
+          "type": "click",
+          "trusted": true,
+          "code": null,
+          "eventTime": 11183.399999999907,
+          "repeat": false
+        },
+        {
+          "sequence": 8,
+          "id": "song-mod-layout",
+          "type": "keyup",
+          "trusted": true,
+          "code": "Enter",
+          "eventTime": 11169.599999999977,
+          "repeat": false
+        },
+        {
+          "sequence": 9,
+          "id": "song-mod-apply",
+          "type": "click",
+          "trusted": true,
+          "code": null,
+          "eventTime": 11483.599999999977,
+          "repeat": false
+        }
+      ],
+      "followingAction": {
+        "sequence": 9,
+        "id": "song-mod-apply",
+        "kind": "click",
+        "samples": [
+          {
+            "frame": 0,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 795,
+              "y": 589.0625,
+              "width": 141,
+              "height": 40
+            },
+            "modalOwner": "song-mod-dialog",
+            "hitId": "song-mod-apply",
+            "hitOwned": true
+          },
+          {
+            "frame": 1,
+            "width": 1024,
+            "height": 689,
+            "target": {
+              "x": 795,
+              "y": 589.0625,
+              "width": 141,
+              "height": 40
+            },
+            "modalOwner": "song-mod-dialog",
+            "hitId": "song-mod-apply",
+            "hitOwned": true
+          }
+        ],
+        "request": {
+          "version": 1,
+          "sequence": 9,
+          "kind": "click",
+          "x": 865.5,
+          "y": 609.0625,
+          "width": 1024,
+          "height": 689
+        },
+        "disabled": false,
+        "clicks": [
+          {
+            "sequence": 9,
+            "id": "song-mod-apply",
+            "owned": true,
+            "trusted": true
+          }
+        ]
+      }
+    }
+  ]
+}

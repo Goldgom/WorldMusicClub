@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {runInNewContext,Script} from 'node:vm';
 import {IDBFactory} from 'fake-indexeddb';
 import {nativeSkinFixture,prepareNativeSkinFixtures,NATIVE_SKIN_PHASES,NATIVE_SKIN_FILES} from '../scripts/prepare-native-skin-fixtures.mjs';
-import {validateNativeSkinRecord,validateNativeSkinProfiles,validateNativeSkinPicker,validateNativeSkinExports,validateNativeSkinHostAction,validateNativeSkinControlClicks} from '../scripts/verify-native-skin-evidence.mjs';
+import {validateNativeSkinRecord,validateNativeSkinProfiles,validateNativeSkinPicker,validateNativeSkinExports,validateNativeSkinHostAction,validateNativeSkinControlClicks,validateNativeSkinTakePreservation} from '../scripts/verify-native-skin-evidence.mjs';
 import {nativeScoreServer,nativeStorageApp} from './native-storage-app-fixtures.js';
 
 const source=readFileSync(new URL('../crates/desktop-shell/skin-acceptance.js',import.meta.url),'utf8');
@@ -52,6 +52,61 @@ test('raw click gate retains precisely the observed native score delegation and 
   for(const [kind,id]of [['click','home-single-player'],['click','export-button'],['click','export-takes'],['picker','skin-image']]){
     const r={sequence:8,kind,id,clicks:[{sequence:8,id:id==='home-single-player'?null:id,owned:true,trusted:true}]};validateNativeSkinControlClicks(r);
     r.clicks.push({sequence:8,id:null,owned:false,trusted:false});assert.throws(()=>validateNativeSkinControlClicks(r));
+  }
+});
+test('original Windows select traces require exact Mod semantics, trusted activation order and owned primary clicks',()=>{
+  const fixture=JSON.parse(readFileSync(new URL('./fixtures/native-skin/windows-select-activation.json',import.meta.url),'utf8'));
+  assert.equal(fixture.provenance.run_id,37452134867);assert.equal(fixture.cases.length,2);
+  for(const actual of fixture.cases){
+    const contextFor=value=>({phase:fixture.phase,modActions:value.modActions,trusted:value.trusted,controlActions:[value.row,value.followingAction]});
+    const context=contextFor(actual);validateNativeSkinControlClicks(actual.row,[],context);
+    const mutations=[
+      v=>v.row.kind='click',v=>v.row.id='foreign-select',v=>v.row.request.kind='click',v=>v.row.request.sequence++,
+      v=>v.row.clicks.pop(),v=>v.row.clicks.push({...v.row.clicks[1]}),v=>v.row.clicks[1].trusted=false,v=>v.row.clicks[1].owned=false,
+      v=>v.row.clicks[0].trusted=false,v=>v.row.clicks[0].owned=false,v=>v.row.clicks[1].sequence++,
+      v=>v.row.samples[1].modalOwner='settings-dialog',v=>v.row.samples[0].hitOwned=false,
+      v=>v.modActions=[],v=>v.modActions.push({...v.modActions[0]}),v=>v.modActions[0].part='foreign',v=>v.modActions[0].value='solo',
+      v=>v.trusted.splice(1,1),v=>v.trusted.splice(2,0,{...v.trusted[2]}),v=>v.trusted[2].trusted=false,
+      v=>v.trusted[3].id='foreign-select',v=>v.trusted[4].code='Escape',v=>v.trusted[4].repeat=true,
+      v=>v.trusted[3].eventTime=v.trusted[0].eventTime-1,
+      v=>v.trusted[4].eventTime=0,v=>v.trusted[4].eventTime=10_000_000_000,
+      v=>v.trusted[4].eventTime=v.trusted[0].eventTime-1,v=>v.trusted[4].eventTime=v.trusted[5].eventTime,
+      v=>v.followingAction.clicks[0].owned=false,v=>v.followingAction.clicks[0].trusted=false,
+      v=>v.followingAction.request.sequence++,v=>v.trusted[5].trusted=false,v=>v.trusted[5].id='foreign',
+    ];
+    for(const [i,mutate]of mutations.entries()){
+      const value=structuredClone(actual);mutate(value);
+      assert.throws(()=>validateNativeSkinControlClicks(value.row,[],contextFor(value)),`Select activation adversary ${i} accepted`);
+    }
+    const deliveredAfterPopup=structuredClone(actual);deliveredAfterPopup.trusted[4].eventTime=(actual.trusted[3].eventTime+actual.trusted[5].eventTime)/2;
+    validateNativeSkinControlClicks(deliveredAfterPopup.row,[],contextFor(deliveredAfterPopup));
+    assert.throws(()=>validateNativeSkinControlClicks(actual.row));
+    assert.throws(()=>validateNativeSkinControlClicks(actual.row,[],{...context,phase:'skin-restart'}));
+  }
+});
+test('seed retains exactly its two original native-picker blur boundaries with unchanged musical take and evidence prefix',()=>{
+  const fixture=JSON.parse(readFileSync(new URL('./fixtures/native-skin/windows-picker-boundaries.json',import.meta.url),'utf8'));
+  const validate=v=>validateNativeSkinTakePreservation(v.takeBefore,v.takeAfter,v.report),extra=v=>v.takeAfter.input_evidence.events[v.takeBefore.input_evidence.events.length];
+  const unchanged=JSON.stringify(fixture);validate(fixture);assert.equal(JSON.stringify(fixture),unchanged,'Verification must not strip or rewrite retained evidence');
+  const mutations=[
+    v=>v.takeAfter.input_evidence.events.pop(),v=>v.takeAfter.input_evidence.events.push({...extra(v)}),
+    v=>{const e=extra(v);e.event_wall_ms=e.boundary_wall_ms=e.received_wall_ms=v.report.trusted[0].eventTime-1;},
+    v=>{const e=extra(v);e.event_wall_ms=e.boundary_wall_ms=e.received_wall_ms=v.report.trusted[1].eventTime+1;},
+    v=>{const e=extra(v);e.event_wall_ms=e.boundary_wall_ms=e.received_wall_ms=v.report.trusted[3].eventTime+1;},
+    v=>{const e=extra(v);e.event_wall_ms=e.boundary_wall_ms=e.received_wall_ms=v.report.trusted[0].eventTime;},
+    v=>{const e=extra(v);e.event_wall_ms=e.boundary_wall_ms=e.received_wall_ms=v.report.trusted[1].eventTime;},
+    v=>extra(v).received_wall_ms=v.report.trusted[1].eventTime,
+    v=>extra(v).received_wall_ms=extra(v).event_wall_ms-1,v=>extra(v).event_id++,v=>extra(v).reason='pause',
+    v=>extra(v).kind='synthetic_release',v=>extra(v).timestamp_basis='event_monotonic',v=>extra(v).boundary_wall_ms++,
+    v=>v.takeAfter.input_evidence.events[0].midi=61,v=>v.takeAfter.passes[0].inputs[0].midi=61,
+    v=>v.takeAfter.passes[0].clock_segments[0].wall_start_ms=0,v=>v.report.trusted[0].trusted=false,
+    v=>v.report.trusted.splice(1,1),v=>v.report.skinPickers.pop(),v=>v.report.skinPickers[0].events[4].trusted=false,
+  ];
+  for(const field of ['source_id','source_generation','input_kind','channel','midi','velocity','encoding','raw_timestamp_ms','onset_capture'])mutations.push(v=>extra(v)[field]=field==='midi'?60:'unexpected');
+  for(const [i,mutate]of mutations.entries()){const value=structuredClone(fixture);mutate(value);assert.throws(()=>validate(value),`Native picker boundary adversary ${i} accepted`);}
+  for(const phase of ['skin-restart','skin-default-restart']){
+    assert.throws(()=>validateNativeSkinTakePreservation(fixture.takeBefore,fixture.takeAfter,{...fixture.report,phase}));
+    validateNativeSkinTakePreservation(fixture.takeBefore,structuredClone(fixture.takeBefore),{phase});
   }
 });
 

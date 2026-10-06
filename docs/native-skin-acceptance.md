@@ -31,8 +31,13 @@ requires the reset phase's host record. All three processes must close normally.
    slot still available, without importing or selecting a replacement.
 
 Each phase exports the source and entire paused take before and after the skin
-round, with Settings closed before opening sibling export panels. Both must be
-identical. Read-only observations also require unchanged stage geometry, key
+round, with Settings closed before opening sibling export panels. Source and all
+musical take fields must be identical. Seed retains exactly one complete,
+source-null blur boundary for each of its two owned native file dialogs. Each
+boundary must have a continuous event ID and an application-clock timestamp
+strictly inside that picker’s trusted click-to-input interval; the entire earlier evidence
+prefix is unchanged. The two restart phases require full take equality.
+Read-only observations also require unchanged stage geometry, key
 nodes, paused clock, captured count and theme choice. Independent disk snapshots
 retain the exact original source payload (including BOM/CRLF), canonical score,
 metadata and backups throughout. The generator reuses
@@ -43,7 +48,10 @@ the actual executable's bytes, verifies trusted control/file gestures, host
 profile identities, native picker results, raw screenshots and exported files,
 then writes `native-skin-proof.json`. No profile contents are copied into the
 evidence artifact. A copied storage state, fresh restart profile, forced process
-close, changed manifest/PNG, source rewrite, resumed clock or lost take fails.
+close, changed manifest/PNG, source rewrite, resumed clock, lost take, an unrelated
+blur boundary or any missing/extra native-picker boundary fails. Raw click traces
+retain the score picker’s hidden-input delegation and the two exact seed Mod
+select activations, including their trusted input/change and Enter-key receipts.
 
 This scenario does not establish physical audibility, manual keyboard/MIDI device
 coverage, continuous audio silence, full visual acceptance, full repository
