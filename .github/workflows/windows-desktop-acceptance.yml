@@ -1144,6 +1144,31 @@ jobs:
           retention-days: 90
           if-no-files-found: error
           include-hidden-files: true
+      - name: Collect exact VSQ following capture diagnostics
+        id: vsq_capture_collect
+        if: always()
+        run: >-
+          python scripts/collect-vsq-capture-diagnostics.py
+          "${{ github.workspace }}/desktop-vsq-song" "${{ runner.temp }}/vsq-following-captures"
+          --source-sha "${{ github.sha }}"
+      - name: Upload original VSQ seed following capture
+        id: vsq_capture_seed_upload
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: vsq-following-seed-${{ github.sha }}
+          path: ${{ runner.temp }}/vsq-following-captures/vsq-seed/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Upload original VSQ restart following capture
+        id: vsq_capture_restart_upload
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: vsq-following-restart-${{ github.sha }}
+          path: ${{ runner.temp }}/vsq-following-captures/vsq-restart/
+          retention-days: 90
+          if-no-files-found: error
       - name: Collect bounded performance-song windows JSON diagnostics
         id: required_044
         if: always()
@@ -1286,7 +1311,7 @@ jobs:
         if: always()
         env:
           ACCEPTANCE_STEPS: ${{ toJSON(steps) }}
-          ACCEPTANCE_REQUIRED_STEPS: required_001,acceptance_source,required_003,required_004,required_005,acceptance_identity,required_007,required_008,required_009,required_010,required_011,required_012,native_build,required_016,required_017,required_018,required_019,required_020,required_021,required_022,required_023,required_024,required_025,required_026,required_027,complete_practice_windows,complete_practice_windows_verify,canonical_practice_windows,canonical_practice_windows_verify,required_032,management_catalog_windows,management_catalog_windows_verify,required_035,required_036,required_037,required_038,required_039,required_040,required_041,required_042,required_043,required_044,required_045,required_046,required_047,required_048,required_049,required_050,required_051,required_052,required_053,required_054,required_055,native_transfer,native_transfer_upload,native_transfer_identity
+          ACCEPTANCE_REQUIRED_STEPS: required_001,acceptance_source,required_003,required_004,required_005,acceptance_identity,required_007,required_008,required_009,required_010,required_011,required_012,native_build,required_016,required_017,required_018,required_019,required_020,required_021,required_022,required_023,required_024,required_025,required_026,required_027,complete_practice_windows,complete_practice_windows_verify,canonical_practice_windows,canonical_practice_windows_verify,required_032,management_catalog_windows,management_catalog_windows_verify,required_035,required_036,required_037,required_038,required_039,required_040,required_041,required_042,required_043,vsq_capture_collect,vsq_capture_seed_upload,vsq_capture_restart_upload,required_044,required_045,required_046,required_047,required_048,required_049,required_050,required_051,required_052,required_053,required_054,required_055,native_transfer,native_transfer_upload,native_transfer_identity
         run: python scripts/native-acceptance-join.py steps
   native-package:
     # Candidate creation is suppressed unless every exact-source producer succeeds.

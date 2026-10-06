@@ -115,6 +115,17 @@ class WindowsJsonDiagnosticsTests(unittest.TestCase):
                                       full["with"]["path"])
                         self.assertIn(".png", full["with"]["path"])
                     self.assertLess(steps.index(full), steps.index(collect))
+                if platform == "windows" and group == "vsq-song":
+                    # Exact selected PNG diagnostics are additive to the original
+                    # adjacent JSON pair and remain mandatory producer receipts.
+                    extra_ids = ["vsq_capture_collect", "vsq_capture_seed_upload", "vsq_capture_restart_upload"]
+                    extras = steps[steps.index(upload) + 1:steps.index(upload) + 4]
+                    self.assertEqual([step["id"] for step in extras], extra_ids)
+                    for step in extras:
+                        self.assertEqual(step["if"], "always()")
+                        self.assertNotIn("continue-on-error", step)
+                        self.assertIn(step["id"], steps[-1]["env"]["ACCEPTANCE_REQUIRED_STEPS"].split(","))
+                    diagnostics.extend(extras)
             # Collectors stay after all original UI checks and full evidence.
             # Only the new transfer/mandatory-result seal follows; packaging now
             # requires the successful producer job, including retained evidence.
