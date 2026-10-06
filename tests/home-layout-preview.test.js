@@ -6,8 +6,9 @@ import {mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync} from 'node
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {HOME_LAYOUT_CASES, HOME_LAYOUT_PREVIEW_CASE, assertHomeLayoutReport, homeLayoutScreenshotNames, homeModeIds, homeFocusIds} from './home-layout.js';
-import {registerHomeLayoutBrowserRegressions} from './home-layout-browser-regression.js';
+import {registerHomeLayoutBrowserRegressions, enterHomeLayoutFromStage, configureHomeLayoutCase, setHomeLabelText} from './home-layout-browser-regression.js';
 import {assertExecutedHomeLayoutCase, verifyUiPreviewHome} from '../scripts/ui-preview-home.mjs';
+import {freePracticeApp, fixtureScoreServer} from './free-practice-app-fixtures.js';
 
 // Original synthetic verifier INPUTS only. No browser or server is launched,
 // and these generated rectangles/PNGs are never published as acceptance evidence.
@@ -47,6 +48,59 @@ function originalContractPng(width,height) {
   for (let y=0;y<height;y++) for (let x=0;x<width;x++) pixels.set(((x>>4)+(y>>4))%2 ? [16,90,110] : [240,180,50], y*stride+1+x*3);
   return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',header),chunk('IDAT',deflateSync(pixels)),chunk('IEND',Buffer.alloc(0))]);
 }
+
+test('home preview setup uses visible stage return controls and preserves locale bindings across all sixteen configurations', async () => {
+  const app=await freePracticeApp({fetchResult:await fixtureScoreServer()});
+  try {
+    await app.until(()=>!app.$('start-practice').disabled);
+    await app.click('home-single-player'); await app.click('resume-session');
+    assert.equal(app.document.body.dataset.screen,'stage');
+    const brand=app.document.querySelector('#shell-brand .brand');
+    assert.equal(brand.closest('.shell-header').hidden,true,'Reproduce546: the brand is hidden on the bootstrapped stage');
+    const clicks=[],selections=[],viewports=[],media=[];
+    // DOM controller adapter only: these calls test real app handlers and hidden
+    // ownership. They provide no browser layout, pixels, focus or hit evidence.
+    const visible=node=>Boolean(node&&!node.closest('[hidden]')&&(!node.closest('dialog')||node.closest('dialog').open));
+    const page={
+      locator:selector=>({
+        isVisible:async()=>visible(app.document.querySelector(selector)),
+        getAttribute:async name=>app.document.querySelector(selector).getAttribute(name),
+        waitFor:async({state})=>{assert.equal(state,'visible');assert.equal(visible(app.document.querySelector(selector)),true,selector);},
+        click:async()=>{const node=app.document.querySelector(selector);assert.equal(visible(node),true,`${selector} must be genuinely exposed by the app`);clicks.push(selector);node.click();await app.tick();},
+        evaluateAll:async(fn,args)=>fn([...app.document.querySelectorAll(selector)],args),
+      }),
+      setViewportSize:async viewport=>viewports.push(viewport),
+      emulateMedia:async value=>media.push(value),
+    };
+    const closeShellPanels=async()=>{
+      for(const dialog of app.document.querySelectorAll('.shell-dialog'))if(dialog.open){dialog.querySelector('[data-close-panel]').click();await app.tick();}
+    };
+    await app.click('settings-button');await closeShellPanels();
+    assert.equal(app.document.body.dataset.screen,'stage','Closing a panel alone does not return home');
+    assert.equal(await page.locator('#shell-brand .brand').isVisible(),false);
+    await enterHomeLayoutFromStage(page,closeShellPanels);
+    assert.deepEqual(clicks,['#back-to-library','#lobby-home']);
+    assert.equal(app.document.querySelector('.shell-header').hidden,false);
+    const ui=selector=>({selectOption:async value=>{
+      if(!app.$('settings-dialog').open)await page.locator('#settings-button').click();
+      const node=app.document.querySelector(selector);assert.equal(visible(node),true);node.value=value;app.emit(node,'change');await app.tick();selections.push([selector,value]);
+    }});
+    const nodes=[...app.document.querySelectorAll('.game-mode-copy strong,.game-mode-copy small')],textNodes=nodes.map(node=>node.firstChild);
+    for(const config of HOME_LAYOUT_CASES){
+      const originals=await configureHomeLayoutCase({page,ui,closeShellPanels},config);
+      assert.equal(app.document.documentElement.lang,config.locale);assert.equal(app.document.documentElement.dataset.themeMode,config.theme);
+      if(config.longLabels){
+        setHomeLabelText(nodes,originals.map(text=>text+' · long label'));
+        assert.deepEqual(nodes.map(node=>node.firstChild),textNodes,'Stress copy must retain the app-owned localization nodes');
+      }
+      await page.locator('#home-settings').click();assert.equal(app.$('settings-dialog').open,true);await closeShellPanels();
+      if(config.longLabels)setHomeLabelText(nodes,originals);
+    }
+    assert.equal(selections.length,32);assert.equal(viewports.length,16);assert.equal(media.length,16);
+    assert.equal(nodes.at(-2).textContent,'Settings','The final English stress case cannot retain the previous Chinese title');
+    assert.deepEqual(nodes.map(node=>node.firstChild),textNodes);
+  } finally {await app.close();}
+});
 
 test('home preview requires the exact sixteen configurations and registers one bounded actual-app case', () => {
   const expected = [[1024,689],[1024,697],[1280,720],[844,390],[390,844],[1920,1080],[512,345]].flatMap(([width,height]) => ['zh-CN','en'].map(locale => [width,height,locale,locale==='en'?'dark':'light','no-preference',false]));

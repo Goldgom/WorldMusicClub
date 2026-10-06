@@ -2,7 +2,46 @@ import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
+import {LOCALE_CATALOGS} from '../web/i18n.js';
 import {assertHomeLayout, assertHomeTargetVisible, assertHomeLayoutReport, homeModeIds, homeFocusIds, HOME_LAYOUT_PREVIEW_CASE, HOME_LAYOUT_CASES, homeLayoutScreenshotNames} from './home-layout.js';
+
+const labelSelector = '.game-mode-copy strong,.game-mode-copy small';
+
+export async function enterHomeLayoutFromStage(page, closeShellPanels) {
+  await closeShellPanels();
+  assert.equal(await page.locator('#workspace').isVisible(), true, 'The full-app bootstrap starts on stage');
+  // The stage deliberately hides the shell brand. Use the same visible return
+  // controls as the existing free-piano and navigation regressions.
+  await page.locator('#back-to-library').click();
+  await page.locator('#song-lobby').waitFor({state:'visible'});
+  await page.locator('#lobby-home').click();
+  await page.locator('#game-home').waitFor({state:'visible'});
+  assert.equal(await page.locator('body').getAttribute('data-screen'), 'home');
+}
+
+export async function configureHomeLayoutCase({page, ui, closeShellPanels}, config) {
+  assert.equal(await page.locator('#game-home').isVisible(), true);
+  await page.setViewportSize({width:config.viewport.width, height:config.viewport.height});
+  await page.emulateMedia({reducedMotion:config.reducedMotion});
+  await ui('#interface-language').selectOption(config.locale);
+  await ui('#theme-mode').selectOption(config.theme);
+  await closeShellPanels();
+  assert.equal(await page.locator('body').getAttribute('data-screen'), 'home');
+  assert.equal(await page.locator('#settings-dialog').isVisible(), false);
+  const labels = await page.locator(labelSelector).evaluateAll(nodes => nodes.map(node => ({key:node.getAttribute('data-i18n'),text:node.textContent})));
+  for (const label of labels) assert.equal(label.text, LOCALE_CATALOGS[config.locale][label.key], `${label.key} must use the actual selected locale before measuring`);
+  return labels.map(label => label.text);
+}
+
+// Keep the app's bound Text nodes alive. Replacing element.textContent retires
+// its localization binding, even if the original string is put back afterward.
+export function setHomeLabelText(nodes, values) {
+  if (nodes.length !== values.length) throw new Error('Home label inventory changed');
+  nodes.forEach((node, index) => {
+    if (node.childNodes.length !== 1 || node.firstChild.nodeType !== 3) throw new Error('Home label no longer has its original text node');
+    node.firstChild.textContent = values[index];
+  });
+}
 
 async function targetVisibility(target) {
   return target.evaluate(node => {
@@ -23,18 +62,13 @@ export function registerHomeLayoutBrowserRegressions({test, getPage, ui, closeSh
     const page = getPage(), evidence = [];
     const report = {version:1, ok:false, scope:'actual-hosted-home-layout', originalFixturesOnly:true, nativeWebviewZoomVerified:false, evidence};
     try {
-      await closeShellPanels();
-      await page.locator('#shell-brand .brand').click();
+      await enterHomeLayoutFromStage(page, closeShellPanels);
       for (const config of HOME_LAYOUT_CASES) {
-        await page.setViewportSize({width:config.viewport.width, height:config.viewport.height});
-        await page.emulateMedia({reducedMotion:config.reducedMotion});
-        await ui('#interface-language').selectOption(config.locale);
-        await ui('#theme-mode').selectOption(config.theme);
-        await closeShellPanels();
-        const originals = await page.locator('.game-mode-copy strong,.game-mode-copy small').allTextContents();
-        if (config.longLabels) await page.locator('.game-mode-copy strong,.game-mode-copy small').evaluateAll((nodes, locale) => {
-          for (const node of nodes) node.textContent += locale === 'en' ? ' · extended appearance and performance configuration' : ' · 更多外观与音乐演奏配置选项';
-        }, config.locale);
+        const originals = await configureHomeLayoutCase({page, ui, closeShellPanels}, config);
+        if (config.longLabels) {
+          const suffix = config.locale === 'en' ? ' · extended appearance and performance configuration' : ' · 更多外观与音乐演奏配置选项';
+          await page.locator(labelSelector).evaluateAll(setHomeLabelText, originals.map(text => text+suffix));
+        }
         await page.locator('#game-home').evaluate(node => { node.scrollTop = 0; });
         await page.evaluate(async () => { await document.fonts.ready; await new Promise(requestAnimationFrame); });
         const row = await page.evaluate(() => {
@@ -82,7 +116,7 @@ export function registerHomeLayoutBrowserRegressions({test, getPage, ui, closeSh
         row.settingsActivation = await page.evaluate(() => ({...globalThis.__wmhHomeSettingsClick, dialog:'settings-dialog', open:document.querySelector('#settings-dialog').open}));
         await closeShellPanels();
         row.settingsOpened = true;
-        if (config.longLabels) await page.locator('.game-mode-copy strong,.game-mode-copy small').evaluateAll((nodes, values) => nodes.forEach((node, index) => { node.textContent = values[index]; }), originals);
+        if (config.longLabels) await page.locator(labelSelector).evaluateAll(setHomeLabelText, originals);
       }
       report.ok = true; assertHomeLayoutReport(report);
     } catch (error) {
