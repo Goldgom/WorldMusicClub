@@ -1,0 +1,22 @@
+.skin-settings{border-top:1px solid var(--border);padding-top:1rem;margin-top:1rem;display:grid;gap:.6rem;min-width:0}
+.skin-settings h3,.skin-settings p{margin:0}.skin-settings p,.skin-settings li{font-size:.85rem;overflow-wrap:anywhere}
+.skin-settings label{display:grid;gap:.3rem;min-width:0}.skin-settings input,.skin-settings select{max-width:100%;min-width:0}
+.skin-actions,#skin-legend{display:flex;flex-wrap:wrap;gap:.5rem 1rem}.skin-actions .button{white-space:normal}
+.skin-settings button[aria-disabled=true]{opacity:.65;cursor:wait}
+#skin-legend[hidden]{display:none}#skin-legend>span{display:flex;align-items:center;gap:.4rem}
+[data-skin-legend]{display:inline-block;width:14px;height:14px;border:1px solid currentColor;background:var(--skin-human-fill)}
+[data-skin-legend][data-marker=circle]{border-radius:50%}[data-skin-legend][data-marker=diamond]{transform:rotate(45deg)}
+[data-skin-legend][data-marker=triangle]{clip-path:polygon(50% 0,100% 100%,0 100%)}
+[data-skin-legend][data-pattern=stripes]{background-image:repeating-linear-gradient(45deg,transparent 0 3px,currentColor 3px 4px)}
+/* A PNG may only decorate the non-interactive, aria-hidden home artwork. The
+   score lane and notation retain their existing surfaces and geometry. */
+html[data-skin] .rhythm-shell .rhythm-hero-art{background:var(--skin-background);isolation:isolate}
+html[data-skin] .rhythm-hero-art::before{content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:inherit;background-image:var(--skin-background-image,none);background-size:var(--skin-background-size,cover);background-repeat:var(--skin-background-repeat,no-repeat);background-position:center;opacity:var(--skin-background-opacity,0)}
+html[data-skin] .game-shell .piano-stage-shared .piano-key{background:var(--skin-key-white);color:var(--skin-key-white-foreground);border-color:var(--skin-key-border);box-shadow:none}
+html[data-skin] .game-shell .piano-stage-shared .piano-key.black{background:var(--skin-key-black);color:var(--skin-key-black-foreground);border-color:var(--skin-key-border)}
+html[data-skin] .game-shell .piano-stage-shared .piano-key:is(.playing,.pressed,.held){background:var(--skin-key-pressed);color:var(--skin-key-pressed-foreground);border-color:var(--skin-key-border);box-shadow:none}
+html[data-skin] .game-shell .piano-stage-shared .piano-key.accompaniment{outline:2px dashed var(--skin-machine-fill);outline-offset:-4px}
+html[data-skin] .game-shell .piano-stage-shared .piano-key:focus-visible{outline:3px solid var(--skin-key-white-foreground);outline-offset:-5px;box-shadow:inset 0 0 0 5px var(--skin-key-white)}
+html[data-skin] .game-shell .piano-stage-shared .piano-key.black:focus-visible{outline-color:var(--skin-key-black-foreground);box-shadow:inset 0 0 0 5px var(--skin-key-black)}
+/* No skin animation or transition overrides. Existing reduced-motion rules
+   and keyboard event ownership continue to apply. */

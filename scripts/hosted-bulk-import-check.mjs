@@ -56,7 +56,7 @@ async function closeSession(){
 }
 try{
  const binary=path.resolve(process.env.WMH_NATIVE_IMPORT_DRIVER);report.driver_sha256=createHash('sha256').update(await readFile(binary)).digest('hex');
- for(const name of ['web/app.js','web/song-mod.js','web/song-mod-view.js','web/part-instrument-policy.js','scripts/hosted-song-mod-controls.mjs','web/bulk-import.js','web/bulk-import-view.js','web/bulk-import-view.css','tests/native-import-driver-fixtures.js','scripts/hosted-bulk-import-check.mjs','scripts/hosted-worklet-assets.mjs','scripts/management-hosted-runtime.mjs']){report.source_hashes??={};report.source_hashes[name]=createHash('sha256').update(await readFile(path.join(root,name))).digest('hex')}
+ for(const name of ['web/app.js','web/song-mod.js','web/song-mod-view.js','web/part-instrument-policy.js','web/skin-format.js','web/skin-runtime.js','web/skin-settings.js','web/skin-storage.js','web/skin-settings.css','scripts/hosted-song-mod-controls.mjs','web/bulk-import.js','web/bulk-import-view.js','web/bulk-import-view.css','tests/native-import-driver-fixtures.js','scripts/hosted-bulk-import-check.mjs','scripts/hosted-worklet-assets.mjs','scripts/management-hosted-runtime.mjs']){report.source_hashes??={};report.source_hashes[name]=createHash('sha256').update(await readFile(path.join(root,name))).digest('hex')}
  report.asset_server={};assetServer=await startHostedAssetServer({root,sourceSha:head,binary:path.resolve(root,process.env.WMH_SERVER_BINARY||'target/debug/practice-server'),evidence:report.asset_server});origin=assetServer.origin;report.origin=origin;
  const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});
  async function launch(){

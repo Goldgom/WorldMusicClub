@@ -62,6 +62,8 @@ import {validLatency, readLatencyPreference, writeLatencyPreference, PRACTICE_SE
 import {setupMidi, eventTimeEvidence} from './midi.js';
 import {setupImageReview} from './image-review.js';
 import {setupThemes} from './themes.js';
+import {createSkinRuntime,paintSkinNote} from './skin-runtime.js';
+import {setupSkinSettings} from './skin-settings.js';
 import {PIANO_RANGES, beat, midiName, pitchMidi, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, renderNotation, notationPageCount, notationLayout, keyAt, keyTonic} from './music.js';
 import {Transport, Synth, TimelineIndex} from './transport.js';
 import {notationAudioAdmission} from './engraving-render-scheduler.js';
@@ -134,6 +136,7 @@ function compatibilityText(result) {
 const renderResultsSummary=setupResultsSummary(document,{i18n});
 const renderGuitarGuidance=setupGuitarGuidance(document);
 setupThemes();
+const skinRuntime=createSkinRuntime({document});
 const transport = new Transport();
 const synth = new Synth({onError:error=>{pausePlayback();notice(()=>liveAudioErrorText(error),true);}});
 function liveAudioErrorText(error) { return cleanErrorText(i18n.locale,{code:error?.code,message:error?.message,details:error?.details,liveAudioTerminal:synth.liveError===error}); }
@@ -1324,6 +1327,7 @@ function drawFrame(displayOnly = false) {
   const windowMs = 4000;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const fallingNotes=reducedMotion?activeDisplay:stageNotes(playbackIndex?.range(position,position+windowMs)||[],state.sourceDisplayIndex?.range(position,position+windowMs)||[]);
+  canvas.dataset.skin=skinRuntime.current()?.id||'builtin';
   canvas.dataset.humanNoteIds=JSON.stringify(fallingNotes.filter(note=>note.practice_role==='human').map(note=>note.id));canvas.dataset.machineNoteIds=JSON.stringify(fallingNotes.filter(note=>note.practice_role==='machine').map(note=>note.id));canvas.dataset.noteLabels=String(fallingNoteLabels?.enabled()===true);
   for (const note of fallingNotes) {
     if (note.start_ms + note.duration_ms < position || note.start_ms > position + windowMs) continue;
@@ -1331,6 +1335,7 @@ function drawFrame(displayOnly = false) {
     const bottom = reducedMotion ? height : height - (note.start_ms - position) / windowMs * height;
     const noteHeight = reducedMotion ? 40 : Math.max(8, note.duration_ms / windowMs * height - 4);
     const x = key.x * width + 2; const y = bottom - noteHeight;
+    if(paintSkinNote(ctx,skinRuntime.current(),{x,y,width:Math.max(2,key.width*width-4),height:noteHeight,viewportHeight:height,role:note.practice_role,label:fallingNoteLabels?.enabled()&&noteHeight>23&&key.width*width>27?midiName(note.midi):null,labelY:Math.min(height-13,Math.max(y+17,85))}))continue;
     const machine=note.practice_role==='machine',color=machine?'#8a91ac':note.start_ms<=position?FIELD_COLORS.scheduled:key.black?FIELD_COLORS.accidental:FIELD_COLORS.natural;
     ctx.fillStyle=color;ctx.shadowColor=color+'66';ctx.shadowBlur=machine?0:fallingNoteShadow(note,position,fallingNotes.length,reducedMotion);
     ctx.beginPath(); ctx.roundRect(x, y, Math.max(2, key.width * width - 4), noteHeight, 5); ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#eaffff55';ctx.lineWidth=machine?2:1;ctx.setLineDash(machine?[5,4]:[]);ctx.stroke();ctx.setLineDash([]);
@@ -1806,4 +1811,5 @@ previewMedia=createCleanSongMedia({loadAsset:loadCleanAsset,cover:cleanView.cove
 activeMedia=createCleanSongMedia({loadAsset:loadCleanAsset,background:cleanView.background,video:cleanView.video,onStatus:value=>cleanView.renderMedia(value)});
 window.addEventListener('pagehide',()=>{canonicalSession.destroy();cleanPlayer.destroy();performanceListening.stop({revokePolicy:true});previewMedia.destroy();activeMedia.destroy();});
 
+setupSkinSettings({document,i18n,runtime:skinRuntime,onChange:()=>drawFrame(true)});
 renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); void scoreStorage.start(); loadCatalog();

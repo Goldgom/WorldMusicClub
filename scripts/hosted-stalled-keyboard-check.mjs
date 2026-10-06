@@ -31,7 +31,7 @@ try{
   assetServer=await startHostedAssetServer({root,sourceSha,binary:resolve(root,process.env.WMH_SERVER_BINARY||'target/debug/practice-server'),evidence:report.asset_server});report.origin=assetServer.origin;
   // Bind all scored-input implementation bytes served by the real executable,
   // in addition to the shared helper's checked Worklet import closure.
-  for(const name of ['app.js','song-mod.js','song-mod-view.js','part-instrument-policy.js','keyboard-input.js','midi-messages.js','practice-recorder.js','input-evidence.js','transport.js']){
+  for(const name of ['app.js','song-mod.js','song-mod-view.js','part-instrument-policy.js','skin-format.js','skin-runtime.js','skin-settings.js','skin-storage.js','skin-settings.css','keyboard-input.js','midi-messages.js','practice-recorder.js','input-evidence.js','transport.js']){
     const expected=await readFile(join(root,'web',name));const response=await fetch(`${report.origin}/${name}`,{redirect:'error',signal:AbortSignal.timeout(10000)});assert.equal(response.status,200);const bytes=await boundedHostedResponse(response);assert.equal(digest(bytes),digest(expected));report.assets.push({name,bytes:bytes.length,sha256:digest(bytes),status:200});
   }
   const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});report.browser_version=browser.version();context=await browser.newContext({viewport:{width:1280,height:900},acceptDownloads:true});page=await context.newPage();page.setDefaultTimeout(15000);

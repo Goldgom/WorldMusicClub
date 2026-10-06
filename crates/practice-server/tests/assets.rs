@@ -62,3 +62,36 @@ fn song_mod_and_sound_modules_are_embedded_with_exact_source_bytes() {
     let view = std::str::from_utf8(practice_server::asset("/song-mod-view.js").unwrap()).unwrap();
     assert!(view.contains("from './part-instrument-policy.js'"));
 }
+
+#[test]
+fn skin_runtime_dependencies_are_embedded_with_exact_source_bytes() {
+    for (path, bytes) in [
+        (
+            "/skin-format.js",
+            include_bytes!("../../../web/skin-format.js").as_slice(),
+        ),
+        (
+            "/skin-runtime.js",
+            include_bytes!("../../../web/skin-runtime.js").as_slice(),
+        ),
+        (
+            "/skin-settings.js",
+            include_bytes!("../../../web/skin-settings.js").as_slice(),
+        ),
+        (
+            "/skin-storage.js",
+            include_bytes!("../../../web/skin-storage.js").as_slice(),
+        ),
+        (
+            "/skin-settings.css",
+            include_bytes!("../../../web/skin-settings.css").as_slice(),
+        ),
+    ] {
+        assert_eq!(practice_server::asset(path).unwrap(), bytes, "{path}");
+    }
+    let app = std::str::from_utf8(practice_server::asset("/app.js").unwrap()).unwrap();
+    assert!(app.contains("from './skin-runtime.js'"));
+    assert!(app.contains("from './skin-settings.js'"));
+    let html = std::str::from_utf8(practice_server::asset("/index.html").unwrap()).unwrap();
+    assert!(html.contains("skin-settings.css"));
+}

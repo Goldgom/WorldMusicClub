@@ -4,13 +4,15 @@ WorldMusicClub skins describe presentation only. The same UTF-8 JSON manifest ca
 be read by a browser, Unity or another renderer without changing the Rust score,
 clock, note targets or assessment engine. This first implementation supplies a
 strict schema, a dependency-free JavaScript reference reader, a bounded directory
-validator and an original sample. It does **not** install a product-wide skin
-picker or establish browser, Unity, native Windows or accessibility acceptance.
+validator and an original sample. The current app also has a bounded
+[import/select/reset adapter](SKIN_APP_MVP.md); its declared support is narrower
+than the portable format. This does not establish browser, Unity, native Windows
+or accessibility acceptance.
 
 中文：皮肤只控制外观，不更改原谱、计时、判定、乐器或演奏者。人类与机器
 必须同时以不同颜色、不同形状和明确图例区分。缺失图片回退为纯色；不支持
-的显示特性使用内置默认值并报告原因。当前完成的是独立格式、解析器与样例，
-不是已验收的全产品主题切换功能。
+的显示特性使用内置默认值并报告原因。当前包含独立格式、解析器、样例以及
+范围受限的应用内导入／选择／重置功能，尚不代表全产品外观功能已通过验收。
 
 ## Package and version
 
