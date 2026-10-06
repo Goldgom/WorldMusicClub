@@ -120,6 +120,70 @@ function Capture-Window($App,[string]$Name) {
   }
   Capture-Handle $App.MainWindowHandle $Name -ClientOnly:($Scenario -cin @('library-catalog','complete-practice','canonical-practice')) -GeometryFile $catalogCaptureGeometryFile
 }
+# This closed action observes an already-visible client. Unlike an ordinary
+# click it must not refocus, move the pointer, request a redraw or wait for UI.
+function Get-PassiveCaptureTarget($App,$Action) {
+  $App.Refresh();$window=$App.MainWindowHandle;[uint32]$owner=0
+  [void][NativeAcceptance]::GetWindowThreadProcessId($window,[ref]$owner)
+  $client=New-Object NativeAcceptance+RECT;$origin=New-Object NativeAcceptance+POINT
+  if(-not [NativeAcceptance]::GetClientRect($window,[ref]$client) -or -not [NativeAcceptance]::ClientToScreen($window,[ref]$origin)){throw 'Passive capture client geometry unavailable'}
+  $foreground=[NativeAcceptance]::GetForegroundWindow();$root=[NativeAcceptance]::GetAncestor($window,2)
+  $visible=[NativeAcceptance]::IsWindowVisible($window);$enabled=[NativeAcceptance]::IsWindowEnabled($window)
+  $monitor=[NativeAcceptance]::MonitorFromWindow($window,2);$info=New-Object NativeAcceptance+MONITORINFO
+  $info.Size=[Runtime.InteropServices.Marshal]::SizeOf([type][NativeAcceptance+MONITORINFO])
+  if($monitor -eq [IntPtr]::Zero -or -not [NativeAcceptance]::GetMonitorInfo($monitor,[ref]$info)){throw 'Passive capture monitor geometry unavailable'}
+  $work=$info.Work;$monitorCount=[NativeAcceptance]::GetSystemMetrics(80)
+  $dpi=[NativeAcceptance]::GetDpiForWindow($window);$systemDpi=[NativeAcceptance]::GetDpiForSystem()
+  $windowAwareness=[NativeAcceptance]::GetAwarenessFromDpiAwarenessContext([NativeAcceptance]::GetWindowDpiAwarenessContext($window))
+  $callerAwareness=[NativeAcceptance]::GetAwarenessFromDpiAwarenessContext([NativeAcceptance]::GetThreadDpiAwarenessContext())
+  [int]$scale=0;$scaleResult=[NativeAcceptance]::GetScaleFactorForMonitor($monitor,[ref]$scale)
+  [NativeAcceptance]::ValidatePassiveCaptureScale($dpi,$systemDpi,$windowAwareness,$callerAwareness,$scaleResult,$scale,$Action.devicePixelRatio,$monitorCount,$info.Monitor)
+  $box=[NativeAcceptance]::PassiveCaptureBounds($window,$root,$foreground,[uint32]$App.Id,$owner,$visible,$enabled,$client,$origin,$work,$Action.width,$Action.height)
+  $above=@();$next=[NativeAcceptance]::GetWindow($window,3)
+  while($next -ne [IntPtr]::Zero) {
+    if($above.Count -ge 128){throw 'Passive capture window inventory exceeds 128'}
+    $rectangle=New-Object NativeAcceptance+RECT
+    if(-not [NativeAcceptance]::GetWindowRect($next,[ref]$rectangle)){throw 'Passive capture cannot verify a higher window'}
+    $shown=[NativeAcceptance]::IsWindowVisible($next)
+    [NativeAcceptance]::ValidatePassiveCaptureOverlay($box,$rectangle,$shown)
+    $above+=,[ordered]@{hwnd=$next.ToInt64();visible=$shown;rect=@($rectangle.Left,$rectangle.Top,$rectangle.Right,$rectangle.Bottom)}
+    $next=[NativeAcceptance]::GetWindow($next,3)
+  }
+  return [ordered]@{process_id=$App.Id;owner_process_id=$owner;hwnd=$window.ToInt64();root_hwnd=$root.ToInt64();foreground_hwnd=$foreground.ToInt64();visible=$visible;enabled=$enabled;client_rect=@($client.Left,$client.Top,$client.Right,$client.Bottom);client_origin=@($origin.X,$origin.Y);client_screen=@($box.Left,$box.Top,$box.Right,$box.Bottom);work_area=@($work.Left,$work.Top,$work.Right,$work.Bottom);viewport=@($Action.width,$Action.height);device_pixel_ratio=$Action.devicePixelRatio;window_dpi=$dpi;system_dpi=$systemDpi;window_awareness=$windowAwareness;caller_awareness=$callerAwareness;monitor_scale_percent=$scale;monitor_scale_hresult=$scaleResult;monitor_count=$monitorCount;monitor_rect=@($info.Monitor.Left,$info.Monitor.Top,$info.Monitor.Right,$info.Monitor.Bottom);windows_above=$above}
+}
+function Capture-PassiveClient($App,$Action) {
+  if($Scenario -cne 'vsq-song' -or $env:WMH_DESKTOP_ACCEPTANCE_PHASE -cnotin @('vsq-seed','vsq-restart') -or $Action.kind -cne 'capture'){throw 'Passive capture requires its exact acceptance phase'}
+  if($Action.sequence -lt 1 -or $Action.sequence -gt 80 -or $Action.x -le 0 -or $Action.x -ge $Action.width -or $Action.y -le 0 -or $Action.y -ge $Action.height){throw 'Passive capture target is invalid'}
+  $timer=[Diagnostics.Stopwatch]::StartNew();$times=[ordered]@{started_ms=0}
+  $before=Get-PassiveCaptureTarget $App $Action;$times.target_checked_ms=$timer.Elapsed.TotalMilliseconds
+  $width=[int]$before.client_rect[2];$height=[int]$before.client_rect[3]
+  $bitmap=[System.Drawing.Bitmap]::new($width,$height,[System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+  try {
+    $graphics=[System.Drawing.Graphics]::FromImage($bitmap)
+    try {
+      $times.copy_started_ms=$timer.Elapsed.TotalMilliseconds
+      $graphics.CopyFromScreen([int]$before.client_screen[0],[int]$before.client_screen[1],0,0,[System.Drawing.Size]::new($width,$height),[System.Drawing.CopyPixelOperation]::SourceCopy)
+      $times.copy_finished_ms=$timer.Elapsed.TotalMilliseconds
+    } finally {$graphics.Dispose()}
+    $after=Get-PassiveCaptureTarget $App $Action;$times.target_rechecked_ms=$timer.Elapsed.TotalMilliseconds
+    if(($before | ConvertTo-Json -Depth 8 -Compress) -cne ($after | ConvertTo-Json -Depth 8 -Compress)){throw 'Passive capture ownership or geometry changed during pixel copy'}
+    $lock=$bitmap.LockBits([System.Drawing.Rectangle]::new(0,0,$width,$height),[System.Drawing.Imaging.ImageLockMode]::ReadOnly,[System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+    try {
+      $pixels=[byte[]]::new($lock.Stride*$height)
+      [Runtime.InteropServices.Marshal]::Copy($lock.Scan0,$pixels,0,$pixels.Length)
+      $pixelStats=[NativeAcceptance]::ValidatePassiveCapturePixels($pixels,$width,$height,$lock.Stride)
+    } finally {$bitmap.UnlockBits($lock)}
+    $times.pixels_verified_ms=$timer.Elapsed.TotalMilliseconds
+    $name="native-action-$($env:WMH_DESKTOP_ACCEPTANCE_PHASE)-$($Action.sequence).png";$path=Join-Path $OutputDirectory $name
+    $stream=[IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {$bitmap.Save($stream,[System.Drawing.Imaging.ImageFormat]::Png)} finally {$stream.Dispose()}
+    $times.png_saved_ms=$timer.Elapsed.TotalMilliseconds
+    $file=Get-Item -LiteralPath $path -Force
+    if($file.Length -le 0 -or $file.Length -gt 16MB -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Passive capture PNG exceeds its ordinary file bound'}
+    $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant();$times.finished_ms=$timer.Elapsed.TotalMilliseconds
+    return [ordered]@{version=1;kind='foreground-client-pixels';method='CopyFromScreen';phase=$env:WMH_DESKTOP_ACCEPTANCE_PHASE;sequence=$Action.sequence;source_sha=$native.source_sha;source_tree=$native.source_tree;executable_sha256=$native.executable_sha256;before=$before;after=$after;input=[ordered]@{pointer_moved=$false;pointer_clicked=$false;focus_changed=$false;keyboard_sent=$false};file=$name;bytes=$file.Length;sha256=$hash;width=$width;height=$height;non_black_pixels=$pixelStats[0];different_pixels=$pixelStats[1];channel_min=$pixelStats[2];channel_max=$pixelStats[3];timings=$times}
+  } finally {$bitmap.Dispose();$timer.Stop()}
+}
 function Find-Control($Root,[string]$Id) {
   $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,$Id)
   return $Root.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$condition)
@@ -325,6 +389,7 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
   }
   $App.Refresh();$window=$App.MainWindowHandle
   if($window -eq [IntPtr]::Zero){throw 'Application window disappeared'}
+  if($Action.kind -ceq 'capture'){$Evidence.native_capture=Capture-PassiveClient $App $Action;return}
   if($Action.kind -cin @('live-key-r-down','live-key-r-up')) {
     if(-not $fixedLiveKeyScenario){throw 'Fixed R actions require an explicit native live-tone scenario'}
     $foreground=[NativeAcceptance]::GetForegroundWindow();$enabled=[NativeAcceptance]::IsWindowEnabled($window)
@@ -576,7 +641,7 @@ if($Scenario -eq 'library-catalog') {
         if($action.sequence -ne $sequence -or $sequence -gt $actionLimit){throw 'Out-of-order or over-limit native action'}
         $catalogReportedViewport=@($action.width,$action.height)
         $result=@{ok=$false}
-        try{Native-Action $app $action $result;if($Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre') -and (-not $fixedLiveKeyScenario -or -not [NativeLiveToneNavigationKey]::Held)){Capture-Window $app "native-action-$phase-$sequence"};$result.ok=$true}catch{$result.error=$_.Exception.Message}
+        try{Native-Action $app $action $result;if($action.kind -cne 'capture' -and $Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre') -and (-not $fixedLiveKeyScenario -or -not [NativeLiveToneNavigationKey]::Held)){Capture-Window $app "native-action-$phase-$sequence"};$result.ok=$true}catch{$result.error=$_.Exception.Message}
         Save-Json $result (Join-Path $OutputDirectory "result-$phase-$sequence.json")
         # A native modal can suspend the renderer, including its result poll.
         # Fail here after preserving the real action error instead of waiting

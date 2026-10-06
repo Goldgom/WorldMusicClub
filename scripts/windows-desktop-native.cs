@@ -33,6 +33,8 @@ public static class NativeAcceptance {
   [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h,ref POINT p);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h,uint command);
+  [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
   [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr h,uint flags);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint processId);
   [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h,StringBuilder text,int length);
@@ -52,6 +54,7 @@ public static class NativeAcceptance {
   [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr window,uint flags);
   [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr monitor,ref MONITORINFO info);
   [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr window);
+  [DllImport("user32.dll")] public static extern uint GetDpiForSystem();
   [DllImport("user32.dll")] public static extern IntPtr GetWindowDpiAwarenessContext(IntPtr window);
   [DllImport("user32.dll")] public static extern IntPtr GetThreadDpiAwarenessContext();
   [DllImport("user32.dll")] public static extern int GetAwarenessFromDpiAwarenessContext(IntPtr context);
@@ -91,6 +94,42 @@ public static class NativeAcceptance {
   }
   public static void Click(int x,int y) { POINT actual; if(!SetCursorPos(x,y) || !GetCursorPos(out actual) || actual.X!=x || actual.Y!=y)throw new InvalidOperationException("Native pointer was clipped or could not reach the requested point"); ClickPositioned(); }
   public static void ClickPositioned() { mouse_event(2,0,0,0,UIntPtr.Zero); mouse_event(4,0,0,0,UIntPtr.Zero); }
+  // Pure checks for passive screen pixels. They never acquire focus or send input.
+  public static RECT PassiveCaptureBounds(IntPtr window,IntPtr root,IntPtr foreground,uint expectedProcess,uint ownerProcess,bool visible,bool enabled,RECT client,POINT origin,RECT work,double viewportWidth,double viewportHeight) {
+    if(window==IntPtr.Zero || root!=window || foreground!=window || expectedProcess==0 || ownerProcess!=expectedProcess || !visible || !enabled)
+      throw new InvalidOperationException("Passive capture requires the visible enabled foreground app owner");
+    long width=(long)client.Right-client.Left,height=(long)client.Bottom-client.Top;
+    if(client.Left!=0 || client.Top!=0 || width<=0 || height<=0 || width>8192 || height>8192 || width*height>16777216 || viewportWidth!=width || viewportHeight!=height)
+      throw new InvalidOperationException("Passive capture requires exact bounded unscaled client pixels");
+    long right=(long)origin.X+width,bottom=(long)origin.Y+height;
+    if(work.Right<=work.Left || work.Bottom<=work.Top || origin.X<work.Left || origin.Y<work.Top || right>work.Right || bottom>work.Bottom)
+      throw new InvalidOperationException("Passive capture client is outside the visible work area");
+    return new RECT { Left=origin.X,Top=origin.Y,Right=(int)right,Bottom=(int)bottom };
+  }
+  public static void ValidatePassiveCaptureScale(uint dpi,uint systemDpi,int windowAwareness,int callerAwareness,int scaleResult,int scale,double rendererRatio,int monitorCount,RECT monitor) {
+    // An unaware caller is equivalent only on one 100% monitor at origin zero.
+    // Mixed-monitor virtual origins and system-aware nonunit DPI stay rejected.
+    bool singleUnitOrigin=monitorCount==1 && monitor.Left==0 && monitor.Top==0;
+    if(monitorCount<1 || monitorCount>16 || monitor.Right<=monitor.Left || monitor.Bottom<=monitor.Top || dpi!=96 || windowAwareness<0 || windowAwareness>2 || (callerAwareness!=2 && !(callerAwareness==1 && systemDpi==96) && !(callerAwareness==0 && singleUnitOrigin)) || systemDpi==0 || scaleResult!=0 || scale!=100 || rendererRatio!=1)
+      throw new InvalidOperationException("Passive capture requires verified unit desktop and renderer scale");
+  }
+  public static void ValidatePassiveCaptureOverlay(RECT capture,RECT overlay,bool visible) {
+    if(visible && overlay.Right>overlay.Left && overlay.Bottom>overlay.Top && overlay.Left<capture.Right && overlay.Right>capture.Left && overlay.Top<capture.Bottom && overlay.Bottom>capture.Top)
+      throw new InvalidOperationException("Passive capture client is occluded by a higher window");
+  }
+  public static int[] ValidatePassiveCapturePixels(byte[] bytes,int width,int height,int stride) {
+    if(width<=0 || height<=0 || width>8192 || height>8192 || (long)width*height>16777216 || stride!=((long)width*3+3)/4*4 || bytes==null || bytes.LongLength!=(long)stride*height)
+      throw new InvalidOperationException("Passive capture pixel buffer is invalid");
+    int nonBlack=0,different=0,min=255,max=0;
+    for(int y=0;y<height;y++)for(int x=0;x<width;x++) {
+      int at=y*stride+x*3,r=bytes[at+2],g=bytes[at+1],b=bytes[at];
+      if((r|g|b)!=0)nonBlack++;
+      if(r!=bytes[2] || g!=bytes[1] || b!=bytes[0])different++;
+      min=Math.Min(min,Math.Min(r,Math.Min(g,b)));max=Math.Max(max,Math.Max(r,Math.Max(g,b)));
+    }
+    if(nonBlack<64 || different<64 || max-min<8)throw new InvalidOperationException("Passive capture pixels are black or uniform");
+    return new int[]{nonBlack,different,min,max};
+  }
   public static RECT WorkArea(IntPtr window) {
     var monitor=MonitorFromWindow(window,2); var info=new MONITORINFO();info.Size=(uint)Marshal.SizeOf(typeof(MONITORINFO));
     if(monitor==IntPtr.Zero || !GetMonitorInfo(monitor,ref info))throw new InvalidOperationException("Cannot read the app monitor work area");

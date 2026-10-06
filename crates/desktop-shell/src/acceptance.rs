@@ -838,7 +838,15 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
     };
     if object.keys().any(|key| {
         ![
-            "version", "sequence", "kind", "x", "y", "width", "height", "file",
+            "version",
+            "sequence",
+            "kind",
+            "x",
+            "y",
+            "width",
+            "height",
+            "file",
+            "devicePixelRatio",
         ]
         .contains(&key.as_str())
     }) || value["version"] != 1
@@ -849,6 +857,21 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
         .as_u64()
         .is_some_and(|sequence| (1..=action_limit(phase)).contains(&sequence))
     {
+        return false;
+    }
+    if value["kind"] == "capture" {
+        return ["vsq-seed", "vsq-restart"].contains(&phase)
+            && value["devicePixelRatio"].as_f64() == Some(1.0)
+            && !object.contains_key("file")
+            && ["x", "y", "width", "height"].iter().all(|field| {
+                value[field]
+                    .as_f64()
+                    .is_some_and(|n| n.is_finite() && n > 0.0 && n <= 8192.0)
+            })
+            && value["x"].as_f64() < value["width"].as_f64()
+            && value["y"].as_f64() < value["height"].as_f64();
+    }
+    if object.contains_key("devicePixelRatio") {
         return false;
     }
     let live_navigation = LIVE_TONE_NAVIGATION_PHASES.contains(&phase);
@@ -2374,6 +2397,36 @@ mod tests {
         }
         for phase in ["basic-key-any", "basic-key-seed-extra", "../basic-key-seed"] {
             assert!(Acceptance::new(Evidence::new().0.clone(), phase).is_err());
+        }
+    }
+
+    #[test]
+    fn passive_capture_is_closed_to_exact_vsq_phases_and_bounded_target() {
+        let action = json!({"version":1,"sequence":17,"kind":"capture","x":500,"y":300,"width":1024,"height":689,"devicePixelRatio":1});
+        for phase in ["vsq-seed", "vsq-restart"] {
+            assert!(valid_action_for_phase(&action, phase));
+            for (key, value) in [
+                ("file", json!("unowned.png")),
+                ("code", json!("KeyU")),
+                ("x", json!(1024)),
+                ("y", json!(-1)),
+                ("width", json!(8193)),
+                ("sequence", json!(81)),
+                ("devicePixelRatio", json!(1.25)),
+            ] {
+                let mut invalid = action.clone();
+                invalid[key] = value;
+                assert!(!valid_action_for_phase(&invalid, phase), "{key}");
+            }
+        }
+        for phase in [
+            "",
+            "vsq-seed-extra",
+            "basic-key-seed",
+            "human-timbre-seed",
+            "catalog-seed",
+        ] {
+            assert!(!valid_action_for_phase(&action, phase));
         }
     }
 

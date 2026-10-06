@@ -14,6 +14,7 @@ function Assert-Rejected([scriptblock]$Operation,[string]$Label) {
 }
 . (Join-Path $PSScriptRoot 'windows-desktop-evidence-contract.ps1')
 . (Join-Path $PSScriptRoot 'windows-desktop-geometry-contract.ps1')
+. (Join-Path $PSScriptRoot 'windows-passive-capture-contract.ps1')
 . (Join-Path $PSScriptRoot 'windows-skin-profile-contract.ps1')
 # Exercise the actual lifecycle helper using owned temporary paths, including
 # a retained earlier cache with an open handle. No WebView or GUI is launched.
