@@ -637,7 +637,9 @@ test('canonical Windows proof binds the built EXE and source before both package
   assert.ok(checked < pack.indexOf('native-release-manifest.py create'));
   assert.match(pack, /if \(\$LASTEXITCODE -ne 0\) \{ throw 'Canonical-practice evidence does not match exact packaged source and executable' \}/);
   assert.match(pack, /native-release-manifest\.py create .* --canonical-practice desktop-canonical-practice(?: |$)/);
-  assert.match(pack, /Copy-Item desktop-canonical-practice\/native-canonical-practice\.json,desktop-canonical-practice\/canonical-practice-proof\.json,desktop-canonical-practice\/renderer-canonical-practice-\*\.json,desktop-canonical-practice\/profile-canonical-practice-\*\.json/);
+  // The manifest adapter retains the whole bound inventory under
+  // evidence/canonical-practice/. Flat copies are forbidden report aliases.
+  assert.doesNotMatch(pack, /Copy-Item[^\n]*desktop-canonical-practice\//);
   assert.doesNotMatch(pack, /^        (?:if|continue-on-error):/m);
   assert.equal(gateRuns(pack, {failed: true}), false);
 });

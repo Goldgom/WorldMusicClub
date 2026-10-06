@@ -297,8 +297,9 @@ def verify_packaged(read, metadata, paths, executable='WorldMusicClub-Native.exe
         if not relevant:
             continue
         if name.endswith('/'):
-            require(name in parents, 'Exact canonical package evidence inventory is required')
+            require(name in parents, f'Exact canonical package evidence inventory is required: extra directory={name!r}')
         else:
             actual.add(name)
-    require(actual == expected, 'Exact canonical package evidence inventory is required')
+    require(actual == expected, 'Exact canonical package evidence inventory is required: '
+            f'missing={sorted(expected - actual)!r}, extra={sorted(actual - expected)!r}')
     require_fields(metadata, fields)

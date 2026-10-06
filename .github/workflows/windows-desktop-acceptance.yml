@@ -832,7 +832,7 @@ jobs:
           Copy-Item LICENSE $folder
           Copy-Item desktop-basic-key/native-basic-key.json,desktop-basic-key/basic-key-proof.json,desktop-basic-key/renderer-basic-key-*.json,desktop-basic-key/profile-basic-key-*.json "$folder/evidence/"
           Copy-Item desktop-complete-practice/native-complete-practice.json,desktop-complete-practice/complete-practice-proof.json,desktop-complete-practice/renderer-complete-practice-*.json,desktop-complete-practice/profile-complete-practice-*.json "$folder/evidence/"
-          Copy-Item desktop-canonical-practice/native-canonical-practice.json,desktop-canonical-practice/canonical-practice-proof.json,desktop-canonical-practice/renderer-canonical-practice-*.json,desktop-canonical-practice/profile-canonical-practice-*.json "$folder/evidence/"
+          # The manifest adapter copies the complete canonical gate into evidence/canonical-practice/.
           Copy-Item docs/WINDOWS_NATIVE.md "$folder/README.md"
           Copy-Item docs/WINDOWS_NATIVE.md "$folder/START-HERE.md"
           Copy-Item -Recurse docs,schema,schemas,catalog $folder

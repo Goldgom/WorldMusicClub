@@ -649,6 +649,58 @@ class NativeReleaseTests(unittest.TestCase):
             shutil.copyfile(ROOT / 'docs/canonical-practice-acceptance.md', doc)
             self.assertTrue(native.create_manifest(directory, metadata)['acceptance']['native_canonical_practice_validated'])
 
+    def test_canonical_flat_report_copies_are_rejected_even_with_identical_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / native.FOLDER
+            metadata = self.package(directory)
+            adapter = native._canonical
+            canonical = directory / adapter.PREFIX
+            original = native.create_manifest(directory, metadata)
+            archive = root / 'canonical.zip'
+            native.create_archive(directory, archive)
+            # The former Windows staging step copied these eight reports into
+            # evidence/ before the adapter retained the complete bound gate.
+            names = [adapter.HOST, adapter.PROOF,
+                     *[f'{kind}-{phase}.json' for phase in adapter.PHASES for kind in ['renderer', 'profile']]]
+            extras = sorted('evidence/' + name for name in names)
+            for name in names:
+                shutil.copyfile(canonical / name, directory / 'evidence' / name)
+            message = f'Exact canonical package evidence inventory is required: missing=[], extra={extras!r}'
+            with self.assertRaises(ValueError) as rejected:
+                native.create_manifest(directory, metadata)
+            self.assertEqual(str(rejected.exception), message)
+            self.rewrite_package_inventory(directory, original)
+            with self.assertRaises(ValueError) as rejected:
+                native.create_archive(directory, archive)
+            self.assertEqual(str(rejected.exception), message)
+            for name in names:
+                (directory / 'evidence' / name).unlink()
+            repaired = native.create_manifest(directory, metadata)
+            self.assertEqual(repaired['acceptance'], original['acceptance'])
+            native.create_archive(directory, archive)
+            with zipfile.ZipFile(archive) as packaged:
+                expected = {native.FOLDER + '/' + adapter.PREFIX + name
+                            for name in metadata['acceptance']['native_canonical_practice_files_sha256']}
+                retained = {name for name in packaged.namelist() if name.startswith(native.FOLDER + '/' + adapter.PREFIX)}
+                self.assertEqual(retained, expected)
+                for name in expected:
+                    relative = name.removeprefix(native.FOLDER + '/')
+                    self.assertEqual(packaged.read(name), (directory / relative).read_bytes())
+
+    def test_canonical_inventory_diagnostic_identifies_missing_retained_path(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / native.FOLDER
+            metadata = self.package(directory)
+            adapter = native._canonical
+            omitted = adapter.PREFIX + adapter.PROOF
+            paths = [path.relative_to(directory).as_posix() for path in directory.rglob('*') if path.is_file()]
+            paths.remove(omitted)
+            with self.assertRaises(ValueError) as rejected:
+                adapter.verify_packaged(lambda name: (directory / name).read_bytes(), metadata, paths)
+            self.assertEqual(str(rejected.exception),
+                             f'Exact canonical package evidence inventory is required: missing={[omitted]!r}, extra=[]')
+
     def test_canonical_missing_gate_files_and_acceptance_fields_cannot_be_rehashed_away(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
