@@ -76,6 +76,17 @@ function requestedState(state,request,label) {
  assert.deepEqual([state.width,state.height],[request.width,request.height],`${label}: viewport changed since request preparation`);
 }
 
+function requestedPoint(event,state,request,label,kind) {
+ assert.ok(finite(event.clientX)&&finite(event.clientY),`${label}: actual event coordinates missing`);
+ // Windows dispatch rounds client coordinates; keep the observed coordinates
+ // while allowing only its integer CSS conversion around the requested center.
+ assert.ok(inside(event.clientX,event.clientY,state.target)&&event.clientX>0&&event.clientX<state.width&&event.clientY>0&&event.clientY<state.height&&Math.abs(event.clientX-request.x)<=1&&Math.abs(event.clientY-request.y)<=1,`${label}: actual ${kind} coordinates missed the requested target center`);
+}
+
+function progressRange(control) {
+ return record(control)&&control.id==='progress'&&control.tag==='INPUT'&&control.type==='range';
+}
+
 function completedState(state,stage,label) {
  if(stage&&state.clock.completed){
   assert.equal(state.playDisabled,false,`${label}: completed stage controls were not admitted`);
@@ -135,15 +146,33 @@ export function validateVsqOwnedControls(report,{actions}={}) {
   // The action can navigate, close a dialog, disable or replace its own control.
   // Retain the real after-state; do not require it to equal the dispatch state.
   snapshot(row.afterDispatch,`${label} after-dispatch`);
+  assert.ok(Array.isArray(row.pointerDown)&&row.pointerDown.length===1,`${label}: exactly one actual pointerdown admission required`);
+  const down=row.pointerDown[0],downLabel=`${label} pointerdown`;
+  assert.ok(record(down)&&id(down.id),`${downLabel}: actual event identity missing`);
+  assert.equal(down.sequence,row.sequence,`${downLabel}: event belongs to another action`);
+  assert.equal(down.owned,true,`${downLabel}: event missed the original control`);
+  assert.equal(down.trusted,true,`${downLabel}: untrusted admission`);
+  assert.equal(down.order,0,`${downLabel}: admission must precede every click`);
+  assert.equal(down.button,0,`${downLabel}: primary mouse button required`);
+  assert.equal(down.buttons,1,`${downLabel}: pressed primary mouse button required`);
+  assert.equal(down.isPrimary,true,`${downLabel}: primary pointer required`);
+  assert.equal(down.pointerType,'mouse',`${downLabel}: native mouse pointer required`);
+  assert.ok(Number.isSafeInteger(down.pointerId)&&down.pointerId>=0,`${downLabel}: actual pointer ID required`);
+  const control=down.control;
+  assert.ok(record(control)&&id(control.id)&&typeof control.tag==='string'&&control.tag.length>0&&control.tag.length<=512&&id(control.type),`${downLabel}: actual original control descriptor required`);
+  assert.equal(control.id,row.id,`${downLabel}: original control ID differs`);
+  const admitted=snapshot(down.state,downLabel,{actionable:true});
+  requestedState(admitted,request,downLabel);completedState(admitted,stage,downLabel);requestedPoint(down,admitted,request,downLabel,'pointerdown');
   assert.ok(Array.isArray(row.clicks)&&row.clicks.length>=1&&row.clicks.length<=4,`${label}: bounded actual click events required`);
   assert.ok(Array.isArray(row.dispatch)&&row.dispatch.length===row.clicks.length,`${label}: every click needs its original dispatch snapshot`);
-  let primary=0,delegated=0;
+  let primary=0,delegated=0,previousOrder=down.order;
   for(const [index,event]of row.clicks.entries()){
    assert.ok(record(event)&&id(event.id)&&typeof event.owned==='boolean'&&typeof event.trusted==='boolean',`${label}: click event identity/ownership/trust missing`);
    assert.equal(event.sequence,row.sequence,`${label}: click belongs to another action`);
    const dispatch=row.dispatch[index];
    assert.ok(record(dispatch),`${label}: dispatch snapshot missing`);
    assert.deepEqual(Object.fromEntries(['sequence','id','owned','trusted'].map(key=>[key,dispatch[key]])),event,`${label}: dispatch must bind the same click event in order`);
+   assert.ok(Number.isSafeInteger(dispatch.order)&&dispatch.order>previousOrder,`${label}: click dispatch order must follow pointerdown and prior clicks`);previousOrder=dispatch.order;
    assert.ok(finite(dispatch.clientX)&&finite(dispatch.clientY),`${label}: actual event coordinates missing`);
    if(!event.trusted){
     assert.ok(row.kind==='picker'&&event.id==='score-file'&&!event.owned,`${label}: untrusted primary click`);
@@ -156,10 +185,14 @@ export function validateVsqOwnedControls(report,{actions}={}) {
    // commits the option. Its coordinates/state remain actual observations,
    // and need not repeat the initial pointer geometry.
    if(primary>1)continue;
-   requestedState(state,request,`${label} dispatch ${index}`);completedState(state,stage,`${label} dispatch ${index}`);
-   // Windows dispatch rounds client coordinates; DOM mouse events may expose
-   // integer CSS coordinates for a fractional center. Keep the raw coordinates.
-   assert.ok(inside(dispatch.clientX,dispatch.clientY,state.target)&&dispatch.clientX>0&&dispatch.clientX<state.width&&dispatch.clientY>0&&dispatch.clientY<state.height&&Math.abs(dispatch.clientX-request.x)<=1&&Math.abs(dispatch.clientY-request.y)<=1,`${label}: actual click coordinates missed the requested target center`);
+   const dispatchLabel=`${label} dispatch ${index}`;
+   // Native range input runs before click and can change the stage geometry.
+   // Only the separately validated seek on the observed original range gets
+   // this exception; its actual down admission and click point stay strict.
+   const rangeSeek=report.phase==='vsq-restart'&&row.kind==='click'&&row.id==='progress'&&report.seek?.pointerAction===row.sequence&&progressRange(report.seek?.before?.control)&&progressRange(control)&&down.id==='progress'&&event.id==='progress';
+   if(rangeSeek)assert.deepEqual([state.width,state.height],[request.width,request.height],`${dispatchLabel}: viewport changed since request preparation`);
+   else requestedState(state,request,dispatchLabel);
+   completedState(state,stage,dispatchLabel);requestedPoint(dispatch,state,request,dispatchLabel,'click');
   }
   assert.ok(primary>=1,`${label}: trusted owned primary click missing`);
   if(row.kind==='click')assert.equal(primary,1,`${label}: duplicate primary click`);

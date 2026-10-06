@@ -139,6 +139,19 @@ function readVsqControlState(document,node,point=null) {
  const b=node.getBoundingClientRect(),view=document.defaultView,clock=globalThis.__wmhReadPlaybackClock(document),hit=document.elementFromPoint(point?.x??b.x+b.width/2,point?.y??b.y+b.height/2);
  return{target:{x:b.x,y:b.y,width:b.width,height:b.height},width:view.innerWidth,height:view.innerHeight,connected:Boolean(node.isConnected),disabled:Boolean(node.disabled),identity:!node.id||document.getElementById(node.id)===node,hitId:hit?.id||null,hitOwned:hit===node||node.contains(hit),screen:document.body.dataset.screen,playDisabled:Boolean(document.getElementById('play-button')?.disabled),scoreState:document.getElementById('workspace')?.dataset.scoreState??null,practiceGateHidden:document.getElementById('practice-gate')?.hidden??null,feedbackPhase:document.querySelector('.performance-status')?.dataset.phase??null,clock:{positionMs:clock.positionMs,running:clock.running,completed:clock.completed,phase:clock.phase}};
 }
+/* Admission belongs to the start of a real pointer gesture. Range input can
+ * pause/seek and repaint before its final click; retain that later state too. */
+function requireVsqPointerDown(control) {
+ const assert=(value,message)=>{if(!value)throw Error(`VSQ pointerdown admission: ${message}`);},rows=control.pointerDown,request=control.request;
+ assert(rows.length===1,'exactly one real pointerdown required');const event=rows[0],state=event.state;
+ assert(event.order===0&&event.sequence===request.sequence&&event.trusted&&event.owned,'first trusted event must hit the original control');
+ assert(event.button===0&&event.buttons===1&&event.isPrimary&&event.pointerType==='mouse'&&Number.isSafeInteger(event.pointerId)&&event.pointerId>=0,'primary mouse pointer metadata required');
+ assert(state.connected&&!state.disabled&&state.identity&&state.hitOwned,'original control changed before pointerdown');
+ assert(JSON.stringify(state.target)===JSON.stringify(request.target)&&state.width===request.width&&state.height===request.height,'requested geometry changed before pointerdown');
+ const {clientX:x,clientY:y}=event,b=state.target;
+ assert(Number.isFinite(x)&&Number.isFinite(y)&&Math.abs(x-request.x)<=1&&Math.abs(y-request.y)<=1&&x>=b.x&&x<b.x+b.width&&y>=b.y&&y<b.y+b.height,'actual pointerdown missed requested center');
+ if(Object.hasOwn(control.samples.at(-1),'committed')&&state.clock.completed)assert(!state.playDisabled&&['listen','assessed','review','empty'].includes(state.feedbackPhase),'completed stage was not ready at pointerdown');
+}
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(v,m)=>{if(!v)throw Error(m);};
  const originalFetch=globalThis.fetch,fetcher=originalFetch.bind(globalThis),waits=createAcceptanceWait(),json=(path,body,milliseconds=10000)=>waits.json(fetcher,path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},milliseconds);
@@ -163,7 +176,7 @@ function readVsqControlState(document,node,point=null) {
  }}catch(error){report.errors.push(`VSQ request observation: ${String(error).slice(0,512)}`);}return promise;};globalThis.fetch=observedFetch;
  const onError=event=>report.errors.push(String(event.message)),onRejection=event=>report.errors.push(String(event.reason));addEventListener('error',onError);addEventListener('unhandledrejection',onRejection);
  async function native(kind,node,file){
-  assert(node,'VSQ native control unavailable');const pointer=kind!=='capture'&&kind!=='key-ds4',deadline=pointer?performance.now()+15000:null;let control,observer,removeDispatch,pickerStarted=false,completed=false,actionSequence,firstError;
+  assert(node,'VSQ native control unavailable');const pointer=kind!=='capture'&&kind!=='key-ds4',deadline=pointer?performance.now()+15000:null;let control,observer,removeDispatch,removeDown,pickerStarted=false,completed=false,actionSequence,firstError;
   const remaining=()=>{const milliseconds=deadline-performance.now();assert(milliseconds>0,'VSQ owned control exceeded its original 15000ms action budget');return milliseconds;};
   const controlUntil=(condition,label,milliseconds=10000)=>until(signal=>{remaining();return condition(signal);},label,Math.min(milliseconds,remaining()));
   try{
@@ -171,7 +184,7 @@ function readVsqControlState(document,node,point=null) {
     assert(!node.disabled,'VSQ passive surface unavailable');assert(globalThis.devicePixelRatio===1&&(!globalThis.visualViewport||globalThis.visualViewport.scale===1),'Passive capture requires unit renderer scale');assert(node.id==='notation-lane-overlay'&&!document.hidden&&document.hasFocus()&&!document.querySelector('dialog[open]'),'Passive capture requires the visible focused stage');observeVsqFollowingSurface(document);
    }else if(kind==='key-ds4')assertVsqInputFocus(document,node);
    else{
-    assert(report.controlActions.length<80,'VSQ owned control evidence bound exceeded');control={sequence:sequence+1,kind,id:node.id||null,before:readVsqControlState(document,node),samples:[],dispatch:[]};report.controlActions.push(control);
+    assert(report.controlActions.length<80,'VSQ owned control evidence bound exceeded');control={sequence:sequence+1,kind,id:node.id||null,before:readVsqControlState(document,node),samples:[],pointerDown:[],dispatch:[]};report.controlActions.push(control);
     assert(control.before.identity,'VSQ original control was replaced');
     control.readiness=await waitCanonicalPracticeControl({document,node,until:controlUntil,readClock:()=>globalThis.__wmhReadPlaybackClock(document)});
     node.scrollIntoView({block:'center',inline:'center'});node.focus();await waits.bounded(async()=>{await frame();await frame();},'VSQ control preparation frames',remaining());
@@ -185,20 +198,25 @@ function readVsqControlState(document,node,point=null) {
    const action={version:1,sequence:++sequence,kind,x,y,width:innerWidth,height:innerHeight,...(file?{file}:{}),...(kind==='capture'?{devicePixelRatio:globalThis.devicePixelRatio}:{})};actionSequence=sequence;
    if(control){
     control.request={...action,target:{x:b.x,y:b.y,width:b.width,height:b.height}};observer=observeCanonicalPracticeOwnedClick({document,node,sequence});control.clicks=observer.events;
-    const record=event=>{if(control.dispatch.length<5)control.dispatch.push({sequence:actionSequence,id:event.target?.id||null,owned:event.target===node||node.contains(event.target),trusted:event.isTrusted===true,clientX:event.clientX,clientY:event.clientY,state:readVsqControlState(document,node,{x:event.clientX,y:event.clientY})});};
+    let eventOrder=0;
+    const record=event=>{
+     const order=eventOrder++,down=event.type==='pointerdown',rows=down?control.pointerDown:control.dispatch;
+     if(rows.length<(down?2:5))rows.push({sequence:actionSequence,id:event.target?.id||null,owned:event.target===node||node.contains(event.target),trusted:event.isTrusted===true,clientX:event.clientX,clientY:event.clientY,order,...(down?{button:event.button,buttons:event.buttons,isPrimary:event.isPrimary,pointerId:event.pointerId,pointerType:event.pointerType,control:{id:node.id||null,tag:node.tagName,type:node.type||null}}:{}),state:readVsqControlState(document,node,{x:event.clientX,y:event.clientY})});
+    };
+    document.addEventListener('pointerdown',record,true);removeDown=()=>document.removeEventListener('pointerdown',record,true);
     document.addEventListener('click',record,true);removeDispatch=()=>document.removeEventListener('click',record,true);
    }
    if(kind==='picker'){controls.beginPicker(sequence,file);pickerStarted=true;}
    await json('/__desktop_smoke/action',action,pointer?Math.min(10000,remaining()):10000);let result;
    await (pointer?controlUntil:until)(async signal=>{const response=await fetcher(`/__desktop_smoke/result/${actionSequence}`,{signal});if(response.status===404)return false;result=await response.json();assert(response.ok,result.error||'VSQ action result failed');return true;},`native ${kind} #${actionSequence}`,15000);
    assert(result.ok,result.error||'VSQ native action failed');
-   if(control){control.afterDispatch=readVsqControlState(document,node);await requireCanonicalPracticeOwnedClick({until:async(condition,label)=>{remaining();assert(await condition(),`VSQ ${label}: no trusted owned click received before host completion`);},events:observer.events,sequence:actionSequence,id:node.id,kind});}
+   if(control){control.afterDispatch=readVsqControlState(document,node);requireVsqPointerDown(control);await requireCanonicalPracticeOwnedClick({until:async(condition,label)=>{remaining();assert(await condition(),`VSQ ${label}: no trusted owned click received before host completion`);},events:observer.events,sequence:actionSequence,id:node.id,kind});}
    completed=true;return actionSequence;
   }catch(error){firstError=error;if(control)control.error=String(error).slice(0,512);throw error;}
   finally{
    const cleanupErrors=[],attempt=(name,operation)=>{try{operation();}catch(error){cleanupErrors.push({name,error:String(error).slice(0,512)});}};
    if(control&&!control.afterDispatch)attempt('after-dispatch-snapshot',()=>{control.afterDispatch=readVsqControlState(document,node);});
-   attempt('owned-click-observer',()=>observer?.restore());attempt('dispatch-observer',()=>removeDispatch?.());
+   attempt('owned-click-observer',()=>observer?.restore());attempt('pointerdown-observer',()=>removeDown?.());attempt('dispatch-observer',()=>removeDispatch?.());
    if(pickerStarted&&!completed)attempt('owned-picker',()=>controls.endPicker(actionSequence,false));
    if(cleanupErrors.length){if(control)control.cleanupErrors=cleanupErrors;if(!firstError)throw Error(`VSQ control observation cleanup failed: ${JSON.stringify(cleanupErrors)}`);}
   }
