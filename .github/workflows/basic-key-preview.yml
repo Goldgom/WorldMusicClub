@@ -162,6 +162,8 @@ jobs:
       - run: python -m pip install PyYAML==6.0.3
       - name: Parse complete workflow and reject malformed run scalars
         run: python scripts/check-authoring-workflow.py .github/workflows/basic-key-preview.yml
+      - name: Check source, cache and bounded diagnostic contracts
+        run: python -m unittest discover -s tests -p 'test_basic_key*.py'
       - name: Bind focused proof to the exact checked-out source
         id: basic_key_source
         shell: bash
@@ -186,10 +188,54 @@ jobs:
           [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'scripts/windows-desktop-acceptance.ps1'),[ref]$tokens,[ref]$errors)
           if ($errors.Count) { $errors | Format-List; throw 'PowerShell syntax errors' }
           ./tests/windows-desktop-contract.ps1
+      # Match the full gate's generated Rust cache; exclude the top-level app
+      # EXE, dependency installation, generated web assets and UI evidence.
+      - name: Restore focused native Rust build cache
+        id: basic_key_rust_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
+        with:
+          path: |
+            target/debug/.fingerprint
+            target/debug/build
+            target/debug/deps
+            target/release/.fingerprint
+            target/release/build
+            target/release/deps
+          # Isolated from the full gate; Cargo still validates source freshness.
+          key: basic-key-rust-v1-${{ runner.os }}-${{ runner.arch }}-msvc-1.99.0-crt-static-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', '.cargo/config*', 'rust-toolchain*', 'package-lock.json', 'scripts/prepare-engraving.mjs', '.github/workflows/basic-key-preview.yml') }}
+          fail-on-cache-miss: false
+          enableCrossOsArchive: false
       - run: cargo test -p score-core basic_keys --locked
       - run: "cargo test -p worldmusichub-desktop --lib acceptance:: --locked"
-      - run: cargo build -p worldmusichub-desktop --release --locked
+      - id: basic_key_native_build
+        run: cargo build -p worldmusichub-desktop --release --locked
+      - name: Save focused native Rust build cache
+        if: success() && steps.basic_key_native_build.outcome == 'success' && steps.basic_key_rust_cache.outputs.cache-hit != 'true' && steps.basic_key_rust_cache.outputs.cache-primary-key != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          path: |
+            target/debug/.fingerprint
+            target/debug/build
+            target/debug/deps
+            target/release/.fingerprint
+            target/release/build
+            target/release/deps
+          key: ${{ steps.basic_key_rust_cache.outputs.cache-primary-key }}
+          enableCrossOsArchive: false
+      - name: Recheck the exact clean source before opening native Windows
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -cne '${{ github.sha }}') { throw 'Unexpected basic-key build source' }
+          if ((git rev-parse 'HEAD^{tree}').Trim() -cne '${{ steps.basic_key_source.outputs.source_tree }}') { throw 'Basic-key build tree changed' }
+          if (git status --porcelain --untracked-files=normal) { throw 'Basic-key preview source is dirty' }
       - name: Actual Windows basic-key and restart in separate native processes
+        timeout-minutes: 10
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-basic-key -Scenario basic-key
       - name: Independently verify exact source, executable and basic-key evidence
@@ -200,6 +246,22 @@ jobs:
           $env:WMH_BASIC_KEY_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
           node scripts/verify-basic-key-evidence.mjs --check desktop-basic-key
           if ($LASTEXITCODE -ne 0) { throw 'Basic-key source/EXE proof failed' }
+      - name: Collect at most 23 MiB of original Basic JSON and PNG diagnostics
+        if: always()
+        timeout-minutes: 2
+        run: >-
+          python scripts/collect-basic-key-diagnostics.py
+          desktop-basic-key "${{ runner.temp }}/basic-key-windows-diagnostics"
+          --source-sha "${{ github.sha }}"
+      - name: Upload small native Basic diagnostics even after failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: basic-key-windows-diagnostics-${{ github.sha }}
+          path: ${{ runner.temp }}/basic-key-windows-diagnostics/
+          if-no-files-found: warn
+      # Full original evidence stays available separately. A focused preview
+      # never replaces full Verify + Native acceptance or publishes a package.
       - name: Retain bounded native basic-key evidence and clean outputs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
